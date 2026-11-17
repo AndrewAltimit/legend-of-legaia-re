@@ -24,6 +24,26 @@ fn shop_slides_open_together_and_close_out() {
     assert!(!s.draw_list().iter().any(|(id, _)| *id == 42));
 }
 
+/// The home count starts on the tick the last window lands and drops the
+/// moment the target changes, so a screen whose windows still move (or
+/// whose press has not stepped the slides yet) reads `0`.
+#[test]
+fn shop_slides_count_ticks_home_on_their_target() {
+    let mut s = ShopSlides::default();
+    let root = shop_screen_windows(ShopScreenPhase::Root, false);
+    for _ in 0..SHOP_SLIDE_FRAMES - 1 {
+        s.tick(&root);
+        assert_eq!(s.home_ticks(), 0);
+    }
+    s.tick(&root);
+    assert_eq!(s.home_ticks(), 1);
+    s.tick(&root);
+    assert_eq!(s.home_ticks(), 2);
+    let buy = shop_screen_windows(ShopScreenPhase::BuyList, false);
+    s.tick(&buy);
+    assert_eq!(s.home_ticks(), 0);
+}
+
 #[test]
 fn shop_screen_window_sets_follow_the_widget_scripts() {
     use ShopScreenPhase as P;
@@ -36,7 +56,10 @@ fn shop_screen_window_sets_follow_the_widget_scripts() {
     for p in [P::BuyList, P::BuyQuantity, P::BuyRecipient] {
         let w = shop_screen_windows(p, false);
         assert!(w.contains(&41) && w.contains(&34), "{p:?}");
-        assert!(!w.contains(&42), "{p:?}: window 41 covers the picker");
+        assert!(
+            !w.contains(&42),
+            "{p:?}: the program's close-all leaves the picker shut"
+        );
     }
     assert!(!shop_screen_windows(P::BuyQuantity, false).contains(&40));
     // The sell flow swaps 40 / 34 for 38 / 39.

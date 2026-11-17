@@ -594,33 +594,57 @@ pub fn shop_party_compare_views<'a>(
 /// info, the quantity steppers, the sell detail, the toast) add their text
 /// on top; [`shop_marker_draws`] resolves their sprite requests.
 pub fn shop_screen_draws(ctx: &ShopScreenCtx<'_>, view: &ShopScreenView<'_>) -> ShopScreenDraws {
-    let mut out = ShopScreenDraws {
-        texts: Vec::new(),
-        sprites: shop_window_frames(ctx, view.windows),
-    };
+    let mut out = ShopScreenDraws::default();
+    for (_, g) in shop_screen_groups(ctx, view) {
+        out.texts.extend(g.texts);
+        out.sprites.extend(g.sprites);
+    }
+    out
+}
+
+/// [`shop_screen_draws`] window by window: each window's frame, then the
+/// picker (42), the list (40 / 38) and the party column (41), each tagged
+/// with the window that draws it, so [`apply_shop_slides`] moves and stacks
+/// every draw with its own window even where two windows' home rects
+/// overlap (41's covers the picker's).
+pub fn shop_screen_groups(
+    ctx: &ShopScreenCtx<'_>,
+    view: &ShopScreenView<'_>,
+) -> Vec<(Option<usize>, ShopScreenDraws)> {
     let has = |id: usize| view.windows.contains(&id);
-    let mut add = |d: ShopScreenDraws| {
-        out.texts.extend(d.texts);
-        out.sprites.extend(d.sprites);
-    };
-    // Window 41's frame covers the picker's whole rect, so while 41 is up
-    // (sliding in or out included) the picker's rows are hidden under it.
-    if let Some(p) = view
-        .picker
-        .as_ref()
-        .filter(|_| has(WIN_SHOP_PICKER) && !has(WIN_SHOP_PARTY_COMPARE))
-    {
-        add(shop_picker_draws(ctx, p));
+    let mut out: Vec<(Option<usize>, ShopScreenDraws)> = view
+        .windows
+        .iter()
+        .map(|&id| {
+            (
+                Some(id),
+                ShopScreenDraws {
+                    texts: Vec::new(),
+                    sprites: shop_window_frames(ctx, &[id]),
+                },
+            )
+        })
+        .collect();
+    // The picker draws its rows while it is on the list, sliding out
+    // included; window 41 sliding in over it covers them (lower id on top,
+    // [`apply_shop_slides`]).
+    if let Some(p) = view.picker.as_ref().filter(|_| has(WIN_SHOP_PICKER)) {
+        out.push((Some(WIN_SHOP_PICKER), shop_picker_draws(ctx, p)));
     }
     if let Some(l) = view.list.as_ref().filter(|l| has(l.kind.window())) {
-        add(shop_list_draws(ctx, l));
+        out.push((Some(l.kind.window()), shop_list_draws(ctx, l)));
     }
     if has(WIN_SHOP_PARTY_COMPARE) && !view.party.is_empty() {
         let (x, y, _, _) = ctx.rects.rect(WIN_SHOP_PARTY_COMPARE);
         let views = shop_party_compare_views(view.party, view.compare_labels);
         let fields = crate::party_compare_panel_fields(&views, (x, y));
-        out.texts
-            .extend(crate::compare_panel_draws_for(ctx.font, &fields));
+        out.push((
+            Some(WIN_SHOP_PARTY_COMPARE),
+            ShopScreenDraws {
+                texts: crate::compare_panel_draws_for(ctx.font, &fields),
+                sprites: Vec::new(),
+            },
+        ));
     }
     out
 }
@@ -654,66 +678,114 @@ pub fn prize_screen_draws(
     out
 }
 
-/// Move every draw of a composed shop frame with the window it belongs to.
+/// Move every draw of a composed shop frame with the window it belongs to,
+/// and stack the windows as retail does.
 ///
 /// The composition and the per-window painters lay everything out at the
-/// windows' home rects; this assigns each text (stage pixels) and sprite
-/// (surface pixels) to the last window in `slides` whose home frame holds
-/// its origin - window 39's widget box counting as 39 - and shifts it by
-/// that window's offset from home (`(window id, (dx, dy))`, stage pixels:
-/// where the window walker has it this frame,
-/// `legaia_engine_menus::shop::shop_window_origin`). A draw in no window
-/// stays put.
+/// windows' home rects. A group tagged with its window ([`shop_screen_groups`])
+/// rides that window; an untagged draw is given to the last window in
+/// `slides` whose home frame holds its origin (window 39's widget box counting
+/// as 39), or stays put in none. Each is shifted by its window's offset from
+/// home (`(window id, (dx, dy))`, stage pixels: where the window walker has it
+/// this frame, `legaia_engine_menus::shop::shop_window_origin`). Texts are
+/// stage pixels, sprites surface pixels.
+///
+/// Where two windows cross, the lower id is on top: the window list is
+/// sorted by id (`FUN_80032434`) and every window's primitives are linked
+/// into one ordering-table slot, which draws the last linked first
+/// (`docs/subsystems/field-menu.md`, "Overlap order").
+/// The hosts draw every text after every sprite, so each draw keeps only
+/// what no lower window's frame, where it stands this frame, covers: the
+/// party column (41) sliding in covers the picker (42) sliding out.
 pub fn apply_shop_slides(
     ctx: &ShopScreenCtx<'_>,
     slides: &[(usize, (i32, i32))],
-    texts: &mut Vec<TextDraw>,
-    sprites: &mut [SpriteDraw],
-) {
-    // (home frame rect, slide offset) per window region, in draw order.
-    let mut regions: Vec<(StageRect, (i32, i32))> = Vec::new();
+    groups: Vec<(Option<usize>, ShopScreenDraws)>,
+) -> ShopScreenDraws {
+    // (window, home frame rect, slide offset) per window region, in draw
+    // order.
+    let mut regions: Vec<(usize, StageRect, (i32, i32))> = Vec::new();
     for &(id, off) in slides {
-        regions.push((ctx.rects.frame_rect(id), off));
+        regions.push((id, ctx.rects.frame_rect(id), off));
         if id == WIN_SHOP_SELL_DETAIL {
             let (x, y, w, h) = sell_detail_box_rect(ctx.rects.rect(id));
-            regions.push(((x - 8, y - 8, w + 16, h + 16), off));
+            regions.push((id, (x - 8, y - 8, w + 16, h + 16), off));
         }
     }
-    if regions.iter().all(|(_, o)| *o == (0, 0)) {
-        return;
-    }
-    let inside = |(rx, ry, rw, rh): (i32, i32, i32, i32), x: i32, y: i32| {
+    let inside = |(rx, ry, rw, rh): StageRect, x: i32, y: i32| {
         x >= rx && x < rx + rw && y >= ry && y < ry + rh
     };
-    let owner_at =
-        |x: i32, y: i32| -> Option<usize> { regions.iter().rposition(|(r, _)| inside(*r, x, y)) };
-    let offset_at =
-        |x: i32, y: i32| -> (i32, i32) { owner_at(x, y).map(|i| regions[i].1).unwrap_or((0, 0)) };
-    // A text whose window slid under a later window's frame is hidden by
-    // it: the host draws every frame before any text, so the cover has to
-    // be applied here.
-    texts.retain_mut(|t| {
-        let owner = owner_at(t.dst.0, t.dst.1);
-        let (dx, dy) = owner.map(|i| regions[i].1).unwrap_or((0, 0));
-        t.dst.0 += dx;
-        t.dst.1 += dy;
-        let Some(owner) = owner else {
-            return true;
-        };
-        !regions[owner + 1..]
+    let owner_at = |x: i32, y: i32| -> Option<usize> {
+        regions
             .iter()
-            .any(|((rx, ry, rw, rh), (ox, oy))| {
-                inside((rx + ox, ry + oy, *rw, *rh), t.dst.0, t.dst.1)
-            })
-    });
+            .rev()
+            .find(|(_, r, _)| inside(*r, x, y))
+            .map(|(id, _, _)| *id)
+    };
+    let offset_of = |id: usize| -> (i32, i32) {
+        slides
+            .iter()
+            .find(|(w, _)| *w == id)
+            .map_or((0, 0), |(_, o)| *o)
+    };
     let s = ctx.scale.max(1) as i32;
-    for sp in sprites.iter_mut() {
-        let sx = (sp.dst.0 - ctx.origin.0).div_euclid(s);
-        let sy = (sp.dst.1 - ctx.origin.1).div_euclid(s);
-        let (dx, dy) = offset_at(sx, sy);
-        sp.dst.0 += dx * s;
-        sp.dst.1 += dy * s;
+    // Each window region where it stands this frame, stage pixels.
+    let now: Vec<(usize, StageRect)> = regions
+        .iter()
+        .map(|&(id, (x, y, w, h), (dx, dy))| (id, (x + dx, y + dy, w, h)))
+        .collect();
+    let covers = |owner: usize| -> Vec<StageRect> {
+        now.iter()
+            .filter(|(v, _)| *v < owner)
+            .map(|(_, r)| *r)
+            .collect()
+    };
+    let clip = |d: TextDraw, frames: &[StageRect], out: &mut Vec<TextDraw>| {
+        let mut parts = vec![d];
+        for &f in frames {
+            let mut kept = Vec::with_capacity(parts.len());
+            for p in parts {
+                crate::pause_menu::clip_quad_outside(p, f, &mut kept);
+            }
+            parts = kept;
+        }
+        out.extend(parts);
+    };
+    let mut out = ShopScreenDraws::default();
+    for (tag, g) in groups {
+        for mut t in g.texts {
+            let owner = tag.or_else(|| owner_at(t.dst.0, t.dst.1));
+            let Some(owner) = owner else {
+                out.texts.push(t);
+                continue;
+            };
+            let (dx, dy) = offset_of(owner);
+            t.dst.0 += dx;
+            t.dst.1 += dy;
+            clip(t, &covers(owner), &mut out.texts);
+        }
+        for mut sp in g.sprites {
+            let owner = tag.or_else(|| {
+                owner_at(
+                    (sp.dst.0 - ctx.origin.0).div_euclid(s),
+                    (sp.dst.1 - ctx.origin.1).div_euclid(s),
+                )
+            });
+            let Some(owner) = owner else {
+                out.sprites.push(sp);
+                continue;
+            };
+            let (dx, dy) = offset_of(owner);
+            sp.dst.0 += dx * s;
+            sp.dst.1 += dy * s;
+            let frames: Vec<StageRect> = covers(owner)
+                .into_iter()
+                .map(|(x, y, w, h)| (ctx.origin.0 + x * s, ctx.origin.1 + y * s, w * s, h * s))
+                .collect();
+            clip(sp, &frames, &mut out.sprites);
+        }
     }
+    out
 }
 
 /// Drop the stage texts a window's frame covers - for a window drawn over
@@ -730,6 +802,50 @@ pub fn occlude_texts(texts: &mut Vec<TextDraw>, frame: (i32, i32, i32, i32)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Two windows on one rect (the fallback rect, as 41's home covers the
+    /// picker's): each tagged draw rides its own window, and the lower id
+    /// covers the higher one where they cross.
+    #[test]
+    fn slides_move_tagged_draws_with_their_window_lower_id_on_top() {
+        let font = legaia_font::synthetic_for_tests();
+        let ctx = ShopScreenCtx {
+            font: &font,
+            rects: crate::pause_menu::MenuRects::new(None),
+            chrome: None,
+            origin: (0, 0),
+            scale: 1,
+        };
+        let q = |x, y| TextDraw {
+            dst: (x, y, 8, 8),
+            src: (0, 0, 8, 8),
+            color: [1.0; 4],
+        };
+        let group = |id, t| {
+            (
+                Some(id),
+                ShopScreenDraws {
+                    texts: vec![t],
+                    sprites: Vec::new(),
+                },
+            )
+        };
+        // 42 has slid 100 px left of its home (frame `x 10..310`); 41 is
+        // 400 px out (frame `x -390..-90`): 42's draw clears it. Then 41
+        // comes in to 150 px out and crosses 42's draw.
+        let groups = || {
+            vec![
+                group(WIN_SHOP_PICKER, q(30, 30)),
+                group(WIN_SHOP_PARTY_COMPARE, q(40, 40)),
+            ]
+        };
+        let out = apply_shop_slides(&ctx, &[(42, (-100, 0)), (41, (-400, 0))], groups());
+        let at: Vec<_> = out.texts.iter().map(|t| (t.dst.0, t.dst.1)).collect();
+        assert_eq!(at, vec![(-70, 30), (-360, 40)]);
+        let out = apply_shop_slides(&ctx, &[(42, (-100, 0)), (41, (-150, 0))], groups());
+        let at: Vec<_> = out.texts.iter().map(|t| (t.dst.0, t.dst.1)).collect();
+        assert_eq!(at, vec![(-110, 40)], "41's frame covers 42's draw");
+    }
 
     #[test]
     fn kernel_page_geometry_matches_the_two_shop_lists() {

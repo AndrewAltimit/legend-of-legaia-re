@@ -176,6 +176,24 @@ impl MenuRuntime {
         self.shop_slides.motion_list()
     }
 
+    /// Frames the current screen's window set has stood home
+    /// ([`legaia_engine_menus::shop::ShopSlides::home_ticks`]), `0` while a
+    /// window moves or while the set on screen is not the current phase's -
+    /// the press frame, before the slides have stepped toward the new set.
+    pub fn shop_settled_frames(&self) -> u8 {
+        let Some(phase) = self.shop_screen_phase() else {
+            return 0;
+        };
+        let mut set =
+            legaia_engine_menus::shop::shop_screen_windows(phase, self.point_card_toast.is_some());
+        set.retain(|&w| w != 31);
+        let on = self.shop_slides.draw_list();
+        if on.len() != set.len() || !on.iter().all(|(id, _)| set.contains(id)) {
+            return 0;
+        }
+        self.shop_slides.home_ticks()
+    }
+
     /// Step the shop slides one frame toward the current screen's window
     /// set. A shop that is closing (the transient exit beat) slides every
     /// window out; no shop drops them.

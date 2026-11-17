@@ -602,6 +602,12 @@ pub fn shop_slide_offsets(
         .collect()
 }
 
+/// Frames the buy list's windows stand home before the list takes the pad
+/// ([`gold_shop_screen`]'s buy-list entry).
+const BUY_LIST_LIVE_AFTER: u8 = 2;
+/// Frames they stand home before windows 34 and 41 show the hovered item.
+const BUY_INFO_LIVE_AFTER: u8 = 3;
+
 /// Texts are stage pixels; sprites are surface pixels for
 /// `surface_w x surface_h`.
 pub fn gold_shop_screen(
@@ -629,6 +635,17 @@ pub fn gold_shop_screen(
     let shop = menu.shop_session.as_ref()?;
     let world = inputs.world;
     let cursor = menu.cursor() as usize;
+    // The buy list's entry (`0x801E4E64`): phase 0 re-creates the list
+    // window in place (`[0A 28]`) and slides the set; phase 1 reads the
+    // slide latch before its pad, so the list stays parked (no hand, every
+    // row in its pen) until the frame after the windows land, and the item
+    // info (34) and the party column (41) fill a frame after that - the
+    // Retock capture filmed a vsync at a time. Retail draws the root screen
+    // whole on the press frame, which the slides have not yet stepped.
+    let settled = menu.shop_settled_frames();
+    let buy_entry = phase == P::BuyList && !exiting;
+    let list_parked = buy_entry && settled < BUY_LIST_LIVE_AFTER;
+    let staged_held = buy_entry && settled < BUY_INFO_LIVE_AFTER;
     // The windows on screen this frame with their slide progress
     // (`ShopSlides`, stepped by the menu tick): the phase's set plus any
     // window still sliding out. The toast's frame is laid last by hand below,
@@ -671,7 +688,9 @@ pub fn gold_shop_screen(
         rows: &picker_rows,
         // The picker's own dispatcher (`FUN_801DAFD4`) no longer runs once
         // the exit sub-screen has the pad; the hand leaves with the input.
-        cursor: (phase == P::Root && !exiting).then_some(cursor),
+        cursor: (phase == P::Root && !exiting)
+            .then_some(cursor)
+            .or_else(|| list_parked.then_some(0)),
     };
 
     // Window 40 / 38 - the list for this phase.
@@ -704,7 +723,7 @@ pub fn gold_shop_screen(
             )
         }
         _ => {
-            let parked = phase == P::Root;
+            let parked = phase == P::Root || list_parked;
             let items = &shop.inventory.items;
             (
                 items
@@ -727,7 +746,7 @@ pub fn gold_shop_screen(
                     .collect(),
                 ss::ShopListKind::Buy,
                 if parked { 0 } else { cursor },
-                phase == P::BuyList,
+                phase == P::BuyList && !list_parked,
             )
         }
     };
@@ -742,8 +761,9 @@ pub fn gold_shop_screen(
         .collect();
     // The page triangles: only while the list itself has the pad, and
     // through the kernel's blink gate.
-    let arrows =
-        matches!(phase, P::BuyList | P::SellList) && ss::page_arrows_blink_on(menu.ui_frame());
+    let arrows = matches!(phase, P::BuyList | P::SellList)
+        && !list_parked
+        && ss::page_arrows_blink_on(menu.ui_frame());
     let list = ss::ShopListView {
         kind,
         rows: &rows,
@@ -756,6 +776,7 @@ pub fn gold_shop_screen(
     let staged = match phase {
         P::BuyRecipient => menu.recipient_session.as_ref().map(|r| r.item_id),
         P::BuyQuantity => menu.quantity_view().map(|v| v.item_id),
+        _ if staged_held => None,
         _ => shop_staged_item(world, shop, state, cursor),
     };
     let members = staged
@@ -792,24 +813,38 @@ pub fn gold_shop_screen(
             stats: [&stats[0], &stats[1], &stats[2]],
         },
     };
-    let mut out = ss::shop_screen_draws(&ctx, &view);
+    let mut groups = ss::shop_screen_groups(&ctx, &view);
 
     // The per-window painters (vendor plate, purse, item info, the quantity
     // steppers, the sell detail, the recipient list, the toast).
-    let mut win = shop_window_draws(inputs, shop, state, cursor);
+    let mut win = shop_window_draws(
+        inputs,
+        shop,
+        if staged_held {
+            Some(MenuState::ShopMenu)
+        } else {
+            state
+        },
+        cursor,
+    );
     let (recip_text, recip_marks) = recipient_window_draws(inputs);
     win.texts.extend(recip_text);
     win.marks.extend(recip_marks);
-    out.texts.extend(win.texts);
     let marks = ss::shop_marker_draws(&ctx, &win.marks, &win.pictograms);
-    out.texts.extend(marks.texts);
-    out.sprites.extend(marks.sprites);
-    // Every window's draws ride its open / close slide.
-    ss::apply_shop_slides(
+    groups.push((
+        None,
+        ss::ShopScreenDraws {
+            texts: std::mem::take(&mut win.texts),
+            sprites: Vec::new(),
+        },
+    ));
+    groups.push((None, marks));
+    // Every window's draws ride its open / close slide, stacked lower id on
+    // top.
+    let mut out = ss::apply_shop_slides(
         &ctx,
         &shop_slide_offsets(inputs.table, &menu.shop_slide_motion()),
-        &mut out.texts,
-        &mut out.sprites,
+        groups,
     );
     // The Point Card toast draws over everything: its frame after every
     // other window's sprites, its text after every other window's text, and

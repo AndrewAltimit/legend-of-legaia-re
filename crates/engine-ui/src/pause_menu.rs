@@ -454,7 +454,7 @@ pub fn clip_text_under_frame(texts: &mut Vec<TextDraw>, frame: (i32, i32, i32, i
 /// Push the bands of quad `t` that lie outside `frame` (`(x, y, w, h)`, the
 /// quad's pixels) onto `out`, each band's source rect cut in proportion to
 /// its destination (`1:1` for a glyph at stage scale, `1:s` once scaled).
-fn clip_quad_outside(t: TextDraw, frame: (i32, i32, i32, i32), out: &mut Vec<TextDraw>) {
+pub(crate) fn clip_quad_outside(t: TextDraw, frame: (i32, i32, i32, i32), out: &mut Vec<TextDraw>) {
     let (x0, y0) = (frame.0, frame.1);
     let (x1, y1) = (frame.0 + frame.2, frame.1 + frame.3);
     let (dx, dy) = (t.dst.0, t.dst.1);
