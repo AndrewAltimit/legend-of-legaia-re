@@ -1778,6 +1778,33 @@ lighter and the effect sprites heavier, as a fit on the strike and arts frames s
 moved the arts images `.9300` to `.9195` and Tail Flare's cue back to `.800`, so the census
 counts each primitive once.
 
+**The backdrop's own work.** A frame that draws neither the backdrop pair nor the ground
+grid costs less than the line's intercept says. Retail transforms every backdrop primitive
+before the quad leaves' off-screen reject (`FUN_80044798`) or the winding test drops it, and
+the grid walks its cells to cull them, so the pair costs a near-constant share of the frame
+that the linked count does not see. On the black-backdrop close-ups the PCSX-Redux recordings
+read it plainly: Final Crisis's arm 6 links some `740` primitives and costs `200` (step `1`),
+Fatal Decision's arms 6 and 7 link `540` and cost `183`, where the line gave `265` and `225`
+(step `2`). The line is `75` hblanks, `42` more while the backdrop or the grid draws
+(`LINKED_BACKDROP_WORK`, `World::battle_backdrop_drawn`), and `.200` a primitive; every
+frame that draws the stage keeps its price. Over the cost-carrying recordings of the strike,
+arts and enemy sets (state-and-arm medians of the unloaded frames against the census on the
+same state and arm) the step read right goes `.730` to `.769` on the enemy casts, `.893` to
+`.898` on the arts and holds `.987` on the strikes. PROT 0898's scanline wash keeps the share:
+it fills the screen where the backdrop stands, its price was read over the line with the
+share in it, and Genocidal Cannon's close-ups under it (no stage, some `500` primitives) run
+step `4` under the polls on every retail frame; without the share they read `3` and both
+films fell `.017`. On the four film sets (image mean, cue mean, step agreement) the enemy
+casts go `.9446` / `.9995` / `.887` to `.9461` / `.9999` / `.892`: Final Crisis's film
+(`cort_evolved_card_pre_doomsday__B4`) reads `.796` to `.961` and plays all its cues, its
+arm 6 on retail's step `1`. The arts go `.9419` to `.9428` (Tri-Somersault `.768` to `.787`),
+the strikes, the Seru casts and the Seru casts on full-party fights read the same. The
+constant is a plateau, not a point:
+intercepts from `45` to `87` (the rest to `117`) read alike. Weighing the classes apart (the
+grid, the stage, the bodies, the shadows, the effects) fits the costs no better held out by
+film and reads the steps worse (`.53` to `.60` on the enemy casts), so the census still counts
+each linked primitive once. Grade `disassembly` for the reject path, `capture` for the price.
+
 The four sets, one default build and the census-priced opt-in (image mean, cue mean, step
 agreement over the game time):
 
@@ -1812,6 +1839,16 @@ build, the default against the census with the seat (image mean, cue mean):
 | Seru casts | 29 | `.9556` / `1.0` | `.9557` / `1.0` |
 | Enemy casts | 109 | `.9351` / `.9985` | `.9360` / `.9991` |
 | Gate | 12 | `.9664` / `.9944` | `.9710` / `1.0` |
+
+The table's lead-in leaves its ring behind, and the film opens on it: a seeded cast in a
+light full-party fight opens its `0x28` and `0x6E` passes at step `3` where Ghost Knight's
+V-Windhash, Rogue's Element Change and Rogue Wind and Slippery's Big Wave read `2` on their
+recordings. The table's rows are not what holds them there. Priced on the census instead (a
+shadow ring the lead-in filled and the film opened on), the enemy films' `0x28`, `0x29` and
+`0x6E` bands read the same steps: the census prices the lead-in's own frames at `600` and
+over (Ghost Knight's idle frame links `2456` primitives, all five bodies in shot), where
+retail's frames before the cast cost `450` to `500`. What parts is the frame the engine
+stands on before the cast, not the price of a primitive.
 
 The span law takes the same seat in the lead-in (`LEGAIA_LEADIN_SPAN_LAW=1`): its longer
 frames re-deal the rounds the replay plays to the gate, and under it Gilium's, Warhalf's,
