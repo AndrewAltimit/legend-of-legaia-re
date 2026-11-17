@@ -278,7 +278,10 @@ battle frame and the engine once a vsync, so its window counts on the tick
 that opens a frame only, and the arts entry's exhausted-pool scan waits while
 the window holds a direction (a PCSX-Redux run from `gaza2_card_first_menu`
 holding Left: one arrow a pass from 33 vsyncs in, the flow in `0x50` until
-release).
+release). The Muscle Dome round runs the same flow through its own session
+(`DomeSelectPad`), which still reads the edge alone: the dome counts one pass
+a vsync tick and keeps no battle frame clock, so the window folded in there
+would repeat at the tick rate, faster than retail's pass.
 
 ### The pump's raw layout
 
