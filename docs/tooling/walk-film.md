@@ -52,6 +52,8 @@ from the state's RAM (`retail_compare::retail_ambient_streams`,
 `rng` column against retail's `walk_film.csv` `rng`: the free-walk stretch agrees
 draw for draw until an engage or a touch separates the two runs.
 
+A span names any pad button on both sides (`UP`, `CROSS`, `L1`, `TRIANGLE`, `START`, ...); spans that overlap hold their buttons together, so `10-90:UP,10-90:RIGHT` is a diagonal.
+
 `LEGAIA_RC_WALK_PAD=<file>` (`tick,0xMASK` rows, one per change of the held word, a `LEGAIA_DIAG_TICK_DIGEST` run's engine pad) drives the engine side in place of the spans, the same rows `autorun_field_walk_film.lua` takes as `LEGAIA_PAD_FILE`; a press retail must see widens to two vsyncs on the retail side only. The engine also writes `engine.draws.csv` (`tick,flat,draws`, each ambient channel's `rand()` draws), against a retail breakpoint on `0x80056798`. The film runs the fog pool's render step as a play host does (`NativeSession::fog_render_tick`), since the live count it writes gates the next tick's fog spawns and their draws, and it stands on the state's fog records (`retail_fog_live`, the records with no step back to the displayed frame).
 
 It also stands on the live count the state's last render step wrote (`_DAT_8007BCA8`, `RetailObs::fog_live_count`), which is what the first pass's spawner reads: a state saved between a pass's spawns and its render step holds more records up than that count (`field_walled_collision_pin`: 73 against 66).

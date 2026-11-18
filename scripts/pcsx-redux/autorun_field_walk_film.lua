@@ -55,7 +55,7 @@ end
 
 local spans = {}
 for item in string.gmatch(SCRIPT, "[^,]+") do
-    local a, b, name = string.match(item, "^%s*(%d+)-(%d+):(%a+)%s*$")
+    local a, b, name = string.match(item, "^%s*(%d+)-(%d+):(%w+)%s*$")
     local btn = name and probe.BTN[string.upper(name)]
     if a and btn then
         spans[#spans + 1] = { from = tonumber(a), to = tonumber(b), btn = btn }

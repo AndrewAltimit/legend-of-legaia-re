@@ -29,6 +29,14 @@ fn button(name: &str) -> Option<u16> {
         "LEFT" => 0x0080,
         "CROSS" => 0x4000,
         "CIRCLE" => 0x2000,
+        "SELECT" => 0x0001,
+        "START" => 0x0008,
+        "L2" => 0x0100,
+        "R2" => 0x0200,
+        "L1" => 0x0400,
+        "R1" => 0x0800,
+        "TRIANGLE" => 0x1000,
+        "SQUARE" => 0x8000,
         _ => return None,
     })
 }
