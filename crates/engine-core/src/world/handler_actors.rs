@@ -741,7 +741,26 @@ impl World {
         }
         self.man_load_resume_programs();
         self.man_load_clear_pad_octant();
+        self.man_load_reset_region_tile_cache();
         outcome
+    }
+
+    /// The MAN loader's fresh encounter actor, as the region reader sees it.
+    ///
+    /// The region reader `FUN_801D9E1C` caches the player's tile in its own
+    /// actor's `+0x8E` / `+0x8F` (`0x801D9E98..0x801D9EC8`, `a0` = the
+    /// `FUN_801DA51C` handler's actor, `move a0,s1` at `0x801DA5B4`). That
+    /// actor is scene content: the entry installer `FUN_8003AB2C` raises the
+    /// kill bit on the old one, spawns a new one from descriptor `0x80073EA0`
+    /// (`jal 0x80020DE0` at `0x8003ABAC`) and stores `sh zero,0x8e(s1)` at
+    /// `0x8003ACFC`. So every scene starts its cache at tile `(0, 0)`, and the
+    /// first sample is a jump the step test refuses. Kept, the last scene's
+    /// tile was compared against the new scene's arrival tile, and an arrival
+    /// one tile from where the player left the old scene counted as a step.
+    ///
+    /// PORT: FUN_8003AB2C (`0x8003ABAC`, `0x8003ACFC`)
+    pub(crate) fn man_load_reset_region_tile_cache(&mut self) {
+        self.terrain.step_tile = Some((0, 0));
     }
 
     /// The MAN loader's pad-octant reset.
@@ -903,6 +922,24 @@ mod tests {
     /// sprites in `edteien`, `ending_scene_load_gap` (the load into
     /// `edbylon`) holds none. A corner panel kept across the load drew the
     /// next scene's VRAM at `(512, 0)` over its vignette.
+    #[test]
+    fn a_scene_load_starts_the_region_tile_cache_at_the_origin() {
+        let mut w = World::default();
+        // The last scene's sampled tile.
+        w.terrain.step_tile = Some((71, 55));
+        w.man_load_actor_reset();
+        assert_eq!(
+            w.terrain.step_tile,
+            Some((0, 0)),
+            "`sh zero,0x8e` at 0x8003ACFC"
+        );
+        // An arrival next to the old tile is a jump from the origin, not a step.
+        assert!(!legaia_engine_battle::region_encounter::is_region_step(
+            (0, 0),
+            (72, 55)
+        ));
+    }
+
     #[test]
     fn a_scene_load_drops_the_screen_effect_widgets() {
         let mut w = World::default();
