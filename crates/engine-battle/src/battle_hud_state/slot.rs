@@ -45,6 +45,10 @@ pub struct BattleSlotHud {
     pub hp_max: u16,
     pub mp: u16,
     pub mp_max: u16,
+    /// The displayed HP / MP the battle frame opened on, before its ramp
+    /// step: what the frame driver's tier pass reads ([`Self::gauge_fill_indices`],
+    /// [`BattleHud::latch_gauge_tiers`]). `None` until a frame has turned.
+    pub tier_hp_mp: Option<(u16, u16)>,
     pub ap_filled: u8,
     pub ap_max: u8,
     /// Per-slot active status effects. Sorted by [`StatusKind`] enum
@@ -132,11 +136,18 @@ impl BattleSlotHud {
     /// keys its death arm on the same `+0x172` display field, so a slot
     /// whose live HP already hit zero stays in the low band until the bar
     /// finishes draining.
+    ///
+    /// The tier is the frame's opening value's, though: the frame driver
+    /// stores it into the digit widgets (`0x80046C10..0x80046CB0`) before the
+    /// actor walk's ramp step moves `+0x172`, so the digits a heal counts up
+    /// keep the old tier for a frame (the `0x83` film's retail frame reads
+    /// `138 / 221` in the caution tier, the first step up from `110`).
     pub fn gauge_fill_indices(&self) -> (u8, u8) {
+        let (hp, mp) = self.tier_hp_mp.unwrap_or((self.hp, self.mp));
         legaia_engine_battle_vm::battle_gauge::gauge_colors(
-            self.hp,
+            hp,
             self.hp_max,
-            self.mp,
+            mp,
             self.mp_max,
             self.status_display_flags(),
         )

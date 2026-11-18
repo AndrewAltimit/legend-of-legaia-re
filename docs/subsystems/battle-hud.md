@@ -992,7 +992,13 @@ shows the rows only at arm `0xD`. PROT 0904's sweep does the same: each ray hit 
 arm 12 stores `0` (`0x801F7D58`) and the pass that leaves the arm raises it
 (`0x801F7F00`), so Theeder's rows open with arm 13, where the port had opened them on
 the first ray's fold (the `0x82` film's retail frames show no plate until arm 13).
-Zenoir's slam raises it on its own exit pass (`0x801F8104`), the fold's pass. Retail states: `0x8D` reads count `1`, window
+Zenoir's slam raises it on its own exit pass (`0x801F8104`), the fold's pass.
+A held cluster or row set opens two battle frames after the pass that lets it go:
+the readout pass answers the flag at the head of the next pass (`lbu v0,-0x49B4(s0)`
+at `0x801E8068`), and the records it seats there take their first glide step on the
+pass after. On the `0x82` film the rows' value record stands at `x = 284` on arm 13's
+fourth pass; released on the module's own pass the port's stood there on its second.
+Port: `BattleHud::hold_combo_at`. Retail states: `0x8D` reads count `1`, window
 `2574` and `_DAT_8007BD14 = 0` in arm `0xC`; `0x82` and `0x86` read the same shape,
 `+0x1DD` staying `3` under `0x82`. Port: `BattleHud::multi_readout`,
 `battle_value_readout::multi_row_cluster`, `battle_multi_readout_plates`.
@@ -2166,6 +2172,10 @@ ramp `FUN_80047430` so damage drains over frames:
   The readout pair `FUN_800349EC` / `FUN_80035EA8` (`hp_bar_color_index` /
   `mp_bar_color_index`) has no battle caller; it tints the menus and the field
   party HUD, where a status folds into the caution tier instead.
+- **The tier is the frame's opening value's.** The frame driver stores it before the
+  actor walk's ramp step moves `+0x172`, so a heal's digits count up a frame in the old
+  tier: the `0x83` film's retail frame shows `138 / 221` in the caution tier, the first
+  step up from `110` (`BattleHud::latch_gauge_tiers`).
 - **The `/` separator takes no tier.** Retail draws it off the system-UI
   sheet through its fixed sub-palette 5 (CLUT `(80, 511)`, colour word
   `0x808080`) whatever the numerals either side read; the numerals' tier is

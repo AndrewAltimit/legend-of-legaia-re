@@ -112,6 +112,11 @@ pub struct BattleHud {
     combo_actor: Option<u8>,
     /// Hits land without opening the cluster ([`Self::hold_combo`]).
     combo_held: bool,
+    /// The battle frame a held cluster was let go on, still to open
+    /// ([`Self::hold_combo_at`]).
+    pending_release: Option<u64>,
+    /// The battle frame [`Self::latch_gauge_tiers`] last latched on.
+    gauge_frame: Option<u64>,
     /// The value window of a cast aimed at the whole monster row
     /// ([`MultiReadout`]); the combo cluster stays shut while it is armed.
     pub multi_readout: Option<MultiReadout>,
@@ -271,6 +276,8 @@ impl BattleHud {
             combo_style: None,
             combo_actor: None,
             combo_held: false,
+            pending_release: None,
+            gauge_frame: None,
             multi_readout: None,
             combo_melee: false,
             pending_land: None,
@@ -516,6 +523,42 @@ impl BattleHud {
     /// (`0x801F802C..0x801F8034`), so the eleven hits open the cluster on the
     /// barrage's last pass, already counted. Releasing a held cluster opens
     /// it then.
+    /// Latch each slot's tier input as a new battle frame opens: the
+    /// displayed HP / MP the last sync left, which the frame's ramp step
+    /// has not moved yet ([`BattleSlotHud::gauge_fill_indices`]). Called
+    /// once per tick ahead of the row syncs.
+    pub fn latch_gauge_tiers(&mut self, frame: u64) {
+        if self.gauge_frame == Some(frame) {
+            return;
+        }
+        let first = self.gauge_frame.is_none();
+        self.gauge_frame = Some(frame);
+        for s in &mut self.slots {
+            s.tier_hp_mp = (!first).then_some((s.hp, s.mp));
+        }
+    }
+
+    /// [`Self::hold_combo`] on the battle-frame clock. The flag a module
+    /// raises is answered by the readout pass in the **next** pass's
+    /// prologue (`FUN_801E805C`, `lbu v0,-0x49B4(s0)` at `0x801E8068`, called
+    /// from the action SM's head), and the records it spawns there take their
+    /// first glide step on the pass after, so a let-go cluster opens two
+    /// battle frames after the frame that released it: on the `0x82` film's
+    /// retail frames the rows stand at `x = 284` on arm 13's fourth pass,
+    /// where an open on the release frame put them there on its second.
+    pub fn hold_combo_at(&mut self, held: bool, frame: u64) {
+        if held || !self.combo_held {
+            self.pending_release = None;
+            self.hold_combo(held);
+            return;
+        }
+        let released = *self.pending_release.get_or_insert(frame);
+        if frame > released + 1 {
+            self.pending_release = None;
+            self.hold_combo(false);
+        }
+    }
+
     /// Hold (or release) the cluster's opening: see the note above.
     pub fn hold_combo(&mut self, held: bool) {
         if self.combo_held

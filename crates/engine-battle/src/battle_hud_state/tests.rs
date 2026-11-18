@@ -811,3 +811,61 @@ fn popups_in_ring_order_walk_every_entry_from_the_cursor() {
         .collect();
     assert_eq!(order, vec![16, 17, 21, 1, 2, 3, 4, 5]);
 }
+
+#[test]
+fn a_let_go_cluster_opens_two_battle_frames_after_the_release() {
+    let mut h = BattleHud::default();
+    h.arm_combo(Some(ComboStyle::Damage), 3);
+    h.hold_combo_at(true, 10);
+    h.push_damage(4, 99);
+    h.hold_combo_at(false, 11);
+    assert!(
+        h.combo.unwrap().hidden,
+        "the readout pass answers next pass"
+    );
+    h.hold_combo_at(false, 12);
+    assert!(
+        h.combo.unwrap().hidden,
+        "the records glide from the pass after"
+    );
+    h.hold_combo_at(false, 13);
+    assert!(!h.combo.unwrap().hidden);
+}
+
+#[test]
+fn the_gauge_tier_reads_the_value_the_frame_opened_on() {
+    let mut h = BattleHud::default();
+    let sync = |h: &mut BattleHud, hp: u16| {
+        h.sync_slot(
+            0,
+            SlotSyncInfo {
+                name: "Vahn",
+                is_party: true,
+                alive: true,
+                hp,
+                hp_max: 221,
+                mp: 27,
+                mp_max: 27,
+                ap: None,
+            },
+        )
+    };
+    h.latch_gauge_tiers(1);
+    sync(&mut h, 110);
+    assert_eq!(
+        h.slots[0].gauge_fill_indices().0,
+        6,
+        "110 of 221 is caution"
+    );
+    // The heal's first ramp step lands on frame 2: the digits read 138 and
+    // the tier still 110's.
+    h.latch_gauge_tiers(2);
+    sync(&mut h, 138);
+    assert_eq!(h.slots[0].gauge_fill_indices().0, 6);
+    h.latch_gauge_tiers(2);
+    sync(&mut h, 138);
+    assert_eq!(h.slots[0].gauge_fill_indices().0, 6, "one latch a frame");
+    h.latch_gauge_tiers(3);
+    sync(&mut h, 166);
+    assert_eq!(h.slots[0].gauge_fill_indices().0, 7);
+}

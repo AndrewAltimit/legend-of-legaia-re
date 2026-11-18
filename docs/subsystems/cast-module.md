@@ -3905,6 +3905,12 @@ seats arm 2's ring on the caller's frame now, reached by the walk where its call
 node behind it (`SummonScene::seat_walk`); arms 0 and 1, which write the module's context,
 stay on the tick. Arm 21 of the `0x95` film reads `.996`. Grade `disassembly` + `capture`.
 
+Juggernaut's last arm (28, `0x801F81D8`) zeroes the yaw ladder `ctx[+0x6DA]` on its way
+out (`sh zero,0x2(t3)` at `0x801F82CC`), so the Done band's case 6 frames the caster from
+`0`. Left at the body's value, the port's exit camera swung `222` yaw units a pass off
+retail's (the `0x99` film's camera error `46.8` px to `0.1`). Grade `disassembly` +
+`capture`.
+
 PROT 0927 (Juggernaut) has the same shape: its stager's spawn arms seat from inside the
 calling part's step, so the port seats them on the caller's frame too, while the fades,
 the shake word and the row sweep the same calls make stay on the module's tick
