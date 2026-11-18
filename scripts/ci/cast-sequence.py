@@ -1183,8 +1183,10 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         "LEGAIA_DIAG_CAST_SEQ_TAIL": str(a.tail),
         # Past the retail side's own span (1500 grabs, every 2 vsyncs by
         # default): the recorder's 2000-frame default stops a long summon
-        # (Mule) short of its last arms.
-        "LEGAIA_DIAG_CAST_SEQ_MAX": "4000",
+        # (Mule) short of its last arms, and 4000 stopped Evil Seru Magic
+        # (`4578` vsyncs of `0x70` on its recording) once its line's polled
+        # arms ran retail's length.
+        "LEGAIA_DIAG_CAST_SEQ_MAX": "6000",
     })
     if guard := engine_guard(a, out, done):
         env["LEGAIA_BATTLE_GUARD"] = guard
