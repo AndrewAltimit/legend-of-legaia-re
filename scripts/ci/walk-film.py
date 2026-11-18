@@ -141,6 +141,13 @@ def report_actors(out, frames):
         return
     with open(rp) as f:
         retail = list(csv.DictReader(f))
+    # A vsync retail spends outside the field (game mode 0x02, a door's field
+    # init loading the next scene) holds no placements of either scene: its
+    # actor table is the load's scratch, so it is not scored.
+    film = out / "walk_film.csv"
+    if film.exists():
+        outside = {r["vsync"] for r in read(film) if r.get("mode", 3) != 3}
+        retail = [r for r in retail if int(r["vsync"]) not in outside]
     engine = {}
     with open(ep) as f:
         for r in csv.DictReader(f):
