@@ -79,8 +79,14 @@ impl LegaiaRuntime {
         debug_camera: bool,
     ) -> Option<legaia_engine_scene::field_view_window::ViewCells> {
         let h = self.scene_host.host()?;
-        legaia_engine_world_views::field_view_window::field_view_cells(
+        // The suspended scene's mode under the pause wipe, as natively.
+        let draw_mode = self
+            .scene_host
+            .session()
+            .map_or(h.world.mode, |s| s.frame_draw_mode());
+        legaia_engine_world_views::field_view_window::field_view_cells_under(
             &h.world,
+            draw_mode,
             legaia_engine_world_views::field_view_window::crop_framing(
                 &h.world,
                 self.scene_host.camera(),

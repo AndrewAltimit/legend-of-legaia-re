@@ -266,8 +266,13 @@ impl LegaiaRuntime {
         self.scene_host
             .host()
             .and_then(|h| {
-                legaia_engine_world_views::field_view_window::field_ground_drop(
+                let draw_mode = self
+                    .scene_host
+                    .session()
+                    .map_or(h.world.mode, |s| s.frame_draw_mode());
+                legaia_engine_world_views::field_view_window::field_ground_drop_under(
                     &h.world,
+                    draw_mode,
                     self.scene_host.camera(),
                     debug_camera,
                     self.page_toggles.psx_render,

@@ -134,7 +134,21 @@ pub fn field_ground_drop(
     debug_camera: bool,
     psx_raster: bool,
 ) -> Option<f32> {
-    (world.mode == SceneMode::Field && !(psx_raster && retail_vantage(world, camera, debug_camera)))
+    field_ground_drop_under(world, world.mode, camera, debug_camera, psx_raster)
+}
+
+/// [`field_ground_drop`] for a frame drawn under `draw_mode` - a host passes
+/// the session's draw mode (`BootSession::frame_draw_mode`), which is the
+/// field's while the pause wipe darkens it with the world already in
+/// [`SceneMode::Menu`].
+pub fn field_ground_drop_under(
+    world: &World,
+    draw_mode: SceneMode,
+    camera: &Camera,
+    debug_camera: bool,
+    psx_raster: bool,
+) -> Option<f32> {
+    (draw_mode == SceneMode::Field && !(psx_raster && retail_vantage(world, camera, debug_camera)))
         .then_some(legaia_engine_scene::field_ground::FREE_VANTAGE_FLOOR_DROP)
 }
 
@@ -171,7 +185,23 @@ pub fn field_ground_drop(
 /// shot; `rim_elm_queen_bee_battle` holds that window, and the cull kernel
 /// over it reproduces every placed actor's bit `1` in the capture).
 pub fn field_view_cells(world: &World, framing: CropFraming) -> Option<ViewCells> {
-    if !world.toggles.view_window_crop || world.mode != SceneMode::Field {
+    field_view_cells_under(world, world.mode, framing)
+}
+
+/// [`field_view_cells`] for a frame drawn under `draw_mode`. The play hosts
+/// pass the session's draw mode (`BootSession::frame_draw_mode`): under the
+/// pause wipe the world is already in [`SceneMode::Menu`] while the field
+/// still draws, and retail's field render library keeps walking the same
+/// window on those frames (the field overlay runs until the menu spawns), so
+/// the crop holds. Asked with the world's own mode, the seven wipe passes
+/// drew the whole map - on `conc` a strip of the next room's wall across the
+/// top of the frame that retail keeps black.
+pub fn field_view_cells_under(
+    world: &World,
+    draw_mode: SceneMode,
+    framing: CropFraming,
+) -> Option<ViewCells> {
+    if !world.toggles.view_window_crop || draw_mode != SceneMode::Field {
         return None;
     }
     // An expansion-pack cutscene's shot is not retail's frustum: the window
@@ -409,6 +439,25 @@ mod tests {
         world.npcs.cull_view = Some(town01());
         world.toggles.view_window_crop = false;
         assert!(field_view_cells(&world, retail).is_none());
+    }
+
+    /// Under the pause wipe the world is in `Menu` while the field still
+    /// draws: asked with the frame's draw mode the crop holds, as retail's
+    /// field render library keeps walking its window until the menu spawns.
+    #[test]
+    fn the_crop_holds_under_the_pause_wipe() {
+        let mut world = World::new();
+        world.npcs.cull_view = Some(town01());
+        world.mode = SceneMode::Menu;
+        let retail = CropFraming::Retail;
+        assert!(field_view_cells(&world, retail).is_none());
+        assert_eq!(
+            field_view_cells_under(&world, SceneMode::Field, retail),
+            Some(view_cells(&town01()))
+        );
+        assert!(field_view_cells_under(&world, SceneMode::WorldMap, retail).is_none());
+        let far = Camera::default();
+        assert!(field_ground_drop_under(&world, SceneMode::Field, &far, false, false).is_some());
     }
 
     /// A re-aimed view lifts the window but keeps the walk region: a cell

@@ -635,8 +635,9 @@ impl PlayWindowApp {
         // depth-tested as a floor a few units lower, so faces buried under
         // it stay hidden.
         r.set_field_ground_drop(
-            legaia_engine_world_views::field_view_window::field_ground_drop(
+            legaia_engine_world_views::field_view_window::field_ground_drop_under(
                 &self.session.host.world,
+                self.session.frame_draw_mode(),
                 &self.session.camera,
                 self.field_debug_camera,
                 self.psx_render,
@@ -677,14 +678,16 @@ impl PlayWindowApp {
                 r.set_scene_lights(&picked, cam);
                 // Halos + soft light shafts around the picked lights (the
                 // bloom stand-in), scaled by the mood's glow.
-                let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
-                    &self.session.host.world,
-                    legaia_engine_world_views::field_view_window::crop_framing(
+                let view_cells =
+                    legaia_engine_world_views::field_view_window::field_view_cells_under(
                         &self.session.host.world,
-                        &self.session.camera,
-                        self.field_debug_camera,
-                    ),
-                );
+                        self.session.frame_draw_mode(),
+                        legaia_engine_world_views::field_view_window::crop_framing(
+                            &self.session.host.world,
+                            &self.session.camera,
+                            self.field_debug_camera,
+                        ),
+                    );
                 r.set_glow_sprites(&legaia_render_kernels::scene_lighting::glow_sprites(
                     &legaia_engine_screens::field_frame::field_glow_lights(
                         view_cells.as_ref(),
@@ -787,14 +790,16 @@ impl PlayWindowApp {
                     // Only what this frame draws can hide the player (the
                     // shared gate the browser page asks too).
                     let world = &self.session.host.world;
-                    let cells = legaia_engine_world_views::field_view_window::field_view_cells(
-                        world,
-                        legaia_engine_world_views::field_view_window::crop_framing(
+                    let cells =
+                        legaia_engine_world_views::field_view_window::field_view_cells_under(
                             world,
-                            &self.session.camera,
-                            self.field_debug_camera,
-                        ),
-                    );
+                            self.session.frame_draw_mode(),
+                            legaia_engine_world_views::field_view_window::crop_framing(
+                                world,
+                                &self.session.camera,
+                                self.field_debug_camera,
+                            ),
+                        );
                     let gate = legaia_engine_world_views::field_view_window::OccluderGate::new(
                         world,
                         cells.as_ref(),
