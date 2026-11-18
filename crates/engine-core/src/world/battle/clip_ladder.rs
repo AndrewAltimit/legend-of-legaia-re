@@ -500,7 +500,13 @@ impl World {
             // with a Seru staged (`ctx[+0x269]`, `0x8004B214`) and, for a
             // monster, in a scripted fight (`ctx[+0x287]`, `0x8004B224`)
             // unless `gp+0x9F5` is up, a byte the engine does not carry.
-            if first_pass && !seru_staged && !self.battle.no_escape {
+            // The gate is the victim's own `+0x1DC` bit 3, not the fade: a
+            // cast module can raise the fade first (PROT 0908's finisher
+            // stores `+0x21C = 2` on the seat it kills, `0x801F7D90`), and
+            // retail's cue still sounds when the death arm then runs.
+            let death_arm_done =
+                victim_flags & legaia_engine_battle::battle_steal::DEATH_ARM_DONE != 0;
+            if !death_arm_done && !seru_staged && !self.battle.no_escape {
                 let c = self.battle.defeat_cue_cursor;
                 self.battle.defeat_cue_cursor = if c + 1 >= 4 { 0 } else { c + 1 };
                 self.audio.sfx_ring_ops.push(
