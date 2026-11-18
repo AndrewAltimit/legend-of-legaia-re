@@ -2262,6 +2262,19 @@ slot's pair and arm 11 struck the victim with the splash's two thirds and a
 monster out of reach with the rest (`battle_kor_spoon_strike`, Dead Bone
 `999` to `776` where retail leaves it whole, its cues the film's three extras).
 
+**Only a seat the finisher kills fades.** Both arm-11 hits clear the struck
+seat's `+0x21C` and then raise the defeat fade (`+0x21C = +0x225 = 2`) only
+when the hit has emptied its HP: `sb zero,0x21c` / `lhu v0,0x14c` /
+`bne v0,zero` at `0x801F7D70..0x801F7D98` for the primary and
+`0x801F7F88..0x801F7FB0` for the splash. A survivor keeps `0` and stays
+drawn (`zenoir_tick`). Read the other way round, a victim that lived through
+Zenoir faded to a zero colour word and fought on invisible until the next
+round's reset. Because the fade now goes up before the knockdown ends, the
+clip commit's death arm finds `+0x21C` already at `2`; its defeat cue `0x0D`
+and its Monsters Defeated credit both sit behind the victim's `+0x1DC` bit 3
+(`0x8004B184`, `0x8004B200`), not the fade, and the port's death arm reads
+the same bit (`World::finish_battle_reaction`). Grade `disassembly`.
+
 Arms 9..12 move the creature's height themselves (`8 * scalar * delta` a
 pass, up in 9 and 10, down in 11 and 12). The strike and the shatter have no
 shot of their own: arm 10 cuts to the victim at the band's depth
