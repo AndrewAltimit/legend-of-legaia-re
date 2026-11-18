@@ -3380,30 +3380,37 @@ impl App {
                              only a few images are written. Command line: --all-textures",
                         );
                     s.skip_all_textures = !every;
-                    for (flag, label, hover) in [
+                    // Every step reads as what it writes, ticked when it
+                    // runs, as the texture row above does: one box that
+                    // meant "do" over five that meant "skip" asked the
+                    // reader to flip each one.
+                    for (skip, label, hover) in [
                         (
                             &mut s.skip_verify,
-                            "Skip the check of the disc image",
-                            "Compares the image's SHA-256 with the known dumps. --skip-verify",
+                            "Check the disc image against the known dumps",
+                            "Compares the image's SHA-256 with the known dumps. Left out: \
+                             --skip-verify",
                         ),
                         (
                             &mut s.skip_png,
-                            "Skip the PNGs of the streamed textures",
-                            "--skip-png",
+                            "PNGs of the streamed textures",
+                            "Left out: --skip-png",
                         ),
                         (
                             &mut s.skip_xa,
-                            "Skip the voice and streamed music (WAV)",
-                            "--skip-xa",
+                            "Voice and streamed music as WAV",
+                            "Left out: --skip-xa",
                         ),
                         (
                             &mut s.skip_catalog,
-                            "Skip the texture lists (.tsv)",
-                            "--skip-catalog",
+                            "Texture lists (.tsv)",
+                            "Left out: --skip-catalog",
                         ),
-                        (&mut s.skip_font, "Skip the dialog font", "--skip-font"),
+                        (&mut s.skip_font, "The dialog font", "Left out: --skip-font"),
                     ] {
-                        ui.checkbox(flag, label).on_hover_text(hover);
+                        let mut on = !*skip;
+                        ui.checkbox(&mut on, label).on_hover_text(hover);
+                        *skip = !on;
                     }
                 });
             });

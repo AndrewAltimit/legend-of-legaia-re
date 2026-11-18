@@ -50,8 +50,8 @@ common cases with buttons:
    *Export folder* row, or *Change folder...* on the status line after such
    an export, picks another.
 5. **Extract** the whole disc: switch to *Extract*, choose an output folder
-   (it proposes one beside the disc image), open *Options* for the same skip options the
-   command line offers, and start. The tab shows progress and the log, can be
+   (it proposes one beside the disc image), open *Options*, where each step the command line
+   can skip is a box ticked while it runs (clear one to leave it out), and start. The tab shows progress and the log, can be
    cancelled, and offers *Open output folder* when it ends; the folder it writes is
    exactly what the `legaia-extract --all-textures` command below produces.
    *Every texture as PNG*, ticked unless you clear it, is what puts the disc's
