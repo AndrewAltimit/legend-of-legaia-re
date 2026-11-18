@@ -826,6 +826,23 @@ impl World {
         self.battle.pending_frame_step_from = self.battle_frame_id();
     }
 
+    /// Close the pass the world's tick left for the census
+    /// ([`BattleState::pass_close_after_census`](legaia_engine_battle_loop::battle_state::BattleState::pass_close_after_census)):
+    /// the host calls it once [`Self::note_linked_polys`] holds the count of
+    /// the frame this tick stands on. Retail measures a frame from one
+    /// `VSync` return to the next (`FUN_800173BC` at the flip), the pass's
+    /// own node ticks and the primitives they link inside it, so the cost
+    /// its step reads is that frame's, not the frame before's: the slow
+    /// motion's first lone ghost (`692` on a `--ghost-trace` recording of
+    /// `battle_jou_party_vahn_tri_somersault_super_open`) opens a step-`3`
+    /// pass in retail, and priced on the census of the pass before (both
+    /// ghosts, `816`) the port's ran `4`. A no-op when no close is waiting.
+    pub fn close_pass_after_census(&mut self) {
+        if std::mem::take(&mut self.battle.pass_close_deferred) {
+            self.close_pass_frame_cost();
+        }
+    }
+
     /// Price the pass just closed again on the summon arm a part's stager
     /// call has stepped it to, on the caller's frame (PROT 0909's
     /// rendezvous, `World::run_viguro_rendezvous_now`). Retail's frame ends,
@@ -838,6 +855,10 @@ impl World {
     /// one already taken by the next frame, keeps its push.
     pub(in crate::world) fn reprice_pass_on_rendezvous(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
+        // The pass's own push first, where the census left it for the host.
+        if std::mem::take(&mut self.battle.pass_close_deferred) {
+            self.close_pass_frame_cost();
+        }
         let Some(before) = self.battle.frame_cost_ring_before else {
             return;
         };
@@ -2569,6 +2590,36 @@ mod tests {
         w.note_linked_polys(3000);
         w.push_frame_cost(None);
         assert_eq!(w.battle.frame_work, linked_frame_work(3000, true));
+    }
+
+    /// A pass the census prices closes on the census of its own tick: the
+    /// world leaves the close for the host, which counts the frame first
+    /// (`World::close_pass_after_census`). A close no host ran is made at
+    /// the next tick's head on the count it has.
+    #[test]
+    fn a_census_priced_pass_closes_on_its_own_frames_count() {
+        use legaia_engine_battle_loop::frame_clock::linked_frame_work;
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x1E;
+        w.toggles.battle_poly_frame_cost = true;
+        w.toggles.battle_sm_frame_cadence = true;
+        // The pass before's census: both slow-motion ghosts.
+        w.note_linked_polys(3500);
+        w.battle.pass_frame_cost_due = Some(None);
+        w.battle.pass_close_deferred = true;
+        // This pass's frame drops a ghost; the host counts it, then closes.
+        w.note_linked_polys(2950);
+        w.close_pass_after_census();
+        assert_eq!(w.battle.frame_work, linked_frame_work(2950, true));
+        assert!(!w.battle.pass_close_deferred);
+        assert_eq!(w.battle.frame_cost_step, 3, "one ghost runs step 3");
+        // Nothing waiting: a no-op.
+        let work = w.battle.frame_work;
+        w.note_linked_polys(3600);
+        w.close_pass_after_census();
+        assert_eq!(w.battle.frame_work, work);
     }
 
     /// Under the census an arm table's step and the summon band's opening

@@ -913,6 +913,16 @@ pub struct BattleState {
     /// names it: the SM stages it and the pass's close pushes it behind the
     /// node ticks (`World::close_pass_frame_cost`).
     pub pass_frame_cost_due: Option<Option<u8>>,
+    /// The host counts the census after the world's tick
+    /// (`legaia_engine_scene_host::battle_link_census`), so a pass's close
+    /// waits for it: set by the scene host before each tick while the census
+    /// prices the frame. The world then leaves the close to
+    /// `World::close_pass_after_census`, and the frame is priced on the
+    /// primitives its own pass links rather than the pass before's.
+    pub pass_close_after_census: bool,
+    /// A pass close [`Self::pass_close_after_census`] left for the host to
+    /// run once its census of the tick is in.
+    pub pass_close_deferred: bool,
     /// The battle frame [`Self::pending_frame_step`] was left by: only a pass
     /// that opens a later frame takes it. The effect scene graphs claim the
     /// same frame after the pass that set it, on the same tick.
@@ -1726,6 +1736,8 @@ impl BattleState {
             cast_arm_pass: None,
             pending_frame_step: None,
             pass_frame_cost_due: None,
+            pass_close_after_census: false,
+            pass_close_deferred: false,
             pending_frame_step_from: 0,
             retail_step_track: None,
             retail_rand_track: None,

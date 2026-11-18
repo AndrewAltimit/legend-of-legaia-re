@@ -1742,6 +1742,18 @@ reads `105` backdrop primitives with them dropped and `259` without, where retai
 holds `111`. The shadows are the `0x7F80` CLUT family of every battle table read, always a
 multiple of `24`. The HUD and the other 2D layers are not counted; they ride the base.
 
+The census counts the frame a pass leaves, so the pass's close waits for it. Retail
+measures a frame from one `VSync` return to the next (`FUN_800173BC` at the flip), the
+pass's node ticks and the primitives they link inside it, and the step its cost reads opens
+the next pass. The scene host counts after the world's tick, and a close made inside the
+tick read the count of the pass before: on `battle_jou_party_vahn_tri_somersault_super_open`
+the slow motion's first lone ghost (retail `685`, step `3` next) was priced on both ghosts
+(`816`), the next pass ran `4`, and Vahn's clip reached the Super Art's commit a pass early
+with Theeder's flinch `24` cursor units short. The world now leaves a census-priced pass's
+close to the host (`World::close_pass_after_census`), which makes it once its count of the
+tick is in; the pass sequence then reads retail's cursor for cursor up to the commit. Grade
+`disassembly` for the order, `capture` for the film.
+
 Over the `62` states the census reads `1.04` times retail's polygon count, median error
 `174` primitives, correlation `.91` (the window `.906`); what is left is mostly the still's
 engine frame standing a pass or an effect away from retail's. On a strike state

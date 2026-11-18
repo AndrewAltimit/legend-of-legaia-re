@@ -65,6 +65,8 @@ impl World {
     // REF: FUN_80016444 (the pass order is `mode::master_frame_plan`;
     //                    render/flip halves are the host renderer's)
     pub fn tick(&mut self) -> Option<StepOutcome> {
+        // A close left for a census no host ran (`World::close_pass_after_census`).
+        self.close_pass_after_census();
         // The CD drive runs on every vsync, held frame or not
         // (`World::tick_cast_drive`).
         self.tick_cast_drive();
@@ -112,8 +114,13 @@ impl World {
         self.tick_battle_camera();
         self.tick_battle_anim_pass();
         // The frame this pass opened is priced with its node ticks behind it
-        // (`World::close_pass_frame_cost`).
-        self.close_pass_frame_cost();
+        // (`World::close_pass_frame_cost`); under the host's census, once the
+        // census has counted this tick (`World::close_pass_after_census`).
+        if self.battle.pass_close_after_census && self.battle.pass_frame_cost_due.is_some() {
+            self.battle.pass_close_deferred = true;
+        } else {
+            self.close_pass_frame_cost();
+        }
         // The volumetric ground-fog enhancement steps on the tick this frame
         // settled, after every actor moved (`legaia_render_kernels::fog_volume`).
         self.tick_fog_volume();
