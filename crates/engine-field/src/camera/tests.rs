@@ -223,3 +223,87 @@ fn the_blend_walks_on_the_follow_ease_law() {
     }
     assert!(steps > 8, "the blend arrived in {steps} passes, a pop");
 }
+
+/// A camera with a linear glide in flight, `t` frames into `d`, its globals
+/// at the pose the mover stored.
+fn gliding_camera(t: i32, d: u16) -> Camera {
+    let mut c = Camera::default();
+    let mut mv = CameraMover::default();
+    let from = [400, 4000, 0, 0, 1200, 16000, -1000, 50, -2000, 512];
+    let to = [200, 4200, 40, 600, 1800, 8000, -1400, 90, -1600, 600];
+    mv.arm(from, to, d, 1);
+    mv.tick(t);
+    mv.write_globals(&mut c.globals.0);
+    c.globals.0[7] = 50;
+    c.mover = Some(mv);
+    c
+}
+
+/// The stored pose draws as itself: no lead, a zero phase, or no glide in
+/// flight leaves every axis where the game frame put it.
+#[test]
+fn led_delta_is_zero_on_the_stored_pose() {
+    let c = gliding_camera(8, 120);
+    assert_eq!(c.led_delta(DrawLead::NONE), [0.0; AXIS_COUNT]);
+    assert_eq!(
+        c.led_delta(DrawLead { phase: 0.0, dt: 4 }),
+        [0.0; AXIS_COUNT]
+    );
+    let mut settled = c.clone();
+    settled.mover = None;
+    assert_eq!(
+        settled.led_delta(DrawLead { phase: 0.5, dt: 4 }),
+        [0.0; AXIS_COUNT]
+    );
+}
+
+/// A draw between two game frames sits on the line from the stored pose to
+/// the pose the next frame stores, by its share of the frame; focus Y,
+/// which the mover never stores, does not move, and the camera is not
+/// written.
+#[test]
+fn led_delta_carries_the_glide_toward_the_next_stored_pose() {
+    let c = gliding_camera(8, 120);
+    let before = c.clone();
+    let mut next = c.mover.clone().unwrap();
+    next.tick(4);
+    let next = next.values();
+    let now = c.mover.as_ref().unwrap().values();
+    let quarter = c.led_delta(DrawLead { phase: 0.25, dt: 4 });
+    let three = c.led_delta(DrawLead { phase: 0.75, dt: 4 });
+    for k in 0..AXIS_COUNT {
+        let span = (next[k] - now[k]) as f32;
+        if k == legaia_engine_camera::camera_mover::FOCUS_Y_AXIS {
+            assert_eq!(quarter[k], 0.0);
+            continue;
+        }
+        assert!((quarter[k] - span * 0.25).abs() < 1e-3, "axis {k}");
+        assert!((three[k] - span * 0.75).abs() < 1e-3, "axis {k}");
+    }
+    // The yaw sweeps up and the depth pulls in on the glide's own line.
+    assert!(quarter[1] > 0.0 && quarter[5] < 0.0);
+    assert_eq!(c.globals, before.globals);
+    assert_eq!(c.mover, before.mover);
+}
+
+/// The last frame of a glide leads only to its end pose: the mover clamps
+/// at the duration, so a draw never overshoots the shot's target.
+#[test]
+fn led_delta_stops_at_the_glide_end() {
+    let c = gliding_camera(118, 120);
+    let end = {
+        let mut m = c.mover.clone().unwrap();
+        m.tick(100);
+        m.values()
+    };
+    let d = c.led_delta(DrawLead { phase: 0.99, dt: 4 });
+    for k in [0usize, 1, 3, 5] {
+        let drawn = c.globals.0[k] as f32 + d[k];
+        let (lo, hi) = if c.globals.0[k] <= end[k] {
+            (c.globals.0[k] as f32, end[k] as f32)
+        } else {
+            (end[k] as f32, c.globals.0[k] as f32)
+        };
+        assert!(drawn >= lo - 1e-3 && drawn <= hi + 1e-3, "axis {k}");
+    }
+}

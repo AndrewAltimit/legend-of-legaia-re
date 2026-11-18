@@ -404,6 +404,7 @@ impl SessionSwitches {
             toggles.immediate_pad = engine.immediate_pad;
             toggles.smooth_walk = engine.smooth_walk;
             toggles.smooth_map_display = engine.smooth_map_display;
+            toggles.smooth_camera = engine.smooth_camera;
             toggles.battle_entry_off_axis = engine.battle_entry_off_axis;
         }
     }

@@ -29,7 +29,18 @@ impl PlayWindowApp {
     /// tick's framebuffer grabs project through.
     pub(in crate::window) fn note_frame_field_view(&mut self, cutscene_cam: Option<CutsceneCam>) {
         self.frame_cutscene_view = cutscene_cam.map(cutscene_view);
-        self.session.field_fog_shot = self.frame_cutscene_view;
+        // The fog pool's next render step is simulation, so it projects
+        // through the shot as the camera stored it, never the smooth
+        // camera's lead (`frame_step::scripted_view_led`).
+        self.session.field_fog_shot = match self.frame_cutscene_view {
+            Some(_) if self.host_view().lead.phase > 0.0 => {
+                Some(legaia_engine_field::frame_step::scripted_view(
+                    &self.session.camera,
+                    self.host_view().scripted_target(),
+                ))
+            }
+            shot => shot,
+        };
         self.last_frame_field_view = self
             .host_view()
             .frame(self.frame_cutscene_view)
@@ -47,6 +58,7 @@ impl PlayWindowApp {
             &self.session.camera,
             self.scene_aabb,
         )
+        .presented()
     }
 
     /// The mood enhanced lighting lights this frame under

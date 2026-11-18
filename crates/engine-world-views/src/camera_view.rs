@@ -27,7 +27,7 @@
 
 use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_core::world::World;
-use legaia_engine_field::camera::{CUTSCENE_WORLD_SCALE, Camera};
+use legaia_engine_field::camera::{CUTSCENE_WORLD_SCALE, Camera, DrawLead};
 use legaia_engine_field::camera_frame::{
     FIELD_CAM_DEPTH, FIELD_FOLLOW_YAW_UNITS, FIELD_H, FIELD_PITCH_UNITS, FOLLOW_PIVOT_LIFT,
     FieldCameraFrame, to_rad, world_map_view_from_follow, world_map_walk_view,
@@ -79,11 +79,56 @@ fn lead_actor_xz(world: &World) -> Option<(f32, f32)> {
 ///
 /// REF: FUN_801DBE9C, FUN_801DAB90
 pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView> {
+    field_follow_view_led(cam, world, DrawLead::NONE)
+}
+
+/// Where in the game frame this frame's **draw** samples an in-flight
+/// camera glide ([`Camera::led_delta`]): the share of the frame's vsyncs
+/// already shown (`FrameClock::frame_vsync` over the frame's wait) and the
+/// credit the next game frame lands, while the smooth camera
+/// (`WorldToggles::smooth_camera`) is on and a glide is in flight;
+/// [`DrawLead::NONE`] otherwise, and a zero phase on the vsync a game frame
+/// opens, so a reader that runs with the game frame sees the stored pose
+/// either way. A presentation input only: the hosts pass it to their
+/// draw-side camera resolve ([`resolve_field_camera_led`],
+/// [`crate::screen_passes::HostView::presented`]) and nothing the
+/// simulation reads takes it. A battle draws through its own camera.
+pub fn camera_present_lead(world: &World, cam: &Camera) -> DrawLead {
+    if !world.toggles.smooth_camera
+        || cam.mover.is_none()
+        || !world.clock.game_tick_live
+        || world.mode == SceneMode::Battle
+    {
+        return DrawLead::NONE;
+    }
+    // The frame's wall length (its step, or the work a long frame waits
+    // out) and the credit the next game frame lands: under the seeded
+    // frame cost the next step is already resolved.
+    let wait = world.clock.game_frame_wait();
+    let dt = world
+        .clock
+        .next_frame_step
+        .unwrap_or(world.clock.frame_step)
+        .max(1);
+    let vsync = world.clock.frame_vsync.min(wait - 1);
+    DrawLead {
+        phase: f32::from(vsync) / f32::from(wait),
+        dt: i32::from(dt),
+    }
+}
+
+/// [`field_follow_view`] drawn `lead` into the game frame
+/// ([`camera_present_lead`]).
+pub fn field_follow_view_led(
+    cam: &Camera,
+    world: &World,
+    lead: DrawLead,
+) -> Option<FieldCameraView> {
     // A player-holding record's op-`0x45` shot frames through this arm too
     // (`World::scripted_shot_holds_camera`), and none of the four knobs
     // reaches a scripted shot.
     if world.scripted_shot_holds_camera() {
-        return follow_view_with_knobs(cam, world, 1.0, 0.0, 0.0, 1.0);
+        return follow_view_with_knobs(cam, world, lead, 1.0, 0.0, 0.0, 1.0);
     }
     // Once the shot lets go the distance preset eases back in over the
     // follow ease (`Camera::knob_blend`) rather than jumping the frame by
@@ -91,6 +136,7 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
     follow_view_with_knobs(
         cam,
         world,
+        lead,
         cam.blended_distance_scale(),
         cam.manual_orbit,
         cam.manual_tilt,
@@ -108,6 +154,7 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
 fn follow_view_with_knobs(
     cam: &Camera,
     world: &World,
+    lead: DrawLead,
     depth_scale: f32,
     manual_orbit: f32,
     manual_tilt: f32,
@@ -116,15 +163,21 @@ fn follow_view_with_knobs(
     let (wx, wz) = lead_actor_xz(world)?;
     let floor_y = world.sample_field_floor_height(wx as i32, wz as i32) as f32;
     let s = CUTSCENE_WORLD_SCALE;
+    let g = &cam.globals.0;
+    // The smooth camera's carry of an in-flight glide; zeros on the stored
+    // pose ([`Camera::led_delta`]).
+    let d = cam.led_delta(lead);
     // The coarse distance preset (`depth_scale`) scales the eye-back depth
     // alone (its historical shape, which a `Far` capture baseline pins); the
     // continuous wheel zoom and the tilt re-pivot the pose about the
     // character below.
-    let (pitch_units, yaw_units, tr_eye) = if cam.zone.active {
-        let g = &cam.globals.0;
+    // The composed globals frame the view once the zone camera has composed,
+    // and whenever a script owns them (`ZoneFollow::script_view`).
+    let globals_live = cam.zone.active || cam.zone.script_view;
+    let (pitch_units, yaw_units, tr_eye) = if globals_live {
         (
-            f32::from(g[0] as i16),
-            f32::from(g[1] as i16),
+            f32::from(g[0] as i16) + d[0],
+            f32::from(g[1] as i16) + d[1],
             // The live eye-space translation trio, reduced by the 6x world
             // scale retail folds into its rotation. Mode 4 flips a negative
             // depth into the yaw, so the depth axis takes the magnitude and
@@ -138,12 +191,12 @@ fn follow_view_with_knobs(
             // depth through zero and past it - the lens passes through the
             // wall to the sky - and the magnitude held it in the room.
             [
-                g[3] as f32 / s,
-                g[4] as f32 / s,
+                (g[3] as f32 + d[3]) / s,
+                (g[4] as f32 + d[4]) / s,
                 if world.scripted_shot_holds_camera() {
-                    g[5] as f32 / s
+                    (g[5] as f32 + d[5]) / s
                 } else {
-                    ((g[5] as f32 / s).abs()).max(FIELD_CAM_DEPTH / 8.0) * depth_scale
+                    (((g[5] as f32 + d[5]) / s).abs()).max(FIELD_CAM_DEPTH / 8.0) * depth_scale
                 },
             ],
         )
@@ -194,10 +247,10 @@ fn follow_view_with_knobs(
         // (`ending_vignette_rimelm_walkaway`: focus `(12091, 3449)`, player
         // `(12194, 3550)`), whose frame the actor-anchored scale slid about
         // 25 px sideways at that depth.
-        focus: if cam.zone.active {
-            cam.globals.focus_world().map(|v| v as f32)
+        focus: if globals_live {
+            [-(g[6] as f32 + d[6]), g[7] as f32, -(g[8] as f32 + d[8])]
         } else {
-            [wx, if cam.zone.active { 0.0 } else { floor_y }, wz]
+            [wx, floor_y, wz]
         },
         pitch: to_rad(pitch_units),
         // PSX camera yaw is the compass negation, so a positive manual orbit
@@ -214,7 +267,7 @@ fn follow_view_with_knobs(
         // op-`0x45` slot-`9` beat on the floor.
         h: match cam.globals.h() {
             0 => FIELD_H,
-            v => v as f32,
+            v => v as f32 + d[9],
         },
         tr_eye,
     };
@@ -402,6 +455,20 @@ pub fn resolve_field_camera(
     cutscene: Option<FieldCameraView>,
     scene_center_xz: [f32; 2],
 ) -> FieldCameraFrame {
+    resolve_field_camera_led(world, cam, cutscene, scene_center_xz, DrawLead::NONE)
+}
+
+/// [`resolve_field_camera`] for a draw `lead` into the game frame
+/// ([`camera_present_lead`]): the follow and overworld walk arms sample an
+/// in-flight glide there. `cutscene` is the caller's own (already led with
+/// [`legaia_engine_field::frame_step::scripted_view_led`]).
+pub fn resolve_field_camera_led(
+    world: &World,
+    cam: &Camera,
+    cutscene: Option<FieldCameraView>,
+    scene_center_xz: [f32; 2],
+    lead: DrawLead,
+) -> FieldCameraFrame {
     if let Some(v) = cutscene {
         return FieldCameraFrame::Cutscene(v);
     }
@@ -452,7 +519,7 @@ pub fn resolve_field_camera(
             cam.blended_distance_scale()
         };
         if cam.zone.active
-            && let Some(v) = follow_view_with_knobs(cam, world, depth_scale, 0.0, 0.0, 1.0)
+            && let Some(v) = follow_view_with_knobs(cam, world, lead, depth_scale, 0.0, 0.0, 1.0)
         {
             return FieldCameraFrame::WorldMapWalk {
                 view: world_map_view_from_follow(&v, az),
@@ -475,7 +542,7 @@ pub fn resolve_field_camera(
             player,
         };
     }
-    match field_follow_view(cam, world) {
+    match field_follow_view_led(cam, world, lead) {
         Some(v) => FieldCameraFrame::Follow(v),
         None => FieldCameraFrame::HostDebugOrbit,
     }
@@ -913,6 +980,76 @@ mod tests {
         assert_ne!(
             resolve_field_camera(&w, &cam, None, [0.0, 0.0]).field_view(),
             clean.field_view()
+        );
+    }
+
+    fn gliding(cam: &mut Camera) {
+        let mut mv = legaia_engine_camera::camera_mover::CameraMover::default();
+        mv.arm(
+            [300, 0, 0, 0, 1200, 12000, -10, 0, -20, 512],
+            [200, 400, 0, 0, 1200, 6000, -10, 0, -20, 512],
+            120,
+            1,
+        );
+        mv.tick(8);
+        mv.write_globals(&mut cam.globals.0);
+        cam.mover = Some(mv);
+    }
+
+    /// The draw lead is the share of the game frame already shown, under the
+    /// smooth camera with a glide in flight; retail (`pin_retail`), the vsync
+    /// a frame opens, no glide and a battle all draw the stored pose.
+    #[test]
+    fn the_draw_lead_follows_the_vsync_inside_the_frame() {
+        let mut w = world_with_player(10, 20);
+        let mut cam = Camera::default();
+        gliding(&mut cam);
+        w.clock.game_tick_live = true;
+        w.clock.frame_step = 4;
+        w.clock.frame_vsync = 2;
+        assert!(w.toggles.smooth_camera);
+        assert_eq!(
+            camera_present_lead(&w, &cam),
+            DrawLead { phase: 0.5, dt: 4 }
+        );
+        w.clock.frame_vsync = 0;
+        assert_eq!(camera_present_lead(&w, &cam).phase, 0.0);
+        // A frame that outlasts its wait holds at the last share.
+        w.clock.frame_vsync = 9;
+        assert_eq!(camera_present_lead(&w, &cam).phase, 0.75);
+        w.clock.frame_vsync = 2;
+        let mut settled = cam.clone();
+        settled.mover = None;
+        assert_eq!(camera_present_lead(&w, &settled), DrawLead::NONE);
+        let mode = w.mode;
+        w.mode = SceneMode::Battle;
+        assert_eq!(camera_present_lead(&w, &cam), DrawLead::NONE);
+        w.mode = mode;
+        w.toggles.pin_retail();
+        assert_eq!(camera_present_lead(&w, &cam), DrawLead::NONE);
+    }
+
+    /// A script's glide draws through the follow arm from the globals even
+    /// before the zone camera composes (`izumi`'s arrival glide), and the
+    /// led draw moves along it while the unled frame - what the simulation
+    /// reads - stays on the stored pose.
+    #[test]
+    fn a_scripted_glide_frames_the_follow_arm_before_the_zone_composes() {
+        let w = world_with_player(10, 20);
+        let mut cam = Camera::default();
+        gliding(&mut cam);
+        cam.zone.active = false;
+        let fallback = field_follow_view(&cam, &w).unwrap();
+        assert_eq!(fallback.pitch, to_rad(FIELD_PITCH_UNITS));
+        cam.zone.script_view = true;
+        let stored = field_follow_view(&cam, &w).unwrap();
+        assert_eq!(stored.pitch, to_rad(f32::from(cam.globals.0[0] as i16)));
+        assert_eq!(stored.focus, [10.0, 0.0, 20.0]);
+        let led = field_follow_view_led(&cam, &w, DrawLead { phase: 0.5, dt: 4 }).unwrap();
+        assert!(led.pitch < stored.pitch && led.yaw > stored.yaw);
+        assert_eq!(
+            resolve_field_camera(&w, &cam, None, [0.0, 0.0]),
+            FieldCameraFrame::Follow(stored)
         );
     }
 }

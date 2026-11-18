@@ -92,16 +92,27 @@ impl LegaiaRuntime {
             .host_view_at(aabb)
             .expect("checked above")
             .scripted_target();
-        let (_, camera) = self.scene_host.host_cam().expect("checked above");
-        let cutscene =
-            scripted.then(|| legaia_engine_field::frame_step::scripted_view(camera, target));
+        let (host, camera) = self.scene_host.host_cam().expect("checked above");
+        // The smooth camera's draw lead (`camera_view::camera_present_lead`):
+        // the frame draws an in-flight glide a vsync further along each
+        // vsync; none off and on the vsync a game frame opens.
+        let lead = legaia_engine_world_views::camera_view::camera_present_lead(&host.world, camera);
+        let cutscene = scripted
+            .then(|| legaia_engine_field::frame_step::scripted_view_led(camera, target, lead));
         // The fog pool's next render step projects through this shot
-        // (`BootSession::step_field_fog`).
+        // (`BootSession::step_field_fog`). It is simulation, so it takes the
+        // shot as the camera stored it, never the draw's lead.
+        let fog_shot = if lead.phase <= 0.0 {
+            cutscene
+        } else {
+            scripted.then(|| legaia_engine_field::frame_step::scripted_view(camera, target))
+        };
         if let Some(session) = self.scene_host.session_mut() {
-            session.field_fog_shot = cutscene;
+            session.field_fog_shot = fog_shot;
         }
         let (host, camera) = self.scene_host.host_cam().expect("checked above");
         legaia_engine_world_views::screen_passes::HostView::new(&host.world, camera, aabb)
+            .presented()
             .frame(cutscene)
     }
 }

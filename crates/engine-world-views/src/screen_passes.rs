@@ -18,10 +18,10 @@
 //! `legaia_engine_session::BootSession::step_field_fog`. Its *draw* - the
 //! quads the step left - is [`HostView::fog_prims`].
 
-use crate::camera_view::{cutscene_view, resolve_field_camera};
+use crate::camera_view::{camera_present_lead, cutscene_view, resolve_field_camera_led};
 use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_core::world::World;
-use legaia_engine_field::camera::Camera;
+use legaia_engine_field::camera::{Camera, DrawLead};
 use legaia_engine_field::camera_frame::{FieldCameraFrame, frame_curve_scale};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_render_kernels::afterimage::AfterimageQuad;
@@ -48,6 +48,10 @@ pub struct HostView<'a> {
     pub world: &'a World,
     pub camera: &'a Camera,
     pub scene_box: SceneBox,
+    /// Where in the game frame the draw samples an in-flight camera glide
+    /// (`camera_view::camera_present_lead`); [`DrawLead::NONE`] unless the
+    /// host asked for [`Self::presented`].
+    pub lead: DrawLead,
 }
 
 impl<'a> HostView<'a> {
@@ -56,7 +60,19 @@ impl<'a> HostView<'a> {
             world,
             camera,
             scene_box,
+            lead: DrawLead::NONE,
         }
+    }
+
+    /// This view as the frame **draws** it: the follow and overworld arms
+    /// sample an in-flight glide at the vsync the frame is drawn on, under
+    /// the smooth camera (`WorldToggles::smooth_camera`). Off, or on the
+    /// vsync a game frame opens, it is [`Self::new`]'s view exactly. A host
+    /// asks for it on its draw side only; nothing the simulation reads
+    /// projects through it.
+    pub fn presented(mut self) -> Self {
+        self.lead = camera_present_lead(self.world, self.camera);
+        self
     }
 
     /// The resolver's fallback focus ([`scene_centre`] of the box).
@@ -68,7 +84,7 @@ impl<'a> HostView<'a> {
     /// gate says one owns the frame (already glided - the glide is the
     /// host's step, not a read), `None` otherwise.
     pub fn frame(&self, cutscene: Option<FieldCameraView>) -> FieldCameraFrame {
-        resolve_field_camera(self.world, self.camera, cutscene, self.centre())
+        resolve_field_camera_led(self.world, self.camera, cutscene, self.centre(), self.lead)
     }
 
     /// The non-scripted frame: the camera this frame would have without a

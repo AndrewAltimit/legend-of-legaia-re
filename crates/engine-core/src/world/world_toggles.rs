@@ -263,6 +263,16 @@ pub struct WorldToggles {
     /// cap) and steps everything on that clock; off, under `pin_retail`, the
     /// port does the same ([`crate::world::World::pace_map_display`]).
     pub smooth_map_display: bool,
+    /// A scripted camera glide draws every vsync (port, on by default).
+    /// Retail's op-`0x45` mover (`FUN_801DC0BC`) steps its progress once a
+    /// game frame by the frame step, so an authored pan or ease moves a
+    /// whole step at a time and holds between - 15 poses a second at the
+    /// step `4` a heavy shot runs at. On, the hosts draw the vsyncs between
+    /// on the line to the pose the next frame stores, a vsync further along
+    /// each (`Camera::led_delta`); the camera globals, the simulation and
+    /// everything it reads keep the stepped pose. Off, under `pin_retail`,
+    /// the frame draws the stored pose, as retail does.
+    pub smooth_camera: bool,
     /// Shiny Seru (port gameplay feature, the engine twin of the patcher's
     /// `--shiny-seru`): each battle entry rolls
     /// [`legaia_engine_battle::seru_state::SeruState::shiny_chance_pct`] for one
@@ -544,6 +554,7 @@ impl WorldToggles {
             immediate_pad: true,
             smooth_walk: true,
             smooth_map_display: true,
+            smooth_camera: true,
             shiny_seru: true,
             battle_memo_verify: false,
             flee_exp: false,
@@ -597,6 +608,7 @@ impl WorldToggles {
         self.immediate_pad = false;
         self.smooth_walk = false;
         self.smooth_map_display = false;
+        self.smooth_camera = false;
         self.arts_saved_list = false;
         self.shiny_seru = false;
         self.flee_exp = false;
@@ -659,6 +671,9 @@ impl WorldToggles {
         }
         if self.smooth_map_display {
             out.push("smooth_map_display");
+        }
+        if self.smooth_camera {
+            out.push("smooth_camera");
         }
         if self.arts_saved_list {
             out.push("arts_saved_list");
@@ -744,6 +759,7 @@ mod fidelity_tests {
                 "immediate_pad",
                 "smooth_walk",
                 "smooth_map_display",
+                "smooth_camera",
                 "shiny_seru",
                 "fortress_encounter_fix",
                 "tetsu_spar_fix",
@@ -777,7 +793,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 31);
+        assert_eq!(t.retail_deviations().len(), 32);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

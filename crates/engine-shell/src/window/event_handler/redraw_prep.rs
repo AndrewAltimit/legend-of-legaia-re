@@ -971,7 +971,14 @@ impl PlayWindowApp {
                 h,
                 tr_eye,
             };
-            let v = legaia_engine_field::frame_step::scripted_view(&self.session.camera, target);
+            // Drawn a vsync further into an in-flight glide each vsync under
+            // the smooth camera (`HostView::presented`'s lead; `0` off).
+            let lead = self.host_view().lead;
+            let v = legaia_engine_field::frame_step::scripted_view_led(
+                &self.session.camera,
+                target,
+                lead,
+            );
             let out = (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye);
             let apply = self.session.host.world.camera.state.apply_trigger;
             if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
