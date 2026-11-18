@@ -1840,7 +1840,7 @@ impl App {
                     msg.clone(),
                     game_exit::report_text(
                         "legaia-explorer",
-                        env!("CARGO_PKG_VERSION"),
+                        legaia_app_theme::APP_VERSION,
                         &headline,
                         why.as_deref(),
                         log_text.as_deref(),
@@ -3827,7 +3827,7 @@ impl App {
                     .max_height(max_h - ABOUT_CHROME_H)
                     .min_scrolled_height(max_h - ABOUT_CHROME_H)
                     .show(ui, |ui| {
-                    ui.heading(format!("Legaia Explorer {}", env!("CARGO_PKG_VERSION")));
+                    ui.heading(format!("Legaia Explorer {}", legaia_app_theme::APP_VERSION));
                     ui.label(
                         "Browse, preview and extract the assets on your own Legend of Legaia disc.",
                     );

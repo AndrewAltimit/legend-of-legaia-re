@@ -49,6 +49,22 @@ pub mod release_layout;
 pub mod settings_file;
 pub mod win_icon;
 
+/// The environment variable a release build sets to the release's own
+/// version (`scripts/ci/release-build.sh`, from the tag), read at compile
+/// time by [`APP_VERSION`].
+pub const RELEASE_VERSION_ENV: &str = "LEGAIA_RELEASE_VERSION";
+
+/// The version the desktop programs show and report: the launcher's header,
+/// both programs' `--version`, the About box and every bug report's
+/// version line. A release build bakes in its tag ([`RELEASE_VERSION_ENV`]);
+/// any other build falls back to the workspace's crate version. The crate
+/// version is not the release number, so a player's report read "0.1.0"
+/// whatever release they ran.
+pub const APP_VERSION: &str = match option_env!("LEGAIA_RELEASE_VERSION") {
+    Some(v) if !v.is_empty() => v,
+    _ => env!("CARGO_PKG_VERSION"),
+};
+
 /// An sRGB colour, 8 bits per channel, opaque.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);

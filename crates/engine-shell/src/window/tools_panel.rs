@@ -696,7 +696,7 @@ impl PlayWindowApp {
         }
         game_exit::report_text(
             "legaia-engine play-window",
-            env!("CARGO_PKG_VERSION"),
+            legaia_app_theme::APP_VERSION,
             &headline,
             Some(&detail.join("\n")),
             log_text.as_deref(),

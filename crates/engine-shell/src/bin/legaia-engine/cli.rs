@@ -7,7 +7,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(
     name = "legaia-engine",
-    version,
+    version = legaia_app_theme::APP_VERSION,
     about = "From-scratch engine port of Legend of Legaia. Bring your own disc: every \
              subcommand that reads game data takes a Legend of Legaia (USA) .bin via --disc, or an \
              extracted/ tree produced by legaia-extract.",

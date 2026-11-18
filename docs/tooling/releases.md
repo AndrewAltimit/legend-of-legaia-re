@@ -343,6 +343,14 @@ SHA256SUMS
 `legaia-tools-0.2.0-x86_64-pc-windows-gnu.zip`. Linux and macOS ship
 `.tar.gz`, Windows ships `.zip`.
 
+The same `<version>` is what the programs say they are. `release-build.sh`
+exports it as `LEGAIA_RELEASE_VERSION` before it builds, and
+`legaia_app_theme::APP_VERSION` reads that at compile time: the launcher's
+header, `legaia-engine --version`, Explorer's `--version` and About box, and
+the version line of every copied bug report. A build without it (any local
+`cargo build`) names the workspace's crate version instead, which is not a
+release number.
+
 Every archive contains a single top-level
 `legaia-tools-<version>-<target>/` directory - extracting one never scatters
 files across the working directory. Inside it, laid out as
@@ -397,7 +405,8 @@ A build smoke-runs `legaia-engine --version`, the game entry's `--version`
 (the stub on Linux, the bundle's binary on macOS) and Explorer's `--version`
 from the staged archive whenever the build host can execute it (the native Linux row and the
 universal macOS row), so a binary that cannot start fails the release rather
-than a user.
+than a user. The same step fails when the engine's or Explorer's
+`--version` does not end in the release's `<version>`.
 
 Verify a download against the published manifest:
 
