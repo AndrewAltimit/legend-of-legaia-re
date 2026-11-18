@@ -179,11 +179,15 @@ impl PlayWindowApp {
     /// held (`LEGAIA_FILM_GUARD`; the drive's own Spirit commits are not
     /// retail's) and the world stream on the state's `rand()` seed word
     /// (`LEGAIA_FILM_RAND`; the replay reached the gate on its own draws),
-    /// and the track coin retail drew through the recording
-    /// (`LEGAIA_FILM_COIN`).
+    /// the track coin retail drew through the recording
+    /// (`LEGAIA_FILM_COIN`) and the action yaw counter the state held
+    /// (`LEGAIA_FILM_YAW`).
     fn seat_film_guard(&mut self) {
         if self.screenshot.as_ref().is_none_or(|sc| {
-            sc.film_guard.is_none() && sc.film_rand.is_none() && sc.film_coins.is_empty()
+            sc.film_guard.is_none()
+                && sc.film_rand.is_none()
+                && sc.film_coins.is_empty()
+                && sc.film_yaw.is_none()
         }) || !self.capture_gate_met()
         {
             return;
@@ -193,7 +197,14 @@ impl PlayWindowApp {
         };
         let (guard, rand) = (sc.film_guard.take(), sc.film_rand.take());
         let coins = std::mem::take(&mut sc.film_coins);
+        let yaw = sc.film_yaw.take();
         let world = &mut self.session.host.world;
+        if let Some(yaw) = yaw
+            && let Some(cam) = world.battle.camera.as_mut()
+        {
+            eprintln!("film yaw: {yaw} (was {})", cam.action_yaw_base() & 0xFFFF);
+            cam.set_action_yaw_base(i32::from(yaw));
+        }
         if !coins.is_empty() {
             eprintln!("film coins: {coins:?}");
             legaia_engine_capture::strike_deal::deal_track_coins(world, &coins);

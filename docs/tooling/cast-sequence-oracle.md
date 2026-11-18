@@ -155,6 +155,7 @@ Flags worth knowing:
 | `LEGAIA_LEADIN_TABLE_COST=1` (engine child, beside `LEGAIA_BATTLE_POLY_COST=1`) | Engine: price the replay's lead-in on the action-state table and raise the polygon census where the film starts (the capture's gate, or the cast begin), so a census-priced film reaches its gate on the round a table-priced one does. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `LEGAIA_FILM_COST_RING=e0,..,e15;cursor` (engine child) | The recording state's frame-cost ring, which the driver reads off the state for a film no `LEGAIA_BATTLE_COST_RING` seeds; under `LEGAIA_LEADIN_TABLE_COST` the film's opening pass is priced again on the census from it. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `LEGAIA_FILM_COIN=coin@vsync,..` (engine child) | The attack camera's track coin `ctx[+0x26D]` through the recording, dealt from the gate on a film no `--strike-deal` carries; the driver sets it whenever the recording has the `coin` column ([the track coin](#the-track-coin-on-a-film)). A harness seat |
+| `LEGAIA_FILM_YAW=<counter>` (engine child) | A `--physical` film's action yaw counter `ctx[+0x6DA]`, read off the state and stood on the camera at the gate (`--no-state-yaw` leaves the replay's own) ([the yaw counter](#the-yaw-counter-on-a-physical-film)). A harness seat |
 | `LEGAIA_LEADIN_SPAN_LAW=1` (engine child) | Engine: run the replay's lead-in on the default one-vsync overrun and raise the span law where the film starts, the same hold for the law's longer frames: under the law in the lead-in `battle_korb2_warhalf_strike`'s replay won its fight in round 3 and never met its gate, as Gilium, Slippery and Topaz did. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `--rand-track` | Engine: seat every module-band pass on the `rand()` word retail's frame before it ended on (`LEGAIA_CAST_RAND_TRACK`, [below](#the-rand-stream)). A harness seat |
 | `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
@@ -1555,6 +1556,23 @@ names a recording with the column (`captures/film-retail/jou_puera_v3_death_game
 it the Done band reads `.675` to `.997`, the film `.941` to `.952` and its camera `42.0` to
 `1.9` px; the eight other enemy films whose recordings carry the column do not move. A
 harness seat: the commit and its draw are the engine's own.
+
+### The yaw counter on a physical film
+
+Case 6 and the Done band frame from `ctx[+0x6DA] - heading`, and the counter drifts
+`4 * step / 3` a pass (`0x801E29E4..0x801E2A24`) from whichever rung last stored it, so
+a replay that reached a mid-cast gate on other passes carries another word into the
+cast. The drive's `y` steer seats it only while the counter is the gate's clock: a
+walk-in body past arm 0 holds its own rung (`yaw_counter_reseeded_by`), and the steer
+is left off. `battle_dohaty_nova_v2_scythe_wind`'s replay entered arm 4 on `579` where
+the state holds `647`, and the Done band stood `66` yaw units off retail's;
+`battle_kor_ghost_knight_v_windhash`'s steer landed a pass before its gate and the
+counter ran `42` past the state's.
+
+The driver reads the counter off the state's RAM and the engine stands it on the camera
+when the gate opens (`LEGAIA_FILM_YAW`), beside the state's `rand()` word. Scythe Wind
+reads `.953` to `.982` and V-Windhash `.933` to `.961`; of the set's other `--physical`
+films none falls by more than `.001` and none rises by more than `.004`. A harness seat.
 
 ### The enemy set on the plain seat, and what holds it
 

@@ -620,6 +620,25 @@ def state_rand_word(out: Path) -> int | None:
     return ram_u32(ram, 0x80009010)
 
 
+def state_yaw_counter(out: Path) -> int | None:
+    """The action yaw counter `ctx[+0x6DA]` in the state's own RAM, for a
+    `--physical` film's `LEGAIA_FILM_YAW`. Case 6 and the Done band frame
+    from `counter - heading`, and the counter drifts `4 * step / 3` a pass
+    from whatever rung last stored it, so a replay that reached the gate on
+    other passes carries another word: `battle_dohaty_nova_v2_scythe_wind`'s
+    replay entered arm 4 on `579` where the state holds `647`, and its Done
+    band stood `66` yaw units off retail's. Seated at the gate, the two
+    counters leave the state's instant together. A harness seat (lane A)."""
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    ram = state_ram(manifest.get("sstate", ""))
+    if ram is None:
+        return None
+    ctx = ram_u32(ram, 0x8007BD24)
+    if not RAM_BASE <= ctx < RAM_TOP - 0x800:
+        return None
+    return ram_u32(ram, ctx + 0x6DA) & 0xFFFF
+
+
 def state_strike_queue(out: Path) -> str | None:
     """The acting monster's committed queue `+0x1DF..+0x1EE` in the state's
     own RAM, as the drive's `q` field, for a `--physical` film of a monster
@@ -1284,6 +1303,8 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     if (a.physical and not (a.rand_at or a.rand_track or a.no_state_rand or a.strike_deal)
             and (w := state_rand_word(out)) is not None):
         env["LEGAIA_FILM_RAND"] = str(w)
+    if a.physical and not a.no_state_yaw and (y := state_yaw_counter(out)) is not None:
+        env["LEGAIA_FILM_YAW"] = str(y)
     # A spell film enters the cast on the replay's own stream, whose draws
     # before the cast are not retail's: seat retail's word on the cast's
     # begin key unless another rand seat or `--no-cast-rand` says otherwise.
@@ -1598,6 +1619,9 @@ def main() -> int:
     ap.add_argument("--no-state-rand", action="store_true",
                     help="--physical: leave the world rand() stream on the replay's own draws at the gate "
                          "(default without --strike-deal: the state's seed word 0x80009010, LEGAIA_FILM_RAND)")
+    ap.add_argument("--no-state-yaw", action="store_true",
+                    help="--physical: leave the action yaw counter ctx[+0x6DA] on the replay's own at the gate "
+                         "(default: the state's word, LEGAIA_FILM_YAW)")
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")
