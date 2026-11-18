@@ -226,6 +226,13 @@ pub struct WorldToggles {
     /// at `(2880, 2886)`), with no step left to start another hop. Off is
     /// retail's unguarded hop.
     pub hop_landing_guard: bool,
+    /// Skip the CD-wait black holds around the pause menu (port, on by
+    /// default): retail holds the screen while the menu overlay loads after
+    /// the wipe (`LOAD_HOLD_OPEN_VSYNCS`) and while the field overlay reloads
+    /// after a close (`LOAD_HOLD_CLOSE_VSYNCS`,
+    /// `legaia_engine_system::pause_wipe`). Off, under `pin_retail`, runs
+    /// both holds as the captures measure them.
+    pub skip_load_holds: bool,
     /// Shiny Seru (port gameplay feature, the engine twin of the patcher's
     /// `--shiny-seru`): each battle entry rolls
     /// [`legaia_engine_battle::seru_state::SeruState::shiny_chance_pct`] for one
@@ -503,6 +510,7 @@ impl WorldToggles {
             battle_poly_window_count: false,
             arts_saved_list: false,
             hop_landing_guard: true,
+            skip_load_holds: true,
             shiny_seru: true,
             battle_memo_verify: false,
             flee_exp: false,
@@ -549,6 +557,7 @@ impl WorldToggles {
         self.overworld_marker_overlay = false;
         self.battle_pass_rand_draw = true;
         self.hop_landing_guard = false;
+        self.skip_load_holds = false;
         self.arts_saved_list = false;
         self.shiny_seru = false;
         self.flee_exp = false;
@@ -599,6 +608,9 @@ impl WorldToggles {
         }
         if self.hop_landing_guard {
             out.push("hop_landing_guard");
+        }
+        if self.skip_load_holds {
+            out.push("skip_load_holds");
         }
         if self.arts_saved_list {
             out.push("arts_saved_list");
@@ -672,13 +684,15 @@ mod fidelity_tests {
     fn pinned_toggles_report_no_deviation() {
         let mut t = WorldToggles::new();
         // The bare default keeps three safety / enhancement toggles, the
-        // shiny roll, the Fortress fix and the off-axis battle open on.
+        // load-hold skip, the shiny roll, the Fortress fix and the off-axis
+        // battle open on.
         assert_eq!(
             t.retail_deviations(),
             [
                 "entry_pulse_enabled",
                 "reduce_flashing",
                 "hop_landing_guard",
+                "skip_load_holds",
                 "shiny_seru",
                 "fortress_encounter_fix",
                 "tetsu_spar_fix",
@@ -712,7 +726,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 27);
+        assert_eq!(t.retail_deviations().len(), 28);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

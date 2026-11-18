@@ -174,16 +174,34 @@ impl<S: AudioSink> BootSession<S> {
     pub fn close_field_menu(&mut self) {
         if self.field_menu.take().is_some() {
             reset_pause_slide_lock(&mut self.host.world);
+            // Retail-faithful mode holds black while the field overlay
+            // reloads (`LOAD_HOLD_CLOSE_VSYNCS`), the world still in `Menu`
+            // so the field stays stopped; `step_pause_wipe` hands the mode
+            // back when the lifting ramp starts. Only a menu the wipe opened
+            // has a field to reload under it.
+            let reload = !self.host.world.toggles.skip_load_holds
+                && matches!(
+                    self.pause_wipe,
+                    legaia_engine_system::pause_wipe::PauseWipe::Opening { .. }
+                );
             // The field brightens back under the lifting wipe (phase 4).
-            self.pause_wipe.close();
+            if reload {
+                self.pause_wipe.close_with_reload();
+            } else {
+                self.pause_wipe.close();
+            }
             // The sub-session goes with it: a menu closed out from under an
             // open screen must not leave that screen holding the pad the next
             // time the menu opens.
             self.field_menu_sub = None;
             self.save_flow.reset();
             let world = &mut self.host.world;
-            world.mode = self.field_menu_resume;
-            world.menu.suspended_mode = None;
+            if reload {
+                world.menu.suspended_mode = Some(self.field_menu_resume);
+            } else {
+                world.mode = self.field_menu_resume;
+                world.menu.suspended_mode = None;
+            }
             // The engaged bit the press raised goes with the menu (retail's
             // field re-install seats the player afresh).
             if let Some(a) = world
@@ -195,7 +213,9 @@ impl<S: AudioSink> BootSession<S> {
             // The word follows the world back out of `CARD MODE`; the seat
             // takes the edge (and the pad swallow) on the next frame, so the
             // confirm that closed the menu does not walk the player.
-            self.mode_seat.adopt_scene_mode(self.field_menu_resume);
+            if !reload {
+                self.mode_seat.adopt_scene_mode(self.field_menu_resume);
+            }
             // A scripted menu press (a save point's `49 01`, a `49 0D` ready
             // check) parks its op until the menu it opened closes; the close
             // resumes it once. Twin of `play_menu_close` on the browser host.
@@ -223,6 +243,25 @@ impl<S: AudioSink> BootSession<S> {
             && self.pause_wipe.menu_spawned()
         {
             self.enter_card_mode();
+            // Retail-faithful mode: the menu overlay's CD load before the
+            // menu's first frame (`LOAD_HOLD_OPEN_VSYNCS`).
+            if !self.host.world.toggles.skip_load_holds {
+                self.pause_wipe.hold_for_load();
+            }
+        }
+        // The close's reload hold has run out: the field comes back under
+        // the lifting ramp, on the mode the menu suspended (unless something
+        // else, a scene entry, took the mode word meanwhile).
+        if self.field_menu.is_none()
+            && !self.pause_wipe.reloading()
+            && let Some(resume) = self.host.world.menu.suspended_mode
+        {
+            let world = &mut self.host.world;
+            world.menu.suspended_mode = None;
+            if world.mode == SceneMode::Menu {
+                world.mode = resume;
+                self.mode_seat.adopt_scene_mode(resume);
+            }
         }
     }
 

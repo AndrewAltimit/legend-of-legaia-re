@@ -126,8 +126,16 @@ state pick's (`PauseWipe::Picking`); the curtain is
 `render-kernels::wipe_curtain` (differential `retail-exec/tests/wipe_curtain.rs`).
 Both play hosts keep the field drawing until `menu_spawned`, route no input to
 the menu before it, and draw `curtain_level` through the curtain. The two
-overlay loads are not modelled: the port loads no overlay, and the menu opens
-and closes without the black holds. Over `conc` (`autorun_pause_wipe_step.lua`
+overlay loads are CD waits, and the port runs them in its retail-faithful mode
+only (`WorldToggles::skip_load_holds` off, as `pin_retail` and `--retail` set
+it): the spawned menu waits `LOAD_HOLD_OPEN_VSYNCS` (`60`) on the last field
+frame and then black (`PauseWipe::Loading`), and a close holds black for
+`LOAD_HOLD_CLOSE_VSYNCS` (`80`) with the world still in `Menu` before the
+lifting ramp (`PauseWipe::Reloading`). The default skips both. Filmed over
+`conc` (Triangle, then Circle), the retail-faithful engine's menu starts to
+slide in one vsync from the capture's and the field starts to lift on the
+capture's vsync; the close folds the menu's twelve-frame slide-out into the
+black. Over `conc` (`autorun_pause_wipe_step.lua`
 with the pad edge logged) the open holds the `160` frame and then black from
 the spawn to the menu's own fade at vsync `88` (`58` vsyncs), and the close
 holds black from vsync `266` to the field's return in mode `3` at `331`.

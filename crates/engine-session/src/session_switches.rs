@@ -400,6 +400,7 @@ impl SessionSwitches {
         } else {
             let engine = WorldToggles::new();
             toggles.hop_landing_guard = engine.hop_landing_guard;
+            toggles.skip_load_holds = engine.skip_load_holds;
             toggles.battle_entry_off_axis = engine.battle_entry_off_axis;
         }
     }

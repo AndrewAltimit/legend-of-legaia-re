@@ -18,8 +18,11 @@ pub const MENU_PRESS_GAP: u64 = 14;
 /// four of four at `4`, so up to sixteen ticks - and the root picker's
 /// windows then slide in for twelve more before it reads the pad. With one
 /// [`MENU_PRESS_GAP`] on top, the first press lands at tick 34, clear of the
-/// slowest step.
-pub const MENU_OPEN_WIPE_TICKS: u64 = 20;
+/// slowest step. Both halves of a comparison run the retail-faithful mode,
+/// so the menu overlay's load hold
+/// ([`legaia_engine_system::pause_wipe::LOAD_HOLD_OPEN_VSYNCS`]) comes on top.
+pub const MENU_OPEN_WIPE_TICKS: u64 =
+    20 + legaia_engine_system::pause_wipe::LOAD_HOLD_OPEN_VSYNCS as u64;
 
 /// Ticks a card screen's grid takes to come up after its pill-row confirm:
 /// the "Now checking" card read runs first (`FUN_801DD35C` sub-modes `0x04`
