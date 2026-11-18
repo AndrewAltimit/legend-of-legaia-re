@@ -5701,8 +5701,9 @@ waives its fold, as for PROT 0959. A frozen seat
 mid-knockdown stands still. `nivora_duel_mid_blazing_slash` reads `.504` to
 `.766` with cues `.00` to `.74`. Grade `disassembly` + `capture`.
 
-What still holds arms `0x0D` / `0x0E` low (`.44` / `.42` on `--retail-steps
---rand-track`, with the camera on retail's to a tick) is two things. The flame puffs
+Arms `0x0D` / `0x0E` read `.967` / `.948` on `--retail-steps --rand-track`
+(the film `.972`). What held them at `.44` / `.42`, with the camera on retail's to
+a tick, was two things. The flame puffs
 are a deal: a `--retail-parts` film puts the same number of effect-pool children per
 arm on both sides, their centroids within the spread of the rolled offsets
 (`fxpool.csv`, arm `0x0D` six against five about `(11, -268, -717)` and
