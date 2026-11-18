@@ -224,7 +224,7 @@ impl LegaiaRuntime {
         let mode = self
             .scene_host
             .host()
-            .map_or(SceneMode::Title, |h| h.world.mode);
+            .map_or(SceneMode::Title, |h| h.world.draw_mode());
         legaia_render_kernels::prim_near_reject::shader_params(
             camera_frame::prim_near_cut(mode, retail_camera),
             camera_frame::prim_gpu_span_h(
@@ -245,7 +245,7 @@ impl LegaiaRuntime {
         let mode = self
             .scene_host
             .host()
-            .map_or(SceneMode::Title, |h| h.world.mode);
+            .map_or(SceneMode::Title, |h| h.world.draw_mode());
         legaia_render_kernels::prim_near_reject::gte_saturation_params(
             camera_frame::gte_saturation(
                 mode,

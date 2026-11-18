@@ -124,7 +124,7 @@ impl<'a> HostView<'a> {
     pub fn fog_prims(&self, enhanced_lighting: bool) -> Vec<ScreenPrim> {
         let world = self.world;
         let mut out: Vec<ScreenPrim> = Vec::new();
-        if World::fog_mode(world.mode) && world.fog.gate {
+        if World::fog_mode(world.draw_mode()) && world.fog.gate {
             out.extend(
                 world.fog_quads().iter().map(|q| {
                     fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth)
@@ -182,7 +182,7 @@ impl<'a> HostView<'a> {
         cutscene: Option<FieldCameraView>,
         link_order: bool,
     ) -> Vec<ScreenPrim> {
-        if !World::fog_mode(self.world.mode)
+        if !World::fog_mode(self.world.draw_mode())
             && self.world.pack_mode_stage().is_none()
             && self.world.mode != SceneMode::Dance
         {
@@ -207,7 +207,7 @@ impl<'a> HostView<'a> {
     /// the host's glided scripted shot, as for [`Self::drop_shadow_prims`].
     pub fn move_strip_prims(&self, cutscene: Option<FieldCameraView>) -> Vec<ScreenPrim> {
         let requests = self.world.move_vm.strip_frame();
-        if requests.is_empty() || self.world.mode != SceneMode::Field {
+        if requests.is_empty() || self.world.draw_mode() != SceneMode::Field {
             return Vec::new();
         }
         let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) =
@@ -226,7 +226,7 @@ impl<'a> HostView<'a> {
     /// for [`Self::drop_shadow_prims`].
     pub fn light_prims(&self, cutscene: Option<FieldCameraView>) -> Vec<ScreenPrim> {
         let world = self.world;
-        if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
+        if world.draw_mode() != SceneMode::Field || world.script_actors.lights.is_empty() {
             return Vec::new();
         }
         let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) =

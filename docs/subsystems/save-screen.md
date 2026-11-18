@@ -113,19 +113,29 @@ logs every emitter call and session pass per vsync on `town01_field_card_boot`
 
 | Beat | Retail |
 |---|---|
-| Opening ramp | levels `20, 40, .., 140` on every second vsync at step `2`; the menu spawns on the seventh pass |
+| Press to ramp | the accept's game frame spawns the subsystem actor, whose first pass is its state pick `FUN_801F1F4C` (slot `7`, installs state `0x30`); the session's first raise is the game frame after that. Over `conc` the edge reads at vsync `12` and the level `20` at `16` |
+| Opening ramp | levels `20, 40, .., 140` on every second vsync at step `2`; the menu spawns on the seventh pass, game mode `0x16` from the next vsync |
 | Spawn to windows | `160` drawn once in mode `0x16`, then the screen is black while the menu overlay loads; the first window slides in about `50` vsyncs after the spawn, the frame step reading `1` (floor `1`) from then on |
 | Cancel to field | about `15` vsyncs of the menu's own close, then about `65` black vsyncs while the field overlay loads |
 | Closing ramp | `242, 222, .., 2` on every second vsync, then `0` |
 
 Port: `engine-system::pause_wipe::PauseWipe`, owned by `BootSession` (opened by
 `press_field_menu`, released by `close_field_menu`), ticked once a vsync and
-stepping on the vsync that completes a game frame; the curtain is
+stepping on the vsync that completes a game frame, its first game frame the
+state pick's (`PauseWipe::Picking`); the curtain is
 `render-kernels::wipe_curtain` (differential `retail-exec/tests/wipe_curtain.rs`).
 Both play hosts keep the field drawing until `menu_spawned`, route no input to
 the menu before it, and draw `curtain_level` through the curtain. The two
 overlay loads are not modelled: the port loads no overlay, and the menu opens
-and closes without the black holds.
+and closes without the black holds. Over `conc` (`autorun_pause_wipe_step.lua`
+with the pad edge logged) the open holds the `160` frame and then black from
+the spawn to the menu's own fade at vsync `88` (`58` vsyncs), and the close
+holds black from vsync `266` to the field's return in mode `3` at `331`.
+
+The world is in `SceneMode::Menu` from the press, so the port's field stops
+on the press frame, where retail's runs in mode `3` until the spawn; the
+render gates read `World::draw_mode` (the suspended scene's mode while the
+wipe draws it), so the wipe frames keep the field's visible-tile crop.
 
 ### The entry-context decode picks the screen family
 

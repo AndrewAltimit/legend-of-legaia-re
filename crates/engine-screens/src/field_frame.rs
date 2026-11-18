@@ -74,7 +74,7 @@ pub fn field_scene_lights(
     // A pack map's placed lamps and prop lights (none off a map).
     let pack = w.expansion_map_lights();
     if screen_owned
-        || w.mode != SceneMode::Field
+        || w.draw_mode() != SceneMode::Field
         || host
             .scene
             .as_ref()

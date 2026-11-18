@@ -134,7 +134,7 @@ pub fn field_ground_drop(
     debug_camera: bool,
     psx_raster: bool,
 ) -> Option<f32> {
-    field_ground_drop_under(world, world.mode, camera, debug_camera, psx_raster)
+    field_ground_drop_under(world, world.draw_mode(), camera, debug_camera, psx_raster)
 }
 
 /// [`field_ground_drop`] for a frame drawn under `draw_mode` - a host passes
@@ -185,7 +185,7 @@ pub fn field_ground_drop_under(
 /// shot; `rim_elm_queen_bee_battle` holds that window, and the cull kernel
 /// over it reproduces every placed actor's bit `1` in the capture).
 pub fn field_view_cells(world: &World, framing: CropFraming) -> Option<ViewCells> {
-    field_view_cells_under(world, world.mode, framing)
+    field_view_cells_under(world, world.draw_mode(), framing)
 }
 
 /// [`field_view_cells`] for a frame drawn under `draw_mode`. The play hosts

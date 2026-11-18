@@ -82,7 +82,7 @@ impl World {
     ) -> Vec<DropShadowQuad> {
         // An in-world golf round or race keeps the field under it, and the
         // leader on that field keeps its blob.
-        if !Self::fog_mode(self.mode)
+        if !Self::fog_mode(self.draw_mode())
             && self.pack_mode_stage().is_none()
             && self.mode != SceneMode::Dance
         {
@@ -158,7 +158,7 @@ impl World {
                     || self.player_near_buckets(i32::from(m.world_x), i32::from(m.world_z)),
             );
         }
-        if self.mode == SceneMode::Field {
+        if self.draw_mode() == SceneMode::Field {
             let hide = FIELD_OFFMAP_HIDE_XZ;
             for c in self.field_vm.channels.iter().filter(|c| !c.object_bind) {
                 if c.ctx.move_id == 0 {

@@ -894,7 +894,8 @@ impl PlayWindowApp {
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         // `set_field_prim_order`'s gate under the renderer's PSX-mode one.
-        let link_order = self.session.host.world.mode == legaia_engine_mode::mode::SceneMode::Field
+        let link_order = self.session.frame_draw_mode()
+            == legaia_engine_mode::mode::SceneMode::Field
             && self.win.renderer.as_ref().is_some_and(|r| r.psx_mode());
         self.host_view()
             .drop_shadow_prims(self.frame_cutscene_view, link_order)

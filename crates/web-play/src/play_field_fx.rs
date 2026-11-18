@@ -142,7 +142,7 @@ impl LegaiaRuntime {
         let field = self
             .scene_host
             .host()
-            .is_some_and(|h| h.world.mode == legaia_engine_mode::mode::SceneMode::Field);
+            .is_some_and(|h| h.world.draw_mode() == legaia_engine_mode::mode::SceneMode::Field);
         self.host_view_at(self.field_pass_box())
             .map(|v| v.drop_shadow_prims(cutscene, field && self.psx_render()))
             .unwrap_or_default()

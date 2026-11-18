@@ -66,6 +66,7 @@ impl<S: AudioSink> BootSession<S> {
         // with no parent link (the place-name banner).
         world.end_unlinked_balloon_on_engage();
         self.field_menu_resume = world.mode;
+        world.menu.suspended_mode = Some(world.mode);
         world.mode = SceneMode::Menu;
         // A fresh menu: no window is up, and the root picker's slide-in is
         // the first thing the slide lock sees.
@@ -146,6 +147,7 @@ impl<S: AudioSink> BootSession<S> {
             self.field_menu_sub = None;
             self.save_flow.reset();
             self.host.world.mode = self.field_menu_resume;
+            self.host.world.menu.suspended_mode = None;
             // The word follows the world back out of `CARD MODE`; the seat
             // takes the edge (and the pad swallow) on the next frame, so the
             // confirm that closed the menu does not walk the player.
@@ -202,12 +204,7 @@ impl<S: AudioSink> BootSession<S> {
     /// `camera_frame::prim_link_order`) are the field's on those frames, not
     /// the menu's.
     pub fn frame_draw_mode(&self) -> SceneMode {
-        let mode = self.host.world.mode;
-        if mode == SceneMode::Menu && self.field_menu.is_some() {
-            self.field_menu_resume
-        } else {
-            mode
-        }
+        self.host.world.draw_mode()
     }
 
     /// Install the rack the Load / Save rows build their sub-session against,

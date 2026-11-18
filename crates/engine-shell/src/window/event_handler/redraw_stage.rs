@@ -608,17 +608,17 @@ impl PlayWindowApp {
         // frame. Only under a retail camera - the field debug orbit is a
         // vantage retail never had; every battle
         // draws through the phase camera.
-        let retail_camera = match self.session.host.world.mode {
+        let retail_camera = match self.session.frame_draw_mode() {
             SceneMode::Battle => true,
             _ => !self.field_debug_camera,
         } && std::env::var_os("LEGAIA_DIAG_NO_PRIM_NEAR").is_none();
         r.set_prim_near_reject(
             legaia_engine_field::camera_frame::prim_near_cut(
-                self.session.host.world.mode,
+                self.session.frame_draw_mode(),
                 retail_camera,
             ),
             legaia_engine_field::camera_frame::prim_gpu_span_h(
-                self.session.host.world.mode,
+                self.session.frame_draw_mode(),
                 retail_camera,
                 self.session.camera.globals.0[9] as f32,
             ),
@@ -626,7 +626,7 @@ impl PlayWindowApp {
         // The GTE's register limits (`camera_frame::gte_saturation`), read
         // by the mesh vertex stages under PSX mode only.
         r.set_gte_saturation(legaia_engine_field::camera_frame::gte_saturation(
-            self.session.host.world.mode,
+            self.session.frame_draw_mode(),
             retail_camera,
             self.session.camera.globals.0[9] as f32,
         ));

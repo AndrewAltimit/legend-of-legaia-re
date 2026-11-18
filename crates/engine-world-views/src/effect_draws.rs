@@ -397,7 +397,7 @@ pub fn effect_model_draws(
     plan_of: impl Fn(usize) -> Option<BattleActorDrawPlan>,
 ) -> FxModelDraws {
     let battle = world.mode == SceneMode::Battle;
-    let overworld = world.mode == SceneMode::WorldMap;
+    let overworld = world.draw_mode() == SceneMode::WorldMap;
     // The passes whose draws keep retail's per-word winding test: battle and
     // the field-shaped ones. The prim dispatcher `FUN_80043390` lowers its
     // `NCLIP` mask only for a word carrying `0x08000000`
@@ -405,7 +405,7 @@ pub fn effect_model_draws(
     // (PROT 0901) and the minigame venues draw both sides.
     let per_word_cull = battle
         || matches!(
-            world.mode,
+            world.draw_mode(),
             SceneMode::Field | SceneMode::Cutscene | SceneMode::Dance
         );
     let model_flip = if battle { WORLD_FLIP } else { IDENTITY };
