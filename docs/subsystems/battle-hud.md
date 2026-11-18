@@ -809,8 +809,6 @@ Differences from retail:
 - the port ticks once per vsync and retail's pass spans the frame step, so the
   parking window opens on the tick the return first reads `5` rather than on
   the pass that contains it - one vsync later at the battle's step of `2`;
-- the pad word is the newly-pressed edge alone; retail's also carries the
-  held-for-32-vsyncs term (`_DAT_8007B938`);
 - the `ctx[+0x26A]` term of the exit is not modelled;
 - `Run` sliding off the right edge as the ring opens is not drawn;
 - the steps past the ring - the windows, the arms the attack-mode prompt
@@ -1781,8 +1779,10 @@ escape sprites, the way the pause Magic list does
 ([field-menu.md](field-menu.md#magic-screen)): the plate at the row pen, the
 name `20 + 5` or `28 + 5` px on (the screenshot read of `32` behind the
 winged plate is one pixel short of the table width). Disc-gated oracle:
-`battle_spell_plate_disc`. Not drawn: the target step's `All` plate - the
-target step still draws the port's text line.
+`battle_spell_plate_disc`. The target step's `All` plate is the target
+plaque's (`engine-battle-hud::battle_target_select_plate`, the preset label
+records `0x3D` / `0x3E` at `0x801D4404..0x801D443C`), and a target step the
+plaque covers draws no port text line.
 
 ## Screen-element placement table `0x80076C10` and its copy helpers
 

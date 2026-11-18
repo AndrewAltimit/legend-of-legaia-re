@@ -195,7 +195,8 @@ mod tests {
     use super::*;
 
     /// Arm 2 seats Swordie half a unit from the victim toward the caster,
-    /// and each later framing lands once, on the next arm's first tick.
+    /// and each later framing lands once, on the next arm's first tick when
+    /// no call behind the body made the pass.
     #[test]
     fn swordie_seats_between_victim_and_caster_and_frames_it_once() {
         let seats = ModuleCamSeats {
@@ -220,6 +221,38 @@ mod tests {
         assert_eq!(
             swordie_direct(&mut st, 7, seats).shot.map(|s| s.frames),
             Some(0x100)
+        );
+    }
+
+    /// The call behind a body that has just passed arm 5 makes arm 5's pass
+    /// alone; the next tick is arm 6's first own tick, which repeats nothing.
+    #[test]
+    fn swordie_pass_lands_behind_the_body() {
+        let seats = ModuleCamSeats::default();
+        let mut st = ModuleCamState {
+            creature: Some(ModuleSeat::default()),
+            ..Default::default()
+        };
+        swordie_direct(&mut st, 5, seats);
+        st.body_pass_now = true;
+        let passed = swordie_direct(&mut st, 6, seats);
+        assert!(!st.body_pass_now, "the call takes the request");
+        assert_eq!(
+            passed.shot.map(|s| s.frames),
+            Some(1),
+            "arm 5's pass is its cut"
+        );
+        assert_eq!(passed.caption, Some(ModuleCaption::AttackName));
+        assert!(
+            swordie_direct(&mut st, 6, seats).shot.is_none(),
+            "arm 6's first own tick makes no second shot"
+        );
+        assert!(swordie_direct(&mut st, 6, seats).shot.is_none());
+        st.body_pass_now = true;
+        assert_eq!(
+            swordie_direct(&mut st, 7, seats).shot.map(|s| s.frames),
+            Some(0x100),
+            "arm 6's pass is the 0x100-frame pull"
         );
     }
 

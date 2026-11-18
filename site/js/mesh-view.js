@@ -184,6 +184,15 @@
         retailStep: Math.max(1, meta.retailStep | 0 || 2),
         sampler: null,
         parts: new Float32Array(meta.partCount * 6),
+        /* Optional object -> pose-row map (`-1` = the object is not drawn):
+         * `objectCount` entries for the whole clip, or `frameCount *
+         * objectCount` frame-major when it changes mid-clip. Without it each
+         * object hangs from its own row and an object past `partCount`
+         * collapses. `liveIds` is the per-vertex object id of the posed
+         * frame with undrawn objects set to 0xFFFFFFFF, for framing. */
+        objectRows: meta.objectRows && meta.objectCount ? meta.objectRows : null,
+        objectCount: meta.objectCount | 0,
+        liveIds: null,
         /* Opt-out: `loop: false` plays the clip once and holds its last pose,
          * firing `onEnd` once. A looping clip (the default) has no end. */
         loop: meta.loop !== false,
@@ -233,11 +242,12 @@
      * posed once, without uploading), so a flip / lunge stays in frame. */
     _refit() {
       if (!this.anim) return;
-      const ids = this._objIds, pc = this.anim.partCount;
+      const pc = this.anim.partCount;
       const lo = [Infinity, Infinity, Infinity];
       const hi = [-Infinity, -Infinity, -Infinity];
       const accum = () => {
         const o = this.anim.out, n = o.length / 3;
+        const ids = this.anim.liveIds || this._objIds;
         for (let v = 0; v < n; v++) {
           if (ids[v] >= pc) continue;
           for (let k = 0; k < 3; k++) {
@@ -329,16 +339,28 @@
       const A = this.anim;
       if (!A) return;
       const ff = ((frameIdx % A.frameCount) + A.frameCount) % A.frameCount;
-      this._poseParts(A.frames, ff * A.partCount * 6, out);
+      this._poseParts(A.frames, ff * A.partCount * 6, out, ff);
     }
 
     /* Pose the mesh from per-part `[tx, ty, tz, rx, ry, rz]` rows starting
      * at `src[at]` (a keyframe of the clip, or a sampler's blended row) into
-     * `out`. */
-    _poseParts(src, at, out) {
+     * `out`. `frameIdx` picks the frame's object -> row map, when the clip
+     * carries one. */
+    _poseParts(src, at, out, frameIdx) {
       const A = this.anim;
       const base = this._basePos;
       const ids = this._objIds, n = base.length / 3;
+      const rows = A.objectRows, oc = A.objectCount;
+      let rowAt = 0;
+      if (rows && rows.length !== oc) {
+        const ff = (((frameIdx | 0) % A.frameCount) + A.frameCount) % A.frameCount;
+        rowAt = ff * oc;
+      }
+      let live = null;
+      if (rows && out === A.out) {
+        if (!A.liveIds || A.liveIds.length !== n) A.liveIds = new Uint32Array(n);
+        live = A.liveIds;
+      }
       /* Precompute each bone's sin/cos + translation once per frame. */
       const sin = new Float32Array(A.partCount * 3);
       const cos = new Float32Array(A.partCount * 3);
@@ -354,7 +376,12 @@
         }
       }
       for (let v = 0; v < n; v++) {
-        const o = ids[v];
+        let o = ids[v];
+        if (rows) {
+          const r = o < oc ? rows[rowAt + o] : -1;
+          if (live) live[v] = r < 0 ? 0xFFFFFFFF : o;
+          o = r < 0 ? A.partCount : r;
+        }
         if (o >= A.partCount) {
           /* A vertex whose object the clip doesn't cover has no joint to hang
            * from; collapse it rather than leave it floating in object space. */
@@ -499,9 +526,10 @@
       const t = A.loop ? raw : Math.min(raw, last);
       const f = A.loop ? Math.floor(t) % A.frameCount : Math.floor(t);
       if (A.sampler) {
-        let key;
+        let key, kf;
         if (this.smooth) {
           key = t;
+          kf = Math.floor(t);
           A.sampler.sample_smooth(t, A.parts);
         } else {
           /* The retail cursor: whole battle frames of vsyncs, each moving it
@@ -512,10 +540,11 @@
           key = Math.floor(gf * (A.fps * 16) / VSYNC_HZ + 1e-6);
           if (!A.loop) key = Math.min(key, last * 16);
           if (key === this._lastSample) return;
+          kf = Math.floor(key / 16);
           A.sampler.sample_retail(key, A.parts);
         }
         this._lastSample = key;
-        this._poseParts(A.parts, 0, A.out);
+        this._poseParts(A.parts, 0, A.out, kf);
         this.renderer.updatePositions(A.out);
         this._updateTrail(f);
         if (typeof this.onPose === 'function') this.onPose();

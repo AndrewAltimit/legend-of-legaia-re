@@ -451,7 +451,11 @@ impl World {
             // (`0x801F6F5C..0x801F6F94`) and this pass stores the second into the
             // first (`0x801F7738..0x801F7758`): the sword in its hand, which no
             // stream's part count reaches on its own channel.
-            (0xC, true) => self.casting.creature_channel_object = Some((14, 16)),
+            (0xC, true) => {
+                self.casting.creature_channel_object =
+                    legaia_engine_effects::summon::creature_channel_object(932)
+                        .map(|s| (s.channel, s.object));
+            }
             (0x12, true) => {
                 for (e, _) in self.ra_seru_row(monster_count) {
                     if let Some(a) = self.actors.get_mut(e) {
@@ -485,9 +489,7 @@ impl World {
             (0xC, true) | (0xD, _) | (0xE, true) | (0xF, _) => Some(2),
             _ => None,
         };
-        if rate.is_some() {
-            self.casting.module_cam.creature_rate = rate;
-        }
+        self.ra_seru_creature_rate(creature, rate);
         if (phase, passed) == (0xC, true)
             && let Some(a) = self.actors.get_mut(usize::from(creature))
         {
@@ -707,9 +709,7 @@ impl World {
             (0xE, true) => Some(8),
             _ => None,
         };
-        if rate.is_some() {
-            self.casting.module_cam.creature_rate = rate;
-        }
+        self.ra_seru_creature_rate(creature, rate);
         if let Some(a) = self.actors.get_mut(usize::from(creature)) {
             if matches!(phase, 0x13 | 0x14) {
                 a.move_state.world_z = a.move_state.world_z.wrapping_add((0x20 * D) as i16);
@@ -718,6 +718,27 @@ impl World {
                 a.battle.render_color = 0;
                 a.battle.render_flag = FLAG_PARKED;
             }
+        }
+    }
+
+    /// A rate store on the creature's `+0x21D` (`sb ..,0x21D(s4)`), made on
+    /// the creature at once: the module runs ahead of the frame's anim tick,
+    /// so the pass that stores the rate already advances the clip at it.
+    /// Handed to the director's seat writes instead, which ran ahead of this
+    /// call, it landed a pass late: Ozma's creature cursor read `4` ahead of
+    /// the recording's from arm 9 (arm 8's rate `2`) and `4` behind from arm
+    /// 19 (arm `0x12`'s `4`), Meta's `16` ahead through arms 7..10 and
+    /// Terra's `4` through arms 9 and 12. A creature not yet seated keeps
+    /// the store for the seat writes.
+    fn ra_seru_creature_rate(&mut self, creature: u8, rate: Option<u8>) {
+        let Some(r) = rate else { return };
+        match self
+            .actors
+            .get_mut(usize::from(creature))
+            .filter(|a| a.active)
+        {
+            Some(a) => a.battle.anim_rate = AnimRate(r),
+            None => self.casting.module_cam.creature_rate = Some(r),
         }
     }
 
@@ -739,7 +760,7 @@ impl World {
     /// | `0x19` (`0x801F91F0..`) | pass | row restored |
     ///
     /// PORT: overlay_summon_ozma_0934_801f6a40 (the row and creature stores)
-    pub(in crate::world::battle::cast_band) fn apply_ozma_writes(
+    pub(in crate::world) fn apply_ozma_writes(
         &mut self,
         phase: u8,
         passed: bool,
@@ -775,9 +796,7 @@ impl World {
             (0xC, true) | (0x12, true) => Some(4),
             _ => None,
         };
-        if rate.is_some() {
-            self.casting.module_cam.creature_rate = rate;
-        }
+        self.ra_seru_creature_rate(creature, rate);
         if (phase, passed) == (0x12, true)
             && let Some(p) = self
                 .actors
@@ -996,8 +1015,8 @@ impl World {
                     a.battle.anim_rate = AnimRate(1);
                 }
             }
-            (6, _) => self.casting.module_cam.creature_rate = Some(1),
-            (7, _) => self.casting.module_cam.creature_rate = Some(4),
+            (6, _) => self.ra_seru_creature_rate(creature, Some(1)),
+            (7, _) => self.ra_seru_creature_rate(creature, Some(4)),
             _ => {}
         }
         if matches!(phase, 5..=7) {

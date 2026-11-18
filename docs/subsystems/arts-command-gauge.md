@@ -192,7 +192,7 @@ There is no alternate seed. All four `ctx + 0x6DC` stores in the builder (`0x801
 
 There are three exits, two of them pad-driven. All are in `FUN_801D0748`'s `0x50` arm, and all consult the committed count `ctx+0x19` (`0x8(s1)`).
 
-**Auto-end.** `801d2054`..`801d2078` walks the four costs at `ctx+0x14` against the pool, leaving `s0 = 0` when at least one is affordable and `s0 = 4` when none is. `801d208c bne s0,zero,801d20ac` then writes `0x5A`.
+**Auto-end.** `801d2054`..`801d2078` walks the four costs at `ctx+0x14` against the pool, leaving `s0 = 0` when at least one is affordable and `s0 = 4` when none is. `801d208c bne s0,zero,801d20ac` then writes `0x5A`, ahead of the confirm and cancel tests. The scan runs only on a pass with no direction in `s2`: a direction runs case `0xB` and returns through `801d1f98 j 0x801d20d4`. So the exhausting press does not end the entry itself; the next pass without a direction does, and a direction held across the pump's 32-vsync window keeps the entry open, since every pass carries it.
 
 **Confirm** uses the configurable mask `_DAT_800846D0`, the same one the round prompt and every menu read:
 
@@ -219,6 +219,8 @@ There are three exits, two of them pad-driven. All are in `FUN_801D0748`'s `0x50
 With a typed buffer the cancel is a restart, not an exit. Case `0x26` of `FUN_801D388C` wipes all sixteen queue bytes (`801d52d4 sb zero,0x1df(v0)` under `801d52d8 sltiu v0,s3,0x10`), re-seeds the pool from AGL (`801d535c lhu v0,0x154(v0)` -> `801d5364 sh v0,0x6(s6)`) and zeros the count (`801d536c sb zero,0x8(s4)`). Nothing writes `ctx+0x06`, so the flow stays in `0x50`.
 
 **The pad word is packed.** `s2` is built at `801d0b20` as `_DAT_8007B874 | _DAT_8007B938`, the packed layout whose byte halves are swapped against the raw BIOS word. The entry's four direction tests at `801d1e60`..`801d1f38` (`0x8000 / 0x1000 / 0x4000 / 0x2000`) are therefore Left / Up / Down / Right, not Square / Triangle / Cross / Circle.
+
+**A held direction repeats.** `_DAT_8007B938` is the pad pump's AND over its 32-vsync ring of held words, so a direction held that long is in `s2` on every pass. A PCSX-Redux run from `gaza2_card_first_menu` (Vahn, a 198 pool, 30 a command) held Left from the entry's open: the press recorded one Left, then one Left a pass (every 3 vsyncs) from 33 vsyncs in until the pool stood at 18, and the flow stayed in `0x50` for the 150 vsyncs the button stayed down. The port folds the window into the entry's press on the tick that opens a battle frame (`World::battle_command_held_repeat`), and the session's auto-end waits while the window holds a direction (`ArtsCommandPad::window_dirs`).
 
 <a id="the-auto-command-string-preseed-on-open-replay-on-a-bare-confirm"></a>
 

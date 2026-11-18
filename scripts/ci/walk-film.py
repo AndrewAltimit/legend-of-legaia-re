@@ -33,6 +33,35 @@ def passes(rows):
     return out
 
 
+def record_retail(a, out, fast):
+    env = dict(os.environ, LEGAIA_PAD_SCRIPT=a.pad)
+    subprocess.run(
+        ["timeout", "--kill-after=5", str(max(a.frames, 300)), "bash",
+         str(REPO / "scripts/pcsx-redux/run_probe.sh"),
+         # No window: a windowed probe in an agent or CI shell never quits.
+         *(["--fast"] if fast else []), *([] if a.window else ["--headless"]), "--iso", a.iso,
+         "--scenario", a.label, "--lua", str(REPO / "scripts/pcsx-redux/autorun_field_walk_film.lua"),
+         "--frames", str(a.frames), "--out-dir", str(out)],
+        cwd=REPO, env=env, check=False,
+    )
+
+
+def stalled(path, tail=60):
+    """True when the pacer's ring cursor holds for the film's last `tail` vsyncs.
+
+    The cursor `0x8007B758` moves once a game frame on any mode, so a film
+    whose cursor never moves is a CPU that stopped running the game, not a
+    game holding still.
+    """
+    try:
+        rows = read(path)
+    except FileNotFoundError:
+        return False
+    if len(rows) < tail or "ring_cur" not in rows[0]:
+        return False
+    return len({r["ring_cur"] for r in rows[-tail:]}) == 1
+
+
 def first_moved(rows, n=0):
     for i, r in enumerate(rows):
         if (r["x"], r["z"]) != (rows[0]["x"], rows[0]["z"]):
@@ -50,22 +79,21 @@ def main():
     ap.add_argument("--no-retail", action="store_true", help="reuse the retail film")
     ap.add_argument("--no-engine", action="store_true", help="reuse the engine film")
     ap.add_argument("--window", action="store_true", help="show the PCSX-Redux window (default: --headless)")
+    ap.add_argument("--interp", action="store_true",
+                    help="record retail on the interpreter (default: the recompiler, falling back to the interpreter when the film stalls)")
     ap.add_argument("--run", action="store_true", help="force the engine's Field Move option to Run (default: the state's own option word, as retail reads it)")
     ap.add_argument("--show", type=int, default=40, help="pass rows printed")
     a = ap.parse_args()
     out = Path(a.out or REPO / "captures" / "walk-film" / a.label)
     out.mkdir(parents=True, exist_ok=True)
     if not a.no_retail:
-        env = dict(os.environ, LEGAIA_PAD_SCRIPT=a.pad)
-        subprocess.run(
-            ["timeout", "--kill-after=5", str(max(a.frames, 300)), "bash",
-             str(REPO / "scripts/pcsx-redux/run_probe.sh"),
-             # No window: a windowed probe in an agent or CI shell never quits.
-             "--fast", *([] if a.window else ["--headless"]), "--iso", a.iso, "--scenario", a.label,
-             "--lua", str(REPO / "scripts/pcsx-redux/autorun_field_walk_film.lua"),
-             "--frames", str(a.frames), "--out-dir", str(out)],
-            cwd=REPO, env=env, check=False,
-        )
+        record_retail(a, out, fast=not a.interp)
+        if not a.interp and stalled(out / "walk_film.csv"):
+            # The recompiler can wedge on a state (the CPU parks in a BIOS
+            # handler and the frame pacer never runs again), which reads as a
+            # retail game that freezes. The interpreter runs it.
+            print("[walk-film] retail frame pacer never advanced under the recompiler; re-recording on the interpreter")
+            record_retail(a, out, fast=False)
     if not a.no_engine:
         env = dict(
             os.environ,

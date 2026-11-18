@@ -318,16 +318,16 @@ impl World {
     /// `0x801D0BA8..0x801D0BCC`), clearing the latch.
     ///
     /// The parked word is consumed by [`Self::take_command_pad_buffer`].
-    /// Not modelled: the same exit under `ctx[+0x26A] != 0`
-    /// (`0x801D0B4C..0x801D0B54`), and the held-for-32-vsyncs term of `s2`
-    /// (`_DAT_8007B938`) - the port's word is the newly-pressed edge alone.
+    /// `s2` carries the pump's 32-vsync held window as well as the edge
+    /// ([`Self::battle_command_held_repeat`]). Not modelled: the same exit
+    /// under `ctx[+0x26A] != 0` (`0x801D0B4C..0x801D0B54`).
     ///
     /// PORT: FUN_801D0748 (`0x801D0B2C..0x801D0BCC`)
     pub(in crate::world) fn battle_command_glide_gate(&mut self) -> bool {
         use legaia_engine_system::option_values::BattleCommandOpt;
         let ret = self.battle.widget_glide_return;
         if ret != 0 {
-            let pressed = self.input.pad() & !self.input.pad_prev() != 0;
+            let pressed = self.battle_command_s2() != 0;
             if ret < Self::GLIDE_PAD_BUFFER_BELOW
                 && pressed
                 && self.battle.command_pad_buffer.is_none()
@@ -347,18 +347,57 @@ impl World {
         false
     }
 
-    /// This tick's command pad edges.
+    /// The buttons the pad pump's 32-vsync held window (`_DAT_8007B938`,
+    /// [`legaia_engine_system::retail_pad::RetailPadState::held_32`]) adds
+    /// to this tick's command-flow pad word, in the engine's raw layout.
+    ///
+    /// Without the cross-button entry `FUN_801D0748` builds its pad word as
+    /// `s2 = _DAT_8007B874 | _DAT_8007B938` (`0x801D0B0C..0x801D0B20`; the
+    /// cross-button entry's walk at `0x801D07FC..0x801D080C` reads the same
+    /// pair), so a button held across the whole window reads as pressed on
+    /// every pass. The flow runs once a battle frame and the engine once a
+    /// vsync, so the window counts on the tick that opens a frame only, and
+    /// a held button repeats at the pass rate as retail's does. A PCSX-Redux
+    /// run from `gaza2_card_first_menu` holding Left: the round prompt takes
+    /// Begin on the press, then the ring's Attack and the prompt's `Auto`
+    /// about 33 vsyncs in; held in the arts entry it records one Left a pass
+    /// (every 3 vsyncs) until the pool is spent.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D0B0C..0x801D0B20`)
+    pub(in crate::world) fn battle_command_held_repeat(&self) -> u16 {
+        let pass_tick = !self.toggles.battle_sm_frame_cadence
+            || self
+                .battle
+                .frame_clock
+                .ticks_into_frame(self.clock.display_frames)
+                == 0;
+        if pass_tick {
+            self.input.retail_pad().held_32 as u16
+        } else {
+            0
+        }
+    }
+
+    /// This tick's command-flow pad word `s2`: the newly pressed buttons plus
+    /// the held window ([`Self::battle_command_held_repeat`]), raw layout.
+    pub(in crate::world) fn battle_command_s2(&self) -> u16 {
+        (self.input.pad() & !self.input.pad_prev()) | self.battle_command_held_repeat()
+    }
+
+    /// This tick's command pad word, as the session's input bundle.
     pub(in crate::world) fn battle_command_pad_edges(
         &self,
     ) -> legaia_engine_battle_menus::battle_input::BattleCommandInput {
         use legaia_engine_system::input::PadButton;
+        let s2 = self.battle_command_s2();
+        let on = |b: PadButton| s2 & b.mask() != 0;
         legaia_engine_battle_menus::battle_input::BattleCommandInput {
-            up: self.input.just_pressed(PadButton::Up),
-            down: self.input.just_pressed(PadButton::Down),
-            left: self.input.just_pressed(PadButton::Left),
-            right: self.input.just_pressed(PadButton::Right),
-            cross: self.input.just_pressed(PadButton::Cross),
-            circle: self.input.just_pressed(PadButton::Circle),
+            up: on(PadButton::Up),
+            down: on(PadButton::Down),
+            left: on(PadButton::Left),
+            right: on(PadButton::Right),
+            cross: on(PadButton::Cross),
+            circle: on(PadButton::Circle),
             // The ring's Attack arm reads the option word with the pad.
             select_attack: self.toggles.select_attack,
         }
@@ -375,7 +414,7 @@ impl World {
     ) -> legaia_engine_battle_menus::battle_input::BattleCommandInput {
         let live = self.battle_command_pad_edges();
         let parked = self.battle.command_pad_buffer.take();
-        let pressed = self.input.pad() & !self.input.pad_prev() != 0;
+        let pressed = self.battle_command_s2() != 0;
         match parked {
             Some(p) if !pressed => legaia_engine_battle_menus::battle_input::BattleCommandInput {
                 select_attack: live.select_attack,

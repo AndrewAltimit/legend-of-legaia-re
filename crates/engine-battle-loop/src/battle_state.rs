@@ -867,6 +867,11 @@ pub struct BattleState {
     pub cast_arm_step_on: bool,
     /// The frame driver's cost history (`FrameCostRing`), one push a pass.
     pub frame_cost_ring: crate::frame_clock::FrameCostRing,
+    /// The ring as it stood before the last pass's push, while that pass
+    /// was priced by an arm table: a summon pass whose arm a part's stager
+    /// call steps after the push is priced again on the arm it leaves on
+    /// (`World::reprice_pass_on_rendezvous`).
+    pub frame_cost_ring_before: Option<crate::frame_clock::FrameCostRing>,
     /// The step the ring read on the last pass.
     pub frame_cost_step: u8,
     /// The GPU's wait over the table the host drew last, in hblanks (draw
@@ -928,6 +933,10 @@ pub struct BattleState {
     /// walk and the framing's pull-in run on through both
     /// (`World::arm_capture_read_wait`). `0` holds nothing.
     pub capture_read_until: u64,
+    /// The battle frame the capture band's `0x6E` poll answers on when a
+    /// harness seats the recording's own pass count
+    /// (`CastFxState::capture_read_seat`). No play path sets it.
+    pub capture_read_frame_until: Option<u64>,
     /// The battle frame the frame driver's discarded `rand()` draw last ran
     /// on (`World::tick_battle_pass_draw`) - one draw a
     /// battle frame, however many vsyncs it spans.
@@ -1707,6 +1716,7 @@ impl BattleState {
             frame_stretch: None,
             cast_arm_step_on: false,
             frame_cost_ring: Default::default(),
+            frame_cost_ring_before: None,
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             drawn_table_cost: None,
             frame_cost_state: None,
@@ -1721,6 +1731,7 @@ impl BattleState {
             retail_rand_track: None,
             death_game_deal_seat: None,
             capture_read_until: 0,
+            capture_read_frame_until: None,
             pass_draw_frame: None,
             sm_pass_frame: None,
             frame_start_ticks: [None; 3],

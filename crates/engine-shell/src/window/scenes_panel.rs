@@ -11,7 +11,8 @@
 //! door transition take, then rebuilds the window's render state the way a
 //! door does, after the two picker rules the page and the `--scene` entry
 //! share: the scene staged at its free-roam visit and the party seated where
-//! the disc's doors land it. The party and the bag come along.
+//! the disc's doors land it - on the arrival whose entry cutscene plays there,
+//! for a scene in the engine's entry-beat table. The party and the bag come along.
 //!
 //! The page refuses where a jump would tear something down mid-way: a
 //! front-end screen (logos, title, save select, pause menu, game over), a
@@ -129,7 +130,9 @@ const NOTE_LINES: usize = 2;
 const CONTROLS: &str = "Arrows pick, page  Enter go  Esc close";
 /// [`CONTROLS`] on a controller (`settings_panel::pad_controls`).
 const PAD_CONTROLS: &str = "D-pad pick, page  {cross} go  {circle} close";
-const FLIP_HINT: &str = "L1/R1 or Tab: tools";
+/// The page `Tab` (or `R1`) flips to, named in the heading's flip hint
+/// (`PlayWindowApp::flip_hint`).
+const FLIP_TO: &str = "tools";
 
 impl PlayWindowApp {
     /// Why a jump cannot be made now, if it cannot.
@@ -172,8 +175,9 @@ impl PlayWindowApp {
         }
         // The picker rules every host's picker asks: a field scene is staged
         // at its free-roam visit (`World::stage_picker_entry`), and the party
-        // is seated where the disc's doors land it
-        // (`SceneHost::arm_picker_entry_seat`) - the page's `enter_field` and
+        // is seated where the disc's doors land it, on the story arrival
+        // whose entry beat plays there when the scene has one
+        // (`SceneHost::arm_picker_story_entry`) - the page's `enter_field` and
         // the `--scene` entry make the same two calls.
         let world_map = legaia_engine_scene::scene::is_world_map_scene(&row.label);
         if !world_map {
@@ -182,7 +186,7 @@ impl PlayWindowApp {
                 .world
                 .stage_picker_entry(&row.label, false);
         }
-        self.session.host.arm_picker_entry_seat(&row.label);
+        self.session.host.arm_picker_story_entry(&row.label);
         let opts = self.field_live_opts.clone();
         match self.session.enter_scene_live(&row.label, &opts) {
             Ok(mode) => {
@@ -241,12 +245,8 @@ impl PlayWindowApp {
             (left, Y0 + 1),
             heading,
         );
-        put(
-            &mut out,
-            FLIP_HINT,
-            (right - width(FLIP_HINT), Y0 + 1),
-            text,
-        );
+        let flip = self.flip_hint(FLIP_TO);
+        put(&mut out, &flip, (right - width(&flip), Y0 + 1), text);
         let mut y = Y0 + super::settings_panel::HEAD_H;
         for (i, row) in rows.iter().enumerate().skip(page.scroll).take(SHOWN) {
             let focused = i == page.cursor;

@@ -141,6 +141,18 @@ impl SceneHost {
         ExpansionReloadSeat::Field { map, seat }
     }
 
+    /// Settle a hot reload's re-entry of the map the player stood on
+    /// ([`Self::expansion_reload_seat`], then
+    /// [`Self::enter_expansion_map_seated`]): a reload is not an arrival, so
+    /// no place-name banner, and the scene comes straight up with the pad
+    /// free rather than out of the installer's fade to black
+    /// ([`legaia_engine_core::world::World::retire_map_install_tail`]) - the
+    /// workbench re-enters on every edit. Both hosts' reloads call it.
+    pub fn settle_expansion_reload(&mut self) {
+        self.world.cutscene.text_balloon = None;
+        self.world.retire_map_install_tail();
+    }
+
     /// Enter map `map_id` of the active pack as a playable field scene, the
     /// player at spawn `spawn` (the map's first spawn when empty).
     ///
@@ -255,6 +267,11 @@ impl SceneHost {
             player.move_state.render_26 = (facing & 0x0FFF) as i16;
         }
         self.world.recentre_field_window_on_player();
+        // A quiet arrival (the workbench preview's entry) comes straight up
+        // on the map: no fade out of black, no pad hold.
+        if self.quiet_expansion_arrivals {
+            self.world.retire_map_install_tail();
+        }
         // The place-name banner: the loader's balloon, carrying the map's
         // display name where a retail scene's MAN carries its own.
         if !self.quiet_expansion_arrivals

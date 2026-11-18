@@ -491,6 +491,23 @@ pub fn build_hybrid_pack_mesh(
     merge_hybrid_halves(mesh, &cmesh)
 }
 
+/// [`build_hybrid_pack_mesh`] **posed** at one set of per-object rigid
+/// transforms: a kingdom landmark whose object bind names a clip (Conkram's
+/// shell lid, `map03` record 458) draws at its clip frame, not as the raw
+/// object-local mesh. Same two halves through the `*_posed_rot` builders the
+/// field kernel ([`build_hybrid_env_mesh_posed`]) uses, merged with the pack
+/// kernel's rules (no hybrid dedup, so the stream stays index-aligned with
+/// the unposed build's).
+pub fn build_hybrid_pack_mesh_posed(
+    tmd: &legaia_tmd::Tmd,
+    raw: &[u8],
+    offsets: &[([i16; 3], [i16; 3])],
+) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
+    let mesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, offsets);
+    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(tmd, raw, offsets);
+    merge_hybrid_halves(mesh, &cmesh)
+}
+
 /// Merge the untextured vertex-colour half into the textured half's vertex
 /// stream, producing the parallel `[r, g, b, flag]` array. Both halves carry a
 /// colour: the untextured half's is its **fill**, the textured half's is its

@@ -91,15 +91,17 @@ pub struct FieldLocomotion {
     /// `+Z`). Engines that orbit the camera write the current azimuth here
     /// each frame; the locomotion remap quantises it to the nearest 90°.
     pub camera_azimuth: u16,
-    /// Opt-in precise-movement mode for pad locomotion. When set,
+    /// Precise-movement mode for pad locomotion. When set,
     /// [`crate::world::World::step_field_locomotion`] decodes the held direction
     /// **continuously** instead of through retail's 4/8-way quantisation:
     /// the camera azimuth is applied at full angular resolution (not
     /// snapped to the nearest 90°), key diagonals walk true 45° vectors at
     /// full speed, and an analog stick ([`legaia_engine_system::input::InputState::lstick`])
-    /// passes its angle through untouched. Off by default - the default
-    /// path stays bit-identical to the retail-faithful quantised remap
-    /// (replays / oracles are unaffected unless a host opts in).
+    /// passes its angle through untouched. Off in the `World` default - the
+    /// default path stays bit-identical to the retail-faithful quantised
+    /// remap, so replays, oracles and walk films are unaffected. The play
+    /// hosts turn it on from `OptionsState::precise_movement`, which defaults
+    /// on and which `--retail` / `pin_retail` force off.
     pub precise_movement: bool,
     /// Field Move option: `false` = Walk, `true` = Run (retail config word
     /// `0x800846CC`, the pause menu's "Field Move" row - see
@@ -162,6 +164,15 @@ pub struct FieldLocomotion {
     /// bit) does not stop this frame's ease. Refreshed at the top of every
     /// tick and again at the field walk gate.
     pub locked_at_walk_gate: bool,
+    /// Scratchpad `0x1F800394 & 0x10000` as the player's field tick read it
+    /// (`0x801D1704..0x801D1714`): the let-through that sends a locked,
+    /// script-carried player through the focus pin. The tick runs ahead of
+    /// the objects' record slices, so a record that drops the bit on the
+    /// pass its last leg settled still sees the focus pinned onto the
+    /// player that pass (`tower_field_walk`'s lift: the bit falls at vsync
+    /// `215` with the focus already on the landing). Refreshed with
+    /// [`Self::locked_at_walk_gate`].
+    pub let_through_at_player_tick: bool,
     /// Sub-step remainder carried between precise-movement frames, in world
     /// units per axis (|carry| < one collision step). Lets shallow movement
     /// angles accumulate distance across frames instead of rounding to
@@ -405,6 +416,7 @@ impl FieldLocomotion {
             scene_ctrl_61: 0,
             camera_mode_byte: None,
             locked_at_walk_gate: false,
+            let_through_at_player_tick: false,
             precise_move_carry: (0.0, 0.0),
             player_scale_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             player_8e: 0,

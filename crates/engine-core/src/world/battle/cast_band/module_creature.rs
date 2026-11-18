@@ -356,7 +356,7 @@ impl World {
                     )),
                 );
             }
-            if arm == 0 && !std::mem::take(&mut self.casting.module_viguro_seated_early) {
+            if arm == 0 {
                 self.seat_viguro_creature();
             }
             if let Some(record) = viguro_stager_record(arm) {
@@ -372,8 +372,8 @@ impl World {
     /// PROT 0909's stager arm 0 on the creature (`0x801F7B2C..0x801F7B5C`):
     /// the installer's seat at `(0, 0xC00)` facing `0x800`, its clip at the
     /// top and its rate `2`. Run on the caller's frame by
-    /// [`Self::seat_viguro_stager_spawns_now`], or by the module tick that
-    /// runs the queued call.
+    /// [`Self::run_viguro_rendezvous_now`], or by the module tick for a call
+    /// a record's clock makes (`module_record_clocks`).
     pub(in crate::world) fn seat_viguro_creature(&mut self) {
         use legaia_engine_cast::cast_module_camera::ModuleSeat;
         let seated = ModuleSeat {
@@ -418,6 +418,63 @@ impl World {
         }
     }
 
+    /// Run PROT 0909's two rendezvous arms (`0`, `1`) this frame's op-`0x20`
+    /// calls owe on the caller's frame, as retail's call inside the caller's
+    /// move-VM step does (`FUN_801F7AF4` -> `FUN_80050ED4`): the phase step,
+    /// the creature's seat and spark selector `2` (arm 0), the held pale-blue
+    /// rise (arm 1).
+    ///
+    /// Each half shows on a retail recording. Arm 0's selector is on the body
+    /// for the next frame's draw, whose decode sheds the first sparks (six
+    /// emitter words on a `--watch 0x80009010` recording, the frame after the
+    /// call). And the frame that made the call already runs the next arm: the
+    /// recorder's first row behind it reads phase `4` and a cost of `246`
+    /// hblanks, the step-`2` rung of arm 4's table entry, so the next pass
+    /// opens on step `2`. Queued to the module's next tick, the step stayed
+    /// with arm 3, the pass after the call ran on step `1` and shed no spark,
+    /// and the cast's `rand()` stream parted from retail's there for the rest
+    /// of the film. The pass is priced again on the phase it now leaves on
+    /// ([`Self::reprice_pass_on_rendezvous`]).
+    pub(in crate::world) fn run_viguro_rendezvous_now(&mut self) {
+        let calls = std::mem::take(&mut self.casting.module_stager_calls);
+        let (now, keep): (Vec<_>, Vec<_>) = calls
+            .into_iter()
+            .partition(|(arm, _)| matches!(*arm, 0 | 1));
+        self.casting.module_stager_calls = keep;
+        if now.is_empty() {
+            return;
+        }
+        let seat_slot = self
+            .casting
+            .summon_actor_slot
+            .unwrap_or(legaia_engine_cast::cast_module_ticks::SUMMON_SEAT);
+        let mut ctx = self.cast_module_ctx();
+        let phase_in = ctx.phase;
+        for (arm, _) in now {
+            let orig = self.cast_view(seat_slot);
+            let mut seat = orig;
+            legaia_engine_cast::cast_module_ticks::viguro_stager(&mut ctx, &mut seat, arm);
+            let mut live = self.cast_view(seat_slot);
+            live.fold_writes(&orig, &seat);
+            self.write_cast_view(seat_slot, &live);
+            if arm == 1 {
+                self.push_stager_fade(
+                    &legaia_engine_cast::cast_module_ticks::VIGURO_STAGER_FADE,
+                    0x801F_7C34,
+                    Some(legaia_overlay_images::cast_presentation::HandleSlot::Ctx(
+                        0x102C,
+                    )),
+                );
+            } else {
+                self.seat_viguro_creature();
+            }
+        }
+        self.casting.module_phase = ctx.phase;
+        if ctx.phase != phase_in {
+            self.reprice_pass_on_rendezvous();
+        }
+    }
+
     /// Seat the records PROT 0909's seating arms (`2`, `3`, `4`, `6`) owe
     /// this frame's op-`0x20` calls, on the caller's frame: retail makes the
     /// call inside the caller's move-VM step (`FUN_801F7AF4` ->
@@ -425,8 +482,9 @@ impl World {
     /// instead, every ring arm 12's emitter `0x801F8158` seats stood a battle
     /// frame behind retail's - one `+0xC0` step of radius - and the expanding
     /// rings read about two thirds of retail's size frame by frame. The
-    /// rendezvous arms `0` / `1` stay queued for the tick, which owns the
-    /// phase they step. Returns whether anything was seated.
+    /// rendezvous arms `0` / `1` run just ahead of these
+    /// ([`Self::run_viguro_rendezvous_now`]). Returns whether anything was
+    /// seated.
     pub(in crate::world) fn seat_viguro_stager_spawns_now(&mut self) -> bool {
         use legaia_engine_cast::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
         let calls = std::mem::take(&mut self.casting.module_stager_calls);

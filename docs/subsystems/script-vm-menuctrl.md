@@ -234,6 +234,16 @@ The records a script hands it are text pages, and the child is the narration
 roller `FUN_80037174`: the [crawl](cutscene.md#inline-narration-format), on
 whatever context the op runs on.
 
+The plain form `4C 80 N` runs the crawl on the executing context, and only
+talk records carry it: the three read-a-letter talks (`bylon` `P1[47]`,
+Maya's unfinished letter; `dolk` `P1[27]`, Drake III's; `retock` `P1[33]`,
+Bon Saryu's). Each dims the screen with op `0x34`, rolls the letter, waits on
+`33 0A` (its own halt bit, which the roller clears as it retires the last
+page), lifts the dim and closes with one more line. The talk runner opens the
+roller at the op and parks the talk on that test while it scrolls
+(`legaia_scene_formats::cutscene_text::crawl_at`). Disc-gated:
+`engine-scene-host/tests/letter_crawl_talk_disc.rs`.
+
 #### `4C 81`: the actor tint
 
 `+0x74 = colour` (`FUN_8003CEB8`, 24-bit `0xBBGGRR`) and `+0x78 = blend`
@@ -1318,6 +1328,16 @@ of each scene, twenty-one placements in fourteen scenes stand on a rate their
 spawn section set (`balden`, `balden2`, `bubu1`, `edstati3`, `garmel`, `jiji`,
 `koin2`, `koin3`, `nilboa`, `nilboa2`, `other7`, `station3`, `teien`,
 `town0d`), at `2`, `4` or `16`.
+
+The ramp form moves the same word. With a non-zero tick count the arm hands
+the scheduler `&actor+0x6A`, the live `lh +0x6A` as the start and the halved
+value as the end (`0x801E11D4..0x801E11DC`, then the exit `0x801E2054`, kind
+`2`). `bubu2`'s possessed villagers (`P1[2..=5]`) open with
+`4C 41 08 00 01 00` and the like, a one-frame ramp, and retail plays their
+header clip at `4` a vsync (`12` a pass at step `3`). Port:
+`FieldHostImpl::ramp_ctx_slot` installs it on the placement's slot ramps
+(`RAMP_DEST_RATE`) or an object's (`ObjectRampSlot::Rate6A`); dropped, the
+villagers shook at the template's `8`.
 
 Port: a clip a script binds steps live (`World::bind_npc_scene_clip`). A
 header clip is bound by the host from its clip player, at the step the record

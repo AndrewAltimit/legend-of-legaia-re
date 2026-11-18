@@ -1335,6 +1335,19 @@ disc cache, as the minigames page's Muscle Dome frame does, and runs with the
 visitor's play-page options. What the engine leaves out of a module is what the
 frame leaves out.
 
+The Model only view plays the creature's clips without the module, but it keeps
+the one module store that decides what the body draws. Jedo's scythe and Meta's
+sword sit past every clip's part count, and their modules move each onto another
+channel of the creature's model table from a given clip on
+(`engine-effects::summon::creature_channel_object`, the rule the battle engine
+uses too). `LegaiaSummons::clip_object_rows` and `sequence_object_rows` give, per
+TMD object, the pose row it hangs from or `-1` when the clip leaves it undrawn, and
+`site/js/mesh-view.js` poses each object from its row (`objectRows`). So the weapon
+draws in the hand from that clip on, the channel's own object yields to it, and
+an object past a clip's part count stays undrawn as the battle draw pass has it.
+The whole-cast timeline pads every clip to the widest one's rows, so Meta's
+fifteen-part clips play in it too.
+
 The Tactical Arts page uses the same slot with
 `play.html?art=<arrows>&char=<name>&target=<seat>&embed=1`, which seats that
 character (`set_active_party_spec`), learns every art, and hands the entered arrows
@@ -1371,7 +1384,10 @@ turn and idles at the next prompt. A relaunch abandons the previous fight
 (`World::abandon_live_battle`), possibly mid-cast. The abandon drops that fight's
 CD-XA drive state, and the skip stops its clip. Otherwise a summon's
 still-running line held the next cast's side-band read for the rest of the line,
-which left a blank of tens of seconds after a second click during Ozma.
+which left a blank of tens of seconds after a second click during Ozma. The abandon
+also hands the music word back to the field (see
+[battle-round-loop](battle-round-loop.md)), so every relaunch starts the battle
+track again (`web-play` `showcase_bgm_switches`).
 
 The slot holds at most one engine. The view toggle remembers its choice per page
 (`legaia-stage-view:<page>` in `localStorage`), defaults to the full battle, and

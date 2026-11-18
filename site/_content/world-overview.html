@@ -54,6 +54,9 @@
         <label style="margin-left:0.5rem" id="wo-show-landmarks-wrap" title="Draw the placed landmark meshes (towns, gates, towers) and the decoration layer (trees, mountain groups, props, the enterable mountains) on top of the continent terrain, at the world positions the game places them. Each mesh draws whole: its textured prims and its vertex-colour prims (the Rim Elm hut roofs).">
           <input type="checkbox" id="wo-show-landmarks" checked> landmarks + trees
         </label>
+        <label style="margin-left:0.5rem" id="wo-story-late-wrap" title="Pose the landmarks that change with the story as they stand late in the game: Conkram's giant shell, open behind the town until the party escapes Jette's Fortress, then shut over it. Off, every kingdom is shown as on a new game.">
+          <input type="checkbox" id="wo-story-late"> late story
+        </label>
         <button id="wo-lock-topview" type="button" hidden title="Flatten the camera to straight-down and recenter on the kingdom's captured top-view spawn. Same anchor the retail dev menu enters with.">lock to retail top-view</button>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
         <button id="wo-export-glb" class="btn-accent" type="button" hidden title="Download the assembled continent - terrain heightfield + placed landmarks and trees, textures baked from VRAM - as a binary glTF. Opens in Blender, three.js, or any glTF viewer.">Download .glb</button>
@@ -91,6 +94,7 @@
       <li><strong>Assembled scene</strong> draws the mesh pack at the world coordinates the bundle's placement data ("MAN") gives it. <strong>Mesh inspector</strong> browses the same pack one mesh at a time.</li>
       <li><strong>show unplaced meshes</strong> lays out every mesh the placement table never uses, sorted into best-guess classes - the leftovers and one-offs in the pack.</li>
       <li><strong>terrain</strong> and <strong>landmarks + trees</strong> toggle the two layers of the walk view: the continent ground, and everything standing on it.</li>
+      <li><strong>late story</strong> poses the landmarks that move with the story the way they stand late in the game. Conkram's giant shell stands open behind the town until the party escapes Jette's Fortress, then lies shut over it. Off, each kingdom is shown as on a new game, the same point the Mist draws.</li>
       <li><strong>ocean</strong> plays the disc's wave animation, a 13-frame palette cycle. <strong>distance haze</strong> is the walk view's depth cue - far ground brightens toward white, far trees toward light grey - measured as if the party stood at the centre of the view.</li>
       <li><strong>Mist</strong> draws the story's Mist the way the game draws it on the world map: drifting cloud sheets inside the kingdom's fog regions, as they stand before any area's Mist is lifted. The game keeps the sheets near the party only; this view spreads the same density over the whole continent.</li>
       <li><strong>lock to retail top-view</strong> flattens the camera to the straight-down view the game's own debug menu uses.</li>

@@ -112,6 +112,7 @@ impl BattleCamera {
             cursor: None,
             entry_sweep: None,
             entry_hold: false,
+            entry_off_axis_yaw: None,
             open_held: false,
             menu_glide_from: None,
         }

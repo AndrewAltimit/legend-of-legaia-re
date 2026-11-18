@@ -1115,3 +1115,27 @@ fn the_target_select_plaque_wears_the_element_badge_and_slides() {
     sync_battle_hud_rows(&mut hud, &w);
     assert!(hud.target_select.is_none());
 }
+
+/// Cort's Evil Seru Magic closes the spell label at arm 10 and prints its
+/// creature record's name at the label's place from arm 20's pass
+/// (PROT 0966, `0x801F7DDC..0x801F7E28`) until arm 27 takes it down.
+#[test]
+fn evil_seru_magic_names_its_creature_after_the_label_closes() {
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_cast::cast_module_camera::ModuleCaption;
+    let mut w = battle_world(1);
+    arm_action(&mut w, 3, ActionCategory::Magic.as_byte(), 0);
+    w.battle_ctx.action_state = 0x70;
+    w.actors[3].battle.params[0] = 0xAD;
+    let mut names = std::collections::BTreeMap::new();
+    names.insert(0x99u8, "Juggernaut".to_string());
+    w.tables.summon_attack_names = std::sync::Arc::new(names);
+    w.casting.module_cam.move_label_closed = true;
+    assert_eq!(battle_move_name(&w), None, "arm 10 closed the label");
+    assert!(!battle_move_name_is_module_line(&w));
+    w.casting.module_caption = Some(ModuleCaption::AttackName);
+    assert_eq!(battle_move_name(&w).as_deref(), Some("Juggernaut"));
+    assert!(battle_move_name_is_module_line(&w));
+    w.casting.module_caption = Some(ModuleCaption::Cleared);
+    assert_eq!(battle_move_name(&w), None, "arm 27 took it down");
+}

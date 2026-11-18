@@ -428,8 +428,17 @@ pub fn retail_object_draw_flags(ram: &[u8]) -> Vec<(u16, u8)> {
 /// alone). The cursor is the **displayed** frame's: the RAM's taken back by
 /// the display lag's game frames ([`rewind_clip_cursor`]).
 pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
+    object_clips_back(ram, crate::retail_compare_battle::DISPLAY_LAG_PASSES)
+}
+
+/// [`retail_object_clips`] as the RAM holds them, not taken back to the
+/// displayed frame: the walk film runs on from the RAM's pass.
+pub fn retail_object_clips_ram(ram: &[u8]) -> Vec<ObjectClipSeed> {
+    object_clips_back(ram, 0)
+}
+
+fn object_clips_back(ram: &[u8], lag_frames: u16) -> Vec<ObjectClipSeed> {
     let step = crate::retail_compare_battle::frame_step(ram).max(1);
-    let lag_frames = crate::retail_compare_battle::DISPLAY_LAG_PASSES;
     let mut seen = std::collections::BTreeSet::new();
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()

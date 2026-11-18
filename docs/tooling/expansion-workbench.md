@@ -728,7 +728,12 @@ space. Their colours are the painter's.
 **Edits** re-export the pack a moment after the last one (debounced) and post
 the bytes to the frame, which hot-reloads them (`reload_expansion`): the pack
 activates again and the map is re-entered with the player where they stood,
-the follow camera's framing kept and no place-name banner. A pack with an
+the follow camera's framing kept and no place-name banner. A reload is not an
+arrival, so the picture does not come up out of black: the MAN installer's
+entry fade pair and its pad hold (`World::seat_map_install_tail`, retail's
+`FUN_8003ADAC`) are taken back on the re-entry
+(`SceneHost::settle_expansion_reload`), and a quiet arrival (the preview's
+own entry of a map, **Arrival** off) drops them too. A pack with an
 error is not sent; the preview keeps the last good build and says why. While
 a fight is armed or running in the frame the reload answers busy and is
 retried (the frame closes a card binder it opened itself first). What
@@ -1029,7 +1034,7 @@ poll, so an editor's save-and-rename lands as one reload. The reload is the
 page's: the validator first (a pack with an error is refused and the running
 pack stays), the one activation path, then the map re-entered seated where
 the player stood (`SceneHost::expansion_reload_seat`, the reading both hosts
-take), the follow camera's framing kept and no banner, and the window's scene
+take), the follow camera's framing kept, no banner and no entry fade, and the window's scene
 render state rebuilt. In a fight or a screen it waits and is retried. Both
 hosts word the outcome through `hotkeys::pack_reload_notice`; on the play page
 `End` reloads the library's copy of the active pack the same way.
@@ -1093,7 +1098,9 @@ committed.
   player's seat and uploads exactly what a fresh entry uploads, an edited
   tile shows in the overlay the engine reads back, a reload waits as busy
   while the card binder is up or a fight is armed, and a pack with an error
-  leaves the running map alone. Disc-free: a reload with no disc refuses.
+  leaves the running map alone; a reload and a quiet arrival draw no entry
+  fade and leave no pad hold, where an arrival draws both. Disc-free: a
+  reload with no disc refuses.
 
 - `crates/web-expansion/tests/sample_pack_round_trip.rs` (disc-free): the sample pack
   loads, validates clean and exports its own bytes; an edit to a monster and a

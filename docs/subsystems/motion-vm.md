@@ -623,13 +623,16 @@ switched on", and a binding that authors it zero keeps choreographing through
 a cutscene.
 
 The port carries the bit as `FieldNpcAmbient::defers` and makes the same three
-tests before the variant preamble. The engaged bit is read through the
-engine's script-context predicate; an ordinary conversation holds only the
-talker's own stream (its record running is retail's `+0x10 & 0x100`), not
-every deferring stream in the scene. That is narrower than retail, where a
-talk freezes them all: with the full rule, villagers frozen beside a talk
-stood in the full-game ladder's walk routes and kept re-opening their touch
-talks. `rikuroa` `P1[3]` is the
+tests before the variant preamble. The engaged bit is the engine's
+script-context predicate or a talk or touched object's run in progress: the
+record runner `FUN_80039B7C` raises the player's `0x80000` on an engaged
+record's first slice (`0x80039DB8..0x80039DD4`) and drops it when the last
+engaged record ends on its `21` and the count at `*(_DAT_801C6EA4) + 0xA`
+reaches zero (`0x80039EE8..0x80039F14`), so a talk freezes every deferring
+stream in the scene, not only the talker's. Retail's idle films of an open
+box (`retock_innkeeper_talk_open`, `town01_npc16_dialogue_first_page`,
+`koin3_gold_card_guard_talk`) hold every wanderer on its seat for 300 vsyncs.
+`rikuroa` `P1[3]` is the
 case a player sees: Noa's stream (bound with the bit set) ramps her to the
 compass point `LUT[7]` and back, and without the gate it ran through her own
 pre-battle beat and turned her away from the creature her spawn prologue's

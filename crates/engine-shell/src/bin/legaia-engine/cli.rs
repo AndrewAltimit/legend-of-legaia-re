@@ -918,8 +918,8 @@ pub(crate) enum Cmd {
     /// camera. `T` cycles the camera
     /// distance preset (retail / far / farther - default `far`, persisted
     /// in `legaia-options.toml`); `R` toggles precise free-angle movement
-    /// (non-retail; true key diagonals + continuous analog angles,
-    /// persisted); `F3` toggles the wide debug orbit vantage; `I` toggles
+    /// (non-retail, default on; true key diagonals + continuous analog
+    /// angles, persisted; `--retail` keeps the 8-way remap); `F3` toggles the wide debug orbit vantage; `I` toggles
     /// dynamic lighting; `F4` toggles the camera-occlusion fade; `F2` mutes
     /// audio; `F6` fills the party's AP gauge and `F7` toggles random
     /// encounters (cheats). Each toggle shows its new state at the bottom

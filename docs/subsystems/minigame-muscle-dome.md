@@ -707,7 +707,7 @@ The dome's Attack command runs the **standard battle arts input** verbatim - the
 ### Flow
 
 - Command cluster (`0x28`) -> Attack opens an **Auto | Command** pick (`0x78`, chips at the Attack / Ra-Seru anchors) -> Command opens the input screen (`0x50`).
-- Each direction press debits `ctx+0x6DC` by the command's `+0x74` cost and appends to `actor+0x1DF` (RAM-verified per press). Entry **ends by itself** when no command is affordable (`0x50 -> 0x5A` on the exhausting press, no confirm).
+- Each direction press debits `ctx+0x6DC` by the command's `+0x74` cost and appends to `actor+0x1DF` (RAM-verified per press). Entry **ends by itself** when no command is affordable (`0x50 -> 0x5A` on the next pass with no direction after the exhausting press, no confirm).
 - `0x5A` reviews the committed bar; any press reaches **Begin | Reselect** (`0x6E`), the party-wide commit confirm ([`battle-command-flow.md`](battle-command-flow.md#the-commit-confirm-screen-0x6e)). Begin plays the round; Reselect reopens the ring. There is no target cursor between `0x5A` and `0x6E`.
 - The previous round's pennants persist when the input reopens and clear on the first fresh press (the [Auto reload](#the-auto-arm) seen from the Command side).
 - **Triangle** cycles the learned-arts list: closed -> page 1 -> ... -> last page -> closed; inert when the character's learned-art constant ([`art-data.md`](../formats/art-data.md#learned-art-constant)) names no art.

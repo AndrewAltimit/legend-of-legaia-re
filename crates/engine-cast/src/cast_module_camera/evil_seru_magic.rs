@@ -29,7 +29,7 @@
 //! (the image at slot-B base `0x801F69D8`).
 
 use super::capture::{CaptureCamArm, CaptureDrift};
-use super::{ModuleCamSeats, ModuleCamState, ModuleShot, focus_on, yaw_from};
+use super::{ModuleCamSeats, ModuleCamState, ModuleCaption, ModuleShot, focus_on, yaw_from};
 
 /// PROT 0966's countdown word (`lui 0x8020` / `-0x5B9C`).
 pub const EVIL_SERU_MAGIC_COUNTDOWN: u32 = 0x801F_A464;
@@ -106,14 +106,14 @@ pub const EVIL_SERU_ARM23_RIDERS: [u32; 13] = [
 /// | 17 (`0x801F7B18`) | - | `+= 0x40` | shot yaw `0xD80`, TR `(0, 0xA00, 0x1000)`, focus z `-0x800` |
 /// | 18 (`0x801F7B7C`) | - | `+= 0x80` | - |
 /// | 19 (`0x801F7C68`) | yaw `+1`, TR x `-16`, TR z `+32` | `+= 0x70` | shot pitch `-0x100`, yaw `0x100`, TR `(0x80, 0x1800, 0x1400)`, focus z `-0x800` |
-/// | 20 (`0x801F7D4C`) | pitch `+2`, TR x `+8`, TR y `-40`, TR z `+40` | `+= 0xB4` | the spell-name banner |
+/// | 20 (`0x801F7D4C`) | pitch `+2`, TR x `+8`, TR y `-40`, TR z `+40` | `+= 0xB4` | the creature record's name line |
 /// | 21 (`0x801F7E38`) | TR z `-4` | `+= 0xC0` | shot pitch `-0x50`, TR `(0, 0x300, 0x1C00)`, focus z `-0x400` |
 /// | 22 (`0x801F7F60`) | - | `+= 0x100` | every pass a `0x24`-frame shot pitch `-0x50`, TR `(-0x14, 0x1228, 0)`; on pass a cut pitch `0x40`, yaw `0x80`, TR `(0, 0, 0x1A00)`; both focus z `-0x400` |
 /// | 23 (`0x801F8008`) | yaw `-1`, TR z `+4` | `+= 0x180` | shot pitch `-0x80`, yaw `-0x80`, TR `(-0x600, 0x800, 0x1400)`, focus z `-0x600` |
 /// | 24 (`0x801F82C8`) | yaw `+2`, TR x `+14`, TR y `+1`, TR z `+4` | `+= 0x80` | - |
 /// | 25 (`0x801F8364`) | - | `+= 0x80` | shot pitch `-0x80`, TR `(0, 0x900, 0x1600)`, focus z `-0x400` |
 /// | 26 (`0x801F83C8`) | TR z `+4` | `+= 0x100` | the party-wide hit |
-/// | 27 (`0x801F86E4`) | TR z `+4` | `+= 0x80` | the seats restored; shot yaw `0x800 - caster[+0x46]`, TR `(0, 0x800, 0x400)`, focus the caster |
+/// | 27 (`0x801F86E4`) | TR z `+4` | `+= 0x80` | the seats restored, the name line cleared; shot yaw `0x800 - caster[+0x46]`, TR `(0, 0x800, 0x400)`, focus the caster |
 /// | 28 (`0x801F89A8`) | TR z `+2` | - | the body finishes |
 ///
 /// Every gate drains first and holds while the word stays positive; the
@@ -264,12 +264,22 @@ pub fn evil_seru_magic_camera(
     if phase == 10 {
         st.move_label_closed = true;
     }
+    // Arm 20's pass prints the streamed record's name `rec[0]`
+    // (`*(0x801C9348 + 0x10)`) at `y = 0x96`, centred on `0xA6`
+    // (`0x801F7DDC..0x801F7E28`); arm 27's pass takes it down
+    // (`jal 0x800319A8` with `a0 = 0`, `0x801F87E0`), both behind the gate.
+    let caption = match phase {
+        20 => Some(ModuleCaption::AttackName),
+        27 => Some(ModuleCaption::Cleared),
+        _ => None,
+    };
     st.countdown.0 += rearm;
     CaptureCamArm {
         shot,
         drift,
         hold: false,
         next,
+        caption,
         ..Default::default()
     }
 }
@@ -304,6 +314,36 @@ mod esm_camera_tests {
             }
         }
         (visited, ticks, tr_x)
+    }
+
+    /// Arm 20's pass puts the creature record's name up and arm 27's takes
+    /// it down; no held pass and no other arm touches the line.
+    #[test]
+    fn esm_name_line_rises_on_arm_20_and_clears_on_arm_27() {
+        let mut st = ModuleCamState::default();
+        let mut phase = 0u8;
+        let mut seen = vec![];
+        for _ in 0..10_000 {
+            let arm = evil_seru_magic_camera(&mut st, phase, ModuleCamSeats::default());
+            if let Some(c) = arm.caption {
+                assert!(!arm.hold, "a held pass prints nothing");
+                seen.push((phase, c));
+            }
+            if arm.hold {
+                continue;
+            }
+            match arm.next {
+                Some(n) => phase = n,
+                None => break,
+            }
+        }
+        assert_eq!(
+            seen,
+            [
+                (20, ModuleCaption::AttackName),
+                (27, ModuleCaption::Cleared)
+            ]
+        );
     }
 
     #[test]

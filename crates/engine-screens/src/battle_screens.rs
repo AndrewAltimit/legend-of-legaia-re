@@ -689,7 +689,6 @@ const MENU_WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const MENU_DIM: [f32; 4] = [0.7, 0.85, 1.0, 1.0];
 /// Greyed-out row tint (K.O.'d targets, unaffordable spells).
 const MENU_DOWN: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
-const TARGET_HINT: &str = "Left/Right=move  Cross=confirm  Circle=back";
 
 /// The command cluster's chip labels, in stage pixels scaled to the surface.
 fn command_chip_text(
@@ -718,9 +717,13 @@ fn command_chip_text(
     )
 }
 
-/// A picker's target line: the enemy-row plaque rides the HUD builder (empty
-/// here), the ally / sweep states keep a text line, then the key hint.
+/// A picker's target line. Retail's target cursor is one plaque (placement
+/// record `0x29`, `FUN_801D5854`'s target arm) riding the HUD builder
+/// ([`bh::battle_target_select_plate`]), with no text and no key hint beside
+/// it, so a state the plaque covers draws nothing here. Only a state the
+/// plaque does not model keeps a text stand-in line.
 fn target_lines(
+    world: &World,
     font: &legaia_font::Font,
     picker: &legaia_engine_battle::target_picker::TargetPickerSession,
     verb: &str,
@@ -728,7 +731,10 @@ fn target_lines(
 ) -> Vec<TextDraw> {
     use legaia_engine_battle::target_picker::{CursorRow, PickerState};
     use legaia_engine_ui::text_draws_for;
-    let mut out = match enemy_target_strip_draws(picker) {
+    if bh::battle_target_select_plate(world).is_some() {
+        return Vec::new();
+    }
+    match enemy_target_strip_draws(picker) {
         Some(strip) => strip,
         None => {
             let line = match picker.state() {
@@ -740,13 +746,7 @@ fn target_lines(
             };
             text_draws_for(&font.layout_ascii(&line), (BATTLE_MENU_X, my), MENU_WHITE)
         }
-    };
-    out.extend(text_draws_for(
-        &font.layout_ascii(TARGET_HINT),
-        (BATTLE_MENU_X, my + 14),
-        MENU_DIM,
-    ));
-    out
+    }
 }
 
 /// The battle overlay's text list, in surface pixels: in a battle the HUD
@@ -858,7 +858,7 @@ pub fn battle_text_draws(
                 }
             }
             ArtsPhase::Targeting { picker, .. } => {
-                out.extend(target_lines(font, picker, "art", my));
+                out.extend(target_lines(w, font, picker, "art", my));
             }
             _ => {}
         }
@@ -882,25 +882,23 @@ pub fn battle_text_draws(
                 }
             }
             SpellPhase::Targeting { picker, .. } => {
-                out.extend(target_lines(font, picker, "cast", BATTLE_MENU_Y));
+                out.extend(target_lines(w, font, picker, "cast", BATTLE_MENU_Y));
             }
             SpellPhase::SweepConfirm { row, .. } => {
                 use legaia_engine_battle::target_picker::CursorRow;
                 use legaia_engine_ui::text_draws_for;
-                let line = match row {
-                    CursorRow::Enemy => "cast -> all enemies",
-                    CursorRow::Ally => "cast -> all allies",
-                };
-                out.extend(text_draws_for(
-                    &font.layout_ascii(line),
-                    (BATTLE_MENU_X, BATTLE_MENU_Y),
-                    MENU_WHITE,
-                ));
-                out.extend(text_draws_for(
-                    &font.layout_ascii(TARGET_HINT),
-                    (BATTLE_MENU_X, BATTLE_MENU_Y + 14),
-                    MENU_DIM,
-                ));
+                // The `All` plaque covers the sweep when it is up.
+                if bh::battle_target_select_plate(w).is_none() {
+                    let line = match row {
+                        CursorRow::Enemy => "cast -> all enemies",
+                        CursorRow::Ally => "cast -> all allies",
+                    };
+                    out.extend(text_draws_for(
+                        &font.layout_ascii(line),
+                        (BATTLE_MENU_X, BATTLE_MENU_Y),
+                        MENU_WHITE,
+                    ));
+                }
             }
             _ => {}
         }
@@ -935,7 +933,13 @@ pub fn battle_text_draws(
                 out.extend(command_chip_text(w, font, origin, scale));
             }
             CommandPhase::Targeting { command, picker } => {
-                out.extend(target_lines(font, picker, command.label(), BATTLE_MENU_Y));
+                out.extend(target_lines(
+                    w,
+                    font,
+                    picker,
+                    command.label(),
+                    BATTLE_MENU_Y,
+                ));
             }
             _ => {}
         }

@@ -17,6 +17,8 @@ scripts/ci/walk-film.py kor3_field_route_walk --pad 0-120:UP --no-retail   # eng
 
 Output goes under `captures/`: it reads retail RAM and stays out of the repository.
 
+The retail side records on PCSX-Redux's recompiler (`--fast`). The recompiler can wedge on a state: `rim_elm_queen_bee_battle` parks the CPU in a BIOS handler on its first vsync, and the film read as a game frozen for 700 vsyncs. A film whose frame-pacer ring cursor (`0x8007B758`) never moves over its last 60 vsyncs is re-recorded on the interpreter, which runs the state on into its fight; `--interp` forces the interpreter.
+
 The engine side seeds as the corpus does, stands the camera on the state's pose,
 and raises what both play hosts raise: the compass bias, the edge wall probes,
 terrain follow, solid and living NPCs. `--run` sets the Field Move option to Run;
@@ -37,7 +39,10 @@ Both sides also write the player's clip: retail's bound record `+0x5E`, cursor
 pose moves. Retail's cursor steps once a pass, the engine's once a vsync at half
 the step, so the two meet on every second row.
 
-Each side writes its talk state too: retail's dialogue byte `*(0x801C6EA4) + 0x62` (`talk`), each placement's talk save `+0x5A` and record cursor `+0x9E`, and the engine's `World::dialogue_owns_input`. A placement's clip is on both sides as well: retail's `+0x5C` / `+0x68` / `+0x6A` in `walk_film_actors.csv`, the engine's bound cursor (`FieldNpcState::clip_cursors`) in `engine.actors.csv`. The film does not seat placement clips, so their phases start where the seed's scene entry left them; read which placements share a phase, not the phase itself.
+Each side writes its talk state too: retail's dialogue byte `*(0x801C6EA4) + 0x62` (`talk`), each placement's talk save `+0x5A` and record cursor `+0x9E`, and the engine's `World::dialogue_owns_input`. A placement's clip is on both sides as well: retail's `+0x5C` / `+0x68` / `+0x6A` in `walk_film_actors.csv`, the engine's bound cursor (`FieldNpcState::clip_cursors`) in `engine.actors.csv`.
+
+The film seats every drawn actor's clip cursor where the state's RAM holds it (`RetailObs::object_clips_ram`, through `World::seed_object_prop_clip`), so the columns compare how each pose moves from retail's own phase; `LEGAIA_RC_NO_CLIP_SEAT=1` leaves the seed's phases.
+The seat writes the clip's control word `+0x62` onto the channel's context as well as the cursor, since the advance reads it there every tick: seated on the cursor alone, a clip retail holds at its end (`+0x62 & 2`) clamped back a frame on the next tick (`chapter2_garmel_pre_songi` clip `23`, `239` to `224`). Kingdom maps seat too, their placements ticking through the same driver (`map01`'s parked flats `15..=17`). A harness seat. Over the idle set it takes the placements' cursor agreement from about a fifth of the rows to nine in ten; what still parts is a wanderer changing clips on its own stream, a cursor bound off the seat's record, and the clamped one-shots a scene entry plays to their end.
 
 The engine side also seats every wanderer's ambient stream and the world seed
 from the state's RAM (`retail_compare::retail_ambient_streams`,
@@ -90,6 +95,14 @@ not a finding by itself; a placement off retail from the first row is.
 - A carried player's height glides as retail's does. `tower_field_walk`'s scripted stair walk reads `-32, -8, 0` a pass on both sides once the walker legs leave `+0x16` to the [settle](../subsystems/field-locomotion.md#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878); the step snap had landed it in one, and the camera fields off over its 61 passes went from pitch `33`, eye Y `35`, eye Z `34` to `1`, `4`, `1`. The leg itself now spends on the game-frame grid in a prop run as in a timeline (`8` a pass rather than `4` a vsync), so the follow focus trails it a whole pass as retail's does: focus Z off went from `54` to `7`, eye Y to `1`.
 
 - A beat's last turn holds when the engine plays the beat. `son` `P2[5]` turns Luctes (flat `10`) onto `0x600` at `(2432, 7936)` and the engine film from the mid-beat checkpoint ends on the same heading and seat; a checkpoint after the beat seeds through the card load, whose entry stands him on his record's `0xE00`, so its facing miss was the seed's, not the engine's; the comparison now seats the beat's turn ([retail-compare](retail-compare.md#the-seeding-model)).
+- A cutscene glide steps once a game frame. The mover `FUN_801DC0BC` adds `DAT_1F800393` to its progress once a frame, from the actor-list walk that runs after the script arming it, so a glide's first frame already stands a whole step along and every pose holds until the next frame. The engine had credited one a vsync: `son_field_door_hop`'s glides stood between two of retail's poses on the vsyncs between, and the one armed inside the film trailed retail's by `step - 1` frames for its whole flight.
+  Crediting the step on the frame's opening vsync (`FrameClock::count_credited_frame`) takes the camera fields off retail on `son_field_door_hop` from `200` vsyncs to `0`, `taiku2_field_door_hop` `141` to `0`, `vozz_genesis_tree_songi` `43` to `0`, and `concnow_field_door_hop` `76` to `3`, whose `rng` column then agrees to the end (`34` to `100` of `100`); the follow ease keeps banking vsyncs toward its passes.
+- A record's wait restarts when a player leg it armed lands. `tower_field_walk`'s lift glides the player, fades and waits `4A 3C`; the engine had moved the player `60` vsyncs after the fade began and retail moves him `60` after the glide lands, the landing clearing the record's `+0x54` ([script-vm](../subsystems/script-vm.md#0x37--0x41--0x47-yield-family-motion-ops)). The move now lands on retail's vsync: player position off `128` vsyncs to `16`, camera `213` to `101`, `rng` `44` to `52` of `150`.
+- A talk stands every deferring wanderer, as retail's does. The engine had held only the talker, so under an open box the rest walked and drew; with the player engaged for the whole run ([motion-vm](../subsystems/motion-vm.md#the-0x8a-byte-is-a-suppression-mask-not-an-enable)) `retock_innkeeper_talk_open`'s `rng` agrees `150` of `150` (from `1`) and `retock_inn_stay_prompt`'s `150` of `151` (from `10`), and over the idle set the placement rows off retail's heading fall from `13452` to `7449`, off its seat from `15950` to `8607`.
+
+- Field placements stand still under the battle intro. Its init rebuilds the actor lists and stores game mode `9` (`FUN_801CE8CC`), so no placement's driver `FUN_8003BC08` runs until the fight. `rim_elm_queen_bee_battle` (interpreter film) holds the seed `0xE49D91B4` from the intro's seeding (vsync `92`) to the battle's first draw (`234`); the engine's wanderers drew twenty times through that window, so the fight opened on another seed. It now opens on retail's. What still parts is the opening: the engine's intro starts at the trigger, where retail spends six vsyncs in mode `8` loading the intro overlay, and its battle draws `14` at entry and one a pass after, where retail draws one before mode `21` and four some thirty vsyncs later.
+- A record waiting on a player leg moves on the pass after the leg lands. The runner steps the record ahead of the walk kernel in the object's tick (`FUN_8003BC08`: runner at `0x8003BD34`, kernel at `0x8003BD50`), so on the landing pass it still finds the leg in flight. `tower_field_walk`'s lift record walks the player, lands and walks him on; resumed on the landing pass, each later leg started a pass ahead of retail's. The player now stands on retail's position on every vsync of the film.
+- The camera reads the locked player's let-through (`0x1F800394 & 0x10000`) as the player's tick saw it. `FUN_801D1344` tests it at `0x801D1704` and pins the focus onto the carried player before the objects' records run, so the record's `2F 10` on the pass after the last leg lands (vsync `215`, recorded on retail) still leaves the focus on the landing. Read live after the slice, the focus stopped a pass short for good: `tower_field_walk`'s camera rows off retail went from `101` to `2`, the two the post-warp snap leaves (the record snaps on the player before the kernel steps him that pass).
 
 ## The game frame's phase
 
@@ -122,12 +135,11 @@ The retail recorder writes the pacer's side of each vsync (`ring_cur`, the slot 
 | `0x801D371C`, `0x801D4600` | the move-VM extension `FUN_801D362C`: an ambient part's random operand | one an op |
 | `0x80038C74`, `0x80039080` | the scripted-motion VM `FUN_80038158`: a wanderer's stream | one a decision |
 
-Every film that parts before its end parts on one of five causes, read off that probe at the first parted pass:
+Every film that parts before its end parts on one of four causes, read off that probe at the first parted pass:
 
 | Cause | Films | Kind |
 |---|---|---|
 | The ambient parts the state holds and the seed does not: a spawner part's children live longer than the seed's settle, so the engine stands fewer of them (`garmel`: nine of retail's twenty-nine), and their random operands go undrawn | the five `garmel` films, `dohaty_field_card_walk`, `jagaroom_field_door_hop`, `koin1_field_route_walk`, `map02_field_door_hop`, `uru2_field_door_hop` | harness seat |
-| An open talk the seed does not resume: retail's wanderers stand under it and draw nothing for the whole film, the engine's are free and draw | `retock_innkeeper_talk_open`, `retock_inn_stay_prompt` | harness seat |
 | A wanderer's stream on another phase than the state's | `balden_field_route_walk`, `koin6_field_route_walk`, `doman_field_card_boot` | harness seat |
 | The fog pool: a burst point the spawner seats on one side and rejects on the other, the pools having parted earlier with no draw to show it | `tower_field_walk`, `concnow_field_door_hop`, `teien_field_run`, `son_arrival_from_doman` | engine (fog pool) or seat, film by film |
 | The measured step changing inside the film | `korout_field_door_hop`, `field_walled_collision_pin` | retail's frame time |

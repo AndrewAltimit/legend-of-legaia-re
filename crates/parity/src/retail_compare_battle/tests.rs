@@ -1093,6 +1093,49 @@ fn a_drifting_capture_arm_walks_back_on_its_drift() {
     assert!(displayed_module_drift_live(&ram, ctx, 0x6F, &[4, 2]).is_none());
 }
 
+/// The same arm gives a cast film no module shot to re-arm: the cut's
+/// increment is its whole gap, so the drift's gap read one frame left and
+/// the film's camera was put back on the cut's pose, five passes behind
+/// retail's (`noaru_songi_genocidal_cannon`, camera `150` px to `0.3`).
+#[test]
+fn a_drifting_capture_arm_seats_no_module_shot() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let songi = 0x800E_D264;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0x1E);
+    put8(&mut ram, ctx + 7, 0x70);
+    put8(&mut ram, ctx + 0x13, 3);
+    put8(&mut ram, ctx + 0x279, 1);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    for slot in 0..3u32 {
+        let base = 0x800E_C9E8 + slot * 0x300;
+        put8(&mut ram, SEAT_CHARS + slot, slot as u8 + 1);
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 100);
+        put16(&mut ram, base + 0x14E, 100);
+    }
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, songi);
+    put16(&mut ram, songi + 0x14C, 999);
+    put16(&mut ram, songi + 0x14E, 999);
+    put8(&mut ram, songi + 0x1DF, 0xB3);
+    put16(&mut ram, 0x8007_B790, (-160i16) as u16);
+    put32(&mut ram, 0x8008_40BC, 320);
+    put32(&mut ram, 0x8008_40C0, 26880);
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 26000);
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4 + 2, 32000);
+    let b = RetailBattle::from_ram(&ram).expect("seedable");
+    assert!(b.cam_drift_owned);
+    assert_eq!(b.module_shot_seat(), None);
+    // Under a shot still walking, the table's frames left are seated.
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 400);
+    let b = RetailBattle::from_ram(&ram).expect("seedable");
+    assert!(!b.cam_drift_owned);
+    assert!(b.module_shot_seat().is_some());
+}
+
 /// Kiss of Death's arm-0 shot (PROT 0955, `0xC` frames) sets out from the
 /// magic-capture fade, which was still walking: the pass that armed it walked
 /// its own two units, and the pass before stood a further step on the fade's

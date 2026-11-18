@@ -106,7 +106,7 @@
   <table>
     <thead><tr><th>Op</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>4C 80</code></td><td>child-actor allocator</td></tr>
+      <tr><td><code>4C 80</code></td><td>child-actor allocator: the narration crawl over the pages that follow</td></tr>
       <tr><td><code>4C 81</code></td><td>actor draw tint, with a blend target and a tick count. An object can name its own id from its bind-time prologue - the actor already exists by then - which is how Octam&rsquo;s sunken set pieces stand black after the collapse</td></tr>
       <tr><td><code>4C 82 slot</code></td><td><strong>full HP / MP restore of one party slot</strong></td></tr>
       <tr><td><code>4C 83</code></td><td>rectangular tile fill</td></tr>
@@ -118,6 +118,7 @@
     </tbody>
   </table>
   </div>
+  <p><strong>A letter is a crawl in a talk.</strong> The plain <code>4C 80</code> rolls its pages on the context running it, and only the three read-a-letter talks use it: Maya's unfinished letter in Biron, Drake III's in the castle chest and Bon Saryu's on the desk in Ratayu. Each dims the screen, rolls the letter, waits for the last line to leave, lifts the dim and closes with one more line.</p>
   <p><strong>There is no inn opcode.</strong> <code>4C 82</code> takes a literal slot, not &ldquo;every active member&rdquo;, and it is the primitive every <a href="inn.html">inn</a>, rest and infirmary script is built on; the charge is a separate gold gate and debit, so the price is per-scene script data.</p>
   <p><strong>The halt-acquire is not a freeze.</strong> The bytes it hands the target are a face-target leg of the <a href="motion-vm.html">walk kernel</a>: the target turns toward a named actor over a frame budget, and the leg's last frame releases it. Cutscene records issue over a thousand of these - &ldquo;one character turns to another&rdquo; is exactly this op. Aimed at the player, the arm also holds the caller, so a cutscene waits on the player's turn. A placement's own spawn section can aim it at itself through the cross-context form - two of Sol Broadway's townspeople turn to the neighbour beside them this way as the scene loads.</p>
 </section>

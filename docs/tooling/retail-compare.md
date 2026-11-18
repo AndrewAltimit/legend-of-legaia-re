@@ -3280,8 +3280,8 @@ whose actor committed nothing since its cast clip reads it far past retail's.
 **A monster's capture-class cast mid-load (`SpanGate::CaptureFade`).** The
 capture band's `0x6E` and `0x6F` wait on the disc: `0x6E` on the CD-ready poll
 `FUN_8003DE7C(1)` (`0x801E4F08`), `0x6F` on `FUN_8003F2B8(1)` (`0x801E5024`)
-while the cast module streams in. The engine's polls are always ready, so
-unheld it crosses both in a tick each. Retail's own words say how long the
+while the drive seeks the monster's voice file ([audio](../subsystems/audio.md#the-capture-bands-seek)). A seed inside them stands on an idle drive (its
+progress is not in RAM), so unheld it crosses both in a tick each. Retail's own words say how long the
 reads took:
 
 - every frame of either state calls `FUN_801D5854(ctx[+0x13], 6)`, whose
@@ -3292,7 +3292,9 @@ reads took:
   the SM's prologue adds about one a frame unless the Battle Camera option is
   Far), where the accumulator counts only from the caster's last clip commit.
 
-The drive holds the engine's polls busy (`BattleDrive::steer`) until its depth
+The corpus, its in-process seed and its image child alike, keeps PCSX-Redux's short `0x6F` hold,
+not the modelled seek (`CastFxState::capture_seek_recorded`): every monster cast's camera row was
+measured on it, and on the modelled seek `78` rows fell (`0.83..0.998`). The steer decides the rest. The drive holds the engine's polls busy (`BattleDrive::steer`) until its depth
 has come down to retail's (for a capture past `0x6F`, until the pass whose ramp
 lands it: `0x6F` ramps before it polls, so retail's exit pass ramped too, and
 released a pass late the engine cut every `0x70` shot one ramp step deeper -
@@ -4033,6 +4035,13 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   is parked there on the rod and water of an earlier cast, and stays unseeded.
 - **The dance's count-in** (`DAT_801D5334` in `3..=5`), sampled at the capture's
   own banner counter `DAT_801D5158` or `GO!` accumulator `DAT_801D515C`.
+- **The dance's play loop on a floor the pad never reached** (`DAT_801D5334 = 0xA`
+  with the human's score `DAT_801D53CC`, latch `DAT_801D548C` and miss counter
+  `DAT_801D568C` all zero), run hands-off from the count-in to the capture's song
+  timer `DAT_801D5820` less the display lag's game frames (`30` a frame). The
+  [minigame film](minigame-film.md) pairs every rival and camera word of a
+  hands-off song, so the floor the seed reaches is the capture's; a floor the pad
+  reached stays unseeded.
 - **The contest hub's first visit** (arm byte `DAT_801D1A78` in `0..=5` or
   `0x15`), sampled at the capture's level `0x801D1A84` or hold `0x801D1A70`.
 - **The Baka Fighter's title card** (cabinet state `DAT_801DBF44 = 1`), sampled at the capture's card clock `DAT_801DBE94`: the card's whole picture is a function of that clock, and a state word alone stands the engine on the fade-in.
@@ -4062,7 +4071,7 @@ What stays unseeded, and what each needs:
   image child, or writing the reel positions `DAT_801D3CC0..` and the
   stopped-reel count over the engine machine's.
 - **A played phase**: a Baka Fighter round (pad input and the AI's `rand()`
-  picks), a cast's flight and bite rolls, the chart's presses, the hub's legs.
+  picks), a cast's flight and bite rolls, the human's chart presses, the hub's legs.
 
 ## Channels
 

@@ -11,7 +11,7 @@
     <dt>Collision grid</dt><dd>Per scene, one byte per 128-unit tile: high nibble = four sub-cell wall bits, low nibble = floor tier. Streamed from the scene's <code>.MAP</code> file at load; scripts paint story-conditional changes on top.</dd>
     <dt>Speed</dt><dd>480 units (3.75 tiles) per second walking, 720 running - counted in vsyncs, so the same on a busy frame as an empty one.</dd>
     <dt>Height</dt><dd>A second controller after the walk: floor sampled from the grid's low nibble, or from per-tile ramp records; ledges trigger a scripted hop.</dd>
-    <dt>In the port</dt><dd><code>World::step_field_locomotion</code> (engine-core); collision is retail by default, precise free-angle movement is an opt-in enhancement (<a href="#engine-port">below</a>).</dd>
+    <dt>In the port</dt><dd><code>World::step_field_locomotion</code> (engine-core); collision is retail by default, precise free-angle movement is an enhancement the play hosts turn on by default (<a href="#engine-port">below</a>).</dd>
     <dt>Confidence</dt><dd>Confirmed - runtime write-watchpoints on the player position, wall-press captures, disassembly (<a href="#how-we-know">how we know</a>).</dd>
   </dl>
 </section>
@@ -192,6 +192,7 @@
     </tbody>
   </table>
   <p>A crossing made while a script holds the player - a cutscene, a conversation, a helper record - is <strong>spent, not deferred</strong>: the tile is stored and nothing is looked up. Deferring it instead fired the landing pad of <code>rugi</code>'s warp pair on the first free frame and bounced the player between the two pads forever.</p>
+  <p><strong>A record a script spawns takes the player over at once.</strong> The spawn adds the new record's share to the script runner's count before the spawning script ends, so the player is never released between the two and a crossing in that frame is spent too. Biron's hall door back from West Voz seats the player on the tile of the very beat it spawns (Gala running ahead to the Mist); counted from the record's first step instead, the crossing spawned the beat a second time and both copies played at once.</p>
   <p>A beat that should play once <strong>self-latches</strong>: its script sets the very flag its gate lists, so it runs on the crossing that finds the flag clear and blocks itself afterwards. The gate bitmap is the field VM's own <a href="script-vm.html#default-route">story-flag bank</a>, so a set is visible to the next record immediately.</p>
   <h3 id="doorways">Walking into a house</h3>
   <p>A town house is <strong>not</strong> a scene change: the interior is a sub-area of the same 128&times;128 grid parked in an unused corner, and the door repositions the player. Two door mechanisms exist, and one house can use one of each.</p>
@@ -528,7 +529,7 @@
   <h2>In the port</h2>
   <ul class="bullets">
     <li><strong>Faithful path.</strong> <code>World::step_field_locomotion</code> rings the held pad around the same eight-direction compass, hands the remapped mask to the wall-slide resolver and walks the result through the same per-axis 2-unit collision with the three-probe edge and the actor boxes. Wall-press captures rest byte-exact. Retail picks its rotation step from scene data; a free-orbiting camera has none, so the port rounds the live camera azimuth to the nearest eighth.</li>
-    <li><strong>Enhancements.</strong> Free-angle movement (<code>options::precise_movement</code>, default off): continuous azimuth, true 45&deg; diagonals at unit speed, analog stick angle. <code>--no-edge-collision</code> / <code>--no-solid-npcs</code> fall back to a centre test and walk-through NPCs.</li>
+    <li><strong>Enhancements.</strong> Free-angle movement (<code>options::precise_movement</code>, default on in both play hosts, off in the <code>World</code> default the oracles and replays run, off under Retail-faithful): continuous azimuth, true 45&deg; diagonals at unit speed, analog stick angle. <code>--no-edge-collision</code> / <code>--no-solid-npcs</code> fall back to a centre test and walk-through NPCs.</li>
     <li><strong>Action movement.</strong> <code>WorldToggles::action_movement</code> (<code>--action-movement</code>, default off, off in retail mode) swaps the walk and its settle for a fixed-point platformer body from <code>legaia_engine_field::action_movement</code>: momentum and sprint, Square to jump and jump again in the air, R2 to dash, coyote time and jump buffering, gravity onto the floor levels. Walls still block, a stair is climbed, a taller ledge takes a jump; every pad lock still holds the player, and doors and touches still fire.</li>
     <li><strong>Floor.</strong> <code>World::sample_field_floor_height</code> carries both height models.</li>
     <li><strong>Run button.</strong> The run mask defaults to the retail <code>Cross | R1</code> plus Square; which key is which pad button is a host binding (<code>legaia-engine config set --binding W=R1</code>).</li>

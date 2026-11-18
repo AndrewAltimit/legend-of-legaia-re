@@ -257,6 +257,7 @@ A row settles the way any audit row does, from the disassembly:
 | `BattleSidebandInputs::pad_edge` | `_DAT_8007B938`, `0x8005638C` | a button held through the sparring fight's opening caption waited it out |
 | `DevMenuSession::equip_slot_bits` | equip record `+7` through the item table, `0x801E5A58..0x801E5A8C`; weapon bytes `0x8007B42C` | the developer menu's `EQUIP` confirm put every item on the body byte, and Noa's weapon on Vahn's weapon byte |
 | `VictorySequence::pose_actor`, `BattleActionHost::first_monster_id` | `ctx[+0x13]`, stored by the victory arm (`0x801E66EC..0x801E6760`); `DAT_8007BD0C[0]` | the leader struck every win pose, whoever finished the fight, and Songi's two fights posed the wrong seat |
+| `BattleTintInputs::prev_colour`, `prev_weight` | node `+0x74` / `+0x78`, kept by the no-lanes arm of `FUN_8004A908` | a lone scripted monster greyed out at the end of its defeat fade drew with its baked shading instead of the stamp's grey |
 
 The short-idle marker was not partial once its missing terms were read off
 the disassembly: the scene-entry arm's warp test is `_DAT_8007B6B0 != 0` (the
@@ -269,10 +270,55 @@ controller and the encounter roll their retail gate
 `_DAT_8007B938` is the pad pump's AND over its 32-vsync ring of held words
 (`0x80018594..0x800185BC`), which the engine has always computed
 (`RetailPadState::held_32`) and no reader took. The three rows above are the
-readers that `or` it into the press for a skip or a cursor step. Three more read
-it and stay open: the command flow's `s2` (`0x801D0804`, `0x801D0B18`), whose
-port reads the edge alone through `battle_command_pad_edges`; the Muscle Dome
-hub's skip snapshot (`0x801CF8B4`); and the Fatal Decision module (`0x801F76D0`).
+readers that `or` it into the press for a skip or a cursor step. Three more are
+wired the same way: the command flow's `s2` (`0x801D0804`, `0x801D0B18`,
+`World::battle_command_s2`), the Muscle Dome hub's skip snapshot `DAT_801D1A9C`
+(`0x801CF8B4`, `World::tick_muscle_hub`) and the Fatal Decision wheel's stop
+(`0x801F76D0`, `World::fatal_decision_view`). The command flow runs once a
+battle frame and the engine once a vsync, so its window counts on the tick
+that opens a frame only, and the arts entry's exhausted-pool scan waits while
+the window holds a direction (a PCSX-Redux run from `gaza2_card_first_menu`
+holding Left: one arrow a pass from 33 vsyncs in, the flow in `0x50` until
+release). A Muscle Dome round is an ordinary battle on both play hosts
+(`World::start_muscle_battle_leg`, `FUN_801D1510`), so its command flow is this
+one and reads the window at the battle's pass rate, as retail's round does
+through the same `FUN_801D0748`. Only the minigames page's standalone dome
+session (`DomeSelectPad`, `MuscleDomeSession::select_input`) still reads the
+edge alone: it counts one pass a call and keeps no battle frame clock, so the
+window folded in there would repeat faster than retail's pass.
+
+The tint pass's kept words are the defeat fade's. Arm 2 of `FUN_80050120`
+stamps the blend word `+0x0C = 0x1000` every pass, so each lit fade frame takes
+the plain arm (`weight = blend`, `colour |= top`) and the node holds `0x1000`
+with the mode byte once the lanes are spent: a `--watch` on Thunder Punch's
+killed target (`battle_garmel_party_gala_thunder_punch_open`) reads `+0x78 =
+0x1000` from the fade's first pass to its last drawn frame, and the Gimard
+results hold (`battle_results_gimard_retail`) keeps `0x85000000` / `0x1000` on
+the faded body. The words reach the pixel only under the lone-monster grey gate:
+its stamp is a whole-word store of the opaque `0x00808080` (`0x800482DC`),
+drawn (`0x800482E0`) before the pass re-tints, so the body takes the cue at the
+kept weight `0x1000` and draws whole in the stamp's grey. The engine reads the
+fade's two words (`World::battle_actor_draw_plan`) and lets a stamped draw take
+the cue (`BattleActorDrawPlan::grey_stamped`). The literal `fade: 0` is not one
+of them: `+0x226` is the additive fade the plan already reads.
+
+### The pump's raw layout
+
+`World::set_pad` hands the raw `PadButton` word to the retail pump, so
+`RetailPadState::held`, `pressed` and `held_32` are raw words under packed
+names ([`pad::retail_packed`](../../crates/engine-system/src/pad.rs)). A
+reader that tests one against a retail mask must pack it first, or the mask
+names other buttons: packed `0xF000` (the D-pad) is raw Triangle, Circle,
+Cross and Square. Three readers did not, each with a visible fault:
+
+| Reader | Retail mask | What a player saw |
+|---|---|---|
+| `World::fog_dpad_held` | `_DAT_8007B850 & 0xF000`, `0x8003F6D8` | fog by the player thinned faster under a held face button (the run button among them) instead of a held direction |
+| `World::pick_victory_pose` | `_DAT_8007B850 & 0x0800` and the pick masks, `0x8004EAF4..0x8004EB8C` | R1 armed the held-button win pose instead of Start, and Start + a direction never picked one |
+| `World::tick_muscle_hub` | `DAT_801D1A9C & 0xF4`, `0x801CFBE0` / `0x801CFFE4` | the D-pad hurried the Muscle Dome hub's cards and tally, and Cross did not |
+
+A reader that only tests the word for zero (`BattleActionHost::pad_word`, the
+side-band skip) needs no packing.
 
 The two options were misnamed: `0x801F6C60` is `lw v0,0x46c8` off `lui v0,0x8008`,
 which is `0x800846C8`, not a `0x801D46C8` overlay word that "clears on the first
@@ -337,12 +383,6 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
   disc carries a type-`0x0B` descriptor (the tuple census in
   `scene-formats::scene_asset_table`), while every observed state reads the
   base as zero ([`mdt.md`](../formats/mdt.md)).
-- `BattleTintInputs::prev_colour` / `prev_weight` and the literal `fade: 0` are
-  the node's own `+0x74` / `+0x78` / `+0x226`. The no-lanes arm keeps `+0x78`,
-  which becomes the cue's `IR0` when a lone no-escape boss's defeat fade has
-  ramped its lanes to zero and the grey gate draws it. Whether that frame is
-  darker in retail than `DEFEATED_GREY` needs a capture of the defeat's last
-  fade frame before anything is carried across frames.
 
 ### State a scene change carries
 

@@ -335,8 +335,11 @@ fn the_selection_walks_the_battle_screens_and_only_begin_fights() {
     assert_eq!(s.budget(0), 100 - 0x2A);
     s.select_input(pad(|p| p.left = true));
     assert_eq!(s.queue(0), &[0x0F, 0x0C]);
-    // 28 left: nothing is affordable, so the entry auto-ends into review.
+    // 28 left: nothing is affordable, so the next pass with no direction
+    // auto-ends the entry into review (the press's own pass returns ahead
+    // of the scan, `0x801D1F98`).
     assert!(s.selection_exhausted(0));
+    s.select_input(pad(|_| {}));
     assert_eq!(
         s.arts_input_view().map(|v| v.phase),
         Some(legaia_engine_battle::arts_command_input::ArtsInputScreen::Review)
@@ -1328,7 +1331,8 @@ fn the_entry_saves_its_string_and_the_next_entry_replays_it() {
     s.select_input(pad(|p| p.left = true)); // Attack
     s.select_input(pad(|p| p.right = true)); // Command
     s.select_input(pad(|p| p.up = true));
-    s.select_input(pad(|p| p.left = true)); // exhausts -> review
+    s.select_input(pad(|p| p.left = true)); // exhausts the gauge
+    s.select_input(pad(|_| {})); // the next idle pass -> review
     s.select_input(pad(|p| p.confirm = true)); // review -> confirm
     let (_, second) = s.auto_command_strings();
     assert_eq!(
@@ -1597,7 +1601,11 @@ fn each_surface_keys_the_battle_cue_sites() {
         e.pool = 0;
     }
     assert_eq!(s.select_input(pad(|p| p.up = true)), DomeMenuEvent::Confirm);
-    // The cancel drops the arrow (`0x801D2104`).
+    // The cancel drops the arrow (`0x801D2104`) while the gauge can still
+    // pay a command: an exhausted one auto-ends ahead of the cancel test.
+    if let DomeMenu::Input(e) = &mut s.menu {
+        e.pool = 100;
+    }
     assert_eq!(
         s.select_input(pad(|p| p.cancel = true)),
         DomeMenuEvent::Back

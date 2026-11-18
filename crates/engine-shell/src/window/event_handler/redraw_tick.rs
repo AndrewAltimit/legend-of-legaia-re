@@ -718,6 +718,20 @@ impl PlayWindowApp {
                 if let Some((entries, cursor)) = env_cost_ring() {
                     world.seed_frame_cost_ring(entries, cursor);
                 }
+                // The recording's frame phase (`LEGAIA_DIAG_CAST_SEQ_PASS_LEFT=
+                // left,step`): the vsyncs before its next pass shows, which a
+                // save taken inside a frame leaves short of the engine's fresh
+                // one; seated only on the recording's own step.
+                if let Some((left, step)) = std::env::var("LEGAIA_DIAG_CAST_SEQ_PASS_LEFT")
+                    .ok()
+                    .and_then(|v| {
+                        let (l, s) = v.split_once(',')?;
+                        Some((l.trim().parse::<u8>().ok()?, s.trim().parse::<u8>().ok()?))
+                    })
+                    && world.battle.frame_clock.step == step
+                {
+                    world.seat_battle_frame_phase(left);
+                }
             }
         }
     }

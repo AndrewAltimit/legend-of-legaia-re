@@ -22,12 +22,14 @@ Pick your path:
 |---|---|
 | **Play the game** | Double-click `Legend of Legaia` (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS); it starts `command-line-tools/legaia-engine` with no arguments. It asks for your disc image once and remembers it; the launcher also sets the display options, then *Play* opens the title screen. [Playing and viewing](playing-and-viewing.md#0-the-launcher) has the controls; its [options table](playing-and-viewing.md#options) lists the enhancements, and *Look and feel* set to *Original* plays the game as it shipped. |
 | **Play the Sample Expansion Pack** | In the launcher, click *Expansion pack...* once: it picks the bundled sample pack (the button then reads *Pack: Sample*), and *Play* starts the game with it on the title screen. *Continue* a late save, or play a New Game: the sample pack's entrance in Rim Elm opens at party level 30, and the Journal (Select on the pause menu) tracks its quests and takes you back to its maps. *Delete* on the button goes back to the original game. [Playing an expansion pack](playing-and-viewing.md#11-playing-an-expansion-pack) has the rest. |
-| **Play without installing anything** | Open the project site's play page and pick your disc image there; it runs the same engine in the browser, with the sample pack one click away. |
+| **Play without installing anything** | Open the project site's [play page](https://andrewaltimit.github.io/legend-of-legaia-re/play.html) and pick your disc image there; it runs the same engine in the browser, with the sample pack one click away. The image is read in the tab and never uploaded; saves stay in the browser. |
 | **Get the assets out** | Without a terminal: open `Legaia Explorer`, open your disc image, and its *Extract* view runs the whole extraction into a folder you pick, with progress and *Cancel*. From a terminal: sections 1-3 below, then [extracting-assets.md](extracting-assets.md). |
 | **Randomize, mod or translate** | Sections 1-2 below, then [modding-and-translation.md](modding-and-translation.md) or [translating.md](translating.md). |
 
-The rest of this guide covers the archive, the disc check and the one-shot
-extraction, and ends with a table of every tool.
+Playing needs only the disc image: neither the game nor the play page reads
+an extracted folder, so a player can stop here. The rest of this guide covers
+the archive, the disc check and the one-shot extraction for the asset side,
+and ends with a table of every tool.
 
 One rule shapes everything here: **the project ships no Sony-owned bytes.**
 The archive contains only the project's own compiled tools and the project's

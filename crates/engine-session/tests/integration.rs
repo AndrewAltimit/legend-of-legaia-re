@@ -14,6 +14,7 @@ mod battle_effect_teardown_disc;
 mod battle_item_use_presentation;
 mod battle_monster_bank_cue;
 mod battle_party_forms_headless;
+mod battle_return_audio_disc;
 mod battle_xa_clip_bank;
 mod bgm_scene_resolution;
 mod bylon_dinner_disc;

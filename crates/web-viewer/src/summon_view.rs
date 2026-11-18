@@ -293,9 +293,15 @@ fn entry_bytes<'a>(
 /// frame, `[tx, ty, tz, rx, ry, rz]`, frame `f` / part `p` / component `c` at
 /// `(f * part_count + p) * 6 + c`. Rotations are unsigned 12-bit angles.
 fn flatten_pose_frames(anim: &MonsterAnimation) -> Vec<i32> {
-    let mut out = Vec::with_capacity(anim.frame_count * anim.part_count * 6);
+    flatten_pose_frames_padded(anim, anim.part_count)
+}
+
+/// [`flatten_pose_frames`] at `width` rows a frame: rows past the clip's own
+/// part count are zero (no object hangs from them - [`object_rows`] says so).
+fn flatten_pose_frames_padded(anim: &MonsterAnimation, width: usize) -> Vec<i32> {
+    let mut out = Vec::with_capacity(anim.frame_count * width * 6);
     for frame in &anim.frames {
-        for p in frame {
+        for p in frame.iter().take(width) {
             out.extend_from_slice(&[
                 p.tx as i32,
                 p.ty as i32,
@@ -305,19 +311,70 @@ fn flatten_pose_frames(anim: &MonsterAnimation) -> Vec<i32> {
                 p.rz as i32,
             ]);
         }
+        let short = width.saturating_sub(frame.len());
+        out.extend(std::iter::repeat_n(0, short * 6));
     }
     out
+}
+
+/// The pose row each of a creature's `n_objects` TMD objects hangs from while
+/// a clip of `parts` rows plays, or `-1` for an object the clip leaves undrawn.
+///
+/// The battle draw pass draws the first `parts` channels, each with the object
+/// the creature's per-channel model table names
+/// (`engine-world-views::battle_draws::battle_drawn_objects`), so an object
+/// past the part count is not drawn. A cast module's channel store
+/// ([`summon_core::creature_channel_object`]) puts `object` in `channel`'s
+/// place: the object is posed by the channel's row, and the channel's own
+/// object goes undrawn. That is how Jedo's scythe and Meta's sword - each past
+/// every clip's part count - appear at all.
+// REF: FUN_80048A08
+pub fn object_rows(
+    parts: usize,
+    n_objects: usize,
+    swap: Option<summon_core::CreatureChannelObject>,
+) -> Vec<i32> {
+    let mut rows: Vec<i32> = (0..n_objects)
+        .map(|o| if o < parts { o as i32 } else { -1 })
+        .collect();
+    if let Some(s) = swap {
+        let (channel, object) = (usize::from(s.channel), usize::from(s.object));
+        if channel < parts && object < n_objects {
+            rows[channel] = -1;
+            rows[object] = channel as i32;
+        }
+    }
+    rows
 }
 
 /// The cast currently on the canvas: the parsed group plus everything derived
 /// from it once, so the per-buffer accessors are pure reads.
 struct LoadedCast {
+    spell_id: u8,
     cast: SummonCast,
     mesh: legaia_tmd::mesh::VramMesh,
     object_ids: Vec<u32>,
     vram: psx_tim::Vram,
     /// Decoded FX texture pages, parallel to `cast.fx_slots`.
     fx_pages: Vec<summon_readef::FxPage>,
+}
+
+impl LoadedCast {
+    /// TMD objects in the creature mesh.
+    fn object_count(&self) -> usize {
+        self.object_ids
+            .iter()
+            .copied()
+            .max()
+            .map_or(0, |m| m as usize + 1)
+    }
+
+    /// The cast module's channel store in force while clip `clip` plays.
+    fn channel_store(&self, clip: usize) -> Option<summon_core::CreatureChannelObject> {
+        summon_core::summon_stager_prot_entry(self.spell_id)
+            .and_then(summon_core::creature_channel_object)
+            .filter(|s| clip >= s.from_clip)
+    }
 }
 
 /// The site's Seru-magic summon host: a disc, plus one cast's decoded group.
@@ -516,6 +573,7 @@ impl LegaiaSummons {
         }
         let json = row.to_string();
         self.current = Some(LoadedCast {
+            spell_id,
             cast,
             mesh,
             object_ids,
@@ -621,35 +679,78 @@ impl LegaiaSummons {
             .unwrap_or_default()
     }
 
+    /// Clip `index`'s [`object_rows`]: per TMD object, the pose row of
+    /// [`Self::clip_pose_frames`] it hangs from, or `-1` when the clip leaves
+    /// it undrawn. Carries the cast module's channel store from the clip it
+    /// starts on, so Jedo's scythe and Meta's sword draw in their hands.
+    pub fn clip_object_rows(&self, index: u32) -> Vec<i32> {
+        let Some(c) = &self.current else {
+            return Vec::new();
+        };
+        let Some(k) = c.cast.clips.get(index as usize) else {
+            return Vec::new();
+        };
+        object_rows(
+            k.part_count,
+            c.object_count(),
+            c.channel_store(index as usize),
+        )
+    }
+
     /// Every clip of the current cast concatenated into one timeline - what
     /// "play the cast" means: the phases run back to back in the actor
-    /// record's own `+0x4C` table order. Clips whose part count differs from
-    /// the first one's are skipped (the rig width has to match to share a
-    /// pose buffer); [`Self::sequence_clip_indices`] reports which survived.
+    /// record's own `+0x4C` table order. Each frame is
+    /// [`Self::sequence_width`] rows (a clip with fewer parts pads with zero
+    /// rows, which [`Self::sequence_object_rows`] leaves unused).
     pub fn sequence_pose_frames(&self) -> Vec<i32> {
+        let Some(c) = &self.current else {
+            return Vec::new();
+        };
+        let width = self.sequence_width() as usize;
+        let mut out = Vec::new();
+        for i in self.sequence_clip_indices() {
+            out.extend(flatten_pose_frames_padded(&c.cast.clips[i as usize], width));
+        }
+        out
+    }
+
+    /// Pose rows per frame of [`Self::sequence_pose_frames`]: the widest
+    /// clip's part count.
+    pub fn sequence_width(&self) -> u32 {
+        self.current
+            .as_ref()
+            .and_then(|c| c.cast.clips.iter().map(|k| k.part_count).max())
+            .unwrap_or(0) as u32
+    }
+
+    /// [`Self::clip_object_rows`] for every frame of
+    /// [`Self::sequence_pose_frames`], frame-major (`frame * n_objects + o`).
+    pub fn sequence_object_rows(&self) -> Vec<i32> {
         let Some(c) = &self.current else {
             return Vec::new();
         };
         let mut out = Vec::new();
         for i in self.sequence_clip_indices() {
-            out.extend(flatten_pose_frames(&c.cast.clips[i as usize]));
+            let k = &c.cast.clips[i as usize];
+            let rows = object_rows(k.part_count, c.object_count(), c.channel_store(i as usize));
+            for _ in 0..k.frame_count {
+                out.extend_from_slice(&rows);
+            }
         }
         out
     }
 
-    /// Indices of the clips [`Self::sequence_pose_frames`] concatenated.
+    /// Indices of the clips [`Self::sequence_pose_frames`] concatenated: every
+    /// clip with at least one frame.
     pub fn sequence_clip_indices(&self) -> Vec<u32> {
         let Some(c) = &self.current else {
-            return Vec::new();
-        };
-        let Some(width) = c.cast.clips.first().map(|f| f.part_count) else {
             return Vec::new();
         };
         c.cast
             .clips
             .iter()
             .enumerate()
-            .filter(|(_, k)| k.part_count == width)
+            .filter(|(_, k)| k.frame_count > 0 && k.part_count > 0)
             .map(|(i, _)| i as u32)
             .collect()
     }
@@ -930,5 +1031,34 @@ mod framing_tests {
         let (pos, ids) = rig(1, 5.0, Some([500.0, 0.0, 0.0]), PART_VERTS);
         let b = framing_bound_of(&pos, &ids, 2, FRAMING_OUTLIER_K);
         assert!(b[3] > 400.0, "two parts: keep everything, got {}", b[3]);
+    }
+}
+
+#[cfg(test)]
+mod object_rows_tests {
+    use super::*;
+
+    #[test]
+    fn objects_past_the_part_count_are_undrawn() {
+        assert_eq!(object_rows(3, 5, None), vec![0, 1, 2, -1, -1]);
+    }
+
+    #[test]
+    fn a_channel_store_poses_the_object_on_the_channel() {
+        let jedo = summon_core::creature_channel_object(931).unwrap();
+        let rows = object_rows(22, 23, Some(jedo));
+        assert_eq!(rows[22], 6);
+        assert_eq!(rows[6], -1);
+        assert_eq!(rows[5], 5);
+    }
+
+    #[test]
+    fn a_store_on_a_channel_the_clip_lacks_does_nothing() {
+        let s = summon_core::CreatureChannelObject {
+            channel: 14,
+            object: 16,
+            from_clip: 0,
+        };
+        assert_eq!(object_rows(10, 17, Some(s))[16], -1);
     }
 }

@@ -774,10 +774,21 @@ impl RetailBattle {
     /// re-arms it onto retail's table from the seated pose
     /// (`LEGAIA_SEAT_MODULE_SHOT`). Harness seat: a still takes its frame on
     /// the gate, before the table walks.
+    ///
+    /// An arm that drifts the globals every pass past a one-frame cut
+    /// ([`Self::cam_drift_owned`]: PROT 0963's arms 1 and 2) has no shot
+    /// walking: the cut's increment is its whole gap, so the gap the drift
+    /// opened reads one frame left, and re-armed onto the cut's pose the
+    /// film's camera lost every drift retail had made since
+    /// (`noaru_songi_genocidal_cannon` opened five passes behind).
     pub fn module_shot_seat(
         &self,
     ) -> Option<(legaia_engine_camera::projection::BattleCamPose, u16)> {
-        if self.action_state != 0x70 || self.module_phase == 0 || self.cam_landed {
+        if self.action_state != 0x70
+            || self.module_phase == 0
+            || self.cam_landed
+            || self.cam_drift_owned
+        {
             return None;
         }
         let (live, end) = self.cam_tween;

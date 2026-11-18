@@ -627,6 +627,20 @@ impl World {
         // entrance's contact is read from ([`Self::auto_engage_world_map_portals`]),
         // as the field controller's do for a door.
         self.locomotion.last_move_dir_bits = dir_bits;
+        // The overworld runs the field's pad controller `FUN_801D01B0`, so the
+        // remapped mask goes through the wall-slide resolver before anything
+        // reads it (`jal 0x80046494` at `0x801D03EC`): a held cardinal into a
+        // wall gains the perpendicular bit of the open side and skids along
+        // it, the heading, the clip, the diagonal cut and the step all on the
+        // resolved mask. A retail `map03` film held Left into a ridge skids
+        // down-left two frames and walks on; without it the player stood
+        // against the ridge.
+        let dir_bits = if dir_bits != 0 {
+            let ms = &self.actors[slot].move_state;
+            self.resolve_field_slide(dir_bits, ms.world_x, ms.world_z)
+        } else {
+            dir_bits
+        };
         // The clip base the settle tail strides into the player's clip -
         // the same slice of `FUN_801D01B0` the field step runs, since the
         // overworld runs that very controller.

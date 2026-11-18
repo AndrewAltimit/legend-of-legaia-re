@@ -21,7 +21,9 @@ Two channels per state:
     cast   the track channel with the engine's own cues mixed in: the fight
            seeded into a battle state by the retail comparison corpus's child,
            its mix recorded from the seed's gate on with the music bus silent
-           (`LEGAIA_DIAG_AUDIO_WAV`), over the cast's own seconds
+           (`LEGAIA_DIAG_AUDIO_WAV`), over the cast's own seconds. A state inside
+           the capture band's `0x6F` seek seats what the seek has left off the
+           state's CD controller (`LEGAIA_SEAT_CAPTURE_SEEK_LEFT`)
     cast_steps  the cast channel with the engine's cast run on the recording's own
            frame steps (`<label>.steps` beside the WAV, mednafen's, from
            `scripts/mednafen/drive-timeline.py --steps-out`): the battle frame
@@ -127,6 +129,14 @@ CAST_STATES = [
     "orb_summon_mid_cast",
     "swordie_summon_mid_cast",
     "gilium_summon_mid_cast",
+    # Monster attacks and the boss's casts: Gimard's Tail Fire on its two
+    # frames, Zora's Glare and Cort's Evil Seru Magic from inside the capture
+    # band's `0x6F` seek (`LEGAIA_SEAT_CAPTURE_SEEK_LEFT`), Cort's Mystic Circle.
+    "battle_gimard_tail_fire_a",
+    "battle_gimard_tail_fire_b",
+    "zora_glare_petrify_pre",
+    "cort_evil_seru_magic_mid_cast",
+    "cort_mystic_circle_mid_cast",
 ]
 # Cast states whose recording carries its own frame steps (`<label>.steps`) for
 # the `cast_steps` channel, and how many mednafen frames the stepping logs: a
@@ -183,6 +193,48 @@ def band_instant(state: Path) -> str | None:
         return None
     word = struct.unpack_from("<h", ram, ctx + 0x6D8)[0]
     return f"{ram[ctx + 0x07]},{ram[ctx + 0x279]},{word}" if word >= 0 else None
+
+
+CAPTURE_POLLS = (0x6E, 0x6F)  # the capture band's two CD polls
+CPU_HZ = 33_868_800
+VSYNC_HZ = 59.826
+LOGICAL_SEEK_VSYNCS = 2  # battle_cd_drive::LOGICAL_SEEK_VSYNCS
+
+
+def mednafen_var(b: bytes, name: str, after: int = 0) -> int | None:
+    """A mednafen state variable: `[len][name][u32 size][bytes]`, little-endian."""
+    key = bytes([len(name)]) + name.encode()
+    i = b.find(key, after)
+    if i < 0:
+        return None
+    at = i + len(key)
+    size = struct.unpack_from("<I", b, at)[0]
+    signed = size == 4 and name == "PSRCounter"
+    return int.from_bytes(b[at + 4 : at + 4 + min(size, 4)], "little", signed=signed)
+
+
+def capture_read_left(state: Path) -> int | None:
+    """Vsyncs of the capture band's seek a state inside `0x6E` / `0x6F` has left.
+
+    The seed stands the engine on the state's action with an idle drive, so its
+    band leaves `0x6F` on its first pass where retail's waits out the `CdlSeekL`
+    `0x6E` issued. Mednafen's CD controller holds what is left of it: the
+    physical seek's cycles (`PSRCounter` while `DriveStatus` is `2`) and the
+    logical seek after it, the engine's `LOGICAL_SEEK_VSYNCS`. A harness seat
+    (`LEGAIA_SEAT_CAPTURE_SEEK_LEFT`); `None` outside those states or with no seek
+    in flight.
+    """
+    raw = state.read_bytes()
+    b = gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
+    ram = b[main_ram_offset(b):][:0x20_0000]
+    ctx = struct.unpack_from("<I", ram, BATTLE_CTX_PTR)[0] & 0x1F_FFFF
+    if not ctx or ram[ctx + 0x07] not in CAPTURE_POLLS:
+        return None
+    cdc = max(b.find(b"CDC"), 0)
+    status, psr = mednafen_var(b, "DriveStatus", cdc), mednafen_var(b, "PSRCounter", cdc)
+    if status == 2 and psr and psr > 0:
+        return -(-psr * VSYNC_HZ // CPU_HZ) + LOGICAL_SEEK_VSYNCS
+    return None
 
 
 def silenced_copy(state: Path, out: Path) -> None:
@@ -346,6 +398,9 @@ def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path,
         manifest = tomllib.loads((REPO / "scripts" / "scenarios.toml").read_text())
         if (st := state_file(label, library, manifest)) and (at := band_instant(st)):
             env["LEGAIA_DIAG_CAST_STEP_ARM"] = at
+    manifest = tomllib.loads((REPO / "scripts" / "scenarios.toml").read_text())
+    if (st := state_file(label, library, manifest)) and (left := capture_read_left(st)):
+        env["LEGAIA_SEAT_CAPTURE_SEEK_LEFT"] = str(int(left))
     env.update({
         "LEGAIA_AUDIO_DETACHED": "1",
         # The frame is not taken: the child plays on past its gate.

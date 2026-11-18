@@ -74,6 +74,50 @@ fn evil_seru_magic_lands_two_stager_sweeps_then_the_tick_hit_and_folds_nothing_m
     assert!(hp.iter().all(|&h| h < 5000), "the hits reached the party");
 }
 
+/// PROT 0966's arm 2 spawns its `0x10`-frame red flash on its pass
+/// (`0x801F6EE8`), and the frame that spawned it steps it before it is drawn:
+/// the recording's arm 3 never shows the template's own `(0xFF, 0x40, 0x40)`.
+#[test]
+fn evil_seru_magic_arm_2_red_flash_takes_its_spawning_frame_step() {
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    let caster = 3u8;
+    world.battle_ctx.active_actor = caster;
+    world.actors[caster as usize].battle_monster_id = Some(180);
+    {
+        use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+        let mut entries = vec![SpellEntry::default(); 0x100];
+        entries[0xAD].class = CAPTURE_CLASS;
+        entries[0xAD].sub_class = 0x1F;
+        world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+            spell_names: Some(SpellNameTable::from_entries(entries)),
+            ..Default::default()
+        });
+    }
+    world.casting.pending_cast = Some(legaia_engine_battle_loop::cast_band::PendingCast {
+        caster,
+        spell_id: 0xAD,
+        targets: vec![0, 1, 2],
+        on_flight: false,
+    });
+    for _ in 0..10_000 {
+        let phase = world.casting.module_phase;
+        world.run_cast_module_code(0xAD, phase).expect("band entry");
+        if phase == 2 && world.casting.module_phase == 3 {
+            let fade = world.presentation.fade.as_ref().expect("arm 2's flash");
+            assert_eq!(fade.duration, 0x10);
+            assert_ne!(
+                fade.rgb(),
+                [0xFF, 0x40, 0x40],
+                "stepped before its first draw"
+            );
+            assert!(fade.rgb()[0] < 0xFF);
+            return;
+        }
+    }
+    panic!("the body never left arm 2");
+}
+
 /// Every capture-class module, every choreography: a cast's HP outcome lands
 /// through **one** owner. Where a tick body rolls the module's own wrapper
 /// in-tick (PROT 0960's burst, the three whole-row tick sweeps, the three

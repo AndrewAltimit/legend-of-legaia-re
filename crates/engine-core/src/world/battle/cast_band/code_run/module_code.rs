@@ -626,15 +626,27 @@ impl World {
                     .module_fades
                     .retain(|f| !(f.mode[1] == -1 && f.duration == 0x100));
             }
+            // Every fade the tick body spawns on an arm's pass takes that
+            // frame's step before it is drawn, as the presentation hook's
+            // exit-pass fades do (`FUN_80024E80` hands the new actor to the
+            // list the frame is still walking): unstepped, arm 2's red flash
+            // (`0x801F6EE8`) opened arm 3 on a level retail never displays.
+            let step = self.battle_frame_step().max(1);
             if passed && phase == 26 {
                 for t in &EVIL_SERU_MAGIC_ARM26_SIDE_FADES {
                     let mut f = None;
                     legaia_engine_system::fade::spawn_fade(&mut f, t, 1);
+                    if let Some(f) = f.as_mut() {
+                        f.step_vsyncs(step);
+                    }
                     self.presentation.module_fades.extend(f);
                 }
             }
             if passed && let Some(t) = evil_seru_magic_fade(phase) {
                 legaia_engine_system::fade::spawn_fade(&mut self.presentation.fade, &t, 1);
+                if let Some(f) = self.presentation.fade.as_mut() {
+                    f.step_vsyncs(step);
+                }
             }
             // The module's own move-VM stager hits land mid-cast, not at the
             // fold: arm 10 seats records `0x801F937C` and `0x801F94D0`, whose
@@ -1935,6 +1947,43 @@ impl World {
                 ctx.phase = next;
             }
         }
+        // A body-paced director's arm pass (PROT 0910..0913): the body has
+        // just let its arm through, and retail's pass makes its shot, caption
+        // and spawns behind the gate on this same pass, which the walker then
+        // steps (`cast_module_camera::body_paced`). The arm's drift ahead of
+        // its gate is in the globals first, so the shot is built from it; a
+        // yaw the pass stores straight replaces that drift's yaw.
+        if matches!(entry, 910..=913)
+            && ctx.phase != phase_in
+            && let Some(p) = self.body_paced_pass_now(entry, caster_slot, ctx.phase)
+        {
+            run.camera_shot = p.shot.or(run.camera_shot);
+            run.caption = p.caption.or(run.caption);
+            if !p.spawns.is_empty() {
+                run.spawns = p.spawns;
+            }
+            if !p.effects.is_empty() {
+                run.effects = p.effects;
+            }
+            if !p.fades.is_empty() {
+                run.fades = p.fades;
+            }
+            run.kills_fades |= p.kills_fades;
+            run.vram_move = p.vram_move.or(run.vram_move);
+            run.camera_end_frame |= p.end_frame;
+            if let Some(pd) = p.drift {
+                let mut d = run.capture_drift.unwrap_or_default();
+                d.pitch = d.pitch.wrapping_add(pd.pitch);
+                d.yaw = pd.yaw;
+                d.tr_x = d.tr_x.wrapping_add(pd.tr_x);
+                d.tr_y = d.tr_y.wrapping_add(pd.tr_y);
+                d.tr_z = d.tr_z.wrapping_add(pd.tr_z);
+                run.capture_drift = Some(d);
+            }
+            if p.shot.is_some() {
+                run.capture_drift_after_shot = false;
+            }
+        }
         // The finishing arm's `ctx[+0x6DA] = 0x780`, which the Done band's
         // case 6 frames from.
         if run.tick_ported
@@ -2195,6 +2244,12 @@ impl World {
             }
             if arm.flushes_pool {
                 self.casting.flush_module_part_pool();
+            }
+            // The line a passing arm prints or clears at the label's place.
+            if !arm.hold
+                && let Some(c) = arm.caption
+            {
+                self.casting.module_caption = Some(c);
             }
             if let Some(w) = arm.part_write
                 && let Some(scene) = self.casting.active_summon.as_mut()
@@ -2538,7 +2593,10 @@ impl World {
                     .actors
                     .get(usize::from(seat_slot))
                     .map_or(0, |a| a.battle.current_anim);
-                self.casting.creature_channel_object = (clip >= 4).then_some((6, 22));
+                self.casting.creature_channel_object =
+                    legaia_engine_effects::summon::creature_channel_object(931)
+                        .filter(|s| usize::from(clip) >= s.from_clip)
+                        .map(|s| (s.channel, s.object));
             }
             if entry == 931 {
                 self.apply_jedo_writes(

@@ -686,6 +686,14 @@ pub(super) fn apply_capture_palette_seeds(session: &mut NativeSession) {
         // (`AmbientFxState::vram_rect_seed_until_action`).
         session.host.world.ambient.vram_rect_seed_until_action =
             std::env::var_os("LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION").is_some();
+        // `LEGAIA_SEAT_VRAM_RECTS_UNTIL_STATE=<ctx[7]>` (the cast-sequence
+        // child, from the recording's first row): land the rects once on the
+        // first pass in the snapshot's own state, ahead of its rolls
+        // (`AmbientFxState::vram_rect_seed_until_state`).
+        session.host.world.ambient.vram_rect_seed_until_state =
+            std::env::var("LEGAIA_SEAT_VRAM_RECTS_UNTIL_STATE")
+                .ok()
+                .and_then(|v| v.trim().parse::<u8>().ok());
     }
 
     // `LEGAIA_SEAT_CELL_SOURCES=<file>` (the retail-compare image channel): the

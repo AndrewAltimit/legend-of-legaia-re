@@ -1985,6 +1985,33 @@ fn the_capture_band_polls_hold_for_the_read() {
     assert!(!world.capture_read_pending());
 }
 
+/// A seeded state inside `0x6F` takes what is left of its seek from the
+/// harness seat; a recording drive's seek seat keeps that drive's hold.
+#[test]
+fn the_capture_seek_seats_hold_the_poll() {
+    use legaia_engine_battle_vm::battle_action::ActionState as S;
+    let mut world = World::new();
+    let start = world.clock.display_frames;
+    world.battle_ctx.action_state = S::MagicCapturePhase2.as_byte();
+    world.seat_capture_seek_left(20);
+    assert!(
+        !world.capture_read_pending(),
+        "outside the polls the seat is a no-op"
+    );
+    world.battle_ctx.action_state = S::MagicCaptureFade.as_byte();
+    world.seat_capture_seek_left(20);
+    world.clock.display_frames = start + 19;
+    assert!(world.capture_read_pending());
+    world.clock.display_frames = start + 20;
+    assert!(!world.capture_read_pending());
+    world.casting.drive_seek_seat = Some(2);
+    world.arm_capture_read_wait(S::MagicCaptureFade.as_byte());
+    world.clock.display_frames = start + 23;
+    assert!(world.capture_read_pending());
+    world.clock.display_frames = start + 24;
+    assert!(!world.capture_read_pending());
+}
+
 /// `FUN_800520F0` stores no category on the summon seat's node, so its runtime
 /// cues key record `0`; the party's keep the `7` of `0x80051548`.
 #[test]
@@ -2292,4 +2319,47 @@ fn the_setup_idle_holds_its_phase_through_the_sms_idle_requests() {
             "{pose:?} restarted the idle"
         );
     }
+}
+
+/// A byte equal to the playing clip under `+0x1DC` bit 0 is a re-commit: the
+/// tick's cut calls `FUN_8004AD80` with no compare of `+0x1DA` against
+/// `+0x1D9` (`0x800478EC..0x80047A40`), and the commit zeroes the cursor
+/// (`0x8004B064..0x8004B068`). Without a cut bit the equal byte waits.
+#[test]
+fn a_bit0_byte_equal_to_the_playing_clip_recommits_it() {
+    use legaia_engine_battle_vm::battle_action::ActorFlags;
+    let mut world = pose_test_world();
+    world.mode = SceneMode::Battle;
+    let idle = pose_test_clip(0, 4, 0);
+    let seat = |w: &mut World| {
+        w.actors[0].battle_animation =
+            legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&idle);
+        w.actors[0].battle.current_anim = 0;
+        w.actors[0].battle.queued_anim = 0;
+        let p = w.actors[0].battle_animation.as_mut().unwrap();
+        p.seek_sixteenths(32);
+    };
+    seat(&mut world);
+    world.commit_staged_battle_anim(0);
+    let cursor = |w: &World| {
+        w.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .cursor_sixteenths()
+    };
+    assert_eq!(cursor(&world), 32, "no cut bit: the equal byte waits");
+    seat(&mut world);
+    world.actors[0]
+        .battle
+        .flag_bits
+        .set(ActorFlags::WINDUP_DONE);
+    world.commit_staged_battle_anim(0);
+    assert_eq!(cursor(&world), 0, "bit 0 re-commits the playing clip");
+    assert!(
+        !world.actors[0]
+            .battle
+            .flag_bits
+            .has(ActorFlags::WINDUP_DONE)
+    );
 }

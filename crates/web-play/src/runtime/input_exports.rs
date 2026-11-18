@@ -21,9 +21,10 @@ impl LegaiaRuntime {
     /// ([`legaia_engine_core::world::FieldLocomotion::precise_movement`]): the camera
     /// azimuth rotates the movement vector at full angular resolution and the
     /// left analog stick ([`Self::set_left_stick`]) supplies an arbitrary
-    /// screen angle. The play page's VR first-person mode drives this so
-    /// "stick forward" walks exactly where the headset looks; the keyboard
-    /// path keeps the retail quantised 8-way remap.
+    /// screen angle. The page's "Free-angle movement" box writes it (on by
+    /// default, persisted); off keeps the retail quantised 8-way remap. The
+    /// VR first-person mode lays its own session override over it
+    /// ([`Self::set_precise_movement_override`]).
     pub fn set_precise_movement(&mut self, on: bool) {
         match self.scene_host.host_mut() {
             Some(h) => h.world.locomotion.precise_movement = on,

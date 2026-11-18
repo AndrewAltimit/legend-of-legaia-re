@@ -271,6 +271,50 @@ pub fn parse_narration(body: &[u8]) -> Vec<NarrationBlock> {
     blocks
 }
 
+/// The crawl a talk record opens at `pc`, if one starts there: the
+/// cross-context form `[CC tt 80 N]` or the plain `[4C 80 N]`, either one
+/// followed by its `N` pages.
+///
+/// The plain form runs the crawl on the context executing it. Only talk
+/// records carry it on the disc: the read-a-letter talks (`bylon` `P1[47]`,
+/// `dolk` `P1[27]`, `retock` `P1[33]`) dim the screen, roll the letter on
+/// the talker's own context and wait for it on `33 0A`, the talker's halt
+/// bit, which the roller clears as it retires its last page. The op's arm is
+/// the same for both forms (`0x801E1ECC..0x801E1FBC`): it halt-acquires the
+/// op's target and allocates the roller `FUN_80037174` over the pages.
+/// [`NarrationBlock::target`] is the plain form's opcode byte `0x4C` (no
+/// actor carries that as a cross-context id; the ids are channel indices and
+/// the `0xF8..` specials).
+pub fn crawl_at(body: &[u8], pc: usize) -> Option<NarrationBlock> {
+    let (target, count_at) = match body.get(pc..pc + 2)? {
+        [0x4C, OP0_NARRATION] => (0x4C, pc + 2),
+        [OP_MENU_CTRL_EXT, t] if body.get(pc + 2) == Some(&OP0_NARRATION) => (*t, pc + 3),
+        _ => return None,
+    };
+    let declared_pages = *body.get(count_at)?;
+    if body.get(count_at + 1) != Some(&PAGE_START) {
+        return None;
+    }
+    let mut cursor = count_at + 1;
+    let mut pages = Vec::new();
+    while pages.len() < usize::from(declared_pages) {
+        let (page, next) = read_page(body, cursor)?;
+        pages.push(page);
+        cursor = next;
+    }
+    Some(NarrationBlock {
+        op_offset: pc,
+        declared_pages,
+        pages,
+        kind: NarrationKind::Crawl,
+        target,
+    })
+}
+
+/// The [`NarrationBlock::target`] [`crawl_at`] gives a plain `[4C 80 N]`
+/// crawl: it runs on the context executing it.
+pub const OWN_CONTEXT_CRAWL: u8 = 0x4C;
+
 /// Flatten every block's pages into a single ordered subtitle script. Useful
 /// for a consumer that just wants the narration lines in display order.
 pub fn narration_pages(body: &[u8]) -> Vec<NarrationPage> {
@@ -299,6 +343,32 @@ mod tests {
         }
         v.push(0x46); // following opcode (not a 1F page)
         v
+    }
+
+    #[test]
+    fn a_plain_crawl_runs_on_its_own_context() {
+        let mut body = vec![0x4A, 0x14, 0x00, 0x4C, OP0_NARRATION, 2];
+        for p in ["one", "two"] {
+            body.push(PAGE_START);
+            body.extend_from_slice(p.as_bytes());
+            body.push(PAGE_END);
+        }
+        body.extend_from_slice(&[0x33, 0x0A]);
+        let b = crawl_at(&body, 3).expect("a crawl at the op");
+        assert_eq!(b.target, OWN_CONTEXT_CRAWL);
+        assert_eq!(b.pages.len(), 2);
+        assert_eq!(&body[b.byte_span().1..], &[0x33, 0x0A]);
+        assert!(crawl_at(&body, 0).is_none());
+        // A page short of the declared count is no crawl.
+        body[5] = 3;
+        assert!(crawl_at(&body, 3).is_none());
+        // The cross-context form names its target.
+        let ext = synthetic_block(&["a"]);
+        let at = ext.iter().position(|&b| b == OP_MENU_CTRL_EXT).unwrap();
+        assert_eq!(
+            crawl_at(&ext, at).map(|b| b.target),
+            Some(EXT_TARGET_CUTSCENE)
+        );
     }
 
     #[test]

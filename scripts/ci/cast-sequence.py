@@ -652,6 +652,32 @@ def retail_cast_already_paid(out: Path) -> bool:
         return False
 
 
+def retail_first_pass_left(out: Path) -> str | None:
+    """`left,step` for `LEGAIA_DIAG_CAST_SEQ_PASS_LEFT`: the vsyncs from the
+    recording's first row to the row its camera first leaves the opening pose
+    on, and the frame step of that first row. The save sits inside the state's
+    frame, so the next pass shows that many vsyncs on, where the engine's gate
+    tick opens a fresh frame and shows its next pass a whole step later; the
+    child seats the phase only on the same step (a frame of another length
+    has no phase in common). `None` when the first row has already left the
+    pose (`gate_film_skip` drops the engine's rows instead) or the camera holds
+    past a frame. A harness seat, like the pose."""
+    cols = ("pitch", "yaw", "try", "trz")
+    try:
+        with open(out / "retail" / "cam.csv") as f:
+            rows = list(csv.DictReader(f))
+    except OSError:
+        return None
+    if not rows:
+        return None
+    first = [rows[0][k] for k in cols]
+    for r in rows[1:MAX_GATE_FILM_SKIP + 1]:
+        if [r[k] for k in cols] != first:
+            left = int(r["vsync"]) - int(rows[0]["vsync"])
+            return f"{left},{rows[0]['step']}" if left >= 1 else None
+    return None
+
+
 def retail_opening_cursor(out: Path, first_row: bool = False) -> str | None:
     """`clip,cursor` of the caster on retail's cast begin, for
     `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. A harness seat, like the pose. A
@@ -684,6 +710,26 @@ def retail_rand_seed(out: Path, key: str) -> str | None:
             if r.get("rand") and int(r["st7"]) == st7 and int(r["phase"]) == phase:
                 seed = int(r["rand"])
     return None if seed is None else f"{st7}:{phase}:{seed}"
+
+
+def retail_capture_read_passes(out: Path) -> int | None:
+    """The passes the recording's capture band opened on its `0x6E` poll: the
+    frames whose first row reads action state `0x6E` (a frame's first row
+    holds the state its pass opens on), counted where the recording enters
+    the band through the cast begin `0x28`; `None` otherwise."""
+    begun, n, frame = False, 0, None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            st7 = int(r["st7"])
+            begun = begun or st7 == 0x28
+            if r["frame"] == frame:
+                continue
+            frame = r["frame"]
+            if st7 == 0x6E and begun:
+                n += 1
+            elif n:
+                break
+    return n or None
 
 
 def retail_cast_begin_key(out: Path, done: dict) -> str | None:
@@ -972,6 +1018,16 @@ def run_engine(a, out: Path) -> bool:
     return False
 
 
+def recording_first_state(out: Path) -> int | None:
+    """The action state `ctx[7]` on the retail recording's first row."""
+    try:
+        with open(out / "retail" / "meta.csv", newline="") as f:
+            row = next(csv.DictReader(f), None)
+        return int(row["st7"]) if row else None
+    except (OSError, KeyError, ValueError):
+        return None
+
+
 def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     """One engine recording: `(ran, frames, the child carried the step pin)`."""
     kept = child_cmd(a, out)
@@ -1027,6 +1083,12 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
         env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION"] = "1"
+        # The rects are the state's own instant, the recording's first row:
+        # they land once on the engine's first pass in that action state,
+        # ahead of its rolls, as every retail pass since rolled them
+        # (`AmbientFxState::vram_rect_seed_until_state`).
+        if (st := recording_first_state(out)) is not None:
+            env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_STATE"] = str(st)
     # The recording's drive is PCSX-Redux's, whose first `summon.dat` slot
     # reads with no seek ahead of it; the engine's modelled drive (mednafen's)
     # holds the side-band stage nine vsyncs longer. A harness seat.
@@ -1037,6 +1099,14 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     # fade and the rise spawned before it running on through the poll. A
     # harness seat ([CD-seek waits](docs/tooling/cast-sequence-oracle.md#cd-seek-waits)).
     env.setdefault("LEGAIA_SEAT_DRIVE_SEEK", str(drive_seek_seat(out) or DRIVE_SEEK_DEFAULT))
+    # The capture band's `0x6E` poll holds `14..18` vsyncs in the recordings,
+    # where the engine holds `14`: on a step-2 fight a vsync or two more is one
+    # pass more, one frame-driver `rand()` more, and the module enters on
+    # another word than retail's (Megaton Press's rocks, the Koru set). Seated
+    # on the recording's own pass count where the film enters the band through
+    # the cast begin. A harness seat.
+    if not a.physical and (n := retail_capture_read_passes(out)) is not None:
+        env.setdefault("LEGAIA_SEAT_CAPTURE_READ", str(n))
     # The sound channel reads the audio director's command record, so the
     # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
     if not a.no_sound:
@@ -1104,6 +1174,8 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR"] = cursor
     if a.physical and (bodies := state_body_cursors(out)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS"] = bodies
+    if a.physical and (left := retail_first_pass_left(out)):
+        env["LEGAIA_DIAG_CAST_SEQ_PASS_LEFT"] = left
     edir = out / "engine"
     env.update({
         "LEGAIA_DIAG_CAST_SEQ": str(edir),
@@ -1111,8 +1183,10 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         "LEGAIA_DIAG_CAST_SEQ_TAIL": str(a.tail),
         # Past the retail side's own span (1500 grabs, every 2 vsyncs by
         # default): the recorder's 2000-frame default stops a long summon
-        # (Mule) short of its last arms.
-        "LEGAIA_DIAG_CAST_SEQ_MAX": "4000",
+        # (Mule) short of its last arms, and 4000 stopped Evil Seru Magic
+        # (`4578` vsyncs of `0x70` on its recording) once its line's polled
+        # arms ran retail's length.
+        "LEGAIA_DIAG_CAST_SEQ_MAX": "6000",
     })
     if guard := engine_guard(a, out, done):
         env["LEGAIA_BATTLE_GUARD"] = guard

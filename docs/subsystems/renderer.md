@@ -1006,13 +1006,28 @@ horizon or pulled back sees those faces whole, painted over the ground:
   of the garden fence shows on the path (orbit `5.6`, tilt `-0.5`, zoom
   `0.7` by the hut west of Vahn's house).
 
+The buckets are also faithful only beside retail's mesh links. A bucket is
+a whole-primitive rule: retail links each mesh primitive at its own slot and
+the floor cell two slots behind its farthest corner, so a face buried under
+the floor loses to the cell or beats it whole. PSX mode links the meshes the
+same way ([the field sorts by each primitive's link](renderer-port.md#the-field-sorts-by-each-primitives-link));
+the clean rasteriser depth-tests a mesh per pixel, so the near edge of a
+buried face wins against the bucket even where retail's slot for the whole
+face loses. `bylon`'s fan pits are the case: pack mesh `82` is a box whose
+top, the grate, lies on the floor plane and whose walls run 96 units under
+it. In the dialogue shot at the east fan room (`P2[7]`, Gala's report), the
+clean rasteriser stood the pit's inner side walls over the floor as spikes
+under the grate's corners, and the grate read as raised off the floor; PSX
+mode, like retail, draws it flush.
+
 So both hosts stage a per-frame word through one kernel,
 `engine-world-views::field_view_window::field_ground_drop`: `None` at
 retail's vantage (`retail_vantage`: `F3` off, and a battle frame, a scripted
 shot, or the follow camera at `CameraDistance::Retail` with the knobs at
-identity) and off the field, `Some(FREE_VANTAGE_FLOOR_DROP)` (`8` units,
-`engine-scene::field_ground`) on any other field frame - the default `Far`
-preset included. Under a drop:
+identity) under PSX rasterisation, and off the field;
+`Some(FREE_VANTAGE_FLOOR_DROP)` (`8` units, `engine-scene::field_ground`) on
+any other field frame - the default `Far` preset and every clean-raster frame
+included. Under a drop:
 
 - a **flat** far-bucket or sorted cell is depth-tested as the plane `8` units
   below it, along each pixel's own ray (`field_ground::dropped_floor_w`): an
@@ -1042,7 +1057,7 @@ looked past it toward the sea (player at `(30, 22)`, orbit `2.7`, tilt
 Natively the word rides the scene-lights block (`Renderer::set_field_ground_drop`,
 `ground_drop_param` in the WGSL); the play page stages it as `u_ground_drop`
 (`play_render_ground_drop` -> `setGroundDrop`). The retail-compare corpus
-frames at retail's vantage, so its frames keep the buckets. Pins:
+frames at retail's vantage under PSX mode, so its frames keep the buckets. Pins:
 `the_dropped_floor_depth_agrees_on_both_hosts` (`engine-render`
 `tests/vertex_law_parity.rs`), `the_ground_drops_only_off_retail_vantage_on_the_field`,
 and the disc-gated `town01_plateau_ground_holds_against_the_beach_at_every_yaw`
@@ -3303,6 +3318,35 @@ eye-player corridor never dithers while the player is plainly on screen.
 - `keikoku_corridor_walk_does_not_arm_the_gate` (disc-gated) pins the mist
   veil case.
 
+**Arming** (`legaia_engine_screens::field_occlusion::host_fade_arming`, both
+hosts). The fade is a field free-roam feature: off with the host's toggle,
+under a boot, pause or menu-runtime screen, a name-entry prompt, a debug
+vantage, and outside field mode, where the ramp resets. It also stands down
+while a **script owns the camera** (`World::script_holds_camera`): the
+player's engaged bit as retail's field tick reads it. `FUN_801D1344` tests
+`+0x10 & 0x80000` at `0x801D1694` and runs the pad controller and the
+free-roam follow tail (`0x801D17DC`) only with it down, so for the whole
+span a record holds the player the shot is the record's - the gaps between
+its op-`0x45` beats and an APPLY's ease back included, where nothing is
+staged. The modal timeline counts once it has taken a slice, as the camera
+ease reads the bit, so a stand-and-press walk-on beat that re-spawns and ends
+inside one slice keeps the fade along its band. A plain talk keeps the follow
+framing and the fade unless it stages a shot of its own.
+
+`town01`'s measuring beat (`P2[5]`) is the case that needs the engaged bit
+rather than the cutscene arm: Vahn's front door (`P0[29]`, `44 5E`) spawns
+it as a concurrent record, so the modal-timeline cutscene arm never takes the
+frame and its shots reach the screen through the follow arm. Its walk-in
+(`C7 F8 ..` legs under the `45 07 ..` shot at `+0x471`) puts the entrance
+hallway's wall between Vahn and the lens, and before this term the hallway
+dissolved there. Under a script hold the gate does not run and the ramp eases
+out from where it stood, a quarter of the gap per frame - a shot that opens
+with the player behind a wall releases the screen-door the way walking out
+from cover does, one that opens at rest never touches the scene - and when
+the script lets go the ramp eases back in on the gate's verdict.
+`town01_measuring_beat_never_dissolves_the_hallway` (disc-gated, the page's
+runtime) walks into the door and pins it.
+
 **The per-fragment rule** (`occl_keep` in the scene-lights WGSL layer; CPU
 mirror and tunables in `crates/engine-render/src/occlusion_fade.rs`). A
 fragment fades only when all four hold:
@@ -3365,9 +3409,11 @@ so there is no neighbour-blink failure mode.
 field free-roam only - the player's floor tier lifted half a character
 height - and clears it for cutscenes (an occluded player there is a
 directorial choice), battle, world map and the boot UI. The arming terms
-combine in `field_occlusion::host_fade_armed`: the host's toggle, a debug or
+combine in `field_occlusion::host_fade_arming`: the host's toggle, a debug or
 VR first-person eye, a boot or menu-runtime screen owning the frame, plus the
-world's field mode, scripted shot and name-entry prompt.
+world's field mode and name-entry prompt; a scripted shot or a script holding
+the player answers `ScriptHeld`, which skips the visibility gate and eases
+the ramp out.
 
 **The browser play page ships the same fade.** `occl_keep` / `occl_bayer`
 have GLSL twins in `site/js/webgl-shaders.js` (tunables mirrored at the top

@@ -593,6 +593,11 @@ pub struct RetailBattle {
     /// Whether every tweened component of retail's camera reads its
     /// endpoint ([`camera_landed`]).
     pub cam_landed: bool,
+    /// Whether the capture stands on a module arm that writes the camera
+    /// globals itself every pass while no shot walks under it
+    /// ([`displayed_module_drift_live`]): the table's gap is the drift's
+    /// sum, not a shot's frames left.
+    pub cam_drift_owned: bool,
     /// A round-prompt capture whose far framing (case 9) was still walking:
     /// the display frames of its arm the displayed frame had left
     /// ([`displayed_menu_glide_left`]).

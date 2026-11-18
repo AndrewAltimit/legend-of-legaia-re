@@ -439,6 +439,19 @@ pub struct CutsceneTimeline {
     /// the script runner's step, not by the spawn); see
     /// `World::script_context_engages_player`.
     pub stepped: bool,
+    /// The record was spawned by a running script (op `0x44`), which held
+    /// the player as it spawned: it holds the player from its install, not
+    /// from its first slice. The spawn bumps the runner's modal depth
+    /// `*(_DAT_801C6EA4)+0xA` and seeds the new context's share `+0x2A = 1`
+    /// (`0x8003C080..0x8003C0CC`), so the spawner's closing `0x21` takes back
+    /// only its own share (`0x80039ECC..0x80039EE4`), the depth stays
+    /// non-zero and the engaged bit the spawner's slices raised is not
+    /// cleared (`0x80039EE8..0x80039F14`). A door that seats the player on
+    /// a walk-on tile and spawns that tile's record (`bylon` `P0[31]`, the
+    /// hall door back from West Voz, onto `P2[6]`'s tile) hands the player
+    /// straight to the record, and the crossing is spent under the lock.
+    /// REF: FUN_8003BDE0, FUN_80039B7C
+    pub held_from_install: bool,
     /// `Some(slot)` when this timeline is placement `slot`'s OWN parked
     /// context resumed by a touch (the boss-stager dispatch), not a spawned
     /// record. Retail has one context per placement: the touch raises its
@@ -615,8 +628,16 @@ impl CutsceneTimeline {
             player_clip_wait: None,
             npc_clip_spin_frames: 0,
             stepped: false,
+            held_from_install: false,
             interaction_slot: None,
         }
+    }
+
+    /// Whether this context holds the player: it has taken a slice, or a
+    /// script that held the player spawned it ([`Self::held_from_install`]),
+    /// and it has not ended.
+    pub fn holds_player(&self) -> bool {
+        (self.stepped || self.held_from_install) && !self.is_done()
     }
 
     /// `true` once the timeline has completed.

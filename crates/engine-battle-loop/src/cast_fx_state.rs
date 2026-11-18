@@ -174,6 +174,18 @@ pub struct CastFxState {
     /// A film recorded on another emulator's drive reads its own; no play
     /// path sets it.
     pub drive_seek_seat: Option<u16>,
+    /// A capture harness seat: the passes that open on the capture band's
+    /// `0x6E` poll in the recording, in place of the engine's
+    /// `World::arm_capture_read_wait` vsync constant. A film recorded on another
+    /// drive reads its own; no play path sets it.
+    pub capture_read_seat: Option<u16>,
+    /// A capture harness seat: a capture child (the retail comparison's
+    /// in-process seed and image child, a cast film, the real-PCM cast
+    /// channel) replays a
+    /// recorded fight whose seeds stand on the recording drive's short `0x6F`
+    /// hold, so the band keeps it rather than the modelled seek
+    /// (`World::arm_capture_read_wait`). No play path sets it.
+    pub capture_seek_recorded: bool,
     /// PROT 0948's beam counter, retail's module word `0x801F8858`: arm 2
     /// zeroes it as it passes and the beam builder `FUN_801F726C` adds
     /// `step * 2` on every call.
@@ -275,10 +287,6 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
     /// of them.
     pub module_stager_calls: Vec<(u8, legaia_engine_cast::cast_module_ticks::StagerCaller)>,
-    /// PROT 0909's stager arm 0 stood its creature on the caller's frame
-    /// (`World::seat_viguro_creature`); the module tick that runs the queued
-    /// call steps the phase and leaves the seat alone.
-    pub module_viguro_seated_early: bool,
     /// How many op-`0x20` calls have reached a module's stager arm
     /// (wrapping): the ones `World::run_part_stager_calls` drains, and PROT
     /// 0925's, whose arm runs inside the calling part's step. Nothing in the
@@ -654,6 +662,8 @@ impl CastFxState {
             sideband_read_left: None,
             sideband_first_seek_seat: None,
             drive_seek_seat: None,
+            capture_read_seat: None,
+            capture_seek_recorded: false,
             module_beam_counter: 0,
             module_beam_live: false,
             module_flee: false,
@@ -681,7 +691,6 @@ impl CastFxState {
             module_settle_ticks: 0,
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),
-            module_viguro_seated_early: false,
             stager_arm_calls_run: 0,
             module_barra_counter: 0,
             summon_parts_dealt: 0,

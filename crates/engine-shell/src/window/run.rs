@@ -333,9 +333,10 @@ fn enter_launch_scene(
         // The engine's one picker rule (`World::stage_picker_entry`), which
         // the browser page's `enter_field` asks too.
         session.host.world.stage_picker_entry(scene, false);
-        // ...and seats the party where the disc's doors land them in it
-        // (`SceneHost::arm_picker_entry_seat`), as the page picker does.
-        session.host.arm_picker_entry_seat(scene);
+        // ...and seats the party where the disc's doors land them in it, on
+        // the story arrival whose entry beat plays there when the scene has
+        // one (`SceneHost::arm_picker_story_entry`), as the page picker does.
+        session.host.arm_picker_story_entry(scene);
         // Drop into the live field scene (run record 0, install the encounter
         // table, arm the live loop). Shared with the v0.1 oracle + headless
         // drivers via `NativeSession::enter_field_live`.
@@ -573,6 +574,11 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         }
         _ => crate::host_setup::open_boot_session(scene, enable_audio, extracted_root, disc)?,
     };
+    // A capture child replays a recorded fight whose seeds stand on the
+    // recording drive's short capture-band hold
+    // (`CastFxState::capture_seek_recorded`), from its first tick: a seed can
+    // cross `0x6F` before the first frame is prepared.
+    session.host.world.casting.capture_seek_recorded = screenshot.is_some();
     let launch_switches = apply_launch_toggles(
         &mut session,
         LaunchToggles {

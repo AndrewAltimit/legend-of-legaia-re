@@ -332,9 +332,11 @@ pub struct WorldToggles {
     /// the three kingdom world maps) or a save point opens the screen. Not
     /// retail; off by default and under [`Self::pin_retail`].
     pub save_anywhere: bool,
-    /// Open a fight off the seat axis (port judgement, **on** by default):
-    /// the battle camera's idle orbit starts on the field camera's azimuth,
-    /// moved out of the window where the two rows overlap
+    /// Open a fight's prompt off the seat axis (port judgement, **on** by
+    /// default): the battle camera's idle orbit starts on the field camera's
+    /// azimuth, moved out of the window where the two rows overlap. The
+    /// entry sweep and the name hold still run on yaw `0`, which frames the
+    /// enemy party; the hand-over to the far framing swings out
     /// (`legaia_engine_battle_vm::battle_cam_script::battle_entry_yaw`).
     /// Retail's battle init zeroes the yaw word (`0x80055E84`) and every
     /// fight opens looking down the seat axis, then orbits out of it -

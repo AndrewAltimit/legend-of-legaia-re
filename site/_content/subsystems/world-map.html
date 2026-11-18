@@ -111,7 +111,7 @@
 
 <section class="doc-section" id="walking" data-doc="walking-the-overworld">
   <h2>Walking and the camera</h2>
-  <p>Everything on <a href="field-locomotion.html">field locomotion</a> applies: the same held-pad remap, the same 2-unit stepping, the same per-axis collision against the walkability grid. The camera is the same follow camera a town has, too - the kingdom MAN's camera-region records, composed per region and eased between them.</p>
+  <p>Everything on <a href="field-locomotion.html">field locomotion</a> applies: the same held-pad remap, the same wall-slide resolver (a direction held into a ridge skids along it rather than stopping), the same 2-unit stepping, the same per-axis collision against the walkability grid. The camera is the same follow camera a town has, too - the kingdom MAN's camera-region records, composed per region and eased between them.</p>
   <figure class="diagram">
     <svg viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Side view of the walk camera: the eye sits behind and above the player, looking down at a per-region pitch of roughly 32 to 42 degrees; the focus is the player's position; the world is scaled 6x before projection with distance H 368.">
       <defs><marker id="wm-arrow3" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>

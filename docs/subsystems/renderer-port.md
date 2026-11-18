@@ -452,6 +452,14 @@ ledge, a bridge - and the actor on them overlaps the mesh around it by design:
 per-pixel depth alone buried King Drake in his throne and Vahn in the cliff behind
 `rikuroa2`'s chest ledge, where retail's link paints both over it.
 
+A shift moves the depth test, not the clip volume. Within ten buckets of the eye
+the shifted key is nearer than the near plane, and on the window's reversed-Z
+target a depth past `1` clips the vertex: under `edbylon`'s close shot the lead's
+near-shifted hair lost its crown on the window alone, where the page's log-of-`w`
+depth never reaches the clip. Both now test such a vertex at the near plane
+(`keyed_clip_depth` in `prim_reject.rs`, for every order key the window writes into
+clip `z`); a vertex nearer than the plane itself still clips.
+
 ### The battle sorts by each primitive's link
 
 A battle has one ordering table too, and every mesh in it goes through the same

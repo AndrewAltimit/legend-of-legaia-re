@@ -245,6 +245,10 @@ pub struct RetailObs {
     /// Drawn field actors' clip words ([`retail_object_clips`]), handed to
     /// the image child as `LEGAIA_SEAT_OBJECT_CLIPS`.
     pub object_clips: Vec<ObjectClipSeed>,
+    /// The same clip words as the RAM holds them
+    /// ([`retail_object_clips_ram`]): the walk film's seat, which runs on
+    /// from the RAM's pass rather than drawing the displayed one.
+    pub object_clips_ram: Vec<ObjectClipSeed>,
     /// The player's clip words ([`retail_player_clip`]), handed to the image
     /// child as `LEGAIA_SEAT_PLAYER_CLIP`.
     pub player_clip: Option<ObjectClipSeed>,
@@ -551,6 +555,14 @@ impl RetailObs {
             },
             object_clips: if matches!(class, StateClass::Field) {
                 retail_object_clips(ram)
+            } else {
+                Vec::new()
+            },
+            // A kingdom map's placements tick through the same driver
+            // (`FUN_8003BC08`), so their clips seat the same way (`map01`'s
+            // parked flats `15..=17` hold cursor `132` in the state).
+            object_clips_ram: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_object_clips_ram(ram)
             } else {
                 Vec::new()
             },

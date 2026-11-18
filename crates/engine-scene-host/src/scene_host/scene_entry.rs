@@ -11,6 +11,7 @@ use legaia_engine_system::movie::cutscene::FmvHandoff;
 
 mod battle_inputs;
 mod door_replay;
+mod entry_beats;
 mod entry_seat;
 mod field_scene;
 mod fmv_handoff;
@@ -19,6 +20,10 @@ mod walk_on_triggers;
 mod world_map_scene;
 
 pub use door_replay::DoorTaken;
+pub use entry_beats::{
+    HeldReason, PICKER_ENTRY_BEATS, PICKER_ENTRY_BEATS_HELD, PickerEntryBeat, PickerEntryBeatHeld,
+    picker_entry_beat,
+};
 pub(crate) use entry_seat::PickerOverrideSeat;
 pub use entry_seat::{PICKER_SEAT_OVERRIDES, PickerSeat, PickerSeatRule, picker_seat_override};
 pub use field_scene::field_scene_build;

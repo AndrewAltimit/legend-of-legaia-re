@@ -40,6 +40,8 @@ impl LegaiaViewer {
             pack.pack.len()
         ));
         self.kingdom = Some(pack);
+        self.kingdom_landmark_flags.clear();
+        self.load_kingdom_landmarks(prot_base);
         self.install_kingdom_clut_walk(prot_base);
         // Sweep nearby entries (+8..+12) for a second 7-asset table holding
         // the bulk continent terrain TMDs. Drake's is at +8 (entry 0093, 70
@@ -385,7 +387,76 @@ impl LegaiaViewer {
             )));
         }
         k.cur_slot = Some(s);
+        k.cur_pose = None;
         Ok(slot)
+    }
+
+    /// Select kingdom pack slot `slot` **posed** at pose key `key`
+    /// ([`Self::walk_placement_pose_keys`]' value) of clip `anim_id`
+    /// ([`Self::walk_placement_anim_ids`]' value): subsequent `pack_mesh_*`
+    /// calls read the posed build, the same stream shape as the raw one.
+    /// Falls back to the raw mesh when the clip does not pose this mesh
+    /// (retail's bone-count contract); the next [`Self::pack_mesh`] returns
+    /// to the raw build.
+    pub fn pack_mesh_posed(&mut self, slot: u32, anim_id: u32, key: i32) -> Result<u32, JsValue> {
+        self.pack_mesh(slot)?;
+        let offsets = (|| {
+            let landmarks = self.kingdom_landmarks.as_ref()?;
+            let k = self.kingdom.as_ref()?;
+            let s = slot as usize;
+            let body = k.pack.get(*k.byte_offsets.get(s)?..*k.byte_ends.get(s)?)?;
+            let tmd = legaia_tmd::parse(body).ok()?;
+            landmarks.offsets(
+                anim_id.min(u8::MAX as u32) as u8,
+                legaia_engine_scene::field_env::PropPoseKey::from_i32(key),
+                tmd.objects.len(),
+            )
+        })();
+        if let Some(k) = self.kingdom.as_mut() {
+            k.cur_pose = offsets;
+        }
+        Ok(slot)
+    }
+
+    /// Set the story flags the loaded kingdom's landmark prologues read as
+    /// raised, and re-pose the landmarks. Empty (the state every kingdom
+    /// load starts in) = a new game.
+    pub fn set_kingdom_landmark_flags(&mut self, flags: Vec<u16>) {
+        self.kingdom_landmark_flags = flags.into_iter().collect();
+        self.refresh_kingdom_landmark_poses();
+    }
+
+    /// The story flags the loaded kingdom's posed landmarks' prologues test,
+    /// ascending: the flags whose state changes what the overview draws
+    /// (`map03`: `0x4C8`, raised in Jette's Fortress once the party escapes
+    /// its collapse, which shuts Conkram's shell).
+    pub fn kingdom_landmark_story_flags(&self) -> Vec<u16> {
+        self.kingdom_landmark_poses
+            .tested_flags
+            .iter()
+            .copied()
+            .collect()
+    }
+
+    /// Per-placement clip id (parallel to [`Self::walk_placement_slots`]):
+    /// `0` for a stamp drawn raw, nonzero for a placed landmark whose bind
+    /// names a clip - draw it through [`Self::pack_mesh_posed`] with the
+    /// matching [`Self::walk_placement_pose_keys`] entry.
+    pub fn walk_placement_anim_ids(&self) -> Vec<u32> {
+        self.walk_placement_poses()
+            .into_iter()
+            .map(|p| p.map_or(0, |(a, _)| a as u32))
+            .collect()
+    }
+
+    /// Per-placement pose key (parallel to [`Self::walk_placement_slots`]):
+    /// `-1` for a raw stamp, else the `PropPoseKey::to_i32` the landmark's
+    /// spawn prologue leaves under the current story flags.
+    pub fn walk_placement_pose_keys(&self) -> Vec<i32> {
+        self.walk_placement_poses()
+            .into_iter()
+            .map(|p| p.map_or(-1, |(_, k)| k.to_i32()))
+            .collect()
     }
 
     /// Number of TMDs in the currently-loaded kingdom pack. 0 when no
@@ -754,6 +825,59 @@ impl LegaiaViewer {
 }
 
 impl LegaiaViewer {
+    /// The kingdom scene (`map01..03`) whose CDNAME block holds `prot_base`.
+    fn kingdom_scene_name(
+        index: &legaia_engine_scene::scene::ProtIndex,
+        prot_base: u32,
+    ) -> Option<&'static str> {
+        ["map01", "map02", "map03"].into_iter().find(|name| {
+            legaia_engine_scene::scene::Scene::load(index, name)
+                .is_ok_and(|scene| (scene.start..scene.end).contains(&prot_base))
+        })
+    }
+
+    /// Load the posable landmarks of the kingdom at `prot_base`
+    /// ([`crate::kingdom_landmarks::KingdomLandmarks`]) and pose them under
+    /// the current story flags. Leaves none (every stamp raw) when the
+    /// scene does not resolve - a raw PROT.DAT load has no CDNAME.
+    fn load_kingdom_landmarks(&mut self, prot_base: u32) {
+        self.kingdom_landmarks = self.ensure_prot_index().ok().and_then(|index| {
+            let name = Self::kingdom_scene_name(&index, prot_base)?;
+            crate::kingdom_landmarks::KingdomLandmarks::load(&index, name)
+        });
+        self.refresh_kingdom_landmark_poses();
+    }
+
+    /// Re-run the landmark prologues under [`Self::kingdom_landmark_flags`].
+    fn refresh_kingdom_landmark_poses(&mut self) {
+        self.kingdom_landmark_poses = self
+            .kingdom_landmarks
+            .as_ref()
+            .map(|l| l.poses(&self.kingdom_landmark_flags))
+            .unwrap_or_default();
+    }
+
+    /// Each walk placement's `(clip id, pose key)`, `None` for a stamp drawn
+    /// raw: a decoration-layer cell spawns no actor and runs no clip, and a
+    /// placed object poses only when its bind names a clip.
+    fn walk_placement_poses(
+        &self,
+    ) -> Vec<Option<(u8, legaia_engine_scene::field_env::PropPoseKey)>> {
+        self.walk_placements
+            .as_ref()
+            .map(|ps| {
+                ps.iter()
+                    .map(|p| {
+                        p.placed
+                            .then(|| self.kingdom_landmark_poses.by_anchor.get(&p.anchor))
+                            .flatten()
+                            .copied()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Resolve the loaded kingdom's CDNAME scene (`map01..03`, the block
     /// holding `prot_base`) and install its slot-5 CLUT-walk shimmer into the
     /// kingdom VRAM: park the slot-0 source strips (plus the Drake complement

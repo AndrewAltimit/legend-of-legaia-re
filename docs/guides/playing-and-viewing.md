@@ -53,7 +53,9 @@ arrives in the launcher as if it were dropped on its window.
 The launcher is one screen: a disc card at the top, the actions on the left
 (*Play*, *Play online*, *Choose disc...* / *Change disc...*, *Expansion
 pack...*, *Controls*, *Recent*, *Saves folder*, *Quit*) with a help box under them that explains whatever is
-focused, and the options on the right. Once a disc validates, the screen is
+focused, and the options on the right. The header's right side carries the
+version and, under it, the keys that work the screen (*Arrows, Enter, Tab,
+Esc*), on a line no help text can push out. Once a disc validates, the screen is
 lettered in the game's own dialog font, read from that disc. It is drawn in
 whole steps (2x in its 960x720 window); a window a little short of a step, as
 a 960x720 window on a 768-pixel-tall screen comes back once the title bar and
@@ -117,7 +119,7 @@ finder on those files (`.mcr` / `.mcd` / `.srm` / `.gme` / `.mcs`, or
 `.lxpack` / `pack.toml`) rather than the file dialog; the card finder's
 places start with the emulators' card folders that exist (DuckStation's
 `memcards`, Mednafen's `sav`, RetroArch's `saves`, ePSXe's `memcards`). While a controller was the last thing
-pressed, the help box's key reminder and the "press to play" lines name its
+pressed, the header's key reminder and the "press to play" lines name its
 buttons, by the labels its maker prints on them.
 
 On a Wayland desktop the launcher window opens through XWayland, because the
@@ -261,7 +263,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
 | Enhancements | Heal numbers (off = `--no-heal-numerals`) | `launcher.toml` | - | on |
-| Play | Free-angle movement | `legaia-options.toml` | `R` | off |
+| Play | Free-angle movement | `legaia-options.toml` | `R` | on |
 | Play | Action movement: Square jumps (twice in the air), R2 dashes (`--action-movement`) | `launcher.toml` | - | off |
 | Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
 | Play | Saved-chain Arts list: in battle, Arts picks from your saved combos (`--arts-saved-list`) | `launcher.toml` | - | off |
@@ -519,11 +521,11 @@ enhancement has a retail-faithful off position
 | `I` | Enhanced lighting: a time-of-day mood, real lights at lamps and glowing props; off is the game's own baked shading | on, remembered | `--no-dynamic-lighting` |
 | `F8` | Lighting time of day: auto, day, dusk, night | auto, remembered | - |
 | `Y` | Shadows cast by the enhanced point lights | on, remembered | `--no-dyn-shadows` |
-| `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on, remembered | `--no-occlusion-fade` |
+| `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither; story scenes that move the camera show them whole | on, remembered | `--no-occlusion-fade` |
 | `F9` | Volumetric ground fog | off, remembered | `--no-volumetric-fog` |
 | `F10` | Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night | off, remembered | - |
 | `Home` | Ambient occlusion: soft contact shadows where walls meet floors and at characters' feet | on, remembered | `--no-ssao` |
-| `R` | Free-angle movement | off (retail 4/8-way movement), remembered | - |
+| `R` | Free-angle movement | on (off is retail 4/8-way movement), remembered | - |
 | `T` | Camera distance preset: retail, far, farther | far, remembered | - |
 | `F3` | Wide debug orbit camera | off | - |
 | `F2` | Mute audio | off, remembered | `--no-audio` |
@@ -569,12 +571,17 @@ nothing else, so the next Play starts the way this game ended, as the play
 page remembers its boxes. While *Original game only* is on, the rows it holds
 read *Original* and do not change, as on the launcher. `L1` / `R1` (`Tab`)
 flip to the **Cheats** page ([below](#cheats)), then to the **Scenes** page,
-then to the **Tools** page, then to the **Keys** page. **Scenes** is the play page's scene list: every
+then to the **Tools** page, then to the **Keys** page; each page names its
+flip key at its heading's right in the words of the device used last (*Tab:
+cheats*, or the pad's own `R1` label). **Scenes** is the play page's scene list: every
 town, field area and overworld, grouped as on the page, opened on the scene you
 stand in (*(here)*). Up / Down pick one, Left / Right move a page, Cross or
 `Enter` goes there with your party and bag, seated and staged as a
 `--scene` launch or the play page's list seats and stages it (the scene's
-free-roam visit, entered through one of its doors). It refuses on the
+free-roam visit, entered through one of its doors). Where walking in through
+the story entrance opens on a cutscene - Garmel's welcome, the Rogue's Tower
+entrance, Noaru's arrival among them - the party lands on that entrance and
+the cutscene plays, unless your game is already past it. It refuses on the
 title and in the pause menu, in a fight, a movie or a minigame, and says so
 under the rows. **Tools** holds what otherwise takes a launch switch or a
 keyboard key: the developer menu (`LEGAIA_DEV_MENU`), the diagnostic rows
@@ -1050,7 +1057,10 @@ named (a double-click), `asset-viewer` opens the archive browser on the
 `extracted/PROT.DAT` in the current folder or beside the program; with none
 there it says how to make one and points at `legaia-explorer` - in the
 terminal, or, double-clicked, in a dialog whose *Choose folder...* picks the
-extracted folder to browse and whose *Legaia Explorer* starts Explorer. The browser takes
+extracted folder to browse and whose *Legaia Explorer* starts Explorer. On
+Windows a double-click opens no console window; started from `cmd.exe` the
+viewer prints there but the prompt comes back while its window is open
+(`start /wait asset-viewer ...` waits for it). The browser takes
 entry names from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` names
 another.
 
@@ -1169,7 +1179,8 @@ the Travel page.
 
 **Editing a pack while you play it.** `End` reloads the pack from its folder
 or `.lxpack` and, when you stand on one of its maps, rebuilds that map with you
-where you stood; the camera keeps its framing and no name banner plays. With
+where you stood; the camera keeps its framing, the screen does not fade
+through black and no name banner plays. With
 `--expansion-watch` the window does that by itself whenever a file of the pack
 changes, so a map edited in a text editor shows a moment after it is saved:
 

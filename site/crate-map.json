@@ -4982,6 +4982,7 @@
     "equipment_view",
     "field_npc",
     "field_scene",
+    "kingdom_landmarks",
     "npc_dialog",
     "player_anm",
     "pose_sampler",

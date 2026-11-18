@@ -427,6 +427,74 @@ impl World {
     /// puffs `gimard_burning_attack` holds eight of (record `0x801F5DA4`,
     /// flags `0x380`, scales `0x800` / `0x1000`). No-op without the battle
     /// overlay image (disc-free battles).
+    /// Seat the bursts a hit queued, on the hit's own pass: the trigger the
+    /// effect spawner seats ahead of ids `4` / `0x13` (`FUN_801DFDF0` ->
+    /// `FUN_80050ED4` -> `FUN_80021B04`) runs its program inside the seat
+    /// (`jal 0x80023070` at `0x80021DC0`), and that program's op `0x17` runs
+    /// the burst `FUN_801F30C4` there, which seats each child the same way.
+    /// A `--watch 0x80009010` recording of `battle_map01_frog_strike` draws
+    /// the hit body's rolls (`ra` `0x801EC664` .. `0x801ED368`), then the
+    /// burst's thirty-six (`0x801F3154` .. `0x801F34F0`, four blocks of
+    /// nine), then the effect-pool walker's (`0x801E01D4`), all on the hit's
+    /// frame. The anim tick is a list-0 callback, so the frame's list-1 walk
+    /// gives every part seated here its part tick on that frame too
+    /// ([`legaia_engine_effects::summon::SummonScene::seat_run`]).
+    /// Queued to the frame tail instead, the burst's draws and first tick
+    /// landed a pass after the hit's, and every spark drew off other words.
+    ///
+    /// REF: FUN_80021B04, FUN_801F30C4
+    pub(crate) fn seat_run_hit_bursts(&mut self) {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle {
+            return;
+        }
+        let channel_delta = self.effect_channel_delta();
+        let ratio = self.move_vm.ramp_ratio.max(1);
+        let fx_pass = if self.toggles.battle_sm_frame_cadence {
+            self.battle_frame_step().max(1)
+        } else {
+            1
+        };
+        // A trigger's burst seats children, whose own programs may queue
+        // more: bounded, as the scene cap bounds the list.
+        for _ in 0..4 {
+            if self.casting.pending_burst_triggers.is_empty()
+                && self.casting.pending_bursts.is_empty()
+            {
+                return;
+            }
+            let before = self.casting.active_action_fx.len();
+            self.flush_battle_bursts();
+            let mut fresh = self.casting.active_action_fx.split_off(before);
+            for scene in &mut fresh {
+                scene.channel_delta = channel_delta * u16::from(fx_pass);
+                scene.last_frame_delta = scene.channel_delta;
+                let seated = {
+                    let mut host = MoveVmHostImpl {
+                        world: self,
+                        current_slot: None,
+                        deferred_writes: std::collections::BTreeMap::new(),
+                        field_record_words: None,
+                        child_spawns: Vec::new(),
+                    };
+                    scene.seat_run(&mut host)
+                };
+                for i in seated {
+                    let part = &mut scene.parts[i];
+                    if !part.finished
+                        && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
+                    {
+                        vm::vdf_morph::envelope_tick_actor(&mut part.state, ratio * fx_pass);
+                    }
+                    self.integrate_battle_part_cycler(part, ratio * fx_pass);
+                }
+            }
+            // Anything a seat run spawned lands behind what it ran.
+            let spawned = self.casting.active_action_fx.split_off(before);
+            self.casting.active_action_fx.extend(fresh);
+            self.casting.active_action_fx.extend(spawned);
+        }
+    }
+
     pub(crate) fn flush_battle_bursts(&mut self) {
         let triggers = std::mem::take(&mut self.casting.pending_burst_triggers);
         let bursts = std::mem::take(&mut self.casting.pending_bursts);
@@ -651,9 +719,10 @@ impl World {
     /// move-FX sibling of [`Self::tick_summon`]). No-op when none is playing;
     /// drains the scene once every part has finished.
     pub fn tick_move_fx(&mut self, frame_delta: u16) {
-        // What the effect spawner queued since the last tick seats first, so
-        // its trigger runs this tick as retail's does on the frame after the
-        // seat; what this tick's op `0x17`s queue seats at the end.
+        // What op `0x17`s queued outside the spawner's seat run seats first;
+        // what this tick's op `0x17`s queue seats at the end. A trigger the
+        // effect spawner seats runs its burst inside the seat, on the hit's
+        // frame (`World::seat_run_hit_bursts`).
         self.flush_battle_bursts();
         let channel_delta = self.effect_channel_delta();
         // Effect-script table-form scenes: take the list, tick each, keep the

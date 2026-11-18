@@ -92,7 +92,10 @@ pub fn pause_slide_gate(
 ) -> bool {
     let screen = menu.and_then(|m| pause_screen(m, sub));
     let delta = legaia_engine_menus::menu_slide_lock::MENU_FRAME_DELTA;
+    let coin_row =
+        world.system_flag_test(legaia_engine_menus::field_menu::SYSTEM_FLAG_CASINO_COIN_ROW);
     let state = &mut world.menu;
+    state.widgets.rewrite_money_box(coin_row);
     state.pause_slide_lock.frame(
         &mut state.widgets,
         state.widget_scripts.as_ref(),

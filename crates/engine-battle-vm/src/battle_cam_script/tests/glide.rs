@@ -546,3 +546,34 @@ fn the_entry_sweep_holds_its_close_in_under_the_battle_open() {
         "case 9 once the flow reaches 0x14"
     );
 }
+
+/// An off-axis entry azimuth (the port's `battle_entry_yaw`) does not reach
+/// the opening: battle init zeroes the yaw (`0x80055E84`) and case 2 aims at
+/// yaw `0`, so the sweep and the name hold look down the seat axis at the
+/// enemy party. The hand-over to case 9 then swings out to the set-aside
+/// azimuth, and the orbit runs on from there.
+#[test]
+fn an_off_axis_entry_opens_on_the_seat_axis_and_swings_out_at_the_prompt() {
+    let entry = BATTLE_ENTRY_YAW_SAMPLE;
+    let mut cam = BattleCamera::new_with_formation(BattleCamPhase::Menu, None, entry, 0);
+    cam.start_entry_sweep();
+    cam.open_held = true;
+    while cam.entry_sweep_counter().is_some() {
+        steps(&mut cam, 1);
+        assert_eq!(cam.pose().yaw, 0.0, "the sweep keeps retail's yaw");
+    }
+    steps(&mut cam, 30);
+    assert_eq!(cam.pose().yaw, 0.0, "the name hold keeps it");
+    cam.open_held = false;
+    steps(&mut cam, 1);
+    assert!(cam.pose().yaw != 0.0, "the hand-over swings out");
+    steps(&mut cam, 40);
+    let off = (cam.pose().yaw - entry).rem_euclid(4096.0);
+    let off = off.min(4096.0 - off);
+    assert!(
+        off <= 200.0,
+        "landed near the entry azimuth: {}",
+        cam.pose().yaw
+    );
+    assert_eq!(cam.pose().pitch, cam.menu_pose().pitch);
+}

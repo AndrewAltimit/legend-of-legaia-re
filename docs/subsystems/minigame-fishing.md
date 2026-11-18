@@ -235,6 +235,7 @@ band    = DAT_801d90e8                        cast band, 0..4
 ### Band roll
 
 While no fish is hooked (`DAT_801d91b4 == 0`) and the line record `DAT_801d927c` exceeds `500`, the check body runs on a frame whose step takes the countdown `DAT_801d90ec` below zero, and zeroes it. A held band therefore skips the body, and the recogniser is called only from inside it: its ring stands still through the hold and at a short line, where the countdown keeps falling unclamped. Each entry first consults the cadence recogniser. The strike draw `rand() % interval` is taken every frame, held or not (`0x801D3300`). With a fish on, the hooked word sends the segment past the band roll (`0x801D31B8`) onto that draw, which nothing then reads: a fight frame spends one `rand()` there, ahead of the fish tick.
+The countdown still decays on a fight frame, since its store sits in that branch's delay slot (`0x801D31BC`), and no arm resets it or the band word: the landing stores neither (`0x801D2940..0x801D29E4`), so a hold a reel-in cut short carries its band and its boosted credit into the next cast.
 
 - **Match:** the template id is stored as the band, the countdown is armed to `0x40` (the body is skipped for the next 64 frame-steps, so the band holds), and the strike-splash timer `DAT_801d90f0` is seeded. The splash fires for any matched template, including the ones that select common bands.
 - **No match:** the band is re-rolled from `r = rand & 0xfff`, so an unmatched band is only ever the current frame's roll.
@@ -984,7 +985,7 @@ Overlay-resident unless noted; `_DAT_8008xxxx` are in the persistent save block.
 | Address | Type | Meaning |
 |---|---|---|
 | `0x801d90e8` | `u32` | Cast band (0..4): spawn-table column. |
-| `0x801d90ec` | `s32` | Band-check countdown: parks at `0`; armed `0x40` by a cadence match, during which the band holds and the strike credit stays boosted. |
+| `0x801d90ec` | `s32` | Band-check countdown: falls by the frame step every state-`0x19` frame, hooked or not, and is zeroed by the check body; armed `0x40` by a cadence match, during which the band holds and the strike credit stays boosted. |
 | `0x801d9064` | `s32` | Last decoded reel button (`0` / `1` / `2`). |
 | `0x801d91dc` | `u32` | Cadence ring write index (mod 16). |
 | `0x801d91e4` | `u64[16]` | Cadence ring - sixteen `{button, held-frames}` entries. |

@@ -51,7 +51,7 @@ fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>,
         }
         let ab = clip_depth_affine(u.mvp);
         let near_w = max(clip.w - 320.0 / 6.0, 1.0);
-        return vec4<f32>(clip.x, clip.y, (ab.x + ab.y / near_w) * clip.w, clip.w);
+        return vec4<f32>(clip.x, clip.y, keyed_clip_depth(ab, near_w, clip.w) * clip.w, clip.w);
     }
     // The overworld keeps `flags.w` for its curve: its order word rides in
     // `flags.z / 2`, above the occlusion bit.
@@ -103,7 +103,21 @@ fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>,
         return clip;
     }
     let ab = clip_depth_affine(m);
-    return vec4<f32>(clip.x, clip.y, (ab.x + ab.y / mean_w) * clip.w, clip.w);
+    return vec4<f32>(clip.x, clip.y, keyed_clip_depth(ab, mean_w, clip.w) * clip.w, clip.w);
+}
+
+// The normalised depth a vertex at view depth `w` tests at when its order key
+// is `key_w`. A key moves the depth test, not the clip volume: a key nearer
+// than the near plane (a near shift on a vertex within ten buckets of the eye)
+// would put the reversed-Z depth past `1` and clip the vertex, cutting open
+// what retail draws at its nearest slot (the lead's hair under `edbylon`'s
+// close shot). Such a key tests at the near plane instead, as the browser
+// host's log-of-`w` depth, which never reaches the clip, already did; a vertex
+// that is itself nearer than the plane keeps its own depth and clips as before.
+fn keyed_clip_depth(ab: vec2<f32>, key_w: f32, w: f32) -> f32 {
+    let keyed = ab.x + ab.y / key_w;
+    let own = ab.x + ab.y / w;
+    return min(keyed, max(own, 1.0));
 }
 
 // `z = a * w + b` of `m`'s depth row over its w row, read the way

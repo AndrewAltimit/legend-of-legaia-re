@@ -684,7 +684,10 @@ impl PondSession {
                     }
                     // The landing zeroes the surge word (`0x801D2964`).
                     self.surge = 0;
-                    self.band = BandCheck::default();
+                    // The band word `DAT_801D90E8` and its countdown
+                    // `DAT_801D90EC` are not touched: the arm stores neither
+                    // (`0x801D2940..0x801D29E4`), so a hold a reel-in cut
+                    // short carries into the next cast's first frames.
                     self.cadence.reset();
                     self.lure_probe = Default::default();
                     self.phase = PondPhase::Waiting;
@@ -816,6 +819,10 @@ impl PondSession {
                 // word sends it past the band roll (`0x801D31B8`) onto the
                 // strike draw (`jal rand` at `0x801D3300`), which nothing
                 // reads with a fish on. The draw falls ahead of the fish tick.
+                // The countdown decays first: its store sits in the delay
+                // slot of the hooked branch (`sw v0,-0x6f14(s2)` at
+                // `0x801D31BC`), so it keeps falling through the fight.
+                self.band.countdown -= fs;
                 self.rng.next_u15();
                 self.fight_tail(sp, input, fs);
             }

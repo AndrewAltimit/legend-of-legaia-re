@@ -113,6 +113,8 @@ pub struct ShopSlides {
     /// `(window id, progress 0..=SHOP_SLIDE_FRAMES, leaving)`, leaving
     /// windows first, then the current set in its draw order.
     entries: Vec<(usize, u8, bool)>,
+    /// Ticks the set has stood home on its target ([`Self::home_ticks`]).
+    home: u8,
 }
 
 impl ShopSlides {
@@ -146,11 +148,29 @@ impl ShopSlides {
             .collect();
         leaving.extend(staying);
         self.entries = leaving;
+        let home = !target.is_empty()
+            && self.entries.len() == target.len()
+            && self
+                .entries
+                .iter()
+                .all(|e| !e.2 && e.1 == SHOP_SLIDE_FRAMES && target.contains(&e.0));
+        self.home = if home { self.home.saturating_add(1) } else { 0 };
+    }
+
+    /// Ticks the window set has stood home on the target it was last stepped
+    /// toward: `1` on the tick its last window lands, `0` while any window
+    /// moves or the set differs. A shop sub-screen reads the slide latch
+    /// before its pad (`_DAT_8007BB80`), so a screen's input phase - the
+    /// list's hand, its affordability greys - starts the frame after its
+    /// windows land.
+    pub fn home_ticks(&self) -> u8 {
+        self.home
     }
 
     /// Drop every window at once (the shop closed).
     pub fn reset(&mut self) {
         self.entries.clear();
+        self.home = 0;
     }
 
     /// `(window id, progress)` in draw order. Progress

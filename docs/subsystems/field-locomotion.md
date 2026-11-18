@@ -534,7 +534,9 @@ A touch's run takes its first slice in the tick that posted it. Retail's player 
 
 The engine walks every vsync and steps records on game frames, so a touch can land between game frames; its first slice runs there anyway. Left to the next game frame, the lock held that frame's walk, and sliding along `town01`'s door at `(22, 18)` (bind record `P0[4]`, `25 21 21`, which pushes back and ends) went at half speed. Disc-gated: `engine-session/tests/town01_door_slide_disc.rs`.
 
-The record's own MOVE_TO (`23 <x> <z>`, no target byte) seats the prop actor itself - the op's non-player arm stores the tile into the executing actor - and the placement's contact box and collider rows move with it (`World::seat_prop`). `vozz` P0[1] is bound to every thicket across East Voz's paths: examined while `0x079` is up, it plays its cue, waits and runs `23 7F 7F`, and the thicket is on the hide tile. Each placement is its own actor, so each thicket is cut on its own.
+The record's own MOVE_TO (`23 <x> <z>`, no target byte) seats the prop actor itself - the op's non-player arm stores the tile into the executing actor (`0x801DECAC`). Retail's executing actor is the object, so the one write moves what is drawn and what is collided with. The port runs the record on a context of its own, so the seat goes onto the object's bind channel, which the draw reads, and the contact box and collider rows follow it (`World::seat_own_object`).
+
+`vozz` P0[1] is bound to every thicket of Crystal Grass across East Voz's paths: examined while `0x079` (the Weed Hammer) is up, it plays its cue, waits and runs `23 7F 7F`, and the thicket is on the hide tile, out of the draw and out of the player's way. Each placement is its own actor, so each thicket is cut on its own. Nothing latches the cut, so a thicket stands again when the scene is entered again. A seat that moved only the collider rows let the player walk through a thicket still drawn where it stood. Disc-gated: `engine-scene-host/tests/vozz_crystal_grass_disc.rs`.
 
 A move made **from another context** carries the box too. `FUN_801CFC40` centres a static-class box on the actor's live `+0x14` / `+0x18` plus the record's footprint offset (`0x801CFCF4..0x801CFD6C`), so whatever seats the object's actor - a cross-context `A3 <obj> <x> <z>`, a `4C C3` re-seat, a park at the hide box - moves what the player collides with on the same frame it moves what is drawn. The engine carries each placement's rows by its object-bind channel's displacement from the bind seat, the displacement the draw reads (`World::sync_prop_colliders_to_object_actors`, once per field tick).
 
@@ -1592,6 +1594,12 @@ The three sum to 296 against the capture's 294 (the capture reads the span off t
 
 A concurrent helper record therefore refuses the pad - walking, the action button and the menu button - from its first slice to its closing `0x21`, exactly as a modal cutscene does; "modal" decides only the camera and the opening chain's beat sequencing. The engine's predicate is `World::script_context_engages_player` (the modal timeline or any live helper), which gates locomotion, the menu open and a prop touch. `korout`'s first-visit record (`P2[3]`, `C1 F8 04 90`: eight tiles along `+Z` over 256 vsyncs) is the helper case.
 
+**A record a script spawns holds the player from its spawn.** The runner adds one to the modal depth `*(_DAT_801C6EA4)+0xA` and to the context's own share `+0x2A` on every slice (`0x80039D98..0x80039DB4`), raises the player's `0x80000` (`0x80039DB8..0x80039DD4`), and on the context's closing `0x21` takes back its share and clears the bit only if the depth is then zero (`0x80039ECC..0x80039F14`). `FUN_8003BDE0` bumps the depth too and seeds the new context's share at `1` (`0x8003C080..0x8003C0CC`).
+
+So when a running script spawns a record (op `0x44`) and ends in the same frame, the depth stays non-zero and the bit its slices raised stays up: the player passes straight from the spawner to the record, and a tile crossing in that frame is spent under the lock (`FUN_801D1EC4`, `0x801D214C`). A walk-on spawn from free roam has no slice behind it, so its record holds the player from its first slice as above.
+
+`bylon`'s hall door back from West Voz is the case that shows it. `P0[31]` seats the player on `(23, 115)` (`A3 F8 17 73`), spawns `P2[6]` (`44 61`, Gala running ahead to the Mist) and ends; the seat tile carries a fallback kind-1 record for the same `P2[6]`. The engine marks an op-`0x44` helper as holding the player from its install (`CutsceneTimeline::held_from_install`); counted from its first slice instead, the door's last frame held nobody, the crossing spawned the record a second time and both copies ran. Disc-gated: `engine-scene-host/tests/bylon_hall_door_record_once_disc.rs`.
+
 ## The submode return state - a parked word nothing reads
 
 Opening a field sub-screen parks a state. The op-`0x49` enter does it twice, in two copies of one idiom in the field overlay, both reaching the scene struct through the pointer at `0x801C6EA4`:
@@ -1742,10 +1750,11 @@ The held d-pad goes through the eight-entry ring retail's remap walks, rotated b
 
 All three default to 0, so headless hosts keep the identity remap. A host that renders the retail follow view sets `render_yaw_bias`; while the zone-driven follow camera composes that view the base term is the negation of the live yaw it eased (`Camera::zone_follow_yaw_units`), so the compass turns with the scene's authored camera. The follow camera itself is documented with its record format in [`encounter.md`](../formats/encounter.md#man-section-3-the-camera-region-table) and ported in `camera_zone`.
 
-Two non-retail, opt-in knobs (play-window keybinds, persisted in `legaia-options.toml`):
+Two non-retail knobs (play-window keybinds, persisted in `legaia-options.toml`):
 
 - **Camera distance** (`Camera::distance`, presets retail / far / farther; `T` cycles) - a framing scale on the follow camera's eye-back depth that never feeds the simulation. The engine-core default stays `retail` so oracle / replay paths are bit-identical; the windowed host defaults to `far`.
-- **Free-angle movement** (`World::locomotion.precise_movement`; `R` toggles, default off) - swaps the quantised remap for a continuous decode (`decode_field_direction_precise`): the azimuth rotates the screen vector at full angular resolution, key diagonals walk true 45-degree vectors at normalised speed (no x0.75 cut), and a deflected analog stick (`InputState::lstick`) passes its angle through. The step still routes through the same 2-unit per-axis collision probes (`advance_with_collision_vector`, Z before X per sub-step), with a sub-step remainder carried across frames.
+- **Free-angle movement** (`World::locomotion.precise_movement`; `R` toggles) - on by default on both play hosts (`OptionsState::precise_movement`), off in the `World` default, so headless sessions, the oracles, walk films, the full-game ladder and `retail-compare` keep the retail decode, and `--retail` / `pin_retail` force it off for a session.
+  It swaps the quantised remap for a continuous decode (`decode_field_direction_precise`): the azimuth rotates the screen vector at full angular resolution, key diagonals walk true 45-degree vectors at normalised speed (no x0.75 cut), and a deflected analog stick (`InputState::lstick`) passes its angle through. The step still routes through the same 2-unit per-axis collision probes (`advance_with_collision_vector`, Z before X per sub-step), with a sub-step remainder carried across frames.
 
 ## Open
 

@@ -138,6 +138,17 @@ pub struct AmbientFxState {
     /// the rects roll on their own clock as retail's do. The cast-sequence
     /// child's form of the seed (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`).
     pub vram_rect_seed_until_action: bool,
+    /// The action state `ctx[7]` the seed's snapshot was taken in
+    /// (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_STATE`): the seed holds through the
+    /// intro and lands once, **ahead** of the rolls of the first battle pass
+    /// the engine runs in that state, and the rects roll on from there. A
+    /// cast film's retail recording opens on the state's own instant, and
+    /// every pass retail ran from it rolled the rects: released on the first
+    /// action pass instead, the seed overwrote the inject state's pass and
+    /// the next one, and Cort's shield page opened Evil Seru Magic two passes
+    /// (eight rows) behind. Takes precedence over
+    /// [`Self::vram_rect_seed_until_action`].
+    pub vram_rect_seed_until_state: Option<u8>,
     /// Capture alignment for a dance hall frame: the palettes retail's hall
     /// cyclers captured (`+0xA8` / `+0xAC`), by rect. They are the walked-in
     /// scene's last paint ([`crate::world::World::carry_walked_in_cells`]), a
@@ -169,6 +180,7 @@ impl AmbientFxState {
             cell_fx_seed: Vec::new(),
             vram_rect_seed: Vec::new(),
             vram_rect_seed_until_action: false,
+            vram_rect_seed_until_state: None,
             cell_source_seed: Vec::new(),
         }
     }

@@ -49,6 +49,29 @@ impl LegaiaRuntime {
     /// applies after this returns; `false` for a picker / door /
     /// opening-chain entry.
     pub(crate) fn enter_field_core(&mut self, name: &str, resume: bool) -> Result<String, String> {
+        self.enter_field_seated(name, resume, true)
+    }
+
+    /// A **plain** picker visit to `name`: staged as [`Self::enter_field`]
+    /// stages it, but seated by the default door rule
+    /// (`SceneHost::arm_picker_entry_seat`) without the selector's entry
+    /// beat (`SceneHost::arm_picker_story_entry`), so no arrival cutscene
+    /// plays. It is the seat the map viewer's live preview takes
+    /// (`legaia_engine_scene_host::scene_live::LiveScene`), which is what a
+    /// side-by-side comparison of the two hosts needs. Rust-side only: the
+    /// page's scene list enters through [`Self::enter_field`].
+    pub fn enter_field_plain(&mut self, name: &str) -> Result<String, String> {
+        self.enter_field_seated(name, false, false)
+    }
+
+    /// [`Self::enter_field_core`] with the seat rule chosen: `story` arms
+    /// the selector's entry beat, `false` the plain door seat.
+    fn enter_field_seated(
+        &mut self,
+        name: &str,
+        resume: bool,
+        story: bool,
+    ) -> Result<String, String> {
         self.field_morph_last.clear();
         let host = self
             .scene_host
@@ -75,12 +98,18 @@ impl LegaiaRuntime {
         // `town01` re-enter through here too, and a card Load's resume is not
         // a picker visit either.
         host.world.stage_picker_entry(name, resume);
-        // A picked scene seats the party where the disc's doors land them
-        // (`SceneHost::arm_picker_entry_seat`, the native `--scene` entry's
-        // rule too). The arm stands down for the opening chain's legs and a
-        // cutscene-owned entry; a card Load's resume carries its own seat.
+        // A picked scene seats the party where the disc's doors land them,
+        // on the story arrival whose entry beat plays there when the scene
+        // has one (`SceneHost::arm_picker_story_entry`, the native `--scene`
+        // entry's and Scenes page's rule too). The arm stands down for the
+        // opening chain's legs and a cutscene-owned entry; a card Load's
+        // resume carries its own seat.
         if !resume {
-            host.arm_picker_entry_seat(name);
+            if story {
+                host.arm_picker_story_entry(name);
+            } else {
+                host.arm_picker_entry_seat(name);
+            }
         }
         // The page's runtime twins of the native launch switches
         // (`crate::play_toggles`).
@@ -348,6 +377,7 @@ impl LegaiaRuntime {
             Some(
                 legaia_engine_scene_host::scene_host::PickerSeat::Arrival { .. }
                     | legaia_engine_scene_host::scene_host::PickerSeat::Override { .. }
+                    | legaia_engine_scene_host::scene_host::PickerSeat::EntryBeat { .. }
             )
         ) {
             return;

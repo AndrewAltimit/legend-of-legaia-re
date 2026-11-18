@@ -523,7 +523,22 @@ pub const fn polygon_frame_work(polys: u32) -> u16 {
 /// Hblanks of a battle frame's work that do not scale with what it links,
 /// the intercept of [`linked_frame_work`]: the frame driver, the battle VMs,
 /// the 2D layers the census does not count.
-pub const LINKED_FRAME_BASE: u16 = 117;
+pub const LINKED_FRAME_BASE: u16 = 75;
+
+/// Hblanks a battle frame spends on the backdrop pair and the ground grid
+/// while they draw, over the primitives of theirs it links: every backdrop
+/// primitive is transformed before the quad leaves' off-screen reject
+/// (`FUN_80044798`) or the winding test drops it, and the grid walks its
+/// cells to cull them (`battle_ground_grid::visible_cell_count`), so the
+/// pair costs a near-constant share of the frame the census's linked count
+/// does not see. Read off the cost-carrying PCSX-Redux recordings of the
+/// strike, arts and enemy film sets: the frames that draw neither (a black
+/// backdrop's close-ups: Final Crisis's arm 6, Fatal Decision's arms 6 and
+/// 7, Blazing Slash's last arms) cost `40` to `60` hblanks under the line
+/// [`LINKED_FRAME_BASE`] `+ 42` reads the rest on, and with the term the
+/// step those frames read agrees with retail's on `.77` of the enemy films'
+/// state-and-arm medians against `.73`, the strikes' and arts' unchanged.
+pub const LINKED_BACKDROP_WORK: u16 = 42;
 
 /// Hblanks a battle frame's work spends per primitive it links, in
 /// thousandths, over the census of world state
@@ -567,9 +582,16 @@ pub const fn is_strike_state(state: u8) -> bool {
 }
 
 /// The work a battle frame whose census counts `linked` primitives costs
-/// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks.
-pub const fn linked_frame_work(linked: u32) -> u16 {
-    let c = LINKED_FRAME_BASE as u32 + (linked as u64 * LINKED_WORK_MILLI as u64 / 1000) as u32;
+/// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks, with
+/// [`LINKED_BACKDROP_WORK`] while the backdrop pair or the grid draws.
+pub const fn linked_frame_work(linked: u32, backdrop: bool) -> u16 {
+    let base = LINKED_FRAME_BASE as u32
+        + if backdrop {
+            LINKED_BACKDROP_WORK as u32
+        } else {
+            0
+        };
+    let c = base + (linked as u64 * LINKED_WORK_MILLI as u64 / 1000) as u32;
     if c > u16::MAX as u32 {
         u16::MAX
     } else {
@@ -599,6 +621,36 @@ pub const fn xa_polled_work_cost(work: u16) -> u16 {
 /// What the pass after a clip's cue costs over its base: Amethyst's Heal's
 /// `507` against the lone member's `0x3E` frames near `385`.
 pub const XA_STREAM_ONSET_COST: u16 = 122;
+
+/// Hblanks from the opening of an arts shout's pass to the clip's first poll
+/// on PCSX-Redux when the drive already stands on the clip's file. The battle
+/// seek-ahead selector (`FUN_8004DA00`) parks the head on the acting member's
+/// long bank `(char - 1) * 2` (`0x8004DAFC`) for an Attack whenever the drive
+/// is idle, so a shout from that bank (`FUN_8004C140` -> `FUN_8003D53C`) seeks
+/// nowhere: `--cd-trace` recordings of Frost Breath, Dragon Fangs' third line,
+/// Tri-Somersault's third and Rogue Flame issue the `CdlSeekL` `35k..50k`
+/// cycles into the frame and `CdlReadS` `21k` after it, so the polls load the
+/// shout's own pass (Frost Breath's runs `8` vsyncs).
+pub const ARTS_SHOUT_PARKED_POLL_HBLANKS: u32 = 31;
+
+/// Hblanks from the opening of an arts shout's pass to the clip's first poll
+/// on PCSX-Redux when the clip lies in another file than the parked bank:
+/// PCSX-Redux answers the seek in `1827k` cycles whatever its distance (every
+/// such seek of the arts and enemy `--cd-trace` recordings), issued `255k..320k`
+/// cycles into the frame. The shout's own pass runs out unloaded and the
+/// polls open part way into the next (Dragon Fangs' first line: `CdlReadS`
+/// `0.66` vsyncs into the pass after the cue, which runs `7` vsyncs).
+pub const ARTS_SHOUT_SEEK_POLL_HBLANKS: u32 = 983;
+
+/// What a frame of `work` hblanks costs when the clip's polls open `wait`
+/// hblanks into it, `polled` pricing the work they load: the work before the
+/// first poll runs at full speed, the rest under the polls' share.
+pub fn xa_partly_polled_cost(wait: u32, work: u16, polled: impl Fn(u16) -> u16) -> u16 {
+    match u16::try_from(wait) {
+        Ok(w) if w < work => w.saturating_add(polled(work - w)),
+        _ => work,
+    }
+}
 
 /// Hblanks one after-image ghost adds to a frame: the draw tick's walk
 /// `FUN_80049348` re-runs the body's whole object draw `FUN_80048A08` per
@@ -948,6 +1000,27 @@ impl RetailRandTrack {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Frost Breath on a full party: the shout from Noa's parked bank loads
+    /// its own pass (retail `8` vsyncs), where a seek leaves it to its step
+    /// and opens the polls part way into the next (Dragon Fangs' first line:
+    /// its cue pass runs `3`, the next `7`).
+    #[test]
+    fn an_arts_shout_loads_from_where_its_seek_ends() {
+        let polled = xa_polled_work_cost;
+        let parked = xa_partly_polled_cost(ARTS_SHOUT_PARKED_POLL_HBLANKS, 542, polled);
+        assert!(frame_span(parked, 3) >= 6, "parked cue pass {parked}");
+        let seek = xa_partly_polled_cost(ARTS_SHOUT_SEEK_POLL_HBLANKS, 600, polled);
+        assert_eq!(seek, 600, "the seek outlasts the cue pass's work");
+        assert_eq!(frame_span(seek, 3), 3);
+        let next = ARTS_SHOUT_SEEK_POLL_HBLANKS - 3 * HBLANKS_PER_VSYNC;
+        let onset = xa_partly_polled_cost(next, 620, polled);
+        assert!(
+            frame_span(onset, 3) >= 6,
+            "pass after the seek's cue {onset}"
+        );
+        assert_eq!(xa_partly_polled_cost(0, 620, polled), polled(620));
+    }
 
     #[test]
     fn the_step_track_counts_from_the_films_first_pass() {

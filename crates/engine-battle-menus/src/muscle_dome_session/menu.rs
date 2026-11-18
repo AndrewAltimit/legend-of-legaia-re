@@ -483,6 +483,7 @@ impl MuscleDomeSession {
                 cross: pad.confirm,
                 circle: pad.cancel,
                 triangle: pad.triangle,
+                window_dirs: false,
             },
             party,
             monsters,

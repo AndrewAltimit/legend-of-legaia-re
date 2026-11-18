@@ -135,6 +135,10 @@ export const SCENES = {
    * cutscene turns Vahn toward the grass, then toward Noa. */
   grass629: { scene: 'vell', flags: [0x460, 0x078], seat: [2112, 4672], ticks: 1500, every: 50, hold: [[150, 153, 'Up']], taps: every(200, 1000, 40, 'Cross') },
   grass629_cut: { scene: 'vell', flags: [0x078], seat: [2112, 4672], ticks: 1500, every: 50, hold: [[150, 153, 'Up']], taps: every(200, 1490, 40, 'Cross') },
+  /* Vahn's front door with the measuring beat armed (flag 0x226): the door spawns the beat as a
+   * concurrent record whose own shot walks Vahn in behind the wall, and the see-through-walls
+   * fade stands down on both hosts while it holds him (`field_occlusion::host_fade_arming`). */
+  door_beat: { scene: 'town01', flags: [0x226], seat: [4824, 3110], ticks: 1500, every: 30, hold: [[30, 270, 'Up']], taps: every(300, 1490, 30, 'Cross') },
   summit582: { scene: 'rikuroa', flags: [0x2FB, 0x281, 0x282, 0x283, 0x284, 0x285], seat: [7300, 9792], ticks: 1500, every: 60, hold: [[30, 55, 'Right']], taps: every(250, 1490, 20, 'Cross') },
 };
 /* The five minigames from the picker's own entries, on a rhythm of presses. */

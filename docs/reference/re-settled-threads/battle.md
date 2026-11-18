@@ -2594,7 +2594,8 @@ Owning pages: [`retail-compare.md`](../../tooling/retail-compare.md), [`battle-s
 
 ### How long `0x6E` and `0x6F` hold, and what the hold moves
 
-Grade `capture` for the lengths, `disassembly` for what runs through them. The two states poll CD reads (`jal 0x8003DE7C` at `0x801E4F08`, `FUN_8003F2B8(1)` in `0x6F`), and over the harvest-state casts they hold `14..=17` and `4..=6` vsyncs whichever module or fight. The polls are not idle, so a load the engine answers at once still costs retail's look: `0x6E` walks the framing each pass (`0x801E4F00`) and `0x6F` pulls `ctx[+0x6D0]` in. Held in the engine, the walk matches retail to the unit through `0x6E`, and the shots built on `ctx[+0x6D0]` land where retail's do.
+Grade `capture` for the lengths, `disassembly` for what runs through them. `0x6E` polls the read `0x28` queued (`jal 0x8003DE7C` at `0x801E4F08`) and `0x6F` the seek to the monster's voice file `0x6E` then issues (`FUN_8003F2B8(1)`). Over the PCSX-Redux harvest-state casts they hold `14..=17` and `4..=6` vsyncs whichever module or fight; under mednafen's drive `0x6F` holds the seek's length, `20` and `31` vsyncs left at the two states that stand in it, and the port takes that drive's law ([audio](../../subsystems/audio.md#the-capture-bands-seek)).
+The polls are not idle, so a load the engine answers at once still costs retail's look: `0x6E` walks the framing each pass (`0x801E4F00`) and `0x6F` pulls `ctx[+0x6D0]` in. Held in the engine, the walk matches retail to the unit through `0x6E`, and the shots built on `ctx[+0x6D0]` land where retail's do.
 
 ### What a hidden seat draws
 

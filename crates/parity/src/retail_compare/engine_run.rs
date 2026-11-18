@@ -317,6 +317,7 @@ fn seed_and_settle(
         NativeSession::open(extracted, &cfg)
     }
     .context("open boot session")?;
+    session.host.world.casting.capture_seek_recorded = true;
     // The image child's `--retail` mode (`pin_seed_retail`). No field-side
     // switch draws differently under a resident patch.
     crate::retail_compare::pin_seed_retail(&mut session.host.world.toggles, false);

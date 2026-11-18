@@ -630,7 +630,10 @@ impl World {
     /// sequencing. A helper counts from its first slice: one installed this
     /// tick has raised nothing yet, and one that runs to its end inside a
     /// slice is dropped before the next pad read, as retail's same-frame
-    /// raise-and-clear leaves the bit down.
+    /// raise-and-clear leaves the bit down. A helper a running script
+    /// spawned counts from its install: the spawner's slices raised the bit,
+    /// and the spawn's share of the depth keeps it up past the spawner's
+    /// end ([`legaia_engine_field::cutscene_timeline::CutsceneTimeline::held_from_install`]).
     ///
     /// REF: FUN_80039B7C (the raise and the clear), FUN_8003BC08 (`0x8003BD34`),
     /// FUN_8003BDE0 (the `0x100` install), FUN_801D1344 (`0x801D1694`)
@@ -654,7 +657,49 @@ impl World {
                 .field_vm
                 .helper_contexts
                 .iter()
+                .any(|tl| tl.holds_player())
+    }
+
+    /// `true` while a script context that has taken a slice holds the player
+    /// and so owns the frame's camera: the engaged bit `+0x10 & 0x80000` as
+    /// the field tick reads it ahead of the pad controller, plus a talk's
+    /// own staged shot.
+    ///
+    /// Retail's field tick `FUN_801D1344` tests the player's engaged bit
+    /// (`lw +0x10` / `and 0x80000` at `0x801D1694..0x801D169C`) before the
+    /// pad controller `FUN_801D01B0`: only with it down does the free-roam
+    /// branch run, latching `s3 = 1` (`0x801D16C0`), and the follow tail
+    /// behind `beq s3,zero` (`0x801D17DC`) is skipped otherwise. While it is
+    /// up the pad does not walk the player and the camera is whatever the
+    /// record's op-`0x45` beats and mover glides leave in the globals, so the
+    /// framing is authored for the whole span - the settled gaps between
+    /// beats and an APPLY's ease back included. The runner
+    /// `FUN_80039B7C` raises it on every frame it steps a context
+    /// (`0x80039DB8..0x80039DD4`) and clears it on the closing `0x21`
+    /// (`0x80039EE8..0x80039F14`).
+    ///
+    /// Unlike [`Self::script_context_engages_player`] (the pad refusal) this
+    /// counts the modal timeline only once it has taken a slice
+    /// ([`Self::cutscene_timeline_holds_camera`]), as retail's camera ease
+    /// does, so a stand-and-press walk-on beat that re-spawns and ends inside
+    /// one slice on every frame of its band holds nothing, and it leaves out
+    /// the parked door countdown, which keeps the follow framing. A plain
+    /// talk holds the pad through the dialogue channel, not here, unless it
+    /// stages a shot of its own ([`Self::scripted_shot_holds_camera`]).
+    ///
+    /// The camera-occlusion fade (`engine-screens::field_occlusion`) stands
+    /// down under it: a scripted shot frames what the script means to show.
+    ///
+    /// REF: FUN_801D1344 (`0x801D1694`), FUN_80039B7C
+    pub fn script_holds_camera(&self) -> bool {
+        self.expansion.cutscene.locks_player()
+            || self.cutscene_timeline_holds_camera()
+            || self
+                .field_vm
+                .helper_contexts
+                .iter()
                 .any(|tl| tl.stepped && !tl.is_done())
+            || self.scripted_shot_holds_camera()
     }
 
     /// `true` while a script record that holds the player has an op-`0x45`
@@ -1089,6 +1134,8 @@ impl World {
                 tl.player_glide = Some(glide);
             } else {
                 tl.player_landed_hold = true;
+                tl.ctx.flags &= !0x400;
+                tl.ctx.wait_accum = 0;
             }
         }
         for mut glide in std::mem::take(&mut tl.npc_glides) {
@@ -1103,11 +1150,15 @@ impl World {
             walk.frames += 1;
             if self.step_player_walk_leg(walk.target, walk.speed, grid, walk.approach) {
                 tl.player_landed_hold = true;
+                tl.ctx.flags &= !0x400;
+                tl.ctx.wait_accum = 0;
             } else if walk.frames < WALK_PARK_TIMEOUT {
                 tl.walk_wait = Some(walk);
             } else {
                 self.seat_player_on_walk_leg_target(walk.target);
                 tl.player_landed_hold = true;
+                tl.ctx.flags &= !0x400;
+                tl.ctx.wait_accum = 0;
             }
         }
     }

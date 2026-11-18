@@ -177,6 +177,36 @@ impl FieldHostImpl<'_> {
             }
             return;
         }
+        // Sub-1: the `+0x6A` clip rate, the halved word the VM hands in
+        // (`0x801E11D4..0x801E11DC`: start `lh +0x6A`, `a1 = &s5+0x6A`, then
+        // the scheduler exit `0x801E2054`, kind 2). `bubu2`'s possessed
+        // villagers (`P1[2..=5]`) slow their header clip with
+        // `4C 41 08 00 01 00`, a one-frame ramp to `4`; dropped, they shook
+        // at the template's `8`, twice retail's speed.
+        if sub == 1 {
+            use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_RATE, Ramp, RampKind};
+            if let Some(record) = self.world.field_vm.executing_object {
+                self.world.schedule_object_ramp(
+                    record,
+                    legaia_engine_field::object_tint::ObjectRampSlot::Rate6A,
+                    i32::from(ctx.field_6a),
+                    i32::from(target),
+                    ticks,
+                );
+            } else if let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx) {
+                let total = i32::from(ticks);
+                self.world.npcs.slot_ramps.install(Ramp {
+                    dest: RAMP_DEST_RATE,
+                    owner: u32::from(slot),
+                    start: i32::from(ctx.field_6a),
+                    end: i32::from(target),
+                    total,
+                    remaining: total,
+                    kind: RampKind::U16,
+                });
+            }
+            return;
+        }
         if sub != 0 {
             return;
         }

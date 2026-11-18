@@ -266,12 +266,15 @@ pub fn viguro_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> A
             st.countdown.0 += p / 4;
             st.countdown.0 = i32::from(st.countdown.0 as i16);
             let [cx, _, cz] = row_focus(st);
+            // The pass climbs the word by a quarter of the whole frame
+            // product (`addu`/`sh 0x6D8` at `0x801F73BC..0x801F73C0`) and only
+            // then lays its sixteen streaks off it (`lhu v0,0x0(s5)` at
+            // `0x801F73CC`). The ring is dealt on the tick that opens the
+            // pass, where the port's word has climbed one tick of it.
+            let pass_w = st.countdown.0 + (i32::from(st.frame_step.max(1)) - 1) * (p / 4);
             ArmDirection {
                 ribbons: Some(super::capture::CastRibbonRing {
-                    points: viguro_charge_ring(
-                        [cx.wrapping_neg(), cz.wrapping_neg()],
-                        st.countdown.0,
-                    ),
+                    points: viguro_charge_ring([cx.wrapping_neg(), cz.wrapping_neg()], pass_w),
                     trail_id: VIGURO_STREAK_TRAIL,
                     count: 16,
                 }),

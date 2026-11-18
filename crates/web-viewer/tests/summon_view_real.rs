@@ -415,3 +415,83 @@ fn casts_expose_their_fx_texture_pages() {
         "only {casts_with_art} casts have a non-flat FX page"
     );
 }
+
+/// Jedo's scythe and Meta's sword sit past every clip's part count and draw
+/// only through the channel their cast module stores them in
+/// (`summon_core::creature_channel_object`). The viewer's clips must carry the
+/// same store: before it, "Model only" collapsed both weapons on every clip.
+#[test]
+fn a_summons_channel_moved_weapon_is_posed_on_its_channel() {
+    let Some(mut s) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // (spell, channel, weapon object, first clip with the store)
+    for (spell, channel, weapon, from) in [(0x9Du32, 6usize, 22usize, 4u32), (0x9E, 14, 16, 3)] {
+        let r: serde_json::Value = serde_json::from_str(&s.set_cast(spell)).unwrap();
+        assert_eq!(r["ok"], true, "{spell:#04x}: {r}");
+        let n_objects = r["object_count"].as_u64().unwrap() as usize;
+        assert_eq!(
+            n_objects,
+            weapon + 1,
+            "{spell:#04x}: the weapon is the last object"
+        );
+        let clips = r["clips"].as_array().unwrap();
+        assert!(
+            clips.len() as u32 > from,
+            "{spell:#04x}: reaches clip {from}"
+        );
+        for (i, k) in clips.iter().enumerate() {
+            let i = i as u32;
+            let parts = k["parts"].as_u64().unwrap() as usize;
+            assert!(
+                parts <= weapon,
+                "{spell:#04x} clip {i}: the weapon has no row of its own"
+            );
+            let rows = s.clip_object_rows(i);
+            assert_eq!(rows.len(), n_objects);
+            if i >= from {
+                assert_eq!(
+                    rows[weapon], channel as i32,
+                    "{spell:#04x} clip {i}: weapon on its channel"
+                );
+                assert_eq!(
+                    rows[channel], -1,
+                    "{spell:#04x} clip {i}: the channel's own object yields"
+                );
+            } else {
+                assert_eq!(rows[weapon], -1, "{spell:#04x} clip {i}: no store yet");
+                assert_eq!(rows[channel], channel as i32);
+            }
+        }
+        // The whole cast: every clip, padded to the widest, with the store on
+        // the frames of the clips that carry it.
+        let width = s.sequence_width() as usize;
+        let frames = s.sequence_pose_frames();
+        let rows = s.sequence_object_rows();
+        let total: usize = s
+            .sequence_clip_indices()
+            .iter()
+            .map(|&i| clips[i as usize]["frames"].as_u64().unwrap() as usize)
+            .sum();
+        assert_eq!(
+            s.sequence_clip_indices().len(),
+            clips.len(),
+            "{spell:#04x}: every clip plays"
+        );
+        assert_eq!(frames.len(), total * width * 6);
+        assert_eq!(rows.len(), total * n_objects);
+        let weapon_frames = rows
+            .chunks(n_objects)
+            .filter(|f| f[weapon] == channel as i32)
+            .count();
+        assert!(
+            weapon_frames > 0,
+            "{spell:#04x}: the weapon draws in the whole cast"
+        );
+        assert!(
+            rows.iter().all(|&r| r < width as i32),
+            "{spell:#04x}: every row is in the pose"
+        );
+    }
+}

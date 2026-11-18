@@ -168,7 +168,13 @@ pub(super) fn arm_host_play_defaults(session: &mut NativeSession) {
     // Nothing a run does reseeds these knobs (they live on `World` from its
     // construction), and a run never opens the options screen, so one push
     // stands for the hosts' per-tick re-assert.
-    let defaults = legaia_engine_menus::options::OptionsState::default();
+    // Free-angle movement stays at the retail decode: the hosts default it
+    // on, but every fixture's pad stream was recorded against the 8-way
+    // remap, and a continuous decode walks the same stream somewhere else.
+    let defaults = legaia_engine_menus::options::OptionsState {
+        precise_movement: false,
+        ..Default::default()
+    };
     session.apply_option_knobs(&defaults, None);
     let w = &mut session.host.world;
     w.toggles.use_vm_dialogue = true;

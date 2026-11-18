@@ -818,8 +818,19 @@ pub(super) fn pad_walk(
             pressed_at = None;
             continue;
         }
+        // A teleport waypoint is pressed toward its press point from the
+        // cell beside it too, not only from its own cell: a lattice cell
+        // straddles the tile edge, so the walker can stand in the waypoint's
+        // cell short of the tile, and a step off it toward the waypoint's
+        // centre is a step back out. `conc3`'s inn exit (21, 95), whose cell
+        // centre is the tile's west edge (2688, 12192): beside the room's
+        // slanted wall the press toward the tile slid the walker to
+        // (2680, 12208), one cell south, the press back toward the centre
+        // slid it to (2672, 12200), on the cell again, and the walk traded
+        // the two for the stall's whole wait without entering the tile.
+        let at_jump = |c: Cell| adjacent(cell, c) && path.get(1).is_some_and(|&n| !adjacent(c, n));
         let (tx, tz) = match path.first() {
-            Some(&c) if c == cell => PRESS_AT
+            Some(&c) if c == cell || at_jump(c) => PRESS_AT
                 .with(|m| m.borrow().get(&c).copied())
                 .unwrap_or(cell_center(c)),
             Some(&c) => cell_center(c),

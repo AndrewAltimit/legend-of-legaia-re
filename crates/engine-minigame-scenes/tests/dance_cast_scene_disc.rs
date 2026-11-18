@@ -122,3 +122,59 @@ fn every_mode_draws_its_own_floor() {
     }
     assert!(surface.frame(None).is_none());
 }
+
+/// The cursors the clip driver leaves on the hall's bodies, against the RAM of
+/// two retail states of one hands-off qualifier (`minigame_dance_retail_dancing`
+/// and `_judged`): each track's restart is where the port's rules bound it, and
+/// the cursor is retail's `+0x68`, two game frames past the displayed frame.
+/// A loop wraps to `0` on the step that reaches its end; a move holds its end;
+/// the loop that follows steps on its rebind frame.
+#[test]
+fn the_clip_cursor_steps_on_game_frames_as_the_retail_ram_reads() {
+    use legaia_engine_minigames::dance::{DanceBodyClip, DanceBodyFrame};
+    let Some(dir) = gate() else { return };
+    let index = ProtIndex::open_extracted(&dir).expect("prot index");
+    let rec = legaia_overlay_images::static_overlay::overlay_map()
+        .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+        .expect("0980 mapped");
+    let raw = index.entry_bytes_extended(rec.prot_index).expect("0980");
+    let overlay = legaia_overlay_images::static_overlay::as_loaded(&raw, rec).expect("loaded form");
+    let cast = legaia_minigame_formats::dance_cast::parse(&overlay).expect("cast");
+    let venue = DanceVenue::build(&index, Some(&overlay)).expect("venue");
+    let pack = index
+        .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
+        .expect("0874");
+    let assets =
+        DanceCastAssets::from_venue(&venue, &cast, Some(pack.as_slice()), [0; 3]).expect("assets");
+    let clip = |id| DanceBodyClip { id, rate: 8 };
+    let body = |loop_id, move_id: Option<u16>, ticks| DanceBodyFrame {
+        model: DanceBodyModel::Scene(0),
+        kind: Some(1),
+        pos: [0; 3],
+        yaw: 0,
+        scale: 0x1000,
+        loop_clip: clip(loop_id),
+        move_clip: move_id.map(clip),
+        ticks,
+    };
+    // (track, retail clip id, retail cursor)
+    let cases = [
+        (body(18, None, 477), 18, 0),
+        (body(18, None, 1977), 18, 480),
+        (body(31, Some(28), 57), 28, 240),
+        (body(36, Some(39), 57), 39, 239),
+        (body(36, Some(41), 135), 36, 72),
+        (body(31, Some(24), 135), 31, 72),
+    ];
+    for (b, id, cursor) in cases {
+        let c = resolve_clip(assets.anm(), &b).expect("clip");
+        assert_eq!(
+            (c.record + 1, c.cursor),
+            (id, cursor),
+            "track {:?} / {:?} at {}",
+            b.loop_clip.id,
+            b.move_clip.map(|m| m.id),
+            b.ticks
+        );
+    }
+}

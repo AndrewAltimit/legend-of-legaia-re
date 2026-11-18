@@ -930,7 +930,8 @@ fn seru_modules_take_their_caption_down() {
     );
 }
 
-/// A body-paced director's pass lands on the next arm's first tick, and it
+/// A body-paced director's pass with no call behind the body lands on the
+/// next arm's first tick, and it
 /// carries the pass's spawn calls with it: Orb's opening flash (arm 2), the
 /// light column (arm 5, which jumps to 9) and the heal's group parts and
 /// rings (arm 9), each on its own anchor.
@@ -1386,6 +1387,23 @@ fn viguro_arm_twelve_draws_sixteen_streaks_every_pass() {
     let d = viguro_direct(&mut st, 12, ModuleCamSeats::default());
     assert_eq!(d.ribbons.map(|r| r.count), Some(16));
     assert!(d.hold);
+}
+
+/// The pass lays its streaks off the word its whole frame product climbed
+/// to (`0x801F73BC` ahead of `0x801F73CC`), not the one tick the port's
+/// word has climbed on the tick that deals them.
+#[test]
+fn viguro_arm_twelve_lays_its_ring_off_the_pass_climb() {
+    let mut st = ModuleCamState {
+        frame_step: 4,
+        ..Default::default()
+    };
+    let d = viguro_direct(&mut st, 12, ModuleCamSeats::default());
+    let pass_w = st.countdown.0 + 3 * (MODULE_DRAIN_PER_TICK / 4);
+    assert_eq!(
+        d.ribbons.map(|r| r.points),
+        Some(viguro_charge_ring([0, 0], pass_w))
+    );
 }
 
 /// Neo Star Slash's and Doomsday's words place a capture inside an arm:

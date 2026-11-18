@@ -1711,6 +1711,17 @@ actor's `+0x14` / `+0x18`;
 `overlay_world_map_walk_801d01b0.txt`), so a faster walk takes more sub-steps
 per frame, each re-probing at the same 47-48 unit reach.
 
+The controller runs the remapped pad mask through the wall-slide resolver
+`FUN_80046494` before anything reads it (`jal 0x80046494` at `0x801D03EC` in
+`overlay_world_map_walk_801d01b0.txt`), on the overworld as on the field
+([wall slide](field-locomotion.md#wall-slide-resolution-fun_80046494)): a
+cardinal held into a wall gains the perpendicular bit of the open side and
+skids along it. A retail film of `map03_field_door_hop` with Left held into a
+ridge skids down-left for two frames (`x -20`, `z -20`) and walks on west;
+`World::step_world_map_locomotion` resolves the mask the same way, and the
+engine film holds retail's path to within two units on both legs of a
+Left-then-Down walk.
+
 ### The overworld is not one walk component
 
 `map01`'s wall bits split the kingdom into **two** walk components joined by a
@@ -2494,7 +2505,9 @@ window sweep's record 457 (mesh 15, draw kind `5`, unposed). The lid's frame
 `+0x5C = 4`, `+0x62 = 0x1F`, cursor `0`. Both hosts draw these landmarks
 posed: the native window through the posed-prop pass the field's doors use
 (`resolve_world_map_draws` leaves them out of the static stamps), the page by
-carrying the bind's clip id on the landmark (`build_field_render`). Drawn
+carrying the bind's clip id on the landmark (`build_field_render`); the
+world-overview page poses them through the same bank under a chosen flag set
+([`world-overview-viewer.md`](world-overview-viewer.md#posed-landmarks-and-the-story-toggle)). Drawn
 unposed, Conkram's lid lay flat in front of the town; posed off both prologue
 arms at once, it lay over the town. The other two pick their arm on a flag
 the same way: `map02`'s three stamps test `0x1D5` (`71 D5 05 00`), set

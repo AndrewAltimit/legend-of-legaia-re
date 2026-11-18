@@ -375,6 +375,10 @@ pub struct BattleCamera {
     /// ([`BattleCamInputs::open_held`]): the last case-2 tween walks on to its
     /// endpoint and nothing frames the camera until the flow reaches `0x14`.
     pub(super) entry_hold: bool,
+    /// The off-axis entry azimuth ([`battle_entry_yaw`]) the sweep set aside:
+    /// the sweep and the name hold run on retail's yaw `0`, and the hand-over
+    /// to case 9 swings out to this. `None` when the fight entered on `0`.
+    pub(super) entry_off_axis_yaw: Option<f32>,
     /// [`BattleCamInputs::open_held`].
     pub(super) open_held: bool,
     /// Where the last fresh case-9 arm set out from, and its duration in
@@ -528,7 +532,10 @@ pub struct BattleCamInputs {
     /// rows project to the same screen X, each occluding the other, for the
     /// seconds the `-4`/step orbit needs to leave. The port opens on the
     /// field camera's azimuth instead, moved off the axis by
-    /// [`battle_entry_yaw`] - a port judgement.
+    /// [`battle_entry_yaw`] - a port judgement. A fight with the entry sweep
+    /// sets it aside until the sweep hands over to the far framing
+    /// ([`BattleCamera::start_entry_sweep`]): the opening frames the enemy
+    /// party down the axis, as retail's does.
     pub entry_yaw: f32,
     /// The live action-SM state `ctx[7]`, the same byte [`phase_for_state`]
     /// classifies. The camera reads it for the edges that re-seed the yaw

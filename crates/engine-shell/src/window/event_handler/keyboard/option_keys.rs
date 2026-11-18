@@ -471,11 +471,11 @@ impl PlayWindowApp {
         );
     }
 
-    /// `R`: precise movement (opt-in, NON-RETAIL): free-angle
-    /// camera-relative locomotion instead of retail's 4/8-way
-    /// quantisation - key diagonals walk true 45-degree vectors and an
-    /// analog stick's angle passes through continuously. Persisted;
-    /// default off (the faithful remap).
+    /// `R`: precise movement (NON-RETAIL): free-angle camera-relative
+    /// locomotion instead of retail's 4/8-way quantisation - key diagonals
+    /// walk true 45-degree vectors and an analog stick's angle passes
+    /// through continuously. Persisted; default on, off is the faithful
+    /// remap (`--retail` forces it off).
     fn key_precise_movement(&mut self) {
         log::info!(
             "movement: precise {}",

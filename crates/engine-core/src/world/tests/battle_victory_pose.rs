@@ -174,3 +174,36 @@ fn a_seeded_win_pose_stands_over_the_pick() {
         "the same draws either way"
     );
 }
+
+/// The held-button pose select (`0x8004EAF4..0x8004EB8C`) reads the packed
+/// held word `_DAT_8007B850`: Start arms it (`0x0800`) and Up picks pose
+/// `0x11`. The engine's pump holds the raw layout, so it is packed before
+/// the select reads it; read raw, R1 armed it and Up was never seen.
+#[test]
+fn start_and_up_held_at_the_win_pick_pose_0x11() {
+    use legaia_engine_system::input::PadButton;
+    let pose = |held: u16| {
+        let mut world = world_won_by(0);
+        world.tables.victory_pose_table = Some([[0x05; _]; _]);
+        world.input.set_pad(held);
+        for _ in 0..64 {
+            world.live_battle_tick();
+            if let Some(seq) = world.battle.victory
+                && seq.pose_id.is_some()
+            {
+                return seq.pose_id;
+            }
+        }
+        panic!("no pose picked");
+    };
+    assert_eq!(pose(0), Some(0x05), "the table's pick");
+    assert_eq!(
+        pose(PadButton::Start.mask() | PadButton::Up.mask()),
+        Some(0x11)
+    );
+    assert_eq!(
+        pose(PadButton::R1.mask() | PadButton::Up.mask()),
+        Some(0x05),
+        "R1 does not arm the select"
+    );
+}

@@ -22,6 +22,11 @@
 --   LEGAIA_SSTATE   state (run_probe.sh --scenario sets it)
 --   LEGAIA_FRAMES   vsyncs to run (default 12000)
 --   LEGAIA_CROSS_EVERY  tap Cross every N vsyncs (default 0 = never)
+--   LEGAIA_HOLD     `BTN:from:to` - hold one pad button from vsync `from` up
+--                   to `to` (e.g. `UP:10:90` walks into a door); default none
+--   LEGAIA_POKE     `x:z:from:to` - hold the player on tile (x, z) from vsync
+--                   `from` to `to` (player +0x14 / +0x18 at the tile centre,
+--                   as autorun_door_hop.lua stands it on a door); default none
 --   LEGAIA_WATCH    comma list of extra words to log, hex; `base+off` reads
 --                   the word at `*base + off` (default none)
 --
@@ -33,6 +38,11 @@ local probe = require("probe")
 local SSTATE = probe.getenv("LEGAIA_SSTATE", "")
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 12000)
 local CROSS_EVERY = probe.getenv_num("LEGAIA_CROSS_EVERY", 0)
+local HOLD_BTN, HOLD_FROM, HOLD_TO = string.match(probe.getenv("LEGAIA_HOLD", ""), "^(%u+):(%d+):(%d+)$")
+HOLD_FROM, HOLD_TO = tonumber(HOLD_FROM), tonumber(HOLD_TO)
+local POKE_X, POKE_Z, POKE_FROM, POKE_TO = string.match(probe.getenv("LEGAIA_POKE", ""), "^(%d+):(%d+):(%d+):(%d+)$")
+POKE_X, POKE_Z, POKE_FROM, POKE_TO = tonumber(POKE_X), tonumber(POKE_Z), tonumber(POKE_FROM), tonumber(POKE_TO)
+local PLAYER_PTR = 0x8007C364
 local WATCH = {}
 for tok in string.gmatch(probe.getenv("LEGAIA_WATCH", ""), "[^,]+") do
     local b, o = string.match(tok, "^(%w+)%+(%w+)$")
@@ -99,6 +109,17 @@ probe.run({
         return {}
     end,
     on_capture = function(_, v)
+        if POKE_X and v >= POKE_FROM and v < POKE_TO then
+            local pp = probe.read_u32(PLAYER_PTR)
+            if ok_ptr(pp) then
+                probe.write_u16(pp + 0x14, POKE_X * 128 + 64)
+                probe.write_u16(pp + 0x18, POKE_Z * 128 + 64)
+            end
+        end
+        if HOLD_BTN then
+            if v == HOLD_FROM then probe.pad.force(probe.BTN[HOLD_BTN]) end
+            if v == HOLD_TO then probe.pad.release(probe.BTN[HOLD_BTN]) end
+        end
         if held and v >= held then
             probe.pad.release(probe.BTN.CROSS)
             held = nil

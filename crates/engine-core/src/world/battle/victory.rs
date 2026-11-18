@@ -235,7 +235,11 @@ impl World {
         let picked = victory_pose_id(&table, char_id, tier, &mut rng);
         // The held-button select and the Songi override run on the pick
         // (`0x8004EAF4..0x8004EBAC`), after its two draws.
-        let held = self.input.retail_pad().held;
+        // `_DAT_8007B850`, the packed held word the select's masks are
+        // written in; the pump holds the raw layout.
+        let held = u32::from(legaia_engine_system::pad::retail_packed(
+            self.input.retail_pad().held as u16,
+        ));
         let first_monster = self.formation_slot0_monster_id().unwrap_or(0);
         let pose = picked.map(|p| {
             victory_pose_formation_override(victory_pose_pad_select(p, held), first_monster)

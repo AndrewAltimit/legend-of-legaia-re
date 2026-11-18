@@ -254,11 +254,28 @@ impl World {
     /// `FieldEvent::Bgm` start for the stashed track, or a stop
     /// ([`crate::world::BGM_SUB_OP_ENGINE_STOP`]) when no field track was
     /// playing at encounter start.
+    ///
+    /// The battle score goes first, through the field close
+    /// ([`crate::world::BGM_SUB_OP_ENGINE_FIELD_CLOSE`]). On the battle-return
+    /// word (`_DAT_8007B8B8 == 2`) with the battle source open, the field init
+    /// ramps that source's sequence to silence over `0xB4` ticks while the map
+    /// reads (`FUN_80062004` at `0x801D6B7C`), and the init's poller loop
+    /// closes it at stage 4 before the field's track loads, so nothing of the
+    /// battle score sounds under the field track's head. The engine's load is
+    /// instant, and the close is the same compressed ramp a door's takes. The
+    /// init's cue-voice mutes do not run on this word (`0x801D6BA8`).
+    ///
+    /// PORT: FUN_801D6704 (0x801D6B30..0x801D6B80, the battle-source ramp)
+    // REF: FUN_80062004, FUN_800243F0
     pub(crate) fn restore_field_bgm(&mut self) {
         if !self.audio.battle_bgm_active {
             return;
         }
         self.audio.battle_bgm_active = false;
+        self.pending_field_events.push(FieldEvent::Bgm {
+            text_id: 0,
+            sub_op: crate::world::BGM_SUB_OP_ENGINE_FIELD_CLOSE,
+        });
         match self.audio.field_bgm_resume.take() {
             // The word the return loads names nothing: the poller copies it
             // (`0x80024558`) and no track attaches. The word stands and the

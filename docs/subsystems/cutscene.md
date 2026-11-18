@@ -2514,6 +2514,8 @@ the `FUN_801CF5BC` row of [`functions.md`](../reference/functions.md).
 | `ReapplyBgmLevel` | a no-op: the BGM director already plays at its configured level and the world models no field-mode duck |
 | mesh assembly, bundle read, load waits | surfaced on `World::battle.intro_effects` for a host that owns those reads |
 
+The init's list rebuild also stands every field placement still for the window: no placement driver `FUN_8003BC08`, so no ambient stream and none of its `rand()` draws (`World::battle_intro_owns_frame`). The fight opens on the seed the intro's seeding left.
+
 ### Per-style emitters (render-track GTE/GPU)
 
 Each style builds primitives into the ordering-table cursor `_DAT_1F8003A0`, transforms

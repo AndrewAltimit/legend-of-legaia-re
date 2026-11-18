@@ -34,10 +34,12 @@ image directly); a double-click, with no terminal to read that in, gets a
 desktop dialog instead (`src/first_run.rs`) with *Choose folder...* (the
 extracted folder, or the one holding it, which the viewer then browses) and
 *Legaia Explorer* (started from the release archive or the build folder,
-`legaia_app_theme::release_layout::find_explorer`). On Windows the
-double-click's console is let go (`FreeConsole`) before the dialog opens; it
-still flashes up for a moment, as any console-subsystem program's does from
-File Explorer. `prot` names
+`legaia_app_theme::release_layout::find_explorer`). On Windows the viewer
+is a `windows`-subsystem program, so a double-click opens no console window
+at all; a start from `cmd.exe` or PowerShell attaches to that terminal
+(`AttachConsole`) so help, log and errors print there, and the prompt comes
+back while the window runs (`start /wait` waits for it;
+[releases](../../docs/tooling/releases.md#windows-the-console-window)). `prot` names
 its entries from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` is
 given. A failure prints one `asset-viewer: <what>: <cause>` line, and a
 window or renderer that cannot start ends the run with that line instead of

@@ -98,6 +98,19 @@ another band's colour through every arm. Released on `0x0C` it stands `3` rows o
 and `chitei2_cort_pre_mystic_circle` reads `.676` to `.893`,
 `chitei2_cort_pre_guilty_cross` `.686` to `.826`. A harness seat.
 
+The seed is the state's own instant, though, and retail rolls the page on every pass from
+it: the recording opens in the inject state `0x0A` and runs it and `0x0C` before the
+cast's `0x28`, one roll each. Written over those two passes, the seed left the engine's
+page two rolls (`6` rows at step `3`) behind, and the bands in Evil Seru Magic's arms 1
+and 2, where the camera stands inside the sphere, sat a few lines off retail's. The child
+now names the recording's first row's action state
+(`LEGAIA_SEAT_VRAM_RECTS_UNTIL_STATE`), and the seed lands once on the engine's first pass
+in that state, ahead of its rolls (`AmbientFxState::vram_rect_seed_until_state`):
+`chitei2_cort_pre_mystic_circle__B7` `.908` to `.981`, `chitei2_cort_pre_guilty_cross__37`
+`.904` to `.945`, Evil Seru Magic `.955` to `.974` (arms 1 and 2 `.79` to `.99`). A rotation
+sweep of the released seed peaks two rows further on (arms 1 and 2 at `1.000`), which the
+scroller's period countdown (`+0xC6`, not in the seed) may carry. A harness seat.
+
 The driver builds `legaia-engine` with `engine-shell`'s `oracles` feature:
 `cast-sequence-score` and the recorder's frame shots exist only in that build,
 and a binary built without it writes `meta.csv` but no `e_<tick>.png`.
@@ -381,7 +394,11 @@ a vsync and never moved the yaw (the replay's caster had faced elsewhere when ar
 where retail's table walks `301` and `14`. The still's child names retail's endpoints and the
 vsyncs its table has left (`LEGAIA_SEAT_MODULE_SHOT`, `RetailBattle::module_shot_seat`), and the
 film re-arms the shot onto them from the seated pose; the film's camera then tracks retail's to
-a unit or two through arm 2. The caster's clip cursor is the other: a module that gates on its
+a unit or two through arm 2. An arm that drifts the camera words itself every pass past a
+one-frame cut has no shot walking (`RetailBattle::cam_drift_owned`): the cut's increment is its
+whole gap, so the drift's gap read one frame left, and re-armed onto the cut's pose
+`noaru_songi_genocidal_cannon` opened five drifts behind retail and stayed there to arm 3's cut
+(camera `150` px). It takes no seat. The caster's clip cursor is the other: a module that gates on its
 countdown leaves the clip free-running, and the replay reached the gate `128` cursor units
 ahead of retail's, so the lips stood shut where retail's frame has them open. A `--physical`
 film seats the state's own RAM cursor on the gate (`state_opening_cursor`), falling back on the
@@ -614,6 +631,12 @@ state's seated pose, not the arm's tween, and its first segment is the harness's
 the game's. An engine seat at another `acting` seat than the retail recording is a
 pairing artefact as well. These are read off the film, not the score.
 
+A tween whose engine column reads retail's previous row on every pass, from the arm's
+first row to its last, is a shot armed a pass late: the body-paced Seru directors made
+an arm's pass shot on the next arm's first tick until the host called them again behind
+the body ([cast module](../subsystems/cast-module.md#body-paced-directors)), and the
+`0x88`, `0x8A` and `0x8B` films read `.04` higher with it.
+
 ## The pairing rule
 
 Frames pair on the action-SM clock, never on wall time:
@@ -825,6 +848,13 @@ look, Earthquake's rocks or a ray fan, plays another pattern every time.
 `--no-cast-rand` leaves the replay's stream, and `--rand-at` / `--rand-track`
 replace the seat. A `--physical` film keeps the state's own word
 (`LEGAIA_FILM_RAND`) or its strike deal. A harness seat.
+
+The key counts the module phase only inside the module bands (`0x35`, `0x36`,
+`0x70`), as the step and rand tracks key a frame. Retail's `ctx[+0x279]` keeps the
+last module's phase through the next action's begin (`255`, or the arm a prior cast
+left it on: Guilty Cross's `0x28` reads `7`), where a replay seated from the state
+reads `0`, so a key matched on the phase never fired on those films and they ran the
+replay's own stream from the cast's begin (`engine-capture::cast_rand`).
 
 On the enemy cast set, of the films measured both ways none falls: Rock Lizard's
 Earthquake `.786` to `.950` (its rocks now fall on retail's draws), Jewel Beam
@@ -1389,8 +1419,32 @@ it is put back, so arm 28's shot centres `z = 944`. Arm 26's pass spawns three f
 one: a white flash, a held blue grade parked in the part pool until arm 27's flush, and
 the delayed white-in; the engine had the last alone, so arm 27 opened on the burst where
 retail's opens white. With those the film reads `.899`: arms 11 to 21 `.94..1.00`, arm 23
-`.86` to `.96`, arm 26 `.65` to `.80`, arm 27 `.50` to `.81`, arm 28 `.997`. Still open:
-arm 22's sphere grows and goes some forty ticks ahead of retail's (`.58`).
+`.86` to `.96`, arm 26 `.65` to `.80`, arm 27 `.50` to `.81`, arm 28 `.997`.
+
+Arm 22's sphere is not the cast's. The state holds Cort's
+[Mystic Shield](../subsystems/cast-module.md#the-mystic-shield-effect) from an earlier turn,
+and the actor pass copies the seat's render scale onto it every frame; arm 21 halves the
+caster, so retail's sphere stands at half size through arm 27, where the port's kept
+`0x1000` and arm 22's dolly passed through it some forty ticks early (`.58`). With the
+seat's scale arm 22 reads `.92..98`. A `--retail-parts` recording names it: the only
+part whose words move across arms 21 and 22 is the sphere, kind `4` from arm 22's first
+pass at scale `0x800`.
+
+The film's cast-begin seat had not fired either. Retail's `ctx[+0x279]` still reads the
+previous cast's phase on the cast begin (`0x28` under phase `5` here), where the replay
+reads `0`, so the stream entered the band on the replay's own word. With the phase keyed
+only inside the module bands (`0x35`, `0x36`, `0x70`) the stream holds retail's word for
+word from arm 15 to the end; one pass of `0x6E`'s poll short, it runs a draw behind
+until arm 14's evade roll, and the film reads `.917` before the shield's scale and
+`.940` with it.
+
+Arm 3 opened on arm 2's red flash a frame early: the tick body's fades went up unstepped, so
+the engine drew the template's first level where retail's first frame already holds the
+spawning frame's step ([a fade takes its spawning frame's step](../subsystems/cast-module.md#a-fade-takes-its-spawning-frames-step)).
+Stepped, arm 3 reads `.960` for `.857`; the rest is two pairs on a retail frame that ran past
+its step. The shield page's scroller does not hold the page's last rows: its period is `2`
+(`+0xC4`) and the step `3` or `4`, so it fires every pass whatever its countdown `+0xC6`
+holds, and seating the state's countdown on the replay's scroller moves no pair.
 
 ### The enemy set on the rand-track seat
 
@@ -1744,6 +1798,30 @@ set: Horn's (`0x9C`) held its poll two passes, so its line passes
 `LEGAIA_SEAT_DRIVE_SEEK=5`, and the wisp loop arm 3 seats then runs on retail's passes
 ([the Seru set](#the-seru-set-on-three-seats)). A per-film seat, read off the recording's poll.
 
+<a id="the-capture-read-seat"></a>
+
+The capture band has a poll of its own ahead of its arms. State `0x6E` waits on the
+read the cast begin queued (`FUN_8003DE7C(1)`), and the engine holds it `14` vsyncs
+(`World::arm_capture_read_wait`). The enemy recordings hold it `14` to `18`: one module's
+casts part (Rogue Flame `15`, Rogue Wind `16`, Rogue Thunder `17`), so it is the drive's
+time, not the module's size. On a step-`2` fight a vsync or two more is a pass more, and a
+pass is one frame-driver `rand()`: the module entered one word behind retail's, and every
+arm that deals its look off the stream dealt another one (Gigaton Press's rocks, Ultra
+Charge's rays, Element Change's colour roll). The driver now seats the recording's own
+count of passes that open on `0x6E` (`LEGAIA_SEAT_CAPTURE_READ`,
+`CastFxState::capture_read_seat`) where the film enters the band through `0x28`. A
+harness seat, which no play path sets. Over the enemy set:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9411` | `.9446` | Ultra Charge `.869` to `.994`, Element Change `.807` to `.941`, Gigaton Press `.859` to `.926`, Blade Breath `.945` to `.974`, Evil Seru Magic `.940` to `.950`; Big Wave (Slippery) `.956` to `.943` |
+
+The cue channel holds, and the camera mean falls from `5.35` to `5.28` pixels (V-Windhash
+`12.5` to `9.3`, Evil Seru Magic `3.9` to `0.9`). Big Wave falls because its fight opens on
+step `3` in the engine where the recording runs `2`: seven passes of `0x6E` are
+twenty-one vsyncs there, and the film's frames stand that much later
+([the opening step](#the-enemy-set-on-the-plain-seat-and-what-holds-it)).
+
 A monster cast reached through the state's pad drive stages the clip the drive's
 replay picked, and the picker stores its clip bytes under draws the replay does not
 share. The seed therefore carries the capture's queue for a monster cast (`q` on
@@ -1774,6 +1852,17 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   pass ahead of the gate tick, so the score drops the engine's leading rows on that
   pose (`--engine-skip`, counted by the driver). A strike's camera sweeps fastest in
   that opening: one step of skew costs its `0x1E` segment about `.08` of `within`.
+- **Frame phase.** A recording whose first row still holds the pose sits somewhere
+  inside the state's frame: its next pass shows that many vsyncs on, where the
+  engine's gate tick has just opened a frame and shows its next pass a whole step
+  later. The driver counts the vsyncs to the recording's first change of pose
+  (`LEGAIA_DIAG_CAST_SEQ_PASS_LEFT`), and the child opens its next frame that many
+  ticks after the gate (`World::seat_battle_frame_phase`), keeping the frame's id
+  and step. Before the seat Thunder Punch's next pass showed on retail's third vsync
+  and the engine's fourth tick, and every pass after it stood a vsync behind; over
+  the arts films the camera's error in the first twenty game-clock units (yaw plus
+  TR z over eight) falls from `23.0` to `2.5`, over the strike films from `14.4` to
+  `1.5`, with the image means flat. A harness seat: it moves no rule.
 - **Ground.** The child stands each seat on the RAM's pairs
   (`LEGAIA_BATTLE_GROUND_SNAP_RAM`, which the still's command carries where the
   two part), not on the displayed frame's ground the still stands a walker on.
@@ -2593,14 +2682,24 @@ Without it Lapis Wave's rings and columns stand on seats the fight never held.
 ### The capture band's reads
 
 State `0x6E` polls `FUN_8003DE7C(1)` (`0x801E4F08`) for the read `0x28` queued, then
-`0x8003EAE4` starts the module's own read, which `0x6F` polls through `FUN_8003F2B8(1)`.
-The recordings of the harvest-state casts hold them `14..=17` and `4..=6` vsyncs, whichever
-module or fight. Neither poll idles: each `0x6E` pass walks the case-6 framing and each
-`0x6F` pass pulls `ctx[+0x6D0]` in by `step * 16`, so an arm-0 tween opened two ticks in
-stands on another pose for its whole length (Spore Gas read yaw `1991` where retail held
-`1121`) and every shot built on `ctx[+0x6D0]` lands at another depth. The engine holds the
-two states `14` and `4` ticks (`World::arm_capture_read_wait`), and the walk then matches
-retail to the unit through `0x6E`.
+`FUN_8003EAE4(0, clip)` (`0x801E4F40`, `CdlSetloc` + `CdlSeekL`) parks the drive on the acting
+monster's voice file, `clip` the byte `0x800787AF[DAT_8007BD09[seat]]`
+(`0x801E4F18..0x801E4F3C`), and `0x6F` polls that seek through `FUN_8003F2B8(1)`. The
+PCSX-Redux recordings of the harvest-state casts hold the two states `14..=17` and `4..=6`
+vsyncs, whichever module or fight: that drive answers a seek of any length in a few vsyncs.
+Neither poll idles: each `0x6E` pass walks the case-6 framing and each `0x6F` pass pulls
+`ctx[+0x6D0]` in by `step * 16`, so an arm-0 tween opened two ticks in stands on another pose
+for its whole length (Spore Gas read yaw `1991` where retail held `1121`) and every shot built
+on `ctx[+0x6D0]` lands at another depth. The engine holds `0x6E` `14` ticks
+(`World::arm_capture_read_wait`; a film seats its recording's own passes, `LEGAIA_SEAT_CAPTURE_READ`),
+and the walk then matches retail to the unit through it.
+
+`0x6F` takes the modelled drive's seek from the module's head to the voice file
+([`battle_cd_drive::capture_seek_vsyncs`](../subsystems/audio.md#the-capture-bands-seek)),
+the law the summon band's seeks take: `33` vsyncs for Glare's `XA23`, `32` for Evil Seru
+Magic's `XA22`. A capture child (a film, the retail comparison's image child, the real-PCM cast channel's) keeps
+PCSX-Redux's `4` (`CastFxState::capture_seek_recorded`), the hold the films' recordings measure and
+the corpus's seeds stand on.
 
 ## See also
 

@@ -116,6 +116,10 @@ pub struct Camera {
     /// advances in retail display frames rather than sim ticks (retail's
     /// `DAT_1F800393` credit - see `camera_mover`'s module docs).
     pub(super) last_field_frame: u64,
+    /// Display frame the follow ease last banked to: the ease counts its
+    /// passes on the vsync clock, not on the mover's credited one, which
+    /// lands a whole step at once.
+    pub(super) last_display_frame: u64,
     /// Latched once this scene has executed an op-`0x45` Configure: from then
     /// on the script owns the focus globals and the follow camera stops
     /// writing them. A scripted scene seizes the camera in retail, and the
@@ -431,6 +435,7 @@ impl Default for Camera {
             globals: RetailCamGlobals::default(),
             mover: None,
             last_field_frame: 0,
+            last_display_frame: 0,
             script_owns_focus: false,
             knob_blend: KNOB_BLEND_FULL,
             zone: ZoneFollow::default(),

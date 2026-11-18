@@ -261,14 +261,31 @@ impl World {
             .iter()
             .find(|c| !c.object_bind && usize::from(c.ctx.script_id) == record)
             .and_then(|c| u8::try_from(c.placement_index).ok());
+        // A host-bound cursor not yet on the live rate word steps by the
+        // record's folded step (`bind_npc_clip_cursor`), not by `+0x6A`:
+        // handing it the raw word played a gated clip at twice its speed.
+        let live = slot.is_some_and(|s| self.npcs.clip_rate_live.contains(&s));
         if let Some(c) = slot
             .and_then(|s| self.npcs.clip_cursors.get_mut(&s))
             .filter(|c| c.anim_id == clip)
         {
             c.cursor = cursor;
             c.flags = flags;
-            if rate != 0 {
+            if rate != 0 && live {
                 c.rate = rate;
+            }
+            // The advance reads the control word off the channel's context
+            // each tick (`World::tick_npc_clips_scaled`), so a seat that set
+            // only the cursor's copy lost its hold bit on the next tick: a
+            // clip retail holds at its end (`+0x62 & 2`) clamped back a frame
+            // (`chapter2_garmel_pre_songi` clip `23`, `239` to `224`).
+            if let Some(ch) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|c| !c.object_bind && usize::from(c.ctx.script_id) == record)
+            {
+                ch.ctx.local_flags = flags;
             }
         }
     }
@@ -432,6 +449,15 @@ impl World {
         // the player a pass, trailed it half as far (`tower_field_walk`).
         // REF: FUN_8003774C (the 0x37 / 0x41 arm), FUN_801DE840 (0x801DEE90..0x801DEF1C)
         let grid = self.clock.script_frame_delta();
+        // A leg that lands on the player clears the record's `+0x54` along
+        // with its halt (`0x80038020`), and the kernel runs after the
+        // record's slice in the object's tick (`FUN_8003BC08`: runner at
+        // `0x8003BD34`, kernel at `0x8003BD50`), so a `4A` the record sits
+        // on loses what it counted while the player walked and counts its
+        // whole span again from the landing. `tower`'s lift fades to white,
+        // waits `4A 3C`, and moves the player: retail's move lands `60`
+        // vsyncs after the glide, not `60` after the fade began.
+        let mut leg_landed = false;
         if let Some(mut glide) = id.player_glide.take() {
             if grid == 0 {
                 id.player_glide = Some(glide);
@@ -439,6 +465,8 @@ impl World {
                 glide.state.speed = grid;
                 if self.step_player_glide(&mut glide) {
                     id.player_glide = Some(glide);
+                } else {
+                    leg_landed = true;
                 }
             }
         }
@@ -689,9 +717,19 @@ impl World {
                 // The record's next cross-context op on the player waits while
                 // a compass leg it armed is still walking the player; the
                 // halt clear `32 F8 0A` is exempt.
-                // REF: FUN_801DE840 (0x801DE90C..0x801DE944, 0x801DE8E0..0x801DE904)
+                //
+                // A leg that landed on this pass still holds it: the runner
+                // steps the record ahead of the walk kernel in the object's
+                // tick (`FUN_8003BC08`: runner at `0x8003BD34`, kernel at
+                // `0x8003BD50`), so it found the leg in flight and the record
+                // moves on the next pass. `tower_field_walk`'s lift record
+                // walks the player, lands, and walks him on: resumed on the
+                // landing pass, each later leg started a pass ahead of
+                // retail's, and the `2F 10` that drops the camera's let-through
+                // after the last leg landed a pass early.
+                // REF: FUN_801DE840 (0x801DE90C..0x801DE944, 0x801DE8E0..0x801DE904), FUN_8003BC08
                 if player_target
-                    && id.player_glide.is_some()
+                    && (id.player_glide.is_some() || leg_landed)
                     && !(b == 0xB2 && id.bytecode.get(id.pc + 2) == Some(&0x0A))
                 {
                     break;
@@ -1012,11 +1050,16 @@ impl World {
                 parked = true;
             }
         }
+        // The landing's `+0x54` clear, after the slice (see the head).
+        // REF: FUN_8003774C (0x80038008..0x80038028), FUN_8003BC08
+        if leg_landed {
+            id.ctx.wait_accum = 0;
+        }
         // Mirror the context back onto the live prop: anim word, rate, and
         // the `+0x10` class word (whose bit `0` is the door's collision-off).
         self.sync_prop_from_ctx(anchor, &id.ctx);
         if let Some(seat) = own_seat {
-            self.seat_prop(anchor, seat);
+            self.seat_own_object(anchor, seat);
         }
         if parked {
             id.park_frames = id.park_frames.saturating_add(1);
@@ -1055,6 +1098,36 @@ impl World {
         if let Some(slot) = self.props.proxy_talk.take() {
             self.trigger_field_interact(0, slot);
         }
+    }
+
+    /// A prop record's own `23 <x> <z>`: seat the object's actor on `seat`.
+    ///
+    /// Retail runs the record on the object's actor, so the op's non-player
+    /// arm (`0x801DECAC`) writes the tile into the same `+0x14` / `+0x18` the
+    /// draw (`FUN_8001ADA4` case 5) and the box test (`FUN_801CFC40`) read.
+    /// The port runs the record on a context of its own, so the seat goes onto
+    /// the object-bind channel the draw reads, and the collider follows it
+    /// through [`Self::sync_prop_colliders_to_object_actors`]. Seating only
+    /// the collider left `vozz`'s cut Crystal Grass drawn where it stood while
+    /// the player walked through it. A prop with no bound channel moves its
+    /// collider alone.
+    ///
+    /// REF: FUN_801DE840 (0x23 arm, 0x801DECAC)
+    fn seat_own_object(&mut self, anchor: (u8, u8), seat: (i32, i32)) {
+        let channel = self.object_key_at_anchor(anchor).and_then(|key| {
+            self.field_vm
+                .channels
+                .iter()
+                .position(|c| c.object_bind && c.placement_index == key)
+        });
+        let Some(ci) = channel else {
+            self.seat_prop(anchor, seat);
+            return;
+        };
+        let ctx = &mut self.field_vm.channels[ci].ctx;
+        ctx.world_x = seat.0 as i16 as u16;
+        ctx.world_z = seat.1 as i16 as u16;
+        self.sync_prop_colliders_to_object_actors();
     }
 
     /// Move prop `anchor`'s actor to `seat`: its position, its contact-box

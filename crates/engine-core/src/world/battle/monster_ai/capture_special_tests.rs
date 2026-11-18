@@ -181,6 +181,12 @@ fn the_mystic_shield_seats_poses_and_bursts() {
         4,
         "drawn while the colour word is up"
     );
+    assert_eq!(sphere(&world).state.field_72, 0x1000);
+    // The sphere takes the seat's render scale (`0x8004D578..0x8004D590`):
+    // Evil Seru Magic's arm 21 halves the caster, and the shield with it.
+    world.actors[3].battle.render_scale = Some(0x800);
+    world.tick_mystic_shield();
+    assert_eq!(sphere(&world).state.field_72, 0x800);
     world.actors[3].battle.render_color = 0;
     world.tick_mystic_shield();
     assert_eq!(

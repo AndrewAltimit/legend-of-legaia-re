@@ -548,13 +548,13 @@ Decrements `ctx[+0x6D8]`; if `ctx[+0x276] != 0` clamps timer at 1. When < 0: ctx
 
 #### State `0x6E` - Magic-capture branch
 
-`FUN_801D5854(actor, 6)`; waits on `func_0x8003DE7C(1)` (CD ready). When ready: calls `func_0x8003EAE4(0, capture_index)` (load capture archive); sets `_DAT_8007BDB0` to capture-monster index.
+`FUN_801D5854(actor, 6)`; waits on `func_0x8003DE7C(1)` (CD ready). When ready: seeks the drive to the acting monster's voice file, `FUN_8003EAE4(0, clip)` (`CdlSetloc` + `CdlSeekL`, `0x801E4F40`) with `clip = 0x800787AF[DAT_8007BD09[seat]]` (`0x801E4F18..0x801E4F3C`), and latches `clip` in `_DAT_8007BDB0`.
 
 **Next:** `0x6F`.
 
 #### State `0x6F` - Magic-capture - fade
 
-If `ctx[+0x287] != 0`: duck the audio level `_DAT_8007B910 -= DAT_1F800393`, clamp to `(_DAT_8008457C * 0x4B) / 100`. Adjusts ctx-buffer X position. Waits on `func_0x8003F2B8(1)`.
+If `ctx[+0x287] != 0`: duck the audio level `_DAT_8007B910 -= DAT_1F800393`, clamp to `(_DAT_8008457C * 0x4B) / 100`. Adjusts ctx-buffer X position. Waits on `func_0x8003F2B8(1)`, the seek `0x6E` issued: the port holds it for the drive law's seek from the module's head to that file ([audio](audio.md#the-capture-bands-seek)).
 
 **Next:** `0x70`.
 

@@ -114,6 +114,43 @@ impl World {
         }
     }
 
+    /// Open the next battle frame `left` display ticks from now, keeping the
+    /// current frame's id and step: a cast film's gate seat
+    /// (`LEGAIA_DIAG_CAST_SEQ_PASS_LEFT`). A recording starts at its save,
+    /// anywhere inside the state's frame, while the engine's gate tick has
+    /// just opened one: `battle_garmel_party_gala_thunder_punch_open`'s next
+    /// pass shows on its third vsync, the engine's on its fourth tick, and
+    /// every pass after it stood a vsync behind retail's. A harness seat: no
+    /// play path calls it. Returns whether it seated.
+    pub fn seat_battle_frame_phase(&mut self, left: u8) -> bool {
+        let clock = self.battle.frame_clock;
+        let span = clock.span();
+        let left = u64::from(left);
+        if left == 0 || left >= span {
+            return false;
+        }
+        let now = self.clock.display_frames;
+        let Some(origin) = now.checked_sub(span - left) else {
+            return false;
+        };
+        // The clock's own re-anchor keeps the id of the frame the anchor
+        // tick falls in: anchor on `now` first (the current id), then move
+        // the anchor back to where a frame of this span opening on it ends
+        // `left` ticks from now. Each re-anchor takes a different overrun
+        // than the clock holds, so both land.
+        let extra = clock.span_extra;
+        let mut c = clock;
+        c.retime_span(now, extra.wrapping_add(1));
+        c.retime_span(origin, extra);
+        if c.frame_of(now) != clock.frame_of(now)
+            || c.frame_of(now + left) != clock.frame_of(now) + 1
+        {
+            return false;
+        }
+        self.battle.frame_clock = c;
+        true
+    }
+
     /// Land battle slot `slot`'s playing clip on the node cursor `+0x68` a
     /// capture held (12.4 sixteenths of a keyframe), re-posing it there -
     /// when the slot plays the clip the capture's `+0x1D9` names. Returns
@@ -445,12 +482,20 @@ impl World {
                 }
                 // The channel a module's table store moved an object onto
                 // places that object, and the object's own channel stands past
-                // the stream.
+                // the stream. The object may sit past every stream's part
+                // count, so no pose entry reaches it yet: Jedo's scythe is
+                // object 22 over clips of 22 parts (channel 6 draws it from
+                // clip 4 on), and left without an entry it stood unposed at
+                // the body's origin natively and collapsed on the browser
+                // page, which poses an object only from its own entry.
                 if let Some((channel, object)) = creature_channel
                     && let Some(&placed) = pose.bone_outputs.get(usize::from(channel))
-                    && let Some(slot) = pose.bone_outputs.get_mut(usize::from(object))
                 {
-                    *slot = placed;
+                    let object = usize::from(object);
+                    if pose.bone_outputs.len() <= object {
+                        pose.bone_outputs.resize(object + 1, placed);
+                    }
+                    pose.bone_outputs[object] = placed;
                 }
                 let after = player.current_frame();
                 // The window arm's counter store (`actor+0x21B = +0x176 >> 4`,
@@ -1103,7 +1148,23 @@ impl World {
         let Some(actor) = self.actors.get(i) else {
             return;
         };
-        if actor.battle.queued_anim == actor.battle.current_anim {
+        // A byte equal to the playing clip is a re-commit, not a no-op, once
+        // a cut bit stands over it: the tick's bit-0 / bit-1 paths call the
+        // commit `FUN_8004AD80` with no compare of `+0x1DA` against `+0x1D9`
+        // (`0x800478EC..0x80047A40`), and the commit re-installs the entry at
+        // cursor `0` (`0x8004B064..0x8004B068`) with its rate decay and
+        // cursor zeroes. Only with neither bit does an equal byte wait - for
+        // the clip's natural end, which re-commits it too.
+        // PORT: FUN_80047430 (`0x800478EC..0x80047A40`, the cut calls no compare)
+        let cut_bits = actor
+            .battle
+            .flag_bits
+            .has(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE)
+            || actor
+                .battle
+                .flag_bits
+                .has(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE);
+        if actor.battle.queued_anim == actor.battle.current_anim && !cut_bits {
             return;
         }
         let in_flight = actor.battle_staged_anim.is_some()

@@ -123,6 +123,12 @@ pub struct ArtsCommandPad {
     pub circle: bool,
     /// Arts-list toggle (Triangle).
     pub triangle: bool,
+    /// A direction sits in the pad pump's 32-vsync held window
+    /// (`_DAT_8007B938`), so the flow's next pass reads it as a press. The
+    /// exhausted-pool scan waits for a pass with no direction in `s2`; a
+    /// host that runs the session between passes raises this so a held
+    /// direction keeps the entry open, as retail's does.
+    pub window_dirs: bool,
 }
 
 /// Sub-phase of the input session.
@@ -709,16 +715,23 @@ impl ArtsCommandInputSession {
                         self.spent.push(cost);
                         self.pennant_glides.push((self.buffer.len() - 1, 0));
                     }
-                    // Auto-end on the exhausting press (retail 0x50 ->
-                    // 0x5A: entry ends by itself, no confirm). The scan's
+                    // A pass with a direction ends at the press: case `0xB`
+                    // returns through `0x801D1F98` (`j 0x801d20d4`), ahead of
+                    // the pool scan, so the exhausted entry ends on the next
+                    // pass that carries no direction (below).
+                    self.phase = ArtsInputPhase::Entering;
+                } else if !self.buffer.is_empty() && !self.any_affordable() && !ev.window_dirs {
+                    // Auto-end (retail 0x50 -> 0x5A: the entry ends by
+                    // itself, no confirm). The scan `0x801D2054..0x801D2078`
+                    // leaves `s0 = 4` when no cost fits the pool, and its
                     // verdict is read behind the committed count
-                    // (`801d2084 beq v0,zero,801d20e4`): a pool that cannot pay
-                    // the first command stays in entry, with cancel the way out.
-                    self.phase = if self.buffer.is_empty() || self.any_affordable() {
-                        ArtsInputPhase::Entering
-                    } else {
-                        ArtsInputPhase::Review
-                    };
+                    // (`801d2084 beq v0,zero,801d20e4`, `801d208c bne s0,zero`):
+                    // a pool that cannot pay the first command stays in
+                    // entry, with cancel the way out. It runs ahead of the
+                    // confirm and cancel tests, so neither is read on the
+                    // pass it fires. A direction in the held window carries
+                    // into the next pass, so no scan runs before it.
+                    self.phase = ArtsInputPhase::Review;
                 } else if ev.cross && self.buffer.is_empty() && !self.preseed.is_empty() {
                     // **Replay.** With nothing entered and a preseeded string
                     // in the window, the confirm mask takes that string as

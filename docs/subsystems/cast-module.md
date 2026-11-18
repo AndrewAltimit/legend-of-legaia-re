@@ -1128,9 +1128,8 @@ the plain films parted named one unported site:
   the volley stopped a whole arm early. The hand port makes the kill
   (`World::apply_iota_writes`): the `0x93` film reads `.995` against `.986` (arm 9
   `.913` to `.996`) and holds retail's words to the Done band.
-- **Orb's heal effects fall on arm 9's own pass.** The body-paced director hands an
-  arm's calls over on the next arm's first tick; the arm's pool spawns
-  (`0x801F7A4C..0x801F7A60`) are made from `World::orb_arm_writes` on the pass instead.
+- **Orb's heal effects fall on arm 9's own pass.** The arm's pool spawns
+  (`0x801F7A4C..0x801F7A60`) are made from `World::orb_arm_writes` on the pass.
 - **Juggernaut's row sweeps fall on the caller's frame.** Stager arms 3 and 4 roll the
   summon damage inside the calling part's step (`0x801F8698` falls into arm 4); their
   rolls run with the frame's other stager calls (`World::run_juggernaut_sweeps_now`),
@@ -1156,6 +1155,31 @@ directors carry their bumps (`creature_restage`). PROT 0932 is one: its arms `0x
 scale `0x1800` (`0x801F6EF4`). Modules outside the list keep the at-once commit
 until their stage stores are read the same way: enlarging the list without the
 bumps parks the arms that wait on a cut.
+
+### A cut bit over the playing clip re-commits it
+
+The anim tick's two cut paths call the commit `FUN_8004AD80` with no compare of the
+staged byte `+0x1DA` against the playing clip `+0x1D9`: bit 0 of `+0x1DC` at once,
+bit 1 once the cursor is two frames past the entry's gate frame, both refused only by
+the entry's `+0x76` lock (`0x800478EC..0x80047A40`). The commit itself compares the
+two bytes only to key off a held sustained cue (`0x8004AE54..0x8004AE68`) and
+re-installs the entry whatever they hold: cursor `0` (`0x8004B064..0x8004B068`), the
+effect and cue cursors zeroed, the rate decay. So a byte equal to the playing clip
+under a cut bit is a re-commit, and only a byte with neither bit waits, for the
+natural end, which re-commits it too. The port's commit dropped any byte equal to
+the playing clip; it now takes one under a cut bit (`World::commit_staged_battle_anim`),
+the battle actors' one commit path for the party, the monsters and the creature seat
+(the field's actors run another). A bump an earlier cast left on a bare seat, and
+PROT 0915's own bump behind its installer (`0x801F6E64..0x801F6E70`), now reach the
+creature's first tick as that bit over the installer's zeroed byte, and the seat pass
+ends on cursor `0` with the rate lifted to `4`, as the recordings read.
+
+Over the film sets the rule moves little: it fires on Mushura's seat, three enemy casts
+(Blazing Slash and the Rogue golem's two) and fifty of the sixty-five strike films,
+where the strike loop's bit-1 stages over the idle re-commit it. The strike and arts
+means hold (`.9839`, `.9428`), the Seru set holds `.9717`, the enemy casts move by at
+most `.001`, and no `battle_` still moves. Grade `disassembly`; the measurements
+`capture`.
 
 ### A staged caster clip between its stage and its idle
 
@@ -2301,7 +2325,18 @@ rendezvous fall where the parts' own waits put them. The seating arms `2`, `3`, 
 (`World::seat_viguro_stager_spawns_now`), as retail's call inside the caller's step
 seats them: queued to the next tick, every ring arm 12's emitter `0x801F8158` seats
 stood a battle frame (one `+0xC0` step of radius) behind retail's, and arm 12 read
-`.590` frame by frame (`.667` on the caller's frame; the rest is the bolts' `rand()`). A host that does not
+`.590` frame by frame (`.667` on the caller's frame; the rest is the bolts' `rand()`). So do
+the two rendezvous arms, phase step and all (`World::run_viguro_rendezvous_now`). The
+frame that makes arm 0's call already runs arm 4 on retail: the recorder's first row
+behind it reads phase `4` and a cost of `246` hblanks, the step-`2` rung of arm 4's
+[table](battle-stage-camera.md#what-the-arm-step-table-is) entry, so the next pass opens
+on step `2` and sheds the creature's first spark (`0x8004A634..0x8004A884`, six words).
+Queued to the module's next tick, the step stayed with arm 3, that pass ran on step `1`
+and shed none, and the film's `rand()` stream parted from retail's there. The engine's
+part tick runs in the frame tail, after the pass has pushed its cost, so the stepped pass
+is priced again on the arm it leaves on (`World::reprice_pass_on_rendezvous`, from the
+ring as it stood before the push). The `0x87` film reads `.920` against `.911`, and its
+stream holds retail's words through arm 4. A host that does not
 seat one of the two records (no disc, or a driver that steps the module
 without the band seam) keeps that record's clock in its place
 (`cast_module_camera::VIGURO_STAGER_CALLERS`, `CastFxState::module_record_clocks`):
@@ -2344,7 +2379,14 @@ pass kills before its own fade-out. Arm 11's pass draws one streak
 ring and the column of light; arm 12 draws sixteen streaks every pass, ahead
 of its gate, about the same point (`viguro_charge_ring`: angle
 `(i << 8) + (w/2 & 0xFF)`, each lane `table * (w/2 + 0x200) >> 11` off the
-climbing word `w`).
+climbing word `w`). The pass climbs `w` by a quarter of the whole frame product first
+(`0x801F73BC..0x801F73C0`) and lays the ring off the climbed word (`0x801F73CC`); the
+port deals the ring on the tick that opens the pass, so it reads the word that tick
+has climbed plus the rest of the pass's climb. Off the one tick's word, every
+streak's anchor stood about `0.8` of a pass behind the `--ribbon-trace` recording's,
+and the streaks whose chain length sits on a segment's edge drew a segment fewer or
+more; with it the anchors match the recording's unit for unit, the cast's `rand()`
+stream holds retail's words through arm 13, and arm 12 reads `.756` against `.672`.
 
 ### PROT 0910 (Swordie)
 
@@ -2463,22 +2505,45 @@ camera arms are the [body-paced directors](#body-paced-directors).
 PROT 0910..0913's tick bodies are ported and hold their own arms, so their
 directors (`cast_module_camera::{swordie,orb,freed,nova}_direct`) run before
 the body, never hold, and see only the phase the body is about to run. What a
-retail arm does on its **pass** - the `FUN_801D829C` call after the gate, a
-caption - lands on the first tick of the arm the pass moved to, half a retail
-frame after retail's; what it does on **every** pass (drifts into the camera
-globals ahead of the gate, a shot re-armed before the gate) runs on every
-tick the body spends in the arm. The clock lives in the director's countdown
-word: `(phase + 1) << 16 | ticks in the arm`. A drift `P` below is the frame
-product `scalar * delta`, per engine tick the scalar alone.
+retail arm does on **every** pass (drifts into the camera globals ahead of the
+gate, a shot re-armed before the gate) runs on every tick the body spends in
+the arm. What it does on its **pass** - the `FUN_801D829C` call after the gate,
+a caption, its spawn calls - comes on that same pass, and the walker steps the
+new shot on it: the host calls the director a second time behind a body that
+has just let its arm through (`ModuleCamState::body_pass_now`,
+`World::body_paced_pass_now`), for the passed arm's pass alone. The clock lives
+in the director's countdown word: `(phase + 1) << 16 | ticks in the arm`, its
+low half `0xFFFF` while the new arm's first own tick is still to come. A drift
+`P` below is the frame product `scalar * delta`, per engine tick the scalar
+alone.
 
-So an arm's first tick carries two retail passes' work: the passed arm's
-shot and the new arm's first drift. Retail's builder tweens from the
-globals the passed arm left, and the drift lands a pass later, so the host
-arms the shot first and drifts after it (`ArmDirection::drift_after_shot`).
-Drifted first, Freed's arm-16 yaw drift (`+2P` a pass) entered the arm-15
-shot's start (yaw `0x810` onto `0x800`): the shot walked the yaw back and
-then held it on its endpoint until it landed, and every later arm framed
-from a yaw about `0x400` short of retail's.
+The arm's drift ahead of its gate is in the globals before the pass builds its
+shot, so the host drifts first on that tick, and a yaw the pass stores straight
+(Nova's arms 3 and 4) replaces the drift's yaw. A pass that seats the creature
+(Orb's arm 3, behind the installer `FUN_801F19EC`) waits for the next arm's
+first tick, where the host has stood it, and that tick carries both: the passed
+arm's shot and the new arm's first drift, armed shot first
+(`ArmDirection::drift_after_shot`). Drifted first there, Freed's arm-16 yaw drift
+(`+2P` a pass) entered the arm-15 shot's start (yaw `0x810` onto `0x800`): the
+shot walked the yaw back and then held it on its endpoint until it landed.
+
+Made on the next arm's first tick, every pass shot of the four casts stepped a
+pass behind retail's for its whole length: on the `0x88` film's camera channel
+Swordie's arm-6 and arm-8 pulls read retail's previous row on every pass of
+arms 7 and 9, Nova's arm-4 and arm-5 pulls on `0x8B` the same. On the pass, on
+`party_basic_attack_vs_gobu_gobu` (plain seat):
+
+| Film | Before | After |
+|---|---|---|
+| `0x88` Swordie | `.925` | `.965` |
+| `0x89` Orb | `.953` | `.964` |
+| `0x8A` Freed | `.946` | `.988` |
+| `0x8B` Nova | `.925` | `.962` |
+
+Orb's arm-5 pass steps and lifts the creature in the pass that cuts to it
+(`0x801F75E4..0x801F7634`); the seat lands before the second call, so the cut
+frames the lifted creature (arm 9 `.893` to `.943`). Grade `disassembly` +
+`capture`.
 
 Three inputs come from the host beside the seats
 (`World::feed_seru_cam`): the live yaw `0x8007B792`, for an arm that re-arms
@@ -2545,7 +2610,19 @@ the creature stood in front of arm 15's pulled-back camera.
 The turn and arm 16's camera yaw `+= sin(W / 2) / 2` are each a fixed step a
 **pass** (`0x801F8000..0x801F8038`, `0x801F8068..0x801F80A4`), taken at the
 countdown the pass climbs to, and so is arm `0x13`'s `0x600` landing spin:
-none scales with the frame step. Retail's arm 16 runs 85 passes over its 260
+none scales with the frame step. Both sit ahead of the arm's gate (`slti 0x401` at
+`0x801F80A8`), so the pass that leaves arm 16 turns the victim too, by close to
+half a turn at the top of the climb; skipped there, the victim stood a half turn
+off retail's from arm 17 on, and the framings of arms 18..20 that read its heading
+looked at its back (arm `0x14` `.899` to `.966`). The yaw add is a step a pass as well, so the rest of the
+passing pass repeats none of it (`ArmDirection::rest_drift`); repeated over that pass's
+second tick it landed twice, and arm 17 opened `1457` yaw units past the recording's.
+Arm 13's straight stores (`0x801F7B10..0x801F7B5C`, TR z `0x200` into `0x800840C0`) meet
+arm 12's `0x10`-frame pull still walking, and the walker writes the globals from it on
+the same frame: the recording reads the pull's endpoint, TR z `819`, from arm 14's first
+row, where a stored `0x200` read `512` and arm 15's pull opened `287` short. The port's
+arm-13 cut lands on that endpoint. With both, the `0x8B` film's camera matches the
+recording's from arm 13 through arm 20. Retail's arm 16 runs 85 passes over its 260
 game ticks on Gobu Gobu (steps `4`, `3`, then `2`), so the port lands each on
 the tick that opens a battle frame (`ModuleCamState::opens_pass`, the body's
 countdown fed through `module_words`), where it used to spread a step-`2`
@@ -3142,8 +3219,15 @@ first on arm `0xC` (`0x801F7738..0x801F7758`): object 16, which no stream's part
 reaches on its own channel, is drawn on channel 14 from then on. PROT 0931 saves
 channels 6 and 22 on arm 4, and the tail of every pass stores object 22 into channel
 6 while the creature plays clip 4 or later (`0x801F89A0..0x801F89F0`). The port
-carries the store as `CastFxState::creature_channel_object`; the anim pass poses the
-object on the channel, and `battle_drawn_objects` swaps which of the two draws.
+carries the store as `CastFxState::creature_channel_object`, set from
+`engine-effects::summon::creature_channel_object` (the same rule the Seru-magic
+page's Model only view applies to the clips it plays on their own); the anim pass
+poses the object on the channel, and `battle_drawn_objects` swaps which of the two draws. Both
+weapons sit past every clip's part count (Jedo's clips have 22 parts over 23 objects,
+Meta's 15 or 16 over 17), so the anim pass grows the pose to reach the object before it
+copies the channel's entry there. Without the entry the native window drew the weapon
+unposed at the body's origin and the browser page, which poses an object only from its
+own entry, drew nothing (`web-play` `summon_channel_object_page`).
 
 The summon modules whose tick bodies are not ported (PROT 0914..0917, 0921,
 0923, 0928..0934, with 0920 above) each run a director that carries the
@@ -3189,7 +3273,7 @@ by the frame step byte `0x1F800393`, not a vsync's: the whirl `+0x7A += step`,
 heights it gives (`96`, `192`, `288`, `+0x7A` `24` / `48` / `72`), and its `body.csv`
 holds the victim on the orbit's points through arms `0xA` and `0xB`. Then Ozma's blue ease
 (`+0x21C = 4`, `FUN_80050120`'s arm 4) and the loop window its arm `0x12` writes
-into clip `3`'s entry. Ozma's arms 5..9 also store TR y straight, a rise word with
+into clip `3`'s entry. The rate stores the Ra-Seru modules (Meta, Terra, Ozma) and Spoon make on their creature's `+0x21D` land as the module returns, ahead of the frame's anim tick, so the pass that stores a rate already advances the clip at it (`World::ra_seru_creature_rate`). Held for the next pass's seat writes, every store landed a pass late: Ozma's cursor read `4` ahead of the recording from arm 9 and `4` behind from arm 19, which moved arm 10's clip commit and the stream words behind it; on the recording's cursors the `0xA0` film reads `.9164` to `.9325` (arms 11..15 `.73..97` to `.99`, arm 20 `.862` to `.980`), Meta `.9505` to `.9506` and Terra `.9841` to `.9852`. Ozma's arms 5..9 also store TR y straight, a rise word with
 a shake on the low bit of a pass word, and draw eight streak ribbons on a ring,
 whose `rand()` words the pass deals ahead of its two rumble words
 ([effect VM](effect-vm.md)); the rumble words are drawn once a battle frame.
@@ -3213,6 +3297,22 @@ Ten bodies re-run the target-size framing `FUN_801F0348` at the head of an arm w
 shot then reads `ctx[+0x6D0]`: 0903, 0906, 0907, 0910, 0913, 0914, 0916, 0917, 0918
 and 0920. Without that call the shot reads the band's `0x600` and frames at half
 retail's depth or less.
+Mushura's seat arm bumps the creature's `+0x1DC` right behind its installer call
+(`0x801F6E64..0x801F6E70`), over the clip bytes the installer zeroed, so the new node's
+first tick commits idle `0` at once and the commit's decay lifts the installer's rate `2`
+to `4`, as a bump an earlier cast left on the seat does. A retail recording holds seat
+7's `+0x21D` at `4` from arm 6 on, the walk clip's cursor climbing `32` a pass; at the
+installer's `2` the walk's effect frames (`FUN_801DEA50`'s pool spawns, `ra 0x801DEEA4` on a
+write watch of the master slots) shed half the dust, and the cast's `rand()` stream
+parted from retail's at arm 6. With the bump the stream stands within a word or two of
+retail's at the start of arms 7, 8 and 9. The bump is bit 0 over the playing clip's own id, so the
+node's first tick advances and then re-commits idle `0` (the re-commit's cursor zero at
+`0x8004B064..0x8004B068`): the seat pass ends on cursor `0`, as the recording's first
+creature row reads, where the port's commit path takes no staged byte equal to the
+playing clip and the walk stood a pass ahead (`World::run_seat_pass_node_tick` makes the
+rewind). With both the `0x8D` film reads `.934` against `.931` (arms 6..8 `.98` to
+`.999`). Grade `disassembly` + `capture`.
+
 Mushura's creature runs: `World::apply_mushura_run` carries its fall and spin
 down the victim's lane (arms 6..8), the victim stepped back a sixth of its body radius on
 arm 6's pass (`*(+0x22C)[+0x58] / 6` into `+0x38`, the `0x2AAAAAAB` divide at
@@ -4406,8 +4506,11 @@ fold.
 - **Who stops it.** Arm 6 holds while the countdown is positive and the
   packed pad edge misses the confirm mask `_DAT_800846D0`. The countdown is
   `scalar * 1200` for a party victim, with "Press the (button) to decide your
-  fate!" in the message bar, and `scalar << 6` for a monster victim. The port
-  reads the engine's confirm (Cross).
+  fate!" in the message bar, and `scalar << 6` for a monster victim. The edge
+  is `_DAT_8007B874 | _DAT_8007B938` (`0x801F76C4..0x801F76E0`), so a confirm
+  held across the pad pump's 32-vsync window stops the wheel as a press does.
+  The port reads the engine's confirm (Cross), pressed or held through the
+  window.
 - **The landing.** Arm 7 decelerates over `scalar << 9` drained `2 * scalar`
   a frame, snaps the angle back to the slot boundary it crosses, flashes white
   (`FUN_80024E80`, a `0x20`-frame ramp), retires the backdrop, spawns the
@@ -4655,6 +4758,15 @@ close to a minute. It is ported whole.
   playing clip's end, as the recording's creature rows read (clip `2` runs to
   cursor `1024`, clip `4` to `1536`). Port `esm_creature_writes`,
   `World::evil_seru_magic_creature`. Grade `disassembly` + `capture`.
+- **Arm 20 names the creature.** Arm 10 closes the spell label's window
+  (`FUN_800319A8(0x21)`, `0x801F7058`), and arm 20's pass prints the streamed
+  record's name `rec[0]` (`*(0x801C9348 + 0x10)`) as a frameless line at
+  `y = 0x96`, centred on `0xA6` (`0x801F7DDC..0x801F7E28`). Arm 27's pass
+  takes it down (`FUN_800319A8(0)`, `0x801F87E0`), both behind their gates.
+  The recording shows the Seru-plated "Juggernaut" from arm 20's pass to arm
+  27's. Port: the director's `CaptureCamArm::caption`, the move label's
+  monster branch reading `ESM_CREATURE_SPELL`'s record name
+  (`capture_caption_record_cast`). Grade `disassembly` + `capture`.
 - **Arm 26's pass spawns three fades** (`0x801F84F8..0x801F85AC`, each
   `FUN_80024E80(0x801C9070, 1)`): a `0x40`-frame white flash to black, a
   `0x100`-frame blue grade from `(0x10, 0x10, 0x20)` to `(0x80, 0x80, 0xFF)`
@@ -5032,6 +5144,14 @@ runtime leg on the first monster seat's bank.
 Port: `World::raise_mystic_shield` at the arm-4 seam and `World::tick_mystic_shield`
 in the actor pass, over `CastFxState::mystic_shield_fx` - a scene of its own,
 since the cast scene is retired when the next action opens.
+
+The scale is the seat's node `+0x72` (`lw 0x22C` / `lhu 0x72` / `sh 0x72` at
+`0x8004D578..0x8004D590`), not the spawn's `0x1000`. It shows under
+[Evil Seru Magic](#prot-0966-evil-seru-magic): arm 21 stands Cort at half scale and
+arm 27 restores him, so a shield still up from an earlier turn draws at half size
+through arms 22..26, and arm 22's dolly reaches it on retail's pass. A
+`--retail-parts` recording holds the sphere at scale `0x800` from arm 22's first
+pass. Grade `disassembly` + `capture`.
 
 The two parts are list nodes of the battle pass, so they take one part tick a
 battle frame, `step` vsyncs of it, like the cast's own parts. The scroller's
@@ -6090,7 +6210,11 @@ A recording holds a fade spawned on a pass one frame step along its ramp by the 
 frame is drawn, which is what `FUN_80024E80` handing a new actor to a list the frame is
 still walking would do (`capture`; the walk order is an inference). On a step-`4` arm that is
 four vsyncs: without it Slippery's arm-7 wash reads a step behind through arm 8. The
-presentation hook's exit-pass sites step at once. Fades a part's stager calls do not:
+presentation hook's exit-pass sites step at once, and so do the fades PROT 0966's tick body
+spawns on its passes (arms 2, 4, 10, 26 and 27, its arm-26 side fades included): unstepped,
+arm 2's `0x10`-frame red flash opened arm 3 on the template's own `(0xFF, 0x40, 0x40)`, a
+level retail never displays, and the cast's film read arm 3 `.857` (`.960` stepped; arm 27
+`.831` to `.837`). Fades a part's stager calls do not:
 Juggernaut's read right unstepped, and a part tick can fall after the fade's in the walk.
 Theeder's arm 11 flash read a step ahead under the rule while the film's pairing counted
 counter runs; counted in wait ends it does not
@@ -6838,8 +6962,8 @@ renderer: the yellow shards of arm 8, not a growing disc
 <a id="module-stagers-and-spawn-reports"></a>
 
 PROT 0905, 0910, 0911 and 0913 report their spawn calls per arm
-(`ModuleProfile::stages_spawns`; the body-paced directors hand a pass's calls
-over on the next arm's first tick), and the op-`0x20` calls their parts make
+(`ModuleProfile::stages_spawns`; the body-paced directors make a pass's calls
+on the pass, [above](#body-paced-directors)), and the op-`0x20` calls their parts make
 reach each module's stager through `gp[+0x714]`: the kernels are
 `cast_module_ticks::{vera,swordie,orb,nova}_stager_spawns`, run with the
 other part-called stagers by `World::run_part_stager_calls`. Anchors are `SpawnAnchor` variants; a call's own scale
@@ -6875,7 +6999,7 @@ Module writes into the parts it keeps handles on, and into the victim:
 - PROT 0911 arm 2's pass seats the opening's star swarm: sixteen `0x801F8190` billboards through `FUN_80050ED4`, two a loop pass (`0x801F6CDC..0x801F7070`). Five `rand()` draws give a star's offset (`y = -(r % 511)`, `x = r % 511 + 0x100` negated on an odd draw, `z = r % 255 + 0x300`) and its mirror's (`-x`, `y = -0x200 - r % 511`), each turned round the caster by its facing. While arm 3 holds, each star sits `k / 128` of the way from its offset height to `y = -0x3E8` and its plane offset shrinks by `(0x80 - k) / 128`, with `k = 0x80 - countdown / scalar` (`0x801F7140..0x801F73D0`): the swarm closes on the flash point as the countdown runs out. Port: `orb_stager::{orb_star_pair, orb_star_place}`, seated with the arm's other calls on arm 3's first tick.
 - PROT 0911 arms 3 and 9 flush the part pool on their pass (`jal 0x80050E74` at `0x801F70A8` and `0x801F77D0`): every part seated through `FUN_80050ED4` gets its halt bit. Arm 3's reaches only the stars; arm 9's takes arm 5's four and the stager's arm-`0` records before arm 9's own calls, and a retail capture of the cast holds them halted at the start of arm 10. Port: `World::orb_arm_writes`, by record tag.
 - PROT 0911 arm 9's pass also raises the roster panels (`FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)`, then `ctx[+0x18] = 6`, `0x801F7E64..0x801F7ED4`): the party's status window the heal counts up in, which takes the readout bar's seat ([battle-hud.md](battle-hud.md#the-party-status-readout)). It stores `+0x78 = 0x800` into both backdrop records (`0x801F7848..0x801F7860`), lights each occupied party seat with `+0x04 = 0x20080200` as it un-hides it, and hides the creature by flag and colour word together (`sb 0xff,0x21c` / `sw zero,0x4` at `0x801F78BC..0x801F78CC`).
-- PROT 0911 arm 5's pass steps and lifts the creature in the pass that cuts to it (`0x801F75E4..0x801F7634`). The body-paced director lands that cut on the next tick, so the port holds the seat for that tick (`CastFxState::orb_defer_seat`); otherwise one frame shows the old shot with the creature lifted out of it.
+- PROT 0911 arm 5's pass steps and lifts the creature in the pass that cuts to it (`0x801F75E4..0x801F7634`). The port holds the seat (`CastFxState::orb_defer_seat`) until the body-paced director's call behind the body lands it ahead of the cut, or the next tick's camera feed where that call makes none; otherwise one frame shows the old shot with the creature lifted out of it.
 - PROT 0910's slash routine `FUN_801F81DC` seats the blade `0x801F8C7C` on every call that leaves its slash travelling (`0x801F883C`), so each slash draws a trail of blades. Arm 8's pass stores the origin `0x801F8D90`: the creature's plane pair `trunc(sin f / 12)` / `trunc(cos f / 12)` along its heading.
 - A PROT 0910 blade sits at `origin + (sin h, cos h) * W / speed >> 7` with `h` the heading from the victim to the origin turned half round and `W` the slash's progress; it bows `sin u >> 15` (slashes 0 / 1, either side) or `>> 16` (2 / 3, which also rise `sin u / 16`) across the line, `u = (W << 5) / speed`, yawed `h - 0x400 -+ cos u / 8` (`/ 16` for the inner pair) (`0x801F829C..0x801F8840`).
 - Retail calls PROT 0910's slash routine once a pass at frame step 4 (the oracle's capture), fifteen blades a slash; the engine seats one on each call that brings the progress to a multiple of `4 * speed`. Port: `seru_magic_ticks::{swordie_blade_origin, swordie_blade_pose}`, `World::swordie_blades`.

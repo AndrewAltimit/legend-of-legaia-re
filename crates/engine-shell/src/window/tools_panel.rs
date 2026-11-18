@@ -403,7 +403,9 @@ const NOTE_LINES: usize = 2;
 const CONTROLS: &str = "Arrows pick  Enter use  Esc close";
 /// [`CONTROLS`] on a controller (`settings_panel::pad_controls`).
 const PAD_CONTROLS: &str = "D-pad pick  {cross} use  {circle} close";
-const FLIP_HINT: &str = "L1/R1 or Tab: keys";
+/// The page `Tab` (or `R1`) flips to, named in the heading's flip hint
+/// (`PlayWindowApp::flip_hint`).
+const FLIP_TO: &str = "keys";
 /// What a refused minigame press says.
 const REFUSED: &str = "Not from here: stand in a town, a field or on the world map.";
 
@@ -801,12 +803,8 @@ impl PlayWindowApp {
         let left = X0 + 6;
         let right = X0 + WIDTH - 6;
         put(&mut out, "Tools", (left, Y0 + 1), heading);
-        put(
-            &mut out,
-            FLIP_HINT,
-            (right - width(FLIP_HINT), Y0 + 1),
-            text,
-        );
+        let flip = self.flip_hint(FLIP_TO);
+        put(&mut out, &flip, (right - width(&flip), Y0 + 1), text);
         let mut y = Y0 + super::settings_panel::HEAD_H;
         let first = self.tools_page.first_shown();
         // The scroll bar on the plate's edge, as the settings page draws it:

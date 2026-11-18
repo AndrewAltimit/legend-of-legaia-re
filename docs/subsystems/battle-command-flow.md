@@ -346,9 +346,14 @@ is what turns its direction tests into "take the highlighted chip".
 
 **Without one**, `0x801D0B0C` builds `s2 = _DAT_8007B874 | _DAT_8007B938`, the
 plain packed pad, and the direction tests are direct presses. The second word is
-the pad pump's 32-vsync held window, so a direction held that long reads as a
-press on every pass; the port's command input is the edge alone
-(`battle_command_pad_edges`).
+the pad pump's 32-vsync held window, so a button held that long reads as a
+press on every pass. A held Left walks a whole prompt chain: from
+`gaza2_card_first_menu` (flow `0x1E`) a PCSX-Redux run holding Left took Begin
+on the press (`0x28`), then the ring's Attack (`0x78`) and the prompt's `Auto`
+(`0x5A`) once the window filled, 34 vsyncs in. The port's command word is the
+same pair (`World::battle_command_s2`): the edge, plus the window on the tick
+that opens a battle frame, since the flow runs once a pass and the engine once
+a vsync.
 
 `0x14` seeds `ctx[+0x880] = 0x8000` (`0x801D0ECC`), so a freshly armed prompt is
 highlighted on its Left arm.

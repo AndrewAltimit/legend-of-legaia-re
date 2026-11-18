@@ -141,14 +141,27 @@ impl PlayWindowApp {
                 PanelPage::Scenes => stage.extend(self.scenes_stage_draws()),
                 PanelPage::Tools => stage.extend(self.tools_stage_draws()),
                 PanelPage::Keys => {
-                    let (x, y, pw, ph) = crate::window::settings_panel::LIST_PLATE;
+                    keys_page = self.hotkey_help_stage_draws();
+                    let mut plate = crate::window::settings_panel::LIST_PLATE;
+                    // On a 1x stage (the smallest window) a fit into the
+                    // plate would shrink the glyphs below a window pixel
+                    // and drop their strokes. The page keeps its own 1:1
+                    // layout there, which fits the stage, and the plate
+                    // grows round it.
+                    let one_x = self.save_select_stage(w, h).1 <= 1;
+                    if one_x {
+                        plate = keys_plate_round(plate, &keys_page);
+                    }
+                    let (x, y, pw, ph) = plate;
                     self.push_scrim(
                         &mut stage,
                         (x, y),
                         (pw as u32, ph as u32),
                         crate::window::settings_panel::PANEL_SCRIM,
                     );
-                    keys_page = self.hotkey_help_stage_draws();
+                    if one_x {
+                        stage.append(&mut keys_page);
+                    }
                 }
             }
         }
@@ -263,20 +276,20 @@ impl PlayWindowApp {
         };
         put("Keys", (l.x0, l.y0), ink.heading);
         if self.netplay.is_none() && self.netplay_menu.is_none() {
-            let back = "L1/R1 or Tab: settings";
-            let w = self.font.layout_ascii(back).advance_x as i32;
-            put(back, (l.x0 + l.width - w, l.y0), ink.text);
+            let back = self.flip_hint("settings");
+            let w = self.font.layout_ascii(&back).advance_x as i32;
+            put(&back, (l.x0 + l.width - w, l.y0), ink.text);
         }
         let mut y = l.y0 + l.line_h + 2;
         put("Esc", (l.x0, y), ink.key);
-        put(HELP_QUIT, (l.x0 + l.key_w, y), ink.text);
+        put(HELP_QUIT, (l.x0 + l.key_w[0], y), ink.text);
         put("F12", (l.x0 + l.col_w, y), ink.key);
-        put(HELP_SELF, (l.x0 + l.col_w + l.key_w, y), ink.text);
+        put(HELP_SELF, (l.x0 + l.col_w + l.key_w[1], y), ink.text);
         y += l.line_h + 2;
         for (((k, line), &(col, row)), state) in entries.iter().zip(&l.cells).zip(&states) {
             let at = (l.x0 + col * l.col_w, y + row as i32 * l.line_h);
             put(k, at, ink.key);
-            let x = at.0 + l.key_w;
+            let x = at.0 + l.key_w[col as usize];
             match state {
                 Some((head, true)) => {
                     let (h, v) = line.split_at(*head);
@@ -411,11 +424,12 @@ impl PlayWindowApp {
             };
             // Camera-distance preset (`T` cycles) + precise-movement toggle
             // (`R`) - the compass/zoom state, appended to the status line.
+            // Free-angle movement is default-on; flag the non-default state.
             let cam_str = format!("  cam {} (T)", self.session.camera.distance.label());
             let precise_str = if self.options_state.precise_movement {
-                "  precise-move ON (R)"
-            } else {
                 ""
+            } else {
+                "  precise-move off (R)"
             };
             // Camera-occlusion fade is default-on; flag the non-default state
             // (`F4` toggles) so a "why is the wall solid again" session sees it.
@@ -969,6 +983,23 @@ const PLATE_STEP_DEN: i32 = 4;
 const KEYS_INSET_X: i32 = 6;
 const KEYS_INSET_Y: i32 = 2;
 
+/// The list plate `plate` grown to hold `draws` (stage pixels) with the
+/// Keys page's insets round them: the 1x stage's Keys plate.
+pub(in crate::window) fn keys_plate_round(
+    plate: (i32, i32, i32, i32),
+    draws: &[TextDraw],
+) -> (i32, i32, i32, i32) {
+    let (mut x0, mut y0) = (plate.0, plate.1);
+    let (mut x1, mut y1) = (plate.0 + plate.2, plate.1 + plate.3);
+    for d in draws {
+        x0 = x0.min(d.dst.0 - KEYS_INSET_X);
+        y0 = y0.min(d.dst.1 - KEYS_INSET_Y);
+        x1 = x1.max(d.dst.0 + d.dst.2 as i32 + KEYS_INSET_X);
+        y1 = y1.max(d.dst.1 + d.dst.3 as i32 + KEYS_INSET_Y);
+    }
+    (x0, y0, x1 - x0, y1 - y0)
+}
+
 /// Scale stage-pixel `draws` into the window rect `(x, y, w, h)`, centred:
 /// the largest quarter step that fits, never above the stage's whole step
 /// `stage_scale` (half a step at the least).
@@ -1159,8 +1190,8 @@ pub(in crate::window) struct HelpPanelLayout {
     pub width: i32,
     pub height: i32,
     pub line_h: i32,
-    /// Offset of a row's text from its key.
-    pub key_w: i32,
+    /// Offset of a row's text from its key, per column.
+    pub key_w: [i32; 2],
     /// Offset of the right column from the left.
     pub col_w: i32,
     /// Each entry's `(column, row)`, in entry order.
@@ -1174,10 +1205,11 @@ pub(in crate::window) struct HelpPanelLayout {
 /// Two columns, each in table order. The table's own halves come first,
 /// which is what a narrow font gets. When their widest rows land in opposite
 /// columns and the pair is wider than the stage (the disc's dialog font,
-/// with what were "Camera distance: farther" and "Free-angle movement: off" both in
+/// with "Camera distance: farther" and "Free-angle movement: off" both in
 /// the second half, ran the panel off the right edge), the widest entries
-/// share one column instead - the most even such split that fits. A single
-/// column is the last candidate.
+/// share one column instead - the most even such split that fits. Each
+/// column's key cell is only as wide as its own keys. A single column is
+/// the last candidate.
 pub(in crate::window) fn help_panel_layout(
     font: &legaia_font::Font,
     entries: &[(&str, String)],
@@ -1200,6 +1232,12 @@ fn pad_row_width(width: &dyn Fn(&str) -> i32, row: &[(&str, String)]) -> i32 {
     pairs + PAD_PAIR_GAP * (row.len() as i32 - 1).max(0)
 }
 
+/// The space between a key and its row's text.
+const KEY_TEXT_GAP: i32 = 5;
+/// The space between the left column's widest text and the right column's
+/// keys.
+const COLUMN_GAP: i32 = 8;
+
 /// [`help_panel_layout`] over any text metric.
 fn help_panel_layout_with(
     width: &dyn Fn(&str) -> i32,
@@ -1214,29 +1252,36 @@ fn help_panel_layout_with(
         .unwrap_or(0);
     let stage_w = legaia_engine_ui::BOOT_UI_STAGE_W as i32;
     let stage_h = legaia_engine_ui::BOOT_UI_STAGE_H as i32;
-    let key_w = entries
-        .iter()
-        .map(|(k, _)| width(k))
-        .chain([width("Esc"), width("F12")])
-        .max()
-        .unwrap_or(0)
-        + 5;
     let n = entries.len();
-    // A candidate is a right-column flag per entry.
+    // A candidate is a right-column flag per entry. Each column's key cell
+    // is as wide as its own widest key (`PrtSc` need not widen the column
+    // `Home` heads), so the full labels fit two columns.
     let candidate = |right: &[bool]| {
-        let col = |want: bool, extra: &str| {
+        let in_col = |want: bool| {
             entries
                 .iter()
                 .zip(right)
-                .filter(|(_, r)| **r == want)
-                .map(|((_, l), _)| width(l))
+                .filter(move |(_, r)| **r == want)
+                .map(|(e, _)| e)
+        };
+        let key_w = |want: bool, extra: &str| {
+            in_col(want)
+                .map(|(k, _)| width(k))
                 .chain([width(extra)])
                 .max()
                 .unwrap_or(0)
-                + key_w
+                + KEY_TEXT_GAP
         };
-        let left_w = col(false, HELP_QUIT) + 10;
-        let right_w = col(true, HELP_SELF);
+        let text_w = |want: bool, extra: &str| {
+            in_col(want)
+                .map(|(_, l)| width(l))
+                .chain([width(extra)])
+                .max()
+                .unwrap_or(0)
+        };
+        let keys = [key_w(false, "Esc"), key_w(true, "F12")];
+        let left_w = keys[0] + text_w(false, HELP_QUIT) + COLUMN_GAP;
+        let right_w = keys[1] + text_w(true, HELP_SELF);
         let in_right = right.iter().filter(|r| **r).count();
         let rows = in_right.max(n - in_right);
         let body = (left_w + right_w)
@@ -1245,7 +1290,7 @@ fn help_panel_layout_with(
             .max(width(HELP_LEGEND))
             .max(pad_w);
         let height = (rows as i32 + 5 + pad.len() as i32) * line_h + 12;
-        (left_w, body, rows, height)
+        (left_w, body, rows, height, keys)
     };
     let even = n.div_ceil(2);
     let mut candidates: Vec<Vec<bool>> = vec![(0..n).map(|i| i >= even).collect()];
@@ -1268,8 +1313,8 @@ fn help_panel_layout_with(
     // The scrim is drawn from `y0 - 4` and is `height` tall (the height
     // carries the text's gaps and the scrim's top margin), so with `y0` at
     // its 4 px floor a panel fits while `height` does.
-    let fits = |c: &(i32, i32, usize, i32)| c.1 + 8 <= stage_w && c.3 <= stage_h;
-    let (right, (col_w, body, rows, height)) = scored
+    let fits = |c: &(i32, i32, usize, i32, [i32; 2])| c.1 + 8 <= stage_w && c.3 <= stage_h;
+    let (right, (col_w, body, rows, height, key_w)) = scored
         .iter()
         .find(|(_, c)| fits(c))
         .or_else(|| scored.iter().min_by_key(|(_, c)| c.1))
@@ -1431,7 +1476,7 @@ mod help_panel_tests {
         );
         // Every row's text ends inside the panel.
         for ((_, line), &(col, _)) in entries.iter().zip(&l.cells) {
-            let x = l.x0 + col * l.col_w + l.key_w;
+            let x = l.x0 + col * l.col_w + l.key_w[col as usize];
             assert!(
                 x + width(line) <= l.x0 + l.width,
                 "{what}: {line:?} runs past the panel"

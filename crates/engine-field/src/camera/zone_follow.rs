@@ -159,7 +159,7 @@ impl Camera {
         }
         let awaiting = zone.arrival.is_some();
         let gated = locked
-            && story & CAMERA_LOCKED_EASE_FLAG == 0
+            && !world.camera_let_through_at_player_tick()
             && !zone.snap_pending
             && (zone.active || awaiting);
         let hold = !gated && (!zone.follow_enabled || story & CAMERA_HOLD_FLAG != 0);

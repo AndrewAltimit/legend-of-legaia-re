@@ -174,7 +174,8 @@ impl World {
                 );
                 self.casting.module_settle_countdown = settle;
                 // Arm 5's pass steps and lifts the creature in the pass that
-                // cuts to it, and the cut lands on the next tick here.
+                // cuts to it: the seat is held until the cut lands
+                // (`World::body_paced_pass_now`, else the next tick).
                 if pos.is_some_and(|b| b != scratch)
                     && self.casting.orb_defer_seat(phase_in, ctx.phase, &scratch)
                 {

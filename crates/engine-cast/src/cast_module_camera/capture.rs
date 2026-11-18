@@ -88,6 +88,10 @@ pub struct CaptureCamArm {
     /// The arm's countdown gate holds: the body's phase chain must not run
     /// this pass (retail's arm returns busy before any of its writes).
     pub hold: bool,
+    /// The line the arm's pass prints or takes down at the move label's
+    /// place (`FUN_8003541C(.., 0x96, ..)` / `FUN_800319A8(0)`): PROT
+    /// 0966's arm 20 prints the streamed record's name, arm 27 clears it.
+    pub caption: Option<super::ModuleCaption>,
     /// For a body whose phase chain is **not** ported, the phase a passing
     /// arm moves to (`None` on the arm that finishes). The director then
     /// owns the module phase, the way a camera-only player director does; a

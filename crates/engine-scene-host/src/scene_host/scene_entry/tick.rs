@@ -188,6 +188,7 @@ impl SceneHost {
                 .and_then(|scene| scene.field_man_entry_script(&self.index).ok().flatten());
             if let Some((bytecode, pc0)) = entry_script {
                 self.world.load_field_script_at(bytecode, pc0);
+                self.world.open_battle_return_field_init();
                 log::info!("field: post-battle return re-ran the scene-entry script");
             }
         }
@@ -231,6 +232,13 @@ impl SceneHost {
                     &man_bytes,
                     global_index,
                 ) {
+                    // The spawner held the player, and the spawn's share of
+                    // the runner's depth keeps it held past the spawner's
+                    // end: the record holds the player from here.
+                    // REF: FUN_8003BDE0 (0x8003C0C0..0x8003C0CC)
+                    if let Some(tl) = self.world.field_vm.helper_contexts.last_mut() {
+                        tl.held_from_install = true;
+                    }
                     log::info!(
                         "field: op-0x44 spawned P2 record (global index {global_index}) as a concurrent helper context",
                     );

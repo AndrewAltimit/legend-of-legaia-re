@@ -85,6 +85,10 @@ impl CameraWorld for World {
         self.clock.credited_frames
     }
 
+    fn display_frames(&self) -> u64 {
+        self.clock.display_frames
+    }
+
     fn cutscene_timeline_active(&self) -> bool {
         World::cutscene_timeline_active(self)
     }
@@ -107,6 +111,10 @@ impl CameraWorld for World {
 
     fn field_player_locked_at_walk_gate(&self) -> bool {
         self.locomotion.locked_at_walk_gate
+    }
+
+    fn camera_let_through_at_player_tick(&self) -> bool {
+        self.locomotion.let_through_at_player_tick
     }
 
     fn scripted_shot_holds_camera(&self) -> bool {

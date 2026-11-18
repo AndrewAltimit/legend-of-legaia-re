@@ -11,11 +11,11 @@
 //!   resident global pool (Noa's field mesh, PROT 0874 §0 slot 1, capped to
 //!   the ten live groups `FUN_8001E890` draws), every other one the
 //!   dance-hall scene's TMD pool ([`crate::dance_venue::DanceVenue`]).
-//! * **The pose** is the clip driver's: the track's ticks turned into the
-//!   1/16-frame cursor by [`legaia_engine_vm::actor_tick::clip_step`] on the record's
-//!   own gate + divisor, the loop wrapping at the end tick
-//!   ([`legaia_engine_vm::actor_tick::clip_end_ticks`]), a move held on its last frame
-//!   until it has run its length, and the record's sub-frame blend
+//! * **The pose** is the clip driver's: the track's ticks turned into hall
+//!   game frames and the 1/16-frame cursor by [`legaia_engine_vm::actor_tick::clip_step`]
+//!   on the record's own gate + divisor ([`resolve_clip`]), the loop wrapping
+//!   to frame `0` on the step that reaches its end, a move held on its last
+//!   frame until the frame after it reaches it, and the record's sub-frame blend
 //!   ([`legaia_actor_formats::player_anm::blend_bone_transform`]). Each object is
 //!   `Rz.Ry.Rx . v + T`, then the actor's render scale (`+0x72`), its yaw
 //!   about Y and its position.
@@ -34,8 +34,10 @@ use std::sync::Arc;
 
 use crate::dance_venue::DanceVenue;
 use legaia_actor_formats::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transform};
-use legaia_engine_minigames::dance::{DanceBodyClip, DanceBodyFrame, DanceBodyModel, DanceGame};
-use legaia_engine_vm::actor_tick::{clip_end_ticks, clip_step};
+use legaia_engine_minigames::dance::{
+    DanceBodyClip, DanceBodyFrame, DanceBodyModel, DanceGame, HALL_FRAME_STEP,
+};
+use legaia_engine_vm::actor_tick::clip_step;
 
 /// Live TMD groups of an active-party field mesh: groups 10 / 11 are the
 /// equipment templates, never drawn (`FUN_8001E890`).
@@ -165,39 +167,48 @@ pub struct ClipCursor {
     pub hold: bool,
 }
 
-/// The step and end tick of one clip on `bank`: `(frames, step, end_ticks)`.
-fn clip_timing(bank: &PlayerAnmBundle, clip: DanceBodyClip) -> Option<(u16, u16, u32)> {
+/// The clip driver's run of one clip on `bank` at the hall's frame step:
+/// `(record, last, per_frame, span)` - the end cursor `frames * 16 - 1`, the
+/// cursor step one hall game frame makes (`+0x6A * DAT_1F800393`), and the
+/// game frames it takes to reach the end.
+fn clip_run(bank: &PlayerAnmBundle, clip: DanceBodyClip) -> Option<(usize, u32, u32, u32)> {
     let record = clip.record()?;
     let rec = bank.record_lenient(record).ok()?;
     let step = clip_step(clip.rate, rec.blends(), (rec.flag & 0xFF) as u8);
-    Some((rec.frame_count, step, clip_end_ticks(rec.frame_count, step)))
+    let per_frame = u32::from(step.max(1)) * HALL_FRAME_STEP;
+    let last = (u32::from(rec.frame_count) * 16).saturating_sub(1);
+    Some((record, last, per_frame, last.div_ceil(per_frame).max(1)))
 }
 
 /// Resolve a body's track to the clip and cursor it shows.
 ///
-/// A move plays from its first frame and holds its last until its end tick;
-/// from then on the standing loop plays from its own first frame, wrapping
-/// every [`clip_end_ticks`] - `FUN_801d1358` rebinding the loop off the clip
-/// driver's end flag.
+/// The clip driver `FUN_800204F8` steps the cursor once a hall game frame, by
+/// the clip's step times the frame step, and the frame that binds a clip
+/// steps it too: a track's `ticks` (vsyncs since its restart) are
+/// `ticks / HALL_FRAME_STEP + 1` steps. A move holds its last frame once a
+/// step reaches it (`0x08`, clamped); the frame after, `FUN_801d1358` sees the
+/// end flag and rebinds the standing loop, which starts from frame `0` and
+/// steps on that frame. A loop wraps to `0` on the step that reaches its end,
+/// dropping the overshoot (`0x800205F0..0x8002072C`), so it repeats every
+/// `ceil(end / step)` game frames, not every `end / step` vsyncs.
 pub fn resolve_clip(bank: &PlayerAnmBundle, body: &DanceBodyFrame) -> Option<ClipCursor> {
-    let mut ticks = body.ticks;
+    let mut steps = body.ticks / HALL_FRAME_STEP + 1;
     if let Some(mv) = body.move_clip
-        && let Some((frames, step, end)) = clip_timing(bank, mv)
+        && let Some((record, last, per_frame, span)) = clip_run(bank, mv)
     {
-        if ticks < end.max(1) {
-            let last = u32::from(frames) * 16 - 1;
+        if steps <= span {
             return Some(ClipCursor {
-                record: mv.record()?,
-                cursor: (ticks * u32::from(step)).min(last),
+                record,
+                cursor: (steps * per_frame).min(last),
                 hold: true,
             });
         }
-        ticks -= end.max(1);
+        steps -= span;
     }
-    let (_, step, end) = clip_timing(bank, body.loop_clip)?;
+    let (record, _, per_frame, span) = clip_run(bank, body.loop_clip)?;
     Some(ClipCursor {
-        record: body.loop_clip.record()?,
-        cursor: (ticks % end.max(1)) * u32::from(step),
+        record,
+        cursor: (steps % span) * per_frame,
         hold: false,
     })
 }

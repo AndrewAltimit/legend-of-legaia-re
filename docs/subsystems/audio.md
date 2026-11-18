@@ -626,8 +626,9 @@ in this order:
 | later | the poller, op-`0x36` sub `1` | the next track's bank and the side-band bank arrive a CD read on |
 
 `see ghidra/scripts/funcs/overlay_dialog_mc4_801d6704.txt` (the complete dump), `80062004.txt`,
-`80061edc.txt`, `800657d0.txt`. On the battle return the ramp measures `129`
-vsyncs ([above](#the-battle-music-timeline)).
+`80061edc.txt`, `800657d0.txt`. The block runs only with the field-entry word
+`_DAT_8007B8B8` at `0` (`0x801D6A5C`, `0x801D6BA0`): a battle return has its own
+ramp, of the battle source ([below](#the-battle-music-timeline)).
 
 The engine's load is instant. Its close used to be a bare key-off of the score
 and of voices `0x10..0x17` at full level, and the next scene's head start
@@ -656,6 +657,29 @@ sounding, nothing is held; the cap is six audio frames, for a host whose output
 pulls no samples. A door behind sub-op 6 has no close and is untouched. Pinned
 by `engine-session/tests/picker_switch_audio_disc.rs` and the page's
 `a_picked_scene_cuts_the_last_ones_sound_before_its_bank_loads`.
+
+What the player hears across a door, measured on retail with
+[`autorun_audio_timeline.lua`](../../scripts/pcsx-redux/autorun_audio_timeline.lua)
+(`LEGAIA_POKE=15:3:30:50` stands the player on `kor`'s door into the overworld
+`korout` from `kor_field_route_walk`; frame step 2, vsyncs from the poke):
+
+| Vsync | Retail |
+|---|---|
+| `+2` | the scene word names `korout`; the door's walk-out runs in mode `3`, `kor`'s `2005` at full |
+| `+82` | mode `2`, the field init |
+| `+85..+191` | the field source's flag `0x20` up, its volume `107 -> 1`, one step a vsync: the `0x78`-tick ramp |
+| `+123` | the entry script's head start stores `2000` (requested `2000`, loaded `-100`) |
+| `+211..+213` | the source closes, its last voices off; nothing sounds |
+| `+268` | the poller attaches the new track; `+269` is `korout`'s first frame |
+| `+283` | the score's first key-on |
+
+So the old track plays at full through the walk-out and fades over the load, and
+the new one attaches a vsync before the first frame and keys its first note `14`
+vsyncs after it. The engine
+plays the walk-out the same way (`72` ticks at full on the same door), cuts the
+`0x78`-tick ramp to its `30` ms fade at the change, and keys the new score's first
+note `17` frames after the first frame: the two frames the cut holds the start,
+plus the score's own lead-in.
 
 ### The overworld's story cutscenes are door records too
 
@@ -949,7 +973,7 @@ mode-`8` store (`T`) and from the fight's end (`E`, mode `2`):
 | `T + 80` | the field's last envelopes reach `0` | |
 | `T + 139` | mode `0x14`, source 5 attached and playing | the completion arm: `FUN_8001E54C(5, ..)` + `FUN_80026478(0x8007056C)` (`0x801CF91C..0x801CF930`) |
 | `E` | mode `2`, the battle sequence plays on | |
-| `E + 121` | it ramps down one step a vsync, over `129` vsyncs | the field init's `FUN_80062004(.., 0x78)`, while the map reads |
+| `E + 121` | it ramps down one step a vsync, over `129` vsyncs | the field init's `FUN_80062004(.., 0xB4)` on the battle source, while the map reads |
 | `E + 251` | the field source plays from its head | the init's poller |
 | `E + 306` | mode `3`, the first field frame | |
 
@@ -965,9 +989,41 @@ The session test `parity/tests/battle_music_timeline_disc.rs` reads the same ord
 forced fight: the key-off on the transition's first tick, the start on the battle's, `132`
 ticks on, where retail's mode `9` runs `133` vsyncs.
 
-The return is the part the port does not reproduce: its load is instant, so the
-`250` vsyncs of battle theme over the loading screen collapse, and the field track
-restarts from its head on the frame the field returns, as retail's does.
+#### The return closes the battle score before the field's track loads
+
+The field init reads the battle-return word `_DAT_8007B8B8 == 2`
+([`battle-round-loop.md`](battle-round-loop.md#a-battle-left-before-its-exit)) and takes
+a branch of its own (`0x801D6B30..0x801D6B80`): with the battle sound set at or above
+`0` and the battle source `0x8007056C` open, it ramps that source's sequence to silence,
+`FUN_80062004(seq, .., 0xB4)`. The field-source ramp and close
+(`0x801D6A5C`) and the cue-voice mutes (`0x801D6BA0`) are skipped on that word. The
+init then forces the loaded index to `-100` (`0x801D70D4`) and drives the poller to
+completion with no `VSync` (`0x801D72D4..0x801D7320`); its stage 4 closes the battle
+source and the field's track loads from its head. The MAN installer `FUN_8003AEB0`
+runs the entry script's first slice inside that window, so a start the entry script
+issues on the return loads with the field too. Nothing of the battle score sounds
+under the field track's head, and the first field frame comes `55` vsyncs into it.
+
+The engine's load is instant, so the `250` vsyncs of battle theme over the loading
+screen collapse. The return takes the field close a door takes, in the same order:
+`World::restore_field_bgm` queues `BGM_SUB_OP_ENGINE_FIELD_CLOSE` ahead of the
+field track's start, so the battle score fades over `30` ms and is cut before the
+start replays, and the post-battle re-run of the entry script opens the init's
+window (`World::open_battle_return_field_init`), so its starts load at once. Before,
+the score was keyed off under the field track's first notes, and the re-run's starts
+took the mid-scene walk ([above](#the-swap-takes-a-settle-and-a-read)): after every
+fight the field played without its music for `66` frames. Pinned by
+`engine-session/tests/battle_return_audio_disc.rs` (a `teien` fight: battle voices gone
+by the second frame, the field track on the second).
+
+The port does not play the `0xB4` ramp at its retail length. Retail runs it, and the
+field track's first `55` vsyncs, over a loading screen: the player never hears the
+fade with the field in view, and hears the field's music from the field's first frame.
+Played over the engine's instant return, the ramp would either sound the battle score
+over the field for two seconds and start the field's music that late, or lay the two
+scores over each other, which retail never does. The compressed close keeps both
+things the player hears: the battle score ends in a fade, and the field's track is
+at its head when the field appears.
 
 **A fight on the park word ends the music.** The return loads what the track word
 names, and the word `0x1000` names nothing. `retockin`'s word is the park, the door
@@ -4029,6 +4085,10 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `orb_summon_mid_cast` | `0.993` | `-0.01` dB | `+608` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
 | `swordie_summon_mid_cast` | `0.990` | `+0.04` dB | `-1042` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
 | `gilium_summon_mid_cast` | `0.991` | `+0.02` dB | `-1365` | the voice `6.0` vsyncs after mednafen's, inside the seek window; the state stands inside arm 1's `CdlSetloc` ([below](#the-selector-seeks-when-the-side-band-drops)) |
+| `battle_gimard_tail_fire_a`, `_b` | `0.992`, `0.999` | `-0.10`, `+0.00` dB | | Tail Fire's two frames: the monster's own cues alone |
+| `zora_glare_petrify_pre` | `0.947` | `-0.01` dB | | Glare from inside the capture band's seek ([seated](#the-capture-bands-seek)); the voice `XA23` channel `7` |
+| `cort_evil_seru_magic_mid_cast` | `0.996` | `+0.04` dB | | Evil Seru Magic from inside the same seek; the voice `XA22` channel `6` |
+| `cort_mystic_circle_mid_cast` | `0.962` | `-0.03` dB | | not split window by window |
 
 <a id="the-casts-step-is-pcsx-reduxs"></a>
 **The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next
@@ -4127,6 +4187,29 @@ Orb's and Swordie's voices then play at retail's level too, which the drive's wa
 level change under a sounding clip lifts it to the full CD volume
 ([the CD input volume](#the-cd-input-volume)), and Orb's duck is still ramping when its voice starts only
 because the blocked frames held the ramp.
+
+<a id="the-capture-bands-seek"></a>
+**The capture band seeks its voice file too.** A monster's special or a boss cast is a capture-class
+module, and the band ahead of it parks the drive the same way: state `0x6E` calls `FUN_8003EAE4(0, clip)`
+(`0x801E4F40`) with `clip` the acting monster's voice file, the byte `0x800787AF[DAT_8007BD09[seat]]`
+(`0x801E4F18..0x801E4F3C`), and `0x6F` polls that seek (`FUN_8003F2B8(1)`) before the module's first arm
+runs. Frame-stepped, `zora_glare_petrify_pre` and `cort_evil_seru_magic_mid_cast` both stand in `0x6F`
+with mednafen's `CdlSeekL` in flight to `XA23` and `XA22`'s first sectors, the files Glare's and Evil Seru
+Magic's head cues then play from, and `0x70` follows `20` and `31` vsyncs on, as the physical seek's
+cycles left (`9.64M`, `15.58M`) and the logical seek put it. The port held `0x6F` for PCSX-Redux's `4`
+vsyncs, a drive that answers any seek at once; it now takes the drive law from the module's head
+(`battle_cd_drive::capture_seek_vsyncs`, `CAPTURE_MODULE_LBA`), `33` vsyncs to `XA23` and `32` to `XA22`,
+the file read off the module's head cue (`voice_cue_clip`). Every capture child (film, retail
+comparison, this channel) keeps PCSX-Redux's hold, which its seeds stand on
+([capture band's reads](../tooling/cast-sequence-oracle.md#the-capture-bands-reads)); the seat below
+places a state inside the seek.
+
+A state inside that seek seeds with an idle drive, so the engine's band ran the module `18` and `27`
+vsyncs ahead of the recording and every sound of the cast with it: the two rows read `0.60` and `0.37`.
+The cast channel now seats what the seek has left off the state's own CD controller (`PSRCounter`
+while `DriveStatus` is `2`, plus the logical seek; `LEGAIA_SEAT_CAPTURE_SEEK_LEFT`, a harness seat), and the
+rows read `0.947` and `0.996`. The same controller holds the summon module seeks the
+[table below](#a-state-inside-a-drive-hold) names, which the seat does not reach yet.
 
 <a id="the-cast-channels-seek-window"></a>
 **The cast channel's seek window.** The drive's seek time is not one number: it varies across drives and

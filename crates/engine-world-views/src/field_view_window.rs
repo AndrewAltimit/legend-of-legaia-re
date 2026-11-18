@@ -92,13 +92,29 @@ pub fn retail_framing(world: &World, camera: &Camera) -> bool {
 /// `drop` units beyond it
 /// ([`legaia_engine_scene::field_ground::FREE_VANTAGE_FLOOR_DROP`]).
 ///
-/// The buckets hold at retail's vantage ([`retail_vantage`]) and in every
-/// mode but the field, whose ground mesh is the only one that carries them.
+/// The buckets hold only where they are faithful: at retail's vantage
+/// ([`retail_vantage`]) **under PSX rasterisation** (`psx_raster`), and in
+/// every mode but the field, whose ground mesh is the only one that carries
+/// them. A bucket is a whole-primitive rule - retail links each mesh
+/// primitive at its own ordering-table slot and the floor cell two slots
+/// behind its farthest corner - and only PSX mode links the meshes that way
+/// too. The clean rasteriser depth-tests a mesh per pixel, so against a
+/// bucketed floor the near edge of a face buried under it wins even where
+/// retail's slot for the whole face loses: `bylon`'s fan pits (pack mesh
+/// `82`, a box sunk 96 units under the floor) stood their inner walls over
+/// the floor as spikes under the grate in the dialogue shot at the east fan
+/// room, a grate that read as raised off the floor.
+///
 /// Off that vantage - the default `Far` preset, the drag / tilt / zoom
 /// knobs, `F3` - the camera sees under-floor faces retail's camera never
-/// frames, which the buckets would paint over the ground.
-pub fn field_ground_drop(world: &World, camera: &Camera, debug_camera: bool) -> Option<f32> {
-    (world.mode == SceneMode::Field && !retail_vantage(world, camera, debug_camera))
+/// frames, which the buckets would paint over the ground, in either mode.
+pub fn field_ground_drop(
+    world: &World,
+    camera: &Camera,
+    debug_camera: bool,
+    psx_raster: bool,
+) -> Option<f32> {
+    (world.mode == SceneMode::Field && !(psx_raster && retail_vantage(world, camera, debug_camera)))
         .then_some(legaia_engine_scene::field_ground::FREE_VANTAGE_FLOOR_DROP)
 }
 
@@ -316,24 +332,31 @@ mod tests {
         }
     }
 
-    /// The ground keeps retail's buckets at retail's vantage and off the
-    /// field, and takes the dropped floor on any other field frame.
+    /// The ground keeps retail's buckets at retail's vantage under PSX
+    /// rasterisation and off the field, and takes the dropped floor on any
+    /// other field frame - the clean rasteriser's retail vantage included.
     #[test]
     fn the_ground_drops_only_off_retail_vantage_on_the_field() {
         use legaia_engine_camera::camera_distance::CameraDistance;
         let mut world = World::new();
         world.mode = SceneMode::Field;
         let retail = Camera::default();
-        assert_eq!(field_ground_drop(&world, &retail, false), None);
+        assert_eq!(field_ground_drop(&world, &retail, false, true), None);
         let drop = Some(legaia_engine_scene::field_ground::FREE_VANTAGE_FLOOR_DROP);
-        assert_eq!(field_ground_drop(&world, &retail, true), drop, "F3");
+        assert_eq!(
+            field_ground_drop(&world, &retail, false, false),
+            drop,
+            "clean raster: a per-pixel mesh against a bucketed floor"
+        );
+        assert_eq!(field_ground_drop(&world, &retail, true, true), drop, "F3");
         let mut far = Camera::default();
         far.distance = CameraDistance::Far;
-        assert_eq!(field_ground_drop(&world, &far, false), drop);
+        assert_eq!(field_ground_drop(&world, &far, false, true), drop);
         world.mode = SceneMode::Battle;
-        assert_eq!(field_ground_drop(&world, &far, false), None);
+        assert_eq!(field_ground_drop(&world, &far, false, true), None);
+        assert_eq!(field_ground_drop(&world, &far, false, false), None);
         world.mode = SceneMode::WorldMap;
-        assert_eq!(field_ground_drop(&world, &far, false), None);
+        assert_eq!(field_ground_drop(&world, &far, false, false), None);
     }
 
     #[test]

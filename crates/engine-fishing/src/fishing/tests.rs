@@ -1535,3 +1535,19 @@ fn the_cast_spawns_the_lure_where_the_retail_cast_did() {
     let lure = p.lure_actor().expect("the lock spawns the lure");
     assert_eq!(lure.spawn, (5888, 4880));
 }
+
+/// The band countdown `DAT_801D90EC` falls through a fight: its store sits in
+/// the delay slot of the hooked branch (`0x801D31BC`), so a hooked frame
+/// decays it by the step like a waiting one. The retail catch film reads it
+/// from `0x40` down past `-800` by the close-up.
+#[test]
+fn the_band_countdown_falls_through_a_fight() {
+    let mut p = pond();
+    p.phase = PondPhase::Hooked;
+    p.fight_species = Some(0);
+    p.line_record = 1000;
+    p.band.countdown = BAND_HOLD_FRAMES;
+    p.tick(PondInput::default(), 3, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Hooked);
+    assert_eq!(p.band_countdown(), BAND_HOLD_FRAMES - 3);
+}

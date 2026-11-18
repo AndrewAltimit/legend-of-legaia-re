@@ -202,8 +202,25 @@ in the captures):
 | `+0x28` | content-renderer VA |
 
 Windows slide to the nearest screen edge on exit and park offscreen (x = 332
-right, x = -124 left, y = 240 bottom). The top-level windows 49 / 50 / 51 stay
-parked while a sub-screen is up.
+right, x = -124 left, y = 240 bottom). The parks are measured off the display
+box at scratchpad `0x1F800388..0x1F80038E`, which every field, overworld, menu
+and shop state holds as `(0, 4, 0x140, 0xE4)`: the bottom park is `0xE4 + 0xC`,
+so the Items info window (`y = 108`) leaves at 11 px a frame. The top-level
+windows 49 / 50 / 51 stay parked while a sub-screen is up.
+
+The money / play-time box (49) slides off the record the menu open rewrites
+(`FUN_801DC6B4` state 0, `0x801DC810..0x801DC844`: `y = 0xB4`, `h = 0x18`,
+then `y -= 0xE`, `h += 0xE` with the casino coin row), not off the disc's
+`y = 178`: with the coin row it runs from `0xA6` to its park at 6 px a frame.
+
+**Overlap order.** The create `FUN_80032434` keeps the list sorted by
+ascending id (`0x80032528..0x8003255C` inserts before the first node whose id
+is not below the new one), the draw walker `FUN_80031D00` walks it in order,
+and every window's primitives are linked into the same ordering-table slot
+(`FUN_8003D2C4` on `*(0x1F8003F4) + 4`, `0x8002C90C`), which draws the last
+linked first. So where two windows overlap, the **lower id is on top**: a
+closing item list (15) covers the party panel (51) sliding in under it, and
+the closing command window (13) covers the root list (50).
 
 ### Window-script runner (`FUN_801D6628`)
 
@@ -1002,8 +1019,13 @@ stood; on the press frame (`field_menu_dispatch::pause_screen_carry` reports
 the lock has not seen the screen) it draws the snapshot in place of the new
 screen; while windows close it draws the snapshot's draws inside each closing
 window's frame, moved as far as that window has travelled, under the new
-screen. It is a draw rule only: the pad reaches the screens on the frames it
-did. Both hosts
+screen. The carry also applies the overlap order: the hosts draw every text quad
+after every sprite, so each draw keeps only what no lower-id window's frame
+covers, a carried draw counting as its closing window's and a new draw as the
+lowest open window its corner stands in. Filmed against retail
+(`autorun_film.lua`, one shot a vsync), the slide frames of the Items screen's
+open and close agree at about `0.99` of pixels. It is a draw rule only: the
+pad reaches the screens on the frames it did. Both hosts
 clip the menu's quads to the 320x240 stage (`pause_menu::clip_to_stage`), so
 a parked or sliding window never shows in a wide surface's margins. The
 menu-overlay loads either side of the menu, about `50` and `65` black vsyncs

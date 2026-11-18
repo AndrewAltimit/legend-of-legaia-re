@@ -315,6 +315,17 @@ impl PlayWindowApp {
             );
             self.options_state.volumetric_fog = false;
         }
+        // A recording keeps the retail movement decode the same way: the
+        // replay format carries the pad stream only and replays run with the
+        // `World` default (precise movement off), so a session recorded under
+        // the free-angle default would not replay where it walked.
+        if self.record_log.is_some() {
+            self.options_pins.pin(
+                &self.options_state,
+                legaia_engine_menus::options::options_pin::PRECISE_MOVEMENT,
+            );
+            self.options_state.precise_movement = false;
+        }
         // `--no-dyn-shadows` / `--no-occlusion-fade`: the same session-only
         // pin over the persisted render options the `Y` / `F4` keys and the
         // page's boxes edit.

@@ -62,7 +62,8 @@ and a browser; nothing is installed.
    error does not export. `F8` steps through the checks.
 7. **Play it.** **Play this map** opens the play page on the map the Maps tab
    is on; while that tab is open, the next Play this map (or **Live**, every
-   edit) reloads the pack in place with the player where they stand.
+   edit) reloads the pack in place with the player where they stand, with
+   no fade to black between edits.
    The 3D view is the map the way the engine builds it; **Fullscreen** (`F11`)
    takes it edge to edge.
 8. **Export and share.** **Save .lxpack** writes the bundle (`Ctrl+S`).

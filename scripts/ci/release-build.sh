@@ -245,7 +245,9 @@ done
 # window. The double-click entry is the GUI-subsystem stub legaia-launch,
 # shipped under the name a player looks for; it starts
 # command-line-tools\legaia-engine.exe with no console. Legaia Explorer has
-# no command-line contract, so it is a GUI program itself. Assert the
+# no command-line contract, so it is a GUI program itself, and so is
+# asset-viewer: its subcommands each open a window, and a terminal start
+# reaches the terminal through AttachConsole. Assert the
 # subsystems from the PE header (2 = Windows GUI, 3 = console) so a build
 # change cannot quietly bring a console back, and assert each of the three
 # carries an icon group resource (RT_GROUP_ICON, type 14) so a build without
@@ -283,12 +285,13 @@ PY
         read -r gui gui_icon < <(pe_info "$STAGE/$GAME_ENTRY")
         read -r cli cli_icon < <(pe_info "$TOOLS/legaia-engine.exe")
         read -r explorer explorer_icon < <(pe_info "$STAGE/$EXPLORER_ENTRY")
-        if [[ "$gui" != 2 || "$cli" != 3 || "$explorer" != 2 ]]; then
-            printf '[release-build] ERROR: PE subsystems wrong: launcher=%s (want 2), engine=%s (want 3), explorer=%s (want 2)\n' \
-                "$gui" "$cli" "$explorer" >&2
+        read -r viewer _ < <(pe_info "$TOOLS/asset-viewer.exe")
+        if [[ "$gui" != 2 || "$cli" != 3 || "$explorer" != 2 || "$viewer" != 2 ]]; then
+            printf '[release-build] ERROR: PE subsystems wrong: launcher=%s (want 2), engine=%s (want 3), explorer=%s (want 2), asset-viewer=%s (want 2)\n' \
+                "$gui" "$cli" "$explorer" "$viewer" >&2
             exit 1
         fi
-        log "PE subsystems hold: $GAME_ENTRY + $EXPLORER_ENTRY = GUI, legaia-engine.exe = console"
+        log "PE subsystems hold: $GAME_ENTRY + $EXPLORER_ENTRY + asset-viewer.exe = GUI, legaia-engine.exe = console"
         if [[ "$gui_icon" != 1 || "$cli_icon" != 1 || "$explorer_icon" != 1 ]]; then
             printf '[release-build] ERROR: icon resource missing: launcher=%s engine=%s explorer=%s (1 = present)\n' \
                 "$gui_icon" "$cli_icon" "$explorer_icon" >&2
@@ -612,6 +615,11 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'Licensed MIT OR Unlicense - see ../LICENSE and ../LICENSE-MIT.\n'
     printf 'The programs link third-party crates; their licenses and notices are\n'
     printf 'in ../THIRD-PARTY-LICENSES.txt.\n'
+    if [[ "$TARGET" == *-windows-* ]]; then
+        printf '\nasset-viewer is a windowed program: double-clicked it opens no console,\n'
+        printf 'and in cmd.exe the prompt comes back while its window stays open. Use\n'
+        printf '"start /wait asset-viewer ..." to wait for it and keep its exit code.\n'
+    fi
     if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
         printf '\nRequires glibc %s or newer.\n' "$GLIBC_PIN"
         printf 'legaia-engine and asset-viewer need ALSA (libasound.so.2) at\n'

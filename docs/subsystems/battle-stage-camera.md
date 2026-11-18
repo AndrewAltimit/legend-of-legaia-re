@@ -909,10 +909,16 @@ focus at the origin, `±800` seats) read yaws `224`, `2632`, `3136`, `3808` and
 
 At yaw `0` the eye looks down the seat axis and the two rows project to the
 same screen X. Retail opens every fight there and orbits out of it. **The port
-does not**: it opens on the azimuth the field camera left, moved off the seat
-axis by `battle_entry_yaw`. This is a port judgement, carried by
-`BattleCamInputs::entry_yaw`, which `battle_cam_inputs` fills from
-`World::locomotion.camera_azimuth`. The sparring fight is the exception and
+reaches the prompt off that axis**: the far framing's orbit starts on the azimuth
+the field camera left, moved off the seat axis by `battle_entry_yaw`. This is a
+port judgement, carried by `BattleCamInputs::entry_yaw`, which
+`battle_cam_inputs` fills from `World::locomotion.camera_azimuth`. It does not
+reach the opening: the [entry sweep](#the-battle-entry-sweep) and the name hold
+run on retail's yaw `0`, which is what frames the whole enemy party under the
+intro banner, and the hand-over to case 9 swings the yaw out to the set-aside
+azimuth over its own glide (`BattleCamera::start_entry_sweep`,
+`hand_over_from_entry_sweep`). Opened on the field azimuth instead, the close-in
+on the origin left most of the enemy row out of frame. The sparring fight is the exception and
 keeps retail's zero: its sweep, its name hold and its caption close-up are
 all framed on it. So does every fight in the retail-faithful mode: the
 judgement is the toggle `WorldToggles::battle_entry_off_axis`, which
@@ -934,7 +940,7 @@ and then, advancing by the frame step `0x1F800393` a pass, runs the sweep
 | Counter | Camera |
 |---|---|
 | `0x80..0xA1` | TR y `+= 0x30 * fs`, TR z `-= 0x40 * fs` from battle init's pose: the camera rises and pulls in |
-| `0xA2..=0xC0` | `FUN_801D5854(0, 2)` every pass |
+| `0xA2..=0xC0` | `FUN_801D5854(0, 2)` every pass: case 2 builds its rotation target from the prologue's zeroed words (`0x801D58AC..0x801D58B4`), so it aims at yaw `0` |
 | past `0xC0` | parked at `0xFF`; the battle tick `FUN_801D0748` runs from then on |
 
 The step is not the fight's own from the first pass. The game-mode transition
@@ -1306,6 +1312,21 @@ The lone-monster defeat fork above it (`ctx[+0x287]` / `ctx[+0x288]` /
 sends a scripted fight's lone monster, dying in place, to the same stand-off
 arm as a gone node.
 
+The falling arm opens two passes after the death arm, on retail and on the
+engine alike. A `--watch` on Thunder Punch's killed target
+(`battle_garmel_party_gala_thunder_punch_open`) reads the death arm's
+`+0x21C = 2` at `0x8004B66C` inside the knockdown's natural-end commit, the
+first sink (`+0x36 = 13`, `0x800504A8`) on the next pass, since
+`FUN_80050120` runs ahead of the node ticks in the frame, and the camera's first
+falling pose on the pass after that, since the state arm frames ahead of the
+sink. The engine's death arm, sink and re-frame land on three consecutive passes
+the same way. Where a film opens the ramp a pass early the knockdown ended a pass
+early: Thunder Punch's replay kept a step-`4` frame where retail's dropped to `3`
+(`into` 124), its knockdown cursor ran `8` ahead, and the clip ended a pass
+sooner. Slash Kick's lead is one vsync of pass phase, left by two such step-`4`
+frames, and its ramp opens on the pass after the killing hit as retail's does.
+Both are the frame step's cost, not the fade's order.
+
 Port: `battle_cam_script::apply_death_reframe`, applied by
 `BattleCamera::action_end_pose` whenever the post-action target reads dead; the
 ramp is `battle_attack_camera::AttackCamCtx::death_ramp`, and the lone-defeat
@@ -1586,9 +1607,22 @@ emulator deferring each sector while a poll's interrupt is pending, `cdrom.cc`
 (`LEGAIA_BATTLE_FRAME_SPAN=1` on a native session, `--engine-env` on a film).
 `World::apply_cast_arm_frame_step` re-times each pass's frame by the span its cost
 reads. An arm table names its frames' step and no cost, so an arm takes the law only
-while a clip loads it; a capture-band module's line loads at the floor only, since
-retail's frames under one run from no overrun (Death Game's `425`-vsync line, four
-vsyncs a step-`4` frame) to five and more (Bloody Horns, Lapis Wave). The harness's
+while a clip loads it. Under a capture-band module's own line the arm's step stays its
+table's and its frame spans the census's work under the polls (`xa_polled_work_cost`):
+retail's frames under one run from no overrun (Death Game's `425`-vsync line, four vsyncs
+a step-`4` frame, some `265` hblanks of work) to eight and more (Kiss of Death, Megaton
+Press). A `--cd-trace` recording of Megaton Press (`nivora_duel_pre_megaton_press`) polls
+from the line's cue to the end of arm 11, `75527` `GetlocL` / `GetStat` pairs at about
+`2050` every twenty vsyncs, and runs its table arms 2 to 4 at `6` vsyncs a frame and 9 to
+11 at `7` and `8`; the census's work for those arms reads `6` and `7` to `8`. Run at their
+step instead, the port's arms let the line, a span of vsyncs, outlive them, and it loaded
+arms 13 to 17 on step `4` where retail's run `2`. Over the enemy films the step agreement
+goes `.892` to `.904` (the capture band `.915` to `.926`, the finalize `0x71` `.630` to
+`.777`, the Done band `.869` to `.885`), the image mean `.9474` to `.9476` and the cues
+hold; the arts, strike and Seru sets read the same. Evil Seru Magic's whole cast now runs
+retail's length (its recording's `0x70` spans `4578` vsyncs), though its arms 23 and 24 run
+longer than retail's (`484` and `530` vsyncs against `281` and `386`): their census counts
+the gather's effect parts high. The harness's
 retail step track and a replay's seeded state run their steps exact. Off, an ordinary
 frame runs its step and a loaded one a single vsync past it.
 
@@ -1597,7 +1631,7 @@ Glare (`battle_korb2_medusa_glare_mid_cast`) reads it set to `2` at the clip's s
 (`0x8003D65C`) and cleared by the stop `FUN_8003EE00` (`sw zero` at `0x8003EE2C`) `559`
 vsyncs on, `20` past the line's `539`; Kiss of Death's clears at `444`. Under the law the
 engine holds its drive word and its load window for the span plus that tail
-(`XA_READ_TAIL_VSYNCS`), and a capture-band line leaves its arms their table's length.
+(`XA_READ_TAIL_VSYNCS`), and a capture-band line spans its arms by their census work.
 
 On, the films' wall clock comes to retail's and their game clock holds; the sets, one
 binary run both ways:
@@ -1757,6 +1791,33 @@ lighter and the effect sprites heavier, as a fit on the strike and arts frames s
 moved the arts images `.9300` to `.9195` and Tail Flare's cue back to `.800`, so the census
 counts each primitive once.
 
+**The backdrop's own work.** A frame that draws neither the backdrop pair nor the ground
+grid costs less than the line's intercept says. Retail transforms every backdrop primitive
+before the quad leaves' off-screen reject (`FUN_80044798`) or the winding test drops it, and
+the grid walks its cells to cull them, so the pair costs a near-constant share of the frame
+that the linked count does not see. On the black-backdrop close-ups the PCSX-Redux recordings
+read it plainly: Final Crisis's arm 6 links some `740` primitives and costs `200` (step `1`),
+Fatal Decision's arms 6 and 7 link `540` and cost `183`, where the line gave `265` and `225`
+(step `2`). The line is `75` hblanks, `42` more while the backdrop or the grid draws
+(`LINKED_BACKDROP_WORK`, `World::battle_backdrop_drawn`), and `.200` a primitive; every
+frame that draws the stage keeps its price. Over the cost-carrying recordings of the strike,
+arts and enemy sets (state-and-arm medians of the unloaded frames against the census on the
+same state and arm) the step read right goes `.730` to `.769` on the enemy casts, `.893` to
+`.898` on the arts and holds `.987` on the strikes. PROT 0898's scanline wash keeps the share:
+it fills the screen where the backdrop stands, its price was read over the line with the
+share in it, and Genocidal Cannon's close-ups under it (no stage, some `500` primitives) run
+step `4` under the polls on every retail frame; without the share they read `3` and both
+films fell `.017`. On the four film sets (image mean, cue mean, step agreement) the enemy
+casts go `.9446` / `.9995` / `.887` to `.9461` / `.9999` / `.892`: Final Crisis's film
+(`cort_evolved_card_pre_doomsday__B4`) reads `.796` to `.961` and plays all its cues, its
+arm 6 on retail's step `1`. The arts go `.9419` to `.9428` (Tri-Somersault `.768` to `.787`),
+the strikes, the Seru casts and the Seru casts on full-party fights read the same. The
+constant is a plateau, not a point:
+intercepts from `45` to `87` (the rest to `117`) read alike. Weighing the classes apart (the
+grid, the stage, the bodies, the shadows, the effects) fits the costs no better held out by
+film and reads the steps worse (`.53` to `.60` on the enemy casts), so the census still counts
+each linked primitive once. Grade `disassembly` for the reject path, `capture` for the price.
+
 The four sets, one default build and the census-priced opt-in (image mean, cue mean, step
 agreement over the game time):
 
@@ -1791,6 +1852,16 @@ build, the default against the census with the seat (image mean, cue mean):
 | Seru casts | 29 | `.9556` / `1.0` | `.9557` / `1.0` |
 | Enemy casts | 109 | `.9351` / `.9985` | `.9360` / `.9991` |
 | Gate | 12 | `.9664` / `.9944` | `.9710` / `1.0` |
+
+The table's lead-in leaves its ring behind, and the film opens on it: a seeded cast in a
+light full-party fight opens its `0x28` and `0x6E` passes at step `3` where Ghost Knight's
+V-Windhash, Rogue's Element Change and Rogue Wind and Slippery's Big Wave read `2` on their
+recordings. The table's rows are not what holds them there. Priced on the census instead (a
+shadow ring the lead-in filled and the film opened on), the enemy films' `0x28`, `0x29` and
+`0x6E` bands read the same steps: the census prices the lead-in's own frames at `600` and
+over (Ghost Knight's idle frame links `2456` primitives, all five bodies in shot), where
+retail's frames before the cast cost `450` to `500`. What parts is the frame the engine
+stands on before the cast, not the price of a primitive.
 
 The span law takes the same seat in the lead-in (`LEGAIA_LEADIN_SPAN_LAW=1`): its longer
 frames re-deal the rounds the replay plays to the gate, and under it Gilium's, Warhalf's,
@@ -2132,6 +2203,27 @@ the same artifact: `XA_STREAM_FRAME_COST` (`1063`) is a frame of about `370` hbl
 the third of the CPU the polls leave. So the arm tables' whole-screen `4` is, on most voiced arms,
 PCSX-Redux's CD timing and not the draw. Grade `disassembly` for the stop watch, `capture` for
 both emulators, `docs` for the console.
+
+<a id="an-arts-shouts-seek"></a>
+
+**An arts shout's seek.** Where the polls open depends on where the head stands. The battle
+seek-ahead selector `FUN_8004DA00` parks the idle drive on the acting member's long bank
+`(char - 1) * 2` for an Attack (`0x8004DAFC`), and re-parks it once each clip's read is done. The
+anim commit's voice sites (`FUN_8004AD80` into `FUN_8004C140`, then `FUN_8003D53C`) start a
+shout from that bank or from another file. PCSX-Redux answers a `CdlSeekL` to the parked sector in
+`21k` cycles and any other seek in `1827k`, whatever its distance: every clip seek of the arts and
+enemy `--cd-trace` recordings reads one or the other. So a parked shout loads its own pass from the
+start (Frost Breath's `CdlSeekL` lands `47k` cycles into the frame, which runs `8` vsyncs), and a
+seeking one leaves its pass to its step and opens the polls part way into the next (Dragon Fangs'
+first line: the cue pass runs `3`, `CdlReadS` lands `0.66` vsyncs into the next pass, which runs
+`7`). The port times the polls from the cue's pass
+(`frame_clock::ARTS_SHOUT_PARKED_POLL_HBLANKS`, `ARTS_SHOUT_SEEK_POLL_HBLANKS`,
+`World::time_arts_voice_seek`), the work before the first poll at full speed and the rest under the
+polls. With the cue-pass-free onset the other clips keep, the shout's first `0x1F` passes ran step
+`3` where retail's run `4`, every cursor cut of the per-art attack camera came a pass late, and the
+arts films' sustained camera error read `8.4` px; timed from the seek it reads `2.2`, Frost Breath
+`15.3` to `1.1` and Tornado Flame `15.6` to `0.9`. Grade `capture` for the seek times and the
+films, `disassembly` for the parked bank.
 
 **Port.** `WorldToggles::battle_cd_timing` (`CdTiming`) picks the machine. `PcsxRedux`, the
 default, keeps the recordings' tables, the clamp `1063` and the overrun. On `Console`, an opt-in

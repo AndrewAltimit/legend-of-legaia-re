@@ -3,22 +3,25 @@
 //! A body-paced director runs before its module's ported tick body and sees
 //! only the phase the body is about to run; whether that pass lets the arm
 //! through is the body's own countdown's call. What a retail arm does on its
-//! **pass** - the `FUN_801D829C` call after its gate, a caption - therefore
-//! lands on the first tick of the arm the pass moved to, one engine tick (half
-//! a retail battle frame) after retail's. Retail's walker steps the shot on the
-//! pass that armed it, after the module call: Nova's arm 2 arms a `0x40`-frame
-//! pull from pitch `0x400` to `0x80`, and the rows of the pass that stores
-//! phase 3 already read pitch `1010` (one step-`1` frame of `-14`), where the
-//! engine's first step lands a pass later. The arm then stands `14` in pitch and
-//! `12` in TR y off retail's for its whole length (the `0x8B` film's camera
-//! channel), which a director that saw the pass would close.
+//! **pass** - the `FUN_801D829C` call after its gate, a caption - comes on the
+//! same pass, and retail's walker steps the shot on the pass that armed it,
+//! after the module call: Nova's arm 2 arms a `0x40`-frame pull from pitch
+//! `0x400` to `0x80`, and the rows of the pass that stores phase 3 already read
+//! pitch `1010` (one step-`1` frame of `-14`). So the host calls the director a
+//! second time behind a body that has just let its arm through
+//! ([`ModuleCamState::body_pass_now`]), and that call makes the passed arm's
+//! pass alone. Left to the next arm's first tick, every shot of the four casts
+//! stepped a pass behind retail's for its whole length: Swordie's arm-6 and
+//! arm-8 pulls read retail's previous row on every pass of the `0x88` film's
+//! camera channel.
 //!
 //! What an arm does on **every** pass - the drifts it adds to the camera
 //! globals ahead of its gate, a shot it re-arms before the gate - runs on
-//! every tick the body spends in the arm.
+//! every tick the body spends in the arm, from the tick after the pass.
 //!
 //! The clock lives in the module countdown word, which none of these
-//! directors uses as a countdown: `(phase + 1) << 16 | ticks in the arm`.
+//! directors uses as a countdown: `(phase + 1) << 16 | ticks in the arm`, the
+//! low half [`OWN_FIRST`] while the arm's first own tick is still to come.
 
 use super::*;
 
@@ -31,7 +34,14 @@ pub(super) enum ArmTick {
     From(u8),
     /// A later tick in the same arm, counted from `1`.
     Within(i32),
+    /// The first tick of this arm, whose pass the call behind the body
+    /// already made.
+    OwnFirst,
 }
+
+/// The arm clock's low half after a pass made behind the body: the arm's
+/// first own tick is still to come.
+pub(super) const OWN_FIRST: i32 = 0xFFFF;
 
 /// Read and advance the arm clock for `phase`.
 pub(super) fn arm_tick(st: &mut ModuleCamState, phase: u8) -> ArmTick {
@@ -42,6 +52,8 @@ pub(super) fn arm_tick(st: &mut ModuleCamState, phase: u8) -> ArmTick {
         ArmTick::First
     } else if memo != here {
         ArmTick::From((memo - 1) as u8)
+    } else if word & 0xFFFF == OWN_FIRST {
+        ArmTick::OwnFirst
     } else {
         ArmTick::Within((word & 0xFFFF) + 1)
     };
@@ -82,9 +94,20 @@ where
     P: Fn(&mut ModuleCamState, u8) -> ArmDirection,
     E: Fn(&mut ModuleCamState, u8, i32) -> ArmDirection,
 {
+    // The call behind a body that has just passed its arm: that arm's pass
+    // alone, with the new arm's first own tick left for the next call.
+    if std::mem::take(&mut st.body_pass_now) {
+        return match arm_tick(st, phase) {
+            ArmTick::From(prev) => {
+                st.countdown.0 = ((i32::from(phase) + 1) << 16) | OWN_FIRST;
+                (arms.pass)(st, prev)
+            }
+            _ => ArmDirection::PASS,
+        };
+    }
     match arm_tick(st, phase) {
         ArmTick::First if phase == 0 => (arms.open)(st),
-        ArmTick::First => (arms.each)(st, phase, 0),
+        ArmTick::First | ArmTick::OwnFirst => (arms.each)(st, phase, 0),
         ArmTick::Within(n) => (arms.each)(st, phase, n),
         ArmTick::From(prev) => {
             let passed = (arms.pass)(st, prev);
