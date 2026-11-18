@@ -41,6 +41,9 @@ const SPU_BUSY_WORD: u32 = 0x8007_AF38;
 const SEQ_CALC: u32 = 0x8006_2F98;
 const SEQ_INIT: u32 = 0x8006_2410;
 const SEQ_PLAY: u32 = 0x8006_28F0;
+/// `SsSeqSetVol` (`FUN_80064890`): store the pair, and on a playing slot
+/// re-volume its notes (`FUN_80067E9C`).
+const SEQ_SET_VOL: u32 = 0x8006_4890;
 const SEQ_LOCK: u32 = 0x801C_D2B4;
 const SEQ_BITMAP: u32 = 0x801C_D2B8;
 const SEQ_TABLE: u32 = 0x801C_D2C0;
@@ -232,6 +235,15 @@ impl RetailSide {
             slot: u32::from(slot),
             vag_addr,
         })
+    }
+
+    /// `SsSeqSetVol(slot, v, v)` (`FUN_80064890`) between two calcs, as the
+    /// game frame's duck makes it.
+    pub fn set_seq_vol(&mut self, v: u8) -> Result<()> {
+        expect_return(
+            self.cpu
+                .call(SEQ_SET_VOL, &[self.slot, u32::from(v), u32::from(v)]),
+        )
     }
 
     /// One vsync: the calc, its writes on the SPU, the samples, `ENVX` back.
@@ -631,6 +643,25 @@ pub struct SeqDifferentialArgs {
     /// sequence open).
     #[arg(long, default_value = "mei_house_inside")]
     pub host: String,
+    /// `START:FROM:TO`: from vsync `START` on, set the sequence volume once a
+    /// vsync, a step at a time from `FROM` toward `TO`, on both sides - a
+    /// summon's duck as the game frame applies it (`FUN_8002657C` ->
+    /// `SsSeqSetVol` `FUN_80064890`, which re-volumes the sounding notes
+    /// through `FUN_80067E9C`), against the port's `Sequencer::set_master_vol`.
+    #[arg(long)]
+    pub duck: Option<String>,
+}
+
+/// The `--duck` ramp's volume at vsync `i`, `None` before it starts.
+fn duck_at(duck: Option<(usize, u8, u8)>, i: usize) -> Option<u8> {
+    let (start, from, to) = duck?;
+    let k = i.checked_sub(start)?;
+    let v = if from >= to {
+        i32::from(from) - k as i32
+    } else {
+        i32::from(from) + k as i32
+    };
+    Some(v.clamp(i32::from(from.min(to)), i32::from(from.max(to))) as u8)
 }
 
 /// The differential of the mednafen or PCSX-Redux state `label`, `None` when the
@@ -668,6 +699,7 @@ pub fn run_label(label: &str, vsyncs: usize, cues: bool) -> Result<Option<Differ
         dump_at: None,
         track: None,
         host: String::new(),
+        duck: None,
     };
     run_one(
         &ram,
@@ -816,6 +848,7 @@ pub fn run_seated_track(
         dump_at: None,
         track: None,
         host: String::new(),
+        duck: None,
     };
     run_one(&ram, slot, track, 127, &entry, &args, true).map(Some)
 }
@@ -924,9 +957,30 @@ fn run_one(
     // A cue keyed ahead of retail's calc `i` goes out in that calc's flush, which
     // is the port's flush of step `i - 1`.
     let mut retail_cue = None;
+    let duck = match args.duck.as_deref() {
+        Some(d) => {
+            let p: Vec<&str> = d.split(':').collect();
+            anyhow::ensure!(p.len() == 3, "--duck is START:FROM:TO");
+            Some((p[0].parse()?, p[1].parse()?, p[2].parse()?))
+        }
+        None => None,
+    };
     for i in 0..vsyncs {
         if let Some(c) = retail_cue.take() {
             retail.key_cue(&c)?;
+        }
+        // `FUN_8002657C` sets the volume only when the level moved
+        // (`lh v0,0x6(s1)` / `beq v0,s0` at `0x80026590..0x80026598`).
+        if let Some(v) = duck_at(duck, i)
+            && (i == 0 || duck_at(duck, i - 1) != Some(v))
+        {
+            retail.set_seq_vol(v)?;
+        }
+        // The port's step `i` is retail's calc `i + 1` (its KON lead).
+        if let Some(v) = duck_at(duck, i + 1)
+            && let Some(s) = port.d.sequencer_mut()
+        {
+            s.set_master_vol(v);
         }
         rv.push(retail.step(RETAIL_VSYNC_SAMPLES)?);
         let cue = if args.cues && i + 1 == next_cue {

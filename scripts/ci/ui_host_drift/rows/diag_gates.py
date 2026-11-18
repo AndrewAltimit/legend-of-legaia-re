@@ -86,6 +86,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_AUDIO_WAV_BUS", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV: `all` keeps the music bus (default silent); draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV ticks past the Done band before it stops; draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV_SECONDS", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV length cap; draws nothing"},
+    {"env": "LEGAIA_DIAG_SFX_LOG", "additive": False, "note": "lane C: write every cue the audio director was handed (`tick,id,kind,mode,menu`), any scene, for filming menu blips against retail's cue ring; draws nothing"},
     {"env": "LEGAIA_DIAG_CAPTURE_VRAM", "additive": False, "note": "write the battle VRAM on the --screenshot frame; draws nothing"},
     {"env": "LEGAIA_DIAG_FX_ALL", "additive": False, "note": "log every effect sprite's projected centre each frame; draws nothing"},
     {"env": "LEGAIA_DIAG_NOFX", "additive": False, "note": "suppress the effect layer"},
