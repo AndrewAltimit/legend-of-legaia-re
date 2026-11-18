@@ -23,6 +23,7 @@ mod battle_entry_memo_disc;
 mod battle_stage_entries_real;
 mod battle_tutorial_disc;
 mod bgm_midscene_change_disc;
+mod bgm_paused_install_disc;
 mod bgm_swap_commit_disc;
 mod bgm_track_word_disc;
 mod bylon_hall_door_record_once_disc;

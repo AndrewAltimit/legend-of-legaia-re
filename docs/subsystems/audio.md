@@ -548,6 +548,16 @@ start and holds the new one (`pending_bgm_install`) until
 moves there at the commit. A field init ends the walk and attaches what it
 held, unless the entry starts another track.
 
+Stage 6 skips the re-attach while pause bit 1 is up (`andi v0,v0,0x2` /
+`bne` at `0x8002479C..0x800247A0`), so a start the script pauses before the
+install lands stays silent until the script's own sub-op `4` replays it.
+`vozz` `P1[7]`, the Genesis Tree's revival, is the shape: `1 (2035)` and `2`
+in one slice, the burst, then `4`; retail's capture holds bit 1 from the start
+to the replay, and the theme is first heard at the replay. The port attaches
+the install and pauses it before a sample is mixed
+(`bgm_paused_install_disc.rs`); attached unpaused, the theme started at the
+install and restarted at the replay.
+
 ### A door keeps its music only behind sub-op 6
 
 Every field init decides the field BGM on bit 2 (`FUN_801D6704`, PROT 0897;
