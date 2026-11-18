@@ -395,6 +395,26 @@ fn terra_walks_its_whirl_and_orbit_once_a_pass() {
     assert_eq!(world.casting.module_terra_orbit, (2 * k, k + 2 * k));
 }
 
+/// A Ra-Seru module's creature rate store (`sb ..,0x21D(s4)`) is on the
+/// creature as the module's tick returns, ahead of the frame's anim tick:
+/// PROT 0934's arm `0x12` pass stores `4` and the same pass's clip advance
+/// already runs at it. Retail's creature cursor reads `388` on that pass
+/// where a store held for the next pass's seat writes read `384`.
+#[test]
+fn ozma_creature_rate_store_lands_on_its_own_pass() {
+    let mut world = module_code_world();
+    let creature = 7u8;
+    world.actors[usize::from(creature)].active = true;
+    world.actors[usize::from(creature)].battle.anim_rate =
+        legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
+    world.apply_ozma_writes(0x12, true, 1, creature, 3, 0xA0);
+    assert_eq!(
+        world.actors[usize::from(creature)].battle.anim_rate,
+        legaia_engine_battle_vm::battle_anim_rate::AnimRate(4)
+    );
+    assert_eq!(world.casting.module_cam.creature_rate, None);
+}
+
 /// PROT 0913 (Nova) draws its whirlwind on the world `rand()` stream: arm
 /// `0x0D`'s pass one yaw a ring (`rand() % 0xFFF`), and every pass of arms
 /// `0x0E..=0x10` an `x` and a `z` jitter a ring (`rand() % 63 - 0x20` off the

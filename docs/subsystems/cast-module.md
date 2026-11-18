@@ -3273,7 +3273,7 @@ by the frame step byte `0x1F800393`, not a vsync's: the whirl `+0x7A += step`,
 heights it gives (`96`, `192`, `288`, `+0x7A` `24` / `48` / `72`), and its `body.csv`
 holds the victim on the orbit's points through arms `0xA` and `0xB`. Then Ozma's blue ease
 (`+0x21C = 4`, `FUN_80050120`'s arm 4) and the loop window its arm `0x12` writes
-into clip `3`'s entry. Ozma's arms 5..9 also store TR y straight, a rise word with
+into clip `3`'s entry. The rate stores the Ra-Seru modules (Meta, Terra, Ozma) and Spoon make on their creature's `+0x21D` land as the module returns, ahead of the frame's anim tick, so the pass that stores a rate already advances the clip at it (`World::ra_seru_creature_rate`). Held for the next pass's seat writes, every store landed a pass late: Ozma's cursor read `4` ahead of the recording from arm 9 and `4` behind from arm 19, which moved arm 10's clip commit and the stream words behind it; on the recording's cursors the `0xA0` film reads `.9164` to `.9325` (arms 11..15 `.73..97` to `.99`, arm 20 `.862` to `.980`), Meta `.9505` to `.9506` and Terra `.9841` to `.9852`. Ozma's arms 5..9 also store TR y straight, a rise word with
 a shake on the low bit of a pass word, and draw eight streak ribbons on a ring,
 whose `rand()` words the pass deals ahead of its two rumble words
 ([effect VM](effect-vm.md)); the rumble words are drawn once a battle frame.
