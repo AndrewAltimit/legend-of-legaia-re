@@ -1383,7 +1383,9 @@ pub use power_charge::{POWER_CHARGE_BODY, POWER_CHARGE_RECORD, power_charge_came
 pub use power_up::{POWER_UP_BODY, POWER_UP_COUNTDOWN, power_up_camera};
 pub use puera::*;
 pub use rolling_flare::{ROLLING_FLARE_BODY, ROLLING_FLARE_WALK_REACH, rolling_flare_camera};
-pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
+pub use scythe_wind::{
+    SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera, scythe_wind_reseat_pins,
+};
 pub use seru::*;
 pub use shadow_break::{
     SHADOW_BREAK_BLADES, SHADOW_BREAK_BODY, SHADOW_BREAK_BURST_RECORD, SHADOW_BREAK_FALL_RECORD,

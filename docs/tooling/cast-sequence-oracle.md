@@ -555,6 +555,18 @@ top of that gate, `battle_rugi_barra_strike` and `battle_taiku_topaz_strike` nev
 met it and recorded no frame (now `.995` and `.987`), and
 `battle_dohaty_nova_v2_strike` reads `.993` for `.976`. A harness seat.
 
+A capture director's saved seat pairs are RAM the gate stands on as well. Scythe
+Wind's arm 2 saves the caster's live pair (`0x801F89DC`) and arms 3 and 4 write it
+back on every pass, as arms 0 to 4 do the victim's (`0x801F89D4`), so on a gate inside
+those arms each saved word equals the live pair the state holds. The replay saved its
+own on the passes before the gate: `battle_dohaty_nova_v2_scythe_wind_mid_cast`'s
+replay was still walking in when its arm 2 ran, so the saved pair stood `72` units
+nearer the victim than the state's, the gate's first pass carried Nova there, and the
+Done band framed her off retail's seat (case 6's yaw `66` units off, `.726`). The gate
+re-takes the pairs off the seated ground (`World::reseat_capture_pins_on_gate`,
+`scythe_wind_reseat_pins`): the film reads `.953` for `.919`, its camera `1.66` px
+for `3.76`. A harness seat.
+
 A cast whose hits are the melee kernel's takes the deal too. PROT 0952's Astral
 Slash stages Gaza's four-beat clip, each beat a block roll: retail's first roll
 lands and the three behind it cannot block a victim mid-reaction, while the

@@ -920,6 +920,11 @@ impl PlayWindowApp {
             if seat_cursor && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take() {
                 let slot = usize::from(world.battle_ctx.active_actor);
                 world.seat_acting_clip_cursor(slot, clip, cursor);
+                // ... and a capture director's saved pairs on the ground the
+                // gate stood the seats on.
+                if on_gate {
+                    world.reseat_capture_pins_on_gate();
+                }
             }
             // ... and every other body on its loop as the state's RAM holds it.
             if on_gate

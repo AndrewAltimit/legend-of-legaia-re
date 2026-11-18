@@ -56,6 +56,33 @@ fn pin(
     }
 }
 
+/// A cast film seated on a gate inside the cast (a harness seat, never in
+/// play): re-take the saved pairs [`pin`] writes back off the pairs the gate
+/// stood the seats on. Every pass of arms 0 to 4 writes the victim's saved
+/// pair back once arm 0 has saved it, and every pass of arms 3 and 4 the
+/// caster's, so on such a gate each saved word equals the live pair retail's
+/// RAM holds. The replay saved its own on the passes before the gate:
+/// `battle_dohaty_nova_v2_scythe_wind_mid_cast`'s replay was still walking
+/// in when its arm 2 saved the caster's pair, `72` units nearer the victim
+/// than the state's, and arms 3 and 4 carried Nova there on the gate's first
+/// pass.
+pub fn scythe_wind_reseat_pins(
+    st: &mut ModuleCamState,
+    phase: u8,
+    caster: super::ModuleSeat,
+    victim: super::ModuleSeat,
+) {
+    if phase <= 4 && st.pin_saved & 1 != 0 {
+        st.horns_pin[2] = victim.x;
+        st.horns_pin[3] = victim.z;
+        st.horns_lift = victim.y;
+    }
+    if (3..=4).contains(&phase) && st.pin_saved & 2 != 0 {
+        st.horns_pin[0] = caster.x;
+        st.horns_pin[1] = caster.z;
+    }
+}
+
 /// **Scythe Wind** (`sltiu 6` through the table at `0x801F6A08`; caster
 /// `actor_table[ctx + 0x13]`, victim `actor_table[caster + 0x1DD]`):
 ///
@@ -262,6 +289,29 @@ mod tests {
     /// Arm 0 saves the victim's pair and arm 2 the caster's; arms up to 4
     /// write them back, and the wind sits on the saved pair
     /// (`0x801F7BF4..0x801F7CFC`). Arm 5 writes none.
+    #[test]
+    fn a_gate_re_takes_the_pairs_its_arm_writes_back() {
+        let mut st = ModuleCamState::default();
+        scythe_wind_camera(&mut st, 0, seats());
+        let mut walked = seats();
+        walked.caster.x -= 12;
+        walked.caster.z -= 71;
+        scythe_wind_camera(&mut st, 2, walked);
+        // The gate stands both seats where retail's RAM holds them.
+        let gate = seats();
+        scythe_wind_reseat_pins(&mut st, 3, gate.caster, gate.victim);
+        st.countdown.0 = 0;
+        let a = scythe_wind_camera(&mut st, 3, gate);
+        assert_eq!((a.caster_write.x, a.caster_write.z), (Some(900), Some(100)));
+        assert_eq!((a.victim_write.x, a.victim_write.z), (Some(0), Some(700)));
+        // Arm 2 writes the caster's back on no pass: its pair is not re-taken there.
+        let mut st2 = ModuleCamState::default();
+        scythe_wind_camera(&mut st2, 0, seats());
+        scythe_wind_camera(&mut st2, 2, walked);
+        scythe_wind_reseat_pins(&mut st2, 2, gate.caster, gate.victim);
+        assert_eq!(&st2.horns_pin[..2], &[888, 29]);
+    }
+
     #[test]
     fn the_arms_pin_both_pairs_until_the_last() {
         let mut st = ModuleCamState::default();
