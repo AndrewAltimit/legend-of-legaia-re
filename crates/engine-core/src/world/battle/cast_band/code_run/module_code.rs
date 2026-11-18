@@ -974,6 +974,16 @@ impl World {
                 run.spawns = creature_arm_spawns(entry, phase_in, SpawnTiming::Pass);
             }
             run.every_spawns = creature_arm_spawns(entry, phase_in, SpawnTiming::Every);
+            // PROT 0931's arm 7 seats its spark only while the drained word
+            // stands at `0xA1` or more (`slti v0,v0,0xa1` / `bne` at
+            // `0x801F72A0..0x801F72A4`, past the spark to the ring shrink at
+            // `0x801F7354`): arm 6 leaves the word `0xC0` up, so the arm's
+            // first few passes shed a spark and the rest only shrink the rings.
+            // A `--watch` of the `rand()` seed reads seven sparks (`ra`
+            // `0x801F72C4` / `0x801F72FC`) over the arm's 48 passes.
+            if entry == 931 && phase_in == 7 && self.casting.module_cam.countdown.0 < 0xA1 {
+                run.every_spawns = &[];
+            }
         }
         let step = if held && !owns_chain {
             Some(ticks::CastTickStep::Busy)

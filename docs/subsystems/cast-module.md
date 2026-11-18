@@ -1137,6 +1137,12 @@ the plain films parted named one unported site:
 - **Jedo's sparks are jittered.** Arms 5..7 seat record `0x801F8E20` every pass at
   `x = rand() % 0x301 - 0x180`, `y = rand() % 0x301 - 0x600`, on the creature's
   `z + 0x180` (`0x801F6FA0..0x801F7028` and its two copies).
+  Arm 7 seats it only while its drained word stands at `0xA1` or more (`slti v0,v0,0xa1`
+  at `0x801F72A0`, which branches past the spark to the ring shrink): arm 6's pass
+  leaves the word `0xC0` up, so a `--watch` of the seed reads seven sparks over the
+  arm's 48 passes. Seated on every pass, the port drew `81` words more in the arm and
+  every later deal stood off retail's; gated, the `0x9D` film reads `.981` against
+  `.973` (arm 7 `.867` to `.979`).
 
 Grade `disassembly` + `capture`. The sites a recording names that stay open are listed
 in the [open threads](../reference/open-rev-eng-threads.md#battle--rendering).
