@@ -1929,7 +1929,7 @@ poller `FUN_800243F0` until requested and loaded indices agree
 that. The credits' `130` is the `126`-vsync floor and four vsyncs of the
 init's own waits.
 
-The port loads at once. In the credits that is not invisible: the ending
+The port's default loads at once. In the credits that is not invisible: the ending
 theme plays across every load (the credits latch `_DAT_8007B9B8`), and the
 eight skipped holds put the last vignette about 17 seconds ahead of the
 score. So under the latch (`AudioState::credits_latch`, raised by the
@@ -1979,7 +1979,7 @@ none by more than six. The retail-faithful mode arms `field_init_hold` from
 it (`mode_entry_init::battle_return_hold_vsyncs`) on the tick the battle
 hands back to the field or the overworld.
 
-The last one, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` /
+The last vignette, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` /
 `42 01 09` (Circle / Cross held, [op `0x42` mode 1](script-vm.md)) and a `26` back to the wait.
 The timeline's natural-termination rule reads a backward jump onto an executed PC as a wrapped
 choreography; a loop whose body polls the held pad is exempt (`loop_polls_held_pad` in
