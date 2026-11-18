@@ -984,6 +984,24 @@ fn the_cash_out_picker_moves_and_cancels_like_retail() {
     assert_eq!(m.balance(), 50, "the picker charges nothing");
 }
 
+/// Circle + Cross on one frame on the rules row: retail's cancel stores state
+/// `1` and the row's confirm adds `1` (`0x801CFA2C..0x801CFA84`), landing on
+/// the spin-up with no bet and no stop flags, so its reels spin forever (a
+/// captured softlock). The port deliberately takes the confirm instead: the
+/// rules pages open and nothing is charged or spun.
+#[test]
+fn circle_and_cross_on_the_rules_row_open_the_rules_not_a_stuck_spin() {
+    let mut m = SlotMachine::new(payouts(), 1, 50);
+    m.skip_entry_fade();
+    m.cash_out_input(0x10);
+    m.cash_out_input(menu_pad::DOWN);
+    m.cash_out_input(menu_pad::DOWN);
+    m.cash_out_input(0x20 | 0x40);
+    assert_eq!(m.retail_state(), 0x33);
+    assert_ne!(m.phase(), SlotPhase::Spinning);
+    assert_eq!(m.balance(), 50);
+}
+
 /// The quit row fades out over sixteen frames and only then commits.
 #[test]
 fn the_quit_row_fades_then_commits() {

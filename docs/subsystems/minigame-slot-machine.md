@@ -148,7 +148,11 @@ Row `0` returns to play (state `1`), row `1` quits (state `100`), row `2` opens 
 
 The cursor is reduced `% 3` by a `multu` with `0xAAAAAAAB`, an **unsigned** remainder. Up on row `0` (`0xFFFFFFFF % 3 = 0`) stays on row `0`, while Down on row `2` wraps to row `0`.
 
-The cancel test runs before the confirm test, and the confirm arms add to whatever state the cancel just wrote. A frame pressing both on row `2` therefore lands in state `2`: a spin-up with no bet charged. The port does not reproduce that collision.
+The cancel test runs before the confirm test, and the confirm arms add to whatever state the cancel just wrote (`0x801CFA2C..0x801CFA84`: the cancel stores `1`, row `2`'s confirm adds `1`). A frame pressing Circle and Cross together on row `2` therefore lands in state `2`: a spin-up with no bet charged.
+
+It is not a free spin. The bet charge is what raises the three stop-still-open flags `DAT_801d3d00`/`+4`/`+8`, and this path skips it, so state `2` accelerates the reels and hands over to state `3` with every flag clear. State `3` takes a Stop only on a reel whose flag is up (`0x801CF71C..0x801CF72C`), so no press stops a reel, and state `3` has no other exit: the reels spin at full speed until the console is reset.
+
+A capture from `minigame_slot_machine_retail_reels` (Triangle, Down, Down, then Circle + Cross on one vsync) holds state `3` with all three flags `0`, balance and net take unchanged, through four Stop presses and 400 vsyncs *(capture)*. The port does not reproduce the collision: on row `2` its confirm overrides the cancel and opens the rules pages (`SlotMachine::menu_frame`), leaving out a retail softlock on purpose. Rows `0` and `1` agree with retail (play, quit).
 
 The picker draws three things each frame:
 
