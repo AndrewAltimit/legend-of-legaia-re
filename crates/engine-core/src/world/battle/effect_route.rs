@@ -94,6 +94,10 @@ impl World {
                 table_staged,
             });
         }
+        // A burst trigger seated here runs its program inside the seat, and
+        // its op `0x17` the burst, on the hit's frame
+        // (`World::seat_run_hit_bursts`).
+        self.seat_run_hit_bursts();
         // Both hosts route once a frame, after the world tick and before
         // the draw: every part this frame seated - here, or in the tick's
         // stager and module arms - gets the seater's VM run before it draws.

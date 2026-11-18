@@ -472,6 +472,12 @@ Byte-level decode, the two records, and the 18-byte trigger programs that fire e
 
 Port: `engine-vm::battle_burst`, wired through the engine's move-VM host (op `0x17` queues the call) and the effect host (`FUN_801DFDF0`'s ids `4` / `0x13` seat the trigger), both seated by `World::flush_battle_bursts`.
 
+**The burst runs on the hit's frame.** `FUN_80021B04` runs the move VM once before it returns (`jal 0x80023070` at `0x80021DC0`), so the trigger the spawner seats executes its `WAIT_SET 0` and its `0x17` inside the seat, and `FUN_801F30C4` seats and runs its twelve children there too.
+
+A `--watch 0x80009010` recording of `battle_map01_frog_strike` reads each hit's frame in one order: the frame driver's discard (`ra` `0x80046D34`), the hit body's rolls (`0x801EC664` .. `0x801ED368`), the burst's thirty-six (`0x801F3154` .. `0x801F34F0`, four blocks of nine), then the effect-pool walker (`0x801E01D4`).
+
+The port seats the triggers the hit's routing queued and runs them, their bursts and the bursts' children inside the seat (`World::seat_run_hit_bursts`), each part with its part tick on that frame as the list-1 walk gives it. Queued to the next tick's move-FX step instead, a hit drew its rolls on one pass and the burst's thirty-six on the next, behind that pass's own discard. Grade `disassembly` for the seat run, `capture` for the order.
+
 ### The burning-body emitter at the tail of `FUN_8004998C`
 
 The per-body anim decode `FUN_8004998C` ends in a second spawn loop (`0x8004A5FC..0x8004A8D8`).
