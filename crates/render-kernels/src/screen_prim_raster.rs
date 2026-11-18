@@ -90,10 +90,60 @@ pub fn rasterize_rgba_overlay(prims: &[ScreenPrim], vram: &[u16], w: u32, h: u32
     rasterize(prims, vram, w, h, true)
 }
 
+/// [`rasterize_rgba`] onto a frame that is already there: `display` is a
+/// `w x h` 15-bpp image (BGR555 words, the display space the primitives are
+/// authored in) the list draws over, blending each semi-transparent pixel
+/// against what the image holds, and every stored pixel is written back at
+/// the 5-bit channel depth a PSX framebuffer keeps. The CPU model of a display
+/// buffer a style draws into without clearing it (the battle intro's particle
+/// fields).
+pub fn rasterize_onto_15bpp(
+    prims: &[ScreenPrim],
+    vram: &[u16],
+    display: &mut [u16],
+    w: u32,
+    h: u32,
+) {
+    let (wu, hu) = (w as usize, h as usize);
+    if display.len() < wu * hu {
+        return;
+    }
+    let mut px: Vec<[f32; 3]> = display[..wu * hu]
+        .iter()
+        .map(|&p| [p & 31, (p >> 5) & 31, (p >> 10) & 31].map(|c| f32::from(c) / 31.0))
+        .collect();
+    let mut covered = vec![false; wu * hu];
+    raster_into(prims, vram, wu, hu, &mut px, &mut covered);
+    for ((d, p), &hit) in display.iter_mut().zip(px.iter()).zip(covered.iter()) {
+        if !hit {
+            continue;
+        }
+        let c = p.map(|v| (v * 31.0).round().clamp(0.0, 31.0) as u16);
+        *d = (*d & 0x8000) | c[0] | (c[1] << 5) | (c[2] << 10);
+    }
+}
+
 fn rasterize(prims: &[ScreenPrim], vram: &[u16], w: u32, h: u32, overlay: bool) -> Vec<u8> {
     let (w, h) = (w as usize, h as usize);
     let mut px = vec![[0.0f32; 3]; w * h];
     let mut covered = vec![false; w * h];
+    raster_into(prims, vram, w, h, &mut px, &mut covered);
+    let mut out = Vec::with_capacity(w * h * 4);
+    for (p, &hit) in px.iter().zip(covered.iter()) {
+        out.extend(p.map(|v| (v * 255.0).round() as u8));
+        out.push(if overlay && !hit { 0 } else { 0xFF });
+    }
+    out
+}
+
+fn raster_into(
+    prims: &[ScreenPrim],
+    vram: &[u16],
+    w: usize,
+    h: usize,
+    px: &mut [[f32; 3]],
+    covered: &mut [bool],
+) {
     let sx = w as f32 / PSX_DISPLAY_W as f32;
     let sy = h as f32 / PSX_DISPLAY_H as f32;
     for i in order_primitives(prims) {
@@ -186,12 +236,6 @@ fn rasterize(prims: &[ScreenPrim], vram: &[u16], w: u32, h: u32, overlay: bool) 
             }
         }
     }
-    let mut out = Vec::with_capacity(w * h * 4);
-    for (p, &hit) in px.iter().zip(covered.iter()) {
-        out.extend(p.map(|v| (v * 255.0).round() as u8));
-        out.push(if overlay && !hit { 0 } else { 0xFF });
-    }
-    out
 }
 
 #[cfg(test)]
@@ -225,6 +269,33 @@ mod tests {
         assert_eq!(at(15, 5), &[255, 0, 0]);
         assert_eq!(at(25, 5), &[0, 0, 255]);
         assert_eq!(at(35, 5), &[0, 0, 0]);
+    }
+
+    /// The display-model raster draws over what the frame holds: an additive
+    /// (ABR 1) quad adds to it, frame after frame, and a pixel no primitive
+    /// reaches keeps its value.
+    #[test]
+    fn an_additive_quad_accumulates_on_the_frame_it_draws_over() {
+        let vram = vec![0u16; VRAM_W * VRAM_H];
+        let add = ScreenPrim::Flat(FlatQuad {
+            xy: [(0, 0), (2, 0), (0, 1), (2, 1)],
+            color: [64, 0, 0, 255],
+            gouraud: None,
+            semi_transparent: true,
+            abr_mode: 1,
+            ot_index: 0,
+            depth: None,
+        });
+        let mut display = vec![0x0004u16; 320 * 240];
+        rasterize_onto_15bpp(std::slice::from_ref(&add), &vram, &mut display, 320, 240);
+        let once = display[0] & 31;
+        rasterize_onto_15bpp(std::slice::from_ref(&add), &vram, &mut display, 320, 240);
+        assert!(
+            once > 4 && display[0] & 31 > once,
+            "{once} then {}",
+            display[0] & 31
+        );
+        assert_eq!(display[5], 0x0004, "an undrawn pixel keeps the frame");
     }
 
     #[test]

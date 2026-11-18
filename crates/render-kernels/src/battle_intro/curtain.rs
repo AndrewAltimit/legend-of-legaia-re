@@ -166,6 +166,60 @@ impl BattleIntro {
         self.pending_rows = rows;
     }
 
+    /// Advance the spin-up style's CPU display model and land it in
+    /// [`CURTAIN_TRAIL_RECT`].
+    ///
+    /// `FUN_801D0370` arms no wash, and nothing clears the display buffer
+    /// while the transition runs (game mode `9`, no field renderer; the only
+    /// full-rect quads are the styles' own washes and fades), so each frame's
+    /// particles land on the pixels the frames before left. A particle stays
+    /// opaque at its rest pose and redraws its own patch; once its delay
+    /// expires it is semi-transparent on the page's ABR `1` (`B + F`) and
+    /// adds its patch wherever it flies, so the field stays up behind the
+    /// confetti and the patches crowding the centre add up to a white bloom.
+    /// The retail film of `vozz`'s Viguro pair (formation row `10`, flags bit
+    /// `0x80`, monster `0x4A`: the spin-up arm of the selector) shows exactly
+    /// that - the field intact and a white burst growing out of the screen
+    /// centre - where a frame composed from scratch over the black backdrop
+    /// opened a black hole in the middle of the field.
+    ///
+    /// Order is the curtain trail's: the model is uploaded first (the frame
+    /// the trail quads show under this frame's live particles), then this
+    /// frame's particles and ring are rasterised into it for the next frame.
+    /// Seeded from the field capture, which retail's init lands in both
+    /// display buffers. Retail's display is double-buffered, so each buffer
+    /// takes every second frame's particles; the single model here
+    /// accumulates every frame (an approximation, graded inference).
+    pub(super) fn update_spinup_display(&mut self) {
+        let (w, h) = (PSX_SCREEN_WIDTH as usize, PSX_SCREEN_HEIGHT as usize);
+        if self.capture_src.len() < (usize::from(FIELD_CAPTURE_V_OFFSET) + h) * w {
+            return;
+        }
+        if self.display_accum.len() != w * h {
+            let skip = usize::from(FIELD_CAPTURE_V_OFFSET) * w;
+            self.display_accum = self.capture_src[skip..skip + w * h].to_vec();
+        }
+        let Some(page) = self.captured.as_mut() else {
+            return;
+        };
+        let r = CURTAIN_TRAIL_RECT;
+        page.write_block(
+            r.x,
+            r.y,
+            r.w,
+            r.h,
+            bytemuck::cast_slice(&self.display_accum),
+        );
+        let prims = std::mem::take(&mut self.pending_particles);
+        crate::screen_prim_raster::rasterize_onto_15bpp(
+            &prims,
+            page.as_u16(),
+            &mut self.display_accum,
+            u32::from(PSX_SCREEN_WIDTH),
+            u32::from(PSX_SCREEN_HEIGHT),
+        );
+    }
+
     /// The five textured backdrop quads that put [`CURTAIN_TRAIL_RECT`] on
     /// screen behind the live row strips - the port's stand-in for the display
     /// buffer retail draws over without clearing. Five because a 15-bpp

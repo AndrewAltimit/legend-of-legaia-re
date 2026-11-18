@@ -375,9 +375,18 @@ fn rung2_style_emitters(index: &ProtIndex) -> Result<(), String> {
             ));
         }
 
-        // Only the curtain re-composes its page per frame; every other style
-        // reports exactly one changed page (the capture landing).
-        if style == IntroStyle::Curtain {
+        // The curtain and the spin-up field re-compose their page per frame
+        // (the curtain's intermediate and trail, the spin-up's never-cleared
+        // display); every other style reports exactly one changed page (the
+        // capture landing).
+        if style == IntroStyle::SpinUpParticles {
+            if run.page_refreshes != run.frames {
+                return Err(format!(
+                    "spin-up: {} of {} frames re-composed the display model",
+                    run.page_refreshes, run.frames
+                ));
+            }
+        } else if style == IntroStyle::Curtain {
             if run.page_refreshes != run.frames {
                 return Err(format!(
                     "curtain: {} of {} frames re-composed the intermediate",

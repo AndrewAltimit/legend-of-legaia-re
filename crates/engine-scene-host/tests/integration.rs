@@ -222,6 +222,7 @@ mod scene_targeted_vram;
 mod scene_vab_offset_disc;
 mod scene_warp_seat_e2e;
 mod scripted_battle_low_op0_disc;
+mod scripted_fight_intro_style_disc;
 mod scripted_scene_program_gate;
 mod seq_chunk_walk_disc;
 mod shop_catalog_disc;
