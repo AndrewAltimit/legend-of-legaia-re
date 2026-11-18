@@ -75,7 +75,8 @@
      * and the page re-reads both only when the rectangle's stamp moves. At
      * the Retail distance preset it walks retail's window, at Far / Farther
      * (no drag / tilt / zoom) the window widened to the preset; a dragged,
-     * tilted or zoomed camera and `F3` draw the map whole. */
+     * tilted or zoomed camera and `F3` lift the window and keep the walk
+     * region, so another region's cells never draw. */
     /* Upload one lit env copy: slot `rec.slot` shaded at the draw rotation
      * `(rec.rx, rec.ry, rec.rz)` under the world's live field light. */
     _uploadLitEnvMesh(rt, rec) {
