@@ -2487,6 +2487,28 @@ film scores `.728`, against `.729` on retail's own steps (`--retail-steps`).
 
 <a id="a-party-members-ghosts"></a>
 
+<a id="an-arts-keyframe-decode"></a>
+
+**An art's keyframe decode.** A party commit of a staged id `>= 0x10` decodes the bank
+record's `"ME"` keyframe stream out of the side-band slot (`jal 0x8002B28C` at `0x8004BCC8`
+in `FUN_8004AD80`; the art constants reach it through the name label, a starter or the
+SpecialStarter by the `sltiu 0x1B` branch to `0x8004BC4C`). The reader and its codec
+`FUN_8002A9CC` run `512` instructions a decoded part-frame: run in the retail interpreter
+over every `readef.DAT` entry, each sits within `4%` of that (`retail-exec`'s
+`the_archive_reader_costs_its_part_frames`), so a `13`-frame Gala art costs about `93`
+hblanks at PCSX-Redux's two cycles an instruction and a `28`-frame Vahn art `200`. A
+`--cd-trace` recording of Dragon Fangs puts the first art's commit pass inside the reader
+for its first `100` hblanks, ahead of the shout's `CdlSetloc`; the SpecialStarter's voice is
+dispatched from the banner block before the decode, which is why Frost Breath's seek lands
+`35k` cycles into its frame. The census links nothing for it, so the arts films' art-commit
+passes read `60..120` hblanks over their census before the term. Port:
+`frame_clock::me_decode_work`, added by `World::commit_staged_battle_anim_at_boundary` and
+taken by the pass's push. Tri-Somersault reads `.767` to `.816` and its cues `.964` to
+`1.000`, Slash Kick `.911` to `.979`; the Gala chain films fall (`.99` to `.94`) on a
+knife edge: their art pass prices `722` where retail's reads `717`, the census `4` over
+retail's base, which tips the ring to step `4`. Grade `disassembly` for the call and the
+instruction count, `capture` for the films.
+
 **A party member's ghosts.** The Super Arts' slow motion and the chain finishers draw two
 ghosts of the acting member. PCSX-Redux recordings of the three Super Arts on a full party
 (`battle_jou_party_vahn_tri_somersault_super_open`, `_gala_super_ironhead_super_open`,

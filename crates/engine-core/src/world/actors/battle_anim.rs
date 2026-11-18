@@ -1582,6 +1582,26 @@ impl World {
                 (clip, q)
             }
         };
+        // The bank record's keyframe decode (`jal 0x8002B28C` at
+        // `0x8004BCC8`): every party commit of an id `>= 0x10` reaches it,
+        // the art constants through the name label and the rest (a starter,
+        // the SpecialStarter) by the `sltiu 0x1B` branch to `0x8004BC4C`.
+        // The record's `"ME"` stream comes out of the side-band slot, the
+        // pass's own CPU work, ahead of the shout below and behind the
+        // SpecialStarter's voice.
+        // REF: FUN_8002B28C
+        if q >= 0x10
+            && self.actors[i].battle_monster_id.is_none()
+            && let Some(c) = clip.as_ref()
+        {
+            let parts = match c.variant_track.stream_parts {
+                0 => c.part_count as u32,
+                n => u32::from(n),
+            };
+            let w =
+                legaia_engine_battle_loop::frame_clock::me_decode_work(parts, c.frame_count as u32);
+            self.battle.me_decode_work = self.battle.me_decode_work.saturating_add(w);
+        }
         // The entry's solo / freeze byte (`+0x87`): a non-zero value is
         // handed to `FUN_8004E13C` right after the loop-window seed
         // (`0x8004BE18..0x8004BE2C`), which stores it into battle ctx

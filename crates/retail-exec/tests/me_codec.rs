@@ -120,3 +120,40 @@ fn the_codec_matches_retail_over_generated_streams() {
     }
     assert!(fails.is_empty(), "{}", fails.join("\n"));
 }
+
+/// The reader's instruction count, which the battle frame clock prices an art
+/// commit's decode at (`frame_clock::ME_DECODE_STEPS_PER_PART_FRAME`): every
+/// entry of the `readef.DAT` archives within `4%` of the per-part-frame law.
+#[test]
+fn the_archive_reader_costs_its_part_frames() {
+    not_a_differential!(
+        "measures the reader's instruction count; the decode itself is compared above"
+    );
+    use legaia_engine_battle_loop::frame_clock::ME_DECODE_STEPS_PER_PART_FRAME as PER;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let bytes = d.read_entry(894).expect("readef");
+    let mut entries = 0;
+    for slot in bytes.chunks(SLOT) {
+        let Ok(arc) = me_archive::parse(slot) else {
+            continue;
+        };
+        cpu.mem.load(SRC, slot);
+        for n in 0..arc.len() {
+            let Ok(port) = arc.entry(n) else { continue };
+            assert_eq!(cpu.call(READ, &[SRC, DST, n as u32]), Stop::Returned);
+            let part_frames = u64::from(port[0]) * u64::from(port[1]);
+            let law = part_frames * u64::from(PER);
+            let off = cpu.steps.abs_diff(law);
+            assert!(
+                off * 25 <= law,
+                "entry {n}: {} steps against {law}",
+                cpu.steps
+            );
+            entries += 1;
+        }
+    }
+    assert!(entries > 50, "{entries}");
+}

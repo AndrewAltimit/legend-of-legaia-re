@@ -589,6 +589,33 @@ pub const fn floor_clip_walk_work(prims: u32) -> u16 {
     }
 }
 
+/// Instructions the `"ME"` archive reader `FUN_8002B28C` (with its
+/// channel-delta codec `FUN_8002A9CC`) executes a decoded part-frame: the
+/// anim commit `FUN_8004AD80` decodes a bank record's keyframe stream out of
+/// the side-band slot on every party commit of a staged id `>= 0x10` (`jal
+/// 0x8002B28C` at `0x8004BCC8`). Run in the retail interpreter over
+/// every entry of the `readef.DAT` archives, the reader's instruction count
+/// is `512` per part-frame to within `3%` (Gala's `13`-frame entries
+/// `98k`, Noa's `60`-frame `481k`).
+pub const ME_DECODE_STEPS_PER_PART_FRAME: u32 = 512;
+
+/// The hblanks a bank commit's `"ME"` decode adds to its pass on PCSX-Redux
+/// (two cycles an instruction, `2152` cycles an hblank): `parts * frames`
+/// part-frames at [`ME_DECODE_STEPS_PER_PART_FRAME`]. A `--cd-trace`
+/// recording of Dragon Fangs (`jou_noa_dragon_fangs_super_open`) puts the
+/// first art's commit pass inside the reader for its first `100` hblanks,
+/// ahead of the shout's `CdlSetloc`, and the arts films' art-commit passes
+/// read `60..120` hblanks over their census.
+pub const fn me_decode_work(parts: u32, frames: u32) -> u16 {
+    let c =
+        (parts as u64 * frames as u64 * ME_DECODE_STEPS_PER_PART_FRAME as u64 * 2 + 1076) / 2152;
+    if c > u16::MAX as u64 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
 /// The work a battle frame whose census counts `linked` primitives costs
 /// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks, with
 /// [`LINKED_BACKDROP_WORK`] while the backdrop pair or the grid draws.

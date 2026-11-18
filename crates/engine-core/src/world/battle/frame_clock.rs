@@ -151,7 +151,10 @@ impl World {
         let poly = census.filter(|_| self.toggles.battle_poly_frame_cost);
         let table_work = measured_frame_cost_at(self.party.party_count, state, passes)
             .saturating_add(self.battle_frame_load_cost());
-        let work = poly.unwrap_or(table_work);
+        // The art commits' `"ME"` decodes, which link nothing.
+        let me_decode = std::mem::take(&mut self.battle.me_decode_work);
+        let poly = poly.map(|w| w.saturating_add(me_decode));
+        let work = poly.unwrap_or(table_work.saturating_add(me_decode));
         self.battle.frame_work = work;
         // A frame the seek arm's `CdlSetloc` held for longer than one of
         // PCSX-Redux's ordinary seeks ran past its step. The full-party

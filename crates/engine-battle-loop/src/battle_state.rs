@@ -938,6 +938,10 @@ pub struct BattleState {
     /// [`Self::linked_polys`] at
     /// `frame_clock::FLOOR_CLIP_WALK_MILLI`.
     pub floor_clip_walk: u32,
+    /// The hblanks the art commits of the pass in flight spent decoding their
+    /// `"ME"` keyframe streams (`frame_clock::me_decode_work`), taken by the
+    /// pass's push.
+    pub me_decode_work: u16,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
@@ -1785,6 +1789,7 @@ impl BattleState {
             drawn_polys: None,
             linked_polys: None,
             floor_clip_walk: 0,
+            me_decode_work: 0,
             cast_arm_pass: None,
             pending_frame_step: None,
             pass_frame_cost_due: None,
