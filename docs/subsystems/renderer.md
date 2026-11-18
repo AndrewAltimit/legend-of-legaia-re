@@ -2623,6 +2623,19 @@ in the credits' window shot their origin sits beside the eye, and a retail
 film of that shot shows the sky through the window (`+0x52 = 0x20` on both
 in its RAM) where the port, rejecting them, drew black.
 
+The draw-kind-`4` arm makes the same test after its emitter has built the node's
+geometry (`0x8001B160..0x8001B1DC`): a node on render mode `6` (`+0x5A`) is skipped
+under view depth `0xA1`, any other with a non-zero `+0x72` under `0xA0`, unless
+`+0x52` carries `0x20`. So a cast's ring, fan or tube whose origin the camera
+passes is dropped whole, in battle as on the field. Nova's whirlwind wall (PROT
+0913, records `0x801F87F0` / `0x801F8790`, a cloud-textured tube) is the case: a
+`--retail-parts` recording reads the wall's `+0x34` falling through `129` and on to
+`-1089` as arm 16's camera rises up the tube, and a RAM image of that arm holds
+no packet of it, where the port drew the tube's far side over the black. Both hosts
+drop such a node from the shared draw-kind-`4` list
+(`effect_ribbon::node_near_reject_depth`, tested in `effect_draws::effect_model_draws`
+on the node origin's `SZ`). Grade `disassembly` + `capture`.
+
 Both hosts ask `field_env::placed_origin_near_culled` (through
 `placed_draw_near_culled` where the draw is known) per placed draw with
 the origin's clip `w` under the frame's camera - the native placed, colour

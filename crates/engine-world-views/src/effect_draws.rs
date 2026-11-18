@@ -451,8 +451,21 @@ pub fn effect_model_draws(
     out.kind4 = world
         .active_effect_kind4_draws()
         .into_iter()
-        .map(|mut rb| {
+        .filter_map(|rb| {
             let model = node(rb.flags_52, rb.world_pos, rb.rot);
+            // The draw-kind-4 tail skips a node whose origin stands nearer
+            // than its view-depth floor (`effect_ribbon::node_near_reject_depth`),
+            // read off the view-space origin the dispatcher's `MVMVA` stored.
+            match (part_cam, rb.near_reject_depth) {
+                (Some(cam), Some(floor))
+                    if cam.eye_point([model[12], model[13], model[14]], battle)[2] < floor =>
+                {
+                    None
+                }
+                _ => Some((rb, model)),
+            }
+        })
+        .map(|(mut rb, model)| {
             if rb.object_effect_kind != 0 {
                 rb.mesh = far_arm_node_mesh(world, &rb, &model, part_cam, battle);
                 // The arm has run its own winding test on the quad.

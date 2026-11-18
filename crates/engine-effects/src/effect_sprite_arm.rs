@@ -170,6 +170,7 @@ pub fn sprite_arm_draw_row(
             && !sprite_arm_tessellated(s),
         object_effect_kind: s.field_42,
         object_effect_scale: f32::from(s.field_72) / 4096.0,
+        near_reject_depth: crate::effect_ribbon::node_near_reject_depth(s),
     })
 }
 
