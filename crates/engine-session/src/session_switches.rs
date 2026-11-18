@@ -403,6 +403,7 @@ impl SessionSwitches {
             toggles.skip_load_holds = engine.skip_load_holds;
             toggles.immediate_pad = engine.immediate_pad;
             toggles.smooth_walk = engine.smooth_walk;
+            toggles.smooth_map_display = engine.smooth_map_display;
             toggles.battle_entry_off_axis = engine.battle_entry_off_axis;
         }
     }

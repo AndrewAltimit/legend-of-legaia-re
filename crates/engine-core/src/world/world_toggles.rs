@@ -253,6 +253,14 @@ pub struct WorldToggles {
     /// the frame's whole step taken; off, under `pin_retail`, the port does
     /// the same.
     pub smooth_walk: bool,
+    /// The L1 map display runs every vsync (port, on by default) at retail's
+    /// speeds: the held d-pad pans a tile per five vsyncs a fifth of a tile
+    /// at a time, the fades take retail's time stepped a vsync at a time,
+    /// and the pad is read every vsync, so no tap falls between frames.
+    /// Retail draws the survey a frame every five vsyncs (its `0x2BC` cost
+    /// cap) and steps everything on that clock; off, under `pin_retail`, the
+    /// port does the same ([`crate::world::World::pace_map_display`]).
+    pub smooth_map_display: bool,
     /// Shiny Seru (port gameplay feature, the engine twin of the patcher's
     /// `--shiny-seru`): each battle entry rolls
     /// [`legaia_engine_battle::seru_state::SeruState::shiny_chance_pct`] for one
@@ -533,6 +541,7 @@ impl WorldToggles {
             skip_load_holds: true,
             immediate_pad: true,
             smooth_walk: true,
+            smooth_map_display: true,
             shiny_seru: true,
             battle_memo_verify: false,
             flee_exp: false,
@@ -582,6 +591,7 @@ impl WorldToggles {
         self.skip_load_holds = false;
         self.immediate_pad = false;
         self.smooth_walk = false;
+        self.smooth_map_display = false;
         self.arts_saved_list = false;
         self.shiny_seru = false;
         self.flee_exp = false;
@@ -641,6 +651,9 @@ impl WorldToggles {
         }
         if self.smooth_walk {
             out.push("smooth_walk");
+        }
+        if self.smooth_map_display {
+            out.push("smooth_map_display");
         }
         if self.arts_saved_list {
             out.push("arts_saved_list");
@@ -725,6 +738,7 @@ mod fidelity_tests {
                 "skip_load_holds",
                 "immediate_pad",
                 "smooth_walk",
+                "smooth_map_display",
                 "shiny_seru",
                 "fortress_encounter_fix",
                 "tetsu_spar_fix",
@@ -758,7 +772,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 30);
+        assert_eq!(t.retail_deviations().len(), 31);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

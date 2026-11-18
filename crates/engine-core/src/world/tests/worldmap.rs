@@ -1120,20 +1120,145 @@ fn open_map_display_interactive(w: &mut World) -> usize {
     panic!("the display never reached its interactive mode");
 }
 
+/// The map display's camera X after each of `vsyncs` vsyncs with `pad` held.
+fn map_display_pan_track(w: &mut World, pad: u16, vsyncs: usize) -> Vec<i32> {
+    (0..vsyncs)
+        .map(|_| {
+            w.set_pad(pad);
+            let _ = w.tick();
+            w.world_map.map_display.as_ref().unwrap().cam_x
+        })
+        .collect()
+}
+
 /// The map display runs a frame every five vsyncs (a PCSX-Redux film's
-/// frame-pacer cursor `0x8007B758`), so a held d-pad pans one tile (`0x80`)
-/// per five vsyncs, not one a vsync.
+/// frame-pacer cursor `0x8007B758`), so in the retail-faithful mode a held
+/// d-pad pans one tile (`0x80`) a frame, in whole-tile jumps.
 #[test]
-fn the_map_display_pans_one_tile_a_display_frame() {
+fn the_retail_map_display_pans_one_tile_a_display_frame() {
     let mut w = overworld_with_player();
+    w.toggles.pin_retail();
     open_map_display_interactive(&mut w);
     let x0 = w.world_map.map_display.as_ref().unwrap().cam_x;
-    for _ in 0..50 {
-        w.set_pad(input::PadButton::Right.mask());
-        let _ = w.tick();
+    let track = map_display_pan_track(&mut w, input::PadButton::Right.mask(), 50);
+    assert_eq!((track[49] - x0).abs(), 10 * 0x80, "ten frames, ten tiles");
+    assert!(
+        track.iter().all(|x| (x - x0) % 0x80 == 0),
+        "the camera moves only in whole tiles: {track:?}"
+    );
+}
+
+/// The smooth display (the default) pans at retail's speed, a tile per
+/// five vsyncs, but moves the camera every vsync, and comes to rest on a
+/// whole tile.
+#[test]
+fn the_smooth_map_display_pans_every_vsync_at_retail_speed() {
+    let mut w = overworld_with_player();
+    assert!(w.toggles.smooth_map_display);
+    open_map_display_interactive(&mut w);
+    let x0 = w.world_map.map_display.as_ref().unwrap().cam_x;
+    let track = map_display_pan_track(&mut w, input::PadButton::Right.mask(), 50);
+    assert_eq!(
+        (track[49] - x0).abs(),
+        10 * 0x80,
+        "ten tiles in fifty vsyncs"
+    );
+    let mut prev = x0;
+    for x in &track {
+        let d = (x - prev).abs();
+        assert!(
+            (25..=26).contains(&d),
+            "a fifth of a tile a vsync: {track:?}"
+        );
+        prev = *x;
     }
-    let x1 = w.world_map.map_display.as_ref().unwrap().cam_x;
-    assert_eq!((x1 - x0).abs(), 10 * 0x80, "ten frames, ten tiles");
+    // Let go mid-tile: the pan finishes the tile and rests on it.
+    let _ = map_display_pan_track(&mut w, input::PadButton::Right.mask(), 2);
+    let rest = map_display_pan_track(&mut w, 0, 8);
+    assert_eq!((rest[7] - x0).abs(), 11 * 0x80);
+    assert_eq!(rest[3], rest[7], "the camera rests once the tile is done");
+}
+
+/// The smooth display reads the pad every vsync: a one-vsync Triangle tap
+/// between two display frames cycles the overlay, where the retail-faithful
+/// display, reading once a frame, can miss it.
+#[test]
+fn the_smooth_map_display_reads_a_one_vsync_tap() {
+    let tap = |smooth: bool| {
+        let mut w = overworld_with_player();
+        w.toggles.smooth_map_display = smooth;
+        open_map_display_interactive(&mut w);
+        // Two vsyncs into a display frame, tap Triangle for one vsync.
+        for pad in [0, 0, input::PadButton::Triangle.mask(), 0, 0, 0, 0, 0] {
+            w.set_pad(pad);
+            let _ = w.tick();
+        }
+        w.world_map.map_display.as_ref().unwrap().overlay
+    };
+    assert_eq!(tap(true), 1, "the smooth display cycles on the tap");
+    assert_eq!(tap(false), 0, "the frame-paced display reads past it");
+}
+
+/// The smooth display's open and exit take retail's time - the same vsync
+/// count from the hand-off to the interactive mode, and from the exit press
+/// to the hand-back - with the fade stepping every vsync instead of every
+/// frame.
+#[test]
+fn the_smooth_map_display_fades_in_retail_time() {
+    let run = |smooth: bool| {
+        let mut w = overworld_with_player();
+        w.toggles.smooth_map_display = smooth;
+        w.set_pad(input::PadButton::L1.mask());
+        let _ = w.tick();
+        let mut greys = Vec::new();
+        let mut open_vsyncs = 0usize;
+        for _ in 0..200 {
+            w.set_pad(0);
+            let _ = w.tick();
+            let Some(d) = w.world_map.map_display.as_ref() else {
+                continue;
+            };
+            if d.mode == legaia_engine_field::map_display::MODE_INTERACTIVE {
+                break;
+            }
+            open_vsyncs += 1;
+            greys.extend(w.map_display_fade_push_args().iter().map(|a| a.2 & 0xFF));
+        }
+        // Circle leaves, held across a display frame so the frame-paced
+        // display reads it too.
+        let mut exit_vsyncs = 0usize;
+        while w.world_map.map_display.is_some() {
+            w.set_pad(if exit_vsyncs < 5 {
+                input::PadButton::Circle.mask()
+            } else {
+                0
+            });
+            let _ = w.tick();
+            exit_vsyncs += 1;
+            assert!(exit_vsyncs < 200, "the exit never handed back");
+        }
+        (open_vsyncs, exit_vsyncs, greys)
+    };
+    let (open_r, exit_r, greys_r) = run(false);
+    let (open_s, exit_s, greys_s) = run(true);
+    assert_eq!(open_s, open_r, "the open takes retail's vsyncs");
+    assert!(
+        exit_s.abs_diff(exit_r) < 5,
+        "the exit takes retail's vsyncs, give or take the press's place in its frame: {exit_s} vs {exit_r}"
+    );
+    let distinct = |g: &[u32]| {
+        let mut d = g.to_vec();
+        d.dedup();
+        d.len()
+    };
+    assert!(
+        distinct(&greys_s) > distinct(&greys_r),
+        "the smooth fade steps more often: {greys_s:?} vs {greys_r:?}"
+    );
+    assert!(
+        greys_s.windows(2).all(|p| p[1] <= p[0]),
+        "and only clears: {greys_s:?}"
+    );
 }
 
 /// The retail-faithful mode waits out the PROT 0981 load (game mode `0x0C`,
