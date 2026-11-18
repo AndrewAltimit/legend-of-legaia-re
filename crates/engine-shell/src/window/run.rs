@@ -578,7 +578,10 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
     // recording drive's short capture-band hold
     // (`CastFxState::capture_seek_recorded`), from its first tick: a seed can
     // cross `0x6F` before the first frame is prepared.
-    session.host.world.casting.capture_seek_recorded = screenshot.is_some();
+    // A sweep films the play path, as the host pair's page plays it, and
+    // seats nothing.
+    session.host.world.casting.capture_seek_recorded =
+        screenshot.as_ref().is_some_and(|s| s.sweep.is_none());
     let launch_switches = apply_launch_toggles(
         &mut session,
         LaunchToggles {

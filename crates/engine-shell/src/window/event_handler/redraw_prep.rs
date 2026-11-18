@@ -203,8 +203,11 @@ impl PlayWindowApp {
             }
             // A capture child replays a recorded fight up to its gate, whose
             // depth words were seated against the recording drive's short
-            // `0x6F` hold, not the modelled seek.
-            self.session.host.world.casting.capture_seek_recorded = true;
+            // `0x6F` hold, not the modelled seek. A sweep films the play path
+            // and seats nothing (lane E): the host pair's page plays the
+            // modelled seek, so a seated window left the `0x6F` hold
+            // first and every seeded cast parted from the page there.
+            self.session.host.world.casting.capture_seek_recorded = sc.sweep.is_none();
             // On the gate itself, not the frame a forced capture tick takes:
             // the seek runs from the state's instant.
             if self.capture_gate_met()
