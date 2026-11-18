@@ -2702,6 +2702,23 @@ the step each arm spends the most vsyncs on. Measured against that and three oth
   recording), and since each pass draws the frame driver's `rand()`, the plain film's
   stream stays on retail's words as far as the counts hold
   ([the band's pass count](../tooling/cast-sequence-oracle.md#the-bands-pass-count)).
+- **The capture band reads its arms the same way.** `CAPTURE_ARM_STEPS` holds the step
+  each enemy cast's arm spends the most vsyncs on, and the engine pushes it into the
+  ring as each frame's cost. The step is the ring's, though: an arm that opens behind
+  dear frames and runs cheap reads the dear step, and pushed as a cost it held the ring
+  sixteen passes past the arm. Megaton Press's arm 5 costs `335`..`356` hblanks (rung
+  `2`) from its tenth frame under a step of `3`; pushed as `3`, the ring held `3` sixteen
+  passes into arm 6, where retail's drops on its fifth frame, and the stream reached
+  arm 9's rock deal eight words behind. `CAPTURE_ARM_COST_TAILS` takes rows off the
+  recordings' `cost` column (`cast-arm-cost-rows.py --capture`): the rung per frame,
+  run-length coded, a row where it changes for three frames or more. A cast filmed in
+  two fights takes rows only where both films carry the column and read the same rows,
+  since an arm that shows the stage costs what that fight draws. The generator
+  reproduces Fatal Decision's arm 4 and 6 rows and Evil Seru Magic's arm 24 rows,
+  fitted by hand earlier, to within a pass. Over the 29 enemy films whose casts the rows
+  reach, the image mean reads `.9322` to `.9427` with every cue held: Megaton Press
+  `.802` to `.933`, Mystic Shield `.919` to `.982`, Rogue Thunder `.865` to `.903`,
+  Green Slime's Divide `.970` to `.987`, Guilty Cross `.985` to `.998`.
 - **The band opens cheap, whatever the party.** The arms no recording reads a step for
   (the page-in pass and the drive's seek) cost `122`..`236` hblanks on the lone-caster
   films and `165`..`221` on a full party's (`kor`, `tower`): the module draws its own
