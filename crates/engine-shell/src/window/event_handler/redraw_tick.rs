@@ -243,7 +243,7 @@ impl PlayWindowApp {
             && self.session.field_menu_is_open()
             && self.session.pause_wipe().menu_spawned()
         {
-            self.boot_ui = BootUiState::FieldMenu { sub: None };
+            self.enter_spawned_pause_menu();
             self.pause_menu_handover = true;
         }
         if run_ticks > 0 && self.screenshot.is_none() {
@@ -252,6 +252,19 @@ impl PlayWindowApp {
         if self.screenshot.is_some() {
             self.pad_taps.clear();
         }
+    }
+
+    /// The wipe has spawned the pause menu: the boot-UI arm owns the frame,
+    /// and the menu's draw carries start empty. A carry is emptied only by a
+    /// frame drawn outside the menu, which the window never draws once the
+    /// menu closes (the field's frame does not run the menu's draw), so a
+    /// reopened menu's first pending frames handed back the last session's
+    /// root, whole and at rest, for two frames before its windows slid in.
+    /// The page builds its carries with each menu (`PlayMenu::new`).
+    fn enter_spawned_pause_menu(&mut self) {
+        self.boot_ui = BootUiState::FieldMenu { sub: None };
+        *self.pause_text_carry.borrow_mut() = Default::default();
+        *self.pause_sprite_carry.borrow_mut() = Default::default();
     }
 
     /// One sim tick, after the pad word and `tick_no` are set: the scripted
@@ -357,7 +370,9 @@ impl PlayWindowApp {
                 // The wipe has spawned the menu: the boot-UI arm takes the
                 // frame from the next tick. Retail's mode-`0x17` handler runs
                 // the cue drainer under the menu, so the SFX scheduler steps.
-                self.boot_ui = BootUiState::FieldMenu { sub: None };
+                if !matches!(self.boot_ui, BootUiState::FieldMenu { .. }) {
+                    self.enter_spawned_pause_menu();
+                }
                 self.tick_menu_sfx();
                 self.tick_field_party_hud();
                 self.prev_pad = self.pad;
