@@ -211,6 +211,42 @@ fn overworld_walk_moves_ten_units_every_three_vsyncs() {
     assert_eq!(w.world_map.walk_carry, 0);
 }
 
+/// An overworld diagonal walks the cardinal step on each axis: the walk's
+/// diagonal cut is the field controller's mode-4 arm
+/// (`lbu 0x8007B607 >> 4 == 4`, `0x801D05EC..0x801D0614`), and every kingdom
+/// camera record holds mode `1`. A retail `map01` film held Up+Right steps
+/// `(+10, +10)` every three vsyncs; with no camera composing the cut applies.
+#[test]
+fn overworld_diagonal_walks_the_cardinal_step_under_the_kingdom_camera_mode() {
+    let walk = |mode: Option<u8>| {
+        let mut w = World::new();
+        w.install_field_player(0);
+        w.enter_world_map();
+        w.party.scene_save_allowed = true;
+        w.locomotion.camera_mode_byte = mode;
+        w.actors[0].move_state.field_72 = 0x0C00;
+        w.actors[0].move_state.world_x = 2000;
+        w.actors[0].move_state.world_z = 2000;
+        if let Some(c) = w.world_map.ctrl.as_mut() {
+            c.view_mode = 0;
+        }
+        for _ in 0..39 {
+            w.set_pad(input::PadButton::Up.mask() | input::PadButton::Right.mask());
+            let _ = w.tick();
+        }
+        let ms = &w.actors[0].move_state;
+        (i32::from(ms.world_x) - 2000, i32::from(ms.world_z) - 2000)
+    };
+    assert_eq!(
+        walk(Some(0x10)),
+        (130, 130),
+        "kingdom camera mode 1: no cut"
+    );
+    // Mode 4 (and no camera): `9 - (9 >> 2) = 7`, rounded to 8 a frame.
+    assert_eq!(walk(Some(0x40)), (104, 104));
+    assert_eq!(walk(None), (104, 104));
+}
+
 /// A talk the runner ends before it reaches its own `CC F8 40 00 10` restore
 /// does not leave the player hidden (undrawn and, through the same word,
 /// unable to walk): the restore the record still owes lands at teardown.

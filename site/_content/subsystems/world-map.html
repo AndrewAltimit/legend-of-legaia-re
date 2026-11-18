@@ -354,6 +354,7 @@
   </div>
   <ul class="bullets">
     <li><strong>One axis per bit.</strong> The integrator then steps each held axis by 2 units, each step gated on its own collision probe - so a diagonal slides along a wall instead of stopping.</li>
+    <li><strong>A diagonal is not slowed.</strong> The walk trims a diagonal by a quarter only under camera mode 4, and every kingdom camera holds mode 1, so an overworld diagonal walks the full step on each axis: a retail film held Up+Right moves 10 units on both axes every three vsyncs.</li>
     <li><strong>Facing is offset by half a turn.</strong> The facing angle is written from the ring index plus four, so retail's heading 0 is world <code>Z&minus;</code>; the port's is <code>Z+</code>, compensated where the animation sector is looked up.</li>
     <li><strong>The overworld figure is three quarters size.</strong> Each kingdom's entry script sets the player's scale word to <code>0xC00</code> where a town holds <code>0x1000</code>; the same word is the speed multiplier the pad step folds in.</li>
   </ul>

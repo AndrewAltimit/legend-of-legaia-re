@@ -1612,8 +1612,15 @@ same fill (`walk_regen_steps`, bumped on a committed step),
 gate in `World::live_world_map_tick`
 ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)).
 
-**Diagonals.** Diagonal movement applies the field controller's
-`speed -= speed >> 2` normalise.
+**Diagonals.** The field controller's diagonal cut (`speed -= speed >> 2`)
+is gated on the camera block's mode nibble (`0x8007B607 >> 4 == 4`,
+`0x801D05EC..0x801D0614`), and every kingdom camera record holds mode `1`
+(`0x8007B607 = 0x10` on the `map01`, `map02` and `map03` library states). So
+an overworld diagonal walks the cardinal step on each axis: a retail `map01`
+walk film held Up+Right steps `(+10, +10)` every three vsyncs.
+`step_world_map_locomotion` reads the same published mode byte as the field
+walk (`CameraWorld::set_camera_mode_byte`), and runs the controller's terrain
+slow too (`0x801D05B8..0x801D05E8`).
 
 **Heading.** `step_world_map_locomotion` records the heading into the actor's
 `render_26` field, the same field the field path stores.

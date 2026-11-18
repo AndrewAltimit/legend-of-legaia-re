@@ -687,12 +687,29 @@ impl World {
         let mult = i32::from(self.actors[slot].move_state.field_72);
         let dt = WORLD_MAP_FRAME_STEP;
         let mut speed = ((self.field_base_step() * mult) >> 12) * dt;
-        // Diagonal normalise: when both axes are moving, x0.75 - mirroring the
-        // field controller (`FUN_801d01b0`) and the retail world-map walk
-        // overlay (`speed -= speed >> 2`). `advance_with_collision` steps both
-        // axes by the same amount, so without this a diagonal travels `speed` on
-        // each axis = ~1.41x the cardinal speed.
-        if dx != 0 && dz != 0 {
+        // Terrain slow (`0x801D05B8..0x801D05E8`): the same controller halves
+        // the step on an object-grid tile carrying `0x4000` while the scene
+        // control byte `+0x61` is `1`, as `step_field_locomotion` does.
+        if self.locomotion.scene_ctrl_61 == 1 {
+            let ms = &self.actors[slot].move_state;
+            let (tx, tz) = (i32::from(ms.world_x) >> 7, i32::from(ms.world_z) >> 7);
+            let cell = usize::try_from(tz * 0x80 + tx)
+                .ok()
+                .and_then(|i| self.terrain.object_cells.get(i).copied())
+                .unwrap_or(0);
+            if cell & 0x4000 != 0 {
+                speed >>= 1;
+            }
+        }
+        // Diagonal normalise: x0.75 only under camera mode 4 with both axes in
+        // the resolved mask (`lbu 0x8007B607 >> 4 == 4`, `0x801D05EC..0x801D0614`),
+        // the field controller's own gate. Every kingdom camera record holds
+        // mode `1` (`0x8007B607 = 0x10` on the `map01` / `map02` / `map03`
+        // library states), so an overworld diagonal walks the full `10` units
+        // on each axis a frame: a retail `map01` film held Up+Right steps
+        // `(+10, +10)` every three vsyncs. A run with no camera composing takes
+        // the mode-4 arm, as the field path does.
+        if dx != 0 && dz != 0 && self.locomotion.camera_mode_byte.is_none_or(|m| m >> 4 == 4) {
             speed -= speed >> 2;
         }
         if speed <= 0 {
