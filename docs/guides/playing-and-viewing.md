@@ -1254,6 +1254,7 @@ With a pack loaded:
 
 ## Related docs
 
+- [Player FAQ](https://andrewaltimit.github.io/legend-of-legaia-re/guides/faq.html) (site) - short answers on the disc image, saves, the original mode, controllers, the scene selector and bug reports.
 - [engine.md](../subsystems/engine.md) - the engine's architecture and port boundaries.
 - [shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md) - why `site/wasm/` is generated, not committed.
 - [renderer.md](../subsystems/renderer.md) - what "retail-faithful rendering" means here.

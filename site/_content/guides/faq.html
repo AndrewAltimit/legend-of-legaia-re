@@ -1,0 +1,189 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; player FAQ</div>
+  <h1>Player FAQ</h1>
+  <p class="lede">Short answers to what players ask most about the port: which disc image it needs, where saves go, how to play the original game with no enhancements, controllers, the scene selector, how the port differs from the PlayStation game, and what to put in a bug report. Each answer links to the page with the full detail. The same engine runs in two places, the <a href="desktop-apps.html">desktop download</a> and the <a href="../play.html">browser play page</a>, and the answers name both where they differ.</p>
+</header>
+
+<section class="doc-section" id="disc">
+  <h2>The disc image</h2>
+
+  <h3 id="which-disc">What do I need to play?</h3>
+  <p>Your own copy of <em>Legend of Legaia</em> for the PlayStation, USA release (<code>SCUS-94254</code>), dumped to a raw <code>.bin</code> file (Mode&nbsp;2/2352, every sector whole). The desktop apps also take the <code>.cue</code> sheet beside it; the browser page takes the <code>.bin</code> itself. Nothing from the game ships with the port: no data, no music, no executable. Every program reads the disc image you supply, on your machine, and uploads nothing.</p>
+
+  <h3 id="no-image">I have the CD but no image file. How do I make one?</h3>
+  <p>With a PC and a CD or DVD drive: ImgBurn's <em>Create image file from disc</em> on Windows, or <code>cdrdao read-cd --read-raw</code> on Linux and macOS. The steps are in <a href="desktop-apps.html#disc-image">Before you start: a disc image</a>.</p>
+
+  <h3 id="refused">My image is refused. Why?</h3>
+  <table class="compact">
+    <thead><tr><th>You have</th><th>What to do</th></tr></thead>
+    <tbody>
+      <tr><td>A 2048-byte <code>.iso</code></td><td>Dump again as a raw <code>.bin</code>: an <code>.iso</code> has no room for the movies and voices.</td></tr>
+      <tr><td><code>.chd</code>, <code>.pbp</code>, ECM or a zip</td><td>Unpack it to a <code>.bin</code> first (<code>chdman extractcd</code> for <code>.chd</code>).</td></tr>
+      <tr><td>A PAL or Japanese disc</td><td>The game runs on the USA release only. Legaia Explorer still opens other releases to browse.</td></tr>
+      <tr><td>A randomized or translated copy of the USA disc</td><td>That works: it still boots the USA executable.</td></tr>
+    </tbody>
+  </table>
+  <p>The launcher, Legaia Explorer and the play page check the file when you pick it and say which of these it is.</p>
+</section>
+
+<section class="doc-section" id="saves">
+  <h2>Saves</h2>
+
+  <h3 id="where-saves">Where do my saves live?</h3>
+  <table>
+    <thead><tr><th>Where you play</th><th>Saves</th></tr></thead>
+    <tbody>
+      <tr><td>Desktop, Linux</td><td><code>~/.local/share/legaia-engine/saves/memcard1.mcr</code></td></tr>
+      <tr><td>Desktop, Windows</td><td><code>%APPDATA%\legaia-engine\saves\memcard1.mcr</code></td></tr>
+      <tr><td>Desktop, macOS</td><td><code>~/Library/Application Support/legaia-engine/saves/memcard1.mcr</code></td></tr>
+      <tr><td>Browser play page</td><td>A memory card kept in that browser's storage for the site</td></tr>
+    </tbody>
+  </table>
+  <p>On the desktop, the launcher's <em>Saves folder</em> button opens the folder; options and key bindings sit beside the saves (<a href="desktop-apps.html#port-saves">where saves and settings live</a>). A <code>play-window</code> started from a terminal keeps them in the current directory instead, unless you pass <code>--save-dir</code>.</p>
+  <p>In the browser, the card stays as long as the browser keeps the site's data: clearing site data, a private window, or another browser or computer starts with an empty card. Use the <em>Saves</em> card's <em>Export</em> to keep a copy, or to carry a game to another machine.</p>
+
+  <h3 id="emulator-saves">Can I use my saves from an emulator?</h3>
+  <p>Yes. The desktop and the browser both read emulator memory cards (<code>.mcr</code>, <code>.mcd</code>, <code>.srm</code>, DexDrive <code>.gme</code>, single-save <code>.mcs</code>). On the desktop, drop the card on the launcher or right-click <em>Saves folder</em>: it becomes card 2 on the game's Load and Save screens, and saving writes back into it (<a href="desktop-apps.html#port-memory-card">saves from another emulator</a>). On the play page, import it on the <em>Saves</em> card or put it in a card slot. The other way works too: <code>memcard1.mcr</code> is an ordinary PlayStation card image, and a card exported from the play page loads in an emulator.</p>
+
+  <h3 id="where-save">Where can I save?</h3>
+  <p>Where the original lets you: save points and the world map, through the game's own Save screen. The <em>Save anywhere</em> tweak (off by default) lets the pause menu's Save row work in every scene.</p>
+</section>
+
+<section class="doc-section" id="settings">
+  <h2>The original game, and the enhancements</h2>
+
+  <h3 id="retail-mode">How do I play exactly like the original?</h3>
+  <p>The port starts with its enhancements on. One switch turns them all off for a session and leaves your own settings as they were:</p>
+  <table>
+    <thead><tr><th>Where</th><th>Switch</th></tr></thead>
+    <tbody>
+      <tr><td>Desktop launcher</td><td>First row, <em>Look and feel</em>: <em>Original</em> (adds the PlayStation pixel look), or the <em>Original game only</em> row alone</td></tr>
+      <tr><td>In the desktop game</td><td><kbd>F12</kbd> opens the settings panel on <em>Look and feel</em>; one Right press plays the original, the next gives your mix back</td></tr>
+      <tr><td>Terminal</td><td><code>legaia-engine play-window --disc &lt;bin&gt; --boot-ui --retail</code></td></tr>
+      <tr><td>Browser play page</td><td><em>Visual enhancements</em> panel: <em>Look and feel</em>, or the <em>Retail-faithful</em> box</td></tr>
+    </tbody>
+  </table>
+  <p>Original mode also brings back the original's short loading pauses: about a second on a held or black screen while the pause menu or a shop loads, and again on the way back to the map. The default mode skips them.</p>
+
+  <h3 id="enhancements">What does the port change by default, and how do I turn one thing off?</h3>
+  <p>Each enhancement has its own key on both hosts, and its own row on the launcher and on the play page:</p>
+  <table class="compact">
+    <thead><tr><th>Key</th><th>Enhancement</th><th>Default</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>I</kbd></td><td>Enhanced lighting: time-of-day mood, lamp lights, glowing props</td><td>on</td></tr>
+      <tr><td><kbd>Y</kbd></td><td>Shadows from those lamps</td><td>on</td></tr>
+      <tr><td><kbd>Home</kbd></td><td>Ambient occlusion (soft contact shadows)</td><td>on</td></tr>
+      <tr><td><kbd>F4</kbd></td><td>See-through walls between the camera and your character</td><td>on</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Free-angle movement (off is the original's eight directions)</td><td>on</td></tr>
+      <tr><td><kbd>T</kbd></td><td>Camera distance: retail, far, farther</td><td>far</td></tr>
+      <tr><td><kbd>F9</kbd> / <kbd>F10</kbd></td><td>Ground fog / bloom</td><td>off</td></tr>
+    </tbody>
+  </table>
+  <p>The gameplay tweaks (Shiny Seru, the Fortress and Tetsu fixes, the battle freeze guard, heal numbers, EXP rate and the rest) are rows on the launcher and boxes on the play page; each says in its help whether the original has it. Full lists: <a href="playing-and-viewing.html#launcher-options">launcher options</a> and <a href="desktop-apps.html#port-toggles">display toggles and the F12 panel</a>.</p>
+
+  <h3 id="psx-look">Can it look like a PlayStation picture?</h3>
+  <p>Yes: <em>PlayStation pixel look</em> on the launcher and in the <kbd>F12</kbd> panel (<code>--psx-render</code>), or <em>PSX rasterisation</em> on the play page. It draws the console's own 320x240 picture, magnified, with its wobbling vertices and colour dithering.</p>
+</section>
+
+<section class="doc-section" id="controls">
+  <h2>Controls</h2>
+
+  <h3 id="controller">Does a controller work?</h3>
+  <p>Yes, on the desktop game, the launcher, Legaia Explorer, the play page and the minigames page. It plays by button position: bottom / right / left / top face buttons are Cross / Circle / Square / Triangle, the bumpers L1 / R1, the triggers L2 / R2, back / start Select / Start, and both the D-pad and the left stick walk. Plug it in at any time; the notice line says <em>Controller connected</em>. A browser sees a controller only after its first button press. One the browser does not map in the standard way still plays, with its buttons guessed; Key Config with that pad fixes the rest. On a phone or tablet the play page draws a touch pad over the picture.</p>
+
+  <h3 id="keys">Which key is which button?</h3>
+  <table>
+    <thead><tr><th>Button</th><th>Desktop game</th><th>Browser play page</th></tr></thead>
+    <tbody>
+      <tr><td>D-pad</td><td>Arrow keys</td><td>Arrow keys or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></td></tr>
+      <tr><td>Cross (confirm, talk)</td><td><kbd>Z</kbd></td><td><kbd>Z</kbd></td></tr>
+      <tr><td>Circle (back)</td><td><kbd>S</kbd></td><td><kbd>X</kbd></td></tr>
+      <tr><td>Triangle</td><td><kbd>A</kbd></td><td><kbd>C</kbd></td></tr>
+      <tr><td>Square</td><td><kbd>X</kbd></td><td><kbd>V</kbd></td></tr>
+      <tr><td>L1 / R1</td><td><kbd>Q</kbd> / <kbd>W</kbd></td><td><kbd>Q</kbd> / <kbd>E</kbd></td></tr>
+      <tr><td>L2 / R2</td><td><kbd>1</kbd> / <kbd>2</kbd></td><td><kbd>1</kbd> / <kbd>2</kbd></td></tr>
+      <tr><td>Start</td><td><kbd>Enter</kbd>, <kbd>Space</kbd></td><td><kbd>Enter</kbd>, <kbd>Space</kbd></td></tr>
+      <tr><td>Select</td><td>Right <kbd>Shift</kbd></td><td>Right <kbd>Shift</kbd></td></tr>
+    </tbody>
+  </table>
+  <p>Every key and button can be moved with <em>Key Config</em> (Select on the pause menu's Options screen, on both hosts) or the launcher's <em>Controls</em> page. The mouse turns the camera: drag to orbit, wheel to zoom, double-click for the game's own framing.</p>
+
+  <h3 id="pause-menu">How do I open the menu?</h3>
+  <p>Triangle, the original game's menu button, or Start. <kbd>F12</kbd> (or <kbd>Select</kbd> + <kbd>Start</kbd> on a controller) is a different thing: the port's own settings panel, with the game held still under it. On the desktop, <kbd>Esc</kbd> pressed twice quits; save in the game first.</p>
+
+  <h3 id="stuck-keys">I rebound a key and now cannot reach the menu.</h3>
+  <p>Put every key and button back: on the desktop, the last row of the launcher's <em>Controls</em> page, or the <kbd>F12</kbd> panel's <em>Keys</em> page (<kbd>Delete</kbd> pressed twice); on the play page, <em>Reset keys and buttons</em> in the <em>Controls</em> card.</p>
+</section>
+
+<section class="doc-section" id="scenes">
+  <h2>The scene selector</h2>
+
+  <h3 id="jump">Can I jump straight to a town or dungeon?</h3>
+  <p>Yes. On the play page, pick it on the <em>Scenes</em> card (the box above the list filters it). In the desktop game, <kbd>F12</kbd> then <kbd>Tab</kbd> (or L1 / R1) to the <em>Scenes</em> page takes you there with your party and bag. From a terminal, <code>legaia-engine list-scenes --disc &lt;bin&gt;</code> lists the names and <code>play-window --scene &lt;name&gt;</code> starts in one. You arrive where the game's own doors put you. With no save loaded, a picked scene starts with Vahn, Noa and Gala at level 1, a convenience of the port; a real New Game starts with Vahn alone.</p>
+
+  <h3 id="scene-cutscene">Why did a cutscene start when I picked a scene?</h3>
+  <p>Because the story opens that scene on one: a town's welcome, a dungeon's first line, the Uru Mais dreams, frozen and thawed Buma, the Bio Castle's last room and Noa's dream among them. The selector seats the party where the beat plays and raises the story flags the door in would have raised, so it plays as it does when you walk in. With a save already past that point, nothing fires, as in the original. Some picks are cutscene-only scenes that the game only ever passes through (the second form of Zora's castle is one); they play that passage and move on. More in <a href="playing-and-viewing.html#scenes">Pick a scene</a>.</p>
+
+  <h3 id="scene-refused">The selector says no. Why?</h3>
+  <p>It refuses on the title screen, in the pause menu, in a fight, a movie or a minigame, and says which. Go back to the map and pick again.</p>
+</section>
+
+<section class="doc-section" id="differences">
+  <h2>How the port differs from the original</h2>
+
+  <h3 id="faithful">Is it the same game?</h3>
+  <p>The rules are the original's: damage, drops, encounter rates, AP costs, story flags and saves are ported from the game's own code and checked against recordings of it. The whole game plays, New Game to the credits. The picture is where the distance is, most of all in the middle of a battle: it is close, not frame-identical. <a href="../subsystems/engine.html#status">The engine page</a> has the measured figures.</p>
+
+  <h3 id="known-differences">What is different on purpose?</h3>
+  <ul class="bullets">
+    <li><strong>The enhancements</strong> above start on. <em>Original</em> mode turns them off.</li>
+    <li><strong>No loading pauses</strong> around the pause menu and shops, except in Original mode.</li>
+    <li><strong>Start opens the pause menu</strong> as well as Triangle, and leaves any minigame, so no minigame can trap you.</li>
+    <li><strong>A few original softlocks are closed.</strong> The battle freeze guard, a guard on ledge hops that could box you in, and the slot machine, where pressing Cross and Circle together on the rules screen spins the reels forever in the original and does not here.</li>
+    <li><strong>Additions with no original counterpart:</strong> the scene selector, the <kbd>F12</kbd> panel, cheats, the saved-chain Arts list, custom game modes, expansion packs and online play. Each is off or out of the way until you use it.</li>
+  </ul>
+  <p>Why each one is the way it is: <a href="../subsystems/engine.html#fidelity">fidelity and enhancements</a> and <a href="../subsystems/gameplay-tweaks.html">gameplay tweaks</a>.</p>
+
+  <h3 id="feels-wrong">Something behaves differently from how I remember it.</h3>
+  <p>Some of what feels off is the original's own behaviour. Two common ones: one Run in battle is one escape roll for the whole party, and when it fails the party's turn is spent and the monsters still act; and a healing spell or item opens its target cursor on the character casting it. Both are as on the PlayStation. If you are not sure, try it with Original mode on; if it still differs from the original, it is worth a report.</p>
+</section>
+
+<section class="doc-section" id="hosts">
+  <h2>Desktop or browser?</h2>
+  <p>Both run the same engine and the same saves format. The desktop game has every option on the command line, hosts online rooms, and reloads an expansion pack from a folder as you edit it; the browser needs nothing installed, runs on a phone, and does VR. What a tab cannot do: <a href="playing-and-viewing.html#what-a-browser-cannot-do">what a browser cannot do</a>. Downloads for Windows, macOS and Linux (PC and ARM) are on the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/releases" target="_blank" rel="noopener">Releases page</a>; the first start on each system is in <a href="desktop-apps.html">Desktop apps</a>.</p>
+</section>
+
+<section class="doc-section" id="bug-report">
+  <h2>Reporting a bug</h2>
+  <p>Open an issue on the project's <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/issues" target="_blank" rel="noopener">GitHub issues page</a>. Both hosts gather most of what a report needs in one press, with no game data in it:</p>
+  <table>
+    <thead><tr><th>Where</th><th>Copy the report</th></tr></thead>
+    <tbody>
+      <tr><td>Desktop game, still running</td><td><kbd>F12</kbd>, <em>Tools</em> page, <em>Copy report</em> (written to <code>legaia-report.txt</code> in the saves folder where there is no clipboard)</td></tr>
+      <tr><td>Desktop game that stopped with an error</td><td>The launcher comes back: <kbd>Ctrl</kbd>+<kbd>C</kbd>, or a click on its help box; the full log is <code>legaia-engine-game.log</code> in the saves folder</td></tr>
+      <tr><td>Legaia Explorer</td><td><em>Copy report</em> on its error banner</td></tr>
+      <tr><td>Browser play page</td><td><em>Copy report</em> beside the picture</td></tr>
+    </tbody>
+  </table>
+  <p>The report carries the version, your system (and in the browser, the browser and graphics chip), the scene and the settings. Add to it:</p>
+  <ol class="steps">
+    <li><b>What happened</b><span>What you did, what you expected, and what you saw instead.</span></li>
+    <li><b>Original mode</b><span>Whether it still happens with Original mode on. That tells an enhancement's side effect apart from the game itself.</span></li>
+    <li><b>Your disc</b><span>The plain USA disc, or a randomized or patched copy (and its seed or patch).</span></li>
+    <li><b>A picture</b><span><kbd>Print Screen</kbd> saves a screenshot on both hosts; a short video is better for anything that moves. For a "looks different" report, footage of the original at the same moment helps most.</span></li>
+    <li><b>A save near it</b><span>Desktop: <em>Export session</em> on the <kbd>F12</kbd> <em>Tools</em> page writes an <code>.lgsf</code> into the saves folder. Browser: <em>Export save</em> on the <em>Saves</em> card.</span></li>
+  </ol>
+  <p class="hint">Never attach the disc image or files extracted from it; the project cannot take Sony's data.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Guides</span>
+    <a href="desktop-apps.html">Desktop apps</a>
+    <a href="playing-and-viewing.html">Playing and viewing</a>
+    <a href="playing-expansion-packs.html">Playing an expansion pack</a>
+    <a href="playing-online.html">Playing online</a>
+    <a href="../play.html">Play in the browser</a>
+  </div>
+</section>
