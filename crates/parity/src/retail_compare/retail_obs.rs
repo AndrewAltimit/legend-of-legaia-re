@@ -208,6 +208,11 @@ pub struct RetailObs {
     /// [`Self::departure_countdown`]: `3` while it waits on the CD queue for
     /// its chunk, `4` once it only waits on the countdown.
     pub departure_state: Option<u16>,
+    /// The buttons libpad's port-1 buffer (`0x800840F8`, refreshed at every
+    /// vblank) held at the save, in the host pad's layout (the buffer's
+    /// active-low halfword at `+2`, inverted): what the frame pacer's pad
+    /// build (`FUN_8001822C`) latched into the held word for the next frame.
+    pub pad_buffer: u16,
     /// The frame pacer's history at the capture: the sixteen frame times of
     /// `DAT_80084098` and the write cursor `gp+0x440`
     /// ([`crate::retail_compare_battle::frame_cost_ring`]). `None` where the
@@ -502,6 +507,7 @@ impl RetailObs {
             departure_countdown: (game_anchors::u8_at(ram, 0x8007_B648) == 0x80)
                 .then(|| game_anchors::u32_at(ram, 0x8007_BA28) as i32)
                 .filter(|c| (-0x20..=0x46).contains(c)),
+            pad_buffer: !game_anchors::u16_at(ram, 0x8008_40FA),
             departure_state: crate::retail_compare_script::actor_nodes(ram)
                 .into_iter()
                 .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8002_1934)

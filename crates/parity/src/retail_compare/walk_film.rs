@@ -378,6 +378,16 @@ impl WalkFilm {
             .departure_countdown
             .filter(|_| std::env::var_os("LEGAIA_RC_NO_DEPART_SEAT").is_none());
         let mut depart_spent = 0i32;
+        // The pad the state's last frame latched: the frame after the save
+        // reads it, not the film's first pad (`kor3_field_route_walk` holds
+        // the route walk's Left and steps once more under it before the
+        // film's Up). A harness seat; `LEGAIA_RC_NO_PAD_SEAT=1` keeps the
+        // pipeline empty.
+        if !session.host.world.toggles.immediate_pad
+            && std::env::var_os("LEGAIA_RC_NO_PAD_SEAT").is_none()
+        {
+            session.host.world.seat_retail_frame_pad(retail.pad_buffer);
+        }
         for t in 0..self.ticks {
             if t < 8
                 && let Some(cd) = depart_seat

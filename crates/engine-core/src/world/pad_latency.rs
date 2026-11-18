@@ -109,6 +109,19 @@ impl World {
         (game, Some(tick.wrapping_sub(1).wrapping_add(u32::from(k))))
     }
 
+    /// Seat the pipeline's latched sample on `mask` (host-pad layout), as a
+    /// state saved after a frame's pad build holds it: the next frame to
+    /// open reads `mask`, and the frames after it sample the host pad again.
+    /// A harness standing the world on a retail capture.
+    pub fn seat_retail_frame_pad(&mut self, mask: u16) {
+        let tick = self.clock.sim_ticks;
+        let p = &mut self.pad_latency;
+        p.hist[tick as usize % HISTORY] = mask;
+        p.newest = Some(tick);
+        p.game = mask;
+        p.sample_tick = Some(tick);
+    }
+
     /// The pad word game logic reads on the tick about to run, given the
     /// host's `mask` for it. With [`WorldToggles::immediate_pad`] up, or
     /// while no game-tick clock runs (a mode with no master frame driver),

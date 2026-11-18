@@ -25,6 +25,10 @@ terrain follow, solid and living NPCs. `--run` sets the Field Move option to Run
 read it off the retail side's step (a run step is `24` at frame step `2`, a walk
 step `16`), since the seed has no host to mirror it.
 
+A state saved mid-departure seats the scene-change actor (`RetailObs::departure_countdown` / `departure_state`: the countdown `gp+0x710` while the screen byte `0x8007B648` reads `0x80`, and `+0x1A` of the `FUN_80021934` actor). The engine's parked hold takes the vsync retail hands off on (the first frame past zero on the state's frame grid) and, for an actor still in state 3, what is left of its chunk read. Left to a fresh actor, `s2_rimelm_town01` left `map01` at vsync `70` where retail leaves at `32`. A harness seat; `LEGAIA_RC_NO_DEPART_SEAT=1` keeps the engine's.
+
+Under the retail pad pipeline the film also seats the pad the state's last frame latched (`RetailObs::pad_buffer`, libpad's buffer at `0x800840F8` inverted, `World::seat_retail_frame_pad`): the frame after the save reads it before the film's own pad. `kor3_field_route_walk` steps once more under the route walk's Left before turning under the film's Up, and so follows retail onto its warp pad; `tower_field_walk`'s `rng` agrees to its end (`52` to `150` of `150`). A harness seat; `LEGAIA_RC_NO_PAD_SEAT=1` keeps the pipeline empty.
+
 ## Reading it
 
 A retail pass is a row where the player or camera changed. The engine walks one
