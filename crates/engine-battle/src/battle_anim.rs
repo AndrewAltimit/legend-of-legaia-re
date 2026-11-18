@@ -743,6 +743,15 @@ impl MonsterAnimPlayer {
         self.clip_rate
     }
 
+    /// Rewrite the playing entry's rate byte `+0x78`, as a module store into
+    /// the committed record (`*(node + 0x4C) + 0x78`) does: the advance reads
+    /// the byte every frame (`lbu v0,0x78(s3)` at `0x8004774C`), so the clip
+    /// runs at the new rate from the next advance on.
+    pub fn set_clip_rate(&mut self, rate: u8) {
+        self.clip_rate = rate;
+        self.step = step_for_rate(rate);
+    }
+
     /// The pose at node cursor `sixteenths` (retail's 12.4 `+0x68` unit) of
     /// the playing clip, without moving the cursor: what the weapon-trail
     /// sweep `FUN_80048310` reads when it stores a rewound cursor and calls

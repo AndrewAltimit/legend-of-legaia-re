@@ -97,6 +97,32 @@ impl World {
         if phase == 9 && passed {
             self.casting.module_creature_clip_kind = 1;
         }
+        // Arm 8's pass writes `3` into the rate byte `+0x78` of the entry its
+        // creature's cast record `0x801C9348[4]` points at from `+0x4C`
+        // (`lw v0,-0x6ca8(v0)` / `lw v1,0x4c(v0)` / `sb v0,0x78(v1)`,
+        // `0x801F7324..0x801F7338`): idle `0`'s, the clip the creature plays
+        // there. The entry is archive RAM, so every later commit of it keeps
+        // the byte: on the recording the idle advances `24` a pass from arm 9
+        // on where it ran `32`, and its walk dust falls with it.
+        if phase == 8
+            && passed
+            && let Some(a) = self.actors.get_mut(usize::from(seat))
+        {
+            const ARM_8_RECORD_RATE: u8 = 3;
+            if let Some(entry) = a
+                .battle_action_clips
+                .as_mut()
+                .and_then(|c| std::sync::Arc::make_mut(c).get_mut(0))
+                .and_then(|c| c.as_mut())
+            {
+                entry.rate = ARM_8_RECORD_RATE;
+            }
+            if a.battle.current_anim == 0
+                && let Some(p) = a.battle_animation.as_mut()
+            {
+                p.set_clip_rate(ARM_8_RECORD_RATE);
+            }
+        }
         // Arm 6's pass, after its shot: the victim steps back a sixth of its
         // body radius, `+0x38 += *(+0x22C)[+0x58] / 6` (`lw v0,0x22c(s1)`,
         // `lhu a0,0x58(v0)`, the `0x2AAAAAAB` divide and `sh v0,0x38(s1)` at

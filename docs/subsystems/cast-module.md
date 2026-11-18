@@ -3353,11 +3353,15 @@ past the creature's own takes (`0x801F7A48..0x801F7A60`); a `--range-trace` reco
 reads Gobu Gobu's facing `0xC00` off the first hit, which finds it straight down the
 creature's line. The port had turned it `0x400` without the draw, so its knock-back
 walked it the other way and the chase read it in reach on passes retail reads it out.
-On the `--rand-track` seat the `0x8D` film reads `.974` against `.921` (arm `0xC`
-`.738` to `.804`, more on its own cursors); on the plain seat the stream already
-parts from retail's in arm 9, where the creature's idle advances `24` a pass on retail's
-cursors and `32` on the port's, and its walk dust (`FUN_801DEA50`) sheds seven spawns
-more. Grade `disassembly` + `capture`.
+Arm 8's pass also writes `3` into the rate byte `+0x78` of the entry the creature's
+cast record `0x801C9348[4]` points at from `+0x4C` (`0x801F7324..0x801F7338`), idle
+`0`'s. The entry is archive RAM, so every later commit keeps the byte, and from arm 9 on
+the idle advances `24` a pass where it ran `32`, as the recording's cursors read; its
+walk dust (`FUN_801DEA50`) falls with it. Without the store the port shed seven dust
+spawns more in arm 9, `19` `rand()` words, and every later deal of the cast stood off
+retail's. With the three the `0x8D` film holds retail's stream to the end of the cast
+and reads `.978` against `.934` (arm 9 `.975` to `1.000`, arm `0xC` `.797` to `.954`).
+Grade `disassembly` + `capture`.
 Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of arms
 2 and 7 over its holds. Arm 4's pass stores rate `1` beside the clip it stages, and the commit lifts it to
 `4` (`0x8004B080`), so arm 5 runs at `4` until arm 6 stores `1` again: the eye close-up
