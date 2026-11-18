@@ -894,6 +894,23 @@ pub struct BattleState {
     /// call steps after the push is priced again on the arm it leaves on
     /// (`World::reprice_pass_on_rendezvous`).
     pub frame_cost_ring_before: Option<crate::frame_clock::FrameCostRing>,
+    /// The ring as it stood before the last pass's push, whatever priced it,
+    /// with the action state and arm step that push ran under: what a film's
+    /// opening pass is priced again from once the census it waited on has
+    /// counted it (`World::reprice_opening_pass_on_census`). A harness seat's
+    /// read.
+    pub last_push: Option<(
+        crate::frame_clock::FrameCostRing,
+        crate::frame_clock::FrameCostRing,
+        Option<u8>,
+    )>,
+    /// Lane G harness seat: the lead-in's census came back on this tick
+    /// (`LEGAIA_LEADIN_TABLE_COST`), and the pass the film opened on, which
+    /// its table priced, waits to be priced again on the census
+    /// (`World::reprice_opening_pass_on_census`): `1` that pass alone, `2`
+    /// the lead-in's table entries with it (a film whose ring no capture
+    /// seeds).
+    pub reprice_opening_pass: u8,
     /// The step the ring read on the last pass.
     pub frame_cost_step: u8,
     /// The GPU's wait over the table the host drew last, in hblanks (draw
@@ -1755,6 +1772,8 @@ impl BattleState {
             cast_arm_step_on: false,
             frame_cost_ring: Default::default(),
             frame_cost_ring_before: None,
+            last_push: None,
+            reprice_opening_pass: 0,
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             drawn_table_cost: None,
             frame_cost_state: None,

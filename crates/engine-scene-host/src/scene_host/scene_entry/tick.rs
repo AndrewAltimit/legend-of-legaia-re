@@ -170,6 +170,7 @@ impl SceneHost {
             self.ensure_battle_party_forms();
             self.refresh_battle_link_census();
             self.world.close_pass_after_census();
+            self.world.reprice_opening_pass_on_census();
         } else {
             self.world.close_pass_after_census();
             self.battle_party_forms = None;

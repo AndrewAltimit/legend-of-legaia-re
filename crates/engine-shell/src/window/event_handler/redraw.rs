@@ -160,6 +160,16 @@ impl PlayWindowApp {
             toggles.battle_poly_frame_cost = met && wanted;
             if met {
                 sc.leadin_table_cost = false;
+                // The pass the film opened on ran before the census came
+                // back; it is priced again once the census counts it.
+                self.session.host.world.battle.reprice_opening_pass = match (
+                    wanted,
+                    std::env::var_os("LEGAIA_BATTLE_COST_RING").is_some(),
+                ) {
+                    (false, _) => 0,
+                    (true, true) => 1,
+                    (true, false) => 2,
+                };
             }
         }
     }

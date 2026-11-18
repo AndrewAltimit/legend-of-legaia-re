@@ -224,7 +224,9 @@ impl World {
         let (loaded, cost) = price(poly, work);
         self.battle.frame_cost_ring_before =
             matches!((arm_step, poly), (Some(_), None)).then_some(self.battle.frame_cost_ring);
+        let before = self.battle.frame_cost_ring;
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
+        self.battle.last_push = Some((before, self.battle.frame_cost_ring, arm_step));
         // A capture-band module's own line spans an arm's frames by their
         // census work under the polls, the arm's step staying its table's:
         // retail's frames under one run anywhere from inside the step (Death
@@ -845,6 +847,56 @@ impl World {
         // on: Nova's arm 3 runs `1` then `4`, as its recording reads.
         self.battle.pending_frame_step = Some(want);
         self.battle.pending_frame_step_from = self.battle_frame_id();
+    }
+
+    /// Price the film's opening pass again on the census, once the census
+    /// has counted it ([`BattleState::reprice_opening_pass`](legaia_engine_battle_loop::battle_state::BattleState::reprice_opening_pass)).
+    /// A replay's lead-in holds the census off and gives it back where the
+    /// film starts (`LEGAIA_LEADIN_TABLE_COST`), which the recorder learns
+    /// only behind the tick that opened the film's first pass: that pass was
+    /// priced on the action-state table, with no census yet. Retail's entry
+    /// for it is its own frame's (`battle_garmel_zeto_pre_poisonous_bubbles`'s
+    /// `0x28` pass costs `453`, step `2` next, where the table's `595` read
+    /// `3`). The push is redone from the ring as it stood before it, while
+    /// the step it left has not been taken. A harness seat.
+    pub fn reprice_opening_pass_on_census(&mut self) {
+        let mode = std::mem::take(&mut self.battle.reprice_opening_pass);
+        if mode == 0
+            || self.battle.linked_polys.is_none()
+            || self.battle.pending_frame_step.is_none()
+        {
+            return;
+        }
+        // Only the push the film opened on, untouched since (a capture's
+        // ring seeded after it stands).
+        let Some((before, after, None)) = self.battle.last_push else {
+            return;
+        };
+        if self.battle.frame_cost_ring != after {
+            return;
+        }
+        self.battle.frame_cost_ring = before;
+        self.battle.frame_cost_state = self
+            .battle
+            .frame_cost_state
+            .map(|(s, n)| (s, n.saturating_sub(1)));
+        self.push_frame_cost(None);
+        if mode == 2 {
+            // The lead-in's entries are the table's prices for the intro's
+            // frames, which retail's ring holds at their own cost: stand them
+            // on the opening frame's, the nearest the census has.
+            let c = self.battle.frame_cost_ring.newest();
+            let ring = self.battle.frame_cost_ring;
+            let seeded = legaia_engine_battle_loop::frame_clock::FrameCostRing::from_state(
+                [c as i16; 16],
+                ring.cursor(),
+                legaia_engine_battle_loop::frame_clock::step_of_cost(c),
+                ring.prev_step(),
+            );
+            self.battle.frame_cost_ring = seeded;
+            self.battle.frame_cost_step = seeded.step();
+        }
+        self.battle.pending_frame_step = Some(self.battle.frame_cost_step);
     }
 
     /// Close the pass the world's tick left for the census

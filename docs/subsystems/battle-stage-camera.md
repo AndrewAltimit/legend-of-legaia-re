@@ -1900,6 +1900,18 @@ over (Ghost Knight's idle frame links `2456` primitives, all five bodies in shot
 retail's frames before the cast cost `450` to `500`. What parts is the frame the engine
 stands on before the cast, not the price of a primitive.
 
+The seat also prices the film's first pass on the table: the recorder learns the film has
+started only behind the tick that opened it, and the census comes back on the next. Retail's
+ring entry for that pass is its own frame's, read inside the pass: the PCSX-Redux
+recording of Zeto's Poisonous Bubbles (`garmel_zeto_pre_poisonous_bubbles`) shows `453` on the
+`0x28` pass's second vsync and `526` on the first `0x29` pass's third, each before the pass
+ends, against the table's `595` on the engine's `0x28` pass. So the seat prices that pass
+again once the census has counted it (`World::reprice_opening_pass_on_census`, the push redone
+from the ring as it stood before it), and on a film whose ring no capture seeds
+(`LEGAIA_BATTLE_COST_RING` absent: the seeded spells) stands the lead-in's table entries on the
+opening frame's census price, the nearest the census has to retail's intro frames. Zeto's
+film reads `.829` to `.883`, its opening passes on retail's step `2`. A harness seat.
+
 The span law takes the same seat in the lead-in (`LEGAIA_LEADIN_SPAN_LAW=1`): its longer
 frames re-deal the rounds the replay plays to the gate, and under it Gilium's, Warhalf's,
 Slippery's and Topaz's strike films recorded nothing (Warhalf's replay won the fight in round
