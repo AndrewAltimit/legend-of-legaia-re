@@ -336,6 +336,7 @@ pub struct SceneTransitionHold {
 /// `143` / `163` / `181` (`jagaroom`, `koin2` and `balden2`, `rayman2`): the
 /// countdown, or the read past it at about two sectors a vsync, whichever
 /// ends later.
+// REF: FUN_8003DE7C (the CD-queue poll), FUN_8001EEF0 (the chunk stream)
 pub const CHUNK_SECTORS_PER_VSYNC_X100: u32 = 205;
 
 /// Vsyncs the CD queue spends streaming a departure's chunk of `sectors`.
