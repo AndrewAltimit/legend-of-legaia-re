@@ -210,12 +210,17 @@ impl<S: AudioSink> AudioDirector<S> {
         });
         // Every ring cue that came due and keyed nothing, in batch order (an
         // id the batch carries twice is silent as often as it fell short).
-        let mut keyed: Vec<u16> = report.fired.iter().map(|&(id, _)| id).collect();
+        // A mask over `fired` marks the keys already paired: no allocation.
+        let mut used: u64 = 0;
         for &id in &batch.ring {
-            match keyed.iter().position(|&k| k == id as u16) {
-                Some(i) => {
-                    keyed.swap_remove(i);
-                }
+            let hit = report
+                .fired
+                .iter()
+                .enumerate()
+                .take(64)
+                .position(|(i, &(k, _))| used & (1 << i) == 0 && k == id as u16);
+            match hit {
+                Some(i) => used |= 1 << i,
                 None => self.silent_ring.push(id),
             }
         }
