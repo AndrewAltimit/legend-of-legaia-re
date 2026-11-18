@@ -380,6 +380,24 @@ inside the rect the destination is written to `(x, y, 2*zz - z)` facing
 `-0x800 - a`; outside it, the image stays put. The rect test quantises with
 `(v + 0x40) >> 7`, half a tile the other way from the walk-on trigger compare.
 
+Inside the rect the tick also copies the source's **clip** before the pose,
+when both actors' model words `+0x64` agree (`0x801E5204..0x801E5250`): the
+party-bank bit `+0x10 & 0x01000000`, the clip id `+0x5C`, the rate `+0x6A`
+and the cursor `+0x68`. This is what makes the image walk, run and stand with
+the player: every image record re-stages itself to the party model its source
+spawns with before it installs the pair (`4C 50 F0` / `F1` / `F2`, then
+`31 18` and its idle clip `22 02` / `22 09` / `22 10`), so the gate passes. A
+capture of the `conc2` tick on a pad walk
+(`scripts/pcsx-redux/autorun_w6c_spoke_walk.lua`, `LEGAIA_MIRROR=1`) reads the
+player's and the image's `+0x64` both `0`, and at every tick entry the image
+carries the player's `+0x5C`, `+0x68`, `+0x6A` and bank bit through idle (`2`),
+run (`3`) and walk (`1`). The image's own clip tick restarts a newly copied
+id at frame `0` (`+0x5C != +0x5E`), so a clip switch shows on the image one
+tick late. The port copies the same words onto the image's world-owned clip
+cursor (`World::tick_reflection_controllers`); a new id is cued for both
+hosts' clip re-target. Disc-gated:
+`engine-scene-host/tests/field_reflection_anim_concnow_disc.rs`.
+
 `4C 87`'s arm at `0x801E2284` loads the same handler VA and actor list
 `_DAT_8007C34C` and tail-jumps to the shared exit `0x801E2DC4`
 (`jal 0x8003CF40`, `addiu s8,s8,2` in the delay slot). `FUN_8003CF40`
