@@ -43,6 +43,10 @@ const SCENE: &str = "town01";
 /// post-load hold.
 const POST_LOAD_TICKS: usize = 4 + 0x28;
 
+/// Bound on the ticks a pressed open spends under the pause wipe before the
+/// menu spawns (`play_menu_settle`'s own bound).
+const WIPE_TICKS: usize = 64;
+
 /// `(mode index, mode name)` with consecutive duplicates removed - the chain
 /// of words the host walked.
 fn chain(words: &[(u8, String)]) -> Vec<(u8, String)> {
@@ -85,8 +89,25 @@ fn native_chain(disc: &str) -> (Vec<(u8, String)>, u64) {
         let _ = s.tick();
         sample(&s, &mut words);
     }
-    s.open_field_menu();
+    // The menu button, as the window asks it: a pressed open keeps the
+    // field running under the wipe and enters `CARD INIT` on the spawning
+    // pass (retail stays in game mode 3 from the accept to the spawn), so
+    // the ladder ticks the wipe out before it reads the menu's word.
+    assert!(
+        matches!(
+            s.press_field_menu(true),
+            legaia_engine_session::PauseMenuPress::Opened { .. }
+        ),
+        "the native menu press did not open the menu"
+    );
     sample(&s, &mut words);
+    for _ in 0..WIPE_TICKS {
+        if s.pause_wipe().menu_spawned() {
+            break;
+        }
+        let _ = s.tick();
+        sample(&s, &mut words);
+    }
     for _ in 0..3 {
         let _ = s.tick();
         sample(&s, &mut words);
@@ -121,7 +142,12 @@ fn web_chain(disc_bytes: Vec<u8>) -> (Vec<(u8, String)>, u64) {
         let _ = rt.tick_frame();
         sample(&rt, &mut words);
     }
+    // The page's menu button, then the wipe run out until the menu spawns
+    // (`play_menu_settle`, the frames the page spends drawing the field
+    // under the curtain).
     rt.play_menu_open();
+    sample(&rt, &mut words);
+    rt.play_menu_settle();
     sample(&rt, &mut words);
     for _ in 0..3 {
         let _ = rt.tick_frame();
