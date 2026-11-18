@@ -45,7 +45,8 @@ pub(super) enum Fight {
 /// | `Targeting` | Cross | the cursor's enemy |
 ///
 /// `Item` is taken only when the acting party is hurt past
-/// [`Self::heal_below_pct`] **and** the bag still holds the heal id - a policy
+/// [`Self::heal_below_pct`], or is within two of the hardest hits the run has
+/// taken ([`Self::worst_hit`]), **and** the bag still holds the heal id - a policy
 /// that opens an empty bag has to back out again, which costs a turn and reads
 /// as a hang if the back-out is ever missed.
 ///
@@ -75,6 +76,15 @@ pub(super) struct FightPolicy {
     pub(super) heal_below_pct: u32,
     /// Item id the fighter heals with ([`BAG_HEAL_ITEM`]).
     pub(super) heal_item: u8,
+    /// The largest single drop in a party member's HP the run has watched,
+    /// fed by [`drain_battle`]. A player who has seen a monster take 48 off
+    /// a swing does not swing again at 93 HP: a monster that acts first can
+    /// land the hit before the heal does, so the leaf goes in while two such
+    /// hits are still survivable. Without it the flat 50% line let a solo
+    /// Vahn swing at 93/180 against a 48-a-round monster and queue his leaf
+    /// at 46, one hit too late - the hand a re-dealt rand stream turned into
+    /// a wipe on the `map01 -> suimon` leg.
+    pub(super) worst_hit: std::cell::Cell<u16>,
 }
 
 impl Default for FightPolicy {
@@ -84,6 +94,7 @@ impl Default for FightPolicy {
             bag: std::env::var_os("LEGAIA_CPR_NO_BAG").is_none(),
             heal_below_pct: 50,
             heal_item: BAG_HEAL_ITEM,
+            worst_hit: std::cell::Cell::new(0),
         }
     }
 }
@@ -160,8 +171,26 @@ impl FightPolicy {
             let a = &w.actors[i].battle;
             a.max_hp > 0
                 && a.hp > 0
-                && u32::from(a.hp) * 100 <= u32::from(a.max_hp) * self.heal_below_pct
+                && (u32::from(a.hp) * 100 <= u32::from(a.max_hp) * self.heal_below_pct
+                    || u32::from(a.hp) <= 2 * u32::from(self.worst_hit.get()))
         })
+    }
+
+    /// Fold this tick's HP drops into [`Self::worst_hit`]. `before` is each
+    /// party slot's HP on the previous tick.
+    fn watch_hits(&self, host: &SceneHost, before: &mut [u16; 3]) {
+        let w = &host.world;
+        for (i, prev) in before
+            .iter_mut()
+            .enumerate()
+            .take(w.party.party_count.clamp(1, 3) as usize)
+        {
+            let hp = w.actors[i].battle.hp;
+            if hp < *prev {
+                self.worst_hit.set(self.worst_hit.get().max(*prev - hp));
+            }
+            *prev = hp;
+        }
     }
 }
 
@@ -213,6 +242,10 @@ pub(super) fn drain_battle(host: &mut SceneHost, resume: SceneMode, policy: &Fig
     let mut ticks = 0u32;
     let mut pad_prev = 0u16;
     let mut outcome = Fight::Stuck;
+    let mut hp_seen = [0u16; 3];
+    for (i, hp) in hp_seen.iter_mut().enumerate() {
+        *hp = host.world.actors[i].battle.hp;
+    }
     for _ in 0..BATTLE_FRAME_BUDGET {
         // A press is an *edge*: the session reads `just_pressed`, so a held
         // mask pages exactly once and then does nothing. Alternate every
@@ -227,6 +260,7 @@ pub(super) fn drain_battle(host: &mut SceneHost, resume: SceneMode, policy: &Fig
             break;
         }
         ticks += 1;
+        policy.watch_hits(host, &mut hp_seen);
         if host.world.game_over_hold || host.world.game_over {
             outcome = Fight::Wiped;
             break;
