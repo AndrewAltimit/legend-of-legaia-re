@@ -2066,6 +2066,27 @@ out; the exit stages clip `3`. Ports: the tick body's `VERA_HIDE_ARM` and
 `VERA_CAST_ARM`, and the director's held-pass clip
 (`ModuleCamState::creature_stage`).
 
+Arm 2's white rise and arm 4's warm and blue pair spawn on the pass the gate
+lets go, and the fade actor's tick `FUN_80025000` runs later in that same pass, so
+each ramp has taken the frame's step by the time the frame is drawn. The port
+spawned them after its own fade step and ran every ramp a pass behind: the
+`0x83` film's arm 5 (the warm flash fading out over the cut) read `.853`, the
+background `16` luma over retail's on every pair. Stepped on the spawn pass, as
+the decoded exit fades already are, arm 5 reads `1.000`. Port: the director-fade
+loop of `World::summon_stager_tick`.
+
+Arms 8..10 write the camera globals ahead of their gate, so the pass that hands
+over drifts by the whole `p` too. The port's pass runs its one-vsync ticks and
+stops on the one that hands over, and repeated the rest of the pass's capture
+drift but not a director's nudge: arm 9's last pass moved pitch `108` to `109`
+where retail's moved it to `112` (TR y `-48`, TR z `+96`), and arm 10 ran its
+whole length that far off. Arm 10 also lifts the creature by `p / 2` a pass
+(`lhu v0,0x36(s4)` / `sh v0,0x36(s4)` at `0x801F7FF0..0x801F8000`, `s4` the
+creature seat `*(0x801C938C)`), so Vera rises out of the shot as the camera pulls
+back; retail's `creature.csv` walks `y` by `-16` a step-`4` pass. With both the
+`0x83` film's arm 10 reads `.955` for `.877`. Port: `ModuleNudge::creature_y`,
+`World::nudge_rest_of_pass`.
+
 Arm 5's pass stages clip `1` beside the seat with the `+0x1DC` bump and rate `8`
 (`0x801F730C..0x801F733C`), so the creature opens on clip `1`; arm 8's bare `2`
 then waits for that clip's natural end, which PROT 0905's place on the band's
@@ -2133,6 +2154,16 @@ TR y `0x600` and TR z two thirds of `ctx[+0x6D0]`
 (`cast_module_camera::gizam_sweep_exit_shot`). No arm moves the creature: it
 stays where `FUN_801F19EC` leaves it, on the caster
 ([the creature seat](#the-creature-seat)).
+
+The record's first call (stager arm 0, `0x801F7788..0x801F7804`) spawns the white
+and blue flash pair from inside the part walk, which runs after the pass has ticked
+its fade actors, so the pair first steps and first draws on the next pass. The port
+runs the call on the module's next tick, whose fade step it has already taken, and
+spawned the pair there unstepped: the flash's tail at the end of arm 5 stood one step
+brighter than retail's on every pass (`.03` to `.86` within, the `0x84` film's lowest
+pairs). Stepped once as it spawns (`World::run_gizam_record_calls`), the film reads
+`.977` for `.966`. PROT 0927's stager fades take the same path and the same step
+(`World::run_juggernaut_stager_calls`). Grade `disassembly` + `capture`.
 
 ### PROT 0907 (Nighto)
 
@@ -2243,6 +2274,11 @@ until the seat pass, which shows `4` on the stage point. Retail's seat pass
 then overruns to three vsyncs and the next pass steps `3` (`+12`), where the
 port runs one more step-`1` pass first. `--retail-steps` keeps both, so neither
 is the frame cost the step track carries. Grade `capture`.
+
+**The slam clears the caption.** Arm 11's exit, the pass the creature lands on
+the victim, calls `FUN_800319A8(0)` (`0x801F7BE0`) before it raises the readout flag
+(`0x801F8104`), so retail's shatter runs with no attack name over it. The port kept
+`Vertical Hammer` up through arm 12. Grade `disassembly` + `capture`.
 
 **Stepping over the victim.** Arm 8 holds on `FUN_8004E2F0(7, victim)` (`0x801F7628`) while clip 2's root motion walks the creature on a fixed facing, and it has no other exit. The step is `speed * frame step * +0x21D / 8`: speed 255, step 4 and rate 4 go 510 units a pass, and a foe of `+0x1F = 14` answers in range only inside a window 448 across. So the creature can step clean over the window and walk off the stage for good, the action never ending. The port lets the poll pass on the first pass beyond the victim (`World::creature_ran_past`), a guard that reads false on any walk that lands. The arithmetic is retail's at the frame step the table measures; whether a retail fight has hung this way is [an open question](../reference/open-rev-eng-threads.md#zenoirs-walk-over-a-small-window).
 
