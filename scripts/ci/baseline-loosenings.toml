@@ -1707,3 +1707,36 @@ reason = "Battle hit bursts run their trigger and burst inside the hit's seat (F
 changes = [
   ["states/battle_garmel_party_noa_lizard_tail_mid/image", 0.977, 0.976],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Both hosts' PSX vertex snap now floors a 1024th of a pixel past the exact position (PSX_SNAP_TIE_BIAS), closing the native/page split on Thunder Storm's whole-pixel orb corners; a tie on a whole-pixel corner rounds the other way on a handful of stills, each by .001 (the battle set nets +.002 with 3 up and 2 down, the other image states net 0). rugi_field_card_boot now draws the card boot's retail same-frame stamp, which moves its still to .993. cort_evolved_pre_battle, cort_evolved_pre_doomsday and shiny_refactor_gimard_levelup are patched or mod-disc states whose rows were already stale against the wave's base; they are re-read, not moved by this wave."
+changes = [
+  ["states/battle_map03_heavy_grude_power_up_mid_cast/image", 0.989, 0.988],
+  ["states/battle_noaru_songi_genocidal_cannon_mid_cast/image", 0.974, 0.973],
+  ["states/chitei2_kemaro_v2_pre_lava_breath/image", 0.976, 0.975],
+  ["states/cort_evolved_pre_battle/image", 0.988, 0.974],
+  ["states/cort_evolved_pre_doomsday/image", 0.936, 0.935],
+  ["states/nilboa_lucifer_pre_cross_beam/image", 0.999, 0.998],
+  ["states/rugi_field_card_boot/image", 1.0, 0.993],
+  ["states/shiny_refactor_gimard_levelup/image", 0.83, 0.828],
+  ["states/taiku_topaz_pre_hyper_heal/image", 0.98, 0.979],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The world map's display now runs a frame every five vsyncs as retail's does, and the overworld walk commits retail's cardinal step per axis, so the world_map soak draws and allocates on a different cadence: native +1% KB a frame in both profiles, about one more GL draw a frame on the retail page. Bundle gzip +6 KB / play +8 KB is new engine code (frame-paced pad pipeline, scene-selector entry beats, census repricing, title strip record); no asset or dependency was added. The cast and town01 draw rows and the battle and town01 KB rows move by under a tenth of a unit, measurement grain."
+changes = [
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 130.51, 130.52],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 108.42, 108.46],
+  ["counts/browser/town01/retail/gl_draws_per_frame", 43.92, 43.98],
+  ["counts/browser/world_map/retail/gl_draws_per_frame", 152.36, 153.34],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 161835, 161881],
+  ["counts/bundle/gzip_bytes", 7315796, 7321390],
+  ["counts/bundle/play_gzip_bytes", 5162771, 5170886],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4485.1, 4485.4],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4486.7, 4487.1],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1392.8, 1392.9],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1475.4, 1490.4],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1213.9, 1228.0],
+]
