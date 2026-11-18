@@ -211,6 +211,8 @@ pub struct AudioDirector<S: AudioSink> {
     cd_reverb: bool,
     /// The command record ([`Self::commands`]).
     commands: AudioCommandLog,
+    /// Ring cues that came due and keyed no voice ([`Self::silent_ring`]).
+    silent_ring: SilentRingLog,
     /// An expansion pack's decoded clips and the deferred faded start
     /// ([`pack_audio`]).
     pack: pack_audio::PackAudioState,
@@ -241,6 +243,35 @@ pub struct SfxFrameReport {
     pub ring_due: Vec<i16>,
     /// Queued cues `classify_cue` routed to the CD-XA voice leg and declined.
     pub voice_declined: u32,
+}
+
+/// The ring cues that keyed no voice, newest last ([`AudioDirector::silent_ring`]).
+#[derive(Debug, Clone, Default)]
+pub struct SilentRingLog {
+    count: u64,
+    recent: std::collections::VecDeque<i16>,
+}
+
+impl SilentRingLog {
+    const RECENT: usize = 32;
+
+    fn push(&mut self, id: i16) {
+        self.count += 1;
+        if self.recent.len() == Self::RECENT {
+            self.recent.pop_front();
+        }
+        self.recent.push_back(id);
+    }
+
+    /// How many silent ring cues there have been.
+    pub fn count(&self) -> u64 {
+        self.count
+    }
+
+    /// The most recent silent ring cues, oldest first.
+    pub fn recent(&self) -> impl Iterator<Item = &i16> {
+        self.recent.iter()
+    }
 }
 
 /// One ring cue resolved to what it keys, for [`AudioDirector::tick_sfx_frame`].
@@ -286,6 +317,7 @@ impl<S: AudioSink> AudioDirector<S> {
             ring_held: Vec::new(),
             cd_reverb: false,
             commands: AudioCommandLog::default(),
+            silent_ring: SilentRingLog::default(),
             pack: Default::default(),
             switch: Default::default(),
         }
@@ -295,6 +327,14 @@ impl<S: AudioSink> AudioDirector<S> {
     /// ([`AudioCommandLog`]).
     pub fn commands(&self) -> &AudioCommandLog {
         &self.commands
+    }
+
+    /// The ring cues that came due and keyed no voice: no bank staged for the
+    /// cue's category, no descriptor, no resident program, or no free voice.
+    /// Retail's drainer drops such a cue silently too; a cast recorder lists
+    /// them so a cue retail sounds and the port does not is visible.
+    pub fn silent_ring(&self) -> &SilentRingLog {
+        &self.silent_ring
     }
 
     /// The audio output the director keys into.

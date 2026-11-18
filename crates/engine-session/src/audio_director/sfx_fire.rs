@@ -149,6 +149,9 @@ impl<S: AudioSink> AudioDirector<S> {
         if (batch.ring.is_empty() && descriptors.is_empty())
             || (self.sfx_vabs.is_empty() && self.bank.is_none())
         {
+            for &id in &batch.ring {
+                self.silent_ring.push(id);
+            }
             return report;
         }
         let bank = &self.sfx_bank;
@@ -205,6 +208,17 @@ impl<S: AudioSink> AudioDirector<S> {
                 }
             }
         });
+        // Every ring cue that came due and keyed nothing, in batch order (an
+        // id the batch carries twice is silent as often as it fell short).
+        let mut keyed: Vec<u16> = report.fired.iter().map(|&(id, _)| id).collect();
+        for &id in &batch.ring {
+            match keyed.iter().position(|&k| k == id as u16) {
+                Some(i) => {
+                    keyed.swap_remove(i);
+                }
+                None => self.silent_ring.push(id),
+            }
+        }
         report
     }
 

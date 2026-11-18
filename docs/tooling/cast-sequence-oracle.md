@@ -2117,7 +2117,11 @@ Both sides also write `sfx.csv`, one row per sound cue played:
   tick: the cues that came due (`SfxDue` off the delay scheduler, `RingDue`
   off the retail ring, `SfxNow`). The driver drops the child's `--no-audio`
   and sets `LEGAIA_AUDIO_DETACHED=1`, which opens the director over an
-  output with no device.
+  output with no device. Beside it, `silent.csv` lists each ring cue that came
+  due and keyed no voice (no bank staged for its category, no descriptor, no
+  resident program, no free voice; `AudioDirector::silent_ring`). It is not
+  scored: a cue the port pushes on retail's tick and does not sound reads as
+  matched in `sfx.csv`, and only this file shows it.
 
 Both ids are descriptor indices (the ring value is the index the drainer
 reads the table with). A retail cue is placed into engine time the way a
