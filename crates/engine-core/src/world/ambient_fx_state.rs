@@ -37,6 +37,11 @@ pub struct AmbientFxState {
     /// of the actor walk they belong to (`World::tick` banks it where the
     /// actor pool fires).
     pub pending_game_ticks: u32,
+    /// Banked ticks the world tick already ran ahead of the placements
+    /// ([`crate::world::World::run_banked_ambient_part_ticks`]) whose VRAM
+    /// half - the mode-4 rotates and the cycler captures - the host's
+    /// [`crate::world::World::step_ambient_fx`] still owes.
+    pub ticked_ahead: u32,
     /// Per-rect VRAM capture cache for the ambient CLUT-cell cyclers: the
     /// texels op `0x2C` stored (`FUN_8005842C` StoreImage) keyed by the
     /// captured rect. Filled lazily by [`crate::world::World::step_ambient_fx`] from the
@@ -110,6 +115,11 @@ pub struct AmbientFxState {
     /// `legaia_engine_vm::vram_grab`), waiting for a host to project them
     /// through its frame's camera ([`crate::world::World::queue_vram_grabs`]).
     pub(crate) vram_grabs: Vec<legaia_engine_vm::vram_grab::GrabRequest>,
+    /// The grabs the ticks run ahead of the placements made, held until the
+    /// host's frame tail has queued the previous tick's: a grab copies the
+    /// frame drawn after the tick that made it, as it did when the parts
+    /// ticked in the tail.
+    pub(crate) grabs_ahead: Vec<legaia_engine_vm::vram_grab::GrabRequest>,
     /// The frame-grab handshake for a rect copy that reads the display
     /// framebuffer - see [`crate::world::World::framebuffer_grab_pending`].
     pub frame_grab: FrameGrab,
@@ -163,6 +173,7 @@ impl AmbientFxState {
             venue_restore: None,
             fx: Vec::new(),
             pending_game_ticks: 0,
+            ticked_ahead: 0,
             cell_captures: std::collections::HashMap::new(),
             cell_restores: Vec::new(),
             flash_applied: std::collections::HashMap::new(),
@@ -176,6 +187,7 @@ impl AmbientFxState {
             script_vram_stp: Vec::new(),
             vram_rect_copies: Vec::new(),
             vram_grabs: Vec::new(),
+            grabs_ahead: Vec::new(),
             frame_grab: FrameGrab::default(),
             cell_fx_seed: Vec::new(),
             vram_rect_seed: Vec::new(),

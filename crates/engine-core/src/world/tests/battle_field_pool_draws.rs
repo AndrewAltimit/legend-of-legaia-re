@@ -73,14 +73,19 @@ fn field_ambient_parts_bank_no_passes_through_a_battle() {
         let _ = w.tick();
     }
     assert_eq!(
-        w.ambient.pending_game_ticks, 0,
+        w.ambient.pending_game_ticks + w.ambient.ticked_ahead,
+        0,
         "nothing banked in the fight"
     );
     w.mode = SceneMode::Field;
     for _ in 0..8 {
         let _ = w.tick();
     }
-    assert!(w.ambient.pending_game_ticks > 0, "the field's passes bank");
+    // The world runs them ahead of the placements and owes their VRAM half.
+    assert!(
+        w.ambient.pending_game_ticks + w.ambient.ticked_ahead > 0,
+        "the field's passes run"
+    );
 }
 
 /// The camera-offset ease's caller `FUN_801DA51C` is a field-list handler:

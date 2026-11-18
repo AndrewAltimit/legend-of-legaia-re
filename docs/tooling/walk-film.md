@@ -140,9 +140,11 @@ Every film that parts before its end parts on one of four causes, read off that 
 | Cause | Films | Kind |
 |---|---|---|
 | The ambient parts the state holds and the seed does not: a spawner part's children live longer than the seed's settle, so the engine stands fewer of them (`garmel`: nine of retail's twenty-nine), and their random operands go undrawn | the five `garmel` films, `dohaty_field_card_walk`, `jagaroom_field_door_hop`, `koin1_field_route_walk`, `map02_field_door_hop`, `uru2_field_door_hop` | harness seat |
-| A wanderer's stream on another phase than the state's | `balden_field_route_walk`, `koin6_field_route_walk`, `doman_field_card_boot` | harness seat |
+| A wanderer's stream on another phase than the state's | `doman_field_card_boot` | harness seat |
 | The fog pool: a burst point the spawner seats on one side and rejects on the other, the pools having parted earlier with no draw to show it | `tower_field_walk`, `concnow_field_door_hop`, `teien_field_run`, `son_arrival_from_doman` | engine (fog pool) or seat, film by film |
 | The measured step changing inside the film | `korout_field_door_hop`, `field_walled_collision_pin` | retail's frame time |
+
+`koin6_field_route_walk` and `balden_field_route_walk` parted on the tick order inside the pass: the ambient parts are walked before the placements ([field-ambient-fx](../subsystems/field-ambient-fx.md#the-part-pool-and-the-halted-part-free)), and with the parts ticked after them each wanderer drew the value retail hands a part. Both now agree to their ends (`13` to `91` of `91`, `58` to `150` of `150`), and every placement in both holds retail's heading and seat for the whole film.
 
 Five more films parted on the fog pool until the emitter took its centre from the camera translation rather than the player ([field-ambient-fx](../subsystems/field-ambient-fx.md#mechanism-4---the-ambient-particle-emitter)): `taiku2_field_door_hop` (`51` to `150` of `151`), `rikuroa2_field_door_hop` (`46` to `150`), `rikuroa_field_cave_exit_arrival` (`71` to `150`), `map01_tree_revival_cutscene` (`2` to `76` of `76`) and `s2_rimelm_town01` (`5` to `17` of `18`). The probe's `spawner_calls.csv` (every spawner entry with its tile, the walk-region box and the emitter's span) named it: on `taiku2` the box and span matched on both sides, and the tiles did not.
 

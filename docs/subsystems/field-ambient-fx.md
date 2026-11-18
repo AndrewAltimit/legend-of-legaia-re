@@ -215,10 +215,24 @@ A PCSX-Redux breakpoint on `FUN_80021DF4` and on the `rand()` thunk over idle
 field states (`deroa_field_door_hop`, `koin1_field_route_walk`, every two and
 every three vsyncs) logs the part ticks and their move-VM draws (return address
 `0x801D371C`, the ext op's `jal`) on the pass vsyncs only (grade: capture). The
-port banks one part tick where its actor pool fires (`World::tick`), and the
-host drains it on the same tick (`World::step_ambient_fx`); a counter of its own
+port banks one part tick where its actor pool fires (`World::tick`); a counter of its own
 had drifted off the pass, and a part's `rand()` op then drew on a vsync between
 passes where retail draws nothing.
+
+Inside the pass the parts tick before the placements. The parts are actor list
+`1` (`0x8007C350`) and the placements list `2` (`0x8007C354`), and
+`FUN_80016444` hands `FUN_8002519C` list `0` (camera, emitter, the script
+handlers), then list `1`, then lists `3` and `2` (`0x800165A0..0x8001661C`; with
+`0x1F800394 & 0x10` up, lists `5` and `4` instead). So on a pass where a part's
+random operand and a wanderer's `0x18` pick both draw, the part draws first
+(grade: disassembly). The port runs the banked part ticks in the world tick just
+ahead of the placements' streams (`World::run_banked_ambient_part_ticks`) and
+leaves only their VRAM half, the strip rotations and the cycler captures, to the
+host's `World::step_ambient_fx`. Ticked in the host's frame tail instead, after
+the placements, each wanderer took the value retail hands a part: `koin6`'s flat
+`12`, in a one-tile-wide box, drew the `-Z` pick the box rejects where retail's
+drew `+X` and walked, and the stream parted from retail's ten vsyncs into the
+film.
 
 Freeing is one walk later than stopping. The halted arm tests bit
 `0x02000000` and, while it is **clear**, branches past the entire teardown to

@@ -437,9 +437,10 @@ impl World {
             // The ambient move-VM effect parts (jou's CLUT-cell cyclers and
             // lightning director, every stager part) are nodes of the same
             // actor lists: the part tick `FUN_80021DF4` is their node handler,
-            // so they step on this pass and no other vsync. Banked here for
-            // the host's `step_ambient_fx`, which drains it against its VRAM
-            // on the same tick. A clock of their own drifted half a pass off
+            // so they step on this pass and no other vsync. Banked here and
+            // run ahead of the placements below
+            // (`World::run_banked_ambient_part_ticks`); the host's
+            // `step_ambient_fx` drains what is left, and the VRAM half. A clock of their own drifted half a pass off
             // the walk, and a part's `rand()` op then drew on a vsync where
             // retail draws nothing (`deroa`'s, every second pass).
             //
@@ -834,6 +835,8 @@ impl World {
                 // The battle intro rebuilt the actor lists, so no placement's
                 // driver runs under it (`Self::battle_intro_owns_frame`).
                 if actor_tick_fired && !self.battle_intro_owns_frame() {
+                    // The part list walks ahead of the placements'.
+                    self.run_banked_ambient_part_ticks();
                     self.tick_field_npc_ambient();
                     // The same driver's height arm (`FUN_8003BC08`), after
                     // the tick moved anyone: the glide-class NPCs' Y.
@@ -1020,6 +1023,7 @@ impl World {
                 // `+0x16 = -(+0x8E)` = 900 up) drifts along the ground.
                 // REF: FUN_8003BC08, FUN_80038158
                 if actor_tick_fired && !self.battle_intro_owns_frame() {
+                    self.run_banked_ambient_part_ticks();
                     self.tick_field_npc_ambient();
                     self.tick_field_npc_heights();
                 }
