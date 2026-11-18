@@ -1376,8 +1376,23 @@ pub const CAPTURE_ARM_READ_TAILS: &[(u8, u8, u16, u8)] = &[(0x6E, 4, 27, 3)];
 /// ring reads `3`, `2` for ten frames, `3` and `4`. The arm drains its
 /// countdown by the step, so the classes are its pass count: `117` frames on
 /// retail, `97` on one step of `4`.
-pub const CAPTURE_ARM_COST_TAILS: &[(u8, u8, u16, u8)] =
-    &[(0xAD, 24, 20, 2), (0xAD, 24, 45, 3), (0xAD, 24, 74, 4)];
+///
+/// Fatal Decision's spin arm 6 (PROT 0954) is the other. On its recording
+/// (`kor_shade_pre_fatal_decision`, a party victim, the stop prompt up) the
+/// arm's first `57` frames cost `549`..`596` hblanks and the rest `180`..`214`,
+/// so the ring reads `3` for `72` frames and `1` after: `1202` vsyncs, the
+/// countdown `scalar * 1200` drained `scalar * step` a pass
+/// (`0x801F75EC..0x801F7630`). On the arm's cheap `1` the port ran the dear
+/// frames three vsyncs long on a step of `1`, drained the countdown a third as
+/// fast and held the spin `78` vsyncs longer (`1280`); with the rows its arm
+/// runs `219` vsyncs at `3` and `983` at `1`.
+pub const CAPTURE_ARM_COST_TAILS: &[(u8, u8, u16, u8)] = &[
+    (0x5F, 6, 0, 3),
+    (0x5F, 6, 57, 1),
+    (0xAD, 24, 20, 2),
+    (0xAD, 24, 45, 3),
+    (0xAD, 24, 74, 4),
+];
 
 /// [`capture_arm_frame_step`] on the `pass`-th pass (from `0`) of the arm,
 /// with a line's read ending inside it ([`CAPTURE_ARM_READ_TAILS`]) or the

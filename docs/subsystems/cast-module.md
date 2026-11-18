@@ -4538,6 +4538,18 @@ fold.
   id is `0x299`.
 - **The settle.** Arm 12 reads the victim's clip off the reaction channel, and a
   party seat at zero HP settles on its Defeat pose, the engine's clip `8`.
+- **The spin's frames.** Arm 6 drains its countdown `scalar * step` a pass
+  (`0x801F75EC..0x801F7630`), so how long the wheel spins, and where it stops, is
+  the arm's frame steps. On `kor_shade_pre_fatal_decision`'s recording the arm's
+  first `57` frames cost `549`..`596` hblanks and the rest about `183`, so the
+  ring reads `3` for `72` frames and `1` after, `1202` vsyncs in all. The port's
+  capture table names the cheap `1` for the arm, and the dear frames ran three
+  vsyncs long on that step, a third of a drain each: the spin held `78` vsyncs
+  longer. The arm's two cost classes are capture tail rows now
+  (`CAPTURE_ARM_COST_TAILS`): `219` vsyncs at `3` and `983` at `1`. Which slot
+  the wheel lands on is also the slots arm 4 fills off `rand()`, which a film
+  seat does not carry: the film still lands Halve HP where retail's lands an
+  outcome with no reaction (`--retail-steps --rand-track` lands retail's).
 
 - **The message bar.** The body calls the element spawner on the bar four
   times with mode `0` and once with mode `1`. Arm 5's exit raises the stop
