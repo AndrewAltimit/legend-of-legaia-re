@@ -46,7 +46,9 @@ impl World {
         let Some(slot) = self.ambient_seat_slot(flat) else {
             return;
         };
-        if !self.npcs.positions.contains_key(&slot) {
+        // A stream-bound placement no talk or menu arm seats publishes its
+        // seat only once its stream walks; the state's stands it now.
+        if !self.npcs.positions.contains_key(&slot) && !self.npcs.ambient.contains_key(&slot) {
             return;
         }
         self.npcs.positions.insert(slot, (x, z));
@@ -387,8 +389,18 @@ impl World {
             let retail_heading = engine_heading.wrapping_sub(0x800) & 0x0FFF;
             // Seat the channel where the spawn prologue left the actor: the
             // wander op's AABB guard is absolute, so a channel started at
-            // the origin would retire its wander on the first tick.
-            let (px, pz) = self.npcs.positions.get(&slot).copied().unwrap_or((0, 0));
+            // the origin would retire its wander on the first tick. A
+            // placement no arm above published a seat for stands where the
+            // spawner put it, its header tile's centre (`FUN_8003A1E4`
+            // `0x8003A328..0x8003A354`): started at the origin, `koin1`'s
+            // flat `57` walked its stream from `(0, 0)` and published `(4, 0)`
+            // where retail's floats at `(9408, 8512)`.
+            let (px, pz) = self
+                .npcs
+                .positions
+                .get(&slot)
+                .copied()
+                .unwrap_or((p.world_x, p.world_z));
             let mut vm = legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(
                 u32::from(slot),
                 retail_heading,
