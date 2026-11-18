@@ -413,6 +413,7 @@ mod worldmap;
 
 mod battle_auto_attack;
 mod battle_formation_span;
+mod battle_frame_phase_seat;
 mod battle_make_way;
 mod battle_rage_turn;
 mod battle_target_ring;

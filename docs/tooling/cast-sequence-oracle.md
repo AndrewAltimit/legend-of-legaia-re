@@ -1844,6 +1844,17 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   pass ahead of the gate tick, so the score drops the engine's leading rows on that
   pose (`--engine-skip`, counted by the driver). A strike's camera sweeps fastest in
   that opening: one step of skew costs its `0x1E` segment about `.08` of `within`.
+- **Frame phase.** A recording whose first row still holds the pose sits somewhere
+  inside the state's frame: its next pass shows that many vsyncs on, where the
+  engine's gate tick has just opened a frame and shows its next pass a whole step
+  later. The driver counts the vsyncs to the recording's first change of pose
+  (`LEGAIA_DIAG_CAST_SEQ_PASS_LEFT`), and the child opens its next frame that many
+  ticks after the gate (`World::seat_battle_frame_phase`), keeping the frame's id
+  and step. Before the seat Thunder Punch's next pass showed on retail's third vsync
+  and the engine's fourth tick, and every pass after it stood a vsync behind; over
+  the arts films the camera's error in the first twenty game-clock units (yaw plus
+  TR z over eight) falls from `23.0` to `2.5`, over the strike films from `14.4` to
+  `1.5`, with the image means flat. A harness seat: it moves no rule.
 - **Ground.** The child stands each seat on the RAM's pairs
   (`LEGAIA_BATTLE_GROUND_SNAP_RAM`, which the still's command carries where the
   two part), not on the displayed frame's ground the still stands a walker on.

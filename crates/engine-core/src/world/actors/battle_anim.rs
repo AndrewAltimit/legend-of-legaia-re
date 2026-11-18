@@ -114,6 +114,43 @@ impl World {
         }
     }
 
+    /// Open the next battle frame `left` display ticks from now, keeping the
+    /// current frame's id and step: a cast film's gate seat
+    /// (`LEGAIA_DIAG_CAST_SEQ_PASS_LEFT`). A recording starts at its save,
+    /// anywhere inside the state's frame, while the engine's gate tick has
+    /// just opened one: `battle_garmel_party_gala_thunder_punch_open`'s next
+    /// pass shows on its third vsync, the engine's on its fourth tick, and
+    /// every pass after it stood a vsync behind retail's. A harness seat: no
+    /// play path calls it. Returns whether it seated.
+    pub fn seat_battle_frame_phase(&mut self, left: u8) -> bool {
+        let clock = self.battle.frame_clock;
+        let span = clock.span();
+        let left = u64::from(left);
+        if left == 0 || left >= span {
+            return false;
+        }
+        let now = self.clock.display_frames;
+        let Some(origin) = now.checked_sub(span - left) else {
+            return false;
+        };
+        // The clock's own re-anchor keeps the id of the frame the anchor
+        // tick falls in: anchor on `now` first (the current id), then move
+        // the anchor back to where a frame of this span opening on it ends
+        // `left` ticks from now. Each re-anchor takes a different overrun
+        // than the clock holds, so both land.
+        let extra = clock.span_extra;
+        let mut c = clock;
+        c.retime_span(now, extra.wrapping_add(1));
+        c.retime_span(origin, extra);
+        if c.frame_of(now) != clock.frame_of(now)
+            || c.frame_of(now + left) != clock.frame_of(now) + 1
+        {
+            return false;
+        }
+        self.battle.frame_clock = c;
+        true
+    }
+
     /// Land battle slot `slot`'s playing clip on the node cursor `+0x68` a
     /// capture held (12.4 sixteenths of a keyframe), re-posing it there -
     /// when the slot plays the clip the capture's `+0x1D9` names. Returns

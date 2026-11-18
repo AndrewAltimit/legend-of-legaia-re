@@ -652,6 +652,32 @@ def retail_cast_already_paid(out: Path) -> bool:
         return False
 
 
+def retail_first_pass_left(out: Path) -> str | None:
+    """`left,step` for `LEGAIA_DIAG_CAST_SEQ_PASS_LEFT`: the vsyncs from the
+    recording's first row to the row its camera first leaves the opening pose
+    on, and the frame step of that first row. The save sits inside the state's
+    frame, so the next pass shows that many vsyncs on, where the engine's gate
+    tick opens a fresh frame and shows its next pass a whole step later; the
+    child seats the phase only on the same step (a frame of another length
+    has no phase in common). `None` when the first row has already left the
+    pose (`gate_film_skip` drops the engine's rows instead) or the camera holds
+    past a frame. A harness seat, like the pose."""
+    cols = ("pitch", "yaw", "try", "trz")
+    try:
+        with open(out / "retail" / "cam.csv") as f:
+            rows = list(csv.DictReader(f))
+    except OSError:
+        return None
+    if not rows:
+        return None
+    first = [rows[0][k] for k in cols]
+    for r in rows[1:MAX_GATE_FILM_SKIP + 1]:
+        if [r[k] for k in cols] != first:
+            left = int(r["vsync"]) - int(rows[0]["vsync"])
+            return f"{left},{rows[0]['step']}" if left >= 1 else None
+    return None
+
+
 def retail_opening_cursor(out: Path, first_row: bool = False) -> str | None:
     """`clip,cursor` of the caster on retail's cast begin, for
     `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. A harness seat, like the pose. A
@@ -1148,6 +1174,8 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR"] = cursor
     if a.physical and (bodies := state_body_cursors(out)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS"] = bodies
+    if a.physical and (left := retail_first_pass_left(out)):
+        env["LEGAIA_DIAG_CAST_SEQ_PASS_LEFT"] = left
     edir = out / "engine"
     env.update({
         "LEGAIA_DIAG_CAST_SEQ": str(edir),
