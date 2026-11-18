@@ -190,6 +190,16 @@ fn unreleased_record_shots_return_to_the_follow_camera() {
             retriggered |= holds(&s);
         }
         s.host.world.set_pad(0);
+        // A record that hands the frame to a movie or another mode has left
+        // the field as surely as a scene change (`dohaty` P2[12] ends in
+        // one).
+        if s.host.world.mode != legaia_engine_mode::mode::SceneMode::Field {
+            eprintln!(
+                "RECORD {scene} P{partition}[{record}] left the field ({:?})",
+                s.host.world.mode
+            );
+            continue;
+        }
         let latched = s.camera.script_owns_focus();
         eprintln!(
             "RECORD {scene} P{partition}[{record}] staged={staged} ended={ended} \
