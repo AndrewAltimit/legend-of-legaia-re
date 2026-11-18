@@ -1148,7 +1148,23 @@ impl World {
         let Some(actor) = self.actors.get(i) else {
             return;
         };
-        if actor.battle.queued_anim == actor.battle.current_anim {
+        // A byte equal to the playing clip is a re-commit, not a no-op, once
+        // a cut bit stands over it: the tick's bit-0 / bit-1 paths call the
+        // commit `FUN_8004AD80` with no compare of `+0x1DA` against `+0x1D9`
+        // (`0x800478EC..0x80047A40`), and the commit re-installs the entry at
+        // cursor `0` (`0x8004B064..0x8004B068`) with its rate decay and
+        // cursor zeroes. Only with neither bit does an equal byte wait - for
+        // the clip's natural end, which re-commits it too.
+        // PORT: FUN_80047430 (`0x800478EC..0x80047A40`, the cut calls no compare)
+        let cut_bits = actor
+            .battle
+            .flag_bits
+            .has(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE)
+            || actor
+                .battle
+                .flag_bits
+                .has(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE);
+        if actor.battle.queued_anim == actor.battle.current_anim && !cut_bits {
             return;
         }
         let in_flight = actor.battle_staged_anim.is_some()

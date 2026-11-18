@@ -132,9 +132,17 @@ impl World {
         // holds the installer's `sb s3,0x21d` and the commit's store of `4`
         // on one vsync, and the golem then idles at `4` from cursor `0`.
         // PORT: FUN_80047430 (`0x800478EC..0x800478F8`, the bit-0 commit on a fresh node)
+        //
+        // The bump is the anim tick's own bit 0 over the installer's zeroed
+        // byte: the node's first tick advances and re-commits idle `0`
+        // (`World::commit_staged_battle_anim`, which takes a byte equal to
+        // the playing clip under a cut bit), so the pass ends on cursor `0`
+        // with the commit's rate decay.
         if stale_restage {
-            a.battle.anim_rate =
-                legaia_engine_battle_vm::battle_anim_rate::commit_rate_decay(a.battle.anim_rate);
+            a.battle.queued_anim = 0;
+            a.battle
+                .flag_bits
+                .set(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE);
         }
         // The installer hangs the record's first clip on the node directly
         // (`sw v1,0x4c(v0)` / `sh zero,0x68(v0)` at `0x801F1DCC..0x801F1DE8`)
@@ -235,21 +243,6 @@ impl World {
             a.battle_node_colour_zero = Some(false);
         }
         self.tick_battle_animations_walk_of(false, Some(slot));
-        // PROT 0915's bump behind the installer is bit 0 over the clip bytes
-        // the installer zeroed: the node's first tick advances and then
-        // re-commits idle `0` at once (`0x800478F4`, the re-commit's cursor
-        // zero at `0x8004B064..0x8004B068`), so the seat pass ends on cursor
-        // `0`, as Mushura's recording's first creature row reads. The commit
-        // path here takes no staged byte equal to the playing clip, so the
-        // re-commit's rewind is made directly.
-        if entry == INSTALL_BUMP_ENTRY
-            && let Some(a) = self.actors.get_mut(slot)
-        {
-            if let Some(p) = a.battle_animation.as_mut() {
-                p.rewind();
-            }
-            a.battle_effect_cursor = 0;
-        }
         self.latch_battle_node_colours();
     }
 

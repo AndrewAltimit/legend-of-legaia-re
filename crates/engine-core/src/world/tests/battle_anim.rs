@@ -2320,3 +2320,46 @@ fn the_setup_idle_holds_its_phase_through_the_sms_idle_requests() {
         );
     }
 }
+
+/// A byte equal to the playing clip under `+0x1DC` bit 0 is a re-commit: the
+/// tick's cut calls `FUN_8004AD80` with no compare of `+0x1DA` against
+/// `+0x1D9` (`0x800478EC..0x80047A40`), and the commit zeroes the cursor
+/// (`0x8004B064..0x8004B068`). Without a cut bit the equal byte waits.
+#[test]
+fn a_bit0_byte_equal_to_the_playing_clip_recommits_it() {
+    use legaia_engine_battle_vm::battle_action::ActorFlags;
+    let mut world = pose_test_world();
+    world.mode = SceneMode::Battle;
+    let idle = pose_test_clip(0, 4, 0);
+    let seat = |w: &mut World| {
+        w.actors[0].battle_animation =
+            legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&idle);
+        w.actors[0].battle.current_anim = 0;
+        w.actors[0].battle.queued_anim = 0;
+        let p = w.actors[0].battle_animation.as_mut().unwrap();
+        p.seek_sixteenths(32);
+    };
+    seat(&mut world);
+    world.commit_staged_battle_anim(0);
+    let cursor = |w: &World| {
+        w.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .cursor_sixteenths()
+    };
+    assert_eq!(cursor(&world), 32, "no cut bit: the equal byte waits");
+    seat(&mut world);
+    world.actors[0]
+        .battle
+        .flag_bits
+        .set(ActorFlags::WINDUP_DONE);
+    world.commit_staged_battle_anim(0);
+    assert_eq!(cursor(&world), 0, "bit 0 re-commits the playing clip");
+    assert!(
+        !world.actors[0]
+            .battle
+            .flag_bits
+            .has(ActorFlags::WINDUP_DONE)
+    );
+}
