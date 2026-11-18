@@ -12,6 +12,38 @@ fn run_begin_sets_timer_and_emits_run_ui() {
 }
 
 #[test]
+fn run_begin_names_its_line_as_the_actions_element() {
+    // `sb 0x43,0x7(s5)` at `0x801E57F4`: ctx[+0x18] = 0x43, so the Done
+    // band's teardown unloads the outcome line after a failed run.
+    let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
+    ctx.action_state = ActionState::RunBegin.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_ui_element, RUN_MESSAGE_ELEMENT);
+}
+
+#[test]
+fn run_begin_takes_the_other_members_out_of_the_round() {
+    // The `0x64` arm's party walk (`0x801E5810..0x801E58A4`): every other
+    // living party member still holding a key loses it and steps the turn
+    // cursor; the runner, a downed member and the monsters keep theirs.
+    let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
+    host.party_count = 3;
+    for a in &mut host.actors {
+        a.hp = 50;
+        a.init_key = 40;
+    }
+    host.actors[1].init_key = 0; // the runner spent its key at dispatch
+    host.actors[2].hp = 0; // downed: the dead-slot sweep's, not this walk's
+    ctx.action_state = ActionState::RunBegin.as_byte();
+    ctx.turn_cursor = 1;
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].init_key, 0, "member 0 is out of the round");
+    assert_eq!(host.actors[2].init_key, 40, "a downed member is skipped");
+    assert_eq!(host.actors[3].init_key, 40, "monsters keep their turns");
+    assert_eq!(ctx.turn_cursor, 2, "one cursor step per member taken out");
+}
+
+#[test]
 fn run_begin_successful_escape_floors_downed_party_at_1() {
     // PORT: FUN_801E295C case 0x64 success branch - every party actor
     // with +0x14C == 0 is set to 1 (downed / petrified members leave the

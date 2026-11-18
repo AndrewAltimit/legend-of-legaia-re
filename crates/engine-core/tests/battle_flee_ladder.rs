@@ -145,6 +145,14 @@ fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
     w.battle
         .status_effects
         .apply_with_duration(1, StatusKind::Stone, 255);
+    // Synthetic outcome-line pieces: the disc's live in PROT 0898 and are
+    // never carried.
+    w.tables.escape_text = Some(legaia_engine_battle_vm::battle_party_panel::EscapeText {
+        team_tail: "+TEAM".into(),
+        escaped: "+ESCAPED".into(),
+        failed: "+FAILED".into(),
+    });
+    w.party.roster.members[0].set_name("Lead");
     let xp_before = w.party.roster.members[0].raw.to_vec();
 
     // Round prompt: Right opens the flee confirm (`0x1E` -> `0x32`), Left takes it.
@@ -152,7 +160,20 @@ fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
     press(&mut w, PadButton::Right, &mut trace);
     press(&mut w, PadButton::Left, &mut trace);
     // Run band: RunBegin (0x3C-frame banner) -> RunWait -> RunEscape.
-    idle_ticks(&mut w, 0x100, &mut trace);
+    let mut escaped_line = None;
+    for _ in 0..0x100 {
+        w.set_pad(0);
+        let _ = w.tick();
+        trace.push(w.battle_ctx.action_state);
+        if escaped_line.is_none() {
+            escaped_line = w.battle.message_banner.as_ref().map(|b| b.text.clone());
+        }
+    }
+    assert_eq!(
+        escaped_line.as_deref(),
+        Some("Lead+TEAM+ESCAPED"),
+        "record 0x43 shows the escaped line"
+    );
 
     for state in [
         ActionState::Begin,
@@ -301,5 +322,79 @@ fn a_button_held_through_a_failed_run_cuts_its_message() {
     assert!(
         held < idle,
         "a held button cuts the failed run's message ({held} vs {idle} ticks)"
+    );
+}
+
+/// One Run is one roll for the whole party. Retail's `0x64` arm, after the
+/// roll, walks the party seats (`i < ctx[+0]`, `0x801E5810..0x801E58A4`) and
+/// takes every other living member still holding a turn this round
+/// (`+0x16C != 0`, `+0x14C != 0`, not the AI companion `DAT_8007BD10[i] == 4`)
+/// out of it: the turn cursor `ctx[+0x1A]` steps past it and its initiative key
+/// is zeroed. A failed run therefore spends the party's round: the monsters
+/// still act, and the next round opens on the prompt. Without the walk each
+/// member dispatched its own Run and re-rolled after the monsters' turns - a
+/// failed run that "escaped later".
+#[test]
+fn a_failed_run_spends_the_whole_partys_round_on_one_roll() {
+    let mut w = build_world();
+    enter_battle(&mut w);
+    wait_for_prompt(&mut w);
+    for i in 0..3 {
+        w.battle.speed[i] = 0;
+        w.actors[i].battle.hp = w.actors[i].battle.max_hp;
+    }
+    let monster_slot = w.party.party_count as usize;
+    w.battle.speed[monster_slot] = 20000;
+    w.rng_state = 0xDEAD_BEEF;
+    w.set_battle_formation(legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None);
+    w.set_battle_formation_latched(
+        legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None,
+    );
+    // Synthetic pieces: the disc's live in PROT 0898 and are never carried.
+    w.tables.escape_text = Some(legaia_engine_battle_vm::battle_party_panel::EscapeText {
+        team_tail: "+TEAM".into(),
+        escaped: "+ESCAPED".into(),
+        failed: "+FAILED".into(),
+    });
+    w.party.roster.members[0].set_name("Lead");
+    let mut trace: Vec<u8> = Vec::new();
+    press(&mut w, PadButton::Right, &mut trace);
+    press(&mut w, PadButton::Left, &mut trace);
+    // Play the round out until the next round's prompt opens.
+    let mut reopened = false;
+    let mut lines: Vec<String> = Vec::new();
+    for _ in 0..0x1000 {
+        w.set_pad(0);
+        let _ = w.tick();
+        trace.push(w.battle_ctx.action_state);
+        if let Some(b) = &w.battle.message_banner
+            && lines.last() != Some(&b.text)
+        {
+            lines.push(b.text.clone());
+        }
+        if w.battle.command.is_some() {
+            reopened = true;
+            break;
+        }
+    }
+    assert!(
+        reopened,
+        "the next round's prompt opens; trace = {trace:02X?}"
+    );
+    assert_eq!(w.mode, SceneMode::Battle);
+    let run_bands = trace
+        .windows(2)
+        .filter(|p| p[0] != p[1] && p[1] == ActionState::RunBegin.as_byte())
+        .count();
+    assert_eq!(
+        run_bands, 1,
+        "one Run band (one roll) per committed Run; trace = {trace:02X?}"
+    );
+    // Record `0x43` showed the could-not-escape line (the roster arm: the
+    // lead's team), and the Done band's teardown took it down again.
+    assert_eq!(lines, vec!["Lead+TEAM+FAILED".to_string()]);
+    assert!(
+        w.battle.message_banner.is_none(),
+        "the line is gone by the next prompt"
     );
 }

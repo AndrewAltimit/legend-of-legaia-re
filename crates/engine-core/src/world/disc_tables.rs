@@ -168,6 +168,10 @@ pub struct DiscTables {
     /// `0x801F4C38`), installed beside [`Self::defeat_text`]. `None` on a
     /// disc-free host, where the report draws the port's English.
     pub victory_text: Option<legaia_engine_battle_vm::battle_party_panel::VictoryText>,
+    /// The run band's outcome lines' pieces (PROT 0898 `0x801F4C2C` /
+    /// `0x801F4CAC` / `0x801F4CC4`), installed beside [`Self::defeat_text`].
+    /// `None` on a disc-free host, where a Run raises no line.
+    pub escape_text: Option<legaia_engine_battle_vm::battle_party_panel::EscapeText>,
     /// The name-entry screen's prompts (PROT 0897's pointer table at
     /// `0x801F3324`), installed at field scene entry. `None` on a disc-free
     /// host, where the screen draws the port's English.
@@ -288,6 +292,7 @@ impl DiscTables {
             absorb_caption: None,
             defeat_text: None,
             victory_text: None,
+            escape_text: None,
             name_entry_prompts: None,
             summon_elements: std::collections::HashMap::new(),
             summon_creatures: std::collections::HashMap::new(),

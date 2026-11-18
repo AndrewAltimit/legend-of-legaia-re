@@ -87,8 +87,8 @@ use done::*;
 pub use done::{hp_bar_drain_pending, restore_action_anim_rates, tick_cast_census, tick_hp_bars};
 
 mod run;
-pub use run::capture_takedown;
 use run::*;
+pub use run::{RUN_MESSAGE_ELEMENT, capture_takedown};
 
 mod enemy_budget;
 pub use enemy_budget::*;

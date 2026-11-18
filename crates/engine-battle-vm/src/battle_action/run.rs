@@ -4,12 +4,44 @@ use super::*;
 
 // --- run / capture band -----------------------------------------------------
 
+/// Screen element `0x43`: the run band's outcome line (and the capture
+/// band's caption). A top-of-screen framed line, seat A `(16, -24)` gliding
+/// to seat B `(16, 14)`, width 288 (placement record `0x80076C10 + 0x43 *
+/// 0x18`).
+pub const RUN_MESSAGE_ELEMENT: u8 = 0x43;
+
 pub(super) fn run_begin<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     ctx.frame_timer = 0x3C;
-    host.ui_element(0x43, 0);
+    // The outcome line: record `0x43`, whose content word `0x8007726C` the
+    // roll pointed at the escaped (`ctx + 0x159`) or could-not-escape
+    // (`ctx + 0x189`) buffer. The arm names it as the action's own element
+    // (`sb 0x43,0x7(s5)` at `0x801E57F4`, `ctx[+0x18]`), so the Done band's
+    // teardown glides it out after a failed run (`0x801E6188`).
+    host.ui_element(RUN_MESSAGE_ELEMENT, 0);
+    ctx.action_ui_element = RUN_MESSAGE_ELEMENT;
+    // One Run is one roll for the whole party: the arm walks the party seats
+    // (`i < ctx[+0]`, `0x801E5810..0x801E58A4`) and takes every other
+    // member still owed a turn this round out of it - not the acting seat
+    // (`ctx[+0x13]`), a key still live (`+0x16C`), alive (`+0x14C`), and not
+    // the AI companion (`DAT_8007BD10[i] != 4`) - stepping the turn cursor
+    // past it (`ctx[+0x1A]`) and zeroing its key. A failed run so spends the
+    // party's round; the monsters still act.
+    let active = ctx.active_actor;
+    for slot in 0..host.party_count() {
+        if slot == active || host.roster_character_id(slot) == 4 {
+            continue;
+        }
+        if let Some(actor) = host.actor_mut(slot)
+            && actor.init_key != 0
+            && actor.hp != 0
+        {
+            actor.init_key = 0;
+            ctx.turn_cursor = ctx.turn_cursor.wrapping_add(1);
+        }
+    }
     // PORT: FUN_801E295C case 0x64 (successful-escape branch). When the run
     // roll succeeded (retail tests `_DAT_8007726C != ctx + 0x189`; the port
     // carries the outcome on `absorbed_seru`, consumed later by RunWait),
