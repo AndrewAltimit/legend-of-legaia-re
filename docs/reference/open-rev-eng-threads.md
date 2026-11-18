@@ -403,7 +403,7 @@ Answered questions: [settled audio](re-settled-threads/audio.md); falsified read
 
 ### How long does a summon's seek hold its voice?
 
-*Status:* partial (measured)
+*Status:* partial (measured; the seek's length waits on a real console, the band ahead of the module on the cast's own pace)
 
 The drive's two seeks ahead of the head cue are modelled
 ([the drive holds a summon's voice](../subsystems/audio.md#the-drive-holds-a-summons-voice)), and so is
