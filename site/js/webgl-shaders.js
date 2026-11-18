@@ -283,6 +283,12 @@ const PSX_NATIVE_TIE_ROWS = 0.0625;
  * common, otherwise falls a hair either side by each host's float error, and
  * the hosts sampled whole rows a texel apart. */
 const PSX_TEXEL_TIE_BIAS = 0.00390625;
+/* How far past a vertex's exact stage position the vertex snap reads, in stage
+ * pixels: the twin of engine-render's PSX_SNAP_TIE_BIAS (psx_prelude.rs). A
+ * corner the engine places on a whole pixel (Thunder Storm's sprite-arm orbs)
+ * otherwise floors a pixel short on whichever host's float error lands under
+ * it, and this page's baked FX stream drew the orbs a row up. */
+const PSX_SNAP_TIE_BIAS = 0.0009765625;
 
 const LOG_DEPTH_GLSL = `
 float logDepthOfW(float w) {
@@ -454,8 +460,8 @@ vec4 psxSnapClip(vec4 clip, float vp_w, float vp_h) {
   if (vp_w <= 0.0 || vp_h <= 0.0 || clip.w <= 0.0) return clip;
   float px = (clip.x / clip.w * 0.5 + 0.5) * vp_w;
   float py = (0.5 - clip.y / clip.w * 0.5) * vp_h;
-  float nx = (floor(px) / vp_w) * 2.0 - 1.0;
-  float ny = 1.0 - (floor(py) / vp_h) * 2.0;
+  float nx = (floor(px + ${glslFloat(PSX_SNAP_TIE_BIAS)}) / vp_w) * 2.0 - 1.0;
+  float ny = 1.0 - (floor(py + ${glslFloat(PSX_SNAP_TIE_BIAS)}) / vp_h) * 2.0;
   return vec4(nx * clip.w, ny * clip.w, clip.z, clip.w);
 }
 

@@ -94,6 +94,16 @@ fn psx_dither(rgb: vec3<f32>, frag: vec2<f32>, dither_on: f32) -> vec3<f32> {
 const PSX_STAGE_W: f32 = 320.0;
 const PSX_STAGE_H: f32 = 240.0;
 
+// How far past a vertex's exact stage position the PSX snap reads, in stage
+// pixels. The port builds some corners on whole pixels (Thunder Storm's
+// orbs: draw-kind-4 sprite-arm quads whose corners retail writes as integer
+// screen offsets), and a float transform lands each a hair either side of
+// it: the window's per-draw matrix and the play page's baked stream on
+// different sides, so the page drew every orb a row up. A 1024th of a pixel is
+// far above that noise and far below a pixel (the page's
+// `PSX_SNAP_TIE_BIAS` is the same).
+const PSX_SNAP_TIE_BIAS: f32 = 0.0009765625;
+
 // Snap a clip-space x/y down to the integer pixel of a (vp_w, vp_h) stage the
 // GTE would have written (`PSX_STAGE_W` x `PSX_STAGE_H`). Returns the snapped
 // clip position with z/w preserved. This is the GTE-style "vertex jitter"
@@ -120,9 +130,12 @@ fn psx_snap_clip(clip: vec4<f32>, vp_w: f32, vp_h: f32) -> vec4<f32> {
     // Truncate, as the GTE's `SX` / `SY` are: `(IR * (H / SZ)) >> 16` is an
     // arithmetic (floor) shift. A vertex on integer `SX` covers the pixel
     // whose left edge it is, which is where the rasteriser's pixel centres
-    // put the same floor.
-    let snapped_x = floor(px);
-    let snapped_y = floor(py);
+    // put the same floor. The floor reads `PSX_SNAP_TIE_BIAS` past the exact
+    // position, so a corner the port places on a whole pixel (a screen-space
+    // sprite-arm quad, retail's integer `SX` / `SY` unprojected) keeps that
+    // pixel on both hosts whichever side each one's float error lands.
+    let snapped_x = floor(px + PSX_SNAP_TIE_BIAS);
+    let snapped_y = floor(py + PSX_SNAP_TIE_BIAS);
     // Back to NDC.
     let nx = (snapped_x / vp_w) * 2.0 - 1.0;
     let ny = 1.0 - (snapped_y / vp_h) * 2.0;

@@ -380,11 +380,39 @@ fn the_psx_snap_truncates_onto_the_stage_grid() {
         let (ex, ey) = stage(&exact);
         let (sx, sy) = stage(&snapped);
         assert!((sx - sx.round()).abs() < 1e-3 && (sy - sy.round()).abs() < 1e-3);
-        assert!((sx - ex.floor()).abs() < 1e-3, "x {ex} snapped to {sx}");
-        assert!((sy - ey.floor()).abs() < 1e-3, "y {ey} snapped to {sy}");
+        assert!(
+            (sx - (ex + SNAP_BIAS).floor()).abs() < 1e-3,
+            "x {ex} snapped to {sx}"
+        );
+        assert!(
+            (sy - (ey + SNAP_BIAS).floor()).abs() < 1e-3,
+            "y {ey} snapped to {sy}"
+        );
         n += 1;
     }
     assert!(n > 20, "the grid covers the stage: {n} vertices checked");
+}
+
+/// The snap's tie bias (`PSX_SNAP_TIE_BIAS`, a 1024th of a stage pixel).
+const SNAP_BIAS: f32 = 0.0009765625;
+
+/// Both hosts read the snap's floor `PSX_SNAP_TIE_BIAS` past a corner's exact
+/// stage position: a corner on a whole pixel, a hair under it by either
+/// host's float error (the window's per-draw matrix, the page's baked FX
+/// stream), snaps to that pixel on both, and one a pixel's worth less the
+/// bias under it still floors to the pixel before.
+#[test]
+fn the_psx_snap_reads_one_tie_bias_on_both_hosts() {
+    let consts = js_consts(&site_js("webgl-shaders.js"));
+    match consts.get("PSX_SNAP_TIE_BIAS") {
+        Some(super::page_glsl::JsConst::Num(v)) => assert_eq!(*v as f32, SNAP_BIAS),
+        other => panic!("PSX_SNAP_TIE_BIAS: {other:?}"),
+    }
+    assert!(
+        compose_scene_lit_shader(VRAM_MESH_SHADER_SRC)
+            .contains("const PSX_SNAP_TIE_BIAS: f32 = 0.0009765625;"),
+        "the native prelude carries the same bias"
+    );
 }
 
 /// The field ground off retail's vantage: a far-bucket cell - flat (its `z`
