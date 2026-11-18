@@ -1646,8 +1646,8 @@ impl OptionRow {
                  size. Off: a window just short of a step shows that step shrunk to fit."
             }
             Self::Theme => {
-                "The launcher's and the game's settings colours: follow your desktop, or \
-                 always light or dark."
+                "The colours of the launcher, the game's settings and Legaia Explorer: \
+                 follow your desktop, or always light or dark."
             }
             Self::EnhancedLighting => {
                 "A time-of-day mood, real light at lamps and glowing props. Off draws the \

@@ -1543,6 +1543,13 @@ impl App {
             self.explorer.settings.theme = theme;
             ui.ctx().set_theme(theme_preference(theme));
             self.explorer.save_settings();
+            // One light-or-dark choice for both programs: the game's
+            // launcher and its F12 panel read it as their Menu colours row.
+            if let Some(file) = crate::launch::engine_options_file()
+                && let Err(e) = crate::launch::record_theme_for_engine(&file, theme)
+            {
+                log::warn!("explorer: could not share the theme with the game ({e:#})");
+            }
         }
         ui.separator();
         ui.label(RichText::new(format!("Zoom ({:.0}%)", ui.ctx().zoom_factor() * 100.0)).strong());
@@ -1604,6 +1611,11 @@ impl App {
         if !self.appearance_applied {
             self.appearance_applied = true;
             crate::theme::install(ctx);
+            // The game's Menu colours row is the shared choice: a theme
+            // picked in its launcher since Explorer last ran wins.
+            if let Some(t) = crate::launch::engine_theme() {
+                s.theme = t;
+            }
             ctx.set_theme(theme_preference(s.theme));
             self.zoom_applied = crate::settings::sane_zoom(s.zoom);
             ctx.set_zoom_factor(self.zoom_applied);
@@ -1791,6 +1803,15 @@ impl App {
         let Some(res) = game.poll() else { return };
         let log = game.log.clone();
         self.game = None;
+        // The launcher (or the game's F12 panel) may have changed the
+        // shared theme.
+        if let Some(t) = crate::launch::engine_theme()
+            && t != self.explorer.settings.theme
+        {
+            self.explorer.settings.theme = t;
+            ctx.set_theme(theme_preference(t));
+            self.explorer.save_settings();
+        }
         match res {
             Ok(()) => {
                 // The launcher ends with a game its Play started, or on Quit.

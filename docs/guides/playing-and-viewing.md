@@ -193,8 +193,9 @@ banner.
 The launcher and the game's own chrome draw in the same two palettes as Legaia
 Explorer. *Menu colours* in the Display group follows the desktop's light or dark
 preference (GNOME's colour scheme or `GTK_THEME` on Linux, the system setting
-elsewhere), or stays light or dark; the `F12` page changes it live and Explorer's
-*View* menu keeps its own choice. The Multiplayer screen and the game-mode
+elsewhere), or stays light or dark; the `F12` page changes it live. It is one
+choice with Explorer's *View* theme: either program's change is the other's
+next time it opens (Explorer also picks it up when a game it started closes). The Multiplayer screen and the game-mode
 picker follow it too. A mode in play keeps its own colours: its text sits on
 the field and on its table, not on a plate.
 
