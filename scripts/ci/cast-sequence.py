@@ -482,6 +482,51 @@ def state_cost_ring(out: Path) -> str | None:
     return ",".join(entries) + f";{cursor}"
 
 
+def ring_with_inflight_push(out: Path, seed: str) -> str | None:
+    """The gate's cost ring (`LEGAIA_BATTLE_COST_RING`, the still's seat: the
+    state's ring) with the push of the frame the state was saved inside.
+
+    A save state stands inside a frame: its pass has run, its frame end has
+    not, so the state's ring lacks that pass's push. The recording's first
+    frame-counter bump past the state's (`gp+0x480`, `0x8007B798`) is that
+    frame end, and its `cost` row the entry it pushed. The engine's gate tick
+    is the same pass, but the seed lands after it and overwrote its push, so
+    every entry of the film's ring aged out a pass later than retail's:
+    Ironhead's step fell from `3` to `2` a pass after retail's, and its clip
+    cursors ran `8` short from there. `None` where the state, the recording
+    or the seed cannot be read, or the seed is not the state's ring. A harness
+    seat."""
+    ram = state_ram(read_kv(out / "retail" / "manifest.txt").get("sstate", ""))
+    if ram is None:
+        return None
+    try:
+        e, cur = seed.split(";")
+        entries = [int(x) for x in e.split(",")]
+        cursor = int(cur) & 0xF
+    except ValueError:
+        return None
+    own = [max(int.from_bytes(ram[0x84098 + 2 * i:0x84098 + 2 * i + 2], "little", signed=True), 0)
+           for i in range(16)]
+    if len(entries) != 16 or entries != own or cursor != ram_u32(ram, 0x8007B758) & 0xF:
+        return None
+    frame = ram_u32(ram, 0x8007B798)
+    try:
+        rows = list(csv.DictReader((out / "retail" / "meta.csv").open()))
+    except OSError:
+        return None
+    for r in rows:
+        try:
+            if int(r["frame"]) != frame:
+                pushed = int(r["cost"])
+                break
+        except (KeyError, ValueError):
+            return None
+    else:
+        return None
+    entries[cursor] = pushed
+    return ",".join(map(str, entries)) + f";{(cursor + 1) & 0xF}"
+
+
 def state_creature_restage(out: Path) -> bool:
     """Whether the recording's state holds a stage bump on the bare creature
     seat (`+0x1DC` bit 0 of actor `(&DAT_801C9370)[7]`): an earlier cast of the
@@ -1218,6 +1263,8 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     ring = state_cost_ring(out)
     if ring and "LEGAIA_BATTLE_COST_RING" not in env:
         env["LEGAIA_FILM_COST_RING"] = ring
+    elif "LEGAIA_BATTLE_COST_RING" in env and (seated := ring_with_inflight_push(out, env["LEGAIA_BATTLE_COST_RING"])):
+        env["LEGAIA_BATTLE_COST_RING"] = seated
     cyclers = state_stage_cyclers(out)
     if cyclers:
         env["LEGAIA_SEAT_STAGE_CYCLERS"] = cyclers
