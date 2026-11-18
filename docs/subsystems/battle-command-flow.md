@@ -137,7 +137,10 @@ Every one of the eight reads the pad the same way. The cancel mask
 returns the party count `ctx[+0x00]`. The one-target states also step their
 cursor: `0x5B` / `0x5C` walk the monster seats through `FUN_801D8D00` on the
 `0x2000` / `0x8000` masks, `0x64` / `0x65` step `+0x1DD` by one and wrap on
-the party count, frozen for a party of one. The all-target states have no
+the party count, frozen for a party of one: Left (`0x8000`) adds one
+(`0x801D2C34`, past the last seat to `0`) and Right (`0x2000`) subtracts one
+(`0x801D2CC4`, below `0` to the last seat). Both open on the caster's seat,
+and the walk applies no liveness test. The all-target states have no
 cursor to move, but they still wait for the confirm: the window's press
 raises the state, a second press commits.
 
@@ -671,7 +674,9 @@ Drives the post-action target cursor. Parameterised on a `TargetKind` enum const
 | `AllEnemies` / `AllAllies` | Sweep target - auto-confirm. |
 | `Self_` | The actor itself - auto-confirm. |
 
-Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead. Implementation: [`engine-battle::target_picker`](../../crates/engine-battle/src/target_picker.rs).
+Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead.
+
+The **party** row follows the one-ally states [above](#the-window-target-sub-cursors): it opens on the caster's seat, and Left steps the seat up, Right down. The picker's liveness filter is the port's: retail's `0x65` walk stops on a downed member too. The item window's party band (`World::tick_battle_item_menu`) walks every seated member, as retail's `0x64` does. Implementation: [`engine-battle::target_picker`](../../crates/engine-battle/src/target_picker.rs).
 
 The **enemy** row is not a slot-order walk. Each picker row carries the slot's battle-world seat (`actor[+0x34]` / `+0x38`, filled by `World::battle_target_rows` from the actor's `move_state`), and a `SingleEnemy` cursor steps through retail's attack-target ring - `FUN_801D8A88` builds the ring and `FUN_801D8D00` steps it, so Left/Right move to the *angularly* nearest live monster.
 

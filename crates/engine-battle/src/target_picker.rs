@@ -233,6 +233,18 @@ impl TargetPickerSession {
             CursorRow::Ally
         };
 
+        // The one-ally sub-cursors open on the caster's own seat: the window
+        // commit stores `ctx[+0x13]` into `+0x1DD` before it raises `0x64`
+        // (`0x801D1988..0x801D19A0`) or `0x65` (`0x801D1BF8` / `0x801D1D18`).
+        //
+        // PORT: FUN_801D0748 (the one-ally raise's caster-seat store)
+        if initial_row == CursorRow::Ally && self.is_valid(CursorRow::Ally, self.actor_slot) {
+            self.state = PickerState::Cursor {
+                row: initial_row,
+                slot: self.actor_slot,
+            };
+            return;
+        }
         if let Some(slot) = self.first_valid_in(initial_row) {
             self.state = PickerState::Cursor {
                 row: initial_row,
@@ -498,9 +510,21 @@ impl TargetPickerSession {
             return;
         }
 
-        // Cursor motion. Left/Right step within the row.
+        // Cursor motion. Left/Right step within the row. On the party row
+        // Left steps the seat **up** and Right **down**: the one-ally states
+        // `0x64` / `0x65` add one to `+0x1DD` on the Left mask `0x8000`
+        // (`0x801D2C34`, wrapping to `0` at the party count) and subtract one
+        // on the Right mask `0x2000` (`0x801D2CC4`, wrapping to the last
+        // seat). The enemy row keeps its ring order.
+        //
+        // PORT: FUN_801D0748 (states `0x64` / `0x65`, `0x801D2BE8..0x801D2D24`)
+        let (left_dir, right_dir) = if row == CursorRow::Ally {
+            (1, -1)
+        } else {
+            (-1, 1)
+        };
         if input.left {
-            if let Some(s) = self.step_within_row(row, slot, -1)
+            if let Some(s) = self.step_within_row(row, slot, left_dir)
                 && s != slot
             {
                 self.state = PickerState::Cursor { row, slot: s };
@@ -509,7 +533,7 @@ impl TargetPickerSession {
             return;
         }
         if input.right {
-            if let Some(s) = self.step_within_row(row, slot, 1)
+            if let Some(s) = self.step_within_row(row, slot, right_dir)
                 && s != slot
             {
                 self.state = PickerState::Cursor { row, slot: s };

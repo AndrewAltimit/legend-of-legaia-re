@@ -50,7 +50,7 @@ fn single_ally_excludes_self() {
         } => assert_eq!(slot, 0),
         _ => panic!("expected ally cursor at 0"),
     }
-    // Step right → 2 (skipping self at 1).
+    // Step right → seat down, wrapping 0 → 2 (self at 1 is never a stop).
     p.input(PickerInput {
         right: true,
         ..Default::default()
@@ -69,15 +69,32 @@ fn single_ally_or_self_includes_actor() {
         full_party(),
         full_monsters(),
     );
-    // Step from 0 → 1, includes self.
-    p.input(PickerInput {
-        right: true,
-        ..Default::default()
-    });
+    // Opens on the caster (retail stores ctx[+0x13] into +0x1DD before it
+    // raises 0x64 / 0x65).
     match p.state() {
-        PickerState::Cursor { slot, .. } => assert_eq!(slot, 1),
+        PickerState::Cursor {
+            row: CursorRow::Ally,
+            slot,
+        } => assert_eq!(slot, 1),
         _ => panic!(),
     }
+    // Left adds one to the seat (0x801D2C34), Right subtracts one
+    // (0x801D2CC4), both wrapping on the party count.
+    let step = |p: &mut TargetPickerSession, left: bool| {
+        p.input(PickerInput {
+            left,
+            right: !left,
+            ..Default::default()
+        });
+        match p.state() {
+            PickerState::Cursor { slot, .. } => slot,
+            _ => panic!(),
+        }
+    };
+    assert_eq!(step(&mut p, true), 2);
+    assert_eq!(step(&mut p, true), 0, "Left wraps past the last seat");
+    assert_eq!(step(&mut p, false), 2, "Right wraps below seat 0");
+    assert_eq!(step(&mut p, false), 1);
 }
 
 #[test]
