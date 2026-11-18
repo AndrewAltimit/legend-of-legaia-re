@@ -1438,6 +1438,14 @@ word from arm 15 to the end; one pass of `0x6E`'s poll short, it runs a draw beh
 until arm 14's evade roll, and the film reads `.917` before the shield's scale and
 `.940` with it.
 
+Arm 3 opened on arm 2's red flash a frame early: the tick body's fades went up unstepped, so
+the engine drew the template's first level where retail's first frame already holds the
+spawning frame's step ([a fade takes its spawning frame's step](../subsystems/cast-module.md#a-fade-takes-its-spawning-frames-step)).
+Stepped, arm 3 reads `.960` for `.857`; the rest is two pairs on a retail frame that ran past
+its step. The shield page's scroller does not hold the page's last rows: its period is `2`
+(`+0xC4`) and the step `3` or `4`, so it fires every pass whatever its countdown `+0xC6`
+holds, and seating the state's countdown on the replay's scroller moves no pair.
+
 ### The enemy set on the rand-track seat
 
 The same reading runs over [`film-sets/enemy.txt`](../../scripts/ci/film-sets/enemy.txt). A

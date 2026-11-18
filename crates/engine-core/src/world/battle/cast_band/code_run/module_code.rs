@@ -626,15 +626,27 @@ impl World {
                     .module_fades
                     .retain(|f| !(f.mode[1] == -1 && f.duration == 0x100));
             }
+            // Every fade the tick body spawns on an arm's pass takes that
+            // frame's step before it is drawn, as the presentation hook's
+            // exit-pass fades do (`FUN_80024E80` hands the new actor to the
+            // list the frame is still walking): unstepped, arm 2's red flash
+            // (`0x801F6EE8`) opened arm 3 on a level retail never displays.
+            let step = self.battle_frame_step().max(1);
             if passed && phase == 26 {
                 for t in &EVIL_SERU_MAGIC_ARM26_SIDE_FADES {
                     let mut f = None;
                     legaia_engine_system::fade::spawn_fade(&mut f, t, 1);
+                    if let Some(f) = f.as_mut() {
+                        f.step_vsyncs(step);
+                    }
                     self.presentation.module_fades.extend(f);
                 }
             }
             if passed && let Some(t) = evil_seru_magic_fade(phase) {
                 legaia_engine_system::fade::spawn_fade(&mut self.presentation.fade, &t, 1);
+                if let Some(f) = self.presentation.fade.as_mut() {
+                    f.step_vsyncs(step);
+                }
             }
             // The module's own move-VM stager hits land mid-cast, not at the
             // fold: arm 10 seats records `0x801F937C` and `0x801F94D0`, whose

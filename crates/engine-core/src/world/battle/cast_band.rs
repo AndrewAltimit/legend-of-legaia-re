@@ -145,6 +145,9 @@ pub const AOE_STAGER_WORKING_ARM: u8 = 4;
 /// | 26 (`0x801F8574`) | 1 | `0x40` | black | white | `0xC0` delay, held |
 /// | 27 (`0x801F879C`) | 1 | `0x80` | white | black | - |
 ///
+/// Each takes its spawning frame's step before it is drawn, as the
+/// presentation hook's exit-pass fades do.
+///
 /// Arm 26 spawns three fades at once (a white flash, a held blue grade, and
 /// the delayed white-in); the seat carries the last, which is the one still
 /// on screen when arm 27 fades out of it, and the other two run beside it

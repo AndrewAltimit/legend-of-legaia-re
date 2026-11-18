@@ -6210,7 +6210,11 @@ A recording holds a fade spawned on a pass one frame step along its ramp by the 
 frame is drawn, which is what `FUN_80024E80` handing a new actor to a list the frame is
 still walking would do (`capture`; the walk order is an inference). On a step-`4` arm that is
 four vsyncs: without it Slippery's arm-7 wash reads a step behind through arm 8. The
-presentation hook's exit-pass sites step at once. Fades a part's stager calls do not:
+presentation hook's exit-pass sites step at once, and so do the fades PROT 0966's tick body
+spawns on its passes (arms 2, 4, 10, 26 and 27, its arm-26 side fades included): unstepped,
+arm 2's `0x10`-frame red flash opened arm 3 on the template's own `(0xFF, 0x40, 0x40)`, a
+level retail never displays, and the cast's film read arm 3 `.857` (`.960` stepped; arm 27
+`.831` to `.837`). Fades a part's stager calls do not:
 Juggernaut's read right unstepped, and a part tick can fall after the fade's in the walk.
 Theeder's arm 11 flash read a step ahead under the rule while the film's pairing counted
 counter runs; counted in wait ends it does not
