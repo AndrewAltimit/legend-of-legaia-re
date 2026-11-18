@@ -2153,6 +2153,17 @@ Across the library's PCSX-Redux battle states the two words agree on `.997` of t
 so on that machine the entry is the CPU's time alone and the GPU has no cost. Mednafen
 states do show a gap, up to `127` hblanks.
 
+PCSX-Redux's source says why. Its interpreter adds two cycles an instruction
+(`Emulator::BIAS`, `src/core/psxinterpreter.cc`) and one more for each data load and
+store through the memory map (`src/core/psxmem.cc`), with no cost for a GTE operation;
+a GPU ordering-table DMA completes after as many cycles as the chain holds words
+(`scheduleGPUDMAIRQ(gpuDmaChainSize(..))`, `src/core/gpu.cc`), and the GPU status word
+always reads idle. Fill area, semi-transparency and primitive setup cost nothing, so
+`DrawSync(0)` returns at once: a profile of `party_basic_attack_vs_gobu_gobu` puts
+`0.1` hblanks of each `326`-hblank frame inside `FUN_80058104`. On Mednafen a field state
+can be GPU-bound as a battle can: `keikoku_chest_pre` reads CPU `236` and entry `287`
+(the table model `270`), `zenoir_summon_mid_cast` CPU `141` and entry `268`.
+
 <a id="what-a-real-consoles-frame-costs"></a>
 
 **What a real console's frame costs.** The window both words measure opens at the frame
