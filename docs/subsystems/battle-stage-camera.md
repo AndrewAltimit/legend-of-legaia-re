@@ -1907,10 +1907,13 @@ recording of Zeto's Poisonous Bubbles (`garmel_zeto_pre_poisonous_bubbles`) show
 `0x28` pass's second vsync and `526` on the first `0x29` pass's third, each before the pass
 ends, against the table's `595` on the engine's `0x28` pass. So the seat prices that pass
 again once the census has counted it (`World::reprice_opening_pass_on_census`, the push redone
-from the ring as it stood before it), and on a film whose ring no capture seeds
-(`LEGAIA_BATTLE_COST_RING` absent: the seeded spells) stands the lead-in's table entries on the
-opening frame's census price, the nearest the census has to retail's intro frames. Zeto's
-film reads `.829` to `.883`, its opening passes on retail's step `2`. A harness seat.
+from the ring as it stood before it). A film no gate seeds a ring on (the seeded spells and
+the casts filmed from a gate outside the strike loop) runs on from the capture state's own ring
+instead of the lead-in's table entries: the driver reads it off the state
+(`0x80084098`, cursor `0x8007B758`) as `LEGAIA_FILM_COST_RING`. Zeto's ring holds `353` to `465`,
+so its opening passes run retail's step `2` and the film reads `.829` to `.883`; Devil Pump's
+holds `529` to `558`, which keeps Multi Cutter's opening on retail's `3`, where standing the
+lead-in on the opening frame's census price dropped it to `2`. A harness seat.
 
 The span law takes the same seat in the lead-in (`LEGAIA_LEADIN_SPAN_LAW=1`): its longer
 frames re-deal the rounds the replay plays to the gate, and under it Gilium's, Warhalf's,

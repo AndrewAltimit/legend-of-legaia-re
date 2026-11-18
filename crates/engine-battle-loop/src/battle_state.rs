@@ -907,10 +907,13 @@ pub struct BattleState {
     /// Lane G harness seat: the lead-in's census came back on this tick
     /// (`LEGAIA_LEADIN_TABLE_COST`), and the pass the film opened on, which
     /// its table priced, waits to be priced again on the census
-    /// (`World::reprice_opening_pass_on_census`): `1` that pass alone, `2`
-    /// the lead-in's table entries with it (a film whose ring no capture
-    /// seeds).
-    pub reprice_opening_pass: u8,
+    /// (`World::reprice_opening_pass_on_census`).
+    pub reprice_opening_pass: bool,
+    /// Lane G harness seat: the capture state's own frame-cost ring
+    /// (`LEGAIA_FILM_COST_RING`, entries and cursor), which a film no gate
+    /// seeds stands its lead-in's table entries on before the opening pass is
+    /// priced again.
+    pub film_cost_ring: Option<([u16; 16], u8)>,
     /// The step the ring read on the last pass.
     pub frame_cost_step: u8,
     /// The GPU's wait over the table the host drew last, in hblanks (draw
@@ -1773,7 +1776,8 @@ impl BattleState {
             frame_cost_ring: Default::default(),
             frame_cost_ring_before: None,
             last_push: None,
-            reprice_opening_pass: 0,
+            reprice_opening_pass: false,
+            film_cost_ring: None,
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             drawn_table_cost: None,
             frame_cost_state: None,

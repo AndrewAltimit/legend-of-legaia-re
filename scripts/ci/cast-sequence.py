@@ -458,6 +458,30 @@ def state_guard_seats(sstate: str) -> str | None:
     return ",".join(seats)
 
 
+def state_cost_ring(out: Path) -> str | None:
+    """The recording state's frame-cost ring (`0x80084098`, sixteen entries,
+    cursor `0x8007B758`) as `e0,..,e15;cursor`, for a film no gate seeds a ring
+    on: the lead-in's table entries are not what retail's frames cost before
+    the cast (`LEGAIA_FILM_COST_RING`, the engine's
+    `World::reprice_opening_pass_on_census`). `None` where the state cannot be
+    read, or its step is forced or not measured (`0x8007B8F0`, mode
+    `0x8007B7E6`). A harness seat."""
+    ram = state_ram(read_kv(out / "retail" / "manifest.txt").get("sstate", ""))
+    if ram is None:
+        return None
+    if ram_u32(ram, 0x8007B8F0) != 0:
+        return None
+    mode = int.from_bytes(ram[0x7B7E6:0x7B7E8], "little", signed=True)
+    if mode != 0x10:
+        return None
+    entries = []
+    for i in range(16):
+        v = int.from_bytes(ram[0x84098 + 2 * i:0x84098 + 2 * i + 2], "little", signed=True)
+        entries.append(str(max(v, 0)))
+    cursor = ram_u32(ram, 0x8007B758) & 0xF
+    return ",".join(entries) + f";{cursor}"
+
+
 def state_creature_restage(out: Path) -> bool:
     """Whether the recording's state holds a stage bump on the bare creature
     seat (`+0x1DC` bit 0 of actor `(&DAT_801C9370)[7]`): an earlier cast of the
@@ -1172,6 +1196,9 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         env["LEGAIA_SEAT_SEED_MP_UNPAID"] = "1"
     if state_creature_restage(out):
         env["LEGAIA_SEAT_CREATURE_RESTAGE"] = "1"
+    ring = state_cost_ring(out)
+    if ring and "LEGAIA_BATTLE_COST_RING" not in env:
+        env["LEGAIA_FILM_COST_RING"] = ring
     cyclers = state_stage_cyclers(out)
     if cyclers:
         env["LEGAIA_SEAT_STAGE_CYCLERS"] = cyclers

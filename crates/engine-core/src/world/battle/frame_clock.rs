@@ -858,44 +858,37 @@ impl World {
     /// for it is its own frame's (`battle_garmel_zeto_pre_poisonous_bubbles`'s
     /// `0x28` pass costs `453`, step `2` next, where the table's `595` read
     /// `3`). The push is redone from the ring as it stood before it, while
-    /// the step it left has not been taken. A harness seat.
+    /// the step it left has not been taken; on a film no gate seeds, from the
+    /// capture state's own ring (`BattleState::film_cost_ring`). A harness
+    /// seat.
     pub fn reprice_opening_pass_on_census(&mut self) {
-        let mode = std::mem::take(&mut self.battle.reprice_opening_pass);
-        if mode == 0
+        if !std::mem::take(&mut self.battle.reprice_opening_pass)
             || self.battle.linked_polys.is_none()
             || self.battle.pending_frame_step.is_none()
         {
             return;
         }
         // Only the push the film opened on, untouched since (a capture's
-        // ring seeded after it stands).
+        // ring seeded at a gate after it stands).
         let Some((before, after, None)) = self.battle.last_push else {
             return;
         };
         if self.battle.frame_cost_ring != after {
             return;
         }
-        self.battle.frame_cost_ring = before;
+        // A film no gate seeds runs on from the capture state's own ring,
+        // not the lead-in's table prices for the intro's frames.
+        self.battle.frame_cost_ring = match self.battle.film_cost_ring.take() {
+            Some((entries, cursor)) => {
+                legaia_engine_battle_loop::frame_clock::FrameCostRing::from_entries(entries, cursor)
+            }
+            None => before,
+        };
         self.battle.frame_cost_state = self
             .battle
             .frame_cost_state
             .map(|(s, n)| (s, n.saturating_sub(1)));
         self.push_frame_cost(None);
-        if mode == 2 {
-            // The lead-in's entries are the table's prices for the intro's
-            // frames, which retail's ring holds at their own cost: stand them
-            // on the opening frame's, the nearest the census has.
-            let c = self.battle.frame_cost_ring.newest();
-            let ring = self.battle.frame_cost_ring;
-            let seeded = legaia_engine_battle_loop::frame_clock::FrameCostRing::from_state(
-                [c as i16; 16],
-                ring.cursor(),
-                legaia_engine_battle_loop::frame_clock::step_of_cost(c),
-                ring.prev_step(),
-            );
-            self.battle.frame_cost_ring = seeded;
-            self.battle.frame_cost_step = seeded.step();
-        }
         self.battle.pending_frame_step = Some(self.battle.frame_cost_step);
     }
 
@@ -2737,6 +2730,45 @@ mod tests {
         w.push_frame_cost(None);
         assert_eq!(w.battle_frame_tick_cost(), 3, "two live children at 1.6");
         assert_eq!(w.battle.frame_work, linked_frame_work(2600, true) + 3);
+    }
+
+    /// A film's opening pass, priced on the table before the lead-in's census
+    /// came back, is priced again on the census once it has counted the
+    /// frame, from the capture state's ring where the film names one.
+    #[test]
+    fn a_films_opening_pass_is_priced_again_on_the_census() {
+        use legaia_engine_battle_loop::frame_clock::{linked_frame_work, step_of_cost};
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x28;
+        // The lead-in on the table, then the opening pass's push.
+        w.push_frame_cost(None);
+        w.battle.pending_frame_step = Some(w.battle.frame_cost_step);
+        assert!(w.battle.frame_work > linked_frame_work(1830, true));
+        // The census comes back and counts the opening frame.
+        w.toggles.battle_poly_frame_cost = true;
+        w.note_linked_polys(1830);
+        w.battle.film_cost_ring = Some(([360; 16], 4));
+        w.battle.reprice_opening_pass = true;
+        w.reprice_opening_pass_on_census();
+        let c = linked_frame_work(1830, true);
+        assert_eq!(w.battle.frame_work, c);
+        assert_eq!(w.battle.frame_cost_ring.newest(), c);
+        assert_eq!(
+            w.battle
+                .frame_cost_ring
+                .entries()
+                .iter()
+                .filter(|&&e| e == 360)
+                .count(),
+            15
+        );
+        assert_eq!(w.battle.pending_frame_step, Some(step_of_cost(c)));
+        // Once only.
+        w.note_linked_polys(3000);
+        w.reprice_opening_pass_on_census();
+        assert_eq!(w.battle.frame_work, c);
     }
 
     /// Under the census an arm table's step and the summon band's opening
