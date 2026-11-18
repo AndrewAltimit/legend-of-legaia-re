@@ -121,19 +121,24 @@ PSX SEQ encodes looping through NRPN-style control changes on `0xB0`:
 | Controller | Value | Meaning |
 | ---------- | ----- | ------- |
 | `0x63` (99) | 20 | Loop Start - remembers the current position, arms the count |
-| `0x06` (6) | n | Data entry after a Loop Start: the loop's count (`127` = for good) |
+| `0x06` (6) or `0x62` (98) | n | Data entry, or the NRPN LSB, after a Loop Start: the loop's count (`127` = for good) |
 | `0x63` (99) | 30 | Loop end - jump back to the last Loop Start while the count lasts |
 
 88 of 92 retail SEQ tracks carry these markers.
 
 The parser surfaces them as ordinary `ControlChange` events (the bytes really
 are a CC), and the engine `Sequencer` interprets them at playback time, as
-`FUN_8006139C` (CC 99) and `FUN_8006126C` (CC 6) do:
+retail's handlers do. The control-change dispatch `FUN_8006171C` sends CC 6 to
+`FUN_80060A94`, CC 98 to `FUN_8006126C` and CC 99 to `FUN_8006139C`
+(`0x800617A0`, `0x800617E8`, `0x800617D0`, each through its slot of the vector
+table `0x801CD238` the installer `FUN_80026234` fills):
 
 - A Loop Start saves the position after the marker (`+0x08`, unconditionally, so
   the last one read wins) and arms the count (`+0x1C`).
-- A data entry while armed and no count is running stores the count (`+0x1D`) and
-  marks it running (`+0x15`); `FUN_80062410` opens a sequence with both zero.
+- A data entry or an NRPN LSB while armed and no count is running stores the count
+  (`+0x1D`) and marks it running (`+0x15`): the two handlers carry the same five
+  instructions (`0x80060B24..0x80060B58`, `0x800612BC..0x800612E8`).
+  `FUN_80062410` opens a sequence with both zero.
 - A loop end with a zero count clears `+0x15` and **reads on**; a count of `127` or
   more jumps back for good; any other is decremented and jumps while it stays
   non-zero.
@@ -151,9 +156,15 @@ Across `music_01` that splits the scores like this:
 
 | Score shape | Tracks | Plays |
 |---|---|---|
-| Loop Start, count `127`, loop end (some with several Loop Starts: the last wins) | all but those below | loops from the last Loop Start |
-| Loop Start, loop end, no count | `2057`, `2070`, `2071` | once |
+| Loop Start, count `127` by data entry, loop end (some with several Loop Starts: the last wins) | all but those below | loops from the last Loop Start |
+| Loop Start, count `127` by NRPN LSB, loop end | `2057`, `2072`, `2073` (extraction `1045`, `1060`, `1061`) | loops from the Loop Start |
+| Loop Start, count `127`, no loop end | `2036`, `2037` | once |
 | No markers | `2050`, and the entry past the sound-test list at extraction `1057` | once |
+
+The three NRPN-LSB scores read as uncounted while the port took only CC 6 for the
+count: they played once and fell silent at their end, where retail loops them
+(`2057`, the requiem, about `99` s in). The keying differential with the tracks seated
+([audio](../subsystems/audio.md#the-keying-differential)) is what showed it.
 
 A jump touches no voice. Most looping scores hold notes across their loop end (54 of
 the 73 in `music_01`, up to 14 notes), and those keep sounding until the next pass's

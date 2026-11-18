@@ -2192,8 +2192,8 @@ expressive-event sweep confirms the retail score never emits them, so they
 have no consumer to drive.
 
 **Loop points.** SEQ loop markers are read from the stream, with the count retail's
-handlers keep: a Loop Start with a counted data entry repeats from the last Loop
-Start, an uncounted one runs on, and end-of-track stops the score, because the field
+handlers keep: a Loop Start with a count (a data entry or an NRPN LSB) repeats from
+the last Loop Start, an uncounted one runs on, and end-of-track stops the score, because the field
 BGM attach plays with a count of `1`
 ([`formats/seq.md`](../formats/seq.md#loop-markers)). The rewind resets the integer
 sample-clock, so the looped body re-fires on the same sample offset every pass.
@@ -2218,9 +2218,10 @@ live core sample for sample (at the interpolator's two-sample lag;
 (`engine-audio/tests/real_seq_expressive_events.rs`) fixes which control
 changes the retail score actually emits: CC7 (channel volume) and CC10 (pan)
 carry the bulk; CC99 carries **only** the two loop-marker values 20 and 30
-(so the loop handler drops nothing); and CC6 (Data Entry) is a constant 127
-emitted ~once per track (a fixed init the engine ignores - it varies nothing,
-so it is not a per-track parameter). Notably **absent**: expression (CC11)
+(so the loop handler drops nothing); and the loop's count is a constant 127,
+carried by CC6 (Data Entry) on most scores and by CC98 (the NRPN LSB) on
+`2057`, `2072` and `2073`. Retail's two handlers store it alike, so both
+loop for good ([`formats/seq.md`](../formats/seq.md#loop-markers)). Notably **absent**: expression (CC11)
 and reverb-depth (CC91). So per-channel volume swells and reverb sends are not
 encoded in the SEQ stream - consistent with reverb being a fixed global
 network (Studio C, master-on) whose per-voice send comes from the keyed tone,
@@ -3822,8 +3823,8 @@ from the top on an idle voice file. The port's KON falls one vsync ahead by cons
 `--cues` keys a seeded run of cues beside the score on both sides, through `FUN_800653C8` and
 `FUN_80065034` on retail's and `play_tone_pair` on the port's, on the drainer's voices: the
 contention a state cannot show on demand. `--filter`, `--vsyncs`, `--all-states`, `--dump-at`
-(retail's voice records and both sides' voices at one vsync). Disc-gated test:
-`parity/tests/seq_differential_disc.rs`.
+(retail's voice records and both sides' voices at one vsync), `--track` / `--host` (below).
+Disc-gated test: `parity/tests/seq_differential_disc.rs`.
 
 Both sides run their flushes from the state's own silent-history index `_DAT_801CE204`
 ([below](#the-silent-historys-phase)): the harness leaves retail's where the RAM holds it and
@@ -3835,15 +3836,35 @@ of them on `2068`. Every such voice row is a tail ending inside one vsync's lag 
 release reaches zero a vsync apart on the two sides (level `1` against `0`), so the next note
 takes the next free voice up.
 
+`--track` takes the library out of the choice: each listed `music_01` track (or `all`) is
+seated into one state's RAM (`--host`, `mei_house_inside` by default) through retail's own
+code, its VAB header opened on the slot's bank by `SsVabOpenHeadSticky` (`FUN_80068D34`) and
+its score by `_SsSeqInit`, with the samples in both SPUs where the port's bank put them. The
+open leaves the bank at `2` in its in-use byte (`0x801CE368 + vab`), header only, and the
+program reads behind a key-on (`FUN_80068B98`) refuse anything but `1`, the value
+`SsVabTransBody` stores once the bodies are sent, so the harness stores `1`. Seated, a track a
+state holds reads what the state reads (`2013`'s four `sound` rows among them), and the
+seventy-seven tracks with a score of their own read zero in `key`, `release` and `sound` over
+four minutes each, `2013` and `2071` (three single-vsync rows) aside.
+
+That run found two port defects, both on tracks no library state was saved under:
+
+- `2057`, `2072` and `2073` count their loop with the NRPN LSB, which the port did not take
+  as a count: the scores ran to their end and stopped, `1165` key-ons against `505` on
+  `2057`, where retail loops them ([`formats/seq.md`](../formats/seq.md#loop-markers)).
+- A note past the table's front. A key more than five octaves under its tone's centre reads
+  `DAT_8007A940` at a negative index, into the globals below it. The disc's scores reach two
+  such indices: `-25` (`2030`), a word every library state holds at zero, and `-23` (`2072`,
+  `36` key-ons over four minutes), the high half of libsnd's tick-function pointer at
+  `0x8007A910`, which holds `FUN_80062F98` in every state. That note sounds at `0x8006 >> 5 =
+  0x400` in retail; the port read zero for every such word and keyed it still
+  (`vab_bind::table_front_word`).
+
 What it leaves open:
 
 - `2013`, four single-vsync rows of a held voice sounding on one side alone, two each way: a
   one-shot sample ending on a vsync boundary, a sample or two apart under the two sides' KON
   lag estimates.
-- A note past the table's front. A key more than five octaves under its tone's centre reads
-  `DAT_8007A940` at a negative index, into libspu's globals; track `2030` keys these. Retail's words there
-  are mostly zero and the port reads zero, so the voice keys and does not move
-  (`vab_bind::pitch_at_index`).
 
 ## The cue differential
 
@@ -4143,6 +4164,7 @@ be two; `cast` keeps that, because a hold on the engine's own steps is a hold on
 | `cort_guilty_cross_mid_cast` | `0.859` | `0.981` |
 | `zenoir_summon_mid_cast` | `0.854` | `0.881` |
 | `theeder_summon_mid_cast` | `0.954` | `0.964` |
+| `swordie_summon_mid_cast` | `0.990` | `0.990` |
 
 Guilty Cross's whole loss is the step. Theeder's is not: mednafen runs its arms `6` to `12` at `1`
 or `2` against the table's `3` and `4`, and the score moves by `0.01` either way. Zenoir's arms now
@@ -4152,6 +4174,16 @@ vsyncs late against the track. Which emulator a console agrees with is
 [open](../reference/open-rev-eng-threads.md): PCSX-Redux's entry is the CPU's alone, and mednafen's adds
 a GPU wait on a CPU that costs less. The GPU wait is the table's drawing, and what moves Guilty Cross's
 arms is PCSX-Redux's CD command wait ([a real console's frame cost](battle-stage-camera.md#what-a-real-consoles-frame-costs)).
+
+Swordie's loss is the step as well, and it sits in the kill. The finish's three ring cues (`0x18`
+twice, then `0x27A`, at `839`, `875` and `917` vsyncs from the state) fit `4.6` to `7.6` vsyncs behind
+the recording on the engine's steps; mednafen runs arms `9` and `10` at steps `2` and `3`
+(`scripts/mednafen/drive-timeline.py --steps-out`). On mednafen's steps they fit `0.6` vsyncs behind, the `cast_core` row reads
+`0.995` for `0.989` and its tenth percentile `0.79` for `0.28`. The cast-sequence film of the same
+cast from the Gobu Gobu opener (PCSX-Redux) keys its own finish's ring cues at `dt 0`, so the cues
+are not late against the game: the two emulators price the arms apart, as on Guilty Cross. What the `0.6`-vsync
+fit leaves is `0x27A` itself, a rising sweep whose pitch the two sides hold within `20` Hz at every
+quarter-second: a few milliseconds of phase on a sweep near `7` kHz.
 
 <a id="the-cast-core-channel"></a>
 **The `cast_core` channel: the cast with no score under it.** Every channel above renders the score
