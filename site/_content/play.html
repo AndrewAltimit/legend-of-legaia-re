@@ -637,7 +637,7 @@ div.play-vis-head { cursor: default; }
               </select>
             </label>
             <label class="play-dev-menu" title="Retail-faithful (the native --retail): every enhancement off - the scene-entry pulse, smart monsters, overworld markers, the saved-chain Arts list and the ledge-hop landing guard off, the battle kernels on retail's own, and every engine-only option pinned to retail (enhanced lighting and its shadows, ground fog, see-through walls, bloom, camera distance, 4/8-way movement, no flash slew, retail tile windows). Your own settings are not overwritten, and the box is remembered for your next visit, as the launcher remembers its Retail row; untick to get your settings back.">
-              <input type="checkbox" id="play-retail-mode"> Retail-faithful (all enhancements off, this session)
+              <input type="checkbox" id="play-retail-mode"> Retail-faithful (all enhancements off; your settings kept)
             </label>
             <button id="play-visuals-reset" type="button"
                     title="Put every setting in this panel back to the port's shipped defaults (stored like your other options).">Reset to defaults</button>
@@ -1058,9 +1058,9 @@ div.play-vis-head { cursor: default; }
             <kbd data-key="KeyW">W A S D</kbd><span>Walk, same as the arrows</span>
             <kbd data-key="KeyZ">Z</kbd><span>Talk / confirm (Cross)</span>
             <kbd data-key="KeyX">X</kbd><span>Cancel (Circle)</span>
-            <kbd data-key="KeyC">C</kbd><span>Triangle</span>
+            <kbd data-key="KeyC">C</kbd><span>Triangle (opens the pause menu, the original game's menu button)</span>
             <kbd data-key="KeyV">V</kbd><span>Square (reel harder while fishing)</span>
-            <kbd data-key="Enter">Enter</kbd><span>Start</span>
+            <kbd data-key="Enter">Enter</kbd><span>Start (opens the pause menu too; Space is Start as well)</span>
             <kbd data-key="ShiftRight">R-Shift</kbd><span>Select</span>
             <kbd data-key="KeyQ">Q</kbd><span>L1</span>
             <kbd data-key="KeyE">E</kbd><span>R1</span>
@@ -1140,8 +1140,8 @@ div.play-vis-head { cursor: default; }
       <em>"Select your name."</em> grid - the real screen, opened by the scene's own script. The
       name you commit is written into the party record, so the status panel and your saves carry
       it (<a href="subsystems/boot.html">boot chain</a>).</li>
-    <li><strong>The pause menu and every screen behind it.</strong> Press <kbd>Enter</kbd> for the
-      retail menu - chrome and glyphs off your disc, every window placed by the ported
+    <li><strong>The pause menu and every screen behind it.</strong> Press <kbd>C</kbd> (Triangle,
+      the original game's menu button) or <kbd>Enter</kbd> (Start) for the retail menu - chrome and glyphs off your disc, every window placed by the ported
       descriptor table (<a href="subsystems/field-menu.html">field menu</a>). Items, Magic,
       Equip, Status, Options, Load and Save each run their live engine session.</li>
     <li><strong>Shops.</strong> Walk into a shopkeeper and the retail gold shop opens, priced from

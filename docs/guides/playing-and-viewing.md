@@ -312,7 +312,10 @@ either place is the one the other shows. The `launcher.toml` rows are launch
 switches with no option behind them; the browser play page has a box for each.
 *Original game only* starts the game retail-faithful (`play-window --retail`):
 every enhancement off for that session, the saved options untouched; the rows
-it overrides read *Original* while it is on.
+it overrides read *Original* while it is on. It also plays the original's
+loading pauses: the screen holds on the last field frame and then black for
+about a second while the pause menu or a shop loads, and again on the way
+back to the map, where the default mode opens and closes them at once.
 
 *Saved-chain Arts list* is an addition of the port's; the original has nothing
 like it. With it on, the battle command ring's **Arts** opens a list of the
@@ -820,6 +823,14 @@ choice, not retail's: a true New Game starts with Vahn alone and still does
 (the title screen's NEW GAME, and `--seed-party`, reseed retail's roster).
 Both hosts reach the same seed, `World::seed_picker_party`.
 
+Where the story opens a scene on a cutscene - a town's welcome, a dungeon's
+first line, thawed or frozen Buma, the Bio Castle's last room, one of the Uru
+Mais dreams, Noa's dream - a picked scene seats the party where it plays and
+raises the story flags the door in would have raised, so it plays as on
+arrival. A game already past that point sees nothing fire, as in the original,
+and the next pick clears the flags this one raised. Noa's dream is the one beat
+that changes the leader: its own script hands Noa the lead.
+
 A picked scene that the game itself only ever passes through plays that
 passage. Zora's Floating Castle's second form (`taiku2`) is one: arriving from
 Sol Tower plays the throne-room scene with Songi and Zora, which ends on the
@@ -1196,9 +1207,10 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 ```
 
 A pack with an error is refused and the running one stays; the notice line
-says why (*Reload pack refused: ...*, the whole line in the log). In a fight or
-a menu the reload waits until you are back on the map; a cutscene running on
-the map ends with the reload.
+says why (*Reload pack refused: ...*, the whole line in the log). In a fight, a
+menu or one of the pack's own cutscenes (an arrival scene such as the sample
+tower's entrance) the reload waits, saying so once, and goes in by itself when
+you are back on the map, so a cutscene always plays to its end.
 
 **In the browser**, the sample pack is built in: once the disc is up, the play page's
 *Sample Expansion Pack* boot mode loads it and opens the title screen, and
