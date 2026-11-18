@@ -1679,3 +1679,31 @@ changes = [
   ["counts/native/town01/retail/allocs_per_frame", 1197.4, 1197.7],
 ]
 
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Precise free-angle movement now defaults on in the enhanced profile, so the town01 enhanced soak walks a different route through the scene (more of town01's concurrent records and NPCs in view): native enhanced allocations 1709.7 -> 1766.4 KB and 1446.8 -> 1455.1 a frame, wasm bytes a frame 54935 -> 55526. The retail profile keeps the 8-way decode and moves only by fractions. Bundle gzip +28 KB / play +13 KB is new engine code across the wave (scene-selector entry beats, hit bursts in the seat, script-held occlusion fade, expansion reload settle, band-module line spans); no asset or dependency was added. world_map enhanced gl_draws rise by under half a draw a frame; the other rows move by measurement noise."
+changes = [
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 102334, 102336],
+  ["counts/browser/town01/enhanced/wasm_bytes_per_frame", 54935, 55526],
+  ["counts/browser/world_map/enhanced/gl_draws_per_frame", 204.74, 205.02],
+  ["counts/bundle/gzip_bytes", 7287731, 7315796],
+  ["counts/bundle/play_gzip_bytes", 5149299, 5162771],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4486.6, 4486.7],
+  ["counts/native/battle/retail/allocs_per_frame", 1267.0, 1267.1],
+  ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4609.0, 4609.3],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1286.4, 1287.3],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 1709.7, 1766.4],
+  ["counts/native/town01/enhanced/allocs_per_frame", 1446.8, 1455.1],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1392.6, 1392.8],
+  ["counts/native/town01/retail/allocs_per_frame", 1197.7, 1197.9],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1213.7, 1213.9],
+  ["counts/native/world_map/retail/allocs_per_frame", 1760.3, 1760.5],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Battle hit bursts run their trigger and burst inside the hit's seat (FUN_80021B04 runs the move VM, jal 0x80023070), so each hit's rand order is now retail's per a --watch 0x80009010 recording; this still's spark particles draw from the re-ordered words and the image score moves .977 -> .976 while the strike, arts and enemy film sets are identical."
+changes = [
+  ["states/battle_garmel_party_noa_lizard_tail_mid/image", 0.977, 0.976],
+]
