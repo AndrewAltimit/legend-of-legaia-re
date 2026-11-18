@@ -1918,19 +1918,39 @@ per-vsync PCSX-Redux film of the whole chain reads each scene change the same
 way: the scene-change packet, the streaming actor's `0x46`-frame hand-off
 (72 vsyncs; 92 into `eddoman`), then game mode `0x02` for exactly `130`
 vsyncs at all eight changes, whatever the destination block's size (240 KB
-to 680 KB). The init `FUN_801D6704` is one synchronous call - its reads and
-decodes, then a loop running the BGM poller `FUN_800243F0` until requested
-and loaded indices agree (`0x801D72D4..0x801D731C`) - and stores mode `3` at
-`0x801D7484` only after it; no frame count bounds it.
+to 680 KB). The init `FUN_801D6704` is one synchronous call: it zeroes the
+vsync counter `_DAT_8007B8AC` (counted up by the vsync callback
+`FUN_80018DB0`) just before the map read (`0x801D6A64`), runs its reads and
+decodes, waits `VSync(0)` until that counter reads `0x7E` on an ordinary
+entry (field-entry word `_DAT_8007B8B8` and dev word `_DAT_8007B868` zero,
+`0x801D7110..0x801D713C`), and outside the credits latch then loops the BGM
+poller `FUN_800243F0` until requested and loaded indices agree
+(`0x801D72D4..0x801D731C`); it stores mode `3` at `0x801D7484` only after
+that. The credits' `130` is the `126`-vsync floor and four vsyncs of the
+init's own waits.
 
 The port loads at once. In the credits that is not invisible: the ending
 theme plays across every load (the credits latch `_DAT_8007B9B8`), and the
 eight skipped holds put the last vignette about 17 seconds ahead of the
 score. So under the latch (`AudioState::credits_latch`, raised by the
-theme's start) a named scene change arms `World::field_init_hold` for
-`CREDITS_FIELD_INIT_HOLD_VSYNCS` (`130`, the measured length - a figure,
-not a disassembled count): `SceneHost::tick` runs none of the scene and both
-hosts draw the frame black (`screen_layers`). Everywhere else the load stays
+theme's start) a committed scene change arms `World::field_init_hold` for
+`CREDITS_FIELD_INIT_HOLD_VSYNCS` (`130`): `SceneHost::tick` runs none of the
+scene and both hosts draw the frame black (`screen_layers`).
+
+An ordinary door holds too, and its length is the music. With sound-flag
+bit 2 clear the init closes the field-BGM source and forces the loaded index
+to `-100` (`0x801D70D4`), so its poll reads the scene's track from the disc,
+the same id included; with the bit up (op `0x35` sub-op `6` on the door's
+path) it loads no track. PCSX-Redux door hops (`autorun_door_hop.lua`, which
+logs the sound-flag word at each mode change) read mode `0x02` for `184`
+vsyncs behind every door that kept the music (`kor` -> `koin2`, `balden` ->
+`balden2`, `jouind` -> `jouinc`; `map03` -> `son` `185`) and `241` or `242`
+behind every door that did not (`ropeway` -> `map02` -> `stone` ->
+`tunnela` -> `rayman2`, `retockin` -> `jagaroom`, `korb2` -> `doman`;
+`map01` -> `town01` reads `256`), whatever the scene. The retail-faithful mode
+(`WorldToggles::skip_load_holds` off, as `--retail` sets it) arms
+`field_init_hold` for those two figures
+(`mode_entry_init::door_field_init_hold_vsyncs`); the default keeps the load
 instant.
 
 The last one, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` /

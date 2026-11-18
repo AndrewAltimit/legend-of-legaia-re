@@ -225,17 +225,19 @@ pub const FIELD_BGM_TWO_PART_ID: u32 = 0x814;
 pub const FIELD_BGM_TWO_PART_STREAMS: [u32; 2] = [0x428, 0x422];
 
 /// Vsyncs one field MAIN INIT (game mode `0x02`) holds the screen between
-/// two scenes of the credits chain - measured, not a script wait.
+/// two scenes of the credits chain - measured.
 ///
 /// The init `FUN_801D6704` is one synchronous call: its CD reads and LZS
-/// decodes, then a busy loop that runs the BGM poller `FUN_800243F0` until
-/// the requested and loaded indices agree (`0x801D72D4..0x801D731C`), and
-/// only then the store of mode `3` (`0x801D7484`). No frame count bounds it;
-/// its length is the load. A PCSX-Redux film of the whole credits chain
-/// reads mode `0x02` for exactly `130` vsyncs at each of its eight scene
-/// changes (`edteien` -> `edbylon` .. `edson` -> `edlast`), whatever the
-/// size of the destination's block (240 KB to 680 KB), after the streaming
-/// actor's `0x46`-frame hand-off.
+/// decodes, a floor of [`FIELD_INIT_FLOOR_VSYNCS`] on the vsync counter it
+/// zeroes before the map read, then (outside the credits) a busy loop that
+/// runs the BGM poller `FUN_800243F0` until the requested and loaded indices
+/// agree (`0x801D72D4..0x801D731C`), and only then the store of mode `3`
+/// (`0x801D7484`). A PCSX-Redux film of the whole credits chain reads mode
+/// `0x02` for exactly `130` vsyncs at each of its eight scene changes
+/// (`edteien` -> `edbylon` .. `edson` -> `edlast`), whatever the size of the
+/// destination's block (240 KB to 680 KB), after the streaming actor's
+/// `0x46`-frame hand-off: the floor and four vsyncs of the init's own
+/// waits. The credits latch (`_DAT_8007B9B8`) skips the BGM poll.
 ///
 /// The port's loads are instant and stay so in play; the credits are the
 /// place where the gap is visible, because the ending theme plays across
@@ -243,6 +245,66 @@ pub const FIELD_BGM_TWO_PART_STREAMS: [u32; 2] = [0x428, 0x422];
 /// the eight holds puts the last vignette about 17 seconds ahead of the
 /// score.
 pub const CREDITS_FIELD_INIT_HOLD_VSYNCS: u16 = 130;
+
+/// The field init's floor: it zeroes the vsync counter `_DAT_8007B8AC` (which
+/// the vsync callback `FUN_80018DB0` counts up) just before the map read
+/// (`0x801D6A64`) and, on an ordinary entry (field-entry word `_DAT_8007B8B8`
+/// and the dev word `_DAT_8007B868` both zero), waits `VSync(0)` until it
+/// reads `0x7E` (`0x801D7110..0x801D713C`). A load faster than the floor
+/// still holds the screen for it.
+// REF: FUN_80018DB0 (the counter's tick), FUN_800243F0 (the BGM poller the init loops)
+pub const FIELD_INIT_FLOOR_VSYNCS: u16 = 0x7E;
+
+/// Vsyncs an ordinary door's field MAIN INIT (game mode `0x02`) holds the
+/// black screen when the door keeps the music (sound-flag bit 2, op-`0x35`
+/// sub-op `6`): the init leaves the field-BGM source sounding and loads no
+/// track. Measured on PCSX-Redux door hops: `kor` -> `koin2`, `balden` ->
+/// `balden2`, `jouind` -> `jouinc` read mode `0x02` for `184` vsyncs,
+/// `map03` -> `son` `185`, whatever the destination's size: the floor
+/// [`FIELD_INIT_FLOOR_VSYNCS`] and the init's reads around it.
+pub const DOOR_FIELD_INIT_HOLD_KEPT_VSYNCS: u16 = 184;
+
+/// Vsyncs an ordinary door's field MAIN INIT holds when the door does not
+/// keep the music: the init ramps the field-BGM source down, closes it and
+/// forces the loaded-index barrier to `-100` (`0x801D70D4`), so its poll
+/// loop (`0x801D72D4..0x801D731C`) reads the scene's track from the disc
+/// before mode `3` - the same id included. Measured on PCSX-Redux door hops:
+/// `ropeway` -> `map02` `241`, `map02` -> `stone`, `stone` -> `tunnela`,
+/// `korb2` -> `doman` `242`, `tunnela` -> `rayman2`, `retockin` ->
+/// `jagaroom` `241` (`map01` -> `town01` reads `256`).
+pub const DOOR_FIELD_INIT_HOLD_RELOAD_VSYNCS: u16 = 241;
+
+/// The field MAIN INIT hold of an ordinary door ([`DOOR_FIELD_INIT_HOLD_KEPT_VSYNCS`],
+/// [`DOOR_FIELD_INIT_HOLD_RELOAD_VSYNCS`]): `keeps_music` is sound-flag
+/// bit 2 as the door left it.
+///
+/// REF: FUN_801D6704 (`0x801D7110..0x801D713C` the floor, `0x801D72D4..0x801D731C` the BGM poll)
+pub fn door_field_init_hold_vsyncs(keeps_music: bool) -> u16 {
+    if keeps_music {
+        DOOR_FIELD_INIT_HOLD_KEPT_VSYNCS
+    } else {
+        DOOR_FIELD_INIT_HOLD_RELOAD_VSYNCS
+    }
+}
+
+/// The field MAIN INIT hold a committed scene change arms: the credits
+/// chain's [`CREDITS_FIELD_INIT_HOLD_VSYNCS`] whenever the credits latch is
+/// up, an ordinary door's [`door_field_init_hold_vsyncs`] only when the
+/// port's load-hold skip is off (the retail-faithful mode), and none
+/// otherwise - the port's loads are instant.
+pub fn field_init_hold_vsyncs(
+    credits_latch: bool,
+    skip_load_holds: bool,
+    keeps_music: bool,
+) -> u16 {
+    if credits_latch {
+        CREDITS_FIELD_INIT_HOLD_VSYNCS
+    } else if skip_load_holds {
+        0
+    } else {
+        door_field_init_hold_vsyncs(keeps_music)
+    }
+}
 
 /// Retail's sound slot for the two-part track: the `0x80091508 + slot * 12`
 /// table row `FUN_8001E54C` installs into and the `0x8007051C + slot * 16`
@@ -698,6 +760,19 @@ pub const ENTRY_WORD_FROM_ATTRACT: u32 = 2;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The credits chain holds in every mode; an ordinary door only with the
+    /// port's load-hold skip off, longer when its init reloads the track.
+    #[test]
+    fn a_door_holds_for_its_field_init_only_in_the_retail_mode() {
+        assert_eq!(field_init_hold_vsyncs(true, true, false), 130);
+        assert_eq!(field_init_hold_vsyncs(true, false, true), 130);
+        assert_eq!(field_init_hold_vsyncs(false, true, false), 0);
+        assert_eq!(field_init_hold_vsyncs(false, false, true), 184);
+        assert_eq!(field_init_hold_vsyncs(false, false, false), 241);
+        // Both stand past the floor the init waits out on its vsync counter.
+        const { assert!(DOOR_FIELD_INIT_HOLD_KEPT_VSYNCS > FIELD_INIT_FLOOR_VSYNCS) };
+    }
 
     #[test]
     fn cold_entry_seats_at_the_window_centre() {

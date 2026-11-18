@@ -133,6 +133,15 @@ impl World {
         self.audio.keep_audio_across_field_init = true;
     }
 
+    /// Whether sound-flag bit 2 (op-`0x35` sub-op `6`) is up for the next
+    /// field init: the init keeps the field-BGM source sounding and loads no
+    /// track ([`Self::release_field_init_voices`]), which is what decides how
+    /// long its load holds
+    /// ([`legaia_engine_system::mode_entry_init::door_field_init_hold_vsyncs`]).
+    pub fn keeps_audio_across_field_init(&self) -> bool {
+        self.audio.keep_audio_across_field_init
+    }
+
     /// Drain the SPU voices field-VM ops asked the host to stop this tick.
     pub fn take_sfx_voice_stops(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.audio.sfx_voice_stops)

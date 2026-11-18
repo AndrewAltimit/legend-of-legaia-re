@@ -315,7 +315,9 @@ every enhancement off for that session, the saved options untouched; the rows
 it overrides read *Original* while it is on. It also plays the original's
 loading pauses: the screen holds on the last field frame and then black for
 about a second while the pause menu or a shop loads, and again on the way
-back to the map, where the default mode opens and closes them at once.
+back to the map, where the default mode opens and closes them at once. Each
+door holds black for three to four seconds while the next scene loads (longer
+when the music changes); the default mode enters the next scene at once.
 
 *Saved-chain Arts list* is an addition of the port's; the original has nothing
 like it. With it on, the battle command ring's **Arts** opens a list of the

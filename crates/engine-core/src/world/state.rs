@@ -145,9 +145,12 @@ pub struct World {
 
     /// Vsyncs left of a field MAIN INIT hold after a committed scene change:
     /// the scene is loaded, nothing of it runs, and the frame stays black.
-    /// Armed only under the credits latch
-    /// ([`crate::world::AudioState::credits_latch`]); see
-    /// [`legaia_engine_system::mode_entry_init::CREDITS_FIELD_INIT_HOLD_VSYNCS`].
+    /// Armed under the credits latch
+    /// ([`crate::world::AudioState::credits_latch`],
+    /// [`legaia_engine_system::mode_entry_init::CREDITS_FIELD_INIT_HOLD_VSYNCS`])
+    /// and, with [`crate::world::WorldToggles::skip_load_holds`] off, behind
+    /// every door
+    /// ([`legaia_engine_system::mode_entry_init::door_field_init_hold_vsyncs`]).
     pub field_init_hold: u16,
 
     /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.

@@ -69,6 +69,24 @@ impl SceneHost {
         false
     }
 
+    /// Arm the field MAIN INIT hold behind a committed door
+    /// ([`legaia_engine_core::world::World::field_init_hold`]): the scene is
+    /// loaded and nothing of it runs, under a black frame, for the vsyncs
+    /// retail spends in game mode `0x02` loading it. The credits chain holds
+    /// in every mode; an ordinary door only in the retail-faithful mode
+    /// (`WorldToggles::skip_load_holds` off), where its length follows
+    /// whether the door kept the music (`keeps_music`, sound-flag bit 2 as
+    /// the door left it).
+    ///
+    /// REF: FUN_801D6704 (the floor `0x801D7110..0x801D713C`, the BGM poll `0x801D72D4..0x801D731C`)
+    fn arm_door_field_init_hold(&mut self, keeps_music: bool) {
+        self.world.field_init_hold = legaia_engine_system::mode_entry_init::field_init_hold_vsyncs(
+            self.world.audio.credits_latch,
+            self.world.toggles.skip_load_holds,
+            keeps_music,
+        );
+    }
+
     /// The exit fade of the overworld entrance at entity `slot`, on the
     /// crossing frame.
     ///
@@ -298,6 +316,7 @@ impl SceneHost {
             // scene somebody actually walked into.
             self.world.arm_arrival_facing(dir);
             self.set_entry_seat_tile(entry_x, entry_z);
+            let keeps_music = self.world.keeps_audio_across_field_init();
             if is_world_map_scene(&name) {
                 self.enter_world_map_scene(&name)?;
             } else {
@@ -318,10 +337,7 @@ impl SceneHost {
             // record - this is how the opening chain's `map01` fly-in and the
             // natural `town01` opening launch.
             self.spawn_arrival_trigger_record(entry_x, entry_z);
-            if self.world.audio.credits_latch {
-                self.world.field_init_hold =
-                    legaia_engine_system::mode_entry_init::CREDITS_FIELD_INIT_HOLD_VSYNCS;
-            }
+            self.arm_door_field_init_hold(keeps_music);
             return Ok(SceneTickEvent::SceneEntered { name });
         }
         // GAP-1: overworld-portal scene transition. The world-map entity SM
@@ -426,6 +442,7 @@ impl SceneHost {
                 }
                 self.world.arm_arrival_facing(dir);
                 self.set_entry_seat_tile(entry_x, entry_z);
+                let keeps_music = self.world.keeps_audio_across_field_init();
                 if is_world_map_scene(&name) {
                     self.enter_world_map_scene(&name)?;
                 } else {
@@ -434,6 +451,7 @@ impl SceneHost {
                 self.world.seat_player_at_tile(entry_x, entry_z);
                 self.world.face_player_sector(dir);
                 self.spawn_arrival_trigger_record(entry_x, entry_z);
+                self.arm_door_field_init_hold(keeps_music);
                 return Ok(SceneTickEvent::SceneEntered { name });
             }
             // The config row is gone (a host installed the event by hand, or

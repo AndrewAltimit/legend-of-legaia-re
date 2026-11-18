@@ -226,12 +226,14 @@ pub struct WorldToggles {
     /// at `(2880, 2886)`), with no step left to start another hop. Off is
     /// retail's unguarded hop.
     pub hop_landing_guard: bool,
-    /// Skip the CD-wait black holds around the pause menu (port, on by
-    /// default): retail holds the screen while the menu overlay loads after
-    /// the wipe (`LOAD_HOLD_OPEN_VSYNCS`) and while the field overlay reloads
-    /// after a close (`LOAD_HOLD_CLOSE_VSYNCS`,
-    /// `legaia_engine_system::pause_wipe`). Off, under `pin_retail`, runs
-    /// both holds as the captures measure them.
+    /// Skip the CD-wait black holds around the pause menu and behind a door
+    /// (port, on by default): retail holds the screen while the menu overlay
+    /// loads after the wipe (`LOAD_HOLD_OPEN_VSYNCS`) and while the field
+    /// overlay reloads after a close (`LOAD_HOLD_CLOSE_VSYNCS`,
+    /// `legaia_engine_system::pause_wipe`), and while a door's field init
+    /// loads the next scene (`World::field_init_hold`,
+    /// `legaia_engine_system::mode_entry_init::door_field_init_hold_vsyncs`).
+    /// Off, under `pin_retail`, runs the holds as the captures measure them.
     pub skip_load_holds: bool,
     /// The game reads the pad on the vsync it is pressed (port, on by
     /// default). Retail samples the libpad buffer once a frame, at the end of

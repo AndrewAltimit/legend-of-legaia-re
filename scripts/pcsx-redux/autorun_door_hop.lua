@@ -158,8 +158,10 @@ probe.run({
         local label = scene_name()
         if mode ~= last_mode or label ~= last_scene then
             local px, pz = player_xz()
-            logf("vsync=%d game_mode=0x%02x scene=%q player=(%s,%s) hop=%d", vsync, mode, label,
-                tostring(px), tostring(pz), hi)
+            -- The sound-flag word 0x8007B750: bit 2 (op-0x35 sub-op 6) up
+            -- as a door enters mode 0x02 keeps the music across the init.
+            logf("vsync=%d game_mode=0x%02x scene=%q player=(%s,%s) hop=%d sound_flags=0x%x", vsync, mode,
+                label, tostring(px), tostring(pz), hi, probe.read_u32(0x8007B750) or 0)
             field_since = vsync
             if label ~= last_scene then poked_at, nudge_at = nil, nil end
             last_mode, last_scene = mode, label
