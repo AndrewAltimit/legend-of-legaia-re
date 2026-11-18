@@ -5330,6 +5330,21 @@ three units). The bodies without that store keep the half turn
 | 0937 `0x4C` Hyper Lightning, `0x801F69D8` (`SINGLE_BODY`) | arms 0 and 1 are Hyper Crush's on their own three records; arm 2's cut (pitch `-0x20`, yaw `0x900 - facing`, TR `(0x1C0, 0x480, 0x800)`, `0x20` frames) with the party hidden and six records `600` ahead of the caster at height `-0x166`; arm 4's five more; arm 5 turns the victim to the caster and cuts on it (yaw `0xA80 - facing`, TR `(0, 0x480, 0x500)`), shows it, hides the caster and seats two records on it; TR z `+4s` on arms 4 / 5, `+s` on arm 6; arm 7 pushes TR z `+s` until its first hit, then re-cuts every pass to the victim (TR `(0, 0x480, 0x800)`), each hit flashing it; `0xFF` shows the caster again | `0x801F8090`; the chain (`HYPER_LIGHTNING_CHAIN`) carries the phase |
 | 0956 `0x75` Paralyzing Wave, `0x801F69D8` | arm 0's cut on the caster's display pair (TR `(0, 0x280, ctx[+0x6D0] / 2)`), every seat hidden but the caster, four records on the shot; arm 1's cut on the victim (TR `(0, 0x380, 0x600)`), the victim shown and the caster hidden, three records after the pool flush; TR z `+s / 2` on arms 1..3; arm 3 raises the pooled parts' level to `0x1000`, which ends the cast | `0x801F86A0`, seeded `scalar << 8`; the chain (`WATER_HAZARD_75_CHAIN`) carries the phase |
 | 0955 `0x60` White Shield, `0x801F8F0C` | three shots behind the caster on its live pair, TR y `0x400`: arm 0's `0xC`-frame shot (pitch `-0x20`, TR z `ctx[+0x6D0] / 2`), arm 1's `0x100`-frame pull (pitch `0x80`, TR z `ctx[+0x6D0]`), arm 2's `0x40`-frame level-off (pitch `0`); arm 3 is the buff | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 8` / `* 0x60`; the chain is ported (`white_shield_tick`), so the director carries the countdown and its hold. `battle_bubu2_spoon_white_shield_mid_cast` holds arm 0's table with `96` left |
+| 0945 `0xBA` Jugger Power, `0x801F69F8` | arm 0's cut far down the stage (pitch `0x80`, yaw `-0x80`, TR `(0, 0x1800, 0x4000)`, focus `(0, 0, -0x1D00)`), three records at `(0, 0, 0x1D00)`, every party seat and the caster hidden; yaw `+2` and TR z `+16` a vsync through arm 1, `+8` through arm 2; arm 1's cut on the caster (TR `(0, 0x400, 0x800)`), which it shows with three records and the message bar. [Below](#prot-0945-jugger-power) | `0x801F7E5C` (Water Column's word), stored `scalar << 7`, `<< 7`, `<< 6`, not added |
+
+<a id="prot-0945-jugger-power"></a>
+
+**0945 `0xBA` Jugger Power** (Van Saryu's self-buff,
+`cast_module_camera::jugger_power_camera`) shares Water Column's image and its
+countdown word. Its body calls no damage wrapper: its `jal` set is the head cue,
+the framing builder, the two spawn wrappers, the pool flush and the message bar
+(`0x800774AC = 0x801F7E44`, `FUN_801D8DE8(0x5B, 0)`), so the band's fold owes the
+cast nothing. The port once folded Water Column's baked power through it, a hit on
+the caster with two hit cues retail's recording lacks. Nothing in the body shows
+the party again. A `--monster-pick` film from `battle_jagaroom_van_saryu_strike`
+reads arms 1, 2 and 3 at `128`, `128` and `64` game frames, the gates' own dwells,
+and the whole film `.976`, cues `1.000` (one pass an arm, `.331`). Grade
+`disassembly` + `capture`.
 
 - <a id="prot-0942-dark-typhoon"></a>**0942 `0xAA`**: the drifts, with
   `s = scalar * delta`, are TR z `+s` (arm 1); TR z `+s`, TR x `+s/4`, TR y `-s`,

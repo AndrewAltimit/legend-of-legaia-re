@@ -2151,3 +2151,34 @@ mod terio_punch_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod band_coverage_tests {
+    use super::*;
+    use crate::cast_module_ticks::CAPTURE_TRAMPOLINES;
+
+    /// Every capture-class body paces its arms on retail's gates: each of
+    /// the trampolines' `(entry, body)` arms and each of the eleven bodies
+    /// the `0x801CF56C` table points at directly has a camera director or a
+    /// countdown table, so none walks its arms a pass each. PROT 0954 is the
+    /// one exception, ported whole with its own gates (`cast_fatal_decision`).
+    #[test]
+    fn every_capture_body_is_gated_arm_by_arm() {
+        let gated = |entry: u32, body: u32| {
+            capture_camera_director(entry, body).is_some()
+                || super::super::capture_arm_countdowns(entry, body).is_some()
+        };
+        for t in &CAPTURE_TRAMPOLINES {
+            for &(id, body) in t.arms {
+                assert!(
+                    gated(t.prot_entry, body),
+                    "PROT {} action {id:#04X} body {body:#010X}",
+                    t.prot_entry
+                );
+            }
+        }
+        for entry in [935, 936, 937, 939, 946, 947, 948, 949, 953, 966] {
+            assert!(gated(entry, SINGLE_BODY), "PROT {entry}");
+        }
+    }
+}
