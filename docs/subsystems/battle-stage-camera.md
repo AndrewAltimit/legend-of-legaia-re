@@ -1607,9 +1607,22 @@ emulator deferring each sector while a poll's interrupt is pending, `cdrom.cc`
 (`LEGAIA_BATTLE_FRAME_SPAN=1` on a native session, `--engine-env` on a film).
 `World::apply_cast_arm_frame_step` re-times each pass's frame by the span its cost
 reads. An arm table names its frames' step and no cost, so an arm takes the law only
-while a clip loads it; a capture-band module's line loads at the floor only, since
-retail's frames under one run from no overrun (Death Game's `425`-vsync line, four
-vsyncs a step-`4` frame) to five and more (Bloody Horns, Lapis Wave). The harness's
+while a clip loads it. Under a capture-band module's own line the arm's step stays its
+table's and its frame spans the census's work under the polls (`xa_polled_work_cost`):
+retail's frames under one run from no overrun (Death Game's `425`-vsync line, four vsyncs
+a step-`4` frame, some `265` hblanks of work) to eight and more (Kiss of Death, Megaton
+Press). A `--cd-trace` recording of Megaton Press (`nivora_duel_pre_megaton_press`) polls
+from the line's cue to the end of arm 11, `75527` `GetlocL` / `GetStat` pairs at about
+`2050` every twenty vsyncs, and runs its table arms 2 to 4 at `6` vsyncs a frame and 9 to
+11 at `7` and `8`; the census's work for those arms reads `6` and `7` to `8`. Run at their
+step instead, the port's arms let the line, a span of vsyncs, outlive them, and it loaded
+arms 13 to 17 on step `4` where retail's run `2`. Over the enemy films the step agreement
+goes `.892` to `.904` (the capture band `.915` to `.926`, the finalize `0x71` `.630` to
+`.777`, the Done band `.869` to `.885`), the image mean `.9474` to `.9476` and the cues
+hold; the arts, strike and Seru sets read the same. Evil Seru Magic's whole cast now runs
+retail's length (its recording's `0x70` spans `4578` vsyncs), though its arms 23 and 24 run
+longer than retail's (`484` and `530` vsyncs against `281` and `386`): their census counts
+the gather's effect parts high. The harness's
 retail step track and a replay's seeded state run their steps exact. Off, an ordinary
 frame runs its step and a loaded one a single vsync past it.
 
@@ -1618,7 +1631,7 @@ Glare (`battle_korb2_medusa_glare_mid_cast`) reads it set to `2` at the clip's s
 (`0x8003D65C`) and cleared by the stop `FUN_8003EE00` (`sw zero` at `0x8003EE2C`) `559`
 vsyncs on, `20` past the line's `539`; Kiss of Death's clears at `444`. Under the law the
 engine holds its drive word and its load window for the span plus that tail
-(`XA_READ_TAIL_VSYNCS`), and a capture-band line leaves its arms their table's length.
+(`XA_READ_TAIL_VSYNCS`), and a capture-band line spans its arms by their census work.
 
 On, the films' wall clock comes to retail's and their game clock holds; the sets, one
 binary run both ways:
