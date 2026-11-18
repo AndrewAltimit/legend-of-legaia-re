@@ -1384,8 +1384,22 @@ caption cleared on the slam. No cue moves:
 | `0x88` Swordie | `.9654` | `.9663` |
 | the 29 films | `.9742` | `.9759` |
 
-Open on the same films: Swordie's arm-10 blades and Theeder's first sweep fan draw a pass
-behind retail's, and the row readouts (Theeder, Zenoir) still open about two passes ahead.
+The row readouts then opened two passes ahead of retail's: the readout pass answers
+the flag at the next pass's head and its records glide from the pass after
+([battle HUD](../subsystems/battle-hud.md#action-phase-records)). Two camera arms framed
+the wrong point: Juggernaut's exit band kept the body's yaw ladder, and Mushura's arm
+`0xD` framed the creature where retail re-arms on the camera's own focus
+([cast module](../subsystems/cast-module.md#summon-creature-directors)). Over the 29 films, no cue
+moving, the image mean reads `.9762` for `.9759` (`0x8D` `.978` to `.984`, `0x86` `.965`
+to `.967`) and the camera channel's sustained error `2.44` px for `4.77` (`0x99` `46.8`
+to `0.1`, `0x8D` `21.0` to `0`).
+
+Swordie's arm-10 blades are not late: a `--retail-parts` recording beside
+`LEGAIA_DIAG_CAST_PARTS` seats every blade at retail's point on the pass retail does,
+relative to each hit, with the same level walk. Open: Gimard's arm-12 case-8 ease takes
+five sixths of its TR z gap on its first pass where retail takes a third (`13.4` px),
+Kemaro's arm 4 drifts a part pass past retail's last (`7.3` px), and Theeder's first
+sweep fan.
 
 ### Evil Seru Magic
 
