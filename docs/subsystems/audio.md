@@ -1310,6 +1310,13 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `FUN_8006206C(...)` | `_SsSetSlideVolume` - ramp from→to over N ticks. Touches `+0x48/0x4A/0x9C/0xA0/0x4C`, signed-divide per-tick delta. Gated by flags `4 & 0x100` in `+0x98`. |
 | `FUN_8006171C(vab, prog, ev)` | Per-program SEQ controller/meta dispatch - post-increments the program's stream cursor (`_DAT_801CD2C0[vab] + prog*0xB0`, deref `+0`), switches on the event byte `ev`, routes through the installed handler vector `_DAT_801CD238..248`, and falls to the varint decoder `FUN_80061C68` for value events, storing the result at `+0x90`. |
 
+**The calc's lock.** `FUN_80062F98` opens on the word `0x801CD2B4`: set, the call returns at
+its first branch (`0x80062FCC`), and that vsync's flush and score events are not run, nor made up
+later. The one-shot cue key-on `FUN_80065034` holds the word while it allocates and stages
+(`0x800650A4` to `0x80065288` / `0x80065388`), so a vblank that lands inside the ring drainer's
+key-on costs the score a vsync ([settled](../reference/re-settled-threads/audio.md#does-the-scores-calc-run-once-a-vsync-across-a-summon)).
+Which drains do is the frame's CPU time; the port's calc never skips.
+
 **Per-frame tick call graph.** The concrete chain behind the prose "hand the
 payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) →
 `FUN_8006320C` / `FUN_8006352C` (the **volume-slide ticks** over
@@ -3823,7 +3830,9 @@ from the top on an idle voice file. The port's KON falls one vsync ahead by cons
 `--cues` keys a seeded run of cues beside the score on both sides, through `FUN_800653C8` and
 `FUN_80065034` on retail's and `play_tone_pair` on the port's, on the drainer's voices: the
 contention a state cannot show on demand. `--filter`, `--vsyncs`, `--all-states`, `--dump-at`
-(retail's voice records and both sides' voices at one vsync), `--track` / `--host` (below).
+(retail's voice records and both sides' voices at one vsync), `--track` / `--host` (below),
+`--duck START:FROM:TO` (a sequence-volume ramp on both sides, a vsync a step, set only when it
+moves: `SsSeqSetVol` `FUN_80064890` against `Sequencer::set_master_vol`).
 Disc-gated test: `parity/tests/seq_differential_disc.rs`.
 
 Both sides run their flushes from the state's own silent-history index `_DAT_801CE204`

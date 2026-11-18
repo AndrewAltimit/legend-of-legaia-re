@@ -450,7 +450,7 @@ seek time, and the band ahead of the module above.
 
 ### Why does Theeder's score not subtract out of its recording?
 
-*Status:* open (measured)
+*Status:* open (narrowed: a lost calc is the measured mechanism)
 
 `theeder_summon_mid_cast` reads `0.71` on the [cast channel](../subsystems/audio.md#the-cast-channel)
 with the state's [Monaural](../subsystems/audio.md#the-monaural-states) seated and its cast offset free
@@ -474,15 +474,20 @@ the port's KON lead) moved the cast row to `0.79` but cost the clean track rows 
 not kept. Two readings are ruled out. The silent history's phase: seated on the state's index,
 the keying differential reads no `key` or `voice` row on `2013` and the cast row does not move. A
 parked KON: the KON path never defers ([a key-on is never deferred](../subsystems/audio.md#a-key-on-is-never-deferred)).
-A skipped calc would put retail's voice ahead, not behind, and the calc runs once a vsync wherever it
-has been watched. What is left is a calc doubled in one vsync, or a voice whose playback stood still
-for one (a re-key or a pitch write on the same voice). A summon cast does not disturb the calc on
-PCSX-Redux: a Theeder cast (`0x82` from `party_basic_attack_vs_gobu_gobu`, `cast-sequence.py
---calc-clock`) enters `FUN_80062F98` exactly once a vsync across `1451` vsyncs, the module's seek arms
-and the side-band's loads included, and every KON write comes from the flush (`0x80065F7C`). That fight
-plays the battle theme, not `2013`, and mednafen's calc has not been watched over a cast. What closes
-it: a state from the battle that leads into this cast, run under the same clock with a watch on that
-voice's pitch and KON bits; the library holds no state of that fight before the cast.
+Watched over this cast, the calc is not once a vsync: mednafen loses two of `1079`, the vsyncs
+whose vblank lands inside the drainer's cue key-on, which holds the calc's lock
+([settled](re-settled-threads/audio.md#does-the-scores-calc-run-once-a-vsync-across-a-summon)). A
+lost calc delays every later event and the flush of the notes staged the vsync before it, so a
+loss between that note's key-on and its flush keys it a vsync late, as measured. What does not
+fit yet is the note keyed `151` vsyncs back standing on time, which a loss after it would put a
+vsync early against the render's alignment on the state's wait. The duck's re-volume is ruled
+out (`seq-differential --duck` keys `2013` alike under any ramp), and so is cue contention for
+the voices (the seated `--cues` run keys `2013` alike). A PCSX-Redux Theeder cast (`0x82` from
+`party_basic_attack_vs_gobu_gobu`, `cast-sequence.py --calc-clock`) enters `FUN_80062F98` once a
+vsync across `1451` vsyncs, which the lock does not contradict: a locked call is entered and returns
+at its first branch. What closes it: a state from the battle that leads into this cast, run under
+the same clock with the flush index and that voice's pitch and KON bits watched; the library holds
+no state of that fight before the cast.
 
 ## Title / boot / overlays
 
