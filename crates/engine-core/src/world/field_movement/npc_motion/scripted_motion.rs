@@ -56,14 +56,15 @@ impl World {
         true
     }
 
-    /// Attach the `4C 51` record's byte-`+4` **move-anim id** to a just-started
-    /// NPC glide leg. Retail's run dispatch writes that byte to the actor's
-    /// `+0x5C` anim slot (consumed by the anim-stream stepper `FUN_800204F8`),
-    /// so the walk plays its named move clip instead of gliding in a frozen
-    /// pose. The engine surfaces it as a [`crate::world::FieldNpcState::anim_cues`] entry -
-    /// the same shape the cross-context `A2` ExecMove raises - keyed by the
-    /// placement slot. A zero id carries no clip (retail's `+0x5C = 0` is the
-    /// "no move-anim" sentinel, not clip `-1`).
+    /// Raise an **unforced** move request on NPC `slot`: the `+0x5C` write
+    /// the ambient walker (and the expansion stagers) make, which the anim
+    /// consumer `FUN_800204F8` binds out of the bank the actor's party-bank
+    /// bit names. The engine surfaces it as a
+    /// [`crate::world::FieldNpcState::anim_cues`] entry - the same shape the
+    /// cross-context `A2` ExecMove raises - keyed by the placement slot. A
+    /// zero id carries no clip (retail's `+0x5C = 0` is the "no move-anim"
+    /// sentinel, not clip `-1`). The `4C 51` seat forces its restart and
+    /// goes through [`Self::seat_npc_run_anim`] instead.
     ///
     /// A request for the move the slot is already playing raises nothing:
     /// the consumer restarts a clip only when `+0x5C` differs from the
@@ -75,6 +76,27 @@ impl World {
     /// REF: FUN_80024E08, FUN_800204F8 (actor `+0x5C` anim-slot consumer)
     pub(crate) fn carry_npc_run_anim(&mut self, slot: u8, move_id: u8) {
         if move_id != 0 && self.npcs.clip_current.get(&slot) != Some(&move_id) {
+            self.npcs.anim_cues.insert(slot, (1, move_id, Vec::new()));
+        }
+    }
+
+    /// The `4C 51` seat's clip cue on NPC `slot`: raised whatever the slot
+    /// is playing. The seat's NPC arm stores `-2` into the playing-clip word
+    /// before it writes the move and binds (`li v0,-0x2` / `sh v0,0x5e(s5)`
+    /// / `jal 0x800204F8` / `sh v1,0x5c(s5)` at `0x801E1A90..0x801E1A9C`), so
+    /// the consumer's change test always fails and it re-reads the bank from
+    /// the party-bank bit the same op's depth byte just wrote
+    /// (`0x8002053C`). The same id can therefore name a different record:
+    /// `juui1` `P2[2]` seats Vahn with `CC 09 51 68 4C 04 02`, scene clip `2`
+    /// (his flying pose), while he is playing party-bank clip `2`, his
+    /// standing idle. A cue gated on the id alone, as
+    /// [`Self::carry_npc_run_anim`] gates the ambient walker's unforced
+    /// requests, would drop there and leave Vahn standing while Noa and Gala
+    /// fly.
+    ///
+    /// REF: FUN_801DE840 (`0x801E1A8C..0x801E1A9C`), FUN_800204F8
+    pub(crate) fn seat_npc_run_anim(&mut self, slot: u8, move_id: u8) {
+        if move_id != 0 {
             self.npcs.anim_cues.insert(slot, (1, move_id, Vec::new()));
         }
     }

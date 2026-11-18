@@ -516,7 +516,7 @@ the renderer reads). The **talk-time** pose does not go through it - see the
 section below. Separately, the interacted
 `0x4C 0x51` op's byte-+4 move-anim id (retail actor `+0x5C`, consumed by the
 anim-stream stepper `FUN_800204F8`) is carried onto the started glide leg as a
-`World::npcs.anim_cues` entry (`carry_npc_run_anim`) instead of being dropped.
+`World::npcs.anim_cues` entry (`seat_npc_run_anim`) instead of being dropped.
 The retail speed encoding is pinned: the ops carry their own base-step selector (`(op0>>5 & 4)|(op1>>6)` for 0x37/0x41, `b2 & 7` for 0x47; numerator `0x80`, or `0x40` for 0x41)
 and are the field-VM record's yield-class bytes interpreted in place from the pointer parked at actor `+0x94` -
 see [field-locomotion.md](field-locomotion.md#npc-glide-speed) + [script-vm.md](script-vm.md) § 0x37-0x42.

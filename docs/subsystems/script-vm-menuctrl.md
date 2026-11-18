@@ -1139,9 +1139,15 @@ pre-run's `+0x5C` is what `bind_scene_actors` binds at scene entry. The
 `+0x5E = -2` restart holds there too: the seat drops the spawner's waiting
 phase draw and restarts a cursor already on the move (`World::restart_npc_clip`),
 so prologue-seated villagers start their idles together, as retail's do
-([the spawner's phase](motion-vm.md#the-draws-are-the-worlds-stream)). The cue itself still skips a re-request of
-the clip already playing (`World::carry_npc_run_anim`), since the hosts' bind of
-the same clip keeps the world's restarted cursor.
+([the spawner's phase](motion-vm.md#the-draws-are-the-worlds-stream)). The cue
+is raised whatever the slot plays (`World::seat_npc_run_anim`), because the
+forced bind re-reads the bank the depth byte just wrote, so the same id can name
+another record: `juui1` `P2[2]` seats Vahn with `CC 09 51 68 4C 04 02`, scene clip
+`2` (his flying pose), while he plays party-bank clip `2` (his standing idle).
+A cue gated on the playing id, as the ambient walker's unforced requests are
+(`World::carry_npc_run_anim`), drops there and leaves Vahn standing while Noa
+and Gala fly (`engine-scene-host/tests/juui1_party_seat_rebank_disc.rs`). On the
+same id and bank the hosts' bind keeps the world's restarted cursor.
 The run's byte is the actor's one `+0x5C`, which the scripted motion VM
 `FUN_80038158` also writes from its own ops, so the port stores it into that
 VM's requested move as well (`World::script_npc_move`, with the `A2` ExecMove

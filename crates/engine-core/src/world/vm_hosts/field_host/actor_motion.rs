@@ -609,7 +609,7 @@ impl FieldHostImpl<'_> {
             // `CC 09 51 .. 0A` / `CC 0A 51 .. 0F` ahead of their `C1`
             // legs) plays its walk clip instead of gliding in the idle.
             self.restart_run_clip(ctx, slot, move_id, true);
-            self.world.carry_npc_run_anim(slot, move_id);
+            self.world.seat_npc_run_anim(slot, move_id);
             self.world.script_npc_move(slot, move_id);
             self.bind_run_clip(ctx, slot, move_id);
             self.world.seat_npc_floor_resample(slot, ctx.flags);
@@ -711,7 +711,7 @@ impl FieldHostImpl<'_> {
                     self.world.npcs.headings.insert(slot, heading);
                 }
                 self.restart_run_clip(ctx, slot, move_id, true);
-                self.world.carry_npc_run_anim(slot, move_id);
+                self.world.seat_npc_run_anim(slot, move_id);
                 self.world.script_npc_move(slot, move_id);
                 self.bind_run_clip(ctx, slot, move_id);
                 self.world.seat_npc_floor_resample(slot, ctx.flags);
