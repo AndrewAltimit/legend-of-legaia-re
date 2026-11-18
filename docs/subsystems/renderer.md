@@ -2626,7 +2626,14 @@ in its RAM) where the port, rejecting them, drew black.
 The draw-kind-`4` arm makes the same test after its emitter has built the node's
 geometry (`0x8001B160..0x8001B1DC`): a node on render mode `6` (`+0x5A`) is skipped
 under view depth `0xA1`, any other with a non-zero `+0x72` under `0xA0`, unless
-`+0x52` carries `0x20`. So a cast's ring, fan or tube whose origin the camera
+`+0x52` carries `0x20`. The depth is measured only for a node whose `+0x10`
+carries `0x80` (`0x8001AE00`); any other stores `+0x34 = 0x7D0` (`0x8001AE40`) and
+always draws. Move-VM op `0x15` clears the bit with a `+0x52` that sets `0x400`, so
+a camera-relative node (`+0x52 & 0x780`) is never skipped: Gimard's camera-locked
+fans read `0x00044800` beside `+0x52 = 0x780` in a `--retail-parts` recording, and
+taking them by their camera-space origin dropped them and read Gimard's film `.774`
+for `.985`. The depth is the world position's under the camera
+(`0x8001AE0C..0x8001AE34`), not the draw's camera-relative placement. So a cast's ring, fan or tube whose origin the camera
 passes is dropped whole, in battle as on the field. Nova's whirlwind wall (PROT
 0913, records `0x801F87F0` / `0x801F8790`, a cloud-textured tube) is the case: a
 `--retail-parts` recording reads the wall's `+0x34` falling through `129` and on to

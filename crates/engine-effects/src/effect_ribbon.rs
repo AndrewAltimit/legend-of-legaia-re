@@ -828,7 +828,7 @@ pub struct RibbonDraw {
 /// tail draws nothing of a node (`FUN_8001ADA4`, `0x8001B160..0x8001B1DC`):
 /// on a mode-`6` node (`+0x5A`) one under `0xA1`, on any other with a
 /// non-zero render scale `+0x72` one under `0xA0`, unless `+0x52` carries
-/// `0x20`. The emitter has already built the node's geometry; the tail
+/// `0x20`, and only for a node whose view depth the dispatcher measured. The emitter has already built the node's geometry; the tail
 /// returns before the model draw. The test is on the node's origin, not its
 /// primitives, so a node the camera stands inside is dropped whole: Nova's
 /// whirlwind wall (PROT 0913, `0x801F87F0` / `0x801F8790`, a cloud-textured
@@ -837,7 +837,14 @@ pub struct RibbonDraw {
 ///
 /// PORT: FUN_8001ADA4 (`0x8001B160..0x8001B1DC`, the draw-kind-4 tail's near reject)
 pub fn node_near_reject_depth(s: &legaia_engine_vm::move_vm::ActorState) -> Option<f32> {
-    if s.field_52 & 0x20 != 0 {
+    // The view depth is measured only for a node whose `+0x10` carries
+    // `0x80` (`andi v0,v0,0x80` at `0x8001AE00`); any other has `+0x34 =
+    // 0x7D0` stored in its place (`0x8001AE40`) and always draws. The seater
+    // raises the bit and move-VM op `0x15` clears it beside a `+0x52` with
+    // `0x400` set, so a camera-relative node (`+0x52 & 0x780`) is never
+    // rejected: Gimard's arm-9..12 camera-locked fans read `0x00044800`
+    // under `+0x52 = 0x780` in a `--retail-parts` recording.
+    if s.field_52 & (0x20 | 0x400) != 0 {
         None
     } else if s.move_submode == 6 {
         Some(161.0)
@@ -887,6 +894,8 @@ mod tests {
         s.move_submode = 2;
         s.field_52 = 0x20;
         assert_eq!(node_near_reject_depth(&s), None);
+        s.field_52 = 0x780;
+        assert_eq!(node_near_reject_depth(&s), None, "camera-relative");
         s.field_52 = 0;
         s.field_72 = 0;
         assert_eq!(node_near_reject_depth(&s), None);

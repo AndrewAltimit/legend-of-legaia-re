@@ -455,10 +455,13 @@ pub fn effect_model_draws(
             let model = node(rb.flags_52, rb.world_pos, rb.rot);
             // The draw-kind-4 tail skips a node whose origin stands nearer
             // than its view-depth floor (`effect_ribbon::node_near_reject_depth`),
-            // read off the view-space origin the dispatcher's `MVMVA` stored.
+            // read off the view depth the dispatcher's `MVMVA` stored: the
+            // world position `+0x14` under the camera (`0x8001AE0C..0x8001AE34`),
+            // whatever camera-relative prefix the node's draw takes after.
+            let origin = node(0, rb.world_pos, rb.rot);
             match (part_cam, rb.near_reject_depth) {
                 (Some(cam), Some(floor))
-                    if cam.eye_point([model[12], model[13], model[14]], battle)[2] < floor =>
+                    if cam.eye_point([origin[12], origin[13], origin[14]], battle)[2] < floor =>
                 {
                     None
                 }
