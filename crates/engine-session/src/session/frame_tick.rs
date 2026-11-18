@@ -455,7 +455,10 @@ impl<S: AudioSink> BootSession<S> {
         // keeps, exactly once per arm.
         let menu_opened_this_tick = !self.host_owns_pause_menu
             && matches!(
-                self.press_field_menu(self.host.world.input.just_pressed(PadButton::Start)),
+                self.press_field_menu({
+                    let pad = &self.host.world.input;
+                    pad.pad() & !pad.pad_prev() & super::MENU_BUTTONS != 0
+                }),
                 PauseMenuPress::Opened { .. }
             );
         if !self.host_owns_pause_menu && !menu_opened_this_tick && self.field_menu.is_some() {

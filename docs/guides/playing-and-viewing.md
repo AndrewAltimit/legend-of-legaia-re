@@ -448,6 +448,9 @@ Keyboard defaults are arrows = D-pad, then:
 | `Enter`, `Space` | Start |
 | `RShift` | Select |
 
+Start opens the pause menu, and so does Triangle, the original game's menu
+button.
+
 `Esc` twice quits: the first press only shows *Press Esc again to quit* at
 the bottom left of the window, and a second press within three seconds closes it,
 so a stray press does not lose an unsaved game. The browser play page ships a *different* default layout (`X` is

@@ -139,7 +139,7 @@ impl<S: AudioSink> BootSession<S> {
         if !claims.overlay_open
             && claims.pause_menu_ready
             && let PauseMenuPress::Opened { scripted } =
-                self.press_field_menu(edge & PadButton::Start.mask() != 0)
+                self.press_field_menu(edge & super::MENU_BUTTONS != 0)
         {
             return TickOwner::PauseMenuOpened(scripted);
         }

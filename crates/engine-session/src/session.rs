@@ -50,6 +50,20 @@ pub use frame_steps::step_npc_clip_players;
 pub use scene_entry::{NewGameHost, start_new_game_on};
 pub use tick_owner::{TickClaims, TickOwner};
 
+/// The pad buttons whose new press is a pause-menu press on the field and
+/// the overworld.
+///
+/// Retail's accept (`FUN_801D01B0`, `0x801D0250..0x801D0284`) tests the
+/// newly-pressed packed word against the menu mask `_DAT_800846D8`, which
+/// the new-game init `FUN_80034A6C` seeds to `0x10` (Triangle) and nothing
+/// rewrites, widened by `0x100` (Select). A capture over `conc` pressing
+/// Triangle opens it; the port had read Start alone, which retail's accept
+/// never tests. Triangle is retail's, Start stays the port's own menu key.
+/// Select is left out: the hosts read Select held + Start as the settings
+/// chord, and a Select edge opening the menu first would take that chord.
+// REF: FUN_801D01B0
+pub const MENU_BUTTONS: u16 = PadButton::Start as u16 | PadButton::Triangle as u16;
+
 /// What one menu-button press did ([`BootSession::press_field_menu`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PauseMenuPress {
@@ -506,6 +520,32 @@ mod tests {
         s.camera_azimuth_override = Some(0x400);
         s.tick().expect("tick");
         assert_eq!(s.camera_azimuth_override, None);
+    }
+
+    /// Triangle is retail's menu button (`_DAT_800846D8 = 0x10`, read at
+    /// `0x801D0250`) and opens the menu as Start does; Select does not (the
+    /// hosts' settings chord), nor does any other button.
+    #[test]
+    fn triangle_opens_the_pause_menu_as_retail_does() {
+        let ready = TickClaims {
+            pause_menu_ready: true,
+            ..TickClaims::default()
+        };
+        for (button, opens) in [
+            (PadButton::Triangle, true),
+            (PadButton::Start, true),
+            (PadButton::Select, false),
+            (PadButton::Cross, false),
+        ] {
+            let mut s = headless_session();
+            s.host.world.mode = SceneMode::Field;
+            let owner = s.claim_tick(ready, button.mask());
+            assert_eq!(
+                owner == TickOwner::PauseMenuOpened(false),
+                opens,
+                "{button:?}: {owner:?}"
+            );
+        }
     }
 
     /// The one tick order both play hosts share: a host screen first, the

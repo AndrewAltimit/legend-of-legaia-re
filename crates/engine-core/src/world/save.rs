@@ -636,6 +636,11 @@ impl World {
             && !self.cutscene.opening_chain_active
             && !self.dialogue_owns_input()
             && !self.script_context_engages_player()
+            // An op-`0x49` sub-screen (a code lock, a flag window, a picker)
+            // reads the pad itself, and the talk or record that opened it
+            // holds the engaged bit the accept branches out on; the code
+            // lock takes Triangle as a symbol.
+            && !self.field_vm.submode_screen.is_open()
             && !self.shops.shop_open
             && !self.shops.prize_exchange_open
             && !self.cutscene_narration_active()

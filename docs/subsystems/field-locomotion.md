@@ -212,7 +212,7 @@ The mask word is **`0x48` = Cross | R1**. It is the last of four button-mask wor
 |---|---|---|---|---|
 | `+0x590` = `0x800846D0` | `0x44` | Cross \| L1 | `0x80034AA0` | the heading-directed field interact test `0x801D0818` |
 | `+0x594` = `0x800846D4` | `0x21` | Circle \| L2 | `0x80034AA8` | menus test `0x590 \| 0x594` together - `0x801D8590` (menu overlay), `0x80032328` (SCUS) |
-| `+0x598` = `0x800846D8` | `0x10` | Triangle | `0x80034AB0` | the controller's menu press test at `0x801D0250`, widened to `\| 0x100` (Select) on the fall-through |
+| `+0x598` = `0x800846D8` | `0x10` | Triangle | `0x80034AB0` | the controller's menu press test at `0x801D0250`, widened to `\| 0x100` (Select) on the fall-through; the port opens on Triangle or Start |
 | `+0x59C` = `0x800846DC` | `0x48` | Cross \| R1 | `0x80034AB8` | the run test, `0x801D0364` |
 
 The bit names are the packed pad layout `FUN_8001822C` builds (`0x40` Cross, `0x20` Circle, `0x10` Triangle, `0x08` R1, `0x04` L1, `0x01` L2 - see [`minigame-fishing.md`](minigame-fishing.md)). The run word is ANDed against the *held* mask `_DAT_8007B850`; the other three against the *edge* mask `_DAT_8007B874`, which makes them press tests. The confirm / cancel reading of the first pair is an inference from those sites; the values and the wiring are disassembly.
