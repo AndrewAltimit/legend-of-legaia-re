@@ -87,6 +87,32 @@ impl SceneHost {
         );
     }
 
+    /// Arm the field MAIN INIT hold of a battle's return to the field, in the
+    /// retail-faithful mode only: the scene's block is read again, and the
+    /// hold follows its size
+    /// ([`legaia_engine_system::mode_entry_init::battle_return_hold_vsyncs`]).
+    ///
+    /// REF: FUN_801D6704 (the return arm, `_DAT_8007B8B8 == 2`)
+    fn arm_battle_return_field_init_hold(&mut self) {
+        let sectors = self
+            .index
+            .block_range_extraction(&self.world.active_scene_label)
+            .map_or(0, |(start, end)| {
+                self.index
+                    .entries()
+                    .iter()
+                    .skip(start as usize)
+                    .take(end.saturating_sub(start) as usize)
+                    .map(|e| e.size_sectors)
+                    .sum()
+            });
+        self.world.field_init_hold =
+            legaia_engine_system::mode_entry_init::battle_return_hold_vsyncs(
+                self.world.toggles.skip_load_holds,
+                sectors,
+            );
+    }
+
     /// The exit fade of the overworld entrance at entity `slot`, on the
     /// crossing frame.
     ///
@@ -215,6 +241,15 @@ impl SceneHost {
                 self.world.open_battle_return_field_init();
                 log::info!("field: post-battle return re-ran the scene-entry script");
             }
+        }
+        if was_battle
+            && matches!(
+                self.world.mode,
+                legaia_engine_mode::mode::SceneMode::Field
+                    | legaia_engine_mode::mode::SceneMode::WorldMap
+            )
+        {
+            self.arm_battle_return_field_init_hold();
         }
         self.world
             .materialize_actor_spawns(legaia_engine_core::world::FIELD_SPAWN_START_SLOT);

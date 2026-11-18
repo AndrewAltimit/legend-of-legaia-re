@@ -287,6 +287,38 @@ pub fn door_field_init_hold_vsyncs(keeps_music: bool) -> u16 {
     }
 }
 
+/// Vsyncs a battle's way back to the field holds in game mode `0x02`, a
+/// fixed part and one vsync for every
+/// [`BATTLE_RETURN_SECTORS_PER_VSYNC_X10`] tenths of a sector of the scene's
+/// PROT block.
+///
+/// The return's field init (`_DAT_8007B8B8 == 2`) waits on no floor (the
+/// `0x7E` loop is gated on that word being zero, `0x801D70E8..0x801D70F4`,
+/// and on the dev word `_DAT_8007B868`, `0x801D70FC..0x801D7104`):
+/// its length is its reads - the field overlay, the scene's block, the
+/// track afresh (`0x801D70D4`) - so it follows the block's size.
+/// PCSX-Redux battles played to their end (`autorun_story_forward.lua`)
+/// read mode `0x02` for `325` vsyncs back into `korb2` (209 sectors), `346`
+/// into `map01` (291), `363` into `garmel` (319) and `424` into `town0b`
+/// (491); a line through them misses none by more than six vsyncs.
+pub const BATTLE_RETURN_HOLD_BASE_VSYNCS: u16 = 247;
+
+/// Sectors of the scene's block read per vsync of a battle return's field
+/// init, the slope of [`BATTLE_RETURN_HOLD_BASE_VSYNCS`]'s fit (`2.8`, in
+/// tenths): about the 2x drive's `150` sectors a second.
+pub const BATTLE_RETURN_SECTORS_PER_VSYNC_X10: u32 = 28;
+
+/// [`BATTLE_RETURN_HOLD_BASE_VSYNCS`] for a scene whose PROT block holds
+/// `block_sectors` sectors, in the retail-faithful mode only
+/// (`skip_load_holds` off).
+pub fn battle_return_hold_vsyncs(skip_load_holds: bool, block_sectors: u32) -> u16 {
+    if skip_load_holds {
+        return 0;
+    }
+    let read = block_sectors.saturating_mul(10) / BATTLE_RETURN_SECTORS_PER_VSYNC_X10;
+    BATTLE_RETURN_HOLD_BASE_VSYNCS.saturating_add(u16::try_from(read).unwrap_or(u16::MAX))
+}
+
 /// The field MAIN INIT hold a committed scene change arms: the credits
 /// chain's [`CREDITS_FIELD_INIT_HOLD_VSYNCS`] whenever the credits latch is
 /// up, an ordinary door's [`door_field_init_hold_vsyncs`] only when the
@@ -770,6 +802,16 @@ mod tests {
         assert_eq!(field_init_hold_vsyncs(false, true, false), 0);
         assert_eq!(field_init_hold_vsyncs(false, false, true), 184);
         assert_eq!(field_init_hold_vsyncs(false, false, false), 241);
+        // A battle's return follows the block: the four measured returns
+        // within six vsyncs, none in the default mode.
+        for (sectors, measured) in [(209, 325), (291, 346), (319, 363), (491, 424)] {
+            let got = battle_return_hold_vsyncs(false, sectors);
+            assert!(
+                got.abs_diff(measured) <= 6,
+                "{sectors}: {got} vs {measured}"
+            );
+        }
+        assert_eq!(battle_return_hold_vsyncs(true, 491), 0);
         // Both stand past the floor the init waits out on its vsync counter.
         const { assert!(DOOR_FIELD_INIT_HOLD_KEPT_VSYNCS > FIELD_INIT_FLOOR_VSYNCS) };
     }

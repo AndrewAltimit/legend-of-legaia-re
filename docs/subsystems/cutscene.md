@@ -1953,6 +1953,17 @@ behind every door that did not (`ropeway` -> `map02` -> `stone` ->
 (`mode_entry_init::door_field_init_hold_vsyncs`); the default keeps the load
 instant.
 
+A battle's return to the field runs the same init with the field-entry word
+at `2`, which skips the floor (`0x801D70E8..0x801D70F4`), so its length is
+its reads: the field overlay, the scene's block and the track afresh.
+PCSX-Redux battles played to their end (`autorun_story_forward.lua`) read
+mode `0x02` for `325` vsyncs back into `korb2` (209 sectors), `346` into
+`map01` (291), `363` into `garmel` (319) and `424` into `town0b` (491): a
+line of `247` vsyncs plus one for every `2.8` sectors of the block misses
+none by more than six. The retail-faithful mode arms `field_init_hold` from
+it (`mode_entry_init::battle_return_hold_vsyncs`) on the tick the battle
+hands back to the field or the overworld.
+
 The last one, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` /
 `42 01 09` (Circle / Cross held, [op `0x42` mode 1](script-vm.md)) and a `26` back to the wait.
 The timeline's natural-termination rule reads a backward jump onto an executed PC as a wrapped
