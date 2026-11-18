@@ -3553,6 +3553,14 @@ animating cannot hold the band; with no clip fed the wait passes. Mushura
 arm `0xD`'s wait on the creature's tint word `+0x04` passes: the writer that
 drains it is not identified.
 
+Mushura's arm `0xD` re-arms its framing every pass on the focus pair
+`0x80089118` / `0x80089120` itself, the camera's own focus, so the focus holds
+where arm `0xC`'s last glide left it. Framed on the creature, the port's focus
+walked from `(720, 262)` to `(817, 520)` through the arm while retail's held:
+the `0x8D` film's camera error `21.0` px to `0`, image `.978` to `.984`.
+Port: `ModuleCamState::live_focus`. Grade `capture` + docs (the focus trio,
+[battle action helpers](battle-action-helpers.md)).
+
 Arms that store the camera globals straight (Barra arms 3..6 and `0xC`, Palma
 arms 3 and 4) land each store as a one-frame cut on the origin, the TR z
 through the inverse of the tween's prescale. The builder keeps its endpoints in

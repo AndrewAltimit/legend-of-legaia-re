@@ -260,6 +260,10 @@ pub struct ModuleCamState {
     /// arms a shot (PROT 0928's arm 4 exit). `None` where the host has no
     /// camera.
     pub live_pitch_tr: Option<(i32, [i32; 3])>,
+    /// The live focus trio `0x80089118/1C/20` as the host last saw it: PROT
+    /// 0915's arm `0xD` re-arms its framing on it every pass, so its focus
+    /// stays where arm `0xC`'s last glide left it.
+    pub live_focus: Option<[i32; 3]>,
     /// Module-image words a director reads that the module's ported tick
     /// body owns, fed by the host each tick: PROT 0910's hit counter
     /// `0x801F8DAC` and fourth-slash progress `0x801F8DA8`, which pick its
