@@ -4547,9 +4547,12 @@ fold.
   vsyncs long on that step, a third of a drain each: the spin held `78` vsyncs
   longer. The arm's two cost classes are capture tail rows now
   (`CAPTURE_ARM_COST_TAILS`): `219` vsyncs at `3` and `983` at `1`. Which slot
-  the wheel lands on is also the slots arm 4 fills off `rand()`, which a film
-  seat does not carry: the film still lands Halve HP where retail's lands an
-  outcome with no reaction (`--retail-steps --rand-track` lands retail's).
+  the wheel lands on is also the slots arm 4 fills off `rand()`, so the arms
+  before it count too: arms 1 and 4 open over the step-`3` edge and run just
+  under it, and on the table's `3` arm 1 took two more passes than retail's and
+  the fill dealt another wheel (Halve HP, where retail's lands an outcome with
+  no reaction). With their rows the film lands retail's outcome on the port's
+  own steps.
 
 - **The message bar.** The body calls the element spawner on the bar four
   times with mode `0` and once with mode `1`. Arm 5's exit raises the stop

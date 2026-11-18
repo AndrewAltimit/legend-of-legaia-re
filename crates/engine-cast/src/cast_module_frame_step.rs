@@ -1385,8 +1385,17 @@ pub const CAPTURE_ARM_READ_TAILS: &[(u8, u8, u16, u8)] = &[(0x6E, 4, 27, 3)];
 /// (`0x801F75EC..0x801F7630`). On the arm's cheap `1` the port ran the dear
 /// frames three vsyncs long on a step of `1`, drained the countdown a third as
 /// fast and held the spin `78` vsyncs longer (`1280`); with the rows its arm
-/// runs `219` vsyncs at `3` and `983` at `1`.
+/// runs `219` vsyncs at `3` and `983` at `1`. Its arms 1 and 4 open over the
+/// step-`3` edge (`525`, `511`) and run just under it (`473`..`508`), so each
+/// reads `3` for about the ring's sixteen frames and `2` after, where the
+/// table's `3` held the step through arm 1 and into arm 2. The recording's
+/// step reads `3` through arm 1's nineteenth frame, three past the one dear
+/// cost's sixteen, and the row's edge is fitted to the step. The arms' pass
+/// counts are the wheel's slot fill: run on the table, arm 1 took two more
+/// passes than retail's, and the fill (`rand()` in arm 4) dealt another wheel.
 pub const CAPTURE_ARM_COST_TAILS: &[(u8, u8, u16, u8)] = &[
+    (0x5F, 1, 3, 2),
+    (0x5F, 4, 1, 2),
     (0x5F, 6, 0, 3),
     (0x5F, 6, 57, 1),
     (0xAD, 24, 20, 2),
