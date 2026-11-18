@@ -65,6 +65,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_CAST_PRES", "additive": False, "note": "print one stderr line per cast-module tick whose arm has presentation sites; draws nothing"},
     {"env": "LEGAIA_DIAG_CAPTURE_STATE", "additive": False, "note": "print the battle state on the --screenshot frame; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ", "additive": False, "note": "record a cast's frames + per-tick metadata for the cast-sequence oracle; draws nothing"},
+    {"env": "LEGAIA_DIAG_CAST_SEQ_PASS_LEFT", "additive": False, "note": "cast-sequence harness seat: start the recording on its frame phase (vsyncs left in the pass, step) at the gate; draws nothing"},
     {"env": "LEGAIA_DIAG_TICK_DIGEST", "additive": False, "note": "append one line per session tick (pad word, mode, digest) to the named file for host-trace / walk-film comparisons; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_STEP_ARM", "additive": False, "note": "audio-pcm cast_steps: open the retail step track on the state's own instant (state,phase,band word) instead of cast begin; harness seat, draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_RING_AT_FRAME_END", "additive": False, "note": "audio-pcm cast_steps: key battle ring cues at the end of their frame step, as retail's frame driver does; sound timing of a harness channel, draws nothing"},
