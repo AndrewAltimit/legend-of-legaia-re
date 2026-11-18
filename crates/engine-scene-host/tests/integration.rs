@@ -216,6 +216,7 @@ mod scene_host_effect_pool_underlay_disc;
 mod scene_live_disc;
 mod scene_resources_real_data;
 mod scene_round_trip_disc;
+mod scene_selector_cutscenes_disc;
 mod scene_targeted_vram;
 mod scene_vab_offset_disc;
 mod scene_warp_seat_e2e;

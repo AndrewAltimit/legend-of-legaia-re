@@ -573,6 +573,10 @@ impl World {
     pub fn seed_free_roam_story_baseline(&mut self, scene: &str) {
         self.field_vm.free_roam_staging = true;
         self.field_vm.free_roam_entry_frame = self.clock.display_frames;
+        // The previous pick's beat flags go first, as the twins' do.
+        for f in std::mem::take(&mut self.field_vm.picker_beat_flags) {
+            self.system_flag_clear(f);
+        }
         // Managed story-event flags (reset-then-seed): every flag any twin
         // seeds is cleared first, then the picked scene's own set is raised.
         for &(_, flags) in FREE_ROAM_TWIN_SEEDS {
@@ -615,6 +619,21 @@ impl World {
             && !self.cutscene_timeline_active()
     }
 
+    /// Raise the story flags a scene-selector entry beat needs (the
+    /// arriving door's hand-off flags and the beat record's C2 list), as the
+    /// door and the story before it would have. Each flag that was clear is
+    /// remembered and cleared again by the next picker staging
+    /// ([`Self::seed_free_roam_story_baseline`]), so a session's own flags
+    /// are never dropped and one pick's flags never outlive the next pick.
+    pub fn seed_picker_beat_flags(&mut self, flags: &[u16]) {
+        for &f in flags {
+            if !self.system_flag_test(f) {
+                self.system_flag_set(f);
+                self.field_vm.picker_beat_flags.push(f);
+            }
+        }
+    }
+
     /// Stage `scene` as a free-roam picker visit when
     /// [`Self::picker_entry_stages_free_roam`] says it is one. Returns whether
     /// it staged.
@@ -647,6 +666,7 @@ impl World {
         // authored entry pauses / pre-event scenery are the point. Any flags
         // an earlier picker staging seeded reset with the bank.
         self.field_vm.free_roam_staging = false;
+        self.field_vm.picker_beat_flags.clear();
         self.flags.system_flags.clear();
         self.party.money = NEW_GAME_STARTING_GOLD;
         // A New Game is no retail block's continuation: its saves compose

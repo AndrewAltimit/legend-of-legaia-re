@@ -21,8 +21,8 @@ mod world_map_scene;
 
 pub use door_replay::DoorTaken;
 pub use entry_beats::{
-    HeldReason, PICKER_ENTRY_BEATS, PICKER_ENTRY_BEATS_HELD, PickerEntryBeat, PickerEntryBeatHeld,
-    picker_entry_beat,
+    BeatTrigger, HeldReason, PICKER_BEATS_THAT_LEAVE, PICKER_ENTRY_BEATS, PICKER_ENTRY_BEATS_HELD,
+    PickerEntryBeat, PickerEntryBeatHeld, picker_entry_beat,
 };
 pub(crate) use entry_seat::PickerOverrideSeat;
 pub use entry_seat::{PICKER_SEAT_OVERRIDES, PickerSeat, PickerSeatRule, picker_seat_override};
