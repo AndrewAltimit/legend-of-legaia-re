@@ -152,9 +152,9 @@ impl MenuRuntime {
     pub fn open_shop(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
         self.shop_slides.reset();
-        // A direct open (tooling / tests) skips the field fade; the merchant
-        // path (`open_shop_menu`) runs it.
-        self.shop_age = SHOP_FADE_FRAMES;
+        // A direct open (tooling / tests) skips the field fade and the load
+        // hold; the merchant path (`open_shop_menu`) runs them.
+        self.shop_age = SHOP_FADE_FRAMES + SHOP_LOAD_HOLD_OPEN;
     }
 
     /// Open a shop into its **top-level Buy / Sell / Trade picker**
@@ -179,9 +179,9 @@ impl MenuRuntime {
     pub fn open_shop_buy(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
         self.shop_slides.reset();
-        // A direct open (tooling / tests) skips the field fade; the merchant
-        // path (`open_shop_menu`) runs it.
-        self.shop_age = SHOP_FADE_FRAMES;
+        // A direct open (tooling / tests) skips the field fade and the load
+        // hold; the merchant path (`open_shop_menu`) runs them.
+        self.shop_age = SHOP_FADE_FRAMES + SHOP_LOAD_HOLD_OPEN;
         self.ctx.state = MenuState::ShopBuy.as_byte();
         self.ctx.cursor = 0;
     }
@@ -245,8 +245,13 @@ impl MenuRuntime {
         if self.shop_session.is_none() && self.prize_session.is_none() {
             return None;
         }
-        (self.shop_age < SHOP_FADE_FRAMES)
-            .then(|| (255 * (self.shop_age + 1) / SHOP_FADE_FRAMES).min(255) as u8)
+        if self.shop_age < SHOP_FADE_FRAMES {
+            return Some((255 * (self.shop_age + 1) / SHOP_FADE_FRAMES).min(255) as u8);
+        }
+        // The retail-faithful load hold: the field stays faded out and no
+        // window is drawn until the windows start to move.
+        (self.shop_load_hold && self.shop_age < SHOP_FADE_FRAMES + SHOP_LOAD_HOLD_OPEN)
+            .then_some(255)
     }
 
     /// Open the casino prize-exchange screen (field-VM op-`0x49` sub-op 7) -

@@ -81,6 +81,19 @@ pub enum MenuTickEvent {
 /// [`MenuRuntime::shop_fade_level`].
 pub const SHOP_FADE_FRAMES: u32 = 14;
 
+/// Ticks a shop holds black after its fade while retail loads the menu
+/// overlay, before the windows move: about fifty frames on the Retock Items
+/// Shop's per-vsync capture ([shop.md], the fade paragraph). A CD wait: the
+/// retail-faithful mode only (`WorldToggles::skip_load_holds` off).
+pub const SHOP_LOAD_HOLD_OPEN: u32 = 50;
+
+/// Ticks a shop's close holds black past the port's own `Closing` /
+/// `Deactivate` beats while retail reloads the field overlay: filmed from
+/// `shop_items_root_retock_retail` with Circle, the windows are out at vsync
+/// `26` and the field starts to lift at `109`, `83` black vsyncs where the
+/// port's beats spend `17`. Retail-faithful mode only.
+pub const SHOP_LOAD_HOLD_CLOSE: u32 = 66;
+
 pub struct MenuRuntime {
     pub ctx: MenuCtx,
     /// Save-slot directory. Created lazily on first save.
@@ -165,6 +178,12 @@ pub struct MenuRuntime {
     /// Ticks since the current shop / prize counter opened, saturating -
     /// the clock of the field's fade to black ([`Self::shop_fade_level`]).
     shop_age: u32,
+    /// Ticks left of a shop close's field-reload hold
+    /// ([`SHOP_LOAD_HOLD_CLOSE`]); the menu stands on `Closing` meanwhile.
+    shop_reload_left: u32,
+    /// The world's retail-faithful load holds, latched each tick
+    /// (`!WorldToggles::skip_load_holds`), for [`Self::shop_fade_level`].
+    shop_load_hold: bool,
     /// The list row the hand was on when a quantity stepper opened over it.
     /// The kind-4 list keeps its selection behind the stepper, so the hand
     /// comes back to this row (clamped to the rebuilt list) when it closes.
@@ -308,6 +327,8 @@ impl MenuRuntime {
             shop_slides: legaia_engine_menus::shop::ShopSlides::default(),
             ui_frames: 0,
             shop_age: 0,
+            shop_reload_left: 0,
+            shop_load_hold: false,
             quantity_list_row: 0,
             ui_cue: None,
             spell_level_notice: None,
