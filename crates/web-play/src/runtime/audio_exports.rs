@@ -46,6 +46,16 @@ impl LegaiaRuntime {
     /// `AudioContext` suspended even inside a gesture - call
     /// [`Self::audio_resume`] right after this to make it audible.
     pub fn audio_init(&mut self) -> bool {
+        self.audio_init_on(JsValue::UNDEFINED)
+    }
+
+    /// [`Self::audio_init`] on the page's own `AudioContext` (the site's one
+    /// shared context, `LegaiaSound.context()` in `site/js/audio-toggle.js`),
+    /// so the engine output and the page's other sources (the FMV fallback,
+    /// the minigame BGM loops) share the context the page's first user
+    /// gesture unlocks. `undefined` / `null` opens a fresh context, as
+    /// `audio_init` does.
+    pub fn audio_init_on(&mut self, ctx: JsValue) -> bool {
         #[cfg(target_arch = "wasm32")]
         {
             // Idempotent: a second output would replace the first, and the
@@ -54,7 +64,12 @@ impl LegaiaRuntime {
             if self.audio_out.is_some() {
                 return true;
             }
-            match WebAudioOut::new() {
+            let out = if ctx.is_undefined() || ctx.is_null() {
+                WebAudioOut::new()
+            } else {
+                WebAudioOut::on_context(ctx)
+            };
+            match out {
                 Ok(out) => {
                     out.set_gain(super::play_page_gain(BGM_DEFAULT_GAIN));
                     #[allow(clippy::arc_with_non_send_sync)]
@@ -76,7 +91,10 @@ impl LegaiaRuntime {
             }
         }
         #[cfg(not(target_arch = "wasm32"))]
-        false
+        {
+            let _ = ctx;
+            false
+        }
     }
 
     /// Resume the BGM `AudioContext`. Browsers construct it in `suspended`
