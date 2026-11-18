@@ -474,6 +474,37 @@ def state_creature_restage(out: Path) -> bool:
     return ram[a - RAM_BASE + 0x1DC] & 1 != 0
 
 
+def state_stage_cyclers(out: Path) -> str:
+    """The mode-3 HSV cyclers the recording's state holds armed, as the
+    `LEGAIA_SEAT_STAGE_CYCLERS` list `x:y:w:h:H:S:V:rH:rS:rV:gate`: every
+    part on the nine move-VM lists (`0x8007C34C`) whose tick is the part
+    tick `FUN_80021DF4`, whose render mode `+0x5A` is `3` and whose gate
+    `+0x9C` is up. The replay's fresh fight seats a stage's cyclers at the
+    cycle's start (Doomsday's backdrop row 479 hue-walks from `0` where the
+    state's stands at `176`), the one piece of their history it cannot
+    rebuild. A harness seat (lane A)."""
+    ram = state_ram(read_kv(out / "retail" / "manifest.txt").get("sstate", ""))
+    if ram is None:
+        return ""
+
+    def s16(va: int) -> int:
+        v = int.from_bytes(ram[va - RAM_BASE:va - RAM_BASE + 2], "little")
+        return v - 0x10000 if v >= 0x8000 else v
+
+    seeds = []
+    for k in range(9):
+        n, guard = ram_u32(ram, 0x8007C34C + 4 * k), 0
+        while RAM_BASE <= n < RAM_TOP - 0x100 and guard < 512:
+            guard += 1
+            if ram_u32(ram, n + 0xC) == 0x80021DF4 and s16(n + 0x5A) == 3 and s16(n + 0x9C) != 0:
+                a0, a4 = ram_u32(ram, n + 0xA0), ram_u32(ram, n + 0xA4)
+                rect = (a0 & 0xFFFF, a0 >> 16, a4 & 0xFFFF, a4 >> 16)
+                vals = [s16(n + o) for o in (0x90, 0x92, 0x94, 0x96, 0x98, 0x9A, 0x9C)]
+                seeds.append(":".join(str(v) for v in (*rect, *vals)))
+            n = ram_u32(ram, n)
+    return ",".join(seeds)
+
+
 def state_live_cursor(ram: bytes, a: int, node: int) -> int:
     """The anim node's cursor as the last anim tick left it: the history ring's
     slot 0 (`+0x17A`, stamped beside the committed record `+0x234` at
@@ -1141,6 +1172,9 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         env["LEGAIA_SEAT_SEED_MP_UNPAID"] = "1"
     if state_creature_restage(out):
         env["LEGAIA_SEAT_CREATURE_RESTAGE"] = "1"
+    cyclers = state_stage_cyclers(out)
+    if cyclers:
+        env["LEGAIA_SEAT_STAGE_CYCLERS"] = cyclers
     if a.physical:
         pass
     elif caster < 3:

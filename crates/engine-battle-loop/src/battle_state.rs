@@ -67,6 +67,22 @@ pub struct InflightCastSeed {
 /// monster seats.
 pub const INFLIGHT_GROUND_SLOTS: usize = 8;
 
+/// Capture alignment (lane A harness seat, `LEGAIA_SEAT_STAGE_CYCLERS`): one
+/// mode-3 HSV cycler a retail state holds live - its captured rect
+/// (`+0xA0` / `+0xA4`), its HSV adds (`+0x90` / `+0x92` / `+0x94`), their
+/// rates (`+0x96` / `+0x98` / `+0x9A`) and its gate counter (`+0x9C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StageCyclerSeed {
+    /// The captured rect `(x, y, w, h)` the seed matches a part on.
+    pub rect: [u16; 4],
+    /// The H / S / V adds.
+    pub hsv: [i16; 3],
+    /// The adds' rates.
+    pub rates: [i16; 3],
+    /// The gate counter.
+    pub gate: i32,
+}
+
 /// One op-`0x30` hand-back: the captured rect `(x, y, w, h)` and its texels,
 /// or `None` when the engine had not captured the rect yet
 /// (`BattleState::cell_restores`).
@@ -536,6 +552,12 @@ pub struct BattleState {
     /// row `(224, 476)` holds, copied there once the battle's VRAM has loaded
     /// (`World::apply_battle_vram_moves`). `None` on every ordinary fight.
     pub cue_clut_seed: Option<u8>,
+    /// Capture alignment: the HSV cyclers a retail state holds mid-cycle
+    /// ([`StageCyclerSeed`]). A replayed fight seats its stage's cyclers
+    /// fresh, at the cycle's start; each seed overwrites the matching part's
+    /// adds, rates and gate on its first armed pass and is consumed.
+    /// Empty on every ordinary fight.
+    pub stage_cycler_seeds: Vec<StageCyclerSeed>,
     /// Capture alignment: the roll a state past Element Change's arm 0
     /// accepted (`0x801C8FE4`), which the replay's arm 0 takes in place of its
     /// own. `None` on every ordinary fight.
@@ -1673,6 +1695,7 @@ impl BattleState {
             creature_seat_restage: false,
             forced_monster_target: None,
             cue_clut_seed: None,
+            stage_cycler_seeds: Vec::new(),
             element_roll_seed: None,
             forced_monster_cast_at_prompt: false,
             forced_monster_ground: [None; INFLIGHT_GROUND_SLOTS],

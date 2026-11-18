@@ -242,6 +242,21 @@ impl World {
         {
             return;
         }
+        // A capture's seat (`BattleState::stage_cycler_seeds`): the state's
+        // cycler phase, on the part's first armed pass.
+        if part.state.field_9c != 0
+            && let Some(i) = self
+                .battle
+                .stage_cycler_seeds
+                .iter()
+                .position(|s| s.rect == part.state.keyframe_desc)
+        {
+            let seed = self.battle.stage_cycler_seeds.remove(i);
+            let st = &mut part.state;
+            [st.tween_src_x, st.tween_src_y, st.tween_src_z] = seed.hsv;
+            [st.tween_scale_x, st.tween_scale_y, st.tween_scale_z] = seed.rates;
+            st.field_9c = seed.gate;
+        }
         if part.state.field_9c == 1 {
             let d = &part.state.keyframe_desc;
             self.battle.cell_captures.remove(&(d[0], d[1], d[2], d[3]));
