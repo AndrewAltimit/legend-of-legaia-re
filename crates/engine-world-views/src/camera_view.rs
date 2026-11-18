@@ -291,9 +291,19 @@ pub fn pack_cutscene_view(cam: &Camera, world: &World) -> Option<FieldCameraView
 /// last drew. Released there, both hosts framed the follow view - the shot's
 /// angles and eye trio around the *player* - and the wipe opened inside the
 /// tree line.
+///
+/// A battle never answers yes. It draws through its own phase camera
+/// (`battle_cam_script`), and the field's camera globals play no part in it,
+/// yet a scene timeline can still be running when its fight starts: a
+/// scripted boss arm, or a scene's entry beat under a forced fight
+/// (`noaru`'s formation row `4`, Songi). Asked per host, the window used to
+/// draw that battle through the field shot and the play page to arm the
+/// field pass's `NCLIP` cull over it ([`legaia_engine_field::camera_frame::nclip_cull_mode`]),
+/// which dropped Genocidal Cannon's both-sided draw-kind-4 flares and wash.
 // REF: FUN_801D1344, FUN_801CE8CC
 pub fn cutscene_owns_camera(world: &World) -> bool {
-    !world.camera.state.params.is_empty()
+    world.mode != SceneMode::Battle
+        && !world.camera.state.params.is_empty()
         && (world.cutscene_timeline_active() || world.field_scripts_held_for_battle())
 }
 
@@ -741,6 +751,10 @@ mod tests {
             value: 300,
         }];
         assert!(cutscene_owns_camera(&w), "timeline + a staged slot");
+        // A fight started under the running beat (`noaru` row 4) draws
+        // through the battle camera on both hosts.
+        w.mode = SceneMode::Battle;
+        assert!(!cutscene_owns_camera(&w), "never in battle");
     }
 
     /// A record that commits its fight and ends its run on the `21` after

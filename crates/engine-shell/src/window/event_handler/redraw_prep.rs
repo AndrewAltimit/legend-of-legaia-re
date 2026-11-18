@@ -956,18 +956,9 @@ impl PlayWindowApp {
         // staged param (`camera_view::cutscene_owns_camera`) so a beat record
         // WITHOUT camera beats - a field taunt, the Drake mist-wall
         // force-walk bands - keeps the ordinary field / walk camera.
-        // A battle draws through its own phase camera, never a field shot: a
-        // scene timeline still running when its fight starts (a scripted
-        // boss arm such as `noaru`'s Songi, or a scene's entry beat under a
-        // forced fight) used to hand the battle frame the field cutscene
-        // camera, so the window looked at the stage shell from the field's
-        // vantage while the play page, which never asks, drew the fight
-        // (lane E).
-        if self.session.host.world.mode != SceneMode::Battle
-            && legaia_engine_world_views::camera_view::cutscene_owns_camera(
-                &self.session.host.world,
-            )
-        {
+        // A battle draws through its own phase camera, never a field shot:
+        // the kernel answers no in battle, for both hosts.
+        if legaia_engine_world_views::camera_view::cutscene_owns_camera(&self.session.host.world) {
             let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
             // The shot is the live camera globals, which the op-`0x45` beats
             // and the mover (`FUN_801DC0BC`) wrote this tick
