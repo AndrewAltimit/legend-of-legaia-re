@@ -634,19 +634,13 @@ window.MgDance = (function () {
 
     /* ---------------- sound ---------------- */
 
-    /* The BGM's own context. Every cue and sting keys a voice on the page's
-     * live SPU instead (js/minigame-bgm.js `MgSpu`). */
-    let bgmCtx = null;
+    /* The BGM plays on the page's one AudioContext (js/audio-toggle.js), the
+     * one the live SPU's cues and stings key into too (js/minigame-bgm.js
+     * `MgSpu`); null while muted or before the visitor's first gesture. */
     function bgmContext() {
       /* Page-level sound gate (js/audio-toggle.js). */
       if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return null;
-      if (!bgmCtx) {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!Ctx) return null;
-        bgmCtx = new Ctx();
-      }
-      if (bgmCtx.state === 'suspended') bgmCtx.resume();
-      return bgmCtx;
+      return window.LegaiaSound && LegaiaSound.context ? LegaiaSound.context() : null;
     }
 
     /* A cue by its retail id. */

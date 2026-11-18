@@ -2066,7 +2066,13 @@ div.play-vis-head { cursor: default; }
     const startTitleBgm = () => {
       try {
         if (typeof runtime.audio_init === 'function') {
-          if (typeof runtime.audio_ready !== 'function' || !runtime.audio_ready()) runtime.audio_init();
+          if (typeof runtime.audio_ready !== 'function' || !runtime.audio_ready()) {
+            /* On the page's one AudioContext (play-app.js); with no gesture
+             * yet, the theme starts on the first one. */
+            const up = window.legaiaPlayAudioInit
+              ? window.legaiaPlayAudioInit(runtime, startTitleBgm) : runtime.audio_init();
+            if (!up) return;
+          }
           if (typeof runtime.audio_resume === 'function') runtime.audio_resume();
           if (typeof window.__playApplyVolume === 'function') window.__playApplyVolume();
           if (typeof runtime.play_title_bgm === 'function') runtime.play_title_bgm();

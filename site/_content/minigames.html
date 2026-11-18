@@ -1164,7 +1164,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * window is shorter than either song). Muting or leaving the game's tab
    * stops the loop. */
   const MgBgm = (() => {
-    let ctx = null;
     let cur = null;                /* { game, src } while sounding */
     const RENDER_SECONDS = 45;     /* loop-detection budget */
 
@@ -1191,14 +1190,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       return id > 0 ? id : 0;
     }
 
+    /* The page's one AudioContext (js/audio-toggle.js), shared with the live
+     * SPU; null until the visitor's first gesture, so nothing here builds or
+     * resumes a context the browser would refuse. */
     function audio() {
-      if (!ctx) {
-        const Ctor = window.AudioContext || window.webkitAudioContext;
-        if (!Ctor) return null;
-        ctx = new Ctor();
-      }
-      if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
-      return ctx;
+      return window.LegaiaSound && LegaiaSound.context ? LegaiaSound.context() : null;
     }
     function soundOn() {
       return !window.LegaiaSound || LegaiaSound.isSoundOn();
@@ -1208,9 +1204,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       const bgm = gameBgm(game);
       if (!bgm || prerendered[game] || !window.MgBgm2) return;
       prerendered[game] = true;
-      const a = audio();
-      if (!a) return;
-      setTimeout(() => { try { MgBgm2.render(api, a, bgm, RENDER_SECONDS); } catch (e) { /* skip */ } }, 400);
+      /* The render needs no context (an AudioBuffer belongs to none), so a
+       * pre-mix at disc load runs ahead of the first gesture. */
+      setTimeout(() => { try { MgBgm2.render(api, null, bgm, RENDER_SECONDS); } catch (e) { /* skip */ } }, 400);
     }
     function start(game) {
       if (cur && cur.game === game) return true;

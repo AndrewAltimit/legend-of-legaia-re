@@ -318,7 +318,7 @@
   /** Cache of demuxed voice metadata per SE bank, keyed by `lba`. Filled the
    * first time a bank is expanded so re-expanding is instant. */
   const seVoiceCache = new Map();
-  let audioCtx = null;     // shared AudioContext for XA one-shot playback
+  let audioCtx = null;     // the page's AudioContext (LegaiaSound.context())
   let activeSource = null; // current AudioBufferSourceNode (for XA preview)
   let activeBgm = null;    // { prot_index, vab_offset, seq_offset } when BGM playing
   let activeBgmSource = null;  // current BGM AudioBufferSourceNode
@@ -355,15 +355,16 @@
   }));
 
   // ---------------- WebAudio one-shot helpers ----------------
-  // AudioContext is created lazily on first user interaction. Most browsers
-  // start it in `suspended` state even when created inside a click handler;
-  // calling `.resume()` unblocks audio output. We re-resume on every play
-  // (idempotent) to recover from background-tab suspensions too.
+  // Every preview plays on the page's one AudioContext
+  // (`LegaiaSound.context()`, js/audio-toggle.js), which comes up on the
+  // visitor's first gesture - every caller here is a Play click - and is
+  // resumed on each call and each later gesture, so a background-tab
+  // suspension recovers too. A page without the shared module builds its own.
   function ensureAudioCtx() {
+    if (!audioCtx && window.LegaiaSound && LegaiaSound.context) audioCtx = LegaiaSound.context();
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().catch(() => {});
-    }
+    if (window.LegaiaSound && LegaiaSound.context) LegaiaSound.context();
+    else if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
     return audioCtx;
   }
 

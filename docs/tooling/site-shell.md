@@ -400,6 +400,38 @@ the file again, click **New game** as soon as the boot modes appear, and read
 the HUD ten seconds later. Re-picking leaves the HUD's Scene at `-` (the engine
 never ticked); skipping the re-pick, same profile and same timing, boots to `opdeene`.
 
+## One AudioContext per page, opened by the first gesture
+
+The cached-disc auto-load above runs with no user input at all, so anything a
+page builds at disc load runs before the visitor's first gesture. A browser
+creates an `AudioContext` made then `suspended` and logs an autoplay warning,
+and it refuses a `resume()` until a gesture. Only a later resume brings it up,
+and nothing guarantees one comes. The minigames page used to make one context
+per sound path at disc load (the live SPU's `WebAudioOut`, the `MgBgm` loop, the
+dance's BGM, the cue renderer). Each path then resumed its own context only from
+the inputs it happened to hook. The slot machine's Spin click and its Space key
+resumed the BGM's context and never the SPU's, so the music played over silent
+reel and payout cues.
+
+`site/js/audio-toggle.js` therefore owns the page's one context, beside the
+sound switch it already held. `LegaiaSound.context()` answers `null` until the
+page has had a user activation, then builds the context once and resumes it on
+every call. A capture-phase listener on `window` (pointerdown, mousedown,
+touchend, keydown, click) resumes it on every gesture, ahead of the page's own
+handler, and runs the `addResumer` hooks. The live SPU's open waits on that hook
+rather than going ahead suspended. Every source sits on this one context: the
+WASM outputs take it through `minigame_audio_open_on` / `audio_init_on`
+(`WebAudioOut::on_context`, which leaves the page's context open when the output
+drops), and the JS paths call `LegaiaSound.context()`. A pre-render needs no
+context, since an `AudioBuffer` belongs to none (`LegaiaSound.buffer`). A
+gamepad press is not a user activation in any browser, so a pad alone cannot
+unlock audio.
+
+The check is a warm-cache reload with no input, in a browser that enforces the
+policy. Playwright launches Chromium with `--autoplay-policy=no-user-gesture-required`
+unless told not to (`ignoreDefaultArgs`), and every `page.evaluate` runs as a user
+gesture, so the pre-gesture state has to be read from a page-side console report.
+
 ## The 3D pages are WebGL2-only, and they now say so
 
 Every 3D surface on the site takes a `webgl2` context and there has never been

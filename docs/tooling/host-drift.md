@@ -1976,7 +1976,7 @@ fold the standalone games into the play page.
 | fishing venue actors and exchange session | No venue scene; it lays the exchange out from `fishing_exchange_json` and treats every tackle item as held. |
 | the residency-driven slot-2 bank | `stage_sfx_slot` holds PROT 0869 in slot 2 for every game; no cue it plays differs today. |
 | runtime-bank cues (`>= 0x200`) | It stages no `bse.dat`; the export reports the miss instead of truncating to static row 0. |
-| a `World`-side SFX path | It owns its own `Spu`: `LegaiaMinigames::minigame_audio_open` builds a `WebAudioOut` from a user gesture (`MgSpu` in `site/js/minigame-bgm.js`), reached by `minigame_sfx_cue` and `muscle_tally_voice`. |
+| a `World`-side SFX path | It owns its own `Spu`: `LegaiaMinigames::minigame_audio_open_on` builds a `WebAudioOut` on the page's one context once it has had a gesture (`MgSpu` in `site/js/minigame-bgm.js`), reached by `minigame_sfx_cue` and `muscle_tally_voice`. |
 | mixer-side BGM | Its music is a rendered track on an `AudioBufferSourceNode`, by design. |
 
 It alone draws the dome's command ring as chips (the cross-out X is

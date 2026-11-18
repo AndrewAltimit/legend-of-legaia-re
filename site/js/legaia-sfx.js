@@ -22,8 +22,9 @@
  *   LegaiaSfx.ready()                             // cues rendered?
  *   LegaiaSfx.info()                              // { bank, banks, rate, cues, maps }
  *
- * Autoplay policy: the AudioContext is constructed on the first `play`, which
- * pages only reach from a user gesture (a click / keypress). Muting is the
+ * Autoplay policy: playback goes out on the page's one AudioContext
+ * (`LegaiaSound.context()`), which exists only once the page has had a user
+ * gesture; a play before that is skipped, never queued. Muting is the
  * site-wide `LegaiaSound` gate - every play checks it, and a mute stops
  * whatever is already sounding. */
 (function () {
@@ -53,14 +54,22 @@
     return !window.LegaiaSound || window.LegaiaSound.isSoundOn();
   }
 
-  /* Build the AudioContext on demand. Must be reached from a user gesture;
-   * browsers otherwise hand back a suspended context (we resume it anyway,
-   * which succeeds once a gesture has happened). */
+  /* The page's one AudioContext (`LegaiaSound.context()`, js/audio-toggle.js),
+   * which is null until the visitor's first gesture: nothing here builds or
+   * resumes a context the browser's autoplay policy would refuse. The master
+   * gain is this module's own node on it. A page without the shared module
+   * builds its own context here. */
   function audio() {
     if (!ctx) {
-      var Ctor = window.AudioContext || window.webkitAudioContext;
-      if (!Ctor) return null;
-      ctx = new Ctor();
+      var shared = window.LegaiaSound && window.LegaiaSound.context;
+      if (shared) {
+        ctx = window.LegaiaSound.context();
+        if (!ctx) return null;
+      } else {
+        var Ctor = window.AudioContext || window.webkitAudioContext;
+        if (!Ctor) return null;
+        ctx = new Ctor();
+      }
       master = ctx.createGain();
       // Every cue routes through this node, so the site master trim
       // (js/layout.js) belongs here and nowhere else in this file - the
@@ -68,15 +77,25 @@
       master.gain.value = window.LEGAIA_MASTER_TRIM == null ? 0.25 : window.LEGAIA_MASTER_TRIM;
       master.connect(ctx.destination);
     }
-    if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
+    if (window.LegaiaSound && window.LegaiaSound.context) window.LegaiaSound.context();
+    else if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
     return ctx;
+  }
+
+  /* An AudioBuffer belongs to no context, so building one needs no gesture. */
+  function makeBuffer(channels, frames, rate) {
+    if (ctx) return ctx.createBuffer(channels, frames, rate);
+    if (window.LegaiaSound && window.LegaiaSound.buffer) {
+      return window.LegaiaSound.buffer(channels, frames, rate);
+    }
+    var c = audio();
+    return c ? c.createBuffer(channels, frames, rate) : null;
   }
 
   /* Copy one cue's interleaved-stereo i16 PCM into an AudioBuffer. */
   function bufferFor(id) {
     if (buffers[id] !== undefined) return buffers[id];
-    var c = audio();
-    if (!c || !api) return null;
+    if (!api) return null;
     var pcm = api.cue_pcm_i16(id);           /* Int16Array, interleaved L/R */
     var peak = api.cue_peak(id) / 32768;
     if (!pcm || !pcm.length || peak <= 0) {
@@ -86,7 +105,8 @@
     var frames = pcm.length >> 1;
     /* The SPU renders at 44.1 kHz; the AudioContext resamples if it runs at
      * another rate. */
-    var buf = c.createBuffer(2, frames, meta.rate || 44100);
+    var buf = makeBuffer(2, frames, meta.rate || 44100);
+    if (!buf) return null;
     var l = buf.getChannelData(0);
     var r = buf.getChannelData(1);
     for (var i = 0; i < frames; i++) {
@@ -102,12 +122,11 @@
     var p = pcmBank[key];
     if (!p || !p.data || !p.data.length) return null;
     if (p.buf) return p;
-    var c = audio();
-    if (!c) return null;
     var chs = p.stereo ? 2 : 1;
     var frames = Math.floor(p.data.length / chs);
     if (!frames) return null;
-    var buf = c.createBuffer(chs, frames, p.rate || 37800);
+    var buf = makeBuffer(chs, frames, p.rate || 37800);
+    if (!buf) return null;
     for (var ch = 0; ch < chs; ch++) {
       var d = buf.getChannelData(ch);
       for (var i = 0; i < frames; i++) d[i] = p.data[i * chs + ch] / 32768;
@@ -192,8 +211,8 @@
     },
 
     /* Peak absolute sample of the AudioBuffer a cue actually plays through
-     * (0 = silence / not built). Builds the buffer if it isn't cached, so it
-     * needs the AudioContext - i.e. a user gesture. The verification hook:
+     * (0 = silence / not built). Builds the buffer if it isn't cached (no
+     * AudioContext needed, so no gesture). The verification hook:
      * "did a non-silent buffer reach WebAudio", answered on the browser side
      * rather than trusting the Rust-reported peak. */
     bufferPeak: function (id) {

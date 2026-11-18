@@ -1051,7 +1051,8 @@ void main() { o_color = texture(u_layer, v_uv); }
     step() { this.stepOnce = true; }
 
     /* Bring up the WebAudio BGM backend from inside a user gesture (browser
-     * autoplay policy). Idempotent: initialises the output once, then always
+     * autoplay policy), on the page's one AudioContext (`legaiaPlayAudioInit`
+     * below); a call ahead of the page's first gesture waits for it. Idempotent: initialises the output once, then always
      * resumes the AudioContext (browsers open it suspended even in a gesture).
      * The scene's music plays itself - every engine tick routes the field VM's
      * op-0x35 BGM events into the output - so there is nothing to start here.
@@ -1061,7 +1062,8 @@ void main() { o_color = texture(u_layer, v_uv); }
       if (!rt || typeof rt.audio_init !== 'function') return;
       try {
         if (typeof rt.audio_ready === 'function' ? !rt.audio_ready() : !this._audioUp) {
-          rt.audio_init();
+          if (!this._audioRetry) this._audioRetry = () => this._enableAudio();
+          if (!window.legaiaPlayAudioInit(rt, this._audioRetry)) return;
           this._audioUp = true;
         }
         if (typeof rt.audio_resume === 'function') rt.audio_resume();
@@ -1383,6 +1385,32 @@ void main() { o_color = texture(u_layer, v_uv); }
     { id: 'scale50', applicable: (v) => !v.psxRender },
     { id: 'shadows', applicable: (v) => !!v.dynLighting && v._dynShadowsWanted !== false },
   ];
+
+  /* Open the engine's audio output on the page's one AudioContext
+   * (`LegaiaSound.context()`, js/audio-toggle.js), the context the FMV
+   * fallback and the embedded minigames' BGM use too. Ahead of the page's
+   * first gesture there is no context to open on: `retry` runs on that
+   * gesture instead, and this answers false. A bundle without
+   * `audio_init_on`, a page without the shared module, and the workbench's
+   * same-origin preview frame (whose gesture lands in the parent document,
+   * not here) take the engine's own context, as before. */
+  const audioRetries = new Set();
+  window.legaiaPlayAudioInit = function (rt, retry) {
+    const shared = window.LegaiaSound && LegaiaSound.context;
+    const framed = window.parent !== window;
+    if (shared && typeof rt.audio_init_on === 'function' && !framed) {
+      const ctx = LegaiaSound.context();
+      if (!ctx) {
+        if (typeof retry === 'function' && !audioRetries.has(retry)) {
+          audioRetries.add(retry);
+          LegaiaSound.onUnlock(() => { audioRetries.delete(retry); retry(); });
+        }
+        return false;
+      }
+      return !!rt.audio_init_on(ctx);
+    }
+    return !!rt.audio_init();
+  };
 
   window.PlayView = PlayView;
   /* Drawn by PlayView._drawScreenPrims (play-view-frame.js). */

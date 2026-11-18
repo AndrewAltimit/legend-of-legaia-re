@@ -17,18 +17,22 @@
 
   /* Render + cache one bgm id into a WebAudio buffer with its loop region.
    * Returns null when the id doesn't decode on this disc (so callers can fall
-   * back to silence without throwing). Rendering blocks the thread briefly, so
+   * back to silence without throwing). `ctx` may be null (no gesture yet). Rendering blocks the thread briefly, so
    * callers schedule it off a click/timeout, not the first frame. */
   function render(api, ctx, bgm, seconds) {
     if (cache[bgm] !== undefined) return cache[bgm];
-    if (!api || typeof api.music01_bgm_render !== 'function' || !ctx) return null;
+    if (!api || typeof api.music01_bgm_render !== 'function') return null;
     var r;
     try { r = api.music01_bgm_render(bgm, seconds || 45); } catch (e) { r = null; }
     if (!r || !r.ok) { cache[bgm] = null; return null; }
     var pcm = r.pcm, rate = r.rate;
     var frames = pcm.length / 2;
     if (!frames || !rate) { cache[bgm] = null; return null; }
-    var buf = ctx.createBuffer(2, frames, rate);
+    /* An AudioBuffer belongs to no context, so a pre-render ahead of the
+     * page's first gesture builds one without the (not yet allowed) context. */
+    var buf = ctx ? ctx.createBuffer(2, frames, rate)
+      : (window.LegaiaSound && LegaiaSound.buffer ? LegaiaSound.buffer(2, frames, rate) : null);
+    if (!buf) return null;
     var L = buf.getChannelData(0), R = buf.getChannelData(1);
     for (var i = 0; i < frames; i++) { L[i] = pcm[i * 2] / 32768; R[i] = pcm[i * 2 + 1] / 32768; }
     var ls = r.loop_start, le = r.loop_end || frames;
@@ -70,12 +74,26 @@
    * (`LegaiaMinigames::minigame_audio_*`, the audio director the play hosts
    * run), so it carries the tone's ADSR, the retail volume and pan and the
    * tone's reverb send. Only the BGM above is rendered offline. This is the
-   * page-side gate: open it inside a user gesture, mirror the site sound
-   * toggle onto it, and tell it which game is open.
+   * page-side gate: open it on the page's one AudioContext
+   * (`LegaiaSound.context()`, js/audio-toggle.js) once the page has had a
+   * user gesture, mirror the site sound toggle onto it, and tell it which
+   * game is open.
+   *
+   * The open waits for the gesture rather than going ahead suspended. Calls
+   * before it (the duel's cue load and the tab staging at disc load, a disc
+   * that auto-loaded from the cache) only remember the instance; the gesture
+   * itself opens the SPU (the `LegaiaSound.addResumer` hook below), ahead of the page's own
+   * handler for that click or key. A context opened suspended used to stay
+   * that way whenever the visitor's first input was one that never called
+   * this - the slot machine's Spin, its Space key - so the music (resumed by
+   * each start) played over a silent SPU.
    *
    * `api` is the `LegaiaMinigames` instance. Idempotent. */
   var spuOpen = false;
   var spuApi = null;
+  /* A bundle that predates `minigame_audio_open_on` builds its own context:
+   * the gesture resumer below is what reaches it. */
+  var ownCtxResumer = false;
 
   function spuReady(api) {
     if (!api || typeof api.minigame_audio_open !== 'function') return false;
@@ -83,20 +101,31 @@
     /* Page-level sound gate (js/audio-toggle.js) - same gate the offline cue
      * path above checks, so one toggle silences both. */
     var on = !window.LegaiaSound || LegaiaSound.isSoundOn();
+    var shared = window.LegaiaSound && LegaiaSound.context;
+    /* Open is per instance: a second disc load builds a fresh one. */
+    if (typeof api.minigame_audio_ready === 'function') spuOpen = api.minigame_audio_ready();
     if (!spuOpen) {
       if (!on) return false;           /* never open a context while muted */
-      if (!api.minigame_audio_open()) return false;
+      if (shared && !LegaiaSound.unlocked()) return false;   /* onUnlock opens it */
+      var ctx = shared ? LegaiaSound.context() : null;
+      var opened = ctx && typeof api.minigame_audio_open_on === 'function'
+        ? api.minigame_audio_open_on(ctx) : api.minigame_audio_open();
+      if (!opened) return false;
       spuOpen = true;
+      if (!(ctx && typeof api.minigame_audio_open_on === 'function')
+          && shared && !ownCtxResumer && typeof api.minigame_audio_resume === 'function') {
+        ownCtxResumer = true;
+        LegaiaSound.addResumer(function () {
+          if (spuApi && LegaiaSound.isSoundOn()) spuApi.minigame_audio_resume();
+        });
+      }
     }
-    /* Resume on EVERY call, not only the opening one. The first open can
-     * run outside a gesture (the duel's cue load at disc load, a disc that
-     * auto-loaded from the cache), and the browser then parks the context
-     * `suspended` and refuses a resume until a gesture. Resuming only once
-     * left the page's whole live SPU - every minigame cue, the announcer
-     * lines, the dome tally - silent for good, while the music (a separate
-     * context `MgBgm` resumes on each start) played. A resume of a running
-     * context is a no-op. */
-    if (on && typeof api.minigame_audio_resume === 'function') {
+    /* Resume on every call (a no-op on a running context): the shared one
+     * through `LegaiaSound.context()`, an older bundle's own through its
+     * export. */
+    if (on && shared) LegaiaSound.context();
+    if (on && typeof api.minigame_audio_resume === 'function'
+        && (!shared || LegaiaSound.unlocked())) {
       try { api.minigame_audio_resume(); } catch (e) {}
     }
     if (typeof api.minigame_audio_set_muted === 'function') {
@@ -107,11 +136,22 @@
 
   /* The toggle reaches a voice already sounding, such as the reel motor. */
   if (window.LegaiaSound) LegaiaSound.onChange(function () { if (spuApi) spuReady(spuApi); });
+  /* A gesture opens the SPU for whichever instance asked before one (every
+   * gesture, not the first only: a disc loaded after the first click builds
+   * a fresh instance that has yet to open). */
+  if (window.LegaiaSound && LegaiaSound.addResumer) {
+    LegaiaSound.addResumer(function () {
+      if (spuApi && !(typeof spuApi.minigame_audio_ready === 'function' && spuApi.minigame_audio_ready())) {
+        spuReady(spuApi);
+      }
+    });
+  }
 
   window.MgSpu = {
     ready: spuReady,
     /* The open game's banks: a tab change is that game's mode entry. */
     enter: function (api, game) {
+      if (api) spuApi = api;
       if (api && typeof api.minigame_audio_enter === 'function') api.minigame_audio_enter(game);
     },
     /* One cue by id. Returns whether a voice keyed - the engine answers false
