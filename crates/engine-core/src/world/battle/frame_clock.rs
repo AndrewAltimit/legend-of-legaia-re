@@ -141,8 +141,11 @@ impl World {
                     w
                 }
             })
-        }
-        .filter(|_| !table_kept);
+        };
+        // An arm table's frames still have the census's work: what spans
+        // them under a capture-band module's line (below).
+        let arm_census = census.filter(|_| self.toggles.battle_poly_frame_cost);
+        let census = census.filter(|_| !table_kept);
         let poly = census.filter(|_| self.toggles.battle_poly_frame_cost);
         let table_work = measured_frame_cost_at(self.party.party_count, state, passes)
             .saturating_add(self.battle_frame_load_cost());
@@ -220,14 +223,25 @@ impl World {
         self.battle.frame_cost_ring_before =
             matches!((arm_step, poly), (Some(_), None)).then_some(self.battle.frame_cost_ring);
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
-        // A capture-band module's own line leaves its arms their table's
-        // length: retail's frames under one run anywhere from inside the step
-        // (Death Game, four vsyncs a step-`4` frame) to eight (Kiss of Death),
-        // which no one share of a table cost reads. A priced frame reads them.
+        // A capture-band module's own line spans an arm's frames by their
+        // census work under the polls, the arm's step staying its table's:
+        // retail's frames under one run anywhere from inside the step (Death
+        // Game, four vsyncs a step-`4` frame) to eight (Kiss of Death), which
+        // no one share of a table cost reads. The line is a wall-clock span,
+        // so these frames' length is what decides which passes it loads: a
+        // `--cd-trace` recording of Megaton Press
+        // (`nivora_duel_pre_megaton_press`) polls from the line's cue to the
+        // end of arm 11 (`75527` `GetlocL` / `GetStat` pairs), its table arms
+        // 2 to 4 and 9 to 11 running `6` and `7` to `8` vsyncs a frame; run
+        // at their step, the port's line outlived them and loaded arms 13 to
+        // 17 on step `4` where retail's run `2`.
         match (arm_step, poly) {
             (None, _) | (Some(_), Some(_)) => cost,
             (Some(_), None) if self.audio.battle_xa_poll_load => loaded.unwrap_or(0),
-            (Some(_), None) => 0,
+            (Some(_), None) => match (xa_passes, arm_census, self.toggles.battle_cd_timing) {
+                (Some(_), Some(work), CdTiming::PcsxRedux) => xa_polled_work_cost(work),
+                _ => 0,
+            },
         }
     }
 
@@ -749,6 +763,9 @@ impl World {
                 own
             } else if self.audio.battle_xa_poll_load {
                 fc::frame_span(fc::xa_loaded_frame_cost(self.battle.frame_work), own)
+            } else if span_cost > 0 {
+                // A module line's arm spans its census work under the polls.
+                fc::frame_span(span_cost, own)
             } else {
                 MODULE_LINE_FRAME_VSYNCS.max(own)
             };
@@ -2607,6 +2624,33 @@ mod tests {
             assert_eq!(cost, xa_polled_work_cost(polygon_frame_work(polys)));
             assert_eq!(frame_span(cost, 4), span, "{polys}");
         }
+    }
+
+    /// Under the census an arm table keeps the step of a capture arm, and a
+    /// band module's line spans the arm's frames by the census's work under
+    /// the polls: Megaton Press's arms 9 to 11 run `7` to `8` vsyncs a frame
+    /// on the `--cd-trace` recording.
+    #[test]
+    fn a_table_arm_under_a_band_line_spans_its_census_work() {
+        use legaia_engine_battle_loop::frame_clock::{
+            CdTiming, frame_span, linked_frame_work, xa_polled_work_cost,
+        };
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
+        w.toggles.battle_poly_frame_cost = true;
+        w.party.party_count = 1;
+        w.battle_ctx.action_state = 0x70;
+        let mut spans = vec![0u16; 0x60];
+        spans[0x58] = 1437;
+        w.audio.xa_cue_durations = Some(spans);
+        w.emit_battle_xa_cue(0x158);
+        w.note_linked_polys(2300);
+        let cost = w.push_frame_cost(Some(4));
+        let work = linked_frame_work(2300, w.battle_backdrop_drawn());
+        assert_eq!(cost, xa_polled_work_cost(work));
+        assert!(frame_span(cost, 4) >= 6, "{cost}");
+        assert_eq!(w.battle.frame_cost_step, 4, "the step stays the table's");
     }
 
     /// On a console the clip's stop watch takes a sixteenth of the CPU: the
