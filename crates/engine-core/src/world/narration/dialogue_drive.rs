@@ -2372,10 +2372,19 @@ impl World {
 /// The talker's own actor-word ops a talk steps on the talker's channel
 /// context rather than on its stand-in: the nibble-4 words (`4C 40` scale,
 /// `42` height, `43` / `44` tilt, `45` look, `48` heading), the model set
-/// `4C 50`, the height law `4C D9` / `DA` and the ambient install `34 3x`.
-/// The clip-control word, the rate `4C 41`, the clip `22`, the morph `4B` and
-/// the cursor ops stay on the stand-in, which the talk slice bridges to the
-/// placement.
+/// `4C 50`, the height law `4C D9` / `DA`, the ambient install `34 3x` and
+/// the morph lanes `4B`. The clip-control word, the rate `4C 41`, the clip
+/// `22` and the cursor ops stay on the stand-in, which the talk slice bridges
+/// to the placement.
+///
+/// The morph arm writes the resolved actor's lanes, and the stand-in is no
+/// actor: `vozz` `P1[7]`, the Genesis Tree's revival, re-arms the tree's own
+/// four lanes with `CB 0B 04 02 ..` (rise `0x199`, fall `0x0B` / `0x11` /
+/// `0x22` / `0x22`) before it primes the envelope. On the stand-in the arm
+/// went nowhere and the prime ran the prologue's `0x1000` rates, so the
+/// withered tree dropped to the grown one in four frames where retail grows
+/// it over some five hundred.
+/// REF: FUN_801DE840 (the op-`0x4B` arm `0x801E0820..0x801E08C0`), FUN_80020740
 fn is_talker_actor_word_op(bytecode: &[u8], pc: usize) -> bool {
     let Some(&b) = bytecode.get(pc) else {
         return false;
@@ -2391,6 +2400,7 @@ fn is_talker_actor_word_op(bytecode: &[u8], pc: usize) -> bool {
         // (`0x80039CD8`, `0x80039EAC`), so a talk that raises or drops it
         // writes the talker's word, not the stand-in's.
         0x31 | 0x32 => sub == Some(0x16),
+        0x4B => true,
         _ => false,
     }
 }
