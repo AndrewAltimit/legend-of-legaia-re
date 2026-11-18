@@ -88,6 +88,8 @@ impl World {
             id.held_box = None;
         }
 
+        // A box dismissed on this tick: the talk goes on in the same frame.
+        let mut dismissed = false;
         // A box is open: tick the typewriter + route input.
         if let Some(panel) = id.panel.as_mut() {
             if panel.menu_active() {
@@ -171,6 +173,7 @@ impl World {
                     id.held_box = Some(HeldBox::after_press(panel, post));
                     id.panel = None;
                     end_talk_at_post_box_byte(&mut id);
+                    dismissed = true;
                 } else if panel.is_waiting_for_input() {
                     // Page break inside a multi-page conversation (`0x24` /
                     // `0x48` / implicit next lead): turn the page in the same
@@ -184,6 +187,7 @@ impl World {
                         id.held_box = Some(HeldBox::after_press(panel, post));
                         id.panel = None;
                         end_talk_at_post_box_byte(&mut id);
+                        dismissed = true;
                     } else {
                         for lead in panel.row_leads() {
                             if lead < id.visited.len() {
@@ -197,8 +201,15 @@ impl World {
                     panel.confirm_while_typing();
                 }
             }
-            self.dialog.inline = Some(id);
-            return;
+            // The SM that sees the box done runs on into the record's ops in
+            // the same call (the prop runner's note,
+            // `World::step_prop_interaction`); a talk the byte after the box
+            // ends goes through the next call's end path as before.
+            // REF: FUN_80039B7C (0x80039C5C..0x80039C8C, 0x80039D64..0x80039E14)
+            if !(dismissed && !id.done) {
+                self.dialog.inline = Some(id);
+                return;
+            }
         }
 
         // The dialog SM runs from the talker's actor tick, once per game
