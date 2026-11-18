@@ -3341,6 +3341,23 @@ the seat's null record pointer, its size from RAM `0x1F`, which holds `0x81`
 in every retail image: in reach from anywhere near the field, so it is traded
 again on the next pass and the creature keeps after the row
 (`World::mushura_chase`). Grade `disassembly` + `capture`.
+The chase is one call a pass: the hit loop, the trade and the turn run once on the
+pass's opening tick, the turn by the pass's own frame step. A `--watch` of the target
+word `0x801F8154` reads one store a pass, the traded seats `5, 3, 5, 4` and then `3`
+held for ten passes; traded on each of a pass's one-vsync ticks, an empty seat came up
+several times a pass and the creature turned toward whichever was left. The struck
+body turns a quarter off the creature by the bearing onto its **body** pair
+`+0x3C` / `+0x40` (`0x801F79F8`), and a body dead ahead (`bne a0,s1` at `0x801F7A40`
+not taken) draws one `rand()` it never reads and takes `+0xC00`, the side a bearing
+past the creature's own takes (`0x801F7A48..0x801F7A60`); a `--range-trace` recording
+reads Gobu Gobu's facing `0xC00` off the first hit, which finds it straight down the
+creature's line. The port had turned it `0x400` without the draw, so its knock-back
+walked it the other way and the chase read it in reach on passes retail reads it out.
+On the `--rand-track` seat the `0x8D` film reads `.974` against `.921` (arm `0xC`
+`.738` to `.804`, more on its own cursors); on the plain seat the stream already
+parts from retail's in arm 9, where the creature's idle advances `24` a pass on retail's
+cursors and `32` on the port's, and its walk dust (`FUN_801DEA50`) sheds seven spawns
+more. Grade `disassembly` + `capture`.
 Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of arms
 2 and 7 over its holds. Arm 4's pass stores rate `1` beside the clip it stages, and the commit lifts it to
 `4` (`0x8004B080`), so arm 5 runs at `4` until arm 6 stores `1` again: the eye close-up
