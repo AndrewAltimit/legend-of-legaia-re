@@ -4274,7 +4274,15 @@ centroid (`0x8004A430..0x8004A458`), so the rays fan out of the crystal's middle
 `(28, -388, 1007)` in a `rugi` capture, where a seat on the floor put their
 origin under the HUD. The pool flush `0x801F6E34` and the white `0x801F6E74` sit
 past the countdown test `0x801F6E2C`, on the arm's pass, so the fan lives the whole
-arm. Each ray is a default-arm fin (shape `1`, one column), whose three vertex pairs
+arm. The flush reaches only the pool's words: arm 0 seats the white glow `0x801F9058`
+and the element's coloured one (`0x801F90BC`, `0x801F9120`, `0x801F9184` by the roll)
+straight through `FUN_80021B04` (`0x801F6CAC`, `0x801F6D28`), not through the pool
+wrapper the emitter takes (`0x801F6C94`), so both outlive arm 1's flush and the `k = 5`
+ones. A `--retail-parts` recording of `rugi_rogue_pre_rogue_wind` holds them at
+`(0, 0, 128)` through the Wind run's arm `0x32`, the green one's radius `+0xB6`
+shrinking `510` to `134`, while the flush pass halts every other part; the port's flush
+had taken them too, and the arm framed the bare stage where retail's frames the green
+glow (`ELEMENT_STRIKE_FLUSH_SPARES`). Grade `disassembly` + `capture`. Each ray is a default-arm fin (shape `1`, one column), whose three vertex pairs
 stand `+0xC8 >> 3` apart, so its length channel is its width: the record's program
 fades it in and widens it at `+0xCA = 96` for one wait of `248`, then narrows it at
 `-96` while it fades out, and halts (`0x0D -128`, `0x1C 12`, `0x09 31`, `0x1C -12`,

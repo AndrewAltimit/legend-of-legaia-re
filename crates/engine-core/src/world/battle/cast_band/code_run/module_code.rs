@@ -2248,7 +2248,14 @@ impl World {
                 );
             }
             if arm.flushes_pool {
-                self.casting.flush_module_part_pool();
+                // PROT 0964's strike seats its two glows outside the pool
+                // (`ELEMENT_STRIKE_FLUSH_SPARES`), which its flushes leave.
+                let spare: &[u32] = if entry == 964 {
+                    &legaia_engine_cast::cast_module_camera::ELEMENT_STRIKE_FLUSH_SPARES
+                } else {
+                    &[]
+                };
+                self.casting.flush_module_part_pool_sparing(spare);
             }
             // The line a passing arm prints or clears at the label's place.
             if !arm.hold

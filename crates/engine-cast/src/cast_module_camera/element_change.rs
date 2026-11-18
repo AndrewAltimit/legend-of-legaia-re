@@ -131,6 +131,19 @@ const OPEN_BODY: u32 = 0x801F_8FF0;
 const OPEN_FAR: u32 = 0x801F_9058;
 const OPEN_ELEMENT: [u32; 3] = [0x801F_90BC, 0x801F_9120, 0x801F_9184];
 
+/// The strike's records its pool flushes do not reach. Arm 0 seats the white
+/// glow [`OPEN_FAR`] and the element's coloured glow ([`OPEN_ELEMENT`])
+/// straight through `FUN_80021B04` (`jal` at `0x801F6CAC` and `0x801F6D28`),
+/// into no word of the part pool, where the ray emitter goes through the pool
+/// wrapper (`jal 0x80050ED4` at `0x801F6C94`). So arm 1's flush
+/// (`0x801F6E34`) and the `k = 5` flushes halt the fan and leave both glows:
+/// a `--retail-parts` recording of `rugi_rogue_pre_rogue_wind` holds them at
+/// `(0, 0, 128)`, the green one's radius `+0xB6` shrinking `510` to `134`,
+/// through the whole of the Wind run's arm `0x32`, the flush pass halting
+/// every other part.
+pub const ELEMENT_STRIKE_FLUSH_SPARES: [u32; 4] =
+    [OPEN_FAR, OPEN_ELEMENT[0], OPEN_ELEMENT[1], OPEN_ELEMENT[2]];
+
 /// **Rogue Wind / Thunder / Flame** (the `beq` / `slti` tree at
 /// `0x801F6A68`; caster `actor_table[ctx + 0x13]`). The ids run it alike; arm 1
 /// forks on the last Element Change roll into three six-arm variants, base `2`,
