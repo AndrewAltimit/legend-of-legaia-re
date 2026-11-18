@@ -2581,7 +2581,10 @@ impl World {
                     .actors
                     .get(usize::from(seat_slot))
                     .map_or(0, |a| a.battle.current_anim);
-                self.casting.creature_channel_object = (clip >= 4).then_some((6, 22));
+                self.casting.creature_channel_object =
+                    legaia_engine_effects::summon::creature_channel_object(931)
+                        .filter(|s| usize::from(clip) >= s.from_clip)
+                        .map(|s| (s.channel, s.object));
             }
             if entry == 931 {
                 self.apply_jedo_writes(

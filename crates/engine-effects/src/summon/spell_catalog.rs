@@ -102,6 +102,53 @@ pub fn module_trains_spell_xp(spell_id: u8) -> bool {
     has_summon_body(spell_id) || HIGH_SUMMON_IDS.contains(&spell_id)
 }
 
+/// An object of a summon creature that the cast module draws in another
+/// channel of the creature's per-channel model table
+/// (`*(node + 0x44) + 4 + channel * 4`): from clip `from_clip` on, `channel`
+/// draws `object` instead of its own object, posed by the channel's keyframe
+/// entry. The object sits past every clip's part count, so it has no entry of
+/// its own and draws only through the channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CreatureChannelObject {
+    /// The channel whose pose places the object (and whose own object then
+    /// goes undrawn).
+    pub channel: u8,
+    /// The TMD object the channel draws.
+    pub object: u8,
+    /// The first creature clip (the actor record's `+0x4C` table order) the
+    /// store is in force on.
+    pub from_clip: usize,
+}
+
+/// The channel store a summon's cast module makes on its creature, by the
+/// module's PROT entry ([`summon_stager_prot_entry`]):
+///
+/// - **0931 Jedo**: arm 4 saves channels 6 and 22, and the tail of every pass
+///   stores object 22 (the scythe) into channel 6 while the creature plays clip
+///   4 or later (`0x801F89A0..0x801F89F0`).
+/// - **0932 Meta**: arm 4 saves channels 14 and 16, and arm `0xC`'s exit
+///   stores object 16 (the sword) into channel 14 (`0x801F7738..0x801F7758`) on
+///   the pass that commits clip 3 (`0x801F7708`), and it stays there.
+///
+/// The battle engine places the object on the live cast; the summon viewer
+/// applies the same store to the clips it plays on their own.
+// REF: overlay_summon_meta_0932_801f6a34
+pub const fn creature_channel_object(prot_entry: u32) -> Option<CreatureChannelObject> {
+    match prot_entry {
+        931 => Some(CreatureChannelObject {
+            channel: 6,
+            object: 22,
+            from_clip: 4,
+        }),
+        932 => Some(CreatureChannelObject {
+            channel: 14,
+            object: 16,
+            from_clip: 3,
+        }),
+        _ => None,
+    }
+}
+
 /// The whole player-summon spell-id span, base through high block. Every id in
 /// it resolves through the same linear stager arithmetic - see
 /// [`summon_stager_prot_entry`].

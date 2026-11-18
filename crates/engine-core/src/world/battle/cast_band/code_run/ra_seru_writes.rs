@@ -451,7 +451,11 @@ impl World {
             // (`0x801F6F5C..0x801F6F94`) and this pass stores the second into the
             // first (`0x801F7738..0x801F7758`): the sword in its hand, which no
             // stream's part count reaches on its own channel.
-            (0xC, true) => self.casting.creature_channel_object = Some((14, 16)),
+            (0xC, true) => {
+                self.casting.creature_channel_object =
+                    legaia_engine_effects::summon::creature_channel_object(932)
+                        .map(|s| (s.channel, s.object));
+            }
             (0x12, true) => {
                 for (e, _) in self.ra_seru_row(monster_count) {
                     if let Some(a) = self.actors.get_mut(e) {
