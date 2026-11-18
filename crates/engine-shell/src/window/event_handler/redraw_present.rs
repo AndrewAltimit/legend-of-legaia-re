@@ -246,8 +246,22 @@ impl PlayWindowApp {
         }
     }
 
+    /// Tell the renderer whether this frame builds on an earlier one, and how
+    /// far back, from this frame's world: ahead of every draw of it, the
+    /// sweep's and the framebuffer grab's captures as well as the present.
+    /// Asked after the present instead, a capture drew with the frame
+    /// before's answer, so on the tick a cast's persisting run started or
+    /// changed depth the sweep's PNG read a cleared or older page while the
+    /// presented frame, and the play page, did not (the host pair's
+    /// `cast_thunder`, tick `869`).
+    pub(super) fn arm_frame_persist(&self, r: &legaia_engine_render::Renderer) {
+        r.set_frame_ring_keep(self.session.host.world.cast_module_resident());
+        r.set_frame_persist(self.session.host.world.cast_frame_persists());
+        r.set_frame_persist_depth(self.session.host.world.cast_frame_persist_vsyncs());
+    }
+
     /// The single-shot screenshot harness (phase gate, capture, exit) or
-    /// the present.
+    /// the present. [`Self::arm_frame_persist`] has run for this frame.
     pub(super) fn present_frame(
         &self,
         r: &legaia_engine_render::Renderer,
@@ -256,9 +270,6 @@ impl PlayWindowApp {
         light_prims: &[legaia_render_kernels::screen_prim::ScreenPrim],
     ) {
         let target = |scene| present_target(scene, screen_prims, light_prims);
-        r.set_frame_ring_keep(self.session.host.world.cast_module_resident());
-        r.set_frame_persist(self.session.host.world.cast_frame_persists());
-        r.set_frame_persist_depth(self.session.host.world.cast_frame_persist_vsyncs());
         #[cfg(feature = "oracles")]
         self.record_audio_wav();
         self.capture_cast_sequence_frame(r, &|| target(scene));

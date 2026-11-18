@@ -371,6 +371,7 @@ impl PlayWindowApp {
         // copy reads the displayed framebuffer, so what lands is the frame
         // this redraw presents - its screen layers and every enhancement
         // pass included - not the bare 3D pass.
+        self.arm_frame_persist(r);
         if self.session.host.world.framebuffer_grab_pending()
             && let Some(base) = self.cpu_vram_base.as_mut()
         {
