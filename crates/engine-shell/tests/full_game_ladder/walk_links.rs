@@ -1087,9 +1087,16 @@ pub(super) fn self_opening_doors(session: &NativeSession) -> HashSet<(u8, u8)> {
 /// the camp's (7, 89) teleport, raises its `31 00` only in the spawn arm
 /// that tests `0x15E` (Terra's training), so it stands shut until the
 /// scene is entered again with the flag up, and the camp's way out is the
-/// (19, 90) teleport. A leaf whose touch does anything is counted open as
-/// before: the doors on Rim Elm's way out open through bodies the static
-/// read cannot follow to their `31 00`.
+/// (19, 90) teleport. A touch that only puts up a line is as shut: night
+/// Conkram's house doors (`conc3` P0[2..=9]) answer every touch with two
+/// `1F` text pages and a `25` before their `21` park, and stand over the
+/// teleports into the houses at (17, 30), (19, 35), (38, 38) and the rest.
+/// Counted open, the planner ran the walk to `conc2`'s door (29, 66) past
+/// P0[3]'s leaf at (19, 35), whose box takes the street at (20, 35), and
+/// the walk leaned on it reading the line until the stretch gave up. A
+/// leaf whose touch does anything else is counted open as before: the
+/// doors on Rim Elm's way out open through bodies the static read cannot
+/// follow to their `31 00`.
 pub(super) fn idle_touch_props(session: &NativeSession) -> HashSet<(u8, u8)> {
     use legaia_engine_field::man_field_scripts::partition_record_span;
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
@@ -1131,9 +1138,13 @@ pub(super) fn idle_touch_props(session: &NativeSession) -> HashSet<(u8, u8)> {
                     && i.extended
                         .is_some_and(|t| t != 0xF8 && usize::from(t) >= n0)
             };
+            // The one-byte no-ops (`21` / `24` / `25` / `48`, one handler)
+            // and a text page: what a shut door says.
             !flow.is_empty()
                 && flow.iter().all(|i| {
-                    i.opcode == 0x21 || matches!(i.info, InsnInfo::JmpRel { .. }) || pokes_actor(i)
+                    matches!(i.opcode, 0x21 | 0x24 | 0x25 | 0x48 | 0x1F)
+                        || matches!(i.info, InsnInfo::JmpRel { .. })
+                        || pokes_actor(i)
                 })
         })
         .map(|(&a, _)| a)
