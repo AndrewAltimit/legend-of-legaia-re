@@ -46,7 +46,7 @@ flowchart TD
 
 ## Contents
 
-- [The frame denomination law](#the-frame-denomination-law)
+- [The frame denomination law](#the-frame-denomination-law) - [when the game sees a press](#when-the-game-sees-a-press)
 - [Player actor fields used](#player-actor-fields-used)
 - [Per-frame flow](#per-frame-flow) - [base step](#base-step-selection-walk--run) · [clip base](#the-clip-base-and-the-settle-tail) · [wall slide](#wall-slide-resolution-fun_80046494) · [pad octant](#gp0x2d8-is-authored-not-computed)
 - [Collision](#collision---fun_801cfe4c) - [wall probes](#wall-probes) · [actor probes](#actor-probes-fun_801cfc40) · [touch and interact](#touch-and-interact-dispatch) · [port](#engine-model)
@@ -121,6 +121,16 @@ At the field floor the controller runs 30 times a second and spends `2 * base_st
 The port takes the fine-grained half of retail's identity - the controller once per vsync with the scalar at `1` (`World::move_vm.ramp_ratio`) - instead of once per game tick with the scalar at `2`. Same wall speed, twice the poses. `World::clock.frame_step` still carries the retail cadence for the consumers that genuinely sample at game-tick rate (the actor pool, the CLUT / ambient game-tick banks).
 
 Do not oversample: a sim rate above 60 with the retail frame derived from an accumulator withholds frames from the gated consumers while the ungated ones keep 60, and a wall-time test that divides by the same constant cannot see it. If oversampling ever returns, every consumer has to be re-derived, not just the constant.
+
+### When the game sees a press
+
+Retail reads the pad once a game frame, at the frame's end. The frame pacer `FUN_80016B6C` calls the pad builder `FUN_8001822C` after the frame body (`jal 0x8001822C` at `0x80017034`), ahead of the frame-time sample `FUN_800173BC` and the `VSync(step)` wait; the builder copies the libpad buffer `0x800840F8`, which the controller interrupt refreshes at every vblank, into the held word `_DAT_8007B850`, and the next frame's controller reads it. So a frame opened at vblank `B` samples the buffer as of the vblank its body ends after (`B + cost / 263`, the frame time in hblanks), and the frame opened at `B + step` is the first to act on it. A press shorter than a frame can land between two samples and never reach the game.
+
+PCSX-Redux films measure it to the vsync. On `kor_field_route_walk` (step `2`, frames about `350` hblanks) a press forced at vsync `20` is in the held word by vsync `21`, the walk moves at `22`, a one-vsync tap at `61` is never seen, and one at `140` is. On `map02_field_door_hop` (step `3`, about `660` hblanks) a press at `10` reaches the held word at `13` and the walk at `14`. A Triangle tap at vsync `30` raises the player's engaged bit (the menu accept at `0x801D0250`) at `32`.
+
+On the port's tick numbering (tick `t` is the state retail's RAM holds at vblank `t`) the frame that opens on tick `T` reads the host pad of tick `T_prev - 1 + k`, where `T_prev` opened the frame before and `k` is its body's whole vsyncs: two ticks late at the field's and the overworld's steps, held for the frame. `World::retail_frame_pad` runs that pipeline on the field and the overworld when `WorldToggles::immediate_pad` is off (`pin_retail` / `--retail`), and the pause menu's accept reads the same word (`World::preview_frame_pad`). The default hands the game the pad on the vsync it is pressed: two vsyncs more responsive, and no tap dropped, with nothing in the game keyed to the delay. The walk films stand on the retail pipeline, and `LEGAIA_RC_PORT_PAD=1` films the default instead.
+
+The walk itself commits once a frame in retail too: the controller runs from the actor pass and walks the frame's whole step on the frame that opens, `16` units every two vsyncs in a town. The port's default pays the step out a vsync at a time (`8` a vsync), which draws a pose every vsync; `WorldToggles::smooth_walk` off (`pin_retail`) commits it on the frame, and the films above then hold retail's position on every vsync.
 
 ### Walk speed in units per second
 

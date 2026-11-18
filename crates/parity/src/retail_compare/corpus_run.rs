@@ -677,7 +677,8 @@ fn title_front_run(
         &retail.scene,
         None,
         &extra,
-        &[],
+        // The card drive's presses are one-tick edges too.
+        &[("LEGAIA_DIAG_IMMEDIATE_PAD", "1".to_string())],
         tick,
         opts.out_dir,
         &entry.label,
@@ -758,6 +759,11 @@ pub(super) fn menu_image(
     } else {
         Vec::new()
     };
+    // The drive's presses are one-tick edges, as the headless drive's are
+    // (`pause_menu_drive` sets the world's pad word directly): the child takes
+    // them on the tick they are scripted, past the retail pad pipeline
+    // (`WorldToggles::immediate_pad`). A harness seat (lane W).
+    env.push(("LEGAIA_DIAG_IMMEDIATE_PAD", "1".to_string()));
     if let Some(block) = menu.prize_block {
         env.push(("LEGAIA_SEAT_PRIZE", format!("{first}:{block}")));
     }

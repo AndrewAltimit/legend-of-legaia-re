@@ -137,6 +137,7 @@ impl World {
     ///
     /// REF: FUN_80034A6C
     pub fn set_pad(&mut self, mask: u16) {
+        let mask = self.retail_frame_pad(mask);
         self.input.set_pad(mask);
         self.locomotion.run_button_held = mask & self.locomotion.run_button_mask != 0;
     }

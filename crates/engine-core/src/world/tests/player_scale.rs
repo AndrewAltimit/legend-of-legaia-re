@@ -292,3 +292,46 @@ fn a_player_aimed_effect_gate_lands_on_the_player() {
     assert_eq!(w.field_vm.player_field_42, 0);
     assert!(w.object_effect_clips().is_empty());
 }
+
+/// Retail's pad pipeline: the frame pacer samples the pad at the end of each
+/// frame body and the next frame reads it, so under the retail-faithful mode
+/// an overworld press moves the player two vsyncs later than the port's
+/// default, and a one-vsync tap that misses the frame's sample is never
+/// seen.
+#[test]
+fn the_retail_pad_pipeline_delays_an_overworld_press() {
+    let first_move = |immediate: bool, hold: u32| {
+        let mut w = World::new();
+        w.install_field_player(0);
+        w.enter_world_map();
+        w.toggles.immediate_pad = immediate;
+        w.party.scene_save_allowed = true;
+        w.actors[0].move_state.field_72 = 0x0C00;
+        w.actors[0].move_state.world_x = 2000;
+        w.actors[0].move_state.world_z = 2000;
+        if let Some(c) = w.world_map.ctrl.as_mut() {
+            c.view_mode = 0;
+        }
+        let mut moved = None;
+        for t in 0..60u32 {
+            let pad = if (30..30 + hold).contains(&t) {
+                input::PadButton::Up.mask()
+            } else {
+                0
+            };
+            w.set_pad(pad);
+            let _ = w.tick();
+            if moved.is_none() && w.actors[0].move_state.world_z != 2000 {
+                moved = Some(t);
+            }
+        }
+        moved
+    };
+    let fast = first_move(true, 30).expect("moves");
+    let slow = first_move(false, 30).expect("moves");
+    eprintln!("immediate {fast} retail {slow}");
+    assert!(
+        slow > fast,
+        "the retail pipeline acts later: {fast} vs {slow}"
+    );
+}

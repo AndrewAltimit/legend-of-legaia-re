@@ -764,10 +764,22 @@ impl World {
         // for, so the displacement over time is retail's - `10` units every
         // `3` vsyncs, `130` per `39` - rather than `4` every vsync.
         let frame_units = (speed + FIELD_STEP_UNIT - 1) / FIELD_STEP_UNIT * FIELD_STEP_UNIT;
-        let per_sub_step = FIELD_STEP_UNIT * dt;
-        let carry = self.world_map.walk_carry + frame_units;
-        let speed = (carry / per_sub_step) * FIELD_STEP_UNIT;
-        self.world_map.walk_carry = carry % per_sub_step;
+        let speed = if self.toggles.smooth_walk {
+            let per_sub_step = FIELD_STEP_UNIT * dt;
+            let carry = self.world_map.walk_carry + frame_units;
+            self.world_map.walk_carry = carry % per_sub_step;
+            (carry / per_sub_step) * FIELD_STEP_UNIT
+        } else if self.clock.game_tick_fired || !self.clock.game_tick_live {
+            // Retail's controller runs once a game frame and commits the
+            // whole frame step there (`FUN_801D1344` calls `FUN_801D01B0` from
+            // the actor pass), so the player stands still between two frames
+            // and reaches a trigger tile or an encounter crossing with the
+            // frame's full step taken.
+            self.world_map.walk_carry = 0;
+            frame_units
+        } else {
+            0
+        };
         if speed <= 0 {
             return;
         }

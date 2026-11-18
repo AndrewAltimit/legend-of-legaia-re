@@ -1694,7 +1694,14 @@ every three vsyncs. So the overworld walk computes the step for one retail
 frame at `dt = 3` (`WORLD_MAP_FRAME_STEP`), rounds it to whole 2-unit
 sub-steps, and pays it out over three ticks through a carry
 (`WorldMapState::walk_carry`, cleared on release): `2, 4, 4` units. A town
-needs no carry (`8` walk, `12` run at `0x1000` are whole sub-steps). The walk
+needs no carry (`8` walk, `12` run at `0x1000` are whole sub-steps). The
+payout is the port's default (`WorldToggles::smooth_walk`); the
+retail-faithful mode commits the whole `10` on the frame that opens, as
+retail does, so the player stops on a trigger tile and rolls an encounter
+with the frame's full step taken (`map01` walk films: the vozz crossing at
+`z 11654`, a fight rolled at `z 3328`, both on retail's vsync). The press
+that starts a walk reaches the controller two vsyncs late in that mode too
+([field-locomotion](field-locomotion.md#when-the-game-sees-a-press)). The walk
 clip needs no correction: `FUN_800204F8` multiplies its cursor step by the
 same `DAT_1F800393`.
 

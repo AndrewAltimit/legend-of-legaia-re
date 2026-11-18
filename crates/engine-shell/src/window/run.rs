@@ -217,6 +217,12 @@ fn apply_launch_toggles(
         retail,
     };
     switches.apply(&mut session.host.world.toggles);
+    // `LEGAIA_DIAG_IMMEDIATE_PAD=1`: the pad reaches the game on the tick it
+    // is pressed even under `--retail` (`WorldToggles::immediate_pad`), for a
+    // harness whose press script is authored in one-tick edges.
+    if std::env::var_os("LEGAIA_DIAG_IMMEDIATE_PAD").is_some() {
+        session.host.world.toggles.immediate_pad = true;
+    }
     switches
 }
 

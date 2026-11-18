@@ -95,6 +95,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_NO_PRIM_ORDER", "additive": False, "note": "draw the field per pixel instead of at each primitive's link in PSX mode (A/B attribution; the browser always links)"},
     {"env": "LEGAIA_DIAG_NOSEMI", "additive": False, "note": "semi-transparent blend off"},
     {"env": "LEGAIA_DIAG_NO_LIT_ROWS", "additive": False, "note": "leave the light-source rows at the neutral texel (A/B attribution; the browser always shades them)"},
+    {"env": "LEGAIA_DIAG_IMMEDIATE_PAD", "additive": False, "note": "lane W: the pad reaches the game on its tick under --retail, for one-tick harness press scripts; draws nothing"},
     {"env": "LEGAIA_DIAG_NO_DECO_CUE", "additive": False, "note": "drop the overworld decoration depth cue (before/after frames)"},
     {"env": "LEGAIA_DIAG_LAYERS", "additive": False, "note": "draw only the named layers"},
     {"env": "LEGAIA_DIAG_PLACE_RANGE", "additive": False, "note": "draw only placements [a,b)"},

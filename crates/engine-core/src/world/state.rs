@@ -206,6 +206,8 @@ pub struct World {
     /// here via [`Self::set_pad`] before each tick. Menu navigation still
     /// runs through the host-side `play-window` loop.
     pub input: input::InputState,
+    /// The retail pad pipeline ([`crate::world::pad_latency`]).
+    pub pad_latency: crate::world::pad_latency::PadLatency,
 
     /// Overworld state: the world-map controller, its entity state machines and the encounter / region trackers.
     pub world_map: WorldMapState,
@@ -462,6 +464,7 @@ impl World {
             props: FieldPropState::new(),
             frame: 0,
             input: input::InputState::default(),
+            pad_latency: Default::default(),
             world_map: WorldMapState::new(),
             board: TileBoardState::new(),
             minigames: MinigameState::new(),

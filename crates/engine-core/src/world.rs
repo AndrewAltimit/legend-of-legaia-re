@@ -88,6 +88,7 @@ mod field_terrain;
 mod field_vm_state;
 mod frame_step_floor;
 mod menu_state;
+pub mod pad_latency;
 mod player_rig;
 mod screen_fx_state;
 mod state;

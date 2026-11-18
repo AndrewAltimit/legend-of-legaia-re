@@ -98,6 +98,14 @@ impl WalkFilm {
         crate::retail_compare::seat_host_camera(&mut session.camera);
         // The lead's clip players, as a play host binds them.
         legaia_engine_session::scene_actors::bind_scene_actors(&mut session.host);
+        // `LEGAIA_RC_PORT_PAD=1` (lane W) runs the port's default pad and
+        // walk delivery instead of the retail pipeline the seed pins: the pad
+        // on the vsync it is pressed, the overworld step paid out a vsync at
+        // a time. A diagnostic, for measuring what the pipeline buys.
+        if std::env::var_os("LEGAIA_RC_PORT_PAD").is_some() {
+            session.host.world.toggles.immediate_pad = true;
+            session.host.world.toggles.smooth_walk = true;
+        }
         // What both play hosts raise.
         session.host.world.locomotion.leading_edge_wall_probes = true;
         session.host.world.locomotion.follow_terrain_height = true;
@@ -284,7 +292,7 @@ impl WalkFilm {
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(
             f,
-            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint,rng,talk,enc"
+            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint,rng,talk,enc,menu"
         )?;
         // A placement's flat MAN index is its channel slot past the scene's
         // partition-0 count, which is the scene's own: a film that crosses a
@@ -360,7 +368,9 @@ impl WalkFilm {
         };
         for t in 0..self.ticks {
             let pad = self.pad_at(t);
-            session.host.world.input.set_pad(pad);
+            // The hosts' pad entry, so the retail-faithful pad pipeline
+            // (`World::retail_frame_pad`) runs as it does in play.
+            session.host.world.set_pad(pad);
             session.tick()?;
             if hold_first && t == 0 {
                 seat_frame_accums(&mut session.host.world, 0);
@@ -465,6 +475,14 @@ impl WalkFilm {
                     n0 + u16::from(slot)
                 )?;
             }
+            // The pause menu: `1` from its open, `2` once the wipe has spawned it.
+            let menu = if !session.field_menu_is_open() {
+                0
+            } else if session.pause_wipe().menu_spawned() {
+                2
+            } else {
+                1
+            };
             let g = &session.camera.globals.0;
             let anim = world.locomotion.player_anim.as_ref();
             // The scene change's own timeline: the scene, whether the hold
@@ -478,7 +496,7 @@ impl WalkFilm {
                 .unwrap_or(0);
             writeln!(
                 f,
-                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:08x},{},{}",
+                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:08x},{},{},{}",
                 ms.world_x,
                 ms.world_y,
                 ms.world_z,
@@ -503,6 +521,7 @@ impl WalkFilm {
                 world.rng_state,
                 u8::from(world.dialogue_owns_input()),
                 world.encounter_step_counter(),
+                menu,
             )?;
         }
         session.host.world.input.set_pad(0);

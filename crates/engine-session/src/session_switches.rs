@@ -401,6 +401,8 @@ impl SessionSwitches {
             let engine = WorldToggles::new();
             toggles.hop_landing_guard = engine.hop_landing_guard;
             toggles.skip_load_holds = engine.skip_load_holds;
+            toggles.immediate_pad = engine.immediate_pad;
+            toggles.smooth_walk = engine.smooth_walk;
             toggles.battle_entry_off_axis = engine.battle_entry_off_axis;
         }
     }
