@@ -574,7 +574,7 @@ pub enum ModuleCaption {
     /// No text: the arm called `FUN_800319A8(0)` on its own, freeing the text
     /// actor it put up and printing nothing after it. Every player Seru
     /// module ends its line this way ahead of the band's exit (PROT 0903
-    /// `0x801F74C8`, 0905 `0x801F802C`, 0906 `0x801F75D4`, 0910
+    /// `0x801F74C8`, 0905 `0x801F802C`, 0906 `0x801F75D4`, 0908 `0x801F7BE0`, 0910
     /// `0x801F7BC4`, 0911 `0x801F7ED0`, 0913 `0x801F8460`).
     Cleared,
     /// A string in the module's own image, by slot-B VA: PROT 0927 arm 21
@@ -1137,6 +1137,10 @@ pub struct ModuleNudge {
     pub tr_x: i16,
     pub tr_y: i16,
     pub tr_z: i16,
+    /// The creature seat's height `+0x36`, written beside the camera globals
+    /// on the same passes (PROT 0905's arm 10 lifts Vera off the field by
+    /// `p / 2`, `sh v0,0x36(s4)` at `0x801F8000`).
+    pub creature_y: i16,
 }
 
 impl ArmDirection {

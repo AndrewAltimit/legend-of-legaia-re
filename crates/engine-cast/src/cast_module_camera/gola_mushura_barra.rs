@@ -448,6 +448,7 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                     tr_x: 0,
                     tr_y: P as i16,
                     tr_z: 0,
+                    creature_y: 0,
                 });
             }
             ArmDirection::PASS

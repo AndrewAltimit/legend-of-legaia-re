@@ -1638,6 +1638,7 @@ impl World {
             let phase = self.casting.module_phase;
             self.casting.module_pass_repeat = i != 0;
             self.casting.module_tick_drift = None;
+            self.casting.module_tick_nudge = None;
             self.casting.module_tick_after_drift = None;
             // The one-vsync ticks of the pass still owed after this one: an
             // arm leaving on this tick has drained `delta` ticks' worth by
@@ -1655,12 +1656,54 @@ impl World {
                 // the one that hands over: the rest of the pass's drift.
                 if live && self.casting.module_phase != phase {
                     self.drift_rest_of_pass(delta - 1 - i);
+                    self.nudge_rest_of_pass(delta - 1 - i);
                     self.repeat_module_seat_moves(phase, delta - 1 - i);
                 }
                 break;
             }
         }
         live
+    }
+
+    /// Re-apply the handing-over tick's camera nudge for the `ticks` of its
+    /// pass the port does not run ([`Self::module_pass`]). A nudge is a
+    /// director's write into the camera globals ahead of its gate, so
+    /// retail's passing pass adds its whole `k * delta` before the arm
+    /// leaves: PROT 0905's arm 9 drifts pitch `p / 8`, TR y `-3p / 2` and TR
+    /// z `3p` (`0x801F7A70..`) on the pass that hands over to arm 10: the
+    /// `0x83` film's retail camera reads pitch `108` to `112` there, where
+    /// the port's one handing tick moved it to `109`.
+    fn nudge_rest_of_pass(&mut self, ticks: u8) {
+        let Some(n) = self.casting.module_tick_nudge else {
+            return;
+        };
+        for _ in 0..ticks {
+            self.apply_module_nudge(n);
+        }
+    }
+
+    /// One tick of a director's [`ModuleNudge`]: the camera globals and the
+    /// creature seat's height.
+    ///
+    /// [`ModuleNudge`]: legaia_engine_cast::cast_module_camera::ModuleNudge
+    pub(in crate::world) fn apply_module_nudge(
+        &mut self,
+        n: legaia_engine_cast::cast_module_camera::ModuleNudge,
+    ) {
+        if let Some(cam) = self.battle.camera.as_mut() {
+            cam.nudge_module(n.pitch, n.tr_y, n.tr_z);
+            if n.tr_x != 0 {
+                cam.nudge_module_tr_x(n.tr_x);
+            }
+        }
+        if n.creature_y != 0
+            && let Some(a) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|s| self.actors.get_mut(usize::from(s)))
+        {
+            a.move_state.world_y = a.move_state.world_y.wrapping_add(n.creature_y);
+        }
     }
 
     /// Re-apply the handing-over tick's camera drift for the `ticks` of its
