@@ -1364,6 +1364,26 @@ the frame after its spawn the port walks on the spawn's own frame (Ozma's arm 11
 its `30` stager words and the effect's `64` seeding words on one tick where retail draws
 them a frame apart; Meta's arm-7 mirror words land a frame early).
 
+Six more places parted from retail on a pass, each read off a film's frames and settled
+in the module's disassembly ([cast module](../subsystems/cast-module.md#prot-0905-vera)):
+director fades that took no step on their spawn pass (Vera's rise and cut flashes, Gizam's
+and Juggernaut's stager flashes), a director's camera nudge the port dropped from the rest
+of a handing-over pass, Vera's arm-10 rise, Swordie's and Theeder's readout flag kept down
+past the fold ([battle HUD](../subsystems/battle-hud.md#action-phase-records)), and Zenoir's
+caption cleared on the slam. No cue moves:
+
+| Film | Before | After |
+|---|---|---|
+| `0x83` Vera | `.9556` | `.9871` (arm 5 `.853` to `1.000`, arm 10 `.877` to `.955`) |
+| `0x84` Gizam | `.9655` | `.9770` |
+| `0x86` Zenoir | `.9627` | `.9654` |
+| `0x82` Theeder | `.9680` | `.9695` |
+| `0x88` Swordie | `.9654` | `.9663` |
+| the 29 films | `.9742` | `.9759` |
+
+Open on the same films: Swordie's arm-10 blades and Theeder's first sweep fan draw a pass
+behind retail's, and the row readouts (Theeder, Zenoir) still open about two passes ahead.
+
 ### Evil Seru Magic
 
 Cort's Evil Seru Magic (`0xAD`, PROT 0966) records from `chitei2_cort_pre_mystic_circle`
