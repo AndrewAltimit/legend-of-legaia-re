@@ -327,6 +327,9 @@ unread, and it moves your character a whole step once a game frame (every two
 refreshes in a town, every three on the world map); the default reads a press
 the refresh it lands and spreads each step over the refreshes, at the same
 walking speed.
+A
+cutscene's camera pans and zooms move in the original's steps, fifteen to
+thirty a second; the default draws every frame of them along the same path.
 
 *Saved-chain Arts list* is an addition of the port's; the original has nothing
 like it. With it on, the battle command ring's **Arts** opens a list of the

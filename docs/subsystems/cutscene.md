@@ -1557,6 +1557,34 @@ Do not recover `R` from a save state's GTE rotation matrix: it is the last-rende
 composed transform (row norms ≈ 6.0, the base-matrix world scale). Recover it from the angle
 globals.
 
+#### The smooth camera (enhancement)
+
+Because the mover steps once a game frame, a glide moves a whole frame step at a time and
+stands still on the vsyncs between: `izumi`'s arrival glide (`apply 120`, linear) runs at step
+`4` and draws 15 poses a second, each four vsyncs apart. The port's default draws the vsyncs
+between (`WorldToggles::smooth_camera`, off under `pin_retail` / `--retail`):
+
+- Each draw falls `phase` of the way through its game frame (`FrameClock::frame_vsync` over the
+  frame's wait), and the camera it draws is the stored pose plus `phase` of the move to the pose
+  the next frame will store - the mover advanced by the next frame's credit
+  (`Camera::led_delta`). That pose is fixed in advance unless a beat re-arms the mover, and a
+  beat that does re-arms from the stored pose, so the draw never feeds back.
+- The stored poses are retail's integers; the draws between land on fractions of a unit, so a
+  slow pan whose yaw moves a unit or two a frame does not stutter on the integer grid. Angles
+  move on the mover's own linear 12-bit line, with no short arc, as retail's glide sweeps.
+- A cut is a snap (`apply == 0`) or a scene change, and neither leaves a mover in flight, so the
+  frame after it draws the snapped pose; a battle draws through its own camera and never leads.
+- It is presentation-only. Both hosts lead only their draw-side camera resolve
+  (`HostView::presented`, `scripted_view_led`); the camera globals, every simulation read of the
+  view (the fog pool's shot and depth view among them) and the vsync a game frame opens on keep
+  the stored pose. Under `pin_retail` the lead is always zero and the frame is the stored pose,
+  bit for bit.
+
+The follow arm draws a script's glide from the globals even before the zone camera has
+composed: retail's view builder `FUN_800172C0` reads the globals every frame, so a shot staged
+while the scene's arrival actor still counts down for an engaged player (`izumi`'s opening) is
+on screen from its first frame (`ZoneFollow::script_view`).
+
 #### What a build census actually measures
 
 `FUN_800172c0` is **not** a once-per-frame builder. It has seventeen `jal` sites - four in
