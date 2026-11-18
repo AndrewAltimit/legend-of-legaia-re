@@ -238,7 +238,8 @@
       "save",
       "gamedata",
       "cheats",
-      "app-theme"
+      "app-theme",
+      "release-version"
      ]
     }
    ]
@@ -328,7 +329,9 @@
   },
   "anm": {
    "package": "legaia-anm",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "anm"
@@ -384,7 +387,9 @@
   },
   "art": {
    "package": "legaia-art",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [
     "iso"
    ],
@@ -485,6 +490,7 @@
     "minigame-formats",
     "overlay-images",
     "prot",
+    "release-version",
     "scene-formats",
     "tim",
     "tmd"
@@ -521,6 +527,7 @@
     "font",
     "mes",
     "prot",
+    "release-version",
     "scene-formats",
     "seq",
     "tim",
@@ -568,7 +575,9 @@
   },
   "cheats": {
    "package": "legaia-cheats",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "cheat-tool"
@@ -2759,6 +2768,7 @@
     "parity",
     "prot",
     "ram-image",
+    "release-version",
     "render-kernels",
     "save",
     "scene-formats",
@@ -3188,6 +3198,7 @@
     "mdec",
     "mes",
     "prot",
+    "release-version",
     "scene-formats",
     "seq",
     "tim",
@@ -3233,6 +3244,7 @@
     "font",
     "iso",
     "prot",
+    "release-version",
     "tim",
     "xa"
    ],
@@ -3256,7 +3268,9 @@
   },
   "font": {
    "package": "legaia-font",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "font-extract"
@@ -3388,7 +3402,9 @@
   },
   "gamedata": {
    "package": "legaia-gamedata",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [
     "actor-formats",
     "art",
@@ -3419,7 +3435,9 @@
   },
   "iso": {
    "package": "psx-iso",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "disc-extract"
@@ -3460,7 +3478,9 @@
   },
   "lzs": {
    "package": "psx-lzs",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "lzs-decode"
@@ -3496,6 +3516,7 @@
   "mdec": {
    "package": "psx-mdec",
    "deps": [
+    "release-version",
     "xa"
    ],
    "dev_deps": [
@@ -3529,7 +3550,9 @@
   },
   "mdt": {
    "package": "legaia-mdt",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "mdt"
@@ -3549,7 +3572,8 @@
    "deps": [
     "actor-formats",
     "cheats",
-    "ram-image"
+    "ram-image",
+    "release-version"
    ],
    "dev_deps": [
     "overlay-images",
@@ -3577,7 +3601,9 @@
   },
   "mes": {
    "package": "legaia-mes",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "mes"
@@ -3887,6 +3913,7 @@
     "party-swap",
     "prot",
     "randomizer",
+    "release-version",
     "scene-formats",
     "texture-replace",
     "tim",
@@ -3984,7 +4011,9 @@
   },
   "prot": {
    "package": "legaia-prot",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "prot-extract"
@@ -4084,6 +4113,44 @@
     "web-patcher"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/randomizer/README.md"
+  },
+  "release-version": {
+   "package": "legaia-release-version",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [],
+   "band": "leaves",
+   "track": "tooling",
+   "scope": "The release number every shipped program reports (<code>VERSION</code>): each <code>--version</code>, the launcher's header, Explorer's About box and bug reports. A release build bakes in <code>LEGAIA_RELEASE_VERSION</code>; any other build names the crate version. No dependencies.",
+   "dependents": [
+    "anm",
+    "art",
+    "asset",
+    "asset-viewer",
+    "cheats",
+    "engine-shell",
+    "explorer",
+    "extract",
+    "font",
+    "gamedata",
+    "iso",
+    "lzs",
+    "mdec",
+    "mdt",
+    "mednafen",
+    "mes",
+    "patcher",
+    "prot",
+    "save",
+    "seq",
+    "tim",
+    "tmd",
+    "vab",
+    "xa"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/release-version/README.md"
   },
   "render-kernels": {
    "package": "legaia-render-kernels",
@@ -4243,7 +4310,9 @@
   },
   "save": {
    "package": "legaia-save",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "save-tool"
@@ -4363,7 +4432,9 @@
   },
   "seq": {
    "package": "psx-seq",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "seq"
@@ -4420,7 +4491,9 @@
   },
   "tim": {
    "package": "psx-tim",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "tim"
@@ -4474,6 +4547,7 @@
   "tmd": {
    "package": "legaia-tmd",
    "deps": [
+    "release-version",
     "tim"
    ],
    "dev_deps": [],
@@ -4630,7 +4704,9 @@
   },
   "vab": {
    "package": "psx-vab",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [
     "xa"
    ],
@@ -5002,7 +5078,8 @@
   "xa": {
    "package": "psx-xa",
    "deps": [
-    "iso"
+    "iso",
+    "release-version"
    ],
    "dev_deps": [],
    "bins": [

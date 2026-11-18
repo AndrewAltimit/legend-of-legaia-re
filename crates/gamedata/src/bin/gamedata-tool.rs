@@ -6,7 +6,7 @@ use legaia_gamedata::{ArtKind, Character, Database};
 
 #[derive(Parser, Debug)]
 #[command(
-    version,
+    version = legaia_release_version::VERSION,
     about = "Inspect Legend of Legaia game-data tables (arts, magic, items, shops, etc.).",
     long_about = "All data is baked in via include_str!; nothing on disc is required.\n\
                   See data/gamedata/README.md for the source attribution."

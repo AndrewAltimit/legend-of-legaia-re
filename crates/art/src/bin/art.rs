@@ -30,7 +30,7 @@ use legaia_art::{
 #[derive(Parser, Debug)]
 #[command(
     name = "art",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Inspect Legaia Tactical Arts tables and trigger Super/Miracle Arts."
 )]
 struct Cli {

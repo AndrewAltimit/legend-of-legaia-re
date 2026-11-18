@@ -9,7 +9,7 @@ use serde::Serialize;
 #[derive(Parser)]
 #[command(
     name = "prot-extract",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Extract Legaia PROT.DAT-style archives"
 )]
 struct Cli {

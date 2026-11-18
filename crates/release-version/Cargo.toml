@@ -1,0 +1,10 @@
+[package]
+name = "legaia-release-version"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The release number every shipped program reports, baked in at compile time"
+
+[lib]
+name = "legaia_release_version"
+path = "src/lib.rs"

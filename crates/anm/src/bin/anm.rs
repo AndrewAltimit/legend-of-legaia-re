@@ -11,7 +11,7 @@ use legaia_anm::{
 #[derive(Parser)]
 #[command(
     name = "anm",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Legaia ANM (asset type 0x06) inspector"
 )]
 struct Cli {

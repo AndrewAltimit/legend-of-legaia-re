@@ -1648,6 +1648,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "serde",
  "serde_json",
@@ -1663,6 +1664,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "psx-iso",
  "serde",
@@ -1696,6 +1698,7 @@ dependencies = [
  "legaia-minigame-formats",
  "legaia-overlay-images",
  "legaia-prot",
+ "legaia-release-version",
  "legaia-scene-formats",
  "legaia-tmd",
  "libc",
@@ -1733,6 +1736,7 @@ dependencies = [
  "legaia-font",
  "legaia-mes",
  "legaia-prot",
+ "legaia-release-version",
  "legaia-scene-formats",
  "legaia-tmd",
  "legaia-ui-formats",
@@ -1751,6 +1755,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "serde",
  "serde_json",
@@ -2639,6 +2644,7 @@ dependencies = [
  "legaia-overlay-images",
  "legaia-parity",
  "legaia-prot",
+ "legaia-release-version",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
@@ -2797,6 +2803,7 @@ dependencies = [
  "legaia-gamedata",
  "legaia-mes",
  "legaia-prot",
+ "legaia-release-version",
  "legaia-scene-formats",
  "legaia-tmd",
  "legaia-translate",
@@ -2827,6 +2834,7 @@ dependencies = [
  "legaia-disc-audit",
  "legaia-font",
  "legaia-prot",
+ "legaia-release-version",
  "legaia-scene-formats",
  "legaia-tmd",
  "libc",
@@ -2846,6 +2854,7 @@ dependencies = [
  "anyhow",
  "clap",
  "flate2",
+ "legaia-release-version",
  "log",
  "png",
  "serde",
@@ -2874,6 +2883,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-art",
  "legaia-game-tables",
+ "legaia-release-version",
  "legaia-scene-formats",
  "libc",
  "serde",
@@ -2887,6 +2897,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "serde",
  "serde_json",
@@ -2898,6 +2909,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "serde",
  "serde_json",
@@ -3051,6 +3063,7 @@ dependencies = [
  "legaia-party-swap",
  "legaia-prot",
  "legaia-randomizer",
+ "legaia-release-version",
  "legaia-scene-formats",
  "legaia-texture-replace",
  "legaia-tmd",
@@ -3074,6 +3087,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "serde",
  "serde_json",
@@ -3081,6 +3095,10 @@ dependencies = [
 
 [[package]]
 name = "legaia-randomizer"
+version = "0.1.0"
+
+[[package]]
+name = "legaia-release-version"
 version = "0.1.0"
 
 [[package]]
@@ -3107,6 +3125,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "serde",
  "serde_json",
@@ -3149,6 +3168,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "psx-tim",
  "serde",
@@ -4312,6 +4332,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "sha2",
  "tempfile",
@@ -4323,6 +4344,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
 ]
 
@@ -4333,6 +4355,7 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-prot",
+ "legaia-release-version",
  "libc",
  "png",
  "psx-iso",
@@ -4350,6 +4373,7 @@ dependencies = [
  "legaia-cheats",
  "legaia-overlay-images",
  "legaia-prot",
+ "legaia-release-version",
  "libc",
  "png",
  "psx-ram-image",
@@ -4442,6 +4466,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "serde",
  "serde_json",
@@ -4454,6 +4479,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "clap",
+ "legaia-release-version",
  "libc",
  "png",
 ]
@@ -4464,6 +4490,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "psx-xa",
  "serde",
@@ -4476,6 +4503,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-release-version",
  "libc",
  "psx-iso",
 ]

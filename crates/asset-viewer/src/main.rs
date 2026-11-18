@@ -85,7 +85,7 @@ use crate::world_app::run_world;
 
 #[derive(Parser, Debug)]
 #[command(
-    version,
+    version = legaia_release_version::VERSION,
     about = "Windowed asset viewer for Legend of Legaia: TIM textures, TMD \
              meshes, VAB/SEQ audio, PROT browsing, and field/battle/dialog \
              scene demos.",

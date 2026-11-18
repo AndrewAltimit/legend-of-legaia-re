@@ -16,7 +16,7 @@ pub(crate) use translate_args::TranslateCmd;
 #[derive(Parser)]
 #[command(
     name = "legaia-patcher",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Legend of Legaia disc patcher: randomizer, translation packs, manual record edits (operates on a user-supplied disc)"
 )]
 pub(crate) struct Cli {

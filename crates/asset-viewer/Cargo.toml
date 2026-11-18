@@ -42,6 +42,7 @@ winit.workspace = true
 # and the release layout to find Legaia Explorer by.
 rfd.workspace = true
 legaia-app-theme.workspace = true
+legaia-release-version.workspace = true
 
 # SIGPIPE reset in the bin's main() so piping stdout into `head` exits
 # quietly instead of panicking on a broken pipe.

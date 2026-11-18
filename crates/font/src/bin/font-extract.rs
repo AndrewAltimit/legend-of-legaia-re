@@ -62,7 +62,7 @@ const ATLAS_FIRST_CHAR: u8 = 0x20;
 #[derive(Parser, Debug)]
 #[command(
     name = "font-extract",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Extract the proportional dialog font from SCUS_942.54 + either the disc itself (--disc) or a mednafen save state (--save).",
     long_about = "Extract the proportional dialog font (atlas PNG, tile-page sheet PNG, widths \
 CSV, metadata JSON, raw 4bpp page) from SCUS_942.54 plus ONE glyph source:\n\n\

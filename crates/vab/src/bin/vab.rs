@@ -16,7 +16,7 @@ use psx_vab::{decode_vag, find_vabs, parse, write_wav};
 #[derive(Parser)]
 #[command(
     name = "vab",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Sony VAB parser + VAG sample extractor for Legaia"
 )]
 struct Cli {

@@ -3881,7 +3881,7 @@ fn failure_report(status: &std::process::ExitStatus, log_text: Option<&str>) -> 
     use legaia_app_theme::game_exit;
     game_exit::report_text(
         "legaia-engine",
-        legaia_app_theme::APP_VERSION,
+        legaia_release_version::VERSION,
         &game_exit::exit_headline(status),
         log_text.and_then(game_exit::failure_detail).as_deref(),
         log_text,
@@ -4390,7 +4390,7 @@ fn header_right(c: &Canvas, hint: &str) -> HeaderRight {
     // centred in them.
     let top = sq + (HEADER_H - sq - 27) / 2;
     let right = c.stage.width() - PAD;
-    let version_text = format!("engine port {}", legaia_app_theme::APP_VERSION);
+    let version_text = format!("engine port {}", legaia_release_version::VERSION);
     HeaderRight {
         version: (right - c.width(&version_text), top),
         hint: (right - c.width(hint), top + 15),

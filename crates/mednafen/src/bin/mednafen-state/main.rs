@@ -40,7 +40,7 @@ use ram_ops::{
 use world_map::cmd_world_map_camera;
 
 #[derive(Parser)]
-#[command(name = "mednafen-state", version, about)]
+#[command(name = "mednafen-state", version = legaia_release_version::VERSION, about)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

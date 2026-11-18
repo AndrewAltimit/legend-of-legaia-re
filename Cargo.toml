@@ -6,6 +6,7 @@ members = [
     "crates/lzs",
     "crates/bytes",
     "crates/app-theme",
+    "crates/release-version",
     "crates/game-tables",
     "crates/actor-formats",
     "crates/overlay-images",
@@ -157,6 +158,7 @@ winit = "0.30"
 # binary, and a library dependent never needs it.
 psx-bytes = { path = "crates/bytes" }
 legaia-app-theme = { path = "crates/app-theme" }
+legaia-release-version = { path = "crates/release-version" }
 legaia-anm = { path = "crates/anm", default-features = false }
 legaia-art = { path = "crates/art", default-features = false }
 legaia-game-tables = { path = "crates/game-tables" }

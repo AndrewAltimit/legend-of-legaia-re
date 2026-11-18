@@ -22,7 +22,7 @@ const KNOWN_HASHES: &[(&str, &str)] = &[(
 #[derive(Parser)]
 #[command(
     name = "disc-extract",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Read a PSX Mode2/2352 disc image (.bin or .cue) and walk ISO9660"
 )]
 struct Cli {

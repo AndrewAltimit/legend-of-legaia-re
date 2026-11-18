@@ -10,7 +10,7 @@ use legaia_mes::{
 #[derive(Parser)]
 #[command(
     name = "mes",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Legaia MES (asset type 0x04) inspector"
 )]
 struct Cli {

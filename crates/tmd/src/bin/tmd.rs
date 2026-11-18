@@ -6,7 +6,7 @@ use legaia_tmd::{legaia_prim_probe, legaia_prims, parse, vram_targeted};
 use psx_tim::vram::{PrimTextureStatus, VRAM_HEIGHT, VRAM_WIDTH, Vram};
 
 #[derive(Parser)]
-#[command(name = "tmd", version, about = "PSX TMD parser (Legaia variant)")]
+#[command(name = "tmd", version = legaia_release_version::VERSION, about = "PSX TMD parser (Legaia variant)")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

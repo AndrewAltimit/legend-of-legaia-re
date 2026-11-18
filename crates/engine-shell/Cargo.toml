@@ -19,6 +19,7 @@ path = "src/bin/legaia-launch.rs"
 [dependencies]
 legaia-engine-battle-loop.workspace = true
 legaia-app-theme.workspace = true
+legaia-release-version.workspace = true
 legaia-engine-camera.workspace = true
 legaia-engine-battle-menus.workspace = true
 legaia-engine-menus.workspace = true

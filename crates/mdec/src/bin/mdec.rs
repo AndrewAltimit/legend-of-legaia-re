@@ -12,7 +12,7 @@ use psx_mdec::{
 };
 
 #[derive(Parser)]
-#[command(name = "mdec", version, about = "PSX MDEC bitstream tools")]
+#[command(name = "mdec", version = legaia_release_version::VERSION, about = "PSX MDEC bitstream tools")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

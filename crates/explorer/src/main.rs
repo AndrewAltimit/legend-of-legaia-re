@@ -35,7 +35,7 @@ fn main() -> eframe::Result {
     // a GUI-subsystem program, so they print only when a console is attached.
     match std::env::args().nth(1).as_deref() {
         Some("--version" | "-V") => {
-            println!("legaia-explorer {}", legaia_app_theme::APP_VERSION);
+            println!("legaia-explorer {}", legaia_release_version::VERSION);
             return Ok(());
         }
         Some("--help" | "-h") => {
