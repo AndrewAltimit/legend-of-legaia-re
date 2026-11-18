@@ -31,7 +31,9 @@
 -- its scenario must name the flags.
 --
 -- Env: LEGAIA_SSTATE, LEGAIA_HOPS, LEGAIA_OUT_DIR, LEGAIA_PREFIX (default
--- "hop"), LEGAIA_FRAMES (default 6000). No breakpoints, --fast is fine.
+-- "hop"), LEGAIA_FRAMES (default 6000), LEGAIA_DEPART_CSV=1 (depart.csv: per
+-- vsync mode, scene, the scene-change countdown gp+0x710, the screen byte
+-- 0x8007B648, the frame step and the pacer's ring cursor). No breakpoints, --fast is fine.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -46,6 +48,11 @@ local POKE_FOR = probe.getenv_num("LEGAIA_POKE_FOR", 20)
 local NUDGE = probe.BTN[probe.getenv("LEGAIA_NUDGE", "UP")] or probe.BTN.UP
 
 local GAME_MODE_VA = 0x8007b83c
+local depart_fh = nil
+if probe.getenv("LEGAIA_DEPART_CSV", "") ~= "" then
+    depart_fh = assert(io.open(probe.out_path("depart.csv"), "w"))
+    depart_fh:write("vsync,mode,scene,countdown,screen,step,ring_cur\n")
+end
 local SCENE_VA = 0x8007050c
 local PLAYER_PTR = 0x8007c364
 local FIELD_CTL = 0x801c6ea4
@@ -136,6 +143,16 @@ probe.run({
 
     on_capture = function(ctx, vsync)
         if finished then return end
+        -- depart.csv: one row a vsync while the scene-change actor's
+        -- countdown (gp+0x710) or game mode 0x02 runs: what a departure
+        -- waits on.
+        if depart_fh then
+            local cd = probe.read_u32(0x8007BA28) or 0
+            if cd >= 0x80000000 then cd = cd - 0x100000000 end
+            depart_fh:write(string.format("%d,%d,%q,%d,%d,%d,%d\n", vsync, probe.read_u8(GAME_MODE_VA) or 0,
+                scene_name(), cd, probe.read_u8(0x8007B648) or 0, probe.read_scratch_u8(0x393) or 0,
+                probe.read_u32(0x8007B758) or 0))
+        end
         -- After the state load, which on_arm runs ahead of.
         if not flags_done then
             flags_done = true

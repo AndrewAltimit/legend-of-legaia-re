@@ -1953,6 +1953,21 @@ behind every door that did not (`ropeway` -> `map02` -> `stone` ->
 (`mode_entry_init::door_field_init_hold_vsyncs`); the default keeps the load
 instant.
 
+The departure before the init has a CD wait of its own. The streaming
+actor `FUN_80021934` seeds its `0x46`-frame countdown in state 0, streams
+the destination's chunk (raw TOC entry `DAT_8007B768 + 3`, the fourth of the
+destination's block) in state 2, and in states 1 and 3 waits on the CD queue
+(`FUN_8003DE7C(1)`) before state 4 tests the countdown. A chunk that reads
+longer than the countdown holds the departure past it: PCSX-Redux door hops
+with `autorun_door_hop.lua`'s `depart.csv` (the countdown `gp+0x710` a vsync)
+read the countdown at `-26` when `tunnela` hands off to `rayman2` (`181`
+sectors, `96` vsyncs after the seed) and `-2` behind every chunk of `82..106`
+sectors (`72` vsyncs). About two sectors a vsync
+(`CHUNK_SECTORS_PER_VSYNC_X100`) fits `jagaroom` (`143`, `76`), `koin2` and
+`balden2` (`163`, `84`) to two vsyncs; `map02` -> `stone` (`127`, `78` at
+step `3`) reads six past it. The retail-faithful mode sets the hold's
+`stream_vsyncs` from the chunk's size, the default reads the chunk at once.
+
 A battle's return to the field runs the same init with the field-entry word
 at `2`, which skips the floor (`0x801D70E8..0x801D70F4`), so its length is
 its reads: the field overlay, the scene's block and the track afresh.

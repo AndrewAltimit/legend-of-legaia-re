@@ -28,7 +28,11 @@ impl SceneHost {
                     return false;
                 };
             log::info!("scene transition parked behind the streaming actor: {request:?}");
-            self.world.scene_transition_hold = Some(SceneTransitionHold::new(request));
+            let mut hold = SceneTransitionHold::new(request);
+            if !self.world.toggles.skip_load_holds {
+                hold.stream_vsyncs = self.departure_chunk_vsyncs(&hold.request);
+            }
+            self.world.scene_transition_hold = Some(hold);
         }
         self.world.pending_named_scene_transition = None;
         while self.world.take_world_map_transition().is_some() {}
@@ -67,6 +71,36 @@ impl SceneHost {
             }
         }
         false
+    }
+
+    /// Vsyncs the streaming actor's state-2 chunk read keeps the CD queue
+    /// busy on a departure to `request`'s scene: the chunk is raw TOC entry
+    /// `define + 3` (`DAT_8007B768 + 3`), the fourth of the destination's
+    /// extraction block, read at
+    /// [`legaia_engine_field::scene_transition_actor::CHUNK_SECTORS_PER_VSYNC_X100`].
+    /// `0` for a destination the index cannot place.
+    ///
+    /// REF: FUN_80021934 (state 2 `0x800219BC`, states 1 / 3 `0x800219FC`)
+    fn departure_chunk_vsyncs(
+        &self,
+        request: &legaia_engine_field::scene_transition_actor::HeldTransition,
+    ) -> u32 {
+        use legaia_engine_field::scene_transition_actor::{HeldTransition, chunk_stream_vsyncs};
+        let name = match request {
+            HeldTransition::Named(n, ..) => Some(n.clone()),
+            HeldTransition::Portal(_, slot) => match self.world.world_map.entity_configs.get(usize::from(*slot)) {
+                Some(
+                    legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::OverworldPortal {
+                        scene_name,
+                        ..
+                    },
+                ) => Some(scene_name.clone()),
+                _ => None,
+            },
+        };
+        name.and_then(|n| self.index.block_range_extraction(&n))
+            .and_then(|(start, _)| self.index.entries().get(start as usize + 3))
+            .map_or(0, |e| chunk_stream_vsyncs(e.size_sectors))
     }
 
     /// Arm the field MAIN INIT hold behind a committed door
