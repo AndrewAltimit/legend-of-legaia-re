@@ -566,6 +566,29 @@ pub const LINKED_WORK_MILLI: u32 = 200;
 /// `3`, where every retail frame there runs step `4` five vsyncs long.
 pub const SCANLINE_WASH_WORK: u16 = 60;
 
+/// Hblanks a floor-clipped body's full-TMD walk costs a primitive of its
+/// drawn objects, over what the census prices its linked primitives at.
+/// A sinking body (`+0x42` non-zero, stored beside the sink's height at
+/// `0x800504AC`) leaves the dispatcher's leaves: `FUN_80048A08` sends each of
+/// its objects through `FUN_8001C204` and the TMD renderer `FUN_8002735C`,
+/// which runs its GTE ops on every primitive. PCSX-Redux recordings sampled
+/// a vsync at a time (`--gpu-cost`) put the pass inside `0x8002735C..` and
+/// `0x8001C2xx` through the dead target's sink in state `0x20`, and nowhere
+/// else; the arts films' unloaded `0x20` frames under a sink read over the
+/// census by `.13` to `.19` hblanks a mesh primitive (Gimard-class `318`,
+/// Orb `518`) against the same films' `0x51` frames.
+pub const FLOOR_CLIP_WALK_MILLI: u32 = 160;
+
+/// The work [`FLOOR_CLIP_WALK_MILLI`] adds for `prims` walked primitives.
+pub const fn floor_clip_walk_work(prims: u32) -> u16 {
+    let c = prims as u64 * FLOOR_CLIP_WALK_MILLI as u64 / 1000;
+    if c > u16::MAX as u64 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
 /// Hblanks a monster's strike frame (`0x1E..=0x20` with a monster acting)
 /// spends over what it links. Retail's unloaded monster-strike frames sit a
 /// steady offset over the census line (`+25` at the mean over the strike

@@ -891,6 +891,11 @@ pub struct BattleState {
     /// prices its work from while `WorldToggles::battle_poly_frame_cost` is
     /// up, the same on every host. `None` before the first census.
     pub linked_polys: Option<u32>,
+    /// The primitives the census's floor-clipped bodies walk through the
+    /// full-TMD renderer (`World::note_floor_clip_walk`), priced over
+    /// [`Self::linked_polys`] at
+    /// `frame_clock::FLOOR_CLIP_WALK_MILLI`.
+    pub floor_clip_walk: u32,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
@@ -1733,6 +1738,7 @@ impl BattleState {
             frame_work: 0,
             drawn_polys: None,
             linked_polys: None,
+            floor_clip_walk: 0,
             cast_arm_pass: None,
             pending_frame_step: None,
             pass_frame_cost_due: None,

@@ -1754,6 +1754,20 @@ close to the host (`World::close_pass_after_census`), which makes it once its co
 tick is in; the pass sequence then reads retail's cursor for cursor up to the commit. Grade
 `disassembly` for the order, `capture` for the film.
 
+A sinking body costs more than it links. The defeat fade's sink raises the body's `+0x42`
+(`0x800504AC`), and `FUN_80048A08` then sends every object of it through `FUN_8001C204` and
+the TMD renderer `FUN_8002735C` instead of the dispatcher's leaves
+([a raised `+0x42`](renderer.md#what-a-raised-0x42-draws)), which runs its GTE work on every
+primitive of the object. A `--gpu-cost` recording of `battle_jou_party_vahn_chain_open`, one
+PC sample a vsync, finds the pass inside `0x8002735C..0x80028098` and `0x8001C2xx` through the
+target's sink in state `0x20` and nowhere else, its table's polygon count level with the
+census's while the frame costs `55` to `75` hblanks over the census line; the same film's `0x51`
+frames sit on it. Over the arts films the unloaded `0x20` frames under a sink read `.13` to
+`.19` hblanks a primitive of the sinking mesh over their `0x51` frames, so the census prices
+the walk at `FLOOR_CLIP_WALK_MILLI` (`.16`) a primitive of the clipped body's drawn objects
+(`LinkCount::floor_clip_walk`), outside the link count. Grade `disassembly` for the arm,
+`capture` for the price.
+
 Over the `62` states the census reads `1.04` times retail's polygon count, median error
 `174` primitives, correlation `.91` (the window `.906`); what is left is mostly the still's
 engine frame standing a pass or an effect away from retail's. On a strike state

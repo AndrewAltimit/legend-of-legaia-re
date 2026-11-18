@@ -176,6 +176,14 @@ pub struct LinkCount {
     /// trails, the move-FX after-image streak and the cast ribbons, one
     /// packet a quad.
     pub trails: u32,
+    /// The primitives the floor-clipped bodies' meshes hold: a sinking body
+    /// (`+0x42` non-zero, `0x800504AC`) draws through the full-TMD renderer
+    /// `FUN_8002735C` behind `FUN_8001C204` (`FUN_80048A08`'s `+0x42` arm),
+    /// which transforms every primitive of each drawn object, not the
+    /// dispatcher's per-primitive leaves. Its work, not a link count: left
+    /// out of [`Self::total`] and priced on its own
+    /// (`World::note_floor_clip_walk`).
+    pub floor_clip_walk: u32,
 }
 
 impl LinkCount {
@@ -533,6 +541,19 @@ pub fn battle_link_count(
             scratch,
         );
         out.bodies += nb;
+        if a.battle.floor_clip {
+            out.floor_clip_walk += mesh
+                .objects
+                .iter()
+                .enumerate()
+                .filter(|(oi, _)| {
+                    drawn
+                        .as_deref()
+                        .is_none_or(|d| d.get(*oi).copied().unwrap_or(false))
+                })
+                .map(|(_, o)| o.prims.len() as u32)
+                .sum::<u32>();
+        }
     }
     for g in legaia_engine_world_views::battle_draws::battle_ghost_draws(world) {
         let i = usize::from(g.actor_slot);
@@ -750,6 +771,7 @@ impl crate::scene_host::SceneHost {
         let count = battle_link_count(&self.world, geom, &mut self.battle_link_scratch);
         self.battle_link_last = count;
         self.world.note_linked_polys(count.total());
+        self.world.note_floor_clip_walk(count.floor_clip_walk);
     }
 
     /// A seat's body mesh: a party member's battle form, a monster's archive

@@ -123,7 +123,11 @@ impl World {
                     && p.wash_live
                     && p.wash.armed()
                     && matches!(p.wash.mode, 1 | 2);
-                let w = linked_frame_work(n, wash || self.battle_backdrop_drawn());
+                let w = linked_frame_work(n, wash || self.battle_backdrop_drawn()).saturating_add(
+                    legaia_engine_battle_loop::frame_clock::floor_clip_walk_work(
+                        self.battle.floor_clip_walk,
+                    ),
+                );
                 let monster_acting = self
                     .actors
                     .get(usize::from(self.battle_ctx.active_actor))
@@ -275,6 +279,15 @@ impl World {
     pub fn note_linked_polys(&mut self, polys: u32) {
         if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
             self.battle.linked_polys = Some(polys);
+        }
+    }
+
+    /// Note the primitives the census's floor-clipped bodies walk through
+    /// the full-TMD renderer ([`BattleState::floor_clip_walk`](legaia_engine_battle_loop::battle_state::BattleState::floor_clip_walk)).
+    /// A no-op outside a battle.
+    pub fn note_floor_clip_walk(&mut self, prims: u32) {
+        if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
+            self.battle.floor_clip_walk = prims;
         }
     }
 
@@ -2620,6 +2633,28 @@ mod tests {
         w.note_linked_polys(3600);
         w.close_pass_after_census();
         assert_eq!(w.battle.frame_work, work);
+    }
+
+    /// A sinking body's full-TMD walk adds its primitives' price over the
+    /// census line; with no body clipped the line stands alone.
+    #[test]
+    fn a_floor_clipped_body_prices_its_walk_over_the_census() {
+        use legaia_engine_battle_loop::frame_clock::{floor_clip_walk_work, linked_frame_work};
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x20;
+        w.toggles.battle_poly_frame_cost = true;
+        w.note_linked_polys(2600);
+        w.push_frame_cost(None);
+        assert_eq!(w.battle.frame_work, linked_frame_work(2600, true));
+        w.note_floor_clip_walk(318);
+        w.push_frame_cost(None);
+        assert_eq!(
+            w.battle.frame_work,
+            linked_frame_work(2600, true) + floor_clip_walk_work(318)
+        );
+        assert_eq!(floor_clip_walk_work(318), 50);
     }
 
     /// Under the census an arm table's step and the summon band's opening
