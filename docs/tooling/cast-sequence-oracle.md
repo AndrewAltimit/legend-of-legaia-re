@@ -314,7 +314,7 @@ already holds the paid figure, so the driver credits it back as a still does
 at `0` of `150` MP; left unpaid, the engine's monster could not afford Earthquake,
 struck instead, and the recorder logged no cast frame.
 
-A monster those turns killed is seated dead and faded out (`0` HP, `d0`) where the state stands it alive: `battle_garmel_zenoir_strike`'s harvest rounds left seat 3 at `0`, the state at `279`. Neither that film's frames nor its roll moved (`.785`, `.821` with `--retail-steps --rand-at 0x2B:0`, the burst's `82` / `97` against retail's `91`), so the dead seat is not the film's residue. A harness seat.
+A monster those turns killed is seated dead and faded out (`0` HP, `d0`) where the state stands it alive: `battle_garmel_zenoir_strike`'s harvest rounds left seat 3 at `0`, the state at `279`. Neither that film's frames nor its roll moved, so the dead seat is not the film's residue: the roll is the frame step's (on `--retail-steps` the burst lands retail's `91` on retail's pass, plain `33` frames run step `3` where retail runs `2`). A harness seat.
 
 A `--physical` film keeps the state's drive, which commits Spirit for the whole party while a monster casts (`BattleDrive::Action`), so on its own its victims stand guarded whatever retail's party held.
 The film therefore stands the party in the recording's stance exactly on its gate tick (`LEGAIA_FILM_GUARD`: the recording's `guard=`, else the state's own `+0x1DE`), a member out of the stance included, and sets the world `rand()` stream to the state's own seed word `0x80009010` there (`LEGAIA_FILM_RAND`; `--no-state-rand` leaves it, `--rand-at` / `--rand-track` replace it, and a `--strike-deal` film, which seats every hit on its own word, does without it: on top of the deal it moved `battle_map02_mad_ogre_strike`'s landed hit onto the other swing).
@@ -830,7 +830,9 @@ The probe logs the seed word on every vsync. `--rand-at <st7>:<phase>` takes
 the word retail held on its last vsync under that key and has the engine
 child set its world stream to it before every tick it opens under the same
 key (`engine-capture::cast_rand`), so the pass that leaves the key draws as
-retail's did. In a `koru_strip_forced` capture the word on arm 3's last vsync
+retail's did. Every pass under the key starts from that word, so on a key that holds
+several passes (a magic band's `0x2B`) only the last draws as retail's: a
+hit on an earlier pass rolls off a word retail reached after it. In a `koru_strip_forced` capture the word on arm 3's last vsync
 makes one draw and then the sixteen picks a RAM read of the rocks holds; the
 engine, seeded there, makes the same draws. Measured on that capture, the
 arm-4 segment scores `.770` with the option and `.649` without.
