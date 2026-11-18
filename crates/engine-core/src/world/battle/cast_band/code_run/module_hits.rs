@@ -100,6 +100,15 @@ impl World {
             ticks::juggernaut_stager(&ctx, &mut seats, arm, take)
         };
         self.write_cast_seat_row(&seats);
+        // PROT 0966's sweep raises each swept seat's numeral on the raw roll,
+        // between the wrapper and the clamp (`jal 0x801DD4B0` at `0x801F8F08`,
+        // `jal 0x801F44A0` at `0x801F8F1C`); the band's fold is waived for
+        // these hits, so nothing else raises them. PROT 0927's first sweep
+        // still goes through the fold, which raises its numbers there.
+        // REF: FUN_801F44A0
+        if entry == 966 {
+            self.push_sweep_popups(rolls.iter().map(|&(s, _)| s), &rolls);
+        }
         let hits = self.cast_hits_to_engine(hits);
         Some(CastModuleCodeRun {
             prot_entry: entry,

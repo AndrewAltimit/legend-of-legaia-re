@@ -692,6 +692,11 @@ impl World {
                     }
                 }
                 self.refresh_seat_spirit(&mut seats);
+                // Each rolled seat's numeral on the raw roll, ahead of the
+                // clamp (`jal 0x801F44A0` at `0x801F8624`, behind the wrapper
+                // at `0x801F8610`).
+                // REF: FUN_801F44A0
+                self.push_sweep_popups(rolls.iter().map(|&(s, _)| s), &rolls);
             }
             let take = |s: u8| {
                 rolls

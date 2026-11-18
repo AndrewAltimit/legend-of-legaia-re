@@ -4824,6 +4824,14 @@ close to a minute. It is ported whole.
   `FUN_801DD4B0(0x327, ctx[+0x13], seat)` with the shape-A clamp
   (`0x801F8610` / `0x801F863C`), so it can kill a member the sweeps left
   low. It also stages the seat's knockdown at rate `2`.
+- **Every hit raises its numeral.** Both the stager's sweep (`jal 0x801F44A0`
+  at `0x801F8F1C`, behind the wrapper at `0x801F8F08`) and arm 26's hit
+  (`0x801F8624`, behind `0x801F8610`) push each rolled seat's raw roll through
+  the popup push before the clamp, and the band's fold is waived for these
+  hits, so nothing else raises them. The recording shows the numbers over the
+  party after each sweep and through arm 27; the port had landed the HP with no
+  number. Port `World::push_sweep_popups` from both. Grade `disassembly` +
+  `capture`.
 - **Arms 12..15 cut each get-up two keyframes short.** Each arm opens, ahead
   of its countdown, on the same walk over the party row (`0x801F7418` in arm
   12, copies at `0x801F75FC`, `0x801F77CC`, `0x801F7998`): a seat whose
