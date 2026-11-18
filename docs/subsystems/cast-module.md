@@ -1156,6 +1156,31 @@ scale `0x1800` (`0x801F6EF4`). Modules outside the list keep the at-once commit
 until their stage stores are read the same way: enlarging the list without the
 bumps parks the arms that wait on a cut.
 
+### A cut bit over the playing clip re-commits it
+
+The anim tick's two cut paths call the commit `FUN_8004AD80` with no compare of the
+staged byte `+0x1DA` against the playing clip `+0x1D9`: bit 0 of `+0x1DC` at once,
+bit 1 once the cursor is two frames past the entry's gate frame, both refused only by
+the entry's `+0x76` lock (`0x800478EC..0x80047A40`). The commit itself compares the
+two bytes only to key off a held sustained cue (`0x8004AE54..0x8004AE68`) and
+re-installs the entry whatever they hold: cursor `0` (`0x8004B064..0x8004B068`), the
+effect and cue cursors zeroed, the rate decay. So a byte equal to the playing clip
+under a cut bit is a re-commit, and only a byte with neither bit waits, for the
+natural end, which re-commits it too. The port's commit dropped any byte equal to
+the playing clip; it now takes one under a cut bit (`World::commit_staged_battle_anim`),
+the battle actors' one commit path for the party, the monsters and the creature seat
+(the field's actors run another). A bump an earlier cast left on a bare seat, and
+PROT 0915's own bump behind its installer (`0x801F6E64..0x801F6E70`), now reach the
+creature's first tick as that bit over the installer's zeroed byte, and the seat pass
+ends on cursor `0` with the rate lifted to `4`, as the recordings read.
+
+Over the film sets the rule moves little: it fires on Mushura's seat, three enemy casts
+(Blazing Slash and the Rogue golem's two) and fifty of the sixty-five strike films,
+where the strike loop's bit-1 stages over the idle re-commit it. The strike and arts
+means hold (`.9839`, `.9428`), the Seru set holds `.9717`, the enemy casts move by at
+most `.001`, and no `battle_` still moves. Grade `disassembly`; the measurements
+`capture`.
+
 ### A staged caster clip between its stage and its idle
 
 A capture-class body stages its caster's clip once and says nothing more until its
