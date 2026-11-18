@@ -1808,14 +1808,25 @@ enemy casts `.9985` to `.9775` (both Kiss of Death films lose their cue), Seru c
 `.9754` (`0x8E` to `.286`). So the cue losses earlier seen with the polygon cost on are the
 pricing of those arms, not the window's host-bound count.
 
-A monster's strike frame carries `LINKED_STRIKE_WORK` (`25` hblanks) over the census line:
-retail's unloaded monster-strike frames sit that far over it at the mean, and no counted
-class explains the offset held out by film (the effect sprites, the ghosts, the parts, the
-bodies and the stage each add nothing past a constant). Without it the strikes run a
-twentieth of a step under retail (`2.92` against `2.96`). Weighing the ghosts' flat packets
-lighter and the effect sprites heavier, as a fit on the strike and arts frames suggests,
-moved the arts images `.9300` to `.9195` and Tail Flare's cue back to `.800`, so the census
-counts each primitive once.
+The effects cost their ticks as well as their links. Every live move-VM part runs its node
+tick `FUN_80021DF4` and every live child of the effect pool `_DAT_8007BD30` its walker step,
+whatever it links, and the census counts only the link (a spark's one or two primitives).
+Priced on its own, the tick is the action-state table's measured load
+(`World::battle_frame_tick_cost`: `EFFECT_PART_COST`, `2` hblanks a part, and
+`effect_pool_cost`, `1.6` a child), added over the census line. Against the arts films'
+unloaded frames the residual over the line follows the live parts (correlation `.38` in
+`0x1E`, `.51` in `0x51`) and no other class. The same work is what a monster's strike frames
+once read as a flat `25` hblanks over the line, which the tick term replaces: its spark bursts
+carry it. Over the arts films the image mean reads `.9395` to `.9442` (Vahn's late chain
+`.906` to `.967`, Sonic Javelin `.895` to `.942`), over the strike films `.9831` to `.9843`
+(Frog `.908` to `.964`); the step agreement reads `.951` to `.943` on the arts and `.961` to
+`.968` on the strikes. Grade `disassembly` for the walks, `capture` for the prices.
+
+Weighing the ghosts' flat packets lighter, as a fit on the strike and arts frames suggests,
+moves the arts images down: a party ghost priced flat at `PARTY_GHOST_DRAW_COST` under the
+census put Vahn's chains at `.876` and `.858` against `.925` and `.906`, their finisher frames
+(two ghosts, `716` to `722` on the census) falling under `0x2D0` where retail's run step `4`.
+The census counts each ghost primitive once.
 
 **The backdrop's own work.** A frame that draws neither the backdrop pair nor the ground
 grid costs less than the line's intercept says. Retail transforms every backdrop primitive

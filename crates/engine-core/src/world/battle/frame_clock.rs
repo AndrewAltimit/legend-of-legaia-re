@@ -59,8 +59,8 @@ impl World {
     /// inside its step.
     fn push_frame_cost(&mut self, arm_step: Option<u8>) -> u16 {
         use legaia_engine_battle_loop::frame_clock::{
-            CdTiming, LINKED_STRIKE_WORK, XA_STREAM_ONSET_COST, cost_of_step, is_strike_state,
-            linked_frame_work, measured_frame_cost_at, polygon_frame_work, xa_polled_work_cost,
+            CdTiming, XA_STREAM_ONSET_COST, cost_of_step, linked_frame_work,
+            measured_frame_cost_at, polygon_frame_work, xa_polled_work_cost,
         };
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
@@ -123,20 +123,18 @@ impl World {
                     && p.wash_live
                     && p.wash.armed()
                     && matches!(p.wash.mode, 1 | 2);
+                // Over the line: a sinking body's full-TMD walk
+                // (`floor_clip_walk_work`) and the effects' own ticks, which
+                // link nothing: each live move-VM part and pool child
+                // (`battle_frame_tick_cost`). A monster's swing carries its
+                // spark bursts there, the work the strike films once read as
+                // a flat offset over the line.
                 let w = linked_frame_work(n, wash || self.battle_backdrop_drawn()).saturating_add(
                     legaia_engine_battle_loop::frame_clock::floor_clip_walk_work(
                         self.battle.floor_clip_walk,
-                    ),
+                    )
+                    .saturating_add(self.battle_frame_tick_cost()),
                 );
-                let monster_acting = self
-                    .actors
-                    .get(usize::from(self.battle_ctx.active_actor))
-                    .is_some_and(|a| a.battle_monster_id.is_some());
-                let w = if is_strike_state(state) && monster_acting {
-                    w.saturating_add(LINKED_STRIKE_WORK)
-                } else {
-                    w
-                };
                 // The resident module's scanline wash, a screen layer the
                 // census does not count (`SCANLINE_WASH_WORK`).
                 if wash {
@@ -399,11 +397,15 @@ impl World {
     /// [`PARTY_GHOST_DRAW_COST`](legaia_engine_battle_loop::frame_clock::PARTY_GHOST_DRAW_COST).
     /// A ghost re-runs the body's whole draw (`FUN_80049348` calls
     /// `FUN_80048A08` per ghost), so a boss's ghost costs what its mesh does.
-    pub fn battle_frame_load_cost(&self) -> u16 {
-        use legaia_engine_battle::battle_afterimage as ai;
-        use legaia_engine_battle_loop::frame_clock::{
-            EFFECT_PART_COST, PARTY_GHOST_DRAW_COST, effect_pool_cost, ghost_draw_cost,
-        };
+    /// What the frame's live effects cost to tick, in hblanks: each live
+    /// move-VM part's node tick `FUN_80021DF4`
+    /// ([`EFFECT_PART_COST`](legaia_engine_battle_loop::frame_clock::EFFECT_PART_COST))
+    /// and each live child of the effect pool `_DAT_8007BD30`
+    /// ([`effect_pool_cost`](legaia_engine_battle_loop::frame_clock::effect_pool_cost)).
+    /// The census prices what they link; this is the walk that runs them,
+    /// which links nothing of its own.
+    pub fn battle_frame_tick_cost(&self) -> u16 {
+        use legaia_engine_battle_loop::frame_clock::{EFFECT_PART_COST, effect_pool_cost};
         let (parts, _) = self.battle_frame_load();
         let pool = self
             .effect_pool
@@ -411,9 +413,15 @@ impl World {
             .iter()
             .filter(|c| c.frame_count != 0)
             .count();
-        let mut cost = parts
+        parts
             .saturating_mul(EFFECT_PART_COST)
-            .saturating_add(effect_pool_cost(u16::try_from(pool).unwrap_or(u16::MAX)));
+            .saturating_add(effect_pool_cost(u16::try_from(pool).unwrap_or(u16::MAX)))
+    }
+
+    pub fn battle_frame_load_cost(&self) -> u16 {
+        use legaia_engine_battle::battle_afterimage as ai;
+        use legaia_engine_battle_loop::frame_clock::{PARTY_GHOST_DRAW_COST, ghost_draw_cost};
+        let mut cost = self.battle_frame_tick_cost();
         let per_frame = self.ghost_ring_slots_per_frame();
         for a in &self.actors {
             if a.battle_pose_history.is_empty()
@@ -2655,6 +2663,28 @@ mod tests {
             linked_frame_work(2600, true) + floor_clip_walk_work(318)
         );
         assert_eq!(floor_clip_walk_work(318), 50);
+    }
+
+    /// The census line carries the effects' ticks on top of their links,
+    /// for a monster's swing as for a party member's: no flat strike offset.
+    #[test]
+    fn the_census_line_carries_the_effects_ticks() {
+        use legaia_engine_battle_loop::frame_clock::linked_frame_work;
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x1E;
+        w.toggles.battle_poly_frame_cost = true;
+        w.note_linked_polys(2600);
+        w.push_frame_cost(None);
+        assert_eq!(w.battle_frame_tick_cost(), 0);
+        assert_eq!(w.battle.frame_work, linked_frame_work(2600, true));
+        for (i, frames) in [3u8, 0, 5].into_iter().enumerate() {
+            w.effect_pool.children[i].frame_count = frames;
+        }
+        w.push_frame_cost(None);
+        assert_eq!(w.battle_frame_tick_cost(), 3, "two live children at 1.6");
+        assert_eq!(w.battle.frame_work, linked_frame_work(2600, true) + 3);
     }
 
     /// Under the census an arm table's step and the summon band's opening
