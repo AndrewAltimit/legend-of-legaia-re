@@ -1087,7 +1087,28 @@ impl World {
                 if own_clip {
                     host.world.field_vm.executing_channel = id.npc_slot;
                 }
+                // A run aimed at another actor takes the NPC arm whatever the
+                // talker's class: retail splits the player arm off on an
+                // identity compare of the resolved actor against the player
+                // (`0x801E1954`), which a companion fails. The port reads the
+                // player arm off the party-bank bit of the stepped context, so
+                // a talker carrying that bit seated the PLAYER on the
+                // companion's tile: `vozz` `P1[7]`, the Genesis Tree's
+                // revival, puts Vahn on `(103, 100)` with `A3 F8 67 64` and
+                // then seats Noa and Gala with `CC 06 51 6B 62 83 09` /
+                // `CC 07 51 69 60 84 10`, and Vahn ended on Gala's tile while
+                // Gala stood in front of Noa. The bit is the talker's own, so
+                // it comes back after the op; the seat writes the target's.
+                // REF: FUN_8003C83C, FUN_801DE840 (0x801E1828..0x801E1954)
+                let party = legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
+                let talker_class = run_target.map(|_| id.ctx.flags & party);
+                if talker_class.is_some() {
+                    id.ctx.flags &= !party;
+                }
                 let r = field_step_routed(&mut host, &mut id.ctx, &id.bytecode, id.pc);
+                if let Some(bit) = talker_class {
+                    id.ctx.flags = (id.ctx.flags & !party) | bit;
+                }
                 if own_clip {
                     host.world.field_vm.executing_channel = None;
                 }
