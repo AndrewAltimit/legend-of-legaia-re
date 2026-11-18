@@ -2347,6 +2347,17 @@ adds its reaction-channel entry). What the recordings on
   to `718` (the table's `534` and the flight's parts), so two homing slots that reach their
   targets in one retail frame land in consecutive engine frames. Priced from what the flight
   links, the state reads `4` from its first frame and both pairs land together.
+- **The hit reactions' cues sit on the clip, not on the hit.** The party's reaction cues
+  (`0x11`, `0x15..0x17`) come off the reaction clip's cue track
+  ([`FUN_800508DC`](../subsystems/audio.md#the-second-shout-trigger---the-animation-cue-track-fun_800508dc)):
+  `seats.csv` and `rates.csv` read the seat's cue index `+0x1F6` and node cursor `+0x68` on both sides,
+  and over the enemy set the cue fires at the same cursor in 340 of 468 reactions (`80`, `96`,
+  `192`, `112`, `128`, `272` on Rogue Wind, Stone Circle and Terio Punch, whose cues all pair `+5`
+  to `+7`), with the reaction clip starting one frame after the HP drop on both. The rest fire a
+  frame's advance past the same threshold, where the two sides' frame steps differ. So a film's
+  constant cue offset is its frames' pace between the hit and the cue (`rugi_rogue_pre_rogue_wind`:
+  `20` frames on both sides, `12` vsyncs each at step `4` in retail, `9` ticks each in the engine),
+  which is the battle frame cost's to close, not a cue path.
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 
