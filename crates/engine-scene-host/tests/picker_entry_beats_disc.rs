@@ -9,8 +9,9 @@
 //! and, per arrival, three kinds of candidate (`BeatTrigger`): the gate-1
 //! walk-on trigger on the arrival tile, the entry script's spawn behind the
 //! arriving door's hand-off flags (the `0x5x` sets its record makes before
-//! the `0x3F`), and a gate-1 trigger within [`NEAR_TILES`] of the arrival
-//! tile. A trigger record that carries a `0x3F` is a door, not a beat. Each
+//! the `0x3F`; only in a scene the overworld does not enter, whose story
+//! entrance is the overworld's), and a gate-1 trigger within [`NEAR_TILES`]
+//! of the arrival tile. A trigger record that carries a `0x3F` is a door, not a beat. Each
 //! candidate is staged as a fresh selector visit (the free-roam staging, then
 //! `arm_picker_beat` with the hand-off flags and the record's missing C2
 //! flags) and ticked with Cross tapped: the first candidate whose record
@@ -373,6 +374,14 @@ fn sweep_scene(
         legaia_engine_field::man_field_scripts::partition2_record_gates(&mf, &man, record as usize)
     };
 
+    // A scene the overworld enters has its story entrance there: a beat an
+    // entry script plays behind another door's hand-off is a later return
+    // (`rikuroa` from `noaru`, `bylon` from `garmel`), not the way in. Only a
+    // scene doors and hops alone lead into opens on one.
+    let overworld_entrance = cat
+        .ranked(scene)
+        .iter()
+        .any(|a| a.class == ArrivalClass::Entrance);
     let mut seen: Vec<((u8, u8), Vec<u16>)> = Vec::new();
     // Per trigger kind, in `BeatTrigger` order: every arrival's tile
     // trigger before any entry-script candidate, and those before any near
@@ -414,7 +423,7 @@ fn sweep_scene(
             });
         }
         // The entry script's spawn behind the hand-off flags.
-        if !old_beat && handoff.iter().any(|f| !staged.contains(f)) {
+        if !old_beat && !overworld_entrance && handoff.iter().any(|f| !staged.contains(f)) {
             scripted.push(Candidate {
                 trigger: BeatTrigger::EntryScript,
                 ..base.clone()

@@ -77,10 +77,32 @@ fn runtime() -> Option<LegaiaRuntime> {
     Some(rt)
 }
 
+/// The page's Cross bit.
+const CROSS: u16 = 0x4000;
+
+/// Frames past [`ENTRY_FRAMES`] a picked scene's music may take to settle.
+/// The selector opens some scenes on their story beat, and a beat may fade
+/// the scene's track into its own (`retockin` `P2[42]`: `35 78 00 05`, then
+/// `35 05 08 09`) or rest the music for a moment (`conc3` `P2[9]`), paged by
+/// Cross; the track the beat settles on must sound.
+const SETTLE_FRAMES: u32 = 600;
+
 fn pick(rt: &mut LegaiaRuntime, scene: &str) -> Option<Bgm> {
     rt.enter_field(scene).ok()?;
     for _ in 0..ENTRY_FRAMES {
         let _ = rt.tick_frame();
+    }
+    for _ in 0..SETTLE_FRAMES / 30 {
+        if starts_its_music(bgm(rt)) {
+            break;
+        }
+        // Page the beat's text as a player does: a beat may hold its music
+        // change behind a line.
+        for f in 0..30 {
+            rt.set_pad(if f % 2 == 0 { CROSS } else { 0 });
+            let _ = rt.tick_frame();
+        }
+        rt.set_pad(0);
     }
     Some(bgm(rt))
 }
