@@ -281,8 +281,20 @@ pub fn pack_cutscene_view(cam: &Camera, world: &World) -> Option<FieldCameraView
 /// per-slot fallbacks with nothing staged framed an invented shot. Both
 /// hosts gate on this one kernel; the world map has always been gated this
 /// way (its Drake mist-wall force-walk bands carry no camera beats).
+///
+/// The shot also holds from a scripted fight's commit until the battle opens
+/// ([`World::field_scripts_held_for_battle`]), even when the record ended its
+/// run on the `21` after its `3E FF <row>` (East Voz Forest's Songi beat,
+/// `vozz` `P2[13]` `+0xF95`). Retail's battle request stores the game mode
+/// at once, and the intro overlay loaded over the field pump steps neither
+/// the follow camera nor a script, so the intro wipes the frame the shot
+/// last drew. Released there, both hosts framed the follow view - the shot's
+/// angles and eye trio around the *player* - and the wipe opened inside the
+/// tree line.
+// REF: FUN_801D1344, FUN_801CE8CC
 pub fn cutscene_owns_camera(world: &World) -> bool {
-    world.cutscene_timeline_active() && !world.camera.state.params.is_empty()
+    !world.camera.state.params.is_empty()
+        && (world.cutscene_timeline_active() || world.field_scripts_held_for_battle())
 }
 
 /// The **op-`0x45` cutscene shot**'s inputs, decoded from the camera state the
@@ -729,6 +741,26 @@ mod tests {
             value: 300,
         }];
         assert!(cutscene_owns_camera(&w), "timeline + a staged slot");
+    }
+
+    /// A record that commits its fight and ends its run on the `21` after
+    /// `3E FF <row>` (`vozz` `P2[13]`, the Viguro pair) leaves the staged shot
+    /// owning the frame until the battle opens: the intro wipes the shot,
+    /// not a follow view framed around the player.
+    #[test]
+    fn a_committed_fight_keeps_the_shot_after_its_record_ends() {
+        use legaia_engine_vm::field::CameraParam;
+        let mut w = world_with_player(700, 800);
+        w.camera.state.params = vec![CameraParam {
+            slot: 0,
+            value: 300,
+        }];
+        assert!(!cutscene_owns_camera(&w), "no timeline, no fight");
+        w.carriers.pending_battle = Some(10);
+        assert!(w.field_scripts_held_for_battle());
+        assert!(cutscene_owns_camera(&w), "the fight holds the shot");
+        w.camera.state.params.clear();
+        assert!(!cutscene_owns_camera(&w), "nothing staged");
     }
 
     /// The op-`0x45` slot decode: focus X/Z come back **negated** out of the
