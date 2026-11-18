@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; player FAQ</div>
   <h1>Player FAQ</h1>
-  <p class="lede">Short answers to what players ask most about the port: which disc image it needs, where saves go, how to play the original game with no enhancements, controllers, the scene selector, how the port differs from the PlayStation game, and what to put in a bug report. Each answer links to the page with the full detail. The same engine runs in two places, the <a href="desktop-apps.html">desktop download</a> and the <a href="../play.html">browser play page</a>, and the answers name both where they differ.</p>
+  <p class="lede">Short answers to what players ask most about the port: which disc image it needs, where saves go, how to play the original game with no enhancements, controllers, the scene selector, changing your party, expansion packs and other languages, how the port differs from the PlayStation game, what to try when something goes wrong, and what to put in a bug report. Each answer links to the page with the full detail. The same engine runs in two places, the <a href="desktop-apps.html">desktop download</a> and the <a href="../play.html">browser play page</a>, and the answers name both where they differ.</p>
 </header>
 
 <section class="doc-section" id="disc">
@@ -63,7 +63,7 @@
       <tr><td>Browser play page</td><td><em>Visual enhancements</em> panel: <em>Look and feel</em>, or the <em>Retail-faithful</em> box</td></tr>
     </tbody>
   </table>
-  <p>Original mode also brings back the original's short loading pauses: about a second on a held or black screen while the pause menu or a shop loads, and again on the way back to the map, and three to four seconds of black behind each door while the next scene loads (longer when the music changes), five to seven on the way back from a battle. The default mode skips them.</p>
+  <p>Original mode also brings back the original's short loading pauses: about a second on a held or black screen while the pause menu or a shop loads, and again on the way back to the map, and three to four seconds of black behind each door while the next scene loads (longer when the music changes), five to seven on the way back from a battle. The default mode skips them. It also plays the original's timing on the field and the world map: a button press acts two screen refreshes after it lands (a very short tap can go unread), your character moves a whole step once a game frame, and the <kbd>L1</kbd> map draws twelve frames a second. The default reads a press at once and moves both every refresh, at the original's speeds.</p>
 
   <h3 id="enhancements">What does the port change by default, and how do I turn one thing off?</h3>
   <p>Each enhancement has its own key on both hosts, and its own row on the launcher and on the play page:</p>
@@ -128,6 +128,24 @@
   <p>It refuses on the title screen, in the pause menu, in a fight, a movie or a minigame, and says which. Go back to the map and pick again.</p>
 </section>
 
+<section class="doc-section" id="party">
+  <h2>Your party</h2>
+
+  <h3 id="pick-party">Can I change who is in my party mid-game?</h3>
+  <p>Yes, as a port tool the original does not have. In the desktop game, <kbd>F12</kbd>, then <kbd>Tab</kbd> (or L1 / R1) to the <em>Tools</em> page: the <em>Party</em> row picks who fights and in which order (Vahn alone, Vahn and Noa, all three in any of a few orders, Noa or Gala alone), Left / Right to choose and Cross to seat it. On the play page, the <em>Battle tools</em> box takes the names in battle order (<code>noa,vahn,gala</code>) and <em>Apply party</em> seats them; from a terminal, <code>play-window --party noa,gala</code> starts with that party. Up to three fight. A character who has not joined yet in your game joins with the stats the game gives them when they first join; one who has keeps their level, equipment and arts. Only the party changes: story flags stay as they are, so the story does not know who joined early.</p>
+  <p>The scene selector is the other way the party changes: a picked scene keeps your party, and with no save loaded it starts Vahn, Noa and Gala at level 1 (<a href="#jump">above</a>). Levels, money and items are on the <a href="playing-and-viewing.html#cheats">cheats</a> pages.</p>
+</section>
+
+<section class="doc-section" id="packs-languages">
+  <h2>Expansion packs and other languages</h2>
+
+  <h3 id="expansion">What is an expansion pack, and where do I get one?</h3>
+  <p>New content made for the port - maps, quests, fights, trading cards, game modes - that plays beside your own disc and carries none of its data. Every release includes the sample pack. On the desktop, the launcher's <em>Expansion pack...</em> button picks one; on the play page, the <em>Expansion pack</em> card loads an <code>.lxpack</code> once the disc is up. With a pack on, Select in the pause menu opens its Journal. The steps are in <a href="playing-expansion-packs.html">Playing an expansion pack</a>; making one is <a href="making-expansion-packs.html">Making expansion packs</a>.</p>
+
+  <h3 id="language">Can I play in another language?</h3>
+  <p>Yes, by translating a copy of your disc: the <a href="../tooling/rom-patcher.html">ROM patcher page</a>'s <em>Language</em> box applies one of the community translations (Spanish, French, German, Italian, Polish, Brazilian Portuguese) or your own pack, in the browser, and gives you a patched image to play. Your own disc is not changed. Writing or improving a translation: <a href="translating.html">Translating the game</a>.</p>
+</section>
+
 <section class="doc-section" id="differences">
   <h2>How the port differs from the original</h2>
 
@@ -138,6 +156,7 @@
   <ul class="bullets">
     <li><strong>The enhancements</strong> above start on. <em>Original</em> mode turns them off.</li>
     <li><strong>No loading pauses</strong> around the pause menu, shops, doors and battles, except in Original mode.</li>
+    <li><strong>Smoother input and motion:</strong> a press acts the moment it lands, and walking and the <kbd>L1</kbd> map move every screen refresh rather than once a game frame, at the same speeds. Original mode plays the original's timing.</li>
     <li><strong>Start opens the pause menu</strong> as well as Triangle, and leaves any minigame, so no minigame can trap you.</li>
     <li><strong>A few original softlocks are closed.</strong> The battle freeze guard, a guard on ledge hops that could box you in, and the slot machine, where pressing Cross and Circle together on the rules screen spins the reels forever in the original and does not here.</li>
     <li><strong>Additions with no original counterpart:</strong> the scene selector, the <kbd>F12</kbd> panel, cheats, the saved-chain Arts list, custom game modes, expansion packs and online play. Each is off or out of the way until you use it.</li>
@@ -151,6 +170,25 @@
 <section class="doc-section" id="hosts">
   <h2>Desktop or browser?</h2>
   <p>Both run the same engine and the same saves format. The desktop game has every option on the command line, hosts online rooms, and reloads an expansion pack from a folder as you edit it; the browser needs nothing installed, runs on a phone, and does VR. What a tab cannot do: <a href="playing-and-viewing.html#what-a-browser-cannot-do">what a browser cannot do</a>. Downloads for Windows, macOS and Linux (PC and ARM) are on the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/releases" target="_blank" rel="noopener">Releases page</a>; the first start on each system is in <a href="desktop-apps.html">Desktop apps</a>.</p>
+</section>
+
+<section class="doc-section" id="trouble">
+  <h2>When something goes wrong</h2>
+
+  <h3 id="version">Which version am I running?</h3>
+  <p>The desktop launcher names it at its top right (<em>engine port</em> and the release number); <code>legaia-engine --version</code> prints it, and so does Legaia Explorer's <em>About</em> box. The play page always runs the site's current build. Both hosts put the version in a copied bug report (<a href="#bug-report">below</a>).</p>
+
+  <h3 id="wont-start">The desktop programs will not start.</h3>
+  <p>On Windows, unpack the <code>.zip</code> with <em>Extract All...</em> first; a program run from inside the zip window cannot find the engine. A <em>Windows protected your PC</em> or <em>Apple could not verify</em> warning is the first start of a program that is not signed by Microsoft or notarised by Apple; <a href="desktop-apps.html#windows">Windows</a> and <a href="desktop-apps.html#macos">macOS</a> say how to let it run. On Linux the game needs ALSA for sound and udev for controllers (<a href="desktop-apps.html#linux">Linux</a>).</p>
+
+  <h3 id="stopped">The game stopped with an error.</h3>
+  <p>Started from the launcher, the launcher comes back and says how the game ended and why; the whole log is <code>legaia-engine-game.log</code> in the saves folder. Copy the report from there for an issue.</p>
+
+  <h3 id="no-sound">The play page has no sound.</h3>
+  <p>A browser opens no audio until you click or press a key on the page; the sound starts with that press. Check the page's own volume slider and <kbd>F2</kbd> (mute) as well.</p>
+
+  <h3 id="slow">The play page is slow, or the lighting went off by itself.</h3>
+  <p>The page runs everything on one thread, so on a slow machine it steps its quality down to hold the frame rate: it turns enhancements off and draws a smaller picture for the session, and says so beside the picture, with a <em>Put it back</em> button. It never changes a saved setting. The desktop game has more headroom on the same machine.</p>
 </section>
 
 <section class="doc-section" id="bug-report">
