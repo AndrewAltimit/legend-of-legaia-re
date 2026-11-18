@@ -100,6 +100,7 @@ mod field_pickup_once_disc;
 mod field_placement_retire_disc;
 mod field_player_clip_disc;
 mod field_prop_anim_disc;
+mod field_reflection_anim_concnow_disc;
 mod field_reflection_conc2_capture_disc;
 mod field_region_encounter_disc;
 mod field_regions_disc;

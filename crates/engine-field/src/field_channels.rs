@@ -171,6 +171,11 @@ fn placement_channel(p0_count: usize, p: &ActorPlacement) -> FieldChannel {
         // (`FUN_8003A1E4`); mirror it so scripts that read/replace
         // the clip see the seeded value.
         move_id: u16::from(p.anim_id),
+        // The model word `+0x64` the seater stamps (`FUN_80024E08` behind
+        // the bank select at `0x8003A2CC..0x8003A328`), kept in the raw
+        // operand space `4C 50` writes. The reflection tick compares it
+        // across a mirror pair before it copies the clip (`0x801E5204`).
+        model_id: u16::from(p.model_index),
         // Retail inits the `+0x94` payload slot to `-1`
         // (`FUN_8003A1E4`); the halt-acquire predicate reads it as
         // "acquireable" (non-zero).
