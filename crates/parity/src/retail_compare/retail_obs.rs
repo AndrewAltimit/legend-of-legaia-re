@@ -198,6 +198,16 @@ pub struct RetailObs {
     /// on that return, so this says which vsync of retail's frame the state
     /// was saved on - the phase a walk film resumes on.
     pub vsync_phase: u32,
+    /// The scene-change actor's countdown (`gp+0x710`, `0x8007BA28`) when a
+    /// state was saved mid-departure: the actor's state 0 writes the screen
+    /// byte `0x8007B648 = 0x80`, which reads `0x80` until mode `0x02`.
+    /// `None` on a state with no departure in flight.
+    pub departure_countdown: Option<i32>,
+    /// The scene-change actor's own state (`actor+0x1A` of the live actor
+    /// whose handler `+0x0C` is `FUN_80021934`), beside
+    /// [`Self::departure_countdown`]: `3` while it waits on the CD queue for
+    /// its chunk, `4` once it only waits on the countdown.
+    pub departure_state: Option<u16>,
     /// The frame pacer's history at the capture: the sixteen frame times of
     /// `DAT_80084098` and the write cursor `gp+0x440`
     /// ([`crate::retail_compare_battle::frame_cost_ring`]). `None` where the
@@ -489,6 +499,14 @@ impl RetailObs {
             encounter_step_counter: game_anchors::u32_at(ram, 0x8007_B5FC) as i32,
             vsync_phase: game_anchors::u32_at(ram, 0x8007_A894)
                 .wrapping_sub(game_anchors::u32_at(ram, 0x8007_97D4)),
+            departure_countdown: (game_anchors::u8_at(ram, 0x8007_B648) == 0x80)
+                .then(|| game_anchors::u32_at(ram, 0x8007_BA28) as i32)
+                .filter(|c| (-0x20..=0x46).contains(c)),
+            departure_state: crate::retail_compare_script::actor_nodes(ram)
+                .into_iter()
+                .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8002_1934)
+                .map(|n| game_anchors::u16_at(ram, n + 0x1A))
+                .max(),
             frame_history: crate::retail_compare_battle::frame_cost_ring(ram)
                 .map(|(e, c)| (e.map(|v| v.min(0x7FFF) as i16), usize::from(c))),
             step_bytes: None,

@@ -356,6 +356,12 @@ impl SceneTransitionHold {
         }
     }
 
+    /// Seat the chunk read as still running for `vsyncs` (a harness standing
+    /// the hold on a state saved while the actor waits on the CD queue).
+    pub fn seat_stream_left(&mut self, vsyncs: u32) {
+        self.stream_left = vsyncs;
+    }
+
     /// One world tick at frame step `dt`. `true` on the tick the actor writes
     /// [`SceneTransitionEffect::EnterGameMode`] - the switch commits then.
     ///

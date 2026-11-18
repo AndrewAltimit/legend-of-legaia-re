@@ -366,12 +366,57 @@ impl WalkFilm {
             }
             None => None,
         };
+        // A state saved mid-departure holds the scene-change actor's
+        // countdown in RAM (`RetailObs::departure_countdown`): seat the
+        // engine's parked hold on it, in state 4, the first time one is
+        // parked inside the film's opening ticks, less the frame steps the
+        // film has already opened. Left to the engine's own fresh actor,
+        // `s2_rimelm_town01` (countdown `30`) left `map01` forty vsyncs after
+        // retail. A harness seat; `LEGAIA_RC_NO_DEPART_SEAT=1` keeps the
+        // engine's.
+        let mut depart_seat = retail
+            .departure_countdown
+            .filter(|_| std::env::var_os("LEGAIA_RC_NO_DEPART_SEAT").is_none());
+        let mut depart_spent = 0i32;
         for t in 0..self.ticks {
+            if t < 8
+                && let Some(cd) = depart_seat
+                && let Some(hold) = session.host.world.scene_transition_hold.as_mut()
+            {
+                // The frames the film already opened count down from the
+                // RAM's value, a frame step each.
+                let spent = depart_spent;
+                use legaia_engine_field::scene_transition_actor::{
+                    STATE_COUNT, TRANSITION_COUNTDOWN,
+                };
+                let state = retail.departure_state.unwrap_or(STATE_COUNT - 1);
+                hold.actor.state = state.min(STATE_COUNT - 1);
+                // Retail counts down a frame step at each frame it opens and
+                // hands off on the first frame past zero; the hold here counts
+                // a vsync a tick. Seat the vsync of that frame: the first frame
+                // opens `step - phase` vsyncs into the film.
+                let step = i32::from(session.host.world.clock.frame_step.max(1));
+                let phase = (retail.vsync_phase as i32).min(step);
+                let handoff = (step - phase) + (cd.max(0) / step) * step;
+                hold.actor.countdown = handoff - spent.max(0);
+                // An actor still in state 3 waits on its chunk: what is left
+                // of the read the hold's own size law gives, counted from
+                // state 2, two frames past the seed.
+                if state == 3 {
+                    let read_since = (TRANSITION_COUNTDOWN - cd) - 2 * step + spent;
+                    let left = i64::from(hold.stream_vsyncs) - i64::from(read_since.max(0));
+                    hold.seat_stream_left(left.max(0) as u32);
+                }
+                depart_seat = None;
+            }
             let pad = self.pad_at(t);
             // The hosts' pad entry, so the retail-faithful pad pipeline
             // (`World::retail_frame_pad`) runs as it does in play.
             session.host.world.set_pad(pad);
             session.tick()?;
+            if depart_seat.is_some() && session.host.world.clock.game_tick_fired {
+                depart_spent += i32::from(session.host.world.clock.frame_step);
+            }
             if hold_first && t == 0 {
                 seat_frame_accums(&mut session.host.world, 0);
             }
