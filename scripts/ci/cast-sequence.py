@@ -1318,6 +1318,12 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         yaws = retail_yaw_coins(out)
         if yaws:
             env["LEGAIA_STRIKE_DEAL_YAW"] = ",".join(yaws)
+    elif coins := retail_track_coins(out):
+        # Without a deal the track coin is still a draw the replay's stream
+        # makes on another word, and case 8's dead-target yaw reads it: Death
+        # Game's Done band framed its victim half a turn from retail's. Dealt
+        # from the recording's `coin` column (lane A seat, a harness seat).
+        env["LEGAIA_FILM_COIN"] = ",".join(coins)
     if a.gpu_cost_step:
         env["LEGAIA_BATTLE_GPU_COST"] = "1"
     # The recordings are PCSX-Redux's, and so is the engine's default CD

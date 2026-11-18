@@ -266,6 +266,12 @@ pub struct ScreenshotConfig {
     /// (the state's instant) opens. Set by the cast-sequence oracle; `None`
     /// in play.
     pub film_rand: Option<u32>,
+    /// `LEGAIA_FILM_COIN=coin@vsync,..` (HARNESS, lane A): the attack
+    /// camera's track coin `ctx[+0x26D]` through a film's recording, dealt
+    /// from the capture's gate on a film no strike deal carries
+    /// ([`legaia_engine_capture::strike_deal::deal_track_coins`]). Set by the
+    /// cast-sequence oracle; empty in play.
+    pub film_coins: Vec<(u8, u32)>,
     /// `LEGAIA_LEADIN_TABLE_COST=1`: the replay's lead-in to the capture's
     /// gate prices its battle frames on the action-state table, and the
     /// polygon census takes over when the gate opens
@@ -1200,6 +1206,9 @@ impl ScreenshotConfig {
             film_guard: std::env::var("LEGAIA_FILM_GUARD")
                 .ok()
                 .map(|v| legaia_engine_capture::strike_deal::film_guard_from_env(&v)),
+            film_coins: std::env::var("LEGAIA_FILM_COIN")
+                .map(|v| legaia_engine_capture::strike_deal::track_coins_from_env(&v))
+                .unwrap_or_default(),
             film_rand: std::env::var("LEGAIA_FILM_RAND")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

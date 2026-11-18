@@ -154,6 +154,7 @@ Flags worth knowing:
 | `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
 | `LEGAIA_LEADIN_TABLE_COST=1` (engine child, beside `LEGAIA_BATTLE_POLY_COST=1`) | Engine: price the replay's lead-in on the action-state table and raise the polygon census where the film starts (the capture's gate, or the cast begin), so a census-priced film reaches its gate on the round a table-priced one does. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `LEGAIA_FILM_COST_RING=e0,..,e15;cursor` (engine child) | The recording state's frame-cost ring, which the driver reads off the state for a film no `LEGAIA_BATTLE_COST_RING` seeds; under `LEGAIA_LEADIN_TABLE_COST` the film's opening pass is priced again on the census from it. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
+| `LEGAIA_FILM_COIN=coin@vsync,..` (engine child) | The attack camera's track coin `ctx[+0x26D]` through the recording, dealt from the gate on a film no `--strike-deal` carries; the driver sets it whenever the recording has the `coin` column ([the track coin](#the-track-coin-on-a-film)). A harness seat |
 | `LEGAIA_LEADIN_SPAN_LAW=1` (engine child) | Engine: run the replay's lead-in on the default one-vsync overrun and raise the span law where the film starts, the same hold for the law's longer frames: under the law in the lead-in `battle_korb2_warhalf_strike`'s replay won its fight in round 3 and never met its gate, as Gilium, Slippery and Topaz did. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `--rand-track` | Engine: seat every module-band pass on the `rand()` word retail's frame before it ended on (`LEGAIA_CAST_RAND_TRACK`, [below](#the-rand-stream)). A harness seat |
 | `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
@@ -1533,6 +1534,27 @@ on its own seat (`+0x1DD = s7 + 3` at `0x801EB9AC`) and only Big Wave on the par
 (`+0x1DD = 8` at `0x801EBD24`), and the engine seam lands a party code only where the spell's
 own class is a group, so retail frames a party-wide cast with the panels up against the
 engine's self-cast. The film on the cast's own seat reads `.991`.
+
+### The track coin on a film
+
+A film's state stands a few instructions ahead of a commit as often as not, and
+`FUN_8004E13C` draws `ctx[+0x26D] = rand() % 2` at every commit of a clip whose `+0x87`
+byte is set (`0x8004E2BC..0x8004E2DC`). The replay reaches that commit on its own
+stream, so the coin is a coin flip against retail's. Case 8's dead-target arm builds its
+yaw from it (`-target[+0x46] - ((coin << 9) - 0x100)`, `0x801D6A20..0x801D6A98`), so a
+monster cast that fells a party member frames its Done band from one side of the corpse
+or the other, half a turn apart. A `--watch 0x80009010` recording of
+`battle_jou_puera_v3_death_game_mid_cast` makes the draw at the state's own instant
+(`ra` `0x8004E2C4`, vsync `0`, `1`), and the replay drew `0`: Death Game's `0x51` turned
+the other way round and stood `517` yaw units off for the whole band (camera `42` px).
+
+The driver now deals the recording's `coin` column on every film that carries it, not only
+under `--strike-deal` (`LEGAIA_FILM_COIN`): the change points go to the same lookahead the
+strike deal uses, and the coin of the first row is seated at the gate. Death Game's film
+names a recording with the column (`captures/film-retail/jou_puera_v3_death_game`), and on
+it the Done band reads `.675` to `.997`, the film `.941` to `.952` and its camera `42.0` to
+`1.9` px; the eight other enemy films whose recordings carry the column do not move. A
+harness seat: the commit and its draw are the engine's own.
 
 ### The enemy set on the plain seat, and what holds it
 

@@ -157,21 +157,33 @@ pub fn deal_hit_words(world: &mut World, deal: &StrikeDeal) {
         .iter()
         .map(|&(w, at)| (w, at.map(|v| gate + u64::from(v.saturating_sub(1)))))
         .collect::<VecDeque<_>>();
-    // The track coin: retail draws `ctx[+0x26D] = rand() % 2` at each commit
-    // of a `+0x87` clip (`FUN_8004E13C`), a draw the replay's own stream
-    // makes on another word. It picks the per-art camera's column, so a
-    // Super Art's shots fork on it.
-    world.battle.capture_track_coin = deal
-        .track_coins
-        .iter()
-        .map(|&(c, v)| (gate + u64::from(v.saturating_sub(1)), c))
-        .collect();
+    deal_track_coins(world, &deal.track_coins);
     // The swing camera's side: the same routine's value-2 arm draws
     // `ctx[+0x6DA] = (rand() % 2) * 0x800 + 0x280` at a Super Art finisher's
     // first commit, and a replay one frame step off retail's by then draws it
     // on another word and films the finisher from the far side. Dealt in
     // order: an action re-seeds once or not at all.
     world.battle.capture_yaw_coin = deal.yaw_coins.iter().copied().collect();
+}
+
+/// Deal the recording's track coin `ctx[+0x26D]` from the capture's gate on:
+/// `(coin, vsync)` change points, the recording's vsync counted from the gate.
+///
+/// Retail draws `ctx[+0x26D] = rand() % 2` at each commit of a `+0x87` clip
+/// (`FUN_8004E13C`, `0x8004E2BC..0x8004E2DC`), a draw the replay's own stream
+/// makes on another word. It picks the per-art camera's column, so a Super
+/// Art's shots fork on it, and case 8's dead-target yaw
+/// (`-target[+0x46] - ((coin << 9) - 0x100)`), so a monster cast that fells a
+/// party member frames its Done band from one side or the other half a turn
+/// apart: `battle_jou_puera_v3_death_game_mid_cast` draws `1` on the commit
+/// at the state's own instant (a `--watch 0x80009010` recording: `ra`
+/// `0x8004E2C4` at vsync `0`), and the replay's stream drew `0`.
+pub fn deal_track_coins(world: &mut World, coins: &[(u8, u32)]) {
+    let gate = world.clock.display_frames;
+    world.battle.capture_track_coin = coins
+        .iter()
+        .map(|&(c, v)| (gate + u64::from(v.saturating_sub(1)), c))
+        .collect();
 }
 
 /// The byte the replay's strike loop already staged from its own stream,
