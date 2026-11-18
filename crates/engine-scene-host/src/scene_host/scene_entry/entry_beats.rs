@@ -26,8 +26,10 @@
 //!
 //! The rows are generated, not curated: the disc-gated
 //! `picker_entry_beats_disc` test walks every selector scene's inbound
-//! arrivals in [`ArrivalCatalog::ranked`] order and, per arrival, tries the
-//! three triggers in [`BeatTrigger`] order, each as a fresh picker visit after
+//! arrivals in [`ArrivalCatalog::ranked`] order and tries the three triggers
+//! in [`BeatTrigger`] order (every arrival's tile trigger first; an entry-script
+//! beat only in a scene the overworld does not enter, whose story entrance is
+//! the overworld's), each as a fresh picker visit after
 //! the free-roam staging
 //! ([`legaia_engine_core::world::World::stage_picker_entry`]) with the
 //! arrival's hand-off flags and the record's missing C2 flags raised. It keeps
