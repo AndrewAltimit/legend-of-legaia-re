@@ -1195,7 +1195,10 @@ div.play-vis-head { cursor: default; }
       everywhere; the picture is where the distance is, most of all mid-battle. The
       <a href="subsystems/engine.html#status">engine page</a> says what is measured.</li>
     <li><strong>Overworld debug.</strong> The world map draws its ground, landmarks and actors as
-      the game does; retail's top-view debug camera is not ported. The <em>Overworld markers</em>
+      the game does. Retail's top-view debug camera, which the shipped game keeps behind a debug
+      flag, is armed only on an overworld picked from the Scenes list, behind its own button chord
+      (<a href="subsystems/world-map.html">world map</a>); a Load or a New Game leaves it off, as
+      retail does. The <em>Overworld markers</em>
       box adds a coloured post for each town, port and encounter zone, an aid of the port's own.
       The <a href="world-overview.html">world overview</a> shows the continents.</li>
   </ul>
