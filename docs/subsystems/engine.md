@@ -411,19 +411,35 @@ The failures the rows answer come in four shapes. A door that lands behind a clo
 
 ### Selector entry beats
 
-The ranked rule steps off every gate-1 trigger, so a picked scene never opens on the cutscene a door plays there. For the play hosts' selectors that is the wrong first impression: walking into Garmel, the Rogue's Tower or Noaru through the story entrance opens on a beat, spawned on the first post-arrival frame by the stale-tile compare (`FUN_801D1EC4` -> `FUN_801D5630` -> `FUN_8003BDE0`) and gated by the record's C1 (any set blocks) and C2 (all must be set) flag lists.
+The ranked rule steps off every gate-1 trigger and raises no door's flags, so a picked scene never opens on the cutscene a door plays there. For the play hosts' selectors that is the wrong first impression: walking into Garmel, the Rogue's Tower or Noaru through the story entrance opens on a beat. Retail starts a scene's opening beat in one of three ways, and the selector stages each:
 
-`SceneHost::arm_picker_story_entry` seats a scene listed in `PICKER_ENTRY_BEATS` (`engine-scene-host`, `scene_entry::entry_beats`) on its row's arrival tile, faced along the arrival, so that beat plays on the first tick; `SceneHost::picker_seat` reports it as `PickerSeat::EntryBeat`. Whether it plays is still the record's own gate against the live flags: a session past the beat stands on the door's tile and nothing fires, as in retail.
+| `BeatTrigger` | How retail starts it | How the selector stages it |
+|---|---|---|
+| `ArrivalTile` | The door's entry tile is a gate-1 trigger; the first post-arrival frame's stale-tile compare spawns its record | Seats the party on the tile, faced along the arrival |
+| `EntryScript` | The entry script tests a flag the door's record raised before its `0x3F` and spawns a record with `0x44` | Raises the door's flags; the party takes the default seat |
+| `NearArrival` | A gate-1 trigger a step or two past the entry tile, on the party's first steps | Seats the party on that trigger |
 
-The table is generated, not curated. The disc-gated `crates/engine-scene-host/tests/picker_entry_beats_disc.rs` walks every selector scene's ranked arrivals and keeps those whose entry tile carries a gate-1 trigger on a record with no `0x3F`. It seats a fresh picker visit, after the free-roam staging, on each in turn and takes the first whose record installs on the first tick, runs at least 20 ticks and hands control back in the scene. Only an overworld entrance or a walk-on door counts: a beat behind a scripted arrival continues another scene's cutscene. The test fails when the committed block and the disc disagree, and `LEGAIA_PICKER_BEATS_WRITE=1` rewrites it. A second test enters the table's scenes through the hosts' arm and checks each beat starts on the first tick.
+The walk-on path is `FUN_801D1EC4` -> `FUN_801D5630` -> `FUN_8003BDE0`, and `FUN_8003BDE0` gates every spawned record on its C1 (any set blocks) and C2 (all must be set) flag lists. The entry-script path is how the Uru Mais dreams and the Bio Castle's last room open. `uru` `P2[33]` raises `0x3F7` and changes scene to `urudre2`, whose entry script tests `0x3F7`, clears it and spawns `P2[9]` (`44 37`), King Nebular naming his daughter. `jouind`'s door raises `0x512`, and `jouine`'s entry script spawns `P2[5]` behind it.
+
+`SceneHost::arm_picker_story_entry` stages a scene listed in `PICKER_ENTRY_BEATS` (`engine-scene-host`, `scene_entry::entry_beats`) by its row (`SceneHost::arm_picker_beat`). It takes the seat the row's trigger names, reported as `PickerSeat::EntryBeat`, and raises the row's flags through `World::seed_picker_beat_flags`. Those flags are the arriving door's hand-off flags (the `0x5x` sets its record makes before the `0x3F`) and the record's C2 flags the staging does not hold.
+
+Only flags that were clear are raised, and the next picker staging clears them again, so a pick never leaks its beat into the next one. Whether the beat plays is still the record's own gate against the live flags: a session past it sees nothing fire, as in retail. Both hosts make the same two calls (`World::stage_picker_entry`, then the arm), and `crates/web-play/tests/scene_select_cutscene_page.rs` holds the page and the window to the same seat, flags and first-tick beat.
+
+The table is generated, not curated. The disc-gated `crates/engine-scene-host/tests/picker_entry_beats_disc.rs` walks every selector scene's ranked arrivals and builds candidates of the three kinds, every `ArrivalTile` candidate before any `EntryScript` candidate and those before any `NearArrival` one. A trigger record that carries a `0x3F` is a door, not a beat. It stages a fresh picker visit on each in turn and takes the first that passes four tests:
+
+- **It engages the player on the first ticks.** The test is `World::script_context_engages_player`: a walk-on trigger installs the modal timeline, an entry-script spawn a helper context that holds the player.
+- **It runs its own record.** The running context's body is matched against the partition-2 records.
+- **It is a story beat.** It runs at least 20 ticks, and it speaks or runs 300. A silent record shorter than that is a door or lift animation (`kor3`'s lift, `jouinc`'s door).
+- **It hands control back in the scene.** The exceptions are the scenes in `PICKER_BEATS_THAT_LEAVE`, the one curated input: cutscene scenes retail never hands the player control in. `urudre2`'s `P2[9]` ends in an unconditional `0x3F` to `map01`, and every arm of `dream`'s return record `P2[5]` ends in a `0x3F` back to the inn its `0x58x` flag names.
+
+An `EntryScript` candidate is only built for a scene the overworld does not enter. A scene with an overworld entrance has its story entrance there, and a beat its entry script plays behind another door's hand-off is a later return: `rikuroa` from `noaru`, `bylon` from `garmel`. The test fails when the committed block and the disc disagree, and `LEGAIA_PICKER_BEATS_WRITE=1` rewrites it. A second test stages every row through the hosts' arm and checks its record engages the player on the first ticks, and `crates/engine-scene-host/tests/scene_selector_cutscenes_disc.rs` follows one scene of each kind (`bubu1`, `bubu2`, `jouine`, `urudre2`, `juui2`) through its whole beat.
 
 Candidates the selector does not stage sit in `PICKER_ENTRY_BEATS_HELD` with a `HeldReason`, and their scenes keep the ranked seat:
 
-- **Needs flags.** The record's C2 list wants story flags the free-roam staging does not seed: `balden` (`0x1D5`), `bubu2` (`0x608`, `0x3D3`), `deroa` (`0x3E1`), `retockin`'s `jagaroom` door (`0x502`), `rayman2`'s `tunnelb` door (`0x1D5`).
-- **Blocked by flag `7`.** The MAN loader's always-set flag, which marks developer leftovers: `rayman2`'s `tunnela` door, `rikuroa`'s `rikuroa2` door.
-- **Scripted arrival.** `retockin` (from `dohaty`), `ropeway2` (from `rayman`), `bubu1` (from `map03`'s thaw) and `taiku` (from `son`) play a beat only behind another scene's cutscene hop.
-- **Does not end.** `town01`'s gate record `P2[3]` is the New Game opening, which runs on into name entry; a picked Rim Elm keeps Vahn's yard.
-- **Does not play.** The trigger's record installs nothing or ends at once from a fresh state (`bylon`, `balden2`, `stone`, `jagaroom`, `korout`, `dream`, `rikuroa`'s `noaru` door).
+- **Blocked by flag `7`.** The MAN loader's always-set flag, which marks developer leftovers: `rayman2`'s `tunnela` door, `rikuroa`'s `rikuroa2` door and the triggers beside it, `izumi`'s near trigger.
+- **Leaves the scene.** The beat ends in a scene change that carries the party on: `korout`'s `kor` door, the hand-offs into `taiku2`, `koin1b` and `juui1`.
+- **Does not end.** `town01`'s gate record `P2[3]` is the New Game opening, which runs on into name entry; a picked Rim Elm keeps Vahn's yard. `urudre3`'s dream waits on the player.
+- **Does not play.** The trigger's record installs nothing, ends at once, or is no story beat from a fresh state (`bylon`, `balden2`, `stone`, `jagaroom`, `ropeway2`, `retockin`'s `jagaroom` door, `rikuroa`'s `noaru` door).
 
 ### Pass-through scenes
 

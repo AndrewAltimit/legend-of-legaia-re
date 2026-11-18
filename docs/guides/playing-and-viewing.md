@@ -580,8 +580,10 @@ stand in (*(here)*). Up / Down pick one, Left / Right move a page, Cross or
 `--scene` launch or the play page's list seats and stages it (the scene's
 free-roam visit, entered through one of its doors). Where walking in through
 the story entrance opens on a cutscene - Garmel's welcome, the Rogue's Tower
-entrance, Noaru's arrival among them - the party lands on that entrance and
-the cutscene plays, unless your game is already past it. It refuses on the
+entrance, Noaru's arrival, thawed and frozen Buma, the Bio Castle's last room,
+Noa's dream and the second Ra-Seru scene among them - the party lands on that
+entrance, with the story flags the scene's door would have raised, and the
+cutscene plays, unless your game is already past it. It refuses on the
 title and in the pause menu, in a fight, a movie or a minigame, and says so
 under the rows. **Tools** holds what otherwise takes a launch switch or a
 keyboard key: the developer menu (`LEGAIA_DEV_MENU`), the diagnostic rows
