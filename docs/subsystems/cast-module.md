@@ -2266,14 +2266,18 @@ where the disc's edge stands. Arm `0` seats its eight rays at
 
 ### PROT 0908 (Zenoir)
 
-**The seat opens a half keyframe ahead.** On the `0x86` Gobu Gobu film the
-port's creature reaches its first step-`3` pass at cursor `24` where retail's
-reads `16`, in two halves of `4`. The port advances the node on the phase-4
-pass while it still stands on the caster's point; retail's reads cursor `-1`
-until the seat pass, which shows `4` on the stage point. Retail's seat pass
-then overruns to three vsyncs and the next pass steps `3` (`+12`), where the
-port runs one more step-`1` pass first. `--retail-steps` keeps both, so neither
-is the frame cost the step track carries. Grade `capture`.
+**The seat lands on arm 4's pass.** Arm 4 polls the creature stream
+(`jal 0x8003F2B8` / `bne` to the busy return at `0x801F6E20..0x801F6E28`) ahead
+of the installer (`0x801F6FC0`) and stands the creature on its stage point
+right behind it, so retail's creature is first drawn there with one advance
+(cursor `4`, phase byte `5`). Seated as the phase reached arm 4, as the port
+once did, it stood one pass early on the caster's point and took an extra
+step-`1` advance (`4`, `8` against `4`). PROT 0903 and 0906 poll the same way
+(`module_seat_arm::SEATS_ON_PASS`); Gimard's first rows now read `2`, `8` and
+Zenoir's `4`, `16`, `32`, retail's. What still differs is the seat pass's
+length: retail's overruns to three vsyncs, the engine's runs one, which is the
+[frame span](battle-stage-camera.md#a-frames-span)'s. Grade `disassembly` +
+`capture`.
 
 **The slam clears the caption.** Arm 11's exit, the pass the creature lands on
 the victim, calls `FUN_800319A8(0)` (`0x801F7BE0`) before it raises the readout flag

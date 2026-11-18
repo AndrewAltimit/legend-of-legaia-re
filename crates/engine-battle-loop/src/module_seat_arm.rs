@@ -268,9 +268,16 @@ pub const PUERA_WAKE_ARM: u8 = 5;
 /// it keeps the entry seat.
 /// Seated on entry, PROT 0933's creature ran its clip through the drive's
 /// modelled wait and opened arm 6 four keyframes ahead of retail's.
-pub const SEATS_ON_PASS: [u32; 20] = [
-    904, 905, 907, 910, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 930, 931, 932, 933,
-    934,
+/// PROT 0903 (`jal 0x8003F2B8` / `bne` at `0x801F6D2C..0x801F6D34`, the
+/// installer at `0x801F6D3C`), 0906 (`0x801F6CF8..0x801F6D00`, installer
+/// `0x801F6D10`) and 0908 (`0x801F6E20..0x801F6E28`, installer `0x801F6FC0`)
+/// poll the same way. Seated on entry, their creature stood one pass early on
+/// the caster's point and its node took one more advance than retail's
+/// (Gimard's first rows `2`, `4` against `2` on the stage point; Zenoir's
+/// `4`, `8` against `4`).
+pub const SEATS_ON_PASS: [u32; 23] = [
+    903, 904, 905, 906, 907, 908, 910, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 930,
+    931, 932, 933, 934,
 ];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
@@ -297,13 +304,16 @@ mod seat_due_tests {
         assert_eq!(w.tint, Some((0xFF, 0)));
     }
 
-    /// A gate ahead of the installer holds the seat to the arm's pass; an arm
-    /// with none seats as it is entered.
+    /// A gate ahead of the installer holds the seat to the arm's pass (PROT
+    /// 0934's countdown, PROT 0903's stream poll); an arm with none seats as
+    /// it is entered.
     #[test]
     fn a_gated_seat_arm_seats_on_its_way_out() {
         assert!(!seat_due(Some(934), 5, 5));
         assert!(seat_due(Some(934), 5, 6));
-        assert!(seat_due(Some(903), 3, 3));
+        assert!(!seat_due(Some(903), 3, 3));
+        assert!(seat_due(Some(903), 3, 4));
+        assert!(seat_due(Some(922), 3, 3));
         assert!(seat_due(None, 3, 3));
     }
 
