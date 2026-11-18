@@ -118,6 +118,18 @@ pub(crate) const FIELD_BASE_STEP_DEBUG_TURBO: i32 = 0x18;
 /// rounds every tick's `3` up to `4`: `4` units a vsync against retail's
 /// `10 / 3`.
 pub(crate) const WORLD_MAP_FRAME_STEP: i32 = 3;
+
+/// Vsyncs a map-display frame spans: a PCSX-Redux film of
+/// `map02_field_door_hop` with the display up advances the frame pacer's
+/// ring cursor `0x8007B758` once every five vsyncs, each frame at the
+/// `0x2BC` cost cap ([`crate::world::World::pace_map_display`]).
+pub(crate) const MAP_DISPLAY_FRAME_VSYNCS: u8 = 5;
+
+/// Vsyncs of game mode `0x0C`, the PROT 0981 load between the L1 ramp's
+/// hand-off and the map display's first frame, in the same film (mode `0x0C`
+/// at vsync 22, mode `0x0D` at 47). Held in the retail-faithful mode only
+/// (`WorldToggles::skip_load_holds` off).
+pub(crate) const MAP_DISPLAY_LOAD_VSYNCS: u8 = 25;
 /// Per-iteration advance of the locomotion step loop (retail commits in
 /// 2-unit increments per axis).
 pub(crate) const FIELD_STEP_UNIT: i32 = 2;

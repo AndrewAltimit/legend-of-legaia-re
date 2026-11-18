@@ -144,9 +144,14 @@ fn l1_opens_the_map_display_and_labels_the_discovered_places() {
         // location stepper `FUN_801CF5E8` wraps backward to this kingdom's
         // last record (`0x801CEE8C..0x801CEEC4`), the survey seats on its
         // cell, and its label lands at the display's centre column.
-        frame(&mut host, PadButton::Square as u16);
-        frame(&mut host, 0);
-        frame(&mut host, 0);
+        // The display reads the pad once a frame, and a frame spans five
+        // vsyncs: hold the press across one, then let the seat land.
+        for _ in 0..5 {
+            frame(&mut host, PadButton::Square as u16);
+        }
+        for _ in 0..10 {
+            frame(&mut host, 0);
+        }
         let d = host.world.world_map.map_display.as_ref().expect("display");
         assert_eq!(
             d.cursor,
@@ -178,9 +183,11 @@ fn l1_opens_the_map_display_and_labels_the_discovered_places() {
         eprintln!("[ok] {scene}: Square stepped to record {rec}");
 
         // Circle leaves, and the walk frame comes back.
-        frame(&mut host, PadButton::Circle as u16);
+        for _ in 0..5 {
+            frame(&mut host, PadButton::Circle as u16);
+        }
         let mut closed = false;
-        for _ in 0..32 {
+        for _ in 0..160 {
             frame(&mut host, 0);
             if host.world.world_map.map_display.is_none() {
                 closed = true;

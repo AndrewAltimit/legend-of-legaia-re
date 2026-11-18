@@ -965,7 +965,7 @@ impl World {
                     ctrl.map_display_requested = false;
                     ctrl.entry_fade_draw = None;
                 }
-                self.tick_map_display();
+                self.pace_map_display();
                 None
             }
             SceneMode::WorldMap => {

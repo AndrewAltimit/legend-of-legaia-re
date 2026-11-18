@@ -310,6 +310,17 @@ still under it. It is a state machine on the mode word `0x801CF76C`:
 or more. Opening therefore holds the black the entry ramp ended on for two
 frames and clears in three steps; leaving darkens in the same steps.
 
+**Frame rate.** The display runs a frame every five vsyncs. The survey view
+draws the whole kingdom, and a PCSX-Redux walk film of `map02_field_door_hop`
+with the display up holds the frame pacer's ring cursor `0x8007B758` for five
+vsyncs a frame, each frame time at the `0x2BC` cap; the timer `0x801CF778`
+steps on that clock (`4 -> 0` at vsyncs `56, 61, 66, 71`, interactive at
+`76`), and a held d-pad pans one tile every five vsyncs. The pad is read once
+a frame, so a press shorter than a frame can fall between two reads and do
+nothing (a four-vsync Circle tap in the same film). Before the first frame,
+game mode `0x0C` loads PROT 0981 for `25` vsyncs (mode `0x0C` at vsync `22`,
+`0x0D` at `47`) on the black the ramp ended on.
+
 **Survey camera** (mode `1`, `0x801CE8EC..0x801CE950`): `TR = (0, 0, 0x9470)`
 at `0x800840B8`, rotation trio `0x8007B790 = (0x300, 0, 0)`, projection
 `0x8007B6F4 = 0x170`, camera height `0x8008911C = 0`, and the visible tile
@@ -382,7 +393,11 @@ kingdom MANs at once. See
 `ghidra/scripts/funcs/overlay_monster_test_0981_801ce850.txt`.
 
 **Port.** The state machine, the stepper, the clamp and the panel geometry
-are `legaia_engine_field::map_display`. `World::tick_world_map` opens the
+are `legaia_engine_field::map_display`. `World::pace_map_display` runs it on
+its own frame clock, a frame every `MAP_DISPLAY_FRAME_VSYNCS` vsyncs with the
+edge word taken against the last frame's pad, and the retail-faithful mode
+(`WorldToggles::skip_load_holds` off) holds `MAP_DISPLAY_LOAD_VSYNCS` of
+black for the load first. `World::tick_world_map` opens the
 display on the ramp's hand-off, and while it is up `World::tick` runs
 `tick_map_display` in place of the whole overworld arm. The camera is a
 `FieldCameraFrame::WorldMapDisplay` (`camera_view::map_display_frame`):

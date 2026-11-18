@@ -146,15 +146,21 @@ fn the_map_display_draws_a_spinning_pointer_on_the_player() {
 
         // The program spins it (`04 0000 0020 0000`: `+0x82 = 0x100`), so the
         // pose moves from frame to frame while nothing else does.
+        // The display (and the pointer's handler in its tail) runs a frame
+        // every five vsyncs.
         let before = draws[0].draw.rot;
-        frame(&mut host, 0);
+        for _ in 0..5 {
+            frame(&mut host, 0);
+        }
         let after = pointer_draws(&host, src.pack_slot)[0].draw.rot;
         assert_ne!(before, after, "{scene}: the pointer turns");
 
         // Circle leaves: the fade out, mode 4's halt, the hand-back.
-        frame(&mut host, PadButton::Circle as u16);
+        for _ in 0..5 {
+            frame(&mut host, PadButton::Circle as u16);
+        }
         let mut closed = false;
-        for _ in 0..60 {
+        for _ in 0..200 {
             frame(&mut host, 0);
             if host.world.world_map.map_display.is_none() {
                 closed = true;

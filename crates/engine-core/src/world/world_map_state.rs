@@ -80,6 +80,15 @@ pub struct WorldMapState {
     /// the frame the L1 fade-up completes until its exit hands the frame back
     /// to the walk. While it is up it owns the whole overworld frame.
     pub map_display: Option<legaia_engine_field::map_display::MapDisplay>,
+    /// The map display's frame clock: vsyncs left before its next frame
+    /// ([`crate::world::World::pace_map_display`]).
+    pub(crate) map_display_wait: u8,
+    /// Vsyncs left of the PROT 0981 load before the display's first frame
+    /// (retail's game mode `0x0C`), in the retail-faithful mode only.
+    pub(crate) map_display_load_hold: u8,
+    /// The held pad the display's last frame read: its edge word is the
+    /// change since that frame, not since the last vsync.
+    pub(crate) map_display_pad: u16,
     /// What every entry of the overworld curvature table is offset by, in
     /// screen rows: `0` from the scene load's build, and
     /// [`legaia_render_kernels::overworld_curvature::REBUILD_BIAS`] once the
@@ -134,6 +143,9 @@ impl WorldMapState {
             walk_carry: 0,
             locations: Vec::new(),
             map_display: None,
+            map_display_wait: 0,
+            map_display_load_hold: 0,
+            map_display_pad: 0,
             curve_bias: 0,
             pointer_source: None,
             pointer: None,

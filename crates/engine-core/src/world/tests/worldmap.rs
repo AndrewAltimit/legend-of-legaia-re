@@ -1094,3 +1094,73 @@ fn the_party_stands_still_under_the_map_fade() {
     }
     assert!(opened, "the held d-pad does not stop the display opening");
 }
+
+/// Open the map display from the walk frame and run it to its interactive
+/// mode; returns the vsyncs from the open to the first display frame.
+fn open_map_display_interactive(w: &mut World) -> usize {
+    use legaia_engine_field::map_display::MODE_INTERACTIVE;
+    w.set_pad(input::PadButton::L1.mask());
+    let _ = w.tick();
+    let mut opened_at = None;
+    let mut first_frame = None;
+    for t in 0..200 {
+        w.set_pad(0);
+        let _ = w.tick();
+        let Some(d) = w.world_map.map_display.as_ref() else {
+            continue;
+        };
+        opened_at.get_or_insert(t);
+        if d.mode != 0 {
+            first_frame.get_or_insert(t);
+        }
+        if d.mode == MODE_INTERACTIVE {
+            return first_frame.unwrap() - opened_at.unwrap();
+        }
+    }
+    panic!("the display never reached its interactive mode");
+}
+
+/// The map display runs a frame every five vsyncs (a PCSX-Redux film's
+/// frame-pacer cursor `0x8007B758`), so a held d-pad pans one tile (`0x80`)
+/// per five vsyncs, not one a vsync.
+#[test]
+fn the_map_display_pans_one_tile_a_display_frame() {
+    let mut w = overworld_with_player();
+    open_map_display_interactive(&mut w);
+    let x0 = w.world_map.map_display.as_ref().unwrap().cam_x;
+    for _ in 0..50 {
+        w.set_pad(input::PadButton::Right.mask());
+        let _ = w.tick();
+    }
+    let x1 = w.world_map.map_display.as_ref().unwrap().cam_x;
+    assert_eq!((x1 - x0).abs(), 10 * 0x80, "ten frames, ten tiles");
+}
+
+/// The retail-faithful mode waits out the PROT 0981 load (game mode `0x0C`,
+/// 25 vsyncs in the film) on black before the display's first frame; the
+/// default skips it, as it skips the pause menu's loads.
+#[test]
+fn the_retail_mode_holds_the_map_display_load() {
+    let mut w = overworld_with_player();
+    assert_eq!(open_map_display_interactive(&mut w), 0);
+    let mut w = overworld_with_player();
+    w.toggles.skip_load_holds = false;
+    w.set_pad(input::PadButton::L1.mask());
+    let _ = w.tick();
+    let mut held = 0;
+    for _ in 0..200 {
+        w.set_pad(0);
+        let _ = w.tick();
+        if let Some(d) = w.world_map.map_display.as_ref() {
+            if d.mode != 0 {
+                break;
+            }
+            held += 1;
+            assert!(
+                w.map_display_fade_push_args().contains(&(0, 2, 0xFF_FF_FF)),
+                "the load holds black"
+            );
+        }
+    }
+    assert_eq!(held, 24, "the open frame plus 24 held vsyncs");
+}
