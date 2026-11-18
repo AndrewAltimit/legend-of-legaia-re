@@ -187,6 +187,11 @@ pub struct RetailObs {
     /// stand against (`FUN_8003F3FC` at `0x8003F448`): a clock of the steps the
     /// player walked, handed over as `LEGAIA_SEAT_FOG_OFFSET`.
     pub fog_offset: i32,
+    /// The region roll's step counter `_DAT_8007B5FC` (`FUN_801D9E1C`): the
+    /// steps left before the next random fight, walk history the card load
+    /// does not carry. The walk film seats it, so a walk rolls where retail's
+    /// rolled (`karisto_sol_pre_encounter` holds `14`).
+    pub encounter_step_counter: i32,
     /// Vsyncs since the frame pacer's last `VSync(step)` returned: libetc's
     /// vblank counter `0x8007A894` less the count `FUN_8005FB84` stored on
     /// return (`0x800797D4`, `0x8005FC8C..0x8005FCA0`). The game frame opens
@@ -481,6 +486,7 @@ impl RetailObs {
             },
             fog_live_count: game_anchors::u16_at(ram, 0x8007_BCA8),
             fog_offset: game_anchors::u32_at(ram, 0x8007_BCAC) as i32,
+            encounter_step_counter: game_anchors::u32_at(ram, 0x8007_B5FC) as i32,
             vsync_phase: game_anchors::u32_at(ram, 0x8007_A894)
                 .wrapping_sub(game_anchors::u32_at(ram, 0x8007_97D4)),
             frame_history: crate::retail_compare_battle::frame_cost_ring(ram)

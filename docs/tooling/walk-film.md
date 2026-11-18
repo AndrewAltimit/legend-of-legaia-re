@@ -39,6 +39,8 @@ Both sides also write the player's clip: retail's bound record `+0x5E`, cursor
 pose moves. Retail's cursor steps once a pass, the engine's once a vsync at half
 the step, so the two meet on every second row.
 
+Both sides write the region roll's step counter as `enc` (retail's `_DAT_8007B5FC`, the engine's `World::encounter_step_counter`), and the engine side seats it from the state's RAM: the steps left before a fight are walk history the card load does not carry, so a film from `karisto_sol_pre_encounter` (counter `14`) rolls its fight on retail's first tile crossing, and a `map02_field_door_hop` walk drains `42` a crossing on both sides. A harness seat; `LEGAIA_RC_NO_STEP_SEAT=1` keeps the seed's counter.
+
 Each side writes its talk state too: retail's dialogue byte `*(0x801C6EA4) + 0x62` (`talk`), each placement's talk save `+0x5A` and record cursor `+0x9E`, and the engine's `World::dialogue_owns_input`. A placement's clip is on both sides as well: retail's `+0x5C` / `+0x68` / `+0x6A` in `walk_film_actors.csv`, the engine's bound cursor (`FieldNpcState::clip_cursors`) in `engine.actors.csv`.
 
 The film seats every drawn actor's clip cursor where the state's RAM holds it (`RetailObs::object_clips_ram`, through `World::seed_object_prop_clip`), so the columns compare how each pose moves from retail's own phase; `LEGAIA_RC_NO_CLIP_SEAT=1` leaves the seed's phases.

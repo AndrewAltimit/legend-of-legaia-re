@@ -106,6 +106,16 @@ impl WalkFilm {
                 Ok(_) => true,
                 Err(_) => retail.field_move_run,
             };
+        // The region roll's step counter (`_DAT_8007B5FC`): how many steps
+        // the walk has left before a fight is walk history, so a film from a
+        // state one step short of an encounter rolls on retail's step. A
+        // harness seat (lane W); `LEGAIA_RC_NO_STEP_SEAT=1` keeps the seed's.
+        if std::env::var_os("LEGAIA_RC_NO_STEP_SEAT").is_none() {
+            session
+                .host
+                .world
+                .set_encounter_step_counter(retail.encounter_step_counter);
+        }
         // The wanderers' stream state and the world's seed, so a film's
         // `rng` column and its `rand()`-driven NPCs track retail's.
         super::seat_ambient_streams(session, retail);
@@ -266,7 +276,7 @@ impl WalkFilm {
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(
             f,
-            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint,rng,talk"
+            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint,rng,talk,enc"
         )?;
         // A placement's flat MAN index is its channel slot past the scene's
         // partition-0 count, which is the scene's own: a film that crosses a
@@ -460,7 +470,7 @@ impl WalkFilm {
                 .unwrap_or(0);
             writeln!(
                 f,
-                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:08x},{}",
+                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:08x},{},{}",
                 ms.world_x,
                 ms.world_y,
                 ms.world_z,
@@ -484,6 +494,7 @@ impl WalkFilm {
                 tint,
                 world.rng_state,
                 u8::from(world.dialogue_owns_input()),
+                world.encounter_step_counter(),
             )?;
         }
         session.host.world.input.set_pad(0);
