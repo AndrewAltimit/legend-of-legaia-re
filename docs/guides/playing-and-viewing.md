@@ -320,7 +320,13 @@ door holds black for three to four seconds while the next scene loads (longer
 when the music changes), and the way back from a battle for five to seven;
 the default mode enters the next scene at once. The L1 overworld map runs at
 the original's twelve frames a second, panning a tile at a time; the default
-moves it every frame at the same speed and reads every button tap.
+moves it every frame at the same speed and reads every button tap. On the
+field and the world map the original reads the controller once a game frame
+and acts on a press two screen refreshes late, so a very short tap can go
+unread, and it moves your character a whole step once a game frame (every two
+refreshes in a town, every three on the world map); the default reads a press
+the refresh it lands and spreads each step over the refreshes, at the same
+walking speed.
 
 *Saved-chain Arts list* is an addition of the port's; the original has nothing
 like it. With it on, the battle command ring's **Arts** opens a list of the
