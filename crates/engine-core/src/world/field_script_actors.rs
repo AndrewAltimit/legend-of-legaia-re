@@ -706,6 +706,45 @@ mod npc_draw_pose_tests {
         assert!(w.field_npc_draw_pose(3, (100, 200)).is_none());
     }
 
+    /// The two angle words have two writers, and each draws the word it
+    /// wrote: the field VM's `4C 43` pitch (`ctx.field_24`) stays under the
+    /// scripted-motion channel's op-`0x16` roll, as `juui1` `P2[0]` turns a
+    /// rolling party member.
+    #[test]
+    fn the_field_vm_pitch_draws_under_the_channel_roll() {
+        let mut w = World::default();
+        w.field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 3,
+                ctx: legaia_engine_vm::field::FieldCtx {
+                    field_24: 0x400,
+                    ..Default::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: false,
+                object_bind: false,
+            });
+        assert_eq!(
+            w.field_npc_tilt(3),
+            Some((0x400, 0)),
+            "the VM's pitch alone"
+        );
+        w.npcs.tilts.insert(3, (0, -60));
+        assert_eq!(
+            w.field_npc_tilt(3),
+            Some((0x400, -60)),
+            "the channel's roll does not drop the VM's pitch"
+        );
+        w.npcs.tilts.insert(3, (0x200, -60));
+        assert_eq!(
+            w.field_npc_tilt(3),
+            Some((0x200, -60)),
+            "a channel pitch draws"
+        );
+    }
+
     /// A tilt is the tweening actor's own `+0x24` / `+0x28`, and a scene load
     /// re-spawns every actor: the next scene's slot 3 stands untilted.
     #[test]

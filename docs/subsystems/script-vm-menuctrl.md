@@ -1304,7 +1304,11 @@ Sub-3 and sub-4 tween the same way, from the resolved actor's live `+0x24`
 / `+0x28` (`0x801E124C..0x801E1268`, `0x801E1284..0x801E12A0`): an object's
 into its context, which `World::object_draw_turns` composes; a placement's
 into `World::npcs.slot_ramps`, which `World::field_npc_tilt` draws on both
-hosts alongside the scripted-motion VM's own `0x15` / `0x16` tilts.
+hosts alongside the scripted-motion VM's own `0x15` / `0x16` tilts. The two
+writers share one actor record, so each word draws the value it last took:
+op `0x15` has no authored site, so the pitch is always this arm's, under the
+channel's `0x16` roll. `juui1` `P2[0]` turns all three party members with
+`CC 09..0B 43 B8 0B 2C 01` while the channel rolls two of them.
 
 Aimed at the player (`CC F8 42 ..`), the slot is the player's own `+0x8E`,
 and it moves the player only while the player's `+0x10` carries
