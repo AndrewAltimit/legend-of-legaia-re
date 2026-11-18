@@ -318,7 +318,9 @@ about a second while the pause menu or a shop loads, and again on the way
 back to the map, where the default mode opens and closes them at once. Each
 door holds black for three to four seconds while the next scene loads (longer
 when the music changes), and the way back from a battle for five to seven;
-the default mode enters the next scene at once.
+the default mode enters the next scene at once. The L1 overworld map runs at
+the original's twelve frames a second, panning a tile at a time; the default
+moves it every frame at the same speed and reads every button tap.
 
 *Saved-chain Arts list* is an addition of the port's; the original has nothing
 like it. With it on, the battle command ring's **Arts** opens a list of the
