@@ -504,8 +504,14 @@ mod tests {
             PauseMenuPress::Opened { scripted: false }
         );
         assert!(s.field_menu_is_open());
-        assert_eq!(s.host.world.mode, SceneMode::Menu);
+        // The field runs under the wipe; the mode word turns over when the
+        // wipe spawns the menu (retail stays in game mode 3 until then).
+        assert_eq!(s.host.world.mode, SceneMode::Field);
         assert_eq!(s.press_field_menu(true), PauseMenuPress::None);
+        while !s.pause_wipe().menu_spawned() {
+            s.step_pause_wipe();
+        }
+        assert_eq!(s.host.world.mode, SceneMode::Menu);
         s.close_field_menu();
         assert_eq!(s.host.world.mode, SceneMode::Field);
         // Off the field-run modes the press is refused silently.
@@ -589,7 +595,7 @@ mod tests {
         // No owner and no press: the field, on the player's pad.
         assert_eq!(s.claim_tick(ready, 0), TickOwner::Field(false));
         // The press opens the menu and takes the tick; while the wipe runs
-        // the field ticks under it (the world in `Menu`).
+        // the field ticks under it (the world still in its own mode).
         assert_eq!(
             s.claim_tick(ready, start),
             TickOwner::PauseMenuOpened(false)

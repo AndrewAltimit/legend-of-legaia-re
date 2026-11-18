@@ -125,7 +125,7 @@ impl<S: AudioSink> BootSession<S> {
         }
         // The pause menu spawns partway through the field's wipe to black
         // (`pause_wipe`): until then the field keeps ticking under the wipe
-        // (with the world in `Menu`, so the player stands still).
+        // (the player held by the engaged bit the press raised).
         if self.field_menu_is_open() {
             if self.pause_wipe().menu_spawned() {
                 return TickOwner::PauseMenuSpawned;

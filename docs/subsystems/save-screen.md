@@ -132,10 +132,14 @@ with the pad edge logged) the open holds the `160` frame and then black from
 the spawn to the menu's own fade at vsync `88` (`58` vsyncs), and the close
 holds black from vsync `266` to the field's return in mode `3` at `331`.
 
-The world is in `SceneMode::Menu` from the press, so the port's field stops
-on the press frame, where retail's runs in mode `3` until the spawn; the
-render gates read `World::draw_mode` (the suspended scene's mode while the
-wipe draws it), so the wipe frames keep the field's visible-tile crop.
+The field runs under the wipe, as retail's does in mode `3` until the spawn:
+`press_field_menu` builds the menu session and raises the player's engaged
+bit (`+0x10 |= 0x80000`, as the accept does at `0x801D02F0..0x801D0308`),
+which holds the walk, the talk and the accept, while the NPCs, their clips
+and the fog go on under the curtain. The pass that spawns the menu
+(`BootSession::step_pause_wipe`) hands the world `SceneMode::Menu` and the
+seat `CARD INIT`; the close clears the engaged bit. A direct open (the title
+rows, a seeded comparison) enters `Menu` at once.
 
 ### The entry-context decode picks the screen family
 

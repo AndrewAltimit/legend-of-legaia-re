@@ -3,6 +3,9 @@
 
 use super::*;
 
+/// The player's engaged bit (`+0x10 & 0x80000`) the menu accept raises.
+const PAUSE_ENGAGED_BIT: u32 = 0x0008_0000;
+
 impl<S: AudioSink> BootSession<S> {
     /// Open the in-field pause menu (the retail Start-press path into the
     /// CARD mode pair, `game_mode 0x17`). Builds a [`FieldMenuSession`]
@@ -22,8 +25,18 @@ impl<S: AudioSink> BootSession<S> {
     /// `SceneMode::Field` silently drops the three kingdom overworlds, and
     /// those are the only scenes where the Save row is legal at all.
     pub fn open_field_menu(&mut self) {
+        if self.open_field_menu_session() {
+            self.enter_card_mode();
+        }
+    }
+
+    /// The menu session's half of an open: build the session, raise the
+    /// row gates, end an unlinked balloon. `false` when nothing opened.
+    /// The scene mode is left alone: a pressed open keeps the field running
+    /// under the wipe until the menu spawns ([`Self::step_pause_wipe`]).
+    fn open_field_menu_session(&mut self) -> bool {
         if self.field_menu.is_some() {
-            return;
+            return false;
         }
         // Start is inert while a dialogue engagement owns the player. Retail's
         // menu-open accept lives in `FUN_801D01B0`'s pre-movement header,
@@ -34,7 +47,7 @@ impl<S: AudioSink> BootSession<S> {
         // A script's own menu press (a save point's `49 01`) comes from the
         // interaction the engagement belongs to, so it is not refused.
         if self.host.world.dialogue_owns_input() && !self.host.world.scripted_menu_open_pending() {
-            return;
+            return false;
         }
         let world = &mut self.host.world;
         // Menu-open state 0 (`FUN_801DC6B4`, `0x801DC7EC..0x801DC800`): a
@@ -66,11 +79,19 @@ impl<S: AudioSink> BootSession<S> {
         // with no parent link (the place-name banner).
         world.end_unlinked_balloon_on_engage();
         self.field_menu_resume = world.mode;
-        world.mode = SceneMode::Menu;
         // A fresh menu: no window is up, and the root picker's slide-in is
         // the first thing the slide lock sees.
         reset_pause_slide_lock(world);
         self.field_menu = Some(session);
+        true
+    }
+
+    /// The mode word's half: the world leaves the field for
+    /// [`SceneMode::Menu`] and the seat enters `CARD INIT`.
+    fn enter_card_mode(&mut self) {
+        let world = &mut self.host.world;
+        world.mode = SceneMode::Menu;
+        world.menu.suspended_mode = None;
         // Retail opens the menu by writing the mode word, not by calling the
         // menu: `CARD INIT` (22) stages the menu overlay and hands the word to
         // `CARD MODE` (23) at `0x80025974`, which is the mode every menu-open
@@ -113,8 +134,7 @@ impl<S: AudioSink> BootSession<S> {
         }
         let scripted = self.host.world.scripted_menu_open_pending();
         if scripted || (start_edge && self.host.world.field_menu_open_allowed()) {
-            self.open_field_menu();
-            if self.field_menu.is_none() {
+            if !self.open_field_menu_session() {
                 return PauseMenuPress::None;
             }
             if scripted {
@@ -123,10 +143,23 @@ impl<S: AudioSink> BootSession<S> {
             // The field darkens before the menu exists (`FUN_801ED308`
             // phase 1): hosts draw the field under the wipe and route no
             // input to the menu until `pause_wipe().menu_spawned()`. Until
-            // then the frame draws under the suspended scene's rules
-            // (`World::draw_mode`).
+            // then the field runs: retail stays in game mode `3` from the
+            // accept to the spawn (`CARD INIT` `0x16` the vsync after it,
+            // `autorun_pause_wipe_step.lua` over `conc`), its NPCs, clips
+            // and fog going on under the curtain. The accept raises the
+            // player's engaged bit (`+0x10 |= 0x80000`,
+            // `0x801D02F0..0x801D0308`), which holds the walk, the talk and
+            // the menu accept themselves.
             self.pause_wipe.open();
-            self.host.world.menu.suspended_mode = Some(self.field_menu_resume);
+            let resume = self.field_menu_resume;
+            let world = &mut self.host.world;
+            world.menu.suspended_mode = Some(resume);
+            if let Some(a) = world
+                .player_actor_slot
+                .and_then(|s| world.actors.get_mut(usize::from(s)))
+            {
+                a.move_state.flags |= PAUSE_ENGAGED_BIT;
+            }
             return PauseMenuPress::Opened { scripted };
         }
         if start_edge && self.host.world.field_menu_press_denied() {
@@ -148,8 +181,17 @@ impl<S: AudioSink> BootSession<S> {
             // time the menu opens.
             self.field_menu_sub = None;
             self.save_flow.reset();
-            self.host.world.mode = self.field_menu_resume;
-            self.host.world.menu.suspended_mode = None;
+            let world = &mut self.host.world;
+            world.mode = self.field_menu_resume;
+            world.menu.suspended_mode = None;
+            // The engaged bit the press raised goes with the menu (retail's
+            // field re-install seats the player afresh).
+            if let Some(a) = world
+                .player_actor_slot
+                .and_then(|s| world.actors.get_mut(usize::from(s)))
+            {
+                a.move_state.flags &= !PAUSE_ENGAGED_BIT;
+            }
             // The word follows the world back out of `CARD MODE`; the seat
             // takes the edge (and the pad swallow) on the next frame, so the
             // confirm that closed the menu does not walk the player.
@@ -173,9 +215,14 @@ impl<S: AudioSink> BootSession<S> {
     pub fn step_pause_wipe(&mut self) {
         let step = self.host.world.clock.frame_step;
         self.pause_wipe.tick(step);
-        // Once the menu covers the field, the frame is the menu's.
-        if self.pause_wipe.menu_spawned() {
-            self.host.world.menu.suspended_mode = None;
+        // The pass that spawns the menu hands the mode word over: retail's
+        // `CARD INIT` (`0x16`) reads from the next vsync, and the field
+        // stops there.
+        if self.field_menu.is_some()
+            && self.host.world.menu.suspended_mode.is_some()
+            && self.pause_wipe.menu_spawned()
+        {
+            self.enter_card_mode();
         }
     }
 
