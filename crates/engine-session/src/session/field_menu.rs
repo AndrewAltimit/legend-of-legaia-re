@@ -66,7 +66,6 @@ impl<S: AudioSink> BootSession<S> {
         // with no parent link (the place-name banner).
         world.end_unlinked_balloon_on_engage();
         self.field_menu_resume = world.mode;
-        world.menu.suspended_mode = Some(world.mode);
         world.mode = SceneMode::Menu;
         // A fresh menu: no window is up, and the root picker's slide-in is
         // the first thing the slide lock sees.
@@ -123,8 +122,11 @@ impl<S: AudioSink> BootSession<S> {
             }
             // The field darkens before the menu exists (`FUN_801ED308`
             // phase 1): hosts draw the field under the wipe and route no
-            // input to the menu until `pause_wipe().menu_spawned()`.
+            // input to the menu until `pause_wipe().menu_spawned()`. Until
+            // then the frame draws under the suspended scene's rules
+            // (`World::draw_mode`).
             self.pause_wipe.open();
+            self.host.world.menu.suspended_mode = Some(self.field_menu_resume);
             return PauseMenuPress::Opened { scripted };
         }
         if start_edge && self.host.world.field_menu_press_denied() {
@@ -171,6 +173,10 @@ impl<S: AudioSink> BootSession<S> {
     pub fn step_pause_wipe(&mut self) {
         let step = self.host.world.clock.frame_step;
         self.pause_wipe.tick(step);
+        // Once the menu covers the field, the frame is the menu's.
+        if self.pause_wipe.menu_spawned() {
+            self.host.world.menu.suspended_mode = None;
+        }
     }
 
     /// Whether the open pause menu reads the pad on its next frame: it has
@@ -197,7 +203,8 @@ impl<S: AudioSink> BootSession<S> {
     }
 
     /// The mode the 3D frame draws under: the suspended scene's while the
-    /// pause menu holds [`SceneMode::Menu`], else the world's. Retail's field
+    /// pause wipe draws it under [`SceneMode::Menu`] (`World::draw_mode`),
+    /// else the world's. Retail's field
     /// keeps drawing through its own renderer under the pause wipe (back faces
     /// culled, primitives at their links) until the menu covers it, and the
     /// draw rules the hosts read off the mode (`camera_frame::nclip_cull_mode`,
