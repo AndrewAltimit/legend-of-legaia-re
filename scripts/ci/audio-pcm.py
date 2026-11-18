@@ -24,6 +24,13 @@ Two channels per state:
            (`LEGAIA_DIAG_AUDIO_WAV`), over the cast's own seconds. A state inside
            the capture band's `0x6F` seek seats what the seek has left off the
            state's CD controller (`LEGAIA_SEAT_CAPTURE_SEEK_LEFT`)
+    cast_core  the engine's cast against a recording of the state with its open
+           sequence bitmap zeroed and the score's sounding voices stopped
+           (`<label>.castcore.wav`): the cue voices sounding at the state ring
+           on, which the resumed SPU renders sample for sample, and the cast is
+           all that moves, so no score reconstruction stands under it.
+           Harness-only, beside `cast`; `cast_core_steps` is the same on the
+           `cast_steps` run
     cast_steps  the cast channel with the engine's cast run on the recording's own
            frame steps (`<label>.steps` beside the WAV, mednafen's, from
            `scripts/mednafen/drive-timeline.py --steps-out`): the battle frame
@@ -150,6 +157,9 @@ CAST_STEP_STATES = {
 CAST_DONE_TAIL = 20
 CAST_RECORD_SECONDS = 40
 OPEN_SEQUENCE_BITMAP = 0x1C_D2B8  # _DAT_801CD2B8, main-RAM offset
+VOICE_RECORDS = 0x1C_DB50  # libsnd's per-voice records, 0x36 bytes each
+CUE_OWNER = 0x21  # a record's `+0x10` owner for the cue slot
+ADSR_RELEASE = 3  # mednafen's ADSR.Phase for release
 CORR_SLACK = 0.002
 LEVEL_SLACK = 0.05
 
@@ -237,13 +247,39 @@ def capture_read_left(state: Path) -> int | None:
     return None
 
 
-def silenced_copy(state: Path, out: Path) -> None:
-    """A copy of a state whose game code writes no more sequence voices."""
+def silenced_copy(state: Path, out: Path, stop_score: bool = False) -> None:
+    """A copy of a state whose game code writes no more sequence voices.
+
+    With `stop_score` the score's sounding voices stop too: every voice whose
+    libsnd record (`0x801CDB50 + v * 0x36`) names a sequence, not the cue slot
+    `0x21` at `+0x10`, has its envelope zeroed in release. A held note would
+    otherwise ring on, and a summon's duck re-volumes it (`FUN_80067E9C`), which
+    a resumed SPU does not; the cue voices sounding at the state ring on.
+    """
     raw = state.read_bytes()
     b = bytearray(gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw)
-    at = main_ram_offset(b) + OPEN_SEQUENCE_BITMAP
+    base = main_ram_offset(b)
+    at = base + OPEN_SEQUENCE_BITMAP
     b[at : at + 2] = struct.pack("<H", 0)
+    if stop_score:
+        spu = max(b.find(b"SPU"), 0)
+        for v in range(24):
+            if b[base + VOICE_RECORDS + v * 0x36 + 0x10] == CUE_OWNER:
+                continue
+            for name, value in (("ADSR.EnvLevel", 0), ("ADSR.Phase", ADSR_RELEASE)):
+                set_mednafen_var(b, f"Voices[{v}].{name}", value, spu)
     out.write_bytes(gzip.compress(bytes(b), 1))
+
+
+def set_mednafen_var(b: bytearray, name: str, value: int, after: int = 0) -> None:
+    """Overwrite a mednafen state variable found as `mednafen_var` reads it."""
+    key = bytes([len(name)]) + name.encode()
+    i = b.find(key, after)
+    if i < 0:
+        raise KeyError(name)
+    at = i + len(key)
+    size = struct.unpack_from("<I", b, at)[0]
+    b[at + 4 : at + 4 + size] = value.to_bytes(size, "little")
 
 
 # Each recording gets its own X server. `xvfb-run -a` moves on from a number in
@@ -316,8 +352,14 @@ def capture_missing(want, library: Path, manifest: dict, out: Path, disc: Path, 
     def cast(label: str, state: Path, wav: Path) -> None:
         record(state, wav, CAST_RECORD_SECONDS, disc)
 
+    def cast_core(label: str, state: Path, wav: Path) -> None:
+        silent = out / f"{label}.castcore.mcr"
+        silenced_copy(state, silent, stop_score=True)
+        record(silent, wav, CAST_RECORD_SECONDS, disc)
+
     tasks = []
     for labels, suffix, fn in ((STATES, "", track), (CAST_STATES, "", cast),
+                               (CAST_STATES, ".castcore", cast_core),
                                (CORE_STATES, ".core", core), (XA_STATES, ".core", core)):
         for label in filter(want, labels):
             state = state_file(label, library, manifest)
@@ -509,6 +551,14 @@ def main() -> int:
                   f"window {d['window'][0] / vs:+.1f}..{d['window'][1] / vs:+.1f} vsyncs")
         results.setdefault(label, {})
         results[label] |= {"cast_corr": c["corr_median"], "cast_level": c["level_db"]}
+        core_wav, silent = out / f"{label}.castcore.wav", out / f"{label}.castcore.mcr"
+        if core_wav.exists():
+            if not silent.exists():
+                silenced_copy(state, silent, stop_score=True)
+            k = score(exe, ["--resume-state", str(silent), "--cast-wav", str(cast)], core_wav, samples,
+                      out / f"{label}.castcore.json")
+            if k["corr_median"] >= 0:
+                results[label] |= {"cast_core_corr": k["corr_median"], "cast_core_level": k["level_db"]}
         steps = out / f"{label}.steps"
         if steps.exists() and (sc := engine_cast_wav(exe, label, out, library, disc, steps)):
             samples = (sc.stat().st_size - 44) // 4
@@ -520,6 +570,12 @@ def main() -> int:
             )
             results[label] |= {"cast_steps_corr": c["corr_median"],
                                "cast_steps_level": c["level_db"]}
+            if core_wav.exists():
+                k = score(exe, ["--resume-state", str(silent), "--cast-wav", str(sc)], core_wav, samples,
+                          out / f"{label}.steps.castcore.json")
+                if k["corr_median"] >= 0:
+                    results[label] |= {"cast_core_steps_corr": k["corr_median"],
+                                       "cast_core_steps_level": k["level_db"]}
     for label in filter(want, CORE_STATES):
         state = state_file(label, library, manifest)
         wav = out / f"{label}.core.wav"

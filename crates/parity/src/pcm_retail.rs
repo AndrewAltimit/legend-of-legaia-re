@@ -77,7 +77,9 @@ pub struct PcmRetailArgs {
     /// Mix in the engine's own cues from the state on, on the track's lag: a
     /// `play-window` capture child's `LEGAIA_DIAG_AUDIO_WAV` recording (the
     /// fight seeded into the state, its music bus silent), which carries what
-    /// the engine's cast keys after the state's instant.
+    /// the engine's cast keys after the state's instant. With
+    /// `--resume-state` (a silenced copy) it mixes onto the resumed SPU
+    /// instead: the `cast_core` channel.
     #[arg(long, requires = "retail_wav")]
     pub cast_wav: Option<PathBuf>,
     /// Print the level and correlation second by second.
@@ -1011,6 +1013,108 @@ fn mix_at_lag(pcm: &mut [i16], add: &[i16], lag: i64) {
     }
 }
 
+/// Mix the engine's cast recording into `pcm` (a render of the state's score
+/// or of its SPU alone) where it fits `retail` best: the cast's own offset
+/// fitted on the frame step's reach and the one-vsync reach, and the voice past
+/// a CD-seek wait fitted inside the seek window. `lag` is the render's against
+/// the recording, found on the render when `None` (a resumed SPU stands on the
+/// recording's sample 0, and its quiet render would not name one). Returns the
+/// mix and the wait's report.
+fn mix_cast_best(
+    retail: &[i16],
+    pcm: Vec<i16>,
+    lag: Option<i64>,
+    cast_path: &Path,
+    path: &Path,
+    label: &str,
+    vsync_samples: f64,
+) -> Result<(Vec<i16>, Option<serde_json::Value>)> {
+    let lag = lag.unwrap_or_else(|| score_window(retail, &pcm).lag);
+    let cast = read_wav(cast_path)?;
+    // A CD-seek wait in the cast: the voice past it may start anywhere
+    // in the seek window, and is aligned there on its own.
+    let wait = std::fs::read_to_string(cast_path.with_extension("drive"))
+        .ok()
+        .and_then(|t| cast_drive_wait(&t));
+    let split = wait.map(|(start, held)| {
+        (((start + held) as f64 * vsync_samples) as usize).min(cast.len() / 2)
+    });
+    // The child's gate tick stands near the state's instant, not on its
+    // sample: the cast's own offset is fitted against what the track
+    // leaves of the recording, and reported. The gate is a game-frame
+    // boundary, so the state's instant can lie up to a frame step off
+    // it ([`fit_cast_offset`]); a fit that reaches that far can also
+    // lock a misplaced voice onto a louder stretch, so the frame-step
+    // reach and the one-vsync reach are both mixed and the better
+    // scoring kept - one alignment parameter, chosen on the score.
+    let step = {
+        let st = psx_mednafen::SaveState::from_path(path)?;
+        crate::retail_compare_battle::frame_step(st.main_ram()?)
+    };
+    let track = pcm;
+    let mut best: Option<(f64, Vec<i16>, Option<serde_json::Value>)> = None;
+    let mut reaches = vec![(0i64, 1u8)];
+    if step > 1 {
+        reaches.push((0, step));
+    }
+    // A state taken mid-ramp names its own instant on the engine's
+    // recording: the tick the engine's applied level passes the
+    // state's ([`duck_anchor_tick`]).
+    let applied = {
+        let st = psx_mednafen::SaveState::from_path(path)?;
+        let ram = st.main_ram()?;
+        i32::from_le_bytes(ram[0x7_B6EC..0x7_B6F0].try_into()?).clamp(0, 255) as u8
+    };
+    let levels: Vec<u8> = std::fs::read_to_string(cast_path.with_extension("duck"))
+        .map(|t| t.lines().filter_map(|l| l.trim().parse().ok()).collect())
+        .unwrap_or_default();
+    if let Some(k) = duck_anchor_tick(&levels, applied) {
+        reaches.push((-((k as f64 * vsync_samples) as i64), 1));
+    }
+    for (center, reach) in reaches {
+        let offset = fit_cast_offset(retail, &track, &cast, lag, center, reach);
+        let mut mixed = track.clone();
+        let mut drive = None;
+        let mut notes = vec![format!(
+            "{}: cast offset {offset:+} samples on the track's lag {lag} (reach {reach} vsyncs of {center:+})",
+            label
+        )];
+        match wait.zip(split) {
+            Some(((start, held), split)) => {
+                let (after, window) =
+                    fit_cast_offset_after_wait(retail, &track, &cast, lag, offset, split, held);
+                notes.push(format!(
+                    "{}: cast CD-seek wait {held} ticks from tick {start}: voice offset {after:+} \
+                     samples ({:+.1} vsyncs past the cast's), window {:+}..={:+} samples",
+                    label,
+                    (after - offset) as f64 / vsync_samples,
+                    window.0,
+                    window.1
+                ));
+                mix_at_lag(&mut mixed, &cast[..split * 2], lag + offset);
+                mix_at_lag(&mut mixed, &cast[split * 2..], lag + after + split as i64);
+                drive = Some(serde_json::json!({
+                    "wait_start_tick": start,
+                    "held_ticks": held,
+                    "offset": offset,
+                    "voice_offset": after,
+                    "window": [window.0, window.1],
+                }));
+            }
+            None => mix_at_lag(&mut mixed, &cast, lag + offset),
+        }
+        let corr = score_window(retail, &mixed).corr_median;
+        for n in &notes {
+            println!("{n} -> corr {corr:.4}");
+        }
+        if best.as_ref().is_none_or(|(c, _, _)| corr > *c) {
+            best = Some((corr, mixed, drive));
+        }
+    }
+    let (_, mixed, drive) = best.expect("one reach is always tried");
+    Ok((mixed, drive))
+}
+
 pub fn run(args: PcmRetailArgs) -> Result<()> {
     let mut cast_drive: Option<serde_json::Value> = None;
     let (pcm, label) = if let Some(state) = &args.resume_state {
@@ -1040,6 +1144,29 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             return Ok(());
         }
         spu.render_into(&mut pcm);
+        // The `cast_core` channel: a state whose sequences are silenced plays
+        // the cast alone over its own held notes, which the resumed SPU
+        // renders sample for sample, so the engine's cast mixed in here is
+        // scored with no score reconstruction under it.
+        if let Some(cast_path) = &args.cast_wav {
+            let retail = read_wav(
+                args.retail_wav
+                    .as_deref()
+                    .context("--cast-wav needs --retail-wav")?,
+            )?;
+            let label = state.display().to_string();
+            let (mixed, drive) = mix_cast_best(
+                &retail,
+                pcm,
+                Some(0),
+                cast_path,
+                state,
+                &label,
+                args.vsync_samples,
+            )?;
+            pcm = mixed;
+            cast_drive = drive;
+        }
         (pcm, state.display().to_string())
     } else {
         let (m, l, e) = crate::retail_compare::resolve_dirs();
@@ -1141,90 +1268,15 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
                     ahead.map(|n| (&st, n)),
                 )?;
             }
-            let lag = score_window(&retail, &pcm).lag;
-            let cast = read_wav(cast_path)?;
-            // A CD-seek wait in the cast: the voice past it may start anywhere
-            // in the seek window, and is aligned there on its own.
-            let wait = std::fs::read_to_string(cast_path.with_extension("drive"))
-                .ok()
-                .and_then(|t| cast_drive_wait(&t));
-            let split = wait.map(|(start, held)| {
-                (((start + held) as f64 * args.vsync_samples) as usize).min(cast.len() / 2)
-            });
-            // The child's gate tick stands near the state's instant, not on its
-            // sample: the cast's own offset is fitted against what the track
-            // leaves of the recording, and reported. The gate is a game-frame
-            // boundary, so the state's instant can lie up to a frame step off
-            // it ([`fit_cast_offset`]); a fit that reaches that far can also
-            // lock a misplaced voice onto a louder stretch, so the frame-step
-            // reach and the one-vsync reach are both mixed and the better
-            // scoring kept - one alignment parameter, chosen on the score.
-            let step = {
-                let st = psx_mednafen::SaveState::from_path(&path)?;
-                crate::retail_compare_battle::frame_step(st.main_ram()?)
-            };
-            let track = pcm;
-            let mut best: Option<(f64, Vec<i16>, Option<serde_json::Value>)> = None;
-            let mut reaches = vec![(0i64, 1u8)];
-            if step > 1 {
-                reaches.push((0, step));
-            }
-            // A state taken mid-ramp names its own instant on the engine's
-            // recording: the tick the engine's applied level passes the
-            // state's ([`duck_anchor_tick`]).
-            let applied = {
-                let st = psx_mednafen::SaveState::from_path(&path)?;
-                let ram = st.main_ram()?;
-                i32::from_le_bytes(ram[0x7_B6EC..0x7_B6F0].try_into()?).clamp(0, 255) as u8
-            };
-            let levels: Vec<u8> = std::fs::read_to_string(cast_path.with_extension("duck"))
-                .map(|t| t.lines().filter_map(|l| l.trim().parse().ok()).collect())
-                .unwrap_or_default();
-            if let Some(k) = duck_anchor_tick(&levels, applied) {
-                reaches.push((-((k as f64 * args.vsync_samples) as i64), 1));
-            }
-            for (center, reach) in reaches {
-                let offset = fit_cast_offset(&retail, &track, &cast, lag, center, reach);
-                let mut mixed = track.clone();
-                let mut drive = None;
-                let mut notes = vec![format!(
-                    "{}: cast offset {offset:+} samples on the track's lag {lag} (reach {reach} vsyncs of {center:+})",
-                    args.label
-                )];
-                match wait.zip(split) {
-                    Some(((start, held), split)) => {
-                        let (after, window) = fit_cast_offset_after_wait(
-                            &retail, &track, &cast, lag, offset, split, held,
-                        );
-                        notes.push(format!(
-                            "{}: cast CD-seek wait {held} ticks from tick {start}: voice offset {after:+} \
-                             samples ({:+.1} vsyncs past the cast's), window {:+}..={:+} samples",
-                            args.label,
-                            (after - offset) as f64 / args.vsync_samples,
-                            window.0,
-                            window.1
-                        ));
-                        mix_at_lag(&mut mixed, &cast[..split * 2], lag + offset);
-                        mix_at_lag(&mut mixed, &cast[split * 2..], lag + after + split as i64);
-                        drive = Some(serde_json::json!({
-                            "wait_start_tick": start,
-                            "held_ticks": held,
-                            "offset": offset,
-                            "voice_offset": after,
-                            "window": [window.0, window.1],
-                        }));
-                    }
-                    None => mix_at_lag(&mut mixed, &cast, lag + offset),
-                }
-                let corr = score_window(&retail, &mixed).corr_median;
-                for n in &notes {
-                    println!("{n} -> corr {corr:.4}");
-                }
-                if best.as_ref().is_none_or(|(c, _, _)| corr > *c) {
-                    best = Some((corr, mixed, drive));
-                }
-            }
-            let (_, mixed, drive) = best.expect("one reach is always tried");
+            let (mixed, drive) = mix_cast_best(
+                &retail,
+                pcm,
+                None,
+                cast_path,
+                &path,
+                &args.label,
+                args.vsync_samples,
+            )?;
             pcm = mixed;
             cast_drive = drive;
         }
