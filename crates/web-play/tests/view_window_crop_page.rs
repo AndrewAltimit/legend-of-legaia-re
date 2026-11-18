@@ -8,14 +8,14 @@
 //! a pulled-back distance preset alone (the page's and the native window's
 //! default `far`) it walks the window widened to the preset's scale, so what
 //! lies past retail's near edge stays out of shot; under a swung, tilted or
-//! zoomed camera it draws the map whole.
+//! zoomed camera it lifts the window and crops to the walk region alone.
 //!
 //! The ladder takes the option the way a player does - the page's distance
 //! control - and scores the crop on its effect: at `retail` the stamp a host
 //! re-uploads on is live and both the ground index buffer and the terrain
 //! draw mask come back smaller than the whole map; at `far` the crop holds,
 //! at least as wide as retail's and still short of the whole map; a dragged
-//! orbit then gives the whole map back.
+//! orbit then lifts the window and keeps the walk region.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
@@ -92,13 +92,26 @@ fn the_retail_preset_crops_the_field_to_its_visible_tiles() {
         );
     }
 
-    // A swung camera is not retail's frustum: the map draws whole.
+    // A swung camera is not retail's frustum: the window lifts, and the
+    // walk region alone bounds the crop - at least what far draws, never
+    // another region's cells.
     assert!(rt.play_camera_orbit_by(0.5), "the orbit knob is live");
     tick(&mut rt, 2);
-    assert_eq!(
+    assert_ne!(
         rt.field_view_window_stamp(false),
         0,
-        "a swung view kept the crop"
+        "a swung view dropped the region crop"
     );
-    assert_eq!(rt.field_ground_indices_cropped(false).len(), whole_ground);
+    let free_ground = rt.field_ground_indices_cropped(false).len();
+    assert!(
+        free_ground >= far_ground && free_ground <= whole_ground,
+        "a swung view kept {free_ground} of {whole_ground} ground indices (far {far_ground})"
+    );
+    let free_live = rt.field_terrain_live(false);
+    for (i, (&f, &o)) in far_live.iter().zip(&free_live).enumerate() {
+        assert!(
+            f == 0 || o == 1,
+            "terrain draw {i} drawn at far, cropped under a swung view"
+        );
+    }
 }

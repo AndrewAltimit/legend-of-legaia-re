@@ -72,7 +72,8 @@ impl LegaiaRuntime {
     /// This frame's visible-tile cell rectangle through the shared
     /// `field_view_window::field_view_cells` kernel the native play-window
     /// asks: `None` = draw the map whole. `debug_camera` is the page's `F3`
-    /// vantage, which (like the native window's) lifts the crop.
+    /// vantage, which (like the native window's) lifts the window and keeps
+    /// the walk region.
     pub(crate) fn field_view_cells_now(
         &self,
         debug_camera: bool,
