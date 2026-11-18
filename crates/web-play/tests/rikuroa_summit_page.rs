@@ -90,7 +90,7 @@ fn picker_entry_seats_the_same_lead_on_both_hosts() {
                 }
             }
             s.host.world.stage_picker_entry(scene, false);
-            s.host.arm_picker_entry_seat(scene);
+            s.host.arm_picker_story_entry(scene);
             s.enter_field_live(scene, &Default::default())
                 .expect("native entry");
             for _ in 0..3 {
@@ -119,7 +119,9 @@ fn the_summit_beat_runs_under_the_crop() {
     for f in CHAPTER_FLAGS {
         assert!(rt.set_system_flag(f, true));
     }
-    rt.enter_field("rikuroa").expect("enter rikuroa");
+    // The plain picker seat: the selector's own entry opens the scene on
+    // its entry beat, and this test is about the summit's.
+    rt.enter_field_plain("rikuroa").expect("enter rikuroa");
     assert!(rt.debug_seat_player(TRIGGER.0, TRIGGER.1));
     // The seat latched the region box at the seated tile.
     let b = world(&rt).terrain.region_attributes.box_bytes;

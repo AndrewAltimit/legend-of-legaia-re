@@ -254,6 +254,7 @@ impl SceneHost {
         // looping emitter of the scene left behind falls silent.
         self.world.release_field_init_voices();
         self.world.ambient.pending_game_ticks = 0;
+        self.world.ambient.ticked_ahead = 0;
         self.world.ambient.cell_captures.clear();
         self.world.ambient.flash_applied.clear();
         // Same scene-scoping for the sibling `4C 60` MoveImage stamps: any

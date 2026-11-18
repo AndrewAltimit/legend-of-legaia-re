@@ -193,8 +193,9 @@ banner.
 The launcher and the game's own chrome draw in the same two palettes as Legaia
 Explorer. *Menu colours* in the Display group follows the desktop's light or dark
 preference (GNOME's colour scheme or `GTK_THEME` on Linux, the system setting
-elsewhere), or stays light or dark; the `F12` page changes it live and Explorer's
-*View* menu keeps its own choice. The Multiplayer screen and the game-mode
+elsewhere), or stays light or dark; the `F12` page changes it live. It is one
+choice with Explorer's *View* theme: either program's change is the other's
+next time it opens (Explorer also picks it up when a game it started closes). The Multiplayer screen and the game-mode
 picker follow it too. A mode in play keeps its own colours: its text sits on
 the field and on its table, not on a plate.
 
@@ -311,7 +312,10 @@ either place is the one the other shows. The `launcher.toml` rows are launch
 switches with no option behind them; the browser play page has a box for each.
 *Original game only* starts the game retail-faithful (`play-window --retail`):
 every enhancement off for that session, the saved options untouched; the rows
-it overrides read *Original* while it is on.
+it overrides read *Original* while it is on. It also plays the original's
+loading pauses: the screen holds on the last field frame and then black for
+about a second while the pause menu or a shop loads, and again on the way
+back to the map, where the default mode opens and closes them at once.
 
 *Saved-chain Arts list* is an addition of the port's; the original has nothing
 like it. With it on, the battle command ring's **Arts** opens a list of the
@@ -447,6 +451,9 @@ Keyboard defaults are arrows = D-pad, then:
 | `Enter`, `Space` | Start |
 | `RShift` | Select |
 
+Start opens the pause menu, and so does Triangle, the original game's menu
+button.
+
 `Esc` twice quits: the first press only shows *Press Esc again to quit* at
 the bottom left of the window, and a second press within three seconds closes it,
 so a stray press does not lose an unsaved game. The browser play page ships a *different* default layout (`X` is
@@ -580,8 +587,10 @@ stand in (*(here)*). Up / Down pick one, Left / Right move a page, Cross or
 `--scene` launch or the play page's list seats and stages it (the scene's
 free-roam visit, entered through one of its doors). Where walking in through
 the story entrance opens on a cutscene - Garmel's welcome, the Rogue's Tower
-entrance, Noaru's arrival among them - the party lands on that entrance and
-the cutscene plays, unless your game is already past it. It refuses on the
+entrance, Noaru's arrival, thawed and frozen Buma, the Bio Castle's last room,
+Noa's dream and the second Ra-Seru scene among them - the party lands on that
+entrance, with the story flags the scene's door would have raised, and the
+cutscene plays, unless your game is already past it. It refuses on the
 title and in the pause menu, in a fight, a movie or a minigame, and says so
 under the rows. **Tools** holds what otherwise takes a launch switch or a
 keyboard key: the developer menu (`LEGAIA_DEV_MENU`), the diagnostic rows
@@ -813,6 +822,14 @@ them wear in each slot, their own weapon family first. That is an engine
 choice, not retail's: a true New Game starts with Vahn alone and still does
 (the title screen's NEW GAME, and `--seed-party`, reseed retail's roster).
 Both hosts reach the same seed, `World::seed_picker_party`.
+
+Where the story opens a scene on a cutscene - a town's welcome, a dungeon's
+first line, thawed or frozen Buma, the Bio Castle's last room, one of the Uru
+Mais dreams, Noa's dream - a picked scene seats the party where it plays and
+raises the story flags the door in would have raised, so it plays as on
+arrival. A game already past that point sees nothing fire, as in the original,
+and the next pick clears the flags this one raised. Noa's dream is the one beat
+that changes the leader: its own script hands Noa the lead.
 
 A picked scene that the game itself only ever passes through plays that
 passage. Zora's Floating Castle's second form (`taiku2`) is one: arriving from
@@ -1190,9 +1207,10 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 ```
 
 A pack with an error is refused and the running one stays; the notice line
-says why (*Reload pack refused: ...*, the whole line in the log). In a fight or
-a menu the reload waits until you are back on the map; a cutscene running on
-the map ends with the reload.
+says why (*Reload pack refused: ...*, the whole line in the log). In a fight, a
+menu or one of the pack's own cutscenes (an arrival scene such as the sample
+tower's entrance) the reload waits, saying so once, and goes in by itself when
+you are back on the map, so a cutscene always plays to its end.
 
 **In the browser**, the sample pack is built in: once the disc is up, the play page's
 *Sample Expansion Pack* boot mode loads it and opens the title screen, and
@@ -1236,6 +1254,7 @@ With a pack loaded:
 
 ## Related docs
 
+- [Player FAQ](https://andrewaltimit.github.io/legend-of-legaia-re/guides/faq.html) (site) - short answers on the disc image, saves, the original mode, controllers, the scene selector and bug reports.
 - [engine.md](../subsystems/engine.md) - the engine's architecture and port boundaries.
 - [shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md) - why `site/wasm/` is generated, not committed.
 - [renderer.md](../subsystems/renderer.md) - what "retail-faithful rendering" means here.

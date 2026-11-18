@@ -25,7 +25,7 @@
  *      engine's `MovieClock`, the pacing rule the native window runs
  *      (the picture follows the soundtrack, never a free-running timer). A
  *      page with no engine audio up falls back to `play_fmv_audio_pcm_i16`
- *      through its own context, trimmed by `LEGAIA_MASTER_TRIM`, the play
+ *      through the page's one context, trimmed by `LEGAIA_MASTER_TRIM`, the play
  *      page's own half (`PLAY_PAGE_GAIN_SCALE`, as on the engine path), the
  *      volume slider and the site sound switch; a silent
  *      movie or a cursor that never moves falls back to the wall clock.
@@ -157,13 +157,22 @@
     const channels = rt.play_fmv_audio_channels();
     if (!pcm || !pcm.length || !rate || !channels) return;
     try {
+      /* The page's one AudioContext (js/audio-toggle.js); before the first
+       * gesture there is none, and the movie plays silent rather than on a
+       * context the browser holds suspended. */
       if (!st.audioCtx) {
-        const Ctor = window.AudioContext || window.webkitAudioContext;
-        if (!Ctor) return;
-        st.audioCtx = new Ctor();
+        if (window.LegaiaSound && LegaiaSound.context) {
+          st.audioCtx = LegaiaSound.context();
+          if (!st.audioCtx) return;
+        } else {
+          const Ctor = window.AudioContext || window.webkitAudioContext;
+          if (!Ctor) return;
+          st.audioCtx = new Ctor();
+        }
       }
       const ctx = st.audioCtx;
-      if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+      if (window.LegaiaSound && LegaiaSound.context) LegaiaSound.context();
+      else if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
       const frames = Math.floor(pcm.length / channels);
       const buf = ctx.createBuffer(channels, frames, rate);
       for (let c = 0; c < channels; c++) {

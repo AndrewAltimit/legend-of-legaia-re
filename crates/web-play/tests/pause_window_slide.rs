@@ -80,10 +80,18 @@ fn pause_windows_slide_in_inside_the_stage_or_skip() {
     }
     let area = |q: &Vec<[i64; 4]>| q.iter().map(|r| r[2] * r[3]).sum::<i64>();
     let settled = frames.last().expect("a frame");
-    // Once the walker has finished, the layout holds still.
+    // Once the walker has finished, the layout holds still - all but the
+    // hand cursor (a 16x16 sprite, 32x32 at stage scale 2), which bobs on its
+    // own clock whatever frame the menu spawned on.
+    let still = |q: &Vec<[i64; 4]>| -> Vec<[i64; 4]> {
+        q.iter()
+            .copied()
+            .filter(|r| r[2] != 32 || r[3] != 32)
+            .collect()
+    };
     assert_eq!(
-        frames[frames.len() - 2],
-        *settled,
+        still(&frames[frames.len() - 2]),
+        still(settled),
         "the windows rest on their homes"
     );
     // The first drawn frames are the windows coming in: less of them is on

@@ -487,6 +487,12 @@ pub(super) fn run_one(
             let frame = match gate {
                 Some(g) => {
                     let mut env = vec![("LEGAIA_SCRIPT_GATE", g.to_env())];
+                    // The seed's presses are one-tick edges, as the menu
+                    // and card drives' are: past the retail pad pipeline
+                    // (`WorldToggles::immediate_pad`) a one-vsync tap is
+                    // never read, and the gate's record never reaches its
+                    // phase by the deadline. A harness seat.
+                    env.push(("LEGAIA_DIAG_IMMEDIATE_PAD", "1".to_string()));
                     // A gate on the player's clip latch is met on the RAM's
                     // cursor, and a text gate mid-page on the RAM's pager
                     // phase, neither with a wait to take the lag off: the
@@ -677,7 +683,8 @@ fn title_front_run(
         &retail.scene,
         None,
         &extra,
-        &[],
+        // The card drive's presses are one-tick edges too.
+        &[("LEGAIA_DIAG_IMMEDIATE_PAD", "1".to_string())],
         tick,
         opts.out_dir,
         &entry.label,
@@ -758,6 +765,11 @@ pub(super) fn menu_image(
     } else {
         Vec::new()
     };
+    // The drive's presses are one-tick edges, as the headless drive's are
+    // (`pause_menu_drive` sets the world's pad word directly): the child takes
+    // them on the tick they are scripted, past the retail pad pipeline
+    // (`WorldToggles::immediate_pad`). A harness seat (lane W).
+    env.push(("LEGAIA_DIAG_IMMEDIATE_PAD", "1".to_string()));
     if let Some(block) = menu.prize_block {
         env.push(("LEGAIA_SEAT_PRIZE", format!("{first}:{block}")));
     }

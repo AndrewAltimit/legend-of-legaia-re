@@ -310,6 +310,17 @@ still under it. It is a state machine on the mode word `0x801CF76C`:
 or more. Opening therefore holds the black the entry ramp ended on for two
 frames and clears in three steps; leaving darkens in the same steps.
 
+**Frame rate.** The display runs a frame every five vsyncs. The survey view
+draws the whole kingdom, and a PCSX-Redux walk film of `map02_field_door_hop`
+with the display up holds the frame pacer's ring cursor `0x8007B758` for five
+vsyncs a frame, each frame time at the `0x2BC` cap; the timer `0x801CF778`
+steps on that clock (`4 -> 0` at vsyncs `56, 61, 66, 71`, interactive at
+`76`), and a held d-pad pans one tile every five vsyncs. The pad is read once
+a frame, so a press shorter than a frame can fall between two reads and do
+nothing (a four-vsync Circle tap in the same film). Before the first frame,
+game mode `0x0C` loads PROT 0981 for `25` vsyncs (mode `0x0C` at vsync `22`,
+`0x0D` at `47`) on the black the ramp ended on.
+
 **Survey camera** (mode `1`, `0x801CE8EC..0x801CE950`): `TR = (0, 0, 0x9470)`
 at `0x800840B8`, rotation trio `0x8007B790 = (0x300, 0, 0)`, projection
 `0x8007B6F4 = 0x170`, camera height `0x8008911C = 0`, and the visible tile
@@ -382,7 +393,11 @@ kingdom MANs at once. See
 `ghidra/scripts/funcs/overlay_monster_test_0981_801ce850.txt`.
 
 **Port.** The state machine, the stepper, the clamp and the panel geometry
-are `legaia_engine_field::map_display`. `World::tick_world_map` opens the
+are `legaia_engine_field::map_display`. `World::pace_map_display` runs it on
+its own frame clock, a frame every `MAP_DISPLAY_FRAME_VSYNCS` vsyncs with the
+edge word taken against the last frame's pad, and the retail-faithful mode
+(`WorldToggles::skip_load_holds` off) holds `MAP_DISPLAY_LOAD_VSYNCS` of
+black for the load first. `World::tick_world_map` opens the
 display on the ramp's hand-off, and while it is up `World::tick` runs
 `tick_map_display` in place of the whole overworld arm. The camera is a
 `FieldCameraFrame::WorldMapDisplay` (`camera_view::map_display_frame`):
@@ -1612,8 +1627,15 @@ same fill (`walk_regen_steps`, bumped on a committed step),
 gate in `World::live_world_map_tick`
 ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)).
 
-**Diagonals.** Diagonal movement applies the field controller's
-`speed -= speed >> 2` normalise.
+**Diagonals.** The field controller's diagonal cut (`speed -= speed >> 2`)
+is gated on the camera block's mode nibble (`0x8007B607 >> 4 == 4`,
+`0x801D05EC..0x801D0614`), and every kingdom camera record holds mode `1`
+(`0x8007B607 = 0x10` on the `map01`, `map02` and `map03` library states). So
+an overworld diagonal walks the cardinal step on each axis: a retail `map01`
+walk film held Up+Right steps `(+10, +10)` every three vsyncs.
+`step_world_map_locomotion` reads the same published mode byte as the field
+walk (`CameraWorld::set_camera_mode_byte`), and runs the controller's terrain
+slow too (`0x801D05B8..0x801D05E8`).
 
 **Heading.** `step_world_map_locomotion` records the heading into the actor's
 `render_26` field, the same field the field path stores.
@@ -1672,7 +1694,14 @@ every three vsyncs. So the overworld walk computes the step for one retail
 frame at `dt = 3` (`WORLD_MAP_FRAME_STEP`), rounds it to whole 2-unit
 sub-steps, and pays it out over three ticks through a carry
 (`WorldMapState::walk_carry`, cleared on release): `2, 4, 4` units. A town
-needs no carry (`8` walk, `12` run at `0x1000` are whole sub-steps). The walk
+needs no carry (`8` walk, `12` run at `0x1000` are whole sub-steps). The
+payout is the port's default (`WorldToggles::smooth_walk`); the
+retail-faithful mode commits the whole `10` on the frame that opens, as
+retail does, so the player stops on a trigger tile and rolls an encounter
+with the frame's full step taken (`map01` walk films: the vozz crossing at
+`z 11654`, a fight rolled at `z 3328`, both on retail's vsync). The press
+that starts a walk reaches the controller two vsyncs late in that mode too
+([field-locomotion](field-locomotion.md#when-the-game-sees-a-press)). The walk
 clip needs no correction: `FUN_800204F8` multiplies its cursor step by the
 same `DAT_1F800393`.
 

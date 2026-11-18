@@ -74,7 +74,7 @@ pub fn field_scene_lights(
     // A pack map's placed lamps and prop lights (none off a map).
     let pack = w.expansion_map_lights();
     if screen_owned
-        || w.mode != SceneMode::Field
+        || w.draw_mode() != SceneMode::Field
         || host
             .scene
             .as_ref()
@@ -104,7 +104,7 @@ pub fn field_scene_lights(
 
 /// The picked lights that draw a halo and a shaft this frame. `cells` is the
 /// frame's visible-tile crop (`field_view_window::field_view_cells`, `None`
-/// where the map draws whole): a lamp on a cell the crop leaves out has no
+/// where no crop applies): a lamp on a cell the crop leaves out has no
 /// geometry on screen, and its sprite would float over the clear colour with
 /// nothing to depth-test against. Such a lamp keeps shading the cells that do
 /// draw - only its sprites go, and they return with the lamp's own geometry.

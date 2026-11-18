@@ -198,7 +198,7 @@ impl LegaiaRuntime {
                 "busy": true,
                 "map": map,
                 "reentered": false,
-                "errors": ["the game is in a fight or a screen: the pack reloads once it is back on the field"],
+                "errors": ["the game is in a fight, a screen or a cutscene: the pack reloads once it is back on the field"],
             });
         }
         let mut v: Value =
@@ -1221,7 +1221,9 @@ mod tests {
         };
         let bytes = std::fs::read(disc).expect("read the disc");
         let pack = bundle(&sample_pack_files());
-        let map = "genesis_1f";
+        // A floor with no arrival cutscene: a reload waits out the Atrium's
+        // `tower_intro` (`SceneHost::expansion_reload_seat`).
+        let map = "genesis_2f";
         let mut rt = LegaiaRuntime::new();
         assert!(rt.load_disc(bytes, String::new()).is_ok());
         let _ = rt.load_expansion_core(&pack);

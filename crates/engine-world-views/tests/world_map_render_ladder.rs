@@ -264,7 +264,8 @@ fn rung2b_map_display(w: &mut World) -> Result<(), String> {
     // The display owns the frame: the d-pad pans its camera, not the player.
     let player = w.actors[0].move_state.world_x;
     let cam = d.cam_x;
-    for _ in 0..3 {
+    // The display runs a frame every five vsyncs.
+    for _ in 0..5 {
         frame(w, raw(PAD_RIGHT));
     }
     let d = w.world_map.map_display.as_ref().expect("display");
@@ -275,8 +276,12 @@ fn rung2b_map_display(w: &mut World) -> Result<(), String> {
         return Err("the d-pad did not pan the display camera".into());
     }
     let _ = w.take_sfx_ring_ops();
-    // Circle (packed 0x20) leaves.
-    tap(w, raw(0x0020));
+    // Circle (packed 0x20) leaves: held across a display frame, since the
+    // display reads its pad once a frame.
+    for _ in 0..5 {
+        frame(w, raw(0x0020));
+    }
+    frame(w, 0);
     let sfx = w.take_sfx_ring_ops();
     if !sfx.contains(&SfxRingOp::WriteSlot(0, SFX_EXIT)) {
         return Err(format!("the exit raised no cue: {sfx:?}"));
@@ -285,7 +290,7 @@ fn rung2b_map_display(w: &mut World) -> Result<(), String> {
     while w.world_map.map_display.is_some() {
         frame(w, 0);
         frames += 1;
-        if frames > 32 {
+        if frames > 200 {
             return Err("the exit never handed the frame back".into());
         }
     }

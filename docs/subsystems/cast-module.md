@@ -1137,6 +1137,12 @@ the plain films parted named one unported site:
 - **Jedo's sparks are jittered.** Arms 5..7 seat record `0x801F8E20` every pass at
   `x = rand() % 0x301 - 0x180`, `y = rand() % 0x301 - 0x600`, on the creature's
   `z + 0x180` (`0x801F6FA0..0x801F7028` and its two copies).
+  Arm 7 seats it only while its drained word stands at `0xA1` or more (`slti v0,v0,0xa1`
+  at `0x801F72A0`, which branches past the spark to the ring shrink): arm 6's pass
+  leaves the word `0xC0` up, so a `--watch` of the seed reads seven sparks over the
+  arm's 48 passes. Seated on every pass, the port drew `81` words more in the arm and
+  every later deal stood off retail's; gated, the `0x9D` film reads `.981` against
+  `.973` (arm 7 `.867` to `.979`).
 
 Grade `disassembly` + `capture`. The sites a recording names that stay open are listed
 in the [open threads](../reference/open-rev-eng-threads.md#battle--rendering).
@@ -2262,6 +2268,19 @@ slot's pair and arm 11 struck the victim with the splash's two thirds and a
 monster out of reach with the rest (`battle_kor_spoon_strike`, Dead Bone
 `999` to `776` where retail leaves it whole, its cues the film's three extras).
 
+**Only a seat the finisher kills fades.** Both arm-11 hits clear the struck
+seat's `+0x21C` and then raise the defeat fade (`+0x21C = +0x225 = 2`) only
+when the hit has emptied its HP: `sb zero,0x21c` / `lhu v0,0x14c` /
+`bne v0,zero` at `0x801F7D70..0x801F7D98` for the primary and
+`0x801F7F88..0x801F7FB0` for the splash. A survivor keeps `0` and stays
+drawn (`zenoir_tick`). Read the other way round, a victim that lived through
+Zenoir faded to a zero colour word and fought on invisible until the next
+round's reset. Because the fade now goes up before the knockdown ends, the
+clip commit's death arm finds `+0x21C` already at `2`; its defeat cue `0x0D`
+and its Monsters Defeated credit both sit behind the victim's `+0x1DC` bit 3
+(`0x8004B184`, `0x8004B200`), not the fade, and the port's death arm reads
+the same bit (`World::finish_battle_reaction`). Grade `disassembly`.
+
 Arms 9..12 move the creature's height themselves (`8 * scalar * delta` a
 pass, up in 9 and 10, down in 11 and 12). The strike and the shatter have no
 shot of their own: arm 10 cuts to the victim at the band's depth
@@ -3341,6 +3360,27 @@ the seat's null record pointer, its size from RAM `0x1F`, which holds `0x81`
 in every retail image: in reach from anywhere near the field, so it is traded
 again on the next pass and the creature keeps after the row
 (`World::mushura_chase`). Grade `disassembly` + `capture`.
+The chase is one call a pass: the hit loop, the trade and the turn run once on the
+pass's opening tick, the turn by the pass's own frame step. A `--watch` of the target
+word `0x801F8154` reads one store a pass, the traded seats `5, 3, 5, 4` and then `3`
+held for ten passes; traded on each of a pass's one-vsync ticks, an empty seat came up
+several times a pass and the creature turned toward whichever was left. The struck
+body turns a quarter off the creature by the bearing onto its **body** pair
+`+0x3C` / `+0x40` (`0x801F79F8`), and a body dead ahead (`bne a0,s1` at `0x801F7A40`
+not taken) draws one `rand()` it never reads and takes `+0xC00`, the side a bearing
+past the creature's own takes (`0x801F7A48..0x801F7A60`); a `--range-trace` recording
+reads Gobu Gobu's facing `0xC00` off the first hit, which finds it straight down the
+creature's line. The port had turned it `0x400` without the draw, so its knock-back
+walked it the other way and the chase read it in reach on passes retail reads it out.
+Arm 8's pass also writes `3` into the rate byte `+0x78` of the entry the creature's
+cast record `0x801C9348[4]` points at from `+0x4C` (`0x801F7324..0x801F7338`), idle
+`0`'s. The entry is archive RAM, so every later commit keeps the byte, and from arm 9 on
+the idle advances `24` a pass where it ran `32`, as the recording's cursors read; its
+walk dust (`FUN_801DEA50`) falls with it. Without the store the port shed seven dust
+spawns more in arm 9, `19` `rand()` words, and every later deal of the cast stood off
+retail's. With the three the `0x8D` film holds retail's stream to the end of the cast
+and reads `.978` against `.934` (arm 9 `.975` to `1.000`, arm `0xC` `.797` to `.954`).
+Grade `disassembly` + `capture`.
 Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of arms
 2 and 7 over its holds. Arm 4's pass stores rate `1` beside the clip it stages, and the commit lifts it to
 `4` (`0x8004B080`), so arm 5 runs at `4` until arm 6 stores `1` again: the eye close-up
@@ -4274,7 +4314,15 @@ centroid (`0x8004A430..0x8004A458`), so the rays fan out of the crystal's middle
 `(28, -388, 1007)` in a `rugi` capture, where a seat on the floor put their
 origin under the HUD. The pool flush `0x801F6E34` and the white `0x801F6E74` sit
 past the countdown test `0x801F6E2C`, on the arm's pass, so the fan lives the whole
-arm. Each ray is a default-arm fin (shape `1`, one column), whose three vertex pairs
+arm. The flush reaches only the pool's words: arm 0 seats the white glow `0x801F9058`
+and the element's coloured one (`0x801F90BC`, `0x801F9120`, `0x801F9184` by the roll)
+straight through `FUN_80021B04` (`0x801F6CAC`, `0x801F6D28`), not through the pool
+wrapper the emitter takes (`0x801F6C94`), so both outlive arm 1's flush and the `k = 5`
+ones. A `--retail-parts` recording of `rugi_rogue_pre_rogue_wind` holds them at
+`(0, 0, 128)` through the Wind run's arm `0x32`, the green one's radius `+0xB6`
+shrinking `510` to `134`, while the flush pass halts every other part; the port's flush
+had taken them too, and the arm framed the bare stage where retail's frames the green
+glow (`ELEMENT_STRIKE_FLUSH_SPARES`). Grade `disassembly` + `capture`. Each ray is a default-arm fin (shape `1`, one column), whose three vertex pairs
 stand `+0xC8 >> 3` apart, so its length channel is its width: the record's program
 fades it in and widens it at `+0xCA = 96` for one wait of `248`, then narrows it at
 `-96` while it fades out, and halts (`0x0D -128`, `0x1C 12`, `0x09 31`, `0x1C -12`,
@@ -4538,6 +4586,21 @@ fold.
   id is `0x299`.
 - **The settle.** Arm 12 reads the victim's clip off the reaction channel, and a
   party seat at zero HP settles on its Defeat pose, the engine's clip `8`.
+- **The spin's frames.** Arm 6 drains its countdown `scalar * step` a pass
+  (`0x801F75EC..0x801F7630`), so how long the wheel spins, and where it stops, is
+  the arm's frame steps. On `kor_shade_pre_fatal_decision`'s recording the arm's
+  first `57` frames cost `549`..`596` hblanks and the rest about `183`, so the
+  ring reads `3` for `72` frames and `1` after, `1202` vsyncs in all. The port's
+  capture table names the cheap `1` for the arm, and the dear frames ran three
+  vsyncs long on that step, a third of a drain each: the spin held `78` vsyncs
+  longer. The arm's two cost classes are capture tail rows now
+  (`CAPTURE_ARM_COST_TAILS`): `219` vsyncs at `3` and `983` at `1`. Which slot
+  the wheel lands on is also the slots arm 4 fills off `rand()`, so the arms
+  before it count too: arms 1 and 4 open over the step-`3` edge and run just
+  under it, and on the table's `3` arm 1 took two more passes than retail's and
+  the fill dealt another wheel (Halve HP, where retail's lands an outcome with
+  no reaction). With their rows the film lands retail's outcome on the port's
+  own steps.
 
 - **The message bar.** The body calls the element spawner on the bar four
   times with mode `0` and once with mode `1`. Arm 5's exit raises the stop
@@ -4809,6 +4872,14 @@ close to a minute. It is ported whole.
   `FUN_801DD4B0(0x327, ctx[+0x13], seat)` with the shape-A clamp
   (`0x801F8610` / `0x801F863C`), so it can kill a member the sweeps left
   low. It also stages the seat's knockdown at rate `2`.
+- **Every hit raises its numeral.** Both the stager's sweep (`jal 0x801F44A0`
+  at `0x801F8F1C`, behind the wrapper at `0x801F8F08`) and arm 26's hit
+  (`0x801F8624`, behind `0x801F8610`) push each rolled seat's raw roll through
+  the popup push before the clamp, and the band's fold is waived for these
+  hits, so nothing else raises them. The recording shows the numbers over the
+  party after each sweep and through arm 27; the port had landed the HP with no
+  number. Port `World::push_sweep_popups` from both. Grade `disassembly` +
+  `capture`.
 - **Arms 12..15 cut each get-up two keyframes short.** Each arm opens, ahead
   of its countdown, on the same walk over the party row (`0x801F7418` in arm
   12, copies at `0x801F75FC`, `0x801F77CC`, `0x801F7998`): a seat whose

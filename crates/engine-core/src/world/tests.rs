@@ -319,6 +319,7 @@ fn gimard_spell_def() -> legaia_engine_battle::spells::SpellDef {
 }
 
 mod actor_alloc_init;
+mod ambient_heading_adopt;
 mod battle_anim;
 mod battle_ap_carry;
 mod battle_arts_list;

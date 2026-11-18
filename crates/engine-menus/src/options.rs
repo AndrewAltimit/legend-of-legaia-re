@@ -543,12 +543,38 @@ impl OptionsState {
     }
 
     /// Load from a TOML file, falling back to [`Default`] if the file is
-    /// absent or unparseable.
+    /// absent or is not TOML at all. A file that parses keeps every row it
+    /// spells right ([`Self::from_toml_lenient`]): one value this build does
+    /// not know (a hand edit, or a newer release's setting read by an older
+    /// one) puts that row alone back on its default, where a whole-file
+    /// fallback reset every option and the next save wrote the reset over the
+    /// file.
     pub fn load_or_default(path: &Path) -> Self {
         let Ok(text) = std::fs::read_to_string(path) else {
             return Self::default();
         };
-        toml::from_str(&text).unwrap_or_default()
+        Self::from_toml_lenient(&text)
+    }
+
+    /// Parse an options file, dropping each top-level key whose value does
+    /// not deserialise instead of the whole file. Text that is not TOML gives
+    /// [`Default`].
+    pub fn from_toml_lenient(text: &str) -> Self {
+        if let Ok(o) = toml::from_str::<Self>(text) {
+            return o;
+        }
+        let Ok(table) = text.parse::<toml::Table>() else {
+            return Self::default();
+        };
+        let kept: toml::Table = table
+            .into_iter()
+            .filter(|(k, v)| {
+                let mut one = toml::Table::new();
+                one.insert(k.clone(), v.clone());
+                toml::Value::Table(one).try_into::<Self>().is_ok()
+            })
+            .collect();
+        toml::Value::Table(kept).try_into().unwrap_or_default()
     }
 
     /// Persist to a TOML file. Creates parent directories as needed.
@@ -1429,6 +1455,23 @@ impl OptionsPins {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One value the build does not know resets that row alone: the rows
+    /// around it keep what the file says.
+    #[test]
+    fn an_unknown_value_resets_its_row_not_the_file() {
+        let text = "ui_theme = \"Light\"\nbloom = true\nssao = false\nunknown_row = 3\n";
+        let o = OptionsState::from_toml_lenient(text);
+        assert_eq!(o.ui_theme, UiTheme::System, "the misspelled row falls back");
+        assert!(o.bloom, "a good row keeps its value");
+        assert!(!o.ssao, "a good row keeps its value");
+        let good = OptionsState::from_toml_lenient("ui_theme = \"light\"\nbloom = true\n");
+        assert_eq!(good.ui_theme, UiTheme::Light);
+        assert_eq!(
+            OptionsState::from_toml_lenient("not = [toml"),
+            OptionsState::default()
+        );
+    }
 
     /// A loaded save's rows land on every unpinned row; a pinned row keeps
     /// its session override, and the save's value is what persists for it.

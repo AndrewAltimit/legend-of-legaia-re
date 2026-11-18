@@ -1269,7 +1269,8 @@ SIM_PAIRS: list[dict[str, object]] = [
         "only the cells the camera's tile window reaches (FUN_801F7088), and "
         "whether a frame crops, and by which window, is a policy (knob, field "
         "mode, no cutscene, a focus the region box holds, and the framing). "
-        "Both hosts ask the one `field_view_window::field_view_cells` entry "
+        "Both hosts ask the one `field_view_window::field_view_cells_under` "
+        "entry, on the session's draw mode (the field's under the pause wipe), "
         "with `crop_framing`'s three cases: retail's window at retail framing "
         "(or a scripted shot), the window widened by the distance preset under "
         "Far / Farther with the knobs at identity, the whole map under a "
@@ -1280,7 +1281,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web": (WEB_PLAY_TERRAIN_GROUND, "field_view_cells_now"),
         },
         "mode": "symbols_all",
-        "symbols": ["field_view_cells", "crop_framing"],
+        "symbols": ["field_view_cells_under", "frame_draw_mode", "crop_framing"],
     },
     {
         "what": "visible-tile crop of the terrain list, native vs play page - "

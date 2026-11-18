@@ -113,19 +113,41 @@ logs every emitter call and session pass per vsync on `town01_field_card_boot`
 
 | Beat | Retail |
 |---|---|
-| Opening ramp | levels `20, 40, .., 140` on every second vsync at step `2`; the menu spawns on the seventh pass |
+| Press to ramp | the accept's game frame spawns the subsystem actor, whose first pass is its state pick `FUN_801F1F4C` (slot `7`, installs state `0x30`); the session's first raise is the game frame after that. Over `conc` the edge reads at vsync `12` and the level `20` at `16` |
+| Opening ramp | levels `20, 40, .., 140` on every second vsync at step `2`; the menu spawns on the seventh pass, game mode `0x16` from the next vsync |
 | Spawn to windows | `160` drawn once in mode `0x16`, then the screen is black while the menu overlay loads; the first window slides in about `50` vsyncs after the spawn, the frame step reading `1` (floor `1`) from then on |
 | Cancel to field | about `15` vsyncs of the menu's own close, then about `65` black vsyncs while the field overlay loads |
 | Closing ramp | `242, 222, .., 2` on every second vsync, then `0` |
 
 Port: `engine-system::pause_wipe::PauseWipe`, owned by `BootSession` (opened by
 `press_field_menu`, released by `close_field_menu`), ticked once a vsync and
-stepping on the vsync that completes a game frame; the curtain is
+stepping on the vsync that completes a game frame, its first game frame the
+state pick's (`PauseWipe::Picking`); the curtain is
 `render-kernels::wipe_curtain` (differential `retail-exec/tests/wipe_curtain.rs`).
 Both play hosts keep the field drawing until `menu_spawned`, route no input to
 the menu before it, and draw `curtain_level` through the curtain. The two
-overlay loads are not modelled: the port loads no overlay, and the menu opens
-and closes without the black holds.
+overlay loads are CD waits, and the port runs them in its retail-faithful mode
+only (`WorldToggles::skip_load_holds` off, as `pin_retail` and `--retail` set
+it): the spawned menu waits `LOAD_HOLD_OPEN_VSYNCS` (`60`) on the last field
+frame and then black (`PauseWipe::Loading`), and a close holds black for
+`LOAD_HOLD_CLOSE_VSYNCS` (`80`) with the world still in `Menu` before the
+lifting ramp (`PauseWipe::Reloading`). The default skips both. Filmed over
+`conc` (Triangle, then Circle), the retail-faithful engine's menu starts to
+slide in one vsync from the capture's and the field starts to lift on the
+capture's vsync; the close folds the menu's twelve-frame slide-out into the
+black. Over `conc` (`autorun_pause_wipe_step.lua`
+with the pad edge logged) the open holds the `160` frame and then black from
+the spawn to the menu's own fade at vsync `88` (`58` vsyncs), and the close
+holds black from vsync `266` to the field's return in mode `3` at `331`.
+
+The field runs under the wipe, as retail's does in mode `3` until the spawn:
+`press_field_menu` builds the menu session and raises the player's engaged
+bit (`+0x10 |= 0x80000`, as the accept does at `0x801D02F0..0x801D0308`),
+which holds the walk, the talk and the accept, while the NPCs, their clips
+and the fog go on under the curtain. The pass that spawns the menu
+(`BootSession::step_pause_wipe`) hands the world `SceneMode::Menu` and the
+seat `CARD INIT`; the close clears the engaged bit. A direct open (the title
+rows, a seeded comparison) enters `Menu` at once.
 
 ### The entry-context decode picks the screen family
 

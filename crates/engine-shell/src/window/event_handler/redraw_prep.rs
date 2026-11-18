@@ -203,8 +203,11 @@ impl PlayWindowApp {
             }
             // A capture child replays a recorded fight up to its gate, whose
             // depth words were seated against the recording drive's short
-            // `0x6F` hold, not the modelled seek.
-            self.session.host.world.casting.capture_seek_recorded = true;
+            // `0x6F` hold, not the modelled seek. A sweep films the play path
+            // and seats nothing (lane E): the host pair's page plays the
+            // modelled seek, so a seated window left the `0x6F` hold
+            // first and every seeded cast parted from the page there.
+            self.session.host.world.casting.capture_seek_recorded = sc.sweep.is_none();
             // On the gate itself, not the frame a forced capture tick takes:
             // the seek runs from the state's instant.
             if self.capture_gate_met()
@@ -829,8 +832,9 @@ impl PlayWindowApp {
         // browser play page asks too). The terrain draws are gated per draw
         // below; the ground re-uploads a cropped index list whenever the
         // rectangle moves.
-        let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
+        let view_cells = legaia_engine_world_views::field_view_window::field_view_cells_under(
             &self.session.host.world,
+            self.session.frame_draw_mode(),
             legaia_engine_world_views::field_view_window::crop_framing(
                 &self.session.host.world,
                 &self.session.camera,
@@ -920,6 +924,11 @@ impl PlayWindowApp {
             if seat_cursor && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take() {
                 let slot = usize::from(world.battle_ctx.active_actor);
                 world.seat_acting_clip_cursor(slot, clip, cursor);
+                // ... and a capture director's saved pairs on the ground the
+                // gate stood the seats on.
+                if on_gate {
+                    world.reseat_capture_pins_on_gate();
+                }
             }
             // ... and every other body on its loop as the state's RAM holds it.
             if on_gate
@@ -947,6 +956,8 @@ impl PlayWindowApp {
         // staged param (`camera_view::cutscene_owns_camera`) so a beat record
         // WITHOUT camera beats - a field taunt, the Drake mist-wall
         // force-walk bands - keeps the ordinary field / walk camera.
+        // A battle draws through its own phase camera, never a field shot:
+        // the kernel answers no in battle, for both hosts.
         if legaia_engine_world_views::camera_view::cutscene_owns_camera(&self.session.host.world) {
             let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
             // The shot is the live camera globals, which the op-`0x45` beats

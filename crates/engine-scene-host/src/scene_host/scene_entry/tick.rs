@@ -153,6 +153,9 @@ impl SceneHost {
             return Ok(SceneTickEvent::Stepped);
         }
         let was_battle = matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Battle);
+        // A pass the census prices closes behind the census of its tick
+        // (`World::close_pass_after_census`).
+        self.world.battle.pass_close_after_census = self.world.toggles.battle_poly_frame_cost;
         let _ = self.world.tick();
         self.measure_fog_volume_light();
         // The arena hub's screens run every tick, including the ones after a
@@ -166,7 +169,10 @@ impl SceneHost {
             self.install_battle_monster_action_clips();
             self.ensure_battle_party_forms();
             self.refresh_battle_link_census();
+            self.world.close_pass_after_census();
+            self.world.reprice_opening_pass_on_census();
         } else {
+            self.world.close_pass_after_census();
             self.battle_party_forms = None;
             self.battle_link = None;
         }

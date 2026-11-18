@@ -127,8 +127,12 @@ fn the_page_draws_the_map_display_pointer() {
          mesh {baked_verts} vertices"
     );
 
-    frame(&mut rt, PadButton::Circle.mask());
-    for _ in 0..60 {
+    // The display reads the pad once a frame, five vsyncs apart: hold the
+    // press across one.
+    for _ in 0..5 {
+        frame(&mut rt, PadButton::Circle.mask());
+    }
+    for _ in 0..200 {
         frame(&mut rt, 0);
         if rt
             .scene_host

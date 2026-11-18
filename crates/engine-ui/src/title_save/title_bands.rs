@@ -124,9 +124,12 @@ pub fn title_band_sprites(
     // The prompt phase is the port's own: retail's sub-mode `0x10` is one state
     // and draws the rows straight away. The prompt stands where those rows are
     // about to, since at the band's position in the TIM it would land on the
-    // TM line ([`title_strip_rows`]' `0xBE`).
+    // TM line ([`title_strip_rows`]' `0xBE`). It is retail's own record 1 of
+    // the strip table, centred by the strip drawer's law like every other
+    // strip: the glyphs sit centred in that 254-wide record, so a tighter
+    // crop centred on its own width would stand off the screen's centre.
     if state.press_start {
-        let ps = title_pak::TITLE_BAND_PRESS_START;
+        let ps = TITLE_STRIP_RECORDS[1];
         let x = TITLE_STRIP_CENTRE_X - (ps.2 >> 1) as i32;
         let y = (0xA0 + 0xAE) / 2 - (ps.3 >> 1) as i32;
         out.push(SpriteDraw {
@@ -323,7 +326,7 @@ mod tests {
         let mut st = TitleBandState::card(1.0);
         st.press_start = true;
         let out = title_band_sprites(st, (0, 0), 1);
-        let band = legaia_ui_formats::title_pak::TITLE_BAND_PRESS_START;
+        let band = TITLE_STRIP_RECORDS[1];
         let prompt = out
             .iter()
             .find(|d| d.src == band)
@@ -414,6 +417,40 @@ mod tests {
         // only per-row input besides the cursor.
         assert_eq!(title_strip_modulation(0x80), 0x7F);
         assert_eq!(title_strip_modulation(0xFF), 0xFE);
+    }
+
+    /// The prompt is retail's record 1 and stands centred on the stage at
+    /// every scale and origin: the glyphs are centred in that record, so its
+    /// centre is the text's. A tighter crop (`x = 60`, `w = 196`) centred on
+    /// its own width put the text 30 stage pixels left of centre.
+    #[test]
+    fn press_start_is_record_one_centred_on_the_stage() {
+        assert_eq!(
+            legaia_ui_formats::title_pak::TITLE_BAND_PRESS_START,
+            TITLE_STRIP_RECORDS[1]
+        );
+        let mut st = TitleBandState::card(1.0);
+        st.press_start = true;
+        for (origin, scale) in [((0, 0), 1), ((0, 0), 3), ((160, 0), 3), ((37, 11), 4)] {
+            let out = title_band_sprites(st, origin, scale);
+            let p = out
+                .iter()
+                .find(|d| d.src == TITLE_STRIP_RECORDS[1])
+                .expect("the prompt draws");
+            let centre_x2 = 2 * p.dst.0 + p.dst.2 as i32;
+            let stage_centre_x2 = 2 * (origin.0 + TITLE_STRIP_CENTRE_X * scale as i32);
+            assert_eq!(
+                centre_x2, stage_centre_x2,
+                "origin {origin:?} scale {scale}"
+            );
+            // It shares the TM and copyright lines' left edge, as one record
+            // of the same table drawn by the same law.
+            let tm = out
+                .iter()
+                .find(|d| d.src == TITLE_STRIP_RECORDS[2])
+                .expect("the TM line draws");
+            assert_eq!(p.dst.0, tm.dst.0);
+        }
     }
 
     #[test]

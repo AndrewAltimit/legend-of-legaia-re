@@ -121,6 +121,9 @@ const MAY_DIFFER: &[(&str, &str)] = &[
     ("sm_ran_state", "per pass"),
     ("sm_ran_actor", "per pass"),
     ("sm_ran_target_clip", "per pass"),
+    // The last ring push, which every pass's own push overwrites before the
+    // film seat that reads it can run.
+    ("last_push", "per pass"),
     // Session counters and host hand-offs.
     ("entry_serial", "counts entries"),
     ("field_camera_reseat", "the host camera takes it"),

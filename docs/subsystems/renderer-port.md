@@ -27,7 +27,11 @@ field's [draw order](#the-field-sorts-by-each-primitives-link). The hosts run PS
   scale the host draws the stage at - the GTE's `SX` / `SY` are an
   arithmetic-shift floor ([renderer](renderer.md)). That gives the
   characteristic per-vertex shimmer on slow-moving geometry and puts each
-  edge on retail's pixel boundary.
+  edge on retail's pixel boundary. The floor reads `PSX_SNAP_TIE_BIAS`, a
+  1024th of a pixel, past the exact position on both hosts: a corner the
+  engine places on a whole pixel (a sprite-arm quad's, retail's integer
+  screen offset) keeps that pixel whichever side each host's float error
+  lands ([host drift](../tooling/host-drift.md#open-differences)).
 - **The scanline's texel row.** In PSX mode the texel lookup moves up half
   a stage row (`psx_sample_uv`, the page's `uv_dy` term): the GPU takes a
   scanline's texels at the row itself, while the host rasteriser samples

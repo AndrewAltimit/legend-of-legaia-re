@@ -125,7 +125,7 @@ impl<S: AudioSink> BootSession<S> {
         }
         // The pause menu spawns partway through the field's wipe to black
         // (`pause_wipe`): until then the field keeps ticking under the wipe
-        // (with the world in `Menu`, so the player stands still).
+        // (the player held by the engaged bit the press raised).
         if self.field_menu_is_open() {
             if self.pause_wipe().menu_spawned() {
                 return TickOwner::PauseMenuSpawned;
@@ -136,10 +136,19 @@ impl<S: AudioSink> BootSession<S> {
         // edge, the deny buzz - the one rule `press_field_menu` holds. A
         // menu-overlay screen owns the pad, so no press reaches the menu
         // while one is up.
+        // Retail's accept is the field controller's (`0x801D0250`), on the
+        // edge of the pad the frame pacer sampled: under the retail pad
+        // pipeline the press is that word's, as the walk's is.
+        let menu_edge = if self.host.world.retail_pad_pipeline_live() {
+            let game = self.host.world.preview_frame_pad(claims.held);
+            game & !self.host.world.input.pad()
+        } else {
+            edge
+        };
         if !claims.overlay_open
             && claims.pause_menu_ready
             && let PauseMenuPress::Opened { scripted } =
-                self.press_field_menu(edge & PadButton::Start.mask() != 0)
+                self.press_field_menu(menu_edge & super::MENU_BUTTONS != 0)
         {
             return TickOwner::PauseMenuOpened(scripted);
         }

@@ -1212,11 +1212,46 @@ impl World {
         self.ambient.entry_vdf_pulse.is_some()
     }
 
+    /// Run the banked ambient part ticks where retail's actor walk runs
+    /// them: the parts are list `1` (`0x8007C350`) and the placements list
+    /// `2` (`0x8007C354`), and the frame's walk `FUN_80016444` hands
+    /// `FUN_8002519C` list `0`, then list `1`, then lists `3` and `2`
+    /// (`0x800165A0..0x8001661C`). So on a pass where a part's op and a
+    /// wanderer both draw `rand()`, the part draws first; ticked in the
+    /// host's frame tail, after the placements, the wanderer took the part's
+    /// value (`koin6`'s flat `12` drew a `-Z` pick its one-tile box rejects,
+    /// where retail's drew `+X` and walked). The VRAM half of each tick is
+    /// left to [`Self::step_ambient_fx`] ([`AmbientFxState::ticked_ahead`]).
+    ///
+    /// [`AmbientFxState::ticked_ahead`]: crate::world::AmbientFxState::ticked_ahead
+    // REF: FUN_80016444
+    pub(crate) fn run_banked_ambient_part_ticks(&mut self) {
+        if self.ambient.fx.is_empty() || self.ambient.venue_restore.is_some() {
+            return;
+        }
+        let ticks = std::mem::take(&mut self.ambient.pending_game_ticks);
+        if ticks == 0 {
+            return;
+        }
+        // The previous tick's grabs wait for this frame's tail to queue them.
+        let held = std::mem::take(&mut self.ambient.vram_grabs);
+        for _ in 0..ticks {
+            self.tick_ambient_fx();
+        }
+        self.ambient.grabs_ahead = std::mem::replace(&mut self.ambient.vram_grabs, held);
+        self.ambient.ticked_ahead = (self.ambient.ticked_ahead + ticks).min(600);
+    }
+
     /// Drain the banked game ticks and apply the live CLUT-cell effects to
     /// `vram`. Returns `true` when any texels changed (the caller re-uploads
     /// its GPU copy). The renderer-facing sibling of [`World::step_clut_fx`].
     pub fn step_ambient_fx(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let ticks = std::mem::take(&mut self.ambient.pending_game_ticks);
+        let ahead = std::mem::take(&mut self.ambient.ticked_ahead);
+        if ahead > 0 {
+            // The host has queued the previous tick's grabs by now.
+            self.ambient.vram_grabs = std::mem::take(&mut self.ambient.grabs_ahead);
+        }
         if self.ambient.fx.is_empty()
             && self.ambient.cell_fx_seed.is_empty()
             && self.ambient.cell_restores.is_empty()
@@ -1226,6 +1261,13 @@ impl World {
         let mut wrote = false;
         // A part seated since the last step took its capture on its seat.
         self.take_cycler_captures(vram);
+        // The ticks the world ran ahead of the placements
+        // (`Self::run_banked_ambient_part_ticks`): their rotates land in
+        // queue order, then the captures their ops made due.
+        if ahead > 0 {
+            wrote |= self.apply_ambient_scrolls(vram);
+            self.take_cycler_captures(vram);
+        }
         for _ in 0..ticks {
             self.tick_ambient_fx();
             // The mode-4 rotates are destructive and ordered: apply each
@@ -1292,7 +1334,9 @@ impl World {
                 continue;
             }
             let f = if self.toggles.reduce_flashing {
-                self.limit_flash(f, ticks)
+                // The flash limiter slews by every tick this drain owes, the
+                // ones the world ran ahead included.
+                self.limit_flash(f, ticks + ahead)
             } else {
                 f
             };

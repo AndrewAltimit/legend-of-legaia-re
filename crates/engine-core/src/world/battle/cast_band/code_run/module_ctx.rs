@@ -31,6 +31,36 @@ impl World {
         self.casting.module_cam = st;
     }
 
+    /// A cast film's gate (harness, never in play): the saved seat pairs a
+    /// capture director writes back on every pass re-taken off the pairs the
+    /// gate stood the seats on, which retail's RAM holds in those words
+    /// ([`legaia_engine_cast::cast_module_camera::scythe_wind_reseat_pins`]).
+    /// The replay saved its own on the passes before the gate.
+    pub fn reseat_capture_pins_on_gate(&mut self) {
+        use legaia_engine_cast::cast_module_camera as cmc;
+        let Some(spell) = self.casting.capture_spell else {
+            return;
+        };
+        let Some(entry) = self.cast_module_for(spell) else {
+            return;
+        };
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell);
+        let Some(victim) = self.casting.module_cam.victim_slot else {
+            return;
+        };
+        let caster = self.battle_ctx.active_actor;
+        let seats = self.module_cam_seats(caster, victim);
+        let phase = self.casting.module_phase;
+        if body == Some(cmc::SCYTHE_WIND_BODY) {
+            cmc::scythe_wind_reseat_pins(
+                &mut self.casting.module_cam,
+                phase,
+                seats.caster,
+                seats.victim,
+            );
+        }
+    }
+
     /// The caster and victim as the module camera arms read them: world
     /// position (`+0x34..+0x38`) and battle heading (`+0x46`).
     pub(in crate::world) fn module_cam_seats(

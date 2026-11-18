@@ -97,6 +97,32 @@ impl World {
         if phase == 9 && passed {
             self.casting.module_creature_clip_kind = 1;
         }
+        // Arm 8's pass writes `3` into the rate byte `+0x78` of the entry its
+        // creature's cast record `0x801C9348[4]` points at from `+0x4C`
+        // (`lw v0,-0x6ca8(v0)` / `lw v1,0x4c(v0)` / `sb v0,0x78(v1)`,
+        // `0x801F7324..0x801F7338`): idle `0`'s, the clip the creature plays
+        // there. The entry is archive RAM, so every later commit of it keeps
+        // the byte: on the recording the idle advances `24` a pass from arm 9
+        // on where it ran `32`, and its walk dust falls with it.
+        if phase == 8
+            && passed
+            && let Some(a) = self.actors.get_mut(usize::from(seat))
+        {
+            const ARM_8_RECORD_RATE: u8 = 3;
+            if let Some(entry) = a
+                .battle_action_clips
+                .as_mut()
+                .and_then(|c| std::sync::Arc::make_mut(c).get_mut(0))
+                .and_then(|c| c.as_mut())
+            {
+                entry.rate = ARM_8_RECORD_RATE;
+            }
+            if a.battle.current_anim == 0
+                && let Some(p) = a.battle_animation.as_mut()
+            {
+                p.set_clip_rate(ARM_8_RECORD_RATE);
+            }
+        }
         // Arm 6's pass, after its shot: the victim steps back a sixth of its
         // body radius, `+0x38 += *(+0x22C)[+0x58] / 6` (`lw v0,0x22c(s1)`,
         // `lhu a0,0x58(v0)`, the `0x2AAAAAAB` divide and `sh v0,0x38(s1)` at
@@ -269,6 +295,16 @@ impl World {
     /// pass lands the last of the roll, where retail's own write can kill.
     fn mushura_chase(&mut self, monster_count: u8, seat: u8, caster: u8, spell_id: u8) {
         use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
+        // The arm runs once a pass: the hit loop, the trade and the turn sit
+        // in one call of the module (`0x801F7878..0x801F7D18`), so a pass the
+        // port runs as several one-vsync ticks rolls the trade's `rand()` and
+        // turns the creature on its opening tick only. Rolled on every tick, a
+        // target on an empty seat (in reach from anywhere) was traded up to a
+        // step's worth of times a pass: four draws where a `--watch` of
+        // `0x801F8154` reads one store a pass.
+        if !self.module_tick_opens_pass() {
+            return;
+        }
         let Some(c) = self.actors.get(usize::from(seat)) else {
             return;
         };
@@ -327,21 +363,43 @@ impl World {
                 v.restage = 5;
             }
             self.write_cast_view(s, &v);
-            let Some(m) = self.actors.get_mut(e) else {
+            // The bearing reads the struck body's pair `+0x3C` / `+0x40`
+            // (`lh a2,0x40(v0)` / `lh a3,0x3c(v0)` at `0x801F79F8`), the
+            // pair the draw stored, not its live stand.
+            let Some((bx, bz)) = self.actors.get(e).map(|m| {
+                m.battle
+                    .seat
+                    .unwrap_or((m.move_state.world_x, m.move_state.world_z))
+            }) else {
                 continue;
             };
             let to_it = heading(
                 here,
                 ModuleSeat {
-                    x: m.move_state.world_x,
+                    x: bx,
                     y: 0,
-                    z: m.move_state.world_z,
+                    z: bz,
                     facing: 0,
                 },
             );
             let (bearing, own) = closest_turn(i32::from(to_it), facing);
-            let off = if bearing > own { 0xC00 } else { 0x400 };
-            m.battle.facing_angle = ((own + off) & 0xFFF) as u16;
+            // Dead ahead (`bne a0,s1` at `0x801F7A40` not taken) the arm
+            // draws a `rand()` it never reads and turns the body `0xC00`,
+            // as it does for a bearing past the creature's own
+            // (`0x801F7A48..0x801F7A60`); behind it, `0x400`. A recording's
+            // `--range-trace` reads Gobu Gobu's facing `0xC00` off the hit
+            // that finds it straight down the creature's line.
+            let off = if bearing == own {
+                let _ = self.next_rand();
+                0xC00
+            } else if bearing > own {
+                0xC00
+            } else {
+                0x400
+            };
+            if let Some(m) = self.actors.get_mut(e) {
+                m.battle.facing_angle = ((own + off) & 0xFFF) as u16;
+            }
         }
         // The chase target `0x801F8154`. A target in reach is traded by
         // `do t = rand() % 4 + 3 while t == old` (`0x801F7ABC..0x801F7AE8`):
@@ -381,21 +439,10 @@ impl World {
             self.casting.module_mushura_retail_seat = seat;
         }
         // The turn and the bank are a pass's law (`(step * scalar) << 3` and
-        // `step * scalar`, `0x801F7B74..0x801F7D10`): run once every frame
-        // step of ticks with the pass's whole amounts, since a facing within
-        // the pass's rate of the bearing holds rather than snaps.
-        let step = legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step(
-            915,
-            legaia_engine_cast::cast_module_camera::MUSHURA_HIT_ARM,
-            self.toggles.battle_cd_timing,
-        )
-        .unwrap_or(4);
-        let ticks = self.casting.module_mushura_turn_ticks + 1;
-        if ticks < step {
-            self.casting.module_mushura_turn_ticks = ticks;
-            return;
-        }
-        self.casting.module_mushura_turn_ticks = 0;
+        // `step * scalar`, `0x801F7B74..0x801F7D10`) on the frame step the
+        // pass runs at (`DAT_1F800393`), since a facing within the pass's
+        // rate of the bearing holds rather than snaps.
+        let step = self.module_frame_step();
         // The bearing reads the target's body pair `+0x3C` / `+0x40`
         // (`lh a2,0x40(v0)` / `lh a3,0x3c(v0)` at `0x801F7B18`), which an
         // empty seat holds at `(0, 0)`.

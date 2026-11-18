@@ -434,6 +434,25 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
     {
         world.battle.cue_clut_seed = Some(x);
     }
+    // `LEGAIA_SEAT_STAGE_CYCLERS=x:y:w:h:H:S:V:rH:rS:rV:gate[,..]` (lane A
+    // harness seat): the HSV cyclers the retail state holds mid-cycle
+    // (`BattleState::stage_cycler_seeds`).
+    if let Ok(v) = std::env::var("LEGAIA_SEAT_STAGE_CYCLERS") {
+        world.battle.stage_cycler_seeds = v
+            .split(',')
+            .filter_map(|t| {
+                let n: Vec<i32> = t.split(':').filter_map(|f| f.trim().parse().ok()).collect();
+                (n.len() == 11).then(
+                    || legaia_engine_battle_loop::battle_state::StageCyclerSeed {
+                        rect: [n[0] as u16, n[1] as u16, n[2] as u16, n[3] as u16],
+                        hsv: [n[4] as i16, n[5] as i16, n[6] as i16],
+                        rates: [n[7] as i16, n[8] as i16, n[9] as i16],
+                        gate: n[10],
+                    },
+                )
+            })
+            .collect();
+    }
     // `LEGAIA_SEAT_ELEMENT_ROLL=<n>`: the roll the state's Element Change
     // accepted (`BattleState::element_roll_seed`).
     if let Some(n) = std::env::var("LEGAIA_SEAT_ELEMENT_ROLL")

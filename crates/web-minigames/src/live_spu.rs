@@ -19,14 +19,21 @@ pub(crate) type MgSink = legaia_engine_audio::TestAudioSink;
 /// The page's audio director - the native window's and the play page's.
 pub(crate) type MgDirector = legaia_engine_session::AudioDirector<MgSink>;
 
-/// Build the page's output. Must run inside a user gesture in a browser.
-fn open_sink() -> Result<MgSink, String> {
+/// Build the page's output: on the page's own `AudioContext` when it hands
+/// one in (`ctx` not `undefined` / `null`), otherwise on a fresh one. A fresh
+/// one must be built inside a user gesture in a browser.
+fn open_sink(ctx: JsValue) -> Result<MgSink, String> {
     #[cfg(target_arch = "wasm32")]
     {
-        legaia_engine_audio::WebAudioOut::new().map_err(|e| e.to_string())
+        if ctx.is_undefined() || ctx.is_null() {
+            legaia_engine_audio::WebAudioOut::new().map_err(|e| e.to_string())
+        } else {
+            legaia_engine_audio::WebAudioOut::on_context(ctx).map_err(|e| e.to_string())
+        }
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let _ = ctx;
         Ok(legaia_engine_audio::TestAudioSink::new(
             legaia_engine_audio::SPU_INTERNAL_RATE,
         ))
@@ -71,10 +78,19 @@ impl LegaiaMinigames {
     /// Idempotent: a second call is a no-op and still answers `true`. Answers
     /// `false` off wasm32, where there is no `WebAudioOut` to build.
     pub fn minigame_audio_open(&mut self) -> bool {
+        self.minigame_audio_open_on(JsValue::UNDEFINED)
+    }
+
+    /// [`Self::minigame_audio_open`] on the page's own `AudioContext` (the
+    /// site's one shared context, `LegaiaSound.context()`), so the SPU, the
+    /// offline-rendered BGM and every other source on the page sit on one
+    /// context that the page's first user gesture unlocks. `undefined` /
+    /// `null` opens a fresh context, as `minigame_audio_open` does.
+    pub fn minigame_audio_open_on(&mut self, ctx: JsValue) -> bool {
         if self.audio.is_some() {
             return true;
         }
-        match open_sink() {
+        match open_sink(ctx) {
             Ok(out) => {
                 #[allow(clippy::arc_with_non_send_sync)]
                 let d = MgDirector::new(std::sync::Arc::new(out));

@@ -416,18 +416,28 @@ impl World {
         // Retail's state 0x64 steps the target on the HORIZONTAL pad masks
         // (`0x2000`/`0x8000` at `0x801D2A50..0x801D2A5C` - the same pair the
         // ring uses), so during target select Left/Right drive the strip
-        // cursor alongside Up/Down.
-        let target_select = matches!(menu.state, InventoryUseState::TargetSelect { .. });
+        // cursor alongside Up/Down. On the party band Left adds one to the
+        // seat (`0x801D2C34`) and Right subtracts one (`0x801D2CC4`) - the
+        // session's `Down` and `Up`; the enemy rows keep Left as `Up`.
+        let (target_select, ally_target) = match menu.state {
+            InventoryUseState::TargetSelect { cursor, .. } => {
+                (true, menu.targets.get(cursor).is_some_and(|t| !t.is_enemy))
+            }
+            _ => (false, false),
+        };
+        let (left_ev, right_ev) = if ally_target {
+            (InventoryUseInput::Down, InventoryUseInput::Up)
+        } else {
+            (InventoryUseInput::Up, InventoryUseInput::Down)
+        };
         let repeat = self.input.take_menu_repeat();
-        let ev = if self.input.just_pressed(PadButton::Up)
-            || repeat & PadButton::Up.mask() != 0
-            || (target_select && self.input.just_pressed(PadButton::Left))
-        {
+        let ev = if target_select && self.input.just_pressed(PadButton::Left) {
+            Some(left_ev)
+        } else if target_select && self.input.just_pressed(PadButton::Right) {
+            Some(right_ev)
+        } else if self.input.just_pressed(PadButton::Up) || repeat & PadButton::Up.mask() != 0 {
             Some(InventoryUseInput::Up)
-        } else if self.input.just_pressed(PadButton::Down)
-            || repeat & PadButton::Down.mask() != 0
-            || (target_select && self.input.just_pressed(PadButton::Right))
-        {
+        } else if self.input.just_pressed(PadButton::Down) || repeat & PadButton::Down.mask() != 0 {
             Some(InventoryUseInput::Down)
         } else if !target_select
             && (self.input.just_pressed(PadButton::Left) || repeat & PadButton::Left.mask() != 0)
@@ -455,6 +465,27 @@ impl World {
         let state_before = menu.state;
         if let Some(ev) = ev {
             menu.input(ev);
+        }
+        // The one-ally sub-cursor opens on the caster's own seat: the item
+        // arm stores `ctx[+0x13]` into `+0x1DD` before it raises `0x64`
+        // (`0x801D1988..0x801D19A0`), whoever the item would help most.
+        //
+        // PORT: FUN_801D0748 (`0x801D1988..0x801D19A0`)
+        if !matches!(state_before, InventoryUseState::TargetSelect { .. })
+            && let InventoryUseState::TargetSelect {
+                item_cursor,
+                cursor,
+            } = menu.state
+            && menu.targets.get(cursor).is_some_and(|t| !t.is_enemy)
+            && let Some(own) = menu
+                .targets
+                .iter()
+                .position(|t| !t.is_enemy && t.slot == self.battle_ctx.active_actor)
+        {
+            menu.state = InventoryUseState::TargetSelect {
+                item_cursor,
+                cursor: own,
+            };
         }
         // The event log drives the window's blip (`super::ui_cues`) and is
         // otherwise discarded; `used_slots` is the authoritative list of

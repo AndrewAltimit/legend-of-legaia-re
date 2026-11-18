@@ -27,6 +27,13 @@ use legaia_engine_field::scene_transition_sweep::{
     ACTOR_FLAG_YIELD, SweepActor, SweepDecision, sweep_actor,
 };
 
+/// The player's model word `+0x64` in the raw `4C 50` operand space while no
+/// script has re-staged it: player-bank slot `0`, the id the Room of Mirrors
+/// image re-stages itself to (`4C 50 F0`). A capture of the `conc2` mirror
+/// tick reads the player's `+0x64` equal to the image's (both resolve to
+/// player-bank index `0`), which is the reflection's clip-copy gate.
+const PLAYER_LEAD_MODEL: i16 = 0xF0;
+
 /// What one [`World::scene_transition_actor_sweep`] pass did, for callers and
 /// tests that want to see the sweep worked rather than trusting that it ran.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -338,12 +345,14 @@ impl World {
     /// The engine reaches the same state by treating an unresolvable seat as
     /// that dead end.
     ///
-    /// What the engine mirrors is the **pose**: the position triple and the
-    /// facing angle, which is what both hosts draw an actor from. Retail
-    /// additionally copies the source's clip cursor (`+0x5C`, `+0x68`,
-    /// `+0x6A`) under the `+0x64` equality gate; a scene NPC placement has
-    /// no per-seat clip cursor here, so that copy has nowhere to land and
-    /// the gate's only input is the live model id.
+    /// The engine mirrors the **pose** - the position triple and the facing
+    /// angle - and, when both ends' model words `+0x64` agree, the **clip**
+    /// (`0x801E5204..0x801E5250`): the party-bank bit, the clip id `+0x5C`,
+    /// the rate `+0x6A` and the cursor `+0x68`. That copy is what makes the
+    /// Room of Mirrors image (`concnow` / `conc2` `P1[1]`, which re-stages
+    /// itself to the party model `0xF0` before it installs the pair) walk,
+    /// run and stand with the player; without it the image slid along the
+    /// glass on its own idle clip.
     fn tick_reflection_controllers(&mut self) {
         use legaia_engine_field::field_actor_reflect::{ReflectOutcome, flags, tick_reflection};
 
@@ -359,14 +368,19 @@ impl World {
             let ends = self
                 .reflect_seat_read(link.source)
                 .zip(self.reflect_seat_read(link.destination));
-            let Some((src, mut dst)) = ends else {
+            let Some(((src, src_step), (mut dst, _))) = ends else {
                 link.controller.flags |= flags::TEARDOWN;
                 self.actors[slot].physics.status_flags |= ACTOR_FLAG_YIELD;
                 self.actors[slot].reflection = Some(link);
                 continue;
             };
+            // The kernel's own gate (`lh v1,0x64(a3)` / `lh v0,0x64(a2)` /
+            // `bne` at `0x801E5204..0x801E5210`), asked again here so the
+            // write-back knows whether the clip half ran.
+            let clip_copied = dst.anim_set == src.anim_set;
             if tick_reflection(&mut link.controller, &mut dst, &src) == ReflectOutcome::Reflected {
-                self.reflect_seat_write(link.destination, &dst);
+                let clip = clip_copied.then_some(src_step);
+                self.reflect_seat_write(link.destination, &dst, clip);
             }
             if link.controller.flags & flags::TEARDOWN != 0 {
                 self.actors[slot].physics.status_flags |= ACTOR_FLAG_YIELD;
@@ -375,49 +389,135 @@ impl World {
         }
     }
 
-    /// The fields the reflection tick reads off one end of a pair.
+    /// The fields the reflection tick reads off one end of a pair, plus the
+    /// per-tick step of the clip that end plays in the port's cursor units
+    /// (`None` when unknown). Retail needs no step: the image's own clip
+    /// tick steps the copied clip at the copied rate through the same record
+    /// header. The port's image cursor is bound from a clip player whose
+    /// step already folds that header in, so the step crosses over instead.
     ///
     /// `None` is "this end is gone", which the tick treats as the retail
     /// kill bit.
     fn reflect_seat_read(
         &self,
         seat: crate::world::EasedMoveTarget,
-    ) -> Option<legaia_engine_field::field_actor_reflect::ReflectActor> {
-        use legaia_engine_field::field_actor_reflect::ReflectActor;
+    ) -> Option<(
+        legaia_engine_field::field_actor_reflect::ReflectActor,
+        Option<u32>,
+    )> {
+        use legaia_engine_field::field_actor_reflect::{ReflectActor, flags};
         match seat {
             crate::world::EasedMoveTarget::Player => {
                 let slot = self.player_actor_slot? as usize;
                 let a = self.actors.get(slot).filter(|a| a.active)?;
-                Some(ReflectActor {
-                    flags: a.physics.status_flags,
-                    x: a.move_state.world_x,
-                    y: a.physics.world_y,
-                    z: a.move_state.world_z,
-                    facing: a.move_state.render_26,
-                    ..ReflectActor::default()
-                })
+                let (clip, party, cursor, step) = self.player_reflect_clip();
+                let bank = if party { flags::ANIM_MIRROR } else { 0 };
+                Some((
+                    ReflectActor {
+                        flags: (a.physics.status_flags & !flags::ANIM_MIRROR) | bank,
+                        x: a.move_state.world_x,
+                        y: a.physics.world_y,
+                        z: a.move_state.world_z,
+                        facing: a.move_state.render_26,
+                        anim_cursor: clip,
+                        anim_set: self
+                            .locomotion
+                            .player_live_model
+                            .unwrap_or(PLAYER_LEAD_MODEL),
+                        anim_frame: cursor,
+                        anim_timer: self.locomotion.player_clip_rate as u16,
+                    },
+                    step,
+                ))
             }
             crate::world::EasedMoveTarget::Placement(p) => {
                 let (x, z) = self.npcs.positions.get(&p).copied()?;
-                Some(ReflectActor {
-                    x,
-                    z,
-                    facing: self.npcs.heading(p),
-                    anim_set: self.npcs.models.get(&p).copied().unwrap_or(0),
-                    ..ReflectActor::default()
-                })
+                let ch = self
+                    .field_vm
+                    .channels
+                    .iter()
+                    .find(|c| !c.object_bind && c.placement_index == usize::from(p));
+                let cursor = self.npcs.clip_cursors.get(&p);
+                let model = self
+                    .npcs
+                    .models
+                    .get(&p)
+                    .copied()
+                    .or_else(|| ch.map(|c| c.ctx.model_id as i16))
+                    .unwrap_or(0);
+                Some((
+                    ReflectActor {
+                        flags: ch.map_or(0, |c| c.ctx.flags & flags::ANIM_MIRROR),
+                        x,
+                        z,
+                        facing: self.npcs.heading(p),
+                        anim_cursor: cursor
+                            .map(|c| u16::from(c.anim_id))
+                            .or_else(|| ch.map(|c| c.ctx.move_id))
+                            .unwrap_or(0),
+                        anim_set: model,
+                        anim_frame: cursor.map_or(0, |c| c.cursor as u16),
+                        anim_timer: ch.map_or(0, |c| c.ctx.field_6a as u16),
+                        ..ReflectActor::default()
+                    },
+                    cursor.map(|c| c.rate.max(1) as u32),
+                ))
             }
         }
     }
 
-    /// Write the mirrored pose back to the `+0x90` end.
+    /// The player's clip as the reflection copy reads it: `(+0x5C, the
+    /// party-bank bit, +0x68, the per-tick step)`, off the clip the player's
+    /// body plays this tick. A bank clip is record `leader * 7 + slot + 1`
+    /// of the party bank (the settle tail's stride, `0x801D1E0C`); the
+    /// motion-derived walk and idle are the bank's walk and idle slots; a
+    /// scene-bank pick is record `+ 1` with the bank bit down.
+    fn player_reflect_clip(&self) -> (u16, bool, u16, Option<u32>) {
+        use legaia_actor_formats::character_pack::{
+            LOCOMOTION_BANK_STRIDE, LOCOMOTION_IDLE_SLOT, LOCOMOTION_WALK_SLOT,
+        };
+        let fallback = (
+            self.locomotion.player_clip.max(0) as u16,
+            self.locomotion.player_party_bank,
+            0,
+            None,
+        );
+        let Some(anim) = self.locomotion.player_anim.as_ref() else {
+            return fallback;
+        };
+        let (source, id, cursor, _) = anim.playing_clip();
+        let bank = |slot: usize| anim.leader * LOCOMOTION_BANK_STRIDE as u16 + slot as u16 + 1;
+        let (clip, party) = match source {
+            "scene" => (id as u16 + 1, false),
+            "bank" => (bank(id), true),
+            "walk" => (bank(LOCOMOTION_WALK_SLOT), true),
+            "idle" => (bank(LOCOMOTION_IDLE_SLOT), true),
+            _ => return fallback,
+        };
+        (clip, party, cursor as u16, anim.playing_step())
+    }
+
+    /// Write the mirrored pose back to the `+0x90` end, and the copied clip
+    /// when the tick's model gate passed (`clip` carries the source clip's
+    /// port step).
+    ///
+    /// The clip lands on the image's world-owned cursor: the same clip id
+    /// takes the source's cursor and step, a new one is cued like any other
+    /// `+0x5C` write, so both hosts re-target the image's clip player in
+    /// their cue drain and the next tick's copy seats its cursor. The
+    /// party-bank bit goes onto the image's channel, where the cue drain
+    /// reads which bank the id names.
     fn reflect_seat_write(
         &mut self,
         seat: crate::world::EasedMoveTarget,
         mirrored: &legaia_engine_field::field_actor_reflect::ReflectActor,
+        clip: Option<Option<u32>>,
     ) {
+        use legaia_engine_field::field_actor_reflect::flags;
         match seat {
             crate::world::EasedMoveTarget::Player => {
+                // No shipped `4C 86` writes the player; the pose is all the
+                // engine carries for that end.
                 let Some(slot) = self.player_actor_slot.map(usize::from) else {
                     return;
                 };
@@ -434,6 +534,41 @@ impl World {
             crate::world::EasedMoveTarget::Placement(p) => {
                 self.npcs.positions.insert(p, (mirrored.x, mirrored.z));
                 self.npcs.headings.insert(p, mirrored.facing);
+                let Some(step) = clip else {
+                    return;
+                };
+                if let Some(ch) = self
+                    .field_vm
+                    .channels
+                    .iter_mut()
+                    .find(|c| !c.object_bind && c.placement_index == usize::from(p))
+                {
+                    ch.ctx.flags = (ch.ctx.flags & !flags::ANIM_MIRROR)
+                        | (mirrored.flags & flags::ANIM_MIRROR);
+                    ch.ctx.move_id = mirrored.anim_cursor;
+                    ch.ctx.field_6a = mirrored.anim_timer as i16;
+                }
+                let Ok(id) = u8::try_from(mirrored.anim_cursor) else {
+                    return;
+                };
+                if id == 0 {
+                    return;
+                }
+                match self.npcs.clip_cursors.get_mut(&p) {
+                    Some(c) if c.anim_id == id => {
+                        let span = i32::from(c.frames.max(1)) * 16;
+                        c.cursor =
+                            (i32::from(mirrored.anim_frame as i16)).clamp(0, span - 1) as i16;
+                        if let Some(step) = step {
+                            c.rate = i16::try_from(step).unwrap_or(i16::MAX).max(1);
+                        }
+                    }
+                    _ => {
+                        if self.npcs.anim_cues.get(&p).is_none_or(|c| c.1 != id) {
+                            self.npcs.anim_cues.insert(p, (1, id, Vec::new()));
+                        }
+                    }
+                }
             }
         }
     }
@@ -606,7 +741,26 @@ impl World {
         }
         self.man_load_resume_programs();
         self.man_load_clear_pad_octant();
+        self.man_load_reset_region_tile_cache();
         outcome
+    }
+
+    /// The MAN loader's fresh encounter actor, as the region reader sees it.
+    ///
+    /// The region reader `FUN_801D9E1C` caches the player's tile in its own
+    /// actor's `+0x8E` / `+0x8F` (`0x801D9E98..0x801D9EC8`, `a0` = the
+    /// `FUN_801DA51C` handler's actor, `move a0,s1` at `0x801DA5B4`). That
+    /// actor is scene content: the entry installer `FUN_8003AB2C` raises the
+    /// kill bit on the old one, spawns a new one from descriptor `0x80073EA0`
+    /// (`jal 0x80020DE0` at `0x8003ABAC`) and stores `sh zero,0x8e(s1)` at
+    /// `0x8003ACFC`. So every scene starts its cache at tile `(0, 0)`, and the
+    /// first sample is a jump the step test refuses. Kept, the last scene's
+    /// tile was compared against the new scene's arrival tile, and an arrival
+    /// one tile from where the player left the old scene counted as a step.
+    ///
+    /// PORT: FUN_8003AB2C (`0x8003ABAC`, `0x8003ACFC`)
+    pub(crate) fn man_load_reset_region_tile_cache(&mut self) {
+        self.terrain.step_tile = Some((0, 0));
     }
 
     /// The MAN loader's pad-octant reset.
@@ -768,6 +922,24 @@ mod tests {
     /// sprites in `edteien`, `ending_scene_load_gap` (the load into
     /// `edbylon`) holds none. A corner panel kept across the load drew the
     /// next scene's VRAM at `(512, 0)` over its vignette.
+    #[test]
+    fn a_scene_load_starts_the_region_tile_cache_at_the_origin() {
+        let mut w = World::default();
+        // The last scene's sampled tile.
+        w.terrain.step_tile = Some((71, 55));
+        w.man_load_actor_reset();
+        assert_eq!(
+            w.terrain.step_tile,
+            Some((0, 0)),
+            "`sh zero,0x8e` at 0x8003ACFC"
+        );
+        // An arrival next to the old tile is a jump from the origin, not a step.
+        assert!(!legaia_engine_battle::region_encounter::is_region_step(
+            (0, 0),
+            (72, 55)
+        ));
+    }
+
     #[test]
     fn a_scene_load_drops_the_screen_effect_widgets() {
         let mut w = World::default();
@@ -1120,5 +1292,87 @@ mod tests {
         assert_eq!(t.push_kind, 5);
         assert_eq!(t.push_blend, tpl.kind);
         assert_eq!(t.clock, 0);
+    }
+
+    /// The Room of Mirrors pair: an image placement re-staged to the lead's
+    /// party model mirrors the player's clip, not only its pose
+    /// (`FUN_801E5154` `0x801E5204..0x801E5250`). A new clip id is cued for
+    /// the hosts' re-target with the party-bank bit on the image's channel;
+    /// once bound, the next tick seats the player's cursor and step. A model
+    /// mismatch keeps the image's own clip.
+    #[test]
+    fn a_mirror_image_copies_the_players_clip_when_the_models_agree() {
+        use legaia_engine_field::field_anim::{FieldClipPlayer, FieldPlayerAnim, synth_anm_bundle};
+        use legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
+        let bundle = synth_anm_bundle(&[(2, 6), (2, 4), (2, 5), (2, 2), (2, 2), (2, 2), (2, 2)]);
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.install_field_player(0);
+        let s = w.player_actor_slot.unwrap() as usize;
+        w.actors[s].move_state.world_x = 35 * 128 + 64;
+        w.actors[s].move_state.world_z = 96 * 128 + 64;
+        let mut anim = FieldPlayerAnim::from_locomotion_bank(&bundle, 0).expect("bank");
+        anim.select_retail_slot(Some(0));
+        w.locomotion.player_anim = Some(anim);
+        for _ in 0..3 {
+            w.tick_field_player_anim();
+        }
+        w.field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 1,
+                ctx: legaia_engine_vm::field::FieldCtx {
+                    flags: 0x2_0000,
+                    model_id: 0xF0,
+                    move_id: 2,
+                    ..Default::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: false,
+                object_bind: false,
+            });
+        w.npcs.positions.insert(1, (0, 0));
+        w.set_field_npc_live_model(1, 0xF0);
+        let idle = FieldClipPlayer::from_record(&bundle, 1).unwrap();
+        w.bind_npc_clip_cursor(1, 2, &idle);
+        w.field_vm.executing_channel = Some(1);
+        let words = [0, 0x37A0, 30, 90, 38, 110];
+        assert!(w.spawn_reflection_controller(false, 0xF8, words).is_some());
+        w.field_vm.executing_channel = None;
+
+        w.tick_handler_actors(1);
+        assert_eq!(
+            w.npcs.positions[&1],
+            (35 * 128 + 64, 2 * 0x37A0 - (96 * 128 + 64)),
+            "the pose is mirrored"
+        );
+        assert_eq!(w.npcs.anim_cues.get(&1).map(|c| c.1), Some(1), "walk cued");
+        let ch = &w.field_vm.channels[0];
+        assert_eq!(
+            (ch.ctx.move_id, ch.ctx.flags & PARTY_BANK_FLAG),
+            (1, PARTY_BANK_FLAG)
+        );
+
+        // The host's re-target binds the walk; the next copy seats the cursor.
+        w.npcs.anim_cues.clear();
+        let walk = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        w.bind_npc_clip_cursor(1, 1, &walk);
+        w.tick_field_player_anim();
+        w.tick_handler_actors(1);
+        let (_, _, cursor, _) = w.locomotion.player_anim.as_ref().unwrap().playing_clip();
+        assert_eq!(w.npcs.clip_cursors[&1].cursor as u32, cursor);
+
+        // Another model: the pose still mirrors, the clip stays the image's.
+        w.set_field_npc_live_model(1, 0xF1);
+        w.locomotion
+            .player_anim
+            .as_mut()
+            .unwrap()
+            .select_retail_slot(Some(2));
+        w.tick_field_player_anim();
+        w.tick_handler_actors(1);
+        assert!(w.npcs.anim_cues.is_empty(), "no copy across models");
+        assert_eq!(w.npcs.clip_cursors[&1].anim_id, 1);
     }
 }

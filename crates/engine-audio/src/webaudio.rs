@@ -20,6 +20,10 @@
 //!
 //! Must be initialised from a user-gesture handler to satisfy the browser
 //! autoplay policy - call [`WebAudioOut::new`] inside e.g. a button click.
+//! A page that already holds an `AudioContext` (the site's one shared context,
+//! `LegaiaSound.context()` in `site/js/audio-toggle.js`) hands it over with
+//! [`WebAudioOut::on_context`] instead, so the page keeps one context that one
+//! gesture unlocks rather than one per audio path.
 
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
@@ -126,7 +130,7 @@ enum Driver {
         _callback: Closure<dyn FnMut(AudioProcessingEvent)>,
     },
     Worklet {
-        _node: AudioWorkletNode,
+        node: AudioWorkletNode,
         port: MessagePort,
         _callback: Closure<dyn FnMut(MessageEvent)>,
     },
@@ -142,6 +146,11 @@ struct Inner {
     pump: RefCell<MixPump>,
     driver: RefCell<Driver>,
     path: Cell<WebAudioPath>,
+    /// Whether this output built `ctx` itself ([`WebAudioOut::new`]) and so
+    /// closes it on drop. A context handed in by the page
+    /// ([`WebAudioOut::on_context`]) is the page's: the drop only takes this
+    /// output's nodes off it.
+    owns_ctx: bool,
 }
 
 /// WebAudio-backed audio output for `wasm32` targets. See the module docs for
@@ -152,15 +161,27 @@ pub struct WebAudioOut {
     inner: Rc<Inner>,
 }
 
-/// Closing the context on drop stops the driver node with it.
+/// Dropping the output detaches its nodes, and closes the context when the
+/// output built it.
 impl Drop for WebAudioOut {
     fn drop(&mut self) {
         match &*self.inner.driver.borrow() {
-            Driver::Script { node, .. } => node.set_onaudioprocess(None),
-            Driver::Worklet { port, .. } => port.set_onmessage(None),
+            Driver::Script { node, .. } => {
+                node.set_onaudioprocess(None);
+                let _ = node.disconnect();
+            }
+            Driver::Worklet { node, port, .. } => {
+                port.set_onmessage(None);
+                let _ = node.disconnect();
+            }
             Driver::None => {}
         }
-        let _ = self.inner.ctx.close();
+        // A context the page handed in stays open for the page's other
+        // sources; this output only takes its own nodes off it.
+        let _ = self.inner.gain.disconnect();
+        if self.inner.owns_ctx {
+            let _ = self.inner.ctx.close();
+        }
     }
 }
 
@@ -246,7 +267,7 @@ fn install_worklet_node(inner: &Rc<Inner>) -> Result<(), JsValue> {
     node.connect_with_audio_node(&inner.gain)?;
     pump(inner, &port);
     *inner.driver.borrow_mut() = Driver::Worklet {
-        _node: node,
+        node,
         port,
         _callback: callback,
     };
@@ -289,6 +310,23 @@ impl WebAudioOut {
     pub fn new() -> anyhow::Result<Self> {
         let ctx = web_sys::AudioContext::new()
             .map_err(|e| anyhow::anyhow!("AudioContext::new: {:?}", e))?;
+        Self::build(ctx, true)
+    }
+
+    /// Open the output on a context the page already holds, rather than a
+    /// fresh one. The page owns the context: its autoplay unlock (one resume
+    /// on the first user gesture) reaches this output with everything else on
+    /// the page, and dropping the output leaves the context open. `ctx` is a
+    /// `JsValue` so a wasm-bindgen export can pass the page's object straight
+    /// through; anything that is not an `AudioContext` is an error.
+    pub fn on_context(ctx: JsValue) -> anyhow::Result<Self> {
+        let ctx = ctx
+            .dyn_into::<web_sys::AudioContext>()
+            .map_err(|_| anyhow::anyhow!("on_context: not an AudioContext"))?;
+        Self::build(ctx, false)
+    }
+
+    fn build(ctx: web_sys::AudioContext, owns_ctx: bool) -> anyhow::Result<Self> {
         let device_rate = ctx.sample_rate() as u32;
 
         // Insert a `GainNode` between the driver node and the destination so
@@ -322,6 +360,7 @@ impl WebAudioOut {
             path: Cell::new(WebAudioPath::Opening),
             ctx,
             gain,
+            owns_ctx,
         });
         if !has_worklet || forced_script || open_worklet(&inner).is_err() {
             install_script_processor(&inner)?;

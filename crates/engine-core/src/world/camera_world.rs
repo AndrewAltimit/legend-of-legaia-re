@@ -152,6 +152,10 @@ impl CameraWorld for World {
         self.camera.state.params.clear();
     }
 
+    fn field_held_for_battle(&self) -> bool {
+        self.field_scripts_held_for_battle()
+    }
+
     fn set_fog_view_window(&mut self, window: [i8; 4]) {
         self.fog.view_window = Some(window);
     }

@@ -82,6 +82,56 @@ pub fn record_disc_for_engine(settings: &Path, disc: &Path) -> anyhow::Result<()
         .with_context(|| format!("writing {}", settings.display()))
 }
 
+/// The game's options file, `legaia-options.toml` in its data folder
+/// ([`engine_data_dir`]), which holds the launcher's *Menu colours* row
+/// (`ui_theme`) among the rest.
+pub fn engine_options_file() -> Option<PathBuf> {
+    engine_data_dir().map(|d| d.join("legaia-options.toml"))
+}
+
+/// The game's *Menu colours* choice in its options file's text: the theme
+/// Explorer and the game share. `None` when the file does not parse or does
+/// not name one this build knows.
+pub fn engine_theme_from_options(text: &str) -> Option<crate::settings::Theme> {
+    let table = text.parse::<toml::Table>().ok()?;
+    table.get("ui_theme")?.clone().try_into().ok()
+}
+
+/// The game's theme ([`engine_theme_from_options`] over
+/// [`engine_options_file`]), when the file is there.
+pub fn engine_theme() -> Option<crate::settings::Theme> {
+    engine_theme_from_options(&std::fs::read_to_string(engine_options_file()?).ok()?)
+}
+
+/// Write `theme` as the game's *Menu colours* row (`ui_theme` in
+/// `options`), so the launcher, the game's `F12` panel and Explorer keep one
+/// light or dark choice. Only that key is written; a file that exists but
+/// does not parse is left alone and reported, as [`record_disc_for_engine`]
+/// does.
+pub fn record_theme_for_engine(
+    options: &Path,
+    theme: crate::settings::Theme,
+) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let mut table = match std::fs::read_to_string(options) {
+        Ok(text) => text
+            .parse::<toml::Table>()
+            .with_context(|| format!("{} does not parse; left as it is", options.display()))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => toml::Table::new(),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", options.display())),
+    };
+    let value = toml::Value::try_from(theme)?;
+    if table.get("ui_theme") == Some(&value) {
+        return Ok(());
+    }
+    table.insert("ui_theme".into(), value);
+    if let Some(dir) = options.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+    legaia_app_theme::settings_file::write_atomic(options, toml::to_string(&table)?.as_bytes())
+        .with_context(|| format!("writing {}", options.display()))
+}
+
 /// The disc the game itself boots, from its launcher file's text
 /// (`launcher.toml`'s `disc` key, which [`record_disc_for_engine`] and the
 /// game's own disc picker write): what Explorer's start page offers on a
@@ -546,6 +596,33 @@ mod tests {
         assert_eq!(t["extra"]["x"].as_bool(), Some(true));
         std::fs::write(&file, "not = = toml").unwrap();
         assert!(record_disc_for_engine(&file, Path::new("/g/new.bin")).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "not = = toml");
+    }
+    /// The theme is the game's `ui_theme` row, spelled as its options file
+    /// spells it (`legaia_engine_menus::options::UiTheme`, lowercase); the
+    /// write keeps every other row, and a file that does not parse is left
+    /// alone.
+    #[test]
+    fn shares_the_theme_with_the_games_options_file() {
+        use crate::settings::Theme;
+        assert_eq!(
+            engine_theme_from_options("bloom = true\nui_theme = \"light\"\n"),
+            Some(Theme::Light)
+        );
+        assert_eq!(engine_theme_from_options("ui_theme = \"Sepia\"\n"), None);
+        assert_eq!(engine_theme_from_options("bloom = true\n"), None);
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("data").join("legaia-options.toml");
+        record_theme_for_engine(&file, Theme::Dark).unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(engine_theme_from_options(&text), Some(Theme::Dark));
+        std::fs::write(&file, "ssao = false\nui_theme = \"system\"\n").unwrap();
+        record_theme_for_engine(&file, Theme::Light).unwrap();
+        let t: toml::Table = std::fs::read_to_string(&file).unwrap().parse().unwrap();
+        assert_eq!(t["ui_theme"].as_str(), Some("light"));
+        assert_eq!(t["ssao"].as_bool(), Some(false));
+        std::fs::write(&file, "not = = toml").unwrap();
+        assert!(record_theme_for_engine(&file, Theme::Light).is_err());
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "not = = toml");
     }
 }

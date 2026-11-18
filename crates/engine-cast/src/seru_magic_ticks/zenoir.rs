@@ -65,8 +65,9 @@ pub const ZENOIR_LAST_ARM: u8 = 12;
 /// (`li v0,0x7` at `0x801F7438`).
 pub const ZENOIR_POSE_RENDER_FLAG: u8 = 7;
 
-/// The render flag PROT 0908's finisher arm leaves the summon seat and a
-/// surviving victim at (`li s0,0x2` at `0x801F7BB0`).
+/// The render flag PROT 0908's finisher arm leaves the summon seat at
+/// (`li s0,0x2` at `0x801F7BB0`), and every seat its two hits kill - the
+/// defeat fade. A seat the hits leave alive stays at `0`.
 pub const ZENOIR_FINISH_RENDER_FLAG: u8 = 2;
 
 /// The `ctx+0x278` value PROT 0908's finisher arm writes
@@ -241,10 +242,7 @@ pub fn zenoir_tick(
                 let applied = finisher.apply(v, roll);
                 stage_reaction_assign(v);
                 v.root_speed = SERU_HIT_ROOT_SPEED;
-                v.render_flag = 0;
-                if v.hp != 0 {
-                    v.render_flag = ZENOIR_FINISH_RENDER_FLAG;
-                }
+                zenoir_hit_render_flag(v);
                 hits.push(SweepHit {
                     seat: who.victim,
                     applied,
@@ -266,7 +264,7 @@ pub fn zenoir_tick(
                 let applied = splash.apply(v, roll);
                 stage_reaction_assign(v);
                 v.root_speed = SERU_HIT_ROOT_SPEED;
-                v.render_flag = 0;
+                zenoir_hit_render_flag(v);
                 hits.push(SweepHit { seat, applied });
             }
             CastArmStep::Advance
@@ -287,6 +285,21 @@ pub fn zenoir_tick(
         _ => CastArmStep::Finish,
     });
     (step, hits)
+}
+
+/// The render flag both of PROT 0908's arm-11 hits leave on the seat they
+/// strike: `sb zero,0x21c`, then the defeat fade (`+0x21C = +0x225 = 2`)
+/// only when the hit has emptied `+0x14C` - `lhu v0,0x14c` / `bne v0,zero`
+/// past the fade at `0x801F7D70..0x801F7D98` (primary) and
+/// `0x801F7F88..0x801F7FB0` (splash). A survivor keeps `0` and stays drawn;
+/// a defeat fade on it would drain its colour word to nothing while it
+/// fights on.
+fn zenoir_hit_render_flag(v: &mut CastActorState) {
+    v.render_flag = if v.hp == 0 {
+        ZENOIR_FINISH_RENDER_FLAG
+    } else {
+        0
+    };
 }
 
 /// The arm PROT 0908 runs its shatter loop in (`0x801F8108`), after the

@@ -152,7 +152,7 @@ local FIRST = probe.csv_open(probe.out_path("w6c_spoke_flags_first.csv"),
     "vsync,op,flag_hex,flag,ra,pc_offset,op_bytes,scene,mode,bit_before")
 local first_seen, hit_count = {}, {}
 local MIRROR = WANT_MIRROR and probe.csv_open(probe.out_path("w6c_mirror.csv"),
-    "vsync,event,ctrl,dst,src,w0,w1,w2,w3,w4,w5,src_x,src_y,src_z,src_h,src_64,dst_x,dst_y,dst_z,dst_h,dst_64,scene") or nil
+    "vsync,event,ctrl,dst,src,w0,w1,w2,w3,w4,w5,src_x,src_y,src_z,src_h,src_64,dst_x,dst_y,dst_z,dst_h,dst_64,scene,src_5c,src_68,src_6a,src_bank,dst_5c,dst_68,dst_6a,dst_bank") or nil
 
 local function log(s)
     PCSX.log("[w6c_spoke] " .. s)
@@ -266,14 +266,19 @@ end
 -- Reflection controller (`4C 86`): the spawner's arguments, then one row per
 -- tick with the source (`+0x94`) and destination (`+0x90`) actors' position
 -- (`+0x14/+0x16/+0x18`), facing (`+0x26`) and the `+0x64` word the tick
--- compares before it copies the animation. A tick row is sampled at the
--- tick's ENTRY, so its `dst` columns are what the PREVIOUS tick wrote.
+-- compares before it copies the animation, then the clip words that copy
+-- moves (`+0x5C` clip id, `+0x68` cursor, `+0x6A` rate, the party-bank bit
+-- `+0x10 & 0x01000000`). A tick row is sampled at the tick's ENTRY, so its
+-- `dst` columns are what the PREVIOUS tick wrote.
 local function mirror_row(event, ctrl, dst, src, w)
-    MIRROR:row("%d,%s,%s,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s",
+    local function bank(a) return bit.band(mem.read_u32(a + 0x10) or 0, 0x01000000) ~= 0 and 1 or 0 end
+    MIRROR:row("%d,%s,%s,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d",
         vsync, event, hex32(ctrl), hex32(dst), hex32(src), w[1], w[2], w[3], w[4], w[5], w[6],
         s16(src + 0x14), s16(src + 0x16), s16(src + 0x18), s16(src + 0x26), s16(src + 0x64),
         s16(dst + 0x14), s16(dst + 0x16), s16(dst + 0x18), s16(dst + 0x26), s16(dst + 0x64),
-        scene_name())
+        scene_name(),
+        s16(src + 0x5C), s16(src + 0x68), s16(src + 0x6A), bank(src),
+        s16(dst + 0x5C), s16(dst + 0x68), s16(dst + 0x6A), bank(dst))
     MIRROR.fh:flush()
 end
 

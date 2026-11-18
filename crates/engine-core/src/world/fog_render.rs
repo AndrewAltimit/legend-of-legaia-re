@@ -194,6 +194,20 @@ impl World {
         FogView::from_field_view(view).with_depth_scale(scale)
     }
 
+    /// The mode this frame's 3D scene draws under: the suspended scene's
+    /// while the pause wipe darkens it with the world already in
+    /// [`SceneMode::Menu`] (retail's field overlay draws its whole frame
+    /// until the menu spawns and game mode `0x16` follows), else
+    /// [`Self::mode`]. Every field draw gate asks this rather than the
+    /// mode word, or the wipe's first frames drop the drop shadows, strips,
+    /// lights and the visible-tile crop retail keeps drawing.
+    pub fn draw_mode(&self) -> SceneMode {
+        match (self.mode, self.menu.suspended_mode) {
+            (SceneMode::Menu, Some(m)) => m,
+            (m, _) => m,
+        }
+    }
+
     /// Whether `mode` is one the fog pass runs in - retail's game mode `3`,
     /// which the port splits into the field and the kingdom overworld. The
     /// hosts gate their draw-path call on this so they cannot disagree.

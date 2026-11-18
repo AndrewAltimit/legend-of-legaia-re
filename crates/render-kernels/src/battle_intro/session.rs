@@ -87,6 +87,11 @@ pub struct BattleIntro {
     /// emission so [`BattleIntro::refresh_captured_page`] can also land them in
     /// the CPU display model the trail decays. Only the curtain fills it.
     pub(super) pending_rows: Vec<IntroQuad>,
+    /// This frame's spin-up particle and ring primitives, held between
+    /// [`BattleIntro::tick`] (which emits them) and
+    /// [`BattleIntro::refresh_captured_page`] (which lands them in the CPU
+    /// display model the next frame draws over). Only the spin-up fills it.
+    pub(super) pending_particles: Vec<crate::screen_prim::ScreenPrim>,
     /// The curtain's intermediate ([`FIELD_CAPTURE_ROWS`] content) as a
     /// persistent buffer: retail never clears it - `FUN_801D1D9C` decays it by
     /// [`CURTAIN_MIDPASS_DECAY_5`] each frame before the column strips draw.
@@ -189,6 +194,7 @@ impl BattleIntro {
             capture_src: Vec::new(),
             pending_columns: Vec::new(),
             pending_rows: Vec::new(),
+            pending_particles: Vec::new(),
             intermediate: Vec::new(),
             display_accum: Vec::new(),
             last_frame: None,
@@ -341,7 +347,7 @@ impl BattleIntro {
             entry0.textures.retain(|t| t.index == 0);
             entry0.upload_to_vram(page, false);
         }
-        if style == IntroStyle::Curtain {
+        if style == IntroStyle::Curtain || style == IntroStyle::SpinUpParticles {
             self.capture_src = lift_capture_src(page);
         }
         self.upload_pending = true;
@@ -369,6 +375,11 @@ impl BattleIntro {
     /// the last uploaded page is still correct.
     pub fn refresh_captured_page(&mut self) -> Option<&Vram> {
         let landed = std::mem::take(&mut self.upload_pending);
+        if self.style == IntroStyle::SpinUpParticles {
+            self.captured.as_ref()?;
+            self.update_spinup_display();
+            return self.captured.as_ref();
+        }
         if self.style != IntroStyle::Curtain {
             return if landed { self.captured.as_ref() } else { None };
         }

@@ -14,9 +14,9 @@
 
 use crate::common::{Rng, diff_offsets, disc, scus_cpu};
 use legaia_engine_battle_vm::battle_party_panel::{
-    ANCHOR_FIELDS, DefeatText, LabelState, NAME_ESCAPE, NAME_POINTER_FIELDS, PARTY_RESET,
-    PORTRAIT_CELL_FIELDS, PUBLISHED_BUFFERS, ResultSubject, VictoryText, name_field_ptr,
-    panel_anchors, portrait_cell, result_subject,
+    ANCHOR_FIELDS, DefeatText, EscapeText, LabelState, NAME_ESCAPE, NAME_POINTER_FIELDS,
+    PARTY_RESET, PORTRAIT_CELL_FIELDS, PUBLISHED_BUFFERS, ResultSubject, VictoryText,
+    name_field_ptr, panel_anchors, portrait_cell, result_subject,
 };
 use psx_retail_exec::Stop;
 
@@ -47,6 +47,7 @@ fn the_result_build_writes_what_the_port_says() {
     cpu.mem.load(OVERLAY_BASE, &image);
     let victory = VictoryText::parse(&image).expect("victory text");
     let defeat = DefeatText::parse(&image).expect("defeat text");
+    let escape = EscapeText::parse(&image).expect("escape text");
     let sentence = bytes(&format!("{}|{}", victory.opening_tail, victory.report));
     cpu.mem.wr32(CTX_PTR, CTX);
     for s in 0..3 {
@@ -111,16 +112,31 @@ fn the_result_build_writes_what_the_port_says() {
                 [head.clone(), bytes(&defeat.team_tail)].concat(),
             ),
         };
+        let (ran, stuck) = match subject {
+            ResultSubject::Lead(_) => (
+                [head.clone(), bytes(&escape.escaped)].concat(),
+                [head.clone(), bytes(&escape.failed)].concat(),
+            ),
+            ResultSubject::LeadsTeam { .. } => (
+                [
+                    head.clone(),
+                    bytes(&escape.team_tail),
+                    bytes(&escape.escaped),
+                ]
+                .concat(),
+                [
+                    head.clone(),
+                    bytes(&escape.team_tail),
+                    bytes(&escape.failed),
+                ]
+                .concat(),
+            ),
+        };
         put(0xA9, &vic);
         put(0x129, &def);
+        put(0x159, &ran);
+        put(0x189, &stuck);
         let got_ctx = cpu.mem.read(CTX, CTX_LEN);
-        // The escape messages: the port carries their subject only.
-        for at in [0x159, 0x189] {
-            assert_eq!(&got_ctx[at..at + head.len()], &head[..], "n {n} {at:#x}");
-            let from = at + head.len();
-            let end = from + got_ctx[from..].iter().position(|&b| b == 0).expect("NUL");
-            want_ctx[at..=end].copy_from_slice(&got_ctx[at..=end]);
-        }
         assert!(
             got_ctx == want_ctx,
             "n {n} {slots:?}: ctx {:?}",

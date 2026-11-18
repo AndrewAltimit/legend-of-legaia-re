@@ -78,10 +78,11 @@ impl World {
         self.casting.module_shake = 0;
         // A module with pre-hits keeps the readout flag down from its first
         // popup, which the HUD reads a frame late: hold from the start, and let
-        // the band's fold release it.
+        // the band's fold release it. PROT 0927's party sweeps keep it down
+        // until the body's last hits (`World::juggernaut_final_hits`).
         self.battle.combo_cluster_held = self
             .cast_module_for(spell_id)
-            .is_some_and(|e| matches!(e, 908 | 915 | 928 | 932 | 933 | 934));
+            .is_some_and(|e| matches!(e, 908 | 915 | 927 | 928 | 932 | 933 | 934));
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -405,7 +406,11 @@ impl World {
                     // module's pre-hits kept down. PROT 0915 has no fold: its
                     // rolls store `0` there and arm `0xC`'s pass raises it
                     // (`li v0,0x78` at `0x801F7DA0`).
-                    self.battle.combo_cluster_held = false;
+                    let juggernaut_sweeps = self.cast_module_for(st.spell_id) == Some(927)
+                        && st.caster < self.party.party_count;
+                    if !juggernaut_sweeps {
+                        self.battle.combo_cluster_held = false;
+                    }
                     self.fold_pending_cast();
                     if run.as_ref().is_some_and(|r| r.prot_entry == 904) {
                         self.show_theeder_fold_targets();

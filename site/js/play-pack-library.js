@@ -355,7 +355,10 @@
     /* `End` on the play page: reload the active pack from its library copy
      * in place (`live.reload`, the workbench's hot reload), with the
      * notice the native window shows (`pack_reload_notice`'s wording). */
-    async function reloadActive(live) {
+    let reloadRetry = null;
+    async function reloadActive(live, retry) {
+      clearTimeout(reloadRetry);
+      reloadRetry = null;
       const notice = (t) => { if (typeof window.__playShowNotice === 'function') window.__playShowNotice(t); };
       /* The pack the engine is playing, not the library's choice: with
        * none loaded (a retail New game or Scene picker), End loads none. */
@@ -372,7 +375,10 @@
       if (r && r.ok) {
         notice(`Reload pack: ${rec.id} ${rec.version} (${r.totalMs} ms)`);
       } else if (r && r.busy) {
-        notice('Reload pack: waits until the fight or screen is over');
+        /* The notice says it waits, so it does: tried again until the
+         * field is back (the window's BUSY_RETRY). */
+        if (!retry) notice('Reload pack: waits for the fight, screen or cutscene');
+        reloadRetry = setTimeout(() => { reloadActive(live, true); }, 750);
       } else {
         notice(`Reload pack refused: ${((r && r.errors) || []).slice(0, 1).join('')}`.slice(0, 56));
       }

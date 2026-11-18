@@ -65,6 +65,8 @@ impl World {
     // REF: FUN_80016444 (the pass order is `mode::master_frame_plan`;
     //                    render/flip halves are the host renderer's)
     pub fn tick(&mut self) -> Option<StepOutcome> {
+        // A close left for a census no host ran (`World::close_pass_after_census`).
+        self.close_pass_after_census();
         // The CD drive runs on every vsync, held frame or not
         // (`World::tick_cast_drive`).
         self.tick_cast_drive();
@@ -112,8 +114,13 @@ impl World {
         self.tick_battle_camera();
         self.tick_battle_anim_pass();
         // The frame this pass opened is priced with its node ticks behind it
-        // (`World::close_pass_frame_cost`).
-        self.close_pass_frame_cost();
+        // (`World::close_pass_frame_cost`); under the host's census, once the
+        // census has counted this tick (`World::close_pass_after_census`).
+        if self.battle.pass_close_after_census && self.battle.pass_frame_cost_due.is_some() {
+            self.battle.pass_close_deferred = true;
+        } else {
+            self.close_pass_frame_cost();
+        }
         // The volumetric ground-fog enhancement steps on the tick this frame
         // settled, after every actor moved (`legaia_render_kernels::fog_volume`).
         self.tick_fog_volume();
@@ -437,9 +444,10 @@ impl World {
             // The ambient move-VM effect parts (jou's CLUT-cell cyclers and
             // lightning director, every stager part) are nodes of the same
             // actor lists: the part tick `FUN_80021DF4` is their node handler,
-            // so they step on this pass and no other vsync. Banked here for
-            // the host's `step_ambient_fx`, which drains it against its VRAM
-            // on the same tick. A clock of their own drifted half a pass off
+            // so they step on this pass and no other vsync. Banked here and
+            // run ahead of the placements below
+            // (`World::run_banked_ambient_part_ticks`); the host's
+            // `step_ambient_fx` drains what is left, and the VRAM half. A clock of their own drifted half a pass off
             // the walk, and a part's `rand()` op then drew on a vsync where
             // retail draws nothing (`deroa`'s, every second pass).
             //
@@ -834,6 +842,8 @@ impl World {
                 // The battle intro rebuilt the actor lists, so no placement's
                 // driver runs under it (`Self::battle_intro_owns_frame`).
                 if actor_tick_fired && !self.battle_intro_owns_frame() {
+                    // The part list walks ahead of the placements'.
+                    self.run_banked_ambient_part_ticks();
                     self.tick_field_npc_ambient();
                     // The same driver's height arm (`FUN_8003BC08`), after
                     // the tick moved anyone: the glide-class NPCs' Y.
@@ -955,7 +965,7 @@ impl World {
                     ctrl.map_display_requested = false;
                     ctrl.entry_fade_draw = None;
                 }
-                self.tick_map_display();
+                self.pace_map_display();
                 None
             }
             SceneMode::WorldMap => {
@@ -1020,6 +1030,7 @@ impl World {
                 // `+0x16 = -(+0x8E)` = 900 up) drifts along the ground.
                 // REF: FUN_8003BC08, FUN_80038158
                 if actor_tick_fired && !self.battle_intro_owns_frame() {
+                    self.run_banked_ambient_part_ticks();
                     self.tick_field_npc_ambient();
                     self.tick_field_npc_heights();
                 }

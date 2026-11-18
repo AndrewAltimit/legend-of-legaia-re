@@ -85,9 +85,10 @@ pub const GLIDE_RECORD_PAIRS: usize = 10;
 /// the safe default for a caller with no zoom to tween.
 ///
 /// PORT: FUN_801D829C
-/// REPLACED-BY: `engine-shell`'s `window/battle_cam.rs` `Glide`, which holds
+/// REPLACED-BY: `engine-battle-vm`'s `battle_cam_script` `Glide`, which holds
 /// the same nine `(step, endpoint)` channels between frames directly off
-/// `crate::battle_camera::build_camera_angle_tween`. No host is owed a call.
+/// `crate::battle_camera::build_camera_angle_tween`, and which both play hosts
+/// run through the shared battle camera. No host is owed a call.
 ///
 /// This layout is **transport**, not behaviour: retail needs the twenty
 /// halfwords because its glide lives on a pool actor allocated from

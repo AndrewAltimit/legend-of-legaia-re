@@ -289,6 +289,9 @@ impl World {
             self.fold_pending_cast();
             return;
         }
+        // The push's delay slot stores `0` to the readout flag
+        // (`0x801F8778`): the sweep's numerals do not open the cluster.
+        self.battle.combo_cluster_held = true;
         self.run_cast_module_aoe_as(caster, spell_id, super::super::AOE_STAGER_WORKING_ARM);
         if self.casting.pending_cast.is_some() {
             self.casting.module_skips_fold = true;
@@ -309,6 +312,13 @@ impl World {
     /// The kill-capable hit on arm 26's pass (`0x801F7DD4..0x801F7F24`): every
     /// live monster takes the summon roll again, clamped to its HP, staging its
     /// reaction with the animation rate at `2`.
+    ///
+    /// Each roll's numeral goes up between the wrapper and the clamp
+    /// (`jal 0x801F44A0` at `0x801F7E20`). Nothing here stores `0` to the
+    /// readout flag the wrapper's finisher raised (`FUN_801DD0AC` calls
+    /// `FUN_801DDB30`), so the cluster opens on this pass with the stager
+    /// sweeps' hits already counted: retail's film reads `3 HIT` /
+    /// `TOTAL 4556` under the last numeral.
     fn juggernaut_final_hits(&mut self, spell_id: u8) {
         use legaia_engine_cast::cast_module_ticks as ticks;
         // The band has its stager out of the world for this tick.
@@ -330,6 +340,7 @@ impl World {
             let roll = self
                 .summon_module_roll(caster, target, spell_id)
                 .map_or(0, |r| r as i32);
+            self.push_sweep_popups(std::iter::once(seat), &[(seat, roll)]);
             if let Some(v) = seats.get_mut(usize::from(seat)) {
                 ticks::apply_hit_floor_zero(v, roll);
                 legaia_engine_cast::seru_magic_ticks::stage_reaction_bits(v);
@@ -337,6 +348,7 @@ impl World {
             }
         }
         self.write_cast_seat_row(&seats);
+        self.battle.combo_cluster_held = false;
         self.bank_juggernaut_hit_xp(caster, spell_id);
     }
 

@@ -506,7 +506,11 @@ Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, 
 
 #### State `0x64` - Run - flee anim begin
 
-Calls `FUN_801E791C` ([the escape roll](battle-action-helpers.md#the-escape-roll-fun_801e791c) - decides the flee, writes `_DAT_8007726C`). Sets `ctx[+0x6D8] = 0x3C`. Fires `FUN_801D8DE8(0x43, 0)` (run UI). Advances the [turn cursor](#the-turn-cursor-ctx0x1a) past each monster with a rotation trigger (`+0x16C != 0`) that isn't immune (`(&DAT_8007BD10)[i] != 4`). If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - the mechanism behind "escape restores a Stoned member". Ported: `RunBegin` + `StatusEffectTracker::cure_stone_on_escape`. Else screen-shake only.
+Calls `FUN_801E791C` ([the escape roll](battle-action-helpers.md#the-escape-roll-fun_801e791c) - decides the flee, writes `_DAT_8007726C`). Sets `ctx[+0x6D8] = 0x3C`. Raises `FUN_801D8DE8(0x43, 0)`, the outcome line, and names it as the action's element (`ctx[+0x18] = 0x43` at `0x801E57F4`) so the Done band's teardown glides it out after a failed run.
+
+**One Run is one roll for the party.** The arm walks the party seats (`i < ctx[+0]`, `0x801E5810..0x801E58A4`) and takes every other member still owed a turn out of the round: not the acting seat (`ctx[+0x13]`), initiative key live (`+0x16C != 0`), alive (`+0x14C != 0`) and not the AI companion (`DAT_8007BD10[i] != 4`). Each one steps the [turn cursor](#the-turn-cursor-ctx0x1a) and has its key zeroed, so a failed run spends the party's round and the monsters still act.
+
+If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - the mechanism behind "escape restores a Stoned member". Else screen-shake only. Ported: `run::run_begin` (the line, the party walk, the floor) + `StatusEffectTracker::cure_stone_on_escape`; the line's text is `battle_party_panel::EscapeText`, raised by `World::message_banner_ui_element`.
 
 **Next:** `0x65`.
 

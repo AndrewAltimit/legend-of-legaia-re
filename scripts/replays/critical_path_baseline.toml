@@ -68,6 +68,15 @@
 # The margin is thin and that is the point: the crossing ends at 14/190 HP
 # with an empty bag, having fought six encounters and levelled once.
 #
+# The fighter reaches for a leaf at 50% HP or once its HP is within two of
+# the hardest hits the run has watched (`FightPolicy::worst_hit`). The flat
+# 50% line alone is one rand deal from a wipe: a monster taking 48 a round
+# lets a solo Vahn swing at 93/180, queue the leaf at 46, and die to a monster
+# that acts first. The ambient parts ticking ahead of the placements, inside
+# the world tick (so their `rand()` draws now reach this driver, which runs no
+# frame tail), dealt exactly that hand on the first map01 encounter; a player who has watched a 48-point hit heals at
+# 93, and so does the fighter. The two contrast controls still score 3.
+#
 # ---------------------------------------------------------------------------
 # What the run stopped leaning on
 # ---------------------------------------------------------------------------

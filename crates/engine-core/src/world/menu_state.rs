@@ -105,6 +105,11 @@ pub struct MenuState {
     /// The spell-level notice a cast raised while the Magic screen stayed up;
     /// the session's finish path hands it to the host.
     pub pending_spell_notice: Option<legaia_engine_battle::magic_xp::SpellLevelNotice>,
+    /// The scene mode the pause menu suspended, while its wipe still draws
+    /// that scene: from a pressed open until the menu spawns
+    /// ([`crate::world::World::draw_mode`]). Set by the session's menu
+    /// press, cleared at the spawn and the close.
+    pub suspended_mode: Option<legaia_engine_mode::mode::SceneMode>,
 }
 
 impl MenuState {
@@ -129,6 +134,7 @@ impl MenuState {
             notify_template: None,
             pending_art_notice: None,
             pending_spell_notice: None,
+            suspended_mode: None,
         }
     }
 

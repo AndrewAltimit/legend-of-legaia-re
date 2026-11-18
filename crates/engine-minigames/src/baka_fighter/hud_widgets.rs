@@ -33,39 +33,26 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
     p >> shift
 }
 
-// WIRED ON ONE HOST, and the split is deliberate rather than an oversight.
+// Wired on every host that draws the duel.
 //
-// **Browser**: `LegaiaMinigames::baka_hud_quad_json` calls this emitter, and
-// the duel page's `_widget` draws the quad it returns - the corners, the
-// inclusive UV span and the mirror arm are now this function's, not the page's.
-// That is a behavioural change, not a rename: the page computed its half-extent
-// as `(cell * scale) / 0x1000 / 2` in floating point with **no `size` term**,
-// where retail is `((cell * scale) >> 13) * size >> 12` with both shifts
-// rounding toward zero over a span of `x - hw ..= x + hw - 1`.
+// **Both play hosts** reach it per frame through
+// `legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelScene::hud_quads`
+// -> `crate::baka_fighter_chrome::hud_widget_quads` (one call per cabinet
+// cell and per `ChromeDraw`) -> `legaia_engine_ui::baka_hud_prims`, which
+// links each quad at the emitter's OT bucket with its gouraud pair
+// (`rgb_top` on verts 0/1, `rgb_bottom` on 2/3). The quads sample the duel
+// VRAM, so they draw while the PROT 1203 art pages are resident
+// (`BakaDuelScene::hud_art_resident`); without them each host falls back to
+// font labels (`baka_widget_label_draws_for`).
 //
-// **Native**: still unwired, and the blocker there is a texel source. The play
-// window draws each `ChromeDraw` as font text because no PROT 1203 art page is
-// resident in engine VRAM; the quad sink itself is not missing
-// (`legaia_render_kernels::screen_prim::ScreenQuad` carries POLY_GT4 corners,
-// per-vertex gouraud, CLUT/texpage, ABR and an OT bucket, and both hosts
-// consume its `build_geometry` output). The earlier reason on this row said the
-// sink was the gap; it is the page.
+// **The standalone minigames page** calls it through
+// `LegaiaMinigames::baka_hud_quad_json`, and the duel page's `_widget` draws
+// the quad it returns. Its 2D canvas cannot express the per-texel
+// `texel * c / 128` modulation in one pass, so that page draws geometry and
+// UVs and the colours ride along in the JSON.
 //
-// One half of the emitter is surfaced but not applied on either host: the
-// brightness-scaled gouraud pair. PSX modulation is a per-texel
-// `texel * c / 128`, which the duel page's 2D canvas cannot express in one
-// pass, so the page draws geometry + UVs and the colours ride along in the
-// JSON.
-//
-// (Everything upstream was already present:
-// `legaia_minigame_formats::baka_opponents::parse_baka_hud` is called by the play window -
-// `window/minigames.rs` stages the 51 records for the duel - and by the browser
-// duel page, which also decodes the PROT 1203 art pack the widgets sample; and
-// `BakaChrome` emits one
-// [`ChromeDraw`](crate::baka_fighter_chrome::ChromeDraw) per call of this
-// emitter with the same `(widget, x, y, brightness, size)`, the play window
-// resolving its `u` column through
-// [`crate::baka_fighter_chrome::glyph_u`].)
+// The half-extent is retail's `((cell * scale) >> 13) * size >> 12`, both
+// shifts rounding toward zero, over a span of `x - hw ..= x + hw - 1`.
 /// PORT: FUN_801d5ed0 - the Baka Fighter HUD textured-quad emitter.
 ///
 /// `FUN_801d5ed0(x, y, id, brightness, size)` draws widget `id` of the

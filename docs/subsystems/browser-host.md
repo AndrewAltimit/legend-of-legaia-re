@@ -118,7 +118,8 @@ The play page plays its music and sound effects through the native window's
 own director, `legaia_engine_session::AudioDirector`, over the browser's
 audio output (`play_sfx::PageDirector`). `audio_init()` opens a
 `legaia_engine_audio::WebAudioOut` (must run inside a user gesture - browser
-autoplay policy), builds the director over it and stages the resident SFX
+autoplay policy; the page calls `audio_init_on` with its one shared context,
+[site-shell.md](../tooling/site-shell.md#one-audiocontext-per-page-opened-by-the-first-gesture)), builds the director over it and stages the resident SFX
 banks at once; every `tick_frame()` then routes the field VM's op-`0x35` BGM
 events into it (`SceneHost::route_bgm_events`, the native call) and runs the
 director's per-tick SFX routing. A track the script started before audio was

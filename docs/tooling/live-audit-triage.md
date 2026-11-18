@@ -410,6 +410,23 @@ ends one fight by a flee and by a win, enters a second, and holds every
 | `CameraRig::offset_ease` on a fight's return | the field initialiser's seed runs ahead of its warp test (`0x801D67B8`), so the return from a fight takes it too | the field came back from every fight with the fog's offset at `0` |
 | `AmbientFxState::pending_game_ticks` through a fight or a minigame | the mode switch re-seeds the lists (`FUN_8001E1B4`) and the return brings the parked pool back whole (`0x8001E308`): the parts stand still | the first field frame after a fight ran up to 600 of the parts' passes at once, `rand()` ops included |
 | A minigame's return (`World::minigame_return_warp`) | MAIN INIT's warp arm, the same field-back load a fight's end makes (`World::seat_warp_field_return`) | a cabinet left by Start put the player straight back under the pad on a fully lit field |
+| `FieldTerrain::step_tile` | the entry installer `FUN_8003AB2C` retires the region reader's actor, spawns a fresh one (`0x8003ABAC`) and zeroes its tile cache `+0x8E` / `+0x8F` (`sh zero,0x8e` at `0x8003ACFC`) | an arrival one tile from the last scene's last sampled tile could count as a region step |
+
+The rows are found by diffing two worlds that should agree: the same save
+entered fresh and entered after a detour (another scene, the world map, a
+fight, a party wipe and a title Continue), each field's `Debug` output
+compared once its hash maps are sorted and the world RNG is pinned at the
+last entry. Most of what such a diff reports is not a leak: the actor tick's
+two-vsync phase, RNG-driven particles, per-frame output buffers, and queues a
+headless run never drains. Two carries are retail's too. The world-map
+controller (`WorldMapState::ctrl`) outlives the overworld by design
+(`World::enter_world_map` keeps its camera). Row 0 of the object-effect table
+keeps the battle setup's re-seed (`FUN_80055B6C`, `0x80055DDC..0x80055DF8`)
+after a fight, since only the boot init and a scene's own prescript write it.
+The region reader's cache has a sentinel
+the port does not model: a cache of `(0xFF, 0xFF)` takes the step body on
+the first sample (`0x801D9EC4..0x801D9ECC`), and no writer of that value has
+been found.
 
 `CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` / `_DAT_8007B62A`)
 has no reset on any scene change, and needs none. Its one carrier is `uru`:

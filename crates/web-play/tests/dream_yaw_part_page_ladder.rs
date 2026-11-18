@@ -84,7 +84,10 @@ fn the_dream_cutscene_draws_its_yaw_keeping_parts_through_the_page() {
     let mut walked = None;
     'seat: for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
         for dir in DIRECTIONS {
-            rt.enter_field("urudre1").expect("enter urudre1");
+            // The plain picker seat: the selector's own entry (`enter_field`)
+            // opens the dream on its entry-script beat, and this walk is the
+            // band's walk-on dispatch.
+            rt.enter_field_plain("urudre1").expect("enter urudre1");
             if !rt.play_debug_seat(tile_centre(tx + dx), tile_centre(tz + dz)) {
                 continue;
             }

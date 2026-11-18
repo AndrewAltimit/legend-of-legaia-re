@@ -83,7 +83,18 @@ impl World {
         if open_map_display {
             self.world_map.map_display =
                 Some(legaia_engine_field::map_display::MapDisplay::enter());
-            self.tick_map_display();
+            self.world_map.map_display_pad = self.input.pad();
+            self.world_map.map_display_wait = 0;
+            // Mode `0x0C` is the PROT 0981 load: a PCSX-Redux film holds it
+            // `MAP_DISPLAY_LOAD_VSYNCS` vsyncs between the ramp's hand-off and
+            // the display's first frame. The retail-faithful mode waits it out
+            // on black, as it does the pause menu's loads.
+            self.world_map.map_display_load_hold = if self.toggles.skip_load_holds {
+                0
+            } else {
+                MAP_DISPLAY_LOAD_VSYNCS
+            };
+            self.pace_map_display();
         }
         // The map-display arm's cue is a `jal FUN_80035B50` (`0x801D0220`) -
         // the same SFX-ring producer the field VM's op `0x36` sub `0` calls -
@@ -217,6 +228,31 @@ impl World {
             .unwrap_or_default();
     }
 
+    /// One vsync under the map display: its frame clock. The display runs a
+    /// frame every [`MAP_DISPLAY_FRAME_VSYNCS`] vsyncs, not every vsync: the
+    /// survey view draws the whole kingdom, and a PCSX-Redux film of
+    /// `map02_field_door_hop` holds the frame-pacer ring cursor `0x8007B758`
+    /// for five vsyncs a frame (each at the `0x2BC` cost cap), with the fade
+    /// timer `0x801CF778` and the one-tile pan (`0x801CEDC8..0x801CEE44`)
+    /// stepping once a frame on it - a held d-pad pans `0x80` every five
+    /// vsyncs. Ticked once a vsync, the port's display panned five tiles to
+    /// retail's one and ran its opening and closing fades in a vsync a step.
+    ///
+    /// REF: FUN_80016B6C (the frame pacer), FUN_801CE850
+    pub(crate) fn pace_map_display(&mut self) {
+        if self.world_map.map_display_load_hold > 0 {
+            self.world_map.map_display_load_hold -= 1;
+            if self.world_map.map_display_load_hold > 0 {
+                return;
+            }
+        } else if self.world_map.map_display_wait > 0 {
+            self.world_map.map_display_wait -= 1;
+            return;
+        }
+        self.world_map.map_display_wait = MAP_DISPLAY_FRAME_VSYNCS - 1;
+        self.tick_map_display();
+    }
+
     /// One frame of the map display: the module tick, its ring cues, and on
     /// the way out the walk frame's fade-in and the hand-back.
     ///
@@ -229,8 +265,10 @@ impl World {
     pub fn tick_map_display(&mut self) {
         use legaia_engine_field::map_display::EXIT_FADE;
         use legaia_engine_field::world_map_panel_host::packed_pad;
+        // The edge word is the change since the display's last frame.
         let raw_held = self.input.pad();
-        let raw_edge = raw_held & !self.input.pad_prev();
+        let raw_edge = raw_held & !self.world_map.map_display_pad;
+        self.world_map.map_display_pad = raw_held;
         let player = self.world_map_player_xz();
         let kingdom = self.world_map_kingdom_index().map_or(u32::MAX, u32::from);
         let Some(mut display) = self.world_map.map_display.take() else {
@@ -482,7 +520,10 @@ impl World {
         if let Some(q) = self.world_map.ctrl.as_ref().and_then(|c| c.entry_fade_draw) {
             out.push((1, 2, u32::from(q.grey) * 0x01_01_01));
         }
-        if let Some(grey) = self
+        // The PROT 0981 load holds the black the ramp ended on.
+        if self.world_map.map_display.is_some() && self.world_map.map_display_load_hold > 0 {
+            out.push((0, 2, 0xFF_FF_FF));
+        } else if let Some(grey) = self
             .world_map
             .map_display
             .as_ref()
@@ -687,12 +728,29 @@ impl World {
         let mult = i32::from(self.actors[slot].move_state.field_72);
         let dt = WORLD_MAP_FRAME_STEP;
         let mut speed = ((self.field_base_step() * mult) >> 12) * dt;
-        // Diagonal normalise: when both axes are moving, x0.75 - mirroring the
-        // field controller (`FUN_801d01b0`) and the retail world-map walk
-        // overlay (`speed -= speed >> 2`). `advance_with_collision` steps both
-        // axes by the same amount, so without this a diagonal travels `speed` on
-        // each axis = ~1.41x the cardinal speed.
-        if dx != 0 && dz != 0 {
+        // Terrain slow (`0x801D05B8..0x801D05E8`): the same controller halves
+        // the step on an object-grid tile carrying `0x4000` while the scene
+        // control byte `+0x61` is `1`, as `step_field_locomotion` does.
+        if self.locomotion.scene_ctrl_61 == 1 {
+            let ms = &self.actors[slot].move_state;
+            let (tx, tz) = (i32::from(ms.world_x) >> 7, i32::from(ms.world_z) >> 7);
+            let cell = usize::try_from(tz * 0x80 + tx)
+                .ok()
+                .and_then(|i| self.terrain.object_cells.get(i).copied())
+                .unwrap_or(0);
+            if cell & 0x4000 != 0 {
+                speed >>= 1;
+            }
+        }
+        // Diagonal normalise: x0.75 only under camera mode 4 with both axes in
+        // the resolved mask (`lbu 0x8007B607 >> 4 == 4`, `0x801D05EC..0x801D0614`),
+        // the field controller's own gate. Every kingdom camera record holds
+        // mode `1` (`0x8007B607 = 0x10` on the `map01` / `map02` / `map03`
+        // library states), so an overworld diagonal walks the full `10` units
+        // on each axis a frame: a retail `map01` film held Up+Right steps
+        // `(+10, +10)` every three vsyncs. A run with no camera composing takes
+        // the mode-4 arm, as the field path does.
+        if dx != 0 && dz != 0 && self.locomotion.camera_mode_byte.is_none_or(|m| m >> 4 == 4) {
             speed -= speed >> 2;
         }
         if speed <= 0 {
@@ -706,10 +764,22 @@ impl World {
         // for, so the displacement over time is retail's - `10` units every
         // `3` vsyncs, `130` per `39` - rather than `4` every vsync.
         let frame_units = (speed + FIELD_STEP_UNIT - 1) / FIELD_STEP_UNIT * FIELD_STEP_UNIT;
-        let per_sub_step = FIELD_STEP_UNIT * dt;
-        let carry = self.world_map.walk_carry + frame_units;
-        let speed = (carry / per_sub_step) * FIELD_STEP_UNIT;
-        self.world_map.walk_carry = carry % per_sub_step;
+        let speed = if self.toggles.smooth_walk {
+            let per_sub_step = FIELD_STEP_UNIT * dt;
+            let carry = self.world_map.walk_carry + frame_units;
+            self.world_map.walk_carry = carry % per_sub_step;
+            (carry / per_sub_step) * FIELD_STEP_UNIT
+        } else if self.clock.game_tick_fired || !self.clock.game_tick_live {
+            // Retail's controller runs once a game frame and commits the
+            // whole frame step there (`FUN_801D1344` calls `FUN_801D01B0` from
+            // the actor pass), so the player stands still between two frames
+            // and reaches a trigger tile or an encounter crossing with the
+            // frame's full step taken.
+            self.world_map.walk_carry = 0;
+            frame_units
+        } else {
+            0
+        };
         if speed <= 0 {
             return;
         }

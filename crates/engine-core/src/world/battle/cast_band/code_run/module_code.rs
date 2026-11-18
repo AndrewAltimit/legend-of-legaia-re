@@ -692,6 +692,11 @@ impl World {
                     }
                 }
                 self.refresh_seat_spirit(&mut seats);
+                // Each rolled seat's numeral on the raw roll, ahead of the
+                // clamp (`jal 0x801F44A0` at `0x801F8624`, behind the wrapper
+                // at `0x801F8610`).
+                // REF: FUN_801F44A0
+                self.push_sweep_popups(rolls.iter().map(|&(s, _)| s), &rolls);
             }
             let take = |s: u8| {
                 rolls
@@ -969,6 +974,16 @@ impl World {
                 run.spawns = creature_arm_spawns(entry, phase_in, SpawnTiming::Pass);
             }
             run.every_spawns = creature_arm_spawns(entry, phase_in, SpawnTiming::Every);
+            // PROT 0931's arm 7 seats its spark only while the drained word
+            // stands at `0xA1` or more (`slti v0,v0,0xa1` / `bne` at
+            // `0x801F72A0..0x801F72A4`, past the spark to the ring shrink at
+            // `0x801F7354`): arm 6 leaves the word `0xC0` up, so the arm's
+            // first few passes shed a spark and the rest only shrink the rings.
+            // A `--watch` of the `rand()` seed reads seven sparks (`ra`
+            // `0x801F72C4` / `0x801F72FC`) over the arm's 48 passes.
+            if entry == 931 && phase_in == 7 && self.casting.module_cam.countdown.0 < 0xA1 {
+                run.every_spawns = &[];
+            }
         }
         let step = if held && !owns_chain {
             Some(ticks::CastTickStep::Busy)
@@ -2243,7 +2258,14 @@ impl World {
                 );
             }
             if arm.flushes_pool {
-                self.casting.flush_module_part_pool();
+                // PROT 0964's strike seats its two glows outside the pool
+                // (`ELEMENT_STRIKE_FLUSH_SPARES`), which its flushes leave.
+                let spare: &[u32] = if entry == 964 {
+                    &legaia_engine_cast::cast_module_camera::ELEMENT_STRIKE_FLUSH_SPARES
+                } else {
+                    &[]
+                };
+                self.casting.flush_module_part_pool_sparing(spare);
             }
             // The line a passing arm prints or clears at the label's place.
             if !arm.hold

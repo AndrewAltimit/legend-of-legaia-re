@@ -246,8 +246,22 @@ impl PlayWindowApp {
         }
     }
 
+    /// Tell the renderer whether this frame builds on an earlier one, and how
+    /// far back, from this frame's world: ahead of every draw of it, the
+    /// sweep's and the framebuffer grab's captures as well as the present.
+    /// Asked after the present instead, a capture drew with the frame
+    /// before's answer, so on the tick a cast's persisting run started or
+    /// changed depth the sweep's PNG read a cleared or older page while the
+    /// presented frame, and the play page, did not (the host pair's
+    /// `cast_thunder`, tick `869`).
+    pub(super) fn arm_frame_persist(&self, r: &legaia_engine_render::Renderer) {
+        r.set_frame_ring_keep(self.session.host.world.cast_module_resident());
+        r.set_frame_persist(self.session.host.world.cast_frame_persists());
+        r.set_frame_persist_depth(self.session.host.world.cast_frame_persist_vsyncs());
+    }
+
     /// The single-shot screenshot harness (phase gate, capture, exit) or
-    /// the present.
+    /// the present. [`Self::arm_frame_persist`] has run for this frame.
     pub(super) fn present_frame(
         &self,
         r: &legaia_engine_render::Renderer,
@@ -256,9 +270,6 @@ impl PlayWindowApp {
         light_prims: &[legaia_render_kernels::screen_prim::ScreenPrim],
     ) {
         let target = |scene| present_target(scene, screen_prims, light_prims);
-        r.set_frame_ring_keep(self.session.host.world.cast_module_resident());
-        r.set_frame_persist(self.session.host.world.cast_frame_persists());
-        r.set_frame_persist_depth(self.session.host.world.cast_frame_persist_vsyncs());
         #[cfg(feature = "oracles")]
         self.record_audio_wav();
         self.capture_cast_sequence_frame(r, &|| target(scene));
@@ -374,6 +385,14 @@ struct CastSeqRecorder {
     sfx: std::io::BufWriter<std::fs::File>,
     /// `xa.csv`: the CD-XA clip requests each tick, `tick,st7,phase,clip,channel,dur`.
     xa: std::io::BufWriter<std::fs::File>,
+    /// `silent.csv`: the ring cues that came due and keyed no voice
+    /// ([`AudioDirector::silent_ring`]), `tick,st7,phase,id`. Not scored: a
+    /// listening check beside `sfx.csv`.
+    ///
+    /// [`AudioDirector::silent_ring`]: legaia_engine_session::audio_director::AudioDirector::silent_ring
+    silent: std::io::BufWriter<std::fs::File>,
+    /// Silent ring cues already read.
+    silent_seen: u64,
     /// Director commands already read ([`AudioCommandLog::count`]).
     ///
     /// [`AudioCommandLog::count`]: legaia_engine_session::audio_director::AudioCommandLog::count
@@ -601,6 +620,8 @@ impl PlayWindowApp {
             let _ = writeln!(sfx, "tick,st7,phase,id,kind");
             let mut xa = std::io::BufWriter::new(std::fs::File::create(dir.join("xa.csv")).ok()?);
             let _ = writeln!(xa, "tick,st7,phase,clip,channel,dur");
+            let mut silent = std::io::BufWriter::new(std::fs::File::create(dir.join("silent.csv")).ok()?);
+            let _ = writeln!(silent, "tick,st7,phase,id");
             if self.session.bgm.is_none() {
                 eprintln!(
                     "cast sequence: no audio director (--no-audio) - sfx.csv stays empty \
@@ -612,6 +633,8 @@ impl PlayWindowApp {
                 body,
                 sfx,
                 xa,
+                silent,
+                silent_seen: 0,
                 sfx_seen: 0,
                 every: num("LEGAIA_DIAG_CAST_SEQ_EVERY", 1).max(1),
                 tail: num("LEGAIA_DIAG_CAST_SEQ_TAIL", 60),
@@ -638,6 +661,14 @@ impl PlayWindowApp {
         // before the cast never lands on its first tick.
         let mut due: Vec<(i32, &'static str)> = Vec::new();
         let mut clips: Vec<(u32, u32, u32)> = Vec::new();
+        let mut silent: Vec<i16> = Vec::new();
+        if let Some(d) = self.session.bgm.as_ref() {
+            let log = d.silent_ring();
+            let fresh = log.count().saturating_sub(rec.silent_seen) as usize;
+            rec.silent_seen = log.count();
+            let recent: Vec<i16> = log.recent().copied().collect();
+            silent.extend_from_slice(&recent[recent.len().saturating_sub(fresh)..]);
+        }
         if let Some(d) = self.session.bgm.as_ref() {
             let log = d.commands();
             let fresh = log.count().saturating_sub(rec.sfx_seen);
@@ -982,7 +1013,7 @@ impl PlayWindowApp {
                 let h = |o: usize| st.actor_u16(o) as i16;
                 let _ = writeln!(
                     f,
-                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{},{},{},{:#06x},{},{:#06x},{:#06x},{:#06x},{:#06x},{},{:#010x},{},{},{},{},{},{},{},{},{},{},{}",
+                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{},{},{},{:#06x},{},{:#06x},{:#06x},{:#06x},{:#06x},{},{:#010x},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                     part.model_sel,
                     u8::from(part.finished),
                     st.field_74,
@@ -1020,6 +1051,8 @@ impl PlayWindowApp {
                     st.field_9c,
                     h(0xBC),
                     h(0xBE),
+                    h(0xC8),
+                    h(0xCA),
                 );
             }
         }
@@ -1070,6 +1103,9 @@ impl PlayWindowApp {
                 "{tick},{st},{},{id},{kind}",
                 w.casting.module_phase
             );
+        }
+        for id in &silent {
+            let _ = writeln!(rec.silent, "{tick},{st},{},{id}", w.casting.module_phase);
         }
         for (clip, channel, dur) in &clips {
             let _ = writeln!(
@@ -1277,6 +1313,7 @@ impl PlayWindowApp {
         let _ = rec.cam.flush();
         let _ = rec.body.flush();
         let _ = rec.sfx.flush();
+        let _ = rec.silent.flush();
         let _ = rec.xa.flush();
         if rec.done.is_some_and(|d| tick >= d + rec.tail) || rec.shots >= rec.max {
             let _ = rec.meta.flush();

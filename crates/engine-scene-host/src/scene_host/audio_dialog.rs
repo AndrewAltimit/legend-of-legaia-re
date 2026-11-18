@@ -483,11 +483,26 @@ impl SceneHost {
                 other => leftover.push(other),
             }
         }
-        // The poller's stage 6 ran: attach the start it was walking.
+        // The poller's stage 6 ran: attach the start it was walking - unless
+        // the script holds the slot paused. Stage 6 tests pause bit 1 and
+        // skips the re-attach under it (`andi v0,v0,0x2` / `bne` at
+        // `0x8002479C..0x800247A0`, around `jal 0x80026478`), so the
+        // installed score stays silent until the script's own sub-op 4
+        // replays it from the top. `vozz` `P1[7]`, the Genesis Tree's
+        // revival, starts `2035` with `35 F3 07 01`, pauses the slot with
+        // `35 00 00 02` in the same slice, waits for the burst and replays it
+        // with `35 00 00 04`; attached regardless, the theme started at the
+        // install and restarted at the replay. The port's director holds the
+        // install as retail's slot does: attached, then paused before any
+        // sample is mixed, and the replay rewinds it.
+        // REF: FUN_800243F0 (stage 6, 0x80024790..0x800247C4), FUN_80026478
         if self.world.take_bgm_install_due()
             && let Some((id, entry)) = self.pending_bgm_install.take()
         {
             director.start_owned_vab(id, &entry);
+            if self.world.audio.bgm_script_paused() {
+                director.pause();
+            }
             self.bgm_ending_source =
                 u32::from(id) == legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID;
             acted += 1;

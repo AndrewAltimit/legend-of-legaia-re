@@ -1348,8 +1348,9 @@ pub use doomsday::{
 };
 pub use earthquake::{EARTHQUAKE_COUNTDOWN, ROCK_RECORDS, earthquake_camera, rock_point};
 pub use element_change::{
-    ELEMENT_CHANGE_BODY, ELEMENT_CHANGE_COUNTDOWN, ELEMENT_STRIKE_BODY, THUNDER_SPRAY_ROUNDS,
-    element_change_camera, element_strike_camera,
+    ELEMENT_CHANGE_BODY, ELEMENT_CHANGE_COUNTDOWN, ELEMENT_STRIKE_BODY,
+    ELEMENT_STRIKE_FLUSH_SPARES, THUNDER_SPRAY_ROUNDS, element_change_camera,
+    element_strike_camera,
 };
 pub use evil_seru_magic::*;
 pub use freed::*;
@@ -1383,7 +1384,9 @@ pub use power_charge::{POWER_CHARGE_BODY, POWER_CHARGE_RECORD, power_charge_came
 pub use power_up::{POWER_UP_BODY, POWER_UP_COUNTDOWN, power_up_camera};
 pub use puera::*;
 pub use rolling_flare::{ROLLING_FLARE_BODY, ROLLING_FLARE_WALK_REACH, rolling_flare_camera};
-pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
+pub use scythe_wind::{
+    SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera, scythe_wind_reseat_pins,
+};
 pub use seru::*;
 pub use shadow_break::{
     SHADOW_BREAK_BLADES, SHADOW_BREAK_BODY, SHADOW_BREAK_BURST_RECORD, SHADOW_BREAK_FALL_RECORD,

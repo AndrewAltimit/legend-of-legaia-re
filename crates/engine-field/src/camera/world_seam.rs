@@ -129,6 +129,11 @@ pub trait CameraWorld {
     /// (`camera.state.params`): the staged shot no longer owns the camera,
     /// so a later record must not read it back as its own framing.
     fn drop_staged_camera_shot(&mut self) {}
+    /// Whether a committed battle holds the field from its request until it
+    /// opens: nothing field-side steps in retail then, so no shot lets go.
+    fn field_held_for_battle(&self) -> bool {
+        false
+    }
     /// Whether a scripted arc drives the follow camera.
     fn script_arc_follow_camera(&self) -> bool;
     /// Whether the per-frame camera-zone re-query flag is raised.

@@ -397,7 +397,7 @@ pub fn effect_model_draws(
     plan_of: impl Fn(usize) -> Option<BattleActorDrawPlan>,
 ) -> FxModelDraws {
     let battle = world.mode == SceneMode::Battle;
-    let overworld = world.mode == SceneMode::WorldMap;
+    let overworld = world.draw_mode() == SceneMode::WorldMap;
     // The passes whose draws keep retail's per-word winding test: battle and
     // the field-shaped ones. The prim dispatcher `FUN_80043390` lowers its
     // `NCLIP` mask only for a word carrying `0x08000000`
@@ -405,7 +405,7 @@ pub fn effect_model_draws(
     // (PROT 0901) and the minigame venues draw both sides.
     let per_word_cull = battle
         || matches!(
-            world.mode,
+            world.draw_mode(),
             SceneMode::Field | SceneMode::Cutscene | SceneMode::Dance
         );
     let model_flip = if battle { WORLD_FLIP } else { IDENTITY };
@@ -451,8 +451,24 @@ pub fn effect_model_draws(
     out.kind4 = world
         .active_effect_kind4_draws()
         .into_iter()
-        .map(|mut rb| {
+        .filter_map(|rb| {
             let model = node(rb.flags_52, rb.world_pos, rb.rot);
+            // The draw-kind-4 tail skips a node whose origin stands nearer
+            // than its view-depth floor (`effect_ribbon::node_near_reject_depth`),
+            // read off the view depth the dispatcher's `MVMVA` stored: the
+            // world position `+0x14` under the camera (`0x8001AE0C..0x8001AE34`),
+            // whatever camera-relative prefix the node's draw takes after.
+            let origin = node(0, rb.world_pos, rb.rot);
+            match (part_cam, rb.near_reject_depth) {
+                (Some(cam), Some(floor))
+                    if cam.eye_point([origin[12], origin[13], origin[14]], battle)[2] < floor =>
+                {
+                    None
+                }
+                _ => Some((rb, model)),
+            }
+        })
+        .map(|(mut rb, model)| {
             if rb.object_effect_kind != 0 {
                 rb.mesh = far_arm_node_mesh(world, &rb, &model, part_cam, battle);
                 // The arm has run its own winding test on the quad.

@@ -2636,6 +2636,19 @@ The port composites the transition's screen primitives over a live scene
 an opaque display-rect quad at the farthest OT bucket - on **every** frame of the window to
 stand in for the cleared frame.
 
+Nothing clears the display buffer between the transition's frames, though, so a style that
+draws no full-rect quad of its own draws over the frames before it. The spin-up field
+(`FUN_801D0370`) arms no wash: its particles stay opaque at rest, and once a delay expires the
+patch adds (`B + F`) wherever it flies, so the field stays up behind the confetti and the patches
+crowding the centre add up to a white burst. That is what the retail film of `vozz`'s Viguro pair
+(`3E FF 0A`, row `10`: flags bit `0x80`, monster `0x4A`, the selector's spin-up arm) shows;
+composed from scratch over the backdrop, the port opened a black hole in the field instead. The
+port keeps a CPU model of the display for this style, as it does for the curtain
+(`BattleIntro::update_spinup_display`, drawn back as the trail quads): seeded from the capture,
+uploaded under each frame's particles, and each frame's particles and ring rasterised into it
+(`screen_prim_raster::rasterize_onto_15bpp`). Retail double-buffers the display, so each buffer
+takes every second frame; the single model accumulates every frame (`inference`).
+
 #### The fade's second argument is a blend mode, not a depth
 
 `func_0x80024EE4(layer, blend, rgb)` pushes a five-word untextured quad over the whole display

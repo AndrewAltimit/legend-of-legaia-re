@@ -599,6 +599,15 @@ out when the player actor's engaged bit `+0x10 & 0x80000` is set - the bit the
 touch post `FUN_801D5B5C` raises on every talk and the dialog teardown
 clears. A talking player's Start opens nothing and buzzes nothing.
 
+The accept's button is the menu mask `_DAT_800846D8`, which the new-game
+init `FUN_80034A6C` seeds to `0x10` (Triangle) and nothing rewrites, widened by
+`0x100` (Select) on the fall-through (`0x801D0258..0x801D0284`); retail's
+accept never tests Start. A capture over `conc_field_card_boot` pressing
+Triangle opens the menu, as one pressing Select does. The port takes Triangle
+and its own Start (`legaia_engine_session::MENU_BUTTONS`, both hosts through
+`BootSession::claim_tick`); it leaves Select out, since both hosts read Select
+held with a Start press as the settings chord.
+
 <a id="which-scenes-the-menu-opens-in"></a>
 Because the accept is a leg of `FUN_801D01B0`, the menu opens in every scene
 that controller walks, including the three kingdom overworlds - ordinary

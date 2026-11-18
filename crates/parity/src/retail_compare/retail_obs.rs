@@ -187,6 +187,11 @@ pub struct RetailObs {
     /// stand against (`FUN_8003F3FC` at `0x8003F448`): a clock of the steps the
     /// player walked, handed over as `LEGAIA_SEAT_FOG_OFFSET`.
     pub fog_offset: i32,
+    /// The region roll's step counter `_DAT_8007B5FC` (`FUN_801D9E1C`): the
+    /// steps left before the next random fight, walk history the card load
+    /// does not carry. The walk film seats it, so a walk rolls where retail's
+    /// rolled (`karisto_sol_pre_encounter` holds `14`).
+    pub encounter_step_counter: i32,
     /// Vsyncs since the frame pacer's last `VSync(step)` returned: libetc's
     /// vblank counter `0x8007A894` less the count `FUN_8005FB84` stored on
     /// return (`0x800797D4`, `0x8005FC8C..0x8005FCA0`). The game frame opens
@@ -269,6 +274,10 @@ pub struct RetailObs {
     /// ([`retail_ambient_streams`]): what a run resuming from the state, so
     /// its `rand()` stream can match retail's, seats after the settle.
     pub ambient_streams: Vec<RetailAmbientStream>,
+    /// The placement a talk holds engaged and the pre-talk heading the touch
+    /// saved on it ([`retail_talk_facing_save`]), which the walk film seats
+    /// so the talk's end restores it.
+    pub talk_facing_save: Option<(u16, u16)>,
     /// Placements a finished partition-2 beat left on a script-literal tile
     /// ([`scripted_seats`]): set by the corpus run, which holds the scene's
     /// MAN; seated, position only, by the headless seed and by the image
@@ -477,6 +486,7 @@ impl RetailObs {
             },
             fog_live_count: game_anchors::u16_at(ram, 0x8007_BCA8),
             fog_offset: game_anchors::u32_at(ram, 0x8007_BCAC) as i32,
+            encounter_step_counter: game_anchors::u32_at(ram, 0x8007_B5FC) as i32,
             vsync_phase: game_anchors::u32_at(ram, 0x8007_A894)
                 .wrapping_sub(game_anchors::u32_at(ram, 0x8007_97D4)),
             frame_history: crate::retail_compare_battle::frame_cost_ring(ram)
@@ -522,6 +532,11 @@ impl RetailObs {
                 retail_ambient_streams(ram)
             } else {
                 Vec::new()
+            },
+            talk_facing_save: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_talk_facing_save(ram)
+            } else {
+                None
             },
             morphs: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_morphs(ram)
@@ -677,6 +692,9 @@ pub fn seat_ambient_streams(session: &mut NativeSession, retail: &RetailObs) {
     for s in &retail.ambient_streams {
         world.seed_ambient_walker(s.seat.flat, s.x, s.z, s.heading);
         world.seed_ambient_stream(&s.seat);
+    }
+    if let Some((flat, heading)) = retail.talk_facing_save {
+        world.seed_talk_facing_save(flat, heading);
     }
     if let Some(seed) = retail.rand_seed {
         world.rng_state = seed;

@@ -819,6 +819,40 @@ pub struct RibbonDraw {
     /// The render scale `+0x72` the clip measures with (`1.0 = 0x1000`); the
     /// mesh already carries it.
     pub object_effect_scale: f32,
+    /// The view depth under which the dispatcher skips the whole node
+    /// ([`node_near_reject_depth`]), `None` for a draw it never skips.
+    pub near_reject_depth: Option<f32>,
+}
+
+/// The view depth `+0x34` under which the render dispatcher's draw-kind-4
+/// tail draws nothing of a node (`FUN_8001ADA4`, `0x8001B160..0x8001B1DC`):
+/// on a mode-`6` node (`+0x5A`) one under `0xA1`, on any other with a
+/// non-zero render scale `+0x72` one under `0xA0`, unless `+0x52` carries
+/// `0x20`, and only for a node whose view depth the dispatcher measured. The emitter has already built the node's geometry; the tail
+/// returns before the model draw. The test is on the node's origin, not its
+/// primitives, so a node the camera stands inside is dropped whole: Nova's
+/// whirlwind wall (PROT 0913, `0x801F87F0` / `0x801F8790`, a cloud-textured
+/// tube `3072` / `4096` units round) drops out as arm 16's camera rises
+/// past its origin, where the port drew the tube's far side over the sky.
+///
+/// PORT: FUN_8001ADA4 (`0x8001B160..0x8001B1DC`, the draw-kind-4 tail's near reject)
+pub fn node_near_reject_depth(s: &legaia_engine_vm::move_vm::ActorState) -> Option<f32> {
+    // The view depth is measured only for a node whose `+0x10` carries
+    // `0x80` (`andi v0,v0,0x80` at `0x8001AE00`); any other has `+0x34 =
+    // 0x7D0` stored in its place (`0x8001AE40`) and always draws. The seater
+    // raises the bit and move-VM op `0x15` clears it beside a `+0x52` with
+    // `0x400` set, so a camera-relative node (`+0x52 & 0x780`) is never
+    // rejected: Gimard's arm-9..12 camera-locked fans read `0x00044800`
+    // under `+0x52 = 0x780` in a `--retail-parts` recording.
+    if s.field_52 & (0x20 | 0x400) != 0 {
+        None
+    } else if s.move_submode == 6 {
+        Some(161.0)
+    } else if s.field_72 != 0 {
+        Some(160.0)
+    } else {
+        None
+    }
 }
 
 /// A move-VM node's model rotation, radians X / Y / Z: its rotation banks
@@ -845,6 +879,27 @@ pub fn node_rotation(s: &legaia_engine_vm::move_vm::ActorState) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The draw-kind-4 tail's near reject: `0xA1` on a mode-6 node, `0xA0`
+    /// on a scaled one, none under `+0x52 & 0x20` or at scale `0`.
+    #[test]
+    fn the_kind4_tail_rejects_a_node_at_the_lens() {
+        let mut s = legaia_engine_vm::move_vm::ActorState {
+            field_72: 0x1000,
+            ..Default::default()
+        };
+        assert_eq!(node_near_reject_depth(&s), Some(160.0));
+        s.move_submode = 6;
+        assert_eq!(node_near_reject_depth(&s), Some(161.0));
+        s.move_submode = 2;
+        s.field_52 = 0x20;
+        assert_eq!(node_near_reject_depth(&s), None);
+        s.field_52 = 0x780;
+        assert_eq!(node_near_reject_depth(&s), None, "camera-relative");
+        s.field_52 = 0;
+        s.field_72 = 0;
+        assert_eq!(node_near_reject_depth(&s), None);
+    }
 
     #[test]
     fn the_keyframe_cursor_is_not_a_rotation() {

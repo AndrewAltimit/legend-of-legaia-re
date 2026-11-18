@@ -1045,6 +1045,7 @@ pub fn default_arm_draw_row(
         far_corner: ColourWord::of(s).links_at_far_corner(),
         object_effect_kind: s.field_42,
         object_effect_scale: f32::from(s.field_72) / 4096.0,
+        near_reject_depth: crate::effect_ribbon::node_near_reject_depth(s),
     })
 }
 

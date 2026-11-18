@@ -839,8 +839,8 @@ export function createPreview3d(env) {
       if (m.ok && P.lastKind === 'xw-reload') P.reloadMs = ms;
       P.last = { ok: m.ok, ms, engineMs: m.engineMs, map: m.map, n: P.builds };
       if (m.busy) {
-        // A fight or a screen owns the frame: try again shortly.
-        setStatus('The preview is in a fight or a screen: the edit goes in once it is back on the field.');
+        // A fight, a screen or a cutscene owns the frame: try again shortly.
+        setStatus('The preview is in a fight, a screen or a cutscene: the edit goes in once it is back on the field.');
         P.dirty = true;
         clearTimeout(P.timer);
         P.timer = setTimeout(flush, 1500);

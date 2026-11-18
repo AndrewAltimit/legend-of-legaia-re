@@ -36,9 +36,12 @@ pub enum PickerSeat {
     },
     /// A [`super::PICKER_ENTRY_BEATS`] row seated it: the selector's story
     /// arrival, on the trigger tile of the beat it plays
-    /// ([`SceneHost::arm_picker_story_entry`]).
+    /// ([`SceneHost::arm_picker_story_entry`]). An
+    /// [`super::BeatTrigger::EntryScript`] row keeps the default seat and
+    /// reports it as such.
     EntryBeat {
-        /// The arrival rule (always [`PickerSeatRule::Arrival`]).
+        /// The arrival rule (always [`PickerSeatRule::Arrival`], stepped for a
+        /// [`super::BeatTrigger::NearArrival`] row).
         rule: PickerSeatRule,
         /// The world `(x, z)` seat.
         seat: (i16, i16),
@@ -337,32 +340,53 @@ impl SceneHost {
 
     /// Arm a **scene-selector** entry into `scene`: the play hosts' scene
     /// pickers (the native `F12` Scenes page and `--scene` switch, the browser
-    /// page's scene list) seat a scene with a [`super::PICKER_ENTRY_BEATS`]
-    /// row on its story arrival, the tile a door lands the party on and the
-    /// trigger of the beat that plays there, faced along the arrival - so
-    /// the area opens on the cutscene a player who walks in sees. Every
-    /// other scene, and every refusal, is [`Self::arm_picker_entry_seat`]'s.
+    /// page's scene list) open a scene with a [`super::PICKER_ENTRY_BEATS`]
+    /// row on its story beat ([`Self::arm_picker_beat`]), so the area opens
+    /// on the cutscene a player who walks in sees. Every other scene, and
+    /// every refusal, is [`Self::arm_picker_entry_seat`]'s.
     ///
     /// Whether the beat then plays is the record's own C1 / C2 gate against
-    /// the live flags: a session past the beat stands on the door's tile with
-    /// nothing firing, as retail does.
+    /// the live flags: a session past the beat sees nothing fire, as retail
+    /// does.
     // REF: FUN_801D1EC4, FUN_8003BDE0
     pub fn arm_picker_story_entry(&mut self, scene: &str) -> bool {
-        if !self.arm_picker_entry_seat(scene) {
+        match super::picker_entry_beat(scene) {
+            Some(beat) => self.arm_picker_beat(beat),
+            None => self.arm_picker_entry_seat(scene),
+        }
+    }
+
+    /// Arm a picker entry into `beat.scene` staged for `beat`: the default
+    /// arm ([`Self::arm_picker_entry_seat`]), then the seat the beat's
+    /// [`super::BeatTrigger`] names - its trigger tile, faced along the
+    /// arrival, for [`super::BeatTrigger::ArrivalTile`] and
+    /// [`super::BeatTrigger::NearArrival`]; the default seat for
+    /// [`super::BeatTrigger::EntryScript`] - and the row's flags raised
+    /// ([`legaia_engine_core::world::World::seed_picker_beat_flags`]): the
+    /// arriving door's hand-off flags, which the door's record sets before
+    /// its `0x3F`, and the beat record's C2 flags. `false` when the default
+    /// arm refuses; a seated row whose arrival the disc does not carry keeps
+    /// the default seat and raises nothing. The entry-beat sweep stages each
+    /// candidate through it.
+    // REF: FUN_801D1EC4, FUN_8003BDE0
+    pub fn arm_picker_beat(&mut self, beat: &super::PickerEntryBeat) -> bool {
+        if !self.arm_picker_entry_seat(beat.scene) {
             return false;
         }
-        if let Some(beat) = super::picker_entry_beat(scene) {
+        if beat.trigger != super::BeatTrigger::EntryScript {
             let rule = PickerSeatRule::Arrival {
                 from: beat.from,
                 tile: beat.tile,
-                step: (0, 0),
+                step: beat.step,
             };
-            if let Some(mut seat) = self.resolve_picker_override(scene, rule) {
-                seat.beat = Some(beat.record);
-                self.pending_picker_override = Some(seat);
-                self.pending_picker_arrivals = Some(Vec::new());
-            }
+            let Some(mut seat) = self.resolve_picker_override(beat.scene, rule) else {
+                return true;
+            };
+            seat.beat = Some(beat.record);
+            self.pending_picker_override = Some(seat);
+            self.pending_picker_arrivals = Some(Vec::new());
         }
+        self.world.seed_picker_beat_flags(beat.flags);
         true
     }
 

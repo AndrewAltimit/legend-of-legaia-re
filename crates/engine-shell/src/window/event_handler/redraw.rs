@@ -160,6 +160,16 @@ impl PlayWindowApp {
             toggles.battle_poly_frame_cost = met && wanted;
             if met {
                 sc.leadin_table_cost = false;
+                // The pass the film opened on ran before the census came
+                // back; it is priced again once the census counts it.
+                let battle = &mut self.session.host.world.battle;
+                battle.reprice_opening_pass = wanted;
+                // `LEGAIA_FILM_COST_RING=e0,..,e15;cursor`: the capture
+                // state's ring, for a film no gate seeds one on.
+                battle.film_cost_ring = std::env::var("LEGAIA_FILM_COST_RING")
+                    .ok()
+                    .and_then(|v| super::redraw_tick::parse_cost_ring(&v))
+                    .filter(|_| std::env::var_os("LEGAIA_BATTLE_COST_RING").is_none());
             }
         }
     }

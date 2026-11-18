@@ -101,10 +101,11 @@
 //!
 //! **Still open.** The victory sentence is built from typed state rather than
 //! from the pool, so a translation that lifts the `0898` pool does not reach
-//! it, and the escape messages have no engine caption at all. The defeat
-//! message does come off the pool ([`DefeatText`]): both hosts draw it in the
-//! loss window through `legaia_engine_battle_hud::battle_defeat_banner`. The layout arguments
-//! `FUN_801DBB8C` passes the register call encode the panel band's
+//! it. The defeat message does come off the pool ([`DefeatText`]): both hosts
+//! draw it in the loss window through
+//! `legaia_engine_battle_hud::battle_defeat_banner`. So do the two escape
+//! messages ([`EscapeText`]), which the run band raises on record `0x43`.
+//! The layout arguments `FUN_801DBB8C` passes the register call encode the panel band's
 //! *vertical* placement, which is why `engine-ui`'s panel Y is still an
 //! approximation.
 
@@ -719,12 +720,21 @@ pub const VICTORY_TEAM_VA: u32 = 0x801F_4C2C;
 /// figures into by column.
 pub const VICTORY_REPORT_VA: u32 = 0x801F_4C38;
 
+/// The successful-escape sentence both arms append to the escaped buffer
+/// `ctx+0x159` (`0x801D85C4` on the solo arm, after the lead's name;
+/// `0x801D8668` on the roster arm, after the [`VICTORY_TEAM_VA`] head).
+pub const ESCAPED_TAIL_VA: u32 = 0x801F_4CAC;
+
+/// The failed-escape sentence both arms append to the could-not-escape
+/// buffer `ctx+0x189` (`0x801D8600` solo, `0x801D868C` roster).
+pub const ESCAPE_FAILED_TAIL_VA: u32 = 0x801F_4CC4;
+
 /// One site in PROT 0898 that forms each result-window string's address
 /// (`legaia_overlay_images::string_refs`), by retail VA: the `lui` /
 /// `addiu` pair of the build arm that copies it. A string a language pack
 /// moved is read where its site now points. Coordinates from the
 /// translation pipeline's reference scan of the retail image.
-pub const RESULT_TEXT_REFS: [(u32, legaia_overlay_images::string_refs::StrRef); 4] = {
+pub const RESULT_TEXT_REFS: [(u32, legaia_overlay_images::string_refs::StrRef); 6] = {
     use legaia_overlay_images::string_refs::StrRef::Pair;
     [
         (
@@ -753,6 +763,20 @@ pub const RESULT_TEXT_REFS: [(u32, legaia_overlay_images::string_refs::StrRef); 
             Pair {
                 lui: 0x801D_8580,
                 lo: 0x801D_8588,
+            },
+        ),
+        (
+            ESCAPED_TAIL_VA,
+            Pair {
+                lui: 0x801D_85BC,
+                lo: 0x801D_85C4,
+            },
+        ),
+        (
+            ESCAPE_FAILED_TAIL_VA,
+            Pair {
+                lui: 0x801D_85F8,
+                lo: 0x801D_8600,
             },
         ),
     ]
@@ -826,6 +850,65 @@ impl DefeatText {
         match subject {
             ResultSubject::Lead(_) => format!("{lead_name}{}", self.solo_suffix),
             ResultSubject::LeadsTeam { .. } => format!("{lead_name}{}", self.team_tail),
+        }
+    }
+}
+
+/// The run band's two outcome lines' disc pieces, read off the caller's PROT
+/// 0898 image. No bytes of the text are carried here.
+///
+/// `FUN_801D84C0` builds both buffers at battle start the way it builds the
+/// defeat line: the solo arm copies the lead's name and appends the sentence,
+/// the roster arm copies the [`VICTORY_TEAM_VA`] head (`0xC1 <id>` plus the
+/// team suffix) and appends it, then patches the escape operand to the lead
+/// (`0x801D86E8` / `0x801D8710`). The escape roll `FUN_801E791C` points
+/// record `0x43`'s content word `0x8007726C` at one of the two
+/// (`0x801E7B38` failed, `0x801E7B84` escaped) and the run band's `0x64` arm
+/// raises the record.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EscapeText {
+    /// The roster arm's head after its leading `0xC1 <id>` name escape.
+    pub team_tail: String,
+    /// The successful-escape sentence (`ctx+0x159`'s tail).
+    pub escaped: String,
+    /// The failed-escape sentence (`ctx+0x189`'s tail).
+    pub failed: String,
+}
+
+impl EscapeText {
+    /// Read the three pieces. `None` under the shapes [`DefeatText::parse`]
+    /// refuses.
+    pub fn parse(overlay_0898: &[u8]) -> Option<Self> {
+        let glyphs = |b: &[u8]| b.iter().all(|&c| is_glyph(c));
+        let team = result_string(overlay_0898, VICTORY_TEAM_VA)?;
+        let escaped = result_string(overlay_0898, ESCAPED_TAIL_VA)?;
+        let failed = result_string(overlay_0898, ESCAPE_FAILED_TAIL_VA)?;
+        let (&[escape, _operand], tail) = team.split_first_chunk::<2>()?;
+        if escape != NAME_ESCAPE
+            || !glyphs(tail)
+            || !glyphs(escaped)
+            || !glyphs(failed)
+            || escaped.is_empty()
+            || failed.is_empty()
+        {
+            return None;
+        }
+        Some(Self {
+            team_tail: latin1(tail),
+            escaped: latin1(escaped),
+            failed: latin1(failed),
+        })
+    }
+
+    /// The line record `0x43` shows for `subject`: the lead's name (and the
+    /// team suffix on the roster arm), then the escaped or the failed
+    /// sentence. Nothing re-points the escape buffers' operand, so the line
+    /// names the lead whoever ran.
+    pub fn compose(&self, subject: ResultSubject, lead_name: &str, escaped: bool) -> String {
+        let tail = if escaped { &self.escaped } else { &self.failed };
+        match subject {
+            ResultSubject::Lead(_) => format!("{lead_name}{tail}"),
+            ResultSubject::LeadsTeam { .. } => format!("{lead_name}{}{tail}", self.team_tail),
         }
     }
 }

@@ -53,9 +53,14 @@ fn kor5_ambient_script_writes_its_cue_into_ring_slot_3() {
     // Each write is stamped with the world's retail display-frame counter
     // (one per vsync), so the cadence below is in vsyncs whatever a session
     // tick spans.
+    // The parts tick inside the world tick, ahead of the placements, and a
+    // session with no audio drops the ring ops it routes after that tick; so
+    // the probe ticks the scene host and its headless tail itself and reads
+    // the ops the tick queued.
     let mut writes = Vec::new();
     for _ in 0..400u32 {
-        s.tick().expect("tick");
+        s.host.tick().expect("tick");
+        let _ = s.host.step_headless_frame_tail();
         for op in s.host.world.take_sfx_ring_ops() {
             if op == SfxRingOp::WriteSlot(3, 0x204) {
                 writes.push(s.host.world.clock.display_frames);

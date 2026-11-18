@@ -47,6 +47,15 @@ impl World {
     ///
     /// REF: FUN_801D8DE8 (`0x801D9154..0x801D91D0`, the `0x59` compose arm)
     pub(in crate::world) fn message_banner_ui_element(&mut self, element: u8, mode: u8) {
+        use legaia_engine_battle_vm::battle_action::RUN_MESSAGE_ELEMENT;
+        if element == RUN_MESSAGE_ELEMENT {
+            if mode & 1 != 0 {
+                self.battle.unload_message_banner(element);
+            } else if let Some(text) = self.run_message_text() {
+                self.battle.message_banner = Some(BattleMessageBanner::raised(element, text, 0));
+            }
+            return;
+        }
         if element != ABSORB_BANNER_ELEMENT
             && element != MAGIC_LEVEL_BANNER_ELEMENT
             && element != TIMED_MESSAGE_ELEMENT
@@ -62,6 +71,38 @@ impl World {
         {
             self.battle.message_banner = Some(BattleMessageBanner::raised(element, text, 0));
         }
+    }
+
+    /// The run band's outcome line for record `0x43`: the escaped or the
+    /// could-not-escape buffer `FUN_801D84C0` built, whichever the escape
+    /// roll pointed the record's content word `0x8007726C` at (the port
+    /// carries the roll's outcome on `battle_ctx.absorbed_seru` from the
+    /// dispatch to the band). `None` when a monster seat raised the record
+    /// (the capture band's caption, not composed here) or without the disc
+    /// pool.
+    ///
+    /// REF: FUN_801E791C (`0x801E7B38` / `0x801E7B84`, the two pointer stores)
+    fn run_message_text(&self) -> Option<String> {
+        if self.battle_ctx.active_actor >= self.party.party_count {
+            return None;
+        }
+        let text = self.tables.escape_text.as_ref()?;
+        let seats: [u8; 3] = std::array::from_fn(|i| {
+            if i < usize::from(self.party.party_count) {
+                (self.party_roster_slot(i) as u8).wrapping_add(1)
+            } else {
+                0
+            }
+        });
+        let subject = legaia_engine_battle_vm::battle_party_panel::result_subject(seats);
+        let lead = self
+            .party
+            .roster
+            .members
+            .get(self.party_roster_slot(0))
+            .map(|m| m.name())
+            .filter(|n| !n.trim().is_empty())?;
+        Some(text.compose(subject, &lead, self.battle_ctx.absorbed_seru != 0))
     }
 
     /// Raise the timed message: record `0x66`'s content word pointed at the

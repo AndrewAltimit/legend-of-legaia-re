@@ -320,7 +320,8 @@ pub enum PackReloadOutcome {
         /// Wall time of the reload, milliseconds.
         ms: u32,
     },
-    /// The player is in a fight or a screen on a pack map: the reload waits.
+    /// The player is in a fight, a screen or a pack cutscene on a pack map:
+    /// the reload waits.
     Busy,
     /// No pack is active, or it has no source to reload from.
     NoPack,
@@ -337,7 +338,7 @@ pub fn pack_reload_notice(outcome: &PackReloadOutcome) -> String {
         // The map is on screen; the line names what reloaded, short enough
         // for the 320-wide notice row.
         PackReloadOutcome::Reloaded { pack, ms, .. } => format!("{label}: {pack} ({ms} ms)"),
-        PackReloadOutcome::Busy => format!("{label}: waits until the fight or screen is over"),
+        PackReloadOutcome::Busy => format!("{label}: waits for the fight, screen or cutscene"),
         PackReloadOutcome::NoPack => format!("{label}: no expansion pack is loaded"),
         PackReloadOutcome::Refused(why) => {
             let first = why.lines().next().unwrap_or_default();

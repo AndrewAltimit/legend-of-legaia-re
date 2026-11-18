@@ -100,6 +100,19 @@ impl World {
             ticks::juggernaut_stager(&ctx, &mut seats, arm, take)
         };
         self.write_cast_seat_row(&seats);
+        // PROT 0966's sweep raises each swept seat's numeral on the raw roll,
+        // between the wrapper and the clamp (`jal 0x801DD4B0` at `0x801F8F08`,
+        // `jal 0x801F44A0` at `0x801F8F1C`); the band's fold is waived for
+        // these hits, so nothing else raises them. PROT 0927's party sweep
+        // does the same (`jal 0x801DD0AC` at `0x801F8758`, `jal 0x801F44A0`
+        // at `0x801F8774`), and stores `0` to the readout flag the wrapper's
+        // finisher raised (`sb zero,-0x49B4` in the push's delay slot): its
+        // numerals count on the cluster but do not open it
+        // (`World::juggernaut_final_hits`).
+        // REF: FUN_801F44A0
+        if entry == 966 || (entry == 927 && caster < ctx.party_count) {
+            self.push_sweep_popups(rolls.iter().map(|&(s, _)| s), &rolls);
+        }
         let hits = self.cast_hits_to_engine(hits);
         Some(CastModuleCodeRun {
             prot_entry: entry,

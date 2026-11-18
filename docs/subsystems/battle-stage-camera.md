@@ -1742,6 +1742,32 @@ reads `105` backdrop primitives with them dropped and `259` without, where retai
 holds `111`. The shadows are the `0x7F80` CLUT family of every battle table read, always a
 multiple of `24`. The HUD and the other 2D layers are not counted; they ride the base.
 
+The census counts the frame a pass leaves, so the pass's close waits for it. Retail
+measures a frame from one `VSync` return to the next (`FUN_800173BC` at the flip), the
+pass's node ticks and the primitives they link inside it, and the step its cost reads opens
+the next pass. The scene host counts after the world's tick, and a close made inside the
+tick read the count of the pass before: on `battle_jou_party_vahn_tri_somersault_super_open`
+the slow motion's first lone ghost (retail `685`, step `3` next) was priced on both ghosts
+(`816`), the next pass ran `4`, and Vahn's clip reached the Super Art's commit a pass early
+with Theeder's flinch `24` cursor units short. The world now leaves a census-priced pass's
+close to the host (`World::close_pass_after_census`), which makes it once its count of the
+tick is in; the pass sequence then reads retail's cursor for cursor up to the commit. Grade
+`disassembly` for the order, `capture` for the film.
+
+A sinking body costs more than it links. The defeat fade's sink raises the body's `+0x42`
+(`0x800504AC`), and `FUN_80048A08` then sends every object of it through `FUN_8001C204` and
+the TMD renderer `FUN_8002735C` instead of the dispatcher's leaves
+([a raised `+0x42`](renderer.md#what-a-raised-0x42-draws)), which runs its GTE work on every
+primitive of the object. A `--gpu-cost` recording of `battle_jou_party_vahn_chain_open`, one
+PC sample a vsync, finds the pass inside `0x8002735C..0x80028098` and `0x8001C2xx` through the
+target's sink in state `0x20` and nowhere else, its table's polygon count level with the
+census's while the frame costs `55` to `75` hblanks over the census line; the same film's `0x51`
+frames sit on it. Over the arts films the unloaded `0x20` frames under a sink read `.13` to
+`.19` hblanks a primitive of the sinking mesh over their `0x51` frames, so the census prices
+the walk at `FLOOR_CLIP_WALK_MILLI` (`.16`) a primitive of the clipped body's drawn objects
+(`LinkCount::floor_clip_walk`), outside the link count. Grade `disassembly` for the arm,
+`capture` for the price.
+
 Over the `62` states the census reads `1.04` times retail's polygon count, median error
 `174` primitives, correlation `.91` (the window `.906`); what is left is mostly the still's
 engine frame standing a pass or an effect away from retail's. On a strike state
@@ -1782,14 +1808,25 @@ enemy casts `.9985` to `.9775` (both Kiss of Death films lose their cue), Seru c
 `.9754` (`0x8E` to `.286`). So the cue losses earlier seen with the polygon cost on are the
 pricing of those arms, not the window's host-bound count.
 
-A monster's strike frame carries `LINKED_STRIKE_WORK` (`25` hblanks) over the census line:
-retail's unloaded monster-strike frames sit that far over it at the mean, and no counted
-class explains the offset held out by film (the effect sprites, the ghosts, the parts, the
-bodies and the stage each add nothing past a constant). Without it the strikes run a
-twentieth of a step under retail (`2.92` against `2.96`). Weighing the ghosts' flat packets
-lighter and the effect sprites heavier, as a fit on the strike and arts frames suggests,
-moved the arts images `.9300` to `.9195` and Tail Flare's cue back to `.800`, so the census
-counts each primitive once.
+The effects cost their ticks as well as their links. Every live move-VM part runs its node
+tick `FUN_80021DF4` and every live child of the effect pool `_DAT_8007BD30` its walker step,
+whatever it links, and the census counts only the link (a spark's one or two primitives).
+Priced on its own, the tick is the action-state table's measured load
+(`World::battle_frame_tick_cost`: `EFFECT_PART_COST`, `2` hblanks a part, and
+`effect_pool_cost`, `1.6` a child), added over the census line. Against the arts films'
+unloaded frames the residual over the line follows the live parts (correlation `.38` in
+`0x1E`, `.51` in `0x51`) and no other class. The same work is what a monster's strike frames
+once read as a flat `25` hblanks over the line, which the tick term replaces: its spark bursts
+carry it. Over the arts films the image mean reads `.9395` to `.9442` (Vahn's late chain
+`.906` to `.967`, Sonic Javelin `.895` to `.942`), over the strike films `.9831` to `.9843`
+(Frog `.908` to `.964`); the step agreement reads `.951` to `.943` on the arts and `.961` to
+`.968` on the strikes. Grade `disassembly` for the walks, `capture` for the prices.
+
+Weighing the ghosts' flat packets lighter, as a fit on the strike and arts frames suggests,
+moves the arts images down: a party ghost priced flat at `PARTY_GHOST_DRAW_COST` under the
+census put Vahn's chains at `.876` and `.858` against `.925` and `.906`, their finisher frames
+(two ghosts, `716` to `722` on the census) falling under `0x2D0` where retail's run step `4`.
+The census counts each ghost primitive once.
 
 **The backdrop's own work.** A frame that draws neither the backdrop pair nor the ground
 grid costs less than the line's intercept says. Retail transforms every backdrop primitive
@@ -1862,6 +1899,21 @@ shadow ring the lead-in filled and the film opened on), the enemy films' `0x28`,
 over (Ghost Knight's idle frame links `2456` primitives, all five bodies in shot), where
 retail's frames before the cast cost `450` to `500`. What parts is the frame the engine
 stands on before the cast, not the price of a primitive.
+
+The seat also prices the film's first pass on the table: the recorder learns the film has
+started only behind the tick that opened it, and the census comes back on the next. Retail's
+ring entry for that pass is its own frame's, read inside the pass: the PCSX-Redux
+recording of Zeto's Poisonous Bubbles (`garmel_zeto_pre_poisonous_bubbles`) shows `453` on the
+`0x28` pass's second vsync and `526` on the first `0x29` pass's third, each before the pass
+ends, against the table's `595` on the engine's `0x28` pass. So the seat prices that pass
+again once the census has counted it (`World::reprice_opening_pass_on_census`, the push redone
+from the ring as it stood before it). A film no gate seeds a ring on (the seeded spells and
+the casts filmed from a gate outside the strike loop) runs on from the capture state's own ring
+instead of the lead-in's table entries: the driver reads it off the state
+(`0x80084098`, cursor `0x8007B758`) as `LEGAIA_FILM_COST_RING`. Zeto's ring holds `353` to `465`,
+so its opening passes run retail's step `2` and the film reads `.829` to `.883`; Devil Pump's
+holds `529` to `558`, which keeps Multi Cutter's opening on retail's `3`, where standing the
+lead-in on the opening frame's census price dropped it to `2`. A harness seat.
 
 The span law takes the same seat in the lead-in (`LEGAIA_LEADIN_SPAN_LAW=1`): its longer
 frames re-deal the rounds the replay plays to the gate, and under it Gilium's, Warhalf's,
@@ -2690,6 +2742,23 @@ the step each arm spends the most vsyncs on. Measured against that and three oth
   recording), and since each pass draws the frame driver's `rand()`, the plain film's
   stream stays on retail's words as far as the counts hold
   ([the band's pass count](../tooling/cast-sequence-oracle.md#the-bands-pass-count)).
+- **The capture band reads its arms the same way.** `CAPTURE_ARM_STEPS` holds the step
+  each enemy cast's arm spends the most vsyncs on, and the engine pushes it into the
+  ring as each frame's cost. The step is the ring's, though: an arm that opens behind
+  dear frames and runs cheap reads the dear step, and pushed as a cost it held the ring
+  sixteen passes past the arm. Megaton Press's arm 5 costs `335`..`356` hblanks (rung
+  `2`) from its tenth frame under a step of `3`; pushed as `3`, the ring held `3` sixteen
+  passes into arm 6, where retail's drops on its fifth frame, and the stream reached
+  arm 9's rock deal eight words behind. `CAPTURE_ARM_COST_TAILS` takes rows off the
+  recordings' `cost` column (`cast-arm-cost-rows.py --capture`): the rung per frame,
+  run-length coded, a row where it changes for three frames or more. A cast filmed in
+  two fights takes rows only where both films carry the column and read the same rows,
+  since an arm that shows the stage costs what that fight draws. The generator
+  reproduces Fatal Decision's arm 4 and 6 rows and Evil Seru Magic's arm 24 rows,
+  fitted by hand earlier, to within a pass. Over the 29 enemy films whose casts the rows
+  reach, the image mean reads `.9322` to `.9427` with every cue held: Megaton Press
+  `.802` to `.933`, Mystic Shield `.919` to `.982`, Rogue Thunder `.865` to `.903`,
+  Green Slime's Divide `.970` to `.987`, Guilty Cross `.985` to `.998`.
 - **The band opens cheap, whatever the party.** The arms no recording reads a step for
   (the page-in pass and the drive's seek) cost `122`..`236` hblanks on the lone-caster
   films and `165`..`221` on a full party's (`kor`, `tower`): the module draws its own

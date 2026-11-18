@@ -869,3 +869,60 @@ fn an_accessory_percent_moves_the_live_window_both_ways() {
     world.refresh_party_ability_bits();
     assert_eq!(world.party.roster.members[0].live_stats().atk, 53);
 }
+
+/// The one-ally item sub-cursor (`0x64`) opens on the caster's own seat
+/// (`0x801D1988..0x801D19A0`) - not on the member the heal would help most -
+/// and steps the seat up on Left (`0x801D2C34`) and down on Right
+/// (`0x801D2CC4`), wrapping on the party count.
+#[test]
+fn ally_item_cursor_opens_on_the_caster_and_left_steps_the_seat_up() {
+    use legaia_engine_menus::inventory_use::InventoryUseState;
+    use legaia_engine_system::input::PadButton;
+
+    let mut world = offensive_item_world(500, 7);
+    world.party.party_count = 3;
+    // Three members (engine slots 0..=2), the monster moved to slot 3.
+    for i in 0..3 {
+        world.actors[i].battle.max_hp = 200;
+        world.actors[i].battle.hp = 200;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle_monster_id = None;
+    }
+    world.actors[0].battle.hp = 20; // the member a heal would help most
+    world.actors[3].battle.max_hp = 500;
+    world.actors[3].battle.hp = 500;
+    world.actors[3].battle.liveness = 1;
+    world.actors[3].battle_monster_id = Some(7);
+    world.battle_ctx.active_actor = 1;
+    world.party.inventory.insert(0x01, 1);
+    world.battle.item_menu = Some(world.build_battle_item_session());
+
+    let press = |world: &mut World, b: PadButton| {
+        world.set_pad(0);
+        world.settle_battle_pad_hold();
+        world.set_pad(b.mask());
+        world.tick_battle_item_menu();
+        let m = world.battle.item_menu.as_ref().expect("menu still open");
+        match m.state {
+            InventoryUseState::TargetSelect { cursor, .. } => m.targets[cursor].slot,
+            other => panic!("expected TargetSelect, got {other:?}"),
+        }
+    };
+    assert_eq!(
+        press(&mut world, PadButton::Cross),
+        1,
+        "opens on the caster"
+    );
+    assert_eq!(press(&mut world, PadButton::Left), 2, "Left: seat + 1");
+    assert_eq!(
+        press(&mut world, PadButton::Left),
+        0,
+        "wraps at the party count"
+    );
+    assert_eq!(
+        press(&mut world, PadButton::Right),
+        2,
+        "Right: seat - 1, wrapping"
+    );
+    assert_eq!(press(&mut world, PadButton::Right), 1);
+}

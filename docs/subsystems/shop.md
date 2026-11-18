@@ -172,8 +172,15 @@ last dialogue frame to black in fourteen frames (the same per-vsync capture).
 The port runs it from the merchant open (`MenuRuntime::shop_fade_level`, a
 subtractive full-screen quad over the frozen field on both hosts) and starts
 the slides when it lands. Retail then holds black for about fifty frames while
-the menu overlay loads before the windows move; that load wait is not
-reproduced. The slides are stepped on the tick after the fade ends, so the
+the menu overlay loads before the windows move; the port holds it
+(`SHOP_LOAD_HOLD_OPEN`) in its retail-faithful mode only
+(`WorldToggles::skip_load_holds` off), keeping the windows parked and the pad
+unread. Leaving holds black the same way while the field overlay reloads:
+filmed from `shop_items_root_retock_retail` with Circle, the windows are out
+at vsync `26` and the field starts to lift at `109`; the retail-faithful port
+stands on `Closing` for `SHOP_LOAD_HOLD_CLOSE` more ticks and lifts on the
+same vsync. The field's lifting ramp itself is not reproduced (the port's
+field returns at once). The slides are stepped on the tick after the fade ends, so the
 first window frame is already one step in from the park edge; no frame shows
 the set at home before it slides.
 

@@ -1074,7 +1074,11 @@ fn attract_fmv_id(title: &legaia_engine_title::title::TitleSession) -> Option<i1
 /// from `legaia-parity`'s `frame_cost_ring`): a retail capture's frame-cost
 /// ring `0x80084098` and its cursor `gp+0x440`.
 fn env_cost_ring() -> Option<([u16; 16], u8)> {
-    let v = std::env::var("LEGAIA_BATTLE_COST_RING").ok()?;
+    parse_cost_ring(&std::env::var("LEGAIA_BATTLE_COST_RING").ok()?)
+}
+
+/// A frame-cost ring as the film seats spell it, `e0,..,e15;cursor`.
+pub(super) fn parse_cost_ring(v: &str) -> Option<([u16; 16], u8)> {
     let (list, cursor) = v.split_once(';')?;
     let parsed: Vec<u16> = list
         .split(',')

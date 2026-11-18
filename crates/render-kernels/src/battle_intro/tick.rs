@@ -67,9 +67,15 @@ impl BattleIntro {
         // gets it by never clearing the display buffer. Empty (no quads) until
         // the first capture landing has seeded the model, which is also
         // the frame the capture itself lands.
-        if self.style == IntroStyle::Curtain {
+        // The spin-up field draws over the same never-cleared display
+        // ([`Self::update_spinup_display`]).
+        if matches!(
+            self.style,
+            IntroStyle::Curtain | IntroStyle::SpinUpParticles
+        ) {
             self.curtain_trail_prims(&mut out.prims);
         }
+        let style_start = out.prims.len();
 
         match &mut self.set {
             WorkingSet::Particles { grid, style } => {
@@ -100,6 +106,11 @@ impl BattleIntro {
                 // expanding ring behind the confetti.
                 let ring = emit && style.spin_up && emit_spinup_ring(ring_phase, &mut out.prims);
                 out.style_drawn = drawn || ring;
+                if style.spin_up {
+                    self.pending_particles.clear();
+                    self.pending_particles
+                        .extend_from_slice(&out.prims[style_start..]);
+                }
             }
             WorkingSet::Tiles(grid) => {
                 // Retail's first shatter frame projects through the field

@@ -1376,8 +1376,108 @@ pub const CAPTURE_ARM_READ_TAILS: &[(u8, u8, u16, u8)] = &[(0x6E, 4, 27, 3)];
 /// ring reads `3`, `2` for ten frames, `3` and `4`. The arm drains its
 /// countdown by the step, so the classes are its pass count: `117` frames on
 /// retail, `97` on one step of `4`.
-pub const CAPTURE_ARM_COST_TAILS: &[(u8, u8, u16, u8)] =
-    &[(0xAD, 24, 20, 2), (0xAD, 24, 45, 3), (0xAD, 24, 74, 4)];
+///
+/// Fatal Decision's spin arm 6 (PROT 0954) is the other. On its recording
+/// (`kor_shade_pre_fatal_decision`, a party victim, the stop prompt up) the
+/// arm's first `57` frames cost `549`..`596` hblanks and the rest `180`..`214`,
+/// so the ring reads `3` for `72` frames and `1` after: `1202` vsyncs, the
+/// countdown `scalar * 1200` drained `scalar * step` a pass
+/// (`0x801F75EC..0x801F7630`). On the arm's cheap `1` the port ran the dear
+/// frames three vsyncs long on a step of `1`, drained the countdown a third as
+/// fast and held the spin `78` vsyncs longer (`1280`); with the rows its arm
+/// runs `219` vsyncs at `3` and `983` at `1`. Its arms 1 and 4 open over the
+/// step-`3` edge (`525`, `511`) and run just under it (`473`..`508`), so each
+/// reads `3` for about the ring's sixteen frames and `2` after, where the
+/// table's `3` held the step through arm 1 and into arm 2. The recording's
+/// step reads `3` through arm 1's nineteenth frame, three past the one dear
+/// cost's sixteen, and the row's edge is fitted to the step. The arms' pass
+/// counts are the wheel's slot fill: run on the table, arm 1 took two more
+/// passes than retail's, and the fill (`rand()` in arm 4) dealt another wheel.
+///
+/// The rest are read off the recordings' cost column the way the summon
+/// band's [`CAST_ARM_COST_TAILS`] are (`scripts/ci/cast-arm-cost-rows.py
+/// --capture`): each frame's cost rung, run-length coded per arm, a row where
+/// the rung changes for three frames or more. [`CAPTURE_ARM_STEPS`] names the
+/// step each arm spends the most vsyncs on, and the engine pushes it into the
+/// ring as each frame's cost; but the step is the ring's, and the ring holds a
+/// dear frame for sixteen passes, so an arm that opens behind dear frames and
+/// runs cheap read the dear step as its cost and held the step sixteen passes
+/// past its end. Megaton Press's arm 5 costs `335`..`356` hblanks (rung `2`)
+/// from its tenth frame while its step reads `3`: pushed as `3`, the ring held
+/// `3` sixteen passes into arm 6, where retail's drops to `2` on its fifth
+/// frame, and the stream entered arm 9's rock deal eight words behind. The
+/// rule reproduces Fatal Decision's arm 4 and 6 rows and Evil Seru Magic's
+/// arm 24 rows to within a pass; Fatal Decision's arm 1 keeps its fitted edge.
+/// A cast filmed in more than one fight takes rows only where every film
+/// carries a cost column and reads the same rows: an arm that shows the stage
+/// costs what the fight draws, and Spore Gas's rows read off one Berserker
+/// fight moved the other's film down (`.920` to `.910`).
+pub const CAPTURE_ARM_COST_TAILS: &[(u8, u8, u16, u8)] = &[
+    (0x5F, 1, 3, 2),
+    (0x5F, 4, 1, 2),
+    (0x5F, 6, 0, 3),
+    (0x5F, 6, 57, 1),
+    (0xAD, 24, 20, 2),
+    (0xAD, 24, 45, 3),
+    (0xAD, 24, 74, 4),
+    // Derived from the recordings' cost column by
+    // `scripts/ci/cast-arm-cost-rows.py --capture --rust` (the film each arm
+    // is read off).
+    // chitei2_cort_pre_guilty_cross__37
+    (0x37, 4, 50, 3),
+    // korb2_medusa_glare
+    (0x3C, 3, 27, 2),
+    // retona_songi_hyper_lightning
+    (0x4C, 6, 9, 2),
+    (0x4C, 7, 0, 2),
+    (0x4C, 7, 8, 3),
+    (0x4C, 7, 23, 2),
+    // map01_green_slime_divide
+    (0x50, 2, 59, 2),
+    (0x50, 3, 0, 2),
+    // garmel_zeto_pre_call_wave__55
+    (0x55, 3, 13, 2),
+    // tunnelc_xain_terio_punch
+    (0x5D, 8, 18, 3),
+    (0x5D, 8, 24, 2),
+    // deroa_iota_v2_paralyzing_wave
+    (0x75, 3, 14, 2),
+    // nivora_duel_pre_megaton_press__7A
+    (0x7A, 5, 10, 2),
+    (0x7A, 7, 0, 2),
+    (0x7A, 7, 7, 3),
+    (0x7A, 12, 0, 2),
+    (0x7A, 15, 0, 3),
+    (0x7A, 15, 16, 4),
+    (0x7A, 15, 52, 3),
+    (0x7A, 15, 64, 2),
+    // nivora_duel_pre_plasma_strike__7B
+    (0x7B, 9, 0, 2),
+    (0x7B, 9, 2, 3),
+    (0x7B, 9, 5, 4),
+    (0x7B, 14, 30, 2),
+    // nilboa_koru_pre_blade_breath__A2
+    (0xA2, 4, 39, 2),
+    // nilboa_koru_pre_gigaton_press__A4
+    (0xA4, 4, 35, 2),
+    // taiku_zora_dark_typhoon
+    (0xAA, 4, 0, 4),
+    (0xAA, 4, 27, 3),
+    (0xAA, 6, 20, 3),
+    // chitei2_cort_pre_mystic_shield__AC
+    (0xAC, 5, 34, 3),
+    (0xAC, 5, 43, 2),
+    // rugi_rogue_pre_rogue_thunder__B1
+    (0xB1, 1, 0, 3),
+    (0xB1, 1, 4, 4),
+    (0xB1, 100, 0, 4),
+    (0xB1, 100, 17, 3),
+    (0xB1, 102, 32, 4),
+    (0xB1, 102, 35, 3),
+    // chitei2_cort_pre_mystic_circle__B7
+    (0xB7, 4, 0, 3),
+    (0xB7, 4, 14, 4),
+];
 
 /// [`capture_arm_frame_step`] on the `pass`-th pass (from `0`) of the arm,
 /// with a line's read ending inside it ([`CAPTURE_ARM_READ_TAILS`]) or the

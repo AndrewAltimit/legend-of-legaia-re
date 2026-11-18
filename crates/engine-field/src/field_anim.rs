@@ -557,6 +557,35 @@ impl FieldPlayerAnim {
         }
     }
 
+    /// The per-tick cursor step of the clip [`Self::playing_clip`] names - the
+    /// step a world-owned cursor copying this player's `+0x68` has to take to
+    /// stay on it (the reflection pair's image, `FUN_801E5154`). `None` while
+    /// a fresh scene pick waits for its clip.
+    pub fn playing_step(&self) -> Option<u32> {
+        if self.holding && self.scene_record.is_some() {
+            return None;
+        }
+        if let Some((_, c)) = self
+            .scene_clip
+            .as_ref()
+            .filter(|(r, _)| self.playing_scene == Some(*r))
+        {
+            return Some(c.step());
+        }
+        if let Some(c) = self
+            .playing_slot
+            .and_then(|s| self.bank.get(s))
+            .and_then(Option::as_ref)
+        {
+            return Some(c.step());
+        }
+        Some(if self.walking {
+            self.walk.step()
+        } else {
+            self.idle.step()
+        })
+    }
+
     /// Frame count of whichever locomotion clip is playing now.
     pub fn active_frame_count(&self) -> usize {
         if let Some((_, clip)) = self

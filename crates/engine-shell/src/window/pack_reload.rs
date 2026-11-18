@@ -30,6 +30,8 @@ const POLL: Duration = Duration::from_millis(500);
 /// How long a reload the game was too busy for waits before it is tried
 /// again.
 const BUSY_RETRY: Duration = Duration::from_millis(750);
+/// The reason a busy reload's retry passes to `reload_expansion_pack`.
+const RETRY: &str = "retry";
 
 /// The pack the window reloads, and the watcher over it.
 #[derive(Debug)]
@@ -38,6 +40,9 @@ pub(in crate::window) struct PackReload {
     launch: ExpansionLaunch,
     /// `Some` under `--expansion-watch`.
     watch: Option<PackWatch>,
+    /// A reload the game was busy for (`End` or a watched change), tried
+    /// again at this time: the notice says it waits, so it does.
+    retry: Option<Instant>,
 }
 
 /// The `--expansion-watch` state.
@@ -52,8 +57,6 @@ struct PackWatch {
     pending: Option<u64>,
     /// The next poll.
     next: Instant,
-    /// A reload the game was busy for, tried again at this time.
-    retry: Option<Instant>,
 }
 
 impl PackReload {
@@ -68,7 +71,6 @@ impl PackReload {
                 path,
                 pending: None,
                 next: Instant::now() + POLL,
-                retry: None,
             });
         if let Some(w) = watch.as_ref() {
             log::info!(
@@ -76,19 +78,28 @@ impl PackReload {
                 w.path.display()
             );
         }
-        Self { launch, watch }
+        Self {
+            launch,
+            watch,
+            retry: None,
+        }
     }
 
-    /// Whether the watcher wants a reload now: a change that held still for
-    /// one poll, or a busy reload's retry.
-    fn due(&mut self, now: Instant) -> bool {
+    /// Why a reload is due now, if one is: a busy reload's retry, or a
+    /// watched change that held still for one poll.
+    fn due(&mut self, now: Instant) -> Option<&'static str> {
+        if self.retry.is_some_and(|t| now >= t) {
+            self.retry = None;
+            return Some(RETRY);
+        }
+        self.watch_due(now).then_some("file change")
+    }
+
+    /// Whether the watched tree changed and has held still for one poll.
+    fn watch_due(&mut self, now: Instant) -> bool {
         let Some(w) = self.watch.as_mut() else {
             return false;
         };
-        if w.retry.is_some_and(|t| now >= t) {
-            w.retry = None;
-            return true;
-        }
         if now < w.next {
             return false;
         }
@@ -112,9 +123,8 @@ impl PlayWindowApp {
     /// The per-frame watcher step: reload when the watched pack changed.
     pub(in crate::window) fn poll_pack_watch(&mut self) {
         let now = Instant::now();
-        let due = self.pack_reload.as_mut().is_some_and(|r| r.due(now));
-        if due {
-            self.reload_expansion_pack("file change");
+        if let Some(why) = self.pack_reload.as_mut().and_then(|r| r.due(now)) {
+            self.reload_expansion_pack(why);
         }
     }
 
@@ -122,10 +132,12 @@ impl PlayWindowApp {
     /// how it went on the notice line.
     pub(in crate::window) fn reload_expansion_pack(&mut self, why: &str) {
         let outcome = self.reload_expansion_outcome();
-        if outcome == PackReloadOutcome::Busy
-            && let Some(w) = self.pack_reload.as_mut().and_then(|r| r.watch.as_mut())
-        {
-            w.retry = Some(Instant::now() + BUSY_RETRY);
+        if let Some(r) = self.pack_reload.as_mut() {
+            r.retry = (outcome == PackReloadOutcome::Busy).then(|| Instant::now() + BUSY_RETRY);
+        }
+        // A retry that is still waiting says nothing new.
+        if why == RETRY && outcome == PackReloadOutcome::Busy {
+            return;
         }
         let notice = pack_reload_notice(&outcome);
         match &outcome {
@@ -251,19 +263,27 @@ mod tests {
                 applied: before,
                 pending: None,
                 next: Instant::now(),
-                retry: None,
             }),
+            retry: None,
         };
         let t = Instant::now();
-        assert!(!r.due(t), "nothing changed");
+        assert_eq!(r.due(t), None, "nothing changed");
         std::fs::write(dir.join("maps/a.toml"), "x = 22\n").unwrap();
         assert_ne!(tree_signature(&dir), before);
-        assert!(!r.due(t + POLL), "the first poll sees the change");
-        assert!(r.due(t + POLL * 2), "the second, unchanged, reloads");
-        assert!(!r.due(t + POLL * 3), "and only once");
-        // A busy retry fires without a change.
-        r.watch.as_mut().unwrap().retry = Some(t + POLL * 3);
-        assert!(r.due(t + POLL * 3));
+        assert_eq!(r.due(t + POLL), None, "the first poll sees the change");
+        assert_eq!(
+            r.due(t + POLL * 2),
+            Some("file change"),
+            "the second, unchanged, reloads"
+        );
+        assert_eq!(r.due(t + POLL * 3), None, "and only once");
+        // A busy retry fires without a change, watched or not.
+        r.retry = Some(t + POLL * 3);
+        assert_eq!(r.due(t + POLL * 3), Some(RETRY));
+        r.watch = None;
+        r.retry = Some(t + POLL * 4);
+        assert_eq!(r.due(t + POLL * 4), Some(RETRY), "a busy End retries too");
+        assert_eq!(r.due(t + POLL * 5), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

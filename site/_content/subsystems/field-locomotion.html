@@ -140,6 +140,12 @@
   <p>The overworld step comes from a per-scene MAN flag set on exactly the three kingdom maps, and each kingdom's entry script also sets the player's multiplier to <code>0xC00</code>, so the overworld walk is <code>(5 &times; 0xC00) &gt;&gt; 12 = 3</code> units per vsync. Reading a per-frame number in the wrong clock is where "the player moves 1.67&times; too fast" comes from; the port ticks once per vsync with the scalar at 1.</p>
 </section>
 
+<section class="doc-section" id="press-latency" data-doc="the-frame-denomination-law">
+  <h2>When the game sees a press</h2>
+  <p>Retail reads the pad once a game frame, at the end of the frame, and the next frame acts on what it read. A press therefore reaches the game about two vsyncs after it happens, and a tap shorter than a frame can fall between two reads and do nothing. Emulator films pin it to the vsync: in Koru a press at vsync 20 moves Vahn at 22, a one-vsync tap at 61 is never seen and one at 140 is; on the Sebucus overworld a press at 10 moves him at 14; a Triangle tap at 30 opens the menu at 32.</p>
+  <p>The walk commits once a frame as well: 16 units every two vsyncs in a town, 10 every three on the overworld. The port's default gives the game the pad on the vsync it is pressed and moves the figure every vsync, which is more responsive and smoother. Its retail mode runs the frame-paced pipeline instead, and the walk films then hold retail's position on every vsync.</p>
+</section>
+
 <section class="doc-section" id="grid-source" data-doc="where-the-collision-grid-comes-from">
   <h2>The field buffer: where walls come from</h2>
   <p>Nothing in a town's script says "this is a wall". The scene loader streams the scene's <code>.MAP</code> file into a per-scene buffer, and the collision grid is one region of it.</p>

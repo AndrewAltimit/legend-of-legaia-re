@@ -67,6 +67,22 @@ pub struct InflightCastSeed {
 /// monster seats.
 pub const INFLIGHT_GROUND_SLOTS: usize = 8;
 
+/// Capture alignment (lane A harness seat, `LEGAIA_SEAT_STAGE_CYCLERS`): one
+/// mode-3 HSV cycler a retail state holds live - its captured rect
+/// (`+0xA0` / `+0xA4`), its HSV adds (`+0x90` / `+0x92` / `+0x94`), their
+/// rates (`+0x96` / `+0x98` / `+0x9A`) and its gate counter (`+0x9C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StageCyclerSeed {
+    /// The captured rect `(x, y, w, h)` the seed matches a part on.
+    pub rect: [u16; 4],
+    /// The H / S / V adds.
+    pub hsv: [i16; 3],
+    /// The adds' rates.
+    pub rates: [i16; 3],
+    /// The gate counter.
+    pub gate: i32,
+}
+
 /// One op-`0x30` hand-back: the captured rect `(x, y, w, h)` and its texels,
 /// or `None` when the engine had not captured the rect yet
 /// (`BattleState::cell_restores`).
@@ -536,6 +552,12 @@ pub struct BattleState {
     /// row `(224, 476)` holds, copied there once the battle's VRAM has loaded
     /// (`World::apply_battle_vram_moves`). `None` on every ordinary fight.
     pub cue_clut_seed: Option<u8>,
+    /// Capture alignment: the HSV cyclers a retail state holds mid-cycle
+    /// ([`StageCyclerSeed`]). A replayed fight seats its stage's cyclers
+    /// fresh, at the cycle's start; each seed overwrites the matching part's
+    /// adds, rates and gate on its first armed pass and is consumed.
+    /// Empty on every ordinary fight.
+    pub stage_cycler_seeds: Vec<StageCyclerSeed>,
     /// Capture alignment: the roll a state past Element Change's arm 0
     /// accepted (`0x801C8FE4`), which the replay's arm 0 takes in place of its
     /// own. `None` on every ordinary fight.
@@ -872,6 +894,26 @@ pub struct BattleState {
     /// call steps after the push is priced again on the arm it leaves on
     /// (`World::reprice_pass_on_rendezvous`).
     pub frame_cost_ring_before: Option<crate::frame_clock::FrameCostRing>,
+    /// The ring as it stood before the last pass's push, whatever priced it,
+    /// with the action state and arm step that push ran under: what a film's
+    /// opening pass is priced again from once the census it waited on has
+    /// counted it (`World::reprice_opening_pass_on_census`). A harness seat's
+    /// read.
+    pub last_push: Option<(
+        crate::frame_clock::FrameCostRing,
+        crate::frame_clock::FrameCostRing,
+        Option<u8>,
+    )>,
+    /// Lane G harness seat: the lead-in's census came back on this tick
+    /// (`LEGAIA_LEADIN_TABLE_COST`), and the pass the film opened on, which
+    /// its table priced, waits to be priced again on the census
+    /// (`World::reprice_opening_pass_on_census`).
+    pub reprice_opening_pass: bool,
+    /// Lane G harness seat: the capture state's own frame-cost ring
+    /// (`LEGAIA_FILM_COST_RING`, entries and cursor), which a film no gate
+    /// seeds stands its lead-in's table entries on before the opening pass is
+    /// priced again.
+    pub film_cost_ring: Option<([u16; 16], u8)>,
     /// The step the ring read on the last pass.
     pub frame_cost_step: u8,
     /// The GPU's wait over the table the host drew last, in hblanks (draw
@@ -891,6 +933,11 @@ pub struct BattleState {
     /// prices its work from while `WorldToggles::battle_poly_frame_cost` is
     /// up, the same on every host. `None` before the first census.
     pub linked_polys: Option<u32>,
+    /// The primitives the census's floor-clipped bodies walk through the
+    /// full-TMD renderer (`World::note_floor_clip_walk`), priced over
+    /// [`Self::linked_polys`] at
+    /// `frame_clock::FLOOR_CLIP_WALK_MILLI`.
+    pub floor_clip_walk: u32,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
@@ -913,6 +960,16 @@ pub struct BattleState {
     /// names it: the SM stages it and the pass's close pushes it behind the
     /// node ticks (`World::close_pass_frame_cost`).
     pub pass_frame_cost_due: Option<Option<u8>>,
+    /// The host counts the census after the world's tick
+    /// (`legaia_engine_scene_host::battle_link_census`), so a pass's close
+    /// waits for it: set by the scene host before each tick while the census
+    /// prices the frame. The world then leaves the close to
+    /// `World::close_pass_after_census`, and the frame is priced on the
+    /// primitives its own pass links rather than the pass before's.
+    pub pass_close_after_census: bool,
+    /// A pass close [`Self::pass_close_after_census`] left for the host to
+    /// run once its census of the tick is in.
+    pub pass_close_deferred: bool,
     /// The battle frame [`Self::pending_frame_step`] was left by: only a pass
     /// that opens a later frame takes it. The effect scene graphs claim the
     /// same frame after the pass that set it, on the same tick.
@@ -1658,6 +1715,7 @@ impl BattleState {
             creature_seat_restage: false,
             forced_monster_target: None,
             cue_clut_seed: None,
+            stage_cycler_seeds: Vec::new(),
             element_roll_seed: None,
             forced_monster_cast_at_prompt: false,
             forced_monster_ground: [None; INFLIGHT_GROUND_SLOTS],
@@ -1717,15 +1775,21 @@ impl BattleState {
             cast_arm_step_on: false,
             frame_cost_ring: Default::default(),
             frame_cost_ring_before: None,
+            last_push: None,
+            reprice_opening_pass: false,
+            film_cost_ring: None,
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             drawn_table_cost: None,
             frame_cost_state: None,
             frame_work: 0,
             drawn_polys: None,
             linked_polys: None,
+            floor_clip_walk: 0,
             cast_arm_pass: None,
             pending_frame_step: None,
             pass_frame_cost_due: None,
+            pass_close_after_census: false,
+            pass_close_deferred: false,
             pending_frame_step_from: 0,
             retail_step_track: None,
             retail_rand_track: None,

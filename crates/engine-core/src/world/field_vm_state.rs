@@ -75,6 +75,13 @@ pub struct FieldVmState {
     /// [`legaia_engine_vm::frame_clock::FrameClock::display_frames`] at the most recent free-roam staging / scene
     /// entry - the base of the entry window the pause-drop measures against.
     pub free_roam_entry_frame: u64,
+    /// Story flags a **scene-selector** entry raised for the beat it seats
+    /// the party on ([`crate::world::World::seed_picker_beat_flags`]): the
+    /// flags the arriving door's record sets before its `0x3F`, and the
+    /// beat record's C2 flags. Only the ones that were clear are listed, and
+    /// the next picker staging clears them again, so one pick's beat never
+    /// leaks into the next.
+    pub picker_beat_flags: Vec<u16>,
     /// The track a **scene-picker** entry inherits in place of a park start
     /// ([`crate::world::BGM_PARK_SENTINEL`]): the entry script of the scene
     /// whose door the picker seated the party at. Retail never cold-enters a
@@ -279,6 +286,7 @@ impl FieldVmState {
             helper_contexts: Vec::new(),
             free_roam_staging: false,
             free_roam_entry_frame: 0,
+            picker_beat_flags: Vec::new(),
             picker_bgm_inherit: None,
             channels: Vec::new(),
             stepping_view: Vec::new(),

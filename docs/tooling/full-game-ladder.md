@@ -487,9 +487,11 @@ Walking instead of running misses `jouind`'s timed switch pair on every try.
 playthrough's player switched Field Move to Run by Mt. Rikuroa (every
 order-checked anchor from `mt_rikuroa` on holds `1` at SC `+0x58C`). The
 continuous player keeps walking until a stretch stalls short of a wipe in
-a stretch whose anchor runs; then it sets Run, reloads the stretch's save
-once and keeps running - setting it again on any reload of a save from
-before the switch. Running from Mt. Rikuroa on re-dealt the whole
+a stretch whose anchor runs; then it sets Run where it stands, once, and
+plays the stretch on in the same session and on what is left of its budget -
+the option is a pause-menu toggle, and the reload it once took cost the Cort
+stretch a second attempt on every dealt stream. It sets Run again on any
+reload of a save from before the switch. Running from Mt. Rikuroa on re-dealt the whole
 middle of the game, and a runner meets corners and stones differently: it
 wedged in `ropeway` at (24, 27), and Sol's lower floors closed off Gaza's
 second fight (`korb3` P2[2]). Held back, it first switches on at
@@ -1003,7 +1005,8 @@ done
 Zora (`taiku`) is where the set was fragile: seed 5 stopped there at 26
 before the fighter learned to guard against Stone
 ([the boss section](#a-boss-the-anchors-party-cannot-outlast)). Cort takes a
-second attempt on most streams, as the Cort notes above describe.
+attempt of its own only when Cort wipes the party, as the Cort notes above
+describe; the switch to Run at `jouind`'s switch pair is not one.
 
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
 
@@ -1856,7 +1859,8 @@ So the hand:
 - Casts when the turn's Miracle is out of reach and the best spell beats the member's swings (`race_spell_gain`): about ten per point of catalog power until a cast is measured, against presses at about seven tenths of ATK and any Arts hit measured this battle. A caster's magic level makes the difference: Gala's Kemaro takes about 2900, retail's level-25 party casts Aluru at 1500..1700 each. A race keeps no MP back and drinks the largest MP item while a cast is still to come.
 - Strikes with the Point Card whenever `min(bank, 9999)` off the shop-points bank beats the member's own turn (`wanted_point_card`, any fight that forbids running, [`item-effect-table.md`](../formats/item-effect-table.md)). The card goes back in the bag, so a run that has shopped opens Koru with a third to a half of its HP.
 - Hands out Power Elixirs from the opening round when a fifth of what a typist still has to deal beats the giver's own turn (`race_ramp_pays`). Each use ramps again, so Vahn's Miracle reaches about 5600.
-- Dresses on the reload after a lost race (`race_goods_plan`, `RACE_LOST`): each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where an undressed run has one.
+- Dresses at the door of a race (`race_goods_plan`, `race_ahead`): at the beat whose staged formation row seats Koru in the scene's formation table, or the beat a race was lost at (`RACE_LOST`). Met in the Goods the run chose, the race was lost on every dealt stream's first attempt, Koru at 2184..6684 of 20000 when Dead End Crisis landed.
+  Dressed, each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where an undressed run has one.
 - Walks in charged on a reload after a lost race against a timed finisher (`pad_charge_for_race`, `RACE_LOST`). The gauge carries between fights through the record's AP cell, so where the scene rolls encounters the hand walks them first, taking the Spirit stance (`+0x20` a turn) until every typist holds 99, with no art spending what the turns earn. A party that walks into Koru off the duels holds 30..60 AP, and in a race that is the difference between a Miracle in the first round and one in the third. The stance deals nothing, so a charging party flees past half its HP, starts each outing healed, stops under half its MP, and meets the boss healed.
   A boss above 15000 HP is a race too for what its typists save in the fight (`long_boss`), but takes no walk ([arriving at a boss](#arriving-at-a-boss)).
 
@@ -2374,7 +2378,7 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   its own divisor in the level-up applier (`0x18C0` against every other
   stat's `0x24C0`, [`level-up.md`](../subsystems/level-up.md)). The run's party
   reaches `nivora_late` at AGL 191 / 211 / 173 and, carried past the ledge,
-  beats Koru within its reloads, dressed for the race from the second. The ledge band P2[20] is
+  beats Koru on its first attempt, dressed for the race at the door. The ledge band P2[20] is
   reached from its other tiles ([how the pad tier
   walks](#how-the-pad-tier-walks)), and the stretch then plays the chain
   that opens `deene`'s dock ([overworld and dungeon

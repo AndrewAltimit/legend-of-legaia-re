@@ -667,6 +667,29 @@ pub fn retail_ambient_streams(ram: &[u8]) -> Vec<RetailAmbientStream> {
         .collect()
 }
 
+/// The placement a talk holds and the heading its touch saved: the one
+/// field-actor-ticked placement whose own record runs (`+0x10 & 0x100`), and
+/// its `+0x5A`, which the touch post copies from `+0x26` before the snap
+/// turns it (`FUN_801D5B5C` `0x801D5BE4`) and the record's end writes back
+/// (`FUN_80039B7C` `0x80039CE8`). `None` when no placement, or more than one,
+/// is engaged. A state saved inside a talk holds the snapped `+0x26`; a run
+/// resumed from it restores nothing unless the save is seated too.
+pub fn retail_talk_facing_save(ram: &[u8]) -> Option<(u16, u16)> {
+    let player = game_anchors::player_ptr(ram);
+    let mut engaged = crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| Some(n) != player && game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x10) & 0x100 != 0);
+    let n = engaged.next()?;
+    if engaged.next().is_some() {
+        return None;
+    }
+    Some((
+        game_anchors::u16_at(ram, n + 0x50),
+        game_anchors::u16_at(ram, n + 0x5A),
+    ))
+}
+
 /// Where a walker stood `lag` game frames before the RAM's tick.
 ///
 /// The actor-list tick iterator `FUN_8002519C` copies each node's `+0x14`

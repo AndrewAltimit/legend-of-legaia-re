@@ -226,6 +226,31 @@ pub struct WorldToggles {
     /// at `(2880, 2886)`), with no step left to start another hop. Off is
     /// retail's unguarded hop.
     pub hop_landing_guard: bool,
+    /// Skip the CD-wait black holds around the pause menu (port, on by
+    /// default): retail holds the screen while the menu overlay loads after
+    /// the wipe (`LOAD_HOLD_OPEN_VSYNCS`) and while the field overlay reloads
+    /// after a close (`LOAD_HOLD_CLOSE_VSYNCS`,
+    /// `legaia_engine_system::pause_wipe`). Off, under `pin_retail`, runs
+    /// both holds as the captures measure them.
+    pub skip_load_holds: bool,
+    /// The game reads the pad on the vsync it is pressed (port, on by
+    /// default). Retail samples the libpad buffer once a frame, at the end of
+    /// the frame body (`jal 0x8001822C` at `0x80017034` in `FUN_80016B6C`,
+    /// ahead of the `VSync` wait), and the next frame reads that sample, so a
+    /// press reaches game logic two vsyncs late at the field's and the
+    /// overworld's frame steps and a press shorter than a frame can fall
+    /// between two samples ([`crate::world::pad_latency`]). Off, under
+    /// `pin_retail`, the world runs that pipeline.
+    pub immediate_pad: bool,
+    /// The player's walk pays each game frame's step out over the frame's
+    /// vsyncs (port, on by default: the figure moves every vsync, 60 updates
+    /// a second). Retail commits the whole step on the frame (`FUN_801D01B0`
+    /// runs once a game frame from the actor pass), so its figure moves `16`
+    /// units every two vsyncs in a town and `10` every three on the
+    /// overworld, and reaches a trigger tile or an encounter crossing with
+    /// the frame's whole step taken; off, under `pin_retail`, the port does
+    /// the same.
+    pub smooth_walk: bool,
     /// Shiny Seru (port gameplay feature, the engine twin of the patcher's
     /// `--shiny-seru`): each battle entry rolls
     /// [`legaia_engine_battle::seru_state::SeruState::shiny_chance_pct`] for one
@@ -503,6 +528,9 @@ impl WorldToggles {
             battle_poly_window_count: false,
             arts_saved_list: false,
             hop_landing_guard: true,
+            skip_load_holds: true,
+            immediate_pad: true,
+            smooth_walk: true,
             shiny_seru: true,
             battle_memo_verify: false,
             flee_exp: false,
@@ -549,6 +577,9 @@ impl WorldToggles {
         self.overworld_marker_overlay = false;
         self.battle_pass_rand_draw = true;
         self.hop_landing_guard = false;
+        self.skip_load_holds = false;
+        self.immediate_pad = false;
+        self.smooth_walk = false;
         self.arts_saved_list = false;
         self.shiny_seru = false;
         self.flee_exp = false;
@@ -599,6 +630,15 @@ impl WorldToggles {
         }
         if self.hop_landing_guard {
             out.push("hop_landing_guard");
+        }
+        if self.skip_load_holds {
+            out.push("skip_load_holds");
+        }
+        if self.immediate_pad {
+            out.push("immediate_pad");
+        }
+        if self.smooth_walk {
+            out.push("smooth_walk");
         }
         if self.arts_saved_list {
             out.push("arts_saved_list");
@@ -672,13 +712,17 @@ mod fidelity_tests {
     fn pinned_toggles_report_no_deviation() {
         let mut t = WorldToggles::new();
         // The bare default keeps three safety / enhancement toggles, the
-        // shiny roll, the Fortress fix and the off-axis battle open on.
+        // load-hold skip, the shiny roll, the Fortress fix and the off-axis
+        // battle open on.
         assert_eq!(
             t.retail_deviations(),
             [
                 "entry_pulse_enabled",
                 "reduce_flashing",
                 "hop_landing_guard",
+                "skip_load_holds",
+                "immediate_pad",
+                "smooth_walk",
                 "shiny_seru",
                 "fortress_encounter_fix",
                 "tetsu_spar_fix",
@@ -712,7 +756,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 27);
+        assert_eq!(t.retail_deviations().len(), 30);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

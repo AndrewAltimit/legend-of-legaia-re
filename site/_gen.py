@@ -88,6 +88,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "tooling/expansion-workbench": "Legend of Legaia Expansion Workbench - Build an Expansion Pack in the Browser",
     "guides/vrchat-world": "Legend of Legaia in VRChat - Build a World from Your Own Disc",
     "guides/desktop-apps": "Legaia Explorer and the Native Legend of Legaia Port - Download and Run",
+    "guides/faq": "Legend of Legaia Port Player FAQ - Disc Image, Saves, Original Mode, Controllers",
 }
 
 # Hand-written meta descriptions for the same landing pages. Everything else
@@ -623,6 +624,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("guides/extracting-assets.html","Extracting assets",             "guides/extracting-assets",   "guides/extracting-assets.html"),
     ("guides/playing-and-viewing.html","Playing and viewing",         "guides/playing-and-viewing", "guides/playing-and-viewing.html"),
     ("guides/desktop-apps.html",   "Desktop apps: Legaia Explorer and the native port", "guides/desktop-apps", "guides/desktop-apps.html"),
+    ("guides/faq.html",            "Player FAQ",                     "guides/faq",                 "guides/faq.html"),
     ("guides/modding-and-translation.html","Modding and translation", "guides/modding-and-translation","guides/modding-and-translation.html"),
     ("guides/translating.html",    "Translating the game",           "guides/translating",         "guides/translating.html"),
     ("guides/vrchat-world.html",   "Importing a world into VRChat",  "guides/vrchat-world",        "guides/vrchat-world.html"),

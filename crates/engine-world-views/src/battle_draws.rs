@@ -138,6 +138,8 @@ pub fn battle_ground_shadow(
         far_corner: false,
         object_effect_kind: 0,
         object_effect_scale: 1.0,
+        // Not a move-VM node: the body draw has no node near reject.
+        near_reject_depth: None,
     })
 }
 

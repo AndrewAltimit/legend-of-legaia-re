@@ -58,6 +58,23 @@ impl MenuRuntime {
         if self.shop_session.is_some() || self.prize_session.is_some() {
             self.shop_age = self.shop_age.saturating_add(1);
         }
+        // Retail-faithful mode: the menu overlay's load after the fade (the
+        // windows stay parked and the pad goes nowhere) and the field
+        // overlay's reload after the close (the menu stands on `Closing`).
+        self.shop_load_hold = !world.toggles.skip_load_holds;
+        if self.shop_load_hold
+            && self.shop_session.is_some()
+            && self.shop_age >= SHOP_FADE_FRAMES
+            && self.shop_age < SHOP_FADE_FRAMES + SHOP_LOAD_HOLD_OPEN
+        {
+            self.ui_cue = None;
+            return MenuTickEvent::Stepped;
+        }
+        if self.shop_reload_left > 0 {
+            self.shop_reload_left -= 1;
+            self.ui_cue = None;
+            return MenuTickEvent::Stepped;
+        }
         self.tick_shop_slides();
         self.ui_cue = None;
         if self.prize_session.is_some() {
@@ -144,6 +161,9 @@ impl MenuRuntime {
             && MenuState::from_byte(self.ctx.state) != Some(MenuState::ShopExit)
         {
             self.shop_session = None;
+            if !world.toggles.skip_load_holds {
+                self.shop_reload_left = SHOP_LOAD_HOLD_CLOSE;
+            }
         }
         // The mode select is a picker window, not a kernel list: its confirm
         // keeps the picker's `0x36` unless the row writes over it.

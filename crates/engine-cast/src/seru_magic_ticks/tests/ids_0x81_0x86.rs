@@ -978,6 +978,46 @@ fn zenoir_finisher_splashes_every_other_live_monster_seat() {
 }
 
 #[test]
+fn zenoir_finisher_fades_only_the_seats_it_kills() {
+    // PROT 0908 `0x801F7D70..0x801F7D98` (primary) and
+    // `0x801F7F88..0x801F7FB0` (splash): `+0x21C = 0`, then `= 2` only when
+    // `+0x14C` reads zero. Seat 3 (primary) and seat 4 (splash) survive,
+    // seat 6 (splash) dies; 200 HP against 120 * 3/4 and 120 * 2/3.
+    let mut seats = row();
+    seats[6].hp = 50;
+    let mut ctx = CastModuleCtx {
+        phase: ZENOIR_FINISH_ARM,
+        ..Default::default()
+    };
+    zenoir_tick(&mut ctx, &mut seats, WHO, |_| false, |_| Some(120));
+    assert_eq!(seats[3].hp, 110);
+    assert_eq!(seats[3].render_flag, 0, "a surviving victim stays drawn");
+    assert_eq!(
+        seats[4].render_flag, 0,
+        "a surviving splash seat stays drawn"
+    );
+    assert_eq!(seats[6].hp, 0);
+    assert_eq!(seats[6].render_flag, ZENOIR_FINISH_RENDER_FLAG);
+    assert_eq!(
+        seats[7].render_flag, ZENOIR_FINISH_RENDER_FLAG,
+        "the creature"
+    );
+
+    let mut seats = row();
+    seats[3].hp = 30;
+    let mut ctx = CastModuleCtx {
+        phase: ZENOIR_FINISH_ARM,
+        ..Default::default()
+    };
+    zenoir_tick(&mut ctx, &mut seats, WHO, |_| false, |_| Some(120));
+    assert_eq!(seats[3].hp, 0);
+    assert_eq!(
+        seats[3].render_flag, ZENOIR_FINISH_RENDER_FLAG,
+        "a killed victim fades"
+    );
+}
+
+#[test]
 fn zenoir_bump_shows_the_seats_in_reach_for_the_splash() {
     // `zenoir_summon_mid_cast` (mednafen, frame-stepped): the creature lands
     // on the victim's body pair (-751, 968); seat 4 at (0, 750) is 969 away

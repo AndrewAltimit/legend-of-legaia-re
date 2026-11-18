@@ -316,7 +316,15 @@ impl World {
 
         // speed = ((base_step * player[+0x72]) >> 12) * DAT_1f800393.
         let mult = self.actors[slot].move_state.field_72 as i32;
-        let ratio = i32::from(ratio);
+        // Under the retail walk ([`crate::world::WorldToggles::smooth_walk`]
+        // off) the controller runs once a game frame and walks the frame's
+        // whole step, `base * DAT_1F800393`, on the vsync that opens it.
+        let frame_walk = !self.toggles.smooth_walk && self.clock.game_tick_live;
+        let ratio = if frame_walk {
+            i32::from(self.clock.frame_step.max(1))
+        } else {
+            i32::from(ratio)
+        };
         let mut speed = ((self.field_base_step() * mult) >> 12) * ratio;
         // Terrain slow (`0x801D05B8..0x801D05E8`): the object-grid word of the
         // tile the player stands on carries `0x4000`, and the scene control
@@ -355,6 +363,12 @@ impl World {
         if let Some(anim) = &mut self.locomotion.player_anim {
             anim.moved_this_frame = true;
         }
+        // The retail walk commits on the game frame only: between two frames
+        // the player stands where the last one left it.
+        // REF: FUN_801D1344 (`jal 0x801D01B0` at `0x801D16F4`, once a frame)
+        if frame_walk && !self.clock.game_tick_fired {
+            return;
+        }
 
         let before = {
             let ms = &self.actors[slot].move_state;
@@ -371,7 +385,7 @@ impl World {
             // A speed that is a whole pass's (the ramp runs at the frame step)
             // has no later vsync to carry to: retail's last sub-step takes an
             // odd one up to even.
-            if self.clock.frame_step > self.move_vm.ramp_ratio {
+            if !frame_walk && self.clock.frame_step > self.move_vm.ramp_ratio {
                 let speed = speed + self.locomotion.step_carry;
                 self.locomotion.step_carry = speed % FIELD_STEP_UNIT;
                 self.advance_with_collision(slot, dir_bits, speed - self.locomotion.step_carry);

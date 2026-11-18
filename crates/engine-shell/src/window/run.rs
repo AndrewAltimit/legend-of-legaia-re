@@ -217,6 +217,12 @@ fn apply_launch_toggles(
         retail,
     };
     switches.apply(&mut session.host.world.toggles);
+    // `LEGAIA_DIAG_IMMEDIATE_PAD=1`: the pad reaches the game on the tick it
+    // is pressed even under `--retail` (`WorldToggles::immediate_pad`), for a
+    // harness whose press script is authored in one-tick edges.
+    if std::env::var_os("LEGAIA_DIAG_IMMEDIATE_PAD").is_some() {
+        session.host.world.toggles.immediate_pad = true;
+    }
     switches
 }
 
@@ -578,7 +584,10 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
     // recording drive's short capture-band hold
     // (`CastFxState::capture_seek_recorded`), from its first tick: a seed can
     // cross `0x6F` before the first frame is prepared.
-    session.host.world.casting.capture_seek_recorded = screenshot.is_some();
+    // A sweep films the play path, as the host pair's page plays it, and
+    // seats nothing.
+    session.host.world.casting.capture_seek_recorded =
+        screenshot.as_ref().is_some_and(|s| s.sweep.is_none());
     let launch_switches = apply_launch_toggles(
         &mut session,
         LaunchToggles {

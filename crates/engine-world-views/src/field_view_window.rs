@@ -26,9 +26,29 @@ pub enum CropFraming {
     /// the window grown by this scale (`widened_window`).
     Widened(f32),
     /// A view retail's window says nothing about (a swung, tilted or
-    /// wheeled follow camera, a host's debug vantage): the map draws whole.
+    /// wheeled follow camera, a host's debug vantage): the window is lifted
+    /// ([`REGION_ONLY_WINDOW`]) and the crop keeps only the latched walk
+    /// region, which retail's cell passes and actor cull test whatever the
+    /// window holds.
     Free,
 }
+
+/// The visible tile window a [`CropFraming::Free`] view crops by: wide
+/// enough that no cell of the `128 x 128` grid lies past it from any focus,
+/// so the region box is the only bound left.
+///
+/// Retail never draws another walk region's cells, from any vantage. The
+/// decoration pass `FUN_801F7088` tests every cell against the latched box
+/// (scratchpad `0x1F800384..87`, `0x801F74DC..0x801F7540`) before it asks
+/// the window, the ground emitter's window is clamped to the box by the
+/// pass prologue (`0x801F7304..0x801F7408`), and the actor cull
+/// `FUN_801D79E8` drops an actor outside the box as well as one outside the
+/// window. A scene's `.MAP` grid carries several sub-areas side by side:
+/// `uru` keeps its three ring-tunnel sub-areas (pack meshes `45..=50`,
+/// `59`, `63`, `64`) in regions `3`, `4` and `7`, beside the village's
+/// region `9`, and a free view that drew the map whole showed them round
+/// the village's edges.
+pub const REGION_ONLY_WINDOW: [i8; 4] = [-127, -127, 127, 127];
 
 /// This frame's [`CropFraming`]. `debug_camera` is the host's own debug
 /// vantage (`F3`), which frees the view.
@@ -114,22 +134,38 @@ pub fn field_ground_drop(
     debug_camera: bool,
     psx_raster: bool,
 ) -> Option<f32> {
-    (world.mode == SceneMode::Field && !(psx_raster && retail_vantage(world, camera, debug_camera)))
+    field_ground_drop_under(world, world.draw_mode(), camera, debug_camera, psx_raster)
+}
+
+/// [`field_ground_drop`] for a frame drawn under `draw_mode` - a host passes
+/// the session's draw mode (`BootSession::frame_draw_mode`), which is the
+/// field's while the pause wipe darkens it with the world already in
+/// [`SceneMode::Menu`].
+pub fn field_ground_drop_under(
+    world: &World,
+    draw_mode: SceneMode,
+    camera: &Camera,
+    debug_camera: bool,
+    psx_raster: bool,
+) -> Option<f32> {
+    (draw_mode == SceneMode::Field && !(psx_raster && retail_vantage(world, camera, debug_camera)))
         .then_some(legaia_engine_scene::field_ground::FREE_VANTAGE_FLOOR_DROP)
 }
 
 /// This frame's cell rectangle, or `None` when the host should draw the whole
 /// map - the one entry point both play hosts ask.
 ///
+/// The window it crops by follows `framing` (the host passes
+/// [`crop_framing`]): retail's at retail framing, grown to the preset's scale
+/// under a pulled-back preset alone ([`CropFraming::Widened`]), and lifted
+/// under a re-aimed view ([`CropFraming::Free`], [`REGION_ONLY_WINDOW`]),
+/// where the window authored for retail's frustum would open black edges the
+/// player can see. The latched walk region bounds every arm.
+///
 /// `None` when:
 ///
 /// - the crop knob is off ([`legaia_engine_core::world::WorldToggles::view_window_crop`],
 ///   from [`legaia_engine_menus::options::OptionsState::retail_view_window`]);
-/// - `framing` is [`CropFraming::Free`] (the host passes [`crop_framing`]).
-///   The window is authored for retail's frustum, so under a re-aimed view
-///   it would open black edges the player can see. A pulled-back preset
-///   alone keeps retail's angles and crops by the window grown to its scale
-///   ([`CropFraming::Widened`]);
 /// - the world is not in [`SceneMode::Field`]: the kingdom overworld is drawn
 ///   by the PROT 0901 library, not by the pair this module ports, and the
 ///   other modes draw no `.MAP` cells;
@@ -149,12 +185,23 @@ pub fn field_ground_drop(
 /// shot; `rim_elm_queen_bee_battle` holds that window, and the cull kernel
 /// over it reproduces every placed actor's bit `1` in the capture).
 pub fn field_view_cells(world: &World, framing: CropFraming) -> Option<ViewCells> {
-    let scale = match framing {
-        CropFraming::Retail => 1.0,
-        CropFraming::Widened(scale) => scale,
-        CropFraming::Free => return None,
-    };
-    if !world.toggles.view_window_crop || world.mode != SceneMode::Field {
+    field_view_cells_under(world, world.draw_mode(), framing)
+}
+
+/// [`field_view_cells`] for a frame drawn under `draw_mode`. The play hosts
+/// pass the session's draw mode (`BootSession::frame_draw_mode`): under the
+/// pause wipe the world is already in [`SceneMode::Menu`] while the field
+/// still draws, and retail's field render library keeps walking the same
+/// window on those frames (the field overlay runs until the menu spawns), so
+/// the crop holds. Asked with the world's own mode, the seven wipe passes
+/// drew the whole map - on `conc` a strip of the next room's wall across the
+/// top of the frame that retail keeps black.
+pub fn field_view_cells_under(
+    world: &World,
+    draw_mode: SceneMode,
+    framing: CropFraming,
+) -> Option<ViewCells> {
+    if !world.toggles.view_window_crop || draw_mode != SceneMode::Field {
         return None;
     }
     // An expansion-pack cutscene's shot is not retail's frustum: the window
@@ -172,8 +219,13 @@ pub fn field_view_cells(world: &World, framing: CropFraming) -> Option<ViewCells
     if tx < r0 || tx >= r2 || tz < r1 || tz >= r3 {
         return None;
     }
+    let window = match framing {
+        CropFraming::Retail => view.window,
+        CropFraming::Widened(scale) => widened_window(view.window, scale),
+        CropFraming::Free => REGION_ONLY_WINDOW,
+    };
     Some(view_cells(&legaia_engine_field::camera::FieldCullView {
-        window: widened_window(view.window, scale),
+        window,
         ..*view
     }))
 }
@@ -370,7 +422,11 @@ mod tests {
             field_view_cells(&world, retail),
             Some(view_cells(&town01()))
         );
-        assert!(field_view_cells(&world, CropFraming::Free).is_none());
+        assert_eq!(
+            field_view_cells(&world, CropFraming::Free).map(|c| c.region),
+            Some(town01().attr_box),
+            "a free view still crops to the walk region"
+        );
         world.mode = SceneMode::WorldMap;
         assert!(field_view_cells(&world, retail).is_none());
         world.mode = SceneMode::Field;
@@ -383,6 +439,79 @@ mod tests {
         world.npcs.cull_view = Some(town01());
         world.toggles.view_window_crop = false;
         assert!(field_view_cells(&world, retail).is_none());
+    }
+
+    /// Under the pause wipe the world is in `Menu` while the field still
+    /// draws: asked with the frame's draw mode the crop holds, as retail's
+    /// field render library keeps walking its window until the menu spawns.
+    #[test]
+    fn the_crop_holds_under_the_pause_wipe() {
+        let mut world = World::new();
+        world.npcs.cull_view = Some(town01());
+        world.mode = SceneMode::Menu;
+        let retail = CropFraming::Retail;
+        assert!(field_view_cells(&world, retail).is_none());
+        assert_eq!(
+            field_view_cells_under(&world, SceneMode::Field, retail),
+            Some(view_cells(&town01()))
+        );
+        assert!(field_view_cells_under(&world, SceneMode::WorldMap, retail).is_none());
+        let far = Camera::default();
+        assert!(field_ground_drop_under(&world, SceneMode::Field, &far, false, false).is_some());
+    }
+
+    /// A re-aimed view lifts the window but keeps the walk region: a cell
+    /// or actor past retail's window inside the box draws, one in another
+    /// region does not.
+    #[test]
+    fn a_free_view_crops_to_the_walk_region_alone() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.npcs.cull_view = Some(town01());
+        let retail = field_view_cells(&world, CropFraming::Retail).unwrap();
+        let free = field_view_cells(&world, CropFraming::Free).unwrap();
+        // Column 42 lies past retail's window (`+8` from focus column 32)
+        // and inside the region box `[20, 77, 44, 108]`.
+        assert!(!retail.decoration_visible(42, 80, 0));
+        assert!(free.decoration_visible(42, 80, 0));
+        assert!(free.ground_visible(42, 100));
+        // Outside the box on either axis: never drawn.
+        assert!(!free.decoration_visible(50, 90, 6));
+        assert!(!free.ground_visible(10, 90));
+        assert!(!free.decoration_visible(30, 115, 6));
+        // Every cell retail's window draws, the free view draws too.
+        for col in 0..128 {
+            for row in 0..128 {
+                if retail.decoration_visible(col, row, 0) {
+                    assert!(free.decoration_visible(col, row, 0), "cell ({col}, {row})");
+                }
+                if retail.ground_visible(col, row) {
+                    assert!(free.ground_visible(col, row), "ground ({col}, {row})");
+                }
+            }
+        }
+        let tile = |c: i32| c * 128 + 64;
+        assert!(placed_actor_visible(
+            &world,
+            Some(&free),
+            tile(42),
+            tile(100),
+            0
+        ));
+        assert!(!placed_actor_visible(
+            &world,
+            Some(&free),
+            tile(50),
+            tile(90),
+            0
+        ));
+        assert!(!placed_actor_visible(
+            &world,
+            Some(&free),
+            tile(30),
+            tile(115),
+            0
+        ));
     }
 
     /// A pulled-back preset with the knobs at identity keeps the crop,

@@ -142,7 +142,7 @@ Flags worth knowing:
 | `--cd-trace` | Retail: `cd.csv` (breakpoint core), each libcd command call (`FUN_8005CF80` / `FUN_8005D0B8` / `FUN_8005CCB4`, the command, its first parameter byte, `ra`), CdSync's entry and return, the response dispatcher `FUN_8005DAB0`'s entry, interrupt causes, callbacks and exit, every exception at `0x80000080`, and the frame's `VSync(n)` return and CPU-done marks, each with the CPU cycle. [`cd-poll-steps.py`](../../scripts/ci/cd-poll-steps.py) prices each frame's CD interrupt time ([the CD stop watch](../subsystems/battle-stage-camera.md#the-cd-stop-watch)) |
 | `--console-cd` | Engine: price a voice clip's CD stop watch at a console's response time (`LEGAIA_BATTLE_CD_TIMING=console`, opt-in). Without it the film runs the engine's default PCSX-Redux timing, the machine the recordings ran on ([the CD stop watch](../subsystems/battle-stage-camera.md#the-cd-stop-watch)) |
 | `--gpu-cost-step` | Engine: a battle pass's ring entry is `max(cpu, gpu)`, the GPU half priced over the frame the window drew last (`LEGAIA_BATTLE_GPU_COST=1`, `WorldToggles::battle_gpu_cost_step`, opt-in). Not a harness seat: it changes the engine's own clock ([the engine's GPU source](../subsystems/battle-stage-camera.md#the-engines-gpu-frame-step-source)) |
-| `--retail-parts` | Retail: `parts.csv`, every live move-VM part per vsync (`+0x10`, colour word, level, draw kind, `+0x5A`, `+0x9E`, packed colours, `+0xB4..+0xBA`, the position halfwords `+0x14..+0x18`, scale, `+0x52`, `+0x9C`, UV / tpage / CLUT, H / S / V adds, view depth `+0x34`, `+0x7A`, `+0x6D`, `+0x42`, the rotation banks `+0x24..+0x28`): the retail half of `LEGAIA_DIAG_CAST_PARTS`. Beside it `fxpool.csv`, every live child of the effect pool `_DAT_8007BD30` (slot, frame count, cursor, position `>> 8`): where the 2D sprites, a burning body's puffs among them, sit |
+| `--retail-parts` | Retail: `parts.csv`, every live move-VM part per vsync (`+0x10`, colour word, level, draw kind, `+0x5A`, `+0x9E`, packed colours, `+0xB4..+0xBA`, the position halfwords `+0x14..+0x18`, scale, `+0x52`, `+0x9C`, UV / tpage / CLUT, H / S / V adds, view depth `+0x34`, `+0x7A`, `+0x6D`, `+0x42`, the rotation banks `+0x24..+0x28`, the draw-kind-4 phase `+0xC8` and its rate `+0xCA`): the retail half of `LEGAIA_DIAG_CAST_PARTS`. Beside it `fxpool.csv`, every live child of the effect pool `_DAT_8007BD30` (slot, frame count, cursor, position `>> 8`): where the 2D sprites, a burning body's puffs among them, sit |
 | `--pose-objects` | Retail: `pose.csv` (breakpoint core), at each burning-body emit (`0x8004A61C`) on the summon creature, its cursor, live pair, facing and decoded object table; `LEGAIA_DIAG_CAST_PARTS` writes the engine's `pose.csv` from `stream_pose` |
 | `--body-decode` | Retail: `decode.csv` (breakpoint core), each seat's body-pair store in the draw's decode `FUN_8004998C` (`0x8004A5FC`, after the `+0x3C` / `+0x40` stores): clip, node cursor, the pose centroid the store rotated, facing, live and body pairs. The pose a range law or separation pass reads next pass. `body.csv` carries the target's facing `+0x46` as `tfacing` on both sides |
 | `--prim-calls` | Retail: `primcall.csv` (breakpoint core), each prim dispatcher entry with its word, level, caller and first group words, and each cued leaf: whether a part reached the dispatcher at all, and by which leaf |
@@ -153,6 +153,7 @@ Flags worth knowing:
 | `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
 | `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
 | `LEGAIA_LEADIN_TABLE_COST=1` (engine child, beside `LEGAIA_BATTLE_POLY_COST=1`) | Engine: price the replay's lead-in on the action-state table and raise the polygon census where the film starts (the capture's gate, or the cast begin), so a census-priced film reaches its gate on the round a table-priced one does. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
+| `LEGAIA_FILM_COST_RING=e0,..,e15;cursor` (engine child) | The recording state's frame-cost ring, which the driver reads off the state for a film no `LEGAIA_BATTLE_COST_RING` seeds; under `LEGAIA_LEADIN_TABLE_COST` the film's opening pass is priced again on the census from it. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `LEGAIA_LEADIN_SPAN_LAW=1` (engine child) | Engine: run the replay's lead-in on the default one-vsync overrun and raise the span law where the film starts, the same hold for the law's longer frames: under the law in the lead-in `battle_korb2_warhalf_strike`'s replay won its fight in round 3 and never met its gate, as Gilium, Slippery and Topaz did. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `--rand-track` | Engine: seat every module-band pass on the `rand()` word retail's frame before it ended on (`LEGAIA_CAST_RAND_TRACK`, [below](#the-rand-stream)). A harness seat |
 | `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
@@ -162,6 +163,7 @@ Flags worth knowing:
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
 | `LEGAIA_SEAT_DRIVE_SEEK=<vsyncs>` (engine child) | Every seek of the cast drive takes this many vsyncs in place of the modelled law; the driver passes `2` ([the drive seek seat](#the-drive-seek-seat)) |
 | `LEGAIA_SEAT_CREATURE_RESTAGE=1` (engine child) | The state's bare creature seat holds a stage bump an earlier cast of its battle left (`+0x1DC` bit 0 of seat 7), which the next creature's first tick commits on ([the golem's rate](../subsystems/cast-module.md#prot-0964-element-change-rogue-wind--thunder--flame)). The driver reads the byte off the recording's state and sets it; the replay's fresh fight has played no such cast |
+| `LEGAIA_SEAT_STAGE_CYCLERS=x:y:w:h:H:S:V:rH:rS:rV:gate[,..]` (engine child) | The mode-3 HSV cyclers the state holds armed: rect `+0xA0` / `+0xA4`, adds `+0x90..+0x94`, rates `+0x96..+0x9A`, gate `+0x9C`, read off the nine move-VM lists at `0x8007C34C`. The replay's fresh fight seats a stage's cyclers at the cycle's start, so each seed overwrites its matching part on that part's first armed pass (Doomsday's backdrop row 479) |
 | `LEGAIA_SEAT_SEED_MP_UNPAID=1` (engine child) | The seeded cast has not paid its MP: the seed credits no price back, and the `0x28` debit wraps on the state's MP as retail's does ([below](#the-casters-mp)). The driver sets it on every non-physical film |
 | `LEGAIA_SEAT_SIDEBAND_SEEK=<vsyncs>` (engine child) | The recording drive's seek into the first `summon.dat` slot; the driver passes `0` ([the side-band read](#the-side-band-reads-seek)), `--engine-env` overrides it |
 | `LEGAIA_CAST_SEQ_EXE=<path>` (environment) | Score another `legaia-engine` build (a before / after pair) without rebuilding the tree's |
@@ -184,7 +186,7 @@ position, then the draw kind `+0x56`, scale `+0x72`, `+0x52`, the count
 `+0x9C`, the UV words `+0xA8` / `+0xAC`, tpage `+0xB0`, CLUT `+0xB2`, the
 default-arm mesh's vertex count, the spawn record's address, the flag word
 `+0x10`, the angle trio `+0x24..+0x28`, `+0x7A`, a mode-3 cycler's H / S / V adds
-`+0x90..+0x94` and its gate `+0x9C` - the engine half of a
+`+0x90..+0x94`, its gate `+0x9C`, the in-plane scales `+0xBC` / `+0xBE` and the draw-kind-4 phase `+0xC8` and rate `+0xCA` - the engine half of a
 part-by-part comparison. It writes `fxpool.csv` beside it, the effect pool's live
 children (tick, slot, frame count, cursor, position, anim id). It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
@@ -554,6 +556,18 @@ the later draws. A still gated on the first swing's clip and cursor (the drive's
 top of that gate, `battle_rugi_barra_strike` and `battle_taiku_topaz_strike` never
 met it and recorded no frame (now `.995` and `.987`), and
 `battle_dohaty_nova_v2_strike` reads `.993` for `.976`. A harness seat.
+
+A capture director's saved seat pairs are RAM the gate stands on as well. Scythe
+Wind's arm 2 saves the caster's live pair (`0x801F89DC`) and arms 3 and 4 write it
+back on every pass, as arms 0 to 4 do the victim's (`0x801F89D4`), so on a gate inside
+those arms each saved word equals the live pair the state holds. The replay saved its
+own on the passes before the gate: `battle_dohaty_nova_v2_scythe_wind_mid_cast`'s
+replay was still walking in when its arm 2 ran, so the saved pair stood `72` units
+nearer the victim than the state's, the gate's first pass carried Nova there, and the
+Done band framed her off retail's seat (case 6's yaw `66` units off, `.726`). The gate
+re-takes the pairs off the seated ground (`World::reseat_capture_pins_on_gate`,
+`scythe_wind_reseat_pins`): the film reads `.953` for `.919`, its camera `1.66` px
+for `3.76`. A harness seat.
 
 A cast whose hits are the melee kernel's takes the deal too. PROT 0952's Astral
 Slash stages Gaza's four-beat clip, each beat a block roll: retail's first roll
@@ -2117,7 +2131,16 @@ Both sides also write `sfx.csv`, one row per sound cue played:
   tick: the cues that came due (`SfxDue` off the delay scheduler, `RingDue`
   off the retail ring, `SfxNow`). The driver drops the child's `--no-audio`
   and sets `LEGAIA_AUDIO_DETACHED=1`, which opens the director over an
-  output with no device.
+  output with no device. Beside it, `silent.csv` lists each ring cue that came
+  due and keyed no voice (no bank staged for its category, no descriptor, no
+  resident program, no free voice; `AudioDirector::silent_ring`). It is not
+  scored: a cue the port pushes on retail's tick and does not sound reads as
+  matched in `sfx.csv`, and only this file shows it. Over the four film sets two
+  cues key nothing, and both are silent on retail too: Garnet's Heal `0x25E` and
+  Topaz's Hyper Heal `0x25F` (`bse.dat` rows `2B 03 3F 01` / `2B 04 40 01`) name
+  tones `3` and `4` of program `0x2B` in the caster's `monster.snd` bank, and every
+  bank carrying that program (`109` to `111`) holds three tones; the tone records
+  past them are zero, volume `0` and VAG `0`.
 
 Both ids are descriptor indices (the ring value is the index the drainer
 reads the table with). A retail cue is placed into engine time the way a

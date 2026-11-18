@@ -45,6 +45,7 @@ impl Camera {
             || self.mover.is_some()
             || world.scene_mode() == legaia_engine_mode::mode::SceneMode::Menu
             || world.cutscene_timeline_active()
+            || world.field_held_for_battle()
             || world.field_player_movement_locked()
             || !zone_camera_scene(world)
         {

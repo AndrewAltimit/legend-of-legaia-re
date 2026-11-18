@@ -548,6 +548,16 @@ start and holds the new one (`pending_bgm_install`) until
 moves there at the commit. A field init ends the walk and attaches what it
 held, unless the entry starts another track.
 
+Stage 6 skips the re-attach while pause bit 1 is up (`andi v0,v0,0x2` /
+`bne` at `0x8002479C..0x800247A0`), so a start the script pauses before the
+install lands stays silent until the script's own sub-op `4` replays it.
+`vozz` `P1[7]`, the Genesis Tree's revival, is the shape: `1 (2035)` and `2`
+in one slice, the burst, then `4`; retail's capture holds bit 1 from the start
+to the replay, and the theme is first heard at the replay. The port attaches
+the install and pauses it before a sample is mixed
+(`bgm_paused_install_disc.rs`); attached unpaused, the theme started at the
+install and restarted at the replay.
+
 ### A door keeps its music only behind sub-op 6
 
 Every field init decides the field BGM on bit 2 (`FUN_801D6704`, PROT 0897;
@@ -4142,6 +4152,49 @@ vsyncs late against the track. Which emulator a console agrees with is
 [open](../reference/open-rev-eng-threads.md): PCSX-Redux's entry is the CPU's alone, and mednafen's adds
 a GPU wait on a CPU that costs less. The GPU wait is the table's drawing, and what moves Guilty Cross's
 arms is PCSX-Redux's CD command wait ([a real console's frame cost](battle-stage-camera.md#what-a-real-consoles-frame-costs)).
+
+<a id="the-cast-core-channel"></a>
+**The `cast_core` channel: the cast with no score under it.** Every channel above renders the score
+from its top and mixes the cast over it, so a cast row's loss mixes two things: the cast's own sound and
+the score's reconstruction under it. The seventh channel takes the score out. A scratch copy of the
+state has the open sequence bitmap zeroed and every sounding voice whose libsnd record names a
+sequence (`0x801CDB50 + v * 0x36`, owner `+0x10` other than the cue slot `0x21`) stopped, its envelope
+zeroed in release; mednafen records that copy (`<label>.castcore.wav`), so what plays is the cast alone
+over the cue voices already sounding at the state. A held note is stopped rather than left to ring,
+because a summon's duck re-volumes it (`FUN_80067E9C`, the square taper) where a resumed SPU does not:
+left ringing, Theeder's held pad read `4.5` to `5` dB louder in the render than in the recording through
+the seconds the cast is quiet. The engine's side is the cast recording the `cast` channel already makes,
+mixed onto the resumed SPU at lag `0` on the same offset fit (`pcm-retail --resume-state <copy>
+--cast-wav`); `cast_core_steps` does the same with the `cast_steps` run. Harness-only.
+
+| State | `cast` | `cast_core` | `cast_core` p10 |
+|---|---|---|---|
+| `zeto_call_wave_mid_cast` | `0.999` | `0.9998` | `1.00` |
+| `zeto_big_wave_mid_cast` | `0.986` | `0.998` | `0.45` |
+| `cort_guilty_cross_mid_cast` | `0.859` | `0.992` | `0.55` |
+| `cort_mystic_shield_mid_cast` | `0.995` | `0.998` | `0.98` |
+| `theeder_summon_mid_cast` | `0.954` | `0.990` | `0.20` |
+| `zenoir_summon_mid_cast` | `0.854` | `0.998` | `-0.05` |
+| `nighto_summon_mid_cast` | `0.982` | `0.998` | `0.98` |
+| `orb_summon_mid_cast` | `0.995` | `0.999` | `0.99` |
+| `swordie_summon_mid_cast` | `0.990` | `0.989` | `0.28` |
+| `gilium_summon_mid_cast` | `0.991` | `0.996` | `0.92` |
+| `zora_glare_petrify_pre` | `0.947` | `0.996` | `0.79` |
+| `cort_evil_seru_magic_mid_cast` | `0.996` | `0.999` | `0.60` |
+| `cort_mystic_circle_mid_cast` | `0.962` | `0.977` | `0.24` |
+| `battle_gimard_tail_fire_a`, `_b` | `0.992`, `0.999` | `0.984`, `0.971` | two windows each |
+
+Taken out of the score, every summon and boss cast reads `0.99` or better at the median but Mystic Circle
+(`0.977`); the Tail Fire states hold two scored windows each. Where the
+two halves stand alone, quarter-second by quarter-second, the level and the pan of each window agree to
+`0.1` dB, and an XA voice's or a cue's octave bands to `0.02` dB, so the voices are retail's: pitch,
+volume, pan and send. What the tenth percentile keeps is time, in two kinds. The hit and reaction cues
+of Big Wave (`5.75` to `7` s) and Mystic Circle (`4.5` to `6.75` s) fit best `4.5` to `4.9` vsyncs early: a battle frame step, the key on the pushing tick against retail's drain at
+the frame's end ([settled](../reference/re-settled-threads/audio.md#when-does-a-ring-cue-sound-against-the-frame-that-pushed-it)).
+And the voices that fit at their best lag still read `0.8` to `0.9` with the band levels equal, which is
+phase: the clip's start or the converter's phase a fraction of a sample apart. Glare's `cast` row is the
+score, not the cast: under the cast its notes key `13` to `31` samples off the render's on the vsync,
+which costs a cymbal's window most of its correlation, while the cast alone reads `0.996`.
 
 What it found on Call Wave, both from the disassembly and both confirmed by the recording:
 

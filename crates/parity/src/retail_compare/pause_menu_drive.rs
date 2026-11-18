@@ -18,8 +18,11 @@ pub const MENU_PRESS_GAP: u64 = 14;
 /// four of four at `4`, so up to sixteen ticks - and the root picker's
 /// windows then slide in for twelve more before it reads the pad. With one
 /// [`MENU_PRESS_GAP`] on top, the first press lands at tick 34, clear of the
-/// slowest step.
-pub const MENU_OPEN_WIPE_TICKS: u64 = 20;
+/// slowest step. Both halves of a comparison run the retail-faithful mode,
+/// so the menu overlay's load hold
+/// ([`legaia_engine_system::pause_wipe::LOAD_HOLD_OPEN_VSYNCS`]) comes on top.
+pub const MENU_OPEN_WIPE_TICKS: u64 =
+    20 + legaia_engine_system::pause_wipe::LOAD_HOLD_OPEN_VSYNCS as u64;
 
 /// Ticks a card screen's grid takes to come up after its pill-row confirm:
 /// the "Now checking" card read runs first (`FUN_801DD35C` sub-modes `0x04`
@@ -32,6 +35,13 @@ pub const PRIZE_SETTLE_TICKS: u64 = 90;
 
 /// Ticks the map display takes to fade up after `L1`.
 pub const MAP_DISPLAY_SETTLE_TICKS: u64 = 120;
+
+/// Ticks a shop's windows take to come up after the arm: the prize counter's
+/// settle plus the menu overlay's load hold, which both halves of a
+/// comparison run in the retail-faithful mode
+/// ([`legaia_engine_menu_runtime::menu_runtime::SHOP_LOAD_HOLD_OPEN`]).
+pub const SHOP_OPEN_SETTLE_TICKS: u64 =
+    PRIZE_SETTLE_TICKS + legaia_engine_menu_runtime::menu_runtime::SHOP_LOAD_HOLD_OPEN as u64;
 
 /// Ticks between two scripted presses inside a shop: the widget scripts of
 /// the screen a confirm opens run before the next one takes the pad.
@@ -54,7 +64,7 @@ pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_system::
     if menu.shop_instr.is_some() {
         return (0u64..)
             .zip(&menu.path)
-            .map(|(i, b)| (PRIZE_SETTLE_TICKS + i * SHOP_PRESS_GAP, *b))
+            .map(|(i, b)| (SHOP_OPEN_SETTLE_TICKS + i * SHOP_PRESS_GAP, *b))
             .collect();
     }
     let mut out = vec![(0, PadButton::Start)];
@@ -98,7 +108,9 @@ pub fn pause_menu_drive_ticks(menu: &RetailMenu) -> u64 {
         return MAP_DISPLAY_SETTLE_TICKS;
     }
     if menu.shop_instr.is_some() {
-        return PRIZE_SETTLE_TICKS + menu.path.len() as u64 * SHOP_PRESS_GAP + PRIZE_SETTLE_TICKS;
+        return SHOP_OPEN_SETTLE_TICKS
+            + menu.path.len() as u64 * SHOP_PRESS_GAP
+            + PRIZE_SETTLE_TICKS;
     }
     let settle = if menu.card_grid {
         CARD_READ_SETTLE_TICKS

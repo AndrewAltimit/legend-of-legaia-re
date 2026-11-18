@@ -1449,8 +1449,8 @@ pub(super) fn pad_undress_after_duels(session: &mut NativeSession) -> usize {
 
 thread_local! {
     /// A race against a timed finisher wiped the party this stretch
-    /// ([`racing_a_finisher`]): the reload dresses for it
-    /// ([`pad_dress_for_race`]). Set by the fight, cleared at a new stretch.
+    /// ([`racing_a_finisher`]): the reload walks in charged for it
+    /// ([`pad_charge_for_race`]). Set by the fight, cleared at a new stretch.
     pub(super) static RACE_LOST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The beat being played, through the fight it stages.
     pub(super) static FIGHT_BEAT: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) };
@@ -1613,12 +1613,42 @@ pub(super) fn at_lost_door() -> bool {
     LOST_BEAT.with(std::cell::Cell::get) == FIGHT_BEAT.with(std::cell::Cell::get)
 }
 
-/// Dress for a lost race ([`race_goods_plan`]) with the pad, once the party is
-/// walking. A player who watched the finisher land reads the fight off the AP
-/// plate on the reload; the first attempt goes in the Goods the run chose.
+/// Whether the beat at hand stages the race against a timed finisher
+/// ([`KORU_MONSTER_ID`]): a formation row its record installs (`3E FF row`,
+/// [`staged_formation_rows`]) seats that monster in the scene's own
+/// formation table. Koru is route knowledge the hand already fights by, and
+/// a player who knows the fight dresses for it at the door: met in the Goods
+/// the run chose, the race was lost on every dealt stream's first attempt
+/// (Koru at 2184..6684 of 20000 when Dead End Crisis landed) and won on the
+/// reload dressed for it.
+fn at_race_door(session: &NativeSession) -> bool {
+    let Some(rec) = FIGHT_BEAT.with(std::cell::Cell::get) else {
+        return false;
+    };
+    let Some((mf, man, _)) = scene_man_and_triggers(session) else {
+        return false;
+    };
+    let table = &session.host.world.tables.formation_table;
+    staged_formation_rows(&mf, &man, 2, usize::from(rec))
+        .into_iter()
+        .any(|row| {
+            table
+                .formation(row)
+                .is_some_and(|d| d.slots.iter().any(|s| s.monster_id == KORU_MONSTER_ID))
+        })
+}
+
+/// Whether the hand prepares for a race at this door: the door the last
+/// race was lost at, or one whose staged fight is that race
+/// ([`at_race_door`]).
+pub(super) fn race_ahead(session: &NativeSession) -> bool {
+    (RACE_LOST.with(std::cell::Cell::get) && at_lost_door()) || at_race_door(session)
+}
+
+/// Dress for a race ([`race_goods_plan`]) with the pad, once the party is
+/// walking, at the door of one ([`race_ahead`]).
 pub(super) fn pad_dress_for_race(session: &mut NativeSession, charged: bool) -> usize {
-    if !RACE_LOST.with(std::cell::Cell::get)
-        || !at_lost_door()
+    if !race_ahead(session)
         || session.host.world.party.party_count < 3
         || !walking(session)
         || !released(session)
@@ -1931,7 +1961,7 @@ pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, S
     // the run wore before them.
     if continuous::STRETCH_TO.with(|t| t.borrow().as_str() == "nivora_late") {
         pad_dress_for_duels(session);
-    } else if !RACE_LOST.with(std::cell::Cell::get) {
+    } else if !race_ahead(session) {
         pad_undress_after_duels(session);
     }
     pad_dress_for_race(session, true);
