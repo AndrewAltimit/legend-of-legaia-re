@@ -175,6 +175,7 @@ fn placement_channel(p0_count: usize, p: &ActorPlacement) -> FieldChannel {
         // the bank select at `0x8003A2CC..0x8003A328`), kept in the raw
         // operand space `4C 50` writes. The reflection tick compares it
         // across a mirror pair before it copies the clip (`0x801E5204`).
+        // REF: FUN_80024E08
         model_id: u16::from(p.model_index),
         // Retail inits the `+0x94` payload slot to `-1`
         // (`FUN_8003A1E4`); the halt-acquire predicate reads it as
