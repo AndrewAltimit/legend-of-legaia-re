@@ -1035,7 +1035,11 @@ page's: the validator first (a pack with an error is refused and the running
 pack stays), the one activation path, then the map re-entered seated where
 the player stood (`SceneHost::expansion_reload_seat`, the reading both hosts
 take), the follow camera's framing kept, no banner and no entry fade, and the window's scene
-render state rebuilt. In a fight or a screen it waits and is retried. Both
+render state rebuilt. In a fight, a screen or one of the pack's cutscenes it
+waits and is retried: re-entering under a cutscene dropped the run, so the
+camera snapped from its shot to the follow framing and the scene never
+finished (the sample's `tower_intro` arrival, watched with the workbench's
+arrivals on). Both
 hosts word the outcome through `hotkeys::pack_reload_notice`; on the play page
 `End` reloads the library's copy of the active pack the same way.
 

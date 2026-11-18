@@ -33,8 +33,8 @@ pub enum ExpansionReloadSeat {
     /// Not on a pack map: the reload re-activates the pack and enters
     /// nothing.
     OffPack,
-    /// On pack map `map` but off its field (a fight, a screen): the reload
-    /// waits.
+    /// On pack map `map` but off its field (a fight, a screen) or under one
+    /// of the pack's cutscenes: the reload waits.
     Busy {
         /// The pack map the player is on.
         map: String,
@@ -113,7 +113,12 @@ impl SceneHost {
     /// transition plays while the mode is still the field's - and a card
     /// screen or a mode round is not the field either: activation would
     /// take the map out from under them, so those answer
-    /// [`ExpansionReloadSeat::Busy`] and the reload waits.
+    /// [`ExpansionReloadSeat::Busy`] and the reload waits. So does a pack
+    /// cutscene in play (an arrival such as the sample's `tower_intro`, a
+    /// trigger's, the workbench's preview of one): the re-entry would drop
+    /// the run, and its shot with it, so the camera snapped from the
+    /// cutscene's framing to the follow camera's and the scene never
+    /// finished. The edit goes in once the cutscene ends.
     pub fn expansion_reload_seat(&self) -> ExpansionReloadSeat {
         use legaia_engine_battle::encounter::EncounterPhase;
         let Some(map) = self.active_expansion_map().map(str::to_string) else {
@@ -127,7 +132,10 @@ impl SceneHost {
                     | EncounterPhase::Battling { .. }
             )
         });
-        if self.world.mode != legaia_engine_mode::mode::SceneMode::Field || fighting {
+        if self.world.mode != legaia_engine_mode::mode::SceneMode::Field
+            || fighting
+            || self.world.expansion_cutscene_active()
+        {
             return ExpansionReloadSeat::Busy { map };
         }
         let Some(p) = self.world.actors.first() else {

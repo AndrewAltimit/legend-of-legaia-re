@@ -136,3 +136,47 @@ fn the_tower_intro_plays_once_on_arrival_and_skips_once_seen() {
     assert!(!host.world.expansion_cutscene_active(), "skipped");
     assert!(!host.world.script_context_engages_player());
 }
+
+/// A hot reload (the workbench's every edit, `End`, `--expansion-watch`)
+/// waits while the intro plays: re-entering under it dropped the run and
+/// snapped the camera from its shot to the follow framing. Once the
+/// cutscene is over, the field is a reload seat again.
+#[test]
+fn a_reload_waits_for_the_tower_intro_to_end() {
+    use legaia_engine_scene_host::scene_host::ExpansionReloadSeat;
+    let Some(mut host) = host() else {
+        return;
+    };
+    host.enter_expansion_map(MAP, "entrance")
+        .expect("enter the Atrium");
+    let mut started = false;
+    for _ in 0..600 {
+        tick(&mut host, 0);
+        if host.world.expansion_cutscene_active() {
+            started = true;
+            break;
+        }
+    }
+    assert!(started, "the arrival plays the tower intro");
+    assert!(
+        matches!(host.expansion_reload_seat(), ExpansionReloadSeat::Busy { ref map } if map == MAP),
+        "a reload under the cutscene waits"
+    );
+    // Play it out, paging its lines; the field is a seat again.
+    for i in 0..6000 {
+        let pad = if i % 3 == 0 {
+            PadButton::Cross.mask()
+        } else {
+            0
+        };
+        tick(&mut host, pad);
+        if !host.world.expansion_cutscene_active() {
+            break;
+        }
+    }
+    assert!(!host.world.expansion_cutscene_active(), "the intro ends");
+    assert!(
+        matches!(host.expansion_reload_seat(), ExpansionReloadSeat::Field { ref map, .. } if map == MAP),
+        "the field takes the reload once the cutscene is over"
+    );
+}

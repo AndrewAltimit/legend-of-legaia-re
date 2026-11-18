@@ -3018,7 +3018,7 @@ impl LauncherApp {
                 Some(_) => waiting_message(self.rebind_button_label(row)),
                 None => format!(
                     "Enter, Cross or click, then press the key or controller button for {}. \
-                     One another button is on swaps with it.",
+                     If another button had that key, the two swap.",
                     self.rebind_button_label(row)
                 ),
             },
