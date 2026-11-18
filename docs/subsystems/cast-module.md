@@ -3194,8 +3194,10 @@ first on arm `0xC` (`0x801F7738..0x801F7758`): object 16, which no stream's part
 reaches on its own channel, is drawn on channel 14 from then on. PROT 0931 saves
 channels 6 and 22 on arm 4, and the tail of every pass stores object 22 into channel
 6 while the creature plays clip 4 or later (`0x801F89A0..0x801F89F0`). The port
-carries the store as `CastFxState::creature_channel_object`; the anim pass poses the
-object on the channel, and `battle_drawn_objects` swaps which of the two draws. Both
+carries the store as `CastFxState::creature_channel_object`, set from
+`engine-effects::summon::creature_channel_object` (the same rule the Seru-magic
+page's Model only view applies to the clips it plays on their own); the anim pass
+poses the object on the channel, and `battle_drawn_objects` swaps which of the two draws. Both
 weapons sit past every clip's part count (Jedo's clips have 22 parts over 23 objects,
 Meta's 15 or 16 over 17), so the anim pass grows the pose to reach the object before it
 copies the channel's entry there. Without the entry the native window drew the weapon

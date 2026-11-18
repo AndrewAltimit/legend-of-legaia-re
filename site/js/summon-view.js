@@ -340,14 +340,14 @@
       const k = (this.state.clips || [])[index];
       const frames = this.api.clip_pose_frames(index);
       if (!k || !frames.length) return;
-      this.view.setAnimation({
+      this.view.setAnimation(Object.assign({
         partCount: k.parts,
         frameCount: k.frames,
         frames,
         fps: fpsForRate(k.rate),
         fitAll: this.fitAll,
         loop: false,   /* a cast is one play, then the body holds */
-      });
+      }, this._objectRows(this.api.clip_object_rows)(index)));
       this._armCamera();
       this.view.setPlaying(true);
       this._label(`phase ${index + 1}`, `${k.frames} keyframes over ${k.parts} parts @ rate ${k.rate}`);
@@ -360,28 +360,47 @@
       const seq = this.api.sequence_clip_indices();
       const frames = this.api.sequence_pose_frames();
       const clips = this.state.clips || [];
-      const parts = this.state.part_count;
+      /* Every clip padded to the widest one's rows (a bundle from before
+       * `sequence_width` concatenated only the first clip's width). */
+      const parts = typeof this.api.sequence_width === 'function'
+        ? this.api.sequence_width() : this.state.part_count;
       if (!seq.length || !frames.length || !parts) {
         this.view.setAnimation(null);
         this._label('rest pose', 'no decodable keyframe clip on this disc');
         return;
       }
       const total = frames.length / (parts * 6);
-      this.view.setAnimation({
+      this.view.setAnimation(Object.assign({
         partCount: parts,
         frameCount: total,
         frames,
         fps: fpsForRate(clips.length ? clips[0].rate : 0),
         fitAll: this.fitAll,
         loop: false,
-      });
+      }, this._objectRows(this.api.sequence_object_rows)()));
       this._armCamera();
       this.view.setPlaying(true);
       const dropped = clips.length - seq.length;
       const note = `${total} keyframes across ${seq.length} phase${seq.length === 1 ? '' : 's'}`
-        + (dropped > 0 ? ` (${dropped} phase${dropped === 1 ? '' : 's'} use a different rig width - play them on their own)` : '');
+        + (dropped > 0 ? ` (${dropped} phase${dropped === 1 ? '' : 's'} not in the timeline - play them on their own)` : '');
       this._label('whole cast', note);
       this._markClip('all');
+    }
+
+    /* The object -> pose-row map for a clip (`getter` is the WASM accessor):
+     * which channel poses each TMD object, with the cast module's channel
+     * store applied - Jedo's scythe and Meta's sword sit past every clip's
+     * part count and draw only through the channel the module moves them
+     * onto (`summon_core::creature_channel_object`). Returns a factory so a
+     * bundle without the accessor plays the raw clips. */
+    _objectRows(getter) {
+      return (...args) => {
+        if (typeof getter !== 'function') return {};
+        const rows = getter.apply(this.api, args);
+        const objectCount = (this.state && this.state.object_count) | 0;
+        if (!rows || !rows.length || !objectCount) return {};
+        return { objectRows: Int32Array.from(rows), objectCount };
+      };
     }
 
     /* Keep the creature framed and centred while its cast plays.
@@ -409,7 +428,7 @@
     _follow() {
       const v = this.view;
       if (!v || !v.anim || this.fitAll || !this.mod) return;
-      const out = v.anim.out, ids = v._objIds, pc = v.anim.partCount;
+      const out = v.anim.out, ids = v.anim.liveIds || v._objIds, pc = v.anim.partCount;
       if (!out || !ids) return;
       const c = this.mod.summon_framing_center(out, ids, pc);
       if (c && c.length === 3) v.center = [c[0], c[1], c[2]];
@@ -423,7 +442,7 @@
         const k = this.frameOutlierK != null
           ? this.frameOutlierK : this.mod.summon_framing_outlier_k();
         const b = this.mod.summon_framing_bound(
-          v.anim.out, v._objIds, v.anim.partCount, k);
+          v.anim.out, v.anim.liveIds || v._objIds, v.anim.partCount, k);
         if (b && b.length === 4 && b[3] > 0) {
           v.center = [b[0], b[1], b[2]];
           /* Slack so a limb that swings out mid-clip is not clipped at the
