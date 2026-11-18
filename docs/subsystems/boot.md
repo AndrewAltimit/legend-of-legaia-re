@@ -1424,6 +1424,15 @@ rather than blitting the full quad:
   it (sub-mode `0x10` shows the rows at once); the port's PressStart phase
   draws it by that law. A tighter crop at `x = 60` centred on its own
   196-texel width stood the text 30 pixels left of centre.
+- **Retail never shows the prompt.** In PROT 0899 the table at `0x801E50A8`
+  has one reader, the strip drawer `FUN_801E2EE4` (`0x801E2F1C`), and the
+  drawer has six callers, all in `FUN_801E0418`, passing records `0`, `3`,
+  `3`, `4`, `2` and `5`; no pointer word names the drawer, so nothing reaches
+  it indirectly. A capture agrees: filmed every 10 vsyncs from the
+  `title_attract` state with no input, through the attract FMV and the
+  title's re-entry (`Init`, `0x11`, `0x10`), every title frame is
+  pixel-identical to the first - the wordmark, NEW GAME / CONTINUE and the
+  two legal lines, with no prompt and no blink.
 - **`<DEMO>` is never sampled.** In a live title-screen state (sub-mode `0x10`)
   the in-RAM TIM bytes match the disc TIM while the framebuffer omits the band.
 - **The menu rows are strips of this TIM**, not glyph-atlas or dialog-font
