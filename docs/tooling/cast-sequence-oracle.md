@@ -2121,7 +2121,12 @@ Both sides also write `sfx.csv`, one row per sound cue played:
   due and keyed no voice (no bank staged for its category, no descriptor, no
   resident program, no free voice; `AudioDirector::silent_ring`). It is not
   scored: a cue the port pushes on retail's tick and does not sound reads as
-  matched in `sfx.csv`, and only this file shows it.
+  matched in `sfx.csv`, and only this file shows it. Over the four film sets two
+  cues key nothing, and both are silent on retail too: Garnet's Heal `0x25E` and
+  Topaz's Hyper Heal `0x25F` (`bse.dat` rows `2B 03 3F 01` / `2B 04 40 01`) name
+  tones `3` and `4` of program `0x2B` in the caster's `monster.snd` bank, and every
+  bank carrying that program (`109` to `111`) holds three tones; the tone records
+  past them are zero, volume `0` and VAG `0`.
 
 Both ids are descriptor indices (the ring value is the index the drainer
 reads the table with). A retail cue is placed into engine time the way a
