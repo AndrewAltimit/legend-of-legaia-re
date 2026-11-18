@@ -487,9 +487,11 @@ Walking instead of running misses `jouind`'s timed switch pair on every try.
 playthrough's player switched Field Move to Run by Mt. Rikuroa (every
 order-checked anchor from `mt_rikuroa` on holds `1` at SC `+0x58C`). The
 continuous player keeps walking until a stretch stalls short of a wipe in
-a stretch whose anchor runs; then it sets Run, reloads the stretch's save
-once and keeps running - setting it again on any reload of a save from
-before the switch. Running from Mt. Rikuroa on re-dealt the whole
+a stretch whose anchor runs; then it sets Run where it stands, once, and
+plays the stretch on in the same session and on what is left of its budget -
+the option is a pause-menu toggle, and the reload it once took cost the Cort
+stretch a second attempt on every dealt stream. It sets Run again on any
+reload of a save from before the switch. Running from Mt. Rikuroa on re-dealt the whole
 middle of the game, and a runner meets corners and stones differently: it
 wedged in `ropeway` at (24, 27), and Sol's lower floors closed off Gaza's
 second fight (`korb3` P2[2]). Held back, it first switches on at
@@ -1003,7 +1005,8 @@ done
 Zora (`taiku`) is where the set was fragile: seed 5 stopped there at 26
 before the fighter learned to guard against Stone
 ([the boss section](#a-boss-the-anchors-party-cannot-outlast)). Cort takes a
-second attempt on most streams, as the Cort notes above describe.
+attempt of its own only when Cort wipes the party, as the Cort notes above
+describe; the switch to Run at `jouind`'s switch pair is not one.
 
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
 

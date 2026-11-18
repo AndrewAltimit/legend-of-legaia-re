@@ -621,16 +621,23 @@ fn part_c_continuous_run() {
             RACE_LOST.with(|l| l.set(false));
         }
         let t0 = std::time::Instant::now();
+        // Set when the last pass ended on a Field Move switch made in place
+        // (see `run_retry` below): the next pass plays on in the same
+        // session, on what is left of the same budget, and is not another
+        // attempt.
+        let mut switched_in_place = false;
         loop {
-            attempt += 1;
-            LOST_TO_ELEMENT.with(|l| l.set(None));
-            let played = catch_unwind(AssertUnwindSafe(|| {
+            if !std::mem::take(&mut switched_in_place) {
+                attempt += 1;
                 let budget = PAD_SEGMENT_FRAMES + to.via.len() as u64 * PAD_SEGMENT_FRAMES / 4;
                 STRETCH_FRAMES.with(|f| f.set(budget));
                 PAD_DEADLINE.with(|d| d.set(session.frames + budget));
                 // This hand takes the fights it can win, so a stretch's
                 // battles run long past the fleeing hand's allowance.
                 PAD_BATTLE_LEFT.with(|l| l.set(4 * PAD_BATTLE_ALLOWANCE));
+            }
+            LOST_TO_ELEMENT.with(|l| l.set(None));
+            let played = catch_unwind(AssertUnwindSafe(|| {
                 if let Some(element) = prepare {
                     pad_equip_guard(&mut session, element);
                 }
@@ -700,11 +707,13 @@ fn part_c_continuous_run() {
             let wiped = err.contains("party wiped") || err.contains("scripted game over");
             let guard = LOST_TO_ELEMENT.with(std::cell::Cell::get);
             // A walking player stuck where the playthrough ran switches
-            // Field Move to Run and reloads, once, and keeps running.
+            // Field Move to Run where it stands, once, and keeps running:
+            // the option is a pause-menu toggle, not a reason to reload.
             // Turned on from the start of the playthrough's running stretch
             // it re-dealt the whole middle of the game (and a runner wedges
             // and pushes stones differently), so it waits for the stretch
-            // that needs it: `jouind`'s switch pair.
+            // that needs it: `jouind`'s switch pair. Reloading for it cost
+            // the Cort stretch a second attempt on every dealt stream.
             let run_retry = !wiped
                 && !run_tried
                 && !session.host.world.locomotion.run_default
@@ -732,12 +741,24 @@ fn part_c_continuous_run() {
                     );
                 }
             }
+            if run_retry {
+                run_tried = true;
+                session.host.world.locomotion.run_default = true;
+                switched_in_place = true;
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [run] {} -> {}: Field Move set to Run where the walk stalled: {err}",
+                        spine[i].id, to.id
+                    );
+                }
+                continue;
+            }
             let again = match guard {
                 Some(el) if wiped && prepare.is_none() => {
                     prepare = Some(el);
                     true
                 }
-                _ => (wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS) || run_retry || stall_retry,
+                _ => (wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS) || stall_retry,
             };
             if !again {
                 print_state_diff(&mut session, &inp, to);
@@ -776,17 +797,8 @@ fn part_c_continuous_run() {
             // The reload restores the save's own Field Move (the options
             // words travel with it, SC `+0x58C`); a player who switched to Run
             // switches again on a save from before the switch.
-            if run_retry || run_tried {
+            if run_tried {
                 session.host.world.locomotion.run_default = true;
-            }
-            if run_retry {
-                run_tried = true;
-                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                    eprintln!(
-                        "    [run] {} -> {}: Field Move set to Run",
-                        spine[i].id, to.id
-                    );
-                }
             }
             if !(attempt == 1 && prepare.is_some()) {
                 let w = &mut session.host.world;
