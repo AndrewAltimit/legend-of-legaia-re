@@ -1281,6 +1281,7 @@ mod gola_mushura_barra;
 mod hyper_crush;
 mod hyper_lightning;
 mod jedo_iota_mule;
+mod jugger_power;
 mod juggernaut;
 mod kemaro;
 mod kiss_of_death;
@@ -1368,6 +1369,7 @@ pub use gola_mushura_barra::*;
 pub use hyper_crush::hyper_crush_camera;
 pub use hyper_lightning::hyper_lightning_camera;
 pub use jedo_iota_mule::*;
+pub use jugger_power::{JUGGER_POWER_BODY, jugger_power_camera};
 pub use juggernaut::*;
 pub use kemaro::*;
 pub use kiss_of_death::{

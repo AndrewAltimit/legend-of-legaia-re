@@ -353,6 +353,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (952, super::BLOODY_HORNS_BODY) => Some(super::bloody_horns_camera),
         (952, super::ASTRAL_SLASH_BODY) => Some(super::astral_slash_camera),
         (945, crate::cast_module_ticks::WATER_COLUMN_TICK) => Some(super::water_column_camera),
+        (945, super::JUGGER_POWER_BODY) => Some(super::jugger_power_camera),
         (943, crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK) => Some(super::lapis_wave_camera),
         (956, crate::cast_arm_ticks::WATER_HAZARD_TICK) => Some(super::water_hazard_camera),
         (956, super::PARALYZING_WAVE_BODY) => Some(super::paralyzing_wave_camera),
@@ -551,6 +552,8 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         // PROT 0963's word (`lui 0x8020` / `-0x6D38`): arm 0 seeds it
         // (`0x801F6BC0`) and every later arm drains the bare step.
         0xB3 => Some(GENOCIDAL_CANNON_COUNTDOWN),
+        // PROT 0945's word, shared by its two bodies (`0x801F7E5C`).
+        0xBA => Some(super::WATER_COLUMN_COUNTDOWN),
         _ => None,
     }
 }
