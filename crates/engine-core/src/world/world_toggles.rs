@@ -144,8 +144,10 @@ pub struct WorldToggles {
     pub battle_sm_frame_cadence: bool,
     /// Run an ordinary battle frame on the step retail's frame cost gives this
     /// party's size (`World::ordinary_battle_frame_step`), not the two-vsync
-    /// default. Off in a bare `World`, which unit tests pin on the default; the
-    /// play hosts raise it through [`Self::retail_cost_step`].
+    /// default. On in a bare `World` and on both play hosts; the native
+    /// session lowers it under `LEGAIA_BATTLE_PARTY_STEP=0`
+    /// (`legaia_engine_session::native::apply_env_world_toggles`), and the
+    /// play page has no setter for it.
     pub battle_party_cost_step: bool,
     /// Opt-in frame-step source, off by default (the step tables stay the
     /// default clock): a battle pass's frame cost is the larger of its
@@ -571,13 +573,16 @@ impl WorldToggles {
     /// Pin every fidelity toggle to retail's behaviour: no entry pulse, no
     /// photosensitivity slew, the retail tile crop, no volumetric fog, the
     /// uniform monster target, the damage finisher and the battle pass's
-    /// discarded draw. The loop and dialogue-routing switches and the option
-    /// mirrors are host wiring, not fidelity, and are left alone.
+    /// discarded draw, the CD-wait holds, the frame-latched pad, the
+    /// once-a-frame walk and map display, and every gameplay tweak and battle
+    /// tuning at retail. The loop and dialogue-routing switches, the
+    /// frame-cost measurement switches and the option mirrors are host
+    /// wiring, not fidelity, and are left alone.
     ///
     /// A bare [`WorldToggles::new`] is not this: it keeps the
-    /// photosensitivity slew and the entry pulse on, so a host that never
-    /// plumbs options is safe by default. A headless comparison against
-    /// retail calls this.
+    /// photosensitivity slew, the entry pulse and the other default-on
+    /// enhancements and fixes on, so a host that never plumbs options is safe
+    /// by default. A headless comparison against retail calls this.
     pub fn pin_retail(&mut self) {
         self.entry_pulse_enabled = false;
         self.reduce_flashing = false;

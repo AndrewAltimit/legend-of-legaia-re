@@ -505,12 +505,21 @@ The engine crates read no process environment for a gameplay switch: a
 `wasm32` build has none, so a switch read there is one the browser can never
 throw. A native session raises its environment switches onto `WorldToggles`
 in one place (`legaia_engine_session::native::apply_env_world_toggles`, on
-every native session open); the play page has a setter per switch. Tier 15
+every native session open); the play page has a setter for each player-facing
+one (`set_battle_frame_cadence`, `set_arts_saved_list`, `set_smart_monsters`,
+`set_world_map_markers`). The frame-cost measurement switches
+(`LEGAIA_BATTLE_FRAME_SPAN`, `LEGAIA_BATTLE_POLY_COST`,
+`LEGAIA_BATTLE_PARTY_STEP`, `LEGAIA_BATTLE_GPU_COST`,
+`LEGAIA_BATTLE_POLY_SOURCE`, `LEGAIA_BATTLE_CD_TIMING`,
+`LEGAIA_FIELD_FRAME_COST`) have no page setter: the page runs each at its
+`WorldToggles::new` value. Tier 15
 of the [host-drift gate](../tooling/host-drift.md#tier-15---engine-environment-reads)
 fails on a new read.
 
-A bare `World` is **not** retail-pinned: `WorldToggles::new` keeps the
-photosensitivity slew and the entry pulse on, so a host that never plumbs
+A bare `World` is **not** retail-pinned: `WorldToggles::new` holds every
+`World::toggles` knob below at its listed default - the photosensitivity slew,
+the entry pulse, the load-hold skip, the immediate pad, the smooth walk and map
+display and the default-on tweaks among them - so a host that never plumbs
 options is safe by default. A headless comparison against retail calls
 `pin_retail`.
 
@@ -529,7 +538,7 @@ options is safe by default. A headless comparison against retail calls
 | `World::toggles.action_movement` (`--action-movement`, the launcher's Action movement row; same-named box on the browser play page; remembered on both) | off (off under `pin_retail`) | The platformer field controller in place of the walk and its settle: momentum, sprint, Square to jump and double jump, R2 to dash, gravity onto floor levels ([field-locomotion](field-locomotion.md#action-movement-enhancement)). Every pad lock still holds. Not retail. |
 | `World::locomotion.leading_edge_wall_probes` (`--no-edge-collision` disables) | **on** in `play-window` + browser play page | Retail's three-probe leading-edge wall footprint (`FUN_801cfe4c`'s `DAT_801f2214` table): the player rests ~47 units off a wall plane ([field-locomotion](field-locomotion.md#collision---fun_801cfe4c)). Off = the single candidate-centre test the locomotion oracles and BFS nav drivers run on, which is why the `World` field itself still defaults off. |
 | `World::toggles.hop_landing_guard` | **on** (off under `pin_retail` / `--retail`) | Refuses a field ledge hop whose landing the walk could not leave in any direction. Retail tests no landing, and a diagonal step-up hop can set the player boxed in a raised pocket for good ([field-locomotion](field-locomotion.md#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878)). |
-| `World::toggles.skip_load_holds` | **on** (off under `pin_retail` / `--retail`) | Skips the CD-wait black holds around the pause menu, a shop, a door and a battle's return: retail holds the screen while the menu overlay loads after the wipe or the shop's fade, while the field overlay reloads after a close, and while a door's or a battle's field init loads the scene ([save-screen](save-screen.md#outer-dispatcher-fun_801dc6b4), [shop](shop.md), [cutscene](cutscene.md#the-credits-hold-for-each-scene-load)). Off runs them as the captures measure them. |
+| `World::toggles.skip_load_holds` | **on** (off under `pin_retail` / `--retail`) | Skips the CD-wait black holds around the pause menu, a shop, a door and a battle's return: retail holds the screen while the menu overlay loads after the wipe or the shop's fade, while the field overlay reloads after a close, while a departing door streams the next scene's chunk past its countdown, and while a door's or a battle's field init loads the scene ([save-screen](save-screen.md#outer-dispatcher-fun_801dc6b4), [shop](shop.md), [cutscene](cutscene.md#the-credits-hold-for-each-scene-load)). Off runs them as the captures measure them. |
 | `World::toggles.immediate_pad` | **on** (off under `pin_retail` / `--retail`) | The field and the overworld read the pad on the vsync it is pressed. Retail samples it once a frame, at the end of the frame body, and acts on it the frame after, so a press lands two vsyncs late and a tap shorter than a frame can go unread ([field-locomotion](field-locomotion.md#when-the-game-sees-a-press)). Off runs that pipeline; on is the better feel, with nothing in the game keyed to the delay. |
 | `World::toggles.smooth_walk` | **on** (off under `pin_retail` / `--retail`) | The player's walk pays each game frame's step out a vsync at a time, so the figure moves every vsync. Retail commits the whole step once a frame (`16` units every two vsyncs in a town, `10` every three on the overworld); off does the same, and reaches a trigger tile or an encounter crossing with the frame's whole step taken. |
 | `World::toggles.smooth_map_display` | **on** (off under `pin_retail` / `--retail`) | The L1 map display runs every vsync at retail's speeds: the held d-pad pans a tile per five vsyncs a fifth of a tile at a time, the fades take retail's time stepped every vsync, and the pad is read every vsync. Retail draws the survey a frame every five vsyncs and steps everything on that clock ([world-map](world-map.md#the-map-display---prot-0981)); off does the same, bit for bit. |
