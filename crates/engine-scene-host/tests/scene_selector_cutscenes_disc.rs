@@ -16,6 +16,20 @@
 //! in its `0x3F` to `map01`, as retail's does. A second pick clears the flags
 //! the first one raised.
 //!
+//! **The party.** Each beat runs with the party retail has there: Vahn, Noa
+//! and Gala, Vahn leading. No record on the way into these scenes changes the
+//! party - the disc's party ops (`0x3C` / `0x3D` / `4C 0x`) sit elsewhere -
+//! and the last one before them leaves the three together: `uru` `P2[30]` /
+//! `P2[32]` / `P2[34]` (`3D 00 3D 01 3D 02 3C 00 3C 01 3C 02`, the presence
+//! flags `0x10..0x12` raised with them) after each Uru Mais dream, `nilboa`
+//! `P2[28]` after the Nivora split. Retail memory-card saves agree: the party
+//! word at `0x80084594` reads three members, Vahn leading (`0x80084597 = 0`),
+//! in the card-loaded `noaru`, `rugi`, `jouind`, `deene` and `conc2` states.
+//! Terra's "Noa, wait a minute" in `juui2` speaks to a member of that party;
+//! the field shows only the leader. Noa's Dreams (`dream`) is the row whose
+//! own entry script hands Noa the lead (`4C 01` in `P1[0]`), and the
+//! selector keeps it.
+//!
 //! Skips when `LEGAIA_DISC_BIN` is unset - CI runs without disc data.
 
 use std::path::PathBuf;
@@ -29,15 +43,19 @@ fn disc_path() -> Option<PathBuf> {
     p.is_file().then_some(p)
 }
 
-/// `(scene, how it starts, record, where the beat ends)`; `None` = control
-/// comes back in the scene.
-const CASES: &[(&str, BeatTrigger, u8, Option<&str>)] = &[
-    ("bubu1", BeatTrigger::ArrivalTile, 1, None),
-    ("bubu2", BeatTrigger::ArrivalTile, 3, None),
-    ("jouine", BeatTrigger::EntryScript, 5, None),
-    ("urudre2", BeatTrigger::EntryScript, 9, Some("map01")),
-    ("juui2", BeatTrigger::NearArrival, 16, None),
+/// `(scene, how it starts, record, where the beat ends, the leader)`;
+/// `None` = control comes back in the scene. Leader ids: `0` Vahn, `1` Noa.
+const CASES: &[(&str, BeatTrigger, u8, Option<&str>, u8)] = &[
+    ("bubu1", BeatTrigger::ArrivalTile, 1, None, 0),
+    ("bubu2", BeatTrigger::ArrivalTile, 3, None, 0),
+    ("jouine", BeatTrigger::EntryScript, 5, None, 0),
+    ("urudre2", BeatTrigger::EntryScript, 9, Some("map01"), 0),
+    ("juui2", BeatTrigger::NearArrival, 16, None, 0),
+    ("dream", BeatTrigger::ArrivalTile, 0, Some("bylon"), 1),
 ];
+
+/// The party every case runs with: Vahn, Noa and Gala.
+const PARTY: [u8; 3] = [0, 1, 2];
 
 /// The partition-2 record whose body the running context executes.
 fn running_record(h: &SceneHost) -> Option<u8> {
@@ -72,13 +90,20 @@ fn the_selector_opens_each_scene_on_its_cutscene() {
     let mut base = SceneHost::open_disc(&disc).expect("open disc host");
     let index = base.index.clone();
     let cat = base.arrival_catalog();
-    for &(scene, trigger, record, ends_in) in CASES {
+    // The hosts' picker party (`World::seed_picker_party`), as both hosts
+    // arm it.
+    let mut defaults = base.new_game_defaults.clone();
+    if let Some(d) = defaults.as_mut() {
+        d.picker_party = true;
+    }
+    for &(scene, trigger, record, ends_in, lead) in CASES {
         let beat = picker_entry_beat(scene).unwrap_or_else(|| panic!("[{scene}] has no row"));
         assert_eq!(beat.trigger, trigger, "[{scene}] trigger");
         assert_eq!(beat.record, record, "[{scene}] record");
 
         let mut h = SceneHost::new(index.clone());
         h.set_arrival_catalog(cat.clone());
+        h.new_game_defaults = defaults.clone();
         h.world.stage_picker_entry(scene, false);
         assert!(h.arm_picker_story_entry(scene), "[{scene}] arm refused");
         h.enter_field_scene(scene, 0).expect("enter");
@@ -105,6 +130,12 @@ fn the_selector_opens_each_scene_on_its_cutscene() {
                 None if active => {
                     started = Some(t);
                     ran = running_record(&h);
+                    assert_eq!(h.world.field_leader(), lead, "[{scene}] the beat's leader");
+                    assert_eq!(
+                        h.world.present_party_list(),
+                        PARTY,
+                        "[{scene}] the beat's party"
+                    );
                 }
                 None => assert!(t < 4, "[{scene}] nothing started on the first ticks"),
                 Some(t0) if !active => {

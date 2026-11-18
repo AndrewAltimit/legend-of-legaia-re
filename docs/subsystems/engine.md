@@ -434,6 +434,10 @@ The table is generated, not curated. The disc-gated `crates/engine-scene-host/te
 
 An `EntryScript` candidate is only built for a scene the overworld does not enter. A scene with an overworld entrance has its story entrance there, and a beat its entry script plays behind another door's hand-off is a later return: `rikuroa` from `noaru`, `bylon` from `garmel`. The test fails when the committed block and the disc disagree, and `LEGAIA_PICKER_BEATS_WRITE=1` rewrites it. A second test stages every row through the hosts' arm and checks its record engages the player on the first ticks, and `crates/engine-scene-host/tests/scene_selector_cutscenes_disc.rs` follows one scene of each kind (`bubu1`, `bubu2`, `jouine`, `urudre2`, `juui2`) through its whole beat.
 
+The party a beat runs with is the selector's own (Vahn, Noa and Gala, Vahn leading), and that is retail's for every row. No record on the way into a row's scene changes the party: the disc's party ops (`0x3C` add, `0x3D` remove, `4C 0x` leader) sit in a handful of story records. The last of them before these scenes leaves the three together, Vahn first: `uru` `P2[30]` / `P2[32]` / `P2[34]` after each Uru Mais dream and `nilboa` `P2[28]` after the Nivora split. Each op keeps its presence flag in step (`0x10..0x12`).
+
+Retail memory-card saves loaded in `noaru`, `rugi`, `jouind`, `deene` and `conc2` read the same three members, Vahn leading, in the party word at `0x80084594`. A line addressed to Noa (Terra's in `juui2`) speaks to a member of that party, since the field draws only the leader. A row whose own scripts change the lead keeps that change: Noa's Dreams' entry script hands Noa the lead (`4C 01`). The two tests above assert the leader and party list at each beat on both hosts.
+
 Candidates the selector does not stage sit in `PICKER_ENTRY_BEATS_HELD` with a `HeldReason`, and their scenes keep the ranked seat:
 
 - **Blocked by flag `7`.** The MAN loader's always-set flag, which marks developer leftovers: `rayman2`'s `tunnela` door, `rikuroa`'s `rikuroa2` door and the triggers beside it, `izumi`'s near trigger.
