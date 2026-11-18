@@ -744,9 +744,13 @@ pub const TITLE_BAND_WORDMARK: (u32, u32, u32, u32) = (0, 17, 256, 124);
 /// here as a reference; engines should NOT emit a draw for this rect.
 pub const TITLE_BAND_DEMO: (u32, u32, u32, u32) = (96, 151, 64, 10);
 
-/// Source sub-rect of the "PRESS START BUTTON" prompt label. Drawn
-/// only during the PressStart phase, matching retail.
-pub const TITLE_BAND_PRESS_START: (u32, u32, u32, u32) = (60, 178, 196, 16);
+/// Source sub-rect of the "PRESS START BUTTON" prompt label: record 1 of
+/// the menu overlay's title-strip descriptor table (`0x801E50A8`), the
+/// rect retail's strip drawer samples. The glyphs (texel columns
+/// `66..=189`) sit centred in its 254-texel width, so the strip centred on
+/// the screen centres the text; the column-255 texel past the record's
+/// right edge is a stray the record leaves out.
+pub const TITLE_BAND_PRESS_START: (u32, u32, u32, u32) = (0, 176, 254, 16);
 
 /// Source sub-rect of the "TM of Sony Computer Entertainment America
 /// Inc." copyright line. Drawn in all post-fade phases.

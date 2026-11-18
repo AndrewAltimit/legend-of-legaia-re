@@ -1411,11 +1411,19 @@ rather than blitting the full quad:
 |---|---|---|
 | `(0, 17, 256, 124)` | Orb + "Legend of Legaia" wordmark | every post-fade phase |
 | `(96, 151, 64, 10)` | `<DEMO>` | **never** - demo-build leftover |
-| `(60, 178, 196, 16)` | "PRESS START BUTTON" prompt | PressStart phase only |
+| `(0, 176, 254, 16)` | "PRESS START BUTTON" prompt (strip record 1) | never on the US title; the port's PressStart phase only |
 | `(4, 195, 244, 14)` | "TM of Sony..." copyright | every post-fade phase |
 | `(8, 209, 234, 14)` | "© 1998,1999..." copyright | every post-fade phase |
 | `(0, 226, 256, 11)` | "NEW GAME CONTINUE" strip | the menu rows, sampled as two halves |
 
+- **The prompt is strip record 1, centred like every strip.** Its rect is the
+  menu overlay's descriptor record 1 ([`save-screen.md`](save-screen.md#the-title-strips-behind-the-load-window)),
+  and its glyphs (texel columns `66..=189`) sit centred in that 254-texel
+  width, so the strip drawer's law - each record centred on `x = 0xA0` by its
+  own half width - centres the text on the screen. No US title state draws
+  it (sub-mode `0x10` shows the rows at once); the port's PressStart phase
+  draws it by that law. A tighter crop at `x = 60` centred on its own
+  196-texel width stood the text 30 pixels left of centre.
 - **`<DEMO>` is never sampled.** In a live title-screen state (sub-mode `0x10`)
   the in-RAM TIM bytes match the disc TIM while the framebuffer omits the band.
 - **The menu rows are strips of this TIM**, not glyph-atlas or dialog-font
