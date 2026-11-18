@@ -679,6 +679,33 @@ fn a_counted_loop_plays_its_count() {
     assert!(s.is_finished());
 }
 
+/// The NRPN LSB (CC 98) names a loop's count as the data entry does: retail's
+/// dispatch sends it to `FUN_8006126C`, which stores the count of an armed
+/// loop (`0x800612BC..0x800612E8`). `2057`, `2072` and `2073` carry their
+/// `127` that way and loop for good.
+#[test]
+fn an_nrpn_lsb_after_a_loop_start_counts_the_loop() {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&SEQ_MAGIC);
+    buf.extend_from_slice(&[0x00, 0x01]);
+    buf.extend_from_slice(&[0x01, 0xE0]);
+    buf.extend_from_slice(&[0x07, 0xA1, 0x20]);
+    buf.push(0x04);
+    buf.push(0x02);
+    buf.extend_from_slice(&[0x00, 0xB0, 99, 20]);
+    buf.extend_from_slice(&[0x00, 0xB0, 98, 127]);
+    buf.extend_from_slice(&[0x83, 0x60, 0x90, 60, 100]);
+    buf.extend_from_slice(&[0x00, 0xB0, 99, 30]);
+    buf.extend_from_slice(&[0x00, 0xFF, 0x2F]);
+    let mut s = Sequencer::new(Seq::parse(&buf).unwrap(), empty_bank());
+    let mut spu = Spu::new();
+    for _ in 0..200_000 {
+        s.tick_sample(&mut spu);
+    }
+    assert!(s.loop_count() >= 3, "{}", s.loop_count());
+    assert!(!s.is_finished());
+}
+
 #[test]
 fn tempo_event_changes_us_per_tick() {
     // Build a SEQ that starts at 120 BPM then jumps to 60 BPM after 0
