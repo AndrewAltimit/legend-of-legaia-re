@@ -431,6 +431,19 @@ the player bearing and restore as before
 player as the box opens and its `+0x5A` lands back as the last page closes, on
 both sides ([walk-film](../tooling/walk-film.md#what-it-has-settled)).
 
+All three steps write the one heading word the addressed actor's ambient
+stream reads, so a wanderer talked to inside its `0x18` turn phase resumes its
+turn from the restored `+0x26`, not from the talk's bearing. The port keeps the
+stream's heading on its VM (`AmbientMotion::heading`) and the snap, the restore
+and every script turn write `World::npcs.headings`, so
+`World::tick_field_npc_ambient` adopts a published heading the VM's masked one
+does not match before the stream steps, as it adopts the published seat. A
+ramp's raw out-of-range heading publishes as its own masked value and is kept.
+`town01_npc16_dialogue_first_page` (Cross every `40` vsyncs) closes the talk on
+flat `52`, a wanderer saved at `0xE80` and snapped to `0x800`: retail restores
+`0xE80` and turns up through `0` to its pick `0x400`; the engine had turned down
+from `0x800` the short way round, and now takes retail's path to the vsync.
+
 ## Per-frame speed
 
 `DAT_1f800393` is the per-frame speed scalar (also drives the [move VM](move-vm.md) frame-time scratchpad). The motion VM consumes it as the budget for incremental motion - engines update once per frame, the VM consumes per opcode.

@@ -115,6 +115,20 @@ impl World {
         true
     }
 
+    /// Capture alignment for a run resumed inside a talk: the touch that
+    /// opened it saved the addressed placement's pre-talk heading
+    /// (`+0x5A`, retail space) and the talk's end writes it back
+    /// ([`Self::release_talk_facing`]). A state saved mid-talk carries the
+    /// save in RAM and nothing in the seed takes it, so the end restored
+    /// nothing, or the heading the seed's own snap found (the state's
+    /// already snapped one), so the RAM's save replaces any the seed made.
+    pub fn seed_talk_facing_save(&mut self, flat: u16, heading: u16) {
+        let Some(slot) = self.ambient_seat_slot(flat) else {
+            return;
+        };
+        self.npcs.facing_save = Some((slot, (heading as i16).wrapping_add(0x800)));
+    }
+
     /// Capture alignment: tick the ambient channels in the actor-list order
     /// `flats` (flat MAN indices, head to tail) a capture holds, which is
     /// load history no seed replays. A channel `flats` does not name keeps
@@ -590,6 +604,7 @@ impl World {
                 exempt: self.field_channel_flags(slot) & 3 != 0,
             };
             let seat = self.npcs.positions.get(&slot).copied();
+            let published_heading = self.npcs.headings.get(&slot).copied();
             // The pair a field-VM `4C 81` (or this stream, last tick) left on
             // the actor's one `+0x74` / `+0x78` record.
             let tint_seat = self
@@ -617,6 +632,24 @@ impl World {
             if live_walk && let Some((sx, sz)) = seat {
                 chan.vm.x = sx;
                 chan.vm.z = sz;
+            }
+            // The heading is the same one word, `+0x26`: the talk snap
+            // (`0x80039F48..`) and its restore (`0x80039CE8` `lhu 0x5a` /
+            // `sh 0x26`) and a script's turn write it, and the stream's next
+            // turn starts from what they left. The port's other writers
+            // publish into `FieldNpcState::headings` only, so adopt a
+            // published heading the VM's does not hold (masked: a ramp's raw
+            // out-of-range value already publishes as its own). Left on its
+            // own copy, a wanderer addressed mid-turn restarted its turn
+            // from the talk's bearing, not from the pose the restore put
+            // back, and turned the other way round
+            // (`town01_npc16_dialogue_first_page`'s flat `52`).
+            // REF: FUN_80039B7C
+            if live_walk && let Some(h) = published_heading {
+                let retail = (h as u16).wrapping_sub(0x800) & 0x0FFF;
+                if chan.vm.heading & 0x0FFF != retail {
+                    chan.vm.heading = retail;
+                }
             }
             // Split the borrow across the struct's fields so the bytecode can
             // be read while the VM is stepped - no per-frame clone.

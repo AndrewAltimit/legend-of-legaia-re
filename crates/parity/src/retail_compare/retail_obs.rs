@@ -269,6 +269,10 @@ pub struct RetailObs {
     /// ([`retail_ambient_streams`]): what a run resuming from the state, so
     /// its `rand()` stream can match retail's, seats after the settle.
     pub ambient_streams: Vec<RetailAmbientStream>,
+    /// The placement a talk holds engaged and the pre-talk heading the touch
+    /// saved on it ([`retail_talk_facing_save`]), which the walk film seats
+    /// so the talk's end restores it.
+    pub talk_facing_save: Option<(u16, u16)>,
     /// Placements a finished partition-2 beat left on a script-literal tile
     /// ([`scripted_seats`]): set by the corpus run, which holds the scene's
     /// MAN; seated, position only, by the headless seed and by the image
@@ -523,6 +527,11 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            talk_facing_save: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_talk_facing_save(ram)
+            } else {
+                None
+            },
             morphs: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_morphs(ram)
             } else {
@@ -677,6 +686,9 @@ pub fn seat_ambient_streams(session: &mut NativeSession, retail: &RetailObs) {
     for s in &retail.ambient_streams {
         world.seed_ambient_walker(s.seat.flat, s.x, s.z, s.heading);
         world.seed_ambient_stream(&s.seat);
+    }
+    if let Some((flat, heading)) = retail.talk_facing_save {
+        world.seed_talk_facing_save(flat, heading);
     }
     if let Some(seed) = retail.rand_seed {
         world.rng_state = seed;
