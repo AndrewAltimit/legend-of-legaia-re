@@ -72,6 +72,8 @@ It seats each live ambient part's program from the state too (`retail_part_vm`, 
 
 A retail pass reads the pad the probe set one vsync earlier, and a pass is on a game frame, so a pad file made from an engine digest replays on retail two vsyncs early (each row's `tick - 2`, one-vsync presses widened); `retail - 1` of a draw then pairs with the engine tick.
 
+Both sides log the cue ring. Retail's `cues` column is the ring's four ids (`0x8007B6D8`, `-1` empty), and an id that newly fills a slot is a push (the ager empties a played slot the frame after, so a re-push shows as a new fill). The engine's is the ids its producers handed out that tick, read off a tap on `World::take_sfx_ring_ops` (`World::open_sfx_ring_tap`), since the session drains the ring for its director inside the tick. The report pairs each retail push with the engine's nearest push of the same id and prints the offset in vsyncs. Cues the hosts key on their own (the pause menu's blips, `AudioDirector::queue_ui_cue`) are not on the ring and not in the column.
+
 The first pass differs by construction: a state saved mid-walk has one more
 pass of the old pad queued, as `kor3_field_route_walk`'s first row does.
 

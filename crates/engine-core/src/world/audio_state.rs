@@ -309,6 +309,12 @@ pub struct AudioState {
     /// the crate boundary, so the calls cross it as data. Drained by
     /// [`crate::world::World::take_sfx_ring_ops`].
     pub(crate) sfx_ring_ops: Vec<SfxRingOp>,
+    /// A diagnostic copy of every op [`crate::world::World::take_sfx_ring_ops`]
+    /// hands out, kept only while a harness has opened it
+    /// ([`crate::world::World::open_sfx_ring_tap`]): the parity walk film reads
+    /// the cues a tick pushed after the session has drained them. Never
+    /// read by a play path.
+    pub(crate) sfx_ring_tap: Option<Vec<SfxRingOp>>,
     /// The slot the SFX enqueue last parked (`gp+0x15A`) - the index
     /// [`crate::world::AudioState::sfx_cue_delays`] is written through.
     pub(crate) sfx_parked_slot: i16,
@@ -443,6 +449,7 @@ impl AudioState {
                 legaia_engine_system::scus_leaf_kernels::SFX_CUE_SLOTS,
             ),
             sfx_ring_ops: Vec::new(),
+            sfx_ring_tap: None,
             sfx_parked_slot: 0,
             sfx_cue_cursor: 0,
             // Retail's field init writes `(8, -1)` (`0x801D6880`) and
@@ -563,7 +570,27 @@ impl World {
     /// per-frame tick, which is the order retail's frame runs them in
     /// (producers inside the game-logic phase, the drainer after).
     pub fn take_sfx_ring_ops(&mut self) -> Vec<SfxRingOp> {
-        std::mem::take(&mut self.audio.sfx_ring_ops)
+        let ops = std::mem::take(&mut self.audio.sfx_ring_ops);
+        if let Some(tap) = self.audio.sfx_ring_tap.as_mut() {
+            tap.extend(ops.iter().copied());
+        }
+        ops
+    }
+
+    /// Keep a copy of every op [`Self::take_sfx_ring_ops`] hands out, for a
+    /// harness to read with [`Self::take_sfx_ring_tap`].
+    pub fn open_sfx_ring_tap(&mut self) {
+        self.audio.sfx_ring_tap.get_or_insert_with(Vec::new);
+    }
+
+    /// The ops handed out since the last call, oldest first (empty with the
+    /// tap closed).
+    pub fn take_sfx_ring_tap(&mut self) -> Vec<SfxRingOp> {
+        self.audio
+            .sfx_ring_tap
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     /// Queue `FUN_80035B50(id)` - the push producer - for the host ring, and

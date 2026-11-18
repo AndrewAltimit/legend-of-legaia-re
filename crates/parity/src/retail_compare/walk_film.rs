@@ -292,7 +292,7 @@ impl WalkFilm {
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(
             f,
-            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint,rng,talk,enc,menu"
+            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint,rng,talk,enc,menu,cues"
         )?;
         // A placement's flat MAN index is its channel slot past the scene's
         // partition-0 count, which is the scene's own: a film that crosses a
@@ -388,6 +388,7 @@ impl WalkFilm {
         {
             session.host.world.seat_retail_frame_pad(retail.pad_buffer);
         }
+        session.host.world.open_sfx_ring_tap();
         for t in 0..self.ticks {
             if t < 8
                 && let Some(cd) = depart_seat
@@ -499,6 +500,33 @@ impl WalkFilm {
                 n0 = partition0(session);
                 n0_scene = session.host.world.active_scene_label.clone();
             }
+            // The cue ring's writes this tick, `;`-joined ids (`-` none): the
+            // engine half of the film's `cues` column, a push being an id
+            // that newly fills a slot of retail's `0x8007B6D8`.
+            // The session drains the ring for its director inside the tick;
+            // the tap keeps what it drained. What is still queued (a write
+            // after the drain) goes through the tap too.
+            let _ = session.host.world.take_sfx_ring_ops();
+            let cues: Vec<String> = session
+                .host
+                .world
+                .take_sfx_ring_tap()
+                .into_iter()
+                .filter_map(|op| {
+                    use legaia_engine_system::sound_state::SfxRingOp as O;
+                    match op {
+                        O::Push(id) | O::ReplaceLast(id) | O::WriteSlot(_, id) => Some(id),
+                        O::PushUnlessSustained { id, .. } | O::ArmSlot(_, id, _) => Some(id),
+                        _ => None,
+                    }
+                })
+                .map(|id| id.to_string())
+                .collect();
+            let cues = if cues.is_empty() {
+                "-".to_string()
+            } else {
+                cues.join(";")
+            };
             let world = &session.host.world;
             let Some(ms) = world
                 .player_actor_slot
@@ -551,7 +579,7 @@ impl WalkFilm {
                 .unwrap_or(0);
             writeln!(
                 f,
-                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:08x},{},{},{}",
+                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:08x},{},{},{},{}",
                 ms.world_x,
                 ms.world_y,
                 ms.world_z,
@@ -577,6 +605,7 @@ impl WalkFilm {
                 u8::from(world.dialogue_owns_input()),
                 world.encounter_step_counter(),
                 menu,
+                cues,
             )?;
         }
         session.host.world.input.set_pad(0);
