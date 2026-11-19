@@ -19,6 +19,13 @@
 -- LEGAIA_PRESSES: `;` list of `<vsync>:<BUTTON>:<hold>`, a button held from
 -- that vsync of the run (a walk to the next trigger), ahead of the Cross drive.
 --
+-- LEGAIA_PICKS: comma list of 0-based picker rows, taken in turn. While the
+-- field pager (_DAT_801F2734) sits in a picker input state (0x12 / 0x14 /
+-- 0x16 / 0x18), the cursor (*(_DAT_801C6EA4) + 0x0C) is stepped with Down /
+-- Up to the next listed row and confirmed with Cross; a picker past the end
+-- of the list takes the row it opens on. A quiz (doman P1[3], Mrs. Usha:
+-- "2,1,3,1") or an inn's stay prompt answers this way.
+--
 -- Checkpoints (<prefix>_<scene>_e<vsyncs since the scene entered>_v<vsync>):
 --   LEGAIA_CKPT_AT     comma list of vsyncs after each scene's entry (default
 --                      "150,600,1200,1800,2400,3000")
@@ -118,6 +125,11 @@ for b in string.gmatch(probe.getenv("LEGAIA_MASH", "CROSS"), "%u+") do MASH[#MAS
 local mash_i = 0
 local DEBUG = probe.getenv_num("LEGAIA_DEBUG", 0) == 1
 local ARTS = probe.getenv("LEGAIA_ARTS", "121")
+local PICKS = {}
+for n in string.gmatch(probe.getenv("LEGAIA_PICKS", ""), "%d+") do PICKS[#PICKS + 1] = tonumber(n) end
+local pick_i = 1
+local PAGER_STATE = 0x801F2734
+local FIELD_CTL_PTR = 0x801C6EA4
 local stop_at = nil
 
 probe.run({
@@ -220,6 +232,25 @@ probe.run({
             else
                 press(BTN.CROSS, vsync, 4)
                 next_press = vsync + 20
+            end
+            return
+        end
+        local pst = probe.read_u32(PAGER_STATE) or 0
+        if mode == 0x03 and (pst == 0x12 or pst == 0x14 or pst == 0x16 or pst == 0x18) then
+            local fc = probe.read_u32(FIELD_CTL_PTR)
+            local cur = ok_ptr(fc) and (probe.read_u8(fc + 0x0C) or 0) or 0
+            local want = PICKS[pick_i] or cur
+            if cur < want then
+                press(BTN.DOWN, vsync, 3)
+                next_press = vsync + 12
+            elseif cur > want then
+                press(BTN.UP, vsync, 3)
+                next_press = vsync + 12
+            else
+                logf("pick %d -> row %d vsync=%d", pick_i, cur, vsync)
+                pick_i = pick_i + 1
+                press(BTN.CROSS, vsync, 4)
+                next_press = vsync + 30
             end
             return
         end
