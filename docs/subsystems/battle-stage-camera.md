@@ -1910,6 +1910,71 @@ agree with retail on `.90` to `.94` of their game time and Tri-Somersault's arts
 (`.964` to `1.0`); the enemy casts' `0x2B..0x2E` and Done band agree further, and Gimard's
 Tail Flare plays all fifteen cues with no window.
 
+<a id="the-derived-table"></a>
+
+**The derived table.** The census's terms are fits to films. `retail-exec` counts what each
+unit of a battle frame costs retail on PCSX-Redux's clock, off library states played on
+([battle frames by unit](../tooling/retail-frame-cost.md#battle-frames-by-unit)), and the
+table it gives (`legaia_engine_battle_loop::derived_cost`, not wired) reproduces those states'
+ring entries to `7` hblanks rms. Beside the fitted terms (derived in hblanks, interrupts out
+unless named):
+
+| Term | Fitted | Derived |
+|---|---|---|
+| `LINKED_WORK_MILLI` | `.200` a link | `.202`: its own pass `.116`, the rejected primitives beside it `.072`, groups and calls `.014` |
+| `LINKED_FRAME_BASE` | `75` | `23.8`, `11.3` a body, `3.4` an idle walk, `11.6` a vblank interrupt the work spans |
+| `LINKED_BACKDROP_WORK` | `42` | the stage's unlinked primitives, `17..55` over `.200` a link; the grid `-5` |
+| `EFFECT_PART_COST` | `2` a part | its tick `.74` (mean), a kind-4 build `3.0` |
+| `effect_pool_cost` | `1.6` a child | a draw `.31`, a step `.07` a sweep, `1.8` a retire |
+| `FLOOR_CLIP_WALK_MILLI` | `.16` a primitive | `.21..34` a primitive walked, `.127` through the dispatcher |
+| `SCANLINE_WASH_WORK` | `60` | not read: no library state stands under the wash |
+| `PARTY_GHOST_DRAW_COST` | `90` a ghost | `70` (Gala), `81` (Noa), `97` (Vahn); a monster's `32..75` |
+
+The slope is the dispatcher's own price: a link, its share of the culled and off-screen
+primitives, groups and calls come to the fitted `.200`. The intercept is where the fit
+stands in for structure. A body costs about `11.3` hblanks whatever it links (the draw's
+fixed part, fifteen objects' matrices at `.32`, the keyframe decode `2.9`, the draw tick,
+its share of the base), and the five actor-list walks `FUN_8001ADA4` add `5.3` a frame, so
+the derived base runs from about `61` on two bodies at one interrupt to `107` on five at
+two, where the census holds `75` for every frame. The backdrop share is the stage: Gobu Gobu's backdrop walks `648` primitives a
+frame and links `82`, `55` hblanks against the `16` its links are priced at, while the grid
+costs `68` fixed and `.18` a visible cell, `89` hblanks against the `94` its `470` links are
+priced at. Grade `capture` (an interpreter count on PCSX-Redux's timing).
+
+**What a pool child costs, by kind.** The walker runs one path for every child: a draw `665`
+cycles, a step `150` a sweep (the frame step's), and on the child's retire the overrun, `26`
+advances (`3895` cycles) on every batch read but one of `34`. Children differ by how often
+they retire. Timed visit by visit, Koru's dust (`koru_pre_blade_breath`) costs `.31` to draw,
+`.175` to step and `.146` in overruns, `.63` hblanks a child-frame; Caruban's flames
+(`battle_rikuroa_caruban_fire_breath_mid_cast`) `.31`, `.206` and `.201`, `.72`. So the films'
+`.68` against `1.8` a child is not the walker: as Caruban's flames rise from `3` to `50` its
+frames also draw three more dispatcher objects (the breath's meshes, `19.5` hblanks) and the
+caster's ghosts, and a fit by child count carries them. Grade `capture`.
+
+Rock Lizard's Earthquake (`battle_nilboa_rock_lizard_earthquake_mid_cast`, forty frames, the
+pool from `0` to `112` children) grows `3.43` hblanks a child: its links `1.57` (`12.7` a
+child, the rocks each puff bursts with), the kind-4 mesh builds `.59` (`.16` builds a child
+at about `3.7` each), the walker `.81`, the part ticks `.10`, the dispatcher's groups, calls
+and culled primitives `.14`. The cast module's own tick does not grow (`.01` a child). Of
+these the census prices the links, the walker and the parts; nothing in it prices a kind-4
+node's build (`FUN_80028158`, `6386` cycles and `59` a segment), which is the size of the
+`.38` a child the engine's Earthquake frames fall short by. Grade `capture` for the costs,
+inference for the shortfall's owner.
+
+**The three opt-in terms on this clock.** `WorldToggles::battle_me_decode_cost` prices an
+art commit's `"ME"` keyframe decode (`FUN_8002B28C`): real CPU work, `95` to `122` hblanks
+on the commit passes of Noa's Frost Breath, Gala's Thunder Punch and Vahn's Slash Kick, at
+`2.27` cycles an instruction with its data accesses where `frame_clock::me_decode_work`
+charges `2` over `2152` cycles an hblank, `13%` low. `battle_effect_walk_cost` prices the
+walker's branches: real, the in-frame visits read the random-walk fit within `5%` (a step
+`150` against `157` and `166`, an overrun advance `150` against `149`, a draw `665` against
+`652`, a sweep `4446` against `4243`), and the flat price it replaces runs about `.9` a child
+over these for a child that lives. `frame_clock::CYCLES_PER_HBLANK` (`2172`) is the
+video clock's hblank, `1.2%` longer than PCSX-Redux's `2146.3`. `battle_arts_shout_cd` prices
+a CD read's polls, whose length is the emulator's CD timing and no instruction count: the
+interpreter takes no CD interrupt and cannot read it, so it stays the `--cd-trace`
+recordings' measurement. Grade `capture`.
+
 **The film's lead-in.** A film replays rounds to reach its state (a physical strike) or the
 cast it seeds, and those rounds draw `rand()` on the frame step, so pricing them moves the
 round the film reaches its gate on. Ghost Knight's film reached its gate at tick `15705`

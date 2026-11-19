@@ -124,8 +124,9 @@ pub const KEYFRAME_DECODE_CYCLES: u32 = 6241;
 pub const DRAW_TICK_CYCLES: u32 = 1703;
 /// The ghost walk `FUN_80049348` with no ghost to draw, a call.
 pub const GHOST_WALK_CYCLES: u32 = 304;
-/// The actor draw `FUN_8001ADA4`'s own work, a call (every drawn actor: the
-/// bodies, the stage's objects, an effect's meshes).
+/// The actor render's list walk `FUN_8001ADA4`, its own work a call (five a
+/// frame, one a list: each actor's view cull and set-up); a frame's mean
+/// spreads with what the lists hold.
 pub const ACTOR_DRAW_CYCLES: u32 = 2254;
 
 /// A kind-4 node's procedural mesh build `FUN_80028158`: fixed, and a

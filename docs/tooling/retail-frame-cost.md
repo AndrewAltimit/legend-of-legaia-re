@@ -252,6 +252,123 @@ vary with the model (`695..1785` and `777..1084` cycles), and a non-model kind
 | NPC | `24.8` | about `9.3` set-up for `son`'s models (`12` objects each), the rest its primitives | the fitted NPC carries its mesh |
 | fog record / half-sheet | `0.20` / `0.006` | `0.30` / `0.069..0.109` | under: the fog walk's time sits in the base |
 
+## Battle frames by unit
+
+`battle_cost::PartRunner` resumes a battle state the way the frame runner does
+and times every part of each frame on its own. Nothing is hooked or seated;
+probes mark where each unit opens and closes:
+
+| Unit | Opens | Closes |
+|---|---|---|
+| Dispatcher group | the `jr t8` into the leaf (`0x80043614`) | the group head `0x80043580` or the exit `0x8004361C` |
+| Primitive | its leaf's loop head | the leaf's `bgtz t3` back edge |
+| Walker child step | past the live test `0x801E049C` | the slot advance `0x801E0694` |
+| Walker child draw | past the live test `0x801E06F4` | the slot advance `0x801E09B0` |
+| A routine's call | its entry | its return address |
+
+A primitive is linked when the packet cursor `t1` moved over its loop pass,
+off-screen when the pass entered `FUN_80044798` and wrote nothing, and culled
+otherwise (the winding test, or the near floor). A child step that reaches the
+frame advance `0x801E0594` more than once is a retired child reading on past
+its batch (the overrun). The parts nest; each one's own cycles are its span
+less the spans inside it, so the parts sum to the frame. On every battle frame
+read they sum to the ring entry within `3` hblanks, the pacer's own work up to
+its mark.
+
+`retail-exec battle-cost --mode parts --scenario <label>` prints a frame's
+parts; `--mode series` prints the routines of each frame beside the pool's live
+children, `--mode walker` each walker visit.
+
+### What each unit costs
+
+Measured over `36` battle states (party strikes and arts, enemy strikes and
+casts, Seru and flute summons, the menu), `8` frames each, interrupts out. The
+table is `legaia_engine_battle_loop::derived_cost`.
+
+| Unit | Cycles | Hblanks |
+|---|---:|---:|
+| A linked primitive, by leaf | `152..301` | `.071..140` |
+| An off-screen primitive | `206..260` | `.096..121` |
+| A culled primitive | `68..130` | `.032..061` |
+| A dispatcher group / call | `226` / `252` | `.105` / `.117` |
+| A body draw, fixed / an object | `1412` / `679` | `.66` / `.32` |
+| A ghost's drawn object | `1159` | `.54` |
+| A body's keyframe decode `FUN_8004998C` | `6241` | `2.9` |
+| A draw tick / an actor-list walk `FUN_8001ADA4` | `1703` / `2254` | `.79` / `1.05` |
+| A kind-4 mesh build, fixed / a segment | `6386` / `59` | `3.0` / `.027` |
+| A move-VM part tick `FUN_80021DF4` (mean) | `1578` | `.74` |
+| The ground grid, fixed / a visible cell | `145452` / `389` | `67.8` / `.18` |
+| A shadow packet | `266` | `.124` |
+| The walker: a call / a sweep | `2820` / `4446` | `1.31` / `2.07` |
+| A live child: a step / a draw | `150` / `665` | `.070` / `.310` |
+| An overrun advance of a retired child | `150` | `.070` |
+| The frame base, fixed / a body | `39760` / `4394` | `18.5` / `2.0` |
+| A vblank interrupt inside the work | `24900` | `11.6` |
+
+The leaves the battle frames reach:
+
+| Leaf | Kind, bank | Linked | Off-screen | Culled |
+|---|---|---:|---:|---:|
+| `0x800448B0` | 12, cued | `152` | - | `112` |
+| `0x80044A3C` | 13, cued | `169` | - | `93` |
+| `0x80044FDC` | 14, cued | `260` | `226` | `130` |
+| `0x80045194` | 15, cued | `301` | `260` | `92` |
+| `0x80044C14` | 16, bank 1 | `263` | `243` | `80` |
+| `0x80044DC8` | 17, bank 1 | `292` | `221` | `92` |
+| `0x800453BC` | 18, bank 1 | `275` | `254` | `92` |
+| `0x800457C4` | 18, bank 2 | `269` | `251` | `68` |
+| `0x80045584` | 19, bank 1 | `236` | `206` | `92` |
+| `0x80045988` | 19, bank 2 | `208` | - | `92` |
+
+Each path is nearly fixed. A linked primitive spreads over a few cycles, a
+culled one over the winding reject (the cheap end) and the near reject (up to
+twice that). The kind-18 bank-2 leaf enters the off-screen test on triangles as
+well as quads (`jal 0x80044798` at `0x80045940`, under no colour-word test).
+
+Over the dispatcher, a linked primitive and its share of the culled and
+off-screen ones beside it and of the groups and calls come to `.202` hblanks a
+link on the measured frames: `.116` its own pass, `.072` the rejected ones,
+`.014` the groups and calls.
+
+The units outside that table are priced by their own count. An art's `"ME"`
+keyframe decode `FUN_8002B28C` is `95` to `122` hblanks on its commit pass
+(Noa's Frost Breath, Gala's Thunder Punch, Vahn's Slash Kick): `2.27` cycles an
+instruction with its data accesses, `1162` a part-frame at `512` instructions.
+A sinking body's floor-clipped walk (`FUN_8002735C`) costs `445` cycles a
+primitive with most of the body under the floor and `740` as the sink opens,
+where the same body costs `273` a primitive through the dispatcher.
+
+### The table against the frames
+
+`battle_frame_cost.rs` prices each frame's units with the table and holds the
+sum against the ring entry (`the_derived_table_reproduces_the_battle_frames`,
+each state's mean within `5%`, rms under `20` hblanks), and each leaf path's
+mean against its row (`each_leaf_path_costs_what_the_table_says`, `6%`). Four
+frames each, clamped entries and `"ME"` or floor-clip frames left out:
+
+| State | Ring | Derived |
+|---|---:|---:|
+| `party_basic_attack_vs_gobu_gobu` | `315.0` | `324.6` |
+| `battle_rikuroa_caruban_fire_breath_mid_cast` | `491.5` | `490.1` |
+| `battle_nilboa_rock_lizard_earthquake_mid_cast` | `429.0` | `438.4` |
+| `battle_jou_gimard_v3_strike` | `570.2` | `565.1` |
+| `battle_jou_party_vahn_chain_open` | `483.5` | `485.9` |
+| `battle_jou_party_vahn_tri_somersault_super_open` | `570.2` | `572.8` |
+| `battle_jou_cort_181_strike` | `655.2` | `651.7` |
+| `battle_chitei2_gilium_thunder_storm_mid_cast` | `252.8` | `248.2` |
+| `battle_dohaty_dohati_strike` | `583.5` | `582.2` |
+| `battle_noaru_songi_strike` | `625.8` | `625.9` |
+
+The rms over those `40` frames is `6.9` hblanks; over all `36` states it is
+`12`. What spreads most is what the table prices at a mean: a part tick runs
+its part's bytecode (a frame's mean spreads `650..28000` cycles with the op
+mix), and the base and the actor-list walks move
+with the party. The worst states read `7%` under (`battle_tunnelc_xain_bull_charge_mid_cast`)
+and `5.7%` under (`battle_jou_party_noa_chain_mid`), and the Seru summon close-up
+`gimard_summon_visible` (`54` hblanks, no stage) `23%` over, whose base the
+fight's own does not fit. How the table stands beside the fitted census line is
+in [the census](../subsystems/battle-stage-camera.md#the-census).
+
 ## Limits
 
 - PCSX-Redux states only; a Mednafen state carries no register file this
