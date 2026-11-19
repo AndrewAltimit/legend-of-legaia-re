@@ -4410,6 +4410,8 @@ dependencies = [
 name = "psx-retail-exec"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "clap",
  "legaia-actor-formats",
  "legaia-art",
  "legaia-container-formats",
@@ -4455,6 +4457,7 @@ dependencies = [
  "psx-lzs",
  "psx-mdec",
  "psx-pcsx-redux",
+ "psx-ram-image",
  "psx-seq",
  "psx-tim",
  "psx-vab",

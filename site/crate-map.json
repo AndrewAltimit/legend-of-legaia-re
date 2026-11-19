@@ -840,6 +840,7 @@
     "delilas-challenge",
     "delilas-party",
     "patcher",
+    "retail-exec",
     "texture-replace",
     "translate",
     "web-patcher"
@@ -4005,7 +4006,8 @@
    "track": "tooling",
    "scope": "PCSX-Redux save-state (<code>.sstate</code>) main-RAM reader, exposing <code>main_ram()</code> + VA readers + <code>scene_name()</code>/<code>game_mode()</code>/<code>player_pos()</code>; the CLI mirrors <code>mednafen-state</code>'s <code>extract</code> so scripts treat both emulators' states interchangeably. The bridge that feeds the cataloged playthrough anchors (<code>s1..s5</code>) into the engine's disc-gated field/opening oracles.",
    "dependents": [
-    "parity"
+    "parity",
+    "retail-exec"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/pcsx-redux/README.md"
   },
@@ -4082,6 +4084,7 @@
     "mednafen",
     "parity",
     "pcsx-redux",
+    "retail-exec",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/ram-image/README.md"
@@ -4243,13 +4246,16 @@
   },
   "retail-exec": {
    "package": "psx-retail-exec",
-   "deps": [],
+   "deps": [
+    "disc-patch",
+    "pcsx-redux",
+    "ram-image"
+   ],
    "dev_deps": [
     "actor-formats",
     "art",
     "container-formats",
     "disc-audit",
-    "disc-patch",
     "engine-audio",
     "engine-battle",
     "engine-battle-hud",
@@ -4283,7 +4289,6 @@
     "mes",
     "minigame-formats",
     "overlay-images",
-    "pcsx-redux",
     "prot",
     "render-kernels",
     "save",
@@ -4294,11 +4299,15 @@
     "ui-formats",
     "vab"
    ],
-   "bins": [],
+   "bins": [
+    "retail-exec"
+   ],
    "lib": true,
    "modules": [
     "gte",
-    "ledger"
+    "frame_runner",
+    "ledger",
+    "pcsx_state"
    ],
    "band": "top",
    "track": "tooling",

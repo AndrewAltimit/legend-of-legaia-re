@@ -209,6 +209,7 @@ mod fog_spawn;
 mod format_leaves;
 mod frame_begin;
 mod frame_blend;
+mod frame_cost;
 mod frame_pace;
 mod gameover_banner;
 mod gauge_content;
