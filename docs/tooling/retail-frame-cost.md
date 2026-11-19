@@ -413,6 +413,40 @@ and `5.7%` under (`battle_jou_party_noa_chain_mid`), and the Seru summon close-u
 fight's own does not fit. How the table stands beside the fitted census line is
 in [the census](../subsystems/battle-stage-camera.md#the-census).
 
+### Command-surface frames
+
+A battle frame with a command surface up runs every pass an action frame
+runs: the frame driver `FUN_80046A20` (the menu SM `FUN_801D0748`, about
+`2000` cycles, then the action SM), the ground grid, the stage, every body
+and its shadow, and the battle template's tick `FUN_8004DA00`, which links
+the HUD and the surface's windows, rows and cursors. Nothing is skipped
+because the pad belongs to a menu. What the surface adds is the template
+tick's packets, `266` cycles each. On the library's full-party menu states
+(interrupts out, frame `1` of `battle-cost --mode parts`):
+
+| State | Flow | Ring | Template packets | Template hblanks |
+|---|---|---:|---:|---:|
+| `battle_rugi_barra_strike` (no surface) | - | `506` | `76` | `8.7` |
+| `gaza2_card_first_menu`, `battle_menu_rugi_barra_retail` | `0x1E` | `612`, `691` | `156`, `152` | `19.8`, `19.3` |
+| the Gaza fight's ring (Cross from the first menu) | `0x28` | `517` | `281` | `33.5` |
+| `battle_run_confirm_gaza2_retail` | `0x32` | `618` | `184` | `22.9` |
+| `battle_item_window_gaza2_retail` | `0x3C` | `548` | `518` | `63.5` |
+| `battle_magic_window_gaza2_retail` | `0x46` | `546` | `501` | `61.1` |
+| the Gaza fight's arts entry (Cross from the Auto / Command prompt) | `0x50` | `609` | `278` | `32.6` |
+| `battle_target_cursor_gaza2_retail`, `..._rugi_barra_retail` | `0x5A` | `592`, `567` | `137`, `145` | `15.6`, `16.5` |
+| `battle_magic_target_gaza2_retail` | `0x5C` | `625` | `412` | `51.4` |
+| `battle_item_target_gaza2_retail`, `battle_item_allparty_gaza2_retail` | `0x64`, `0x66` | `545`, `541` | `501`, `456` | `61.7`, `57.1` |
+| `battle_commit_confirm_gaza2_retail` | `0x6E` | `640` | `209` | `23.9` |
+| `battle_auto_prompt_gaza2_retail` | `0x78` | `502` | `162` | `18.3` |
+
+The rest of each ring entry is the stage and the bodies under the framing the
+surface holds, which the census counts. The arts entry also draws a fourth
+body pass through the bank-2 leaves (`339` linked kind-18 primitives,
+`0x800457C4` and `0x80045988`), about `75` hblanks with its decode, which the census does not count. The port prices
+these frames on the census line plus the surface's packets over the bare
+HUD's (`frame_clock::surface_frame_work`,
+[battle-command-flow](../subsystems/battle-command-flow.md#the-flow-reads-the-pad-once-a-battle-frame)).
+
 ## Baka Fighter frames
 
 Mode `0x19` runs the same handler, so the runner prices the Baka Fighter

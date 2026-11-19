@@ -459,12 +459,25 @@ one two before, and four after one a vsync before:
 The port's retail-faithful mode runs the pipeline in a fight
 (`World::retail_frame_pad`, on the battle frame clock and the frame-cost
 ring's newest push); the default hands a press to the flow on its own vsync.
-The port column is a `play-window --retail` child stood on each state's
-frame grid (`LEGAIA_DIAG_BATTLE_STEP_AT`): a child that opens on a prompt has
-priced no battle pass, so it runs the default step `2` there where retail's
-frames run `3`, and a film off that grid lands its cues a vsync either side.
-The engine prices no frame while a command surface is up; its step there is
-the one the last action-SM pass left.
+The port column is a `play-window --retail` child on the state's own cost
+ring and frame phase, the seats every gate film takes
+(`LEGAIA_BATTLE_COST_RING`, `LEGAIA_DIAG_CAST_SEQ_PASS_LEFT`, the phase read
+off the recording's first ring push less its whole vsyncs of cost); a film
+off that phase lands its cues a vsync either side.
+
+Retail's frame on a surface is a whole battle frame: the frame driver runs
+the menu SM and the action SM, the stage, the bodies and the HUD draw, and
+the pacer stores its cost (`retail-exec battle-cost` prices the Gaza fight's
+item window at `548` hblanks, interrupts out; the films store `527..650` on
+every frame). The port's live loop parks the action SM while a surface owns
+the pad, so it prices those frames apart
+(`World::price_command_surface_frame`, `WorldToggles::battle_surface_frame_cost`,
+on by default): once a frame, on the census line plus the surface's own
+packets in the battle template's tick `FUN_8004DA00` over the bare HUD's
+(`frame_clock::surface_frame_work`, read per surface in
+[retail-frame-cost](../tooling/retail-frame-cost.md#command-surface-frames)).
+A full party's prompt then runs step `3` as retail's does, where it had kept
+the step the last action-SM pass left (`2` on a fight that opens on it).
 
 ### The ring's cancel steps back a member
 
