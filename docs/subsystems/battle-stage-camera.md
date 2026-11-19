@@ -1975,6 +1975,80 @@ a CD read's polls, whose length is the emulator's CD timing and no instruction c
 interpreter takes no CD interrupt and cannot read it, so it stays the `--cd-trace`
 recordings' measurement. Grade `capture`.
 
+<a id="the-derived-pricing"></a>
+
+**The derived pricing.** `WorldToggles::derived_frame_cost` (`LEGAIA_DERIVED_FRAME_COST=1`,
+off by default) prices a census-priced battle frame from the derived table instead of the
+fitted line. The census counts the frame by the table's units as it counts its links
+(`LinkCount::units`, `World::note_derived_units`), and `derived_cost::frame_hblanks` prices
+them on PCSX-Redux's clock (`2146.3` cycles an hblank) with the vblank interrupts the work
+spans. Where the census has no count of its own the pricing reads one of two stand-ins:
+
+| Unit | Engine count | Source |
+|---|---|---|
+| A primitive's fate | each census primitive by topology: linked, off-screen (the backdrop's reject), culled (near floor, behind the eye, winding) | engine geometry |
+| A primitive's leaf | the class mean over the leaves, weighted by how often each ran | measured ratio |
+| Groups | `1.92` an object (`13900` groups over `7246` calls) | measured ratio |
+| A body's off-screen primitives | linked: the census applies no off-screen test to a body, and the two paths cost within `7%` | engine geometry |
+| A body, a ghost | each drawn body and ghost, its drawn objects | engine geometry |
+| The grid | its visible cells | engine geometry |
+| A shadow | a `24`-segment build and `24` linked quads, one object | engine geometry |
+| A kind-4 node | one build a frame, a segment a quad of its mesh, its quads linked | engine geometry, segments approximated |
+| A swept band | each packet at a linked triangle's price | engine count |
+| A floor-clipped body | its walked primitives at the mean of `445` and `740` | engine geometry |
+| Move-VM parts | each live part's tick at the mean | engine count |
+| The walker | the branches its walks took since the last priced pass | engine count |
+| An art's `"ME"` decode | `parts * frames * 1162` cycles | engine count |
+| The template tick, the actor-list walks | their means a frame | measured |
+
+The measured ratios are the leaf mix, the groups an object and the template tick's and
+list walks' means; every other count is the census's own, on every host.
+
+Against the four film sets (the same recordings, one build, the census line against the
+derived pricing; camera is the sustained law error in pixels, key rms and step-right the
+retail unloaded frames' state-and-phase medians against the engine's priced work):
+
+| Set | Films | Image | Cue | Camera | Step agreement | Key rms | Step right |
+|---|---:|---|---|---|---|---|---|
+| Party arts | 20 | `.9454` / `.9457` | `.9982` / `1.0` | `1.46` / `1.78` | `.943` / `.948` | `35` / `38` | `.938` / `.953` |
+| Enemy casts | 65 | `.9513` / `.9440` | `1.0` / `.9904` | `2.50` / `2.18` | `.915` / `.904` | `116` / `118` | `.767` / `.772` |
+| Seru casts | 29 | `.9721` / `.9721` | `1.0` / `1.0` | `5.91` / `5.91` | `.992` / `.992` | `35` / `15` | `1.0` / `1.0` |
+| Monster strikes | 65 | `.9847` / `.9830` | `1.0` / `1.0` | `.35` / `.58` | `.969` / `.966` | `29` / `32` | `.981` / `.942` |
+
+Over all sets the key rms reads `80.5` against `81.0` and the step agreement `.960`
+against `.956`. The `387` battle stills read the same under both, every state's image to the
+last digit: a still prices no frame. The derived bias is a few hblanks under where the line's was `17` over, but
+it is not a strict win: the Seru frames come in (`35` to `15` hblanks rms), the strikes and
+the enemy films' Done band (`0x51`, `30` hblanks under) go out, and Kor's Gaza's Astral
+Slash loses a cue. Zenoir's Fire Claw is the row it fixes: retail's `0x2B` frames cost
+`504` (step `2`), the line `529` (step `3`) and the derived pricing `506`. Rogue Wind's
+first `0x70` passes keep the arm table's step under both, so neither reaches retail's
+`692`. So the derived pricing stays opt-in.
+
+The strikes' and the Done band's shortfall is the census's count, not the table's price.
+On Medusa's strike (`battle_korb2_medusa_strike`) the runner reads retail's dispatcher
+walking about `2100` linked, `720` off-screen and `1750` culled primitives a frame, where
+the census on the same fight counts `1990`, `315` and `2270` (`units.csv` beside a film's
+`meta.csv`): some `500` primitives retail transforms whole (linked or dropped off screen,
+`210` to `270` cycles) the census drops at the winding or near test (`68` to `92`), about
+`40` hblanks on a full-party frame. The actor render's list walks do not follow the live
+parts as a fit across states suggests: on Cort's strike fourteen parts read `1.9` hblanks
+on one frame and three read `15` on another, so they stay at their mean.
+
+**The three opt-in terms under the derived pricing.** The `"ME"` decode and the walker's
+branches are the derived pricing's own terms (`derived_cost::me_decode_cycles`,
+`derived_cost::walker_cycles`) and run under `derived_frame_cost` whatever the two
+toggles say; the toggles keep their meaning on the census line. Taken out of the derived
+pricing, the decode moves the arts films from `.9457` to `.9462`, camera `1.78` to
+`1.38`, with a cue lost and the step agreement `.948` to `.945`: the trade the census line
+showed. The walker's branches against the flat `1.6` a child, over the thirteen enemy films
+whose pools fill: image `.9447` against `.9478`, camera `.87` against `1.14` (Koru's
+Blade Breath `.973` against `.934`, Zeto's Poisonous Bubbles `.850` against `.923`). Both
+stay folded, retail's costs as the runner counts them. `battle_arts_shout_cd` is a CD
+timing and stays a measured term; on with the derived pricing it moves the arts films
+`.9457` to `.9471` and camera `1.78` to `1.68`, so a derived run takes it on. Grade
+`capture` for each film row, `capture` (runner) for the census's count against retail's.
+
 **The film's lead-in.** A film replays rounds to reach its state (a physical strike) or the
 cast it seeds, and those rounds draw `rand()` on the frame step, so pricing them moves the
 round the film reaches its gate on. Ghost Knight's film reached its gate at tick `15705`

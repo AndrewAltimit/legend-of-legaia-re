@@ -322,7 +322,7 @@ table is `legaia_engine_battle_loop::derived_cost`.
 | A kind-4 mesh build, fixed / a segment | `6386` / `59` | `3.0` / `.027` |
 | A move-VM part tick `FUN_80021DF4` (mean) | `1578` | `.74` |
 | The ground grid, fixed / a visible cell | `145452` / `389` | `67.8` / `.18` |
-| A shadow packet | `266` | `.124` |
+| A packet of the battle template's tick `FUN_8004DA00` | `266` | `.124` |
 | The walker: a call / a sweep | `2820` / `4446` | `1.31` / `2.07` |
 | A live child: a step / a draw | `150` / `665` | `.070` / `.310` |
 | An overrun advance of a retired child | `150` | `.070` |
