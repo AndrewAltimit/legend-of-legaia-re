@@ -304,8 +304,23 @@ fn seed_and_settle(
     retail: &RetailObs,
     order: SeedOrder,
     door: Option<&psx_ram_image::scenarios::ScenarioArrival>,
+    listen: Option<&mut crate::audio_sweep::EngineAudio>,
+    after: Option<AfterSettle<'_>>,
+) -> Result<EngineObs> {
+    seed_and_settle_cut(extracted, retail, order, door, listen, after, false)
+}
+
+/// [`seed_and_settle`]; `film_from_settle` ends a script gate at the settle
+/// window, where a walk film behind it then starts (the retry a
+/// pending-scene gate the engine never met takes).
+fn seed_and_settle_cut(
+    extracted: &Path,
+    retail: &RetailObs,
+    order: SeedOrder,
+    door: Option<&psx_ram_image::scenarios::ScenarioArrival>,
     mut listen: Option<&mut crate::audio_sweep::EngineAudio>,
     after: Option<AfterSettle<'_>>,
+    film_from_settle: bool,
 ) -> Result<EngineObs> {
     let cfg = BootConfig {
         scene: retail.scene.clone(),
@@ -435,11 +450,13 @@ fn seed_and_settle(
     // on its idle `26` at `+0x2E` 60 vsyncs before doman loads. Waiting on
     // that record ran the seed to the deadline and returned the settle
     // sample, so no walk film ever started behind it. Under a walk film such
-    // a gate keeps its resume and ends at the settle window, where the film
-    // starts; a still keeps its deadline (`s2_rimelm_town01` and
-    // `son_arrival_from_doman` score their gate's run).
-    let film_from_settle =
-        retail.pending_scene.is_some() && std::env::var_os("LEGAIA_RC_WALK_OUT").is_some();
+    // a gate the engine never meets is run again, keeping its resume and
+    // ending at the settle window, where the film starts (`film_from_settle`,
+    // below the loop). One the engine meets films from its gate's run as
+    // any other (`s2_rimelm_town01` meets map01 `P1[59]` 1540 ticks in,
+    // `son_arrival_from_doman` map03 `P1[58]` 1179 ticks in, both on the
+    // outgoing scene before the change): a settle cut starts those films
+    // inside the cutscene, 1480 and 1119 ticks early.
     let deadline = if gate.is_some() && !film_from_settle {
         legaia_engine_capture::script_gate::SCRIPT_GATE_DEADLINE
     } else {
@@ -589,7 +606,18 @@ fn seed_and_settle(
         met_at,
         resumed,
     });
-    // A walk film behind a pending-scene gate runs on from the settle tick.
+    // A walk film behind a pending-scene gate the engine never met runs on
+    // from the settle tick of a second seed.
+    if gate.is_some()
+        && met_at.is_none()
+        && !film_from_settle
+        && listen.is_none()
+        && retail.pending_scene.is_some()
+        && std::env::var_os("LEGAIA_RC_WALK_OUT").is_some()
+    {
+        drop(session);
+        return seed_and_settle_cut(extracted, retail, order, door, None, after, true);
+    }
     if let (Some(_), None, Some(mut obs), false) = (&gate, met_at, at_settle, film_from_settle) {
         obs.script = script;
         if let (Some(audio), Some(a)) = (listen, audio_at_settle) {

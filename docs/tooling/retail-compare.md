@@ -314,12 +314,14 @@ records the label as `pending_scene` in the detail
 (`RetailObs::settle_on_loaded_scene`;
 [the arrival states](#arrival-states-are-captured-before-the-town-runs)).
 Such a state holds the outgoing scene's records, which the engine leaves
-with the change the gate's resume replays. Under a [walk film](walk-film.md)
-its script gate keeps the resume and ends at the settle window, where the
-film runs on from: `doman_arrival_from_korb2` holds map03's flat `49` on its
+with the change the gate's resume replays. A still keeps the deadline. Under
+a [walk film](walk-film.md) a gate the engine meets films from its gate as
+any other (`s2_rimelm_town01` and `son_arrival_from_doman` meet theirs on
+the outgoing world map, deep into its cutscene), while one it never meets
+is seeded again with the gate ending at the settle window, where the film
+runs on from: `doman_arrival_from_korb2` holds map03's flat `49` on its
 idle `26` at `+0x2E`, a record the engine's map03 never runs as a context,
-so the seed ran to the deadline and no film ever started behind it. A still
-keeps the deadline.
+so the seed ran to the deadline and no film ever started behind it.
 
 ## Retail observables
 
