@@ -1403,6 +1403,18 @@ five sixths of its TR z gap on its first pass where retail takes a third (`13.4`
 Kemaro's arm 4 drifts a part pass past retail's last (`7.3` px), and Theeder's first
 sweep fan.
 
+The summon band's exit camera (`0x37` arms case 6, `0x38` walks it, `0x50` re-arms) reads
+retail's to the unit wherever the two sides run the same frame step through it (the
+`0x8D`, `0x90` and `0x83` films, pitch, yaw, TR and focus on every row). Where it parts,
+it parts on the step, not the law: on Jedo's `0x9D`, Gilium's `0x95` and `0x9F` retail's
+pass that leaves `0x36` overruns its step-`1` frame to two vsyncs (`frame` counter `2527`
+over vsyncs `3789..3790` on `0x9D`), so `0x37` runs one step-`2` pass and walks case 6's
+fresh tween two vsyncs at once, where the port runs that pass at step `1` and walks one.
+The `1.4x` first `0x38` pass is the second pass's re-arm off the walked pose. The
+overrun is the handing pass's cost, which the band's tail keeps on its measured table
+([`push_frame_cost`](../subsystems/battle-stage-camera.md#a-frames-span)); on `0x86` and
+`0x9A` the same pass does not overrun.
+
 ### Evil Seru Magic
 
 Cort's Evil Seru Magic (`0xAD`, PROT 0966) records from `chitei2_cort_pre_mystic_circle`
