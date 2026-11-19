@@ -1273,6 +1273,17 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         # (`AmbientFxState::vram_rect_seed_until_state`).
         if (st := recording_first_state(out)) is not None:
             env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_STATE"] = str(st)
+    # A `--physical` film opens on the state's own instant, so the frame
+    # driver's burning-puff accumulator `ctx[+0x328]` is the state's: its low
+    # nibble is the phase of the one or two puffs a step-3 pass sheds, which
+    # the replay's own fight does not keep. Held until the film begins (lane J
+    # harness seat, `LEGAIA_BATTLE_BURN_ACCUM`).
+    if a.physical and "LEGAIA_BATTLE_BURN_ACCUM" not in env:
+        ram = state_ram(read_kv(out / "retail" / "manifest.txt").get("sstate", ""))
+        if ram:
+            ctx = ram_u32(ram, 0x8007BD24)
+            if RAM_BASE <= ctx < RAM_TOP - 0x400:
+                env["LEGAIA_BATTLE_BURN_ACCUM"] = str(ram_u32(ram, ctx + 0x328) & 0xFFFF)
     # The recording's drive is PCSX-Redux's, whose first `summon.dat` slot
     # reads with no seek ahead of it; the engine's modelled drive (mednafen's)
     # holds the side-band stage nine vsyncs longer. A harness seat.

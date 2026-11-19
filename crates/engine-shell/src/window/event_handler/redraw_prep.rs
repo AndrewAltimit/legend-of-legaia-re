@@ -463,6 +463,21 @@ impl PlayWindowApp {
                 sc.battle_backdrop_yaw = None;
             }
         }
+        // The burning-puff accumulator is a clock too
+        // (`LEGAIA_BATTLE_BURN_ACCUM`): seated once, where the cast film
+        // begins, then left to the frame driver. Held through the replay
+        // before it, the puffs the replayed rounds shed moved the stream the
+        // replay reaches its gate on (`balden_orb_v2_strike`).
+        if let Some(acc) = self.screenshot.as_ref().and_then(|sc| sc.battle_burn_accum)
+            && self.session.host.world.mode == SceneMode::Battle
+            && std::env::var_os("LEGAIA_DIAG_CAST_SEQ").is_some()
+            && self.cast_film_begun()
+        {
+            self.session.host.world.battle.burn_emit_accum = acc;
+            if let Some(sc) = self.screenshot.as_mut() {
+                sc.battle_burn_accum = None;
+            }
+        }
         // ... and, once a cast capture's gate holds, the summon close-up's
         // accumulator (`PhaseGate::accum_align`).
         if let Some(gate) = self.screenshot.as_ref().and_then(|sc| sc.phase_gate)

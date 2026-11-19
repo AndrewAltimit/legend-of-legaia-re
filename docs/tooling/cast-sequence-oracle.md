@@ -2020,6 +2020,19 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   so stood on `192` against the RAM's `168`, reached its walk's natural end a
   pass early and struck from `(130, 335)` where retail's strikes from
   `(136, 325)` (`.955`); on `168` it walks retail's passes and reads `.994`.
+- **Burning puffs.** A burning body sheds one effect-pool puff per `0x10` of the
+  frame driver's accumulator `ctx[+0x328]`, which gains `step << 3` a frame and keeps
+  its low nibble (`FUN_8004998C`, `0x8004A5FC..0x8004A8D8`), so a step-`3` pass sheds
+  one or two by the nibble's phase. That phase is time the replay's fight does not
+  keep: Zenoir's Fire Claw victim shed two where retail shed one on the landing pass,
+  and every later child and `rand()` draw of the burst parted. The child seats the
+  state's word once, where the film begins (`LEGAIA_BATTLE_BURN_ACCUM`, which the
+  driver reads off the state for every `--physical` film); held through the replay
+  before the gate, the puffs the replayed rounds shed moved the stream the replay
+  meets its gate on, and `balden_orb_v2_strike` read `.927` for `.986`. On `--retail-steps` Fire Claw's
+  `0x2C` / `0x2D` read `.795` / `.834` to `.945` / `.960` (the film `.970` to `.990`);
+  plain, the film `.9169` to `.9210`. Over the enemy set's other physical films only
+  Hyper Lightning moves (`-.0007`). A harness seat.
 - **Target bytes.** The release at the gate also aims every seat but the acting
   one at the target its RAM holds (`+0x1DD`, `LEGAIA_BATTLE_SEAT_TARGETS`, a
   physical film only: an injected cast acts from another seat). The replay

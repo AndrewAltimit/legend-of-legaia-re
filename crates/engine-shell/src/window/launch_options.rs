@@ -221,6 +221,12 @@ pub struct ScreenshotConfig {
     /// [`Self::battle_orbit_yaw`]. Set by the retail-compare image channel
     /// from the battle state's `0x800891D2`.
     pub battle_backdrop_yaw: Option<u16>,
+    /// `LEGAIA_BATTLE_BURN_ACCUM=<word>`: the frame driver's burning-puff
+    /// accumulator `ctx[+0x328]` the capture holds, seated where a cast film
+    /// begins (lane J harness seat). Its low nibble is the phase of the
+    /// one-or-two puffs a step-`3` pass sheds (`World::emit_battle_burn_sprites`),
+    /// time a replayed fight does not keep.
+    pub battle_burn_accum: Option<u16>,
     /// `LEGAIA_BATTLE_CAM_ALIGN=<16 numbers>`: retail's live battle camera
     /// and its tween endpoints (pitch, yaw, eye trio, focus trio each), for
     /// starting the captured phase's glide where retail's stood
@@ -1207,6 +1213,9 @@ impl ScreenshotConfig {
                     <[f32; 3]>::try_from(n).ok()
                 }),
             battle_backdrop_yaw: std::env::var("LEGAIA_BATTLE_BACKDROP_YAW")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
+            battle_burn_accum: std::env::var("LEGAIA_BATTLE_BURN_ACCUM")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
             battle_cam_align: std::env::var("LEGAIA_BATTLE_CAM_ALIGN")
