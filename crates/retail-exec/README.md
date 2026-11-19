@@ -33,5 +33,11 @@ binary prints it:
 cargo run --release -p psx-retail-exec -- frame-cost --scenario son_field_door_hop --frames 4
 ```
 
+`field_units` breaks a frame's field passes into the units they repeat
+(loop iterations by path, dispatcher draws and groups, prim-leaf iterations
+by kind and outcome), each priced from its own instructions
+(`retail-exec field-units --scenario <label>`); `--interrupts` on
+`frame-cost` takes the vblank interrupt through the state's kernel.
+
 Held against the emulator's own profile in
 [`docs/tooling/retail-frame-cost.md`](../../docs/tooling/retail-frame-cost.md).

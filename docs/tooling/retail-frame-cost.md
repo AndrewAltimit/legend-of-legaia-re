@@ -77,9 +77,16 @@ on, priced. A routine that captures VRAM, such as the CLUT-cell cycler
 `FUN_80019D50`, reads what retail reads on every frame; drawing never reaches
 VRAM.
 
-No interrupt is taken. The vblank still counts (`Cpu::vblank_counter` adds one
-to libetc's counter `0x8007A894` each time the clock passes a vblank), so a
-`VSync` wait spins until its vblank as it does on the emulator.
+By default no interrupt is taken. The vblank still counts (`Cpu::vblank_counter`
+adds one to libetc's counter `0x8007A894` each time the clock passes a vblank),
+so a `VSync` wait spins until its vblank as it does on the emulator.
+`--interrupts` (`FrameRunner::take_interrupts`) takes the vblank interrupt
+instead, through the kernel the state holds, as PCSX-Redux does (after a delay
+slot, with `SR` bits 0 and 10 set): the kernel's dispatch and libetc's
+callbacks run and their time lands in the routine they interrupt. The pad and
+card exchange over SIO (`FUN_8006CFC8`, chained on the vblank) would wait on a
+port nothing answers, so it returns at once; the rest of the interrupt costs
+about `24100` cycles against PCSX-Redux's `24400..26200`.
 
 Each row the command prints is one routine over one frame: calls, instructions,
 accesses by region, cycles, hblanks, and the primitives it linked into the
@@ -119,10 +126,12 @@ hblanks, within `0.3%` of the profile, and the frames that recolour a capture
 of rows the frame before recoloured agree as well, through the VRAM the runner
 keeps.
 
-Frames after the first part slightly: the runner never runs the interrupt
-handler, so what the vblank callbacks advance (sound, the pad) stands still,
-and the tick passes that read it drift by up to a few percent. The render
-passes stay on the profile.
+Frames after the first part slightly in the tick passes, by up to a few
+percent (`son`'s third frame `11.9` hblanks against `13.0`); the render passes
+stay on the profile. Taking the vblank interrupt does not close it (`son` and
+`jou` tick alike either way), so what the ticks read is advanced by something
+else the runner does not model, the DMA and CD-ROM interrupts or a DMA's busy
+window among the candidates.
 
 Gates, disc- and library-gated: `crates/retail-exec/tests/frame_cost.rs` (the
 five states, every pass within `3%`) and `clut_cell.rs`'s
@@ -132,13 +141,116 @@ five states, every pass within `3%`) and `clut_cell.rs`'s
 ## What the interrupts cost
 
 The interrupt time the runner leaves out is a large, steady term. On
-PCSX-Redux the vblank interrupt (the kernel's dispatch, libetc's callbacks and
-the pad exchange over SIO, which waits on each byte's acknowledge) costs
-`11.6` hblanks (about `24900` cycles) on every vblank of these states, and a
-DMA or CD-ROM interrupt `1..1.8`. A frame's measured time is its passes' work
-plus whatever interrupts land inside it: `son`'s frame driver spends `580.4`
-hblanks of work and `610` with them. The model a frame-cost derivation builds
-needs that term apart from the per-pass work.
+PCSX-Redux the vblank interrupt (the kernel's dispatch, libetc's callbacks, the
+pad exchange over SIO) costs `11.4..12.2` hblanks (`24400..26200` cycles) on
+every vblank of these states, and the DMA and CD-ROM interrupts (`2081..4500`
+cycles each) add `0.6..3.8` hblanks a vsync (mean `2.3`): `12.2..15.4` hblanks
+a vsync in all. A frame's measured time is its passes' work plus whatever
+interrupts land inside it: `son`'s frame driver spends `580.4` hblanks of work
+and `610` with them. A derived model carries the term apart from the per-pass
+work (`field_frame_units::VBLANK_INTERRUPT_CYCLES`,
+`OTHER_INTERRUPT_CYCLES_PER_VSYNC`).
+
+## Per-unit costs
+
+`retail-exec field-units --scenario <label>` breaks the first whole frame's
+decoration pass, ground emitter, actor render passes and fog records into the
+units they repeat, each with its count and the cycles it ran
+(`pass,unit,count,cycles,cycles_per_unit`). It times every loop iteration
+between two arrivals at the loop's head, names the path it took by the marks
+it passed, and takes a nested routine's time out of the iteration that called
+it (`psx_retail_exec::field_units`, `PASSES` and `LEAVES`). What a pass spends
+outside its loops is its per-call cost, so the units add up to the pass to the
+cycle.
+
+The pooled means over ten library field states (`son`, `stone`, `jou`,
+`retona`, `bubu2`, `kor3`, `uru`, `town01`, `doman`, `korb2`) are the table in
+[`field_frame_units.rs`](../../crates/engine-core/src/world/field_frame_units.rs),
+which nothing reads yet. A path that does not depend on the data costs the same
+on every state to the cycle; the rest vary by what the path computes:
+
+| Unit | Cycles | hblanks | Engine count it needs |
+|---|---:|---:|---|
+| decoration call | `1622` | `0.76` | one a frame |
+| decoration row | `24` | `0.011` | rows of the pass's window |
+| decoration cell outside the walk box | `54` | `0.025` | window cells failing `0x1F800384..87` |
+| decoration cell inside the box, no record | `99` | `0.046` | window cells inside the box |
+| decoration cell with a record, not drawn | `130` | `0.061` | cells whose record fails `+0x12 & 4` or the reach test |
+| decoration cell drawn | `503` | `0.234` | cells the gate draws (`ViewCells::decoration_visible`) |
+| dispatcher draw | `200` | `0.093` | one per drawn mesh (decoration cell, placed mesh, model object) |
+| dispatcher group | `71` | `0.033` | TMD groups of each drawn mesh |
+| leaf group set-up | `40` / `46` | `0.019` / `0.021` | the same groups, tri / quad leaf |
+| ground call | `129` | `0.060` | one a frame |
+| ground row / window cell | `24` / `35` | `0.011` / `0.016` | the emitter's window, rows and cells |
+| ground walk-visible cell | `282` | `0.131` | cells with `0x1000` |
+| ... with the sort bit | `314` | `0.146` | those whose sorted path runs (`0x801F6FA0`) |
+| actor list entry | `50..61` | `0.025` | every entry of the five lists |
+| model actor | `148 + 1297` | `0.67` | each NPC / skinned actor drawn |
+| model object | `919` / `1252` posed | `0.43` / `0.58` | each object of a drawn model |
+| pose | `253` + `22` a track | `0.12` | each posed object, its tracks |
+| morph vertex | `61` | `0.028` | each vertex a morph lane blends (`FUN_8005B038`) |
+| placed actor | `1202` | `0.56` | each placed object drawn |
+| placed mesh | `75` | `0.035` | each of its meshes |
+| fog record | `635..677` | `0.30` | each live fog record |
+| fog half-sheet | `149` culled / `233` kept | `0.069` / `0.109` | each half-sheet the walk emits |
+
+A primitive costs by its leaf (kind `flags >> 1`, bank) and what became of it.
+The decoration draws through the depth-cued leaves with the off-screen test
+(colour word `0x40`), the actors through the opaque leaves without it:
+
+| Leaf | Rejected (back face, near) | Off-screen rejected | Linked |
+|---|---:|---:|---:|
+| `k19` cued quad (gouraud textured) | `96` | `210` | `331` |
+| `k18` cued tri | `81` | `248` | `281` |
+| `k17` cued quad (flat textured) | `97` | `217` | `302` |
+| `k15` / `k14` opaque gouraud quad / tri | `97` / `66` | - | `159` / `125` |
+| `k19` / `k18` opaque gouraud textured quad / tri | `97` / `72` | - | `184` / `151` |
+| `k13` / `k12` opaque flat quad / tri | `98` / `73` | - | `142` / `120` |
+
+Every primitive of a drawn mesh is transformed (`RTPT`, then `NCLIP` against
+the dispatcher's winding mask), so a mesh costs its whole primitive count; the
+link count is only the visible part. `son_field_door_hop`'s decoration pass
+transforms `2480` primitives in `92` drawn cells (`504` `k17`, `736` `k18`,
+`1240` `k19`), rejects `1087` by winding and `1254` past an edge of the screen
+(`FUN_80044798`), and links `139`: the engine's `2480` decoration primitives
+are retail's transformed count, not an overcount. A derived model needs each
+draw's primitive count by leaf, and the share that faces the camera and lands
+on screen; at the shares these states hold, a decoration primitive costs
+`150..205` cycles (`0.070..0.096` hblanks) and an actor primitive `115..168`
+(`0.054..0.078`).
+
+Priced from the table off each state's own counts, every pass lands within
+`4%` of what it ran (`crates/retail-exec/tests/field_units.rs` holds `5%`, and
+the fixed-path units within `2%`):
+
+| State | Decoration | Ground | Actor | Fog |
+|---|---:|---:|---:|---:|
+| `son` | `-0.26%` | `+0.00%` | `+2.99%` | - |
+| `stone` | `-0.57%` | `+0.03%` | `+2.68%` | `-1.11%` |
+| `jou` | `-0.89%` | `+0.00%` | `+0.50%` | - |
+| `retona` | `+0.50%` | `-0.33%` | `-0.65%` | `-2.22%` |
+| `bubu2` | `+0.25%` | `+0.00%` | `+1.02%` | `+1.52%` |
+| `kor3` | `-1.03%` | `+0.00%` | `+2.06%` | - |
+| `uru` | `-0.19%` | `+0.03%` | `-3.85%` | - |
+| `town01` | `+2.03%` | `+0.00%` | `-0.47%` | - |
+| `doman` | `-1.08%` | `+0.01%` | `-3.03%` | - |
+| `korb2` | `-1.01%` | `+0.00%` | `-0.22%` | `+4.04%` |
+
+The actor rows carry what the table averages: a model's set-up and its objects
+vary with the model (`695..1785` and `777..1084` cycles), and a non-model kind
+(`gate1+gate2+kind`, `103..1670`) with what it draws.
+
+### Against the fitted weights
+
+| Fitted term | Fitted hb | Derived | Reading |
+|---|---:|---|---|
+| base | `33` | interrupts `12.2..15.4` a vsync, pass calls `~1.1` | mostly the interrupts a frame's work spans |
+| decoration primitive | `0.091` | `0.077..0.103` a transformed primitive with its share of draws and groups (`stone`, many small draws, `0.145`) | close |
+| decoration loop cell | `0.054` | `0.046` in the box, `0.025` outside, `0.23 + 0.09` a drawn cell | close; carries the drawn cells' set-up |
+| ground cell | `0.158` | `0.131..0.146` a walk cell, `0.016` a window cell | close; carries the window cells and rows |
+| placed primitive | `0.118` | `0.054..0.078` an actor primitive | about twice: carries each placed actor's `0.56` and each mesh's draw |
+| NPC | `24.8` | about `9.3` set-up for `son`'s models (`12` objects each), the rest its primitives | the fitted NPC carries its mesh |
+| fog record / half-sheet | `0.20` / `0.006` | `0.30` / `0.069..0.109` | under: the fog walk's time sits in the base |
 
 ## Limits
 
