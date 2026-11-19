@@ -1481,7 +1481,7 @@ a scratch directory only.
 | `slots`, `baka`, `dance`, `muscle`, `fishing` | each minigame from its picker entry (native: its key), and out on Start |
 | `late_*`, `late4_*`, `ladder_*` | a retail card save: the page lands it and writes an LGSF, the window resumes that file, so each also carries a save from one host to the other |
 | `slot_save` | a save the window wrote, resumed on both |
-| `pack_village`, `pack_tower`, `pack_menu` | a map of the sample expansion pack (`packs/sample`): the window's `--expansion --map` against the page's library load of the `.lxpack` the `asset` binary beside the engine bundles, and its map entry. The page enters over town01, as its pack library always does, and both seed one `rand()` stream around the entry |
+| `pack_village`, `pack_tower`, `pack_menu` | a map of the sample expansion pack (`packs/sample`): the window's `--expansion --map` against the page's library load of the `.lxpack` the `asset` binary bundles (beside the engine, else the first `target/` profile that built one; a scene with none prints `NOT RUN`), and its map entry. The page enters over town01, as its pack library always does, and both seed one `rand()` stream around the entry |
 | `monkey_*` | a seeded rhythm of presses over the whole pad. Where it goes does not matter, only that both go there |
 
 A card landing enters from the page's running scene first, so its audio record starts a
@@ -1500,11 +1500,17 @@ of a door entry reaches no accept, so a menu scene keyed there pairs two hosts
 standing in a field. A scene that is for a screen names it (`reach`: a line of the
 trace some paired frame must show on both hosts), and its summary line says
 `VACUOUS` when neither or only one host got there. The menu scenes press Start at
-tick 90 for that reason.
+tick 90 for that reason, and hold it to tick 99 (`PAUSE_PRESS`): under `--retail`
+the field reads the pad once a game frame (`world::pad_latency`), and a one-tick
+tap that lands between two samples is never seen. On the overworld, after every
+card landing and on the pack map a tap at tick 90 fell between two, and `save`,
+`late_menu`, `late4_menu`, `ladder_menu` and `pack_menu` paired two hosts that never
+opened the menu.
 
 What a healthy pair reads: the trace agrees on every sampled frame, and the pixels differ
-by a few tenths of a percent, hairline pixels on sloped 3D edges where a tie lands on
-the other side. That residual is there on a real GPU and on SwiftShader alike.
+by a few hundredths of a percent under `--mode retail`. The rows that read more are
+SwiftShader's texel ties in the minigame venues (`slots`, `dance`, `baka`, about a
+tenth to a fifth of a percent).
 
 The screen primitives used to read differently by rasteriser, so a row that stood out
 was read on both (`--gl egl` is the real GPU). They are level now:
@@ -1530,10 +1536,28 @@ down into a copy of the frame and flips the copy back
 only the fallback for a framebuffer that cannot be copied. `--page-init
 "window.__psxFlipPrims=false"` draws them the old way for a comparison.
 
-The 3D pass on the native target still takes its own nudge (`PSX_NATIVE_TIE_ROWS`)
-and is where the remaining few tenths of a percent sit. The run prints; it asserts
-nothing and is not a CI gate, since it needs a disc, a built bundle and a
-display.
+The 3D pass on the native target read the same rule upside down, which a nudge of
+its own (`PSX_NATIVE_TIE_ROWS`) settled on flat edges only: a cast's rotated shards
+drew in hairlines (`cast`, ticks `890..915`, up to `1.22%` of a frame on SwiftShader,
+`1.06%` at tick `901` on the GPU), and every sloped 3D edge left a few tenths of a
+percent. The scene pass (`renderAssembled`) and the minigame venues' single-mesh draw
+(`render`) now draw upside down into a copy too (`TmdRenderer.sceneFlip`, the
+`FrameFlip` the screen primitives use), mirroring y last in the vertex stage and
+reading the window position, the facing and the dither row the right way up
+(`u_flip_y`, `fragCoord`, `frontFacing`); the nudge is the fallback for a frame
+drawn the right way up. `--page-init "window.__psxFlipScene=false"` draws the old
+way for a comparison:
+
+| Scene (retail mode, SwiftShader) | Mean, worst frame, right way up | Mean, worst frame, flipped |
+|---|---|---|
+| `cast` ticks `880..915`, every frame | `0.74%`, `1.22%` | `0.00%`, `0.01%` |
+| `cast` (GPU, `--gl egl`) | `0.19%`, `1.06%` | `0.01%`, `0.10%` |
+| `town_walk`, `lamp_walk`, `battle` | `0.20%`, `0.25%`, `0.26%` | `0.00%`, `0.00%`, `0.01%` |
+| `arts`, `dolk2_audience`, `pack_tower` | `0.29%`, `0.29%`, `0.37%` | `0.01%`, `0.01%`, `0.04%` |
+| `baka`, `dance`, `fishing` | `0.21%`, `0.33%`, `0.13%` | `0.09%`, `0.11%`, `0.01%` |
+
+The run prints; it asserts nothing and is not a CI gate, since it needs a disc, a
+built bundle and a display.
 
 ### Black copies of a multisampled canvas
 
@@ -1579,6 +1603,9 @@ the world was right and the picture was not:
 | A generic attribute default | A mesh with no ground cells leaves `a_ground_ref_xz` disabled, and GL reads a disabled attribute as `(0, 0, 0, 1)`, not the zeros the window's `flat_a` carries. The vertex stage's "not a ground cell" test is a compare against zeros, so no field mesh took its link depth and PSX mode's per-primitive sort never ran on the page: off retail's vantage the sea covered town01's beach. Forcing every draw's order word changed no pixel, which is what named it |
 | A nudge under a rasteriser's grid | The tie nudge above was a 64th of a row, finer than SwiftShader's sub-pixel grid, so on the software rasteriser the tie came back and every flat band drew a row low: the ending vignettes' letterbox, the slot machine's panels. A real GPU drew them right. An untextured primitive took an eighth of a row; a textured one kept the 64th, since more shifts the texels the battle intro's rotated shards sample |
 | A fill rule read upside down | The nudges settled flat edges and nothing else: along a slanted edge through pixel centres, and along the seam of a rotated quad's two triangles, the bottom-up rule still gave the pixels to the other triangle. The battle intro's shards drew in hairlines on a real GPU (`2.23%` of `cast_cannon` at tick `81`), and SwiftShader, whose grid swallowed the 64th, still drew the slot machine's rows apart (`1.05%`). The screen primitives now draw upside down into a copy of the frame that is flipped back, the window's rule on every edge: tick `81` reads `0.18%`, `slots` `0.02%` on the GPU and `0.18%` on SwiftShader, and no scene of twenty reads higher on either |
+| A scene pass read upside down | The 3D pass kept a sixteenth-of-a-row nudge, which settles a flat edge and no slanted one: a cast's rotated shards drew in hairlines on the page (`cast` tick `901`, `1.06%` on the GPU), and every sloped 3D edge in every scene left a few tenths of a percent. The scene pass and the single-mesh draw now draw upside down into a copy as the screen primitives do; the retail pairs read a few hundredths of a percent |
+| A pose re-shaded on one host | A placed prop off its rest pose is rebuilt every frame on the window, and its light-source rows shaded at the posed normals. The page re-posed the positions alone and kept the rest pose's shade, so a house door drew at about sixty percent of the window's brightness while it swung (`door_beat` ticks `58..106`, `1.20%` of a frame at worst). The page re-shades each pose through `field_mesh_posed_frame_lit_rgba`; the span reads `0.00%` |
+| A gate in one host's draw list | The window leaves the overworld's party figure out while a cutscene timeline owns the map; the page drew it. `cave_walk` leaves the cave onto the map with the timeline up, and the page's Vahn stood at the cave mouth where the window's map was bare (`0.46%` of a frame, enhanced). Both ask `World::overworld_hides_lead` now |
 | One blend equation for four | The page's single-mesh draw, which every minigame venue uses, re-drew its semi-transparent prims under one additive stand-in, so the Baka duel's `B - F` drop shadows drew as pools of light, while the window blends each prim under its own ABR mode. The run named the shadows by showing them at the title card, where the window's subtraction from black hid the same stray prims: both hosts drew shadows the front end never draws. The single mesh now carries the per-mode semi tail `renderAssembled` blends from (`buildSemiTail`, `_setSemiBlend`), and the scene collapses the shadows outside the duel |
 | One blend order for two | The same single-mesh draw blended its semi tail mode by mode, so in the Baka duel every additive glow prim drew before every subtractive shadow prim. The window blends a frame's semi prims far to near, prim by prim, as retail's ordering table does, and the glow's near half lands after the shadows there. Where both covered a saturating floor the page's frame went grey (`3.6%` of a frame). Hiding the glow on both hosts read `0.7%`, and drawing the glow's coverage in one flat colour on the page with the shadows dropped showed the shadows under it, which named the order. The single mesh now keys and sorts its semi prims per frame (`orderSemiPrims`) |
 | A facet in the wrong frame | A baked stream holds world positions, and the page lit a double-sided summon part off their facet where the window lights it off the object-space one. The battle frame flip between the two mirrored every crystal facet against the key light. Handing the page the window's smoothed normals changed nothing, which named the fallback: the paired copies cancel to the zero sentinel. The stream carries the object facet now |
