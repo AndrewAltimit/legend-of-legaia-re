@@ -109,6 +109,7 @@ const MAY_DIFFER: &[(&str, &str)] = &[
     ("pending_frame_step_from", "frame id"),
     ("pass_draw_frame", "frame id"),
     ("sm_pass_frame", "frame id"),
+    ("surface_pass_frame", "frame id"),
     ("frame_start_ticks", "frame id"),
     ("anim_pass_frame", "frame id"),
     ("defeat_sink_frame", "frame id"),
