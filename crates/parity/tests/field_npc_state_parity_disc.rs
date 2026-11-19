@@ -139,6 +139,39 @@ const NILBOA_RAVINE_BLOCKS: &str = "visit history, inferred: the two push blocks
      neither runs from a cold entry with this bank, and the blocks stand on the pushed \
      seat their prologue picks from 0x457 (A3 27 B1 41 / A3 28 32 3F)";
 
+/// The retail-coverage cutscene states: each is saved inside a scripted beat
+/// that ran after retail's own entry, which the cold entry this oracle runs
+/// does not replay. Inference from each state's catalog route, not traced
+/// slot by slot; the image corpus is what holds these scenes to retail.
+const CONC3_CEREMONY: &str = "mid-beat capture inside the conc3 ceremony (P2[10], walked into \
+     from conc3_field_inn_night with its boxes paged): the ceremony seats the crowd and the \
+     party on the plaza and steps and parks others as it plays, after retail's entry; a cold \
+     entry against the bank holds the prologue arrangement (inference, not traced per slot)";
+
+const CONC3_AFTER_CEREMONY: &str = "visit history: saved 8700 vsyncs after the ceremony began, \
+     the party free in the Mist with 0x3E5 raised by P2[10]; the ceremony's own seats and \
+     parks persist past it, which a cold entry against the bank does not replay (inference)";
+
+const JUUI1_VORTEX: &str = "mid-beat capture inside the juui1 vortex fall (the first Ra-Seru \
+     scene, entered from conc2's vortex tile): the fall seats the party and the shards on \
+     its own path and parks the header seats, after retail's entry (inference, not traced \
+     per slot)";
+
+const TOWN0E_EPILOGUE: &str = "mid-beat capture inside the ending's Rim Elm (town0e, entered from \
+     the ending FMV and paged forward): the epilogue walks Vahn, Mei and Tetsu to the \
+     Genesis Tree and re-seats and parks the village as it plays, after retail's entry \
+     (inference, not traced per slot)";
+
+const VOZZ_TREE: &str = "mid-beat capture inside the vozz Genesis Tree revival (P1[7], after \
+     the Songi fight): the revival's beats park the clearing's actors around the tree after \
+     retail's entry, where a cold entry seats them (inference, not traced per slot)";
+
+const CREDITS_PCSX: &str = "end-credits vignette capture (PCSX-Redux, entered by the town0e \
+     gate band P2[6] after the Village Elder's talk): the credits sequence loads each \
+     vignette scene and places its cast for the shot, which a cold entry of the scene does \
+     not run. Open: the engine's own credits path is not yet held to these placements \
+     (edson / edstati3 image rows are low)";
+
 const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
         label: "son_field_door_hop",
@@ -714,6 +747,492 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         key: "vis:23",
         class: "b",
         note: CONC3_INN_ARRIVAL,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_gala_box",
+        key: "vis:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_gala_box",
+        key: "pos:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_lab",
+        key: "vis:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_lab",
+        key: "pos:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_mist_monsters",
+        key: "vis:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_mist_monsters",
+        key: "pos:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_mist_pillar",
+        key: "vis:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_mist_pillar",
+        key: "pos:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_nebular_box",
+        key: "vis:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_nebular_box",
+        key: "pos:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_noa_box",
+        key: "vis:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_noa_box",
+        key: "pos:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_pedestal",
+        key: "vis:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_pedestal",
+        key: "pos:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_plaza",
+        key: "vis:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_plaza",
+        key: "pos:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_zeto_box",
+        key: "vis:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_zeto_box",
+        key: "pos:*",
+        class: "b",
+        note: CONC3_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_mist_night_free",
+        key: "vis:*",
+        class: "b",
+        note: CONC3_AFTER_CEREMONY,
+    },
+    KnownDivergence {
+        label: "conc3_mist_night_free",
+        key: "pos:*",
+        class: "b",
+        note: CONC3_AFTER_CEREMONY,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_entry",
+        key: "vis:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_entry",
+        key: "pos:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_exit_flash",
+        key: "vis:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_exit_flash",
+        key: "pos:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_gala_box",
+        key: "vis:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_gala_box",
+        key: "pos:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_noa_close",
+        key: "vis:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_noa_close",
+        key: "pos:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_party_flying",
+        key: "vis:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_party_flying",
+        key: "pos:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_tunnel",
+        key: "vis:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "juui1_vortex_tunnel",
+        key: "pos:*",
+        class: "b",
+        note: JUUI1_VORTEX,
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_mei_closeup",
+        key: "vis:*",
+        class: "b",
+        note: TOWN0E_EPILOGUE,
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_mei_closeup",
+        key: "pos:*",
+        class: "b",
+        note: TOWN0E_EPILOGUE,
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_tree",
+        key: "vis:*",
+        class: "b",
+        note: TOWN0E_EPILOGUE,
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_tree",
+        key: "pos:*",
+        class: "b",
+        note: TOWN0E_EPILOGUE,
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_usha_box",
+        key: "vis:*",
+        class: "b",
+        note: TOWN0E_EPILOGUE,
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_usha_box",
+        key: "pos:*",
+        class: "b",
+        note: TOWN0E_EPILOGUE,
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_vahn_alone",
+        key: "vis:*",
+        class: "b",
+        note: TOWN0E_EPILOGUE,
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_vahn_alone",
+        key: "pos:*",
+        class: "b",
+        note: TOWN0E_EPILOGUE,
+    },
+    KnownDivergence {
+        label: "vozz_tree_burst",
+        key: "vis:*",
+        class: "b",
+        note: VOZZ_TREE,
+    },
+    KnownDivergence {
+        label: "vozz_tree_burst",
+        key: "pos:*",
+        class: "b",
+        note: VOZZ_TREE,
+    },
+    KnownDivergence {
+        label: "vozz_tree_closeup_noa_vahn",
+        key: "vis:*",
+        class: "b",
+        note: VOZZ_TREE,
+    },
+    KnownDivergence {
+        label: "vozz_tree_closeup_noa_vahn",
+        key: "pos:*",
+        class: "b",
+        note: VOZZ_TREE,
+    },
+    KnownDivergence {
+        label: "vozz_tree_grown",
+        key: "vis:*",
+        class: "b",
+        note: VOZZ_TREE,
+    },
+    KnownDivergence {
+        label: "vozz_tree_grown",
+        key: "pos:*",
+        class: "b",
+        note: VOZZ_TREE,
+    },
+    KnownDivergence {
+        label: "vozz_tree_rings",
+        key: "vis:*",
+        class: "b",
+        note: VOZZ_TREE,
+    },
+    KnownDivergence {
+        label: "vozz_tree_rings",
+        key: "pos:*",
+        class: "b",
+        note: VOZZ_TREE,
+    },
+    KnownDivergence {
+        label: "vozz_tree_vahn_touch_box",
+        key: "vis:*",
+        class: "b",
+        note: VOZZ_TREE,
+    },
+    KnownDivergence {
+        label: "vozz_tree_vahn_touch_box",
+        key: "pos:*",
+        class: "b",
+        note: VOZZ_TREE,
+    },
+    KnownDivergence {
+        label: "credits_edbubu_fullscreen_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edbubu_fullscreen_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edbylon_fullscreen_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edbylon_fullscreen_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edbylon_panel_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edbylon_panel_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edkorout_panel_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edkorout_panel_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edkorout_window_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edkorout_window_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edretoin_fullscreen_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edretoin_fullscreen_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edretoin_panel_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edretoin_panel_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edson_fullscreen_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edson_fullscreen_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edson_panel_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edson_panel_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edstati3_fullscreen_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edstati3_fullscreen_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edstati3_panel_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edstati3_panel_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edteien_panel_pcsx",
+        key: "vis:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "credits_edteien_panel_pcsx",
+        key: "pos:*",
+        class: "c",
+        note: CREDITS_PCSX,
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_mist_monsters",
+        key: "flag:1314",
+        class: "c",
+        note: "the cold entry sets 0x522 and the mid-ceremony capture holds it clear; \
+               which beat clears it is not traced",
+    },
+    KnownDivergence {
+        label: "conc3_ceremony_noa_box",
+        key: "flag:1314",
+        class: "c",
+        note: "the cold entry sets 0x522 and the mid-ceremony capture holds it clear; \
+               which beat clears it is not traced",
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_vahn_alone",
+        key: "flag:1705",
+        class: "c",
+        note: "the capture holds 0x6A9..0x6AC set, the cold entry against its bank \
+               clears them; which epilogue beat raises them is not traced",
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_vahn_alone",
+        key: "flag:1706",
+        class: "c",
+        note: "the capture holds 0x6A9..0x6AC set, the cold entry against its bank \
+               clears them; which epilogue beat raises them is not traced",
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_vahn_alone",
+        key: "flag:1707",
+        class: "c",
+        note: "the capture holds 0x6A9..0x6AC set, the cold entry against its bank \
+               clears them; which epilogue beat raises them is not traced",
+    },
+    KnownDivergence {
+        label: "town0e_epilogue_vahn_alone",
+        key: "flag:1708",
+        class: "c",
+        note: "the capture holds 0x6A9..0x6AC set, the cold entry against its bank \
+               clears them; which epilogue beat raises them is not traced",
     },
 ];
 
