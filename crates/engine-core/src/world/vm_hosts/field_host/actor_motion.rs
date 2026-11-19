@@ -4,6 +4,10 @@
 
 use super::*;
 
+/// The context flag that puts an actor on the held-height arm (`+0x16 =
+/// -(+0x8E)` every frame, `FUN_8003BC08`).
+const HELD_HEIGHT_FLAG: u32 = 0x2000_0000;
+
 impl FieldHostImpl<'_> {
     // `4C E3 <src>`: the executing context takes the source actor's
     // position `+0x14/+0x16/+0x18` and heading `+0x26`
@@ -11,6 +15,10 @@ impl FieldHostImpl<'_> {
     // `CC <dst> E3 <src>` the destination is `<dst>` - a party placement
     // stepping onto the player's spot facing his way (`CC 09 E3 F8` in
     // `stone`). Headings copy in the engine's own space on both sides.
+    // A destination on the held-height arm (`+0x10 & 0x20000000`) also
+    // takes `+0x8E = -src+0x16` (`0x801E3150..0x801E3170`), so it keeps the
+    // source's height: `juui1` `P2[0]` stacks Noa and Gala on Vahn's
+    // flying height (`CC 0A E3 09`, `CC 0B E3 09`) after seating them lower.
     // REF: FUN_801DE840 (0x801E3108..0x801E31B0), FUN_8003C83C
     pub(super) fn teleport_to_actor(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
         let w = &mut *self.world;
@@ -22,6 +30,7 @@ impl FieldHostImpl<'_> {
                         a.move_state.world_x,
                         a.move_state.world_z,
                         a.move_state.render_26,
+                        a.move_state.world_y,
                     )
                 })
         } else {
@@ -38,10 +47,13 @@ impl FieldHostImpl<'_> {
                 let h = slot
                     .and_then(|s| w.npcs.headings.get(&s).copied())
                     .unwrap_or(0x800);
-                (x, z, h)
+                let y = slot.map_or(ch.ctx.world_y as i16, |s| {
+                    w.field_npc_render_y(s, x, z) as i16
+                });
+                (x, z, h, y)
             })
         };
-        let Some((x, z, heading)) = src else {
+        let Some((x, z, heading, src_y)) = src else {
             return;
         };
         if ctx.script_id == u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
@@ -60,7 +72,11 @@ impl FieldHostImpl<'_> {
             return;
         }
         ctx.world_x = x as u16;
+        ctx.world_y = src_y as u16;
         ctx.world_z = z as u16;
+        if ctx.flags & HELD_HEIGHT_FLAG != 0 {
+            ctx.field_8e = src_y.wrapping_neg();
+        }
         if let Some(slot) = w.field_vm.executing_channel {
             w.npcs.positions.insert(slot, (x, z));
             w.npcs.motions.remove(&slot);

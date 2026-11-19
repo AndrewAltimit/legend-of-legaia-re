@@ -806,7 +806,12 @@ The port applies it in `FieldHostImpl::teleport_to_actor`:
 a placement destination takes the source's live position and heading
 (`stone` `P2[6]` seats Noa and Gala on Vahn with `CC 09 E3 F8` /
 `CC 0A E3 F8`), a player destination moves the player actor; the player
-arm's camera-scroll refresh is not modelled.
+arm's camera-scroll refresh is not modelled. A placement destination on the
+held-height arm takes the `+0x8E` write too, so it keeps the source's height:
+`juui1` `P2[0]` seats Noa at `+0x8E = -32` and then stacks her on Vahn with
+`CC 0A E3 09`, and retail's RAM holds all three party members at `+0x8E = 64`
+(`Y = -64`). Without the write the port drew Noa 96 units low, under the
+bottom of the vortex shot (`juui1_vortex_entry`).
 
 #### `4C E4`: AABB branch
 
