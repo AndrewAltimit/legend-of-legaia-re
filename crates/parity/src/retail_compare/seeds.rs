@@ -296,6 +296,48 @@ pub(super) fn unrotate_rect(texels: &[u16], w: usize, h: usize, dx: usize, dy: u
         .collect()
 }
 
+/// The op-`0x34` screen-effect slot `_DAT_8007B62C`: the colour-tween actor
+/// the scene's live scripted grade runs on, `0` with none.
+const EFFECT_TWEEN_SLOT: u32 = 0x8007_B62C;
+
+/// The colour-tween actor's handler (`FUN_801DDC20`).
+const COLOUR_TWEEN_TICK: u32 = 0x801D_DC20;
+
+/// The scene's live scripted grade: the colour tween `_DAT_8007B62C` names
+/// (`from` `+0xB8..`, `to` `+0xBE..`, delay `+0xC4`, hold `+0xC6`, clock
+/// `+0xC8`, duration `+0xD4`, blend `+0xD2`, kind `+0xD6`), `None` with no
+/// live slot. A grade is the history of the record that ran it, which a
+/// state's reload does not replay: `urudre1_house_free` holds `P2[0]`'s
+/// `(0, 16, 24)` (the dream opening, spawned only while `0x3F5` is set and
+/// done long before the capture), where the entry script the child replays
+/// paints `(48, 48, 0)`.
+pub fn retail_scene_grade(
+    ram: &[u8],
+) -> Option<legaia_engine_field::actor_colour_tween::ColourTween> {
+    let n = game_anchors::u32_at(ram, EFFECT_TWEEN_SLOT);
+    if n == 0 || game_anchors::u32_at(ram, n + 0x0C) != COLOUR_TWEEN_TICK {
+        return None;
+    }
+    let c = |o: u32| {
+        (
+            game_anchors::u16_at(ram, n + o),
+            game_anchors::u16_at(ram, n + o + 2),
+            game_anchors::u16_at(ram, n + o + 4),
+        )
+    };
+    Some(legaia_engine_field::actor_colour_tween::ColourTween {
+        from: c(0xB8),
+        to: c(0xBE),
+        delay: game_anchors::i16_at(ram, n + 0xC4),
+        duration: game_anchors::i16_at(ram, n + 0xD4),
+        hold: game_anchors::i16_at(ram, n + 0xC6),
+        clock: game_anchors::u16_at(ram, n + 0xC8),
+        flags: 0,
+        push_kind: game_anchors::i16_at(ram, n + 0xD6),
+        push_blend: game_anchors::i16_at(ram, n + 0xD2),
+    })
+}
+
 /// The scripted sprite widget's handler (`FUN_801F7A9C`, PROT 0900).
 pub(super) const SPRITE_TICK: u32 = 0x801F_7A9C;
 

@@ -305,6 +305,9 @@ impl PlayWindowApp {
             if due && let Some(f) = sc.seat_page_mark {
                 self.session.host.world.seat_page_mark_frame(f);
             }
+            if due && let Some(t) = sc.seat_grade {
+                self.session.host.world.seat_held_scene_grade(t);
+            }
             if due && sc.seat_sprite_lead > 0 && !sc.sprite_lead_seated.get() {
                 sc.sprite_lead_seated.set(true);
                 let world = &mut self.session.host.world;

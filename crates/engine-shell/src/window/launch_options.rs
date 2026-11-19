@@ -499,6 +499,11 @@ pub struct ScreenshotConfig {
     /// the capture frame - the vignette record that spawned it ran before
     /// the record the seed resumes.
     pub seat_panel: Option<legaia_engine_effects::screen_fx::PanelWidget>,
+    /// `LEGAIA_SEAT_GRADE=<fields>`: a retail state's live op-`0x34` scene
+    /// grade tween (`legaia_parity::retail_compare::retail_scene_grade`),
+    /// stood on the capture frame (`World::seat_held_scene_grade`) - a grade
+    /// a finished record left, which the entry script does not repaint.
+    pub seat_grade: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
     /// `LEGAIA_SEAT_SPRITE_LEAD=<vsyncs>`: run the screen-effect sprite
     /// widgets that many vsyncs (in frame steps) past the capture frame. The
     /// field gate stands the scene on the displayed frame, the record's wait
@@ -1412,6 +1417,9 @@ impl ScreenshotConfig {
             seat_panel: std::env::var("LEGAIA_SEAT_PANEL")
                 .ok()
                 .and_then(|v| legaia_engine_capture::field_seeds::panel_from_env(&v)),
+            seat_grade: std::env::var("LEGAIA_SEAT_GRADE")
+                .ok()
+                .and_then(|v| legaia_engine_capture::field_seeds::grade_from_env(&v)),
             seat_sprite_lead: std::env::var("LEGAIA_SEAT_SPRITE_LEAD")
                 .ok()
                 .and_then(|v| v.trim().parse().ok())

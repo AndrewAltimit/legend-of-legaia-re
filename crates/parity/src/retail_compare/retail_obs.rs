@@ -314,6 +314,10 @@ pub struct RetailObs {
     /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
     /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
     pub panel: Option<legaia_engine_effects::screen_fx::PanelWidget>,
+    /// The scene's live scripted grade ([`retail_scene_grade`]), handed to
+    /// the image child as `LEGAIA_SEAT_GRADE`, its clock taken back by the
+    /// display lag.
+    pub grade: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
     /// Whether the state holds a live screen-effect sprite widget
     /// ([`retail_has_sprite_widget`], the ending crawl's lines): the image
     /// child runs those on by the display lag (`LEGAIA_SEAT_SPRITE_LEAD`).
@@ -556,6 +560,9 @@ impl RetailObs {
             cue_clut_source: None,
             panel: None,
             sprite_widgets: false,
+            grade: matches!(class, StateClass::Field)
+                .then(|| retail_scene_grade(ram))
+                .flatten(),
             scripted_seats: Vec::new(),
             scripted_headings: Vec::new(),
             movie: (class == StateClass::Cutscene)
@@ -947,6 +954,15 @@ impl RetailObs {
         env.push(("LEGAIA_FIELD_FRAME_COST", "0".to_string()));
         if let Some(f) = self.page_mark {
             env.push(("LEGAIA_SEAT_PAGE_MARK", f.to_string()));
+        }
+        if let Some(mut t) = self.grade {
+            let back =
+                u16::from(self.frame_step()) * crate::retail_compare_battle::DISPLAY_LAG_PASSES;
+            t.clock = (t.clock as i16).saturating_sub(back as i16).max(0) as u16;
+            env.push((
+                "LEGAIA_SEAT_GRADE",
+                legaia_engine_capture::field_seeds::grade_env(&t),
+            ));
         }
         if let Some(p) = self.panel {
             // The display shows the tween two game frames back.

@@ -5,6 +5,53 @@
 
 use legaia_engine_core::world::SeededVramRect;
 
+/// `retail_scene_grade` as `LEGAIA_SEAT_GRADE`: the op-`0x34` tween's
+/// fields as comma-separated integers in [`grade_from_env`]'s order (from,
+/// to, delay, duration, hold, clock, kind, blend).
+pub fn grade_env(t: &legaia_engine_field::actor_colour_tween::ColourTween) -> String {
+    [
+        i32::from(t.from.0),
+        i32::from(t.from.1),
+        i32::from(t.from.2),
+        i32::from(t.to.0),
+        i32::from(t.to.1),
+        i32::from(t.to.2),
+        i32::from(t.delay),
+        i32::from(t.duration),
+        i32::from(t.hold),
+        i32::from(t.clock),
+        i32::from(t.push_kind),
+        i32::from(t.push_blend),
+    ]
+    .iter()
+    .map(|x| x.to_string())
+    .collect::<Vec<_>>()
+    .join(",")
+}
+
+/// Inverse of [`grade_env`].
+pub fn grade_from_env(s: &str) -> Option<legaia_engine_field::actor_colour_tween::ColourTween> {
+    let v: Vec<i32> = s
+        .split(',')
+        .map(|t| t.trim().parse().ok())
+        .collect::<Option<_>>()?;
+    if v.len() != 12 {
+        return None;
+    }
+    let c = |i: usize| (v[i] as u16, v[i + 1] as u16, v[i + 2] as u16);
+    Some(legaia_engine_field::actor_colour_tween::ColourTween {
+        from: c(0),
+        to: c(3),
+        delay: v[6] as i16,
+        duration: v[7] as i16,
+        hold: v[8] as i16,
+        clock: v[9] as u16,
+        flags: 0,
+        push_kind: v[10] as i16,
+        push_blend: v[11] as i16,
+    })
+}
+
 /// `retail_panel` as `LEGAIA_SEAT_PANEL`: the widget's fields as
 /// comma-separated integers in [`panel_from_env`]'s order.
 pub fn panel_env(p: &legaia_engine_effects::screen_fx::PanelWidget) -> String {
