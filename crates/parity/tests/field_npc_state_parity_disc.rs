@@ -169,8 +169,25 @@ const VOZZ_TREE: &str = "mid-beat capture inside the vozz Genesis Tree revival (
 const CREDITS_PCSX: &str = "end-credits vignette capture (PCSX-Redux, entered by the town0e \
      gate band P2[6] after the Village Elder's talk): the credits sequence loads each \
      vignette scene and places its cast for the shot, which a cold entry of the scene does \
-     not run. Open: the engine's own credits path is not yet held to these placements \
-     (edson / edstati3 image rows are low)";
+     not run. The retail-compare states, which replay the vignette record, hold the cast \
+     on retail's marks (npcs 1.0) but two: edson flat 12 ends at the second ArcJump's tile \
+     (0x9A, 0x3A) in the engine where retail holds it at the first's (23, 58), and \
+     edretoin's four walkers trail retail's by 12 on z (open)";
+
+const CONC3_CEREMONY_522: &str = "mid-ceremony capture past the ceremony record's own \
+     clear: conc3's P1[0] sets 0x522 at +0x5E and clears it again only with 0x3E5 and 0x4EE \
+     in one state (73 E5 / 74 EE at +0x60 / +0x67), and the ceremony record P2[10] (flat 90) \
+     clears it at +0xF88 (65 22). Both captures hold P2[10] past that op (pc 0x10C4 and \
+     0x16A2) and 0x3E5 / 0x4EE clear, so the cold entry's +0x5E set is the entry script and \
+     the capture's clear is P2[10]'s (disassembly + capture)";
+
+const TOWN0E_CLIP_ONE_SHOTS: &str = "body one-shots the comparison point precedes: town0e's \
+     P1[0] clears 0x6A9..0x6AC in its install slice (66 A9..66 AC at +0x21..+0x27), and its \
+     per-frame body sets each once its placement's clip cursor reads 0 (76 A9 / CC 07 8C / \
+     56 A9 at +0xDB, the same for flats 0x15 / 0x0E / 0x13), starting that placement's clip \
+     (B4 <id> 30 n). The oracle compares the bank after the install slice alone; the \
+     retail-compare state, which runs the body, holds all four set (flags 1.0) \
+     (disassembly + retail-compare)";
 
 const DREAM_URUDRE: &str = "mid-beat capture inside an Uru Mais dream (urudre1 / urudre2 / \
      urudre3, entered through the hub door objects P0[16] / P0[18] / P0[20] after uru P2[38] \
@@ -1214,44 +1231,38 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
         label: "conc3_ceremony_mist_monsters",
         key: "flag:1314",
-        class: "c",
-        note: "the cold entry sets 0x522 and the mid-ceremony capture holds it clear; \
-               which beat clears it is not traced",
+        class: "b",
+        note: CONC3_CEREMONY_522,
     },
     KnownDivergence {
         label: "conc3_ceremony_noa_box",
         key: "flag:1314",
-        class: "c",
-        note: "the cold entry sets 0x522 and the mid-ceremony capture holds it clear; \
-               which beat clears it is not traced",
+        class: "b",
+        note: CONC3_CEREMONY_522,
     },
     KnownDivergence {
         label: "town0e_epilogue_vahn_alone",
         key: "flag:1705",
-        class: "c",
-        note: "the capture holds 0x6A9..0x6AC set, the cold entry against its bank \
-               clears them; which epilogue beat raises them is not traced",
+        class: "b",
+        note: TOWN0E_CLIP_ONE_SHOTS,
     },
     KnownDivergence {
         label: "town0e_epilogue_vahn_alone",
         key: "flag:1706",
-        class: "c",
-        note: "the capture holds 0x6A9..0x6AC set, the cold entry against its bank \
-               clears them; which epilogue beat raises them is not traced",
+        class: "b",
+        note: TOWN0E_CLIP_ONE_SHOTS,
     },
     KnownDivergence {
         label: "town0e_epilogue_vahn_alone",
         key: "flag:1707",
-        class: "c",
-        note: "the capture holds 0x6A9..0x6AC set, the cold entry against its bank \
-               clears them; which epilogue beat raises them is not traced",
+        class: "b",
+        note: TOWN0E_CLIP_ONE_SHOTS,
     },
     KnownDivergence {
         label: "town0e_epilogue_vahn_alone",
         key: "flag:1708",
-        class: "c",
-        note: "the capture holds 0x6A9..0x6AC set, the cold entry against its bank \
-               clears them; which epilogue beat raises them is not traced",
+        class: "b",
+        note: TOWN0E_CLIP_ONE_SHOTS,
     },
     KnownDivergence {
         label: "urudre2_jette_dialog",
