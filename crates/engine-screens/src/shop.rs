@@ -718,7 +718,9 @@ pub fn gold_shop_screen(
                     })
                     .collect(),
                 ss::ShopListKind::Sell,
-                cursor,
+                // Under the sell stepper the list keeps its page and row
+                // (`MenuRuntime::shop_list_cursor`); the menu cursor reads 0.
+                usize::from(menu.shop_list_cursor()),
                 true,
             )
         }

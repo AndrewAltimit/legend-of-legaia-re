@@ -287,3 +287,51 @@ fn a_sale_returns_the_hand_to_its_row() {
     };
     assert_eq!(runtime.ctx.cursor as usize, expected);
 }
+
+/// Issue #645: the sell list under the stepper stays on the page and row it
+/// was confirmed on. Retail's stepper only idles the kind-4 list (mode `0`),
+/// so window 38 goes on drawing the same page with the hand on the same row;
+/// the menu VM's route into `ShopQuantity` drops `ctx.cursor` to `0`, which
+/// the list must not follow (it showed page 1, row 0, until the stepper
+/// closed).
+#[test]
+fn the_sell_list_keeps_its_page_and_row_under_the_stepper() {
+    let mut world = world_with_gold(0);
+    // Fifteen stacks: window 38 pages eleven rows, so two pages.
+    for id in 0x60..0x6F {
+        world.party.inventory.insert(id, 3);
+    }
+    let mut runtime = MenuRuntime::new("/tmp/legaia-w4a");
+    runtime.open_shop_menu(shop());
+    runtime.tick(&mut world, down());
+    runtime.tick(&mut world, cross());
+    assert_eq!(runtime.ctx.state, MenuState::ShopSell.as_byte());
+    assert_eq!(MenuRuntime::sell_list_rows(&world).len(), 15);
+    // Flip to page two, then step to its third row.
+    runtime.tick(&mut world, right());
+    runtime.tick(&mut world, down());
+    runtime.tick(&mut world, down());
+    let row = runtime.ctx.cursor;
+    assert!(row >= 11, "the hand is on page two (row {row})");
+    assert_eq!(runtime.shop_list_cursor(), row);
+
+    runtime.tick(&mut world, cross());
+    assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
+    for _ in 0..3 {
+        assert!(runtime.quantity_view().is_some());
+        assert_eq!(
+            runtime.shop_list_cursor(),
+            row,
+            "the list under the stepper keeps its row and page"
+        );
+        runtime.tick(&mut world, MenuInput::default());
+    }
+    // Sell one copy: the stack survives, the hand stays put.
+    runtime.tick(&mut world, cross());
+    assert_eq!(runtime.shop_list_cursor(), row);
+    runtime.tick(&mut world, MenuInput::default());
+    assert_eq!(runtime.ctx.state, MenuState::ShopSell.as_byte());
+    assert!(runtime.quantity_view().is_none());
+    assert_eq!(runtime.ctx.cursor, row);
+    assert_eq!(runtime.shop_list_cursor(), row);
+}

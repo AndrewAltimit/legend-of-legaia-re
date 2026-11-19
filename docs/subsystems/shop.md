@@ -197,9 +197,17 @@ still up while `ShopSlides` steps every window out, and the session is dropped
 on the way out of the beat. Neither host draws a caption on `ShopExit`,
 `Closing` or `Deactivate`.
 
-**After a quantity screen** the hand returns to the list row it left - the
-kind-4 list keeps its selection behind the stepper - clamped to the rebuilt
-list after a sale.
+**Under and after a quantity screen** the sell list stays on the row it was
+confirmed on. The sell stepper's phase 0 (`FUN_801DBD94`,
+`0x801DBDE4..0x801DBE40`) sets the kind-4 list mode `_DAT_8007BB94` to `0`
+and writes neither the scroll top `_DAT_8007BB90` nor the selection
+`_DAT_8007BB98`, so the kernel `FUN_80032A44` goes on drawing the same page
+with a static hand on the same row and no page triangles (the hand's mode
+argument and the triangles both key on the browsing flag `s4`,
+`0x80032F5C..0x80032FD4`). When the stepper closes the hand is still there,
+clamped to the rebuilt list after a sale. The menu VM's route into
+`ShopQuantity` drops the engine's menu cursor to `0`, so the composition
+reads the held row through `MenuRuntime::shop_list_cursor`, not the cursor.
 
 ## Window text
 
