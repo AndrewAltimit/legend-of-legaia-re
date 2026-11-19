@@ -1,16 +1,28 @@
 {
   "states": {
+    "battle_gimard_tail_fire_a": {
+      "cast_core_corr": 0.9837,
+      "cast_core_level": 0.0013,
+      "cast_corr": 0.9919,
+      "cast_level": -0.1037
+    },
     "battle_melee_hit_spark": {
       "xa_corr": 0.999,
       "xa_level": -0.1319
     },
     "cort_guilty_cross_mid_cast": {
+      "cast_core_corr": 0.9921,
+      "cast_core_level": 0.0107,
+      "cast_core_steps_corr": 0.9921,
+      "cast_core_steps_level": 0.0149,
       "cast_corr": 0.8594,
-      "cast_level": 0.0163,
+      "cast_level": 0.0165,
       "cast_steps_corr": 0.9813,
-      "cast_steps_level": -0.0078
+      "cast_steps_level": -0.0028
     },
     "cort_mystic_shield_mid_cast": {
+      "cast_core_corr": 0.9978,
+      "cast_core_level": 0.0005,
       "cast_corr": 0.995,
       "cast_level": 0.0032
     },
@@ -27,8 +39,10 @@
       "track_level": 0.0057
     },
     "gilium_summon_mid_cast": {
+      "cast_core_corr": 0.9959,
+      "cast_core_level": 0.0096,
       "cast_corr": 0.9908,
-      "cast_level": 0.029
+      "cast_level": 0.0258
     },
     "karisto_overworld_resident": {
       "track_corr": 0.9981,
@@ -79,8 +93,10 @@
       "track_level": -0.0008
     },
     "nighto_summon_mid_cast": {
-      "cast_corr": 0.9818,
-      "cast_level": -0.0449
+      "cast_core_corr": 0.9984,
+      "cast_core_level": -0.0004,
+      "cast_corr": 0.9825,
+      "cast_level": -0.068
     },
     "noa_levelup_field_post": {
       "track_corr": 0.9994,
@@ -91,6 +107,8 @@
       "track_level": 0.0033
     },
     "orb_summon_mid_cast": {
+      "cast_core_corr": 0.9986,
+      "cast_core_level": -0.0005,
       "cast_corr": 0.9946,
       "cast_level": -0.0059
     },
@@ -121,16 +139,26 @@
       "track_level": 0.0037
     },
     "swordie_summon_mid_cast": {
+      "cast_core_corr": 0.9893,
+      "cast_core_level": 0.0405,
+      "cast_core_steps_corr": 0.995,
+      "cast_core_steps_level": -0.0052,
       "cast_corr": 0.9901,
-      "cast_level": 0.034
+      "cast_level": 0.0345,
+      "cast_steps_corr": 0.9897,
+      "cast_steps_level": -0.0149
     },
     "terra_party_battle": {
       "track_corr": 0.9992,
       "track_level": 0.0004
     },
     "theeder_summon_mid_cast": {
+      "cast_core_corr": 0.9902,
+      "cast_core_level": 0.3293,
+      "cast_core_steps_corr": 0.9919,
+      "cast_core_steps_level": 0.1325,
       "cast_corr": 0.9535,
-      "cast_level": 0.3917,
+      "cast_level": 0.3355,
       "cast_steps_corr": 0.9639,
       "cast_steps_level": 0.1936
     },
@@ -157,20 +185,34 @@
       "track_level": 0.1742
     },
     "zenoir_summon_mid_cast": {
+      "cast_core_corr": 0.9978,
+      "cast_core_level": 0.0434,
+      "cast_core_steps_corr": 0.9978,
+      "cast_core_steps_level": -0.0356,
       "cast_corr": 0.854,
-      "cast_level": 0.0619,
-      "cast_steps_corr": 0.873,
-      "cast_steps_level": -0.2899
+      "cast_level": 0.0553,
+      "cast_steps_corr": 0.904,
+      "cast_steps_level": -0.0147
     },
     "zeto_big_wave_mid_cast": {
+      "cast_core_corr": 0.9982,
+      "cast_core_level": -0.045,
       "cast_corr": 0.9863,
       "cast_level": -0.032
     },
     "zeto_call_wave_mid_cast": {
+      "cast_core_corr": 0.9998,
+      "cast_core_level": -0.0007,
       "cast_corr": 0.9992,
       "cast_level": 0.0061,
       "track_corr": 0.9995,
       "track_level": 5.085
+    },
+    "zora_glare_petrify_pre": {
+      "cast_core_corr": 0.9959,
+      "cast_core_level": -0.0032,
+      "cast_corr": 0.9474,
+      "cast_level": -0.0115
     }
   }
 }
