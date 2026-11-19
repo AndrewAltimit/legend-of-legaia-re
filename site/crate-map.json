@@ -3693,7 +3693,9 @@
   },
   "netplay": {
    "package": "legaia-netplay",
-   "deps": [],
+   "deps": [
+    "release-version"
+   ],
    "dev_deps": [],
    "bins": [
     "legaia-relay"
@@ -4145,6 +4147,7 @@
     "mdt",
     "mednafen",
     "mes",
+    "netplay",
     "patcher",
     "prot",
     "save",
