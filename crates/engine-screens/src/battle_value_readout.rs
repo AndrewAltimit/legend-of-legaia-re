@@ -49,8 +49,14 @@ pub fn battle_value_readout_layout(
     vp: &[f32; 16],
     world_scale: f32,
 ) -> Option<ValueReadoutLayout> {
+    // The anchor rides its body on the drawn phase (`World::battle_draw_shift`,
+    // the smooth battle camera's frame; zero off), so a numeral keeps the
+    // place over the drawn body it holds over the live one.
     battle_value_readout_layout_with(world, hud, vp, world_scale, |slot| {
-        world.battle_readout_trio(usize::from(slot))
+        let d = world.battle_draw_shift(usize::from(slot));
+        world
+            .battle_readout_trio(usize::from(slot))
+            .map(|t| [t[0] + d[0], t[1] + d[1], t[2] + d[2]])
     })
 }
 

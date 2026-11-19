@@ -123,6 +123,15 @@ pub fn effect_billboards(world: &World, view_scale: f32) -> Vec<FxBillboard> {
         .into_iter()
         .map(|mut sprite| {
             if battle {
+                // The smooth battle camera's frame: the child where it stood
+                // on the drawn phase (`World::battle_sprite_shift`), so a
+                // spark riding a body stays on it.
+                if let Some(slot) = sprite.slot {
+                    let d = world.battle_sprite_shift(slot);
+                    for (p, d) in sprite.world_pos.iter_mut().zip(d) {
+                        *p += d;
+                    }
+                }
                 sprite.world_pos = legaia_render_kernels::effect_billboard::battle_billboard_centre(
                     sprite.world_pos,
                 );
@@ -396,7 +405,40 @@ pub fn effect_model_draws(
     part_cam: Option<&PartCameraPose>,
     plan_of: impl Fn(usize) -> Option<BattleActorDrawPlan>,
 ) -> FxModelDraws {
+    effect_model_draws_at(world, part_cam, plan_of, false)
+}
+
+/// [`effect_model_draws`] as the hosts draw them: under the smooth battle
+/// camera each scene part and draw-kind-4 node stands where the drawn phase
+/// puts it (`World::battle_fx_shift`), on the phase the bodies and the
+/// camera draw on. [`effect_model_draws`] keeps the live placement, which is
+/// what the frame census counts.
+pub fn effect_model_draws_drawn(
+    world: &World,
+    part_cam: Option<&PartCameraPose>,
+    plan_of: impl Fn(usize) -> Option<BattleActorDrawPlan>,
+) -> FxModelDraws {
+    effect_model_draws_at(world, part_cam, plan_of, true)
+}
+
+/// A draw's node carried onto the drawn phase.
+fn drawn_node(world: &World, node: Option<u32>, pos: &mut [f32; 3], rot: &mut [f32; 3]) {
+    if let Some((dp, dr)) = node.and_then(|n| world.battle_fx_shift(n)) {
+        for k in 0..3 {
+            pos[k] += dp[k];
+            rot[k] += dr[k];
+        }
+    }
+}
+
+fn effect_model_draws_at(
+    world: &World,
+    part_cam: Option<&PartCameraPose>,
+    plan_of: impl Fn(usize) -> Option<BattleActorDrawPlan>,
+    drawn: bool,
+) -> FxModelDraws {
     let battle = world.mode == SceneMode::Battle;
+    let drawn = drawn && battle;
     let overworld = world.draw_mode() == SceneMode::WorldMap;
     // The passes whose draws keep retail's per-word winding test: battle and
     // the field-shaped ones. The prim dispatcher `FUN_80043390` lowers its
@@ -433,7 +475,10 @@ pub fn effect_model_draws(
             .active_summon_part_draws()
             .into_iter()
             .chain(world.active_move_fx_part_draws())
-            .map(|draw| {
+            .map(|mut draw| {
+                if drawn {
+                    drawn_node(world, draw.node, &mut draw.world_pos, &mut draw.rot);
+                }
                 let model = node(draw.flags_52, draw.world_pos, draw.rot);
                 FxPartModel {
                     model: match part_cam.filter(|_| draw.colour.split_quads) {
@@ -451,6 +496,12 @@ pub fn effect_model_draws(
     out.kind4 = world
         .active_effect_kind4_draws()
         .into_iter()
+        .map(|mut rb| {
+            if drawn {
+                drawn_node(world, rb.node, &mut rb.world_pos, &mut rb.rot);
+            }
+            rb
+        })
         .filter_map(|rb| {
             let model = node(rb.flags_52, rb.world_pos, rb.rot);
             // The draw-kind-4 tail skips a node whose origin stands nearer
@@ -608,6 +659,7 @@ mod tests {
 
     fn sprite() -> EffectSprite {
         EffectSprite {
+            slot: None,
             world_pos: [10.0, -20.0, 30.0],
             size: [8.0, 4.0],
             uv: [16, 32],

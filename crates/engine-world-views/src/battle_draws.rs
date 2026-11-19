@@ -124,6 +124,7 @@ pub fn battle_ground_shadow(
     let shift = world.battle_draw_shift(actor_idx);
     Some(legaia_engine_effects::effect_ribbon::RibbonDraw {
         mesh,
+        node: None,
         world_pos: [
             f32::from(m.world_x.wrapping_add(dx)) + shift[0],
             -BATTLE_SHADOW_DEPTH_LIFT,

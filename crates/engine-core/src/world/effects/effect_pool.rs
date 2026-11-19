@@ -142,6 +142,7 @@ impl World {
             .child_billboards(&self.effect_catalog)
             .into_iter()
             .map(|b| EffectSprite {
+                slot: Some(b.slot),
                 world_pos: [b.pos[0] as f32, b.pos[1] as f32, b.pos[2] as f32],
                 size: [b.world_w.max(1) as f32, b.world_h.max(1) as f32],
                 uv: [b.entry.u as u16, b.entry.v as u16],
@@ -223,14 +224,17 @@ impl World {
             return Vec::new();
         }
         let mut out = Vec::new();
-        let scenes = self
-            .casting
-            .active_summon
-            .iter()
-            .chain(self.casting.active_move_fx.iter())
-            .chain(self.casting.active_action_fx.iter());
-        for scene in scenes {
+        for (key, scene) in self.battle_fx_scenes() {
+            if key == crate::world::battle::FX_SCENE_MYSTIC
+                || key == crate::world::battle::FX_SCENE_STAGE
+            {
+                continue;
+            }
+            let from = out.len();
             out.extend(scene.ribbon_draws_with(&|id| self.shatter_row(id)));
+            for d in &mut out[from..] {
+                d.node = d.node.map(|n| crate::world::battle::fx_node(key, n));
+            }
         }
         out
     }
@@ -420,17 +424,13 @@ impl World {
         &self,
     ) -> Vec<legaia_engine_effects::effect_ribbon::RibbonDraw> {
         let mut out = self.active_effect_ribbons();
-        let scenes = self
-            .casting
-            .active_summon
-            .iter()
-            .chain(self.casting.active_move_fx.iter())
-            .chain(self.casting.active_action_fx.iter())
-            .chain(self.casting.mystic_shield_fx.iter())
-            .chain(self.casting.stage_fx.iter());
-        for scene in scenes {
+        for (key, scene) in self.battle_fx_scenes() {
+            let from = out.len();
             out.extend(scene.sprite_arm_draws_with(&|id| self.shatter_row(id)));
             out.extend(scene.default_arm_draws_with(&|id| self.shatter_row(id)));
+            for d in &mut out[from..] {
+                d.node = d.node.map(|n| crate::world::battle::fx_node(key, n));
+            }
         }
         if self.field_pool_drawn() {
             out.extend(self.ambient_sprite_arm_draws());

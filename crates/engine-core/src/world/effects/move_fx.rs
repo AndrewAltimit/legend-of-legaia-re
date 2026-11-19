@@ -824,14 +824,23 @@ impl World {
     /// playing. Each draw's `model_index` indexes [`Self::global_tmd_pool`]
     /// (the PROT 0871 effect-model library).
     pub fn active_move_fx_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
-        let mut out = self
-            .casting
-            .active_move_fx
-            .as_ref()
-            .map(|s| s.part_draws_with(&|id| self.shatter_row(id)))
-            .unwrap_or_default();
-        for scene in &self.casting.active_action_fx {
-            out.extend(scene.part_draws_with(&|id| self.shatter_row(id)));
+        let mut out = Vec::new();
+        for (key, scene) in self.battle_fx_scenes() {
+            if key == crate::world::battle::FX_SCENE_SUMMON
+                || key == crate::world::battle::FX_SCENE_MYSTIC
+                || key == crate::world::battle::FX_SCENE_STAGE
+            {
+                continue;
+            }
+            out.extend(
+                scene
+                    .part_draws_with(&|id| self.shatter_row(id))
+                    .into_iter()
+                    .map(|mut d| {
+                        d.node = d.node.map(|n| crate::world::battle::fx_node(key, n));
+                        d
+                    }),
+            );
         }
         out
     }

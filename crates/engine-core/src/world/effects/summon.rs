@@ -243,10 +243,17 @@ impl World {
     /// [`Self::global_tmd_pool`]. See [`legaia_engine_effects::summon::SummonScene::part_draws`]
     /// for the faithful-tick / interpreted-transform boundary.
     pub fn active_summon_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
+        let key = crate::world::battle::FX_SCENE_SUMMON;
         self.casting
             .active_summon
             .as_ref()
-            .map(|s| s.part_draws_with(&|id| self.shatter_row(id)))
+            .map(|s| {
+                let mut out = s.part_draws_with(&|id| self.shatter_row(id));
+                for d in &mut out {
+                    d.node = d.node.map(|n| crate::world::battle::fx_node(key, n));
+                }
+                out
+            })
             .unwrap_or_default()
     }
 

@@ -200,6 +200,11 @@ pub const RETAIL_CHANNEL_DELTA: u16 = 8;
 pub struct SummonPartDraw {
     /// Index into [`crate::world::World::global_tmd_pool`].
     pub model_index: usize,
+    /// The node this draw comes from: the part's index in its scene, with
+    /// the scene's own key above bit 16 once a world accessor tags it. A
+    /// draw-side handle only (the smooth battle camera's lookup of where the
+    /// node stood a frame ago); `None` for a draw no scene part made.
+    pub node: Option<u32>,
     /// World position (move-VM `world_x/y/z`).
     pub world_pos: [f32; 3],
     /// Euler XYZ rotation in radians (from the move-VM rotation banks).

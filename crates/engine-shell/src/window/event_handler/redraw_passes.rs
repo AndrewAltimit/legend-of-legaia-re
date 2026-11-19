@@ -722,10 +722,11 @@ impl PlayWindowApp {
             return (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         }
         let world = &self.session.host.world;
-        let lists =
-            legaia_engine_world_views::effect_draws::effect_model_draws(world, part_cam, |i| {
-                self.body_draw_plan(i)
-            });
+        let lists = legaia_engine_world_views::effect_draws::effect_model_draws_drawn(
+            world,
+            part_cam,
+            |i| self.body_draw_plan(i),
+        );
         let upload = |vmesh: &legaia_tmd::mesh::VramMesh, what: &str| {
             if vmesh.indices.is_empty() {
                 return None;

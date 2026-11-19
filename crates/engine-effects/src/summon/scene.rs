@@ -514,11 +514,13 @@ impl SummonScene {
         // kept drawing the fully grown flame until the tunnel parts ended.
         self.parts
             .iter()
-            .filter(|p| self.drawn(p) && is_mesh_sel(p.model_sel))
-            .map(|p| {
+            .enumerate()
+            .filter(|(_, p)| self.drawn(p) && is_mesh_sel(p.model_sel))
+            .map(|(i, p)| {
                 let s = &p.state;
                 SummonPartDraw {
                     model_index: self.model_base.wrapping_add(p.model_sel as usize),
+                    node: Some(i as u32),
                     world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
                     rot: crate::effect_ribbon::node_rotation(s),
                     flags_52: s.field_52,
@@ -550,8 +552,9 @@ impl SummonScene {
     ) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.parts
             .iter()
-            .filter(|p| self.drawn(p))
-            .filter_map(|p| {
+            .enumerate()
+            .filter(|(_, p)| self.drawn(p))
+            .filter_map(|(i, p)| {
                 let s = &p.state;
                 let mut mesh = crate::effect_ribbon::ribbon_mesh_for_actor(s)?;
                 // The ribbon is the node's model too: the model draw's
@@ -563,6 +566,7 @@ impl SummonScene {
                 );
                 (!mesh.indices.is_empty()).then(|| crate::effect_ribbon::RibbonDraw {
                     mesh,
+                    node: Some(i as u32),
                     world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
                     rot: crate::effect_ribbon::node_rotation(s),
                     flags_52: s.field_52,
@@ -595,12 +599,18 @@ impl SummonScene {
     ) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.parts
             .iter()
-            .filter(|p| self.drawn(p))
-            .flat_map(|p| {
+            .enumerate()
+            .filter(|(_, p)| self.drawn(p))
+            .flat_map(|(i, p)| {
                 crate::effect_sprite_arm::sprite_arm_draws_row(
                     &p.state,
                     row_of(p.state.face_rotation),
                 )
+                .into_iter()
+                .map(move |mut d| {
+                    d.node = Some(i as u32);
+                    d
+                })
             })
             .collect()
     }
@@ -622,12 +632,17 @@ impl SummonScene {
     ) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.parts
             .iter()
-            .filter(|p| self.drawn(p))
-            .filter_map(|p| {
+            .enumerate()
+            .filter(|(_, p)| self.drawn(p))
+            .filter_map(|(i, p)| {
                 crate::effect_default_arm::default_arm_draw_row(
                     &p.state,
                     row_of(p.state.face_rotation),
                 )
+                .map(|mut d| {
+                    d.node = Some(i as u32);
+                    d
+                })
             })
             .collect()
     }

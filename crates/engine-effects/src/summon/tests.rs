@@ -541,6 +541,7 @@ fn install_part_snapshot_reseats_parts_by_record() {
 fn colour_render_state_packs_the_blend_word_and_scale() {
     let draw = SummonPartDraw {
         model_index: 0,
+        node: None,
         world_pos: [0.0; 3],
         rot: [0.0; 3],
         flags_52: 0,

@@ -178,6 +178,10 @@ pub struct ChildSprite {
 /// neutral).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChildBillboard {
+    /// The child's slot in the pool (`Pool::children`): a draw-side handle
+    /// (the smooth battle camera's lookup of where the child stood a frame
+    /// ago).
+    pub slot: u16,
     /// World position, integer units (the pool's 16.8 coordinates `>> 8`,
     /// truncated to i16 exactly as the retail projection input is).
     pub pos: [i16; 3],
@@ -824,7 +828,7 @@ impl Pool {
     pub fn child_billboards(&self, catalog: &EffectCatalog) -> Vec<ChildBillboard> {
         let sprite_scale = self.head.sprite_scale as i16 as i32;
         let mut out = Vec::new();
-        for c in &self.children {
+        for (slot, c) in self.children.iter().enumerate() {
             if c.frame_count == 0 {
                 continue;
             }
@@ -838,6 +842,7 @@ impl Pool {
                 continue;
             };
             out.push(ChildBillboard {
+                slot: slot as u16,
                 // 16.8 -> integer world units; the low 16 bits of the
                 // shifted value, exactly as retail truncates for projection.
                 pos: [

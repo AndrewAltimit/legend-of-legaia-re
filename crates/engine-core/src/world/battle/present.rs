@@ -74,6 +74,45 @@ struct PresentSnap {
     roots: Vec<Option<Root>>,
     /// Every actor slot's pose (`Actor::pose_frame`), empty for none.
     poses: Vec<Vec<Bone>>,
+    /// Every live effect node, sorted by key ([`FxRec`]).
+    fx: Vec<FxRec>,
+}
+
+/// One live effect node as the draw saw it: a move-VM scene part
+/// ([`fx_node`]) or an effect-pool child ([`FX_POOL_CHILD`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FxRec {
+    key: u32,
+    /// Its identity: the part's model selector, or the child's anim.
+    kind: i32,
+    /// Its age, which only climbs while the node lives: the scene's frame
+    /// counter, or the child's frame cursor. A lower age under the same key
+    /// is a new node in a reused slot.
+    age: u32,
+    pos: [f32; 3],
+    /// Rotation trio, 12-bit units (`+0x24` / `+0x26` / `+0x28`).
+    rot: [f32; 3],
+}
+
+/// The scene keys [`fx_node`] tags a part's node with: the summon creature's
+/// scene, the move-FX scene, the Mystic shield's, a stage module's, and each
+/// action-FX scene from [`FX_SCENE_ACTION`] on, in the order the draws list
+/// them.
+pub const FX_SCENE_SUMMON: u32 = 1;
+/// See [`FX_SCENE_SUMMON`].
+pub const FX_SCENE_MOVE: u32 = 2;
+/// See [`FX_SCENE_SUMMON`].
+pub const FX_SCENE_MYSTIC: u32 = 3;
+/// See [`FX_SCENE_SUMMON`].
+pub const FX_SCENE_STAGE: u32 = 4;
+/// See [`FX_SCENE_SUMMON`].
+pub const FX_SCENE_ACTION: u32 = 0x10;
+/// The key an effect-pool child's node carries above its slot.
+pub const FX_POOL_CHILD: u32 = 0xFFFF;
+
+/// A scene part's node: the scene key over the part's index.
+pub fn fx_node(scene: u32, part: u32) -> u32 {
+    (scene << 16) | (part & 0xFFFF)
 }
 
 /// The smooth battle camera's two states and the phase between them
@@ -133,6 +172,8 @@ impl BattlePresent {
         self.cur.roots.clear();
         self.prev.poses.clear();
         self.cur.poses.clear();
+        self.prev.fx.clear();
+        self.cur.fx.clear();
         self.drawn.clear();
     }
 
@@ -232,6 +273,42 @@ impl World {
                 out.extend_from_slice(&p.bone_outputs);
             }
         }
+        bp.cur.fx.clear();
+        for (key, scene) in self.battle_fx_scenes() {
+            let age = scene.frame;
+            bp.cur.fx.extend(
+                scene
+                    .parts
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| !p.finished)
+                    .map(|(i, p)| {
+                        let s = &p.state;
+                        FxRec {
+                            key: fx_node(key, i as u32),
+                            kind: i32::from(p.model_sel),
+                            age,
+                            pos: [s.world_x, s.world_y, s.world_z].map(f32::from),
+                            rot: [s.render_24, s.render_26, s.render_28].map(f32::from),
+                        }
+                    }),
+            );
+        }
+        bp.cur.fx.extend(
+            self.effect_pool
+                .children
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| c.frame_count != 0)
+                .map(|(i, c)| FxRec {
+                    key: fx_node(FX_POOL_CHILD, i as u32),
+                    kind: i32::from(c.anim_id),
+                    age: u32::from(c.frame_cursor),
+                    pos: c.pos.map(|v| f32::from((v >> 8) as i16)),
+                    rot: [0.0; 3],
+                }),
+        );
+        bp.cur.fx.sort_unstable_by_key(|r| r.key);
         if fresh {
             bp.prev.clone_from(&bp.cur);
         } else {
@@ -379,6 +456,60 @@ impl World {
         let drawn = self.battle_present.drawn.get(slot)?.as_ref()?;
         let live = self.actors.get(slot)?.pose_frame.as_ref()?;
         (drawn.bone_outputs.len() == live.bone_outputs.len()).then_some(drawn)
+    }
+}
+
+impl World {
+    /// The move-VM scenes whose parts the battle draws, keyed for
+    /// [`fx_node`], in the order the draw lists walk them.
+    pub(crate) fn battle_fx_scenes(
+        &self,
+    ) -> impl Iterator<Item = (u32, &legaia_engine_effects::summon::SummonScene)> {
+        let c = &self.casting;
+        c.active_summon
+            .iter()
+            .map(|s| (FX_SCENE_SUMMON, s))
+            .chain(c.active_move_fx.iter().map(|s| (FX_SCENE_MOVE, s)))
+            .chain(
+                c.active_action_fx
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| (FX_SCENE_ACTION + i as u32, s)),
+            )
+            .chain(c.mystic_shield_fx.iter().map(|s| (FX_SCENE_MYSTIC, s)))
+            .chain(c.stage_fx.iter().map(|s| (FX_SCENE_STAGE, s)))
+    }
+
+    /// How far the smooth battle camera carries effect node `node` (a draw's
+    /// `node`, [`fx_node`]) off its live placement this vsync: `(position
+    /// shift, rotation shift in radians)`, both added to the draw's own. A
+    /// node on the same phase as the bodies and the camera stays on the body
+    /// it rides. `None` when it draws live: off, no frame behind, a node
+    /// born this frame (it draws where it spawned), a new node in a reused
+    /// slot, or one moved [`SNAP_ROOT`] in a frame. A rotation turned
+    /// [`SNAP_PART_ANGLE`] lands; the position still steps.
+    pub fn battle_fx_shift(&self, node: u32) -> Option<([f32; 3], [f32; 3])> {
+        let bp = &self.battle_present;
+        let lag = bp.lag()?;
+        let find = |v: &[FxRec]| v.binary_search_by_key(&node, |r| r.key).ok().map(|i| v[i]);
+        let (p, c) = (find(&bp.prev.fx)?, find(&bp.cur.fx)?);
+        if p.kind != c.kind || c.age < p.age || dist(&p.pos, &c.pos) >= SNAP_ROOT {
+            return None;
+        }
+        let dr: [f32; 3] = std::array::from_fn(|k| wrap_angle(c.rot[k] - p.rot[k]));
+        let turn = if dr.iter().any(|d| d.abs() >= SNAP_PART_ANGLE as f32) {
+            [0.0; 3]
+        } else {
+            dr.map(|d| -lag * d * std::f32::consts::TAU / 4096.0)
+        };
+        Some((std::array::from_fn(|k| -lag * (c.pos[k] - p.pos[k])), turn))
+    }
+
+    /// [`Self::battle_fx_shift`]'s position half for an effect-pool child
+    /// in slot `slot`, `[0.0; 3]` when it draws live.
+    pub fn battle_sprite_shift(&self, slot: u16) -> [f32; 3] {
+        self.battle_fx_shift(fx_node(FX_POOL_CHILD, u32::from(slot)))
+            .map_or([0.0; 3], |(d, _)| d)
     }
 }
 
@@ -561,6 +692,39 @@ mod tests {
             w.battle_draw_pose_frame(0).is_none(),
             "the next frame opens on it"
         );
+    }
+
+    /// An effect-pool child rides the drawn phase: one that moved steps
+    /// with the bodies, one born this frame draws where it spawned, and a
+    /// new child in a reused slot does not inherit the old one's path.
+    #[test]
+    fn effect_children_step_with_the_camera() {
+        let mut w = battle_world();
+        let child = |w: &mut World, x: i32, cursor: u8| {
+            let c = &mut w.effect_pool.children[0];
+            c.frame_count = 8;
+            c.anim_id = 3;
+            c.frame_cursor = cursor;
+            c.pos = [x << 8, 0, 0];
+        };
+        child(&mut w, 100, 2);
+        w.observe_battle_present();
+        while w.battle_present.phase > 0.0 {
+            vsync(&mut w);
+        }
+        for _ in 0..3 {
+            vsync(&mut w);
+        }
+        child(&mut w, 130, 3);
+        w.observe_battle_present();
+        vsync(&mut w);
+        let d = w.battle_sprite_shift(0);
+        assert!((d[0] + 20.0).abs() < 1e-3, "{d:?}");
+        assert_eq!(w.battle_sprite_shift(1), [0.0; 3], "no child there");
+        // A new child in the same slot (its cursor back at the start).
+        child(&mut w, 400, 0);
+        w.observe_battle_present();
+        assert_eq!(w.battle_sprite_shift(0), [0.0; 3]);
     }
 
     /// Retail mode, the per-vsync cadence and the field draw the live state.

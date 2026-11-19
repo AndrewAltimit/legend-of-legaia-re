@@ -191,6 +191,9 @@ pub struct EffectMarker {
 /// REF: FUN_801E0088
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EffectSprite {
+    /// The pool child this sprite draws (`ChildBillboard::slot`), `None`
+    /// for a sprite no pool child made: the smooth battle camera's handle.
+    pub slot: Option<u16>,
     /// Child world position in world units (the pool's 16.8 coordinates
     /// `>> 8`, exactly as the retail projection input truncates).
     pub world_pos: [f32; 3],
@@ -926,6 +929,7 @@ mod effect_sprite_tests {
     fn packet_tsb_forces_the_prim_semi_enable() {
         for page in [0x25u16, 0x66, 0x00, 0xFF] {
             let s = EffectSprite {
+                slot: None,
                 world_pos: [0.0; 3],
                 size: [1.0; 2],
                 uv: [0; 2],
