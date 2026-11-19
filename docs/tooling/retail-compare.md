@@ -314,12 +314,12 @@ records the label as `pending_scene` in the detail
 (`RetailObs::settle_on_loaded_scene`;
 [the arrival states](#arrival-states-are-captured-before-the-town-runs)).
 Such a state holds the outgoing scene's records, which the engine leaves
-with the change the gate's resume replays, so its script gate keeps the
-resume and ends at the settle window rather than the deadline: the still is
-the settle sample and a [walk film](walk-film.md) runs on from there.
-`doman_arrival_from_korb2` holds map03's flat `49` on its idle `26` at
-`+0x2E`, a record the engine's map03 never runs as a context; the seed ran
-to the deadline and no film ever started behind it.
+with the change the gate's resume replays. Under a [walk film](walk-film.md)
+its script gate keeps the resume and ends at the settle window, where the
+film runs on from: `doman_arrival_from_korb2` holds map03's flat `49` on its
+idle `26` at `+0x2E`, a record the engine's map03 never runs as a context,
+so the seed ran to the deadline and no film ever started behind it. A still
+keeps the deadline.
 
 ## Retail observables
 
