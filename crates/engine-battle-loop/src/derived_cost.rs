@@ -3,7 +3,7 @@
 //! an instruction, one a data access, the GTE and GPU free) of one unit of
 //! retail work, counted in `retail-exec` by resuming library battle states
 //! and timing each part of their frames (`psx_retail_exec::battle_cost`).
-//! Priced under `WorldToggles::derived_frame_cost` (`derived_cost::frame_hblanks`, off by default); the fitted census line
+//! Priced under `WorldToggles::battle_derived_frame_cost` (`derived_cost::frame_hblanks`, off by default); the fitted census line
 //! ([`crate::frame_clock::linked_frame_work`]) stays the model the engine
 //! prices with. `docs/tooling/retail-frame-cost.md` ("Battle frames by
 //! unit") has the method and the residual check, and

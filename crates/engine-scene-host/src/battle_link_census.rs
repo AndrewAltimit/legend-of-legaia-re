@@ -256,7 +256,7 @@ fn casts_shadow(
 pub struct LinkScratch {
     clip: Vec<[f32; 3]>,
     /// Decide each primitive by the leaves' own rules ([`tally_retail`]):
-    /// under `WorldToggles::derived_frame_cost` or
+    /// under `WorldToggles::battle_derived_frame_cost` or
     /// `WorldToggles::battle_census_retail_culls`, set each count.
     retail_rules: bool,
     /// Each drawn body's seat and tally this count, for
@@ -670,7 +670,7 @@ pub fn battle_link_count(
     }
     let mut units = DerivedUnits::default();
     scratch.retail_rules =
-        world.toggles.derived_frame_cost || world.toggles.battle_census_retail_culls;
+        world.toggles.battle_derived_frame_cost || world.toggles.battle_census_retail_culls;
     scratch.bodies.clear();
     let pose = world.battle_cam_pose();
     // The camera the window composes, `cam` (the focus on the scaled stage);
@@ -936,7 +936,7 @@ impl crate::scene_host::SceneHost {
     /// logs it.
     pub fn refresh_battle_link_census(&mut self) {
         if !self.world.toggles.battle_poly_frame_cost
-            && !self.world.toggles.derived_frame_cost
+            && !self.world.toggles.battle_derived_frame_cost
             && !census_diag()
             && std::env::var_os("LEGAIA_DIAG_CENSUS_FATES").is_none()
         {

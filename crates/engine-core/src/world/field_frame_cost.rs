@@ -1070,7 +1070,12 @@ mod tests {
                     verts: 500,
                     quads: 500,
                     lit: 0,
-                    mesh: MeshCost::default(),
+                    mesh: MeshCost {
+                        objects: 1,
+                        groups: 20,
+                        kinds: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 500],
+                        ..MeshCost::default()
+                    },
                 })
                 .collect(),
             ..FieldCostTable::default()
@@ -1108,14 +1113,15 @@ mod tests {
         assert_eq!(w.clock.frame_cost, Some(model));
     }
 
-    /// The derived per-unit table prices the frame only under its toggle;
-    /// down (the default) the fitted weights do.
+    /// The derived per-unit table prices the frame under its toggle (the
+    /// default); down, the fitted weights do.
     #[test]
-    fn the_derived_model_prices_only_when_raised() {
+    fn the_toggle_picks_the_derived_or_fitted_model() {
         let mut w = World::new();
         w.mode = legaia_engine_mode::mode::SceneMode::Field;
         w.toggles.field_frame_cost = true;
-        assert!(!w.toggles.derived_frame_cost, "off by default");
+        assert!(w.toggles.derived_frame_cost, "on by default");
+        w.toggles.derived_frame_cost = false;
         w.install_field_cost_table(Some(FieldCostTable::default()));
         w.npcs.cull_view = Some(town01_view());
         w.price_field_frame();

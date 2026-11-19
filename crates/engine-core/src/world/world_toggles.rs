@@ -200,26 +200,32 @@ pub struct WorldToggles {
     /// way, so the default keeps the flat price. The native session raises
     /// it from `LEGAIA_BATTLE_WALK_COST=1`.
     pub battle_effect_walk_cost: bool,
-    /// Opt-in, off by default: the frame cost priced from the derived
-    /// per-unit table, retail's own instruction counts on PCSX-Redux's
-    /// clock, in place of the fitted lines. In battle the census's units
+    /// On by default: a field frame's cost priced from the derived per-unit
+    /// table, retail's own instruction counts on PCSX-Redux's clock
+    /// ([`field_frame_units::derived_field_frame_cost`](super::field_frame_units::derived_field_frame_cost)),
+    /// with the interrupt term, in place of the fitted weights
+    /// ([`field_frame_cost::field_frame_cost`](super::field_frame_cost::field_frame_cost)),
+    /// which it matches or beats on every field frame-cost gate. Off runs the
+    /// fitted model. A timing model, not a fidelity knob, so
+    /// [`Self::pin_retail`] leaves it alone; the native session takes
+    /// `LEGAIA_DERIVED_FRAME_COST=0` / `=1` either way.
+    pub derived_frame_cost: bool,
+    /// Opt-in, off by default: a battle frame's cost priced from the derived
+    /// table in place of the fitted census lines. The census's units
     /// (`legaia_engine_battle_loop::derived_cost::DerivedUnits`) are priced
     /// with the table, the move-VM part ticks, the walker's branches and the
     /// `"ME"` decodes beside them, with the vblank interrupts the work spans
-    /// (`docs/subsystems/battle-stage-camera.md`, "The derived table"). In
-    /// the field the frame is priced from
-    /// [`field_frame_units::derived_field_frame_cost`](super::field_frame_units::derived_field_frame_cost)
-    /// in place of the fitted weights, with the interrupt term. A timing
-    /// model, not a fidelity knob, so [`Self::pin_retail`] leaves it alone;
-    /// the native session raises it from `LEGAIA_DERIVED_FRAME_COST=1`.
-    pub derived_frame_cost: bool,
+    /// (`docs/subsystems/battle-stage-camera.md`, "The derived table"). A
+    /// timing model, so [`Self::pin_retail`] leaves it alone; the native
+    /// session raises it from `LEGAIA_BATTLE_DERIVED_FRAME_COST=1`.
+    pub battle_derived_frame_cost: bool,
     /// Opt-in, off by default: the battle census decides each primitive by
     /// the dispatcher leaves' own rules on the GTE's integer corners (the
     /// winding test with its zero kept, the near floor on `OTZ`, the
     /// off-screen test where the leaf runs it, bodies included) in place of
     /// the float rules the fitted census line was fitted on. Always on under
-    /// [`Self::derived_frame_cost`]; this raises it on the census line alone
-    /// (`LEGAIA_CENSUS_RETAIL_CULLS=1` in the native session).
+    /// [`Self::battle_derived_frame_cost`]; this raises it on the census line
+    /// alone (`LEGAIA_CENSUS_RETAIL_CULLS=1` in the native session).
     pub battle_census_retail_culls: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
     /// CD-XA voice clip plays: PCSX-Redux's by default, where the clip player's
@@ -627,7 +633,8 @@ impl WorldToggles {
             battle_me_decode_cost: false,
             battle_arts_shout_cd: false,
             battle_effect_walk_cost: false,
-            derived_frame_cost: false,
+            derived_frame_cost: true,
+            battle_derived_frame_cost: false,
             battle_census_retail_culls: false,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: true,

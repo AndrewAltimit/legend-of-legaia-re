@@ -1977,8 +1977,8 @@ recordings' measurement. Grade `capture`.
 
 <a id="the-derived-pricing"></a>
 
-**The derived pricing.** `WorldToggles::derived_frame_cost` (`LEGAIA_DERIVED_FRAME_COST=1`,
-off by default) prices a census-priced battle frame from the derived table instead of the
+**The derived pricing.** `WorldToggles::battle_derived_frame_cost` (`LEGAIA_BATTLE_DERIVED_FRAME_COST=1`,
+off by default; the field's own `derived_frame_cost` is on) prices a census-priced battle frame from the derived table instead of the
 fitted line. The census counts the frame by the table's units as it counts its links
 (`LinkCount::units`, `World::note_derived_units`), and `derived_cost::frame_hblanks` prices
 them on PCSX-Redux's clock (`2146.3` cycles an hblank) with the vblank interrupts the work
@@ -2105,7 +2105,7 @@ hblanks under. So it stays opt-in.
 
 **The three opt-in terms under the derived pricing.** The `"ME"` decode and the walker's
 branches are the derived pricing's own terms (`derived_cost::me_decode_cycles`,
-`derived_cost::walker_cycles`) and run under `derived_frame_cost` whatever the two
+`derived_cost::walker_cycles`) and run under `battle_derived_frame_cost` whatever the two
 toggles say; the toggles keep their meaning on the census line. Taken out of the derived
 pricing, the decode moves the arts films from `.9457` to `.9462`, camera `1.78` to
 `1.38`, with a cue lost and the step agreement `.948` to `.945`: the trade the census line

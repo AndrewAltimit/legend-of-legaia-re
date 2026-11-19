@@ -145,7 +145,10 @@ impl World {
                 // Under the derived pricing the census's units are priced
                 // from retail's instruction counts instead, the wash an
                 // instruction count already.
-                match (self.toggles.derived_frame_cost, self.battle.derived_units) {
+                match (
+                    self.toggles.battle_derived_frame_cost,
+                    self.battle.derived_units,
+                ) {
                     (true, Some(units)) => self.derived_battle_work(&units, wash),
                     _ => w,
                 }
@@ -161,7 +164,7 @@ impl World {
         // The art commits' `"ME"` decodes, which link nothing. The derived
         // work holds its own (`derived_battle_work`).
         let me_decode = std::mem::take(&mut self.battle.me_decode_work);
-        let derived = self.toggles.derived_frame_cost && self.battle.derived_units.is_some();
+        let derived = self.toggles.battle_derived_frame_cost && self.battle.derived_units.is_some();
         self.battle.me_decode_cycles = 0;
         let poly = poly.map(|w| {
             if derived {
@@ -2938,7 +2941,7 @@ mod tests {
             linked_frame_work(2600, true),
             "off: the census"
         );
-        w.toggles.derived_frame_cost = true;
+        w.toggles.battle_derived_frame_cost = true;
         w.push_frame_cost(None);
         let want = dc::frame_hblanks(&units, 0, &EffectWalkCounts::default(), 0);
         assert_eq!(w.battle.frame_work, want);

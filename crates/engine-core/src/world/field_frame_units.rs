@@ -12,8 +12,8 @@
 //! holds them against the runner.
 //!
 //! [`derived_field_frame_cost`] prices a field frame from these figures,
-//! behind `WorldToggles::derived_frame_cost` (off by default: the fitted
-//! `world::field_frame_cost` stays the model).
+//! under `WorldToggles::derived_frame_cost` (on by default; down, the fitted
+//! `world::field_frame_cost` prices it).
 
 /// `(unit, cycles x 10, repetitions the pool saw)`. Unit names are
 /// `pass.loop[class]` (a loop iteration by the marks it passed),

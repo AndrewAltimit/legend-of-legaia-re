@@ -211,13 +211,19 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             "LEGAIA_BATTLE_ARTS_SHOUT_CD",
             &mut toggles.battle_arts_shout_cd,
         ),
-        // The derived per-unit frame cost (`WorldToggles::derived_frame_cost`).
+        // The derived per-unit frame cost: the field's
+        // (`WorldToggles::derived_frame_cost`, on by default) and the
+        // battle's (`WorldToggles::battle_derived_frame_cost`, off).
         ("LEGAIA_DERIVED_FRAME_COST", &mut toggles.derived_frame_cost),
         // The census on the leaves' own cull rules alone
         // (`WorldToggles::battle_census_retail_culls`).
         (
             "LEGAIA_CENSUS_RETAIL_CULLS",
             &mut toggles.battle_census_retail_culls,
+        ),
+        (
+            "LEGAIA_BATTLE_DERIVED_FRAME_COST",
+            &mut toggles.battle_derived_frame_cost,
         ),
         (
             "LEGAIA_FIELD_COST_PLACED_WALK",

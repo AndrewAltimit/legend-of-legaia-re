@@ -1604,7 +1604,7 @@ impl World {
         // SpecialStarter's voice.
         // REF: FUN_8002B28C
         if q >= 0x10
-            && (self.toggles.battle_me_decode_cost || self.toggles.derived_frame_cost)
+            && (self.toggles.battle_me_decode_cost || self.toggles.battle_derived_frame_cost)
             && self.actors[i].battle_monster_id.is_none()
             && let Some(c) = clip.as_ref()
         {

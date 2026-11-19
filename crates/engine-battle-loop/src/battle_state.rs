@@ -947,7 +947,7 @@ pub struct BattleState {
     pub me_decode_cycles: u64,
     /// The census's count of the frame by the derived pricing's units
     /// (`World::note_derived_units`), read while
-    /// `WorldToggles::derived_frame_cost` is up. `None` before the first.
+    /// `WorldToggles::battle_derived_frame_cost` is up. `None` before the first.
     pub derived_units: Option<crate::derived_cost::DerivedUnits>,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
