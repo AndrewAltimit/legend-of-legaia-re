@@ -566,6 +566,70 @@ pub const LINKED_WORK_MILLI: u32 = 200;
 /// `3`, where every retail frame there runs step `4` five vsyncs long.
 pub const SCANLINE_WASH_WORK: u16 = 60;
 
+/// Packets the battle template's tick `FUN_8004DA00` links on a frame with
+/// no command surface up: the HUD's name plates, bars and readouts. The
+/// census line's base ([`LINKED_FRAME_BASE`]) was fitted on such frames, so
+/// it carries them. `retail-exec battle-cost` on `battle_rugi_barra_strike`
+/// (a full party's strike, no surface).
+pub const HUD_PACKETS_NO_SURFACE: u16 = 76;
+
+/// Packets `FUN_8004DA00` links while the command flow `ctx[+0x06]` stands
+/// on `flow`: the HUD and the surface's own windows, rows and cursors. Read
+/// with `retail-exec battle-cost --mode parts` (interrupts out) on the
+/// library's full-party menu states of the Gaza and `rugi` fights:
+///
+/// | Flow | Surface | Packets |
+/// |---|---|---:|
+/// | `0x1E` | the round prompt | `152..156` |
+/// | `0x28` | the command ring | `281` |
+/// | `0x32` | the run confirm | `184` |
+/// | `0x3C` / `0x46` | the item / magic window | `518` / `501` |
+/// | `0x50` | the arts entry | `278` |
+/// | `0x5A` | the target cursor | `137..145` |
+/// | `0x5C` | the magic window's enemy target | `412` |
+/// | `0x64` / `0x66` | the item window's ally target / all-allies confirm | `501` / `456` |
+/// | `0x6E` | the commit confirm | `209` |
+/// | `0x78` | the Auto / Command prompt | `162` |
+///
+/// The other target sub-cursors keep their window on screen and take its
+/// nearest measured row (`0x5B` the item target's, `0x5D` the all-allies
+/// confirm's, `0x5E` / `0x65` / `0x67` the magic target's). Anything else is
+/// the HUD alone.
+pub const fn surface_hud_packets(flow: u8) -> u16 {
+    match flow {
+        0x1E => 155,
+        0x28 => 281,
+        0x32 => 184,
+        0x3C => 518,
+        0x46 => 501,
+        0x50 => 278,
+        0x5A => 141,
+        0x5B | 0x64 => 501,
+        0x5D | 0x66 => 456,
+        0x5C | 0x5E | 0x65 | 0x67 => 412,
+        0x6E => 209,
+        0x78 => 162,
+        _ => HUD_PACKETS_NO_SURFACE,
+    }
+}
+
+/// Hblanks a command surface adds to a battle frame over the census line,
+/// whose base holds the HUD of a frame with no surface: its packets over
+/// [`HUD_PACKETS_NO_SURFACE`] at the template tick's cost a packet
+/// ([`TEMPLATE_TICK_PACKET_CYCLES`](crate::derived_cost::TEMPLATE_TICK_PACKET_CYCLES)).
+/// The item window adds `54`, the round prompt `10`. The command flow
+/// `FUN_801D0748` itself runs about `2000` cycles a frame (one hblank), and
+/// is in the base.
+pub const fn surface_frame_work(flow: u8) -> u16 {
+    let packets = surface_hud_packets(flow);
+    if packets <= HUD_PACKETS_NO_SURFACE {
+        return 0;
+    }
+    let cycles = (packets - HUD_PACKETS_NO_SURFACE) as u32
+        * crate::derived_cost::TEMPLATE_TICK_PACKET_CYCLES;
+    ((cycles + CYCLES_PER_HBLANK / 2) / CYCLES_PER_HBLANK) as u16
+}
+
 /// Hblanks a floor-clipped body's full-TMD walk costs a primitive of its
 /// drawn objects, over what the census prices its linked primitives at.
 /// A sinking body (`+0x42` non-zero, stored beside the sink's height at
@@ -1268,6 +1332,24 @@ mod tests {
 #[cfg(test)]
 mod frame_cost_tests {
     use super::*;
+
+    /// A command surface's packets price over the HUD the census base holds:
+    /// the item window's `518` against the bare HUD's `76` is the `54`
+    /// hblanks `retail-exec battle-cost` reads between the template tick's
+    /// cycles on `battle_item_window_gaza2_retail` and on
+    /// `battle_rugi_barra_strike` (`137893` against `18816`).
+    #[test]
+    fn a_surfaces_packets_price_over_the_bare_hud() {
+        assert_eq!(surface_frame_work(0x00), 0);
+        assert_eq!(surface_frame_work(0xFF), 0);
+        assert_eq!(surface_frame_work(0x3C), 54);
+        assert_eq!(surface_frame_work(0x1E), 10);
+        assert_eq!(surface_frame_work(0x50), 25);
+        assert_eq!(
+            surface_frame_work(0x3C),
+            ((137_893u32 - 18_816) / 2172) as u16
+        );
+    }
 
     /// A ghost costs its body's polygon load: Caruban's two ghosts take a
     /// lone Vahn's breath frame (`0x2B`) to the step-`3` edge, and the

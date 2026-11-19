@@ -204,6 +204,10 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             &mut toggles.battle_poly_frame_cost,
         ),
         (
+            "LEGAIA_BATTLE_SURFACE_COST",
+            &mut toggles.battle_surface_frame_cost,
+        ),
+        (
             "LEGAIA_BATTLE_ME_DECODE",
             &mut toggles.battle_me_decode_cost,
         ),

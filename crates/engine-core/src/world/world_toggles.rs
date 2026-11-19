@@ -261,6 +261,20 @@ pub struct WorldToggles {
     /// not a fidelity knob; the native session takes
     /// `LEGAIA_BATTLE_POLY_COST=0` / `=1` over the default.
     pub battle_poly_frame_cost: bool,
+    /// On by default: price every battle frame a command surface stands
+    /// on (the round prompt, the ring, the Auto / Command prompt, the target
+    /// cursors, the item and magic windows, the arts entry, the confirms)
+    /// as retail's pacer does (`World::price_command_surface_frame`): the
+    /// frame driver runs the menu SM, the action SM and the whole draw on
+    /// each of them, and `FUN_80016B6C` stores each one's cost, so a full
+    /// party's prompt runs on step `3` (`530..650` hblanks on the
+    /// PCSX-Redux films). The frame's work is the census line plus the
+    /// surface's own packets (`frame_clock::surface_frame_work`). Off, a
+    /// prompt keeps the step the last action-SM pass left. A timing model,
+    /// not a fidelity knob, so [`Self::pin_retail`] leaves it alone; the
+    /// native session takes `LEGAIA_BATTLE_SURFACE_COST=0` / `=1` over the
+    /// default.
+    pub battle_surface_frame_cost: bool,
     /// Step each field frame by the frame time the field frame-cost model
     /// prices it at (`World::field_frame_features`, `field_frame_cost`)
     /// under retail's own law, `FUN_80016B6C`'s longest-of-sixteen against
@@ -639,6 +653,7 @@ impl WorldToggles {
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: true,
             battle_poly_frame_cost: true,
+            battle_surface_frame_cost: true,
             field_frame_cost: true,
             field_cost_placed_walk: true,
             battle_poly_window_count: false,
