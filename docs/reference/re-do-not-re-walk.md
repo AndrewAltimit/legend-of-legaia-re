@@ -2235,6 +2235,166 @@ answered from the extracted image at its mapped base.
 | Baka roster record `+0x44` is a spawn Y | falsified (it is the stand-off) | Plausible: it sits among position-shaped fields. The duel init places each fighter at X = -/+(`+0x44` + 200) (`0x801D005C..0x801D00F4`). |
 | Baka state `0x6D` is the match-result state | falsified (it is the secret opponent's tally variant) | Plausible: it follows the duel. The ordinary tally exit is `0x801D0A38`; `0x6D` is its variant gated on `0x801DBF06`, and the win flourish is stored at both (`0x801D0AA4`). |
 | The play page's black ground in Rim Elm's shop and Hunter's Spring follows a story point (after Drake Castle) | falsified (the odds of one tick) | Plausible: the reporter first saw it after coming back from Drake Castle, and it came only sometimes. The page stepped the previous scene's CLUT walker once against the entered scene's image before rebuilding its render state, and the kingdom table's destination `(32, 509)` is a ground palette in `izumi` and `town0c`; whenever the walker was due on the entry tick the copy blanked it, at any point of the story. A scripted re-entry loop in Chromium reproduces it and the retirement on the entry tick clears it ([field ambient FX](../subsystems/field-ambient-fx.md)). |
+| `zeto_big_wave_mid_cast`'s screen shows Zeto's idle one pass older than the display lag says | falsified (the frame carries no idle pose) | Plausible: the image once fit Zeto seated at cursor `48` (`.980`) over the lag's `52` (`.962`). A film of the cut draws `52`, and the still now reads `1.000` with Zeto seated anywhere from `44` to `99`: the near plate covers the body on both sides. See [below](#zetos-big-wave-idle-is-not-a-pass-older). |
+
+### Zeto's Big Wave idle is not a pass older
+
+*Status:* falsified. Evidence: `capture`.
+
+The still that raised the question no longer witnesses Zeto's pose. The image child seats Zeto's idle at the displayed cursor, two passes back of the RAM's (`52`), and `zeto_big_wave_mid_cast` reads `image` `1.000`. Seated instead at `44`, `48`, `56` or `99` (a one-off override of the child's `LEGAIA_SEAT_BATTLE_CLIPS`), it reads `1.000` with the same `mae` each time:
+the near plate fills the close-up and covers the body on retail's frame and the engine's alike. The `48` fit below was taken on an engine frame that drew some of the body where retail's draws none, and the PCSX-Redux film of the cut already showed the cut pass drawing `52`, as the display lag says.
+What is left of the earlier reading is the engine's opening running a pass longer than retail's, an open thread of its own ([open threads](open-rev-eng-threads.md#battle--rendering)).
+
+The earlier investigation follows; its readings stand, but none of them now asks for an older pass.
+
+The RAM holds Zeto's idle cursor at `60` (rate `+0x21D` `4`, Big Wave's
+halving; all sixteen frame-history entries step `2`), so two passes of display
+lag put the shown frame at `52`. The image reads `.962` with Zeto seated there
+and `.980` seated at `48`, while a display lag one pass longer wrecks the
+pan's framing (`.462`). The same extra pass costs `cort_mystic_shield_mid_cast`
+and moves the other Cort capture-band states by under `.002`, so it is not a
+corpus-wide lag.
+
+It is not the double buffer's phase: the floor grid of the table under the
+current record index (`0x8007BF30 + i * 0x74`, index `gp+0x434`) fits the
+RAM's camera, so the state was saved mid-pass and the screen is two passes
+back, as assumed (`cort_mystic_shield_mid_cast` reads the same way,
+`horn_summon_mid_cast` the other: its newest floor sits under the other
+record). Nor is it the module's pacing: a seat-0 Big Wave recorded on both
+sides (`LEGAIA_POKE32` sends the cast down Big Wave's branch) holds arms 0 and
+4 one pass each and arms 5 to 8 within two vsyncs of retail's game clock.
+What is left is the pose the frame drew, and the obvious reading of it does
+not hold across states: `battle_gimard_tail_fire_b`, saved mid-pass too, draws
+its knockdown exactly two advances behind the RAM's cursor (`72` against
+`56`), where Zeto's idle needs three. A per-pass RAM sequence of a seat-0 Big
+Wave around arm 0 cannot separate the two either: the arm-0 cut moves the
+camera on the same pass the rate halves, so the body packets' motion between
+tables is mostly the camera's. A stretch where the camera holds still and a
+body's rate or clip changes (a commit that zeroes the cursor) would show
+which advance the drawn pose stands on.
+
+That stretch exists and the drawn pose is not the odd one out. A
+PCSX-Redux film of a seat-0 Big Wave (`autorun_drawn_pose_film.lua` with
+`LEGAIA_SPELL=0x56`, `LEGAIA_POKE32=0x801C8FE4=1`) logs every pass of the
+band `0x6E..0x71`: each seat's anim tick advances its cursor and the same
+pass's decode draws the advanced value, party and monster alike, through
+the caster's rate halving on the `0x70` entry and a monster commit. No pass
+skips a decode or draws an older cursor, so the extra advance is not a
+draw-order effect; what is left is the instant the state was saved inside
+a long pass (a step-`3` pass runs across vsyncs, and a save between the
+party's ticks and the monster's splits the seats) or the image metric
+preferring a neighbouring sway pose. `zora_glare_petrify_pre` reads the
+same way round for one seat only: Vahn fits one advance behind the RAM
+(`96` of `108`), Zora two (`168` of `216`), in band `0x6F`.
+
+A save can split the seats, but not that way round. The films put a
+vsync, the instant a save state is cut, between the ticks and the decodes,
+between two seats' decodes and after the flip, and once inside a seat's
+tick: on `rim_elm_gimard_victory`'s art commit, Vahn's tick (which commits
+clip `0x11` and halves every seat's rate) runs across a vsync before
+Gimard's tick starts. The actor list ticks the nodes in descending
+address order, party seat 0 (`0x800835E4`) first and the monster rows
+after it, in both filmed fights, so a save inside the list leaves the
+party one advance further from the screen than the monsters: Vahn two
+back and Zora one, the reverse of the fits, and no split puts a seat three
+back as Zeto's `48` needs.
+
+Nor is it the decode. `FUN_8004998C` builds its pose in the battle
+context's scratch block (`s2 = *(gp+0xA0C) + 0x6F4`, twelve bytes a part,
+the centroid at `+0x120`), and Zeto is the last body the state's pass
+decoded: all sixteen parts there are the blend of cursor `60` (frame `3`,
+fraction `12`) to the halfword, angles through the short-arc guards, and
+the body pair `(-1, 912)` is that pose's centroid turned by the heading.
+The port's blend gives the same pose at the same cursor. Which pass the
+RAM's body pair belongs to also tells where in the pass a state was cut:
+Zeto's is the live cursor's (saved after the draw), and the frame driver's
+order - ticks, the view build `FUN_800172C0`, the render passes, then
+`FUN_80016B6C`'s `VSync`, `PutDispEnv`, `PutDrawEnv` and `DrawOTag` of the
+table just built (`0x800171C0..0x80017288`) - puts the screen two tables
+behind the cursor at either instant. The fit itself is sharp: Zeto seated
+at `36` / `42` / `46` / `48` / `50` / `52` / `56` reads `.877` / `.948` /
+`.963` / `.980` / `.970` / `.962` / `.929`, and moving the camera's depth
+(the Big Wave pan's `26` a vsync) does not trade against it - at `52` the
+best depth is thirteen units out (`.966`), at `48` the RAM's walk-back
+stays best. The near plate filling the close-up is in both ordering tables
+the RAM holds, drawn last over the chest. The other framebuffer (the draw
+area, `(0, 4)`) holds a wide shot with no HUD that matches neither table,
+so it is no witness to the lag.
+
+Nor is it the draw. Both ordering tables, rasterised in retail's chain
+order against the state's own VRAM (`scripts/mednafen/ot-raster.py`), match
+the port's depth-tested frame at `1.000`: the newest table (record `1`, the
+current index) is the port at cursor `60` on the RAM's camera, the other at
+cursor `56` with the camera one pass back (TR z `52` nearer). No primitive is
+missing, extra, ordered differently or drawn with another attribute, and
+the two tables step the cursor `4` and the pan `26` a vsync, as the RAM's
+cursor ring and tween say. The residual is the displayed frame alone, and
+that frame is PROT 0946's arm-0 pass: arm 4 adds `scalar << 6` (`512`) to the
+countdown `0x801F7F20` and arm 5 drains `scalar * step` (`16`) a pass
+(`0x801F6F10..0x801F6F5C`), so the RAM's `496` is arm 5's first pass, the
+older table arm 4's, and the screen arm 0's cut, whose TR z
+`prescale(z / 2) = 2150` is the camera the image child already draws. On
+that one pass the port's frame fits only off the walk: cursor `48` with
+the camera's yaw `+6` reads `.993`, every other seat lower, against the
+`1.000` of the two passes after it. What the cut pass draws differently
+(the yaw the action SM's counter leaves before arm 0's snap lands, or a
+body matrix built ahead of the snap) needs a film of the cut itself.
+
+The engine's film of the cut, against the PCSX-Redux recording of
+`garmel_zeto_pre_big_wave`, scored pair by pair: the camera is retail's to
+the unit through the cut (yaw `0`, pitch `32`, TR z `2380` on the pass the
+recording reads it, then `2492`, `2604`, a step-`4` pass each), and both
+sides draw the close-up first on that pass, which retail shows two passes
+later. The cut pair still reads `.546`, and its whole residue is Zeto's
+pose: the film's Zeto idle cursor stands at `114` where the recording's
+reads `78` (rate `8` halving to `4` on the cut on both sides), three passes
+ahead. One of the three is the opening (the engine runs `0x0A..0x28` in
+three passes where retail runs two), the rest the film's seat of the
+state's cursor. The film cannot weigh `48` against `52` until Zeto's idle
+stands on the recording's cursor at the cut. Grade `capture`.
+
+Two of the three were the engine's. A `--physical` film from
+`garmel_zeto_pre_big_wave` seats Zeto on the state's own cursor (`212`, its
+loop budget `+0x176` spent as retail's), and Zeto then reads `224` on the
+`0x0C` pass and `12` on `0x28`'s, where retail runs `228`, `236`, `0`. Nothing
+committed a clip: the action seed's per-pass `pose(Idle)` request found no
+idle marker on the player battle setup had installed and built a fresh idle
+player at keyframe `0`. Every body's first idle request after setup did the
+same, so every fight's idle phases restarted on each body's first turn. `FUN_801D5854` writes no anim field (its stores go to the
+battle context's framing words, none to the actor's `+0x1D9..+0x1DC` or the
+node's cursor `+0x68`), so retail's idle runs on.
+With the idle kept through the request, the film reads `.874` (was `.824`),
+the cut pair `.849`, and Zeto stands at `90` on the cut pass against the
+recording's `78`: the one pass the engine's opening runs longer (`0x0A..0x28`
+in three passes where retail runs two). The engine now keeps it: battle setup
+seats each body's idle at the phase it drew (`World::seat_battle_setup_idle`),
+so the SM's requests find the loop playing; the film has not been re-shot on
+that seat
+([settled](re-settled-threads/battle.md#the-action-sms-idle-request-keeps-a-playing-idle)).
+Grade `capture` (the film) and `disassembly` (`FUN_801D5854`'s stores, see
+`ghidra/scripts/funcs/overlay_battle_action_801d5854.txt`).
+
+The cut has been filmed, and it draws neither an older cursor nor a
+camera short of the snap. From `garmel_zeto_pre_big_wave` (Zeto's own AI
+pick, PCSX-Redux), `autorun_cast_sequence.lua` logs the camera per vsync and
+`autorun_drawn_pose_film.lua` the anim ticks and decodes per pass. Arms `0`
+to `4` run in one pass: the module counter `ctx[+0x279]` reads `0` after
+one pass and `4` after the next, and that next pass halves Zeto's rate
+(`8` to `4`), lands the cut on its endpoint (yaw `3956` to `0`, the table's
+increment `140` clamped; TR z `4714` to `2380`), ticks Zeto from `72` to
+`78` at the halved rate and decodes `78`. The cut is first on screen two
+passes later. The mid-cast state's own cursor ring holds the same edge:
+`60, 56, 52, 48, 36, 24`, rate `4` from the `48` to `52` step, so its cut
+pass is the one that drew `52`, two passes behind the RAM's `60`, as the
+display lag says. The fit's `48` is therefore not the drawn cursor: the
+cut pass draws `52` on a camera already on its endpoint, and the image's
+preference for `48` with yaw `+6` is another residual of that frame (the
+body's matrix, or the metric trading sway against framing). Grade
+`capture`. Next: the engine's film of the same cast scored at the cut's
+pair, against a recording that opens on cast begin `0x28` as the oracle
+pairs it (this one opens on the state's `0x0A`, and the oracle pairs it at
+`.46` throughout).
+
 
 ## Measurement readings
 
