@@ -37,6 +37,9 @@
 --                it, so the edge into that condition is one cue. `drain`
 --                is the drainer's own gate (0x8007BABC == 0x8007BAA0,
 --                0x80016BC0..0x80016BD4).
+--   fxspawn.csv  with LEGAIA_FX_SPAWNS=1 (breakpoint core): every effect-pool
+--                spawn (FUN_801DFDF0 / FUN_801DFDF8) and prototype seat
+--                (FUN_80050ED4), a0..a3, ra and the rand() seed word.
 --   sfxcall.csv  with LEGAIA_SFX_CALLERS=1 (breakpoint core): every call
 --                into the cue producers FUN_80035B50 / FUN_80035BD0, the
 --                battle router FUN_8004FE5C and the dispatcher FUN_8004FCC8,
@@ -762,6 +765,22 @@ probe.run({
                 calls:row("%d,store,%d,%d,0x%08X", last_elapsed, tou32(r.pc),
                     -1, tou32(r.GPR.n.ra))
             end)
+        end
+        if probe.getenv_num("LEGAIA_FX_SPAWNS", 0) ~= 0 then
+            -- Every effect spawn, in call order: the pool's public entry
+            -- FUN_801DFDF0 and the spawn API FUN_801DFDF8 it falls into, and
+            -- the prototype-table seat FUN_80050ED4, each with a0..a3, ra and
+            -- the BIOS seed word 0x80009010 at entry (breakpoint core).
+            local fx = probe.csv_open(probe.out_path("fxspawn.csv"), "vsync,fn,a0,a1,a2,a3,ra,seed")
+            for _, f in ipairs({ { 0x801DFDF0, "pool" }, { 0x801DFDF8, "spawn" },
+                                  { 0x80050ED4, "proto" } }) do
+                probe.arm_breakpoint(f[1], "Exec", 4, "fx_" .. f[2], function()
+                    local r = PCSX.getRegisters()
+                    fx:row("%d,%s,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X,%d", last_elapsed, f[2],
+                        tou32(r.GPR.n.a0), tou32(r.GPR.n.a1), tou32(r.GPR.n.a2), tou32(r.GPR.n.a3),
+                        tou32(r.GPR.n.ra), u32(0x80009010))
+                end)
+            end
         end
         if probe.getenv_num("LEGAIA_HIT_TRACE", 0) ~= 0 then
             -- Each melee hit the strike kernel FUN_801EC3E4 resolves
