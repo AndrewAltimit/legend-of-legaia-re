@@ -89,14 +89,25 @@ const AVSZ4: u32 = 0x0168_002E;
 /// with its reading. The spread over the library picks them up when the
 /// library grows; a new entry needs the same kind of reading, never just the
 /// name.
-const UNEXPLAINED_SCREEN_WORD: &[(&str, &str)] = &[(
-    // SX2 matches to the pixel and SY2 is exactly 20 rows off, with the
-    // transform, SZ3, H and the divide all agreeing: the shape of OFY moved
-    // between the RTPS and the save (a vertical screen offset), which no
-    // register in the file records. Open, not a settled reading.
-    "f6d09947d68848330fdb5ccbcd8091a7473265f7cc5809443a28606e5e79c28e.sstate",
-    "SY2 20 rows off with SX2 exact: OFY rewritten after the RTPS",
-)];
+const UNEXPLAINED_SCREEN_WORD: &[(&str, &str)] = &[
+    (
+        // SX2 matches to the pixel and SY2 is exactly 20 rows off, with the
+        // transform, SZ3, H and the divide all agreeing: the shape of OFY moved
+        // between the RTPS and the save (a vertical screen offset), which no
+        // register in the file records. Open, not a settled reading.
+        "f6d09947d68848330fdb5ccbcd8091a7473265f7cc5809443a28606e5e79c28e.sstate",
+        "SY2 20 rows off with SX2 exact: OFY rewritten after the RTPS",
+    ),
+    (
+        // vell_fog_field. The fog-sheet emitter FUN_8003F86C RTPTs a sheet's
+        // two corners and then writes SXY2 = (x1, y0) back for its NCLIP
+        // (docs/subsystems/field-ambient-fx.md). The file holds exactly that:
+        // SXY0 (-120, 95), SXY1 (41, 135), SXY2 (41, 95), all SZ 0x3978,
+        // while the transform left in MAC / IR projects to (180, -686).
+        "bd407707f5aa6f437bc3c9a075416da1ac26fad3d7ea6a54cf1fd6450965775e.sstate",
+        "SXY2 = (SX1, SY0) written back after the RTPT by the fog-sheet emitter",
+    ),
+];
 
 #[test]
 fn gte_reproduces_the_captured_register_files() {
