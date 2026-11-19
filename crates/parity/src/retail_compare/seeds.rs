@@ -330,6 +330,28 @@ pub fn retail_panel(ram: &[u8]) -> Option<legaia_engine_effects::screen_fx::Pane
     })
 }
 
+/// The panel tween as the displayed frame drew it: `back` vsyncs earlier.
+///
+/// The clock `+0x9C` gains the frame step `_DAT_1F800393` each frame
+/// (`0x801F84EC..0x801F8500`) and the five channels are a linear
+/// `FUN_801DE4C8` (mode `1`) from `cur` toward `target`, so taking the lag
+/// off the clock is the frame on screen. A clock the lag takes past `0` was
+/// not running yet then, and the start rect is what drew. A
+/// PCSX-Redux film of `edson` `P2[0]`'s shrink (`43 14 A4 00 70 00 00 07 40
+/// 00`, `64` frames on a step-`3` frame) shows the display's panel edge on
+/// the RAM clock less `6`: `credits_edson_fullscreen_pcsx` holds clock `6`
+/// (left edge `15`) under a display that still shows the whole frame. A
+/// finished tween (`dur == 0`) keeps no start, so it stays as it is.
+pub fn rewind_panel(
+    mut p: legaia_engine_effects::screen_fx::PanelWidget,
+    back: i16,
+) -> legaia_engine_effects::screen_fx::PanelWidget {
+    if p.dur != 0 {
+        p.t = (p.t - back).max(0);
+    }
+    p
+}
+
 /// The VRAM the panel samples, with the state's texels there: page 0 from
 /// the texel origin over the spawn size (one page at most), and - for a
 /// panel wider than a page - page 1 out to the far edge its quad's `u`

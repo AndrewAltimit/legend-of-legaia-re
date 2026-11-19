@@ -943,7 +943,10 @@ impl RetailObs {
             env.push(("LEGAIA_SEAT_PAGE_MARK", f.to_string()));
         }
         if let Some(p) = self.panel {
-            env.push(("LEGAIA_SEAT_PANEL", panel_env(&p)));
+            // The display shows the tween two game frames back.
+            let back = i16::from(self.frame_step())
+                * crate::retail_compare_battle::DISPLAY_LAG_PASSES as i16;
+            env.push(("LEGAIA_SEAT_PANEL", panel_env(&rewind_panel(p, back))));
         }
         // The frame child always stands in retail's heading: it seats no
         // arrival facing of its own, and the image channel scores no heading.

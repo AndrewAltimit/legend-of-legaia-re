@@ -884,7 +884,17 @@ engine verdict:
   spawns the panel. The state's live panel widget (`retail_panel`, handler
   `FUN_801F849C`) goes to the child as `LEGAIA_SEAT_PANEL`, installed on the
   frame it captures, and the texels it samples ride the
-  `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects. The second
+  `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects. Its tween is
+  seated as the display drew it, two game frames back: the clock `+0x9C`
+  gains the frame step each frame and the five channels are linear
+  (`FUN_801DE4C8` mode `1`, `0x801F84EC..0x801F8650`), so the lag comes off
+  the clock, and a clock it takes past `0` stands on the start rect
+  (`rewind_panel`). A PCSX-Redux film of `edson` `P2[0]`'s shrink
+  (`43 14 A4 00 70 00 00 07 40 00`, step `3`) puts the displayed left edge
+  on the RAM clock less `6` at every frame; `credits_edson_fullscreen_pcsx`
+  holds clock `6` under a display that still shows the whole grab, and
+  seated on the RAM's clock the panel drew `15` px in (`image` `.606` to
+  `1.000`). The second
   page's rect runs to the far edge its quad reaches, not the image's: the
   handler starts that quad at `u + 0x100 + 0xE` and ends it at
   `u + w0 + 0x10` (`0x801F8838..0x801F88B0`), sixteen texels past the

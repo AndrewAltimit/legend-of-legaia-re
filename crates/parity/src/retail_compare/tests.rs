@@ -312,6 +312,33 @@ fn the_view_window_comes_off_the_scratchpad_of_a_field_state() {
     assert_eq!(overworld.view_window, None);
 }
 
+/// The panel seat is the displayed frame's tween: the lag comes off the
+/// clock, a clock it takes past `0` stands on the start rect, and a finished
+/// tween is left alone. `credits_edson_fullscreen_pcsx`: clock `6` of `64`,
+/// step `3`, so the display drew the whole frame (the PCSX-Redux film's
+/// left edge reads `0` there and `15` two frames on).
+#[test]
+fn the_panel_seat_takes_the_display_lag_off_its_clock() {
+    let rec = [
+        0x13, 0, 0, 0, 0, 0x40, 0x01, 0xE0, 0x00, 0x00, 0x02, 0x00, 0x00,
+    ];
+    let mut p = legaia_engine_effects::screen_fx::PanelWidget::spawn(&rec).expect("panel");
+    p.move_scale(164, 112, 0x700, 64);
+    p.t = 6;
+    let screen = legaia_engine_effects::screen_fx::Screen::default();
+    let mut ram = p;
+    let (q, _) = ram.tick(0, &screen);
+    assert_eq!(q.left, 15, "the RAM's clock");
+    let mut shown = rewind_panel(p, 6);
+    assert_eq!(shown.t, 0);
+    let (q, _) = shown.tick(0, &screen);
+    assert_eq!(q.left, 0, "the display's frame: the whole grab");
+    let mut done = p;
+    done.dur = 0;
+    done.t = 64;
+    assert_eq!(rewind_panel(done, 6).t, 64);
+}
+
 /// The field menu lock is bit `0x0800_0000` of the scratchpad story word at
 /// `0x394`, read on a field state only, and reaches the image child.
 #[test]
