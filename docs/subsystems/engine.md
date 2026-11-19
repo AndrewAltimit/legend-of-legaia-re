@@ -553,6 +553,7 @@ options is safe by default. A headless comparison against retail calls
 | `World::toggles.entry_pulse_enabled` (`--no-entry-pulse` disables; "Entry pulse" checkbox on the browser play page) | on (off under `--retail` / the page's Retail-faithful) | Scene-entry VDF pulse: a rolling vertex-morph envelope over the packs it is authored for (jou's flesh ground, Rim Elm's shoreline; every other scene keeps retail's still geometry; [field-ambient-fx](field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs)). Retail-armed morph scenes are unaffected either way. |
 | `World::toggles.battle_poly_frame_cost` / `battle_frame_span_law` (`LEGAIA_BATTLE_POLY_COST`, `LEGAIA_BATTLE_FRAME_SPAN`, `0` lowers either, on a native session) | **on** on both hosts | The battle frame's cost off the primitives it links (the census) and each frame's span off retail's `VSync` law, a voice line's frames under the CD stop watch's polls included, so the step agrees with retail's frame by frame. Off prices the action-state table and runs a loaded frame one vsync past its step ([the census](battle-stage-camera.md#the-census)). |
 | `World::toggles.field_cost_placed_walk` (`LEGAIA_FIELD_COST_PLACED_WALK`, `0` lowers it) | **on** on both hosts | The field frame-cost model counts a placed object only where retail's draw walk reaches it: an actor holds it and its origin clears the near reject ([the placed objects the draw walk reaches](#the-placed-objects-the-draw-walk-reaches)). Off counts the tile cull alone. |
+| `World::toggles.derived_frame_cost` (`LEGAIA_DERIVED_FRAME_COST=1`) | **off** on both hosts | Prices a field frame from the per-unit cycle table derived off the retail passes' instruction counts ([the derived model](#the-derived-field-frame-cost-model)) instead of the fitted weights. |
 | `World::toggles.field_frame_cost` (`LEGAIA_FIELD_FRAME_COST`, `0` lowers it, on a native session) | **on** on both hosts | Each field frame's step off the frame-cost model's price under retail's pacer law, so a scene retail runs at `3` on cost runs at `3`. Off holds the field floor of `2` ([the field frame-cost model](#the-field-frame-cost-model)). |
 | `World::toggles.battle_sm_frame_cadence` (`LEGAIA_BATTLE_FRAME_CADENCE`, `0` lowers it, on a native session; "Retail battle cadence" checkbox on the browser play page) | **on** on both hosts | The whole battle pass once a battle frame, retail's cadence, instead of once a vsync: the action SM, the cast tick, the anim tick after them, the fades and the effect pool, each by the frame step. Off runs the per-vsync SM ([battle-stage-camera](battle-stage-camera.md)). |
 | `World::toggles.heal_numerals` (`--no-heal-numerals` disables, the launcher's and `F12`'s Heal numbers row; same-named box on the browser play page; remembered on both) | **on** (off under `pin_retail` / `--retail`) | A battle restore throws a heal-coloured number over its patient: an item's HP / MP / revive arm, the Life and Magic Grail ticks, the Lost Grail's Final Heal, the AI companion's heal and a heal cast. Retail throws none of them - the applier and the healing modules push nothing onto the damage-number ring, filmed on a Healing Berry - so off, only the HP figure rolls up ([battle-hud](battle-hud.md)). Kiss of Death's `1`, the poison tick and the fatal-decision heal are retail's own and throw theirs either way. Presentation only. |
@@ -804,6 +805,32 @@ Retail's VRAM survives a scene load and the port's does not. A PCSX-Redux breakp
 The same term moves every scene with a cycler. Over the PCSX-Redux walk films with no cost anchor, `casino_ticket_counter` steps as retail does on every frame (`49` to `300` of `300`), `jou`'s and `kor3`'s prices rise toward their measured `642`, and `korb3_field_walk`, priced over retail before (`468` against `448`), now crosses the `0x1FE` rung on `63` frames where retail does not.
 
 A field entered from a priced field opens on the departing scene's step: the field init stores only the floor (`0x801D6990`) and the load's mode-`2` frames run no pacer, so `opstati` opens at `opdeene`'s `3` and `opurud` at `opstati`'s `2`.
+
+### The derived field frame-cost model
+
+`WorldToggles::derived_frame_cost` (off; `LEGAIA_DERIVED_FRAME_COST=1`) prices a field frame from the per-unit cycle table `world::field_frame_units` derives off the retail passes' instruction counts ([retail frame cost](../tooling/retail-frame-cost.md#per-unit-costs)), on PCSX-Redux's scale.
+It prices the decoration pass's rows, box and out-of-box cells, draws, groups and primitives by leaf kind; the ground emitter's window and walk cells; the placed actors and the models (the player's among them, which the placement counts leave out) with their objects, groups and primitives; the fog records and half-sheets; the CLUT-cell cyclers' measured terms; and, once every `263` hblanks of that work, the vblank interrupt and the vsync's others (`13.9` hblanks). The scene's cost table carries each mesh's dispatcher view for it (`MeshCost`: objects, groups, primitives by `flags >> 1`).
+A primitive is priced at its kind's mix of outcomes over the ten profiled states, not at what the camera makes of it. Per primitive, retail's cost is set by whether it faces the camera and lands on screen (`96` cycles rejected by winding against `331` linked for a `k19` quad), but at that mix a pass moves by at most `6%` on the ten states, while the engine's decoration and ground counts already match retail's to the unit there (`son`: `92` draws, `2480` primitives, `2173` cells; `stone`: `2075` walk cells). A per-primitive outcome would need each primitive projected every frame.
+Two shares are fitted, not derived: the tick passes' base (`10` hblanks besides the parts and cyclers) and the frame driver's other work (`4`).
+
+Against the fitted model on the frame-cost gates (`scripts/ci/field-cost-films.py`):
+
+| Gate | Fitted (default) | Derived |
+|---|---:|---:|
+| films, fit set: rung | `11107` / `11164` | `10976` / `11164` |
+| films, held out: rung | `1586` / `1602` | `1511` / `1602` |
+| unanchored step | `29878` / `30131` | `29220` / `30131` |
+| state rings | `133` / `139` | `131` / `139` |
+| state price rms (bias) | `65.4` (`+2.1`) hblanks | `66.2` (`-27.2`) hblanks |
+| walk-film `rand()` | `8213` / `8892` | `8213` / `8892` |
+| `son_field_door_hop` (ring `613`, step `3`) | `524`, `3` | `561`, `3` |
+| `vahn_walks_out` (PCSX-Redux `471..480`, step `2`) | `506`, `2` | `457`, `2` |
+| `rim_elm_zoom_intro` (PCSX-Redux `805..815`, step `4`) | `770`, `4` | `673`, `3` |
+| `doman_field_card_boot` film rung | `88` / `139` | `116` / `139` |
+
+The derived model gets `doman` right where the fitted one does not: the fitted weights charge its CLUT cycler and cross the `0x1FE` rung `133` vsyncs into the film, where retail crosses it about `241` in; the derived price (`428` against retail's `483` on the film) stays under it.
+It loses three films outright. `teien_field_run` prices `466` against `589`, as `teien` draws its ground through the `_DAT_8007BB4C` twin emitter `FUN_801F69EC`, which the table does not price; `koin1b_field_route_walk` (`513` against `472`) is a scene of nine models, priced at the pool's object mix; `concend_field_door_hop` prices `702` against retail's `700` and steps `3` where retail steps `4`.
+It prices low overall (`-27` hblanks on the state rings): retail's actor passes draw `200..700` more primitives on most states than the placement and player counts hold, and the tick passes are not derived. The zoom intro falls to step `3`, short of PCSX-Redux's `4`, for the same reason. The fitted model stays the default.
 
 ### Where a field frame's time goes
 

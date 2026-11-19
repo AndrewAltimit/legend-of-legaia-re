@@ -170,10 +170,11 @@ const DECORATION_DRAW_CYCLES: i64 = 503 + 200;
 /// A ground walk cell, the plain (`282`) and sorted (`314`) paths averaged
 /// as the ten states hold them.
 const GROUND_WALK_CELL_CYCLES: i64 = 298;
-/// A posed model object: the object's path (`1252`), its pose (`253`), the
-/// tracks a pose walks at the pooled mean (`28 x 22`) and its dispatcher
-/// draw (`200`).
-const NPC_OBJECT_CYCLES: i64 = 1252 + 253 + 616 + 200;
+/// A model object, at the ten states' mix: `287` of their `343` objects
+/// unposed (`919`), `56` posed (`1252`), with `69` poses (`253`) and `1939`
+/// tracks (`22`) among them, `1150` a mean object, and its dispatcher draw
+/// (`200`).
+const NPC_OBJECT_CYCLES: i64 = 1150 + 200;
 /// A drawn model actor: its list entry's path (`148`) and the model set-up
 /// (`1297`).
 const NPC_CYCLES: i64 = 148 + 1297;
@@ -188,7 +189,7 @@ const FOG_KEPT_CYCLES: i64 = 233;
 const FOG_CULLED_CYCLES: i64 = 149;
 
 /// The player's model, which the placement counts leave out: one model
-/// actor of `10` posed objects and `388` primitives at the actor pool's mean
+/// actor of `10` objects and `388` primitives at the actor pool's mean
 /// (`136` a primitive), the shape of `stone_field_door_hop`'s only model.
 const PLAYER_CYCLES: i64 = NPC_CYCLES + 10 * NPC_OBJECT_CYCLES + 10 * GROUP_CYCLES + 388 * 136;
 /// The render lists' entries the walk tests (`50..61` cycles each): the

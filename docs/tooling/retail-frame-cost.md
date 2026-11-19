@@ -166,7 +166,8 @@ cycle.
 The pooled means over ten library field states (`son`, `stone`, `jou`,
 `retona`, `bubu2`, `kor3`, `uru`, `town01`, `doman`, `korb2`) are the table in
 [`field_frame_units.rs`](../../crates/engine-core/src/world/field_frame_units.rs),
-which nothing reads yet. A path that does not depend on the data costs the same
+which the opt-in derived frame-cost model prices with
+([engine](../subsystems/engine.md#the-derived-field-frame-cost-model)). A path that does not depend on the data costs the same
 on every state to the cycle; the rest vary by what the path computes:
 
 | Unit | Cycles | hblanks | Engine count it needs |
