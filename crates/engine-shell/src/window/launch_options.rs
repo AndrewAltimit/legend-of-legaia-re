@@ -1614,6 +1614,9 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "ENTER" | "RETURN" => KeyCode::Enter,
         "SPACE" => KeyCode::Space,
         "RSHIFT" => KeyCode::ShiftRight,
+        // The hotkey panel's close and the quit prompt (`escape_press`); a
+        // scripted run never quits on it.
+        "ESC" | "ESCAPE" => KeyCode::Escape,
         "A" => KeyCode::KeyA,
         "B" => KeyCode::KeyB,
         "C" => KeyCode::KeyC,
@@ -1865,6 +1868,7 @@ mod key_script_tests {
         names.push("Home".to_string());
         names.push("Delete".to_string());
         names.push("Backspace".to_string());
+        names.push("Esc".to_string());
         names.push("`".to_string());
         names.push("\\".to_string());
         let reachable: std::collections::BTreeSet<String> = names
@@ -1886,16 +1890,12 @@ mod key_script_tests {
         for (_, code) in legaia_engine_session::hotkeys::HOST_HOTKEYS {
             handled.insert(code.to_string());
         }
-        // `Escape` quits through the event loop (`handle_keyboard`), which a
-        // script deliberately never reaches; `--screenshot-last-tick` ends a
-        // scripted run instead.
-        handled.remove("Escape");
-        // So does the fullscreen toggle (`fullscreen_key`: `F11`, or
-        // `Alt+Enter` incl. the keypad's): window chrome a capture must never
-        // flip, resolved ahead of `handle_key`.
+        // The fullscreen toggle (`fullscreen_key`: `F11`, or `Alt+Enter`
+        // incl. the keypad's) is window chrome a capture must never flip,
+        // resolved ahead of `handle_key`.
         handled.remove("F11");
         handled.remove("NumpadEnter");
-        // So does the player's screenshot key: it writes into the player's
+        // Nor is the player's screenshot key: it writes into the player's
         // pictures folder, which no scripted capture should touch.
         handled.remove("PrintScreen");
         assert!(

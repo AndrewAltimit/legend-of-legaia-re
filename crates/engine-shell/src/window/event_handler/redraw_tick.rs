@@ -479,6 +479,15 @@ impl PlayWindowApp {
         // which is exactly the edge `--pad-script` delivers.
         let mut scripted_key_pad = 0u16;
         for code in scripted_keys {
+            // Esc takes the window's own arm (`escape_press`): it closes the
+            // hotkey panel or raises the quit prompt, and a scripted run never
+            // leaves on it; `--screenshot-last-tick` ends the run.
+            if code == KeyCode::Escape {
+                if self.escape_press(std::time::Instant::now()) {
+                    log::info!("--key-script: Escape would quit here; a scripted run does not");
+                }
+                continue;
+            }
             if let Some(button) = self.mapping.pad_button_for_key(keycode_to_name(code)) {
                 scripted_key_pad |= button.mask();
             }
