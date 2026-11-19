@@ -185,8 +185,30 @@ gate + debit pair in their scripts.
 
 Some inns append a story-flag-gated tail that warps to a `DREAM` scene after
 the restore (the `0x3F` transition above). The restore runs first and
-unconditionally, so a stay is complete without it. The dream scenes themselves
-are not covered by an oracle.
+unconditionally, so a stay is complete without it.
+
+The tail is a story gate and then a **dice roll**. `retock` `P1[26]` and the
+Usha Research Center's cook (`doman` `P1[5]`) each carry two arms, picked by
+the last dream seen (`0x35C` in `retock`, `0x35D` in `doman`). Each arm skips
+the dream when `0x3EF`, `0x57F` or its own next-dream flag is set, walks a
+`0x35B..0x35D` ladder, and ends on an op `0x4E` with sub-op `4`, which
+compares `Rand() & 0xFF` against a threshold
+([INVENTORY_CMP](script-vm.md#0x4e-inventory_cmp)). Below it, the arm sets
+its marker (`0x588` in `retock`, `0x58C` in `doman`) and changes the scene to
+`DREAM`; otherwise the stay ends on the morning fade.
+
+| Inn | First arm | Second arm |
+|---|---|---|
+| `retock` `P1[26]` | `< 0xFF` | `< 0x66` |
+| `doman` `P1[5]` | `< 0xFF` | `< 0x7F` |
+
+So a stay that meets every flag can still give no dream: the
+`retock_inn_stay_prompt` state stands in `retock`'s second arm, where
+two stays in five dream. On return, `doman`'s entry script `P1[0]`
+clears `0x57F`, then sets it again and clears `0x58C` when `0x58C` is up
+(`+0x4F..+0x5A`), so no second dream comes before `doman` is entered
+again. The
+`dream_noa_*` retail states come from a stay with the cook.
 
 ### The night-before stay in Conkram
 
