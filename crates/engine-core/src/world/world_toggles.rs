@@ -286,7 +286,10 @@ pub struct WorldToggles {
     /// step `4` a heavy shot runs at. On, the hosts draw the vsyncs between
     /// on the line to the pose the next frame stores, a vsync further along
     /// each (`Camera::led_delta`); the camera globals, the simulation and
-    /// everything it reads keep the stepped pose. Off, under `pin_retail`,
+    /// everything it reads keep the stepped pose. A battle's camera has no
+    /// fixed next pose, so its draw runs one battle frame behind instead,
+    /// the camera, every body's root and every body's pose stepped on one
+    /// phase ([`crate::world::BattlePresent`]). Off, under `pin_retail`,
     /// the frame draws the stored pose, as retail does.
     pub smooth_camera: bool,
     /// Shiny Seru (port gameplay feature, the engine twin of the patcher's

@@ -330,6 +330,9 @@ walking speed.
 A
 cutscene's camera pans and zooms move in the original's steps, fifteen to
 thirty a second; the default draws every frame of them along the same path.
+A battle's camera and fighters move once a battle frame in the original, two to
+four refreshes apart; the default draws them every refresh, one battle frame
+behind, with the fighters moving in step with the camera.
 
 *Saved-chain Arts list* is an addition of the port's; the original has nothing
 like it. With it on, the battle command ring's **Arts** opens a list of the

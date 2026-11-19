@@ -1573,7 +1573,8 @@ between (`WorldToggles::smooth_camera`, off under `pin_retail` / `--retail`):
   slow pan whose yaw moves a unit or two a frame does not stutter on the integer grid. Angles
   move on the mover's own linear 12-bit line, with no short arc, as retail's glide sweeps.
 - A cut is a snap (`apply == 0`) or a scene change, and neither leaves a mover in flight, so the
-  frame after it draws the snapped pose; a battle draws through its own camera and never leads.
+  frame after it draws the snapped pose. A battle never leads: its camera has no fixed next pose, so its
+  draw runs a battle frame behind instead ([the smooth battle camera](battle-stage-camera.md#the-smooth-battle-camera-enhancement)).
 - It is presentation-only. Both hosts lead only their draw-side camera resolve
   (`HostView::presented`, `scripted_view_led`); the camera globals, every simulation read of the
   view (the fog pool's shot and depth view among them) and the vsync a game frame opens on keep

@@ -3139,6 +3139,62 @@ camera, which owns the same translation pair. The offset is held beside the
 framing pose rather than inside it, so a live shake cannot stall a rate-clamped
 glide.
 
+### The smooth battle camera (enhancement)
+
+The battle pass runs once a battle frame and the frame then waits out its step
+([the frame step](#the-frame-step)), so the walker `FUN_8002149C` moves the
+camera, and the anim tick `FUN_80047430` moves every body and its parts, two to
+four vsyncs at a time: an entry sweep or a summon's fly-round draws 15 to 30
+poses a second and holds between them. The port's default draws every vsync
+(`WorldToggles::smooth_camera`, the same knob as the field's
+[smooth camera](cutscene.md#the-smooth-camera-enhancement); off under
+`pin_retail` / `--retail`, and on the per-vsync battle cadence, where nothing
+holds). It is one knob rather than a battle twin because it makes one promise,
+a camera drawn every vsync along the path retail steps, and both halves are
+presentation-only with retail one switch away; the battle half's delay is a
+property of how it keeps that promise, not a separate choice to make.
+
+A field glide knows its next pose in advance, so the field draw leads. A battle
+camera does not: every pass re-arms its tween from the live actor records
+([the tween is an ease-out](#the-tween-is-an-ease-out)), so there is no pose to
+lead to. The battle draw therefore runs **one battle frame behind**:
+
+- `World::observe_battle_present`, at the end of every `World::tick`, keeps the
+  state the last battle frame closed on beside the live one: the camera pose
+  without its shake, each body's root (position and facing) and each body's
+  pose (`pose_frame`, translation and rotation per part).
+- Each vsync draws the share of the frame already shown, `phase = (vsync -
+  frame open) / span`, of the way from the old state to the live one. The vsync
+  a frame opens on draws the frame before, whole; the live frame lands on the
+  next frame's open. Angles move the short way round the 12-bit turn.
+- The camera, every body's root and every body's parts move on the one phase,
+  so a body the camera frames holds still on screen as it does in retail. The
+  ground shadows, the weapon trails, the ghost push, the grid cull and the
+  screen-FX projection draw through the same drawn camera and roots. The
+  shake stays the live one, so it keeps its bite.
+- A cut draws its landing at once: a change of camera owner (the phase camera,
+  a stage module's camera), or a step of `480` angle units, `1800` TR units or
+  `480` focus units in one frame (`present::CUT_*`). Across the film sets the
+  ease-out's opening steps run under about `450` angle units, and the cast
+  modules' cuts from `512` up. A body moved `1024` units or turned `1024`
+  in a frame was placed, not moved, and lands too, pose and all; so does a
+  part that moved `512` units or turned `1024`. The first frames of a battle
+  draw live.
+- It is presentation-only. The draw-side reads are `World::battle_draw_pose`,
+  `battle_draw_root`, `battle_draw_shift`, `battle_draw_root_i16` and
+  `battle_draw_pose_frame`, and only the two hosts' draw paths and the shared
+  draw kernels take them. The camera ghost pass, the tint pass's latch, the
+  census, the cast ribbon's `rand` deal and every rule keep
+  `World::battle_cam_pose` and the actor records, so the fight, the frame
+  cost and the `rand()` stream are unchanged. Off, every accessor returns the
+  live value, bit for bit.
+
+The price is a battle frame of display delay on the 3D scene, two to four
+vsyncs; the HUD, the menus and the pad are not delayed. What the draw does not
+carry back is the effect parts and particles, which draw where the live frame
+left them: an effect anchored on a moving body can run up to a frame ahead of
+it.
+
 ### The 4× world scale
 
 The battle base matrix `DAT_8007BF10` holds `16384 * I` (GTE `4096` = 1.0, so a
