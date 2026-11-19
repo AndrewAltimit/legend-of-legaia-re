@@ -8218,3 +8218,143 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "nilboa"
 topics = ["field", "story beat", "nilboa", "Delilas", "cutscene", "held height"]
+
+[[scenarios]]
+label = "vozz_tree_vahn_touch_box"
+backup_fingerprint = "98abc7cefa49531c002dc36ddfea837c543cb9874cf1e09b414756c604a89cd6"
+description = "East Voz Forest P1[7], the Genesis Tree revival: Vahn at the trunk, the 'Vahn reached out gently to touch the Genesis Tree' box open. RETAIL disc, pad only but for the fight's HP poke: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross through the boxes, Attack with arts through the fight, LEGAIA_FINISH=2), then autorun_walk_route.lua to the tree (13280, 12768) -> (13278, 12880) and ACT facing Z+ (the touch that runs vozz P1[7]); saved 150 vsyncs after the touch."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "dialog"]
+
+[[scenarios]]
+label = "vozz_tree_closeup_noa_vahn"
+backup_fingerprint = "3159d0d8bbe36245cd57a80f11b688412c09ba1d49b748ffe59e9a3cfd339c01"
+description = "East Voz Forest P1[7], the Genesis Tree revival: the close-up on Noa and Vahn with the night sky band and the far palms behind them (the shot the port drew over black). RETAIL disc, pad only but for the fight's HP poke: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross through the boxes, Attack with arts through the fight, LEGAIA_FINISH=2), then autorun_walk_route.lua to the tree (13280, 12768) -> (13278, 12880) and ACT facing Z+ (the touch that runs vozz P1[7]); saved 330 vsyncs after the touch."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "camera", "sky", "close-up"]
+
+[[scenarios]]
+label = "vozz_tree_rings"
+backup_fingerprint = "a051e1fb84eb801f07ff515fca2e8d0b6bbf7da688bf9a000021950eecdcd122"
+description = "East Voz Forest P1[7], the Genesis Tree revival: the party at the trunk inside the spinning light rings. RETAIL disc, pad only but for the fight's HP poke: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross through the boxes, Attack with arts through the fight, LEGAIA_FINISH=2), then autorun_walk_route.lua to the tree (13280, 12768) -> (13278, 12880) and ACT facing Z+ (the touch that runs vozz P1[7]); saved 900 vsyncs after the touch."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "effects"]
+
+[[scenarios]]
+label = "vozz_tree_burst"
+backup_fingerprint = "1e329266d71d09dd86530a85f37821d04641e14d679c2a40a2f4fd71a8bdd1a4"
+description = "East Voz Forest P1[7], the Genesis Tree revival: the white light burst over the trunk. RETAIL disc, pad only but for the fight's HP poke: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross through the boxes, Attack with arts through the fight, LEGAIA_FINISH=2), then autorun_walk_route.lua to the tree (13280, 12768) -> (13278, 12880) and ACT facing Z+ (the touch that runs vozz P1[7]); saved 1300 vsyncs after the touch."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "effects", "flash"]
+
+[[scenarios]]
+label = "vozz_tree_grown"
+backup_fingerprint = "4d2f08100b7f9a312eaebbfec030ea4ddec955bf061ba9620d78bedbab3d5d28"
+description = "East Voz Forest P1[7], the Genesis Tree revival: the grown tree, its crown and the light wash over the clearing. RETAIL disc, pad only but for the fight's HP poke: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross through the boxes, Attack with arts through the fight, LEGAIA_FINISH=2), then autorun_walk_route.lua to the tree (13280, 12768) -> (13278, 12880) and ACT facing Z+ (the touch that runs vozz P1[7]); saved 1700 vsyncs after the touch."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "effects", "tree morph"]
+
+[[scenarios]]
+label = "conc3_ceremony_plaza"
+backup_fingerprint = "bbea9eb739ab0b302c6156483d0fe6ca3ef9a103028ea0b7e93345ab4681b764"
+description = "Conkram (Past) at night, the ceremony: the plaza and the castle steps under the sky, the crowd gathering. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 600 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "sky"]
+
+[[scenarios]]
+label = "conc3_ceremony_nebular_box"
+backup_fingerprint = "6af6cce9d91f0ed947110c7601ff6f7feb5a770faec1e4c55dfdee058da016b0"
+description = "Conkram ceremony: King Nebular on the castle steps presenting the new weapon, his box open. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 900 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "dialog"]
+
+[[scenarios]]
+label = "conc3_ceremony_pedestal"
+backup_fingerprint = "1a1e9b5df7e3781f082c388b9fa753ab10703a3cc87fe7e518fb5663556c83ac"
+description = "Conkram ceremony: the crowd around the glass pedestal in the plaza, a soldier in front. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 1800 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "translucent"]
+
+[[scenarios]]
+label = "conc3_ceremony_zeto_box"
+backup_fingerprint = "0b02be5aa11e2a502510b7f8aae31a42f749a70811f0c13a5fb923809011ba23"
+description = "Conkram ceremony: Zeto's close-up before the court, his box open. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 2400 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "dialog", "close-up"]
+
+[[scenarios]]
+label = "conc3_ceremony_lab"
+backup_fingerprint = "3d00aed6304dcb775c269a7c362be350b0f3d67baa65c1ae750c28e62a6a07f9"
+description = "Conkram ceremony: the lab under the castle, the Mist generator pit on the chequered floor. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 3600 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "camera"]
+
+[[scenarios]]
+label = "conc3_ceremony_gala_box"
+backup_fingerprint = "4fae3e22c34312a84e06448e580ec75d4169e77244665282dfb4589615458524"
+description = "Conkram ceremony: the party's close-up, Gala's box open. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 5400 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "dialog", "close-up"]
+
+[[scenarios]]
+label = "conc3_ceremony_mist_pillar"
+backup_fingerprint = "494164d7ba4924424b435223b126e811073402a864e0472b7a01b254c706d016"
+description = "Conkram ceremony: the Mist rising out of the glass pedestal. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 6600 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "Mist", "effects"]
+
+[[scenarios]]
+label = "conc3_ceremony_mist_monsters"
+backup_fingerprint = "dabdf932dde0db7bf58f89c4987b1508ecefb046c26b7b50467503bc76782254"
+description = "Conkram ceremony: the purple Mist over the plaza, a soldier turning into a Mist monster. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 7200 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "Mist", "effects"]
+
+[[scenarios]]
+label = "conc3_ceremony_noa_box"
+backup_fingerprint = "8b1436f89b00fed7a8d569f028fe814367bed46e924a1c1c4b55404a42640de8"
+description = "Conkram ceremony: the party's close-up, Noa's box open. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 8400 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "dialog", "close-up"]
+
+[[scenarios]]
+label = "conc3_mist_night_free"
+backup_fingerprint = "db6c36c13b1e96a50a69ccd4bce969208e5517a9b3ccaac9b794f1b2096d544a"
+description = "Conkram at night after the ceremony: the party free in the Mist-filled plaza, 0x3E5 raised by P2[10]. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 8700 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "Mist", "route walk"]
