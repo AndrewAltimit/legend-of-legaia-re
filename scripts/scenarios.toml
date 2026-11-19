@@ -8462,3 +8462,21 @@ expected_game_mode = 0x03
 expected_active_scene = "town0e"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["field", "story beat", "town0e", "ending", "cutscene", "Genesis Tree", "camera"]
+
+[[scenarios]]
+label = "izumi_arrival_revisit"
+backup_fingerprint = "33647fe22bf61493753df3f65136b349a3b07f94ee5e4ba7ee5ae13316a39a49"
+description = "Hunter's Spring (izumi) just after the arrival fade: Vahn at the entrance among the hunters, the camera at its arrival framing. RETAIL disc, pad only, no pokes: overworld_into_town_man_load walked by autorun_walk_route.lua across map01 (two random fights fought) onto izumi's door tile (70, 39) (map01 P2[17]), then no input in izumi; a revisit (0x485, which izumi's entry raises, was already up); saved 44 vsyncs after the field resumed."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "izumi"
+topics = ["field", "izumi", "arrival", "camera"]
+
+[[scenarios]]
+label = "izumi_hunters_field"
+backup_fingerprint = "7b227f71dc82eea07909f15035a7d4b40b48271902fc442b7cff6342aa11f097"
+description = "Hunter's Spring: Vahn standing at the entrance, the hunters walking their rounds, party HUD up. RETAIL disc, pad only, no pokes: overworld_into_town_man_load walked by autorun_walk_route.lua across map01 (two random fights fought) onto izumi's door tile (70, 39) (map01 P2[17]), then no input in izumi; a revisit (0x485, which izumi's entry raises, was already up); saved 764 vsyncs after the field resumed."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "izumi"
+topics = ["field", "izumi", "walkers", "scene coverage"]
