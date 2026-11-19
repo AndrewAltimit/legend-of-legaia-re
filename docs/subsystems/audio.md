@@ -3857,9 +3857,9 @@ its score by `_SsSeqInit`, with the samples in both SPUs where the port's bank p
 open leaves the bank at `2` in its in-use byte (`0x801CE368 + vab`), header only, and the
 program reads behind a key-on (`FUN_80068B98`) refuse anything but `1`, the value
 `SsVabTransBody` stores once the bodies are sent, so the harness stores `1`. Seated, a track a
-state holds reads what the state reads (`2013`'s four `sound` rows among them), and the
-seventy-seven tracks with a score of their own read zero in `key`, `release` and `sound` over
-four minutes each, `2013` and `2071` (three single-vsync rows) aside.
+state holds reads what the state reads, and the seventy-seven tracks with a score of their own
+read zero in `key`, `voice`, `release` and `sound` over four minutes each, two single-vsync
+`sound` rows of `2071` aside.
 
 That run found two port defects, both on tracks no library state was saved under:
 
@@ -3880,9 +3880,8 @@ That run found two port defects, both on tracks no library state was saved under
 
 What it leaves open:
 
-- `2013`, four single-vsync rows of a held voice sounding on one side alone, two each way: a
-  one-shot sample ending on a vsync boundary, a sample or two apart under the two sides' KON
-  lag estimates.
+- `2071`, two single-vsync rows of a voice sounding on one side alone, and the dozen under
+  `--cues`: a one-shot sample ending on a vsync boundary, a sample or two apart.
 
 ## The cue differential
 
