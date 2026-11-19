@@ -8630,3 +8630,43 @@ expected_game_mode = 0x03
 expected_active_scene = "edlast"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edlast"]
+
+[[scenarios]]
+label = "town0d_arrival_narration"
+backup_fingerprint = "c6f8fcfc8aa1d59fca8df16bd4b2a081f0fd0fcb7c6559ee64e7928f7d2b3ca8"
+description = "Rim Elm revisit (town0d): the narration box over black as Rim Elm fades in ('Vahn! Noa! Gala! Three heroes wearing Ra-Seru...'). RETAIL disc, with the source's flag pokes: concend_field_door_hop (0x4C8 set, 0x3F2 and 0x6C2 cleared at its start, concend P2[0] running) played forward by autorun_story_forward.lua with Cross every 20 vsyncs, through P2[0]'s scene change into town0d; saved 400 vsyncs after town0d loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0d"
+ram_poked = ["system flag 0x4C8 set, 0x3F2 and 0x6C2 cleared (concend_field_door_hop's portal arm), before this state"]
+topics = ["field", "story beat", "town0d", "Rim Elm", "cutscene", "dialog", "fade"]
+
+[[scenarios]]
+label = "town0d_mei_closeup"
+backup_fingerprint = "82a0e3bea232231dda7ddc78aec8a6c9c0de91c04e796237c8e872db5653bfa1"
+description = "Rim Elm revisit (town0d): the close-up on Mei and Vahn in Vahn's house. RETAIL disc, with the source's flag pokes: concend_field_door_hop (0x4C8 set, 0x3F2 and 0x6C2 cleared at its start, concend P2[0] running) played forward by autorun_story_forward.lua with Cross every 20 vsyncs, through P2[0]'s scene change into town0d; saved 800 vsyncs after town0d loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0d"
+ram_poked = ["system flag 0x4C8 set, 0x3F2 and 0x6C2 cleared (concend_field_door_hop's portal arm), before this state"]
+topics = ["field", "story beat", "town0d", "Rim Elm", "cutscene", "close-up", "camera"]
+
+[[scenarios]]
+label = "town0d_house_interior"
+backup_fingerprint = "28e48304adc684784ab16061d00471506040b2564c0e94d3114e1d10bdf17d92"
+description = "Rim Elm revisit (town0d): Vahn and Mei in Vahn's house, the high interior shot. RETAIL disc, with the source's flag pokes: concend_field_door_hop (0x4C8 set, 0x3F2 and 0x6C2 cleared at its start, concend P2[0] running) played forward by autorun_story_forward.lua with Cross every 20 vsyncs, through P2[0]'s scene change into town0d; saved 1300 vsyncs after town0d loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0d"
+ram_poked = ["system flag 0x4C8 set, 0x3F2 and 0x6C2 cleared (concend_field_door_hop's portal arm), before this state"]
+topics = ["field", "story beat", "town0d", "Rim Elm", "cutscene", "interior"]
+
+[[scenarios]]
+label = "town0d_house_free"
+backup_fingerprint = "226a2365749013d0c417197128f8ca44253e5c95664866e90965e9e0a5d95bf9"
+description = "Rim Elm revisit (town0d): Vahn free in his house with Mei, party HUD up. RETAIL disc, with the source's flag pokes: concend_field_door_hop (0x4C8 set, 0x3F2 and 0x6C2 cleared at its start, concend P2[0] running) played forward by autorun_story_forward.lua with Cross every 20 vsyncs, through P2[0]'s scene change into town0d; saved 3000 vsyncs after town0d loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0d"
+ram_poked = ["system flag 0x4C8 set, 0x3F2 and 0x6C2 cleared (concend_field_door_hop's portal arm), before this state"]
+topics = ["field", "story beat", "town0d", "Rim Elm", "cutscene", "interior", "scene coverage"]

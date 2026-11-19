@@ -5997,6 +5997,13 @@ landmark's context sat on its key tile two tiles north of the object, so the
 record's own `A3 08 60 17` read as a move - and drew the `.MAP` slot's mesh
 in its place ([world-map](../subsystems/world-map.md#placed-actors-and-the-mesh-resolver)).
 
+The `credits_*_pcsx` rows are the same vignettes captured on PCSX-Redux,
+played on from the ending's Rim Elm. Its south gate band (`town0e` `P2[6]`)
+carries the hero out only once the Village Elder, who stands in the gate
+opening (`P1[24]`, seated there by its spawn prologue's `4C 51 97 AF`),
+has had his talk paged to its end; a walk onto the band before
+that stops at `(24, 47)` against him.
+
 ### The dance-hall state is inside the contest-entry cutscene
 
 `minigame_dance_pcsx` is `koin3` with the qualifier request (story flag
