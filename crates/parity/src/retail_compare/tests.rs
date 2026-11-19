@@ -497,6 +497,46 @@ fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
     assert!(fog_from_env("1,2,3").is_empty());
 }
 
+/// The dance hall's drum scroller (`0x8008041C` in `minigame_dance_retail_ready`)
+/// alternates `dy 2` and `dy 0` two ticks each; a state taken on the tick its
+/// program switched shows the other pair's roll on the tick before.
+#[test]
+fn a_scroller_that_switched_on_the_states_tick_takes_back_the_other_rate() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let put16 = |ram: &mut Vec<u8>, va: u32, v: i16| {
+        let o = (va & 0x1F_FFFF) as usize;
+        ram[o..o + 2].copy_from_slice(&v.to_le_bytes());
+    };
+    let (node, buf) = (0x8008_041C_u32, 0x8014_C176_u32);
+    ram[(node as usize & 0x1F_FFFF) + 0x48..][..4].copy_from_slice(&buf.to_le_bytes());
+    // 1E dy2, 1A loop, 09 4, 1E dy0, 09 4, 1E dy2, 1B
+    let words: [i16; 33] = [
+        -1, 0, 0x1E, 0, 0, 2, 0x280, 0, 8, 0x100, 0x1A, 0x4000, 0x09, 4, 0x1E, 0, 0, 0, 0x280, 0,
+        8, 0x100, 0x09, 4, 0x1E, 0, 0, 2, 0x280, 0, 8, 0x100, 0x1B,
+    ];
+    for (i, w) in words.iter().enumerate() {
+        put16(&mut ram, buf + 2 * i as u32, *w);
+    }
+    let rect = (0x280, 0, 8, 0x100);
+    // Parked at 14 on a wait set this tick: one tick of the lag is the set's.
+    put16(&mut ram, node + 0x70, 14);
+    put16(&mut ram, node + 0x54, 32);
+    assert_eq!(scroll_ticks_before_set(&ram, node, 3, 2), Some(1));
+    assert_eq!(
+        scroll_previous_rates(&ram, node, rect, [0, 2]),
+        Some([0, 0])
+    );
+    assert_eq!(
+        scroll_previous_rates(&ram, node, rect, [0, 0]),
+        Some([0, 2])
+    );
+    // Set a tick ago: the whole lag rolled at the current rates.
+    put16(&mut ram, node + 0x54, 8);
+    assert_eq!(scroll_ticks_before_set(&ram, node, 3, 2), None);
+    // A rate the program does not hold names no previous one.
+    assert_eq!(scroll_previous_rates(&ram, node, rect, [0, 5]), None);
+}
+
 /// A clip cursor is taken back by the display lag the way the anim tick
 /// would have stood it: Noa's looping eight-frame clip at `48`, two game
 /// frames of `8` back, shows `32`; a loop wraps by its span, a one-shot

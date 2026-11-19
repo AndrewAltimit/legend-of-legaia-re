@@ -800,6 +800,20 @@ engine verdict:
   undone (`scroll_fires_within`, `unrotate_rect`). `jouine`'s two flesh
   columns, period `2` on a step-`3` frame, fire every tick.
 
+  A program that switched its rates inside those two frames rolled the
+  frame before the switch at the old ones. The dance hall's top drum,
+  the scroller on `(640, 0, 8, 256)`, alternates `dy 2` and `dy 0` two
+  ticks each (op `0x1E` then a `09 4` wait, `32` units at `24` a tick),
+  and the scroll rolls on the tick its op runs. A state taken on the tick
+  of the switch (the wait `+0x54` still at its set value) has one lag
+  tick at the new rates and one at the other pair of the program's two
+  (`scroll_ticks_before_set`, `scroll_previous_rates`). Taken back at the
+  current rates for both, the drum stood a roll off on four of the five
+  retail dance states: `minigame_dance_retail_ready` reads `.991` where
+  it read `.981`, `_judged` `.988` where `.971`, `_go_in` `.993` where
+  `.992`. No other state in the library carries such a program on such a
+  tick.
+
   So are the VDF vertex-morph envelopes field actors run off op `0x4B`
   ([field-ambient-fx](../subsystems/field-ambient-fx.md#the-vdf-vertex-morph-chain)).
   Where an envelope stands is time since the arm: `town01`'s shoreline

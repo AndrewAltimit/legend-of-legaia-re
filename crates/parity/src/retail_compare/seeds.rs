@@ -234,20 +234,34 @@ pub fn retail_scroll_rects(ram: &[u8], vram: &[u8]) -> Vec<SeededVramRect> {
             .collect::<Vec<u16>>();
         // The displayed frame is two game frames older than the VRAM: take
         // back the rotations the scroller fired in between.
+        let period = game_anchors::i16_at(ram, n + 0xC4);
         let fires = scroll_fires_within(
-            game_anchors::i16_at(ram, n + 0xC4),
+            period,
             game_anchors::i16_at(ram, n + 0xC6),
             step,
             DISPLAY_LAG_FRAMES,
         );
-        let back = |per_tick: i16, extent: u16| -> usize {
-            let e = i32::from(extent).max(1);
-            (i32::from(per_tick) * i32::from(step) * fires).rem_euclid(e) as usize
+        let rates = [
+            game_anchors::i16_at(ram, n + 0xCC),
+            game_anchors::i16_at(ram, n + 0xCE),
+        ];
+        // Ticks inside the lag before the program last set its rates rolled
+        // at the rates it set before them.
+        let earlier = if period == 0 {
+            scroll_ticks_before_set(ram, n, u8::try_from(step).unwrap_or(1), DISPLAY_LAG_FRAMES)
+                .and_then(|t| scroll_previous_rates(ram, n, rect, rates).map(|r| (t, r)))
+        } else {
+            None
         };
-        let (bw, bh) = (
-            back(game_anchors::i16_at(ram, n + 0xCC), w),
-            back(game_anchors::i16_at(ram, n + 0xCE), h),
-        );
+        let back = |axis: usize, extent: u16| -> usize {
+            let e = i32::from(extent).max(1);
+            let rolled = match earlier {
+                Some((t, prev)) => i32::from(rates[axis]) * (fires - t) + i32::from(prev[axis]) * t,
+                None => i32::from(rates[axis]) * fires,
+            };
+            (rolled * i32::from(step)).rem_euclid(e) as usize
+        };
+        let (bw, bh) = (back(0, w), back(1, h));
         out.push((
             rect,
             unrotate_rect(&texels, usize::from(w), usize::from(h), bw, bh),
@@ -281,6 +295,56 @@ pub(super) fn scroll_fires_within(period: i16, countdown: i16, step: i16, lag: i
         0
     } else {
         1 + (lag - 1 - since) / cycle
+    }
+}
+
+/// How many of a scroller's last `lag` ticks ran before its move program last
+/// set its rates: the program parks on a wait (op `0x09`) after its scroll op
+/// (`0x1E`), so the idle ticks since that run ([`cell_fx_idle_ticks`]) name
+/// the tick the current rates were set on, and the scroll rolls on that tick
+/// at them. `None` when the part is not parked on a wait or the rates were set
+/// before the lag.
+pub(super) fn scroll_ticks_before_set(ram: &[u8], n: u32, step: u8, lag: i32) -> Option<i32> {
+    let idle = cell_fx_idle_ticks(ram, n, step)?;
+    (idle + 1 < lag).then_some(lag - (idle + 1))
+}
+
+/// The rates a scroller's program set before its current ones: its scroll
+/// ops (`0x1E a dx dy x y w h`) on this rect, when they carry exactly two
+/// rate pairs and the current is one of them - the dance hall's drum
+/// alternates `dy 2` and `dy 0` two ticks each, so a state taken on the tick
+/// its program switched shows, two frames back, the other pair's roll.
+/// `None` for any other program.
+pub(super) fn scroll_previous_rates(
+    ram: &[u8],
+    n: u32,
+    rect: (u16, u16, u16, u16),
+    current: [i16; 2],
+) -> Option<[i16; 2]> {
+    const SCROLL_OP: i16 = 0x1E;
+    const SCROLL_OP_WORDS: u32 = 8;
+    let buf = game_anchors::u32_at(ram, n + 0x48);
+    if (buf & 0xFFE0_0000) != 0x8000_0000 {
+        return None;
+    }
+    let word = |i: u32| game_anchors::i16_at(ram, buf + i * 2);
+    let mut pairs: Vec<[i16; 2]> = Vec::new();
+    for i in 0..CYCLER_PROGRAM_WORDS - SCROLL_OP_WORDS {
+        let on_rect = [4u32, 5, 6, 7]
+            .iter()
+            .zip([rect.0, rect.1, rect.2, rect.3])
+            .all(|(&o, v)| word(i + o) as u16 == v);
+        if word(i) == SCROLL_OP && on_rect {
+            let pair = [word(i + 2), word(i + 3)];
+            if !pairs.contains(&pair) {
+                pairs.push(pair);
+            }
+        }
+    }
+    match pairs.as_slice() {
+        [a, b] if *a == current => Some(*b),
+        [a, b] if *b == current => Some(*a),
+        _ => None,
     }
 }
 
