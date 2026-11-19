@@ -2501,12 +2501,17 @@ hblanks at PCSX-Redux's two cycles an instruction and a `28`-frame Vahn art `200
 for its first `100` hblanks, ahead of the shout's `CdlSetloc`; the SpecialStarter's voice is
 dispatched from the banner block before the decode, which is why Frost Breath's seek lands
 `35k` cycles into its frame. The census links nothing for it, so the arts films' art-commit
-passes read `60..120` hblanks over their census before the term. Port:
+passes read `60..120` hblanks over their census without the term. Port:
 `frame_clock::me_decode_work`, added by `World::commit_staged_battle_anim_at_boundary` and
-taken by the pass's push. Tri-Somersault reads `.767` to `.816` and its cues `.964` to
-`1.000`, Slash Kick `.911` to `.979`; the Gala chain films fall (`.99` to `.94`) on a
+taken by the pass's push, behind `WorldToggles::battle_me_decode_cost`
+(`LEGAIA_BATTLE_ME_DECODE=1`), off by default. On, Tri-Somersault reads `.767` to `.816` and
+its cues `.964` to `1.000`, Slash Kick `.911` to `.979`, but the arts mean falls `.9454` to
+`.9423` and the camera `1.46` to `1.94` px. The Gala chain films fall (`.99` to `.94`) on a
 knife edge: their art pass prices `722` where retail's reads `717`, the census `4` over
-retail's base, which tips the ring to step `4`. Grade `disassembly` for the call and the
+retail's base, which tips the ring to step `4`; from there the port's voiced frames run a
+vsync past retail's (`9` against `8`) and the line covers one pass fewer. Closing a pass's
+polls where the read ends, and opening a shout's polls after its commit's decode, do not
+recover it (Sonic Javelin `.942` to `.828`). Grade `disassembly` for the call and the
 instruction count, `capture` for the films.
 
 **A party member's ghosts.** The Super Arts' slow motion and the chain finishers draw two

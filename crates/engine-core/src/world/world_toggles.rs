@@ -158,6 +158,14 @@ pub struct WorldToggles {
     /// `max(cpu, dma + draw)` entry. The native session raises it from
     /// `LEGAIA_BATTLE_GPU_COST=1`; only the native window prices its frames.
     pub battle_gpu_cost_step: bool,
+    /// Opt-in, off by default: a party art commit's `"ME"` keyframe decode
+    /// priced into its battle frame (`frame_clock::me_decode_work`;
+    /// `FUN_8002B28C` from `FUN_8004AD80`). Retail-correct, but over the
+    /// arts films it trades the arts mean and camera against the worst rows
+    /// until the census base and the voiced frames' span agree with retail's
+    /// (`battle-stage-camera.md`, an art's keyframe decode). The native
+    /// session sets it either way from `LEGAIA_BATTLE_ME_DECODE`.
+    pub battle_me_decode_cost: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
     /// CD-XA voice clip plays: PCSX-Redux's by default, where the clip player's
     /// stop watch polls the drive on two thirds of the CPU and a voiced arm's
@@ -543,6 +551,7 @@ impl WorldToggles {
             battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
             battle_party_cost_step: true,
             battle_gpu_cost_step: false,
+            battle_me_decode_cost: false,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: true,
             battle_poly_frame_cost: true,
