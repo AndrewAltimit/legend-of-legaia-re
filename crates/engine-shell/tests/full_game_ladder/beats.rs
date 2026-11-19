@@ -1775,9 +1775,14 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
         let (px, pz) = player_xz(session);
         let back = player_xz(session);
         let pad = pad_for_step(session, (nx - px).signum(), (nz - pz).signum());
-        session.host.world.set_pad(pad);
-        if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
-            return Some(Run::Entered(name));
+        // A step is held across a game frame ([`press_ticks`]): in the
+        // retail-faithful mode a one-tick lean moved nobody, and `rayman`'s
+        // gate guards (P1[44..47]) were never reached.
+        for _ in 0..press_ticks(session) {
+            session.host.world.set_pad(pad);
+            if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
+                return Some(Run::Entered(name));
+            }
         }
         session.host.world.set_pad(0);
         if !inside(session) {
@@ -1788,9 +1793,11 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
             }
             backoffs += 1;
             let away = pad_for_step(session, (px - nx).signum(), (pz - nz).signum());
-            session.host.world.set_pad(away | PadButton::R1.mask());
-            if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
-                return Some(Run::Entered(name));
+            for _ in 0..press_ticks(session) {
+                session.host.world.set_pad(away | PadButton::R1.mask());
+                if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
+                    return Some(Run::Entered(name));
+                }
             }
             session.host.world.set_pad(0);
             if !inside(session) {
@@ -1803,11 +1810,10 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
     if !found {
         return None;
     }
-    session.host.world.set_pad(PadButton::Cross.mask());
-    match session.tick() {
-        Ok(SceneTickEvent::SceneEntered { name }) => return Some(Run::Entered(name)),
-        Ok(_) => {}
-        Err(e) => return Some(Run::Error(format!("{e:#}"))),
+    match press_edge(session, PadButton::Cross.mask()) {
+        Ok(Some(name)) => return Some(Run::Entered(name)),
+        Ok(None) => {}
+        Err(e) => return Some(Run::Error(e)),
     }
     for f in 0..DEEP_EXIT_TICKS {
         if session.host.world.mode == SceneMode::Battle {

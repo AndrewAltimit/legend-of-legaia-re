@@ -242,11 +242,10 @@ pub(super) fn interact_at(
         };
         let before = flags_of_world(session);
         let seat_xz = player_xz(session);
-        session.host.world.set_pad(PadButton::Cross.mask());
-        match session.tick() {
-            Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
-            Ok(_) => {}
-            Err(e) => return Run::Error(format!("{e:#}")),
+        match press_edge(session, PadButton::Cross.mask()) {
+            Ok(Some(name)) => return Run::Entered(name),
+            Ok(None) => {}
+            Err(e) => return Run::Error(e),
         }
         // Page the conversation to its end, then step back off the NPC
         // before anything else runs: a player facing the NPC with the
@@ -709,4 +708,25 @@ pub(super) fn press_ticks(session: &NativeSession) -> usize {
     } else {
         4
     }
+}
+
+/// Press `mask` once, as an edge the field reads: one tick in the default
+/// mode (the caller's pad before it is the release), and in the
+/// retail-faithful mode [`press_ticks`] released and then as many held.
+/// `Ok(Some(scene))` when a scene change landed meanwhile.
+pub(super) fn press_edge(session: &mut NativeSession, mask: u16) -> Result<Option<String>, String> {
+    let n = press_ticks(session);
+    let release = if n > 1 { n } else { 0 };
+    for (pad, ticks) in [(0, release), (mask, n)] {
+        for _ in 0..ticks {
+            session.host.world.set_pad(pad);
+            match session.tick() {
+                Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Some(name)),
+                Ok(_) => {}
+                Err(e) if pad != 0 => return Err(format!("{e:#}")),
+                Err(_) => {}
+            }
+        }
+    }
+    Ok(None)
 }
