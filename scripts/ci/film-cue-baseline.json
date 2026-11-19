@@ -58,7 +58,13 @@
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "71efc4825f80"
+      "recording": "dbc05e5d665f"
+    },
+    "chitei2_cort_pre_mystic_circle__AD": {
+      "cue": 1.0,
+      "matched": 33,
+      "retail_cues": 33,
+      "recording": "2d7bbee3f2d0"
     },
     "chitei2_cort_pre_mystic_circle__B7": {
       "cue": 1.0,
@@ -82,7 +88,7 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "5be64f9fd581"
+      "recording": "b51227afdd39"
     },
     "chitei2_kemaro_lv2_strike": {
       "cue": 1.0,
@@ -106,7 +112,7 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "46860361012c"
+      "recording": "95f219fa8702"
     },
     "deene_garnet_pre_heal__2E": {
       "cue": 1.0,
@@ -139,7 +145,7 @@
       "recording": "2ce9c4003261"
     },
     "deene_lapis_strike": {
-      "cue": 0.9767,
+      "cue": 1.0,
       "matched": 21,
       "retail_cues": 21,
       "recording": "f11ef3e5f24f"
@@ -166,7 +172,7 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "f5181db0d3ce"
+      "recording": "3557649578af"
     },
     "deroa_spoon_v2_pre_hyper_heal__2F": {
       "cue": 1.0,
@@ -184,7 +190,7 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "475da8fa510a"
+      "recording": "c662b51e4bfb"
     },
     "dohaty_gola_gola_strike": {
       "cue": 1.0,
@@ -238,7 +244,7 @@
       "cue": 1.0,
       "matched": 3,
       "retail_cues": 3,
-      "recording": "850878d1c893"
+      "recording": "62d044525194"
     },
     "garmel_noa_frost_breath_open": {
       "cue": 1.0,
@@ -250,13 +256,13 @@
       "cue": 1.0,
       "matched": 9,
       "retail_cues": 9,
-      "recording": "04c9fdf785b4"
+      "recording": "64219d0b00be"
     },
     "garmel_noa_lizard_tail_open": {
       "cue": 1.0,
       "matched": 13,
       "retail_cues": 13,
-      "recording": "3c6e11be47b2"
+      "recording": "593aa149c994"
     },
     "garmel_songi_hyper_wave": {
       "cue": 1.0,
@@ -307,10 +313,10 @@
       "recording": "67e9ddf8d863"
     },
     "gaza2_card_pre_neo_star_slash__A6": {
-      "cue": 0.96,
+      "cue": 1.0,
       "matched": 12,
       "retail_cues": 12,
-      "recording": "86ba8e3295f4"
+      "recording": "67212f0e913b"
     },
     "jagaroom_van_saryu_earthquake": {
       "cue": 1.0,
@@ -328,7 +334,7 @@
       "cue": 1.0,
       "matched": 3,
       "retail_cues": 3,
-      "recording": "ad4f7db664eb"
+      "recording": "1265f6e2baa5"
     },
     "jou_gala_chain_mid": {
       "cue": 1.0,
@@ -346,11 +352,11 @@
       "cue": 1.0,
       "matched": 18,
       "retail_cues": 18,
-      "recording": "4faeee2253ae"
+      "recording": "a295c00caef7"
     },
     "jou_gimard_v3_tail_flare": {
-      "cue": 0.933,
-      "matched": 14,
+      "cue": 1.0,
+      "matched": 15,
       "retail_cues": 15,
       "recording": "fa23bd26b990"
     },
@@ -358,7 +364,7 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "6269795952f8"
+      "recording": "372d99d5981c"
     },
     "jou_mad_golem_forced_earthcrush": {
       "cue": 1.0,
@@ -412,7 +418,7 @@
       "cue": 1.0,
       "matched": 18,
       "retail_cues": 18,
-      "recording": "dee9ba2660bc"
+      "recording": "4b392eb536ae"
     },
     "jou_slippery_v3_moldy_breath": {
       "cue": 1.0,
@@ -448,7 +454,7 @@
       "cue": 0.9643,
       "matched": 27,
       "retail_cues": 28,
-      "recording": "3040218a9314"
+      "recording": "529b1400f356"
     },
     "jou_viguro_v3_thunder_burst": {
       "cue": 1.0,
@@ -466,13 +472,13 @@
       "cue": 1.0,
       "matched": 18,
       "retail_cues": 18,
-      "recording": "b15f341120d1"
+      "recording": "b7d4057bb31a"
     },
     "jouind_gilium_lv3_thunder_storm": {
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "6552a960c3c7"
+      "recording": "48778a1d1e91"
     },
     "kor_dead_bone_curse_all": {
       "cue": 1.0,
@@ -544,7 +550,7 @@
       "cue": 1.0,
       "matched": 3,
       "retail_cues": 3,
-      "recording": "2ed70877994b"
+      "recording": "50cd7fdf6e33"
     },
     "korb2_ghost_knight_strike": {
       "cue": 1.0,
@@ -574,7 +580,7 @@
       "cue": 1.0,
       "matched": 1,
       "retail_cues": 1,
-      "recording": "bcd56923d485"
+      "recording": "32841e152432"
     },
     "korb2_medusa_strike": {
       "cue": 1.0,
@@ -664,13 +670,13 @@
       "cue": 1.0,
       "matched": 7,
       "retail_cues": 7,
-      "recording": "94e709aa502d"
+      "recording": "8df1b10cac3a"
     },
     "nilboa_koru_pre_gigaton_press__A4": {
       "cue": 1.0,
       "matched": 6,
       "retail_cues": 6,
-      "recording": "7386ee4969fc"
+      "recording": "891584247685"
     },
     "nilboa_koru_pre_thunder_needle__A3": {
       "cue": 1.0,
@@ -724,7 +730,7 @@
       "cue": 1.0,
       "matched": 7,
       "retail_cues": 7,
-      "recording": "6e474334542f"
+      "recording": "ff21850e5e72"
     },
     "nivora_duel_pre_megaton_press__7A": {
       "cue": 1.0,
@@ -736,7 +742,7 @@
       "cue": 1.0,
       "matched": 24,
       "retail_cues": 24,
-      "recording": "a1730f9ff93a"
+      "recording": "9364361c0b36"
     },
     "noaru_barra_v2_pre_multi_cutter__65": {
       "cue": 1.0,
@@ -790,13 +796,13 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "8ae7320e400c"
+      "recording": "64ca2cbb6ef2"
     },
     "noaru_songi_pre_genocidal_cannon__B3": {
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "6b4f9298e9ee"
+      "recording": "817ea02c9c0a"
     },
     "noaru_songi_strike": {
       "cue": 1.0,
@@ -850,13 +856,13 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "a5e3ecc514e2"
+      "recording": "208dbca22da3"
     },
     "retona_songi_hyper_lightning": {
       "cue": 1.0,
       "matched": 4,
       "retail_cues": 4,
-      "recording": "8f51c1461238"
+      "recording": "17198b8176e1"
     },
     "retona_viguro_lv2_strike": {
       "cue": 1.0,
@@ -904,7 +910,7 @@
       "cue": 1.0,
       "matched": 3,
       "retail_cues": 3,
-      "recording": "2dc5317a62d2"
+      "recording": "9588df02ad9c"
     },
     "ropeway_gala_flying_knee_late": {
       "cue": 1.0,
@@ -964,7 +970,7 @@
       "cue": 1.0,
       "matched": 8,
       "retail_cues": 8,
-      "recording": "3ba422442b23"
+      "recording": "16741df9df13"
     },
     "rugi_caruban_2_fire_breath": {
       "cue": 1.0,
@@ -994,7 +1000,7 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "2c74d565bbd5"
+      "recording": "8a1969cc6beb"
     },
     "rugi_rogue_pre_rogue_thunder__B1": {
       "cue": 1.0,
@@ -1006,7 +1012,7 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "0a5246189049"
+      "recording": "7d95b4f7df61"
     },
     "rugi_slippery_strike": {
       "cue": 1.0,
@@ -1024,7 +1030,7 @@
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "728e21963168"
+      "recording": "cf4a0e930374"
     },
     "s83": {
       "cue": 1.0,
@@ -1054,13 +1060,13 @@
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "080bdaf9472f"
+      "recording": "8067e7fa12f6"
     },
     "s88": {
       "cue": 1.0,
       "matched": 6,
       "retail_cues": 6,
-      "recording": "4e01fe2799a8"
+      "recording": "b9769055f51e"
     },
     "s89": {
       "cue": 1.0,
@@ -1072,25 +1078,25 @@
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "c930c6e89d59"
+      "recording": "d3b2a6a1b6e7"
     },
     "s8B": {
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "57668c5c97b4"
+      "recording": "d2230c9840d9"
     },
     "s8C": {
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "04b8b75cbb71"
+      "recording": "9e32bc03bd53"
     },
     "s8D": {
       "cue": 1.0,
       "matched": 8,
       "retail_cues": 8,
-      "recording": "605077e7a6d7"
+      "recording": "98ddec6bea30"
     },
     "s8E": {
       "cue": 1.0,
@@ -1120,7 +1126,7 @@
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "5f786b49014b"
+      "recording": "7322d095640c"
     },
     "s93": {
       "cue": 1.0,
@@ -1138,25 +1144,25 @@
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "38fb214291e4"
+      "recording": "0e6f8c938c50"
     },
     "s99": {
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "958c4043b0af"
+      "recording": "764b75a2c678"
     },
     "s9A": {
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "916c89e720ee"
+      "recording": "e4a5f0ef0d98"
     },
     "s9B": {
       "cue": 1.0,
       "matched": 8,
       "retail_cues": 8,
-      "recording": "ca0a93b363b7"
+      "recording": "c2bd0bfa7daa"
     },
     "s9C": {
       "cue": 1.0,
@@ -1180,13 +1186,13 @@
       "cue": 1.0,
       "matched": 5,
       "retail_cues": 5,
-      "recording": "479dc73e30e7"
+      "recording": "bfec2bf9ebf9"
     },
     "sA0": {
       "cue": 1.0,
       "matched": 8,
       "retail_cues": 8,
-      "recording": "7033f457f507"
+      "recording": "2e6585047a6e"
     },
     "taiku_terror_face_pre_fissure__32": {
       "cue": 1.0,
@@ -1246,7 +1252,7 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "818a8537cb88"
+      "recording": "b544593ef9ac"
     },
     "teien_berserker_strike": {
       "cue": 1.0,
@@ -1312,13 +1318,13 @@
       "cue": 1.0,
       "matched": 4,
       "retail_cues": 4,
-      "recording": "3f94f944d55f"
+      "recording": "288d380ef07d"
     },
     "tunnelc_xain_terio_punch": {
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "c461775247e9"
+      "recording": "96fd8d3ef65b"
     },
     "vozz_gizam_strike": {
       "cue": 1.0,
