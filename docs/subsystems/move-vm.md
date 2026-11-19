@@ -826,6 +826,14 @@ play hosts draw them through `engine-screens::screen_layers`. A sprite spawn
 keeps the field-script bytes after its 19-byte record, so the widget script
 runs.
 
+The widgets tick on the game-frame grid, as the actor walk ticks them: each
+handler adds the frame step `_DAT_1F800393` to its clock once a frame (the
+sprite at `0x801F7BB4..0x801F7BD0`), so the port's `tick` takes the step on
+the vsync that is a game frame and holds between two
+(`FrameClock::script_frame_delta`, the credit the script's own waits take).
+A credit of one a vsync ran the ending crawl's line clocks a vsync off the
+credits record's wait on a step-`2` frame.
+
 Widgets are actors on the generic effect-actor list (`_DAT_8007C34C`). SCUS
 `FUN_80020DE0(descriptor, list)` allocates one and binds the per-frame handler
 from `descriptor+8` at `actor+0xc`; `FUN_8003CF04(list, handler)` finds a live

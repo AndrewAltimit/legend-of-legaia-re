@@ -313,6 +313,13 @@ incoming label, so the corpus scores it as the scene the define names and
 records the label as `pending_scene` in the detail
 (`RetailObs::settle_on_loaded_scene`;
 [the arrival states](#arrival-states-are-captured-before-the-town-runs)).
+Such a state holds the outgoing scene's records, which the engine leaves
+with the change the gate's resume replays, so its script gate keeps the
+resume and ends at the settle window rather than the deadline: the still is
+the settle sample and a [walk film](walk-film.md) runs on from there.
+`doman_arrival_from_korb2` holds map03's flat `49` on its idle `26` at
+`+0x2E`, a record the engine's map03 never runs as a context; the seed ran
+to the deadline and no film ever started behind it.
 
 ## Retail observables
 
@@ -902,6 +909,30 @@ engine verdict:
   columns to cover them. A seed cut at the image's width left those texels
   unseeded and the panel's right edge drew whatever the engine held there.
 
+  The ending crawl's lines are not seated: the child replays the credits
+  record that spawns them (`43 10`, the sprite widget `FUN_801F7A9C`). But
+  they show the RAM's frame where the gate stands the scene on the displayed
+  one. A PCSX-Redux film of `edlast` (a shot every two vsyncs) puts each
+  line's top row at its `+0x16` plus the glyph's offset on the same vsync,
+  from `t408` to `t448`, so a state holding a sprite widget
+  (`retail_has_sprite_widget`) hands the child `LEGAIA_SEAT_SPRITE_LEAD`,
+  the display lag, and the child runs the sprites alone on by it in frame
+  steps on the capture frame. On the gate's frame alone the `Casting` line
+  stood two rows low (`credits_edlast_casting_pcsx` image `.925`, `.996`
+  led).
+
+  So is the scene's held op-`0x34` grade. It is the history of the record
+  that ran it: `urudre1`'s entry script grades `(48, 48, 0)` or
+  `(0, 16, 24)` on `0x146` / `0x22E` and spawns the dream opening `P2[0]`
+  only while `0x3F5` is set, clearing it, and `P2[0]` grades
+  `(0, 16, 24)` over it. A state taken after `P2[0]` ended reloads into the
+  entry script's grade. The live tween `_DAT_8007B62C` names (`FUN_801DDC20`'s
+  fields: `from` `+0xB8`, `to` `+0xBE`, delay `+0xC4`, hold `+0xC6`, clock
+  `+0xC8`, duration `+0xD4`, blend `+0xD2`, kind `+0xD6`) goes to the child as
+  `LEGAIA_SEAT_GRADE`, its clock taken back by the display lag, and stands on
+  the capture frame (`retail_scene_grade`, `World::seat_held_scene_grade`;
+  `urudre1_house_free` image `.466` to `.994`).
+
   So is the frame's clear colour, the draw environment's `r0 / g0 / b0`
   (`0x8007BF5D..5F`) that op `4C 13` writes and the MAN loader zeroes: the
   state's bytes go to the child as `LEGAIA_SEAT_CLEAR` and are written over
@@ -1035,6 +1066,20 @@ engine's lands too. Three `concend` checkpoints 60 vsyncs apart had all
 met on the player's first tick of the walk (position `.175`, `0`, `0`; met
 on the walk, `1`), and `concnow` `P2[13]`'s wait on flat `50` at `+0x399`
 read image `.34` on the PC alone and `.84` on the walk.
+
+**A landed face leg.** `4C 85` / `8E` / `8F` aimed at a placement arms the
+walk kernel's FaceTarget leg on it, and the record's next cross-context op
+on that placement waits for the turn. The leg's terminal frame clears the
+placement's `0x400` in its actor tick (`FUN_8003774C`, `0x80038004`), after
+the record's slice, so a capture can hold the record on that op with the
+turn already done. A gate whose op aims at a placement seated on a face leg
+with its halt down carries `FACE_LANDED` in `ScriptGate::walk`, met once no
+face leg turns that placement in the engine
+(`World::npc_face_leg_in_flight`), and the child takes the displayed frame
+the lag back from it. `credits_eddoman_fullscreen_pcsx` is parked on
+`AC 14 07` behind `CC 14 85 0F 00 15`: on the PC alone flat `20` stood on
+the turn's first frame (`0xD5C` against retail's `0x92E`; facing `.8`,
+image `.985`), met on the landing both are `1.0` and `.992`.
 
 A capture with no camera mover on its
 lists holds a landed shot (retail frees the mover when its glide ends), so
