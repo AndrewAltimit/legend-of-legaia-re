@@ -1527,6 +1527,31 @@ impl SceneHost {
 /// placed object with its pack mesh's primitive and vertex counts, and the
 /// `.MAP` grid's walk-visible ground cells. `None` for a world map (its
 /// ground and sweep are another emitter's) or a scene with no `.MAP`.
+/// Vsyncs a door's field init spends reading `scene`'s streamed pack: the
+/// block's `+4` entry (`<scene>.pac` / `tim.dat`), read when the scene's
+/// asset table carries a `Flag(0x14)` or `Flag(0x0A)` descriptor
+/// (`FUN_8002541C`), at the chunk rate the departure's read measures
+/// ([`legaia_engine_field::scene_transition_actor::chunk_stream_vsyncs`]).
+/// `0` for a scene that streams none. What it costs the door's hold is
+/// `legaia_engine_system::mode_entry_init::door_pack_overrun_vsyncs`.
+///
+/// REF: FUN_801D6704 (`0x801D6BF8..0x801D6C20`), FUN_8002541C, FUN_800255B8
+pub fn streamed_pack_read_vsyncs(index: &ProtIndex, scene: &Scene) -> u32 {
+    let streams = scene
+        .entries
+        .iter()
+        .any(|e| legaia_scene_formats::scene_asset_table::streams_scene_pack(&e.bytes));
+    if !streams {
+        return 0;
+    }
+    index
+        .block_range_extraction(&scene.name)
+        .and_then(|(start, _)| index.entries().get(start as usize + 4))
+        .map_or(0, |e| {
+            legaia_engine_field::scene_transition_actor::chunk_stream_vsyncs(e.size_sectors)
+        })
+}
+
 pub fn field_cost_table(
     index: &ProtIndex,
     scene: &Scene,

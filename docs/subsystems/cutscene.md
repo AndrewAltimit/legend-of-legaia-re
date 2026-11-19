@@ -1975,12 +1975,25 @@ logs the sound-flag word at each mode change) read mode `0x02` for `184`
 vsyncs behind every door that kept the music (`kor` -> `koin2`, `balden` ->
 `balden2`, `jouind` -> `jouinc`; `map03` -> `son` `185`) and `241` or `242`
 behind every door that did not (`ropeway` -> `map02` -> `stone` ->
-`tunnela` -> `rayman2`, `retockin` -> `jagaroom`, `korb2` -> `doman`;
-`map01` -> `town01` reads `256`), whatever the scene. The retail-faithful mode
+`tunnela` -> `rayman2`, `retockin` -> `jagaroom`, `korb2` -> `doman`),
+whatever the scene. The retail-faithful mode
 (`WorldToggles::skip_load_holds` off, as `--retail` sets it) arms
 `field_init_hold` for those two figures
 (`mode_entry_init::door_field_init_hold_vsyncs`); the default keeps the load
 instant.
+
+A destination that streams a pack the floor cannot hide holds longer. The
+init reads the block's `+4` entry when the scene's asset table carries a
+`Flag(0x14)` / `Flag(0x0A)` descriptor (`FUN_8002541C`, `0x801D6C18`),
+before the floor test. Cycle-stamped on PCSX-Redux with exec breakpoints
+through the init, `map02` -> `stone` reaches the floor test `52` vsyncs in
+and waits it out to `127`; `map01` -> `town01` (`s2_rimelm_town01`) spends
+`38.3..124.2` inside `FUN_8002541C(0x14)` reading town01's `180`-sector
+pack, reaches the floor test at `141`, past the floor, and stores mode `3`
+at `256`. The BGM poll after the floor runs `109` vsyncs on both. The
+retail-faithful hold adds what the pack read runs past the floor
+(`door_pack_overrun_vsyncs`, `254` for town01); `doman`'s and `balden2`'s
+smaller packs are read under it.
 
 The departure before the init has a CD wait of its own. The streaming
 actor `FUN_80021934` seeds its `0x46`-frame countdown in state 0, streams
@@ -1993,8 +2006,14 @@ read the countdown at `-26` when `tunnela` hands off to `rayman2` (`181`
 sectors, `96` vsyncs after the seed) and `-2` behind every chunk of `82..106`
 sectors (`72` vsyncs). About two sectors a vsync
 (`CHUNK_SECTORS_PER_VSYNC_X100`) fits `jagaroom` (`143`, `76`), `koin2` and
-`balden2` (`163`, `84`) to two vsyncs; `map02` -> `stone` (`127`, `78` at
-step `3`) reads six past it. The retail-faithful mode sets the hold's
+`balden2` (`163`, `84`) to two vsyncs. `map02` -> `stone` (`127`, `78` at
+step `3`) reads six past it, and the six are not the door's: breakpoints on
+the actor's states put its state-1 CD wait at `6` vsyncs there (none on
+`ropeway` -> `map02`), behind a `4`-sector read of the battle-mesh assembly
+`FUN_80052770` (through `FUN_800559EC`), which streams the party's battle
+data in steps for about `190` vsyncs after a scene entry. The hop left
+`map02` inside that window; a departure taken later finds the CD idle. The
+engine does not stream the assembly, so it does not model the wait. The retail-faithful mode sets the hold's
 `stream_vsyncs` from the chunk's size, the default reads the chunk at once.
 
 A battle's return to the field runs the same init with the field-entry word

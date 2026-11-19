@@ -487,7 +487,7 @@ pub use scene_entry::{
     BeatTrigger, DoorTaken, FmvHandoffOutcome, HeldReason, PICKER_BEATS_THAT_LEAVE,
     PICKER_ENTRY_BEATS, PICKER_ENTRY_BEATS_HELD, PICKER_SEAT_OVERRIDES, PickerEntryBeat,
     PickerEntryBeatHeld, PickerSeat, PickerSeatRule, field_scene_build, picker_entry_beat,
-    picker_seat_override,
+    picker_seat_override, streamed_pack_read_vsyncs,
 };
 
 #[cfg(test)]
