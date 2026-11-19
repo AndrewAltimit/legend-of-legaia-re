@@ -3,7 +3,7 @@
 //!
 //! `PartRunner` resumes a battle state and times every part of each frame
 //! (each dispatcher primitive by its leaf and fate, each group and call, each
-//! body draw and its objects, the grid, the shadows, the walker visit by
+//! body draw and its objects, the grid, the template tick, the walker visit by
 //! visit, the mesh builds, the part ticks), each part's own cycles with its
 //! nested parts taken out. The table prices the same units; the frame's ring
 //! entry (the pacer's CPU word, interrupt-free here) is what the sum must
@@ -17,7 +17,7 @@ use psx_retail_exec::battle_cost::{DISPATCHER, FrameParts, Part, PartRunner, Pri
 
 const BODY_DRAW: u32 = 0x8004_8A08;
 const GRID: u32 = 0x801D_02C0;
-const SHADOWS: u32 = 0x8004_DA00;
+const TEMPLATE_TICK: u32 = 0x8004_DA00;
 const WALKER: u32 = 0x801E_0080;
 const ME_DECODE: u32 = 0x8002_B28C;
 const TMD_RENDER: u32 = 0x8002_735C;
@@ -112,7 +112,7 @@ fn derived_cycles(f: &FrameParts) -> Option<u64> {
     if n(Part::Call(GRID)) > 0 {
         s += c(dc::GRID_FIXED_CYCLES) + linked(GRID) / 4 * c(dc::GRID_CELL_CYCLES);
     }
-    s += linked(SHADOWS) * c(dc::SHADOW_PACKET_CYCLES);
+    s += linked(TEMPLATE_TICK) * c(dc::TEMPLATE_TICK_PACKET_CYCLES);
     s += n(Part::Call(WALKER)) * c(dc::WALKER_CALL_CYCLES)
         + u64::from(f.sweeps) * c(dc::WALKER_SWEEP_CYCLES)
         + n(Part::ChildStep) * c(dc::CHILD_STEP_CYCLES)

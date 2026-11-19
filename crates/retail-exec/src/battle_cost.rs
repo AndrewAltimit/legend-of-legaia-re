@@ -243,7 +243,7 @@ pub const CONTEXTS: &[Routine] = &[
     r(0x8001_C204, "floor clip"),
     r(0x8002_6CE4, "field render"),
     r(0x801D_02C0, "ground grid"),
-    r(0x8004_DA00, "shadows"),
+    r(0x8004_DA00, "battle template tick"),
     r(0x8002_519C, "actor tick pass"),
     r(0x8004_6A20, "battle frame driver"),
     r(0x8002_1DF4, "move-VM part tick"),
@@ -494,6 +494,9 @@ pub struct FrameParts {
     /// ([`pool_live`]).
     pub children: u32,
     pub masters: u32,
+    /// The battle's action state as the frame opened (`ctx[+7]`, the context
+    /// at `*0x8007BD24`).
+    pub state: u8,
     /// `(visits, own cycles)` a part; for [`Part::ChildOverrun`] the visits'
     /// advances are in [`Self::overrun_advances`].
     pub parts: std::collections::BTreeMap<Part, (u64, u64)>,
@@ -553,6 +556,15 @@ impl PartRunner {
 
     pub fn frame(&mut self) -> Result<FrameParts> {
         let (children, masters) = pool_live(&mut self.runner.run.cpu.mem);
+        let state = {
+            let m = &mut self.runner.run.cpu.mem;
+            let ctx = m.rd32(0x8007_BD24);
+            if ctx & 0x1FFF_FFFF < 0x20_0000 && ctx != 0 {
+                m.rd8(ctx + 7)
+            } else {
+                0
+            }
+        };
         let bf = self.runner.frame()?;
         let prims = self.leaves.take();
         let (sweeps, _) = self.walker.take();
@@ -623,6 +635,7 @@ impl PartRunner {
             step: bf.cost.step,
             children,
             masters,
+            state,
             parts,
             overrun_advances,
             sweeps,

@@ -211,6 +211,8 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             "LEGAIA_BATTLE_ARTS_SHOUT_CD",
             &mut toggles.battle_arts_shout_cd,
         ),
+        // The derived per-unit frame cost (`WorldToggles::derived_frame_cost`).
+        ("LEGAIA_DERIVED_FRAME_COST", &mut toggles.derived_frame_cost),
         (
             "LEGAIA_FIELD_COST_PLACED_WALK",
             &mut toggles.field_cost_placed_walk,

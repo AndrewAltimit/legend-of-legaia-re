@@ -471,7 +471,7 @@ fn battle_cost(s: &PcsxState, frames: usize, mode: &str) -> Result<()> {
         }
         "parts" => {
             let mut run = bc::PartRunner::new(s)?;
-            println!("frame,ring,step,sweeps,part,n,cycles,extra,children,inclusive");
+            println!("frame,ring,step,sweeps,part,n,cycles,extra,children,inclusive,st7");
             for f in 0..frames {
                 let fp = run.frame()?;
                 let (ring, step) = (fp.ring, fp.step);
@@ -497,10 +497,11 @@ fn battle_cost(s: &PcsxState, frames: usize, mode: &str) -> Result<()> {
                         other => fp.objects.get(other).copied().unwrap_or(0) as i64,
                     };
                     println!(
-                        "{f},{ring},{step},{},{name},{n},{c},{extra},{},{}",
+                        "{f},{ring},{step},{},{name},{n},{c},{extra},{},{},{:#04x}",
                         fp.sweeps,
                         fp.children,
-                        fp.inclusive.get(p).copied().unwrap_or(0)
+                        fp.inclusive.get(p).copied().unwrap_or(0),
+                        fp.state
                     );
                 }
                 let other = fp.builds.iter().filter(|b| b.0 != 0).count();

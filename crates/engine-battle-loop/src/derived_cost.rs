@@ -3,7 +3,7 @@
 //! an instruction, one a data access, the GTE and GPU free) of one unit of
 //! retail work, counted in `retail-exec` by resuming library battle states
 //! and timing each part of their frames (`psx_retail_exec::battle_cost`).
-//! Not wired into any cost path; the fitted census line
+//! Priced under `WorldToggles::derived_frame_cost` (`derived_cost::frame_hblanks`, off by default); the fitted census line
 //! ([`crate::frame_clock::linked_frame_work`]) stays the model the engine
 //! prices with. `docs/tooling/retail-frame-cost.md` ("Battle frames by
 //! unit") has the method and the residual check, and
@@ -16,7 +16,7 @@
 //!
 //! REF: FUN_80043390, FUN_80044798, FUN_80048A08, FUN_8004998C, FUN_80049348
 //! REF: FUN_800480D8, FUN_8001ADA4, FUN_80028158, FUN_80021DF4, FUN_801D02C0
-//! REF: FUN_8004DA00, FUN_801E0080, FUN_8002735C, FUN_8002B28C, FUN_8002519C
+//! REF: FUN_8004DA00, FUN_801E0080, FUN_8001D140, FUN_8002735C, FUN_8002B28C, FUN_8002519C
 
 /// PCSX-Redux's CPU cycles in one scanline, as a fraction: `33868800 / 60
 /// / 263` (`PCSX_CYCLES_PER_HBLANK` in `retail-exec`), the unit the pacer's
@@ -149,8 +149,14 @@ pub const PART_TICK_CYCLES: u32 = 1578;
 pub const GRID_FIXED_CYCLES: u32 = 145_452;
 /// See [`GRID_FIXED_CYCLES`].
 pub const GRID_CELL_CYCLES: u32 = 389;
-/// A ground-shadow packet (`FUN_8004DA00`; a drawn body's shadow is `24`).
-pub const SHADOW_PACKET_CYCLES: u32 = 266;
+/// The battle template's tick `FUN_8004DA00` (the HUD's packets and the
+/// per-frame sweeps), a packet it links. A body's ground shadow is not here:
+/// it is a shape-`0` mesh build of `24` segments inside the body draw
+/// ([`MESH_BUILD_CYCLES`]) and its packets through the dispatcher.
+pub const TEMPLATE_TICK_PACKET_CYCLES: u32 = 266;
+/// What the template tick costs a frame on the library's states (mean; it
+/// links `20..211` packets), for a model that does not count its packets.
+pub const TEMPLATE_TICK_CYCLES: u32 = 23_750;
 
 /// The effect walker `FUN_801E0080` timed visit by visit inside its frames:
 /// a call, a sweep of the first pass (all `32` master and `128` child slots),
@@ -207,6 +213,31 @@ mod tests {
     }
 
     #[test]
+    fn interrupts_land_once_a_vblank() {
+        assert_eq!(with_vblank_irqs(1000), 1000);
+        let one = VBLANK_CYCLES + 10;
+        assert_eq!(with_vblank_irqs(one), one + u64::from(VBLANK_IRQ_CYCLES));
+        // Done short of the vblank: no interrupt lands inside it.
+        let near = VBLANK_CYCLES - 100;
+        assert_eq!(with_vblank_irqs(near), near);
+        // Past two vblanks once the first interrupt is in.
+        let two = 2 * VBLANK_CYCLES - 10_000;
+        assert_eq!(
+            with_vblank_irqs(two),
+            two + 2 * u64::from(VBLANK_IRQ_CYCLES)
+        );
+    }
+
+    #[test]
+    fn an_empty_frame_costs_its_base() {
+        let u = DerivedUnits::default();
+        let w = crate::frame_clock::EffectWalkCounts::default();
+        let h = frame_hblanks(&u, 0, &w, 0);
+        // The base, the list walks, the template tick and an idle walk.
+        assert!((30..45).contains(&h), "{h}");
+    }
+
+    #[test]
     fn every_leaf_is_a_cued_kind_with_a_linked_price() {
         for l in LEAF_COSTS {
             assert!((12..=19).contains(&l.kind), "{:08X}", l.entry);
@@ -215,4 +246,182 @@ mod tests {
         assert!(leaf_cost(0x8004_57C4).is_some());
         assert!(leaf_cost(0x8004_409C).is_none());
     }
+}
+
+/// The dispatcher's primitives by topology, each class's mean over the leaves
+/// the library's battle frames reach, weighted by how often each leaf ran:
+/// for a count that knows a primitive's topology and fate but not its leaf
+/// (the engine's census).
+pub const TRI_LINKED_CYCLES: u32 = 270;
+/// See [`TRI_LINKED_CYCLES`].
+pub const TRI_OFF_SCREEN_CYCLES: u32 = 254;
+/// See [`TRI_LINKED_CYCLES`].
+pub const TRI_CULLED_CYCLES: u32 = 78;
+/// See [`TRI_LINKED_CYCLES`].
+pub const QUAD_LINKED_CYCLES: u32 = 230;
+/// See [`TRI_LINKED_CYCLES`].
+pub const QUAD_OFF_SCREEN_CYCLES: u32 = 211;
+/// See [`TRI_LINKED_CYCLES`].
+pub const QUAD_CULLED_CYCLES: u32 = 92;
+/// A drawn object's primitive groups, in hundredths: the measured ratio of
+/// dispatcher groups to dispatcher calls (`13900` to `7246`), for a count
+/// that knows objects but not their groups.
+pub const GROUPS_PER_OBJECT_CENTI: u32 = 192;
+/// The actor render's five list walks (`FUN_8001D140` / `FUN_8001ADA4`) a
+/// frame, their own work at [`ACTOR_DRAW_CYCLES`] each. The walks' own cost
+/// spreads `3300..37800` cycles a frame and follows no count the census
+/// keeps (not the live parts: on one strike fourteen live parts read `1.9`
+/// hblanks a frame and three read `15`), so the mean stands in.
+pub const ACTOR_LISTS: u32 = 5;
+/// The segments of a body's ground-shadow disc (`FUN_80028158` mode `1`).
+pub const SHADOW_SEGMENTS: u32 = 24;
+/// The walker's per-branch prices this table does not time in-frame (a
+/// master visit, a spawn record), the random-walk fit's
+/// ([`crate::frame_clock::EFFECT_WALK_MASTER_CYCLES`],
+/// [`crate::frame_clock::EFFECT_WALK_SPAWN_CYCLES`]).
+pub const WALKER_MASTER_CYCLES: u32 = crate::frame_clock::EFFECT_WALK_MASTER_CYCLES;
+/// See [`WALKER_MASTER_CYCLES`].
+pub const WALKER_SPAWN_CYCLES: u32 = crate::frame_clock::EFFECT_WALK_SPAWN_CYCLES;
+/// A PCSX-Redux vblank in cycles (`263` hblanks).
+pub const VBLANK_CYCLES: u64 = 263 * PCSX_CYCLES_PER_HBLANK_NUM / PCSX_CYCLES_PER_HBLANK_DEN;
+
+/// Dispatcher primitives by topology and fate.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PrimTally {
+    pub tris_linked: u32,
+    pub tris_off_screen: u32,
+    pub tris_culled: u32,
+    pub quads_linked: u32,
+    pub quads_off_screen: u32,
+    pub quads_culled: u32,
+}
+
+impl PrimTally {
+    pub fn add(&mut self, o: &Self) {
+        self.tris_linked += o.tris_linked;
+        self.tris_off_screen += o.tris_off_screen;
+        self.tris_culled += o.tris_culled;
+        self.quads_linked += o.quads_linked;
+        self.quads_off_screen += o.quads_off_screen;
+        self.quads_culled += o.quads_culled;
+    }
+    pub fn linked(&self) -> u32 {
+        self.tris_linked + self.quads_linked
+    }
+    pub fn cycles(&self) -> u64 {
+        let c = |n: u32, per: u32| u64::from(n) * u64::from(per);
+        c(self.tris_linked, TRI_LINKED_CYCLES)
+            + c(self.tris_off_screen, TRI_OFF_SCREEN_CYCLES)
+            + c(self.tris_culled, TRI_CULLED_CYCLES)
+            + c(self.quads_linked, QUAD_LINKED_CYCLES)
+            + c(self.quads_off_screen, QUAD_OFF_SCREEN_CYCLES)
+            + c(self.quads_culled, QUAD_CULLED_CYCLES)
+    }
+}
+
+/// What the engine's census counts of a battle frame for the derived
+/// pricing: the dispatcher's primitives by fate, the objects they come in,
+/// the bodies and ghosts drawn, the grid, the kind-4 builds, the floor-clipped
+/// walk. The effect pool, the move-VM parts and the `"ME"` decodes are the
+/// world's own counts and are priced beside it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DerivedUnits {
+    pub prims: PrimTally,
+    /// Objects through the dispatcher (bodies', ghosts', the stage's, the
+    /// effects').
+    pub objects: u32,
+    pub bodies: u32,
+    pub body_objects: u32,
+    pub ghosts: u32,
+    pub ghost_objects: u32,
+    /// The ground grid's visible cells, `None` while it does not draw.
+    pub grid_cells: Option<u32>,
+    /// Kind-4 mesh builds (the shadows' among them) and their segments.
+    pub builds: u32,
+    pub build_segments: u32,
+    /// Packets the swept bands link (weapon trails, streaks, ribbons).
+    pub trail_packets: u32,
+    /// Primitives of floor-clipped bodies, walked by `FUN_8002735C`.
+    pub floor_clip_prims: u32,
+}
+
+/// The cycles of what [`DerivedUnits`] counts, the frame's base included
+/// (its fixed part, its share a body, the actor-list walks and the template
+/// tick), interrupts out.
+pub fn units_cycles(u: &DerivedUnits) -> u64 {
+    let c = |n: u32, per: u32| u64::from(n) * u64::from(per);
+    let groups = u64::from(u.objects) * u64::from(GROUPS_PER_OBJECT_CENTI) / 100;
+    let draws = u.bodies + u.ghosts;
+    let mut s = u.prims.cycles()
+        + groups * u64::from(DISPATCH_GROUP_CYCLES)
+        + c(u.objects, DISPATCH_CALL_CYCLES)
+        + c(
+            u.bodies,
+            BODY_DRAW_CYCLES + DRAW_TICK_CYCLES + GHOST_WALK_CYCLES + FRAME_BASE_BODY_CYCLES,
+        )
+        + c(u.body_objects, BODY_OBJECT_CYCLES)
+        + c(u.ghost_objects, GHOST_OBJECT_CYCLES)
+        + c(draws, KEYFRAME_DECODE_CYCLES)
+        + c(u.builds, MESH_BUILD_CYCLES)
+        + c(u.build_segments, MESH_BUILD_SEGMENT_CYCLES)
+        + c(u.trail_packets, TRI_LINKED_CYCLES)
+        + c(
+            u.floor_clip_prims,
+            (FLOOR_CLIP_PRIM_CYCLES.0 + FLOOR_CLIP_PRIM_CYCLES.1) / 2,
+        )
+        + u64::from(FRAME_BASE_CYCLES)
+        + c(ACTOR_LISTS, ACTOR_DRAW_CYCLES)
+        + u64::from(TEMPLATE_TICK_CYCLES);
+    if let Some(cells) = u.grid_cells {
+        s += u64::from(GRID_FIXED_CYCLES) + c(cells, GRID_CELL_CYCLES);
+    }
+    s
+}
+
+/// The effect walker's branches over a frame, priced in-frame.
+pub fn walker_cycles(w: &crate::frame_clock::EffectWalkCounts) -> u64 {
+    let c = |n: u32, per: u32| u64::from(n) * u64::from(per);
+    u64::from(WALKER_CALL_CYCLES)
+        + c(w.live_sweeps.max(1), WALKER_SWEEP_CYCLES)
+        + c(w.masters, WALKER_MASTER_CYCLES)
+        + c(w.spawns, WALKER_SPAWN_CYCLES)
+        + c(w.child_waits + w.advances, CHILD_STEP_CYCLES)
+        + c(w.overruns, CHILD_OVERRUN_ADVANCE_CYCLES)
+        + c(w.drawn, CHILD_DRAW_CYCLES)
+}
+
+/// An art commit's `"ME"` decode of `parts * frames` part-frames.
+pub const fn me_decode_cycles(parts: u32, frames: u32) -> u64 {
+    parts as u64 * frames as u64 * ME_DECODE_CYCLES_PER_PART_FRAME as u64
+}
+
+/// `work` cycles with the vblank interrupts that land inside them: the
+/// window opens on a `VSync` return, just past one, and each later vblank
+/// the work (interrupts in) reaches adds [`VBLANK_IRQ_CYCLES`].
+pub fn with_vblank_irqs(work: u64) -> u64 {
+    let mut total = work;
+    loop {
+        let n = total / VBLANK_CYCLES;
+        let next = work + n * u64::from(VBLANK_IRQ_CYCLES);
+        if next == total {
+            return total;
+        }
+        total = next;
+    }
+}
+
+/// A battle frame's work in hblanks on PCSX-Redux's clock: the census's
+/// units, the move-VM part ticks, the walker's branches, the `"ME"` decodes'
+/// cycles and any other cycles the caller holds, with their interrupts.
+pub fn frame_hblanks(
+    units: &DerivedUnits,
+    parts: u32,
+    walker: &crate::frame_clock::EffectWalkCounts,
+    extra_cycles: u64,
+) -> u16 {
+    let work = units_cycles(units)
+        + u64::from(parts) * u64::from(PART_TICK_CYCLES)
+        + walker_cycles(walker)
+        + extra_cycles;
+    hblanks(with_vblank_irqs(work)).min(u64::from(u16::MAX)) as u16
 }

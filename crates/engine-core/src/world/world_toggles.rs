@@ -200,6 +200,15 @@ pub struct WorldToggles {
     /// way, so the default keeps the flat price. The native session raises
     /// it from `LEGAIA_BATTLE_WALK_COST=1`.
     pub battle_effect_walk_cost: bool,
+    /// Opt-in, off by default: the frame cost priced from the derived
+    /// per-unit table, retail's own instruction counts on PCSX-Redux's
+    /// clock, in place of the fitted lines. In battle the census's units
+    /// (`legaia_engine_battle_loop::derived_cost::DerivedUnits`) are priced
+    /// with the table, the move-VM part ticks, the walker's branches and the
+    /// `"ME"` decodes beside them, with the vblank interrupts the work spans
+    /// (`docs/subsystems/battle-stage-camera.md`, "The derived table"). The
+    /// native session raises it from `LEGAIA_DERIVED_FRAME_COST=1`.
+    pub derived_frame_cost: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
     /// CD-XA voice clip plays: PCSX-Redux's by default, where the clip player's
     /// stop watch polls the drive on two thirds of the CPU and a voiced arm's
@@ -614,6 +623,7 @@ impl WorldToggles {
             battle_me_decode_cost: false,
             battle_arts_shout_cd: false,
             battle_effect_walk_cost: false,
+            derived_frame_cost: false,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: true,
             battle_poly_frame_cost: true,

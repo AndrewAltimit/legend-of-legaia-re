@@ -1604,7 +1604,7 @@ impl World {
         // SpecialStarter's voice.
         // REF: FUN_8002B28C
         if q >= 0x10
-            && self.toggles.battle_me_decode_cost
+            && (self.toggles.battle_me_decode_cost || self.toggles.derived_frame_cost)
             && self.actors[i].battle_monster_id.is_none()
             && let Some(c) = clip.as_ref()
         {
@@ -1612,9 +1612,20 @@ impl World {
                 0 => c.part_count as u32,
                 n => u32::from(n),
             };
-            let w =
-                legaia_engine_battle_loop::frame_clock::me_decode_work(parts, c.frame_count as u32);
-            self.battle.me_decode_work = self.battle.me_decode_work.saturating_add(w);
+            if self.toggles.battle_me_decode_cost {
+                let w = legaia_engine_battle_loop::frame_clock::me_decode_work(
+                    parts,
+                    c.frame_count as u32,
+                );
+                self.battle.me_decode_work = self.battle.me_decode_work.saturating_add(w);
+            }
+            // The derived pricing's own term, at the reader's measured
+            // cycles a part-frame.
+            self.battle.me_decode_cycles +=
+                legaia_engine_battle_loop::derived_cost::me_decode_cycles(
+                    parts,
+                    c.frame_count as u32,
+                );
         }
         // The entry's solo / freeze byte (`+0x87`): a non-zero value is
         // handed to `FUN_8004E13C` right after the loop-window seed

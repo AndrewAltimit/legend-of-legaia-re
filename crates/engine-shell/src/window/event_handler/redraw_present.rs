@@ -931,6 +931,49 @@ impl PlayWindowApp {
             // The effect walker's price on the newest priced pass.
             w.battle.effect_walk_cost,
         );
+        // `units.csv`: the census's count of the frame by the derived
+        // pricing's units (`derived_cost::DerivedUnits`), beside `meta.csv`'s
+        // links, for holding the derived price against retail's frames.
+        {
+            use std::io::Write as _;
+            let path = rec.dir.join("units.csv");
+            let fresh = !path.exists();
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
+                if fresh {
+                    let _ = writeln!(
+                        f,
+                        "tick,st7,phase,tris_linked,tris_off,tris_culled,quads_linked,quads_off,quads_culled,objects,bodies,body_objects,ghosts,ghost_objects,grid_cells,builds,segments,trails,floor_clip"
+                    );
+                }
+                let u = self.session.host.battle_link_last.units;
+                let p = u.prims;
+                let _ = writeln!(
+                    f,
+                    "{tick},{st},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    w.casting.module_phase,
+                    p.tris_linked,
+                    p.tris_off_screen,
+                    p.tris_culled,
+                    p.quads_linked,
+                    p.quads_off_screen,
+                    p.quads_culled,
+                    u.objects,
+                    u.bodies,
+                    u.body_objects,
+                    u.ghosts,
+                    u.ghost_objects,
+                    u.grid_cells.map_or(-1, i64::from),
+                    u.builds,
+                    u.build_segments,
+                    u.trail_packets,
+                    u.floor_clip_prims,
+                );
+            }
+        }
         // `LEGAIA_DIAG_CAST_BODIES=1`: `bodies.csv`, every battle body a tick
         // (tick, seat, monster flag, drawn, triangles, raw position, radius,
         // HP): what a frame-cost term reads of the shot beside `cam.csv`'s

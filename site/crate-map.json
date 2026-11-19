@@ -1092,6 +1092,7 @@
     "engine-battle-hud",
     "engine-capture",
     "engine-core",
+    "engine-scene-host",
     "engine-shell",
     "parity",
     "web-play"
@@ -2493,6 +2494,7 @@
     "art",
     "container-formats",
     "engine-battle",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
@@ -2528,7 +2530,6 @@
     "disc-audit",
     "disc-patch",
     "engine-battle-hud",
-    "engine-battle-loop",
     "engine-modes",
     "font",
     "gamedata",
