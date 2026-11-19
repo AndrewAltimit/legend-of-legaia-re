@@ -442,6 +442,19 @@ impl World {
                 != 0;
             let creature_seat = self.casting.summon_actor_slot == Some(i as u8);
             let commits_at_advance = self.actors[i].battle_clip_commits;
+            // A byte staged under `+0x1DC` bit 0 is cut in before the
+            // natural-end test (`0x800478F4` branches to the commit at
+            // `0x80047940`, which falls into `0x80047A48` on the clip it just
+            // installed), so a loop crossing its end on that pass is not
+            // re-committed ([`Self::loop_cut_locked`] is the lock that refuses
+            // the cut).
+            // PORT: FUN_80047430 (`0x800478F4..0x80047A48`, the bit-0 cut ahead of the natural end)
+            let cut_first = commit_after
+                && self.actors[i]
+                    .battle
+                    .flag_bits
+                    .has(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE)
+                && !self.loop_cut_locked(i);
             let actor = &mut self.actors[i];
             if let Some(player) = &mut actor.battle_animation {
                 player.set_tween_target(tween);
@@ -627,7 +640,7 @@ impl World {
                     && i < 3
                     && actor.battle.current_anim == 0x11
                     && actor.battle.latched_anim >= 0x2B;
-                let recommit = natural_end && player.is_looping();
+                let recommit = natural_end && player.is_looping() && !cut_first;
                 // A loop's natural-end re-commit zeroes the cursor behind the
                 // ending cycle's walks (below).
                 if rearm_window {
@@ -1582,6 +1595,27 @@ impl World {
                 (clip, q)
             }
         };
+        // The bank record's keyframe decode (`jal 0x8002B28C` at
+        // `0x8004BCC8`): every party commit of an id `>= 0x10` reaches it,
+        // the art constants through the name label and the rest (a starter,
+        // the SpecialStarter) by the `sltiu 0x1B` branch to `0x8004BC4C`.
+        // The record's `"ME"` stream comes out of the side-band slot, the
+        // pass's own CPU work, ahead of the shout below and behind the
+        // SpecialStarter's voice.
+        // REF: FUN_8002B28C
+        if q >= 0x10
+            && self.toggles.battle_me_decode_cost
+            && self.actors[i].battle_monster_id.is_none()
+            && let Some(c) = clip.as_ref()
+        {
+            let parts = match c.variant_track.stream_parts {
+                0 => c.part_count as u32,
+                n => u32::from(n),
+            };
+            let w =
+                legaia_engine_battle_loop::frame_clock::me_decode_work(parts, c.frame_count as u32);
+            self.battle.me_decode_work = self.battle.me_decode_work.saturating_add(w);
+        }
         // The entry's solo / freeze byte (`+0x87`): a non-zero value is
         // handed to `FUN_8004E13C` right after the loop-window seed
         // (`0x8004BE18..0x8004BE2C`), which stores it into battle ctx

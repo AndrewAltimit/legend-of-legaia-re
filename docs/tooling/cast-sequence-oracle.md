@@ -154,6 +154,9 @@ Flags worth knowing:
 | `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
 | `LEGAIA_LEADIN_TABLE_COST=1` (engine child, beside `LEGAIA_BATTLE_POLY_COST=1`) | Engine: price the replay's lead-in on the action-state table and raise the polygon census where the film starts (the capture's gate, or the cast begin), so a census-priced film reaches its gate on the round a table-priced one does. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `LEGAIA_FILM_COST_RING=e0,..,e15;cursor` (engine child) | The recording state's frame-cost ring, which the driver reads off the state for a film no `LEGAIA_BATTLE_COST_RING` seeds; under `LEGAIA_LEADIN_TABLE_COST` the film's opening pass is priced again on the census from it. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
+| `LEGAIA_FILM_COIN=coin@vsync,..` (engine child) | The attack camera's track coin `ctx[+0x26D]` through the recording, dealt from the gate on a film no `--strike-deal` carries; the driver sets it whenever the recording has the `coin` column ([the track coin](#the-track-coin-on-a-film)). A harness seat |
+| `LEGAIA_FILM_YAW=<counter>` (engine child) | A `--physical` film's action yaw counter `ctx[+0x6DA]`, read off the state and stood on the camera at the gate (`--no-state-yaw` leaves the replay's own) ([the yaw counter](#the-yaw-counter-on-a-physical-film)). A harness seat |
+| `LEGAIA_BATTLE_COST_RING=e0,..,e15;cursor` (engine child, from the still) | The state's ring, which the gate seats after its own pass has pushed; the driver adds the push of the frame the state was saved inside, read off the recording (its first frame-counter bump past the state's, `0x8007B798`, and that row's `cost`), since the seat overwrote the engine's gate push and every entry aged out a pass after retail's: Ironhead's step fell `3` to `2` a pass late and its clip cursors ran `8` short to the Super commit (`.884` to `.909`). A harness seat |
 | `LEGAIA_LEADIN_SPAN_LAW=1` (engine child) | Engine: run the replay's lead-in on the default one-vsync overrun and raise the span law where the film starts, the same hold for the law's longer frames: under the law in the lead-in `battle_korb2_warhalf_strike`'s replay won its fight in round 3 and never met its gate, as Gilium, Slippery and Topaz did. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `--rand-track` | Engine: seat every module-band pass on the `rand()` word retail's frame before it ended on (`LEGAIA_CAST_RAND_TRACK`, [below](#the-rand-stream)). A harness seat |
 | `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
@@ -311,7 +314,7 @@ already holds the paid figure, so the driver credits it back as a still does
 at `0` of `150` MP; left unpaid, the engine's monster could not afford Earthquake,
 struck instead, and the recorder logged no cast frame.
 
-A monster those turns killed is seated dead and faded out (`0` HP, `d0`) where the state stands it alive: `battle_garmel_zenoir_strike`'s harvest rounds left seat 3 at `0`, the state at `279`. Neither that film's frames nor its roll moved (`.785`, `.821` with `--retail-steps --rand-at 0x2B:0`, the burst's `82` / `97` against retail's `91`), so the dead seat is not the film's residue. A harness seat.
+A monster those turns killed is seated dead and faded out (`0` HP, `d0`) where the state stands it alive: `battle_garmel_zenoir_strike`'s harvest rounds left seat 3 at `0`, the state at `279`. Neither that film's frames nor its roll moved, so the dead seat is not the film's residue: the roll is the frame step's (on `--retail-steps` the burst lands retail's `91` on retail's pass, plain `33` frames run step `3` where retail runs `2`). A harness seat.
 
 A `--physical` film keeps the state's drive, which commits Spirit for the whole party while a monster casts (`BattleDrive::Action`), so on its own its victims stand guarded whatever retail's party held.
 The film therefore stands the party in the recording's stance exactly on its gate tick (`LEGAIA_FILM_GUARD`: the recording's `guard=`, else the state's own `+0x1DE`), a member out of the stance included, and sets the world `rand()` stream to the state's own seed word `0x80009010` there (`LEGAIA_FILM_RAND`; `--no-state-rand` leaves it, `--rand-at` / `--rand-track` replace it, and a `--strike-deal` film, which seats every hit on its own word, does without it: on top of the deal it moved `battle_map02_mad_ogre_strike`'s landed hit onto the other swing).
@@ -827,7 +830,9 @@ The probe logs the seed word on every vsync. `--rand-at <st7>:<phase>` takes
 the word retail held on its last vsync under that key and has the engine
 child set its world stream to it before every tick it opens under the same
 key (`engine-capture::cast_rand`), so the pass that leaves the key draws as
-retail's did. In a `koru_strip_forced` capture the word on arm 3's last vsync
+retail's did. Every pass under the key starts from that word, so on a key that holds
+several passes (a magic band's `0x2B`) only the last draws as retail's: a
+hit on an earlier pass rolls off a word retail reached after it. In a `koru_strip_forced` capture the word on arm 3's last vsync
 makes one draw and then the sixteen picks a RAM read of the rocks holds; the
 engine, seeded there, makes the same draws. Measured on that capture, the
 arm-4 segment scores `.770` with the option and `.649` without.
@@ -1364,6 +1369,52 @@ the frame after its spawn the port walks on the spawn's own frame (Ozma's arm 11
 its `30` stager words and the effect's `64` seeding words on one tick where retail draws
 them a frame apart; Meta's arm-7 mirror words land a frame early).
 
+Six more places parted from retail on a pass, each read off a film's frames and settled
+in the module's disassembly ([cast module](../subsystems/cast-module.md#prot-0905-vera)):
+director fades that took no step on their spawn pass (Vera's rise and cut flashes, Gizam's
+and Juggernaut's stager flashes), a director's camera nudge the port dropped from the rest
+of a handing-over pass, Vera's arm-10 rise, Swordie's and Theeder's readout flag kept down
+past the fold ([battle HUD](../subsystems/battle-hud.md#action-phase-records)), and Zenoir's
+caption cleared on the slam. No cue moves:
+
+| Film | Before | After |
+|---|---|---|
+| `0x83` Vera | `.9556` | `.9871` (arm 5 `.853` to `1.000`, arm 10 `.877` to `.955`) |
+| `0x84` Gizam | `.9655` | `.9770` |
+| `0x86` Zenoir | `.9627` | `.9654` |
+| `0x82` Theeder | `.9680` | `.9695` |
+| `0x88` Swordie | `.9654` | `.9663` |
+| the 29 films | `.9742` | `.9759` |
+
+The row readouts then opened two passes ahead of retail's: the readout pass answers
+the flag at the next pass's head and its records glide from the pass after
+([battle HUD](../subsystems/battle-hud.md#action-phase-records)). Two camera arms framed
+the wrong point: Juggernaut's exit band kept the body's yaw ladder, and Mushura's arm
+`0xD` framed the creature where retail re-arms on the camera's own focus
+([cast module](../subsystems/cast-module.md#summon-creature-directors)). Over the 29 films, no cue
+moving, the image mean reads `.9762` for `.9759` (`0x8D` `.978` to `.984`, `0x86` `.965`
+to `.967`) and the camera channel's sustained error `2.44` px for `4.77` (`0x99` `46.8`
+to `0.1`, `0x8D` `21.0` to `0`).
+
+Swordie's arm-10 blades are not late: a `--retail-parts` recording beside
+`LEGAIA_DIAG_CAST_PARTS` seats every blade at retail's point on the pass retail does,
+relative to each hit, with the same level walk. Open: Gimard's arm-12 case-8 ease takes
+five sixths of its TR z gap on its first pass where retail takes a third (`13.4` px),
+Kemaro's arm 4 drifts a part pass past retail's last (`7.3` px), and Theeder's first
+sweep fan.
+
+The summon band's exit camera (`0x37` arms case 6, `0x38` walks it, `0x50` re-arms) reads
+retail's to the unit wherever the two sides run the same frame step through it (the
+`0x8D`, `0x90` and `0x83` films, pitch, yaw, TR and focus on every row). Where it parts,
+it parts on the step, not the law: on Jedo's `0x9D`, Gilium's `0x95` and `0x9F` retail's
+pass that leaves `0x36` overruns its step-`1` frame to two vsyncs (`frame` counter `2527`
+over vsyncs `3789..3790` on `0x9D`), so `0x37` runs one step-`2` pass and walks case 6's
+fresh tween two vsyncs at once, where the port runs that pass at step `1` and walks one.
+The `1.4x` first `0x38` pass is the second pass's re-arm off the walked pose. The
+overrun is the handing pass's cost, which the band's tail keeps on its measured table
+([`push_frame_cost`](../subsystems/battle-stage-camera.md#a-frames-span)); on `0x86` and
+`0x9A` the same pass does not overrun.
+
 ### Evil Seru Magic
 
 Cort's Evil Seru Magic (`0xAD`, PROT 0966) records from `chitei2_cort_pre_mystic_circle`
@@ -1513,6 +1564,62 @@ on its own seat (`+0x1DD = s7 + 3` at `0x801EB9AC`) and only Big Wave on the par
 (`+0x1DD = 8` at `0x801EBD24`), and the engine seam lands a party code only where the spell's
 own class is a group, so retail frames a party-wide cast with the panels up against the
 engine's self-cast. The film on the cast's own seat reads `.991`.
+
+### The track coin on a film
+
+A film's state stands a few instructions ahead of a commit as often as not, and
+`FUN_8004E13C` draws `ctx[+0x26D] = rand() % 2` at every commit of a clip whose `+0x87`
+byte is set (`0x8004E2BC..0x8004E2DC`). The replay reaches that commit on its own
+stream, so the coin is a coin flip against retail's. Case 8's dead-target arm builds its
+yaw from it (`-target[+0x46] - ((coin << 9) - 0x100)`, `0x801D6A20..0x801D6A98`), so a
+monster cast that fells a party member frames its Done band from one side of the corpse
+or the other, half a turn apart. A `--watch 0x80009010` recording of
+`battle_jou_puera_v3_death_game_mid_cast` makes the draw at the state's own instant
+(`ra` `0x8004E2C4`, vsync `0`, `1`), and the replay drew `0`: Death Game's `0x51` turned
+the other way round and stood `517` yaw units off for the whole band (camera `42` px).
+
+The driver now deals the recording's `coin` column on every film that carries it, not only
+under `--strike-deal` (`LEGAIA_FILM_COIN`): the change points go to the same lookahead the
+strike deal uses, and the coin of the first row is seated at the gate. Death Game's film
+names a recording with the column (`captures/film-retail/jou_puera_v3_death_game`), and on
+it the Done band reads `.675` to `.997`, the film `.941` to `.952` and its camera `42.0` to
+`1.9` px; the eight other enemy films whose recordings carry the column do not move. A
+harness seat: the commit and its draw are the engine's own.
+
+### The yaw counter on a physical film
+
+Case 6 and the Done band frame from `ctx[+0x6DA] - heading`, and the counter drifts
+`4 * step / 3` a pass (`0x801E29E4..0x801E2A24`) from whichever rung last stored it, so
+a replay that reached a mid-cast gate on other passes carries another word into the
+cast. The drive's `y` steer seats it only while the counter is the gate's clock: a
+walk-in body past arm 0 holds its own rung (`yaw_counter_reseeded_by`), and the steer
+is left off. `battle_dohaty_nova_v2_scythe_wind`'s replay entered arm 4 on `579` where
+the state holds `647`, and the Done band stood `66` yaw units off retail's;
+`battle_kor_ghost_knight_v_windhash`'s steer landed a pass before its gate and the
+counter ran `42` past the state's.
+
+The driver reads the counter off the state's RAM and the engine stands it on the camera
+when the gate opens (`LEGAIA_FILM_YAW`), beside the state's `rand()` word. Scythe Wind
+reads `.953` to `.982` and V-Windhash `.933` to `.961`; of the set's other `--physical`
+films none falls by more than `.001` and none rises by more than `.004`. A harness seat.
+
+### The backdrop angle at the cast begin
+
+A stage that keeps backdrop object 1 (`0x8007B64B`) turns it by `step >> 1` every
+battle pass, the angle `0x800891D2` running on from boot (`World::tick_battle_backdrop_spin`).
+The film's child holds the state's angle (`LEGAIA_BATTLE_BACKDROP_YAW`) until the cast
+begins and lets it wind from there, which is retail's angle only when the recording
+opens on the state's instant. A `--monster-pick` recording plays rounds to its pick:
+Zenoir's Fire Claw from `battle_garmel_zenoir_strike` begins `1628` vsyncs on, at
+`942` where the state held `403`, and `garmel`'s cave mist, the object's textured
+band (CLUT `0x77C1`), stood an eighth of a turn off retail's behind the whole cast.
+
+A pick run therefore keeps its RAM at the cast begin (the driver sets
+`LEGAIA_RAM_AT=0`, so `retail/ram_<cast>.bin` sits beside the frames), and the driver
+hands the child that image's angle less the two passes the display lags it by
+(`recording_cast_backdrop_yaw`). The Fire Claw film reads `.909` (`.802` before),
+`0x28` `.946` (`.832`), and `.973` on `--retail-steps` (`.855`), cues unchanged. A
+harness seat.
 
 ### The enemy set on the plain seat, and what holds it
 
@@ -2272,6 +2379,17 @@ adds its reaction-channel entry). What the recordings on
   to `718` (the table's `534` and the flight's parts), so two homing slots that reach their
   targets in one retail frame land in consecutive engine frames. Priced from what the flight
   links, the state reads `4` from its first frame and both pairs land together.
+- **The hit reactions' cues sit on the clip, not on the hit.** The party's reaction cues
+  (`0x11`, `0x15..0x17`) come off the reaction clip's cue track
+  ([`FUN_800508DC`](../subsystems/audio.md#the-second-shout-trigger---the-animation-cue-track-fun_800508dc)):
+  `seats.csv` and `rates.csv` read the seat's cue index `+0x1F6` and node cursor `+0x68` on both sides,
+  and over the enemy set the cue fires at the same cursor in 340 of 468 reactions (`80`, `96`,
+  `192`, `112`, `128`, `272` on Rogue Wind, Stone Circle and Terio Punch, whose cues all pair `+5`
+  to `+7`), with the reaction clip starting one frame after the HP drop on both. The rest fire a
+  frame's advance past the same threshold, where the two sides' frame steps differ. So a film's
+  constant cue offset is its frames' pace between the hit and the cue (`rugi_rogue_pre_rogue_wind`:
+  `20` frames on both sides, `12` vsyncs each at step `4` in retail, `9` ticks each in the engine),
+  which is the battle frame cost's to close, not a cue path.
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 

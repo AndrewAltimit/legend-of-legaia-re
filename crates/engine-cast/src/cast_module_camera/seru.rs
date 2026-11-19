@@ -500,7 +500,7 @@ fn div0(v: i16, d: i32) -> i32 {
 /// | 5 | drain, hold while non-negative | seats the creature a 16th of a unit along `g` from the target, facing `g`; countdown `+= scalar * 180`; the phase jumps by **3**, so arms 6 and 7 are never reached |
 /// | 8 | drift; drain, hold while non-negative | snap: pitch `0`, yaw `0x800 - facing`, TR `(0, 0xA00, 0x200)`, focus the creature (`0x801F7994`); countdown `+= scalar * 112` |
 /// | 9 | drift; drain, hold while non-negative | the restore; countdown `+= scalar * 112` |
-/// | 10 | drift; drain, hold while non-negative | the creature sinks; `0xFF` |
+/// | 10 | drift; drain, hold while non-negative | the creature rises (`+0x36 -= p / 2` every pass); `0xFF` |
 ///
 /// The drift of arms 8..10 is written straight into the camera globals every
 /// pass ([`ModuleNudge`]), with `p` the per-pass product scalar * delta: arm
@@ -612,6 +612,7 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 tr_x: 0,
                 tr_y: (p >> 3) as i16,
                 tr_z: -p as i16,
+                creature_y: 0,
             };
             // Every pass, ahead of the gate: `li v0,2; sb v0,0x1da(s4)` /
             // `sb zero,0x21b(s4)` / `sh zero,0x176(s4)` (`0x801F78D0..
@@ -653,6 +654,7 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 tr_x: 0,
                 tr_y: -((3 * p) >> 1) as i16,
                 tr_z: (3 * p) as i16,
+                creature_y: 0,
             };
             if st.countdown.drain_non_negative() {
                 return ArmDirection::HOLD.nudged(drift);
@@ -671,6 +673,9 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 tr_x: 0,
                 tr_y: -(p >> 3) as i16,
                 tr_z: (4 * p) as i16,
+                // `+0x36 -= p / 2` (`0x801F7FF0..0x801F8000`): the creature
+                // rises out of the shot as the camera pulls back.
+                creature_y: -(p >> 1) as i16,
             };
             if st.countdown.drain_non_negative() {
                 return ArmDirection::HOLD.nudged(drift);
@@ -799,7 +804,7 @@ fn zenoir_drain_holds(st: &mut ModuleCamState) -> bool {
 /// | 8 | hold while `FUN_8004E2F0(7, victim)` is non-zero (`0x801F7628`) | snap: yaw `0x200 - facing`, TR `(0, 0x400, 0x800)`, focus the creature; the opening hit |
 /// | 9 | - | creature rises `8P`; pitch `0`, yaw `0x800 - victim facing`, TR `(0, 0x400, 0x800)`, focus the victim, over `0x3C` frames; `ctx[+0x6D8] = scalar * 60` |
 /// | 10 | creature rises `8P`; drain, hold while non-negative | snap: yaw `0x400 - victim facing`, TR `(0, 0x600, ctx[+0x6D0])`, focus the victim; the creature moves over the victim |
-/// | 11 | drift pitch `+P/2`, yaw `+P`, TR y `-2P`, TR z `+8P`; creature falls `8P`; hold while its `+0x36` is above [`ZENOIR_SLAM_FLOOR_Y`] | the finisher; spawns [`ZENOIR_SLAM_SPAWNS`]; `ctx[+0x6D8] = scalar * 192` |
+/// | 11 | drift pitch `+P/2`, yaw `+P`, TR y `-2P`, TR z `+8P`; creature falls `8P`; hold while its `+0x36` is above [`ZENOIR_SLAM_FLOOR_Y`] | the finisher; spawns [`ZENOIR_SLAM_SPAWNS`]; clears the attack caption; `ctx[+0x6D8] = scalar * 192` |
 /// | 12 | drift TR z `+2P`, TR y `-P/2`, yaw `+P`; creature falls `8P`; drain, hold while non-negative | the shatter loop runs on every pass; then `0xFF` |
 ///
 /// Arm 3's wait is on the **band's** timer: the `0x78` frames the actor
@@ -1013,8 +1018,11 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             if !st.victim_untargetable {
                 st.creature_floor_clip = true;
             }
+            // `FUN_800319A8(0)` on the way out (`0x801F7BE0`): the attack
+            // name comes down as the slam lands, ahead of the shatter.
             ArmDirection {
                 spawns: &ZENOIR_SLAM_SPAWNS,
+                caption: Some(ModuleCaption::Cleared),
                 ..ArmDirection::PASS
             }
             .drifted(drift)

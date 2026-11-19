@@ -147,26 +147,21 @@ No open threads. Answered questions: [settled field / locomotion](re-settled-thr
 |---|---|---|
 | Why do a few strikes and casts fall under the measured frame step? | open (measured) | Medusa's strike, Windhash, Spoon's Hyper Heal and Moldy Worm's strike read lower once the ring feeds ordinary frames: on Medusa a party member mid-fade near the lens moves the replay's gate, on Moldy Worm and Devil Pump a bearing unit. Death Trigger parks in `0x19` under the capture's seats. On the step's edge (Neo Grude, King Frog, Mush Mush) the residue is a per-fight offset over the table, `-85` to `+85` across the full-party strikes and steady within one, which neither parts nor the formation's triangles read ([a heavy fight's hit frames](../subsystems/battle-stage-camera.md#a-heavy-fights-hit-frames)). Seating fade and walk off the state's ring, and a linked-polygon term, would settle them. |
 | What holds the party arts' films under retail's? | open (measured) | Three frame-cost terms read off the Super and Hyper Art recordings: the base under a close shot, an arts shout's own pass, and a voice line's span counted in passes ([below](#the-party-arts-frame-cost)). |
-| Why do the heal cue pillars draw larger in the engine than on `battle_menu_rugi_barra_retail`? | open (narrowed to the displayed pass) | The rings are growing, and the screen shows them two passes younger than the RAM the harness seats. Rasterised (`scripts/mednafen/ot-raster.py`), the state's older ordering table draws the two rings (`POLY_GT4`, CLUT `0x770E`) `78` and `75` px wide where the displayed frame's are `71` and `68` and the engine's, on the RAM's part state, `81`; the table being built had not linked them yet. So the morphed mesh is not the gap. Left: the four parts' program state two passes back, which the part VM has no inverse for; a film of the cue (`--retail-parts`) would give each pass's scale to seat from. |
 | What does a full party cost a summon arm? | open (narrowed) | Six full-party recordings set against the lone caster's read the same on every clamped arm and `14`..`25` hblanks dearer on some arms under the clamp, `29`..`135` on four (Barra's arms 3 and 4 in both fights, Gimard's arm 6, Iota's arm 3), nothing on others (Zenoir's edge arm 7) ([the arm step table](../subsystems/battle-stage-camera.md#what-the-arm-step-table-is)). The engine hides all three members through the band, so the members it draws do not tell the arms apart; the term is not priced. An arm a longer fight runs past the lone recording's length also runs its tail on the closing frame's row (Gimard's arm 12, [the arm step table](../subsystems/battle-stage-camera.md#what-the-arm-step-table-is)). |
-| Which creature seats do the directors still not carry? | open (narrowed) | Reading each cast's `creature.csv` against retail arm by arm names them; Aluru's back-off is now carried ([settled](re-settled-threads/battle.md#threads)) beside Kemaro, Terra, Mushura and Palma. Left: Zenoir's creature opens `+8` ahead in two halves ([PROT 0908](../subsystems/cast-module.md#prot-0908-zenoir)): the port advances the node on the phase-4 pass where retail's reads cursor `-1` until the seat pass, whose overrun is the [frame span](../subsystems/battle-stage-camera.md#a-frames-span)'s. A `--watch` on the seated node's `+0x68` from the `0x86` Gobu Gobu state would name the pass that first ticks it. |
 | What does a real console's frame cost read? | partial (measured) | The entry is `max(cpu, dma + draw of the previous pass's table)` from one vsync, and the GPU half is modelled on the v2 GPU's measured costs with no free constant, which reads mednafen's waits to `8` hblanks at the median ([what a real console's frame costs](../subsystems/battle-stage-camera.md#what-a-real-consoles-frame-costs)). The CD half is PCSX-Redux's response time ([the CD stop watch](../subsystems/battle-stage-camera.md#the-cd-stop-watch)). Left: the instruction cost, two cycles an instruction on PCSX-Redux and about `.8` of that on mednafen. A real console's ring (`0x80084098`) with `gp+0x3A8` / `gp+0x3AC` in a full party's strike and a cast's voice decides both. |
-| What is left of `minigame_dance_retail_go_out`'s `.988`? | open (measured) | The beams, the drop shadows and the clip phase are retail's ([dance](../subsystems/minigame-dance.md#the-halls-animated-props)), as is the camera since its track steps once a game frame ([film](../tooling/minigame-film.md); `.985` before). Of the `2836` pixels off by more than `32` at `.985`, `1196` sit in the top `60` rows (score panels and stage lamps), retail `2` to `4` luma brighter, the rest on the dancers' outlines: the shape of a [PCSX-Redux capture](../tooling/retail-compare.md#a-pcsx-redux-frame-keeps-what-the-console-floors). Rasterising the hall's ordering table under both rules would say whether the top band is the emulator's; a film of the lamp cells' adds would split palette from geometry. |
-| Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (narrowed) | A film of the cut shows the cut pass drawing the advanced cursor (`52`) on a camera already on its endpoint, so the fit's `48` is another residual. The engine's two extra passes are closed: battle setup now seats each idle at its drawn phase and the SM's idle requests keep it ([settled](re-settled-threads/battle.md#the-action-sms-idle-request-keeps-a-playing-idle)). Left: the one pass the engine's opening runs longer (`0x0A..0x28` in three passes where retail runs two), and the cut pair scored on a recording that opens on `0x28` ([detail](#zetos-big-wave-idle-one-pass-older)). |
-| Which capture-band bodies still run their arms in a pass each? | open (narrowed) | PROT 0963 is [directed arm by arm](../subsystems/cast-module.md#the-stagers-of-the-enemy-cells) (mid-cast film `.987`, every arm from 2 on `.975` or better, sound `1.000`). PROT 0936 and 0937 are directed arm by arm, and their ray-burst stagers seat per call (`retona_songi_hyper_crush` / `_lightning` arm 2 `.951` / `.939` on `--rand-track`). PROT 0954 is ported whole; its film differs on its roulette's random icons. [PROT 0958](../subsystems/cast-module.md#prot-0958-blazing-slash) is directed arm by arm; its six damage sites still fold once at the band's exit. |
+| What is left of `minigame_dance_retail_go_out`'s `.988`? | open (narrowed to the beams' edges) | The beams, shadows, clip phase and camera are retail's ([dance](../subsystems/minigame-dance.md#the-halls-animated-props), [film](../tooling/minigame-film.md)). The top band is no brightness rule: rasterised, the score panels are PCSX-Redux's rule and the engine's match the capture to the pixel; what is off sits on the lamps' beam edges at a mean luma offset of `0.6`, and on the dancers' outlines ([the top band](../tooling/retail-compare.md#the-dance-halls-top-band)). A film of the lamp cells would say whether the edges are the sweep's phase or its geometry. |
 | What is left of Koru's Gigaton Press film? | open (narrowed to the frame span) | `koru_pre_gigaton_press` reads `.853`, `.914` on `--rand-track`. The column reaching the red ring early is the stream: seated only on the word retail's phase 3 ended on (`--rand-at 0x70:3`) phase 4 reads `.889` and draws retail's burst in order. The engine's stream parts inside the cast, one frame-driver draw short in `0x6E`, which is the [frame span](../subsystems/battle-stage-camera.md#a-frames-span)'s ([the rand stream](../tooling/cast-sequence-oracle.md#the-rand-stream)). The gold ellipse in the `koru_*_mid_cast` stills is the walk's [floor rings](../tooling/retail-compare.md#a-turning-effect-parts-banks-are-a-clock). |
 | What is left of the battle camera against retail? | open (measured) | Ranked by `cast-camera-rank.py` over the strike, arts, Seru and enemy film sets, the residue is pacing, not framing law: where the worst films part, the engine holds retail's pose of the pass before or after to the unit (`kor_shade_pre_fatal_decision`'s `0x6E` chase, the arts openers' `0x1E` walk). What sets the pass is the frame step (retail `4` against the engine's `3` on an art's first `0x1F` pass, a heavy arm's overrun, [a heavy fight's hit frames](../subsystems/battle-stage-camera.md#a-heavy-fights-hit-frames)), film openers (harness), and summon arms whose first pass lands a frame apart. Next: per-arm films of the player summons (`--retail-parts`). |
-| Why does `battle_jou_cort_181_strike` draw two walk rings where retail draws one? | open (measured) | The effect-script walk reads the crossing cursor ([the effect script](../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50)), so Cort's walk (`0xB5`, an effect-`131` record at gate `13` over `12` keyframes) stomps a ring once a cycle, and the still falls from `.964` to `.951` on a second ring retail's frame lacks. Either the engine stomps one cycle too many or the harness seats a ring the replay also stomps ([the floor rings](../tooling/retail-compare.md#a-turning-effect-parts-banks-are-a-clock)). The capture's live ring count against the replay's, pass by pass, would split the two. |
-| What is left of Zenoir's Fire Claw film? | open (narrowed) | A second recording from `battle_garmel_zenoir_strike` (`--monster-pick`, seat 4, target 0) keeps the whole party, and the film reads `.785`, `.821` with `--retail-steps --rand-at 0x2B:0`, cues `8` of `8`. Retail's harvest rounds killed the other monster (seat 3), which the film now seats dead from the recording; no frame and no roll moved, so the dead seat is not the residue. The burst's roll (`91` in retail) reads `82` plain and `97` on retail's seed at `0x2B`'s entry, so the stream parts between that entry and the hit. Next: `--hit-trace`'s seed word at the hit dealt to the engine's roll. |
+| What is left of Zenoir's Fire Claw film? | open (narrowed to the frame step) | The roll is closed: on `--retail-steps` the engine lands retail's `91` on retail's pass and word; plain, `33` frames run step `3` where retail's `0x2B` runs `2` ([the frame step](../subsystems/battle-stage-camera.md#a-frames-span)). The cave mist is closed: it is the backdrop's kept object, whose angle the pick's rounds had wound on ([the backdrop angle](../tooling/cast-sequence-oracle.md#the-backdrop-angle-at-the-cast-begin)); seated, the film reads `.909` (`.973` on `--retail-steps`), cues `8` of `8`. Left: plain `0x2B` at `.844`, and `0x2C` / `0x2D` at `.74` / `.75` on every seat. |
 | What holds Seru arms low on every film seat? | open (narrowed) | The plain seat reads what `--retail-steps` does on most films ([pass count](../tooling/cast-sequence-oracle.md#the-bands-pass-count)). Still low on both: Barra's arm `0xE` (`.75`; not its frames' span, arm 12 runs the same tick gap at `.96`), Nova's arm 16 (`.83`; the victim's spin matches a watch of its `+0x46` store), Ozma's arm 21 (`.77`; sprays, camera and draws match), Viguro's arm 12 (`.75` on the rand track; its ring parts match retail's, the disc draws darker), Mushura's arm 12 chase (`.80`) and Gizam's arm 13 (`.64`, the bubbles' deal). Open draw timings: [where a film leaves retail's words](../tooling/cast-sequence-oracle.md#where-a-plain-film-leaves-retails-words). |
 | Why do Caruban's Fire Breath stills sit four yaw units off? | open (narrowed) | The camera law is settled forward by a film; what is left is the near bodies' placement or the displayed pass ([below](#caruban-fire-breath-stills-four-yaw-units-off)). A `LEGAIA_RAM_AT` film over `0x2B` would pin the pass. |
-| What holds the Delilas and Cort casts' arms low on every film seat? | open (narrowed) | Seven classes are closed, the latest Blazing Slash's flames: its stager seats a cone pair per emitter call, not the whole set once ([Blazing Slash](../subsystems/cast-module.md#prot-0958-blazing-slash)). On `--retail-steps --rand-track` the films read Megaton Press `.959`, Plasma Strike `.938`, Blazing Slash `.926`, Mystic Shield `.975`, Guilty Cross `.940`, Mystic Circle `.906`; what holds plain is the deal. Blazing Slash's popup steps once a battle frame, as [retail's draw](../subsystems/battle-action-helpers.md#fun_801df6b8---damage-number-popup-renderer) does; arms `0x0D` / `0x0E` stay at `.62` / `.55`, held by the puffs' deal. Arm `0x18`'s close was a knockdown tween; `0x15` is unread. |
-| Why does Big Wave's still read darker over the sheet's rows? | open (narrowed) | The upper frame is closed: PROT 0898's band wash now draws at retail's alpha, scroll and dither ([the presentation calls](../subsystems/cast-module.md#presentation-calls), [the screen-space dither](../subsystems/renderer-port.md#semi-transparency)), rows `0..110` sit within `1` luma and the `noaru_slippery_v2_pre_big_wave` film's arm 6 reads `.953`. What is left of rows `112..140` is not a blend: the deficit sits at `x >= 256`, where the near cream wave part and the speed lines stand in other places on the two sides. On the frame the engine also draws the speed lines into the top corners, where retail has none: the displayed pass is older than the one seated. A probe of that pass's parts would close it. |
+| What holds the Delilas and Cort casts' arms low on every film seat? | open (narrowed) | Seven classes are closed, the latest [Blazing Slash's](../subsystems/cast-module.md#prot-0958-blazing-slash) flames. On `--retail-steps --rand-track` the films read Megaton Press `.959`, Plasma Strike `.938`, Blazing Slash `.972`, Mystic Shield `.975`, Guilty Cross `.940`, Mystic Circle `.906`; what holds plain is the deal. Blazing Slash's arms `0x0D` / `0x0E` read `.967` / `.948`, so the puffs no longer hold them; arm `0x15` does (`.784`, Gi Delilas' hop stands turned off retail's, luma matched), and arm `0x16` (`.797`, the paced flame hits leave the victim `2` HP off by the third numeral). |
+| Why does Big Wave's still read darker over the sheet's rows? | open (narrowed to a near body) | The upper frame is closed: PROT 0898's band wash draws at retail's alpha, scroll and dither ([the presentation calls](../subsystems/cast-module.md#presentation-calls)), and the speed lines are PROT 0946's waves, now seated a lag back off the RAM ([Big Wave's waves](../tooling/retail-compare.md#big-waves-waves)). What is left (`.938`) is a cream body near the camera at `x >= 256` in rows `112..140`, no module part, which the engine draws short of where retail's tables step it in. A film of its placement would say whether it is the camera's depth or the body's own. |
 
 
 ### Caruban Fire Breath stills four yaw units off
 
-`open (narrowed)` `battle_rugi_caruban_2_` / `_3_fire_breath_mid_cast` read `image` `.931` / `.938`, camera `1.000`. The displayed pose is the RAM's table walked back two step-`3` passes (case `0xA` re-arms at `ceil(gap / 6)`, the yaw endpoint climbing `24` a pass), and the walls fit it best. Near bodies fit four yaw units further back (`.988` / `.982`).
+`open (narrowed)` `battle_rugi_caruban_2_` / `_3_fire_breath_mid_cast` read `image` `.940` / `.951`, camera `1.000`; the walls match, and the deficit sits on Vahn's and Gala's near bodies. The displayed pose is the RAM's table walked back two step-`3` passes (case `0xA` re-arms at `ceil(gap / 6)`, the yaw endpoint climbing `24` a pass), and the walls fit it best. Near bodies fit four yaw units further back (`.988` / `.982`).
 
 The `_2_` state is saved mid draw tick: seats `2` / `3` hold view translations `+0x2C` on the camera one step-`3` pass back on the table's increments (pitch `43`, yaw `3508`, to a unit), which pins the walk back's first pass.
 
@@ -247,156 +242,6 @@ The pace is retail's: every `0x86` recording on disk, from three fights (the Gob
 
 Evidence that closes it: a PCSX-Redux recording of Zenoir against monster 27, 36 or 63 reading the creature's `+0x34` through arm 8. The probe cannot inject a party cast from a strike state of those fights (`battle_jou_theeder_v3_strike` and kin): its seat test reads the acting byte at `0x0A`, which still names the previous actor there, so the recording needs a state saved at a party member's command prompt in one of them.
 
-### Zeto's Big Wave idle, one pass older
-
-The RAM holds Zeto's idle cursor at `60` (rate `+0x21D` `4`, Big Wave's
-halving; all sixteen frame-history entries step `2`), so two passes of display
-lag put the shown frame at `52`. The image reads `.962` with Zeto seated there
-and `.980` seated at `48`, while a display lag one pass longer wrecks the
-pan's framing (`.462`). The same extra pass costs `cort_mystic_shield_mid_cast`
-and moves the other Cort capture-band states by under `.002`, so it is not a
-corpus-wide lag.
-
-It is not the double buffer's phase: the floor grid of the table under the
-current record index (`0x8007BF30 + i * 0x74`, index `gp+0x434`) fits the
-RAM's camera, so the state was saved mid-pass and the screen is two passes
-back, as assumed (`cort_mystic_shield_mid_cast` reads the same way,
-`horn_summon_mid_cast` the other: its newest floor sits under the other
-record). Nor is it the module's pacing: a seat-0 Big Wave recorded on both
-sides (`LEGAIA_POKE32` sends the cast down Big Wave's branch) holds arms 0 and
-4 one pass each and arms 5 to 8 within two vsyncs of retail's game clock.
-What is left is the pose the frame drew, and the obvious reading of it does
-not hold across states: `battle_gimard_tail_fire_b`, saved mid-pass too, draws
-its knockdown exactly two advances behind the RAM's cursor (`72` against
-`56`), where Zeto's idle needs three. A per-pass RAM sequence of a seat-0 Big
-Wave around arm 0 cannot separate the two either: the arm-0 cut moves the
-camera on the same pass the rate halves, so the body packets' motion between
-tables is mostly the camera's. A stretch where the camera holds still and a
-body's rate or clip changes (a commit that zeroes the cursor) would show
-which advance the drawn pose stands on.
-
-That stretch exists and the drawn pose is not the odd one out. A
-PCSX-Redux film of a seat-0 Big Wave (`autorun_drawn_pose_film.lua` with
-`LEGAIA_SPELL=0x56`, `LEGAIA_POKE32=0x801C8FE4=1`) logs every pass of the
-band `0x6E..0x71`: each seat's anim tick advances its cursor and the same
-pass's decode draws the advanced value, party and monster alike, through
-the caster's rate halving on the `0x70` entry and a monster commit. No pass
-skips a decode or draws an older cursor, so the extra advance is not a
-draw-order effect; what is left is the instant the state was saved inside
-a long pass (a step-`3` pass runs across vsyncs, and a save between the
-party's ticks and the monster's splits the seats) or the image metric
-preferring a neighbouring sway pose. `zora_glare_petrify_pre` reads the
-same way round for one seat only: Vahn fits one advance behind the RAM
-(`96` of `108`), Zora two (`168` of `216`), in band `0x6F`.
-
-A save can split the seats, but not that way round. The films put a
-vsync, the instant a save state is cut, between the ticks and the decodes,
-between two seats' decodes and after the flip, and once inside a seat's
-tick: on `rim_elm_gimard_victory`'s art commit, Vahn's tick (which commits
-clip `0x11` and halves every seat's rate) runs across a vsync before
-Gimard's tick starts. The actor list ticks the nodes in descending
-address order, party seat 0 (`0x800835E4`) first and the monster rows
-after it, in both filmed fights, so a save inside the list leaves the
-party one advance further from the screen than the monsters: Vahn two
-back and Zora one, the reverse of the fits, and no split puts a seat three
-back as Zeto's `48` needs.
-
-Nor is it the decode. `FUN_8004998C` builds its pose in the battle
-context's scratch block (`s2 = *(gp+0xA0C) + 0x6F4`, twelve bytes a part,
-the centroid at `+0x120`), and Zeto is the last body the state's pass
-decoded: all sixteen parts there are the blend of cursor `60` (frame `3`,
-fraction `12`) to the halfword, angles through the short-arc guards, and
-the body pair `(-1, 912)` is that pose's centroid turned by the heading.
-The port's blend gives the same pose at the same cursor. Which pass the
-RAM's body pair belongs to also tells where in the pass a state was cut:
-Zeto's is the live cursor's (saved after the draw), and the frame driver's
-order - ticks, the view build `FUN_800172C0`, the render passes, then
-`FUN_80016B6C`'s `VSync`, `PutDispEnv`, `PutDrawEnv` and `DrawOTag` of the
-table just built (`0x800171C0..0x80017288`) - puts the screen two tables
-behind the cursor at either instant. The fit itself is sharp: Zeto seated
-at `36` / `42` / `46` / `48` / `50` / `52` / `56` reads `.877` / `.948` /
-`.963` / `.980` / `.970` / `.962` / `.929`, and moving the camera's depth
-(the Big Wave pan's `26` a vsync) does not trade against it - at `52` the
-best depth is thirteen units out (`.966`), at `48` the RAM's walk-back
-stays best. The near plate filling the close-up is in both ordering tables
-the RAM holds, drawn last over the chest. The other framebuffer (the draw
-area, `(0, 4)`) holds a wide shot with no HUD that matches neither table,
-so it is no witness to the lag.
-
-Nor is it the draw. Both ordering tables, rasterised in retail's chain
-order against the state's own VRAM (`scripts/mednafen/ot-raster.py`), match
-the port's depth-tested frame at `1.000`: the newest table (record `1`, the
-current index) is the port at cursor `60` on the RAM's camera, the other at
-cursor `56` with the camera one pass back (TR z `52` nearer). No primitive is
-missing, extra, ordered differently or drawn with another attribute, and
-the two tables step the cursor `4` and the pan `26` a vsync, as the RAM's
-cursor ring and tween say. The residual is the displayed frame alone, and
-that frame is PROT 0946's arm-0 pass: arm 4 adds `scalar << 6` (`512`) to the
-countdown `0x801F7F20` and arm 5 drains `scalar * step` (`16`) a pass
-(`0x801F6F10..0x801F6F5C`), so the RAM's `496` is arm 5's first pass, the
-older table arm 4's, and the screen arm 0's cut, whose TR z
-`prescale(z / 2) = 2150` is the camera the image child already draws. On
-that one pass the port's frame fits only off the walk: cursor `48` with
-the camera's yaw `+6` reads `.993`, every other seat lower, against the
-`1.000` of the two passes after it. What the cut pass draws differently
-(the yaw the action SM's counter leaves before arm 0's snap lands, or a
-body matrix built ahead of the snap) needs a film of the cut itself.
-
-The engine's film of the cut, against the PCSX-Redux recording of
-`garmel_zeto_pre_big_wave`, scored pair by pair: the camera is retail's to
-the unit through the cut (yaw `0`, pitch `32`, TR z `2380` on the pass the
-recording reads it, then `2492`, `2604`, a step-`4` pass each), and both
-sides draw the close-up first on that pass, which retail shows two passes
-later. The cut pair still reads `.546`, and its whole residue is Zeto's
-pose: the film's Zeto idle cursor stands at `114` where the recording's
-reads `78` (rate `8` halving to `4` on the cut on both sides), three passes
-ahead. One of the three is the opening (the engine runs `0x0A..0x28` in
-three passes where retail runs two), the rest the film's seat of the
-state's cursor. The film cannot weigh `48` against `52` until Zeto's idle
-stands on the recording's cursor at the cut. Grade `capture`.
-
-Two of the three were the engine's. A `--physical` film from
-`garmel_zeto_pre_big_wave` seats Zeto on the state's own cursor (`212`, its
-loop budget `+0x176` spent as retail's), and Zeto then reads `224` on the
-`0x0C` pass and `12` on `0x28`'s, where retail runs `228`, `236`, `0`. Nothing
-committed a clip: the action seed's per-pass `pose(Idle)` request found no
-idle marker on the player battle setup had installed and built a fresh idle
-player at keyframe `0`. Every body's first idle request after setup did the
-same, so every fight's idle phases restarted on each body's first turn. `FUN_801D5854` writes no anim field (its stores go to the
-battle context's framing words, none to the actor's `+0x1D9..+0x1DC` or the
-node's cursor `+0x68`), so retail's idle runs on.
-With the idle kept through the request, the film reads `.874` (was `.824`),
-the cut pair `.849`, and Zeto stands at `90` on the cut pass against the
-recording's `78`: the one pass the engine's opening runs longer (`0x0A..0x28`
-in three passes where retail runs two). The engine now keeps it: battle setup
-seats each body's idle at the phase it drew (`World::seat_battle_setup_idle`),
-so the SM's requests find the loop playing; the film has not been re-shot on
-that seat
-([settled](re-settled-threads/battle.md#the-action-sms-idle-request-keeps-a-playing-idle)).
-Grade `capture` (the film) and `disassembly` (`FUN_801D5854`'s stores, see
-`ghidra/scripts/funcs/overlay_battle_action_801d5854.txt`).
-
-The cut has been filmed, and it draws neither an older cursor nor a
-camera short of the snap. From `garmel_zeto_pre_big_wave` (Zeto's own AI
-pick, PCSX-Redux), `autorun_cast_sequence.lua` logs the camera per vsync and
-`autorun_drawn_pose_film.lua` the anim ticks and decodes per pass. Arms `0`
-to `4` run in one pass: the module counter `ctx[+0x279]` reads `0` after
-one pass and `4` after the next, and that next pass halves Zeto's rate
-(`8` to `4`), lands the cut on its endpoint (yaw `3956` to `0`, the table's
-increment `140` clamped; TR z `4714` to `2380`), ticks Zeto from `72` to
-`78` at the halved rate and decodes `78`. The cut is first on screen two
-passes later. The mid-cast state's own cursor ring holds the same edge:
-`60, 56, 52, 48, 36, 24`, rate `4` from the `48` to `52` step, so its cut
-pass is the one that drew `52`, two passes behind the RAM's `60`, as the
-display lag says. The fit's `48` is therefore not the drawn cursor: the
-cut pass draws `52` on a camera already on its endpoint, and the image's
-preference for `48` with yaw `+6` is another residual of that frame (the
-body's matrix, or the metric trading sway against framing). Grade
-`capture`. Next: the engine's film of the same cast scored at the cut's
-pair, against a recording that opens on cast begin `0x28` as the oracle
-pairs it (this one opens on the state's `0x0A`, and the oracle pairs it at
-`.46` throughout).
-
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 
 ## Audio / BGM
@@ -405,7 +250,7 @@ Answered questions: [settled audio](re-settled-threads/audio.md); falsified read
 
 ### How long does a summon's seek hold its voice?
 
-*Status:* partial (measured)
+*Status:* partial (measured; the seek's length waits on a real console, the band ahead of the module on the cast's own pace)
 
 The drive's two seeks ahead of the head cue are modelled
 ([the drive holds a summon's voice](../subsystems/audio.md#the-drive-holds-a-summons-voice)), and so is
@@ -452,7 +297,7 @@ seek time, and the band ahead of the module above.
 
 ### Why does Theeder's score not subtract out of its recording?
 
-*Status:* open (measured)
+*Status:* open (narrowed: a lost calc is the measured mechanism)
 
 `theeder_summon_mid_cast` reads `0.71` on the [cast channel](../subsystems/audio.md#the-cast-channel)
 with the state's [Monaural](../subsystems/audio.md#the-monaural-states) seated and its cast offset free
@@ -476,15 +321,20 @@ the port's KON lead) moved the cast row to `0.79` but cost the clean track rows 
 not kept. Two readings are ruled out. The silent history's phase: seated on the state's index,
 the keying differential reads no `key` or `voice` row on `2013` and the cast row does not move. A
 parked KON: the KON path never defers ([a key-on is never deferred](../subsystems/audio.md#a-key-on-is-never-deferred)).
-A skipped calc would put retail's voice ahead, not behind, and the calc runs once a vsync wherever it
-has been watched. What is left is a calc doubled in one vsync, or a voice whose playback stood still
-for one (a re-key or a pitch write on the same voice). A summon cast does not disturb the calc on
-PCSX-Redux: a Theeder cast (`0x82` from `party_basic_attack_vs_gobu_gobu`, `cast-sequence.py
---calc-clock`) enters `FUN_80062F98` exactly once a vsync across `1451` vsyncs, the module's seek arms
-and the side-band's loads included, and every KON write comes from the flush (`0x80065F7C`). That fight
-plays the battle theme, not `2013`, and mednafen's calc has not been watched over a cast. What closes
-it: a state from the battle that leads into this cast, run under the same clock with a watch on that
-voice's pitch and KON bits; the library holds no state of that fight before the cast.
+Watched over this cast, the calc is not once a vsync: mednafen loses two of `1079`, the vsyncs
+whose vblank lands inside the drainer's cue key-on, which holds the calc's lock
+([settled](re-settled-threads/audio.md#does-the-scores-calc-run-once-a-vsync-across-a-summon)). A
+lost calc delays every later event and the flush of the notes staged the vsync before it, so a
+loss between that note's key-on and its flush keys it a vsync late, as measured. What does not
+fit yet is the note keyed `151` vsyncs back standing on time, which a loss after it would put a
+vsync early against the render's alignment on the state's wait. The duck's re-volume is ruled
+out (`seq-differential --duck` keys `2013` alike under any ramp), and so is cue contention for
+the voices (the seated `--cues` run keys `2013` alike). A PCSX-Redux Theeder cast (`0x82` from
+`party_basic_attack_vs_gobu_gobu`, `cast-sequence.py --calc-clock`) enters `FUN_80062F98` once a
+vsync across `1451` vsyncs, which the lock does not contradict: a locked call is entered and returns
+at its first branch. What closes it: a state from the battle that leads into this cast, run under
+the same clock with the flush index and that voice's pitch and KON bits watched; the library holds
+no state of that fight before the cast.
 
 ## Title / boot / overlays
 

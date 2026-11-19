@@ -63,8 +63,13 @@ impl LegaiaRuntime {
         // The cursor auto-repeat this tick's pump raised, folded into the
         // edge (`BootSession::pause_menu_edge`, the native window's
         // `tick_boot_ui` twin): a direction held on a list steps again.
+        let sub = self
+            .play_menu
+            .as_ref()
+            .and_then(|m| m.sub.as_ref())
+            .map(|PlaySub::Session(s)| s.as_ref());
         let edge = match self.scene_host.session_mut() {
-            Some(session) => session.pause_menu_edge(edge),
+            Some(session) => session.pause_menu_edge(edge, sub),
             None => edge,
         };
         // The pause menu reads nothing while a window slides (retail's

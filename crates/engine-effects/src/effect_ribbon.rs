@@ -786,6 +786,9 @@ pub fn ribbon_mesh_for_actor(
 pub struct RibbonDraw {
     /// [`ribbon_vram_mesh`] of the node's current state.
     pub mesh: legaia_tmd::mesh::VramMesh,
+    /// The node this draw comes from, as [`crate::summon::SummonPartDraw::node`];
+    /// `None` for a draw no scene part made.
+    pub node: Option<u32>,
     /// World position (move-VM `world_x/y/z`).
     pub world_pos: [f32; 3],
     /// Euler XYZ rotation in radians (from the move-VM rotation banks).

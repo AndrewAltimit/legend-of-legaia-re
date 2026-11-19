@@ -345,7 +345,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // The camera the battle bodies' tint pass judges depth under
         // (`World::battle_actor_draw_plan`): the phase-scripted dome
         // camera this pass projects with in every battle.
-        let battle_pose = in_battle.then(|| app.session.host.world.battle_cam_pose());
+        let battle_pose = in_battle.then(|| app.session.host.world.battle_draw_pose());
         for (i, actor) in app.session.host.world.actors.iter().enumerate() {
             let Some(tmd_idx) = actor.tmd_binding else {
                 continue;

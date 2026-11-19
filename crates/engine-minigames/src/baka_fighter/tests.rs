@@ -1630,3 +1630,28 @@ fn the_secret_tally_runs_a_game_tick_every_fourth_vsync() {
         }
     }
 }
+
+/// The opponent install (`0x1E`) loads its fighter synchronously, so with
+/// retail's load holds the cabinet stands in it for the read
+/// ([`OPPONENT_INSTALL_LOAD_VSYNCS`], a PCSX-Redux film's `26`) before the
+/// arm runs on; without them the arm runs on the first vsync.
+#[test]
+fn the_opponent_install_holds_for_its_load_only_under_retail_holds() {
+    use crate::baka_cabinet::ST_OPPONENT_INSTALL;
+    let vsyncs_in_install = |hold: bool| {
+        let mut f = fight();
+        f.set_install_load_hold(hold);
+        f.cabinet.seat_state(ST_OPPONENT_INSTALL);
+        let mut n = 1;
+        while f.cabinet.state() == ST_OPPONENT_INSTALL {
+            f.frame(0, 0, 0);
+            if f.cabinet.state() == ST_OPPONENT_INSTALL {
+                n += 1;
+            }
+            assert!(n < 100, "the install never ran");
+        }
+        n
+    };
+    assert_eq!(vsyncs_in_install(false), 1);
+    assert_eq!(vsyncs_in_install(true), OPPONENT_INSTALL_LOAD_VSYNCS as u32);
+}

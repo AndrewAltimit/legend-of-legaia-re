@@ -105,6 +105,21 @@ impl BakaFight {
         // The held word's 32-vsync window (`_DAT_8007B938`), pumped on every
         // frame whatever the cabinet is doing, as retail's pad pump is.
         self.cabinet_hold.pump_packed(u32::from(held), 1);
+        // The opponent install loads its fighter synchronously: under
+        // retail's load holds the state word stands at `0x1E` for the read
+        // (`OPPONENT_INSTALL_LOAD_VSYNCS`) before the arm runs on.
+        if self.install_load_hold
+            && self.cabinet.state() == crate::baka_cabinet::ST_OPPONENT_INSTALL
+        {
+            if self.install_wait == 0 {
+                self.install_wait = super::OPPONENT_INSTALL_LOAD_VSYNCS;
+            }
+            self.install_wait -= 1;
+            if self.install_wait > 0 {
+                self.held_edge |= edge;
+                return BakaFrameOutcome::default();
+            }
+        }
         // A game tick every `step_floor` vsyncs, on that step: the cabinet's
         // floor is `1` but for the secret tally's `4`. A press between two
         // ticks is held for the next, as the pad pump's edge word holds it.

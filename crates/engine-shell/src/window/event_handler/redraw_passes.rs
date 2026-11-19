@@ -29,7 +29,18 @@ impl PlayWindowApp {
     /// tick's framebuffer grabs project through.
     pub(in crate::window) fn note_frame_field_view(&mut self, cutscene_cam: Option<CutsceneCam>) {
         self.frame_cutscene_view = cutscene_cam.map(cutscene_view);
-        self.session.field_fog_shot = self.frame_cutscene_view;
+        // The fog pool's next render step is simulation, so it projects
+        // through the shot as the camera stored it, never the smooth
+        // camera's lead (`frame_step::scripted_view_led`).
+        self.session.field_fog_shot = match self.frame_cutscene_view {
+            Some(_) if self.host_view().lead.phase > 0.0 => {
+                Some(legaia_engine_field::frame_step::scripted_view(
+                    &self.session.camera,
+                    self.host_view().scripted_target(),
+                ))
+            }
+            shot => shot,
+        };
         self.last_frame_field_view = self
             .host_view()
             .frame(self.frame_cutscene_view)
@@ -47,6 +58,7 @@ impl PlayWindowApp {
             &self.session.camera,
             self.scene_aabb,
         )
+        .presented()
     }
 
     /// The mood enhanced lighting lights this frame under
@@ -225,7 +237,7 @@ impl PlayWindowApp {
             return self
                 .battle_stage_mesh
                 .is_some()
-                .then(|| PartCameraPose::from_battle(&world.battle_cam_pose()));
+                .then(|| PartCameraPose::from_battle(&world.battle_draw_pose()));
         }
         if cutscene_cam.is_none() && !in_world_map && self.field_debug_camera {
             return None;
@@ -257,7 +269,7 @@ impl PlayWindowApp {
         let pose = self
             .battle_stage_mesh
             .is_some()
-            .then(|| world.battle_cam_pose());
+            .then(|| world.battle_draw_pose());
         world.battle_actor_draw_plan(
             ai,
             pose.as_ref(),
@@ -273,7 +285,7 @@ impl PlayWindowApp {
         let pose = self
             .battle_stage_mesh
             .is_some()
-            .then(|| world.battle_cam_pose());
+            .then(|| world.battle_draw_pose());
         legaia_engine_world_views::battle_draws::battle_shatter_view(
             world,
             ai,
@@ -315,9 +327,10 @@ impl PlayWindowApp {
                 &mut local.colors,
             );
         }
-        let bones = actor
-            .pose_frame
-            .as_ref()
+        // The drawn pose (`World::battle_draw_pose_frame`).
+        let lerped = self.session.host.world.battle_draw_pose_frame(ai);
+        let bones = lerped
+            .or(actor.pose_frame.as_ref())
             .map_or(&[][..], |p| p.bone_outputs.as_slice());
         let rotate = actor.battle_animation.is_some()
             || self.session.host.world.player_actor_slot == Some(ai as u8);
@@ -422,6 +435,10 @@ impl PlayWindowApp {
             let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
                 continue;
             };
+            // The drawn pose: under the smooth camera a battle body's parts
+            // step on the camera's phase (`World::battle_draw_pose_frame`).
+            let lerped = self.session.host.world.battle_draw_pose_frame(ai);
+            let pose = lerped.unwrap_or(pose);
             // Battle actors and the field player carry per-object
             // rigid-transform clips (rotation matters), so use the
             // full `R·v + T` builder; other field actors keep the
@@ -705,10 +722,11 @@ impl PlayWindowApp {
             return (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         }
         let world = &self.session.host.world;
-        let lists =
-            legaia_engine_world_views::effect_draws::effect_model_draws(world, part_cam, |i| {
-                self.body_draw_plan(i)
-            });
+        let lists = legaia_engine_world_views::effect_draws::effect_model_draws_drawn(
+            world,
+            part_cam,
+            |i| self.body_draw_plan(i),
+        );
         let upload = |vmesh: &legaia_tmd::mesh::VramMesh, what: &str| {
             if vmesh.indices.is_empty() {
                 return None;
@@ -1031,11 +1049,21 @@ impl PlayWindowApp {
                         * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                     // The live body's current position, for the render-side
                     // eye push that parks the ghost behind it.
-                    let bpos = legaia_engine_battle::battle_afterimage::placement_pos([
-                        f32::from(actor.move_state.world_x),
-                        f32::from(actor.move_state.world_y),
-                        f32::from(actor.move_state.world_z),
-                    ]);
+                    // The drawn root (`World::battle_draw_root`).
+                    let bpos = legaia_engine_battle::battle_afterimage::placement_pos(
+                        self.session
+                            .host
+                            .world
+                            .battle_draw_root(g.actor_slot as usize)
+                            .map_or(
+                                [
+                                    f32::from(actor.move_state.world_x),
+                                    f32::from(actor.move_state.world_y),
+                                    f32::from(actor.move_state.world_z),
+                                ],
+                                |(p, _)| p,
+                            ),
+                    );
                     log::debug!(
                         "arts ghost: actor {} at {:?} colour {:?}",
                         g.actor_slot,

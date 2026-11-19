@@ -3450,3 +3450,35 @@ fn the_displayed_clip_cursor_reads_the_history_ring() {
     let (_, _, walked) = ram_read::displayed_clip_cursor(&ram, 2).expect("seat");
     assert!(walked < 0, "the node cursor walked back the lag: {walked}");
 }
+
+/// `battle_jou_cort_181_strike`'s Cort: the history rings hold the walk's
+/// last passes (`.., 176, 188`) behind the arrival's idle at `0`, so the
+/// arrival pass advanced the walk to `200`.
+#[test]
+fn the_arrival_walk_cursor_is_the_walks_last_advance_once_more() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let actor = 0x800E_D264u32;
+    let record = 0x8010_0000u32;
+    let (walk, idle) = (0x8010_1000u32, 0x8010_2000u32);
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, actor);
+    put32(&mut ram, 0x801C_9348, record);
+    put32(&mut ram, record + 0x4C, idle);
+    put32(&mut ram, record + 0x4C + 4, walk);
+    let ring = [
+        (idle, 32),
+        (idle, 16),
+        (idle, 0),
+        (walk, 188),
+        (walk, 176),
+        (walk, 164),
+    ];
+    for (k, &(rec, cur)) in ring.iter().enumerate() {
+        put32(&mut ram, actor + 0x234 + k as u32 * 4, rec);
+        put16(&mut ram, actor + 0x17A + k as u32 * 2, cur);
+    }
+    assert_eq!(ram_read::arrival_walk_cursor(&ram, 3), Some(200));
+    // A party seat, or a ring whose walk is not behind a commit, reads none.
+    assert_eq!(ram_read::arrival_walk_cursor(&ram, 0), None);
+    put16(&mut ram, actor + 0x17A + 2 * 2, 8);
+    assert_eq!(ram_read::arrival_walk_cursor(&ram, 3), None);
+}

@@ -134,6 +134,7 @@ mod inline_dialogue_vm_no_panic_disc;
 mod jagaroom_statue_spawn_disc;
 mod jouind_object_morph_cflag_disc;
 mod jouine_arc_held_height_disc;
+mod juui1_party_seat_rebank_disc;
 mod koin3_gold_card_door_disc;
 mod kor3_self_face_acquire_disc;
 mod kor5_genesis_figure_height_disc;

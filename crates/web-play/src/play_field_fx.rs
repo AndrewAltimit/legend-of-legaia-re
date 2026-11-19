@@ -59,7 +59,7 @@ impl LegaiaRuntime {
         scene_box: ([f32; 3], [f32; 3]),
     ) -> Option<screen_passes::HostView<'_>> {
         let (host, camera) = self.scene_host.host_cam()?;
-        Some(screen_passes::HostView::new(&host.world, camera, scene_box))
+        Some(screen_passes::HostView::new(&host.world, camera, scene_box).presented())
     }
 
     /// Run the fog pool's render step for this tick and return its sheets as

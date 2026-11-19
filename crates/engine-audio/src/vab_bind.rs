@@ -702,11 +702,10 @@ pub enum PitchPath {
 /// interpretation this function used to carry.
 ///
 /// `n / 12` and `n % 12` truncate toward zero, matching MIPS `div`. For
-/// `n < 0` - a note more than five octaves under the tone's centre, which the
-/// score of track `2030` reaches - the remainder goes negative and retail reads
-/// off the front of its own table, into libspu's globals, five octaves down.
-/// The port reads the zero most of those words hold: a voice that keys and does
-/// not move.
+/// `n < 0` - a note more than five octaves under the tone's centre - the
+/// remainder goes negative and retail reads off the front of its own table,
+/// into the libsnd / libspu globals below it, five octaves down
+/// ([`table_front_word`]).
 ///
 /// PORT: FUN_80066d8c (sequencer arm)
 ///
@@ -734,13 +733,34 @@ pub fn pitch_from_key(key: i32, fine: u32, tone: &VagAtr) -> u16 {
     }
 }
 
+/// The halfword a negative table index reads in retail: `DAT_8007A940 + 2 *
+/// index` lands on the globals below the table (`lhu -0x56C0` off `0x80080000`
+/// at `0x80066E14`, with no bound). Only two such indices are reached by the
+/// disc's scores, both on the sequencer arm: `-25` (track `2030`), a word every
+/// state holds at zero, and `-23` (track `2072`), the high half of the word at
+/// `0x8007A910`. That word is libsnd's tick-function pointer, statically
+/// initialised to `SsSeqCalc` (`FUN_80062F98`) and never rewritten in any
+/// library state, so it reads `0x8006` and the note sounds at `0x8006 >> 5`,
+/// two octaves under unity, where reading zero left the voice keyed and still.
+/// Every other word is taken as zero.
+fn table_front_word(index: i32) -> u32 {
+    /// `FUN_80062F98`, the pointer's value.
+    const SS_SEQ_CALC: u32 = 0x8006_2F98;
+    match index {
+        -23 => SS_SEQ_CALC >> 16,
+        _ => 0,
+    }
+}
+
 fn pitch_at_index(key: i32, fine_index: i32, tone: &VagAtr) -> u16 {
     let n = key + 60 - tone.center as i32;
-    if n < 0 {
-        return 0;
-    }
     let octave = n / 12 - 5;
-    let mut pitch = pitch_table_entry((n % 12) * 16 + fine_index);
+    let index = (n % 12) * 16 + fine_index;
+    let mut pitch = if index < 0 {
+        table_front_word(index)
+    } else {
+        pitch_table_entry(index)
+    };
     if octave > 0 {
         // Retail shifts a 16-bit value and stores 16 bits back: an octave-up
         // that overflows wraps rather than saturating.
@@ -850,6 +870,24 @@ mod tests {
             compute_pitch(60, &tone, PitchPath::Sequencer),
             0x800,
             "0x800 is the 22050/44100 double-count, not retail's unity"
+        );
+    }
+
+    /// A note five octaves and two semitones under its tone's centre reads off
+    /// the front of the table: at fine index `9` that is the tick-function
+    /// pointer's high half `0x8006`, five octaves down, so the voice moves at
+    /// `0x400` (track `2072`); at fine index `7` a zero word, so it keys still
+    /// (track `2030`).
+    #[test]
+    fn a_note_past_the_tables_front_reads_the_globals_below_it() {
+        // n = note + 60 - center = -2.
+        assert_eq!(
+            compute_pitch(10, &tone_with_shift(72, 9 << 3), PitchPath::Sequencer),
+            0x400
+        );
+        assert_eq!(
+            compute_pitch(10, &tone_with_shift(72, 7 << 3), PitchPath::Sequencer),
+            0
         );
     }
 

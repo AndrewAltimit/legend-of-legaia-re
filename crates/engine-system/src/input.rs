@@ -88,7 +88,23 @@ pub struct InputState {
     ///
     /// REF: FUN_8001822C
     retail: crate::retail_pad::RetailPadState,
+    /// The host's held word of the last five sim ticks, newest first
+    /// ([`Self::record_screen_held`]): what [`Self::retail_screen_edge`] reads
+    /// a host screen's presses from.
+    screen_held: [u16; 5],
+    /// The cursor auto-repeat the last screen tick raised, for the next
+    /// ([`Self::retail_screen_edge`]).
+    screen_repeat_prev: u16,
+    /// A harness whose screen presses are one-tick edges authored for a
+    /// screen that reads them on their tick: host screens take the pad
+    /// immediately even in the retail-faithful mode, while the field keeps
+    /// its pipeline. Never set by a play path.
+    screen_immediate: bool,
 }
+
+/// The cursor bits of a menu edge word: the D-pad and the four shoulders,
+/// the window kernel's chord (`0xF00F` packed).
+pub const SCREEN_CURSOR_BITS: u16 = 0x0FF0;
 
 /// Wall-clock read for the held-duration bookkeeping.
 ///
@@ -154,6 +170,7 @@ impl InputState {
     ) {
         self.retail.pump(port0, port1, debug_mode, vsync_delta);
         let held = self.retail.held as u16;
+        self.record_screen_held(held);
         // Publish the mask without re-running the pump (set_pad would pump
         // again at one vsync and double-advance the history ring).
         self.publish_pad(held);
@@ -176,6 +193,58 @@ impl InputState {
     /// Start the cursor auto-repeat over: a list just opened.
     pub fn reset_menu_repeat(&mut self) {
         self.retail.reset_menu_repeat();
+        self.screen_repeat_prev = 0;
+    }
+
+    /// [`Self::screen_immediate`]: whether a harness has the host screens
+    /// read their presses on their tick in the retail-faithful mode.
+    pub fn screen_immediate(&self) -> bool {
+        self.screen_immediate
+    }
+
+    /// Set [`Self::screen_immediate`] (a harness seat); returns the old value.
+    pub fn set_screen_immediate(&mut self, on: bool) -> bool {
+        std::mem::replace(&mut self.screen_immediate, on)
+    }
+
+    /// Note the host's held word for this sim tick, whoever owns the tick:
+    /// [`Self::pump_held`] on a tick a screen owns, the world's `set_pad` on
+    /// a field tick (ahead of its pad pipeline), one or the other a tick.
+    pub fn record_screen_held(&mut self, held: u16) {
+        self.screen_held.rotate_right(1);
+        self.screen_held[0] = held;
+    }
+
+    /// The edge word a menu-overlay screen reads on this tick under the
+    /// retail pad pipeline, with the window kernel's cursor auto-repeat
+    /// folded in.
+    ///
+    /// Retail's screens run a frame a vsync and read the pad the frame
+    /// before latched (`FUN_8001822C` at the frame body's end), so a press
+    /// reaches the confirm and cancel two vsyncs on: the picker
+    /// `FUN_801D688C` tests them on the edge word `_DAT_8007B874`
+    /// (`0x801D68B0`). Its cursor step reads `_DAT_8007BB84` (`0x801D6914`),
+    /// which the window kernel `FUN_80031D00` rebuilds from `_DAT_8007B874`
+    /// and the auto-repeat at its top (`0x80031D48..0x80031DA8`); every
+    /// screen handler calls the picker before the kernel (`0x801D6BA8`, then
+    /// `0x801D6D1C`), so a step reads the frame before's word: three vsyncs
+    /// on, and the repeat a frame late with it.
+    ///
+    /// `cursor_lags = false` is a screen whose step reads the frame's own
+    /// edge word: its cursor bits come with the confirm's, two vsyncs on.
+    // REF: FUN_801D688C, FUN_80031D00
+    pub fn retail_screen_edge(&mut self, cursor_lags: bool) -> u16 {
+        let h = self.screen_held;
+        let now = h[2] & !h[3];
+        let repeat = self.take_menu_repeat();
+        if !cursor_lags {
+            self.screen_repeat_prev = 0;
+            return now | repeat;
+        }
+        let face = now & !SCREEN_CURSOR_BITS;
+        let cursor = ((h[3] & !h[4]) | self.screen_repeat_prev) & SCREEN_CURSOR_BITS;
+        self.screen_repeat_prev = repeat;
+        face | cursor
     }
 
     /// Run the retail pump for a tick no [`Self::set_pad`] is made on: a
@@ -187,12 +256,21 @@ impl InputState {
     /// a tick: a tick that calls [`Self::set_pad`] must not call this too.
     pub fn pump_held(&mut self, mask: u16) {
         self.retail.pump_raw(mask, 1);
+        self.record_screen_held(mask);
     }
 
     /// Replace the pad mask. The previous frame's mask is rotated into
     /// `pad_prev` so edge queries reflect the transition between the last
     /// and current call.
     pub fn set_pad(&mut self, mask: u16) {
+        self.record_screen_held(mask);
+        self.set_pad_unrecorded(mask);
+    }
+
+    /// [`Self::set_pad`] without noting `mask` as the tick's held word: the
+    /// world's `set_pad`, which notes the host's word ahead of its pad
+    /// pipeline and publishes the pipeline's.
+    pub fn set_pad_unrecorded(&mut self, mask: u16) {
         // Feed the retail pump's second half (`FUN_8001822C` from
         // `0x800184E0`) so every host - including the ones that assemble a
         // mask themselves rather than decoding libpad reports - gets the
@@ -937,6 +1015,31 @@ mod tests {
         s.set_pad(0);
         assert!(!s.pressed(PadButton::Cross));
         assert!(s.just_released(PadButton::Cross));
+    }
+
+    /// Under the retail pipeline a screen sees a confirm two ticks after its
+    /// press and a cursor step three, each once.
+    #[test]
+    fn a_retail_screen_reads_a_confirm_two_ticks_on_and_a_step_three() {
+        let mut s = InputState::default();
+        let cross = PadButton::Cross.mask();
+        let down = PadButton::Down.mask();
+        let mut seen = Vec::new();
+        for t in 0..8u16 {
+            let held = if t == 1 { cross | down } else { 0 };
+            s.pump_held(held);
+            seen.push(s.retail_screen_edge(true));
+        }
+        assert_eq!(
+            seen[3], cross,
+            "the confirm, two ticks after the press at 1"
+        );
+        assert_eq!(seen[4], down, "the step, three ticks after");
+        assert!(
+            seen.iter()
+                .enumerate()
+                .all(|(t, &e)| e == 0 || t == 3 || t == 4)
+        );
     }
 
     #[test]

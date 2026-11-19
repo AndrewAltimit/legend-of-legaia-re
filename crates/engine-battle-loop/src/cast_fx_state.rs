@@ -451,6 +451,12 @@ pub struct CastFxState {
     /// own, cleared before it runs). An arm that hands over mid-pass owes the
     /// rest of the pass's drift (`World::module_pass`).
     pub module_tick_drift: Option<legaia_engine_cast::cast_module_camera::CaptureDrift>,
+    /// The camera-global nudge the newest module tick wrote
+    /// ([`legaia_engine_cast::cast_module_camera::ModuleNudge`], cleared
+    /// before each tick): an arm whose nudge sits ahead of its gate drifts
+    /// on its passing pass too, so a hand-over mid-pass owes the rest
+    /// (`World::module_pass`).
+    pub module_tick_nudge: Option<legaia_engine_cast::cast_module_camera::ModuleNudge>,
     /// The newest module tick's rate part when its drift lands a stored value
     /// ([`legaia_engine_cast::cast_module_camera::ArmDirection::rest_drift`]):
     /// what the rest of a handing-over pass repeats in place of the drift.
@@ -729,6 +735,7 @@ impl CastFxState {
             module_handover_waits: false,
             module_pass_repeat: false,
             module_tick_drift: None,
+            module_tick_nudge: None,
             module_tick_rest: None,
             module_tick_after_drift: None,
             module_bump_commits: 0,

@@ -86,6 +86,7 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 - [Dome ringside panel stills PROT 1221 and 1222](#dome-ringside-panel-stills-prot-1221-and-1222)
 - [The display object's sound-bank category](#the-display-objects-sound-bank-category)
 - [The evolved-Cort flow park](#the-evolved-cort-flow-park)
+- [A walk that arrives on its crossing stomps once](#a-walk-that-arrives-on-its-crossing-stomps-once)
 
 ## Threads
 
@@ -107,6 +108,8 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | What dims Element Change's ray fan differently from the port's? | resolved (the capture emulator's dither, not the rays) | `capture` | Rasterised under both rules, the still's ordering table places the capture on PCSX-Redux's side: the fans read `(165, 94, 39)` in the buffer, `(162, 93, 39)` under the emulator's rule, `(145, 75, 30)` under the console's, and each fan's builder output and dispatcher calls match the engine's. With the image child on that rule the fans read within `2` per cent of retail's and the state `.945`; the rest is the crystal's outline and the rays' `rand()` deal. Owning page: [retail-compare](../../tooling/retail-compare.md#a-pcsx-redux-frame-keeps-what-the-console-floors). |
 | Why did Xain's injected strike stand `56` units off through its arms? | resolved (the recording's ground seed carried no heading) | `capture` | A `--range-trace` recording holds the body's first poll (`0x801F7278`) out of range on the victim's body pair `(78, 373)`, `19` units behind its live pair on heading `839`, then one walk step of `(-56, -36)` by the root-motion term (`0x80047D58`) and the next poll in range. The film's older recording seeded the victim's pair without its heading, the replay stood the body pair `19` ahead and the first poll read in range. Against a recording whose `ground=` carries the heading the film reads `.981` from `.868` and the position line is gone. Owning page: [cast-sequence oracle](../../tooling/cast-sequence-oracle.md#a-rate-audit-over-a-film-set). |
 | What paces the Rogue strikes' stand-in creature? | resolved (the last strike's stage bump, left on the bare seat) | `disassembly` + `capture` | PROT 0964's `0xFF` arm stages seat 7's idle with the `+0x1DC` bump after the golem's node is off (`0x801F8880..0x801F8898`); the installer leaves the byte, and the next golem's first tick commits on bit 0 (`0x800478F4`), which lifts the installer's rate `2` to `4`. A `--watch` recording of `rugi_rogue_pre_rogue_wind` holds both stores on the install vsync, and the state's seat 7 reads `+0x1DC = 1` before the cast; the Flame state reads `0` and its golem runs at `2`. Port: `BattleState::creature_seat_restage`. Owning page: [cast-module](../../subsystems/cast-module.md#prot-0964-element-change-rogue-wind--thunder--flame). |
+| Which capture-band bodies still run their arms in a pass each? | resolved (none: the last, PROT 0945's Jugger Power, is directed) | `disassembly` + `capture` | Every `(entry, body)` arm of the 21 trampolines and the eleven direct bodies has a camera director or a countdown table (`band_coverage_tests` in `cast_module_camera::capture`); PROT 0954 is ported whole with its own gates, and PROT 0958's six damage sites land on their own arms (`CaptureCamArm::hit_site`). The last body, `0xBA` (`0x801F69F8`), gates on Water Column's word and calls no damage wrapper; directed, its `--monster-pick` film reads `.976`, cues `1.000`, for `.331`. [cast-module.md](../../subsystems/cast-module.md#prot-0945-jugger-power) |
+| Which creature seats do the directors still not carry? | resolved (the last three seat on their arm's pass) | `disassembly` + `capture` | PROT 0903, 0906 and 0908 poll the creature stream ahead of `jal 0x801F19EC` (Zenoir `0x801F6E20..0x801F6E28`), so the installer and the arm's stores land on the arm's pass. Seated as the phase reached the arm, the creature stood a pass early on the caster and took an extra advance; on the pass, Gimard's, Gizam's and Zenoir's `creature.csv` rows read retail's cursors (`0x86`: `4`, `16`, `32`). The seat pass's own length (retail three vsyncs, the engine one) is the frame span's. [cast-module.md](../../subsystems/cast-module.md#prot-0908-zenoir) |
 | What backs Aluru's creature off through arms 15..18? | resolved (arm 14 stores the running clip's root speed) | `disassembly` + `capture` | PROT 0916's arm-14 pass writes `-16` into the creature's running clip entry (`sh v0,0xc(v1)` at `0x801F79A8`), and a negative root speed steps every pass with no range test. A `--watch` of the creature's `+0x38` reads the anim tick's root-motion store (`0x80047DC0`), `-24` a step-`3` pass, `z` `-2307` to `-3075`. Port: `World::apply_aluru_seat_writes`. Owning page: [cast-module](../../subsystems/cast-module.md#prot-0916-aluru). |
 | What takes Death Game's move label off the screen? | resolved (the module destroys the label's window) | `disassembly` + `capture` | Arm 2's face pass calls `FUN_800319A8(0x21)` (`li a0,0x21; jal 0x800319A8`, `0x801F7F34..0x801F7F40` in PROT 0957), the destroy-window routine, and `0x21` is the window id `FUN_801D8DE8` opens the label under for `(0x4C, 0)`: placement record 76's `+0x00` byte (`0x80077330`). PROT 0966 (Evil Seru Magic) does the same on arm 10's pass (`0x801F7058`). `battle_jou_puera_v3_death_game_mid_cast`'s recording shows the label through arm 1 and none from the faces on. Port: `ModuleCamState::move_label_closed` ([cast-module](../../subsystems/cast-module.md#prot-0957-death-game)). |
 | What holds Xain's rate byte at `4` through Terio Punch? | resolved (the commit of the punch's own clip) | `disassembly` + `capture` | PROT 0953's arm 0 stores `+0x21D = 1` (`0x801F6CA0`) beside its stage of clip `0xA` with the `+0x1DC` bump, and Xain's anim tick commits that clip on the same pass; the commit lifts any rate but `8` to `4` (`0x8004B080..0x8004B090`). A `--watch 0x800ED481` recording of the punch from `battle_tunnelc_xain_bull_charge_mid_cast` reads both stores on one vsync, `1` from `0x801F6CA0` and `4` from `0x8004B090` with the old `1` in `v1`, and later commits leave `4`. The cursor's `8` a step-`4` pass is rate `4`'s. The port's commit already makes the lift. Owning page: [cast-module](../../subsystems/cast-module.md#capture-band-camera). |
@@ -2655,4 +2658,29 @@ re-commits the loop and walks frame `0` on the same pass (`0x80047B54`, then the
 `0x80047C08`); no recording holds that pass.
 
 Owning page: [`battle-action.md`](../../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50).
+
+### A walk that arrives on its crossing stomps once
+
+*Status:* resolved - the engine re-committed the loop ahead of the cut, and the replay crossed a pass early. Evidence: `disassembly` + `capture`
+
+The question was why `battle_jou_cort_181_strike`'s replay drew a walk ring retail's frame lacks.
+Both halves were the port's. In `FUN_80047430` the bit-0 test comes first: `andi v0,v1,0x1` /
+`bne v0,zero,0x80047940` at `0x800478F4`, the cut's displacement and the commit
+`jal 0x8004AD80` at `0x80047A3C`, then `lw s3,0x4c(s5)` reloads the record the commit installed and
+falls into the natural-end test at `0x80047A48` on that clip, at the zeroed cursor. A loop crossing its
+end on the pass a bit-0 cut is staged is therefore never re-committed: its first walk fires the ending
+cycle's last record and the post-commit walk reads the staged clip. The engine's looping player took
+its natural end first, re-committed the walk, and its next walk read the new cycle's frame `0`, so
+gate `1` stomped beside gate `13`; the staged idle then committed behind it. The natural end now
+re-commits only with no bit-0 cut staged (`World::tick_battle_animations_walk`, `cut_first`).
+
+The capture's history rings date the arrival: Cort's walk cursors run `.., 164, 176, 188` and the next
+slot holds the idle at `0`, so the arrival pass advanced the walk to `200` of `192` and fired gate
+`13` there. The replay, seated on distance alone, walked on its own step and crossed a pass short of
+its arrival. Seated on the ring's phase (`CaptureApproach::arrival_walk`), with the cut ordered as
+retail's, it stomps once on the arrival pass and holds the capture's two live rings with or without
+the snapshot's retirement; with the old order it held three, and the still read `.949` unretired.
+`image` stays `.963`, the score the retirement already gave.
+
+Owning pages: [`battle-action.md`](../../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50), [`retail-compare.md`](../../tooling/retail-compare.md#a-turning-effect-parts-banks-are-a-clock).
 

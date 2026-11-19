@@ -80,9 +80,13 @@ impl World {
         // popup, which the HUD reads a frame late: hold from the start, and let
         // the band's fold release it. PROT 0927's party sweeps keep it down
         // until the body's last hits (`World::juggernaut_final_hits`).
-        self.battle.combo_cluster_held = self
-            .cast_module_for(spell_id)
-            .is_some_and(|e| matches!(e, 908 | 915 | 927 | 928 | 932 | 933 | 934));
+        // PROT 0910's party slashes clear it on all but the fourth
+        // (`sb zero,-0x49B4(v1)` at `0x801F88DC`), so its cluster first opens
+        // on the lethal slash as `4 HIT` (the `0x88` film's retail frames).
+        let party_cast = caster < self.party.party_count;
+        self.battle.combo_cluster_held = self.cast_module_for(spell_id).is_some_and(|e| {
+            matches!(e, 904 | 908 | 915 | 927 | 928 | 932 | 933 | 934) || (e == 910 && party_cast)
+        });
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -230,6 +234,12 @@ impl World {
                 self.presentation.module_fades.clear();
                 self.presentation.module_fades_next_pass.clear();
             }
+            // A director's fades spawn on the pass its gate lets go (PROT
+            // 0905's arms 2 and 4, `0x801F6DF4` / `0x801F6F30`), and the fade
+            // actor's own tick `FUN_80025000` runs later in that pass, so the
+            // ramp takes the frame's step at once - as the decoded sites'
+            // exit fades do. The engine has already stepped this pass's fades.
+            let spawn_step = self.battle_frame_step().max(1);
             for (t, id) in r.fades {
                 let mut seat = None;
                 legaia_engine_system::fade::spawn_fade(
@@ -237,6 +247,9 @@ impl World {
                     &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
                     *id,
                 );
+                if let Some(state) = seat.as_mut() {
+                    state.step_vsyncs(spawn_step);
+                }
                 self.presentation.module_fades.extend(seat);
             }
         }
@@ -249,6 +262,14 @@ impl World {
         let module_busy =
             profile.is_some() && run.as_ref().is_some_and(|r| r.tick_ported && r.busy);
         let module_phase = run.as_ref().map_or(0, |r| r.phase);
+        // PROT 0904 raises the readout flag on the pass its sweep arm leaves
+        // (`li v0,0x78; sb v0,-0x49B4(v1)` at `0x801F7EFC..0x801F7F00`), so
+        // the rows open with arm 13, not on the first ray's fold.
+        if run.as_ref().is_some_and(|r| {
+            r.prot_entry == 904 && r.phase > legaia_engine_cast::seru_magic_ticks::THEEDER_SWEEP_ARM
+        }) {
+            self.battle.combo_cluster_held = false;
+        }
         // PROT 0904's ray strikes a seat on this tick: its reaction, and so
         // the outcome, start here.
         let ray_struck = run
@@ -290,13 +311,9 @@ impl World {
                 cam.drift_module_tr_x(d.tr_x);
             }
         }
-        if let Some(n) = run.as_ref().and_then(|r| r.camera_nudge)
-            && let Some(cam) = self.battle.camera.as_mut()
-        {
-            cam.nudge_module(n.pitch, n.tr_y, n.tr_z);
-            if n.tr_x != 0 {
-                cam.nudge_module_tr_x(n.tr_x);
-            }
+        if let Some(n) = run.as_ref().and_then(|r| r.camera_nudge) {
+            self.casting.module_tick_nudge = Some(n);
+            self.apply_module_nudge(n);
         }
         let style = self.battle_ctx.camera_variant;
         if let Some(f) = run.as_ref().and_then(|r| r.camera_follow)
@@ -316,6 +333,9 @@ impl World {
         if run.as_ref().is_some_and(|r| r.camera_end_frame)
             && let Some(cam) = self.battle.camera.as_mut()
         {
+            // Case 8 reads `ctx[+0x6D0]` as it builds (`0x801D67C8`), after
+            // the module's own stores this pass.
+            cam.set_action_depth_raw(i32::from(self.battle.camera_frame_height));
             cam.arm_module_end_frame();
         }
         // The module's seat arm (`FUN_801F19EC`): a seat owed since the
@@ -406,9 +426,15 @@ impl World {
                     // module's pre-hits kept down. PROT 0915 has no fold: its
                     // rolls store `0` there and arm `0xC`'s pass raises it
                     // (`li v0,0x78` at `0x801F7DA0`).
-                    let juggernaut_sweeps = self.cast_module_for(st.spell_id) == Some(927)
-                        && st.caster < self.party.party_count;
-                    if !juggernaut_sweeps {
+                    // PROT 0910's party slashes run past the fold and keep the
+                    // flag down until the fourth (`0x801F88DC`).
+                    // PROT 0904's sweep clears it on every ray hit
+                    // (`sb zero,-0x49B4(v0)` at `0x801F7D58`) and raises it
+                    // as arm 12 leaves (`0x801F7F00`), below.
+                    let entry = self.cast_module_for(st.spell_id);
+                    let module_holds_flag = entry == Some(904)
+                        || (matches!(entry, Some(927 | 910)) && st.caster < self.party.party_count);
+                    if !module_holds_flag {
                         self.battle.combo_cluster_held = false;
                     }
                     self.fold_pending_cast();

@@ -18,7 +18,9 @@
 -- pacer's: its ring cursor (`0x8007B758`, the slot the next frame stores to),
 -- the newest frame time in hblanks there (`0x80084098`, clamped to `0x2BC`)
 -- and the frame step `0x1F800393` - the retail side of the field frame-cost
--- model (`legaia_engine_core::world::field_frame_cost`).
+-- model (`legaia_engine_core::world::field_frame_cost`). After them come the
+-- dialogue byte, the encounter counter and `cues`: the cue ring's four ids
+-- (`0x8007B6D8`, `;`-joined, `-1` empty), whose new ids are the cues pushed.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -41,6 +43,7 @@ local RING        = 0x80084098
 local RING_CURSOR = 0x8007B758
 local FIELD_CTL   = 0x801C6EA4 -- field-control block; +0x62 the dialogue byte
 local ENC_COUNTER = 0x8007B5FC -- the region roll's step counter (FUN_801D9E1C)
+local CUE_RING    = 0x8007B6D8 -- DAT_8007B6D8[4], the cue ring's ids (i16, -1 empty)
 
 local function s16(a)
     local v = probe.read_u16(a)
@@ -79,7 +82,7 @@ local held = {}
 local fh = assert(io.open(probe.out_path("walk_film.csv"), "w"))
 fh:write("vsync,x,y,z,prev_x,prev_z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z," ..
     "st_pitch,st_yaw,st_h,st_eye_x,st_eye_y,st_eye_z,offset_ease,cursor,rate,record,mode,rng," ..
-    "ring_cur,frame_cost,step,talk,enc\n")
+    "ring_cur,frame_cost,step,talk,enc,cues\n")
 
 local afh = assert(io.open(probe.out_path("walk_film_actors.csv"), "w"))
 afh:write("vsync,flat,x,y,z,heading,flags,model,saved,record,clip,clip_cursor,rate\n")
@@ -140,7 +143,7 @@ probe.run({
         local p = probe.read_u32(PLAYER_PTR)
         if p == nil or not probe.in_ram(p) then return end
         fh:write(string.format(
-            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%08x,%d,%d,%d,%d,%d\n",
+            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%08x,%d,%d,%d,%d,%d,%d;%d;%d;%d\n",
             el, s16(p + 0x14), s16(p + 0x16), s16(p + 0x18),
             s16(p + 0x1C), s16(p + 0x20), s16(p + 0x26), s16(p + 0x5C),
             s16(PITCH), s16(YAW), s16(H),
@@ -154,7 +157,8 @@ probe.run({
             probe.read_u16(RING + (((probe.read_u32(RING_CURSOR) or 1) - 1) % 16) * 2) or 0,
             probe.read_scratch_u8(0x1F800393) or 0,
             probe.read_u8((probe.read_u32(FIELD_CTL) or 0) + 0x62) or 0,
-            s32(ENC_COUNTER)))
+            s32(ENC_COUNTER),
+            s16(CUE_RING), s16(CUE_RING + 2), s16(CUE_RING + 4), s16(CUE_RING + 6)))
         fh:flush()
         log_actors(el, p)
     end,

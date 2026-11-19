@@ -34,8 +34,9 @@ pub const BATTLE_FX_ASPECT: f32 = 4.0 / 3.0;
 /// native window's glam composition (`battle_scene_mvp`) is pinned equal to
 /// it by `battle_vp_matches_the_native_glam_composition`.
 pub fn battle_fx_vp(world: &World) -> [f32; 16] {
+    // The drawn pose: the smooth camera's frame (`World::battle_draw_pose`).
     battle_vp(
-        &world.battle_cam_pose(),
+        &world.battle_draw_pose(),
         BATTLE_WORLD_SCALE,
         BATTLE_FX_ASPECT,
     )
@@ -64,17 +65,19 @@ pub fn battle_fx_prims(world: &World) -> Vec<ScreenPrim> {
 /// camera covers it. Off, they composite over the 3D frame.
 pub fn battle_fx_prims_by_link(world: &World, by_link: bool) -> Vec<ScreenPrim> {
     use legaia_engine_world_views::screen_passes::{
-        cast_ribbon_prims, move_fx_streak_prims, weapon_trail_prims, weapon_trail_prims_linked,
+        cast_ribbon_prims_drawn, move_fx_streak_prims, weapon_trail_prims_drawn,
+        weapon_trail_prims_linked_drawn,
     };
     use legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT;
     if world.mode != SceneMode::Battle {
         return Vec::new();
     }
     let vp = battle_fx_vp(world);
+    // The drawn frame: the smooth battle camera's phase, the live one off.
     let mut out = if by_link {
-        weapon_trail_prims_linked(world, &vp)
+        weapon_trail_prims_linked_drawn(world, &vp)
     } else {
-        weapon_trail_prims(world)
+        weapon_trail_prims_drawn(world)
     };
     let mvp = glam::Mat4::from_cols_array(&vp)
         * glam::Mat4::from_scale(glam::Vec3::splat(BATTLE_WORLD_SCALE));
@@ -84,7 +87,7 @@ pub fn battle_fx_prims_by_link(world: &World, by_link: bool) -> Vec<ScreenPrim> 
         MOVE_FX_STREAK_OT,
         by_link,
     ));
-    out.extend(cast_ribbon_prims(world, &mvp, MOVE_FX_STREAK_OT));
+    out.extend(cast_ribbon_prims_drawn(world, &mvp, MOVE_FX_STREAK_OT));
     out.extend(death_game_prims(world));
     out
 }

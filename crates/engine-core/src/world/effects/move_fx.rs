@@ -277,13 +277,11 @@ impl World {
     /// holds rings holds every ring its walk left live, each with its ground
     /// point, so a ring the replay stomped past that count is a footfall
     /// retail's walk never took: the replay walks on its own frame step from
-    /// where the yaw counter places it, and a walk run on a finer step than
-    /// retail's is longer and crosses its clip's end where retail's arrived
-    /// on it. `battle_jou_cort_181_strike`'s Cort walks one cycle of his
-    /// 12-keyframe clip in retail and arrives on its crossing tick, where
-    /// the last of five stomps (gates `1`, `4`, `7`, `10`, `13`) lands; the
-    /// replay's walk runs a third longer, re-commits the loop and stomps the
-    /// crossing's gate `13` and the new cycle's gate `1` on one tick.
+    /// where the yaw counter places it, and a walk no seat stands on retail's
+    /// phase can cross its clip's end where retail's arrived on it. A guard:
+    /// `battle_jou_cort_181_strike`'s Cort, whose walk arrives on its crossing
+    /// tick, is seated on that phase (`World::seat_capture_arrival_phase`)
+    /// and stomps the capture's count without it.
     pub fn install_action_fx_part_snapshot(
         &mut self,
         seeds: &[legaia_engine_effects::summon::CastPartSeed],
@@ -826,14 +824,23 @@ impl World {
     /// playing. Each draw's `model_index` indexes [`Self::global_tmd_pool`]
     /// (the PROT 0871 effect-model library).
     pub fn active_move_fx_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
-        let mut out = self
-            .casting
-            .active_move_fx
-            .as_ref()
-            .map(|s| s.part_draws_with(&|id| self.shatter_row(id)))
-            .unwrap_or_default();
-        for scene in &self.casting.active_action_fx {
-            out.extend(scene.part_draws_with(&|id| self.shatter_row(id)));
+        let mut out = Vec::new();
+        for (key, scene) in self.battle_fx_scenes() {
+            if key == crate::world::battle::FX_SCENE_SUMMON
+                || key == crate::world::battle::FX_SCENE_MYSTIC
+                || key == crate::world::battle::FX_SCENE_STAGE
+            {
+                continue;
+            }
+            out.extend(
+                scene
+                    .part_draws_with(&|id| self.shatter_row(id))
+                    .into_iter()
+                    .map(|mut d| {
+                        d.node = d.node.map(|n| crate::world::battle::fx_node(key, n));
+                        d
+                    }),
+            );
         }
         out
     }

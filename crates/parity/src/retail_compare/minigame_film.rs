@@ -190,7 +190,11 @@ fn dance_values(w: &legaia_engine_core::world::World) -> Vec<i64> {
         Some(S::Done) => 6,
         Some(S::LeadIn) => 7,
         None if g.finished() => 20,
-        None if g.finish_wipe().is_some_and(|w| w > 0) => 12,
+        // HARNESS: state `0xB`'s arm spawns the countdown and stores `0xC` on
+        // the same frame (`0x801CFD5C..0x801CFDB8`); the wipe adds from the
+        // next run on. So a spawned countdown is state `0xC` already, wipe
+        // `0` or not.
+        None if g.finish_wipe().is_some() => 12,
         None if g.in_finale() => 11,
         // The lead-in's last run left the count at one; the beat clock's
         // first frame is the one that takes it to zero and enters state 10.

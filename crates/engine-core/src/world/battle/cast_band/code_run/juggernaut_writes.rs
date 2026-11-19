@@ -368,6 +368,10 @@ impl World {
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
         // The spawn arms' seats were made on the caller's frame
         // (`World::run_summon_part_stager_calls`).
+        // A call the part walk made behind last pass's fade ticks: its fade
+        // first steps and draws on this pass, as PROT 0906's flashes do
+        // (`World::run_gizam_record_calls`).
+        let step = self.battle_frame_step().max(1);
         for (arm, _) in calls {
             if let Some(t) = ticks::juggernaut_stager_fade(arm) {
                 let mut fade = None;
@@ -376,6 +380,9 @@ impl World {
                     &legaia_engine_battle_vm::battle_action::summon_fade_template(&t),
                     1,
                 );
+                if let Some(f) = fade.as_mut() {
+                    f.step_vsyncs(step);
+                }
                 self.presentation.module_fades.extend(fade);
             }
             self.casting.module_shake += ticks::juggernaut_stager_shake(arm);
@@ -432,6 +439,14 @@ impl World {
         }
         for arm in calls {
             if arm == 0 {
+                // Retail's record makes the call inside the part walk, behind
+                // the pass's fade ticks, so the pair first steps and first
+                // draws on the pass after the call: the pass this tick runs
+                // on, whose fade step the engine has already taken. Step it
+                // here, or the flash fades a pass behind (the `0x84` film's
+                // arm-5 tail read `.03` to `.86` on retail's luma less one
+                // step).
+                let step = self.battle_frame_step().max(1);
                 for (t, id) in &cam::GIZAM_STAGER_FLASHES {
                     let mut fade = None;
                     legaia_engine_system::fade::spawn_fade(
@@ -439,6 +454,9 @@ impl World {
                         &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
                         *id,
                     );
+                    if let Some(f) = fade.as_mut() {
+                        f.step_vsyncs(step);
+                    }
                     self.presentation.module_fades.extend(fade);
                 }
             } else {

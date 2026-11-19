@@ -1017,6 +1017,7 @@ impl World {
                 let s = &p.state;
                 Some(legaia_engine_effects::summon::SummonPartDraw {
                     model_index: pack_slot,
+                    node: None,
                     world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
                     rot: legaia_engine_effects::effect_ribbon::node_rotation(s),
                     flags_52: s.field_52,

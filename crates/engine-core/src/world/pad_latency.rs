@@ -109,6 +109,19 @@ impl World {
         (game, Some(tick.wrapping_sub(1).wrapping_add(u32::from(k))))
     }
 
+    /// Seat the pipeline's latched sample on `mask` (host-pad layout), as a
+    /// state saved after a frame's pad build holds it: the next frame to
+    /// open reads `mask`, and the frames after it sample the host pad again.
+    /// A harness standing the world on a retail capture.
+    pub fn seat_retail_frame_pad(&mut self, mask: u16) {
+        let tick = self.clock.sim_ticks;
+        let p = &mut self.pad_latency;
+        p.hist[tick as usize % HISTORY] = mask;
+        p.newest = Some(tick);
+        p.game = mask;
+        p.sample_tick = Some(tick);
+    }
+
     /// The pad word game logic reads on the tick about to run, given the
     /// host's `mask` for it. With [`WorldToggles::immediate_pad`] up, or
     /// while no game-tick clock runs (a mode with no master frame driver),
@@ -123,5 +136,30 @@ impl World {
         p.game = game;
         p.sample_tick = sample;
         game
+    }
+
+    /// The edge word a host screen (the pause menu and its sub-screens, a
+    /// shop, the prize exchange) reads this tick, the window kernel's cursor
+    /// auto-repeat folded in. `edge` is the host's just-pressed word. With
+    /// [`WorldToggles::immediate_pad`] up (the default) that is `edge` and
+    /// this tick's repeat; in the retail-faithful mode the screen reads the
+    /// retail pipeline ([`legaia_engine_system::input::InputState::retail_screen_edge`]):
+    /// confirm and cancel two vsyncs after the press, a cursor step three.
+    ///
+    /// REF: FUN_801D688C, FUN_80031D00, FUN_8001822C
+    pub fn screen_edge(&mut self, edge: u16) -> u16 {
+        self.screen_edge_with(edge, true)
+    }
+
+    /// [`Self::screen_edge`] for a screen whose cursor reads the frame's own
+    /// edge word rather than the window kernel's (`cursor_lags = false`):
+    /// the Save / Load block grid steps on the press's second vsync, as its
+    /// confirm does (a capture over `save_grid_endgame_card_conc`).
+    pub fn screen_edge_with(&mut self, edge: u16, cursor_lags: bool) -> u16 {
+        if self.toggles.immediate_pad || self.input.screen_immediate() {
+            edge | self.input.take_menu_repeat()
+        } else {
+            self.input.retail_screen_edge(cursor_lags)
+        }
     }
 }

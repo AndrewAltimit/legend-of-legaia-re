@@ -45,6 +45,8 @@ pub struct SeatArmWrite {
     pub render_scale: Option<u16>,
     /// `(+0x21C, +0x0C)`: the tint state and blend word.
     pub tint: Option<(u8, u32)>,
+    /// The anim node's `+0x68`, the clip cursor in sixteenths of a keyframe.
+    pub cursor: Option<u16>,
 }
 
 pub const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
@@ -58,6 +60,7 @@ pub const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
         colour: None,
         render_scale: None,
         tint: None,
+        cursor: None,
     }
 }
 
@@ -99,7 +102,9 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
         // `0x801F70E8..0x801F70F0`: the height only (`-0x320`); and
         // `+0x21B = 8` / `+0x176 = 0x80` (`0x801F70C8..0x801F70D4`), which
         // parks the installer's clip on its window frame `3` for eight
-        // keyframes.
+        // keyframes. The same pass stands the cursor on that frame
+        // (`li v0,0x30` / `sh v0,0x68(v1)` at `0x801F70D8..0x801F70E4`,
+        // `v1` the anim node `+0x22C`), so the clip holds there at once.
         911 => SeatArmWrite {
             x: Keep,
             y: Lit(-0x320),
@@ -110,6 +115,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            cursor: Some(0x30),
         },
         // `0x801F6DC0..0x801F6E5C`: after the arm's two vortex records and its
         // shot, the creature steps a twenty-fourth of a unit along the
@@ -124,6 +130,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            cursor: None,
         },
         // `0x801F6C54`: the facing only.
         912 => SeatArmWrite {
@@ -136,6 +143,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            cursor: None,
         },
         // `0x801F6CC0..0x801F6CE0`: `0x400` across and `0x267` back off
         // the installer's seat.
@@ -158,6 +166,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            cursor: None,
         },
         // `0x801F6FC0..0x801F6FC8`.
         921 => seat(Lit(0), Lit(0), 0),
@@ -268,9 +277,16 @@ pub const PUERA_WAKE_ARM: u8 = 5;
 /// it keeps the entry seat.
 /// Seated on entry, PROT 0933's creature ran its clip through the drive's
 /// modelled wait and opened arm 6 four keyframes ahead of retail's.
-pub const SEATS_ON_PASS: [u32; 20] = [
-    904, 905, 907, 910, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 930, 931, 932, 933,
-    934,
+/// PROT 0903 (`jal 0x8003F2B8` / `bne` at `0x801F6D2C..0x801F6D34`, the
+/// installer at `0x801F6D3C`), 0906 (`0x801F6CF8..0x801F6D00`, installer
+/// `0x801F6D10`) and 0908 (`0x801F6E20..0x801F6E28`, installer `0x801F6FC0`)
+/// poll the same way. Seated on entry, their creature stood one pass early on
+/// the caster's point and its node took one more advance than retail's
+/// (Gimard's first rows `2`, `4` against `2` on the stage point; Zenoir's
+/// `4`, `8` against `4`).
+pub const SEATS_ON_PASS: [u32; 23] = [
+    903, 904, 905, 906, 907, 908, 910, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 930,
+    931, 932, 933, 934,
 ];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
@@ -297,13 +313,16 @@ mod seat_due_tests {
         assert_eq!(w.tint, Some((0xFF, 0)));
     }
 
-    /// A gate ahead of the installer holds the seat to the arm's pass; an arm
-    /// with none seats as it is entered.
+    /// A gate ahead of the installer holds the seat to the arm's pass (PROT
+    /// 0934's countdown, PROT 0903's stream poll); an arm with none seats as
+    /// it is entered.
     #[test]
     fn a_gated_seat_arm_seats_on_its_way_out() {
         assert!(!seat_due(Some(934), 5, 5));
         assert!(seat_due(Some(934), 5, 6));
-        assert!(seat_due(Some(903), 3, 3));
+        assert!(!seat_due(Some(903), 3, 3));
+        assert!(seat_due(Some(903), 3, 4));
+        assert!(seat_due(Some(922), 3, 3));
         assert!(seat_due(None, 3, 3));
     }
 

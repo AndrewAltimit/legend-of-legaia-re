@@ -266,6 +266,17 @@ pub struct ScreenshotConfig {
     /// (the state's instant) opens. Set by the cast-sequence oracle; `None`
     /// in play.
     pub film_rand: Option<u32>,
+    /// `LEGAIA_FILM_COIN=coin@vsync,..` (HARNESS, lane A): the attack
+    /// camera's track coin `ctx[+0x26D]` through a film's recording, dealt
+    /// from the capture's gate on a film no strike deal carries
+    /// ([`legaia_engine_capture::strike_deal::deal_track_coins`]). Set by the
+    /// cast-sequence oracle; empty in play.
+    pub film_coins: Vec<(u8, u32)>,
+    /// `LEGAIA_FILM_YAW=<counter>` (HARNESS, lane A): the action yaw counter
+    /// `ctx[+0x6DA]` a `--physical` film's state held, stood on the battle
+    /// camera when the capture's gate (the state's instant) opens. Set by the
+    /// cast-sequence oracle; `None` in play.
+    pub film_yaw: Option<u16>,
     /// `LEGAIA_LEADIN_TABLE_COST=1`: the replay's lead-in to the capture's
     /// gate prices its battle frames on the action-state table, and the
     /// polygon census takes over when the gate opens
@@ -1200,6 +1211,12 @@ impl ScreenshotConfig {
             film_guard: std::env::var("LEGAIA_FILM_GUARD")
                 .ok()
                 .map(|v| legaia_engine_capture::strike_deal::film_guard_from_env(&v)),
+            film_coins: std::env::var("LEGAIA_FILM_COIN")
+                .map(|v| legaia_engine_capture::strike_deal::track_coins_from_env(&v))
+                .unwrap_or_default(),
+            film_yaw: std::env::var("LEGAIA_FILM_YAW")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             film_rand: std::env::var("LEGAIA_FILM_RAND")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
@@ -1597,6 +1614,9 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "ENTER" | "RETURN" => KeyCode::Enter,
         "SPACE" => KeyCode::Space,
         "RSHIFT" => KeyCode::ShiftRight,
+        // The hotkey panel's close and the quit prompt (`escape_press`); a
+        // scripted run never quits on it.
+        "ESC" | "ESCAPE" => KeyCode::Escape,
         "A" => KeyCode::KeyA,
         "B" => KeyCode::KeyB,
         "C" => KeyCode::KeyC,
@@ -1848,6 +1868,7 @@ mod key_script_tests {
         names.push("Home".to_string());
         names.push("Delete".to_string());
         names.push("Backspace".to_string());
+        names.push("Esc".to_string());
         names.push("`".to_string());
         names.push("\\".to_string());
         let reachable: std::collections::BTreeSet<String> = names
@@ -1869,16 +1890,12 @@ mod key_script_tests {
         for (_, code) in legaia_engine_session::hotkeys::HOST_HOTKEYS {
             handled.insert(code.to_string());
         }
-        // `Escape` quits through the event loop (`handle_keyboard`), which a
-        // script deliberately never reaches; `--screenshot-last-tick` ends a
-        // scripted run instead.
-        handled.remove("Escape");
-        // So does the fullscreen toggle (`fullscreen_key`: `F11`, or
-        // `Alt+Enter` incl. the keypad's): window chrome a capture must never
-        // flip, resolved ahead of `handle_key`.
+        // The fullscreen toggle (`fullscreen_key`: `F11`, or `Alt+Enter`
+        // incl. the keypad's) is window chrome a capture must never flip,
+        // resolved ahead of `handle_key`.
         handled.remove("F11");
         handled.remove("NumpadEnter");
-        // So does the player's screenshot key: it writes into the player's
+        // Nor is the player's screenshot key: it writes into the player's
         // pictures folder, which no scripted capture should touch.
         handled.remove("PrintScreen");
         assert!(

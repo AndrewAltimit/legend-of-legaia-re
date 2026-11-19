@@ -926,7 +926,10 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         947 | 948 => true,
         942 => matches!(body, Some(super::POWER_UP_BODY | super::DARK_TYPHOON_BODY)),
         949 => true,
-        945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
+        945 => matches!(
+            body,
+            Some(crate::cast_module_ticks::WATER_COLUMN_TICK | super::JUGGER_POWER_BODY)
+        ),
         943 => body == Some(crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK),
         956 => matches!(
             body,
@@ -972,7 +975,10 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         940 => matches!(body, Some(0x801F_7240 | super::GLARE_BODY)),
         944 => matches!(body, Some(0x801F_6A04 | super::CURSE_ALL_BODY)),
         946..=949 => true,
-        945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
+        945 => matches!(
+            body,
+            Some(crate::cast_module_ticks::WATER_COLUMN_TICK | super::JUGGER_POWER_BODY)
+        ),
         943 => body == Some(crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK),
         956 => matches!(
             body,

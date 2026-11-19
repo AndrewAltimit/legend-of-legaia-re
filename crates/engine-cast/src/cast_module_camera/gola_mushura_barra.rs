@@ -350,17 +350,21 @@ pub fn mushura_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
         }
         // The framing re-arms every pass; the arm ends when the fade arm 0xC's
         // pass raised has eased the creature's word to `0` (`0x801F7EB0`).
-        // Its focus is the anchor `0x80089118` / `0x80089120` the last
-        // rampage framing left: the creature's stand as arm 0xC last framed
-        // it, which the host no longer moves.
-        0xD if st.creature_word_up => ArmDirection {
-            hold: true,
-            ..cut([0, -f], [0, 0x400, 0], on(creature), 0xC)
-        },
-        0xD => finish(caption(
-            cut([0, -f], [0, 0x400, 0], on(creature), 0xC),
-            ModuleCaption::Cleared,
-        )),
+        // Its focus is the focus pair `0x80089118` / `0x80089120` itself, so
+        // it stays where arm 0xC's last glide left it: framed on the
+        // creature, the `0x8D` film's focus walked `(720, 262)` to
+        // `(817, 520)` where retail's holds.
+        0xD => {
+            // The pose holds the focus as the world point; the builder's
+            // stack trio is its negation.
+            let focus = st.live_focus.map_or(on(creature), |f| [-f[0], 0, -f[2]]);
+            let shot = cut([0, -f], [0, 0x400, 0], focus, 0xC);
+            if st.creature_word_up {
+                ArmDirection { hold: true, ..shot }
+            } else {
+                finish(caption(shot, ModuleCaption::Cleared))
+            }
+        }
         _ => ArmDirection::HOLD,
     }
 }
@@ -448,6 +452,7 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                     tr_x: 0,
                     tr_y: P as i16,
                     tr_z: 0,
+                    creature_y: 0,
                 });
             }
             ArmDirection::PASS

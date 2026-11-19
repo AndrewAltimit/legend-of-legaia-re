@@ -19,11 +19,12 @@ default = ["cli"]
 # `cargo build` still builds every binary; library dependents take this
 # crate through [workspace.dependencies] with default features off, which
 # keeps clap out of library-only builds (the wasm bundle among them).
-cli = ["dep:clap", "dep:libc"]
+cli = ["dep:clap", "dep:legaia-release-version", "dep:libc"]
 
 [dependencies]
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
+legaia-release-version = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 psx-tim.workspace = true

@@ -238,6 +238,15 @@ impl World {
     /// vsyncs. Ticked once a vsync, the port's display panned five tiles to
     /// retail's one and ran its opening and closing fades in a vsync a step.
     ///
+    /// The smooth display ([`WorldToggles::smooth_map_display`], the port's
+    /// default) keeps that clock for everything that steps on it - the
+    /// opening and closing modes, the fade timer, the pointer's handler - and
+    /// between its frames runs the interactive mode once a vsync: the pad is
+    /// read every vsync and the held d-pad pans through
+    /// [`legaia_engine_field::map_display::MapDisplay::pan_smooth`], a tile
+    /// per frame's worth of vsyncs. An exit press restarts the clock, so the
+    /// fade-out runs its five frames from the press as retail's does.
+    ///
     /// REF: FUN_80016B6C (the frame pacer), FUN_801CE850
     pub(crate) fn pace_map_display(&mut self) {
         if self.world_map.map_display_load_hold > 0 {
@@ -247,10 +256,24 @@ impl World {
             }
         } else if self.world_map.map_display_wait > 0 {
             self.world_map.map_display_wait -= 1;
+            if self.toggles.smooth_map_display && self.map_display_interactive() {
+                self.step_map_display(false);
+                if !self.map_display_interactive() {
+                    self.world_map.map_display_wait = MAP_DISPLAY_FRAME_VSYNCS - 1;
+                }
+            }
             return;
         }
         self.world_map.map_display_wait = MAP_DISPLAY_FRAME_VSYNCS - 1;
         self.tick_map_display();
+    }
+
+    /// The display is up and in its interactive mode (`0x32`).
+    fn map_display_interactive(&self) -> bool {
+        self.world_map
+            .map_display
+            .as_ref()
+            .is_some_and(|d| d.mode == legaia_engine_field::map_display::MODE_INTERACTIVE)
     }
 
     /// One frame of the map display: the module tick, its ring cues, and on
@@ -263,9 +286,17 @@ impl World {
     ///
     /// REF: FUN_80025F2C (the mode-`0x0D` handler), FUN_801D58F0
     pub fn tick_map_display(&mut self) {
-        use legaia_engine_field::map_display::EXIT_FADE;
+        self.step_map_display(true);
+    }
+
+    /// The display tick on a vsync: `frame` is a display frame (every
+    /// [`MAP_DISPLAY_FRAME_VSYNCS`] vsyncs), and only a frame runs the
+    /// pointer's handler. Between frames only the smooth display calls this,
+    /// in the interactive mode, whose arm steps no timer.
+    fn step_map_display(&mut self, frame: bool) {
+        use legaia_engine_field::map_display::{EXIT_FADE, PAD_PAN};
         use legaia_engine_field::world_map_panel_host::packed_pad;
-        // The edge word is the change since the display's last frame.
+        // The edge word is the change since the display's last read.
         let raw_held = self.input.pad();
         let raw_edge = raw_held & !self.world_map.map_display_pad;
         self.world_map.map_display_pad = raw_held;
@@ -274,14 +305,19 @@ impl World {
         let Some(mut display) = self.world_map.map_display.take() else {
             return;
         };
+        let smooth = self.toggles.smooth_map_display;
+        let held = packed_pad(raw_held);
         let pointer_was_alive = display.pointer_alive;
         let tick = display.tick(
-            packed_pad(raw_held),
+            if smooth { held & !PAD_PAN } else { held },
             packed_pad(raw_edge),
             player,
             &self.world_map.locations,
             kingdom,
         );
+        if smooth {
+            display.pan_smooth(held, MAP_DISPLAY_FRAME_VSYNCS);
+        }
         for id in tick.sfx {
             self.audio
                 .sfx_ring_ops
@@ -322,7 +358,9 @@ impl World {
         // (`lw a0,-0x878(v0)` / `lw v0,0xc(a0)` / `jalr v0` at
         // `0x801CEC2C..0x801CEC44`): the mode-13 handler runs no actor-list
         // walk of its own, so this is the only thing that moves it.
-        self.tick_map_pointer();
+        if frame {
+            self.tick_map_pointer();
+        }
         if !tick.exit {
             self.world_map.map_display = Some(display);
         } else {
@@ -523,12 +561,16 @@ impl World {
         // The PROT 0981 load holds the black the ramp ended on.
         if self.world_map.map_display.is_some() && self.world_map.map_display_load_hold > 0 {
             out.push((0, 2, 0xFF_FF_FF));
-        } else if let Some(grey) = self
-            .world_map
-            .map_display
-            .as_ref()
-            .and_then(|d| d.fade_grey())
-        {
+        } else if let Some(grey) = self.world_map.map_display.as_ref().and_then(|d| {
+            if self.toggles.smooth_map_display {
+                // The vsyncs since the display's last frame.
+                let phase =
+                    (MAP_DISPLAY_FRAME_VSYNCS - 1).saturating_sub(self.world_map.map_display_wait);
+                d.fade_grey_between(phase, MAP_DISPLAY_FRAME_VSYNCS)
+            } else {
+                d.fade_grey()
+            }
+        }) {
             out.push((0, 2, u32::from(grey) * 0x01_01_01));
         }
         out

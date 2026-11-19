@@ -1481,7 +1481,7 @@ a scratch directory only.
 | `slots`, `baka`, `dance`, `muscle`, `fishing` | each minigame from its picker entry (native: its key), and out on Start |
 | `late_*`, `late4_*`, `ladder_*` | a retail card save: the page lands it and writes an LGSF, the window resumes that file, so each also carries a save from one host to the other |
 | `slot_save` | a save the window wrote, resumed on both |
-| `pack_village`, `pack_tower`, `pack_menu` | a map of the sample expansion pack (`packs/sample`): the window's `--expansion --map` against the page's library load of the `.lxpack` the `asset` binary beside the engine bundles, and its map entry. The page enters over town01, as its pack library always does, and both seed one `rand()` stream around the entry |
+| `pack_village`, `pack_tower`, `pack_menu` | a map of the sample expansion pack (`packs/sample`): the window's `--expansion --map` against the page's library load of the `.lxpack` the `asset` binary bundles (beside the engine, else the first `target/` profile that built one; a scene with none prints `NOT RUN`), and its map entry. The page enters over town01, as its pack library always does, and both seed one `rand()` stream around the entry |
 | `monkey_*` | a seeded rhythm of presses over the whole pad. Where it goes does not matter, only that both go there |
 
 A card landing enters from the page's running scene first, so its audio record starts a
@@ -1500,11 +1500,17 @@ of a door entry reaches no accept, so a menu scene keyed there pairs two hosts
 standing in a field. A scene that is for a screen names it (`reach`: a line of the
 trace some paired frame must show on both hosts), and its summary line says
 `VACUOUS` when neither or only one host got there. The menu scenes press Start at
-tick 90 for that reason.
+tick 90 for that reason, and hold it to tick 99 (`PAUSE_PRESS`): under `--retail`
+the field reads the pad once a game frame (`world::pad_latency`), and a one-tick
+tap that lands between two samples is never seen. On the overworld, after every
+card landing and on the pack map a tap at tick 90 fell between two, and `save`,
+`late_menu`, `late4_menu`, `ladder_menu` and `pack_menu` paired two hosts that never
+opened the menu.
 
 What a healthy pair reads: the trace agrees on every sampled frame, and the pixels differ
-by a few tenths of a percent, hairline pixels on sloped 3D edges where a tie lands on
-the other side. That residual is there on a real GPU and on SwiftShader alike.
+by a few hundredths of a percent under `--mode retail`. The rows that read more are
+SwiftShader's texel ties in the minigame venues (`slots`, `dance`, `baka`, about a
+tenth to a fifth of a percent).
 
 The screen primitives used to read differently by rasteriser, so a row that stood out
 was read on both (`--gl egl` is the real GPU). They are level now:
@@ -1530,10 +1536,28 @@ down into a copy of the frame and flips the copy back
 only the fallback for a framebuffer that cannot be copied. `--page-init
 "window.__psxFlipPrims=false"` draws them the old way for a comparison.
 
-The 3D pass on the native target still takes its own nudge (`PSX_NATIVE_TIE_ROWS`)
-and is where the remaining few tenths of a percent sit. The run prints; it asserts
-nothing and is not a CI gate, since it needs a disc, a built bundle and a
-display.
+The 3D pass on the native target read the same rule upside down, which a nudge of
+its own (`PSX_NATIVE_TIE_ROWS`) settled on flat edges only: a cast's rotated shards
+drew in hairlines (`cast`, ticks `890..915`, up to `1.22%` of a frame on SwiftShader,
+`1.06%` at tick `901` on the GPU), and every sloped 3D edge left a few tenths of a
+percent. The scene pass (`renderAssembled`) and the minigame venues' single-mesh draw
+(`render`) now draw upside down into a copy too (`TmdRenderer.sceneFlip`, the
+`FrameFlip` the screen primitives use), mirroring y last in the vertex stage and
+reading the window position, the facing and the dither row the right way up
+(`u_flip_y`, `fragCoord`, `frontFacing`); the nudge is the fallback for a frame
+drawn the right way up. `--page-init "window.__psxFlipScene=false"` draws the old
+way for a comparison:
+
+| Scene (retail mode, SwiftShader) | Mean, worst frame, right way up | Mean, worst frame, flipped |
+|---|---|---|
+| `cast` ticks `880..915`, every frame | `0.74%`, `1.22%` | `0.00%`, `0.01%` |
+| `cast` (GPU, `--gl egl`) | `0.19%`, `1.06%` | `0.01%`, `0.10%` |
+| `town_walk`, `lamp_walk`, `battle` | `0.20%`, `0.25%`, `0.26%` | `0.00%`, `0.00%`, `0.01%` |
+| `arts`, `dolk2_audience`, `pack_tower` | `0.29%`, `0.29%`, `0.37%` | `0.01%`, `0.01%`, `0.04%` |
+| `baka`, `dance`, `fishing` | `0.21%`, `0.33%`, `0.13%` | `0.09%`, `0.11%`, `0.01%` |
+
+The run prints; it asserts nothing and is not a CI gate, since it needs a disc, a
+built bundle and a display.
 
 ### Black copies of a multisampled canvas
 
@@ -1579,6 +1603,9 @@ the world was right and the picture was not:
 | A generic attribute default | A mesh with no ground cells leaves `a_ground_ref_xz` disabled, and GL reads a disabled attribute as `(0, 0, 0, 1)`, not the zeros the window's `flat_a` carries. The vertex stage's "not a ground cell" test is a compare against zeros, so no field mesh took its link depth and PSX mode's per-primitive sort never ran on the page: off retail's vantage the sea covered town01's beach. Forcing every draw's order word changed no pixel, which is what named it |
 | A nudge under a rasteriser's grid | The tie nudge above was a 64th of a row, finer than SwiftShader's sub-pixel grid, so on the software rasteriser the tie came back and every flat band drew a row low: the ending vignettes' letterbox, the slot machine's panels. A real GPU drew them right. An untextured primitive took an eighth of a row; a textured one kept the 64th, since more shifts the texels the battle intro's rotated shards sample |
 | A fill rule read upside down | The nudges settled flat edges and nothing else: along a slanted edge through pixel centres, and along the seam of a rotated quad's two triangles, the bottom-up rule still gave the pixels to the other triangle. The battle intro's shards drew in hairlines on a real GPU (`2.23%` of `cast_cannon` at tick `81`), and SwiftShader, whose grid swallowed the 64th, still drew the slot machine's rows apart (`1.05%`). The screen primitives now draw upside down into a copy of the frame that is flipped back, the window's rule on every edge: tick `81` reads `0.18%`, `slots` `0.02%` on the GPU and `0.18%` on SwiftShader, and no scene of twenty reads higher on either |
+| A scene pass read upside down | The 3D pass kept a sixteenth-of-a-row nudge, which settles a flat edge and no slanted one: a cast's rotated shards drew in hairlines on the page (`cast` tick `901`, `1.06%` on the GPU), and every sloped 3D edge in every scene left a few tenths of a percent. The scene pass and the single-mesh draw now draw upside down into a copy as the screen primitives do; the retail pairs read a few hundredths of a percent |
+| A pose re-shaded on one host | A placed prop off its rest pose is rebuilt every frame on the window, and its light-source rows shaded at the posed normals. The page re-posed the positions alone and kept the rest pose's shade, so a house door drew at about sixty percent of the window's brightness while it swung (`door_beat` ticks `58..106`, `1.20%` of a frame at worst). The page re-shades each pose through `field_mesh_posed_frame_lit_rgba`; the span reads `0.00%` |
+| A gate in one host's draw list | The window leaves the overworld's party figure out while a cutscene timeline owns the map; the page drew it. `cave_walk` leaves the cave onto the map with the timeline up, and the page's Vahn stood at the cave mouth where the window's map was bare (`0.46%` of a frame, enhanced). Both ask `World::overworld_hides_lead` now |
 | One blend equation for four | The page's single-mesh draw, which every minigame venue uses, re-drew its semi-transparent prims under one additive stand-in, so the Baka duel's `B - F` drop shadows drew as pools of light, while the window blends each prim under its own ABR mode. The run named the shadows by showing them at the title card, where the window's subtraction from black hid the same stray prims: both hosts drew shadows the front end never draws. The single mesh now carries the per-mode semi tail `renderAssembled` blends from (`buildSemiTail`, `_setSemiBlend`), and the scene collapses the shadows outside the duel |
 | One blend order for two | The same single-mesh draw blended its semi tail mode by mode, so in the Baka duel every additive glow prim drew before every subtractive shadow prim. The window blends a frame's semi prims far to near, prim by prim, as retail's ordering table does, and the glow's near half lands after the shadows there. Where both covered a saturating floor the page's frame went grey (`3.6%` of a frame). Hiding the glow on both hosts read `0.7%`, and drawing the glow's coverage in one flat colour on the page with the shadows dropped showed the shadows under it, which named the order. The single mesh now keys and sorts its semi prims per frame (`orderSemiPrims`) |
 | A facet in the wrong frame | A baked stream holds world positions, and the page lit a double-sided summon part off their facet where the window lights it off the object-space one. The battle frame flip between the two mirrored every crystal facet against the key light. Handing the page the window's smoothed normals changed nothing, which named the fallback: the paired copies cancel to the zero sentinel. The stream carries the object facet now |
@@ -1647,6 +1674,7 @@ Traps, each of which has produced a false drift report:
 | page key layout | `Mapping::web_default`: `X` is Circle, `V` Square, `C` Triangle, the d-pad `WASD`. |
 | title confirm | `--pad-script` cannot confirm a boot-title row; the confirm lives in the keyboard handler, so use `--key-script "<tick>:Z"`. |
 | `F12` panel cursor | A scripted run's pad word goes to the game, never to the panel, so `--pad-script` moves nothing on it. `LEGAIA_PANEL_FOCUS_ROW=N` steps each page's cursor `N` rows down as it is shown; `tools=11:RX` keeps that to one page and then presses the lettered buttons (`L` `R` `U` `D`, `X` for Cross). `--key-script` still opens the panel (`F12`) and flips its pages (`Tab`). |
+| `Esc` | `--key-script "<tick>:Esc"` takes the window's own arm: it closes the hotkey panel, or raises the quit prompt. A scripted run never quits on it; `--screenshot-last-tick` ends the run. |
 | multi-save `.mcr` | The page's import raises a block picker in `#save-status`; until one is clicked no card session exists and CONTINUE stays dim by design. |
 | persisted options | Each host persists the camera-distance preset itself (`legaia-options.toml` in the working directory; `localStorage`). Pin it on both. Scripted native runs write neither options nor bindings. |
 | `--seed-party` | Resets story flags to a fresh New Game, which changes a scene's entry script; the page's picker has no such seed. |
@@ -1901,7 +1929,8 @@ reverse-engineering questions, so they are not on
 | the near plane in the clean frame | Closed, and not the near plane: `ed_bylon` enhanced tick `571` (`2.3%`), the crown of the lead's near-shifted hair cut open on the window alone. The window wrote the shifted key into clip `z`, so a vertex within ten buckets of the eye tested past the near plane and clipped; the page's log-of-`w` depth never reaches the clip. A page clip on the window's plane, and the near reject off, each left the frame as it was. Both test such a vertex at the near plane now ([renderer-port](../subsystems/renderer-port.md#the-field-sorts-by-each-primitives-link)): `0.02%` at worst. The planes still differ (view depth `PSX_NEAR` against about half of it), a band no measured frame reaches. |
 | Thunder Storm's orbs under PSX mode | Closed: the orbs are draw-kind-4 sprite-arm quads whose corners the engine places on whole stage pixels (retail writes integer screen offsets). The window's per-draw matrix landed each corner on or a hair over its pixel and the page's baked FX stream a hair under, so the page's snap floored a row up. Both hosts' snap now reads `PSX_SNAP_TIE_BIAS` (a 1024th of a pixel) past the exact position (`psx_snap_clip`, `psxSnapClip`); against the tree without it no still moves more than `0.001`. `cast_thunder` ticks `860..880` at `--every 1`: `0.61%` mean to `0.30%`, the held frames `0.51%` to `0.17%`. Tick `869` is the next row. |
 | a sweep's persist question | Closed, harness-only: `play-window`'s sweep drew its PNG before the frame asked whether it builds on an earlier one (`Renderer::set_frame_persist`, its depth and the ring's keep), so on the tick a cast's persisting run started or changed depth the PNG read the frame before's answer: `cast_thunder` tick `869` drew the caster's gem dark and the stage's lower corners black (`2.35%`). The question is asked ahead of every draw of the frame now (`arm_frame_persist`); the presented frame always asked first. Ticks `860..880` read `0.18%` mean, `0.19%` worst. |
-| the pause press frame | Open: `pause_hud` under `--mode retail`, tick `150`, the Start press (`12.3%`, one frame; the ticks around it `0.2%`), the trace agreeing. Both hosts hand the press tick to `TickOwner::PauseMenuOpened` and skip the field's tick. The window redraws the frame before it exactly (the party readout still up, the windmill on its last pose); the page drops the readout and draws the windmill moved, a pose neither host's next frame matches. Unexamined: which page-side state steps on a tick the field skips, and what retail draws on its press frame. |
+| the pause press frame | Closed: `pause_hud` under `--mode retail` read `12.4%` on the Start press, one frame. Retail builds the party readout on the accept tick and never again ([field-menu.md](../subsystems/field-menu.md#the-party-readout-under-the-pause-wipe)), so the press frame keeps it; the window drew it, and the page cleared its overlay as soon as the menu attached, a tick before the readout's own decision dropped it. The page now paints the field's layers until the wipe spawns the menu, as the window does, and the readout's decision clears it from the next tick. `pause_hud` reads `0.16%` mean, `0.28%` worst (`0.23%`, `12.38%` before); `menu`, `menu_hold` and the `monkey_*` scenes unchanged. |
+| a reopened pause menu's first frames | Closed: the window's pause-menu draw carries (`PauseScreenCarry`, one per draw list) empty only on a frame drawn outside the menu, and the window never draws one through them once the menu closes, so a menu opened a second time handed back the last session's root, whole and at rest, on its two pending spawn frames before its windows slid in. The page builds its carries with each menu. The window empties both as the wipe spawns the menu (`enter_spawned_pause_menu`): `monkey_menu` under `--mode enhanced` (the Triangle at tick `1155` reopens it) read `1.14%` mean, `69.6%` at tick `1171`, and reads `0.00%`. |
 | a sweep's capture-band seat | Closed, harness-only: `play-window` seated the recording drive's short `0x6F` hold (`CastFxState::capture_seek_recorded`) on every screenshot run, the host pair's sweep included, while the page plays the modelled seek. Every seeded Seru cast left `0x6F` on the window first and parted at tick `420` (`battle` digest, `action_state` `0x70` against `0x6F`): `cast_thunder` and `cast_big_wave` read `31%` and `14%` mean off. A sweep films the play path and seats nothing now; both read `0.22%` and `0.26%` with the trace agreeing. Films and single shots keep the seat. |
 | a battle under a field cutscene shot | Closed: a scene timeline still running when its fight starts (a scripted boss arm, a scene's entry beat under a forced fight: `noaru` row `4`, Songi) handed the window's battle frame the field cutscene camera, so the window drew the stage shell from the field's vantage, sky filling the frame and the party out of view, while the page drew the fight; the battle camera pose traced equal. `resolve_cutscene_camera` answers `None` in battle mode. `cast_cannon` read `42.1%` mean off, `17.6%` then; the rest was the row below, the same rule on the page. |
 | Genocidal Cannon's flares | Closed: a fight started under a running scene beat (`noaru`'s entry beat under the forced row `4`) left the page's frame armed for the field pass's `NCLIP` cull, since the page asked whether a cutscene owns the camera and the window, after its own fix, did not. The cull dropped the cannon's both-sided draw-kind-4 nodes facing away: the red flare at the charge and most of the beam's white wash. The kernel answers no in battle for both hosts (`camera_view::cutscene_owns_camera`). The window was right, retail's recording (`noaru_songi_pre_genocidal_cannon__B3`) draws the flare and a near-white wash: `cast_cannon` `16.7%` mean, `79%` worst, to `0.18%`, `0.59%`. |

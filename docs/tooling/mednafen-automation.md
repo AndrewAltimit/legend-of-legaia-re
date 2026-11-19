@@ -312,7 +312,7 @@ table was built from must match that table's raster: if it does, a residual
 against the displayed frame is a question of which inputs the screen stood
 on, not of rasterisation, draw order or a missing primitive.
 `zeto_big_wave_mid_cast` is the worked case: the port matches both of its
-tables at `1.000` ([open threads](../reference/open-rev-eng-threads.md#zetos-big-wave-idle-one-pass-older)).
+tables at `1.000` ([do not re-walk](../reference/re-do-not-re-walk.md#zetos-big-wave-idle-is-not-a-pass-older)).
 The output is a picture of retail's frame and stays out of the repository.
 
 ### Film what each battle frame cost

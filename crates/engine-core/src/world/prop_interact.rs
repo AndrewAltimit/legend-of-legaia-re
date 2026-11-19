@@ -492,6 +492,8 @@ impl World {
 
         // A box is open: tick the typewriter + route input. The prop's clip
         // keeps ticking underneath (the cupboard holds open at its clamp).
+        // A box dismissed on this tick: the record goes on in the same frame.
+        let mut dismissed = false;
         if let Some(panel) = id.panel.as_mut() {
             if panel.menu_active() {
                 let mut moved = false;
@@ -550,6 +552,7 @@ impl World {
                     id.held_box = Some(HeldBox::after_press(panel, post_page_byte(panel)));
                     id.panel = None;
                     end_prop_talk_at_post_box_byte(&mut id);
+                    dismissed = true;
                 } else if panel.is_waiting_for_input() {
                     // Multi-page box: turn the page in the same window.
                     panel.advance_page();
@@ -558,6 +561,7 @@ impl World {
                         id.held_box = Some(HeldBox::after_press(panel, post_page_byte(panel)));
                         id.panel = None;
                         end_prop_talk_at_post_box_byte(&mut id);
+                        dismissed = true;
                     }
                 } else {
                     // Still typing or scrolling: the pager's skip latch
@@ -569,8 +573,20 @@ impl World {
                 self.finish_prop_interaction(&mut id, anchor);
                 return;
             }
-            self.dialog.inline = Some(id);
-            return;
+            // The dialog SM that sees the box done goes straight on into the
+            // record's ops in the same call: it walks the cursor past the
+            // text, clears `+0x9C`, raises the box-close byte `+0x62 = 0x20`,
+            // takes `FUN_80038050`'s verdict and, on a continue, branches to
+            // the op loop at `0x80039D64`, which runs because `+0x9C` now
+            // reads `0`. A chest's item-get cue `0x2C` behind its first box
+            // therefore keys on the confirm's own frame; the engine ran it a
+            // game frame later. Off a game frame the slice gate below still
+            // waits for the next one.
+            // REF: FUN_80039B7C (0x80039C5C..0x80039C8C, 0x80039D64..0x80039E14)
+            if !(dismissed && !id.done && id.panel.is_none()) {
+                self.dialog.inline = Some(id);
+                return;
+            }
         }
 
         // A player walk the record armed: the record stays parked on its
@@ -2075,16 +2091,23 @@ mod tests {
                 cflags: 0x4002_0000,
             },
         );
-        // Tap the confirm button every other frame until the run ends.
+        // Tap the confirm button every other frame until the run ends. A box
+        // is counted by its segment: the second opens on the first one's
+        // dismissing frame, with no closed frame between (the dialog SM runs
+        // on into the record's ops on the frame that sees a box done).
         let run = |w: &mut World| {
             let mut boxes = 0;
-            let mut was_open = false;
+            let mut was_open = None;
             for f in 0..2_000 {
                 if w.dialog.inline.is_none() {
                     break;
                 }
-                let open = w.dialog.inline.as_ref().is_some_and(|d| d.panel.is_some());
-                if open && !was_open {
+                let open = w
+                    .dialog
+                    .inline
+                    .as_ref()
+                    .and_then(|d| d.panel.as_ref().map(|_| d.pc));
+                if open.is_some() && open != was_open {
                     boxes += 1;
                 }
                 was_open = open;

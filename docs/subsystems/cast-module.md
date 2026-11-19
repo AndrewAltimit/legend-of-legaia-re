@@ -630,6 +630,13 @@ frame step of `4` (see [measured arm timing](#measured-arm-timing)).
 | 12 | drains that countdown, then waits for the victim to settle; case 8 on the caster every pass, at that depth | 87 |
 | `0xFF` | Done | - |
 
+Arm 11's `3/2` reads the victim's HP after the hit, and the port folds that hit on the
+pass behind it: arm 12's first tick finds the victim still standing, and its first
+case 8 framed on `0x1200` where retail's reads the bare `0xC00`, so the shot covered five
+sixths of its TR z gap on that pass for retail's third. The pass's correction to the
+depth now reaches case 8: it reads `ctx[+0x6D0]` as it builds (`0x801D67C8`), not the
+value the host installed ahead of the tick (`BattleCamera::set_action_depth_raw`).
+
 The run from arm 1 to the hit is about 500 display frames, so the module, not
 a fixed stager script, sets how long battle state `0x36` lasts. Arm details
 are under [spawn reports](#a-module-that-reports-its-spawns) and
@@ -2066,6 +2073,27 @@ out; the exit stages clip `3`. Ports: the tick body's `VERA_HIDE_ARM` and
 `VERA_CAST_ARM`, and the director's held-pass clip
 (`ModuleCamState::creature_stage`).
 
+Arm 2's white rise and arm 4's warm and blue pair spawn on the pass the gate
+lets go, and the fade actor's tick `FUN_80025000` runs later in that same pass, so
+each ramp has taken the frame's step by the time the frame is drawn. The port
+spawned them after its own fade step and ran every ramp a pass behind: the
+`0x83` film's arm 5 (the warm flash fading out over the cut) read `.853`, the
+background `16` luma over retail's on every pair. Stepped on the spawn pass, as
+the decoded exit fades already are, arm 5 reads `1.000`. Port: the director-fade
+loop of `World::summon_stager_tick`.
+
+Arms 8..10 write the camera globals ahead of their gate, so the pass that hands
+over drifts by the whole `p` too. The port's pass runs its one-vsync ticks and
+stops on the one that hands over, and repeated the rest of the pass's capture
+drift but not a director's nudge: arm 9's last pass moved pitch `108` to `109`
+where retail's moved it to `112` (TR y `-48`, TR z `+96`), and arm 10 ran its
+whole length that far off. Arm 10 also lifts the creature by `p / 2` a pass
+(`lhu v0,0x36(s4)` / `sh v0,0x36(s4)` at `0x801F7FF0..0x801F8000`, `s4` the
+creature seat `*(0x801C938C)`), so Vera rises out of the shot as the camera pulls
+back; retail's `creature.csv` walks `y` by `-16` a step-`4` pass. With both the
+`0x83` film's arm 10 reads `.955` for `.877`. Port: `ModuleNudge::creature_y`,
+`World::nudge_rest_of_pass`.
+
 Arm 5's pass stages clip `1` beside the seat with the `+0x1DC` bump and rate `8`
 (`0x801F730C..0x801F733C`), so the creature opens on clip `1`; arm 8's bare `2`
 then waits for that clip's natural end, which PROT 0905's place on the band's
@@ -2133,6 +2161,16 @@ TR y `0x600` and TR z two thirds of `ctx[+0x6D0]`
 (`cast_module_camera::gizam_sweep_exit_shot`). No arm moves the creature: it
 stays where `FUN_801F19EC` leaves it, on the caster
 ([the creature seat](#the-creature-seat)).
+
+The record's first call (stager arm 0, `0x801F7788..0x801F7804`) spawns the white
+and blue flash pair from inside the part walk, which runs after the pass has ticked
+its fade actors, so the pair first steps and first draws on the next pass. The port
+runs the call on the module's next tick, whose fade step it has already taken, and
+spawned the pair there unstepped: the flash's tail at the end of arm 5 stood one step
+brighter than retail's on every pass (`.03` to `.86` within, the `0x84` film's lowest
+pairs). Stepped once as it spawns (`World::run_gizam_record_calls`), the film reads
+`.977` for `.966`. PROT 0927's stager fades take the same path and the same step
+(`World::run_juggernaut_stager_calls`). Grade `disassembly` + `capture`.
 
 ### PROT 0907 (Nighto)
 
@@ -2235,14 +2273,23 @@ where the disc's edge stands. Arm `0` seats its eight rays at
 
 ### PROT 0908 (Zenoir)
 
-**The seat opens a half keyframe ahead.** On the `0x86` Gobu Gobu film the
-port's creature reaches its first step-`3` pass at cursor `24` where retail's
-reads `16`, in two halves of `4`. The port advances the node on the phase-4
-pass while it still stands on the caster's point; retail's reads cursor `-1`
-until the seat pass, which shows `4` on the stage point. Retail's seat pass
-then overruns to three vsyncs and the next pass steps `3` (`+12`), where the
-port runs one more step-`1` pass first. `--retail-steps` keeps both, so neither
-is the frame cost the step track carries. Grade `capture`.
+**The seat lands on arm 4's pass.** Arm 4 polls the creature stream
+(`jal 0x8003F2B8` / `bne` to the busy return at `0x801F6E20..0x801F6E28`) ahead
+of the installer (`0x801F6FC0`) and stands the creature on its stage point
+right behind it, so retail's creature is first drawn there with one advance
+(cursor `4`, phase byte `5`). Seated as the phase reached arm 4, as the port
+once did, it stood one pass early on the caster's point and took an extra
+step-`1` advance (`4`, `8` against `4`). PROT 0903 and 0906 poll the same way
+(`module_seat_arm::SEATS_ON_PASS`); Gimard's first rows now read `2`, `8` and
+Zenoir's `4`, `16`, `32`, retail's. What still differs is the seat pass's
+length: retail's overruns to three vsyncs, the engine's runs one, which is the
+[frame span](battle-stage-camera.md#a-frames-span)'s. Grade `disassembly` +
+`capture`.
+
+**The slam clears the caption.** Arm 11's exit, the pass the creature lands on
+the victim, calls `FUN_800319A8(0)` (`0x801F7BE0`) before it raises the readout flag
+(`0x801F8104`), so retail's shatter runs with no attack name over it. The port kept
+`Vertical Hammer` up through arm 12. Grade `disassembly` + `capture`.
 
 **Stepping over the victim.** Arm 8 holds on `FUN_8004E2F0(7, victim)` (`0x801F7628`) while clip 2's root motion walks the creature on a fixed facing, and it has no other exit. The step is `speed * frame step * +0x21D / 8`: speed 255, step 4 and rate 4 go 510 units a pass, and a foe of `+0x1F = 14` answers in range only inside a window 448 across. So the creature can step clean over the window and walk off the stage for good, the action never ending. The port lets the poll pass on the first pass beyond the victim (`World::creature_ran_past`), a guard that reads false on any walk that lands. The arithmetic is retail's at the frame step the table measures; whether a retail fight has hung this way is [an open question](../reference/open-rev-eng-threads.md#zenoirs-walk-over-a-small-window).
 
@@ -2482,7 +2529,11 @@ once a vsync, drains the scalar alone. With the scalar at `8`:
 The holds that are not the countdown:
 
 - **Orb arm 4** holds on the creature's own height: arm 3 seats it at
-  `+0x36 = -0x320` (`0x801F70EC`), arm 4 adds `rate * speed` a pass and holds
+  `+0x36 = -0x320` (`0x801F70EC`), arms the clip's park (`+0x21B = 8`,
+  `+0x176 = 0x80`) and stands its cursor on the park frame (`+0x68 = 0x30`
+  through the anim node, `0x801F70D8..0x801F70E4`), so the orb holds its pose
+  from the drop's first pass; the port walked the cursor up to the frame and
+  released the park three passes late (`SeatArmWrite::cursor`), arm 4 adds `rate * speed` a pass and holds
   while it reads negative (`bltz` at `0x801F7408`), so the creature drops to
   the ground. Arm 5's pass steps it an eighth of a unit along its facing and
   lifts it to `-0x400`, then jumps to arm 9.
@@ -3124,7 +3175,10 @@ and the drifts the arms add to the camera globals (pitch / yaw `0x8007B790`
 / `0x8007B792`, TR `0x800840B8..C0`) on every pass, held or not - Puera's
 only while its countdown is still positive, since its drifts sit past the
 `blez`. Ports: `cast_module_camera::kemaro_direct`, `puera_direct`,
-`juggernaut_direct`. Juggernaut's cuts and drifts are PROT 0966's one for one
+`juggernaut_direct`. Kemaro's arm 4 drifts only while its drained countdown
+stays above `scalar << 5`, tested once a pass on the whole pass's drain, so the pass
+that crosses drifts none of its frames; tested per tick it drifted three of four
+(pitch `3970`, TR z `4316` against retail's `3976`, `4348`). Juggernaut's cuts and drifts are PROT 0966's one for one
 (the Evil Seru Magic body is the same choreography, numbered differently).
 
 Each director reports its spawn calls, so the records are seated on the arm
@@ -3517,6 +3571,14 @@ animating cannot hold the band; with no clip fed the wait passes. Mushura
 arm `0xD`'s wait on the creature's tint word `+0x04` passes: the writer that
 drains it is not identified.
 
+Mushura's arm `0xD` re-arms its framing every pass on the focus pair
+`0x80089118` / `0x80089120` itself, the camera's own focus, so the focus holds
+where arm `0xC`'s last glide left it. Framed on the creature, the port's focus
+walked from `(720, 262)` to `(817, 520)` through the arm while retail's held:
+the `0x8D` film's camera error `21.0` px to `0`, image `.978` to `.984`.
+Port: `ModuleCamState::live_focus`. Grade `capture` + docs (the focus trio,
+[battle action helpers](battle-action-helpers.md)).
+
 Arms that store the camera globals straight (Barra arms 3..6 and `0xC`, Palma
 arms 3 and 4) land each store as a one-frame cut on the origin, the TR z
 through the inverse of the tween's prescale. The builder keeps its endpoints in
@@ -3868,6 +3930,12 @@ and every ring stood one step small and dim through the arm (`.789` on every fil
 seats arm 2's ring on the caller's frame now, reached by the walk where its caller has a
 node behind it (`SummonScene::seat_walk`); arms 0 and 1, which write the module's context,
 stay on the tick. Arm 21 of the `0x95` film reads `.996`. Grade `disassembly` + `capture`.
+
+Juggernaut's last arm (28, `0x801F81D8`) zeroes the yaw ladder `ctx[+0x6DA]` on its way
+out (`sh zero,0x2(t3)` at `0x801F82CC`), so the Done band's case 6 frames the caster from
+`0`. Left at the body's value, the port's exit camera swung `222` yaw units a pass off
+retail's (the `0x99` film's camera error `46.8` px to `0.1`). Grade `disassembly` +
+`capture`.
 
 PROT 0927 (Juggernaut) has the same shape: its stager's spawn arms seat from inside the
 calling part's step, so the port seats them on the caller's frame too, while the fades,
@@ -5280,6 +5348,21 @@ three units). The bodies without that store keep the half turn
 | 0937 `0x4C` Hyper Lightning, `0x801F69D8` (`SINGLE_BODY`) | arms 0 and 1 are Hyper Crush's on their own three records; arm 2's cut (pitch `-0x20`, yaw `0x900 - facing`, TR `(0x1C0, 0x480, 0x800)`, `0x20` frames) with the party hidden and six records `600` ahead of the caster at height `-0x166`; arm 4's five more; arm 5 turns the victim to the caster and cuts on it (yaw `0xA80 - facing`, TR `(0, 0x480, 0x500)`), shows it, hides the caster and seats two records on it; TR z `+4s` on arms 4 / 5, `+s` on arm 6; arm 7 pushes TR z `+s` until its first hit, then re-cuts every pass to the victim (TR `(0, 0x480, 0x800)`), each hit flashing it; `0xFF` shows the caster again | `0x801F8090`; the chain (`HYPER_LIGHTNING_CHAIN`) carries the phase |
 | 0956 `0x75` Paralyzing Wave, `0x801F69D8` | arm 0's cut on the caster's display pair (TR `(0, 0x280, ctx[+0x6D0] / 2)`), every seat hidden but the caster, four records on the shot; arm 1's cut on the victim (TR `(0, 0x380, 0x600)`), the victim shown and the caster hidden, three records after the pool flush; TR z `+s / 2` on arms 1..3; arm 3 raises the pooled parts' level to `0x1000`, which ends the cast | `0x801F86A0`, seeded `scalar << 8`; the chain (`WATER_HAZARD_75_CHAIN`) carries the phase |
 | 0955 `0x60` White Shield, `0x801F8F0C` | three shots behind the caster on its live pair, TR y `0x400`: arm 0's `0xC`-frame shot (pitch `-0x20`, TR z `ctx[+0x6D0] / 2`), arm 1's `0x100`-frame pull (pitch `0x80`, TR z `ctx[+0x6D0]`), arm 2's `0x40`-frame level-off (pitch `0`); arm 3 is the buff | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 8` / `* 0x60`; the chain is ported (`white_shield_tick`), so the director carries the countdown and its hold. `battle_bubu2_spoon_white_shield_mid_cast` holds arm 0's table with `96` left |
+| 0945 `0xBA` Jugger Power, `0x801F69F8` | arm 0's cut far down the stage (pitch `0x80`, yaw `-0x80`, TR `(0, 0x1800, 0x4000)`, focus `(0, 0, -0x1D00)`), three records at `(0, 0, 0x1D00)`, every party seat and the caster hidden; yaw `+2` and TR z `+16` a vsync through arm 1, `+8` through arm 2; arm 1's cut on the caster (TR `(0, 0x400, 0x800)`), which it shows with three records and the message bar. [Below](#prot-0945-jugger-power) | `0x801F7E5C` (Water Column's word), stored `scalar << 7`, `<< 7`, `<< 6`, not added |
+
+<a id="prot-0945-jugger-power"></a>
+
+**0945 `0xBA` Jugger Power** (Van Saryu's self-buff,
+`cast_module_camera::jugger_power_camera`) shares Water Column's image and its
+countdown word. Its body calls no damage wrapper: its `jal` set is the head cue,
+the framing builder, the two spawn wrappers, the pool flush and the message bar
+(`0x800774AC = 0x801F7E44`, `FUN_801D8DE8(0x5B, 0)`), so the band's fold owes the
+cast nothing. The port once folded Water Column's baked power through it, a hit on
+the caster with two hit cues retail's recording lacks. Nothing in the body shows
+the party again. A `--monster-pick` film from `battle_jagaroom_van_saryu_strike`
+reads arms 1, 2 and 3 at `128`, `128` and `64` game frames, the gates' own dwells,
+and the whole film `.976`, cues `1.000` (one pass an arm, `.331`). Grade
+`disassembly` + `capture`.
 
 - <a id="prot-0942-dark-typhoon"></a>**0942 `0xAA`**: the drifts, with
   `s = scalar * delta`, are TR z `+s` (arm 1); TR z `+s`, TR x `+s/4`, TR y `-s`,
@@ -5632,8 +5715,9 @@ waives its fold, as for PROT 0959. A frozen seat
 mid-knockdown stands still. `nivora_duel_mid_blazing_slash` reads `.504` to
 `.766` with cues `.00` to `.74`. Grade `disassembly` + `capture`.
 
-What still holds arms `0x0D` / `0x0E` low (`.44` / `.42` on `--retail-steps
---rand-track`, with the camera on retail's to a tick) is two things. The flame puffs
+Arms `0x0D` / `0x0E` read `.967` / `.948` on `--retail-steps --rand-track`
+(the film `.972`). What held them at `.44` / `.42`, with the camera on retail's to
+a tick, was two things. The flame puffs
 are a deal: a `--retail-parts` film puts the same number of effect-pool children per
 arm on both sides, their centroids within the spread of the rolled offsets
 (`fxpool.csv`, arm `0x0D` six against five about `(11, -268, -717)` and

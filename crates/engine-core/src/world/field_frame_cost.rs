@@ -115,14 +115,11 @@ impl FieldCostTable {
 /// the ported gates say the frame's passes walk, and the weights price them
 /// against retail's measured frame times (PCSX-Redux walk films' `frame_cost`
 /// and `step` columns, and the sixteen-sample ring of every retail library
-/// field state). The fit maximises how many measured frames land on
-/// retail's rung of the step law, four hblanks clear of each rung, under the
-/// rule that no frame the previous model stepped right steps wrong; it was
-/// solved as a mixed-integer program over the films' frames and the states'
-/// rings. The terms follow the frame profile's parts (`autorun_field_frame_profile.lua`):
-/// the decoration pass's primitives and the cells its loop visits, the ground
-/// emitter's cells, the actor passes' primitives and NPCs, the tick pass's
-/// ambient parts, and the fog walk's records and the half-sheets it emits.
+/// field state). The weights start from the frame profile's per-routine
+/// times (`autorun_field_frame_profile.lua`: the decoration pass's
+/// primitives and the cells its loop visits, the ground emitter's cells, the
+/// actor draw pass's primitives and NPCs, the fog walk's flat cost) and
+/// climb on how many measured frames land on retail's rung of the step law.
 /// The CLUT-cell cyclers' recolour is priced at what the kernel was measured
 /// to cost a texel. Integer arithmetic, so every host prices a frame alike; weights in
 /// 1/1024 hblank.
@@ -155,7 +152,7 @@ pub fn field_frame_cost(f: &FieldFrameFeatures) -> i32 {
 }
 
 /// The hblanks a field frame costs with nothing in view (fitted).
-pub const FIELD_FRAME_BASE_COST: i64 = 123;
+pub const FIELD_FRAME_BASE_COST: i64 = 33;
 /// The most [`field_frame_cost`] prices a frame at: a bound on the integer,
 /// far past the `0x2D0` rung, not a model term.
 pub const FIELD_FRAME_COST_MAX: i64 = 0x7FFF;
@@ -163,14 +160,14 @@ pub const FIELD_FRAME_COST_MAX: i64 = 0x7FFF;
 /// decoration primitive, a cell of the decoration loop's span, a ground
 /// cell, a placed-object primitive, a visible placement NPC, a live fog
 /// record, an emitted fog half-sheet and a live ambient part.
-pub const COST_PER_DECORATION_PRIM: i64 = 73;
-pub const COST_PER_DECORATION_LOOP_CELL: i64 = 22;
-pub const COST_PER_GROUND_CELL: i64 = 176;
-pub const COST_PER_PLACED_PRIM: i64 = 87;
-pub const COST_PER_NPC: i64 = 16_692;
-pub const COST_PER_FOG_RECORD: i64 = 1_277;
-pub const COST_PER_FOG_HALF_SHEET: i64 = 958;
-pub const COST_PER_PART: i64 = 1_784;
+pub const COST_PER_DECORATION_PRIM: i64 = 93;
+pub const COST_PER_DECORATION_LOOP_CELL: i64 = 55;
+pub const COST_PER_GROUND_CELL: i64 = 162;
+pub const COST_PER_PLACED_PRIM: i64 = 121;
+pub const COST_PER_NPC: i64 = 25_364;
+pub const COST_PER_FOG_RECORD: i64 = 207;
+pub const COST_PER_FOG_HALF_SHEET: i64 = 6;
+pub const COST_PER_PART: i64 = 1_426;
 /// What the CLUT-cell recolour `FUN_80019D50` costs, 1/1024 hblank a unit
 /// (measured, not fitted): a call, a non-zero texel (`RGB -> HSV -> RGB`,
 /// `FUN_8001A78C` / `FUN_8001A6C8`) and a zero texel, which the kernel
@@ -467,9 +464,9 @@ mod tests {
                     col: 30 + i,
                     row: 92,
                     radius: 0,
-                    prims: 700,
-                    verts: 700,
-                    quads: 700,
+                    prims: 500,
+                    verts: 500,
+                    quads: 500,
                     lit: 0,
                 })
                 .collect(),
@@ -507,10 +504,11 @@ mod tests {
     /// The model is not capped at the ring's clamp: `concend`'s view (a
     /// `2704`-cell ground and a `4900`-cell loop span, two NPCs) prices past
     /// the `0x2D0` rung, so the pacer steps it at `4` as retail does on every
-    /// frame of its film, while `ending_vignette_fullscreen`'s (retail `502`,
-    /// step `2`) stays under `0x1FF`.
+    /// frame of its film, while `son`'s (retail `613`, step `3`) prices past
+    /// `0x1FE` and `retona_field_card_boot`'s (retail `454`, step `2`) stays
+    /// under it.
     #[test]
-    fn concend_prices_past_the_spike_rung_and_the_vignette_stays_under_three() {
+    fn concend_prices_past_the_spike_rung_and_son_runs_at_three() {
         let concend = FieldFrameFeatures {
             decoration_prims: 24,
             decoration_loop_cells: 4900,
@@ -519,15 +517,25 @@ mod tests {
             ..FieldFrameFeatures::default()
         };
         assert!(field_frame_cost(&concend) > 0x2D0);
-        let vignette = FieldFrameFeatures {
-            decoration_prims: 1674,
-            decoration_loop_cells: 2436,
-            ground_cells: 400,
-            placed_prims: 540,
+        let son = FieldFrameFeatures {
+            decoration_prims: 2480,
+            decoration_loop_cells: 2173,
             npcs: 6,
+            parts: 1,
             ..FieldFrameFeatures::default()
         };
-        assert!(field_frame_cost(&vignette) <= 0x1FE);
+        assert!((0x1FF..0x2D0).contains(&field_frame_cost(&son)));
+        let retona = FieldFrameFeatures {
+            decoration_prims: 2649,
+            decoration_loop_cells: 2244,
+            ground_cells: 205,
+            placed_prims: 43,
+            npcs: 2,
+            fog: 27,
+            fog_quads: 45,
+            ..FieldFrameFeatures::default()
+        };
+        assert!(field_frame_cost(&retona) <= 0x1FE);
         assert_eq!(
             field_frame_cost(&FieldFrameFeatures::default()),
             FIELD_FRAME_BASE_COST as i32

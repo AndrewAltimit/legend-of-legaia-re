@@ -309,5 +309,90 @@ void main() {
     }
   }
 
+  /* The frame so far, upside down, on a framebuffer of its own: a pass that
+   * draws into it with its y mirrored and copies it back the right way up has
+   * the window's fill rule on every edge. A corner on the GPU's sample point
+   * puts an edge exactly through pixel centres, and the rasteriser's tie rule
+   * decides who gets them; the window's target runs top-down and the page's
+   * framebuffer bottom-up, so the rule read the other way round. The screen
+   * primitives (`ScreenPrimPass.drawRuns`) and the scene pass
+   * (`TmdRenderer.sceneFlip`) each keep one. */
+  class FrameFlip {
+    constructor(gl) {
+      this.gl = gl;
+      this.f = null;
+    }
+
+    /* Copy the frame upside down, colour and depth, and bind the copy. Only
+     * from the screen's own framebuffer (PSX rasterisation's target): `false`
+     * on any other, or when the copy cannot be made. */
+    begin() {
+      const gl = this.gl;
+      if (gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) !== null) return false;
+      const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+      let f = this.f;
+      if (!f || f.w !== w || f.h !== h) {
+        if (f) { gl.deleteFramebuffer(f.fbo); gl.deleteTexture(f.tex); gl.deleteRenderbuffer(f.depth); }
+        f = this.f = { w, h, fbo: gl.createFramebuffer(), tex: gl.createTexture(), depth: gl.createRenderbuffer(), ok: false };
+        const unit = gl.getParameter(gl.ACTIVE_TEXTURE);
+        gl.activeTexture(gl.TEXTURE0);
+        const was = gl.getParameter(gl.TEXTURE_BINDING_2D);
+        gl.bindTexture(gl.TEXTURE_2D, f.tex);
+        gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGB8, w, h);
+        gl.bindTexture(gl.TEXTURE_2D, was);
+        gl.activeTexture(unit);
+        gl.bindRenderbuffer(gl.RENDERBUFFER, f.depth);
+        gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, w, h);
+        gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, f.tex, 0);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, f.depth);
+        f.ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        if (f.ok) {
+          /* One trial copy each way: a screen whose depth is another format,
+           * or a multisampled one, refuses it, and says so once here. */
+          while (gl.getError() !== gl.NO_ERROR);
+          this._blit(null, f.fbo, gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          this._blit(f.fbo, null, gl.DEPTH_BUFFER_BIT);
+          f.ok = gl.getError() === gl.NO_ERROR;
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        }
+      }
+      if (!f.ok) return false;
+      this._blit(null, f.fbo, gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+      return true;
+    }
+
+    /* The copy back onto the frame, the right way up, and the frame bound
+     * again. `depth`: the depth goes back too, for a pass whose depth later
+     * passes test against. */
+    end(depth) {
+      const gl = this.gl;
+      this._blit(this.f.fbo, null, gl.COLOR_BUFFER_BIT | (depth ? gl.DEPTH_BUFFER_BIT : 0));
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    /* `from` onto `to`, top for bottom, texel for texel. */
+    _blit(from, to, bits) {
+      const gl = this.gl;
+      const f = this.f;
+      const scissor = gl.isEnabled(gl.SCISSOR_TEST);
+      if (scissor) gl.disable(gl.SCISSOR_TEST);
+      const mask = gl.getParameter(gl.COLOR_WRITEMASK);
+      const depthMask = gl.getParameter(gl.DEPTH_WRITEMASK);
+      gl.colorMask(true, true, true, true);
+      gl.depthMask(true);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, from);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, to);
+      gl.blitFramebuffer(0, 0, f.w, f.h, 0, f.h, f.w, 0, bits, gl.NEAREST);
+      gl.colorMask(mask[0], mask[1], mask[2], mask[3]);
+      gl.depthMask(depthMask);
+      if (scissor) gl.enable(gl.SCISSOR_TEST);
+    }
+  }
+
   window.LegaiaPsxTarget = PsxTarget;
+  window.LegaiaFrameFlip = FrameFlip;
 })();

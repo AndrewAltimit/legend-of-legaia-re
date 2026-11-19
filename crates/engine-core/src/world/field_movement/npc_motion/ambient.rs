@@ -885,27 +885,42 @@ impl World {
     /// `actor+0x24` / `actor+0x28`, in the same 12-bit angle space as
     /// [`crate::world::FieldNpcState::headings`].
     ///
-    /// `None` when the slot's scripted-motion channel has never tweened
-    /// either angle, which is the ordinary case: the disc-wide census
-    /// (`crates/engine-scene/tests/ambient_motion_op_census_disc.rs`) finds op
-    /// `0x15` authored at zero sites and op `0x16` at 45, all in `juui1`. A
-    /// host may therefore keep its cheap yaw-only model build for `None` and
+    /// Two writers share the words: the scripted-motion channel's tweens
+    /// (ops `0x15` / `0x16`, published in [`crate::world::FieldNpcState::tilts`])
+    /// and the field VM's `4C 43` / `4C 44` on the placement's context
+    /// (written or tweened, `0x801E1234..0x801E12A0`). Retail has one actor
+    /// record, so the angle each one last wrote draws, word by word. The
+    /// disc-wide census (`crates/engine-scene/tests/ambient_motion_op_census_disc.rs`)
+    /// finds op `0x15` authored at zero sites and op `0x16` at 45, all in
+    /// `juui1`, so the channel never writes the pitch: a zero channel pitch
+    /// is no write, and the field VM's `+0x24` draws under the channel's
+    /// roll. `juui1` `P2[0]` turns all three party members with
+    /// `CC 09..0B 43 B8 0B 2C 01` while the channel rolls two of them;
+    /// taking the channel's pair whole dropped the turn on those two.
+    ///
+    /// `None` when neither writer holds an angle, which is the ordinary case,
+    /// so a host may keep its cheap yaw-only model build for `None` and
     /// compose the full `Rx * Ry * Rz` (`FUN_80026988`) only here.
     ///
     /// REF: FUN_8001ADA4, FUN_80026988
     pub fn field_npc_tilt(&self, slot: u8) -> Option<(i16, i16)> {
-        if let Some(&t) = self.npcs.tilts.get(&slot) {
-            return Some(t);
-        }
-        // The field VM writes the same two words (`4C 43` / `4C 44`, written
-        // or tweened, `0x801E1234..0x801E12A0`) on the placement's context.
-        // Retail has one actor record, so either writer's angles draw.
-        self.field_vm
+        let vm = self
+            .field_vm
             .channels
             .iter()
             .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
-            .map(|c| (c.ctx.field_24, c.ctx.field_28))
-            .filter(|&t| t != (0, 0))
+            .map(|c| (c.ctx.field_24, c.ctx.field_28));
+        match self.npcs.tilts.get(&slot) {
+            Some(&(pitch, roll)) => {
+                let pitch = if pitch != 0 {
+                    pitch
+                } else {
+                    vm.map_or(0, |(p, _)| p)
+                };
+                Some((pitch, roll))
+            }
+            None => vm.filter(|&t| t != (0, 0)),
+        }
     }
 
     /// Publish an ambient channel's `actor+0x72` write into the field-VM

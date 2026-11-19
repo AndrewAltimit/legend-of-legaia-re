@@ -175,6 +175,11 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if std::env::var("LEGAIA_BATTLE_GPU_COST").is_ok_and(|v| v.trim() == "1") {
         toggles.battle_gpu_cost_step = true;
     }
+    // Opt-in: price the effect pool on the retail walker's branches
+    // (`WorldToggles::battle_effect_walk_cost`).
+    if std::env::var("LEGAIA_BATTLE_WALK_COST").is_ok_and(|v| v.trim() == "1") {
+        toggles.battle_effect_walk_cost = true;
+    }
     // The battle frame-cost model's two halves, on by default, either way
     // over it: each frame spans what retail's `VSync` law gives its cost
     // (`WorldToggles::battle_frame_span_law`), and its work is priced off
@@ -187,6 +192,14 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
         (
             "LEGAIA_BATTLE_POLY_COST",
             &mut toggles.battle_poly_frame_cost,
+        ),
+        (
+            "LEGAIA_BATTLE_ME_DECODE",
+            &mut toggles.battle_me_decode_cost,
+        ),
+        (
+            "LEGAIA_BATTLE_ARTS_SHOUT_CD",
+            &mut toggles.battle_arts_shout_cd,
         ),
     ] {
         match std::env::var(var).as_deref().map(str::trim) {

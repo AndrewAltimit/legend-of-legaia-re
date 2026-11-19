@@ -72,6 +72,8 @@ cd legaia-tools-<version>-x86_64-unknown-linux-gnu/command-line-tools
 
 Every binary answers `--version` and `--help`; subcommand help
 (`./asset monster-archive --help`) states where each input comes from.
+`--version` names the release you downloaded (the launcher shows the same
+number at its top right).
 
 ## 2. Check your disc image
 

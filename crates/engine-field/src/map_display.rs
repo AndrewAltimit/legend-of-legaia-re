@@ -36,6 +36,14 @@
 //! (`legaia_engine_core::world::World::tick_map_display`), because it is a
 //! move-VM part like any other and draws through the field part pass.
 //!
+//! Retail draws a frame of the display every five vsyncs (its cost cap), so
+//! the pan steps a tile and the fades a level per five vsyncs. The port's
+//! smooth display (an enhancement, `WorldToggles::smooth_map_display` in
+//! `legaia-engine-core`) keeps those speeds but pays them out a vsync at a
+//! time: [`MapDisplay::pan_smooth`] moves the camera a fifth of a tile a
+//! vsync and [`MapDisplay::fade_grey_between`] steps the fade between the
+//! frame's level and the next.
+//!
 //! See `ghidra/scripts/funcs/overlay_monster_test_0981_801ce850.txt` and its
 //! three siblings. The `monster_test` stem is CDNAME inheritance; the image
 //! is the map display.
@@ -100,6 +108,8 @@ pub const PAD_LEFT: u16 = 0x8000;
 pub const PAD_RIGHT: u16 = 0x2000;
 pub const PAD_UP: u16 = 0x1000;
 pub const PAD_DOWN: u16 = 0x4000;
+/// Every packed bit that pans the camera.
+pub const PAD_PAN: u16 = PAD_LEFT | PAD_RIGHT | PAD_UP | PAD_DOWN;
 
 /// One camera step: a 128-unit map tile.
 pub const PAN_STEP: i32 = 0x80;
@@ -225,6 +235,12 @@ pub struct MapDisplay {
     /// The player's map pointer is alive (spawned in mode `1`, killed in
     /// mode `4`).
     pub pointer_alive: bool,
+    /// The smooth pan's progress through its tile, in vsyncs (`0` = on a
+    /// tile boundary). A port enhancement's state: retail's frame tick never
+    /// touches it ([`Self::pan_smooth`]).
+    pub pan_phase: u8,
+    /// The packed pan bits the smooth pan latched at its tile's start.
+    pub pan_held: u16,
 }
 
 /// `-v` truncated toward zero to a whole tile - the `subu; bgez; addiu 0x7f;
@@ -318,7 +334,73 @@ impl MapDisplay {
             target_z: 0,
             camera_staged: false,
             pointer_alive: false,
+            pan_phase: 0,
+            pan_held: 0,
         }
+    }
+
+    /// The fade level `phase` vsyncs into a frame `vsyncs` long: the frame's
+    /// own level ([`Self::fade_grey`]) stepped a vsync at a time toward the
+    /// level the next frame draws - down while mode `2` counts the timer
+    /// down, up while mode `3` counts it up, flat elsewhere. At `phase == 0`
+    /// it is [`Self::fade_grey`]. The smooth display's fade; the opening and
+    /// the exit keep retail's length.
+    pub fn fade_grey_between(&self, phase: u8, vsyncs: u8) -> Option<u8> {
+        if self.mode == 0 {
+            return None;
+        }
+        let step = match self.mode {
+            2 => -1,
+            3 => 1,
+            _ => 0,
+        };
+        let v = (self.timer << 6) + step * 0x40 * i32::from(phase) / i32::from(vsyncs.max(1));
+        Some(v.clamp(0, 0xFF) as u8)
+    }
+
+    /// One vsync of the smooth pan: the held d-pad moves the camera a tile
+    /// (`PAN_STEP`) over `vsyncs` vsyncs - retail's speed, a tile a
+    /// five-vsync frame - in integer slices that sum to the tile exactly
+    /// (`0x80 * (k + 1) / n - 0x80 * k / n`). A tile once started is
+    /// finished in the direction it latched, so the camera rests on whole
+    /// tiles as retail's does. Only the seated interactive mode pans; any
+    /// other state drops the pan in progress (a place step reseats the
+    /// camera outright).
+    ///
+    /// `held` is the packed held word; the caller strips [`PAD_PAN`] from
+    /// what it hands [`Self::tick`].
+    pub fn pan_smooth(&mut self, held: u16, vsyncs: u8) {
+        if self.mode != MODE_INTERACTIVE || self.seat != 2 || vsyncs == 0 {
+            self.pan_phase = 0;
+            self.pan_held = 0;
+            return;
+        }
+        if self.pan_phase == 0 {
+            self.pan_held = held & PAD_PAN;
+            if self.pan_held == 0 {
+                return;
+            }
+        }
+        let n = i32::from(vsyncs);
+        let k = i32::from(self.pan_phase);
+        let step = PAN_STEP * (k + 1) / n - PAN_STEP * k / n;
+        if self.pan_held & PAD_LEFT != 0 {
+            self.cam_x += step;
+        }
+        if self.pan_held & PAD_RIGHT != 0 {
+            self.cam_x -= step;
+        }
+        if self.pan_held & PAD_UP != 0 {
+            self.cam_z -= step;
+        }
+        if self.pan_held & PAD_DOWN != 0 {
+            self.cam_z += step;
+        }
+        self.pan_phase = (self.pan_phase + 1) % vsyncs;
+        if self.pan_phase == 0 {
+            self.pan_held = 0;
+        }
+        clamp_camera(&mut self.cam_x, &mut self.cam_z);
     }
 
     /// This frame's subtractive full-screen fade level, or `None` on the one
@@ -652,6 +734,58 @@ mod tests {
         assert_eq!((m.cam_x, m.cam_z), (x + PAN_STEP, z - PAN_STEP));
         m.tick(PAD_RIGHT | PAD_DOWN, 0, (0x2000, 0x2000), &[], 0);
         assert_eq!((m.cam_x, m.cam_z), (x, z));
+    }
+
+    /// The smooth pan covers a tile in five vsyncs, in slices that sum to
+    /// it exactly, and finishes a tile it started after the d-pad lets go.
+    #[test]
+    fn the_smooth_pan_pays_a_tile_out_over_five_vsyncs() {
+        let mut m = open((0x2000, 0x2000), &[]);
+        m.tick(0, 0, (0x2000, 0x2000), &[], 0);
+        let x = m.cam_x;
+        let mut xs = Vec::new();
+        m.pan_smooth(PAD_LEFT, 5);
+        xs.push(m.cam_x - x);
+        for _ in 0..4 {
+            m.pan_smooth(0, 5);
+            xs.push(m.cam_x - x);
+        }
+        assert_eq!(xs, vec![25, 51, 76, 102, PAN_STEP]);
+        assert_eq!(m.pan_phase, 0);
+        // Released on a boundary: the camera rests.
+        m.pan_smooth(0, 5);
+        assert_eq!(m.cam_x, x + PAN_STEP);
+        // Held for ten vsyncs: two tiles, the same speed as retail's frames.
+        for _ in 0..10 {
+            m.pan_smooth(PAD_RIGHT | PAD_DOWN, 5);
+        }
+        assert_eq!(m.cam_x, x - PAN_STEP);
+        // A place step unseats the camera and drops the pan in progress.
+        m.pan_smooth(PAD_UP, 5);
+        m.seat = 0;
+        m.pan_smooth(PAD_UP, 5);
+        assert_eq!((m.pan_phase, m.pan_held), (0, 0));
+    }
+
+    /// The smooth fade starts on the frame's own level and steps toward the
+    /// next frame's a vsync at a time.
+    #[test]
+    fn the_smooth_fade_steps_between_frame_levels() {
+        let mut m = MapDisplay::enter();
+        assert_eq!(m.fade_grey_between(3, 5), None);
+        m.tick(0, 0, (0, 0), &[], 0);
+        m.tick(0, 0, (0, 0), &[], 0);
+        assert_eq!(m.mode, 2);
+        m.tick(0, 0, (0, 0), &[], 0);
+        assert_eq!(m.fade_grey(), Some(0xC0));
+        let greys: Vec<u8> = (0..5).map(|k| m.fade_grey_between(k, 5).unwrap()).collect();
+        assert_eq!(greys, vec![0xC0, 0xB4, 0xA7, 0x9A, 0x8D]);
+        m.mode = 3;
+        m.timer = 4;
+        assert_eq!(m.fade_grey_between(4, 5), Some(0xFF));
+        m.timer = 0;
+        assert_eq!(m.fade_grey_between(0, 5), Some(0));
+        assert_eq!(m.fade_grey_between(4, 5), Some(0x33));
     }
 
     /// Square walks the kingdom's records backward, wrapping from the player

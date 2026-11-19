@@ -1557,6 +1557,35 @@ Do not recover `R` from a save state's GTE rotation matrix: it is the last-rende
 composed transform (row norms ≈ 6.0, the base-matrix world scale). Recover it from the angle
 globals.
 
+#### The smooth camera (enhancement)
+
+Because the mover steps once a game frame, a glide moves a whole frame step at a time and
+stands still on the vsyncs between: `izumi`'s arrival glide (`apply 120`, linear) runs at step
+`4` and draws 15 poses a second, each four vsyncs apart. The port's default draws the vsyncs
+between (`WorldToggles::smooth_camera`, off under `pin_retail` / `--retail`):
+
+- Each draw falls `phase` of the way through its game frame (`FrameClock::frame_vsync` over the
+  frame's wait), and the camera it draws is the stored pose plus `phase` of the move to the pose
+  the next frame will store - the mover advanced by the next frame's credit
+  (`Camera::led_delta`). That pose is fixed in advance unless a beat re-arms the mover, and a
+  beat that does re-arms from the stored pose, so the draw never feeds back.
+- The stored poses are retail's integers; the draws between land on fractions of a unit, so a
+  slow pan whose yaw moves a unit or two a frame does not stutter on the integer grid. Angles
+  move on the mover's own linear 12-bit line, with no short arc, as retail's glide sweeps.
+- A cut is a snap (`apply == 0`) or a scene change, and neither leaves a mover in flight, so the
+  frame after it draws the snapped pose. A battle never leads: its camera has no fixed next pose, so its
+  draw runs a battle frame behind instead ([the smooth battle camera](battle-stage-camera.md#the-smooth-battle-camera-enhancement)).
+- It is presentation-only. Both hosts lead only their draw-side camera resolve
+  (`HostView::presented`, `scripted_view_led`); the camera globals, every simulation read of the
+  view (the fog pool's shot and depth view among them) and the vsync a game frame opens on keep
+  the stored pose. Under `pin_retail` the lead is always zero and the frame is the stored pose,
+  bit for bit.
+
+The follow arm draws a script's glide from the globals even before the zone camera has
+composed: retail's view builder `FUN_800172C0` reads the globals every frame, so a shot staged
+while the scene's arrival actor still counts down for an engaged player (`izumi`'s opening) is
+on screen from its first frame (`ZoneFollow::script_view`).
+
 #### What a build census actually measures
 
 `FUN_800172c0` is **not** a once-per-frame builder. It has seventeen `jal` sites - four in
@@ -1918,22 +1947,68 @@ per-vsync PCSX-Redux film of the whole chain reads each scene change the same
 way: the scene-change packet, the streaming actor's `0x46`-frame hand-off
 (72 vsyncs; 92 into `eddoman`), then game mode `0x02` for exactly `130`
 vsyncs at all eight changes, whatever the destination block's size (240 KB
-to 680 KB). The init `FUN_801D6704` is one synchronous call - its reads and
-decodes, then a loop running the BGM poller `FUN_800243F0` until requested
-and loaded indices agree (`0x801D72D4..0x801D731C`) - and stores mode `3` at
-`0x801D7484` only after it; no frame count bounds it.
+to 680 KB). The init `FUN_801D6704` is one synchronous call: it zeroes the
+vsync counter `_DAT_8007B8AC` (counted up by the vsync callback
+`FUN_80018DB0`) just before the map read (`0x801D6A64`), runs its reads and
+decodes, waits `VSync(0)` until that counter reads `0x7E` on an ordinary
+entry (field-entry word `_DAT_8007B8B8` and dev word `_DAT_8007B868` zero,
+`0x801D7110..0x801D713C`), and outside the credits latch then loops the BGM
+poller `FUN_800243F0` until requested and loaded indices agree
+(`0x801D72D4..0x801D731C`); it stores mode `3` at `0x801D7484` only after
+that. The credits' `130` is the `126`-vsync floor and four vsyncs of the
+init's own waits.
 
-The port loads at once. In the credits that is not invisible: the ending
+The port's default loads at once. In the credits that is not invisible: the ending
 theme plays across every load (the credits latch `_DAT_8007B9B8`), and the
 eight skipped holds put the last vignette about 17 seconds ahead of the
 score. So under the latch (`AudioState::credits_latch`, raised by the
-theme's start) a named scene change arms `World::field_init_hold` for
-`CREDITS_FIELD_INIT_HOLD_VSYNCS` (`130`, the measured length - a figure,
-not a disassembled count): `SceneHost::tick` runs none of the scene and both
-hosts draw the frame black (`screen_layers`). Everywhere else the load stays
+theme's start) a committed scene change arms `World::field_init_hold` for
+`CREDITS_FIELD_INIT_HOLD_VSYNCS` (`130`): `SceneHost::tick` runs none of the
+scene and both hosts draw the frame black (`screen_layers`).
+
+An ordinary door holds too, and its length is the music. With sound-flag
+bit 2 clear the init closes the field-BGM source and forces the loaded index
+to `-100` (`0x801D70D4`), so its poll reads the scene's track from the disc,
+the same id included; with the bit up (op `0x35` sub-op `6` on the door's
+path) it loads no track. PCSX-Redux door hops (`autorun_door_hop.lua`, which
+logs the sound-flag word at each mode change) read mode `0x02` for `184`
+vsyncs behind every door that kept the music (`kor` -> `koin2`, `balden` ->
+`balden2`, `jouind` -> `jouinc`; `map03` -> `son` `185`) and `241` or `242`
+behind every door that did not (`ropeway` -> `map02` -> `stone` ->
+`tunnela` -> `rayman2`, `retockin` -> `jagaroom`, `korb2` -> `doman`;
+`map01` -> `town01` reads `256`), whatever the scene. The retail-faithful mode
+(`WorldToggles::skip_load_holds` off, as `--retail` sets it) arms
+`field_init_hold` for those two figures
+(`mode_entry_init::door_field_init_hold_vsyncs`); the default keeps the load
 instant.
 
-The last one, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` /
+The departure before the init has a CD wait of its own. The streaming
+actor `FUN_80021934` seeds its `0x46`-frame countdown in state 0, streams
+the destination's chunk (raw TOC entry `DAT_8007B768 + 3`, the fourth of the
+destination's block) in state 2, and in states 1 and 3 waits on the CD queue
+(`FUN_8003DE7C(1)`) before state 4 tests the countdown. A chunk that reads
+longer than the countdown holds the departure past it: PCSX-Redux door hops
+with `autorun_door_hop.lua`'s `depart.csv` (the countdown `gp+0x710` a vsync)
+read the countdown at `-26` when `tunnela` hands off to `rayman2` (`181`
+sectors, `96` vsyncs after the seed) and `-2` behind every chunk of `82..106`
+sectors (`72` vsyncs). About two sectors a vsync
+(`CHUNK_SECTORS_PER_VSYNC_X100`) fits `jagaroom` (`143`, `76`), `koin2` and
+`balden2` (`163`, `84`) to two vsyncs; `map02` -> `stone` (`127`, `78` at
+step `3`) reads six past it. The retail-faithful mode sets the hold's
+`stream_vsyncs` from the chunk's size, the default reads the chunk at once.
+
+A battle's return to the field runs the same init with the field-entry word
+at `2`, which skips the floor (`0x801D70E8..0x801D70F4`), so its length is
+its reads: the field overlay, the scene's block and the track afresh.
+PCSX-Redux battles played to their end (`autorun_story_forward.lua`) read
+mode `0x02` for `325` vsyncs back into `korb2` (209 sectors), `346` into
+`map01` (291), `363` into `garmel` (319) and `424` into `town0b` (491): a
+line of `247` vsyncs plus one for every `2.8` sectors of the block misses
+none by more than six. The retail-faithful mode arms `field_init_hold` from
+it (`mode_entry_init::battle_return_hold_vsyncs`) on the tick the battle
+hands back to the field or the overworld.
+
+The last vignette, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` /
 `42 01 09` (Circle / Cross held, [op `0x42` mode 1](script-vm.md)) and a `26` back to the wait.
 The timeline's natural-termination rule reads a backward jump onto an executed PC as a wrapped
 choreography; a loop whose body polls the held pad is exempt (`loop_polls_held_pad` in

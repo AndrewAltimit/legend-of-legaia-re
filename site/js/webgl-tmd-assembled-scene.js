@@ -885,6 +885,25 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     if (!haveGround && !havePlacements) return;
 
     gl.useProgram(this.program);
+    /* The page's PSX native target draws the scene upside down into a copy
+     * of the frame and flips the copy back (`sceneFlip`, a FrameFlip from
+     * webgl-psx-target.js; u_flip_y in the shaders), so the rasteriser's tie
+     * rule reads the window's way along every edge through pixel centres:
+     * the bottom-up framebuffer gave a slanted edge's tie pixels to the
+     * other side, hairlines along a cast's rotated shards. The backdrops
+     * above and the glow below draw the right way up. */
+    const sceneFlip = this.sceneFlip || null;
+    const flipBegin = () => {
+      const on = !!sceneFlip && sceneFlip.begin();
+      if (this.locFlipY) gl.uniform1i(this.locFlipY, on ? 1 : 0);
+      return on;
+    };
+    const flipEnd = (on) => {
+      if (!on) return;
+      sceneFlip.end(true);
+      if (this.locFlipY) gl.uniform1i(this.locFlipY, 0);
+    };
+    let flipped = flipBegin();
     /* A mesh with no ground cells leaves a_ground_ref_xz / _y disabled and the
      * vertex stage reads the generic value, whose GL default is (0, 0, 0, 1),
      * not the zeros engine-render's flat_a / flat_b carry on every mesh. The
@@ -1111,7 +1130,12 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * before the blend pass, so the semi-transparent prims, the glow and
      * every later layer stay undarkened. `ssaoFrame(vp)` is the page's
      * hook into the engine's packet (`play_ssao_frame`); empty = off. */
-    this._drawSsao(vp, w, h, drawOpaque);
+    /* The pass resolves onto the frame the right way up. */
+    if (this.ssaoFrame) {
+      flipEnd(flipped);
+      this._drawSsao(vp, w, h, drawOpaque);
+      flipped = flipped && flipBegin();
+    }
 
     /* Blend pass: re-draw the deferred semi-transparent (ABE) prims over the
      * finished opaque scene, one fixed-function blend state per ABR mode.
@@ -1319,6 +1343,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     this._setPlacementNclip(undefined, nclipOn);
     if (this.locPrimMeanDepth) gl.uniform1f(this.locPrimMeanDepth, 0);
     gl.bindVertexArray(null);
+    flipEnd(flipped);
     /* Enhanced lighting's halos + light shafts over the finished scene. */
     this._drawGlow(vp);
     /* The frame's view-projection, for overlay passes drawn after this

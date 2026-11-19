@@ -319,6 +319,9 @@ The cabinet writes the frame-step floor `_DAT_8007B9D8` in two arms: the opponen
 
 The port runs the floor the cabinet stored: `BakaFight::frame` is called every vsync and runs a game tick every `step_floor` vsyncs on that step. The floor is `1` but from the frame after the `0x6D` arm first runs (`SECRET_TALLY_FRAME_STEP`, `4`) until the opponent install has run again, so the challenger's announcement animates at fifteen frames a second and its `0xB5` hold lasts `185` vsyncs where a step of `1` gave `181`. A press between two ticks is held for the next. Pinned by `baka_fighter::tests::the_secret_tally_runs_a_game_tick_every_fourth_vsync`.
 
+The opponent install loads its fighter synchronously (`FUN_801D4C50`, PROT `char_index + 0x4B6`), so the state word stands at `0x1E` until the read is done: the Baka Fighter [minigame film](../tooling/minigame-film.md#the-baka-fighter-film) reads `0x1E` for `26` vsyncs on the first rung, where the port ran the arm on the next vsync and reached every later beat of the film that much early *(capture)*. The retail-faithful mode (`WorldToggles::skip_load_holds` off) holds the cabinet in `0x1E` for `OPPONENT_INSTALL_LOAD_VSYNCS` (`26`) through `BakaFight::set_install_load_hold`; the default and the minigames page load at once.
+One rung is measured; a heavier fighter's read may run longer *(inference)*. Pinned by `baka_fighter::tests::the_opponent_install_holds_for_its_load_only_under_retail_holds`.
+
 ### Pot, payout and forfeit
 
 The pot is the casino prize accumulator `_DAT_80084440`.

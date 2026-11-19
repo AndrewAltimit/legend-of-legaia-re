@@ -18,10 +18,10 @@
 //! `legaia_engine_session::BootSession::step_field_fog`. Its *draw* - the
 //! quads the step left - is [`HostView::fog_prims`].
 
-use crate::camera_view::{cutscene_view, resolve_field_camera};
+use crate::camera_view::{camera_present_lead, cutscene_view, resolve_field_camera_led};
 use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_core::world::World;
-use legaia_engine_field::camera::Camera;
+use legaia_engine_field::camera::{Camera, DrawLead};
 use legaia_engine_field::camera_frame::{FieldCameraFrame, frame_curve_scale};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_render_kernels::afterimage::AfterimageQuad;
@@ -48,6 +48,10 @@ pub struct HostView<'a> {
     pub world: &'a World,
     pub camera: &'a Camera,
     pub scene_box: SceneBox,
+    /// Where in the game frame the draw samples an in-flight camera glide
+    /// (`camera_view::camera_present_lead`); [`DrawLead::NONE`] unless the
+    /// host asked for [`Self::presented`].
+    pub lead: DrawLead,
 }
 
 impl<'a> HostView<'a> {
@@ -56,7 +60,19 @@ impl<'a> HostView<'a> {
             world,
             camera,
             scene_box,
+            lead: DrawLead::NONE,
         }
+    }
+
+    /// This view as the frame **draws** it: the follow and overworld arms
+    /// sample an in-flight glide at the vsync the frame is drawn on, under
+    /// the smooth camera (`WorldToggles::smooth_camera`). Off, or on the
+    /// vsync a game frame opens, it is [`Self::new`]'s view exactly. A host
+    /// asks for it on its draw side only; nothing the simulation reads
+    /// projects through it.
+    pub fn presented(mut self) -> Self {
+        self.lead = camera_present_lead(self.world, self.camera);
+        self
     }
 
     /// The resolver's fallback focus ([`scene_centre`] of the box).
@@ -68,7 +84,7 @@ impl<'a> HostView<'a> {
     /// gate says one owns the frame (already glided - the glide is the
     /// host's step, not a read), `None` otherwise.
     pub fn frame(&self, cutscene: Option<FieldCameraView>) -> FieldCameraFrame {
-        resolve_field_camera(self.world, self.camera, cutscene, self.centre())
+        resolve_field_camera_led(self.world, self.camera, cutscene, self.centre(), self.lead)
     }
 
     /// The non-scripted frame: the camera this frame would have without a
@@ -297,7 +313,15 @@ impl<'a> HostView<'a> {
 /// `FieldGteView::from_battle_pose(world.battle_cam_pose())`), onto the
 /// retail 320x240 stage. No host projects a trail point of its own.
 pub fn weapon_trail_prims(world: &World) -> Vec<ScreenPrim> {
-    trail_prims(world, None)
+    trail_prims(world, None, false)
+}
+
+/// [`weapon_trail_prims`] as the hosts draw them: the drawn camera and the
+/// drawn body (`World::battle_draw_pose`, `World::battle_draw_root_i16`),
+/// the smooth battle camera's frame. [`weapon_trail_prims`] keeps the live
+/// ones, which is what the frame census counts.
+pub fn weapon_trail_prims_drawn(world: &World) -> Vec<ScreenPrim> {
+    trail_prims(world, None, true)
 }
 
 /// [`weapon_trail_prims`] with every band depth-tested at the OT entry
@@ -305,7 +329,13 @@ pub fn weapon_trail_prims(world: &World) -> Vec<ScreenPrim> {
 /// scene draws with): PSX mode's battle frame, which sorts the bodies by
 /// link too.
 pub fn weapon_trail_prims_linked(world: &World, vp: &[f32; 16]) -> Vec<ScreenPrim> {
-    trail_prims(world, Some(vp))
+    trail_prims(world, Some(vp), false)
+}
+
+/// [`weapon_trail_prims_linked`] on the drawn frame
+/// ([`weapon_trail_prims_drawn`]).
+pub fn weapon_trail_prims_linked_drawn(world: &World, vp: &[f32; 16]) -> Vec<ScreenPrim> {
+    trail_prims(world, Some(vp), true)
 }
 
 /// The battle ordering table's shift byte `0x1F8003A4` (`2` in every
@@ -313,20 +343,37 @@ pub fn weapon_trail_prims_linked(world: &World, vp: &[f32; 16]) -> Vec<ScreenPri
 /// depth by (`srlv` at `0x80019694`): a band's corners carry `(SZ >> 2) >> 2`.
 const BATTLE_OT_SHIFT: u32 = legaia_render_kernels::prim_near_reject::BATTLE_SHIFT_DEFAULT;
 
-fn trail_prims(world: &World, link_vp: Option<&[f32; 16]>) -> Vec<ScreenPrim> {
+fn trail_prims(world: &World, link_vp: Option<&[f32; 16]>, drawn: bool) -> Vec<ScreenPrim> {
     use legaia_render_kernels::battle_trail as bt;
     let draws = crate::battle_draws::battle_weapon_trail_draws(world);
     if draws.is_empty() {
         return Vec::new();
     }
-    let view = legaia_render_kernels::gte::FieldGteView::from_battle_pose(&world.battle_cam_pose());
+    // On the drawn frame, the drawn camera and the drawn body
+    // (`World::battle_draw_pose`, `World::battle_draw_root_i16`); the live
+    // ones otherwise.
+    let pose = if drawn {
+        world.battle_draw_pose()
+    } else {
+        world.battle_cam_pose()
+    };
+    let view = legaia_render_kernels::gte::FieldGteView::from_battle_pose(&pose);
     let mut out = Vec::new();
     for d in draws {
-        let Some(actor) = world.actors.get(d.actor_slot as usize) else {
+        let slot = d.actor_slot as usize;
+        let root = if drawn {
+            world.battle_draw_root_i16(slot)
+        } else {
+            world.actors.get(slot).map(|a| {
+                (
+                    [a.move_state.world_x, a.move_state.world_z],
+                    a.battle.facing_angle,
+                )
+            })
+        };
+        let Some((base, yaw)) = root else {
             continue;
         };
-        let base = [actor.move_state.world_x, actor.move_state.world_z];
-        let yaw = actor.battle.facing_angle;
         let steps: Vec<[bt::TrailVertex; bt::TRAIL_POINTS]> = d
             .steps
             .iter()
@@ -487,10 +534,34 @@ pub fn cast_ribbon_prims(
     mvp: &glam::Mat4,
     ot_index: u32,
 ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+    cast_ribbon_prims_at(world, mvp, ot_index, false)
+}
+
+/// [`cast_ribbon_prims`] through the drawn camera
+/// (`World::battle_draw_pose`), as the hosts draw it.
+pub fn cast_ribbon_prims_drawn(
+    world: &World,
+    mvp: &glam::Mat4,
+    ot_index: u32,
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+    cast_ribbon_prims_at(world, mvp, ot_index, true)
+}
+
+fn cast_ribbon_prims_at(
+    world: &World,
+    mvp: &glam::Mat4,
+    ot_index: u32,
+    drawn: bool,
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim};
     use legaia_render_kernels::streak_pass::clip_ribbon_quads;
     let frame = world.clock.display_frames as u32;
-    let view = legaia_render_kernels::gte::FieldGteView::from_battle_pose(&world.battle_cam_pose());
+    let pose = if drawn {
+        world.battle_draw_pose()
+    } else {
+        world.battle_cam_pose()
+    };
+    let view = legaia_render_kernels::gte::FieldGteView::from_battle_pose(&pose);
     let mut out = Vec::new();
     // A landed move projectile's bolts (`BattleState::flight_ribbons`) are the
     // same call on the slot's position, numbered on after the arm's points.

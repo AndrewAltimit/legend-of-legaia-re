@@ -18,7 +18,7 @@ use legaia_save::{
 #[derive(Parser)]
 #[command(
     name = "save-tool",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Legaia memory-card / save inspector"
 )]
 struct Cli {

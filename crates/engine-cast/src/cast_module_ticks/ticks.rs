@@ -554,8 +554,9 @@ pub const ALL_STATS_SURGE_ARM: u8 = 2;
 /// exhaustive `sh`-immediate sweep of all 64 band images finds stores in
 /// eight of them (`docs/subsystems/cast-module.md`).
 ///
-/// Not ported: the packet arms and the per-arm countdown gate at
-/// `0x801F8834`.
+/// The camera arms, the seat hides, the records and the per-arm countdown
+/// gates (word `0x801F7E5C`) are
+/// [`crate::cast_module_camera::jugger_power_camera`]'s.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///

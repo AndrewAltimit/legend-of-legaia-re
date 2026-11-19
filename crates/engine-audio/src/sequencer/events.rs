@@ -46,9 +46,10 @@ impl Sequencer {
                         self.channels[ch].volume = 1;
                     }
                 }
-                // `FUN_8006126C`: the data entry after a Loop Start names how
-                // many passes the loop runs. A loop already counting ignores it.
-                CC_DATA_ENTRY if self.loop_armed && !self.loop_busy => {
+                // The data entry (`FUN_80060A94`) or the NRPN LSB
+                // (`FUN_8006126C`) after a Loop Start names how many passes the
+                // loop runs. A loop already counting ignores it.
+                CC_DATA_ENTRY | CC_NRPN_LSB if self.loop_armed && !self.loop_busy => {
                     self.loop_repeats = value;
                     self.loop_armed = false;
                     self.loop_busy = true;

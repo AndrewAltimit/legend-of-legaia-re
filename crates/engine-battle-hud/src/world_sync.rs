@@ -45,6 +45,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
         sync_dome_hud_rows(hud, world);
         return;
     }
+    hud.latch_gauge_tiers(world.battle_frame_id());
     let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     let party_names = world.party.roster_names();
 
@@ -163,7 +164,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
         world.battle_ctx.active_actor,
         crate::battle_multi_readout_rows(world),
     );
-    hud.hold_combo(world.battle.combo_cluster_held);
+    hud.hold_combo_at(world.battle.combo_cluster_held, world.battle_frame_id());
     hud.close_combo_on_fade_down(
         world.battle_ctx.action_state,
         world.battle_ctx.done_ui_torn_down != 0,

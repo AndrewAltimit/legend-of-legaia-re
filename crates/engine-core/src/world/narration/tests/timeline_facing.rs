@@ -405,6 +405,50 @@ fn cutscene_timeline_position_copy_carries_the_heading() {
     assert_eq!((p.world_x, p.world_z, p.render_26), (3000, 3100, 0x456));
 }
 
+/// `CC <dst> E3 <src>` onto a destination on the held-height arm
+/// (`+0x10 & 0x20000000`) also writes `+0x8E = -src+0x16`
+/// (`0x801E3150..0x801E3170`): `juui1` `P2[0]` seats Noa at `+0x8E = -32`,
+/// then `CC 0A E3 09` stacks her on Vahn's flying height (`+0x8E = 64`,
+/// `Y = -64`), where retail's RAM holds all three. Without the write she
+/// drew 96 units low, out of the bottom of the shot.
+#[test]
+fn position_copy_onto_a_held_height_actor_takes_the_source_height() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
+    use legaia_engine_vm::field::FieldCtx;
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    let held = |id: u16, h: i16| FieldCtx {
+        script_id: id,
+        flags: 0x2000_0000,
+        field_8e: h,
+        ..FieldCtx::default()
+    };
+    let ch = |slot: usize, ctx: FieldCtx| FieldChannel {
+        placement_index: slot,
+        ctx,
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    };
+    w.field_vm.channels = vec![ch(2, held(0x09, 64)), ch(3, held(0x0A, -32))];
+    w.npcs.positions.insert(2, (13376, 7510));
+    w.npcs.positions.insert(3, (13248, 7508));
+    w.tick_field_npc_heights();
+    assert_eq!(w.field_npc_render_y(2, 13376, 7510), -64);
+    assert_eq!(w.field_npc_render_y(3, 13248, 7508), 32);
+    let bc = vec![0xCC, 0x0A, 0xE3, 0x09, 0x4A, 0xFF, 0x7F];
+    w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+    w.step_cutscene_timeline();
+    let noa = &w.field_vm.channels[1].ctx;
+    assert_eq!(noa.field_8e, 64, "+0x8E = -src Y");
+    w.tick_field_npc_heights();
+    assert_eq!(w.field_npc_render_y(3, 13376, 7510), -64);
+}
+
 /// A placement's spawn section that turns its own actor toward another
 /// (`4C 85 00 00 16` in `rikuroa` `P1[3]`, Noa facing the placement she
 /// is seated beside) arms the walk kernel's FaceTarget leg on that

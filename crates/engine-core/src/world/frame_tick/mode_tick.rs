@@ -76,6 +76,7 @@ impl World {
         // across the hold. The camera, the actors and the module stand still.
         if self.cast_drive_blocks_frame() {
             self.step_blocked_cast_frame();
+            self.observe_battle_present();
             return None;
         }
         // A pinned encounter entry ([`EncounterState::rng_hold`]).
@@ -125,6 +126,9 @@ impl World {
         // settled, after every actor moved (`legaia_render_kernels::fog_volume`).
         self.tick_fog_volume();
         self.tick_rumble();
+        // The smooth battle camera's draw-side record of what this tick left
+        // (`World::observe_battle_present`); presentation-only.
+        self.observe_battle_present();
         outcome
     }
 

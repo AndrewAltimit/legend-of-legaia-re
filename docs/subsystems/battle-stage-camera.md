@@ -1812,8 +1812,8 @@ The effects cost their ticks as well as their links. Every live move-VM part run
 tick `FUN_80021DF4` and every live child of the effect pool `_DAT_8007BD30` its walker step,
 whatever it links, and the census counts only the link (a spark's one or two primitives).
 Priced on its own, the tick is the action-state table's measured load
-(`World::battle_frame_tick_cost`: `EFFECT_PART_COST`, `2` hblanks a part, and
-`effect_pool_cost`, `1.6` a child), added over the census line. Against the arts films'
+(`World::battle_frame_tick_cost`: `EFFECT_PART_COST`, `2` hblanks a part, and the effect
+walker's own branches, [below](#the-effect-walkers-price)), added over the census line. Against the arts films'
 unloaded frames the residual over the line follows the live parts (correlation `.38` in
 `0x1E`, `.51` in `0x51`) and no other class. The same work is what a monster's strike frames
 once read as a flat `25` hblanks over the line, which the tick term replaces: its spark bursts
@@ -1821,6 +1821,46 @@ carry it. Over the arts films the image mean reads `.9395` to `.9442` (Vahn's la
 `.906` to `.967`, Sonic Javelin `.895` to `.942`), over the strike films `.9831` to `.9843`
 (Frog `.908` to `.964`); the step agreement reads `.951` to `.943` on the arts and `.961` to
 `.968` on the strikes. Grade `disassembly` for the walks, `capture` for the prices.
+
+<a id="the-effect-walkers-price"></a>
+
+**The effect walker's price.** The flat `1.6` a pool child is a fit to Caruban's flames, and
+other children cost retail less: `--retail-parts` recordings read over the census on the
+paired engine tick leave Koru's walk-in dust (`nilboa_koru_pre_blade_breath`, `118`
+children, step `2`) `86` hblanks under the engine's price on average, a child priced
+`1.0` over what retail's frames carry. PCSX-Redux's ring entry is its CPU word alone (the
+GPU is free), so the difference is the walker's own work, not the sprites' size or blend.
+The walker `FUN_801E0080` runs its first pass once per vsync of the frame step while
+anything is live (`lbu v1,0x393(v1)` / `sltu` / `bne` at `0x801E06C0..0x801E06CC`), each
+sweep visiting all `32` master and `128` child slots, and its second pass builds, projects
+and links one `POLY_FT4` a live child with no cull (`0x801E06D8..0x801E09C0`). A retired
+child keeps stepping: retiring zeroes its wait and count but the advance loop tests the
+wait alone, so retail reads on through the `efect.dat` bytes after the batch, a motion step
+each, until a delay byte reads non-zero shifted into the byte-wide wait
+(`EffectCatalog::anim_overrun`).
+
+Run in `retail-exec` beside the port's pool over `3600` random walks at steps `1..=4`,
+priced on PCSX-Redux's clock (two cycles an instruction, one more a load or store, the GTE
+free, `2172` cycles an hblank), the walker fits its branches to `1.2` hblanks rms
+(`the_walker_costs_its_branches`): a live sweep `4243` cycles, an active master `108`, a
+spawn record `179`, a child on its countdown `157`, a frame advance `166`, an overrun
+advance `149`, a drawn child `652`. The port's pool counts the branches each walk takes
+(`Pool::work`, `WalkWork`), and `frame_clock::effect_walk_cost` prices a frame's over the
+census line: the first live sweep is in the line's base, and a drawn child's link is in the
+census already. Over the same recordings the residual's slope against the child count goes
+from `-1.0` to `.24` hblanks a child on Koru's dust, `-.76` to `.06` on Kemaro's Lava
+Breath, `-.27` to `.04` on Slippery's Poisonous Breath and `.13` to `.34` on Thunder Blast.
+
+As a frame step source it moves the films little. Over re-recorded film sets, plain seat,
+one build each way: enemy casts `.9559` to `.9560` (Blade Breath `.928` to `.974`, Thunder
+Needle `.936` to `.945`, Gigaton Press `.919` to `.925`, Thunder Burst `.989` to `.941`),
+Seru casts `.9714` both ways, party arts `.9442` to `.9435` (Sonic Javelin `.942` to
+`.924`), monster strikes `.9846` to `.9845`, every cue kept. The falls are passes that
+cross a step's edge earlier once the dust stops lifting the frames around them. So the
+walker's price is an opt-in (`WorldToggles::battle_effect_walk_cost`,
+`LEGAIA_BATTLE_WALK_COST=1`) and the census keeps the flat price by default. Grade
+`disassembly` for the walker's passes and the overrun, `capture` (an interpreter count on
+PCSX-Redux's timing) for the prices.
 
 Weighing the ghosts' flat packets lighter, as a fit on the strike and arts frames suggests,
 moves the arts images down: a party ghost priced flat at `PARTY_GHOST_DRAW_COST` under the
@@ -2153,6 +2193,17 @@ Across the library's PCSX-Redux battle states the two words agree on `.997` of t
 so on that machine the entry is the CPU's time alone and the GPU has no cost. Mednafen
 states do show a gap, up to `127` hblanks.
 
+PCSX-Redux's source says why. Its interpreter adds two cycles an instruction
+(`Emulator::BIAS`, `src/core/psxinterpreter.cc`) and one more for each data load and
+store through the memory map (`src/core/psxmem.cc`), with no cost for a GTE operation;
+a GPU ordering-table DMA completes after as many cycles as the chain holds words
+(`scheduleGPUDMAIRQ(gpuDmaChainSize(..))`, `src/core/gpu.cc`), and the GPU status word
+always reads idle. Fill area, semi-transparency and primitive setup cost nothing, so
+`DrawSync(0)` returns at once: a profile of `party_basic_attack_vs_gobu_gobu` puts
+`0.1` hblanks of each `326`-hblank frame inside `FUN_80058104`. On Mednafen a field state
+can be GPU-bound as a battle can: `keikoku_chest_pre` reads CPU `236` and entry `287`
+(the table model `270`), `zenoir_summon_mid_cast` CPU `141` and entry `268`.
+
 <a id="what-a-real-consoles-frame-costs"></a>
 
 **What a real console's frame costs.** The window both words measure opens at the frame
@@ -2276,6 +2327,31 @@ polls. With the cue-pass-free onset the other clips keep, the shout's first `0x1
 arts films' sustained camera error read `8.4` px; timed from the seek it reads `2.2`, Frost Breath
 `15.3` to `1.1` and Tornado Flame `15.6` to `0.9`. Grade `capture` for the seek times and the
 films, `disassembly` for the parked bank.
+
+<a id="an-arts-shouts-read"></a>
+
+**An arts shout's read.** `--cd-trace` recordings of Gala's Chain
+(`jou_gala_chain_open`, span `48`) and Sonic Javelin (`ropeway_noa_sonic_javelin_open`,
+span `44`) time the whole read: the cue pass issues `CdlSetloc` and `CdlSeekL`, the seek
+answers `3.24` vsyncs later and the next frame issues `CdlSetmode`, `CdlSetloc`,
+`CdlSetfilter` and `CdlReadS`, and the stop watch `FUN_8003D764` polls `GetlocL` /
+`GetStat` until the `Pause` (`0x09`), `62.3` and `58.2` vsyncs after the read: `14` past
+the span both times. [`XA_READ_TAIL_VSYNCS`](#the-cd-stop-watch)'s `20` is the drive word's
+clear counted from the cue, which runs the port's polls two or three vsyncs past retail's on
+a seeking shout. The fully polled frames run eight vsyncs, `1851..1930` hblanks, where the
+passes beside the line cost `624..671`: `2.97` over the unloaded work, where the port prices
+`2.78`. Cost less the interrupt spans reads `511..577` there, under the unloaded work,
+because the exception exits are the poll's too, which is why that measure read the share
+low. The cue pass costs its keyframe decode over its neighbours
+([an art's keyframe decode](#an-arts-keyframe-decode)): `715` against `629`, `743` against
+`628`. Port: `ARTS_SHOUT_READ_TAIL_VSYNCS`, `ARTS_SHOUT_POLL_WORK_RATIO_MILLI` and
+`xa_poll_tail_cost`, behind `WorldToggles::battle_arts_shout_cd`
+(`LEGAIA_BATTLE_ARTS_SHOUT_CD=1`), off by default: on the arts films it lifts the image
+(`.9455` to `.9476`, Slash Kick `.911` to `.976`) and the port's voiced frames read retail's
+lengths (Ironhead's clip-`5` frames `7, 7, 7` beside retail's), but the Super Arts' camera
+falls (sustained error `1.46` to `1.88` px, Tri-Somersault `7.2` to `12.0`), whose Super
+line's frames still run a vsync under retail's `9`. Grade `capture` for the timings,
+`disassembly` for the sequencer.
 
 **Port.** `WorldToggles::battle_cd_timing` (`CdTiming`) picks the machine. `PcsxRedux`, the
 default, keeps the recordings' tables, the clamp `1063` and the overrun. On `Console`, an opt-in
@@ -2443,10 +2519,11 @@ live move-VM parts and `fxpool.csv`'s effect-pool children it reads three loads:
   cost falls back as the burst's parts retire.
 - **Effect-pool children.** Each live child of the effect pool `_DAT_8007BD30` (the 2D
   sprites the effect VM walks and draws: a breath's flames, a burning body's puffs)
-  costs about `1.6`. Caruban's Fire Breath on a lone Vahn
+  costs about `1.6` on the action-state table. Caruban's Fire Breath on a lone Vahn
   (`rikuroa_caruban_pre_fire_breath`) runs the pool from `0` to `50` children while the
   body and its ghosts stay put, and its frames follow at `1.6` a child (`R^2` `.71`)
-  from `503` to `599`.
+  from `503` to `599`. The census line prices the walker instead
+  ([the effect walker's price](#the-effect-walkers-price)).
 - **After-image ghosts.** The draw tick's walk `FUN_80049348` re-runs the body's whole
   object draw `FUN_80048A08` per ghost (`jal 0x80048A08` at `0x8004950C`, inside the
   loop `0x80049458..0x80049544`), so a ghost costs what the body's mesh does. The same
@@ -2475,6 +2552,33 @@ engine's ran at `2` throughout and its yaw fell `16` units behind; with the load
 film scores `.728`, against `.729` on retail's own steps (`--retail-steps`).
 
 <a id="a-party-members-ghosts"></a>
+
+<a id="an-arts-keyframe-decode"></a>
+
+**An art's keyframe decode.** A party commit of a staged id `>= 0x10` decodes the bank
+record's `"ME"` keyframe stream out of the side-band slot (`jal 0x8002B28C` at `0x8004BCC8`
+in `FUN_8004AD80`; the art constants reach it through the name label, a starter or the
+SpecialStarter by the `sltiu 0x1B` branch to `0x8004BC4C`). The reader and its codec
+`FUN_8002A9CC` run `512` instructions a decoded part-frame: run in the retail interpreter
+over every `readef.DAT` entry, each sits within `4%` of that (`retail-exec`'s
+`the_archive_reader_costs_its_part_frames`), so a `13`-frame Gala art costs about `93`
+hblanks at PCSX-Redux's two cycles an instruction and a `28`-frame Vahn art `200`. A
+`--cd-trace` recording of Dragon Fangs puts the first art's commit pass inside the reader
+for its first `100` hblanks, ahead of the shout's `CdlSetloc`; the SpecialStarter's voice is
+dispatched from the banner block before the decode, which is why Frost Breath's seek lands
+`35k` cycles into its frame. The census links nothing for it, so the arts films' art-commit
+passes read `60..120` hblanks over their census without the term. Port:
+`frame_clock::me_decode_work`, added by `World::commit_staged_battle_anim_at_boundary` and
+taken by the pass's push, behind `WorldToggles::battle_me_decode_cost`
+(`LEGAIA_BATTLE_ME_DECODE=1`), off by default. On, Tri-Somersault reads `.767` to `.816` and
+its cues `.964` to `1.000`, Slash Kick `.911` to `.979`, but the arts mean falls `.9454` to
+`.9423` and the camera `1.46` to `1.94` px. The Gala chain films fall (`.99` to `.94`) on a
+knife edge: their art pass prices `722` where retail's reads `717`, the census `4` over
+retail's base, which tips the ring to step `4`; from there the port's voiced frames run a
+vsync past retail's (`9` against `8`) and the line covers one pass fewer. Closing a pass's
+polls where the read ends, and opening a shout's polls after its commit's decode, do not
+recover it (Sonic Javelin `.942` to `.828`). Grade `disassembly` for the call and the
+instruction count, `capture` for the films.
 
 **A party member's ghosts.** The Super Arts' slow motion and the chain finishers draw two
 ghosts of the acting member. PCSX-Redux recordings of the three Super Arts on a full party
@@ -3075,6 +3179,78 @@ The port models the opcode (`FieldCameraMotionHost::set_shake_amplitude` ->
 camera, which owns the same translation pair. The offset is held beside the
 framing pose rather than inside it, so a live shake cannot stall a rate-clamped
 glide.
+
+### The smooth battle camera (enhancement)
+
+The battle pass runs once a battle frame and the frame then waits out its step
+([the frame step](#the-frame-step)), so the walker `FUN_8002149C` moves the
+camera, and the anim tick `FUN_80047430` moves every body and its parts, two to
+four vsyncs at a time: an entry sweep or a summon's fly-round draws 15 to 30
+poses a second and holds between them. The port's default draws every vsync
+(`WorldToggles::smooth_camera`, the same knob as the field's
+[smooth camera](cutscene.md#the-smooth-camera-enhancement); off under
+`pin_retail` / `--retail`, and on the per-vsync battle cadence, where nothing
+holds). It is one knob rather than a battle twin because it makes one promise,
+a camera drawn every vsync along the path retail steps, and both halves are
+presentation-only with retail one switch away; the battle half's delay is a
+property of how it keeps that promise, not a separate choice to make.
+
+A field glide knows its next pose in advance, so the field draw leads. A battle
+camera does not: every pass re-arms its tween from the live actor records
+([the tween is an ease-out](#the-tween-is-an-ease-out)), so there is no pose to
+lead to. The battle draw therefore runs **one battle frame behind**:
+
+- `World::observe_battle_present`, at the end of every `World::tick`, keeps the
+  state the last battle frame closed on beside the live one: the camera pose
+  without its shake, each body's root (position and facing), each body's pose
+  (`pose_frame`, translation and rotation per part), and each live effect
+  node: every move-VM scene part (the summon creature's scene, the move-FX and
+  action-FX scenes, the Mystic shield's, a stage module's) and every
+  effect-pool child, by position and rotation.
+- Each vsync draws the share of the frame already shown, `phase = (vsync -
+  frame open) / span`, of the way from the old state to the live one. The vsync
+  a frame opens on draws the frame before, whole; the live frame lands on the
+  next frame's open. Angles move the short way round the 12-bit turn.
+- The camera, every body's root and parts, and every effect node move on the
+  one phase, so a body the camera frames holds still on screen as it does in
+  retail, and an effect riding a body stays on it: a summon's invoke burst
+  holds on the caster's raised fist, where with the effects drawn live its
+  rays' centre slid off the fist by up to a frame of the camera's dolly. The
+  ground shadows, the weapon trails, the ghost push, the value readout's
+  anchor, the grid cull and the screen-FX projection draw through the same
+  drawn camera and roots. The shake stays the live one, so it keeps its bite.
+- An effect node is known by a handle the draw lists carry
+  (`SummonPartDraw::node` / `RibbonDraw::node`: the part's index under its
+  scene's key, `present::fx_node`; `EffectSprite::slot`: the pool slot). A
+  node born this frame draws where it spawned; a node whose age falls under
+  the same handle (a new child in a reused slot, a new scene in a reused
+  list place) or whose identity changed draws live, and a node gone from the
+  live frame is gone from the draw, so nothing lingers past retail's frame.
+- A cut draws its landing at once: a change of camera owner (the phase camera,
+  a stage module's camera), or a step of `480` angle units, `1800` TR units or
+  `480` focus units in one frame (`present::CUT_*`). Across the film sets the
+  ease-out's opening steps run under about `450` angle units, and the cast
+  modules' cuts from `512` up. A body moved `1024` units or turned `1024`
+  in a frame was placed, not moved, and lands too, pose and all; so does a
+  part that moved `512` units or turned `1024`. The first frames of a battle
+  draw live.
+- It is presentation-only. The draw-side reads are `World::battle_draw_pose`,
+  `battle_draw_root`, `battle_draw_shift`, `battle_draw_root_i16`,
+  `battle_draw_pose_frame`, `battle_fx_shift` and `battle_sprite_shift`, and
+  only the two hosts' draw paths and the shared draw kernels' `_drawn` entries
+  take them (`effect_model_draws_drawn`, `weapon_trail_prims_drawn`,
+  `cast_ribbon_prims_drawn`). The frame census counts what retail links from
+  the live entries (`effect_model_draws`, `weapon_trail_prims`,
+  `cast_ribbon_prims`), and the camera ghost pass, the tint pass's latch, the
+  cast ribbon's `rand` deal and every rule keep `World::battle_cam_pose` and
+  the actor records, so the fight, the frame cost and the `rand()` stream are
+  unchanged. Off, every accessor returns the live value, bit for bit.
+
+The price is a battle frame of display delay on the 3D scene, two to four
+vsyncs; the HUD, the menus and the pad are not delayed. The near-camera ghost
+(a body drawn see-through as the camera closes on it) is decided on the live
+pose: the decision is a simulation state the frame census counts, so it can
+turn a body to a ghost up to a frame before the drawn camera reaches it.
 
 ### The 4× world scale
 

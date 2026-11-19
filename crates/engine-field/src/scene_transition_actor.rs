@@ -305,10 +305,12 @@ impl HeldTransition {
 /// (`World::script_context_engages_player`), as retail's parked door record
 /// keeps it.
 ///
-/// The CD-queue and index-arm inputs are fixed at their retail-boot values
-/// (`stream_busy = false`, `index_mode = true`): the engine's `Scene` load is
+/// The index arm is fixed at its retail-boot value (`index_mode = true`).
+/// The CD queue reads busy for [`Self::stream_vsyncs`] after state 2 issues
+/// its chunk read: `0` in the port's default (its `Scene` load is
 /// synchronous, so the hold is the countdown plus the machine's own four
-/// state steps.
+/// state steps), the chunk's read time in the retail-faithful mode, where a
+/// large destination holds the departure past the countdown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SceneTransitionHold {
     /// The actor.
@@ -317,6 +319,29 @@ pub struct SceneTransitionHold {
     pub request: HeldTransition,
     /// World ticks spent parked so far.
     pub ticks: u32,
+    /// Vsyncs the CD queue stays busy with the chunk state 2 streams
+    /// ([`SceneTransitionEffect::StreamChunkByIndex`]), which states 1 and 3
+    /// wait out (`FUN_8003DE7C(1)`); `0` reads it at once. A host that runs
+    /// retail's load timing sets it from the chunk's size
+    /// ([`chunk_stream_vsyncs`]).
+    pub stream_vsyncs: u32,
+    /// Vsyncs of the issued chunk read still to run.
+    stream_left: u32,
+}
+
+/// Sectors the drive reads a vsync while a departure streams its chunk, in
+/// hundredths: PCSX-Redux door hops read the departure's mode-`0x02` store
+/// `72` vsyncs after the countdown's seed behind a chunk of `82..106`
+/// sectors (`tunnela`, `jouinc`, `map02`) and `76` / `84` / `96` behind
+/// `143` / `163` / `181` (`jagaroom`, `koin2` and `balden2`, `rayman2`): the
+/// countdown, or the read past it at about two sectors a vsync, whichever
+/// ends later.
+// REF: FUN_8003DE7C (the CD-queue poll), FUN_8001EEF0 (the chunk stream)
+pub const CHUNK_SECTORS_PER_VSYNC_X100: u32 = 205;
+
+/// Vsyncs the CD queue spends streaming a departure's chunk of `sectors`.
+pub fn chunk_stream_vsyncs(sectors: u32) -> u32 {
+    (sectors * 100).div_ceil(CHUNK_SECTORS_PER_VSYNC_X100)
 }
 
 impl SceneTransitionHold {
@@ -326,7 +351,15 @@ impl SceneTransitionHold {
             actor: SceneTransitionActor::default(),
             request,
             ticks: 0,
+            stream_vsyncs: 0,
+            stream_left: 0,
         }
+    }
+
+    /// Seat the chunk read as still running for `vsyncs` (a harness standing
+    /// the hold on a state saved while the actor waits on the CD queue).
+    pub fn seat_stream_left(&mut self, vsyncs: u32) {
+        self.stream_left = vsyncs;
     }
 
     /// One world tick at frame step `dt`. `true` on the tick the actor writes
@@ -335,15 +368,22 @@ impl SceneTransitionHold {
     /// REF: FUN_80021934
     pub fn tick(&mut self, dt: u8) -> bool {
         self.ticks += 1;
+        self.stream_left = self.stream_left.saturating_sub(u32::from(dt));
         let out = self.actor.tick(SceneTransitionInput {
             dt,
             start_gate: 0,
             index_mode: true,
-            stream_busy: false,
+            stream_busy: self.stream_left > 0,
             staged_index: 0,
             pending_index: 0,
             scene_name: self.request.scene_name(),
         });
+        if out
+            .iter()
+            .any(|e| matches!(e, SceneTransitionEffect::StreamChunkByIndex { .. }))
+        {
+            self.stream_left = self.stream_vsyncs;
+        }
         out.iter()
             .any(|e| matches!(e, SceneTransitionEffect::EnterGameMode(_)))
     }
@@ -572,5 +612,20 @@ mod tests {
             assert_eq!(released_at, Some(want), "dt {dt}");
             assert_eq!(h.ticks, want);
         }
+    }
+
+    /// A departure whose chunk read outlasts the countdown hands off when the
+    /// read ends: `rayman2`'s `181` sectors at step `2` reach mode `0x02`
+    /// `96` vsyncs after the seed (PCSX-Redux), against `72` with no read.
+    #[test]
+    fn a_long_chunk_read_holds_the_departure_past_the_countdown() {
+        let run = |stream_vsyncs: u32| {
+            let mut h = SceneTransitionHold::new(HeldTransition::Portal(0, 0));
+            h.stream_vsyncs = stream_vsyncs;
+            (0..200).find(|_| h.tick(2)).map(|t| t * 2)
+        };
+        assert_eq!(run(0), Some(72));
+        assert_eq!(run(chunk_stream_vsyncs(181)), Some(96));
+        assert_eq!(run(chunk_stream_vsyncs(97)), Some(72));
     }
 }

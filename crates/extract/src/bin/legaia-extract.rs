@@ -16,7 +16,7 @@ use clap::Parser;
 #[derive(Parser)]
 #[command(
     name = "legaia-extract",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Run the full Legaia extraction pipeline (disc → PROT → categorize → sub-assets → PNG → XA → font)"
 )]
 struct Cli {

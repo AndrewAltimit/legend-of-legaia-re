@@ -38,3 +38,25 @@ fn cues_contend_for_voices_as_they_do_in_retail() {
     };
     assert_keyed_alike(&d, "cues");
 }
+
+#[test]
+fn a_track_no_state_was_saved_under_keys_alike_when_seated() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        return;
+    }
+    // Tracks the library holds no state of, seated through retail's own VAB
+    // open and `_SsSeqInit` on another state's libsnd: `2057` counts its loop
+    // with the NRPN LSB (CC 98) and loops at about vsync 5950, `2072` keys a
+    // note past the pitch table's front from vsync 1384, and `2075` is a
+    // battle-bank theme.
+    for (track, vsyncs) in [(2057, 6200), (2072, 1500), (2075, 3600)] {
+        let Some(d) =
+            crate::seq_differential::run_seated_track("mei_house_inside", track, vsyncs, false)
+                .expect("differential")
+        else {
+            eprintln!("[skip] mei_house_inside not in the library");
+            return;
+        };
+        assert_keyed_alike(&d, &format!("seated {track}"));
+    }
+}

@@ -151,8 +151,15 @@ impl World {
         let poly = census.filter(|_| self.toggles.battle_poly_frame_cost);
         let table_work = measured_frame_cost_at(self.party.party_count, state, passes)
             .saturating_add(self.battle_frame_load_cost());
-        let work = poly.unwrap_or(table_work);
+        // The art commits' `"ME"` decodes, which link nothing.
+        let me_decode = std::mem::take(&mut self.battle.me_decode_work);
+        let poly = poly.map(|w| w.saturating_add(me_decode));
+        let work = poly.unwrap_or(table_work.saturating_add(me_decode));
         self.battle.frame_work = work;
+        // The walker's branches up to here are this pass's.
+        self.battle.effect_walk_cost =
+            legaia_engine_battle_loop::frame_clock::effect_walk_cost(self.effect_walk_counts());
+        self.effect_walk_priced = self.effect_pool.work;
         // A frame the seek arm's `CdlSetloc` held for longer than one of
         // PCSX-Redux's ordinary seeks ran past its step. The full-party
         // Zenoir recording (`battle_tower_swordie_strike`) spends `11` vsyncs
@@ -177,11 +184,24 @@ impl World {
                     // A clip whose seek the port times: its polls open `wait`
                     // hblanks into this pass, from the cue's own pass on.
                     (Some(_), CdTiming::PcsxRedux, Some(wait)) => {
-                        legaia_engine_battle_loop::frame_clock::xa_partly_polled_cost(
-                            wait,
-                            work,
-                            xa_polled_work_cost,
-                        )
+                        use legaia_engine_battle_loop::frame_clock as fc;
+                        if !self.toggles.battle_arts_shout_cd {
+                            fc::xa_partly_polled_cost(wait, work, xa_polled_work_cost)
+                        } else {
+                            let c = fc::xa_partly_polled_cost(
+                                wait,
+                                work,
+                                fc::arts_shout_polled_work_cost,
+                            );
+                            // The polls stop at the `Pause` past the end
+                            // sector, part way into the pass the window
+                            // closes in.
+                            fc::xa_poll_tail_cost(
+                                u32::from(self.audio.battle_xa_load_frames),
+                                work,
+                                c,
+                            )
+                        }
                     }
                     (None, CdTiming::PcsxRedux, Some(wait)) => {
                         legaia_engine_battle_loop::frame_clock::xa_partly_polled_cost(
@@ -406,24 +426,63 @@ impl World {
     /// ([`effect_pool_cost`](legaia_engine_battle_loop::frame_clock::effect_pool_cost)).
     /// The census prices what they link; this is the walk that runs them,
     /// which links nothing of its own.
+    ///
+    /// Under `WorldToggles::battle_effect_walk_cost` the pool is priced by
+    /// the branches its walks took since the last priced pass
+    /// ([`effect_walk_cost`](legaia_engine_battle_loop::frame_clock::effect_walk_cost)),
+    /// the retail walker's own cost counted in `retail-exec`.
     pub fn battle_frame_tick_cost(&self) -> u16 {
-        use legaia_engine_battle_loop::frame_clock::{EFFECT_PART_COST, effect_pool_cost};
+        use legaia_engine_battle_loop::frame_clock::{
+            EFFECT_PART_COST, effect_pool_cost, effect_walk_cost,
+        };
         let (parts, _) = self.battle_frame_load();
+        let pool = if self.toggles.battle_effect_walk_cost {
+            effect_walk_cost(self.effect_walk_counts())
+        } else {
+            effect_pool_cost(self.live_effect_pool_children())
+        };
+        parts.saturating_mul(EFFECT_PART_COST).saturating_add(pool)
+    }
+
+    /// The effect walker's branches since the last priced pass, and the
+    /// children its second pass draws now.
+    pub fn effect_walk_counts(&self) -> legaia_engine_battle_loop::frame_clock::EffectWalkCounts {
+        let w = self.effect_pool.work.since(&self.effect_walk_priced);
+        let n = |v: u64| u32::try_from(v).unwrap_or(u32::MAX);
+        legaia_engine_battle_loop::frame_clock::EffectWalkCounts {
+            live_sweeps: n(w.live_sweeps),
+            masters: n(w.masters),
+            spawns: n(w.spawns),
+            child_waits: n(w.child_waits),
+            advances: n(w.advances),
+            overruns: n(w.overruns),
+            drawn: u32::from(self.live_effect_pool_children()),
+        }
+    }
+
+    /// The effect pool's live children (`frame_count != 0`).
+    fn live_effect_pool_children(&self) -> u16 {
         let pool = self
             .effect_pool
             .children
             .iter()
             .filter(|c| c.frame_count != 0)
             .count();
-        parts
-            .saturating_mul(EFFECT_PART_COST)
-            .saturating_add(effect_pool_cost(u16::try_from(pool).unwrap_or(u16::MAX)))
+        u16::try_from(pool).unwrap_or(u16::MAX)
     }
 
+    /// The action-state table's draw load: live parts, pool children at the
+    /// flat [`effect_pool_cost`](legaia_engine_battle_loop::frame_clock::effect_pool_cost)
+    /// (the table counts no link of theirs), and each planned ghost.
     pub fn battle_frame_load_cost(&self) -> u16 {
         use legaia_engine_battle::battle_afterimage as ai;
-        use legaia_engine_battle_loop::frame_clock::{PARTY_GHOST_DRAW_COST, ghost_draw_cost};
-        let mut cost = self.battle_frame_tick_cost();
+        use legaia_engine_battle_loop::frame_clock::{
+            EFFECT_PART_COST, PARTY_GHOST_DRAW_COST, effect_pool_cost, ghost_draw_cost,
+        };
+        let (parts, _) = self.battle_frame_load();
+        let mut cost = parts
+            .saturating_mul(EFFECT_PART_COST)
+            .saturating_add(effect_pool_cost(self.live_effect_pool_children()));
         let per_frame = self.ghost_ring_slots_per_frame();
         for a in &self.actors {
             if a.battle_pose_history.is_empty()
@@ -1638,6 +1697,7 @@ impl World {
             let phase = self.casting.module_phase;
             self.casting.module_pass_repeat = i != 0;
             self.casting.module_tick_drift = None;
+            self.casting.module_tick_nudge = None;
             self.casting.module_tick_after_drift = None;
             // The one-vsync ticks of the pass still owed after this one: an
             // arm leaving on this tick has drained `delta` ticks' worth by
@@ -1655,12 +1715,54 @@ impl World {
                 // the one that hands over: the rest of the pass's drift.
                 if live && self.casting.module_phase != phase {
                     self.drift_rest_of_pass(delta - 1 - i);
+                    self.nudge_rest_of_pass(delta - 1 - i);
                     self.repeat_module_seat_moves(phase, delta - 1 - i);
                 }
                 break;
             }
         }
         live
+    }
+
+    /// Re-apply the handing-over tick's camera nudge for the `ticks` of its
+    /// pass the port does not run ([`Self::module_pass`]). A nudge is a
+    /// director's write into the camera globals ahead of its gate, so
+    /// retail's passing pass adds its whole `k * delta` before the arm
+    /// leaves: PROT 0905's arm 9 drifts pitch `p / 8`, TR y `-3p / 2` and TR
+    /// z `3p` (`0x801F7A70..`) on the pass that hands over to arm 10: the
+    /// `0x83` film's retail camera reads pitch `108` to `112` there, where
+    /// the port's one handing tick moved it to `109`.
+    fn nudge_rest_of_pass(&mut self, ticks: u8) {
+        let Some(n) = self.casting.module_tick_nudge else {
+            return;
+        };
+        for _ in 0..ticks {
+            self.apply_module_nudge(n);
+        }
+    }
+
+    /// One tick of a director's [`ModuleNudge`]: the camera globals and the
+    /// creature seat's height.
+    ///
+    /// [`ModuleNudge`]: legaia_engine_cast::cast_module_camera::ModuleNudge
+    pub(in crate::world) fn apply_module_nudge(
+        &mut self,
+        n: legaia_engine_cast::cast_module_camera::ModuleNudge,
+    ) {
+        if let Some(cam) = self.battle.camera.as_mut() {
+            cam.nudge_module(n.pitch, n.tr_y, n.tr_z);
+            if n.tr_x != 0 {
+                cam.nudge_module_tr_x(n.tr_x);
+            }
+        }
+        if n.creature_y != 0
+            && let Some(a) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|s| self.actors.get_mut(usize::from(s)))
+        {
+            a.move_state.world_y = a.move_state.world_y.wrapping_add(n.creature_y);
+        }
     }
 
     /// Re-apply the handing-over tick's camera drift for the `ticks` of its
@@ -2730,6 +2832,17 @@ mod tests {
         w.push_frame_cost(None);
         assert_eq!(w.battle_frame_tick_cost(), 3, "two live children at 1.6");
         assert_eq!(w.battle.frame_work, linked_frame_work(2600, true) + 3);
+        // Priced on the walker: two drawn children and no walk since the
+        // last pass cost their second pass over the census's link price.
+        w.toggles.battle_effect_walk_cost = true;
+        w.push_frame_cost(None);
+        let tick = legaia_engine_battle_loop::frame_clock::effect_walk_cost(
+            legaia_engine_battle_loop::frame_clock::EffectWalkCounts {
+                drawn: 2,
+                ..Default::default()
+            },
+        );
+        assert_eq!(w.battle.frame_work, linked_frame_work(2600, true) + tick);
     }
 
     /// A film's opening pass, priced on the table before the lead-in's census

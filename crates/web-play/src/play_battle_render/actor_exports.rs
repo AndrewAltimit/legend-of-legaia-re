@@ -6,10 +6,6 @@ use super::*;
 /// A battle facing `+0x46` as a Y rotation in radians (glam's
 /// `from_rotation_y` sense: `+Z` turns onto `(sin f, cos f)`, the direction
 /// the root-motion drive moves the actor).
-fn battle_facing_yaw(facing: u16) -> f32 {
-    f32::from(facing & 0xFFF) / 4096.0 * std::f32::consts::TAU
-}
-
 #[wasm_bindgen]
 impl LegaiaRuntime {
     /// Number of bound battle actor meshes (monsters + party).
@@ -98,12 +94,20 @@ impl LegaiaRuntime {
         };
         let mut out = Vec::with_capacity(br.actors.len() * 5);
         for a in &br.actors {
-            match host.world.actors.get(a.actor_idx) {
-                Some(actor) => out.extend_from_slice(&[
-                    actor.move_state.world_x as f32,
-                    actor.move_state.world_y as f32,
-                    actor.move_state.world_z as f32,
-                    battle_facing_yaw(actor.battle.facing_angle),
+            // The drawn root (`World::battle_draw_root`): under the smooth
+            // camera it rides the camera's phase, the native window's
+            // `actor_model` twin.
+            match host
+                .world
+                .actors
+                .get(a.actor_idx)
+                .zip(host.world.battle_draw_root(a.actor_idx))
+            {
+                Some((actor, (pos, facing))) => out.extend_from_slice(&[
+                    pos[0],
+                    pos[1],
+                    pos[2],
+                    facing / 4096.0 * std::f32::consts::TAU,
                     if actor.active
                         && !host.world.battle_body_hidden(a.actor_idx)
                         && self.battle_draw_plan(a.actor_idx).is_none_or(|p| p.drawn)
@@ -174,12 +178,15 @@ impl LegaiaRuntime {
         if a.object_ids.is_empty() {
             return Vec::new();
         }
-        if let Some(pose) = self
-            .scene_host
-            .host()
-            .and_then(|h| h.world.actors.get(a.actor_idx))
-            .and_then(|actor| actor.pose_frame.as_ref())
-            && !pose.bone_outputs.is_empty()
+        // The drawn pose (`World::battle_draw_pose_frame`): under the smooth
+        // camera the parts step on the camera's phase, as the native
+        // window's posed overrides do.
+        let host = self.scene_host.host();
+        let lerped = host.and_then(|h| h.world.battle_draw_pose_frame(a.actor_idx));
+        if let Some(pose) = lerped.or_else(|| {
+            host.and_then(|h| h.world.actors.get(a.actor_idx))
+                .and_then(|actor| actor.pose_frame.as_ref())
+        }) && !pose.bone_outputs.is_empty()
         {
             let mut out = Vec::with_capacity(pose.bone_outputs.len() * 6);
             for (t, r) in &pose.bone_outputs {
@@ -390,13 +397,10 @@ impl LegaiaRuntime {
         // Positions in the placement frame (`T(F pos)`,
         // `battle_afterimage::placement_pos`) - the frame the eye comes
         // back in and the page places them in.
-        let body = host.world.actors.get(a.actor_idx).map(|w| {
-            ai::placement_pos([
-                f32::from(w.move_state.world_x),
-                f32::from(w.move_state.world_y),
-                f32::from(w.move_state.world_z),
-            ])
-        });
+        let body = host
+            .world
+            .battle_draw_root(a.actor_idx)
+            .map(|(p, _)| ai::placement_pos(p));
         let mut out = Vec::new();
         for g in legaia_engine_world_views::battle_draws::battle_ghost_draws(&host.world) {
             if g.actor_slot as usize != a.actor_idx {

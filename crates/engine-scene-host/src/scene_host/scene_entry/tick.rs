@@ -28,7 +28,11 @@ impl SceneHost {
                     return false;
                 };
             log::info!("scene transition parked behind the streaming actor: {request:?}");
-            self.world.scene_transition_hold = Some(SceneTransitionHold::new(request));
+            let mut hold = SceneTransitionHold::new(request);
+            if !self.world.toggles.skip_load_holds {
+                hold.stream_vsyncs = self.departure_chunk_vsyncs(&hold.request);
+            }
+            self.world.scene_transition_hold = Some(hold);
         }
         self.world.pending_named_scene_transition = None;
         while self.world.take_world_map_transition().is_some() {}
@@ -67,6 +71,80 @@ impl SceneHost {
             }
         }
         false
+    }
+
+    /// Vsyncs the streaming actor's state-2 chunk read keeps the CD queue
+    /// busy on a departure to `request`'s scene: the chunk is raw TOC entry
+    /// `define + 3` (`DAT_8007B768 + 3`), the fourth of the destination's
+    /// extraction block, read at
+    /// [`legaia_engine_field::scene_transition_actor::CHUNK_SECTORS_PER_VSYNC_X100`].
+    /// `0` for a destination the index cannot place.
+    ///
+    /// REF: FUN_80021934 (state 2 `0x800219BC`, states 1 / 3 `0x800219FC`)
+    fn departure_chunk_vsyncs(
+        &self,
+        request: &legaia_engine_field::scene_transition_actor::HeldTransition,
+    ) -> u32 {
+        use legaia_engine_field::scene_transition_actor::{HeldTransition, chunk_stream_vsyncs};
+        let name = match request {
+            HeldTransition::Named(n, ..) => Some(n.clone()),
+            HeldTransition::Portal(_, slot) => match self.world.world_map.entity_configs.get(usize::from(*slot)) {
+                Some(
+                    legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::OverworldPortal {
+                        scene_name,
+                        ..
+                    },
+                ) => Some(scene_name.clone()),
+                _ => None,
+            },
+        };
+        name.and_then(|n| self.index.block_range_extraction(&n))
+            .and_then(|(start, _)| self.index.entries().get(start as usize + 3))
+            .map_or(0, |e| chunk_stream_vsyncs(e.size_sectors))
+    }
+
+    /// Arm the field MAIN INIT hold behind a committed door
+    /// ([`legaia_engine_core::world::World::field_init_hold`]): the scene is
+    /// loaded and nothing of it runs, under a black frame, for the vsyncs
+    /// retail spends in game mode `0x02` loading it. The credits chain holds
+    /// in every mode; an ordinary door only in the retail-faithful mode
+    /// (`WorldToggles::skip_load_holds` off), where its length follows
+    /// whether the door kept the music (`keeps_music`, sound-flag bit 2 as
+    /// the door left it).
+    ///
+    /// REF: FUN_801D6704 (the floor `0x801D7110..0x801D713C`, the BGM poll `0x801D72D4..0x801D731C`)
+    fn arm_door_field_init_hold(&mut self, keeps_music: bool) {
+        self.world.field_init_hold = legaia_engine_system::mode_entry_init::field_init_hold_vsyncs(
+            self.world.audio.credits_latch,
+            self.world.toggles.skip_load_holds,
+            keeps_music,
+        );
+    }
+
+    /// Arm the field MAIN INIT hold of a battle's return to the field, in the
+    /// retail-faithful mode only: the scene's block is read again, and the
+    /// hold follows its size
+    /// ([`legaia_engine_system::mode_entry_init::battle_return_hold_vsyncs`]).
+    ///
+    /// REF: FUN_801D6704 (the return arm, `_DAT_8007B8B8 == 2`)
+    fn arm_battle_return_field_init_hold(&mut self) {
+        let sectors = self
+            .index
+            .block_range_extraction(&self.world.active_scene_label)
+            .map_or(0, |(start, end)| {
+                self.index
+                    .entries()
+                    .iter()
+                    .skip(start as usize)
+                    .take(end.saturating_sub(start) as usize)
+                    .map(|e| e.size_sectors)
+                    .sum()
+            });
+        self.world.field_init_hold =
+            legaia_engine_system::mode_entry_init::battle_return_hold_vsyncs(
+                self.world.toggles.skip_load_holds,
+                sectors,
+            );
     }
 
     /// The exit fade of the overworld entrance at entity `slot`, on the
@@ -198,6 +276,15 @@ impl SceneHost {
                 log::info!("field: post-battle return re-ran the scene-entry script");
             }
         }
+        if was_battle
+            && matches!(
+                self.world.mode,
+                legaia_engine_mode::mode::SceneMode::Field
+                    | legaia_engine_mode::mode::SceneMode::WorldMap
+            )
+        {
+            self.arm_battle_return_field_init_hold();
+        }
         self.world
             .materialize_actor_spawns(legaia_engine_core::world::FIELD_SPAWN_START_SLOT);
         // Field-VM op-0x44 SPAWN_RECORD: resolve each queued request against
@@ -298,6 +385,7 @@ impl SceneHost {
             // scene somebody actually walked into.
             self.world.arm_arrival_facing(dir);
             self.set_entry_seat_tile(entry_x, entry_z);
+            let keeps_music = self.world.keeps_audio_across_field_init();
             if is_world_map_scene(&name) {
                 self.enter_world_map_scene(&name)?;
             } else {
@@ -318,10 +406,7 @@ impl SceneHost {
             // record - this is how the opening chain's `map01` fly-in and the
             // natural `town01` opening launch.
             self.spawn_arrival_trigger_record(entry_x, entry_z);
-            if self.world.audio.credits_latch {
-                self.world.field_init_hold =
-                    legaia_engine_system::mode_entry_init::CREDITS_FIELD_INIT_HOLD_VSYNCS;
-            }
+            self.arm_door_field_init_hold(keeps_music);
             return Ok(SceneTickEvent::SceneEntered { name });
         }
         // GAP-1: overworld-portal scene transition. The world-map entity SM
@@ -426,6 +511,7 @@ impl SceneHost {
                 }
                 self.world.arm_arrival_facing(dir);
                 self.set_entry_seat_tile(entry_x, entry_z);
+                let keeps_music = self.world.keeps_audio_across_field_init();
                 if is_world_map_scene(&name) {
                     self.enter_world_map_scene(&name)?;
                 } else {
@@ -434,6 +520,7 @@ impl SceneHost {
                 self.world.seat_player_at_tile(entry_x, entry_z);
                 self.world.face_player_sector(dir);
                 self.spawn_arrival_trigger_record(entry_x, entry_z);
+                self.arm_door_field_init_hold(keeps_music);
                 return Ok(SceneTickEvent::SceneEntered { name });
             }
             // The config row is gone (a host installed the event by hand, or

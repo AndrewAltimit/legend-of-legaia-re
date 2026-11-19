@@ -1050,6 +1050,31 @@ overlay's `FUN_801D688C` (21 callers): Cross pushes `0x36`, Circle `0x37`, a ste
 only for Load and Save, so its first five rows sound the bare `0x36`. The content
 lists run the kernel below, whose confirm is `0x20`.
 
+**When a blip sounds.** Filmed on both sides (retail: the walk film's cue-ring column; engine: a
+`play-window` child of the comparison corpus with `LEGAIA_DIAG_SFX_LOG`, its drive's presses taken
+at once up to the state, `LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL`, and the film's on the retail pipeline
+after), each press's cue lands this many vsyncs after it:
+
+| Press | Retail | Engine, retail-faithful mode | Engine, default |
+|---|---|---|---|
+| Up / Down on the pause root, a shop's root (`0x21`) | `3` | `3` | `0` |
+| Cross into a screen (`0x36`), Circle out (`0x37`) | `2` | `2` | `0` |
+| Up / Down / Left / Right on the Save grid (`0x21`), its Circle (`0x37`) | `2` | `2` | `0` |
+| Triangle on the field (the open, `0x20`) | `4` | `2` | `0` |
+
+Retail's screens run a frame a vsync and read the word the frame before latched (`FUN_8001822C`
+at the body's end), so a press reaches them two vsyncs on. The picker `FUN_801D688C` tests the
+confirm and cancel on that frame's edge word `_DAT_8007B874` (`0x801D68B0`) and the step on the
+cursor word `_DAT_8007BB84` (`0x801D6914`), which the window kernel `FUN_80031D00` rebuilds from
+`_DAT_8007B874` and the auto-repeat at its top (`0x80031D48..0x80031DA8`). Every screen handler
+calls the picker before the kernel (`0x801D6BA8`, then `0x801D6D1C`, in `0x801D6B20`), so a step
+reads the frame before's word, a vsync later than a confirm. The Save grid steps on the frame's
+own word. Port: `World::screen_edge` (`InputState::retail_screen_edge`) in the retail-faithful
+mode, for the pause menu, its sub-screens and the menu-overlay screens on both hosts
+(`BootSession::pause_menu_edge`, `MenuRuntime::step_field_session`); the default takes the press
+on its tick, the better experience. The open is the field's accept, two vsyncs behind its press
+on the field's own pipeline; retail's further two are not traced.
+
 The four apply screens sound their own cue. As an item lands or a spell is cast,
 each overwrites the pick with `0` and pushes `0x25`: the single-target apply at
 `0x801D84B8`, the all-party apply at `0x801D8120`, the group cast at `0x801D9368`

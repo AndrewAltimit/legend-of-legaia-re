@@ -235,6 +235,10 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_PARTY_SPD"] = str(a.party_spd)
     if a.monster_pick:
         env["LEGAIA_MONSTER_PICK"] = "1"
+        # A pick played rounds on from the state: keep its RAM at the cast
+        # begin, which the engine half reads clocks off the state cannot give
+        # ([`recording_cast_backdrop_yaw`]).
+        env.setdefault("LEGAIA_RAM_AT", "0")
         if a.cast_queue:
             env["LEGAIA_CAST_QUEUE"] = a.cast_queue
     if a.physical:
@@ -482,6 +486,51 @@ def state_cost_ring(out: Path) -> str | None:
     return ",".join(entries) + f";{cursor}"
 
 
+def ring_with_inflight_push(out: Path, seed: str) -> str | None:
+    """The gate's cost ring (`LEGAIA_BATTLE_COST_RING`, the still's seat: the
+    state's ring) with the push of the frame the state was saved inside.
+
+    A save state stands inside a frame: its pass has run, its frame end has
+    not, so the state's ring lacks that pass's push. The recording's first
+    frame-counter bump past the state's (`gp+0x480`, `0x8007B798`) is that
+    frame end, and its `cost` row the entry it pushed. The engine's gate tick
+    is the same pass, but the seed lands after it and overwrote its push, so
+    every entry of the film's ring aged out a pass later than retail's:
+    Ironhead's step fell from `3` to `2` a pass after retail's, and its clip
+    cursors ran `8` short from there. `None` where the state, the recording
+    or the seed cannot be read, or the seed is not the state's ring. A harness
+    seat."""
+    ram = state_ram(read_kv(out / "retail" / "manifest.txt").get("sstate", ""))
+    if ram is None:
+        return None
+    try:
+        e, cur = seed.split(";")
+        entries = [int(x) for x in e.split(",")]
+        cursor = int(cur) & 0xF
+    except ValueError:
+        return None
+    own = [max(int.from_bytes(ram[0x84098 + 2 * i:0x84098 + 2 * i + 2], "little", signed=True), 0)
+           for i in range(16)]
+    if len(entries) != 16 or entries != own or cursor != ram_u32(ram, 0x8007B758) & 0xF:
+        return None
+    frame = ram_u32(ram, 0x8007B798)
+    try:
+        rows = list(csv.DictReader((out / "retail" / "meta.csv").open()))
+    except OSError:
+        return None
+    for r in rows:
+        try:
+            if int(r["frame"]) != frame:
+                pushed = int(r["cost"])
+                break
+        except (KeyError, ValueError):
+            return None
+    else:
+        return None
+    entries[cursor] = pushed
+    return ",".join(map(str, entries)) + f";{(cursor + 1) & 0xF}"
+
+
 def state_creature_restage(out: Path) -> bool:
     """Whether the recording's state holds a stage bump on the bare creature
     seat (`+0x1DC` bit 0 of actor `(&DAT_801C9370)[7]`): an earlier cast of the
@@ -618,6 +667,25 @@ def state_rand_word(out: Path) -> int | None:
     if ram is None:
         return None
     return ram_u32(ram, 0x80009010)
+
+
+def state_yaw_counter(out: Path) -> int | None:
+    """The action yaw counter `ctx[+0x6DA]` in the state's own RAM, for a
+    `--physical` film's `LEGAIA_FILM_YAW`. Case 6 and the Done band frame
+    from `counter - heading`, and the counter drifts `4 * step / 3` a pass
+    from whatever rung last stored it, so a replay that reached the gate on
+    other passes carries another word: `battle_dohaty_nova_v2_scythe_wind`'s
+    replay entered arm 4 on `579` where the state holds `647`, and its Done
+    band stood `66` yaw units off retail's. Seated at the gate, the two
+    counters leave the state's instant together. A harness seat (lane A)."""
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    ram = state_ram(manifest.get("sstate", ""))
+    if ram is None:
+        return None
+    ctx = ram_u32(ram, 0x8007BD24)
+    if not RAM_BASE <= ctx < RAM_TOP - 0x800:
+        return None
+    return ram_u32(ram, ctx + 0x6DA) & 0xFFFF
 
 
 def state_strike_queue(out: Path) -> str | None:
@@ -1083,6 +1151,39 @@ def recording_first_state(out: Path) -> int | None:
         return None
 
 
+def recording_cast_backdrop_yaw(out: Path) -> int | None:
+    """The backdrop's slot-1 angle retail's screen showed at the cast begin.
+
+    `0x800891D2` winds `step >> 1` a battle pass from boot while the stage
+    keeps object 1 (`0x8007B64B`; `garmel`'s cave mist, `nilboa`'s horizon
+    ribbon), so a `--monster-pick` recording that plays rounds to its pick
+    meets the cast on another angle than the state's: Zenoir's Fire Claw from
+    `battle_garmel_zenoir_strike` opens on `942` where the state held `403`.
+    Read off the recording's RAM image at the cast begin (`LEGAIA_RAM_AT=0`,
+    `ram_<cast>.bin`), less the two passes the display lags it by. `None`
+    without that image or on a stage that drops the object.
+    """
+    done = read_kv(out / "retail" / "done.txt")
+    try:
+        cast = int(done["cast"])
+        ram = (out / "retail" / f"ram_{cast:05d}.bin").read_bytes()
+    except (KeyError, ValueError, OSError):
+        return None
+    if len(ram) < 0x0020_0000 or ram[0x7B64B] == 0:
+        return None
+    yaw = int.from_bytes(ram[0x891D2:0x891D4], "little")
+    step = 2
+    try:
+        with open(out / "retail" / "meta.csv", newline="") as f:
+            for row in csv.DictReader(f):
+                if int(row["vsync"]) >= cast:
+                    step = int(row["step"])
+                    break
+    except (OSError, KeyError, ValueError):
+        pass
+    return (yaw - 2 * (step >> 1)) & 0xFFFF
+
+
 def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     """One engine recording: `(ran, frames, the child carried the step pin)`."""
     kept = child_cmd(a, out)
@@ -1136,6 +1237,12 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
             and not clip_gated and not a.played_queue
             and (q := state_strike_queue(out))):
         env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
+    # The backdrop's slot-1 angle at the cast begin, off the recording's RAM
+    # image there: the child holds the state's until the cast begins, and a
+    # recording that played rounds to its pick met the cast on another
+    # angle ([`recording_cast_backdrop_yaw`]). A harness seat.
+    if "LEGAIA_BATTLE_BACKDROP_YAW" in env and (yaw := recording_cast_backdrop_yaw(out)) is not None:
+        env["LEGAIA_BATTLE_BACKDROP_YAW"] = str(yaw)
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
         env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION"] = "1"
         # The rects are the state's own instant, the recording's first row:
@@ -1199,6 +1306,8 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     ring = state_cost_ring(out)
     if ring and "LEGAIA_BATTLE_COST_RING" not in env:
         env["LEGAIA_FILM_COST_RING"] = ring
+    elif "LEGAIA_BATTLE_COST_RING" in env and (seated := ring_with_inflight_push(out, env["LEGAIA_BATTLE_COST_RING"])):
+        env["LEGAIA_BATTLE_COST_RING"] = seated
     cyclers = state_stage_cyclers(out)
     if cyclers:
         env["LEGAIA_SEAT_STAGE_CYCLERS"] = cyclers
@@ -1284,6 +1393,8 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     if (a.physical and not (a.rand_at or a.rand_track or a.no_state_rand or a.strike_deal)
             and (w := state_rand_word(out)) is not None):
         env["LEGAIA_FILM_RAND"] = str(w)
+    if a.physical and not a.no_state_yaw and (y := state_yaw_counter(out)) is not None:
+        env["LEGAIA_FILM_YAW"] = str(y)
     # A spell film enters the cast on the replay's own stream, whose draws
     # before the cast are not retail's: seat retail's word on the cast's
     # begin key unless another rand seat or `--no-cast-rand` says otherwise.
@@ -1318,6 +1429,12 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         yaws = retail_yaw_coins(out)
         if yaws:
             env["LEGAIA_STRIKE_DEAL_YAW"] = ",".join(yaws)
+    elif coins := retail_track_coins(out):
+        # Without a deal the track coin is still a draw the replay's stream
+        # makes on another word, and case 8's dead-target yaw reads it: Death
+        # Game's Done band framed its victim half a turn from retail's. Dealt
+        # from the recording's `coin` column (lane A seat, a harness seat).
+        env["LEGAIA_FILM_COIN"] = ",".join(coins)
     if a.gpu_cost_step:
         env["LEGAIA_BATTLE_GPU_COST"] = "1"
     # The recordings are PCSX-Redux's, and so is the engine's default CD
@@ -1592,6 +1709,9 @@ def main() -> int:
     ap.add_argument("--no-state-rand", action="store_true",
                     help="--physical: leave the world rand() stream on the replay's own draws at the gate "
                          "(default without --strike-deal: the state's seed word 0x80009010, LEGAIA_FILM_RAND)")
+    ap.add_argument("--no-state-yaw", action="store_true",
+                    help="--physical: leave the action yaw counter ctx[+0x6DA] on the replay's own at the gate "
+                         "(default: the state's word, LEGAIA_FILM_YAW)")
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")

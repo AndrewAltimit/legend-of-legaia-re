@@ -215,6 +215,7 @@ impl Camera {
                 self.zone.prev_player = None;
             }
             self.zone.prev_scripted = scripted;
+            self.zone.script_view = scripted && self.mode == CameraMode::Follow;
             if !scripted && self.mode == CameraMode::Follow {
                 self.zone_follow_tick(world, ease_dt);
             } else {
@@ -236,6 +237,7 @@ impl Camera {
             return;
         }
 
+        self.zone.script_view = false;
         // A world without field terrain (unit worlds, the ramp oracles):
         // camera-register zone ramps (field-VM op `0x43` sub-3..6) own four
         // of these ten axes while the player stands in an authored zone. The
@@ -267,6 +269,49 @@ impl Camera {
 }
 
 impl Camera {
+    /// How far a frame **drawn** at `lead` has carried each camera global
+    /// past the pose the game frame stored: the in-flight op-`0x45` glide's
+    /// move to the pose its next game frame stores, scaled by how far into
+    /// the frame the draw falls. Add it to [`Self::globals`]; all zeros
+    /// with no glide in flight or a [`DrawLead::NONE`].
+    ///
+    /// Retail's mover `FUN_801DC0BC` steps once a game frame,
+    /// `t = min(t + DAT_1F800393, d)`, so a glide moves a whole frame step
+    /// at a time and stands still on the vsyncs between: at the field's
+    /// step `2..4` an authored ease draws at 15..30 poses a second. The
+    /// smooth camera (`WorldToggles::smooth_camera`) draws the vsyncs
+    /// between on the line to the next stored pose, which the mover fixes
+    /// in advance: its pose at `t + dt` is the pose it will store if no beat
+    /// re-arms it (a beat that does re-arms from the stored pose, never from
+    /// this one). The stored poses are retail's integers and the frames
+    /// between land on fractions of a unit, so a slow pan whose angle moves
+    /// a unit or two a frame does not stutter on the integer grid either.
+    /// Nothing here writes the camera: the simulation, the `rand()` stream
+    /// (the shake draws stay the mover tick's) and every reader of
+    /// [`Self::globals`] keep the stored pose. Focus Y is left alone, as the
+    /// mover leaves it ([`CameraMover::write_globals`]); angles move on the
+    /// mover's own linear 12-bit line, which takes no short arc, so a glide
+    /// across `0` / `4096` sweeps the way retail's does.
+    pub fn led_delta(&self, lead: DrawLead) -> [f32; AXIS_COUNT] {
+        let mut out = [0.0; AXIS_COUNT];
+        if lead.phase <= 0.0 || lead.dt <= 0 {
+            return out;
+        }
+        let Some(mv) = self.mover.as_ref() else {
+            return out;
+        };
+        let now = mv.values();
+        let mut ahead = mv.clone();
+        ahead.tick(lead.dt);
+        let next = ahead.values();
+        for (k, o) in out.iter_mut().enumerate() {
+            if k != legaia_engine_camera::camera_mover::FOCUS_Y_AXIS {
+                *o = (next[k] - now[k]) as f32 * lead.phase;
+            }
+        }
+        out
+    }
+
     /// Drive the cinematic motion script for one tick. Optional layer above
     /// [`Camera::tick`] - engines that want to pre-bake camera paths upload
     /// motion-VM bytecode and call this each frame.

@@ -449,4 +449,60 @@ impl LegaiaRuntime {
             legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed(rtmd, &offsets);
         mesh.positions.iter().flatten().copied().collect()
     }
+
+    /// The flat colour stream of a prop carrying light-source rows
+    /// ([`Self::field_mesh_posed_lit`]) **posed at pose key `frame`** and
+    /// shaded at the draw rotation `(rot_x, rot_y, rot_z)` under the world's
+    /// live field light: the lit rows' normals turn with each bone, so a
+    /// swinging door's shade follows its swing. The native window re-shades
+    /// every off-rest pose it rebuilds the same way (`shade_lit_rows` in
+    /// `field_render::prop_animation`). Same vertex order as
+    /// [`Self::field_mesh_posed_frame_positions`]; empty when the pose cannot
+    /// resolve, and the page then keeps the colours it has.
+    pub fn field_mesh_posed_frame_lit_rgba(
+        &self,
+        slot: u32,
+        anim_id: u32,
+        frame: u32,
+        rot_x: u32,
+        rot_y: u32,
+        rot_z: u32,
+    ) -> Vec<u8> {
+        let s = slot as usize;
+        let anim = anim_id.min(u8::MAX as u32) as u8;
+        let Some(light) = self
+            .scene_host
+            .host()
+            .map(|h| h.world.presentation.field_light)
+        else {
+            return Vec::new();
+        };
+        let Some(&res_idx) = self.field.as_ref().and_then(|f| f.env_tmds.get(s)) else {
+            return Vec::new();
+        };
+        let key = PropPoseKey::from_i32(frame as i32);
+        let Some(offsets) = self.frame_bone_offsets(anim, res_idx, key) else {
+            return Vec::new();
+        };
+        let Some(rtmd) = self.res().and_then(|res| res.tmds.get(res_idx)) else {
+            return Vec::new();
+        };
+        let (mut mesh, mut flat, lit) =
+            legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed_lit(rtmd, &offsets);
+        if legaia_engine_field::field_lit_mesh::has_lit_rows(&lit) {
+            let rot = legaia_engine_field::field_lit_mesh::draw_rotation(
+                rot_x as u16,
+                rot_y as u16,
+                rot_z as u16,
+            );
+            legaia_engine_field::field_lit_mesh::shade_lit_rows_rgba(
+                &mut mesh.colors,
+                &mut flat,
+                &lit,
+                &light,
+                &rot,
+            );
+        }
+        flat
+    }
 }

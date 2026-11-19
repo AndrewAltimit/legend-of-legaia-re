@@ -63,15 +63,25 @@ fn place_point_composes_rx_ry_rz_then_translates() {
     assert!((y[2] - (-v[0] * s + v[2] * c + 7.0)).abs() < 1e-3);
 }
 
-/// `slti v0,v0,0xa0` at `0x8001B1C0`: a view depth of `0xA0` draws, one
-/// below it does not, and an origin behind the eye never does.
+/// `slti v0,v0,0xa0` at `0x8001B1C0`: a retail view depth of `0xA0` draws,
+/// one below it does not, and an origin behind the eye never does. The port's
+/// clip `w` is retail's depth over the `6x` world scale.
 #[test]
 fn placed_near_reject_is_retails_case5_threshold() {
-    assert!(!placed_origin_near_culled(160.0));
+    assert!(!placed_origin_near_culled(160.0 / 6.0));
     assert!(!placed_origin_near_culled(2000.0));
-    assert!(placed_origin_near_culled(159.5));
+    assert!(placed_origin_near_culled(159.5 / 6.0));
     assert!(placed_origin_near_culled(0.0));
-    assert!(placed_origin_near_culled(-423.0));
+    assert!(placed_origin_near_culled(-423.0 / 6.0));
+}
+
+/// `vozz`'s Genesis Tree close-up: retail holds the sky shell's actor at view
+/// depth `+0x34 = 344` and draws it; the port's camera puts its origin at clip
+/// `w = 57.4`. The `1x` depth below `0xA0` is not a reject.
+#[test]
+fn the_near_reject_compares_retail_view_units() {
+    assert!(!placed_origin_near_culled(57.4));
+    assert!(!placed_origin_near_culled(344.0 / 6.0));
 }
 
 #[test]

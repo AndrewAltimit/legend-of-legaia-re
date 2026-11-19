@@ -3398,6 +3398,15 @@ actor it belongs to.
 A spawned cutscene record keeps running past its boxes: it is not a touched
 context, and its boxes are followed by `0x48` or `0x24`.
 
+**A continue runs on the frame the box is seen done.** The SM's box-done arm walks the
+cursor past the text, clears `+0x9C`, raises the box-close byte `+0x62 = 0x20` and takes
+`FUN_80038050`'s verdict (`0x80039C5C..0x80039C8C`); a continue branches to `0x80039D64`,
+whose op loop runs at once because `+0x9C` now reads `0`. A chest's item-get cue `0x2C`
+behind its first box therefore keys on the confirm's own frame, the same vsync the close
+byte reads `0x20` (walk film from `chest_open_trace_pcsx`). Both port runners do the same
+(`World::step_prop_interaction`, `World::drive_inline_dialogue`); they had waited a game frame,
+and the cue keyed two vsyncs late.
+
 Two ops are easy to mistake for a dialog opener and are not: `0x3F` is the
 named scene-change, and `4C 53` / `4C 54` (`FUN_801D65D8`) are polls a script
 waits on ([the wait join](#the-wait-join-at-0x801e28c4)), not an open.

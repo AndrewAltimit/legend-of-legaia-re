@@ -7,7 +7,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(
     name = "legaia-engine",
-    version,
+    version = legaia_release_version::VERSION,
     about = "From-scratch engine port of Legend of Legaia. Bring your own disc: every \
              subcommand that reads game data takes a Legend of Legaia (USA) .bin via --disc, or an \
              extracted/ tree produced by legaia-extract.",
@@ -1128,7 +1128,9 @@ pub(crate) enum Cmd {
         /// e.g. `--key-script "40:L,120:P,140:Down,160:Enter"`. Each entry
         /// presses KEY and releases it on that same world tick, in the order
         /// listed. KEY is a physical key name (letters `A`-`Z`, `Up`/`Down`/
-        /// `Left`/`Right`, `Enter`, `Space`, digits, `F1`-`F10`, `F12`, `/`).
+        /// `Left`/`Right`, `Enter`, `Space`, digits, `F1`-`F10`, `F12`, `/`,
+        /// `Esc`). `Esc` closes the hotkey panel or raises the quit prompt,
+        /// and never quits a scripted run.
         ///
         /// This reaches what `--pad-script` cannot: `--pad-script` writes the
         /// pad word and the keyboard handler never runs, but every minigame

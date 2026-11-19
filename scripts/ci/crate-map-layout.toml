@@ -98,7 +98,7 @@ blurb = "The foundation: sector reader, the PROT archive, LZS, and one small cra
 track = "preservation"
 crates = [
     "iso", "prot", "lzs", "bytes", "tim", "tmd", "vab", "seq", "xa", "mdec",
-    "mes", "anm", "mdt", "art", "font", "save", "gamedata", "cheats", "app-theme",
+    "mes", "anm", "mdt", "art", "font", "save", "gamedata", "cheats", "app-theme", "release-version",
 ]
 
 # --- Per-crate overrides --------------------------------------------------
@@ -117,6 +117,7 @@ pcsx-redux = { track = "tooling" }
 gamedata = { track = "tooling" }
 cheats = { track = "tooling" }
 app-theme = { track = "tooling" }
+release-version = { track = "tooling" }
 expansion-format = { track = "patcher" }
 
 # --- The three hosts on one engine ----------------------------------------

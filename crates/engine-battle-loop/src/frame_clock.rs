@@ -589,6 +589,33 @@ pub const fn floor_clip_walk_work(prims: u32) -> u16 {
     }
 }
 
+/// Instructions the `"ME"` archive reader `FUN_8002B28C` (with its
+/// channel-delta codec `FUN_8002A9CC`) executes a decoded part-frame: the
+/// anim commit `FUN_8004AD80` decodes a bank record's keyframe stream out of
+/// the side-band slot on every party commit of a staged id `>= 0x10` (`jal
+/// 0x8002B28C` at `0x8004BCC8`). Run in the retail interpreter over
+/// every entry of the `readef.DAT` archives, the reader's instruction count
+/// is `512` per part-frame to within `3%` (Gala's `13`-frame entries
+/// `98k`, Noa's `60`-frame `481k`).
+pub const ME_DECODE_STEPS_PER_PART_FRAME: u32 = 512;
+
+/// The hblanks a bank commit's `"ME"` decode adds to its pass on PCSX-Redux
+/// (two cycles an instruction, `2152` cycles an hblank): `parts * frames`
+/// part-frames at [`ME_DECODE_STEPS_PER_PART_FRAME`]. A `--cd-trace`
+/// recording of Dragon Fangs (`jou_noa_dragon_fangs_super_open`) puts the
+/// first art's commit pass inside the reader for its first `100` hblanks,
+/// ahead of the shout's `CdlSetloc`, and the arts films' art-commit passes
+/// read `60..120` hblanks over their census.
+pub const fn me_decode_work(parts: u32, frames: u32) -> u16 {
+    let c =
+        (parts as u64 * frames as u64 * ME_DECODE_STEPS_PER_PART_FRAME as u64 * 2 + 1076) / 2152;
+    if c > u16::MAX as u64 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
 /// The work a battle frame whose census counts `linked` primitives costs
 /// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks, with
 /// [`LINKED_BACKDROP_WORK`] while the backdrop pair or the grid draws.
@@ -650,6 +677,37 @@ pub const ARTS_SHOUT_PARKED_POLL_HBLANKS: u32 = 31;
 /// `0.66` vsyncs into the pass after the cue, which runs `7` vsyncs).
 pub const ARTS_SHOUT_SEEK_POLL_HBLANKS: u32 = 983;
 
+/// Vsyncs an arts shout's polls run past its span, counted from its
+/// `CdlReadS`: the stop watch `FUN_8003D764` polls `GetlocL` / `GetStat` until
+/// the head passes the end sector the player set `span * 150 / 60` sectors on
+/// (`0x8003D698..0x8003D6D8`), then issues the `Pause`. `--cd-trace`
+/// recordings of Gala's Chain (`jou_gala_chain_open`, span `48`) and Sonic
+/// Javelin (`ropeway_noa_sonic_javelin_open`, span `44`) read `62.3` and
+/// `58.2` vsyncs from `CdlReadS` to `Pause`, both `14` past the span; the
+/// seek's `3.24` vsyncs come before the read. [`XA_READ_TAIL_VSYNCS`] is the
+/// drive word's later clear, counted from the cue.
+pub const ARTS_SHOUT_READ_TAIL_VSYNCS: u16 = 14;
+
+/// What a frame an arts shout's polls load costs over the work of the same
+/// pass unloaded, in thousandths. The same two recordings' fully polled
+/// frames run `1851..1930` hblanks (eight vsyncs) where the passes beside the
+/// line cost `624..671`: `2.85` to `3.04`, median `2.97`.
+/// [`XA_POLL_WORK_RATIO_MILLI`] reads lower because it divides by the cost
+/// less the CD interrupt spans, which here is `511..577`, under the
+/// unloaded passes' own work: the exception exits are the poll's too.
+pub const ARTS_SHOUT_POLL_WORK_RATIO_MILLI: u32 = 2970;
+
+/// What a frame of `work` hblanks costs under an arts shout's polls
+/// ([`ARTS_SHOUT_POLL_WORK_RATIO_MILLI`]).
+pub const fn arts_shout_polled_work_cost(work: u16) -> u16 {
+    let c = (work as u32 * ARTS_SHOUT_POLL_WORK_RATIO_MILLI + 500) / 1000;
+    if c > u16::MAX as u32 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
 /// What a frame of `work` hblanks costs when the clip's polls open `wait`
 /// hblanks into it, `polled` pricing the work they load: the work before the
 /// first poll runs at full speed, the rest under the polls' share.
@@ -658,6 +716,21 @@ pub fn xa_partly_polled_cost(wait: u32, work: u16, polled: impl Fn(u16) -> u16) 
         Ok(w) if w < work => w.saturating_add(polled(work - w)),
         _ => work,
     }
+}
+
+/// What a frame the polls load from its opening costs when the read ends
+/// `left` vsyncs into it: the stop watch's sequencer `FUN_8003D764` issues the
+/// `Pause` once the head passes the end sector, and the frame's work past that
+/// point runs at full speed. `loaded` is the frame's cost polled throughout,
+/// `work` its own work; the share of `work` done inside the first `left`
+/// vsyncs is `left / loaded` of it.
+pub fn xa_poll_tail_cost(left: u32, work: u16, loaded: u16) -> u16 {
+    let left = left * HBLANKS_PER_VSYNC;
+    if loaded <= work || u32::from(loaded) <= left {
+        return loaded;
+    }
+    let done = left * u32::from(work) / u32::from(loaded);
+    (left + (u32::from(work) - done)).min(u32::from(u16::MAX)) as u16
 }
 
 /// Hblanks one after-image ghost adds to a frame: the draw tick's walk
@@ -713,7 +786,86 @@ pub const GHOST_TRIANGLE_COST_MILLI: u32 = 92;
 /// burning body's puffs), in thousandths. Caruban's Fire Breath on a lone
 /// Vahn runs its pool from `0` to `50` children with the body and its ghosts
 /// unchanged, and its frames' cost follows at `1.6` a child (`R^2` `.71`).
+/// The action-state table's price, which counts no link of the child's; the
+/// census line prices the walker's branches instead ([`effect_walk_cost`]).
 pub const EFFECT_POOL_CHILD_COST_MILLI: u32 = 1600;
+
+/// CPU cycles in one hblank on PCSX-Redux's clock: `3413` video cycles a
+/// scanline, `3413 * 7 / 11` CPU cycles (psx-spx).
+pub const CYCLES_PER_HBLANK: u32 = 2172;
+
+/// What the effect walker `FUN_801E0080` spends on each branch it takes, in
+/// PCSX-Redux CPU cycles (two an instruction, one more a load or store, the
+/// GTE free). Counted, not fitted to the films: the retail walker run in
+/// `retail-exec` over `3600` random walks at steps `1..=4`, the projector
+/// `FUN_800195A8` and the ordering-table link `FUN_8003D2C4` included, against
+/// the port's pool counting the branches each walk took
+/// (`legaia_engine_vm::effect_vm::WalkWork`), fits to `1.2` hblanks rms
+/// (`the_walker_costs_its_branches`). The branches:
+///
+/// - a **sweep** of the first pass, which visits all `32` master and `128`
+///   child slots whatever they hold (`0x801E0104..0x801E06CC`), once per vsync
+///   of the frame step while anything is live;
+/// - an active **master** visit, a **spawn** record consumed, a **child** on
+///   its countdown branch (with its motion step), a **frame advance** (with
+///   its motion step);
+/// - an **overrun** advance: retiring a child zeroes its wait and count but
+///   the advance loop tests the wait alone, so retail steps on through the
+///   `efect.dat` bytes after the batch until a delay byte reads non-zero
+///   (`EffectCatalog::anim_overrun`); the port does not step them, but they
+///   cost the frame;
+/// - a **drawn** child of the second pass: one `POLY_FT4` built, projected
+///   and linked a child, no cull (`0x801E06D8..0x801E09C0`).
+pub const EFFECT_WALK_SWEEP_CYCLES: u32 = 4243;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_MASTER_CYCLES: u32 = 108;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_SPAWN_CYCLES: u32 = 179;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_CHILD_WAIT_CYCLES: u32 = 157;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_ADVANCE_CYCLES: u32 = 166;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_OVERRUN_CYCLES: u32 = 149;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_DRAWN_CYCLES: u32 = 652;
+
+/// The branches one battle frame's walks took, as [`effect_walk_cost`]
+/// prices them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EffectWalkCounts {
+    pub live_sweeps: u32,
+    pub masters: u32,
+    pub spawns: u32,
+    pub child_waits: u32,
+    pub advances: u32,
+    pub overruns: u32,
+    pub drawn: u32,
+}
+
+/// What one battle frame's effect walk costs over the census line, in
+/// hblanks. An idle pool's walk (one call, one early-out sweep) is in the
+/// line's base already, so the first live sweep is too; and the census
+/// prices each drawn child's linked `POLY_FT4` at [`LINKED_WORK_MILLI`], so a
+/// drawn child adds only its second-pass work over that.
+pub const fn effect_walk_cost(c: EffectWalkCounts) -> u16 {
+    let sweeps = c.live_sweeps.saturating_sub(1);
+    let link = LINKED_WORK_MILLI * CYCLES_PER_HBLANK / 1000;
+    let drawn = EFFECT_WALK_DRAWN_CYCLES.saturating_sub(link);
+    let cycles = sweeps as u64 * EFFECT_WALK_SWEEP_CYCLES as u64
+        + c.masters as u64 * EFFECT_WALK_MASTER_CYCLES as u64
+        + c.spawns as u64 * EFFECT_WALK_SPAWN_CYCLES as u64
+        + c.child_waits as u64 * EFFECT_WALK_CHILD_WAIT_CYCLES as u64
+        + c.advances as u64 * EFFECT_WALK_ADVANCE_CYCLES as u64
+        + c.overruns as u64 * EFFECT_WALK_OVERRUN_CYCLES as u64
+        + c.drawn as u64 * drawn as u64;
+    let h = (cycles + CYCLES_PER_HBLANK as u64 / 2) / CYCLES_PER_HBLANK as u64;
+    if h > u16::MAX as u64 {
+        u16::MAX
+    } else {
+        h as u16
+    }
+}
 
 /// What one after-image ghost of a body of `triangles` costs a frame
 /// ([`GHOST_TRIANGLE_COST_MILLI`]); [`GHOST_DRAW_COST`] for a body whose

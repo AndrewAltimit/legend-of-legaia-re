@@ -234,23 +234,27 @@ the frame included. On the canvas itself the fill rule below would not hold, sin
 a polygon edge resolves to a blend of partly covered samples. The native renderer
 is single-sample throughout, and the page's enhanced mode keeps its MSAA.
 That framebuffer runs bottom-up, so where a snapped edge lies exactly on a row
-of pixel centres its rasteriser hands the tie to the other row from the window's
-top-left rule: every flat 3D edge drew a row low. The page's vertex stage lifts
-the primitive a sixteenth of a row (`PSX_NATIVE_TIE_ROWS` in
-[`webgl-shaders.js`](../../site/js/webgl-shaders.js)), the smallest step its
-sub-pixel grid keeps, and reads the UV and the Gouraud colour that much lower
-again, so the texel and the shade are the pixel's. The lift also moves the tie of a sloped
-edge that crosses a pixel centre exactly, and of a centre within a sixteenth of a
-row of an edge, which the window's column rule decides: those are the hairline
-pixels the pair still reads. A finer lift is under the page's sub-pixel grid on a
-real GPU and moves nothing; drawing the pass top-down is what would settle both.
-The screen-primitive pass does exactly that: it draws upside down into a copy of
-the frame and flips the copy back (`ScreenPrimPass.drawRuns` in
-[`play-app.js`](../../site/js/play-app.js)), which took the battle intro's shards
-from `2.2%` of a frame in hairlines to the level of the 3D pass's own residue
-([host drift](../tooling/host-drift.md#the-host-pair-run)). The 3D pass keeps the
-lift: its flip would turn every winding, screen-space derivative and frame read
-with it.
+of pixel centres its rasteriser hands the tie to the other side from the window's
+top-left rule: every flat 3D edge drew a row low, and a slanted edge through pixel
+centres, or the seam of a rotated quad's two triangles, gave its pixels to the
+other triangle (a cast's shards in hairlines). So both PSX passes on the native
+target draw upside down into a copy of the frame and flip the copy back, which
+gives every edge the window's rule: the screen primitives
+(`ScreenPrimPass.drawRuns` in [`play-app.js`](../../site/js/play-app.js)) and the
+scene pass (`TmdRenderer.sceneFlip` in
+[`webgl-tmd-assembled-scene.js`](../../site/js/webgl-tmd-assembled-scene.js), a
+`FrameFlip` from [`webgl-psx-target.js`](../../site/js/webgl-psx-target.js)). The
+scene pass's vertex stage mirrors y after every rule that places a corner
+(`u_flip_y` in [`webgl-shaders.js`](../../site/js/webgl-shaders.js)), and its
+fragment stage reads the window position, the facing and the dither row the right
+way up (`fragCoord`, `frontFacing`); the copy carries depth both ways, so the
+passes after it test against the scene's depth. Ambient occlusion resolves onto
+the frame between two flipped halves. A frame drawn the right way up (a copy the
+driver refuses, or `window.__psxFlipScene=false` for a comparison) falls back to
+lifting the primitive a sixteenth of a row (`PSX_NATIVE_TIE_ROWS`), the smallest
+step its sub-pixel grid keeps, with the UV and the Gouraud colour read that much
+lower again; that settles flat edges only
+([host drift](../tooling/host-drift.md#the-host-pair-run)).
 
 At stage scale 1 PSX mode rasterises the GPU's way, which no fragment trick
 at a window-sized target could. The snapped vertices move half a stage pixel

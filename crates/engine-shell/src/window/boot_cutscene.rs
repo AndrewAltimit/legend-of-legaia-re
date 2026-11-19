@@ -324,8 +324,8 @@ impl PlayWindowApp {
         // (`BootSession::pause_menu_edge`, the page's `play_menu_input`
         // twin); the title's screens read the plain edge.
         let mut pressed = self.pad & !self.prev_pad;
-        if matches!(self.boot_ui, BootUiState::FieldMenu { .. }) {
-            pressed = self.session.pause_menu_edge(pressed);
+        if let BootUiState::FieldMenu { sub } = &self.boot_ui {
+            pressed = self.session.pause_menu_edge(pressed, sub.as_ref());
         }
         // The pause menu reads nothing while a window slides (retail's
         // `_DAT_8007BB80`): the shared lock, stepped once per menu frame

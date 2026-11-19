@@ -1,7 +1,7 @@
 {
   "films": {
     "balden_field_route_walk": {
-      "agree": 58,
+      "agree": 150,
       "draws": 150
     },
     "bubu2_field_door_hop": {
@@ -57,7 +57,7 @@
       "draws": 1
     },
     "concnow_field_door_hop": {
-      "agree": 34,
+      "agree": 100,
       "draws": 100
     },
     "concnow_field_door_hop_settled": {
@@ -81,7 +81,7 @@
       "draws": 82
     },
     "doman_field_card_boot": {
-      "agree": 45,
+      "agree": 51,
       "draws": 139
     },
     "drake_castle_to_worldmap": {
@@ -137,7 +137,7 @@
       "draws": 1
     },
     "koin1_field_route_walk": {
-      "agree": 9,
+      "agree": 35,
       "draws": 35
     },
     "koin3_gold_card_guard_talk": {
@@ -149,7 +149,7 @@
       "draws": 20
     },
     "koin6_field_route_walk": {
-      "agree": 13,
+      "agree": 91,
       "draws": 91
     },
     "kor3_field_route_walk": {
@@ -225,11 +225,11 @@
       "draws": 150
     },
     "retock_inn_stay_prompt": {
-      "agree": 10,
+      "agree": 150,
       "draws": 151
     },
     "retock_innkeeper_talk_open": {
-      "agree": 1,
+      "agree": 150,
       "draws": 150
     },
     "retona_field_card_boot": {
@@ -269,7 +269,7 @@
       "draws": 1
     },
     "s2_rimelm_town01": {
-      "agree": 17,
+      "agree": 16,
       "draws": 18
     },
     "s4_rimelm_door_transition": {
@@ -309,7 +309,7 @@
       "draws": 101
     },
     "tower_field_walk": {
-      "agree": 44,
+      "agree": 150,
       "draws": 150
     },
     "town01_field_card_boot": {

@@ -36,7 +36,7 @@
 
 use legaia_engine_camera::psx_camera::FieldCameraView;
 
-use crate::camera::{Camera, CameraWorld};
+use crate::camera::{Camera, CameraWorld, DrawLead};
 use crate::camera_rig::CameraRig;
 
 /// The slice of the world the frame-step rules touch beyond the camera's own
@@ -198,20 +198,35 @@ pub fn camera_after_world_tick<W: FrameStepWorld + ?Sized>(
 ///
 /// REF: FUN_800172C0, FUN_801DC0BC, FUN_801DE084
 pub fn scripted_view(camera: &Camera, target: FieldCameraView) -> FieldCameraView {
+    scripted_view_led(camera, target, DrawLead::NONE)
+}
+
+/// [`scripted_view`] drawn `lead` into the game frame
+/// ([`Camera::led_delta`]): the smooth camera's per-vsync sample of an
+/// in-flight glide. [`DrawLead::NONE`] is [`scripted_view`]; a host draws
+/// through this and hands anything the simulation reads back (the fog
+/// pool's shot) the unled view.
+pub fn scripted_view_led(
+    camera: &Camera,
+    target: FieldCameraView,
+    lead: DrawLead,
+) -> FieldCameraView {
     use crate::camera::CUTSCENE_WORLD_SCALE as S;
     let g = &camera.globals;
-    let angle = |v: i32| v as f32 / 4096.0 * std::f32::consts::TAU;
+    let d = camera.led_delta(lead);
+    let axis = |k: usize| g.0[k] as f32 + d[k];
+    let angle = |k: usize| axis(k) / 4096.0 * std::f32::consts::TAU;
     FieldCameraView {
-        focus: g.focus_world().map(|v| v as f32),
-        pitch: angle(g.0[0]),
-        yaw: angle(g.0[1]),
-        roll: angle(g.0[2]),
-        h: if g.h() > 1 { g.h() as f32 } else { target.h },
+        focus: [-axis(6), axis(7), -axis(8)],
+        pitch: angle(0),
+        yaw: angle(1),
+        roll: angle(2),
+        h: if g.h() > 1 { axis(9) } else { target.h },
         tr_eye: [
-            g.0[3] as f32 / S,
-            g.0[4] as f32 / S,
+            axis(3) / S,
+            axis(4) / S,
             if g.0[5].abs() > 1 {
-                g.0[5] as f32 / S
+                axis(5) / S
             } else {
                 target.tr_eye[2]
             },
@@ -317,5 +332,33 @@ mod tests {
         let v = scripted_view(&cam, target());
         assert_eq!(v.h, 512.0);
         assert_eq!(v.tr_eye[2], 2000.0);
+    }
+
+    /// The unled draw is the stored shot, and a lead moves the drawn shot
+    /// along the glide while the camera itself stays put.
+    #[test]
+    fn a_led_shot_draws_the_glide_between_frames() {
+        let mut camera = Camera::default();
+        let mut mv = legaia_engine_camera::camera_mover::CameraMover::default();
+        mv.arm(
+            [300, 0, 0, 0, 1200, 12000, 0, 0, 0, 512],
+            [300, 400, 0, 0, 1200, 6000, 0, 0, 0, 512],
+            120,
+            1,
+        );
+        mv.tick(40);
+        mv.write_globals(&mut camera.globals.0);
+        camera.mover = Some(mv);
+        let t = target();
+        assert_eq!(
+            scripted_view_led(&camera, t, DrawLead::NONE),
+            scripted_view(&camera, t)
+        );
+        let stored = scripted_view(&camera, t);
+        let led = scripted_view_led(&camera, t, DrawLead { phase: 0.5, dt: 4 });
+        assert!(led.yaw > stored.yaw);
+        assert!(led.tr_eye[2] < stored.tr_eye[2]);
+        assert_eq!(led.pitch, stored.pitch);
+        assert_eq!(scripted_view(&camera, t), stored);
     }
 }

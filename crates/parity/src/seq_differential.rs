@@ -41,6 +41,9 @@ const SPU_BUSY_WORD: u32 = 0x8007_AF38;
 const SEQ_CALC: u32 = 0x8006_2F98;
 const SEQ_INIT: u32 = 0x8006_2410;
 const SEQ_PLAY: u32 = 0x8006_28F0;
+/// `SsSeqSetVol` (`FUN_80064890`): store the pair, and on a playing slot
+/// re-volume its notes (`FUN_80067E9C`).
+const SEQ_SET_VOL: u32 = 0x8006_4890;
 const SEQ_LOCK: u32 = 0x801C_D2B4;
 const SEQ_BITMAP: u32 = 0x801C_D2B8;
 const SEQ_TABLE: u32 = 0x801C_D2C0;
@@ -57,6 +60,21 @@ const MONO_FOLD: u32 = 0x801C_E330;
 const SHADOW_REGS: u32 = 0x801C_E080;
 /// Per open bank, the program table (`0x801CE268 + vab * 4`, read by `FUN_80068B98`).
 const VAB_PROGRAM_TABLES: u32 = 0x801C_E268;
+/// `SsVabOpenHeadSticky` (`FUN_80068D34(hdr, vab, spu_addr)`), the wrapper over the
+/// open core `FUN_80068D94` that skips the SPU allocation.
+const VAB_OPEN_HEAD_STICKY: u32 = 0x8006_8D34;
+/// Per vab id, the open core's in-use byte (`0x801CE368 + vab`, `lbu -0x1C98` off
+/// `0x801D0000` at `0x80068E58`): a set byte refuses the open, `1` is a bank
+/// whose bodies are sent.
+const VAB_IN_USE: u32 = 0x801C_E368;
+/// Where a seated track's VAB header and score are written: main RAM that
+/// `SsSeqCalc` never reaches (the scene heap), below the overlay region.
+const SEAT_RAM: u32 = 0x8014_0000;
+const SEAT_RAM_END: u32 = 0x801C_0000;
+/// The SPU word address a seated bank is opened at (sticky, so nothing is
+/// allocated): the samples the calc keys are mapped onto the port's bank by the
+/// program table, so only the table's own arithmetic depends on it.
+const SEAT_SPU_ADDR: u32 = 0x1010;
 
 /// One sounding voice as the SPU holds it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -134,6 +152,21 @@ impl RetailSide {
     /// Stand the state's sequence on `slot` at the top of its score, on an idle
     /// voice file, with `seq_vol` for the sequence volume.
     pub fn new(ram: &[u8], port: &PortSide, slot: u8, seq_vol: u8) -> Result<Self> {
+        Self::seated(ram, port, slot, seq_vol, None)
+    }
+
+    /// [`RetailSide::new`], with `seat` (a `music_01` entry) installed in place of
+    /// the state's own track: its VAB header opened on the slot's bank through
+    /// retail's `SsVabOpenHeadSticky`, its score opened on the slot through
+    /// `_SsSeqInit`. Every track the disc holds then runs through retail's calc,
+    /// not only the ones a library state was saved under.
+    pub fn seated(
+        ram: &[u8],
+        port: &PortSide,
+        slot: u8,
+        seq_vol: u8,
+        seat: Option<&[u8]>,
+    ) -> Result<Self> {
         let mut cpu = Cpu::new();
         cpu.mem.load(0x8000_0000, ram);
         cpu.regs.r[GP] = 0x8007_B318;
@@ -164,13 +197,18 @@ impl RetailSide {
         spu.set_retail_reverb();
         spu.ram = port.d.spu().ram.clone();
         let rec = cpu.mem.rd32(SEQ_TABLE + u32::from(slot) * 4);
-        let start = cpu.mem.rd32(rec + 4);
-        // `+0x04` stands past the header and the score's first delta.
-        let header = (1..64u32)
-            .map(|back| start - back)
-            .find(|&a| cpu.mem.read(a, 4) == *b"pQES")
-            .context("no pQES ahead of the score start")?;
         let vab = u32::from(cpu.mem.rd8(rec + 0x26));
+        let header = match seat {
+            Some(entry) => seat_track(&mut cpu, vab, entry)?,
+            None => {
+                let start = cpu.mem.rd32(rec + 4);
+                // `+0x04` stands past the header and the score's first delta.
+                (1..64u32)
+                    .map(|back| start - back)
+                    .find(|&a| cpu.mem.read(a, 4) == *b"pQES")
+                    .context("no pQES ahead of the score start")?
+            }
+        };
         let plays = u32::from(cpu.mem.rd8(rec + 0x20));
         cpu.mem.wr32(rec + 0x98, 0);
         expect_return(cpu.call(SEQ_INIT, &[u32::from(slot), vab, header]))?;
@@ -197,6 +235,15 @@ impl RetailSide {
             slot: u32::from(slot),
             vag_addr,
         })
+    }
+
+    /// `SsSeqSetVol(slot, v, v)` (`FUN_80064890`) between two calcs, as the
+    /// game frame's duck makes it.
+    pub fn set_seq_vol(&mut self, v: u8) -> Result<()> {
+        expect_return(
+            self.cpu
+                .call(SEQ_SET_VOL, &[self.slot, u32::from(v), u32::from(v)]),
+        )
     }
 
     /// One vsync: the calc, its writes on the SPU, the samples, `ENVX` back.
@@ -328,6 +375,40 @@ fn pick_cue(port: &PortSide, r: u32, sustained: &mut bool) -> Option<CueKey> {
         vol: 0x7F,
         release_from_7,
     })
+}
+
+/// Write `entry`'s VAB header and score into [`SEAT_RAM`], open the header on
+/// bank `vab` through retail's own open, and return the score's address.
+fn seat_track(cpu: &mut Cpu, vab: u32, entry: &[u8]) -> Result<u32> {
+    let split = legaia_engine_system::chunk_install::owned_bank_offsets(entry)
+        .context("the entry carries no bank and score of its own")?;
+    let head = &entry[split.vab..];
+    anyhow::ensure!(head.len() >= 0x20, "a short VAB header");
+    // `pBAV` header, 128 program records, `ps` x 16 tone records, the VAG table.
+    let ps = usize::from(u16::from_le_bytes([head[0x12], head[0x13]]));
+    let head_len = (0x20 + 0x800 + ps * 0x200 + 0x200).min(head.len());
+    let score = &entry[split.seq..];
+    let at_head = SEAT_RAM;
+    let at_score = (SEAT_RAM + head_len as u32 + 0xF) & !0xF;
+    anyhow::ensure!(
+        at_score + score.len() as u32 <= SEAT_RAM_END,
+        "the track does not fit the seat region"
+    );
+    cpu.mem.load(at_head, &head[..head_len]);
+    cpu.mem.load(at_score, score);
+    cpu.mem.wr8(VAB_IN_USE + vab, 0);
+    expect_return(cpu.call(VAB_OPEN_HEAD_STICKY, &[at_head, vab, SEAT_SPU_ADDR]))?;
+    let opened = cpu.regs.r[2] as i32;
+    anyhow::ensure!(
+        opened == vab as i32,
+        "SsVabOpenHeadSticky refused the bank ({opened})"
+    );
+    // The open leaves the bank at `2`, header only; `SsVabTransBody`
+    // (`FUN_80069170`) moves it to `1` once the bodies are sent, and the program
+    // reads behind every key-on (`FUN_80068B98`) refuse any other value. The
+    // bodies are the port's, already in both SPUs.
+    cpu.mem.wr8(VAB_IN_USE + vab, 1);
+    Ok(at_score)
 }
 
 fn expect_return(s: Stop) -> Result<()> {
@@ -553,6 +634,34 @@ pub struct SeqDifferentialArgs {
     /// Print retail's voice records and both sides' voices at this vsync.
     #[arg(long)]
     pub dump_at: Option<usize>,
+    /// Seat these `music_01` tracks (comma-separated global ids, or `all`) into
+    /// the `--host` state's RAM through retail's own VAB open and `_SsSeqInit`,
+    /// instead of running the tracks the library was saved under.
+    #[arg(long)]
+    pub track: Option<String>,
+    /// The state whose libsnd a seated `--track` runs on (any state with a
+    /// sequence open).
+    #[arg(long, default_value = "mei_house_inside")]
+    pub host: String,
+    /// `START:FROM:TO`: from vsync `START` on, set the sequence volume once a
+    /// vsync, a step at a time from `FROM` toward `TO`, on both sides - a
+    /// summon's duck as the game frame applies it (`FUN_8002657C` ->
+    /// `SsSeqSetVol` `FUN_80064890`, which re-volumes the sounding notes
+    /// through `FUN_80067E9C`), against the port's `Sequencer::set_master_vol`.
+    #[arg(long)]
+    pub duck: Option<String>,
+}
+
+/// The `--duck` ramp's volume at vsync `i`, `None` before it starts.
+fn duck_at(duck: Option<(usize, u8, u8)>, i: usize) -> Option<u8> {
+    let (start, from, to) = duck?;
+    let k = i.checked_sub(start)?;
+    let v = if from >= to {
+        i32::from(from) - k as i32
+    } else {
+        i32::from(from) + k as i32
+    };
+    Some(v.clamp(i32::from(from.min(to)), i32::from(from.max(to))) as u8)
 }
 
 /// The differential of the mednafen or PCSX-Redux state `label`, `None` when the
@@ -588,8 +697,20 @@ pub fn run_label(label: &str, vsyncs: usize, cues: bool) -> Result<Option<Differ
         all_states: false,
         cues,
         dump_at: None,
+        track: None,
+        host: String::new(),
+        duck: None,
     };
-    run_one(&ram, music.slot, track, music.vol.0 as u8, &entry, &args).map(Some)
+    run_one(
+        &ram,
+        music.slot,
+        track,
+        music.vol.0 as u8,
+        &entry,
+        &args,
+        false,
+    )
+    .map(Some)
 }
 
 pub fn run(args: SeqDifferentialArgs) -> Result<()> {
@@ -600,6 +721,9 @@ pub fn run(args: SeqDifferentialArgs) -> Result<()> {
     let host = SceneHost::open_extracted(&extracted)?;
     let bank = TrackBank::load(&host);
     let mut seen: BTreeMap<u16, String> = BTreeMap::new();
+    if let Some(list) = args.track.as_deref() {
+        return run_seated(&args, list, &manifest, &library, &host, &bank);
+    }
     let mut corpus: Vec<(String, &'static str, PathBuf)> = enumerate_corpus(&manifest, &library)
         .into_iter()
         .filter(|c| c.resident_patch.is_none() && !excluded(&c.label))
@@ -640,26 +764,129 @@ pub fn run(args: SeqDifferentialArgs) -> Result<()> {
             continue;
         }
         seen.insert(track, label.clone());
-        match run_one(&ram, slot, track, vol, &entry, &args) {
-            Ok(d) => {
-                println!(
-                    "{track} {label}: {} vsyncs lag {} keyons {}/{} key {} voice {} release {} sound {} level {}",
-                    d.vsyncs,
-                    d.lag,
-                    d.retail_keyons,
-                    d.port_keyons,
-                    d.key_diffs,
-                    d.voice_diffs,
-                    d.release_diffs,
-                    d.sound_diffs,
-                    d.level_diffs
-                );
-                for f in &d.first {
-                    println!("    {f}");
-                }
+        print_result(
+            track,
+            &label,
+            run_one(&ram, slot, track, vol, &entry, &args, false),
+        );
+    }
+    Ok(())
+}
+
+fn print_result(track: u16, label: &str, r: Result<Differential>) {
+    match r {
+        Ok(d) => {
+            println!(
+                "{track} {label}: {} vsyncs lag {} keyons {}/{} key {} voice {} release {} sound {} level {}",
+                d.vsyncs,
+                d.lag,
+                d.retail_keyons,
+                d.port_keyons,
+                d.key_diffs,
+                d.voice_diffs,
+                d.release_diffs,
+                d.sound_diffs,
+                d.level_diffs
+            );
+            for f in &d.first {
+                println!("    {f}");
             }
-            Err(err) => println!("{track} {label}: [fail] {err:#}"),
         }
+        Err(err) => println!("{track} {label}: [fail] {err:#}"),
+    }
+}
+
+/// The host state's RAM and music slot for a seated run.
+fn seat_host(
+    manifest: &ScenarioManifest,
+    library: &std::path::Path,
+    bank: &TrackBank,
+    label: &str,
+) -> Result<(Vec<u8>, u8)> {
+    let c = enumerate_corpus(manifest, library)
+        .into_iter()
+        .find(|c| c.label == label)
+        .with_context(|| format!("no library state {label}"))?;
+    let ram = state_ram(c.emulator, &c.path)?;
+    let slot = RetailAudio::from_ram(&ram, bank, None)
+        .music_slot()
+        .with_context(|| format!("{label} has no sequence open"))?
+        .slot;
+    Ok((ram, slot))
+}
+
+/// The differential of `music_01` track `track` seated into the library state
+/// `host` ([`RetailSide::seated`]), at full sequence volume. `None` when the
+/// library or the disc is missing, or the entry carries no bank of its own.
+pub fn run_seated_track(
+    host: &str,
+    track: u16,
+    vsyncs: usize,
+    cues: bool,
+) -> Result<Option<Differential>> {
+    let (Some(m), Some(l), Some(e)) = crate::retail_compare::resolve_dirs() else {
+        return Ok(None);
+    };
+    let manifest = ScenarioManifest::from_path(&m)?;
+    let scene = SceneHost::open_extracted(&e)?;
+    let bank = TrackBank::load(&scene);
+    let Ok((ram, slot)) = seat_host(&manifest, &l, &bank, host) else {
+        return Ok(None);
+    };
+    let Some(entry) = scene.music_bank_entry_bytes(track)? else {
+        return Ok(None);
+    };
+    if legaia_engine_system::chunk_install::owned_bank_offsets(&entry).is_none() {
+        return Ok(None);
+    }
+    let args = SeqDifferentialArgs {
+        filter: None,
+        vsyncs,
+        keep: 4,
+        all_states: false,
+        cues,
+        dump_at: None,
+        track: None,
+        host: String::new(),
+        duck: None,
+    };
+    run_one(&ram, slot, track, 127, &entry, &args, true).map(Some)
+}
+
+/// `--track`: each listed `music_01` track seated into the `--host` state's RAM
+/// ([`RetailSide::seated`]) on the host's music slot, at full sequence volume.
+fn run_seated(
+    args: &SeqDifferentialArgs,
+    list: &str,
+    manifest: &ScenarioManifest,
+    library: &std::path::Path,
+    host: &SceneHost,
+    bank: &TrackBank,
+) -> Result<()> {
+    let (ram, slot) = seat_host(manifest, library, bank, &args.host)?;
+    let tracks: Vec<u16> = if list == "all" {
+        (0..legaia_engine_system::music_labels::MUSIC_BANK_SLOTS)
+            .map(|k| 2000 + k as u16)
+            .collect()
+    } else {
+        list.split(',')
+            .map(|t| t.trim().parse::<u16>().context("a track id"))
+            .collect::<Result<_>>()?
+    };
+    for track in tracks {
+        let Some(entry) = host.music_bank_entry_bytes(track)? else {
+            println!("{track}: [skip] no music_01 entry");
+            continue;
+        };
+        if legaia_engine_system::chunk_install::owned_bank_offsets(&entry).is_none() {
+            println!("{track}: [skip] no bank and score of its own");
+            continue;
+        }
+        print_result(
+            track,
+            &format!("seated on {}", args.host),
+            run_one(&ram, slot, track, 127, &entry, args, true),
+        );
     }
     Ok(())
 }
@@ -716,10 +943,11 @@ fn run_one(
     vol: u8,
     entry: &[u8],
     args: &SeqDifferentialArgs,
+    seat: bool,
 ) -> Result<Differential> {
     let (vsyncs, keep) = (args.vsyncs, args.keep);
     let mut port = PortSide::new(track, entry, vol);
-    let mut retail = RetailSide::new(ram, &port, slot, vol)?;
+    let mut retail = RetailSide::seated(ram, &port, slot, vol, seat.then_some(entry))?;
     port.seat_silent_ring_phase(&mut retail);
     let mut rv = Vec::with_capacity(vsyncs);
     let mut pv = Vec::with_capacity(vsyncs);
@@ -729,9 +957,30 @@ fn run_one(
     // A cue keyed ahead of retail's calc `i` goes out in that calc's flush, which
     // is the port's flush of step `i - 1`.
     let mut retail_cue = None;
+    let duck = match args.duck.as_deref() {
+        Some(d) => {
+            let p: Vec<&str> = d.split(':').collect();
+            anyhow::ensure!(p.len() == 3, "--duck is START:FROM:TO");
+            Some((p[0].parse()?, p[1].parse()?, p[2].parse()?))
+        }
+        None => None,
+    };
     for i in 0..vsyncs {
         if let Some(c) = retail_cue.take() {
             retail.key_cue(&c)?;
+        }
+        // `FUN_8002657C` sets the volume only when the level moved
+        // (`lh v0,0x6(s1)` / `beq v0,s0` at `0x80026590..0x80026598`).
+        if let Some(v) = duck_at(duck, i)
+            && (i == 0 || duck_at(duck, i - 1) != Some(v))
+        {
+            retail.set_seq_vol(v)?;
+        }
+        // The port's step `i` is retail's calc `i + 1` (its KON lead).
+        if let Some(v) = duck_at(duck, i + 1)
+            && let Some(s) = port.d.sequencer_mut()
+        {
+            s.set_master_vol(v);
         }
         rv.push(retail.step(RETAIL_VSYNC_SAMPLES)?);
         let cue = if args.cues && i + 1 == next_cue {

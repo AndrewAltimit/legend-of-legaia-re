@@ -43,7 +43,7 @@ Project docs: https://andrewaltimit.github.io/legend-of-legaia-re/";
 #[derive(Parser)]
 #[command(
     name = "asset",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Inspect and extract Legend of Legaia game data from extracted PROT entries",
     after_help = AFTER_HELP
 )]

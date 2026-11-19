@@ -136,6 +136,13 @@ pub struct BakaFight {
     pub(super) vsync_phase: i32,
     /// Pad edges seen on vsyncs between two game ticks, held for the next.
     pub(super) held_edge: u16,
+    /// Hold the opponent install `0x1E` for its CD load
+    /// ([`super::OPPONENT_INSTALL_LOAD_VSYNCS`]), as retail does; off by
+    /// default, where the load is instant ([`Self::set_install_load_hold`]).
+    pub(super) install_load_hold: bool,
+    /// Vsyncs the install's load still holds the cabinet; `0` when no load is
+    /// in flight.
+    pub(super) install_wait: i32,
     /// Both fighters' strike data. With it installed an exchange is booked
     /// only on the tick the winner's strike lands (retail's `+0x0C == 1`
     /// gate); without it (a fight built from bare configs) the exchange
@@ -257,6 +264,8 @@ impl BakaFight {
             step_floor: 1,
             vsync_phase: 0,
             held_edge: 0,
+            install_load_hold: false,
+            install_wait: 0,
             strike: None,
             rate_divisor: STRIKE_RATE_DIVISOR,
             afterimages: Vec::new(),
@@ -392,6 +401,16 @@ impl BakaFight {
     /// Legaia's layout). Its one reader is the round setup's cameo test
     /// (`0x801D0190..0x801D01C4`): Triangle held (`0x10`) at a round setup
     /// sends the ring girl on.
+    /// Run retail's CD-load hold on the opponent install: the play hosts
+    /// raise it with `WorldToggles::skip_load_holds` off (the retail-faithful
+    /// mode), the minigames page leaves it off.
+    pub fn set_install_load_hold(&mut self, on: bool) {
+        self.install_load_hold = on;
+        if !on {
+            self.install_wait = 0;
+        }
+    }
+
     pub fn set_held_pad(&mut self, packed: u16) {
         self.held_pad = packed;
     }

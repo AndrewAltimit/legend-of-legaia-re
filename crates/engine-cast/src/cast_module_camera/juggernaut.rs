@@ -186,7 +186,7 @@ pub fn juggernaut_drift(phase: u8) -> Option<CaptureDrift> {
 /// | 25 (`0x801F7B5C`) | - | cut pitch `-0x80`, TR `(0, 0x900, 0x1600)`, focus z `-0x400` (`0x801F7BB0`) |
 /// | 26 (`0x801F7BC0`) | TR z `+4` | pool flush, [`JUGGERNAUT_ARM26_SPAWNS`], three fades |
 /// | 27 (`0x801F7F40`) | TR z `+4` | pool flush, a fade, text cleared; cut yaw `0x800 - caster[+0x46]`, TR `(0, 0x400, 0x500)` on the caster (`0x801F81A8`) |
-/// | 28 (`0x801F81D8`) | TR z `+2` | the body finishes |
+/// | 28 (`0x801F81D8`) | TR z `+2` | the body finishes; the yaw ladder `ctx[+0x6DA]` zeroed (`0x801F82CC`) |
 ///
 /// Arm 20 prints `*(0x801C9358)` after clearing the line - the streamed
 /// actor record's `rec[0]` string ([`ModuleCaption::AttackName`]), which the
@@ -202,6 +202,13 @@ pub fn juggernaut_direct(
     seats: ModuleCamSeats,
 ) -> ArmDirection {
     let held = hold_step(JUGGERNAUT, st, phase);
+    // Arm 28's way out zeroes the yaw ladder `ctx[+0x6DA]` (`sh zero,0x2(t3)`
+    // at `0x801F82CC`) before it returns done, so the Done band's case 6
+    // frames the caster from `0` - left at the body's value it swung the
+    // exit camera `222` yaw units a pass off retail's.
+    if phase == 28 && !held {
+        st.yaw_base = 0;
+    }
     let drift = juggernaut_drift(phase);
     let base = if held {
         ArmDirection::HOLD

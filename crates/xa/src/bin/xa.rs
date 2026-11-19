@@ -4,7 +4,7 @@ use psx_xa::{Channels, DecodeOptions};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(name = "xa", version, about = "PSX XA-ADPCM decoder + WAV exporter")]
+#[command(name = "xa", version = legaia_release_version::VERSION, about = "PSX XA-ADPCM decoder + WAV exporter")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

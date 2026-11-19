@@ -56,12 +56,27 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
                 origin[2],
                 world.actors[0].move_state.world_z - crate::world::battle::SUMMON_SPAWN_BEHIND
             );
-            // A host seats it; the world adopts the seat. PROT 0903's band is
-            // director-paced, so the creature stands where `FUN_801F19EC`
-            // puts it - on the caster - until its arm 3 moves it.
+            // A host seats it; the world adopts the seat. PROT 0903's seat
+            // arm polls the stream ahead of `FUN_801F19EC` (`0x801F6D2C..
+            // 0x801F6D34`), so the request comes on arm 3's pass, and the
+            // arm's own stores right behind the installer stand the creature
+            // on its stage point on that same pass: it is never drawn on the
+            // caster.
             world.seat_summon_actor(9);
             assert_eq!(world.casting.summon_actor_slot, Some(9));
+            let placed = world
+                .casting
+                .module_cam
+                .creature
+                .expect("arm 3 placed the creature");
             assert_eq!(
+                (
+                    world.actors[9].move_state.world_x,
+                    world.actors[9].move_state.world_z
+                ),
+                (placed.x, placed.z)
+            );
+            assert_ne!(
                 world.actors[9].move_state.world_z,
                 world.actors[0].move_state.world_z
             );

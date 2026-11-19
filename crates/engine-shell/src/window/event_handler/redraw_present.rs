@@ -273,6 +273,7 @@ impl PlayWindowApp {
         #[cfg(feature = "oracles")]
         self.record_audio_wav();
         self.capture_cast_sequence_frame(r, &|| target(scene));
+        self.record_sfx_log();
         // Screenshot harness: at the target tick, read the frame back
         // offscreen and exit instead of presenting to the window.
         let gated = self.screenshot.as_ref().is_some_and(|sc| {
@@ -585,6 +586,49 @@ impl PlayWindowApp {
     /// ticks past the Done band (`0x50` / `0x51` / `0x5A`), or after
     /// `LEGAIA_DIAG_CAST_SEQ_MAX` (default `2000`) frames. The run must be a
     /// `--screenshot` child, which is what makes it one tick per redraw.
+    /// `LEGAIA_DIAG_SFX_LOG=<path>`: every sound cue the audio director was
+    /// handed, one `tick,id,kind,mode,menu` row each - `queue` off the delay
+    /// scheduler (the hosts' screen blips, `AudioDirector::queue_ui_cue`),
+    /// `ring` off the retail ring, `now` a direct blip - with the scene mode
+    /// and whether the pause menu is open. Whatever the scene, so the pause,
+    /// shop and save screens' blips can be filmed against retail's cue ring.
+    /// A harness reading: a `--screenshot` child runs one tick a redraw.
+    fn record_sfx_log(&self) {
+        use std::io::Write as _;
+        /// The open log and the director commands already read.
+        type SfxLog = std::sync::Mutex<(std::io::BufWriter<std::fs::File>, u64)>;
+        static LOG: std::sync::OnceLock<Option<SfxLog>> = std::sync::OnceLock::new();
+        let Some(log) = LOG.get_or_init(|| {
+            let path = std::env::var_os("LEGAIA_DIAG_SFX_LOG")?;
+            let mut f = std::io::BufWriter::new(std::fs::File::create(path).ok()?);
+            writeln!(f, "tick,id,kind,mode,menu").ok()?;
+            Some(std::sync::Mutex::new((f, 0)))
+        }) else {
+            return;
+        };
+        let (Ok(mut log), Some(d)) = (log.lock(), self.session.bgm.as_ref()) else {
+            return;
+        };
+        let commands = d.commands();
+        let fresh = commands.count().saturating_sub(log.1) as usize;
+        log.1 = commands.count();
+        let recent: Vec<_> = commands.recent().copied().collect();
+        let mode = self.session.host.world.mode;
+        let menu = u8::from(self.session.field_menu_is_open());
+        let tick = self.tick_no;
+        use legaia_engine_session::audio_director::AudioCommand as C;
+        for c in &recent[recent.len().saturating_sub(fresh)..] {
+            let (id, kind) = match *c {
+                C::SfxDue(id) => (i32::from(id), "queue"),
+                C::RingDue(id) => (i32::from(id), "ring"),
+                C::SfxNow(id) => (i32::from(id), "now"),
+                _ => continue,
+            };
+            let _ = writeln!(log.0, "{tick},{id},{kind},{mode:?},{menu}");
+        }
+        let _ = log.0.flush();
+    }
+
     fn capture_cast_sequence_frame<'a>(
         &self,
         r: &legaia_engine_render::Renderer,
@@ -610,7 +654,7 @@ impl PlayWindowApp {
             use std::io::Write as _;
             let _ = writeln!(
                 meta,
-                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,rand,drive_seek_arm,drive_poll_arm,drive_busy,fade_level,guard,cost,parts,ghosts,over,work,wash,linked,lk_stage,lk_grid,lk_bodies,lk_ghosts,lk_shadows,lk_fx,lk_sprites,lk_trails"
+                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,rand,drive_seek_arm,drive_poll_arm,drive_busy,fade_level,guard,cost,parts,ghosts,over,work,wash,linked,lk_stage,lk_grid,lk_bodies,lk_ghosts,lk_shadows,lk_fx,lk_sprites,lk_trails,walk"
             );
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
             let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz,c6da,step");
@@ -854,7 +898,7 @@ impl PlayWindowApp {
         use std::io::Write as _;
         let _ = writeln!(
             rec.meta,
-            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot},{},{seek_arm},{poll_arm},{busy},{fade_level},{guard},{},{},{},{over},{},{},{},{}",
+            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot},{},{seek_arm},{poll_arm},{busy},{fade_level},{guard},{},{},{},{over},{},{},{},{},{}",
             w.casting.module_phase,
             w.clock.display_frames,
             w.battle_ctx.frame_timer,
@@ -884,6 +928,8 @@ impl PlayWindowApp {
                     c.stage, c.grid, c.bodies, c.ghosts, c.shadows, c.effects, c.sprites, c.trails
                 )
             },
+            // The effect walker's price on the newest priced pass.
+            w.battle.effect_walk_cost,
         );
         // `LEGAIA_DIAG_CAST_BODIES=1`: `bodies.csv`, every battle body a tick
         // (tick, seat, monster flag, drawn, triangles, raw position, radius,

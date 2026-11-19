@@ -806,7 +806,12 @@ The port applies it in `FieldHostImpl::teleport_to_actor`:
 a placement destination takes the source's live position and heading
 (`stone` `P2[6]` seats Noa and Gala on Vahn with `CC 09 E3 F8` /
 `CC 0A E3 F8`), a player destination moves the player actor; the player
-arm's camera-scroll refresh is not modelled.
+arm's camera-scroll refresh is not modelled. A placement destination on the
+held-height arm takes the `+0x8E` write too, so it keeps the source's height:
+`juui1` `P2[0]` seats Noa at `+0x8E = -32` and then stacks her on Vahn with
+`CC 0A E3 09`, and retail's RAM holds all three party members at `+0x8E = 64`
+(`Y = -64`). Without the write the port drew Noa 96 units low, under the
+bottom of the vortex shot (`juui1_vortex_entry`).
 
 #### `4C E4`: AABB branch
 
@@ -1139,9 +1144,15 @@ pre-run's `+0x5C` is what `bind_scene_actors` binds at scene entry. The
 `+0x5E = -2` restart holds there too: the seat drops the spawner's waiting
 phase draw and restarts a cursor already on the move (`World::restart_npc_clip`),
 so prologue-seated villagers start their idles together, as retail's do
-([the spawner's phase](motion-vm.md#the-draws-are-the-worlds-stream)). The cue itself still skips a re-request of
-the clip already playing (`World::carry_npc_run_anim`), since the hosts' bind of
-the same clip keeps the world's restarted cursor.
+([the spawner's phase](motion-vm.md#the-draws-are-the-worlds-stream)). The cue
+is raised whatever the slot plays (`World::seat_npc_run_anim`), because the
+forced bind re-reads the bank the depth byte just wrote, so the same id can name
+another record: `juui1` `P2[2]` seats Vahn with `CC 09 51 68 4C 04 02`, scene clip
+`2` (his flying pose), while he plays party-bank clip `2` (his standing idle).
+A cue gated on the playing id, as the ambient walker's unforced requests are
+(`World::carry_npc_run_anim`), drops there and leaves Vahn standing while Noa
+and Gala fly (`engine-scene-host/tests/juui1_party_seat_rebank_disc.rs`). On the
+same id and bank the hosts' bind keeps the world's restarted cursor.
 The run's byte is the actor's one `+0x5C`, which the scripted motion VM
 `FUN_80038158` also writes from its own ops, so the port stores it into that
 VM's requested move as well (`World::script_npc_move`, with the `A2` ExecMove
@@ -1298,7 +1309,11 @@ Sub-3 and sub-4 tween the same way, from the resolved actor's live `+0x24`
 / `+0x28` (`0x801E124C..0x801E1268`, `0x801E1284..0x801E12A0`): an object's
 into its context, which `World::object_draw_turns` composes; a placement's
 into `World::npcs.slot_ramps`, which `World::field_npc_tilt` draws on both
-hosts alongside the scripted-motion VM's own `0x15` / `0x16` tilts.
+hosts alongside the scripted-motion VM's own `0x15` / `0x16` tilts. The two
+writers share one actor record, so each word draws the value it last took:
+op `0x15` has no authored site, so the pitch is always this arm's, under the
+channel's `0x16` roll. `juui1` `P2[0]` turns all three party members with
+`CC 09..0B 43 B8 0B 2C 01` while the channel rolls two of them.
 
 Aimed at the player (`CC F8 42 ..`), the slot is the player's own `+0x8E`,
 and it moves the player only while the player's `+0x10` carries

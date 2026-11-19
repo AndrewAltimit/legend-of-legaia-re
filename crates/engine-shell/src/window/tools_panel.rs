@@ -176,6 +176,15 @@ pub(super) const TOOL_COUNT: usize = TOOL_ROWS.len();
 const SHOWN: usize = 13;
 
 /// The party rows' picks, in the `--party` spec form.
+///
+/// Terra is left out on purpose. Retail never lists her in the field party:
+/// she is the AI companion the party-table rebuild `FUN_801DE190` appends,
+/// last, to the *battle* table while system flag `0x13` is up
+/// (`0x801DE204..0x801DE220`; `World`'s battle entry does the same off the
+/// field list, `field_loop::AI_COMPANION_SYSTEM_FLAG`). A pick that seated her
+/// in the field list would be a party retail cannot reach - her as a field
+/// leader, or ahead of a member the companion always follows. The play page's
+/// free-text party field still takes `terra` as a debug seat.
 const PARTY_PICKS: [&str; 7] = [
     "vahn",
     "vahn,noa",
@@ -696,7 +705,7 @@ impl PlayWindowApp {
         }
         game_exit::report_text(
             "legaia-engine play-window",
-            env!("CARGO_PKG_VERSION"),
+            legaia_release_version::VERSION,
             &headline,
             Some(&detail.join("\n")),
             log_text.as_deref(),

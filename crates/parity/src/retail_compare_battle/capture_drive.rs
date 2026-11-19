@@ -1663,6 +1663,12 @@ impl RetailBattle {
                     walk_phase: self
                         .walk_clock_capture()
                         .then_some((self.walk_yaw_base, self.caster_cursor)),
+                    // Past the arrival: the walk's phase on the arrival pass,
+                    // which decides whether the walk re-committed its loop
+                    // first (`World::seat_capture_arrival_phase`).
+                    arrival_walk: self
+                        .arrival_walk_cursor
+                        .filter(|_| !self.walk_clock_capture()),
                 },
             )
     }
@@ -1736,6 +1742,7 @@ impl RetailBattle {
             strike,
             target_ground,
             walk_phase: None,
+            arrival_walk: None,
         })
     }
 

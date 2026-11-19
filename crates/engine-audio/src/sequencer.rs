@@ -77,6 +77,11 @@ fn retail_header_play_tempo(us_per_qn: u32, ppqn: u16) -> u32 {
 const CC_LOOP_MARKER: u8 = 0x63;
 /// Data entry (CC 6): after a Loop Start, the loop's count.
 const CC_DATA_ENTRY: u8 = 0x06;
+/// NRPN LSB (CC 98): after a Loop Start, the loop's count as well. Retail's
+/// control-change dispatch `FUN_8006171C` sends CC 6 to `FUN_80060A94` and
+/// CC 98 to `FUN_8006126C` (`0x800617E8..0x800618B4`), and both store the
+/// count the same way (`0x80060B24..0x80060B58`, `0x800612BC..0x800612E8`).
+const CC_NRPN_LSB: u8 = 0x62;
 /// The count that loops for good.
 const LOOP_REPEAT_FOREVER: u8 = 0x7F;
 /// `CC_LOOP_MARKER` value marking a Loop Start point.

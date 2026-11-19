@@ -391,7 +391,9 @@ impl PlayWindowApp {
         // First frame before the tick armed the state: the shared BOOT_POSE
         // (far framing at its minimum depth, on the origin) - the same
         // fallback the browser host renders.
-        let p = self.session.host.world.battle_cam_pose();
+        // The drawn pose (`World::battle_draw_pose`): under the smooth
+        // camera the frame before carried toward the live one, else live.
+        let p = self.session.host.world.battle_draw_pose();
         let (pitch, yaw, tr, focus) = (p.pitch, p.yaw, Vec3::from(p.tr), Vec3::from(p.focus));
         // The focus trio is the world point the camera orbits (retail stores
         // it negated at `0x80089118/1C/20`). Retail folds the battle world
@@ -481,6 +483,12 @@ impl PlayWindowApp {
         (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye)
     }
 
+    /// [`Self::battle_body_model_units`] on a record's integer facing.
+    #[cfg(test)]
+    pub(super) fn battle_body_model(pos: Vec3, facing: u16) -> Mat4 {
+        Self::battle_body_model_units(pos, f32::from(facing & 0xFFF))
+    }
+
     /// A battle body's model at retail position `pos` (Y down) turned by its
     /// facing `+0x46`: `T(F pos) . Ry . F`, drawn under `cam * scale`.
     ///
@@ -490,8 +498,11 @@ impl PlayWindowApp {
     /// but would draw a body's height `+0x36` upside down - a killed monster
     /// the defeat fade sinks (`+0x36 += size * step / 4`) rose out of the
     /// floor instead.
-    pub(super) fn battle_body_model(pos: Vec3, facing: u16) -> Mat4 {
-        let rot = Mat4::from_rotation_y(f32::from(facing & 0xFFF) / 4096.0 * std::f32::consts::TAU);
+    ///
+    /// The facing is in 12-bit units and may be fractional: the smooth
+    /// camera's drawn root (`World::battle_draw_root`).
+    pub(super) fn battle_body_model_units(pos: Vec3, facing: f32) -> Mat4 {
+        let rot = Mat4::from_rotation_y(facing / 4096.0 * std::f32::consts::TAU);
         let pos = Vec3::from(legaia_engine_battle::battle_afterimage::placement_pos(
             pos.to_array(),
         ));
@@ -544,7 +555,18 @@ impl PlayWindowApp {
             // mesh's raw vertices on the right, so the roll is the factor
             // nearest them. The browser page composes the same factor from
             // `play_battle_actor_rolls`.
-            let model = Self::battle_body_model(pos, a.battle.facing_angle);
+            //
+            // The root is the drawn one (`World::battle_draw_root`): under
+            // the smooth camera it rides the same phase as the camera.
+            let (pos, facing) = self
+                .session
+                .host
+                .world
+                .battle_draw_root(slot)
+                .map_or((pos, f32::from(a.battle.facing_angle & 0xFFF)), |(p, f)| {
+                    (Vec3::from(p), f)
+                });
+            let model = Self::battle_body_model_units(pos, facing);
             // A pitched body (`+0x44`, `BattleActor::render_pitch`) turns
             // about the X axis through its origin outside the facing: the
             // trio's first factor, which the frame flip `F` conjugates to

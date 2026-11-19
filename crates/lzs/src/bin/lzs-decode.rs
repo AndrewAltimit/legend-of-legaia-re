@@ -10,7 +10,7 @@ const DECODE_CAVEAT: &str = "note: LZS decodes almost any input without error - 
      before trusting it";
 
 #[derive(Parser)]
-#[command(name = "lzs-decode", version, about = "Legaia LZS decompressor")]
+#[command(name = "lzs-decode", version = legaia_release_version::VERSION, about = "Legaia LZS decompressor")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

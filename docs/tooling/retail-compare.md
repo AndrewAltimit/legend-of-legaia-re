@@ -2161,6 +2161,23 @@ eight; seeded, the whole fan lands on retail's rays, the lower half over the
 floor that both retail and the port paint first
 ([battle-stage-camera](../subsystems/battle-stage-camera.md#where-the-grid-sorts)).
 
+<a id="big-waves-waves"></a>
+So are Big Wave's waves (`0x801F7BF8`, `CALL_WAVE_WAVE_RECORD`), one seated
+every five frames by PROT 0946's arm 1: each closes its radii `+0xB4` /
+`+0xB6` on the caster at `-16` a vsync and fades its level in at `-64`, so
+radii and level are its age. A `--retail-parts` film of the cast from
+`noaru_slippery_v2_pre_big_wave` passes through
+`battle_noaru_slippery_v2_big_wave_mid_cast`'s instant (frames identical to
+the state's screen), and its screen is two passes behind the RAM: the
+youngest wave not yet seated, the oldest still at radii `256 / 384`, out
+past the screen's corners. The replay's waves stood on its own passes and
+drew rays into the top corners where retail's frame has none; seated off
+the RAM a lag back the top `60` rows read mae `.13` (`.53`), `image` `.937`
+to `.938`. What is left of that still is a cream body near the camera at
+`x >= 256`, rows `112..140`: hiding every module record
+(`LEGAIA_DIAG_CAST_HIDE`) leaves it drawn, so it is no part, and the engine
+draws it short of where retail's tables step it in each pass (TR z `+112`).
+
 **A rate the program switched inside the lag.** A channel is taken back on
 its current rate only while the lag stays inside the part's current wait
 (`part_rate_history`). The program runs to a `WAIT_SET` (op `0x09`) and parks
@@ -2238,17 +2255,27 @@ position `+0x14..+0x18` and its level `+0x78` taken back the lag
 (`is_floor_ring`). `battle_jou_cort_181_strike`'s Cort walks three rings down
 his approach. A third ring on its way out (`+0x10` bit 3) is not seated.
 
-A ring the replay stomped past the capture's count is retired. The capture
-holds every ring its walk left live, and the replay's walk is not retail's: it
-starts where the yaw counter places it and runs on the replay's frame step, so
-on a finer step than retail's it is longer. Cort's walk is one cycle of his
-12-keyframe clip in retail, five stomps with the last (gate `13`, read on the
-crossing's frame `12`) on the pass he arrives; the replay, on step `2` where
-retail's sixteen-entry history reads `3`, walks a third further, re-commits
-the loop and stomps gate `13` and the new cycle's gate `1` on one pass. The
-snapshot seats the capture's rings over the replay's first and marks the rest
-finished (`World::install_action_fx_part_snapshot`), only for a capture that
-holds a ring at all.
+A walk's phase at its arrival decides its last stomp. Cort's walk is one
+cycle of his 12-keyframe clip in retail, five stomps with the last (gate `13`,
+read on the crossing's frame `12`) on the pass he arrives: the arrival's idle,
+staged under `+0x1DC` bit 0, is cut in ahead of the natural-end test, so the
+walk is not re-committed and the new cycle's gate `1` does not fire
+([settled](../reference/re-settled-threads/battle.md#a-walk-that-arrives-on-its-crossing-stomps-once)).
+The replay starts its walk where the yaw counter places it, on its own step,
+so seated on distance alone its cycle crossed a pass short of the arrival and
+stomped gates `13` and `1` together. A capture past its arrival therefore
+carries the walk's cursor on the arrival pass, read off the history rings
+(`ram_read::arrival_walk_cursor`: Cort's `.., 176, 188`, then the idle at `0`,
+so `200`), and the replay's walk is stood on the phase that crosses on its own
+arrival pass (`CaptureApproach::arrival_walk`,
+`World::seat_capture_arrival_phase`). Cort's replay then holds the capture's
+two live rings.
+
+A ring the replay stomped past the capture's count is still retired, as a
+guard for walks no seat reaches: the snapshot seats the capture's rings over
+the replay's first and marks the rest finished
+(`World::install_action_fx_part_snapshot`), only for a capture that holds a
+ring at all.
 
 A ring the replay never stomped is seated outright. The seed carries the ring's
 scale `+0x72` beside its ground point, and the snapshot seats each ring past the
@@ -2277,10 +2304,15 @@ and counters (`HEAL_CUE_RECORDS`, `HEAL_CUE_PROGRAM_OFFSETS`). The snapshot seat
 each past the replay's count through `World::spawn_battle_record_posed` and pokes
 the words over it. `battle_menu_rugi_barra_retail` holds four (`pc 25`, wait
 `192`) on Vahn and Gala; seated, the engine frame shows them where the HUD's
-`1595` is still rolling to `1614`, but its ring and pillars draw wider and taller
-than retail's at the same lane weights (`image` `.956` to `.954`), a residue of
-the part's morphed mesh rather than of the seat
-([open](../reference/open-rev-eng-threads.md)).
+`1595` is still rolling to `1614`. The ring's width is the first morph lane
+`+0xA0`, which grows its up rate `+0xB8` (`91`) a vsync through the whole wait:
+a `--retail-parts` film of the cue (`battle_rugi_barra_strike` played on to the
+round-end regen) steps it `0x111` a step-`3` pass, so the RAM's `0xC71` stands
+two passes ahead of the rings on screen. Seated at the RAM's lane the rings drew
+wide (`image` `.954`); the lane now goes in taken back the display lag
+(`HEAL_CUE_LANE` through `displayed_morph_halfword`), the rings stand at retail's
+width and the still reads `.978`
+([settled](../reference/re-settled-threads/rendering-camera.md)).
 
 A battle-burst child is the other case, and its words **are** draws. The
 move VM's op `0x17` (`FUN_801F30C4`) seats twelve children on one of two
@@ -5054,6 +5086,17 @@ the GPU multiplies `t5 * 8` ([shading](../subsystems/shading.md#step-4-the-colou
 and with the blend at the GPU's precision the Mednafen field states read
 `-0.5`.
 
+<a id="the-dance-halls-top-band"></a>
+The dance hall sits on the same frame driver, so `ot-raster.py` reads its
+tables too. On `minigame_dance_retail_go_out` the three score panels read luma
+`92.2` in the capture, `92.1` rasterised under the emulator's rule and `87.8`
+under the console's, and the engine's panels match the capture to the pixel:
+the "top band brighter" reading was this rule, which the child already carries.
+Of the still's `2465` pixels off by more than `32`, `1020` sit in the top `60`
+rows, none in the panels, all on the stage lamps' beams over the sign, with a
+mean luma offset of `0.6`: beam edges, not light. The rest are the dancers'
+outlines.
+
 The image child carries the emulator's rule on a PCSX-Redux state, beside the
 texel rule (`PsxTexelRule::PcsxRedux`, `psx_params.w = 2`):
 
@@ -5953,6 +5996,13 @@ the op without drawing it - the swap landed on no table a host read, and the
 landmark's context sat on its key tile two tiles north of the object, so the
 record's own `A3 08 60 17` read as a move - and drew the `.MAP` slot's mesh
 in its place ([world-map](../subsystems/world-map.md#placed-actors-and-the-mesh-resolver)).
+
+The `credits_*_pcsx` rows are the same vignettes captured on PCSX-Redux,
+played on from the ending's Rim Elm. Its south gate band (`town0e` `P2[6]`)
+carries the hero out only once the Village Elder, who stands in the gate
+opening (`P1[24]`, seated there by its spawn prologue's `4C 51 97 AF`),
+has had his talk paged to its end; a walk onto the band before
+that stops at `(24, 47)` against him.
 
 ### The dance-hall state is inside the contest-entry cutscene
 

@@ -67,6 +67,11 @@ impl World {
                 p.set_loop_timer(timer);
             }
         }
+        if let Some(cursor) = w.cursor
+            && let Some(p) = a.battle_animation.as_mut()
+        {
+            a.pose_frame = Some(p.seat_cursor(cursor));
+        }
     }
 
     /// The creature stores of a module's later arms that the engine runs

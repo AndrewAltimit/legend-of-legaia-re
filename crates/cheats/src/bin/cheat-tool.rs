@@ -13,7 +13,7 @@ const BUILTIN_CHT: &str = include_str!("../../../../data/cheats/legaia-ntsc-u.ch
 
 /// Top-level CLI.
 #[derive(Parser, Debug)]
-#[command(version, about = "Inspect Legend of Legaia cheat databases", long_about = None)]
+#[command(version = legaia_release_version::VERSION, about = "Inspect Legend of Legaia cheat databases", long_about = None)]
 struct Cli {
     /// Subcommand.
     #[command(subcommand)]

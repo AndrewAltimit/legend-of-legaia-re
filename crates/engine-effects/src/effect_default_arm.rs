@@ -1033,6 +1033,7 @@ pub fn default_arm_draw_row(
     );
     Some(crate::effect_ribbon::RibbonDraw {
         mesh,
+        node: None,
         world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
         rot: crate::effect_ribbon::node_rotation(s),
         flags_52: s.field_52,

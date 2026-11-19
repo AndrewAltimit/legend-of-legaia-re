@@ -17,7 +17,7 @@ default = ["cli"]
 # The command-line binary and its argument parser. On by default so
 # `cargo build` builds the binary; kept as a feature so the package follows
 # the same `cli` convention as every other crate with a binary.
-cli = ["dep:clap", "dep:libc"]
+cli = ["dep:clap", "dep:legaia-release-version", "dep:libc"]
 
 [dependencies]
 anyhow.workspace = true
@@ -25,6 +25,7 @@ png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap = { workspace = true, optional = true }
+legaia-release-version = { workspace = true, optional = true }
 legaia-actor-formats.workspace = true
 psx-bytes.workspace = true
 legaia-container-formats.workspace = true

@@ -272,6 +272,9 @@ class TmdRenderer {
     this.locEclipB     = gl.getUniformLocation(this.program, 'u_eclip_b');
     this.locOcclLift   = gl.getUniformLocation(this.program, 'u_occl_lift');
     this.locPsx      = gl.getUniformLocation(this.program, 'u_psx');
+    /* The scene pass drawn upside down (renderAssembled's `sceneFlip`). */
+    this.locFlipY    = gl.getUniformLocation(this.program, 'u_flip_y');
+    this.sceneFlip = null;
     this.locDynDir   = gl.getUniformLocation(this.program, 'u_dyn_dir');
     this.locLogDepthOn = gl.getUniformLocation(this.program, 'u_log_depth_on');
     /* Whole-draw far bucket (a placement's `farBucket`, the battle grid). */
@@ -874,6 +877,15 @@ class TmdRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
 
+    /* Upside down on the play page's PSX native target, as renderAssembled
+     * draws (`sceneFlip`): the window's fill rule on every edge. Mirroring y
+     * turns every winding over, so an opted-in cull culls the front-facing
+     * side instead; the winding stays, so gl_FrontFacing turns over with it
+     * and the shader's frontFacing() turns it back. */
+    const flipped = !!this.sceneFlip && this.sceneFlip.begin();
+    if (this.locFlipY) gl.uniform1i(this.locFlipY, flipped ? 1 : 0);
+    if (flipped && this.cullBackfaces) gl.cullFace(gl.FRONT);
+
     gl.bindVertexArray(this.vao);
     if (this.semiTwoPass) {
       /* Pass 0: opaque prims only. */
@@ -959,6 +971,11 @@ class TmdRenderer {
       }
     }
     gl.bindVertexArray(null);
+    if (flipped) {
+      this.sceneFlip.end(true);
+      if (this.locFlipY) gl.uniform1i(this.locFlipY, 0);
+      gl.cullFace(gl.BACK);
+    }
     /* The winding goes back with the cull. The scene pass reads gl_FrontFacing
      * for retail's NCLIP (`nclipCull`) and states no winding of its own, so a
      * `cullFrontFace: 'cw'` left behind (the dance hall) inverts the field's

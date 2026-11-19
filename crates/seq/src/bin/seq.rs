@@ -19,7 +19,7 @@ use clap::{Parser, Subcommand};
 use psx_seq::{ChannelMessage, EventBody, MetaMessage, SEQ_MAGIC, Seq, parse_header};
 
 #[derive(Parser)]
-#[command(name = "seq", version, about = "Inspect PsyQ SEQ files")]
+#[command(name = "seq", version = legaia_release_version::VERSION, about = "Inspect PsyQ SEQ files")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

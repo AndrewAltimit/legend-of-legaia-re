@@ -566,3 +566,26 @@ separated, and the port holds `dur`. Grade `disassembly` + `capture`. Port:
 `AudioState::battle_xa_busy_frames` (the word, `dur` vsyncs), the applier hold in
 `World::tick_sideband_token`.
 
+
+### Does the score's calc run once a vsync across a summon?
+
+*Status:* resolved - grade `capture` (mednafen, frame by frame) + `disassembly` (the lock)
+
+No: it loses a vsync whenever the vblank lands inside a cue key-on. `SsSeqCalc`
+(`FUN_80062F98`) opens on the lock `0x801CD2B4`: set, it returns at once (`beq v0,v1,0x800631D8`
+at `0x80062FCC`), so that vsync runs neither the flush `FUN_80065BAC` nor any score event, and no
+later call makes it up. The one-shot cue key-on `FUN_80065034`, which the ring drainer runs from
+the main loop, holds that lock from `0x800650A4` to `0x80065288` / `0x80065388`. Stepped frame by
+frame from `theeder_summon_mid_cast` (`scripts/mednafen/drive-timeline.py`, whose `silent_index`
+column is the flush's history index `_DAT_801CE204`, one step a flush), the index advances once a
+vsync over `1079` vsyncs except at `+913` and `+919`, which are the vsyncs the ring drains cue
+`0x18` and cue `0x27A` (arm `14` of the band, step `3`); the other seven cues of the run drain
+without a loss. So whether a cue costs the score a calc is where the drainer's key-on falls
+against the vblank, a matter of the frame's CPU time, and a lost calc lands every later score
+event, and the flush of the notes the vsync before staged, one vsync late.
+
+The summon's duck does not move the keying. `seq-differential --duck START:FROM:TO` runs
+`SsSeqSetVol` (`FUN_80064890`, which re-volumes the sounding notes through `FUN_80067E9C`) once a
+vsync the level moves, as `FUN_8002657C` does, against the port's `Sequencer::set_master_vol`:
+over track `2013` with ramps down to `0`, `60` and `90` every note keys on the same vsync on both
+sides.

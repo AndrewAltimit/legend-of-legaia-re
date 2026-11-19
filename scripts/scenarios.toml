@@ -8218,3 +8218,455 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "nilboa"
 topics = ["field", "story beat", "nilboa", "Delilas", "cutscene", "held height"]
+
+[[scenarios]]
+label = "vozz_tree_vahn_touch_box"
+backup_fingerprint = "98abc7cefa49531c002dc36ddfea837c543cb9874cf1e09b414756c604a89cd6"
+description = "East Voz Forest P1[7], the Genesis Tree revival: Vahn at the trunk, the 'Vahn reached out gently to touch the Genesis Tree' box open. RETAIL disc, pad only but for the fight's HP poke: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross through the boxes, Attack with arts through the fight, LEGAIA_FINISH=2), then autorun_walk_route.lua to the tree (13280, 12768) -> (13278, 12880) and ACT facing Z+ (the touch that runs vozz P1[7]); saved 150 vsyncs after the touch."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "dialog"]
+
+[[scenarios]]
+label = "vozz_tree_closeup_noa_vahn"
+backup_fingerprint = "3159d0d8bbe36245cd57a80f11b688412c09ba1d49b748ffe59e9a3cfd339c01"
+description = "East Voz Forest P1[7], the Genesis Tree revival: the close-up on Noa and Vahn with the night sky band and the far palms behind them (the shot the port drew over black). RETAIL disc, pad only but for the fight's HP poke: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross through the boxes, Attack with arts through the fight, LEGAIA_FINISH=2), then autorun_walk_route.lua to the tree (13280, 12768) -> (13278, 12880) and ACT facing Z+ (the touch that runs vozz P1[7]); saved 330 vsyncs after the touch."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "camera", "sky", "close-up"]
+
+[[scenarios]]
+label = "vozz_tree_rings"
+backup_fingerprint = "a051e1fb84eb801f07ff515fca2e8d0b6bbf7da688bf9a000021950eecdcd122"
+description = "East Voz Forest P1[7], the Genesis Tree revival: the party at the trunk inside the spinning light rings. RETAIL disc, pad only but for the fight's HP poke: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross through the boxes, Attack with arts through the fight, LEGAIA_FINISH=2), then autorun_walk_route.lua to the tree (13280, 12768) -> (13278, 12880) and ACT facing Z+ (the touch that runs vozz P1[7]); saved 900 vsyncs after the touch."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "effects"]
+
+[[scenarios]]
+label = "vozz_tree_burst"
+backup_fingerprint = "1e329266d71d09dd86530a85f37821d04641e14d679c2a40a2f4fd71a8bdd1a4"
+description = "East Voz Forest P1[7], the Genesis Tree revival: the white light burst over the trunk. RETAIL disc, pad only but for the fight's HP poke: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross through the boxes, Attack with arts through the fight, LEGAIA_FINISH=2), then autorun_walk_route.lua to the tree (13280, 12768) -> (13278, 12880) and ACT facing Z+ (the touch that runs vozz P1[7]); saved 1300 vsyncs after the touch."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "effects", "flash"]
+
+[[scenarios]]
+label = "vozz_tree_grown"
+backup_fingerprint = "4d2f08100b7f9a312eaebbfec030ea4ddec955bf061ba9620d78bedbab3d5d28"
+description = "East Voz Forest P1[7], the Genesis Tree revival: the grown tree, its crown and the light wash over the clearing. RETAIL disc, pad only but for the fight's HP poke: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross through the boxes, Attack with arts through the fight, LEGAIA_FINISH=2), then autorun_walk_route.lua to the tree (13280, 12768) -> (13278, 12880) and ACT facing Z+ (the touch that runs vozz P1[7]); saved 1700 vsyncs after the touch."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "effects", "tree morph"]
+
+[[scenarios]]
+label = "conc3_ceremony_plaza"
+backup_fingerprint = "bbea9eb739ab0b302c6156483d0fe6ca3ef9a103028ea0b7e93345ab4681b764"
+description = "Conkram (Past) at night, the ceremony: the plaza and the castle steps under the sky, the crowd gathering. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 600 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "sky"]
+
+[[scenarios]]
+label = "conc3_ceremony_nebular_box"
+backup_fingerprint = "6af6cce9d91f0ed947110c7601ff6f7feb5a770faec1e4c55dfdee058da016b0"
+description = "Conkram ceremony: King Nebular on the castle steps presenting the new weapon, his box open. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 900 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "dialog"]
+
+[[scenarios]]
+label = "conc3_ceremony_pedestal"
+backup_fingerprint = "1a1e9b5df7e3781f082c388b9fa753ab10703a3cc87fe7e518fb5663556c83ac"
+description = "Conkram ceremony: the crowd around the glass pedestal in the plaza, a soldier in front. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 1800 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "translucent"]
+
+[[scenarios]]
+label = "conc3_ceremony_zeto_box"
+backup_fingerprint = "0b02be5aa11e2a502510b7f8aae31a42f749a70811f0c13a5fb923809011ba23"
+description = "Conkram ceremony: Zeto's close-up before the court, his box open. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 2400 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "dialog", "close-up"]
+
+[[scenarios]]
+label = "conc3_ceremony_lab"
+backup_fingerprint = "3d00aed6304dcb775c269a7c362be350b0f3d67baa65c1ae750c28e62a6a07f9"
+description = "Conkram ceremony: the lab under the castle, the Mist generator pit on the chequered floor. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 3600 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "camera"]
+
+[[scenarios]]
+label = "conc3_ceremony_gala_box"
+backup_fingerprint = "4fae3e22c34312a84e06448e580ec75d4169e77244665282dfb4589615458524"
+description = "Conkram ceremony: the party's close-up, Gala's box open. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 5400 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "dialog", "close-up"]
+
+[[scenarios]]
+label = "conc3_ceremony_mist_pillar"
+backup_fingerprint = "494164d7ba4924424b435223b126e811073402a864e0472b7a01b254c706d016"
+description = "Conkram ceremony: the Mist rising out of the glass pedestal. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 6600 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "Mist", "effects"]
+
+[[scenarios]]
+label = "conc3_ceremony_mist_monsters"
+backup_fingerprint = "dabdf932dde0db7bf58f89c4987b1508ecefb046c26b7b50467503bc76782254"
+description = "Conkram ceremony: the purple Mist over the plaza, a soldier turning into a Mist monster. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 7200 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "Mist", "effects"]
+
+[[scenarios]]
+label = "conc3_ceremony_noa_box"
+backup_fingerprint = "8b1436f89b00fed7a8d569f028fe814367bed46e924a1c1c4b55404a42640de8"
+description = "Conkram ceremony: the party's close-up, Noa's box open. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 8400 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "dialog", "close-up"]
+
+[[scenarios]]
+label = "conc3_mist_night_free"
+backup_fingerprint = "db6c36c13b1e96a50a69ccd4bce969208e5517a9b3ccaac9b794f1b2096d544a"
+description = "Conkram at night after the ceremony: the party free in the Mist-filled plaza, 0x3E5 raised by P2[10]. RETAIL disc, pad only, no pokes: conc3_field_inn_night walked by autorun_walk_route.lua out of the inn (its door teleport lands the party on conc3 P2[0]'s gate-1 tile (22, 20)) toward P2[10]'s tiles (23..24, 20..22), boxes paged with Cross while the ceremony plays; saved 8700 vsyncs into the run."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc3"
+topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "Mist", "route walk"]
+
+[[scenarios]]
+label = "juui1_vortex_entry"
+backup_fingerprint = "dca8a74e43e0e955871463a743077e70631fbdb5946f7e8ecfc726a3af8e2446"
+description = "The first Ra-Seru scene: the party tumbling into the vortex among the drifting light shards. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 400 vsyncs after juui1 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "juui1"
+topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "particles"]
+
+[[scenarios]]
+label = "juui1_vortex_party_flying"
+backup_fingerprint = "0099627c6043335bfb3ccfc8908a2acc23d4abf1f0f78cbc06d10e5643629d4a"
+description = "The first Ra-Seru scene: Vahn, Noa and Gala flying side by side, all three in the flying pose. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 700 vsyncs after juui1 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "juui1"
+topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "party pose", "tilt"]
+
+[[scenarios]]
+label = "juui1_vortex_gala_box"
+backup_fingerprint = "3f70e27d1b9ef698d4882b8f5649075e1abba83c0c586ba24dc369fa6dd0f421"
+description = "The first Ra-Seru scene: 'Gala: Vahn, look at that!' over the flying party, a light ahead. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 1000 vsyncs after juui1 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "juui1"
+topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "dialog", "party pose"]
+
+[[scenarios]]
+label = "juui1_vortex_noa_close"
+backup_fingerprint = "c040c601dcc3e06c645fe6f8e01107802d929ee2d45a0434711253e3c694f4a1"
+description = "The first Ra-Seru scene: Noa close to the camera with Vahn and Gala behind, Noa's green glow. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 1400 vsyncs after juui1 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "juui1"
+topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "party pose", "close-up"]
+
+[[scenarios]]
+label = "juui1_vortex_tunnel"
+backup_fingerprint = "efc00e6ff324697bff283b6abfb57945535f4d6c5da15c4f0139f0343e51ce70"
+description = "The first Ra-Seru scene: the party before the shard tunnel, Noa's green glow. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 1800 vsyncs after juui1 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "juui1"
+topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "party pose", "particles"]
+
+[[scenarios]]
+label = "juui1_vortex_exit_flash"
+backup_fingerprint = "594fa80040b883cf9b3cad9806fa251dccb0e6c240c28aef4d375db23556a8a1"
+description = "The first Ra-Seru scene: the white flash at the vortex's end, before the scene change into rugi. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 2300 vsyncs after juui1 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "juui1"
+topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "flash", "particles"]
+
+[[scenarios]]
+label = "town0e_epilogue_narration"
+backup_fingerprint = "66743c7abd0df47e8425c58ff10a13d36ad9ae1773a31dc329196ac01a26f0cf"
+description = "The ending's Rim Elm (town0e): the narration box over black, before the town fades in. RETAIL disc, pad only but for the fight's HP poke: cort_evolved_card_first_menu played forward by autorun_story_forward.lua (LEGAIA_FINISH=1: Cort's HP written to 1 at round 1's prompt, Attack through the fight), through the ending FMV (game mode 0x1A) into town0e, then Cross and Circle in turn every 20 vsyncs from 150 vsyncs after the field resumed; saved 300 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0e"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["field", "story beat", "town0e", "ending", "cutscene", "dialog", "fade"]
+
+[[scenarios]]
+label = "town0e_epilogue_tree"
+backup_fingerprint = "209c8adff20b6bfe30e74c0f0197ffa9f242f01fa22779990afb7bc368669b63"
+description = "The ending's Rim Elm: Vahn, Mei and Tetsu at the Genesis Tree in the plaza. RETAIL disc, pad only but for the fight's HP poke: cort_evolved_card_first_menu played forward by autorun_story_forward.lua (LEGAIA_FINISH=1: Cort's HP written to 1 at round 1's prompt, Attack through the fight), through the ending FMV (game mode 0x1A) into town0e, then Cross and Circle in turn every 20 vsyncs from 150 vsyncs after the field resumed; saved 600 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0e"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["field", "story beat", "town0e", "ending", "cutscene", "Genesis Tree"]
+
+[[scenarios]]
+label = "town0e_epilogue_mei_closeup"
+backup_fingerprint = "40592fe0e6809f4dbae06d7ac59234e596d985ad1013c054d969326105a2627c"
+description = "The ending's Rim Elm: the close-up on Mei and Vahn at the tree. RETAIL disc, pad only but for the fight's HP poke: cort_evolved_card_first_menu played forward by autorun_story_forward.lua (LEGAIA_FINISH=1: Cort's HP written to 1 at round 1's prompt, Attack through the fight), through the ending FMV (game mode 0x1A) into town0e, then Cross and Circle in turn every 20 vsyncs from 150 vsyncs after the field resumed; saved 1200 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0e"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["field", "story beat", "town0e", "ending", "cutscene", "close-up", "camera"]
+
+[[scenarios]]
+label = "town0e_epilogue_usha_box"
+backup_fingerprint = "273f3204f6ee8b2310060d203c7af5c0efd27177b09a6f086fcbb3e706853310"
+description = "The ending's Rim Elm: Dr. Usha's box open beside Vahn, Mei and Tetsu at the tree. RETAIL disc, pad only but for the fight's HP poke: cort_evolved_card_first_menu played forward by autorun_story_forward.lua (LEGAIA_FINISH=1: Cort's HP written to 1 at round 1's prompt, Attack through the fight), through the ending FMV (game mode 0x1A) into town0e, then Cross and Circle in turn every 20 vsyncs from 150 vsyncs after the field resumed; saved 2000 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0e"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["field", "story beat", "town0e", "ending", "cutscene", "dialog"]
+
+[[scenarios]]
+label = "town0e_epilogue_vahn_alone"
+backup_fingerprint = "276f2ca04b96071a95c7c26058ce7a10ef43ad0df0734876ac0144ec774dad56"
+description = "The ending's Rim Elm: Vahn alone before the Genesis Tree after the epilogue, the high plaza shot. RETAIL disc, pad only but for the fight's HP poke: cort_evolved_card_first_menu played forward by autorun_story_forward.lua (LEGAIA_FINISH=1: Cort's HP written to 1 at round 1's prompt, Attack through the fight), through the ending FMV (game mode 0x1A) into town0e, then Cross and Circle in turn every 20 vsyncs from 150 vsyncs after the field resumed; saved 4000 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0e"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["field", "story beat", "town0e", "ending", "cutscene", "Genesis Tree", "camera"]
+
+[[scenarios]]
+label = "izumi_arrival_revisit"
+backup_fingerprint = "33647fe22bf61493753df3f65136b349a3b07f94ee5e4ba7ee5ae13316a39a49"
+description = "Hunter's Spring (izumi) just after the arrival fade: Vahn at the entrance among the hunters, the camera at its arrival framing. RETAIL disc, pad only, no pokes: overworld_into_town_man_load walked by autorun_walk_route.lua across map01 (two random fights fought) onto izumi's door tile (70, 39) (map01 P2[17]), then no input in izumi; a revisit (0x485, which izumi's entry raises, was already up); saved 44 vsyncs after the field resumed."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "izumi"
+topics = ["field", "izumi", "arrival", "camera"]
+
+[[scenarios]]
+label = "izumi_hunters_field"
+backup_fingerprint = "7b227f71dc82eea07909f15035a7d4b40b48271902fc442b7cff6342aa11f097"
+description = "Hunter's Spring: Vahn standing at the entrance, the hunters walking their rounds, party HUD up. RETAIL disc, pad only, no pokes: overworld_into_town_man_load walked by autorun_walk_route.lua across map01 (two random fights fought) onto izumi's door tile (70, 39) (map01 P2[17]), then no input in izumi; a revisit (0x485, which izumi's entry raises, was already up); saved 764 vsyncs after the field resumed."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "izumi"
+topics = ["field", "izumi", "walkers", "scene coverage"]
+
+[[scenarios]]
+label = "credits_rimelm_walkaway_pcsx"
+backup_fingerprint = "4e93a2511d8752d1052590d3b96d3c8fbb7e07cb057dee8735863243074aaba2"
+description = "End credits on PCSX-Redux: Vahn walking away from Rim Elm on the overworld, the credits' first shot. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 200 vsyncs after map01 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map01"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "map01"]
+
+[[scenarios]]
+label = "credits_edteien_panel_pcsx"
+backup_fingerprint = "f2865ad31475d7eed8b848bb7aeb3b8f264ae7e7fd28de0a88e210de93c82ea2"
+description = "End credits on PCSX-Redux: the Sky Gardens vignette shrunk to its corner panel beside the Director credit. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edteien loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edteien"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edteien"]
+
+[[scenarios]]
+label = "credits_edbylon_fullscreen_pcsx"
+backup_fingerprint = "e04be7aa18dc6183b38a95376d2bd0d02224047927130c63d17b8eea3cfd09c8"
+description = "End credits on PCSX-Redux: the Biron Monastery vignette full screen: the monks before the Master. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edbylon loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edbylon"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edbylon"]
+
+[[scenarios]]
+label = "credits_edbylon_panel_pcsx"
+backup_fingerprint = "99a7e0b888a68fc24b4b84214dfa52cd27bee858fdc1739aecc0253431811791"
+description = "End credits on PCSX-Redux: the Biron vignette in its corner panel under the MAP SECTION banner. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edbylon loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edbylon"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edbylon"]
+
+[[scenarios]]
+label = "credits_edbubu_fullscreen_pcsx"
+backup_fingerprint = "9627d6fe70d3d2a661b75c0fd5f6f175d5bfe4c917034a5749224d13a12a2eb9"
+description = "End credits on PCSX-Redux: the Buma vignette full screen: the hut by the fire. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edbubu loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edbubu"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edbubu"]
+
+[[scenarios]]
+label = "credits_edretoin_fullscreen_pcsx"
+backup_fingerprint = "112e345691a2b6cac0393d7594b8853c374adca0f668b8cc6bbcf3c2cb8ab01c"
+description = "End credits on PCSX-Redux: the Ratayu wedding vignette full screen. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edretoin loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edretoin"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edretoin"]
+
+[[scenarios]]
+label = "credits_edretoin_panel_pcsx"
+backup_fingerprint = "1ba59e258a9e28d35d742699c219c799a39b444cc35ea091d042606745e54c51"
+description = "End credits on PCSX-Redux: the Ratayu vignette in its corner panel under the BATTLE SECTION banner. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edretoin loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edretoin"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edretoin"]
+
+[[scenarios]]
+label = "credits_edkorout_window_pcsx"
+backup_fingerprint = "48f68c20eae20d15ac5c80263d7acbc3210a7f550328e5608adeb2af2f837d3d"
+description = "End credits on PCSX-Redux: the Sol Tower window shot with the sky through the window. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edkorout loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edkorout"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edkorout"]
+
+[[scenarios]]
+label = "credits_edkorout_panel_pcsx"
+backup_fingerprint = "bfefa85d754d656ae65607607d7badc5e2c99a617403b1a4c112328bf4ddf19b"
+description = "End credits on PCSX-Redux: the Sol vignette in its corner panel under the SUBGAME SECTION banner. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edkorout loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edkorout"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edkorout"]
+
+[[scenarios]]
+label = "credits_eddoman_fullscreen_pcsx"
+backup_fingerprint = "3672708c622e1d1796ba1543b547d0c880592f85c4e22580088e8ac03bee8af9"
+description = "End credits on PCSX-Redux: the Usha lab vignette full screen. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after eddoman loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "eddoman"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "eddoman"]
+
+[[scenarios]]
+label = "credits_edstati3_fullscreen_pcsx"
+backup_fingerprint = "750e0e3f9b63c25371851937be2f4ef8a443de2ae73c92189ec234c243a52b64"
+description = "End credits on PCSX-Redux: the Karisto station vignette full screen at sunset. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edstati3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edstati3"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edstati3"]
+
+[[scenarios]]
+label = "credits_edstati3_panel_pcsx"
+backup_fingerprint = "3a56b78d1dcfb88755ddd9f7d16980ee5812a90751538285a5c5f5c800b399fb"
+description = "End credits on PCSX-Redux: the Karisto vignette in its corner panel beside the Sound Effect credit. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edstati3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edstati3"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edstati3"]
+
+[[scenarios]]
+label = "credits_edson_fullscreen_pcsx"
+backup_fingerprint = "d6caafb233ac77183e8f0c07a2b0a1a5f0537f1425ac968df90e5605eabfdc57"
+description = "End credits on PCSX-Redux: the Soren camp vignette full screen, the party and the Ra-Seru. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edson loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edson"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edson"]
+
+[[scenarios]]
+label = "credits_edson_panel_pcsx"
+backup_fingerprint = "1b0dc8cf2055327e6a71f94f6121de6c1a85c159eabe501df540d2e2834c6924"
+description = "End credits on PCSX-Redux: the Soren vignette in its corner panel beside the CG Movie Creation credit. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edson loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edson"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edson"]
+
+[[scenarios]]
+label = "credits_edlast_casting_pcsx"
+backup_fingerprint = "6f812b85287c18c882dca57cb2c5026dfc03343343cecc74645b2de5ae03e250"
+description = "End credits on PCSX-Redux: the closing crawl's Casting block over black. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edlast loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edlast"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edlast"]
+
+[[scenarios]]
+label = "town0d_arrival_narration"
+backup_fingerprint = "c6f8fcfc8aa1d59fca8df16bd4b2a081f0fd0fcb7c6559ee64e7928f7d2b3ca8"
+description = "Rim Elm revisit (town0d): the narration box over black as Rim Elm fades in ('Vahn! Noa! Gala! Three heroes wearing Ra-Seru...'). RETAIL disc, with the source's flag pokes: concend_field_door_hop (0x4C8 set, 0x3F2 and 0x6C2 cleared at its start, concend P2[0] running) played forward by autorun_story_forward.lua with Cross every 20 vsyncs, through P2[0]'s scene change into town0d; saved 400 vsyncs after town0d loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0d"
+ram_poked = ["system flag 0x4C8 set, 0x3F2 and 0x6C2 cleared (concend_field_door_hop's portal arm), before this state"]
+topics = ["field", "story beat", "town0d", "Rim Elm", "cutscene", "dialog", "fade"]
+
+[[scenarios]]
+label = "town0d_mei_closeup"
+backup_fingerprint = "82a0e3bea232231dda7ddc78aec8a6c9c0de91c04e796237c8e872db5653bfa1"
+description = "Rim Elm revisit (town0d): the close-up on Mei and Vahn in Vahn's house. RETAIL disc, with the source's flag pokes: concend_field_door_hop (0x4C8 set, 0x3F2 and 0x6C2 cleared at its start, concend P2[0] running) played forward by autorun_story_forward.lua with Cross every 20 vsyncs, through P2[0]'s scene change into town0d; saved 800 vsyncs after town0d loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0d"
+ram_poked = ["system flag 0x4C8 set, 0x3F2 and 0x6C2 cleared (concend_field_door_hop's portal arm), before this state"]
+topics = ["field", "story beat", "town0d", "Rim Elm", "cutscene", "close-up", "camera"]
+
+[[scenarios]]
+label = "town0d_house_interior"
+backup_fingerprint = "28e48304adc684784ab16061d00471506040b2564c0e94d3114e1d10bdf17d92"
+description = "Rim Elm revisit (town0d): Vahn and Mei in Vahn's house, the high interior shot. RETAIL disc, with the source's flag pokes: concend_field_door_hop (0x4C8 set, 0x3F2 and 0x6C2 cleared at its start, concend P2[0] running) played forward by autorun_story_forward.lua with Cross every 20 vsyncs, through P2[0]'s scene change into town0d; saved 1300 vsyncs after town0d loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0d"
+ram_poked = ["system flag 0x4C8 set, 0x3F2 and 0x6C2 cleared (concend_field_door_hop's portal arm), before this state"]
+topics = ["field", "story beat", "town0d", "Rim Elm", "cutscene", "interior"]
+
+[[scenarios]]
+label = "town0d_house_free"
+backup_fingerprint = "226a2365749013d0c417197128f8ca44253e5c95664866e90965e9e0a5d95bf9"
+description = "Rim Elm revisit (town0d): Vahn free in his house with Mei, party HUD up. RETAIL disc, with the source's flag pokes: concend_field_door_hop (0x4C8 set, 0x3F2 and 0x6C2 cleared at its start, concend P2[0] running) played forward by autorun_story_forward.lua with Cross every 20 vsyncs, through P2[0]'s scene change into town0d; saved 3000 vsyncs after town0d loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0d"
+ram_poked = ["system flag 0x4C8 set, 0x3F2 and 0x6C2 cleared (concend_field_door_hop's portal arm), before this state"]
+topics = ["field", "story beat", "town0d", "Rim Elm", "cutscene", "interior", "scene coverage"]

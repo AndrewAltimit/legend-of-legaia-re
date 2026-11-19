@@ -37,8 +37,14 @@ const walk = [[30, 110, 'Down'], [120, 200, 'Up'], [210, 290, 'Left']];
  * second of a door entry reaches no accept, and a scene that never opens its menu pairs two
  * hosts walking in place (`reach` below says so). */
 const MENU_AT = 90;
+/* The pause press, held over a game frame (a scene's `hold`): under `--retail` the field reads
+ * the pad once a game frame and a press between two samples is never seen (engine-core
+ * `world::pad_latency`). A one-tick tap at tick 90 fell between two on the overworld, the pack
+ * map and every card landing, and a hold over ticks 100..104 on the pack map's long frames; ten
+ * ticks span one. The presses after it go to the open menu, which takes the pad every tick. */
+const PAUSE_PRESS = [MENU_AT, MENU_AT + 9, 'Start'];
 const menuTaps = () => {
-  const t = [[MENU_AT, 'Start']];
+  const t = [];
   for (let row = 0; row < 7; row++) {
     const at = MENU_AT + 60 + row * 120;
     t.push([at, 'Cross'], [at + 60, 'Circle'], [at + 90, 'Down']);
@@ -53,7 +59,7 @@ const arts = (from, to) => {
   return t;
 };
 const savePause = () => {
-  const t = [[MENU_AT, 'Start']];
+  const t = [];
   for (let i = 0; i < 6; i++) t.push([MENU_AT + 30 + i * 15, 'Down']); /* Items .. Save, the seventh row */
   for (const n of [170, 260, 330, 420]) t.push([MENU_AT - 30 + n, 'Cross']);
   t.push([MENU_AT + 440, 'Up'], [MENU_AT + 470, 'Cross']); /* the confirm starts on No */
@@ -75,7 +81,7 @@ export const SCENES = {
   fog_walk: { scene: 'keikoku', ticks: 85, every: 10, hold: walk }, /* the walk leaves the scene at about tick 90 */
   /* Torches on posts, MAN props whose light set is read from their clip's first-frame pose. */
   lamp_walk: { scene: 'rugi', ticks: 300, every: 30, hold: walk },
-  menu: { scene: 'town01', ticks: 1020, every: 30, taps: menuTaps(), reach: PAUSE_MENU },
+  menu: { scene: 'town01', ticks: 1020, every: 30, hold: [PAUSE_PRESS], taps: menuTaps(), reach: PAUSE_MENU },
   dialog: { scene: 'town01', ticks: 600, every: 30, talk: { tick: 30, slot: 0 }, taps: every(120, 590, 40, 'Cross') },
   shop: { scene: 'bylon', ticks: 420, every: 15, reach: OPEN_SHOP, shop: { tick: 30, idx: 0 }, taps: [[90, 'Cross'], [150, 'Down'], [200, 'Cross'], [260, 'Circle'], [320, 'Circle']] },
   battle: { scene: 'map01', ticks: 900, every: 30, battle: 30, taps: every(300, 890, 40, 'Cross') },
@@ -96,11 +102,11 @@ export const SCENES = {
   battle_menus: { scene: 'map01', ticks: 640, every: 10, battle: 30, taps: [[380, 'Cross'], [420, 'Up'], [450, 'Down'], [470, 'Down'], [500, 'Circle'], [530, 'Right'], [560, 'Circle'], [590, 'Up'], [620, 'Cross']] },
   /* The Equip row down to a candidate list and back: the character picker (its party hand
    * bobbing), the slot browse with the worn item's panel beside each row, a slot's candidates. */
-  equip: { scene: 'town01', ticks: 660, every: 10, reach: PAUSE_MENU, taps: [[MENU_AT, 'Start'], [150, 'Down'], [170, 'Down'], [200, 'Cross'], [260, 'Cross'], [310, 'Down'], [340, 'Down'], [370, 'Down'], [410, 'Cross'], [480, 'Down'], [530, 'Circle'], [580, 'Circle'], [620, 'Circle']] },
+  equip: { scene: 'town01', ticks: 660, every: 10, reach: PAUSE_MENU, hold: [PAUSE_PRESS], taps: [[150, 'Down'], [170, 'Down'], [200, 'Cross'], [260, 'Cross'], [310, 'Down'], [340, 'Down'], [370, 'Down'], [410, 'Cross'], [480, 'Down'], [530, 'Circle'], [580, 'Circle'], [620, 'Circle']] },
   /* A direction held on a list: the pause menu's root, then a shop's stock list. The hand steps
    * once on the press and then on the window kernel's auto-repeat, which a screen that owns its
    * ticks gets only if the host pumps the pad under it. */
-  menu_hold: { scene: 'town01', ticks: 420, every: 10, reach: PAUSE_MENU, hold: [[190, 310, 'Down']], taps: [[MENU_AT, 'Start'], [360, 'Circle']] },
+  menu_hold: { scene: 'town01', ticks: 420, every: 10, reach: PAUSE_MENU, hold: [PAUSE_PRESS, [190, 310, 'Down']], taps: [[360, 'Circle']] },
   shop_hold: { scene: 'bylon', ticks: 380, every: 10, reach: OPEN_SHOP, shop: { tick: 30, idx: 0 }, hold: [[130, 250, 'Down']], taps: [[70, 'Cross'], [290, 'Circle'], [330, 'Circle']] },
   /* Arts input: open the command ring, then direction presses and confirms on a cycle. */
   arts: { scene: 'map01', ticks: 1500, every: 30, battle: 30, taps: arts(300, 1490) },
@@ -108,7 +114,7 @@ export const SCENES = {
    * picker and rest fade, stepped on Cross. */
   inn: { scene: 'retock', ticks: 900, every: 30, talk: { tick: 30, slot: 26 }, taps: every(90, 890, 30, 'Cross') },
   /* Pause menu Save on the world map (saving works anywhere there): slot, block, Yes. */
-  save: { scene: 'map01', ticks: 780, every: 30, taps: savePause(), reach: PAUSE_MENU },
+  save: { scene: 'map01', ticks: 780, every: 30, hold: [PAUSE_PRESS], taps: savePause(), reach: PAUSE_MENU },
   /* Off retail's vantage over sloped ground: the player seated at town01 tile (30, 22) and
    * the follow knobs held at orbit 2.7, tilt -0.5, the view past the plateau ramp toward the
    * sea (the field ground's dropped-floor rule, docs/subsystems/renderer.md). */
@@ -161,7 +167,7 @@ const CARD_RNG_SEED = 0x12345678;
 const CARD = { late: 'playthrough-endgame-7saves.mcr', ladder: 'playthrough-ladder-pro00-14.mcr' };
 const cardScenes = (key, card, block) => ({
   [`${key}_walk`]: { card, block, ticks: 300, every: 30, hold: walk },
-  [`${key}_menu`]: { card, block, ticks: 1020, every: 30, taps: menuTaps(), reach: PAUSE_MENU },
+  [`${key}_menu`]: { card, block, ticks: 1020, every: 30, hold: [PAUSE_PRESS], taps: menuTaps(), reach: PAUSE_MENU },
   [`${key}_fight`]: { card, block, ticks: 900, every: 30, battle: 30, inflight: [0, 138, 3], taps: every(300, 890, 40, 'Cross') },
 });
 Object.assign(SCENES, cardScenes('late', CARD.late, 1), cardScenes('late4', CARD.late, 4), cardScenes('ladder', CARD.ladder, 3));
@@ -193,7 +199,7 @@ SCENES.monkey_menu = { card: CARD.late, block: 4, ticks: 1800, every: 30, taps: 
 const PACK = path.join(REPO, 'packs/sample');
 SCENES.pack_village = { pack: { dir: PACK, map: 'isles_village' }, ticks: 300, every: 30, hold: walk };
 SCENES.pack_tower = { pack: { dir: PACK, map: 'genesis_1f' }, ticks: 300, every: 30, hold: walk };
-SCENES.pack_menu = { pack: { dir: PACK, map: 'isles_village' }, ticks: 1020, every: 30, taps: menuTaps(), reach: PAUSE_MENU };
+SCENES.pack_menu = { pack: { dir: PACK, map: 'isles_village' }, ticks: 1020, every: 30, hold: [PAUSE_PRESS], taps: menuTaps(), reach: PAUSE_MENU };
 /* A save the window wrote, resumed on both. */
 SCENES.slot_save = { lgsfPath: path.join(REPO, 'saves/slot_00.bin'), card: 'native', ticks: 300, every: 30, hold: walk };
 
@@ -216,6 +222,17 @@ const MODES = {
   dusk: { native: [], options: 'lighting_time_of_day = "dusk"\n', boxes: [], selects: { 'play-time-of-day': 'dusk' } },
   night: { native: [], options: 'lighting_time_of_day = "night"\n', boxes: [], selects: { 'play-time-of-day': 'night' } },
 };
+
+/* The `asset` CLI that bundles a pack's `.lxpack` for the page: beside the engine, else the
+ * first profile under target/ that built one. */
+function assetBin(engine) {
+  const dirs = [path.dirname(engine), ...['release-test', 'release', 'dev-fast', 'debug'].map((p) => path.join(REPO, 'target', p))];
+  for (const d of dirs) {
+    const f = path.join(d, process.platform === 'win32' ? 'asset.exe' : 'asset');
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
 
 function nativeRun(engine, name, sc, mode, dir, opts) {
   fs.rmSync(dir, { recursive: true, force: true });
@@ -508,9 +525,17 @@ async function main() {
     let lxpack = null;
     if (sc.pack) {
       const bundle = path.join(dir, 'pack.lxpack');
-      const asset = path.join(path.dirname(engine), 'asset');
-      const b = spawnSync(asset, ['expansion', 'bundle', '--out', bundle, sc.pack.dir], { encoding: 'utf8' });
-      if (b.status !== 0) throw new Error(`asset expansion bundle: ${b.stderr}`);
+      const asset = assetBin(engine);
+      const b = asset && spawnSync(asset, ['expansion', 'bundle', '--out', bundle, sc.pack.dir], { encoding: 'utf8' });
+      if (!b || b.error || b.status !== 0) {
+        /* One scene's missing tool is that scene's line, not the end of the sweep. */
+        const why = !b ? `no \`asset\` binary beside ${engine} or under target/ (cargo build -p legaia-asset --bin asset)`
+          : b.error ? `${asset}: ${b.error.message}` : `${asset} exit ${b.status}: ${(b.stderr || '').slice(-600)}`;
+        await context.close();
+        lines.push(`${name}/${mode}: NOT RUN, the pack bundle failed: ${why}`);
+        console.log(lines[lines.length - 1]);
+        continue;
+      }
       lxpack = fs.readFileSync(bundle).toString('base64');
     }
     const r = await page.evaluate(pageRun, { lgsf, lxpack, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], selects: MODES[mode].selects || {}, ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, rngSeed: CARD_RNG_SEED, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });

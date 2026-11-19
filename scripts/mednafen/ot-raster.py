@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""ot-raster.py - rasterise one of retail's battle ordering tables into a PNG.
+"""ot-raster.py - rasterise one of retail's ordering tables into a PNG.
 
 `display-list.py` says which packets a frame links; this draws them. It walks
 one of the two double-buffer records at `0x8007BF30` (`0x74` bytes each, the
 bucket array at `+0x70`, 4096 buckets walked from the top) in chain order -
 retail's painter's order, no depth buffer - and rasterises every polygon and
-sprite packet against the state's own VRAM, at the GPU's 5-bit depth:
+sprite packet against the state's own VRAM, at the GPU's 5-bit depth. The
+records are the SCUS frame driver's, so a battle, a field or a minigame frame
+(the dance hall's) reads the same way:
 
 - textures read from VRAM (4 / 8 / 15 bpp, CLUT from the packet), texel `0`
   transparent, the `(t5 * c8) >> 7` texture blend unless the raw bit is set;

@@ -66,6 +66,11 @@ cd "$REPO_ROOT"
 
 log() { printf '[release-build] %s\n' "$*"; }
 
+# The version the desktop programs show and put in a bug report
+# (`legaia_release_version::VERSION`, read at compile time): the release's own,
+# not the workspace's crate version.
+export LEGAIA_RELEASE_VERSION="$VERSION"
+
 # --- The binary matrix -----------------------------------------------------
 #
 # Every target ships every binary. GUI_BINS (wgpu + winit + cpal) are listed
@@ -386,6 +391,19 @@ if [[ "$TARGET" == "$HOST_TRIPLE" || "$BUILD_MODE" == "universal" ]]; then
     log "smoke: $("$TOOLS/legaia-engine${BIN_EXT}" --version)"
     log "smoke: $("$GAME_RUN" --version) (via ${GAME_RUN#"$STAGE"/})"
     log "smoke: $("$EXPLORER_RUN" --version)"
+    # Each program names the release it ships in: the game, Explorer, the
+    # asset viewer and every command-line tool (`legaia_release_version`).
+    versions=("$("$TOOLS/legaia-engine${BIN_EXT}" --version)" "$("$EXPLORER_RUN" --version)")
+    versions+=("$("$TOOLS/asset-viewer${BIN_EXT}" --version)")
+    for b in "${CLI_BINS[@]}"; do
+        versions+=("$("$TOOLS/$b${BIN_EXT}" --version)")
+    done
+    for v in "${versions[@]}"; do
+        if [[ "$v" != *" $VERSION" ]]; then
+            printf '[release-build] ERROR: %s does not name release %s\n' "$v" "$VERSION" >&2
+            exit 1
+        fi
+    done
 fi
 
 # The bundled expansion packs: packs/<id>.lxpack at the top level. The

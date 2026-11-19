@@ -6,7 +6,8 @@
 //!
 //! Two port bounds are held apart rather than compared: a note more than five
 //! octaves under the tone's centre reads off the front of the pitch table in
-//! retail (the port plays `0`), and the port caps the step at `0x4000`, the
+//! retail, into globals the port models only at the two indices the disc's
+//! scores reach (`vab_bind::table_front_word`), and the port caps the step at `0x4000`, the
 //! limit the SPU's pitch counter applies to whatever is written.
 //!
 //! The key and bend arms run on shifts of `0..=0x7F`, the range every VAB on
@@ -111,7 +112,8 @@ fn tone_bytes(t: &VagAtr) -> [u8; 32] {
 }
 
 /// What retail computes with the step limit applied, or `None` for a note
-/// the port deliberately leaves at zero (more than five octaves down).
+/// more than five octaves down, whose word the port models only where a score
+/// reaches it.
 fn held(retail: u16, n: i32) -> Option<u16> {
     (n >= 0).then_some(retail.min(0x4000))
 }

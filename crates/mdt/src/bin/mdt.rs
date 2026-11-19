@@ -24,7 +24,7 @@ use legaia_mdt::{MoveBuffer, RecordTable, Verdict, classify};
 #[derive(Parser)]
 #[command(
     name = "mdt",
-    version,
+    version = legaia_release_version::VERSION,
     about = "Inspect move.mdt-style buffers (Tactical Arts move table)"
 )]
 struct Cli {

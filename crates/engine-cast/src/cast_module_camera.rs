@@ -260,6 +260,10 @@ pub struct ModuleCamState {
     /// arms a shot (PROT 0928's arm 4 exit). `None` where the host has no
     /// camera.
     pub live_pitch_tr: Option<(i32, [i32; 3])>,
+    /// The live focus trio `0x80089118/1C/20` as the host last saw it: PROT
+    /// 0915's arm `0xD` re-arms its framing on it every pass, so its focus
+    /// stays where arm `0xC`'s last glide left it.
+    pub live_focus: Option<[i32; 3]>,
     /// Module-image words a director reads that the module's ported tick
     /// body owns, fed by the host each tick: PROT 0910's hit counter
     /// `0x801F8DAC` and fourth-slash progress `0x801F8DA8`, which pick its
@@ -574,7 +578,7 @@ pub enum ModuleCaption {
     /// No text: the arm called `FUN_800319A8(0)` on its own, freeing the text
     /// actor it put up and printing nothing after it. Every player Seru
     /// module ends its line this way ahead of the band's exit (PROT 0903
-    /// `0x801F74C8`, 0905 `0x801F802C`, 0906 `0x801F75D4`, 0910
+    /// `0x801F74C8`, 0905 `0x801F802C`, 0906 `0x801F75D4`, 0908 `0x801F7BE0`, 0910
     /// `0x801F7BC4`, 0911 `0x801F7ED0`, 0913 `0x801F8460`).
     Cleared,
     /// A string in the module's own image, by slot-B VA: PROT 0927 arm 21
@@ -1137,6 +1141,10 @@ pub struct ModuleNudge {
     pub tr_x: i16,
     pub tr_y: i16,
     pub tr_z: i16,
+    /// The creature seat's height `+0x36`, written beside the camera globals
+    /// on the same passes (PROT 0905's arm 10 lifts Vera off the field by
+    /// `p / 2`, `sh v0,0x36(s4)` at `0x801F8000`).
+    pub creature_y: i16,
 }
 
 impl ArmDirection {
@@ -1273,6 +1281,7 @@ mod gola_mushura_barra;
 mod hyper_crush;
 mod hyper_lightning;
 mod jedo_iota_mule;
+mod jugger_power;
 mod juggernaut;
 mod kemaro;
 mod kiss_of_death;
@@ -1360,6 +1369,7 @@ pub use gola_mushura_barra::*;
 pub use hyper_crush::hyper_crush_camera;
 pub use hyper_lightning::hyper_lightning_camera;
 pub use jedo_iota_mule::*;
+pub use jugger_power::{JUGGER_POWER_BODY, jugger_power_camera};
 pub use juggernaut::*;
 pub use kemaro::*;
 pub use kiss_of_death::{

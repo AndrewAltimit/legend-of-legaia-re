@@ -207,31 +207,32 @@
         let draws;
         try { draws = JSON.parse(drawsJson); }
         catch (e) { return; }
-        if (!draws || !draws.open) {
-          /* The pause wipe: the menu is open but not spawned yet, and the
-           * field darkens under the wipe quad. Nothing of the field's layers
-           * may stay on this canvas - retail's party readout is gone from the
-           * first field tick after the menu press (the press rearms its idle
-           * countdown, `FUN_801D0D38`), and the native window draws none.
-           * Returning without a clear kept the last field frame's readout
-           * here, dimmed by the wipe drawn over it. */
+        if (draws && draws.open) {
+          /* Native blacks the whole framebuffer while the pause menu is up
+           * (`boot_ui.is_active()` clears to black + suppresses every 3D draw) - the
+           * frozen scene is NOT visible around the windows. This overlay canvas sits
+           * over the GL view, so paint it fully opaque black first, then blit the
+           * menu on top: same result as native's black backdrop. */
           ctx.clearRect(0, 0, ov.width, ov.height);
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, ov.width, ov.height);
+          if (this._menuChrome) this._menuChrome.blitDarkened(ctx, draws.sprites, draws.darken);
+          if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
           this._overlayPainted = menuKey;
           return;
         }
-        /* Native blacks the whole framebuffer while the pause menu is up
-         * (`boot_ui.is_active()` clears to black + suppresses every 3D draw) - the
-         * frozen scene is NOT visible around the windows. This overlay canvas sits
-         * over the GL view, so paint it fully opaque black first, then blit the
-         * menu on top: same result as native's black backdrop. */
-        ctx.clearRect(0, 0, ov.width, ov.height);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, ov.width, ov.height);
-        if (this._menuChrome) this._menuChrome.blitDarkened(ctx, draws.sprites, draws.darken);
-        if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
-        this._overlayPainted = menuKey;
-        return;
+        /* The press and the pause wipe: the menu is attached but not spawned
+         * yet, and the field still owns the frame, so the field's own layers
+         * below paint it, as the native window's do until the spawn hands the
+         * frame to the menu. Retail builds the party readout on the accept
+         * tick and never again (`FUN_801D0D38`; the press rearms its idle
+         * countdown from the next field tick), so the press frame keeps the
+         * readout and every wipe frame after it has none: the readout's own
+         * decision says which. Clearing here dropped it one frame early, on
+         * the press (`pause_hud` tick 152, 12% of the frame); returning
+         * without a clear kept the last field frame's readout under the
+         * whole wipe. */
       }
       /* Opening name-entry overlay (`town01`'s naming prompt). Modal, so it is
        * checked before the shop / dialog layers - but like them it composites

@@ -147,14 +147,29 @@ impl World {
             .battle_xa_cues
             .get(queued..)
             .and_then(|c| c.last())
+            .map(|c| (c.clip, c.duration_sectors))
         else {
             return;
         };
-        let parked = !busy && cue.clip == u32::from(char_id.wrapping_sub(1)) * 2;
-        self.audio.battle_xa_poll_wait = Some(if parked {
+        let (clip, duration) = cue;
+        let parked = !busy && clip == u32::from(char_id.wrapping_sub(1)) * 2;
+        let wait = if parked {
             fc::ARTS_SHOUT_PARKED_POLL_HBLANKS
         } else {
             fc::ARTS_SHOUT_SEEK_POLL_HBLANKS
-        });
+        };
+        self.audio.battle_xa_poll_wait = Some(wait);
+        // The polls run from the read the seek opens to `14` past the span
+        // (`ARTS_SHOUT_READ_TAIL_VSYNCS`), not the cue's span plus the drive
+        // word's tail.
+        if self.toggles.battle_arts_shout_cd && self.toggles.battle_frame_span_law {
+            let span = duration.min(u32::from(u16::MAX)) as u16;
+            let open = wait.div_ceil(fc::HBLANKS_PER_VSYNC) as u16;
+            let window = open
+                .saturating_add(span)
+                .saturating_add(fc::ARTS_SHOUT_READ_TAIL_VSYNCS);
+            self.audio.battle_xa_load_frames = window;
+            self.audio.battle_xa_retail_left = window;
+        }
     }
 }

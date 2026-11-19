@@ -27,22 +27,13 @@ impl PlayWindowApp {
                     self.keys_down.remove(&code);
                 }
                 ElementState::Pressed if self.keys_down.insert(code) => {
-                    if self.hotkey_help {
-                        // On the panel, Esc is the way out of the panel.
-                        self.hotkey_help = false;
-                        return;
-                    }
-                    let now = std::time::Instant::now();
-                    if escape_quits(self.quit_prompt, now) {
+                    if self.escape_press(std::time::Instant::now()) {
                         if let Some(log) = self.record_log.as_mut()
                             && let Err(e) = log.flush()
                         {
                             log::error!("record: flush on Escape failed: {e:#}");
                         }
                         evl.exit();
-                    } else {
-                        log::info!("Escape: press it again to quit");
-                        self.quit_prompt = Some(now);
                     }
                 }
                 ElementState::Pressed => {}
@@ -53,6 +44,24 @@ impl PlayWindowApp {
             return;
         }
         self.handle_key(code, state);
+    }
+
+    /// A leading-edge `Escape` short of leaving: on the hotkey panel it
+    /// closes the panel, otherwise it arms the quit prompt, and `true` says
+    /// this press confirms a prompt still up. The caller owns the exit, so
+    /// `--key-script` presses Esc through here and never quits.
+    pub(in crate::window) fn escape_press(&mut self, now: std::time::Instant) -> bool {
+        if self.hotkey_help {
+            // On the panel, Esc is the way out of the panel.
+            self.hotkey_help = false;
+            return false;
+        }
+        if escape_quits(self.quit_prompt, now) {
+            return true;
+        }
+        log::info!("Escape: press it again to quit");
+        self.quit_prompt = Some(now);
+        false
     }
 
     /// `F11`, or `Alt+Enter`: borderless fullscreen on or off, remembered

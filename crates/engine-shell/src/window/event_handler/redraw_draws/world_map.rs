@@ -253,7 +253,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // (no SSAO on it, as on the field).
         self.r
             .set_occlusion_env_draws(draws.len(), color_draws.len());
-        if !app.session.host.world.cutscene_timeline_active() {
+        if !app.session.host.world.overworld_hides_lead() {
             let w = &app.session.host.world;
             let player = w.player_actor_slot.and_then(|pslot| {
                 // Only a successfully uploaded player mesh draws: the

@@ -25,6 +25,10 @@ terrain follow, solid and living NPCs. `--run` sets the Field Move option to Run
 read it off the retail side's step (a run step is `24` at frame step `2`, a walk
 step `16`), since the seed has no host to mirror it.
 
+A state saved mid-departure seats the scene-change actor (`RetailObs::departure_countdown` / `departure_state`: the countdown `gp+0x710` while the screen byte `0x8007B648` reads `0x80`, and `+0x1A` of the `FUN_80021934` actor). The engine's parked hold takes the vsync retail hands off on (the first frame past zero on the state's frame grid) and, for an actor still in state 3, what is left of its chunk read. Left to a fresh actor, `s2_rimelm_town01` left `map01` at vsync `70` where retail leaves at `32`. A harness seat; `LEGAIA_RC_NO_DEPART_SEAT=1` keeps the engine's.
+
+Under the retail pad pipeline the film also seats the pad the state's last frame latched (`RetailObs::pad_buffer`, libpad's buffer at `0x800840F8` inverted, `World::seat_retail_frame_pad`): the frame after the save reads it before the film's own pad. `kor3_field_route_walk` steps once more under the route walk's Left before turning under the film's Up, and so follows retail onto its warp pad; `tower_field_walk`'s `rng` agrees to its end (`52` to `150` of `150`). A harness seat; `LEGAIA_RC_NO_PAD_SEAT=1` keeps the pipeline empty.
+
 ## Reading it
 
 A retail pass is a row where the player or camera changed. The engine walks one
@@ -67,6 +71,8 @@ The pool alone cannot always tell, since a frame whose emitter spawned nothing l
 It seats each live ambient part's program from the state too (`retail_part_vm`, `World::seat_ambient_part_vm`): the PC `+0x70`, the wait `+0x54`, the loop PCs and counters `+0x88..+0x8E` and `+0x5C`, paired with the engine's parts record by record in list order. A part's waits run on the game pass from its spawn, so which pass its next `rand()` op draws on is time since the scene entry, and the seed's settle had left `koin1`'s parts on other PCs and other waits than the state's (`0x5EE` at PC `20`, wait `96`, against retail's `38`, `24`). Positions, banks and render state stay the engine's. A harness seat; `LEGAIA_RC_NO_PART_VM=1` turns it off and `LEGAIA_RC_PART_DIAG=1` prints both sides' parts.
 
 A retail pass reads the pad the probe set one vsync earlier, and a pass is on a game frame, so a pad file made from an engine digest replays on retail two vsyncs early (each row's `tick - 2`, one-vsync presses widened); `retail - 1` of a draw then pairs with the engine tick.
+
+Both sides log the cue ring. Retail's `cues` column is the ring's four ids (`0x8007B6D8`, `-1` empty), and an id that newly fills a slot is a push (the ager empties a played slot the frame after, so a re-push shows as a new fill). The engine's is the ids its producers handed out that tick, read off a tap on `World::take_sfx_ring_ops` (`World::open_sfx_ring_tap`), since the session drains the ring for its director inside the tick. The report pairs each retail push with the engine's nearest push of the same id and prints the offset in vsyncs. Cues the hosts key on their own (the pause menu's blips, `AudioDirector::queue_ui_cue`) are not on the ring and not in the column.
 
 The first pass differs by construction: a state saved mid-walk has one more
 pass of the old pad queued, as `kor3_field_route_walk`'s first row does.

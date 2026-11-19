@@ -2604,11 +2604,22 @@ non-zero, the view depth `+0x34` is below `0xA0` (`slti v0,v0,0xa0` at
 `0x8001B1C0`) and `+0x52` does not carry `0x20`. The kind-`1` and kind-`2`
 arms test the same depth against `0xA1`.
 
-So an object whose origin sits within 160 units of the eye, or behind it, is
+So an object whose origin sits within 160 view units of the eye, or behind it, is
 not drawn, where a per-pixel near clip would draw its inside. The Thunder
 Ravine walk-in (`nilboa`, the Delilas intro) parks its cutscene camera inside
 an additive mist shell (placement at `(11840, 0, 13784)`); retail holds that
 actor at view depth `-423`.
+
+The view units are retail's: the field base matrix `DAT_8007BF10` folds a `6x`
+world scale into the rotation, so `+0x34` is six times the depth of the port's
+`1x` camera, and the reject reaches about 27 world units in front of the eye,
+not 160. `vozz`'s Genesis Tree close-up (`vozz_tree_closeup_noa_vahn`) is the
+case that tells them apart: the shot's eye stands inside the clearing's sky
+shell (placement at `(13248, -480, 13248)`, pack mesh `46`, a ring of night-sky
+quads), whose actor reads `+0x34 = 344` in the state's RAM while the port's clip
+`w` is `57.4`. Retail draws the two shell quads in shot (ordering-table packets
+at depth `508` / `591`, tpage `0x9A`, CLUT `0x7E80`); compared in `1x` units the
+port rejected the shell and drew the sky black. Grade `capture`.
 
 The `+0x52 & 0x20` exemption comes from the `.MAP` object record: the
 restage `FUN_80020F88` copies the record's `+0x12 & 0x3E8` into `+0x52`

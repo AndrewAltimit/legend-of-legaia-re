@@ -321,6 +321,20 @@ nothing (a four-vsync Circle tap in the same film). Before the first frame,
 game mode `0x0C` loads PROT 0981 for `25` vsyncs (mode `0x0C` at vsync `22`,
 `0x0D` at `47`) on the black the ramp ended on.
 
+The port's default display is smooth (`WorldToggles::smooth_map_display`, an
+enhancement; `pin_retail` and `--retail` turn it off). It keeps retail's
+clock for everything that steps on it - the opening and closing modes, the
+fade timer, the pointer's handler - so the open and the exit take retail's
+vsyncs, and runs the interactive mode every vsync between those frames. The
+pad is read every vsync, and the held d-pad pans a tile per five vsyncs in
+slices of `0x80 * (k + 1) / 5 - 0x80 * k / 5` (`25, 26, 25, 26, 26`), finishing
+a started tile after the d-pad lets go so the camera rests on whole tiles as
+retail's does (`MapDisplay::pan_smooth`). The fade steps between one frame's
+level and the next a vsync at a time (`MapDisplay::fade_grey_between`). An
+exit press restarts the frame clock, so the fade-out runs its five frames
+from the press. Off, the display is the retail one above, bit for bit; the
+retail comparison, the films and the ladder all run it.
+
 **Survey camera** (mode `1`, `0x801CE8EC..0x801CE950`): `TR = (0, 0, 0x9470)`
 at `0x800840B8`, rotation trio `0x8007B790 = (0x300, 0, 0)`, projection
 `0x8007B6F4 = 0x170`, camera height `0x8008911C = 0`, and the visible tile
@@ -395,7 +409,8 @@ kingdom MANs at once. See
 **Port.** The state machine, the stepper, the clamp and the panel geometry
 are `legaia_engine_field::map_display`. `World::pace_map_display` runs it on
 its own frame clock, a frame every `MAP_DISPLAY_FRAME_VSYNCS` vsyncs with the
-edge word taken against the last frame's pad, and the retail-faithful mode
+edge word taken against the last frame's pad (the smooth default adds the
+interactive mode's per-vsync steps between frames), and the retail-faithful mode
 (`WorldToggles::skip_load_holds` off) holds `MAP_DISPLAY_LOAD_VSYNCS` of
 black for the load first. `World::tick_world_map` opens the
 display on the ramp's hand-off, and while it is up `World::tick` runs

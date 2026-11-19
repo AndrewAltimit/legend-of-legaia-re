@@ -2087,6 +2087,27 @@ fn a_hidden_body_sheds_no_impact_sprites() {
     assert_eq!(w.actors[0].battle.impact_state, 2);
 }
 
+/// The fire's red test reads the node's colour word `+0x74` (`0x8004A7FC`),
+/// which the after-image walk overwrites with each ghost's flat colour
+/// (`0x800493C4` / `0x800493D4`, less `0x101010` a ghost). No ghost base
+/// reaches the `0xB0` floor, so a selector-`1` body sheds fire from its live
+/// draw alone and its ghosts only spend `rand()`; selector `2` tests no
+/// colour and sheds from every draw.
+#[test]
+fn a_ghost_draw_sheds_no_fire() {
+    use legaia_engine_battle::battle_afterimage as ai;
+    use legaia_engine_battle_vm::battle_impact_fx as ifx;
+    for base in ai::GHOST_COLOR_PARTY
+        .iter()
+        .chain([&ai::GHOST_COLOR_MONSTER])
+    {
+        for ghost in ai::plan_ghosts(1, false, *base, |_| true) {
+            assert_eq!(ifx::burn_effect(1, ghost.color[0]), None, "{base:?}");
+            assert!(ifx::burn_effect(2, ghost.color[0]).is_some());
+        }
+    }
+}
+
 /// A monster's finished knockdown on zero HP credits the member holding the
 /// action on its record's Monsters Defeated word (`+0x9C`), once: the death
 /// arm's own `+0x1DC` bit 3 gates the credit on the passes after the first,

@@ -42,6 +42,7 @@ RING_IDS = 0x7B6D8  # DAT_8007B6D8[4], the cue ring's ids (i16)
 RING_TIMERS = 0x7C338  # DAT_8007C338[4], their countdowns (u32)
 FRAME_STEP = 0x393  # 0x1F800393 in the scratchpad, the frame step
 FRAME_COUNT = 0x7B798  # gp+0x480, the main loop's frame counter
+SILENT_INDEX = 0x1CE204  # _DAT_801CE204, the libsnd flush's history index: +1 a calc
 CDC_VARS = ["DriveStatus", "CurSector", "SeekTarget", "PSRCounter", "PendingCommand",
             "PendingCommandCounter", "StatusAfterSeek"]
 
@@ -92,7 +93,8 @@ def row(path: Path) -> list | None:
     return [struct.unpack_from("<I", ram, VCOUNT)[0], ram[ctx + 0x279], ram[ctx + 0x276],
             struct.unpack_from("<I", ram, DRIVE_STATE)[0], ram[ctx + 7],
             struct.unpack_from("<i", ram, DUCK_CELL)[0]] + [var(b, v, max(cdc, 0)) for v in CDC_VARS] + \
-        [moved, step, struct.unpack_from("<I", ram, FRAME_COUNT)[0]] + ring
+        [moved, step, struct.unpack_from("<I", ram, FRAME_COUNT)[0]] + ring + \
+        [struct.unpack_from("<I", ram, SILENT_INDEX)[0]]
 
 
 ACTION_BANDS = (0x35, 0x36, 0x70)  # the module bands, where a step track keys the phase
@@ -106,7 +108,7 @@ def step_track(rows: list[list]) -> str:
     skipped."""
     seen, frames = set(), []
     for r in rows:
-        vsync, frame = r[0], r[-9]
+        vsync, frame = r[0], r[-10]
         if vsync in seen:
             continue
         seen.add(vsync)
@@ -116,7 +118,7 @@ def step_track(rows: list[list]) -> str:
             frames.append([frame, r, r])
     out = []
     for _, first, last in frames:
-        state, step = first[4], last[-10]
+        state, step = first[4], last[-11]
         phase = first[1] if state in ACTION_BANDS else 0
         out.append(f"{state} {phase} {step}\n")
     return "".join(out)
@@ -140,7 +142,7 @@ def main() -> int:
         print(f"no mednafen library state {a.state}")
         return 1
     rows = [["vsync", "phase", "sideband", "drive_word", "action_state", "duck"] + CDC_VARS + ["ram_words_moved", "step", "frame"] + \
-        [f"id{n}" for n in range(4)] + [f"timer{n}" for n in range(4)]]
+        [f"id{n}" for n in range(4)] + [f"timer{n}" for n in range(4)] + ["silent_index"]]
     with tempfile.TemporaryDirectory(prefix="drive-timeline-") as t:
         tmp = Path(t)
         stage, home = tmp / "disc", tmp / "home"

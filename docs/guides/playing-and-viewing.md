@@ -315,7 +315,24 @@ every enhancement off for that session, the saved options untouched; the rows
 it overrides read *Original* while it is on. It also plays the original's
 loading pauses: the screen holds on the last field frame and then black for
 about a second while the pause menu or a shop loads, and again on the way
-back to the map, where the default mode opens and closes them at once.
+back to the map, where the default mode opens and closes them at once. Each
+door holds black for three to four seconds while the next scene loads (longer
+when the music changes), and the way back from a battle for five to seven;
+the default mode enters the next scene at once. The L1 overworld map runs at
+the original's twelve frames a second, panning a tile at a time; the default
+moves it every frame at the same speed and reads every button tap. On the
+field and the world map the original reads the controller once a game frame
+and acts on a press two screen refreshes late, so a very short tap can go
+unread, and it moves your character a whole step once a game frame (every two
+refreshes in a town, every three on the world map); the default reads a press
+the refresh it lands and spreads each step over the refreshes, at the same
+walking speed.
+A
+cutscene's camera pans and zooms move in the original's steps, fifteen to
+thirty a second; the default draws every frame of them along the same path.
+A battle's camera and fighters move once a battle frame in the original, two to
+four refreshes apart; the default draws them every refresh, one battle frame
+behind, with the fighters moving in step with the camera.
 
 *Saved-chain Arts list* is an addition of the port's; the original has nothing
 like it. With it on, the battle command ring's **Arts** opens a list of the

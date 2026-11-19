@@ -564,7 +564,9 @@ impl LegaiaRuntime {
     /// as the native `build_effect_billboards` derives it, so both hosts'
     /// quads face the camera that actually draws them.
     fn build_battle_fx(&mut self, aspect: f32) {
-        use legaia_engine_world_views::effect_draws::{effect_billboards, effect_model_draws};
+        use legaia_engine_world_views::effect_draws::{
+            effect_billboards, effect_model_draws_drawn,
+        };
         let mut frame = BattleFxFrame::default();
         if !self.play_battle_active() {
             self.battle_fx = frame;
@@ -608,7 +610,7 @@ impl LegaiaRuntime {
         // draw-kind-4 nodes and the battle ground shadows - the native order.
         let part_cam =
             legaia_render_kernels::gte::PartCameraPose::from_battle(&self.battle_cam_pose());
-        let lists = effect_model_draws(world, Some(&part_cam), |i| self.battle_draw_plan(i));
+        let lists = effect_model_draws_drawn(world, Some(&part_cam), |i| self.battle_draw_plan(i));
         let outer = mat4_scale(s);
         push_fx_models(&mut frame, world, &lists, &outer, Some(&cam));
         for n in lists.kind4.iter().chain(&lists.shadows) {
@@ -649,7 +651,9 @@ impl LegaiaRuntime {
     /// camera-basis corners are added. Field FX carry no world scale, so
     /// half-extents are the raw pass-2 size.
     fn build_field_fx(&mut self, vp: [f32; 16]) {
-        use legaia_engine_world_views::effect_draws::{effect_billboards, effect_model_draws};
+        use legaia_engine_world_views::effect_draws::{
+            effect_billboards, effect_model_draws_drawn,
+        };
         let mut frame = BattleFxFrame::default();
         let Some(host) = self.scene_host.host() else {
             self.battle_fx = frame;
@@ -681,7 +685,7 @@ impl LegaiaRuntime {
             .filter(|(m, _)| *m == vp)
             .and_then(|(_, frame)| frame.field_view())
             .map(|v| legaia_render_kernels::gte::PartCameraPose::from_field_view(&v));
-        let lists = effect_model_draws(world, part_cam.as_ref(), |_| None);
+        let lists = effect_model_draws_drawn(world, part_cam.as_ref(), |_| None);
         let outer = WORLD_FLIP;
         // The page draws this frame both-sided (`nclip: 0`), so a
         // single-sided part or node drops its back faces here, as the native
@@ -1185,6 +1189,7 @@ mod tests {
     #[test]
     fn billboard_corners_are_a_centred_parallelogram() {
         let sprite = legaia_engine_core::world::EffectSprite {
+            slot: None,
             world_pos: [10.0, -20.0, 30.0],
             size: [8.0, 4.0],
             uv: [0, 0],

@@ -1735,8 +1735,8 @@ The arbitrary-write investigation over the unchecked item-add helper `FUN_800421
 
 ##### `autorun_scene_name_hijack.lua`
 
-Some scenes are unreachable from every catalogued save - `juui1` has no
-library state at all - so nothing shows what retail draws there. The field
+A scene no catalogued save stands in shows nothing of what retail draws
+there until a capture reaches it. The field
 VM's op `0x3F` (named scene change) carries its destination **inline in the
 bytecode**, `[u16 seat][u8 name_len][name bytes]`, so a probe that breaks on
 the VM's per-op dispatcher `FUN_801DE840` can rewrite the name in the live MAN
@@ -1788,7 +1788,13 @@ have a five-letter destination, spread over 17 source scenes, so a donor for a
 five-letter target is not scarce; what is scarce is a save state parked next to
 one.
 
-Two consequences for `juui1` in particular:
+`juui1` is no longer such a scene: its `juui1_vortex_*` states come from
+retail play, `conc3_field_inn_night` walked out of the inn into the Conkram
+ceremony (`conc3` `P2[10]` raises `0x3E5`), then by `conc3`'s door into `conc2`
+and onto the vortex, where an `ACT` facing `Z-` on tile `(86, 59)` opens the
+"jump into the vortex" picker (`P2[23..30]`, each spawning the `0x3F` record
+`P2[20]`); Cross takes its default Yes. Walking onto the vortex tiles does not
+open it. Before that capture, two consequences held for `juui1`:
 
 - **It has an ordinary field-to-field door of its own.** `conc2` reaches it
   directly (`index 587`, seat `(0x00,0x00)`, MAN offset `0x7F12`), so the scene

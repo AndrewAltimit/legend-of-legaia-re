@@ -118,8 +118,10 @@ impl World {
         // the Events vibration row is off, copying the duel's two levels into
         // them (`0x801CF3CC..0x801CF3F4`).
         let vibration_off = self.event_vibration_off();
+        let install_load_hold = !self.toggles.skip_load_holds;
         let out = match self.minigames.baka_fighter.as_mut() {
             Some(f) => {
+                f.set_install_load_hold(install_load_hold);
                 let [pulse, level] = if vibration_off { [0; 2] } else { f.rumble() };
                 self.rumble.motors = legaia_engine_system::rumble::RumbleMotors { pulse, level };
                 f.frame(edge, held, pot)

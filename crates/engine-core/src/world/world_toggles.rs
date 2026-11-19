@@ -144,8 +144,10 @@ pub struct WorldToggles {
     pub battle_sm_frame_cadence: bool,
     /// Run an ordinary battle frame on the step retail's frame cost gives this
     /// party's size (`World::ordinary_battle_frame_step`), not the two-vsync
-    /// default. Off in a bare `World`, which unit tests pin on the default; the
-    /// play hosts raise it through [`Self::retail_cost_step`].
+    /// default. On in a bare `World` and on both play hosts; the native
+    /// session lowers it under `LEGAIA_BATTLE_PARTY_STEP=0`
+    /// (`legaia_engine_session::native::apply_env_world_toggles`), and the
+    /// play page has no setter for it.
     pub battle_party_cost_step: bool,
     /// Opt-in frame-step source, off by default (the step tables stay the
     /// default clock): a battle pass's frame cost is the larger of its
@@ -156,6 +158,31 @@ pub struct WorldToggles {
     /// `max(cpu, dma + draw)` entry. The native session raises it from
     /// `LEGAIA_BATTLE_GPU_COST=1`; only the native window prices its frames.
     pub battle_gpu_cost_step: bool,
+    /// Opt-in, off by default: a party art commit's `"ME"` keyframe decode
+    /// priced into its battle frame (`frame_clock::me_decode_work`;
+    /// `FUN_8002B28C` from `FUN_8004AD80`). Retail-correct, but over the
+    /// arts films it trades the arts mean and camera against the worst rows
+    /// until the census base and the voiced frames' span agree with retail's
+    /// (`battle-stage-camera.md`, an art's keyframe decode). The native
+    /// session sets it either way from `LEGAIA_BATTLE_ME_DECODE`.
+    pub battle_me_decode_cost: bool,
+    /// Opt-in, off by default: an arts shout's CD read priced from its own
+    /// `--cd-trace` recordings, the polls running from the read the seek opens
+    /// to `14` vsyncs past the span (`frame_clock::ARTS_SHOUT_READ_TAIL_VSYNCS`)
+    /// at `frame_clock::ARTS_SHOUT_POLL_WORK_RATIO_MILLI` and stopping where the
+    /// read ends (`frame_clock::xa_poll_tail_cost`). Retail's numbers, but over
+    /// the arts films it lifts the image and costs the Super Arts' camera. The
+    /// native session sets it either way from `LEGAIA_BATTLE_ARTS_SHOUT_CD`.
+    pub battle_arts_shout_cd: bool,
+    /// Opt-in census term, off by default: the effect pool's share of a
+    /// census-priced battle frame is the retail walker's branches since the
+    /// last priced pass, each at its cycle count
+    /// (`frame_clock::effect_walk_cost`, counted in `retail-exec`), in place
+    /// of the flat `EFFECT_POOL_CHILD_COST_MILLI` a live child. Measured over
+    /// the four film sets it moves the image means by `.001` or less either
+    /// way, so the default keeps the flat price. The native session raises
+    /// it from `LEGAIA_BATTLE_WALK_COST=1`.
+    pub battle_effect_walk_cost: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
     /// CD-XA voice clip plays: PCSX-Redux's by default, where the clip player's
     /// stop watch polls the drive on two thirds of the CPU and a voiced arm's
@@ -226,12 +253,14 @@ pub struct WorldToggles {
     /// at `(2880, 2886)`), with no step left to start another hop. Off is
     /// retail's unguarded hop.
     pub hop_landing_guard: bool,
-    /// Skip the CD-wait black holds around the pause menu (port, on by
-    /// default): retail holds the screen while the menu overlay loads after
-    /// the wipe (`LOAD_HOLD_OPEN_VSYNCS`) and while the field overlay reloads
-    /// after a close (`LOAD_HOLD_CLOSE_VSYNCS`,
-    /// `legaia_engine_system::pause_wipe`). Off, under `pin_retail`, runs
-    /// both holds as the captures measure them.
+    /// Skip the CD-wait black holds around the pause menu and behind a door
+    /// (port, on by default): retail holds the screen while the menu overlay
+    /// loads after the wipe (`LOAD_HOLD_OPEN_VSYNCS`) and while the field
+    /// overlay reloads after a close (`LOAD_HOLD_CLOSE_VSYNCS`,
+    /// `legaia_engine_system::pause_wipe`), and while a door's field init
+    /// loads the next scene (`World::field_init_hold`,
+    /// `legaia_engine_system::mode_entry_init::door_field_init_hold_vsyncs`).
+    /// Off, under `pin_retail`, runs the holds as the captures measure them.
     pub skip_load_holds: bool,
     /// The game reads the pad on the vsync it is pressed (port, on by
     /// default). Retail samples the libpad buffer once a frame, at the end of
@@ -251,6 +280,27 @@ pub struct WorldToggles {
     /// the frame's whole step taken; off, under `pin_retail`, the port does
     /// the same.
     pub smooth_walk: bool,
+    /// The L1 map display runs every vsync (port, on by default) at retail's
+    /// speeds: the held d-pad pans a tile per five vsyncs a fifth of a tile
+    /// at a time, the fades take retail's time stepped a vsync at a time,
+    /// and the pad is read every vsync, so no tap falls between frames.
+    /// Retail draws the survey a frame every five vsyncs (its `0x2BC` cost
+    /// cap) and steps everything on that clock; off, under `pin_retail`, the
+    /// port does the same ([`crate::world::World::pace_map_display`]).
+    pub smooth_map_display: bool,
+    /// A scripted camera glide draws every vsync (port, on by default).
+    /// Retail's op-`0x45` mover (`FUN_801DC0BC`) steps its progress once a
+    /// game frame by the frame step, so an authored pan or ease moves a
+    /// whole step at a time and holds between - 15 poses a second at the
+    /// step `4` a heavy shot runs at. On, the hosts draw the vsyncs between
+    /// on the line to the pose the next frame stores, a vsync further along
+    /// each (`Camera::led_delta`); the camera globals, the simulation and
+    /// everything it reads keep the stepped pose. A battle's camera has no
+    /// fixed next pose, so its draw runs one battle frame behind instead,
+    /// the camera, every body's root and every body's pose stepped on one
+    /// phase ([`crate::world::BattlePresent`]). Off, under `pin_retail`,
+    /// the frame draws the stored pose, as retail does.
+    pub smooth_camera: bool,
     /// Shiny Seru (port gameplay feature, the engine twin of the patcher's
     /// `--shiny-seru`): each battle entry rolls
     /// [`legaia_engine_battle::seru_state::SeruState::shiny_chance_pct`] for one
@@ -521,6 +571,9 @@ impl WorldToggles {
             battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
             battle_party_cost_step: true,
             battle_gpu_cost_step: false,
+            battle_me_decode_cost: false,
+            battle_arts_shout_cd: false,
+            battle_effect_walk_cost: false,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: true,
             battle_poly_frame_cost: true,
@@ -531,6 +584,8 @@ impl WorldToggles {
             skip_load_holds: true,
             immediate_pad: true,
             smooth_walk: true,
+            smooth_map_display: true,
+            smooth_camera: true,
             shiny_seru: true,
             battle_memo_verify: false,
             flee_exp: false,
@@ -560,13 +615,16 @@ impl WorldToggles {
     /// Pin every fidelity toggle to retail's behaviour: no entry pulse, no
     /// photosensitivity slew, the retail tile crop, no volumetric fog, the
     /// uniform monster target, the damage finisher and the battle pass's
-    /// discarded draw. The loop and dialogue-routing switches and the option
-    /// mirrors are host wiring, not fidelity, and are left alone.
+    /// discarded draw, the CD-wait holds, the frame-latched pad, the
+    /// once-a-frame walk and map display, and every gameplay tweak and battle
+    /// tuning at retail. The loop and dialogue-routing switches, the
+    /// frame-cost measurement switches and the option mirrors are host
+    /// wiring, not fidelity, and are left alone.
     ///
     /// A bare [`WorldToggles::new`] is not this: it keeps the
-    /// photosensitivity slew and the entry pulse on, so a host that never
-    /// plumbs options is safe by default. A headless comparison against
-    /// retail calls this.
+    /// photosensitivity slew, the entry pulse and the other default-on
+    /// enhancements and fixes on, so a host that never plumbs options is safe
+    /// by default. A headless comparison against retail calls this.
     pub fn pin_retail(&mut self) {
         self.entry_pulse_enabled = false;
         self.reduce_flashing = false;
@@ -580,6 +638,8 @@ impl WorldToggles {
         self.skip_load_holds = false;
         self.immediate_pad = false;
         self.smooth_walk = false;
+        self.smooth_map_display = false;
+        self.smooth_camera = false;
         self.arts_saved_list = false;
         self.shiny_seru = false;
         self.flee_exp = false;
@@ -639,6 +699,12 @@ impl WorldToggles {
         }
         if self.smooth_walk {
             out.push("smooth_walk");
+        }
+        if self.smooth_map_display {
+            out.push("smooth_map_display");
+        }
+        if self.smooth_camera {
+            out.push("smooth_camera");
         }
         if self.arts_saved_list {
             out.push("arts_saved_list");
@@ -723,6 +789,8 @@ mod fidelity_tests {
                 "skip_load_holds",
                 "immediate_pad",
                 "smooth_walk",
+                "smooth_map_display",
+                "smooth_camera",
                 "shiny_seru",
                 "fortress_encounter_fix",
                 "tetsu_spar_fix",
@@ -756,7 +824,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 30);
+        assert_eq!(t.retail_deviations().len(), 32);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

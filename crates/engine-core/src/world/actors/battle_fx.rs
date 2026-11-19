@@ -1026,9 +1026,22 @@ impl World {
             // actor's live pair `+0x34` / `+0x38` (`0x8004A648..0x8004A650`).
             // So a body with two ghosts sheds three times a live body's puffs
             // (Astral Wave's charge: six a battle frame on step `4`).
+            //
+            // The fire's red test reads the node's colour word `+0x74`
+            // (`lbu v0,0x74(s6)` at `0x8004A7FC`), and the walk overwrites
+            // that word with the ghost's own flat colour before each ghost's
+            // draw (`sw v0,0x74(s1)` at `0x800493C4` / `0x800493D4`, decayed
+            // `0x101010` a ghost at `0x80049520`). Every ghost base is far
+            // under the `0xB0` floor (`0x50` a monster, `0x60` at most a party
+            // seat), so a ghost of a selector-`1` body draws its four `rand()`
+            // words and sheds no fire; only selector `2`, which tests no
+            // colour, sheds from its ghosts. Rogue Flame's caster holds two
+            // ghosts with selector `1` and sheds a lone body's two puffs a
+            // frame (`--ghost-trace` beside `fxpool.csv`).
             let mut draws = self.battle_burn_ghost_objects(i);
-            draws.push(objects);
-            for objects in draws.iter().filter(|o| !o.is_empty()) {
+            draws.push((red, objects));
+            for (red, objects) in draws.iter().filter(|(_, o)| !o.is_empty()) {
+                let red = *red;
                 for _ in 0..emits {
                     let idx = self.next_rand() as usize % objects.len();
                     let rands = [
@@ -1064,9 +1077,11 @@ impl World {
 
     /// The objects of actor `i`'s after-image ghosts this frame, in the
     /// walk's order (`FUN_80049348`, depth rising): each the stream objects'
-    /// translations on the ring slot the walk re-poses the node on. Empty for
+    /// translations on the ring slot the walk re-poses the node on, paired
+    /// with the red lane of the colour word the walk stores for that ghost
+    /// (its base, less `0x10` a ghost drawn before it). Empty for
     /// a body with no history or under a zero colour word.
-    fn battle_burn_ghost_objects(&self, i: usize) -> Vec<Vec<[i16; 3]>> {
+    fn battle_burn_ghost_objects(&self, i: usize) -> Vec<(u8, Vec<[i16; 3]>)> {
         use legaia_engine_battle::battle_afterimage as ai;
         let Some(actor) = self.actors.get(i) else {
             return Vec::new();
@@ -1079,20 +1094,22 @@ impl World {
         let per_frame = self.ghost_ring_slots_per_frame();
         let hist = &actor.battle_pose_history;
         let monster = self.battle_seat_walks_as_monster(i);
-        ai::plan_ghosts(
-            actor.battle.anim_rate.get(),
-            monster,
-            ai::GHOST_COLOR_MONSTER,
-            |depth| {
-                depth < ai::HISTORY_DEPTH
-                    && hist
-                        .get(per_frame * depth)
-                        .is_some_and(|f| f.ghost_eligible)
-            },
-        )
+        let base = if monster {
+            ai::GHOST_COLOR_MONSTER
+        } else {
+            *ai::GHOST_COLOR_PARTY
+                .get(self.party_roster_slot(i))
+                .unwrap_or(&ai::GHOST_COLOR_MONSTER)
+        };
+        ai::plan_ghosts(actor.battle.anim_rate.get(), monster, base, |depth| {
+            depth < ai::HISTORY_DEPTH
+                && hist
+                    .get(per_frame * depth)
+                    .is_some_and(|f| f.ghost_eligible)
+        })
         .into_iter()
-        .filter_map(|p| hist.get(per_frame * p.depth))
-        .map(|f| {
+        .filter_map(|p| hist.get(per_frame * p.depth).map(|f| (p.color[0], f)))
+        .map(|(red, f)| {
             let parts = &f.pose.bone_outputs;
             let n = usize::from(f.variant_track.stream_parts);
             let parts = if n != 0 && n < parts.len() {
@@ -1100,7 +1117,7 @@ impl World {
             } else {
                 &parts[..]
             };
-            parts.iter().map(|(t, _)| *t).collect()
+            (red, parts.iter().map(|(t, _)| *t).collect())
         })
         .collect()
     }

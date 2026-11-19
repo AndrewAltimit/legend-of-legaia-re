@@ -88,7 +88,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "tooling/expansion-workbench": "Legend of Legaia Expansion Workbench - Build an Expansion Pack in the Browser",
     "guides/vrchat-world": "Legend of Legaia in VRChat - Build a World from Your Own Disc",
     "guides/desktop-apps": "Legaia Explorer and the Native Legend of Legaia Port - Download and Run",
-    "guides/faq": "Legend of Legaia Port Player FAQ - Disc Image, Saves, Original Mode, Controllers",
+    "guides/faq": "Legend of Legaia Port Player FAQ - Disc, Saves, Original Mode, Controls, Party, Packs",
 }
 
 # Hand-written meta descriptions for the same landing pages. Everything else
@@ -208,6 +208,12 @@ DESCRIPTIONS: dict[str, str] = {
         "Windows, macOS or Linux: first start past SmartScreen and Gatekeeper, "
         "browsing and exporting your disc's textures, models, music and movies, "
         "and playing with keyboard or gamepad from your own disc image."
+    ),
+    "guides/faq": (
+        "Answers for players of the Legend of Legaia port: which disc image it "
+        "needs, where saves live, playing the original with no enhancements, "
+        "controllers, changing the party mid-game, expansion packs, other "
+        "languages, and what to try when something goes wrong."
     ),
     "writeups/index": (
         "Technical deep-dives from reverse engineering Legend of Legaia: a "

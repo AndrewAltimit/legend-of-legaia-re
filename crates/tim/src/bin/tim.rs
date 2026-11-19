@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(name = "tim", version, about = "PSX TIM texture parser + PNG exporter")]
+#[command(name = "tim", version = legaia_release_version::VERSION, about = "PSX TIM texture parser + PNG exporter")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

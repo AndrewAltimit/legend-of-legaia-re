@@ -20,6 +20,10 @@ pub struct World {
     /// A blank pool that stands in for [`Self::effect_pool`] while a walk has
     /// it out of the world (`with_effect_pool`).
     pub effect_pool_spare: Option<Box<Pool>>,
+    /// [`Pool::work`] as the last priced battle pass left it: the walker's
+    /// branches since are the next pass's
+    /// (`World::battle_frame_tick_cost`).
+    pub effect_walk_priced: vm::effect_vm::WalkWork,
     /// Script catalog for the effect VM. Populated at battle-enter time
     /// from PROT 873 (`efect.dat`) pack1 data via
     /// [`legaia_engine_vm::effect_vm::EffectCatalog::from_pack1_bytes`].
@@ -110,6 +114,12 @@ pub struct World {
     /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
     pub battle: BattleState,
 
+    /// The smooth battle camera's draw-side record ([`BattlePresent`]): the
+    /// state the last battle frame closed on beside the live one. Written by
+    /// [`World::observe_battle_present`] alone, read by the draw accessors
+    /// alone ([`World::battle_draw_pose`], [`World::battle_draw_root`]).
+    pub battle_present: BattlePresent,
+
     /// Field camera rig: the saved camera snapshot, scene offset + ease, shake amplitude and the zone-ramp register file.
     pub camera: CameraRig,
 
@@ -145,9 +155,12 @@ pub struct World {
 
     /// Vsyncs left of a field MAIN INIT hold after a committed scene change:
     /// the scene is loaded, nothing of it runs, and the frame stays black.
-    /// Armed only under the credits latch
-    /// ([`crate::world::AudioState::credits_latch`]); see
-    /// [`legaia_engine_system::mode_entry_init::CREDITS_FIELD_INIT_HOLD_VSYNCS`].
+    /// Armed under the credits latch
+    /// ([`crate::world::AudioState::credits_latch`],
+    /// [`legaia_engine_system::mode_entry_init::CREDITS_FIELD_INIT_HOLD_VSYNCS`])
+    /// and, with [`crate::world::WorldToggles::skip_load_holds`] off, behind
+    /// every door
+    /// ([`legaia_engine_system::mode_entry_init::door_field_init_hold_vsyncs`]).
     pub field_init_hold: u16,
 
     /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
@@ -416,6 +429,7 @@ impl World {
             battle_ctx: BattleActionCtx::new(),
             effect_pool: Box::new(Pool::new()),
             effect_pool_spare: None,
+            effect_walk_priced: vm::effect_vm::WalkWork::default(),
             effect_catalog: vm::effect_vm::EffectCatalog::default(),
             debug_effects: Vec::new(),
             field_ctx: FieldCtx::default(),
@@ -449,6 +463,7 @@ impl World {
                 .to_vec(),
             object_effect: legaia_engine_effects::object_effect::ObjectEffectTable::boot(),
             battle: BattleState::new(),
+            battle_present: BattlePresent::default(),
             camera: CameraRig::new(),
             audio: AudioState::new(),
             field_vm: FieldVmState::new(),

@@ -177,6 +177,14 @@ impl BattleCamera {
         self.action = action;
     }
 
+    /// The live depth `ctx[+0x6D0]` a framing call reads at the call: a
+    /// module arm that stores it and frames on the same pass (PROT 0903's
+    /// arm 12, whose case 8 reads the depth the pass just corrected) frames
+    /// on the new value, not the one the host installed ahead of the tick.
+    pub fn set_action_depth_raw(&mut self, depth_raw: i32) {
+        self.action.depth_raw = depth_raw;
+    }
+
     /// Observe the live action-SM state and apply the yaw counter's
     /// per-action seeds on its edges - the `ctx[+0x6DA]` ladder in the module
     /// doc:

@@ -94,6 +94,7 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
         tr_x: tr_x as i16,
         tr_y: tr_y as i16,
         tr_z: tr_z as i16,
+        creature_y: 0,
     };
     let on_creature = |pitch: i16, yaw: i32, tr: [i16; 3], frames: u16| {
         ArmDirection::shot(ModuleShot {

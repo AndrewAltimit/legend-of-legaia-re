@@ -24,6 +24,11 @@ impl World {
             .camera
             .as_ref()
             .map(|c| (c.pose().yaw.rem_euclid(4096.0) as i32 & 0xFFF) as u16);
+        st.live_focus = self
+            .battle
+            .camera
+            .as_ref()
+            .map(|c| c.pose().focus.map(|v| v as i32));
         st.live_pitch_tr = self.battle.camera.as_ref().map(|c| {
             let p = c.pose();
             (p.pitch as i32, p.tr.map(|v| v as i32))

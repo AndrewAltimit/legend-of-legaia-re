@@ -17,6 +17,21 @@ pub enum CameraMode {
     Static,
 }
 
+/// Where a frame's **draw** falls inside the game frame, for the smooth
+/// camera ([`Camera::led_delta`]): `phase` is the fraction of the frame's
+/// vsyncs already shown (`0` on the vsync the frame opens), `dt` the credit
+/// the next game frame will step the mover by. A presentation input only.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct DrawLead {
+    pub phase: f32,
+    pub dt: i32,
+}
+
+impl DrawLead {
+    /// The stored pose: retail's draw, and every simulation read.
+    pub const NONE: Self = Self { phase: 0.0, dt: 0 };
+}
+
 /// [`Camera::knob_blend`] at full reach (Q12 one).
 pub const KNOB_BLEND_FULL: i32 = 0x1000;
 
@@ -164,6 +179,17 @@ pub struct ZoneFollow {
     /// terrain - the gate `legaia_engine_world_views::camera_view::field_follow_view` reads
     /// to prefer the composed globals over its pinned fallback.
     pub active: bool,
+    /// `true` while a script owns the camera globals in this zone scene (a
+    /// glide in flight, a staged shot the follow ease has not taken back, a
+    /// timeline's): the frame draws those globals whether or not the follow
+    /// camera has composed yet. Retail's view builder `FUN_800172C0` reads
+    /// the globals every frame and has no other pose; a scene-entry shot
+    /// staged while the arrival actor still counts down for an engaged
+    /// player (`izumi`'s opening glide) is drawn from its first frame, not
+    /// from the terrain-less fallback. Read by the view only.
+    ///
+    /// REF: FUN_800172C0
+    pub script_view: bool,
     /// The player tile the block was last queried at.
     pub(super) tile: Option<(i32, i32)>,
     /// The player `(X, footing, Z)` of the previous tick - retail eases
@@ -274,6 +300,7 @@ impl Default for ZoneFollow {
             loaded_record: None,
             attrs: crate::field_regions::RegionAttributes::DEFAULT_FILL,
             active: false,
+            script_view: false,
             tile: None,
             prev_player: None,
             snap_pending: false,

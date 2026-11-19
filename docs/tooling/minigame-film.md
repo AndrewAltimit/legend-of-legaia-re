@@ -90,8 +90,9 @@ chosen attacks and combo counters, and the `rand()` word (the cabinet's stream
 seated on the capture's, harness). Map each side's `rand()` words to their index
 in the BIOS stream to read which exchange took which draw; the two sides then
 agree exchange for exchange through both rounds. The cabinet's opponent install
-(state `0x1E`) blocks on its CD load for `26` vsyncs in the film and costs the port
-one; that is drive time.
+(state `0x1E`) blocks on its CD load for `26` vsyncs in the film; the port's
+retail-faithful mode, which the film runs, holds it as long, and the default
+loads at once.
 
 ## Adding a minigame
 

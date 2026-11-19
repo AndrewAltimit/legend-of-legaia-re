@@ -1740,3 +1740,36 @@ changes = [
   ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1475.4, 1490.4],
   ["counts/native/world_map/retail/alloc_kb_per_frame", 1213.9, 1228.0],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Each rise bisected on the fast play bundle. world_map retail +1.93 GL draws a frame is 8f40a9ed2 (the retail mode holds each door's field init load, 184 / 241 vsyncs): the retail soak now walks the hold frames, retail-mode only, intended. town01 retail +0.31 draws is e85be4ba6 (the placed-object near reject compares retail's 6x view depth): objects retail draws are drawn. town01 +502 wasm bytes a frame in both modes and world_map enhanced +335 are d4dfb8e09 (an animated prop with light-source rows re-shades at each pose, the door's 1.2% host gap closed). battle and cast enhanced +0.01 / +0.1 draws and their bytes are 830482a1e (the smooth battle camera draws one battle frame behind, enhanced default only; retail rows unmoved). Bundle gzip +16 KB / play +14.5 KB is the wave's new engine code (door holds, smooth cameras, effect phase, retail pad screens); no asset or dependency added. The native alloc rows move by under a tenth of a percent, measurement grain."
+changes = [
+  ["counts/browser/battle/enhanced/gl_draws_per_frame", 185.07, 185.08],
+  ["counts/browser/battle/enhanced/wasm_bytes_per_frame", 117186, 117217],
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 130.52, 130.62],
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 108002, 108046],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 102278, 102279],
+  ["counts/browser/town01/enhanced/wasm_bytes_per_frame", 55526, 56028],
+  ["counts/browser/town01/retail/gl_draws_per_frame", 43.98, 44.29],
+  ["counts/browser/town01/retail/wasm_bytes_per_frame", 48662, 49164],
+  ["counts/browser/world_map/enhanced/wasm_bytes_per_frame", 161931, 162266],
+  ["counts/browser/world_map/retail/gl_draws_per_frame", 153.34, 155.27],
+  ["counts/bundle/gzip_bytes", 7321390, 7337395],
+  ["counts/bundle/play_gzip_bytes", 5170886, 5185415],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4485.4, 4486.3],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1292.0, 1292.4],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4487.1, 4487.2],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1307.2, 1307.7],
+  ["counts/native/town01/retail/allocs_per_frame", 1113.6, 1113.7],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1490.4, 1491.3],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1228.0, 1229.6],
+  ["counts/native/world_map/retail/allocs_per_frame", 1760.0, 1760.1],
+]
+
+[[loosening]]
+file = "scripts/ci/walk-film-rand-baseline.json"
+reason = "The field frame cost is reweighted from a per-routine PCSX-Redux profile, which puts one more vsync's pass before s2_rimelm_town01's retail vsync 32 and parts its rand() stream one draw earlier (17 -> 16 of 18). The wave's field work (the reweighting, the departure and latched-pad seats) lifts eight other films (balden, concnow, koin1, koin6 and the two retock inn films to full agreement, tower +106, doman card boot +6), the set 7551 -> 8213 agreeing draws over the 92 baselined films; measured again on the wave's tip, identical to the lane's proposal."
+changes = [
+  ["films/s2_rimelm_town01/agree", 17, 16],
+]

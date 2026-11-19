@@ -34,9 +34,29 @@ fn boss_bound() -> bool {
 /// (`FUN_801ED308`), and the menu takes no input until then
 /// (`NativeSession::pause_wipe`). A press sent into the wipe is lost, and the
 /// field heal then walked out of a menu it never drove.
+/// Ticks [`open_pause_menu`] waits for its Start to open the menu.
+const START_LATENCY_TICKS: usize = 6;
+
 pub(super) fn open_pause_menu(session: &mut NativeSession) {
     wait_out_pad_hold(session);
     tap_pad(session, PadButton::Start.mask());
+    // In the retail-faithful mode the press reaches the field a frame or two
+    // late (`WorldToggles::immediate_pad` off): wait for the menu to open
+    // before waiting on its wipe, or the heal reads "no menu", walks on, and
+    // the menu opens under the walk (`map01` after a fight on the way to
+    // `dolk`: "mode changed to Menu").
+    let latency = if session.host.world.toggles.immediate_pad {
+        0
+    } else {
+        START_LATENCY_TICKS
+    };
+    for _ in 0..latency {
+        if session.field_menu.is_some() {
+            break;
+        }
+        session.host.world.set_pad(0);
+        let _ = session.tick();
+    }
     for _ in 0..120 {
         if session.field_menu.is_none() || session.pause_wipe().menu_spawned() {
             break;
@@ -1940,6 +1960,9 @@ pub(super) fn pad_equip_goods(session: &mut NativeSession) -> usize {
 /// the rest. The segmented passes heal with [`pad_field_heal`] alone.
 pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, String> {
     if !continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        if let Some(s) = pad_grow_for_race(session)? {
+            return Ok(Some(s));
+        }
         pad_dress_for_race(session, true);
         if let Some(s) = pad_charge_for_race(session)? {
             return Ok(Some(s));
@@ -1963,6 +1986,9 @@ pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, S
         pad_dress_for_duels(session);
     } else if !race_ahead(session) {
         pad_undress_after_duels(session);
+    }
+    if let Some(s) = pad_grow_for_race(session)? {
+        return Ok(Some(s));
     }
     pad_dress_for_race(session, true);
     if let Some(s) = pad_charge_for_race(session)? {

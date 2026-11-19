@@ -588,6 +588,14 @@ impl World {
             .is_some_and(|t| !t.is_done())
     }
 
+    /// Whether the overworld's frame leaves out the party leader's figure:
+    /// while a cutscene timeline owns the map, so the opening fly-in shows
+    /// the bare continent. Both hosts ask it, the window's world-map draw
+    /// list and the page's lead draw (`play_player_drawn`).
+    pub fn overworld_hides_lead(&self) -> bool {
+        self.shows_overworld() && self.cutscene_timeline_active()
+    }
+
     /// `true` while a modal timeline that has taken a slice owns the camera.
     ///
     /// A walk-on record the tile dispatch spawns this frame has not run yet

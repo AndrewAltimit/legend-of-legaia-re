@@ -63,6 +63,15 @@ pub use tally::*;
 /// the floor back at `1` (`0x801CFCB8..0x801CFCC4`).
 pub const SECRET_TALLY_FRAME_STEP: i32 = 4;
 
+/// Vsyncs the opponent install `0x1E` holds the cabinet on its CD load when
+/// the host runs retail's load holds ([`BakaFight::set_install_load_hold`]).
+/// The arm loads the rung's fighter (PROT `char_index + 0x4B6` through
+/// `FUN_801D4C50`) synchronously, so the state word stands at `0x1E` until
+/// the read is done: a PCSX-Redux film from `minigame_baka_fighter_retail_attract`
+/// reads `0x1E` for `26` vsyncs on the first rung (`autorun_minigame_film.lua`,
+/// capture). The port's load is instant by default.
+pub const OPPONENT_INSTALL_LOAD_VSYNCS: i32 = 26;
+
 /// Starting HP each round (`FUN_801d1744` round seed: `DAT_801dbfc4 = 0xc80`).
 pub const HP_START: i32 = 0xC80;
 

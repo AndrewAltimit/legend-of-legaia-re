@@ -521,6 +521,20 @@ pub(super) fn pad_walk(
             eprintln!("      [warp] ({tx},{tz}) entry from z+/x+/z-/x-: {s:?}");
         }
     }
+    // A pause menu the hand just closed (a heal, a Goods swap) still owns
+    // the frame for its close: the retail-faithful mode holds the menu's
+    // exit for its overlay load (`WorldToggles::skip_load_holds` off), and a
+    // walk that took its mode then read the field coming back as a mode
+    // change (`town0b` P2[17] after a heal). Wait it out first.
+    for _ in 0..MENU_CLOSE_TICKS {
+        if session.host.world.mode != SceneMode::Menu || session.field_menu.is_some() {
+            break;
+        }
+        session.host.world.set_pad(0);
+        if session.tick().is_err() {
+            break;
+        }
+    }
     let walking_mode = session.host.world.mode;
     let mut doors = hazards(session, "");
     doors.remove(&(i32::from(goal.0), i32::from(goal.1)));
@@ -650,6 +664,19 @@ pub(super) fn pad_walk(
             }
             if let Some(r) = r {
                 return Err(format!("battle on the walk to {goal:?}: {r:?}"));
+            }
+            // The retail-faithful mode holds the field's return for its CD
+            // reads (`World::field_init_hold`, 300-odd vsyncs): the player
+            // stands still through it, and a walk that counted it read the
+            // fight's return as a stall (`dolk` after each fled fight).
+            for _ in 0..FIELD_INIT_HOLD_TICKS {
+                if session.host.world.field_init_hold == 0 {
+                    break;
+                }
+                session.host.world.set_pad(0);
+                if session.tick().is_err() {
+                    break;
+                }
             }
             pad_field_heal(session, 500);
             pad_field_repel(session, 500);
@@ -1634,3 +1661,9 @@ fn a_lean_on_a_person_is_a_body_ahead_of_a_free_player() {
         }
     }
 }
+
+/// Ticks a walk waits for a closing pause menu to hand the frame back.
+const MENU_CLOSE_TICKS: usize = 240;
+
+/// Ticks a walk waits for a battle's return hold to run out.
+const FIELD_INIT_HOLD_TICKS: usize = 1_200;

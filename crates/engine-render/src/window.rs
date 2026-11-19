@@ -117,6 +117,10 @@ impl EngineWindow {
             .with_title(title)
             .with_window_icon(app_icon())
             .with_inner_size(winit::dpi::LogicalSize::new(w, h))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(
+                WindowSetup::MIN_LOGICAL.0,
+                WindowSetup::MIN_LOGICAL.1,
+            ))
             .with_fullscreen(
                 setup
                     .fullscreen
@@ -254,6 +258,12 @@ impl WindowSetup {
     pub const SCALES: std::ops::RangeInclusive<u8> = 2..=6;
     /// 960x720.
     pub const DEFAULT_SCALE: u8 = 3;
+    /// The smallest inner size a window can be dragged to: the PlayStation's
+    /// own 320x240 display. Below it the game's picture is a minification
+    /// and the in-frame `F12` panel cuts its rows off at the window's edge,
+    /// so the desktop is asked to stop there. A host with a larger floor
+    /// (the launcher's stage) sets its own after opening.
+    pub const MIN_LOGICAL: (f64, f64) = (320.0, 240.0);
 
     /// The PlayStation's 320x240 display times `scale` (clamped to
     /// [`Self::SCALES`]).

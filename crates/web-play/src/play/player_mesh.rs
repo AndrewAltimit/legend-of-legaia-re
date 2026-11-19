@@ -111,11 +111,13 @@ impl LegaiaRuntime {
     /// Whether the page draws the lead's field body this frame: `false`
     /// where the scene hides it outright (`World::actor_hidden_by_scene` -
     /// the opening prologue's vignette shots have no lead), the native
-    /// window's actor-pass skip.
+    /// window's actor-pass skip - and on the overworld while a cutscene
+    /// timeline owns the map (`World::overworld_hides_lead`), the window's
+    /// world-map draw list's gate.
     pub fn play_player_drawn(&self) -> bool {
         self.scene_host.host().is_none_or(|h| {
             let slot = h.world.player_actor_slot.map_or(0, usize::from);
-            !h.world.actor_hidden_by_scene(slot)
+            !h.world.actor_hidden_by_scene(slot) && !h.world.overworld_hides_lead()
         })
     }
 

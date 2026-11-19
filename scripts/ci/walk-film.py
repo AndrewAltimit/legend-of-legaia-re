@@ -5,7 +5,9 @@ Retail: `autorun_field_walk_film.lua` under PCSX-Redux on a scratch-staged disc.
 Engine: `legaia-engine retail-compare` with LEGAIA_RC_WALK_FILM, seated on the
 state. Rows are paired on the player's walk: each retail vsync whose player or
 camera moved is one pass, and pass N of the walk is compared with the engine's.
-Output under captures/ (retail-derived, never committed).
+Output under captures/ (retail-derived, never committed). Both sides log the cue
+ring's writes (`cues`), and each retail push is paired with the engine's
+nearest push of the same id, its offset in vsyncs printed.
 """
 import argparse
 import csv
@@ -131,7 +133,59 @@ def main():
             if i < len(rows):
                 print(f"{i:4}  {side}   " + " ".join(f"{rows[i][f]:>9}" for f in fields))
     report_actors(out, a.frames)
+    report_cues(out)
     return 0
+
+
+def cue_pushes(film):
+    """Retail's cue pushes off the film's `cues` column: `(vsync, id)` for every
+    id that newly fills a slot of the ring `0x8007B6D8` (the ager empties a
+    played slot to `-1` the frame after, so a re-push shows as a new fill)."""
+    out, prev = [], ["-1"] * 4
+    for r in read(film):
+        cur = str(r.get("cues", "")).split(";")
+        if len(cur) != 4:
+            continue
+        for s in range(4):
+            if cur[s] != prev[s] and cur[s] != "-1":
+                out.append((int(r["vsync"]), int(cur[s])))
+        prev = cur
+    return out
+
+
+def report_cues(out, window=60):
+    """Each retail cue push against the engine's nearest push of the same id."""
+    film, eng = out / "walk_film.csv", out / "engine.csv"
+    if not (film.exists() and eng.exists()):
+        return
+    retail = cue_pushes(film)
+    engine = []
+    for r in read(eng):
+        c = str(r.get("cues", "-"))
+        if c not in ("-", ""):
+            engine.extend((int(r["tick"]), int(i)) for i in c.split(";"))
+    if not retail and not engine:
+        return
+    used, rows = set(), []
+    for v, cid in retail:
+        best = None
+        for k, (t, eid) in enumerate(engine):
+            if k in used or eid != cid or abs(t - v) > window:
+                continue
+            if best is None or abs(t - v) < abs(engine[best][0] - v):
+                best = k
+        if best is None:
+            rows.append((v, cid, None))
+        else:
+            used.add(best)
+            rows.append((v, cid, engine[best][0] - v))
+    extra = [engine[k] for k in range(len(engine)) if k not in used]
+    print(f"cues: retail {len(retail)}, engine {len(engine)}, paired "
+          f"{sum(1 for r in rows if r[2] is not None)}, engine-only {len(extra)}")
+    for v, cid, dt in rows:
+        print(f"  vsync {v:5} id {cid:#05x}  " + ("missing" if dt is None else f"dt {dt:+d}"))
+    for t, cid in extra:
+        print(f"  tick  {t:5} id {cid:#05x}  engine only")
 
 
 def report_actors(out, frames):
@@ -141,6 +195,13 @@ def report_actors(out, frames):
         return
     with open(rp) as f:
         retail = list(csv.DictReader(f))
+    # A vsync retail spends outside the field (game mode 0x02, a door's field
+    # init loading the next scene) holds no placements of either scene: its
+    # actor table is the load's scratch, so it is not scored.
+    film = out / "walk_film.csv"
+    if film.exists():
+        outside = {r["vsync"] for r in read(film) if r.get("mode", 3) != 3}
+        retail = [r for r in retail if int(r["vsync"]) not in outside]
     engine = {}
     with open(ep) as f:
         for r in csv.DictReader(f):

@@ -313,8 +313,9 @@ void main() { o_color = texture(u_layer, v_uv); }
        * (`PlayView._psxScreenVertices`): its corners sit on the GPU's sample
        * points, and `drawRuns` owes them the window's fill rule. */
       this.psxNative = false;
-      /* The upside-down copy `drawRuns` draws such a stream into. */
-      this.flip = null;
+      /* The upside-down copy `drawRuns` draws such a stream into
+       * (webgl-psx-target.js). */
+      this.flip = new window.LegaiaFrameFlip(gl);
       this.vao = gl.createVertexArray();
       this.vbo = gl.createBuffer();
       this.ibo = gl.createBuffer();
@@ -386,7 +387,7 @@ void main() { o_color = texture(u_layer, v_uv); }
        * down into a copy of the frame and the copy is flipped back, which
        * gives every edge the window's rule. Where the copy cannot be made
        * the flat edges at least take the tie nudge. */
-      const flipped = this.psxNative && window.__psxFlipPrims !== false && this._beginFlip();
+      const flipped = this.psxNative && window.__psxFlipPrims !== false && this.flip.begin();
       gl.uniform1f(this.locFlipY, flipped ? -1 : 1);
       if (this.psxNative && !flipped) gl.uniform2f(this.locTie, PSX_TIE_NDC_Y, PSX_TIE_FLAT_NDC_Y);
       else gl.uniform2f(this.locTie, 0, 0);
@@ -434,71 +435,7 @@ void main() { o_color = texture(u_layer, v_uv); }
       gl.depthMask(true);
       if (!depthWasOn) gl.disable(gl.DEPTH_TEST);
       gl.bindVertexArray(null);
-      if (flipped) this._endFlip();
-    }
-
-    /* The frame so far, upside down, on a framebuffer of its own and bound
-     * for the runs: its colour, and its depth for the one depth-tested kind.
-     * Only from the screen's own framebuffer (PSX rasterisation's target):
-     * `false` on any other, or when the copy cannot be made. */
-    _beginFlip() {
-      const gl = this.gl;
-      if (gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) !== null) return false;
-      const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
-      let f = this.flip;
-      if (!f || f.w !== w || f.h !== h) {
-        if (f) { gl.deleteFramebuffer(f.fbo); gl.deleteTexture(f.tex); gl.deleteRenderbuffer(f.depth); }
-        f = this.flip = { w, h, fbo: gl.createFramebuffer(), tex: gl.createTexture(), depth: gl.createRenderbuffer(), ok: false };
-        const unit = gl.getParameter(gl.ACTIVE_TEXTURE);
-        gl.activeTexture(gl.TEXTURE0);
-        const was = gl.getParameter(gl.TEXTURE_BINDING_2D);
-        gl.bindTexture(gl.TEXTURE_2D, f.tex);
-        gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGB8, w, h);
-        gl.bindTexture(gl.TEXTURE_2D, was);
-        gl.activeTexture(unit);
-        gl.bindRenderbuffer(gl.RENDERBUFFER, f.depth);
-        gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, w, h);
-        gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, f.tex, 0);
-        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, f.depth);
-        f.ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        if (f.ok) {
-          /* One trial copy: a screen whose depth is another format, or a
-           * multisampled one, refuses it, and says so once here. */
-          while (gl.getError() !== gl.NO_ERROR);
-          this._blitFlip(null, f.fbo, gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-          f.ok = gl.getError() === gl.NO_ERROR;
-          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        }
-      }
-      if (!f.ok) return false;
-      this._blitFlip(null, f.fbo, gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
-      return true;
-    }
-
-    /* The copy back onto the frame, the right way up. */
-    _endFlip() {
-      const gl = this.gl;
-      this._blitFlip(this.flip.fbo, null, gl.COLOR_BUFFER_BIT);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /* `from` onto `to`, top for bottom, texel for texel. */
-    _blitFlip(from, to, bits) {
-      const gl = this.gl;
-      const f = this.flip;
-      const scissor = gl.isEnabled(gl.SCISSOR_TEST);
-      if (scissor) gl.disable(gl.SCISSOR_TEST);
-      const mask = gl.getParameter(gl.COLOR_WRITEMASK);
-      gl.colorMask(true, true, true, true);
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, from);
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, to);
-      gl.blitFramebuffer(0, 0, f.w, f.h, 0, f.h, f.w, 0, bits, gl.NEAREST);
-      gl.colorMask(mask[0], mask[1], mask[2], mask[3]);
-      if (scissor) gl.enable(gl.SCISSOR_TEST);
+      if (flipped) this.flip.end(false);
     }
 
     /* Composite a 2D canvas (the page's text / HUD layer) into the GL frame,
@@ -629,9 +566,19 @@ void main() { o_color = texture(u_layer, v_uv); }
             }
             return this._psxTarget.loadEarlierFrame();
           };
+          /* On the native 320 x 240 target the scene pass draws upside down
+           * and is flipped back (webgl-tmd-assembled-scene.js `sceneFlip`), as
+           * the screen primitives do: the window's fill rule on every edge.
+           * `--page-init "window.__psxFlipScene=false"` draws it the right way
+           * up with the tie nudge, for a comparison. */
+          if (this._psxNativePrims() && window.__psxFlipScene !== false) {
+            if (!this._sceneFlip) this._sceneFlip = new window.LegaiaFrameFlip(this.renderer.gl);
+            this.renderer.sceneFlip = this._sceneFlip;
+          }
         }
         const r = drawFrame.call(this, skipDraw);
         if (psx) {
+          this.renderer.sceneFlip = null;
           this.renderer.loadFrameHook = null;
           /* The 15-bit readout, on the native gate (`Renderer::scanout_15bit`):
            * off under SSAO and bloom, which the window keys on their options,

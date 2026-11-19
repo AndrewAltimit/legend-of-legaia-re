@@ -224,6 +224,14 @@ impl PlayWindowApp {
                 held_pad
             };
             self.tick_no += 1;
+            // `LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL=<tick>`: a one-tick drive ends
+            // on its tick and the retail pad pipeline takes over, so a film
+            // can press on retail's latency from a screen the drive reached.
+            if let Some(until) = immediate_pad_until()
+                && self.tick_no == until
+            {
+                self.session.host.world.toggles.immediate_pad = false;
+            }
             // A tick the field sat frozen under (a shop, the naming prompt,
             // the pause menu) returns before its tail, so it moves no NPC
             // clip: the players step in the tail's `drain_anim_cues`.
@@ -243,7 +251,7 @@ impl PlayWindowApp {
             && self.session.field_menu_is_open()
             && self.session.pause_wipe().menu_spawned()
         {
-            self.boot_ui = BootUiState::FieldMenu { sub: None };
+            self.enter_spawned_pause_menu();
             self.pause_menu_handover = true;
         }
         if run_ticks > 0 && self.screenshot.is_none() {
@@ -252,6 +260,19 @@ impl PlayWindowApp {
         if self.screenshot.is_some() {
             self.pad_taps.clear();
         }
+    }
+
+    /// The wipe has spawned the pause menu: the boot-UI arm owns the frame,
+    /// and the menu's draw carries start empty. A carry is emptied only by a
+    /// frame drawn outside the menu, which the window never draws once the
+    /// menu closes (the field's frame does not run the menu's draw), so a
+    /// reopened menu's first pending frames handed back the last session's
+    /// root, whole and at rest, for two frames before its windows slid in.
+    /// The page builds its carries with each menu (`PlayMenu::new`).
+    fn enter_spawned_pause_menu(&mut self) {
+        self.boot_ui = BootUiState::FieldMenu { sub: None };
+        *self.pause_text_carry.borrow_mut() = Default::default();
+        *self.pause_sprite_carry.borrow_mut() = Default::default();
     }
 
     /// One sim tick, after the pad word and `tick_no` are set: the scripted
@@ -357,7 +378,9 @@ impl PlayWindowApp {
                 // The wipe has spawned the menu: the boot-UI arm takes the
                 // frame from the next tick. Retail's mode-`0x17` handler runs
                 // the cue drainer under the menu, so the SFX scheduler steps.
-                self.boot_ui = BootUiState::FieldMenu { sub: None };
+                if !matches!(self.boot_ui, BootUiState::FieldMenu { .. }) {
+                    self.enter_spawned_pause_menu();
+                }
                 self.tick_menu_sfx();
                 self.tick_field_party_hud();
                 self.prev_pad = self.pad;
@@ -456,6 +479,15 @@ impl PlayWindowApp {
         // which is exactly the edge `--pad-script` delivers.
         let mut scripted_key_pad = 0u16;
         for code in scripted_keys {
+            // Esc takes the window's own arm (`escape_press`): it closes the
+            // hotkey panel or raises the quit prompt, and a scripted run never
+            // leaves on it; `--screenshot-last-tick` ends the run.
+            if code == KeyCode::Escape {
+                if self.escape_press(std::time::Instant::now()) {
+                    log::info!("--key-script: Escape would quit here; a scripted run does not");
+                }
+                continue;
+            }
             if let Some(button) = self.mapping.pad_button_for_key(keycode_to_name(code)) {
                 scripted_key_pad |= button.mask();
             }
@@ -1104,4 +1136,14 @@ fn part_ages_match(world: &legaia_engine_core::world::World, ages: &[(u32, i16)]
     live.sort_unstable();
     want.sort_unstable();
     live == want
+}
+
+/// `LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL`, read once.
+fn immediate_pad_until() -> Option<u64> {
+    static UNTIL: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    *UNTIL.get_or_init(|| {
+        std::env::var("LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL")
+            .ok()
+            .and_then(|v| v.parse().ok())
+    })
 }
