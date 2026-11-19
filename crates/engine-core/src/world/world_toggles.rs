@@ -206,8 +206,12 @@ pub struct WorldToggles {
     /// (`legaia_engine_battle_loop::derived_cost::DerivedUnits`) are priced
     /// with the table, the move-VM part ticks, the walker's branches and the
     /// `"ME"` decodes beside them, with the vblank interrupts the work spans
-    /// (`docs/subsystems/battle-stage-camera.md`, "The derived table"). The
-    /// native session raises it from `LEGAIA_DERIVED_FRAME_COST=1`.
+    /// (`docs/subsystems/battle-stage-camera.md`, "The derived table"). In
+    /// the field the frame is priced from
+    /// [`field_frame_units::derived_field_frame_cost`](super::field_frame_units::derived_field_frame_cost)
+    /// in place of the fitted weights, with the interrupt term. A timing
+    /// model, not a fidelity knob, so [`Self::pin_retail`] leaves it alone;
+    /// the native session raises it from `LEGAIA_DERIVED_FRAME_COST=1`.
     pub derived_frame_cost: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
     /// CD-XA voice clip plays: PCSX-Redux's by default, where the clip player's
@@ -266,14 +270,6 @@ pub struct WorldToggles {
     /// session takes `LEGAIA_FIELD_COST_PLACED_WALK=0` / `=1` over the
     /// default.
     pub field_cost_placed_walk: bool,
-    /// Price a field frame from the per-unit cycle table derived off the
-    /// retail passes' instruction counts
-    /// ([`field_frame_units::derived_field_frame_cost`](super::field_frame_units::derived_field_frame_cost))
-    /// in place of the fitted weights, on PCSX-Redux's scale with the
-    /// interrupt term. Off by default: the fitted model stays the price. A
-    /// timing model, not a fidelity knob, so [`Self::pin_retail`] leaves it
-    /// alone; the native session takes `LEGAIA_DERIVED_FRAME_COST=1`.
-    pub derived_frame_cost: bool,
     /// Diagnostic, off by default: [`Self::battle_poly_frame_cost`] reads the
     /// native window's own count of its drawn table
     /// (`World::note_drawn_polys`) in place of the census, the window-only
@@ -629,7 +625,6 @@ impl WorldToggles {
             battle_poly_frame_cost: true,
             field_frame_cost: true,
             field_cost_placed_walk: true,
-            derived_frame_cost: false,
             battle_poly_window_count: false,
             arts_saved_list: false,
             hop_landing_guard: true,

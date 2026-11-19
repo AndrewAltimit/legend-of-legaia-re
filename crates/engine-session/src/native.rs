@@ -217,7 +217,6 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             "LEGAIA_FIELD_COST_PLACED_WALK",
             &mut toggles.field_cost_placed_walk,
         ),
-        ("LEGAIA_DERIVED_FRAME_COST", &mut toggles.derived_frame_cost),
     ] {
         match std::env::var(var).as_deref().map(str::trim) {
             Ok("1") => *slot = true,
