@@ -946,14 +946,24 @@ impl PlayWindowApp {
                 if fresh {
                     let _ = writeln!(
                         f,
-                        "tick,st7,phase,tris_linked,tris_off,tris_culled,quads_linked,quads_off,quads_culled,objects,bodies,body_objects,ghosts,ghost_objects,grid_cells,builds,segments,trails,floor_clip"
+                        "tick,st7,phase,tris_linked,tris_off,tris_culled,quads_linked,quads_off,quads_culled,objects,bodies,body_objects,ghosts,ghost_objects,grid_cells,builds,segments,trails,floor_clip,stage_linked,stage_off,stage_culled,stage_near,body_linked,body_off,body_culled,body_near"
                     );
                 }
-                let u = self.session.host.battle_link_last.units;
+                let lc = &self.session.host.battle_link_last;
+                let u = lc.units;
                 let p = u.prims;
+                let fates = |t: &legaia_engine_battle_loop::derived_cost::PrimTally| {
+                    format!(
+                        "{},{},{},{}",
+                        t.tris_linked + t.quads_linked,
+                        t.tris_off_screen + t.quads_off_screen,
+                        t.tris_culled + t.quads_culled,
+                        t.near_culled
+                    )
+                };
                 let _ = writeln!(
                     f,
-                    "{tick},{st},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    "{tick},{st},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                     w.casting.module_phase,
                     p.tris_linked,
                     p.tris_off_screen,
@@ -971,6 +981,8 @@ impl PlayWindowApp {
                     u.build_segments,
                     u.trail_packets,
                     u.floor_clip_prims,
+                    fates(&lc.stage_tally),
+                    fates(&lc.body_tally),
                 );
             }
         }

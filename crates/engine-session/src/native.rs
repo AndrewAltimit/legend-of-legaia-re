@@ -213,6 +213,12 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
         ),
         // The derived per-unit frame cost (`WorldToggles::derived_frame_cost`).
         ("LEGAIA_DERIVED_FRAME_COST", &mut toggles.derived_frame_cost),
+        // The census on the leaves' own cull rules alone
+        // (`WorldToggles::battle_census_retail_culls`).
+        (
+            "LEGAIA_CENSUS_RETAIL_CULLS",
+            &mut toggles.battle_census_retail_culls,
+        ),
         (
             "LEGAIA_FIELD_COST_PLACED_WALK",
             &mut toggles.field_cost_placed_walk,

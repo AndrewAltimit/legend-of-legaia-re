@@ -593,6 +593,57 @@ fn battle_cost(s: &PcsxState, frames: usize, mode: &str) -> Result<()> {
                 }
             }
         }
+        "fates" => {
+            // Each primitive's fate by the routine it was drawn under and the
+            // call's colour-word top byte.
+            let mut run = bc::BattleRunner::new(s, bc::CONTEXTS)?;
+            let probe = bc::LeafProbe::arm(&mut run.run);
+            println!("frame,ctx,call_top,leaf,linked,off_screen,culled,st7");
+            for f in 0..frames {
+                let st7 = {
+                    let m = &mut run.run.cpu.mem;
+                    let ctx = m.rd32(0x8007_BD24);
+                    if ctx & 0x1FFF_FFFF < 0x20_0000 && ctx != 0 {
+                        m.rd8(ctx + 7)
+                    } else {
+                        0
+                    }
+                };
+                let bf = run.frame()?;
+                let mut agg: std::collections::BTreeMap<(u32, u8, u32), [u64; 3]> =
+                    Default::default();
+                for v in probe.take() {
+                    // A body draw is keyed by its order in the frame.
+                    let c = match bf.context_of(v.at) {
+                        Some(sp) if sp.entry == 0x8004_8A08 => {
+                            0x8004_8A08
+                                + bf.spans_of(0x8004_8A08)
+                                    .filter(|o| o.start < sp.start)
+                                    .count() as u32
+                        }
+                        Some(sp) => sp.entry,
+                        None => 0,
+                    };
+                    let top = bf
+                        .groups
+                        .iter()
+                        .find(|g| g.at <= v.at && v.at < g.at + g.cycles)
+                        .map_or(0xFF, |g| g.call_top);
+                    let e = agg.entry((c, top, v.leaf)).or_default();
+                    e[match v.fate {
+                        bc::PrimFate::Linked => 0,
+                        bc::PrimFate::OffScreen => 1,
+                        bc::PrimFate::Culled => 2,
+                    }] += 1;
+                }
+                for ((c, top, leaf), e) in agg {
+                    println!(
+                        "{f},{c:08X},{top:02X},{leaf:08X},{},{},{},{st7}",
+                        e[0], e[1], e[2]
+                    );
+                }
+            }
+        }
         "groups" => {
             let ctx: Vec<Routine> = bc::CONTEXTS.to_vec();
             let mut run = bc::BattleRunner::new(s, &ctx)?;
@@ -609,7 +660,7 @@ fn battle_cost(s: &PcsxState, frames: usize, mode: &str) -> Result<()> {
                 for g in &bf.groups {
                     let c = bf.context_of(g.at).map_or(0, |s| s.entry);
                     let e = agg
-                        .entry((c, g.leaf, g.double_sided, (g.word >> 24) as u8))
+                        .entry((c, g.leaf, g.double_sided, g.call_top))
                         .or_default();
                     e[0] += 1;
                     e[1] += u64::from(g.prims);

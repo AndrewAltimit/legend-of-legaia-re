@@ -54,6 +54,7 @@ DIAG_GATES: list[dict[str, object]] = [
         "note": "battle-event log + pose/HP diagnostic text over the frame",
     },
     # --- subtractive / logging only ----------------------------------------
+    {"env": "LEGAIA_DIAG_CENSUS_FATES", "additive": False, "note": "write the battle census's stage and body fates (linked, off-screen, culled, near) a refresh to a file; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_PRES", "additive": False, "note": "print one stderr line per cast-module arm that fires presentation calls; draws nothing"},
     {"env": "LEGAIA_DIAG_DRAWS", "additive": False, "note": "write the frame's draw census + CPU VRAM to a file; draws nothing"},
     {"env": "LEGAIA_DIAG_DAMAGE", "additive": False, "note": "print each strike roll's dealt word, inputs and both rolled sides to stderr; draws nothing"},

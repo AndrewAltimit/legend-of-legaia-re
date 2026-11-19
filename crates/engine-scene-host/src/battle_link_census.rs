@@ -47,6 +47,9 @@ pub const BATTLE_NEAR_SZ: f32 = 64.0;
 struct LinkPrim {
     v: [u16; 4],
     quad: bool,
+    /// The dispatcher's primitive kind (the group flags `>> 1`), which picks
+    /// the leaf and so its cull rules ([`RetailLeaf`]).
+    kind: u8,
 }
 
 /// One TMD object's vertices and primitives.
@@ -92,6 +95,7 @@ impl LinkMesh {
                 o.primitives_byte_offset,
                 o.primitives_byte_size,
             ) {
+                let kind = (g.header.flags >> 1) as u8;
                 for p in &g.prims {
                     let idx = p.vertex_indices();
                     if idx.iter().any(|&i| u32::from(i) >= n_vert) {
@@ -101,10 +105,12 @@ impl LinkMesh {
                         3 => prims.push(LinkPrim {
                             v: [idx[0], idx[1], idx[2], 0],
                             quad: false,
+                            kind,
                         }),
                         4 => prims.push(LinkPrim {
                             v: [idx[0], idx[1], idx[2], idx[3]],
                             quad: true,
+                            kind,
                         }),
                         _ => {}
                     }
@@ -190,6 +196,10 @@ pub struct LinkCount {
     /// dispatcher walks by topology and fate, the objects, bodies, ghosts,
     /// grid cells and kind-4 builds.
     pub units: legaia_engine_battle_loop::derived_cost::DerivedUnits,
+    /// The stage's and the bodies' own tallies, for holding the census's
+    /// fates against retail's (`retail-exec battle-cost --mode fates`).
+    pub stage_tally: PrimTally,
+    pub body_tally: PrimTally,
 }
 
 impl LinkCount {
@@ -245,6 +255,13 @@ fn casts_shadow(
 #[derive(Debug, Default)]
 pub struct LinkScratch {
     clip: Vec<[f32; 3]>,
+    /// Decide each primitive by the leaves' own rules ([`tally_retail`]):
+    /// under `WorldToggles::derived_frame_cost` or
+    /// `WorldToggles::battle_census_retail_culls`, set each count.
+    retail_rules: bool,
+    /// Each drawn body's seat and tally this count, for
+    /// `LEGAIA_DIAG_CENSUS_FATES`.
+    bodies: Vec<(usize, PrimTally)>,
 }
 
 /// The body key the summon creature's seat is counted under.
@@ -302,6 +319,9 @@ fn tally_object(
         let w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
         scratch.clip.push([x, y, w]);
     }
+    if scratch.retail_rules {
+        return tally_retail(obj, &scratch.clip, faces, offscreen_reject);
+    }
     let clip = &scratch.clip;
     let mut t = PrimTally::default();
     for p in &obj.prims {
@@ -314,6 +334,7 @@ fn tally_object(
             sz += w.max(0.0);
         }
         let fate = if behind || sz < BATTLE_NEAR_SZ * k as f32 {
+            t.near_culled += 1;
             Fate::Culled
         } else if offscreen_reject && {
             // The leaves' off-screen reject (`FUN_80044798` on the quad
@@ -355,6 +376,165 @@ fn tally_object(
                 }
             };
             if kept { Fate::Linked } else { Fate::Culled }
+        };
+        match (p.quad, fate) {
+            (false, Fate::Linked) => t.tris_linked += 1,
+            (false, Fate::OffScreen) => t.tris_off_screen += 1,
+            (false, Fate::Culled) => t.tris_culled += 1,
+            (true, Fate::Linked) => t.quads_linked += 1,
+            (true, Fate::OffScreen) => t.quads_off_screen += 1,
+            (true, Fate::Culled) => t.quads_culled += 1,
+        }
+    }
+    t
+}
+
+/// The battle GTE's projection of a clip-space corner `[x, y, w]` (the
+/// hosts' battle matrix, `psx_projection` at `H = 256`, `OFX` / `OFY`
+/// `160` / `114`) the way `RTPS` / `RTPT` land it: the eye-space `IR1` /
+/// `IR2` clamped to `i16`, `SZ3` clamped to `0..=0xFFFF`, the `H / SZ`
+/// quotient capped at `0x1FFFF` (whenever `SZ * 2 <= H`, a corner at or
+/// behind the eye among them), the screen pair truncated and clamped to
+/// `-0x400..=0x3FF`.
+fn gte_corner(c: [f32; 3]) -> (i32, i32, i32) {
+    use legaia_engine_camera::projection::{GTE_H, GTE_OFY_NDC_BIAS};
+    let ex = (c[0] * 160.0 / GTE_H).floor().clamp(-32768.0, 32767.0);
+    let ey = (-(c[1] - GTE_OFY_NDC_BIAS * c[2]) * 120.0 / GTE_H)
+        .floor()
+        .clamp(-32768.0, 32767.0);
+    let sz = c[2].floor().clamp(0.0, 65535.0);
+    let q = if sz * 2.0 > GTE_H {
+        (GTE_H * 65536.0 / sz).min(131071.0).floor()
+    } else {
+        131071.0
+    };
+    let px = |ofs: f32, ir: f32| -> i32 {
+        let mac0 = ofs * 65536.0 + ir * q;
+        ((mac0 / 65536.0).floor() as i32).clamp(-0x400, 0x3FF)
+    };
+    (px(160.0, ex), px(114.0, ey), sz as i32)
+}
+
+/// The leaf a primitive kind runs through on the battle's depth-cued banks,
+/// by its cull rules (`docs/subsystems/battle-stage-camera.md`, "The
+/// census").
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RetailLeaf {
+    /// A triangle (`0x80044C14`, `0x80044FDC`, `0x800453BC`,
+    /// `0x800457C4`): kept on `NCLIP >= 0`, the near test, then the
+    /// off-screen test whatever the word. Kind `12` (`0x800448B0`) has no
+    /// off-screen test.
+    Tri { off_screen: bool },
+    /// A quad of kinds `13` / `15` / `17` (`0x80044A3C`, `0x80045194`,
+    /// `0x80044DC8`): kept on its first half's `NCLIP > 0` or, failing that,
+    /// its second half's `< 0` (`blez` / `bgez`), the near test, then the
+    /// off-screen test (none on kind `13`).
+    QuadStrict { off_screen: bool },
+    /// A kind-`19` quad (`0x80045584`, `0x80045988`): kept on `>= 0` or the
+    /// second half's `<= 0` (`bltz` / `bgtz`), the off-screen test only under
+    /// a word carrying `0x40` in its top byte, then the near test.
+    QuadLoose,
+}
+
+impl RetailLeaf {
+    fn of(kind: u8, quad: bool) -> Self {
+        match (quad, kind) {
+            (false, 12) => Self::Tri { off_screen: false },
+            (false, _) => Self::Tri { off_screen: true },
+            (true, 13) => Self::QuadStrict { off_screen: false },
+            (true, 15 | 17) => Self::QuadStrict { off_screen: true },
+            (true, _) => Self::QuadLoose,
+        }
+    }
+}
+
+/// [`tally_object`] by the leaves' own decisions on the GTE's integer
+/// corners: the winding test on `NCLIP` (with a double-sided word's
+/// `0x7FFFFFFF` mask, so a degenerate half still decides a strict quad),
+/// the near floor on `OTZ = ZSF * sum SZ >> 12` against `0x10` (the
+/// battle's shift `2`: `ZSF3 = 0x155`, `ZSF4 = 0x100`), and the off-screen
+/// test `FUN_80044798` (every corner past one edge) where the leaf runs it,
+/// in the leaf's order. `quad_off_screen` is the word's `0x40` bit, set on
+/// the backdrop's draws. A corner at or behind the eye is not dropped as
+/// such: it projects as the GTE saturates it.
+fn tally_retail(
+    obj: &LinkObject,
+    clip: &[[f32; 3]],
+    faces: Faces,
+    quad_off_screen: bool,
+) -> PrimTally {
+    let mut t = PrimTally::default();
+    let corners: Vec<(i32, i32, i32)> = clip.iter().map(|&c| gte_corner(c)).collect();
+    // The census's winding sign against retail's: `Faces::Ccw` keeps a
+    // counter-clockwise turn in NDC (y up), which is a negative `NCLIP` on
+    // the screen (y down).
+    let (sign, mask) = match faces {
+        Faces::Both => (1i64, 0x7FFF_FFFFu32),
+        Faces::Ccw => (-1, 0xFFFF_FFFF),
+        Faces::Cw => (1, 0xFFFF_FFFF),
+    };
+    let nclip = |a: (i32, i32, i32), b: (i32, i32, i32), c: (i32, i32, i32)| -> i32 {
+        let (ax, ay, bx, by, cx, cy) = (
+            i64::from(a.0),
+            i64::from(a.1),
+            i64::from(b.0),
+            i64::from(b.1),
+            i64::from(c.0),
+            i64::from(c.1),
+        );
+        let v = sign * (ax * by + bx * cy + cx * ay - ax * cy - bx * ay - cx * by);
+        ((v as i32 as u32) & mask) as i32
+    };
+    for p in &obj.prims {
+        let k = if p.quad { 4 } else { 3 };
+        let c: [(i32, i32, i32); 4] =
+            std::array::from_fn(|i| corners[usize::from(p.v[i.min(k - 1)])]);
+        let leaf = RetailLeaf::of(p.kind, p.quad);
+        let first = nclip(c[0], c[1], c[2]);
+        let faced = match leaf {
+            RetailLeaf::Tri { .. } => first >= 0,
+            RetailLeaf::QuadStrict { .. } => first > 0 || nclip(c[1], c[2], c[3]) < 0,
+            RetailLeaf::QuadLoose => first >= 0 || nclip(c[1], c[2], c[3]) <= 0,
+        };
+        let sum: i64 = c[..k].iter().map(|x| i64::from(x.2)).sum();
+        let otz = if p.quad {
+            (0x100 * sum) >> 12
+        } else {
+            (0x155 * sum) >> 12
+        };
+        let near = otz < 0x10;
+        let off = || {
+            let all = |f: &dyn Fn(&(i32, i32, i32)) -> bool| c[..k].iter().all(f);
+            all(&|x| x.1 < 0)
+                || all(&|x| x.1 >= 0xF0)
+                || all(&|x| x.0 <= 0)
+                || all(&|x| x.0 >= 0x140)
+        };
+        let fate = if !faced {
+            Fate::Culled
+        } else {
+            match leaf {
+                RetailLeaf::QuadLoose => {
+                    if quad_off_screen && off() {
+                        Fate::OffScreen
+                    } else if near {
+                        t.near_culled += 1;
+                        Fate::Culled
+                    } else {
+                        Fate::Linked
+                    }
+                }
+                RetailLeaf::Tri { off_screen } | RetailLeaf::QuadStrict { off_screen } => {
+                    if near {
+                        t.near_culled += 1;
+                        Fate::Culled
+                    } else if off_screen && off() {
+                        Fate::OffScreen
+                    } else {
+                        Fate::Linked
+                    }
+                }
+            }
         };
         match (p.quad, fate) {
             (false, Fate::Linked) => t.tris_linked += 1,
@@ -489,6 +669,9 @@ pub fn battle_link_count(
         return out;
     }
     let mut units = DerivedUnits::default();
+    scratch.retail_rules =
+        world.toggles.derived_frame_cost || world.toggles.battle_census_retail_culls;
+    scratch.bodies.clear();
     let pose = world.battle_cam_pose();
     // The camera the window composes, `cam` (the focus on the scaled stage);
     // the aspect does not move a cull.
@@ -532,6 +715,7 @@ pub fn battle_link_count(
             }
         }
     }
+    out.stage_tally = units.prims;
     if world.battle_ground_grid_drawn() {
         let cells = legaia_scene_formats::battle_backdrop::GRID_CELLS as i16;
         let kept = grid::visible_cell_count(&pose, BATTLE_WORLD_SCALE, cells, cells);
@@ -587,6 +771,8 @@ pub fn battle_link_count(
         units.body_objects += objects;
         // A floor-clipped body's objects go through the full-TMD renderer,
         // not the dispatcher.
+        out.body_tally.add(&tally);
+        scratch.bodies.push((i, tally));
         if !a.battle.floor_clip {
             units.prims.add(&tally);
             units.objects += objects;
@@ -752,6 +938,7 @@ impl crate::scene_host::SceneHost {
         if !self.world.toggles.battle_poly_frame_cost
             && !self.world.toggles.derived_frame_cost
             && !census_diag()
+            && std::env::var_os("LEGAIA_DIAG_CENSUS_FATES").is_none()
         {
             return;
         }
@@ -837,6 +1024,42 @@ impl crate::scene_host::SceneHost {
         self.world.note_linked_polys(count.total());
         self.world.note_floor_clip_walk(count.floor_clip_walk);
         self.world.note_derived_units(count.units);
+        // `LEGAIA_DIAG_CENSUS_FATES=<file>`: each count's stage and body
+        // tallies (linked, off-screen, culled, near), a line a refresh, for
+        // holding the census against retail's own per-fate counts
+        // (`retail-exec battle-cost --mode fates`).
+        if let Some(path) = std::env::var_os("LEGAIA_DIAG_CENSUS_FATES") {
+            use std::io::Write as _;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                let row = |t: &PrimTally| {
+                    format!(
+                        "{},{},{},{}",
+                        t.tris_linked + t.quads_linked,
+                        t.tris_off_screen + t.quads_off_screen,
+                        t.tris_culled + t.quads_culled,
+                        t.near_culled
+                    )
+                };
+                let bodies: Vec<String> = self
+                    .battle_link_scratch
+                    .bodies
+                    .iter()
+                    .map(|(i, t)| format!("{i}:{}", row(t).replace(',', "/")))
+                    .collect();
+                let _ = writeln!(
+                    f,
+                    "{},{},{},{}",
+                    self.world.battle_ctx.action_state,
+                    row(&count.stage_tally),
+                    row(&count.body_tally),
+                    bodies.join(" ")
+                );
+            }
+        }
     }
 
     /// A seat's body mesh: a party member's battle form, a monster's archive
@@ -898,6 +1121,7 @@ mod tests {
             prims: vec![LinkPrim {
                 v: [0, 1, 2, 3],
                 quad: true,
+                kind: 19,
             }],
         }
     }
@@ -917,6 +1141,54 @@ mod tests {
 
     /// The units count the primitives the links leave out: the off-screen
     /// ones and the culled ones apart.
+    #[test]
+    fn the_retail_rules_follow_the_leaves() {
+        let retail = || LinkScratch {
+            retail_rules: true,
+            ..Default::default()
+        };
+        let tri = |z: f32, half: f32, centre: [f32; 2]| {
+            let mut o = quad_object(z, half, centre);
+            o.prims[0] = LinkPrim {
+                v: [0, 1, 2, 0],
+                quad: false,
+                kind: 18,
+            };
+            o
+        };
+        // A triangle wholly off the right edge: a body's draw tests it too.
+        let past = tri(1000.0, 0.2, [1.5, 0.0]);
+        let t = tally_object(&past, None, false, &EYE, Faces::Both, false, &mut retail());
+        assert_eq!((t.tris_linked, t.tris_off_screen), (0, 1));
+        // A kind-19 quad off screen is tested only under the word's `0x40`.
+        let q = quad_object(1000.0, 0.2, [1.5, 0.0]);
+        let t = tally_object(&q, None, false, &EYE, Faces::Both, false, &mut retail());
+        assert_eq!((t.quads_linked, t.quads_off_screen), (1, 0));
+        let t = tally_object(&q, None, false, &EYE, Faces::Both, true, &mut retail());
+        assert_eq!((t.quads_linked, t.quads_off_screen), (0, 1));
+        // A triangle whose corners land on one pixel has `NCLIP = 0`, which
+        // the leaf keeps on either winding.
+        let dot = tri(1000.0, 1e-6, [0.0, 0.0]);
+        for faces in [Faces::Ccw, Faces::Cw] {
+            let t = tally_object(&dot, None, false, &EYE, faces, false, &mut retail());
+            assert_eq!(t.tris_linked, 1, "{faces:?}");
+            let t = tally_object(
+                &dot,
+                None,
+                false,
+                &EYE,
+                faces,
+                false,
+                &mut LinkScratch::default(),
+            );
+            assert_eq!(t.linked(), u32::from(faces == Faces::Ccw), "the float rule");
+        }
+        // Under the near floor (mean `SZ` under `64`), culled either way.
+        let near = tri(40.0, 0.2, [0.0, 0.0]);
+        let t = tally_object(&near, None, false, &EYE, Faces::Both, false, &mut retail());
+        assert_eq!((t.tris_culled, t.near_culled), (1, 1));
+    }
+
     #[test]
     fn the_units_tally_each_fate() {
         let past = quad_object(1000.0, 0.2, [1.5, 0.0]);

@@ -70,6 +70,7 @@ const DISPATCH_EXIT: u32 = 0x8004_361C;
 /// winding mask (`sw t9,-0x2d8(t2)`, `0x7FFFFFFF` for a double-sided word).
 const WORD: u32 = 0x1F80_002C;
 const WINDING_MASK: u32 = 0x1F80_003C;
+const CALL_TOP: u32 = 0x1F80_0043;
 
 /// One primitive group a leaf walked.
 #[derive(Debug, Clone, Copy)]
@@ -82,6 +83,10 @@ pub struct Group {
     /// From the `jr` into the leaf to its jump back to the group head.
     pub cycles: u64,
     pub word: u32,
+    /// The top byte of the call's colour word (`sb s6,-0x2d1(t2)`,
+    /// `0x1F800043`): its `0x10` bit picks the far-corner depth, its `0x40`
+    /// bit the quad leaves' off-screen test.
+    pub call_top: u8,
     pub double_sided: bool,
     /// The clock at the `jr`.
     pub at: u64,
@@ -146,7 +151,7 @@ fn clock_mark(m: &mut Memory) -> u32 {
 
 #[derive(Default)]
 struct Pending {
-    open: Option<(u64, u32, u32, u32, u32, bool)>,
+    open: Option<(u64, u32, u32, u32, u32, bool, u8)>,
     done: Vec<Group>,
 }
 
@@ -167,13 +172,14 @@ impl BattleRunner {
             let linked = linked_primitives(m);
             let word = m.rd32(WORD);
             let ds = m.rd32(WINDING_MASK) == 0x7FFF_FFFF;
-            g.borrow_mut().open = Some((m.clock, r.r[24], r.r[11] + 1, linked, word, ds));
+            let top = m.rd8(CALL_TOP);
+            g.borrow_mut().open = Some((m.clock, r.r[24], r.r[11] + 1, linked, word, ds, top));
         });
         for at in [GROUP_HEAD, DISPATCH_EXIT] {
             let g = groups.clone();
             run.cpu.probe(at, move |_, m, _| {
                 let mut p = g.borrow_mut();
-                if let Some((t0, leaf, prims, l0, word, double_sided)) = p.open.take() {
+                if let Some((t0, leaf, prims, l0, word, double_sided, call_top)) = p.open.take() {
                     let linked = linked_primitives(m).wrapping_sub(l0);
                     p.done.push(Group {
                         leaf,
@@ -181,6 +187,7 @@ impl BattleRunner {
                         linked,
                         cycles: m.clock - t0,
                         word,
+                        call_top,
                         double_sided,
                         at: t0,
                     });

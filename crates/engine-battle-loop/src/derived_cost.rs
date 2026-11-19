@@ -294,10 +294,15 @@ pub struct PrimTally {
     pub quads_linked: u32,
     pub quads_off_screen: u32,
     pub quads_culled: u32,
+    /// Of the culled, those the near floor (or a corner behind the eye)
+    /// dropped rather than the winding test: a diagnostic split, priced as
+    /// culled.
+    pub near_culled: u32,
 }
 
 impl PrimTally {
     pub fn add(&mut self, o: &Self) {
+        self.near_culled += o.near_culled;
         self.tris_linked += o.tris_linked;
         self.tris_off_screen += o.tris_off_screen;
         self.tris_culled += o.tris_culled;
