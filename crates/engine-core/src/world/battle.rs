@@ -37,6 +37,7 @@ mod loop_driver;
 mod member_step;
 mod message_banner;
 mod monster_ai;
+mod present;
 mod selectable;
 mod seru_absorb;
 mod sideband;
@@ -55,6 +56,7 @@ pub use actor_draw::{
 pub use cast_band::{CASTER_STAGE_TICK_LIMIT, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND};
 pub use effect_route::RoutedEffectSpawn;
 pub(in crate::world) use legaia_engine_battle_loop::hud_glides::BATTLE_PASS_STEP_PER_TICK;
+pub use present::BattlePresent;
 pub use sideband::ARRIVAL_MODULE_PROT;
 
 /// The staged command id a generic physical swing runs as.

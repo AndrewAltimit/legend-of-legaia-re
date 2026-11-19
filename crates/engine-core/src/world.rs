@@ -182,7 +182,7 @@ mod battle;
 pub use battle::ARRIVAL_MODULE_PROT;
 pub use battle::CASTER_STAGE_TICK_LIMIT;
 pub use battle::{
-    BATTLE_BODY_NCLIP, BattleActorDrawPlan, PARTY_BODY_RADIUS, RoutedEffectSpawn,
+    BATTLE_BODY_NCLIP, BattleActorDrawPlan, BattlePresent, PARTY_BODY_RADIUS, RoutedEffectSpawn,
     SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, battle_shadow_offset,
 };
 mod effects;

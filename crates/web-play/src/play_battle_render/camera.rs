@@ -113,13 +113,14 @@ impl LegaiaRuntime {
             })
     }
 
-    /// The engine's battle-camera pose (`World::battle_cam_pose` - the state
-    /// `World::tick` steps for every host), or the shared boot pose off a
-    /// scene host.
+    /// The battle-camera pose the page draws with (`World::battle_draw_pose`:
+    /// the pose `World::tick` steps for every host, carried one battle frame
+    /// behind under the smooth camera), or the shared boot pose off a scene
+    /// host. A draw-side read: the page's simulation never takes it.
     pub(crate) fn battle_cam_pose(&self) -> legaia_engine_camera::projection::BattleCamPose {
         self.scene_host
             .host()
-            .map(|h| h.world.battle_cam_pose())
+            .map(|h| h.world.battle_draw_pose())
             .unwrap_or(legaia_engine_battle_vm::battle_cam_script::BOOT_POSE)
     }
 }

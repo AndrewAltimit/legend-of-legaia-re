@@ -120,12 +120,14 @@ pub fn battle_ground_shadow(
         shadow.radius,
     );
     let (dx, dz) = legaia_engine_core::world::battle_shadow_offset(actor);
+    // The disc rides the drawn body (`World::battle_draw_shift`).
+    let shift = world.battle_draw_shift(actor_idx);
     Some(legaia_engine_effects::effect_ribbon::RibbonDraw {
         mesh,
         world_pos: [
-            f32::from(m.world_x.wrapping_add(dx)),
+            f32::from(m.world_x.wrapping_add(dx)) + shift[0],
             -BATTLE_SHADOW_DEPTH_LIFT,
-            f32::from(m.world_z.wrapping_add(dz)),
+            f32::from(m.world_z.wrapping_add(dz)) + shift[2],
         ],
         rot: [0.0; 3],
         // A battle body's ground shadow is not a move-VM node; it draws

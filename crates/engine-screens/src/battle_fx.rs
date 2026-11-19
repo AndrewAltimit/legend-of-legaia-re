@@ -34,8 +34,9 @@ pub const BATTLE_FX_ASPECT: f32 = 4.0 / 3.0;
 /// native window's glam composition (`battle_scene_mvp`) is pinned equal to
 /// it by `battle_vp_matches_the_native_glam_composition`.
 pub fn battle_fx_vp(world: &World) -> [f32; 16] {
+    // The drawn pose: the smooth camera's frame (`World::battle_draw_pose`).
     battle_vp(
-        &world.battle_cam_pose(),
+        &world.battle_draw_pose(),
         BATTLE_WORLD_SCALE,
         BATTLE_FX_ASPECT,
     )

@@ -237,7 +237,7 @@ impl PlayWindowApp {
             return self
                 .battle_stage_mesh
                 .is_some()
-                .then(|| PartCameraPose::from_battle(&world.battle_cam_pose()));
+                .then(|| PartCameraPose::from_battle(&world.battle_draw_pose()));
         }
         if cutscene_cam.is_none() && !in_world_map && self.field_debug_camera {
             return None;
@@ -269,7 +269,7 @@ impl PlayWindowApp {
         let pose = self
             .battle_stage_mesh
             .is_some()
-            .then(|| world.battle_cam_pose());
+            .then(|| world.battle_draw_pose());
         world.battle_actor_draw_plan(
             ai,
             pose.as_ref(),
@@ -285,7 +285,7 @@ impl PlayWindowApp {
         let pose = self
             .battle_stage_mesh
             .is_some()
-            .then(|| world.battle_cam_pose());
+            .then(|| world.battle_draw_pose());
         legaia_engine_world_views::battle_draws::battle_shatter_view(
             world,
             ai,
@@ -1043,11 +1043,21 @@ impl PlayWindowApp {
                         * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                     // The live body's current position, for the render-side
                     // eye push that parks the ghost behind it.
-                    let bpos = legaia_engine_battle::battle_afterimage::placement_pos([
-                        f32::from(actor.move_state.world_x),
-                        f32::from(actor.move_state.world_y),
-                        f32::from(actor.move_state.world_z),
-                    ]);
+                    // The drawn root (`World::battle_draw_root`).
+                    let bpos = legaia_engine_battle::battle_afterimage::placement_pos(
+                        self.session
+                            .host
+                            .world
+                            .battle_draw_root(g.actor_slot as usize)
+                            .map_or(
+                                [
+                                    f32::from(actor.move_state.world_x),
+                                    f32::from(actor.move_state.world_y),
+                                    f32::from(actor.move_state.world_z),
+                                ],
+                                |(p, _)| p,
+                            ),
+                    );
                     log::debug!(
                         "arts ghost: actor {} at {:?} colour {:?}",
                         g.actor_slot,

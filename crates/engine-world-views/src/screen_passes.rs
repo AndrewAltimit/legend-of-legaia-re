@@ -310,7 +310,7 @@ impl<'a> HostView<'a> {
 /// projected as the emitter projects it, through the billboard projector
 /// under the integer matrix the battle frame loads
 /// (`battle_trail::project_trail_point` over
-/// `FieldGteView::from_battle_pose(world.battle_cam_pose())`), onto the
+/// `FieldGteView::from_battle_pose(world.battle_draw_pose())`), onto the
 /// retail 320x240 stage. No host projects a trail point of its own.
 pub fn weapon_trail_prims(world: &World) -> Vec<ScreenPrim> {
     trail_prims(world, None)
@@ -335,14 +335,16 @@ fn trail_prims(world: &World, link_vp: Option<&[f32; 16]>) -> Vec<ScreenPrim> {
     if draws.is_empty() {
         return Vec::new();
     }
-    let view = legaia_render_kernels::gte::FieldGteView::from_battle_pose(&world.battle_cam_pose());
+    // The drawn camera and the drawn body (`World::battle_draw_pose`,
+    // `World::battle_draw_root_i16`): the smooth camera's frame, the live
+    // one otherwise.
+    let view =
+        legaia_render_kernels::gte::FieldGteView::from_battle_pose(&world.battle_draw_pose());
     let mut out = Vec::new();
     for d in draws {
-        let Some(actor) = world.actors.get(d.actor_slot as usize) else {
+        let Some((base, yaw)) = world.battle_draw_root_i16(d.actor_slot as usize) else {
             continue;
         };
-        let base = [actor.move_state.world_x, actor.move_state.world_z];
-        let yaw = actor.battle.facing_angle;
         let steps: Vec<[bt::TrailVertex; bt::TRAIL_POINTS]> = d
             .steps
             .iter()
@@ -506,7 +508,8 @@ pub fn cast_ribbon_prims(
     use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim};
     use legaia_render_kernels::streak_pass::clip_ribbon_quads;
     let frame = world.clock.display_frames as u32;
-    let view = legaia_render_kernels::gte::FieldGteView::from_battle_pose(&world.battle_cam_pose());
+    let view =
+        legaia_render_kernels::gte::FieldGteView::from_battle_pose(&world.battle_draw_pose());
     let mut out = Vec::new();
     // A landed move projectile's bolts (`BattleState::flight_ribbons`) are the
     // same call on the slot's position, numbered on after the arm's points.

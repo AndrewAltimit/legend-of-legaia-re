@@ -188,7 +188,7 @@ impl PlayWindowApp {
         let mask = if self.psx_render {
             let cells = legaia_scene_formats::battle_backdrop::GRID_CELLS as i16;
             grid::cell_mask(
-                &self.session.host.world.battle_cam_pose(),
+                &self.session.host.world.battle_draw_pose(),
                 legaia_engine_camera::projection::BATTLE_WORLD_SCALE,
                 cells,
                 cells,

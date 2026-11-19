@@ -110,6 +110,12 @@ pub struct World {
     /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
     pub battle: BattleState,
 
+    /// The smooth battle camera's draw-side record ([`BattlePresent`]): the
+    /// state the last battle frame closed on beside the live one. Written by
+    /// [`World::observe_battle_present`] alone, read by the draw accessors
+    /// alone ([`World::battle_draw_pose`], [`World::battle_draw_root`]).
+    pub battle_present: BattlePresent,
+
     /// Field camera rig: the saved camera snapshot, scene offset + ease, shake amplitude and the zone-ramp register file.
     pub camera: CameraRig,
 
@@ -452,6 +458,7 @@ impl World {
                 .to_vec(),
             object_effect: legaia_engine_effects::object_effect::ObjectEffectTable::boot(),
             battle: BattleState::new(),
+            battle_present: BattlePresent::default(),
             camera: CameraRig::new(),
             audio: AudioState::new(),
             field_vm: FieldVmState::new(),
