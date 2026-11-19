@@ -183,7 +183,7 @@ impl LegaiaRuntime {
         // window's posed overrides do.
         let host = self.scene_host.host();
         let lerped = host.and_then(|h| h.world.battle_draw_pose_frame(a.actor_idx));
-        if let Some(pose) = lerped.as_ref().or_else(|| {
+        if let Some(pose) = lerped.or_else(|| {
             host.and_then(|h| h.world.actors.get(a.actor_idx))
                 .and_then(|actor| actor.pose_frame.as_ref())
         }) && !pose.bone_outputs.is_empty()

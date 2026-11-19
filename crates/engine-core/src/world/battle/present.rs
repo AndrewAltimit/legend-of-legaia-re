@@ -93,6 +93,9 @@ pub struct BattlePresent {
     last_tick: u64,
     /// The share of the current frame already shown, `0.0..=1.0`.
     phase: f32,
+    /// Each slot's drawn pose for this tick
+    /// ([`World::battle_draw_pose_frame`]).
+    drawn: Vec<Option<legaia_anm::PoseFrame>>,
 }
 
 /// `d` folded onto the short way round a 12-bit turn.
@@ -130,6 +133,7 @@ impl BattlePresent {
         self.cur.roots.clear();
         self.prev.poses.clear();
         self.cur.poses.clear();
+        self.drawn.clear();
     }
 
     /// The share of the old frame still to draw, `None` when the draw is the
@@ -263,6 +267,7 @@ impl World {
         bp.frame = Some(frame);
         bp.last_tick = now;
         bp.phase = (now.saturating_sub(bp.open_tick) as f32 / span as f32).clamp(0.0, 1.0);
+        bp.fill_drawn_poses(&self.actors);
         self.battle_present = bp;
     }
 
@@ -313,38 +318,53 @@ impl World {
 }
 
 impl BattlePresent {
-    /// Slot `i`'s pose stepped `lag` of the way back toward the frame
-    /// before, part by part; a part that moved past [`SNAP_PART_MOVE`] or
-    /// turned past [`SNAP_PART_ANGLE`] draws where it landed. `None` when
-    /// the slot draws its live pose.
-    fn lerp_pose(&self, i: usize, lag: f32) -> Option<Vec<Bone>> {
-        let p = self.prev.poses.get(i)?;
-        let c = self.cur.poses.get(i)?;
-        if c.is_empty() || p.len() != c.len() || p == c {
-            return None;
+    /// Fill [`Self::drawn`] for this tick: each slot's pose stepped `lag` of
+    /// the way back toward the frame before, part by part (a part that moved
+    /// past [`SNAP_PART_MOVE`] or turned past [`SNAP_PART_ANGLE`] draws where
+    /// it landed), `None` where the slot draws its live pose. The buffers are
+    /// kept from tick to tick, so a steady fight allocates nothing here.
+    fn fill_drawn_poses(&mut self, actors: &[Actor]) {
+        let lag = self.lag();
+        self.drawn.resize_with(actors.len(), || None);
+        for (i, out) in self.drawn.iter_mut().enumerate() {
+            let (Some(lag), Some(p), Some(c), Some(live)) = (
+                lag,
+                self.prev.poses.get(i),
+                self.cur.poses.get(i),
+                actors[i].pose_frame.as_ref(),
+            ) else {
+                *out = None;
+                continue;
+            };
+            if c.is_empty() || p.len() != c.len() || p == c || live.bone_outputs.len() != c.len() {
+                *out = None;
+                continue;
+            }
+            let frame = out.get_or_insert_with(|| legaia_anm::PoseFrame {
+                bone_outputs: Vec::new(),
+                factor: 0,
+                finished: false,
+            });
+            frame.factor = live.factor;
+            frame.finished = live.finished;
+            frame.bone_outputs.clear();
+            let back = |c: i16, d: i32| (f32::from(c) - lag * d as f32).round() as i16;
+            frame.bone_outputs.extend(p.iter().zip(c).map(|(p, c)| {
+                let dt: [i32; 3] = std::array::from_fn(|k| i32::from(c.0[k]) - i32::from(p.0[k]));
+                let dr: [i32; 3] = std::array::from_fn(|k| {
+                    (i32::from(c.1[k]) - i32::from(p.1[k]) + 2048).rem_euclid(4096) - 2048
+                });
+                if dt.iter().any(|d| d.abs() >= SNAP_PART_MOVE)
+                    || dr.iter().any(|d| d.abs() >= SNAP_PART_ANGLE)
+                {
+                    return *c;
+                }
+                (
+                    std::array::from_fn(|k| back(c.0[k], dt[k])),
+                    std::array::from_fn(|k| back(c.1[k], dr[k])),
+                )
+            }));
         }
-        let back = |c: i16, d: i32| (f32::from(c) - lag * d as f32).round() as i16;
-        Some(
-            p.iter()
-                .zip(c)
-                .map(|(p, c)| {
-                    let dt: [i32; 3] =
-                        std::array::from_fn(|k| i32::from(c.0[k]) - i32::from(p.0[k]));
-                    let dr: [i32; 3] = std::array::from_fn(|k| {
-                        (i32::from(c.1[k]) - i32::from(p.1[k]) + 2048).rem_euclid(4096) - 2048
-                    });
-                    if dt.iter().any(|d| d.abs() >= SNAP_PART_MOVE)
-                        || dr.iter().any(|d| d.abs() >= SNAP_PART_ANGLE)
-                    {
-                        return *c;
-                    }
-                    (
-                        std::array::from_fn(|k| back(c.0[k], dt[k])),
-                        std::array::from_fn(|k| back(c.1[k], dr[k])),
-                    )
-                })
-                .collect(),
-        )
     }
 }
 
@@ -354,15 +374,11 @@ impl World {
     /// as [`Self::battle_draw_pose`], so a body's parts move with its root
     /// and the camera. `None` when the body draws its live pose (off, on the
     /// vsync a frame opens on its last frame's pose, or no pose).
-    pub fn battle_draw_pose_frame(&self, slot: usize) -> Option<legaia_anm::PoseFrame> {
-        let lag = self.battle_present.lag()?;
+    pub fn battle_draw_pose_frame(&self, slot: usize) -> Option<&legaia_anm::PoseFrame> {
+        self.battle_present.lag()?;
+        let drawn = self.battle_present.drawn.get(slot)?.as_ref()?;
         let live = self.actors.get(slot)?.pose_frame.as_ref()?;
-        let bones = self.battle_present.lerp_pose(slot, lag)?;
-        (bones.len() == live.bone_outputs.len()).then_some(legaia_anm::PoseFrame {
-            bone_outputs: bones,
-            factor: live.factor,
-            finished: live.finished,
-        })
+        (drawn.bone_outputs.len() == live.bone_outputs.len()).then_some(drawn)
     }
 }
 

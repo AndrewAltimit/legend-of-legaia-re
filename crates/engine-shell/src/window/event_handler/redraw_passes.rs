@@ -330,7 +330,6 @@ impl PlayWindowApp {
         // The drawn pose (`World::battle_draw_pose_frame`).
         let lerped = self.session.host.world.battle_draw_pose_frame(ai);
         let bones = lerped
-            .as_ref()
             .or(actor.pose_frame.as_ref())
             .map_or(&[][..], |p| p.bone_outputs.as_slice());
         let rotate = actor.battle_animation.is_some()
@@ -439,7 +438,7 @@ impl PlayWindowApp {
             // The drawn pose: under the smooth camera a battle body's parts
             // step on the camera's phase (`World::battle_draw_pose_frame`).
             let lerped = self.session.host.world.battle_draw_pose_frame(ai);
-            let pose = lerped.as_ref().unwrap_or(pose);
+            let pose = lerped.unwrap_or(pose);
             // Battle actors and the field player carry per-object
             // rigid-transform clips (rotation matters), so use the
             // full `R·v + T` builder; other field actors keep the
