@@ -451,6 +451,15 @@ bool primNearRejected(mat4 m) {
  * w = 15-bit dither on. All zeros - the GL default - is off, so every draw
  * that never stages it renders exactly as before. Shared by both stages. */
 uniform vec4 u_psx;
+/* 1 while the scene pass draws upside down into a copy of the frame that is
+ * flipped back after (TmdRenderer.sceneFlip, the play page's PSX native
+ * target): the rasteriser's tie rule then reads the window's way on every
+ * edge, flat or slanted, where the bottom-up framebuffer handed the pixels on
+ * a slanted edge through pixel centres to the other side. The vertex stage
+ * mirrors y last; the fragment stage reads its window position, its facing
+ * and its row step the right way up (fragTopPx, frontFacing). 0 - the GL
+ * default - draws the right way up. Shared by both stages. */
+uniform int u_flip_y;
 
 /* Snap a clip-space position down to the integer pixel of the vp_w x vp_h
  * PSX stage (320 x 240, rows top-down) - the GTE's truncated screen
@@ -768,12 +777,16 @@ void main() {
   if (u_psx.z >= 1.5 && gl_Position.w > 0.0) {
     gl_Position.x += gl_Position.w / 320.0;
     gl_Position.y -= gl_Position.w / 240.0;
-    /* The fill rule's tie, a fraction of a row up (PSX_NATIVE_TIE_ROWS). */
-    gl_Position.y += gl_Position.w * (2.0 / 240.0) * ${glslFloat(PSX_NATIVE_TIE_ROWS)};
+    /* The fill rule's tie, a fraction of a row up (PSX_NATIVE_TIE_ROWS):
+     * only on a frame drawn the right way up, where the tie needs it. */
+    if (u_flip_y == 0) gl_Position.y += gl_Position.w * (2.0 / 240.0) * ${glslFloat(PSX_NATIVE_TIE_ROWS)};
   }
   /* A rejected primitive parks every corner on one point outside the clip
    * volume: no area, nothing rasterised. */
   if (primNearRejected(u_mvp * u_model)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+  /* Upside down for a flipped scene pass (u_flip_y), after every rule that
+   * places the corner on the screen. */
+  if (u_flip_y != 0) gl_Position.y = -gl_Position.y;
   v_view_z = gl_Position.w;
   v_affine_w = gl_Position.w;
   v_uv_pw = a_uv_byte * gl_Position.w;
@@ -918,6 +931,21 @@ uniform int u_occl_allow;
 /* PSX rasterisation word, shared with the vertex stage (see there):
  * xy = framebuffer size, w = 15-bit dither on. */
 uniform vec4 u_psx;
+/* The scene pass drawn upside down (see the vertex stage). */
+uniform int u_flip_y;
+
+/* gl_FragCoord the right way up: on a flipped pass the copy's row r is the
+ * frame's row h - 1 - r once it is flipped back. */
+vec4 fragCoord() {
+  vec4 c = gl_FragCoord;
+  if (u_flip_y != 0) c.y = u_psx.y - c.y;
+  return c;
+}
+
+/* gl_FrontFacing the right way up: mirroring y turns every winding over. */
+bool frontFacing() {
+  return gl_FrontFacing != (u_flip_y != 0);
+}
 /* Enhanced lighting (NON-RETAIL - the GLSL twin of the native renderer's
  * MeshUniforms.light_dir / light_color + the scene-lights block's ambient
  * word, all three the engine's LightingMood::uniforms): u_dyn_dir = (key
@@ -996,7 +1024,7 @@ vec4 gbuf_word() {
    * normal, which the passes read as "no AO on this pixel"
    * (webgl-ssao.js ssao_is_actor; native ssao_gbuffer_word). */
   if (u_occl_allow == 0) return vec4(0.0, 0.0, 0.0, w);
-  vec2 ndc = (gl_FragCoord.xy - u_gbuf_view.xy) / u_gbuf_view.zw * 2.0 - 1.0;
+  vec2 ndc = (fragCoord().xy - u_gbuf_view.xy) / u_gbuf_view.zw * 2.0 - 1.0;
   vec3 p = vec3(ndc.x * w * u_gbuf_k.x, ndc.y * w * u_gbuf_k.y, w * u_gbuf_k.z);
   vec3 n = cross(dFdx(p), dFdy(p));
   float len = length(n);
@@ -1027,7 +1055,8 @@ uniform int u_far_slice;
  * top, and both the dither matrix row and the light pool's centre are
  * authored top-down. */
 vec2 frag_top_px() {
-  return vec2(gl_FragCoord.x, u_psx.y - gl_FragCoord.y);
+  vec4 c = fragCoord();
+  return vec2(c.x, u_psx.y - c.y);
 }
 
 /* PSX 24-bit -> 15-bit ordered dither (opt-in; identity while u_psx.w is 0).
@@ -1358,7 +1387,7 @@ vec2 psxSampleUv(vec2 uv, vec2 uv_dy, vec4 bary, vec4 bary_dy) {
    * its sample point already, and the GPU rounds it to a texel. The sample
    * point is the pixel the tie nudge moved the primitive off
    * (PSX_NATIVE_TIE_ROWS; GL's window y runs up, so that is +dFdy). */
-  if (u_psx.z >= 1.5) return uv + uv_dy * ${glslFloat(PSX_NATIVE_TIE_ROWS)} + vec2(0.5 + ${glslFloat(PSX_TEXEL_TIE_BIAS)});
+  if (u_psx.z >= 1.5) return uv + (u_flip_y != 0 ? vec2(0.0) : uv_dy * ${glslFloat(PSX_NATIVE_TIE_ROWS)}) + vec2(0.5 + ${glslFloat(PSX_TEXEL_TIE_BIAS)});
   float perRow = u_psx.y / 240.0;
   float rows = 0.5 * perRow;
   float margin = perRow / 64.0;
@@ -1384,7 +1413,7 @@ void main() {
   v_uv = psxSampleUv(v_uv, uv_dy, v_prim_bary, bary_dy);
   v_flat_rgba = v_flat_rgba_pw / v_affine_w;
   /* The Gouraud colour at the pixel, not at the tie nudge's sub-row. */
-  if (u_psx.z >= 1.5) v_flat_rgba += dFdy(v_flat_rgba) * ${glslFloat(PSX_NATIVE_TIE_ROWS)};
+  if (u_psx.z >= 1.5 && u_flip_y == 0) v_flat_rgba += dFdy(v_flat_rgba) * ${glslFloat(PSX_NATIVE_TIE_ROWS)};
   if (u_eclip_m.w > 0.5) {
     float ey = dot(u_eclip_m.xyz, v_obj_pos);
     if (ey < u_eclip_b.x || ey > u_eclip_b.y) discard;
@@ -1413,11 +1442,11 @@ void main() {
   /* Double-sided pair copies: draw only the copy facing the camera under
    * this view's parity (see u_pair_front). The CLUT decode below masks the
    * flag bit out ((cba >> 6) & 511 covers CBA bits 6..14 only). */
-  if ((cba & 0x8000u) != 0u && gl_FrontFacing != (u_pair_front != 0)) discard;
+  if ((cba & 0x8000u) != 0u && frontFacing() != (u_pair_front != 0)) discard;
   /* Retail NCLIP: on this page's assembled chain the camera-facing (retail
    * front) copy is the BACK-facing one, which is exactly what u_pair_front
    * encodes - so the rejected half is gl_FrontFacing. */
-  if (u_nclip_cull >= 2 && gl_FrontFacing) discard;
+  if (u_nclip_cull >= 2 && frontFacing()) discard;
   /* Camera-occlusion fade: screen-door discard of fragments between the
    * camera and the player. Placed before the untextured early-return so
    * both prim families fade; identity while u_occl_focus.w is zero, and
@@ -1426,7 +1455,7 @@ void main() {
    * it off its top-left pixel origin; the keep circle is in gl_FragCoord
    * space, where its focus is staged. */
   if (u_occl_allow != 0
-      && occl_bayer(frag_top_px()) >= occl_keep(gl_FragCoord.xy, gl_FragCoord.w)) discard;
+      && occl_bayer(frag_top_px()) >= occl_keep(fragCoord().xy, gl_FragCoord.w)) discard;
   uint u_pix = uint(v_uv.x) & 255u;
   uint v_pix = uint(v_uv.y) & 255u;
 

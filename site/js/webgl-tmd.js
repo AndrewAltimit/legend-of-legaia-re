@@ -272,6 +272,9 @@ class TmdRenderer {
     this.locEclipB     = gl.getUniformLocation(this.program, 'u_eclip_b');
     this.locOcclLift   = gl.getUniformLocation(this.program, 'u_occl_lift');
     this.locPsx      = gl.getUniformLocation(this.program, 'u_psx');
+    /* The scene pass drawn upside down (renderAssembled's `sceneFlip`). */
+    this.locFlipY    = gl.getUniformLocation(this.program, 'u_flip_y');
+    this.sceneFlip = null;
     this.locDynDir   = gl.getUniformLocation(this.program, 'u_dyn_dir');
     this.locLogDepthOn = gl.getUniformLocation(this.program, 'u_log_depth_on');
     /* Whole-draw far bucket (a placement's `farBucket`, the battle grid). */

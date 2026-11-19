@@ -37,11 +37,21 @@ PAGE_STATE_RULES = [
         "what": "the screen primitives on the PSX canvas draw upside down into a copy",
         "path": REPO / "site/js/play-app.js",
         "kind": "contains",
-        "source": "const flipped = this.psxNative && window.__psxFlipPrims !== false && this._beginFlip();",
+        "source": "const flipped = this.psxNative && window.__psxFlipPrims !== false && this.flip.begin();",
         "why": "the canvas's framebuffer runs bottom-up, so the fill rule gave a "
         "corner's row tie to the row under the GPU's and a slanted edge's pixels "
         "to the other triangle: the battle intro's shards in hairlines, the slot "
         "machine's dot matrix a row off (`cast_cannon` tick 81 2.2% of a frame)",
+    },
+    {
+        "what": "the scene pass on the PSX native canvas draws upside down into a copy",
+        "path": REPO / "site/js/play-app.js",
+        "kind": "contains",
+        "source": "this.renderer.sceneFlip = this._sceneFlip;",
+        "why": "the same bottom-up fill rule on the 3D pass: a slanted edge through "
+        "pixel centres gave its tie pixels to the other side, a cast's rotated "
+        "shards in hairlines (`cast` ticks 890-915, up to 1.22% of a frame, "
+        "0.00-0.01% flipped)",
     },
     {
         "what": "leaving a dance takes the hall's ambient tree off the world",
