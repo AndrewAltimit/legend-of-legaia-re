@@ -567,7 +567,8 @@ SIM_PAIRS: list[dict[str, object]] = [
         "apiece, glam on one side and hand-rolled matrices on the other): "
         "the overworld gate, the battle frame flip, the `+0x52` "
         "camera-relative prefix. Every FX model builder takes the one list "
-        "`effect_draws::effect_model_draws`",
+        "`effect_draws::effect_model_draws_drawn` (the live list on the "
+        "smooth battle camera's drawn phase)",
         "sites": {
             "native": (
                 "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
@@ -577,7 +578,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web_field": ("crates/web-play/src/play_battle_fx.rs", "build_field_fx"),
         },
         "mode": "symbols_all",
-        "symbols": ["effect_model_draws"],
+        "symbols": ["effect_model_draws_drawn"],
     },
     {
         "what": "battle effect world scale, native vs play page - the 4x "

@@ -3161,17 +3161,30 @@ lead to. The battle draw therefore runs **one battle frame behind**:
 
 - `World::observe_battle_present`, at the end of every `World::tick`, keeps the
   state the last battle frame closed on beside the live one: the camera pose
-  without its shake, each body's root (position and facing) and each body's
-  pose (`pose_frame`, translation and rotation per part).
+  without its shake, each body's root (position and facing), each body's pose
+  (`pose_frame`, translation and rotation per part), and each live effect
+  node: every move-VM scene part (the summon creature's scene, the move-FX and
+  action-FX scenes, the Mystic shield's, a stage module's) and every
+  effect-pool child, by position and rotation.
 - Each vsync draws the share of the frame already shown, `phase = (vsync -
   frame open) / span`, of the way from the old state to the live one. The vsync
   a frame opens on draws the frame before, whole; the live frame lands on the
   next frame's open. Angles move the short way round the 12-bit turn.
-- The camera, every body's root and every body's parts move on the one phase,
-  so a body the camera frames holds still on screen as it does in retail. The
-  ground shadows, the weapon trails, the ghost push, the grid cull and the
-  screen-FX projection draw through the same drawn camera and roots. The
-  shake stays the live one, so it keeps its bite.
+- The camera, every body's root and parts, and every effect node move on the
+  one phase, so a body the camera frames holds still on screen as it does in
+  retail, and an effect riding a body stays on it: a summon's invoke burst
+  holds on the caster's raised fist, where with the effects drawn live its
+  rays' centre slid off the fist by up to a frame of the camera's dolly. The
+  ground shadows, the weapon trails, the ghost push, the value readout's
+  anchor, the grid cull and the screen-FX projection draw through the same
+  drawn camera and roots. The shake stays the live one, so it keeps its bite.
+- An effect node is known by a handle the draw lists carry
+  (`SummonPartDraw::node` / `RibbonDraw::node`: the part's index under its
+  scene's key, `present::fx_node`; `EffectSprite::slot`: the pool slot). A
+  node born this frame draws where it spawned; a node whose age falls under
+  the same handle (a new child in a reused slot, a new scene in a reused
+  list place) or whose identity changed draws live, and a node gone from the
+  live frame is gone from the draw, so nothing lingers past retail's frame.
 - A cut draws its landing at once: a change of camera owner (the phase camera,
   a stage module's camera), or a step of `480` angle units, `1800` TR units or
   `480` focus units in one frame (`present::CUT_*`). Across the film sets the
@@ -3181,19 +3194,22 @@ lead to. The battle draw therefore runs **one battle frame behind**:
   part that moved `512` units or turned `1024`. The first frames of a battle
   draw live.
 - It is presentation-only. The draw-side reads are `World::battle_draw_pose`,
-  `battle_draw_root`, `battle_draw_shift`, `battle_draw_root_i16` and
-  `battle_draw_pose_frame`, and only the two hosts' draw paths and the shared
-  draw kernels take them. The camera ghost pass, the tint pass's latch, the
-  census, the cast ribbon's `rand` deal and every rule keep
-  `World::battle_cam_pose` and the actor records, so the fight, the frame
-  cost and the `rand()` stream are unchanged. Off, every accessor returns the
-  live value, bit for bit.
+  `battle_draw_root`, `battle_draw_shift`, `battle_draw_root_i16`,
+  `battle_draw_pose_frame`, `battle_fx_shift` and `battle_sprite_shift`, and
+  only the two hosts' draw paths and the shared draw kernels' `_drawn` entries
+  take them (`effect_model_draws_drawn`, `weapon_trail_prims_drawn`,
+  `cast_ribbon_prims_drawn`). The frame census counts what retail links from
+  the live entries (`effect_model_draws`, `weapon_trail_prims`,
+  `cast_ribbon_prims`), and the camera ghost pass, the tint pass's latch, the
+  cast ribbon's `rand` deal and every rule keep `World::battle_cam_pose` and
+  the actor records, so the fight, the frame cost and the `rand()` stream are
+  unchanged. Off, every accessor returns the live value, bit for bit.
 
 The price is a battle frame of display delay on the 3D scene, two to four
-vsyncs; the HUD, the menus and the pad are not delayed. What the draw does not
-carry back is the effect parts and particles, which draw where the live frame
-left them: an effect anchored on a moving body can run up to a frame ahead of
-it.
+vsyncs; the HUD, the menus and the pad are not delayed. The near-camera ghost
+(a body drawn see-through as the camera closes on it) is decided on the live
+pose: the decision is a simulation state the frame census counts, so it can
+turn a body to a ghost up to a frame before the drawn camera reaches it.
 
 ### The 4× world scale
 
