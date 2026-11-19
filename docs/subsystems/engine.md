@@ -746,6 +746,7 @@ Retail's adaptive frame step (`DAT_1F800393`) is a different quantity: the numbe
 A field scene costs what it draws, and about a quarter of the library's field states run at `3` on cost alone (`son`, `stone`, `kor3`, `uru2`, `concnow`, `jou`, `teien`, `bubu2`, `koin1`). The engine has no frame time to measure, so it prices each field frame off engine state ([the field frame-cost model](#the-field-frame-cost-model)) and runs the ported law on that price. A harness standing the engine on a capture hands it the capture's step, or its whole frame-time ring ([walk film](../tooling/walk-film.md#the-game-frames-phase)).
 
 The step changes how often the per-actor passes run, never how many vsyncs a second of play contains, so it does not enter the host frame loop. Three minigame screens install a floor of their own and run at it in the port: the fishing pond at `2` ([fishing](minigame-fishing.md#the-venues-game-tick)), the Muscle Dome hub at `2` ([Muscle Dome](minigame-muscle-dome.md#screen-envelopes)) and the dance hall at `3` ([dance](minigame-dance.md)); a roll made once a game tick comes as often as retail's.
+The Baka Fighter cabinet's floor is `1`, and its step is the law over each frame's price: a duel frame's work holds `1`, and the announcer's lines, whose CD polls take two thirds of PCSX-Redux's CPU, take the round's intro and the duel's opening to `3` and the KO to `4` ([Baka Fighter](minigame-baka-fighter.md#frame-pacing)). The polls follow the battle's CD timing knob.
 
 ### The field frame-cost model
 

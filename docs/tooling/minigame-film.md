@@ -94,6 +94,15 @@ agree exchange for exchange through both rounds. The cabinet's opponent install
 retail-faithful mode, which the film runs, holds it as long, and the default
 loads at once.
 
+The engine side also writes `dt`, the step the next game frame runs on, which
+the driver pairs with retail's step byte, and `cost`, what the last frame stored
+in the cabinet's frame ring ([frame pacing](../subsystems/minigame-baka-fighter.md#frame-pacing)).
+Two PCSX-Redux recordings of the same state and press train can differ by one
+Cross of the train (`20` vsyncs) at an exchange whose press lands in a frame
+paced at step `3`: the press-to-commit edge there is marginal on retail's side,
+so a residual of one press cycle at such an exchange is not by itself a port
+defect.
+
 ## Adding a minigame
 
 Add the words to `SETS` in the driver (address, kind, a key per pre-play phase and

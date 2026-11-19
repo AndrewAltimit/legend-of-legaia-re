@@ -27,7 +27,7 @@
 //! [`BakaPacer`] runs that law over [`frame_work`]'s price of each frame and
 //! the clip windows the cabinet's own lines open ([`BakaPacer::cue_xa`]).
 //!
-//! REF: FUN_80016B6C
+//! REF: FUN_80016B6C, FUN_8003D53C, FUN_8003D764, FUN_8001B964, FUN_801CF388, FUN_8005FB84
 
 use crate::baka_cabinet as cab;
 

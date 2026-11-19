@@ -92,8 +92,9 @@ Each row the command prints is one routine over one frame: calls, instructions,
 accesses by region, cycles, hblanks, and the primitives it linked into the
 frame's ordering table (`linked_primitives` at each call's return less at its
 entry: the chain `DrawOTag` takes, walked from `*(0x1F8003F4) + 4 * len - 4`).
-`--calls` lists every call, `--csv` writes one row per routine per frame, and
-`--funcs` adds routines to price.
+`--calls` lists every call, `--csv` writes one row per routine per frame,
+`--funcs` adds routines to price, and `--watch name=ADDR:kind,...` prints RAM
+words at each frame's end (a cabinet's state word, the step byte `0x1F800393`).
 
 ## Held against the emulator
 
@@ -391,6 +392,31 @@ and `5.7%` under (`battle_jou_party_noa_chain_mid`), and the Seru summon close-u
 `gimard_summon_visible` (`54` hblanks, no stage) `23%` over, whose base the
 fight's own does not fit. How the table stands beside the fitted census line is
 in [the census](../subsystems/battle-stage-camera.md#the-census).
+
+## Baka Fighter frames
+
+Mode `0x19` runs the same handler, so the runner prices the Baka Fighter
+cabinet's frames as they stand. On `minigame_baka_fighter_retail_fight`
+(cabinet state `0x38`, the first rung) and `..._round2` (the spin `0x35`, then
+`0x36`), interrupts in:
+
+| Part | Hblanks | Primitives linked |
+|---|---:|---:|
+| The frame, settled camera (ring entry) | `162..163` | |
+| The frame through the spin `0x35` | `135..147` | |
+| The cabinet arm `FUN_801CF388` with the arena, settled / turning | `55` / `28..41` | `408` / `173..290` |
+| The two fighter draws `FUN_8001B964` | `86..88` | `564..629` |
+| The combat tick `FUN_801D3F44` (two calls) | `13.4` | `48` |
+| The duel HUD `FUN_801D2AFC` | `2.5` | `21` |
+| The attract card's frame | `7` | |
+
+A PCSX-Redux film of the cabinet stores `165..170` for the settled duel frame,
+the CD and DMA interrupts' few hblanks over the runner's. What the film's
+frames cost past that is the announcer's CD stop watch, which the runner does
+not model (the drive never answers it): see
+[Baka Fighter frame pacing](../subsystems/minigame-baka-fighter.md#frame-pacing).
+The runner reaches no state inside the KO's special; a fighter's mesh on the
+depth-cued leaves its ghosts draw through is priced off the leaf table above.
 
 ## Limits
 
