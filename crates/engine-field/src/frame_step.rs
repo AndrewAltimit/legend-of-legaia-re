@@ -171,6 +171,7 @@ pub fn camera_after_world_tick<W: FrameStepWorld + ?Sized>(
     // follow target, and the overworld's standing-player ease would
     // otherwise hold that focus (clamped to the region corner) until the
     // player moved.
+    let mark = camera.present_mark();
     if world.take_field_camera_reseat() {
         camera.reset_globals_for_scene_entry();
     }
@@ -179,6 +180,9 @@ pub fn camera_after_world_tick<W: FrameStepWorld + ?Sized>(
     if scene_entered {
         camera.reset_globals_for_scene_entry();
     }
+    // The smooth camera's record of the move this tick made (presentation
+    // only; `Camera::led_delta` reads it on the draw side).
+    camera.observe_present(world, mark);
 }
 
 /// A scripted shot's view: the live camera globals.
@@ -355,7 +359,15 @@ mod tests {
             scripted_view(&camera, t)
         );
         let stored = scripted_view(&camera, t);
-        let led = scripted_view_led(&camera, t, DrawLead { phase: 0.5, dt: 4 });
+        let led = scripted_view_led(
+            &camera,
+            t,
+            DrawLead {
+                phase: 0.5,
+                dt: 4,
+                lag: 0.0,
+            },
+        );
         assert!(led.yaw > stored.yaw);
         assert!(led.tr_eye[2] < stored.tr_eye[2]);
         assert_eq!(led.pitch, stored.pitch);

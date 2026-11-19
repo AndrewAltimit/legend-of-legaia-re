@@ -21,6 +21,9 @@ impl Camera {
             self.globals.0[9] = RetailCamGlobals::FIELD_RESET.0[9];
         }
         self.mover = None;
+        // A cut: the smooth camera's draw lands on the new scene's pose.
+        self.present = super::present::PresentLag::default();
+        self.present_cut();
         self.knob_blend = KNOB_BLEND_FULL;
         self.script_owns_focus = false;
         // The field draw context (`FUN_801DE37C`) re-stamps the visible-tile

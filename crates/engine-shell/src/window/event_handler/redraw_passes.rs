@@ -33,7 +33,7 @@ impl PlayWindowApp {
         // through the shot as the camera stored it, never the smooth
         // camera's lead (`frame_step::scripted_view_led`).
         self.session.field_fog_shot = match self.frame_cutscene_view {
-            Some(_) if self.host_view().lead.phase > 0.0 => {
+            Some(_) if !self.host_view().lead.is_stored() => {
                 Some(legaia_engine_field::frame_step::scripted_view(
                     &self.session.camera,
                     self.host_view().scripted_target(),
@@ -897,7 +897,7 @@ impl PlayWindowApp {
             self.session.seat_field_fog(&fog, centre);
         }
         let view = self.host_view();
-        let mut prims = view.fog_prims(self.dynamic_lighting);
+        let mut prims = view.fog_prims(self.frame_cutscene_view, self.dynamic_lighting);
         prims.extend(view.beam_prims(self.dynamic_lighting));
         prims
     }

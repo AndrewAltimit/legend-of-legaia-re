@@ -246,13 +246,21 @@ fn led_delta_is_zero_on_the_stored_pose() {
     let c = gliding_camera(8, 120);
     assert_eq!(c.led_delta(DrawLead::NONE), [0.0; AXIS_COUNT]);
     assert_eq!(
-        c.led_delta(DrawLead { phase: 0.0, dt: 4 }),
+        c.led_delta(DrawLead {
+            phase: 0.0,
+            dt: 4,
+            lag: 0.0
+        }),
         [0.0; AXIS_COUNT]
     );
     let mut settled = c.clone();
     settled.mover = None;
     assert_eq!(
-        settled.led_delta(DrawLead { phase: 0.5, dt: 4 }),
+        settled.led_delta(DrawLead {
+            phase: 0.5,
+            dt: 4,
+            lag: 0.0
+        }),
         [0.0; AXIS_COUNT]
     );
 }
@@ -269,8 +277,16 @@ fn led_delta_carries_the_glide_toward_the_next_stored_pose() {
     next.tick(4);
     let next = next.values();
     let now = c.mover.as_ref().unwrap().values();
-    let quarter = c.led_delta(DrawLead { phase: 0.25, dt: 4 });
-    let three = c.led_delta(DrawLead { phase: 0.75, dt: 4 });
+    let quarter = c.led_delta(DrawLead {
+        phase: 0.25,
+        dt: 4,
+        lag: 0.0,
+    });
+    let three = c.led_delta(DrawLead {
+        phase: 0.75,
+        dt: 4,
+        lag: 0.0,
+    });
     for k in 0..AXIS_COUNT {
         let span = (next[k] - now[k]) as f32;
         if k == legaia_engine_camera::camera_mover::FOCUS_Y_AXIS {
@@ -296,7 +312,11 @@ fn led_delta_stops_at_the_glide_end() {
         m.tick(100);
         m.values()
     };
-    let d = c.led_delta(DrawLead { phase: 0.99, dt: 4 });
+    let d = c.led_delta(DrawLead {
+        phase: 0.99,
+        dt: 4,
+        lag: 0.0,
+    });
     for k in [0usize, 1, 3, 5] {
         let drawn = c.globals.0[k] as f32 + d[k];
         let (lo, hi) = if c.globals.0[k] <= end[k] {

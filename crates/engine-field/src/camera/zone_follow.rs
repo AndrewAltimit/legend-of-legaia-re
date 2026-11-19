@@ -259,6 +259,7 @@ impl Camera {
                 g[8] = -z;
             }
             zone.snap_pending = false;
+            self.present.cut = true;
         } else if (zone.ease_moved || forced) && passes > 0 || !zone.active {
             let code = zone.config.ease_shift();
             for _ in 0..passes.max(1) {

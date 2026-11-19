@@ -82,9 +82,10 @@ impl LegaiaRuntime {
         // shadows project through the same field-FX view either way.
         self.fx_depth_affine = Some(fx.depth_affine());
         let lit = self.options_state.enhanced_lighting;
+        let cutscene = self.drawn_cutscene_view();
         self.host_view_at(self.field_pass_box())
             .map(|v| {
-                let mut prims = v.fog_prims(lit);
+                let mut prims = v.fog_prims(cutscene, lit);
                 prims.extend(v.beam_prims(lit));
                 prims
             })

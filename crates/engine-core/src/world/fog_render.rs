@@ -126,6 +126,7 @@ impl World {
         if !Self::fog_mode(self.mode) || !self.fog.gate || self.world_map.map_display.is_some() {
             self.fog.last_dt = dt;
             self.fog.quads.clear();
+            self.fog.quads_view = None;
             return &self.fog.quads;
         }
         // A vsync between two game frames: retail's render pass does not run
@@ -157,6 +158,7 @@ impl World {
             window: self.terrain.region_attributes.box_bytes,
         };
         let proj = self.field_fx_view(view);
+        self.fog.quads_view = Some(*view);
         self.fog.render_step(&proj, &env)
     }
 
@@ -218,6 +220,28 @@ impl World {
     /// The quads the last [`World::fog_render_step`] produced.
     pub fn fog_quads(&self) -> &[FogQuad] {
         &self.fog.quads
+    }
+
+    /// The projection a frame drawn through `drawn` (field frame, the pose
+    /// [`Self::fog_render_step`] takes) re-projects [`Self::fog_quads`]
+    /// through ([`FogQuad::reproject`]), or `None` to draw them as the pass
+    /// left them.
+    ///
+    /// The pool walks once a game pass, and a camera that has moved since -
+    /// the smooth camera's per-vsync pose, or the focus the smooth walk
+    /// carries between passes - would leave the sheets standing on the
+    /// screen while the scene slides under them. Under the smooth camera
+    /// (`WorldToggles::smooth_camera`) each sheet follows the drawn camera;
+    /// off, or drawn through the pass's own camera, `None`.
+    pub fn fog_reprojection(&self, drawn: Option<&FieldCameraView>) -> Option<FogView> {
+        if !self.toggles.smooth_camera || self.fog.quads.is_empty() {
+            return None;
+        }
+        let drawn = drawn?;
+        if self.fog.quads_view.as_ref()? == drawn {
+            return None;
+        }
+        Some(self.field_fx_view(drawn))
     }
 }
 

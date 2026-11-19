@@ -465,6 +465,7 @@ impl World {
                     ot_index: (sz.max(0) as u32) >> 5,
                     sz: sz as f32,
                     depth: view.ndc_depth(world),
+                    source: None,
                 });
             }
         }

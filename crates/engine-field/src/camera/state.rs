@@ -20,16 +20,30 @@ pub enum CameraMode {
 /// Where a frame's **draw** falls inside the game frame, for the smooth
 /// camera ([`Camera::led_delta`]): `phase` is the fraction of the frame's
 /// vsyncs already shown (`0` on the vsync the frame opens), `dt` the credit
-/// the next game frame will step the mover by. A presentation input only.
+/// the next game frame will step the mover by, and `lag` the share of the
+/// camera's last stepped move ([`Camera::observe_present`]) the draw has
+/// still to show (`1` on the vsync the move landed, `0` once it is drawn
+/// whole). A presentation input only.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct DrawLead {
     pub phase: f32,
     pub dt: i32,
+    pub lag: f32,
 }
 
 impl DrawLead {
     /// The stored pose: retail's draw, and every simulation read.
-    pub const NONE: Self = Self { phase: 0.0, dt: 0 };
+    pub const NONE: Self = Self {
+        phase: 0.0,
+        dt: 0,
+        lag: 0.0,
+    };
+
+    /// Whether this lead draws the stored pose: no glide lead and no
+    /// stepped move left to show.
+    pub fn is_stored(&self) -> bool {
+        (self.phase <= 0.0 || self.dt <= 0) && self.lag <= 0.0
+    }
 }
 
 /// [`Camera::knob_blend`] at full reach (Q12 one).
@@ -154,6 +168,10 @@ pub struct Camera {
     /// the target it composes and the ease that walks the globals toward
     /// it. See [`crate::camera_zone`] and [`Self::zone_follow_tick`].
     pub zone: ZoneFollow,
+    /// The smooth camera's record of the last stepped move of the globals
+    /// ([`Self::observe_present`]). Presentation only: nothing the
+    /// simulation reads takes it.
+    pub(super) present: super::present::PresentLag,
 }
 
 /// The state of the **zone-driven field follow camera** - the engine side
@@ -466,6 +484,7 @@ impl Default for Camera {
             script_owns_focus: false,
             knob_blend: KNOB_BLEND_FULL,
             zone: ZoneFollow::default(),
+            present: super::present::PresentLag::default(),
         }
     }
 }
