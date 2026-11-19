@@ -193,7 +193,11 @@ SCENES.monkey_menu = { card: CARD.late, block: 4, ticks: 1800, every: 30, taps: 
 const PACK = path.join(REPO, 'packs/sample');
 SCENES.pack_village = { pack: { dir: PACK, map: 'isles_village' }, ticks: 300, every: 30, hold: walk };
 SCENES.pack_tower = { pack: { dir: PACK, map: 'genesis_1f' }, ticks: 300, every: 30, hold: walk };
-SCENES.pack_menu = { pack: { dir: PACK, map: 'isles_village' }, ticks: 1020, every: 30, taps: menuTaps(), reach: PAUSE_MENU };
+/* The pause press is held over a game frame: under `--retail` the field reads the pad once a
+ * game frame and a press between two samples is never seen (engine-core `world::pad_latency`).
+ * The pack map's frames run long enough there that a tap at tick 90, or a hold over ticks
+ * 100..104, falls between two; ten ticks spans one. */
+SCENES.pack_menu = { pack: { dir: PACK, map: 'isles_village' }, ticks: 1020, every: 30, hold: [[MENU_AT, MENU_AT + 9, 'Start']], taps: menuTaps().slice(1), reach: PAUSE_MENU };
 /* A save the window wrote, resumed on both. */
 SCENES.slot_save = { lgsfPath: path.join(REPO, 'saves/slot_00.bin'), card: 'native', ticks: 300, every: 30, hold: walk };
 
@@ -216,6 +220,17 @@ const MODES = {
   dusk: { native: [], options: 'lighting_time_of_day = "dusk"\n', boxes: [], selects: { 'play-time-of-day': 'dusk' } },
   night: { native: [], options: 'lighting_time_of_day = "night"\n', boxes: [], selects: { 'play-time-of-day': 'night' } },
 };
+
+/* The `asset` CLI that bundles a pack's `.lxpack` for the page: beside the engine, else the
+ * first profile under target/ that built one. */
+function assetBin(engine) {
+  const dirs = [path.dirname(engine), ...['release-test', 'release', 'dev-fast', 'debug'].map((p) => path.join(REPO, 'target', p))];
+  for (const d of dirs) {
+    const f = path.join(d, process.platform === 'win32' ? 'asset.exe' : 'asset');
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
 
 function nativeRun(engine, name, sc, mode, dir, opts) {
   fs.rmSync(dir, { recursive: true, force: true });
@@ -508,9 +523,17 @@ async function main() {
     let lxpack = null;
     if (sc.pack) {
       const bundle = path.join(dir, 'pack.lxpack');
-      const asset = path.join(path.dirname(engine), 'asset');
-      const b = spawnSync(asset, ['expansion', 'bundle', '--out', bundle, sc.pack.dir], { encoding: 'utf8' });
-      if (b.status !== 0) throw new Error(`asset expansion bundle: ${b.stderr}`);
+      const asset = assetBin(engine);
+      const b = asset && spawnSync(asset, ['expansion', 'bundle', '--out', bundle, sc.pack.dir], { encoding: 'utf8' });
+      if (!b || b.error || b.status !== 0) {
+        /* One scene's missing tool is that scene's line, not the end of the sweep. */
+        const why = !b ? `no \`asset\` binary beside ${engine} or under target/ (cargo build -p legaia-asset --bin asset)`
+          : b.error ? `${asset}: ${b.error.message}` : `${asset} exit ${b.status}: ${(b.stderr || '').slice(-600)}`;
+        await context.close();
+        lines.push(`${name}/${mode}: NOT RUN, the pack bundle failed: ${why}`);
+        console.log(lines[lines.length - 1]);
+        continue;
+      }
       lxpack = fs.readFileSync(bundle).toString('base64');
     }
     const r = await page.evaluate(pageRun, { lgsf, lxpack, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], selects: MODES[mode].selects || {}, ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, rngSeed: CARD_RNG_SEED, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
