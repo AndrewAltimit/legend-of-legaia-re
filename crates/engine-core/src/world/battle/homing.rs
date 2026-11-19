@@ -371,6 +371,29 @@ impl World {
                 }
                 continue;
             }
+            let direct =
+                s.effect & legaia_engine_effects::action_effect_script::EFFECT_DIRECT_BIT != 0;
+            // A bit-7 byte from the draw seats its pool master on the spot
+            // (`jal 0x801DFDF0` at `0x801E11A0` / `0x801E1434`), behind the
+            // pass's walker sweep and ahead of the bodies' burning puffs the
+            // same draw sheds (`0x8004A820`): a `--fx-spawns` recording of
+            // Fire Claw's landing pass holds the flight's `0x11`, the
+            // landing's `0x11`, then the victim's `0x0B`, and the pool's
+            // children and their `rand()` draws follow that order. Its
+            // children first tick on the next pass's sweep either way; only a
+            // prototype node waits for the next pass's tick walk.
+            if from_draw && direct {
+                self.flush_queued_pool_spawns();
+                let at =
+                    s.at.map(|v| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16);
+                self.spawn_effect_caught_up(
+                    s.effect & !legaia_engine_effects::action_effect_script::EFFECT_DIRECT_BIT,
+                    at,
+                    s.heading,
+                    0,
+                );
+                continue;
+            }
             let list = if from_draw {
                 &mut self.battle.draw_spawns
             } else {
@@ -385,6 +408,30 @@ impl World {
                 facing: s.heading,
                 homing_slot: Some(s.slot),
             });
+        }
+    }
+
+    /// Seat the pool masters this pass's anim tick queued
+    /// (`World::route_battle_effect_spawns`'s direct form) ahead of a spawn
+    /// the draw makes: retail's effect-script walk calls `FUN_801DFDF0`
+    /// (`0x801DEEA4`) in the anim tick, before the draw's flight lists do
+    /// (`0x801E11A0`), and the pool takes its masters in call order. Each
+    /// takes the sweeps this pass's walker already gave the rest, as the
+    /// host's routing would. The table form stays queued for the host.
+    fn flush_queued_pool_spawns(&mut self) {
+        if !self.battle.effect_spawns.iter().any(|s| s.direct) {
+            return;
+        }
+        let owed = self.battle.anim_pass_vsyncs;
+        let queued = std::mem::take(&mut self.battle.effect_spawns);
+        for s in queued {
+            if s.direct {
+                let at = [s.at.0, s.at.1, s.at.2]
+                    .map(|v| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16);
+                self.spawn_effect_caught_up(s.effect, at, s.facing, owed);
+            } else {
+                self.battle.effect_spawns.push(s);
+            }
         }
     }
 

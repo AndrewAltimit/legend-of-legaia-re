@@ -3236,7 +3236,15 @@ tick between holds:
   ribbons, the victim's tint, the landing cue). A node it links - the landing
   flash's fade actor, a list's effect children - first ticks on the next pass's
   walk and first shows there: Astral Wave's recording brightens one frame after
-  the landing pass (`World::release_draw_spawns`).
+  the landing pass (`World::release_draw_spawns`). A bit-7 list byte is not a
+  node: it seats an effect-pool master on the spot (`jal 0x801DFDF0` at
+  `0x801E11A0` / `0x801E1434`), behind the pass's walker sweep (`0x80048128`)
+  and ahead of the burning puffs the same draw sheds (`0x8004A820`), so its
+  children still first show on the next pass, but the pool takes them in that
+  order. A `--fx-spawns` recording of Zenoir's Fire Claw holds the flight's
+  `0x11`, the landing's `0x11` and then the victim's `0x0B` on the landing
+  pass; held back with the nodes, the port seated the puff first, and every
+  later child slot and `rand()` draw of the burst parted from retail's.
   Every commit `FUN_80047430` makes sits after the advance
   (`0x800478EC..0x80047A44`) and `FUN_8004AD80` zeroes the cursor
   (`sh zero,0x68` at `0x8004B068`), so a clip the SM stages starts the next
