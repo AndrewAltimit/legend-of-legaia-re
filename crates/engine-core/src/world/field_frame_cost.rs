@@ -28,9 +28,21 @@
 use super::World;
 use legaia_engine_scene::field_view_window::{ViewCells, view_cells};
 
+/// What a mesh hands the prim dispatcher `FUN_80043390`: its TMD objects
+/// (one dispatcher draw each), its primitive groups (a group decode and a
+/// leaf set-up each) and its primitives by leaf kind (`flags >> 1`, kinds
+/// `8..=19`, index `kind - 8`), the units the derived frame cost prices
+/// ([`super::field_frame_units`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MeshCost {
+    pub objects: u16,
+    pub groups: u16,
+    pub kinds: [u16; 12],
+}
+
 /// One decoration draw of the scene's terrain layer: its `.MAP` cell, its
 /// record's cull radius and its pack mesh's size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CostCell {
     pub col: u8,
     pub row: u8,
@@ -41,11 +53,12 @@ pub struct CostCell {
     /// flags `0x10..=0x17`, the dispatcher's `NCCS` / `NCCT` handlers).
     pub quads: u16,
     pub lit: u16,
+    pub mesh: MeshCost,
 }
 
 /// One placed object: its world position, cull radius, how the draw walk
 /// treats it, and its mesh size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CostPlaced {
     pub x: i16,
     pub y: i16,
@@ -70,6 +83,7 @@ pub struct CostPlaced {
     /// flags `0x10..=0x17`, the dispatcher's `NCCS` / `NCCT` handlers).
     pub quads: u16,
     pub lit: u16,
+    pub mesh: MeshCost,
 }
 
 /// A field scene's static cost inputs, built once at scene entry.
@@ -85,6 +99,8 @@ pub struct FieldCostTable {
     /// Each placement slot's spawn mesh size in primitives, by slot (`0` for
     /// a slot with no resolvable mesh).
     pub npc_prims: Vec<u16>,
+    /// Each placement slot's spawn mesh as the dispatcher sees it, by slot.
+    pub npc_meshes: Vec<MeshCost>,
 }
 
 impl FieldCostTable {
@@ -247,6 +263,11 @@ pub fn placed_cull_gte(
 
 impl FieldFrameFeatures {
     fn add_placed(&mut self, p: &CostPlaced) {
+        self.placed_objects += u32::from(p.mesh.objects);
+        self.placed_groups += u32::from(p.mesh.groups);
+        for (k, n) in self.placed_kinds.iter_mut().zip(p.mesh.kinds) {
+            *k += u32::from(n);
+        }
         self.placed_draws += 1;
         self.placed_prims += u32::from(p.prims);
         self.placed_verts += u32::from(p.verts);
@@ -301,6 +322,24 @@ pub struct FieldFrameFeatures {
     pub cycler_calls: u32,
     pub cycler_texels: u32,
     pub cycler_zero_texels: u32,
+    /// The derived cost's finer counts ([`super::field_frame_units`]): the
+    /// decoration loop's rows and the cells of its span inside the walk
+    /// box; the ground window's rows and cells; each layer's dispatcher
+    /// objects, primitive groups and primitives by leaf kind (`kind - 8`);
+    /// and the actors the five render lists walk.
+    pub decoration_rows: u32,
+    pub decoration_box_cells: u32,
+    pub decoration_groups: u32,
+    pub decoration_kinds: [u32; 12],
+    pub ground_rows: u32,
+    pub ground_window_cells: u32,
+    pub placed_objects: u32,
+    pub placed_groups: u32,
+    pub placed_kinds: [u32; 12],
+    pub npc_objects: u32,
+    pub npc_groups: u32,
+    pub npc_kinds: [u32; 12],
+    pub list_actors: u32,
 }
 
 impl World {
@@ -338,7 +377,7 @@ impl World {
             return;
         }
         if let Some(f) = self.field_frame_features() {
-            let cost = field_frame_cost(&f) + self.field_cost_offset;
+            let cost = self.field_price(&f) + self.field_cost_offset;
             // Retail's entry is `max(cpu, gpu of the previous table)`.
             let cost = match self.field_drawn_table_cost {
                 Some(gpu) if self.toggles.field_gpu_cost_step => cost.max(i32::from(gpu)),
@@ -346,6 +385,17 @@ impl World {
             };
             self.clock.frame_cost = Some(cost.clamp(0, 0x7FFF));
             self.field_cost_priced = true;
+        }
+    }
+
+    /// The model's price of a frame that draws `f`: the fitted weights, or
+    /// the derived per-unit table under
+    /// [`WorldToggles::derived_frame_cost`](super::WorldToggles::derived_frame_cost).
+    pub fn field_price(&self, f: &FieldFrameFeatures) -> i32 {
+        if self.toggles.derived_frame_cost {
+            super::field_frame_units::derived_field_frame_cost(f)
+        } else {
+            field_frame_cost(f)
         }
     }
 
@@ -382,7 +432,7 @@ impl World {
     /// published view.
     pub fn anchor_field_frame_cost(&mut self, measured: i32) -> Option<i32> {
         let f = self.field_frame_features()?;
-        self.field_cost_offset = measured - field_frame_cost(&f);
+        self.field_cost_offset = measured - self.field_price(&f);
         Some(self.field_cost_offset)
     }
 
@@ -401,13 +451,31 @@ impl World {
                 f.decoration_verts += u32::from(d.verts);
                 f.decoration_quads += u32::from(d.quads);
                 f.decoration_lit += u32::from(d.lit);
+                f.decoration_groups += u32::from(d.mesh.groups);
+                for (k, n) in f.decoration_kinds.iter_mut().zip(d.mesh.kinds) {
+                    *k += u32::from(n);
+                }
             }
+        }
+        {
+            // The loop's span against the walk box it tests each cell on
+            // (`0x801F74DC..0x801F7540`): col `first - 1 + i`, row
+            // `first - 3 + j`, inside when `r0 <= col < r2`, `r1 - 1 <= row < r3`.
+            let [r0, r1, r2, r3] = cells.region.map(i32::from);
+            let c0 = cells.first[0] - 1;
+            let w0 = cells.first[1] - 3;
+            let cols = (c0.max(r0)..(c0 + cells.span[0].max(0)).min(r2)).len() as u32;
+            let rows = (w0.max(r1 - 1)..(w0 + cells.span[1].max(0)).min(r3)).len() as u32;
+            f.decoration_box_cells = cols * rows;
+            f.decoration_rows = cells.span[1].max(0) as u32;
         }
         if !table.ground.is_empty() {
             let cols = (i32::from(cells.window[2]) - i32::from(cells.window[0])).max(1);
             let rows = (i32::from(cells.window[3]) - i32::from(cells.window[1])).max(1);
             let c0 = cells.first[0];
             let r0 = (cells.first[1] - 1) & 0x7F;
+            f.ground_rows = rows as u32;
+            f.ground_window_cells = (cols * rows) as u32;
             for j in 0..rows {
                 for i in 0..cols {
                     if table.ground_at(c0 + i, (r0 + j) & 0x7F) {
@@ -454,8 +522,16 @@ impl World {
                 f.npcs += 1;
                 f.npc_prims +=
                     u32::from(table.npc_prims.get(usize::from(slot)).copied().unwrap_or(0));
+                if let Some(m) = table.npc_meshes.get(usize::from(slot)) {
+                    f.npc_objects += u32::from(m.objects);
+                    f.npc_groups += u32::from(m.groups);
+                    for (k, n) in f.npc_kinds.iter_mut().zip(m.kinds) {
+                        *k += u32::from(n);
+                    }
+                }
             }
         }
+        f.list_actors = self.actors.iter().filter(|a| a.active).count() as u32;
         f.fog = u32::from(self.fog.live);
         // The quads the last walk left; a closed gate runs no walk.
         f.fog_quads = if self.fog.gate {
@@ -507,6 +583,7 @@ mod tests {
                     verts: 12,
                     quads: 0,
                     lit: 0,
+                    mesh: MeshCost::default(),
                 },
                 CostCell {
                     col: 100,
@@ -516,6 +593,7 @@ mod tests {
                     verts: 99,
                     quads: 0,
                     lit: 0,
+                    mesh: MeshCost::default(),
                 },
             ],
             placed: vec![CostPlaced {
@@ -531,9 +609,11 @@ mod tests {
                 verts: 9,
                 quads: 0,
                 lit: 0,
+                mesh: MeshCost::default(),
             }],
             ground,
             npc_prims: Vec::new(),
+            npc_meshes: Vec::new(),
         }));
         assert_eq!(w.field_frame_features(), None, "no view published");
         w.npcs.cull_view = Some(FieldCullView {
@@ -604,6 +684,7 @@ mod tests {
             verts: 0,
             quads: 0,
             lit: 0,
+            mesh: MeshCost::default(),
         }
     }
 
@@ -686,6 +767,7 @@ mod tests {
                     verts: 500,
                     quads: 500,
                     lit: 0,
+                    mesh: MeshCost::default(),
                 })
                 .collect(),
             ..FieldCostTable::default()
@@ -721,6 +803,30 @@ mod tests {
         w.install_field_cost_table(Some(FieldCostTable::default()));
         w.price_field_frame();
         assert_eq!(w.clock.frame_cost, Some(model));
+    }
+
+    /// The derived per-unit table prices the frame only under its toggle;
+    /// down (the default) the fitted weights do.
+    #[test]
+    fn the_derived_model_prices_only_when_raised() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Field;
+        w.toggles.field_frame_cost = true;
+        assert!(!w.toggles.derived_frame_cost, "off by default");
+        w.install_field_cost_table(Some(FieldCostTable::default()));
+        w.npcs.cull_view = Some(town01_view());
+        w.price_field_frame();
+        let f = w.field_frame_features().unwrap();
+        assert_eq!(w.clock.frame_cost, Some(field_frame_cost(&f)));
+        w.toggles.derived_frame_cost = true;
+        w.price_field_frame();
+        assert_eq!(
+            w.clock.frame_cost,
+            Some(super::super::field_frame_units::derived_field_frame_cost(
+                &f
+            ))
+        );
+        assert_ne!(field_frame_cost(&f), w.clock.frame_cost.unwrap());
     }
 
     /// Leaving the field for a mode the model does not price drops its price

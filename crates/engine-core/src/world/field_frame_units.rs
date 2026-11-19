@@ -11,9 +11,9 @@
 //! (section "Per-unit costs"), and `crates/retail-exec/tests/field_units.rs`
 //! holds them against the runner.
 //!
-//! Nothing reads this table yet: the frame-cost model
-//! (`world::field_frame_cost`) stays the fitted one. It is the data a
-//! derived model prices with.
+//! [`derived_field_frame_cost`] prices a field frame from these figures,
+//! behind `WorldToggles::derived_frame_cost` (off by default: the fitted
+//! `world::field_frame_cost` stays the model).
 
 /// `(unit, cycles x 10, repetitions the pool saw)`. Unit names are
 /// `pass.loop[class]` (a loop iteration by the marks it passed),
@@ -141,6 +141,126 @@ pub const VBLANK_INTERRUPT_CYCLES: u32 = 24_900;
 /// the profiled states (mean `2.3`).
 pub const OTHER_INTERRUPT_CYCLES_PER_VSYNC: u32 = 5_000;
 
+use super::field_frame_cost::{
+    COST_PER_CYCLER_CALL, COST_PER_CYCLER_TEXEL, COST_PER_CYCLER_ZERO_TEXEL, COST_PER_PART,
+    FIELD_FRAME_COST_MAX, FieldFrameFeatures,
+};
+
+/// PCSX-Redux cycles a scanline, x 100 (`33868800 / 60 / 263`).
+const CYCLES_PER_HBLANK_X100: i64 = 214_631;
+
+/// What a primitive costs through its leaf, by kind (`flags >> 1`, index
+/// `kind - 8`), pooled over the outcomes (back face, off screen, linked)
+/// and banks the ten states' decoration draws took: the depth-cued leaves
+/// with the off-screen test, mostly. Kinds the decoration never drew take
+/// the actor figure.
+pub const DECORATION_PRIM_CYCLES: [i64; 12] =
+    [120, 204, 120, 141, 157, 137, 100, 166, 179, 152, 168, 188];
+/// The same for the actor render passes, mostly the opaque leaves with no
+/// off-screen test.
+pub const ACTOR_PRIM_CYCLES: [i64; 12] =
+    [120, 204, 120, 141, 99, 115, 109, 129, 140, 144, 153, 174];
+
+/// A primitive group through the dispatcher: its decode (`71`) and the
+/// leaf's set-up (`40` a triangle group, `46` a quad one).
+const GROUP_CYCLES: i64 = 71 + 43;
+/// A drawn decoration cell's own path (`503`) and its dispatcher draw
+/// (`200`).
+const DECORATION_DRAW_CYCLES: i64 = 503 + 200;
+/// A ground walk cell, the plain (`282`) and sorted (`314`) paths averaged
+/// as the ten states hold them.
+const GROUND_WALK_CELL_CYCLES: i64 = 298;
+/// A posed model object: the object's path (`1252`), its pose (`253`), the
+/// tracks a pose walks at the pooled mean (`28 x 22`) and its dispatcher
+/// draw (`200`).
+const NPC_OBJECT_CYCLES: i64 = 1252 + 253 + 616 + 200;
+/// A drawn model actor: its list entry's path (`148`) and the model set-up
+/// (`1297`).
+const NPC_CYCLES: i64 = 148 + 1297;
+/// A placed actor (`1202`), and each of its meshes (`75` and a dispatcher
+/// draw, `200`).
+const PLACED_CYCLES: i64 = 1202;
+const PLACED_MESH_CYCLES: i64 = 75 + 200;
+/// A fog record, its half-sheets kept (`233`) and culled (`149`); each
+/// record emits two.
+const FOG_RECORD_CYCLES: i64 = 655;
+const FOG_KEPT_CYCLES: i64 = 233;
+const FOG_CULLED_CYCLES: i64 = 149;
+
+/// The player's model, which the placement counts leave out: one model
+/// actor of `10` posed objects and `388` primitives at the actor pool's mean
+/// (`136` a primitive), the shape of `stone_field_door_hop`'s only model.
+const PLAYER_CYCLES: i64 = NPC_CYCLES + 10 * NPC_OBJECT_CYCLES + 10 * GROUP_CYCLES + 388 * 136;
+/// The render lists' entries the walk tests (`50..61` cycles each): the
+/// ten states hold `30..97`, their mean `59`.
+const LIST_ENTRY_CYCLES: i64 = 59 * 58;
+
+/// Fitted, not derived: the tick passes' own work besides the ambient parts
+/// and the cyclers (`son_field_door_hop`'s actor tick passes, `11.9`
+/// hblanks), and the frame driver's work outside the priced passes and the
+/// pacer's measure past it (`2..6` hblanks over the ten states).
+const TICK_BASE_HBLANKS: i64 = 10;
+const OTHER_HBLANKS: i64 = 4;
+
+/// The frame time, in hblanks, a field frame that draws `f` costs on
+/// PCSX-Redux's clock, priced from the derived per-unit table: the work of
+/// each pass from its counts, the fitted tick share, and the interrupts the
+/// work spans (`VBLANK_INTERRUPT_CYCLES` and `OTHER_INTERRUPT_CYCLES_PER_VSYNC`
+/// once every `263` hblanks of work).
+///
+/// A primitive is priced at its kind's pooled outcome mix, not at what the
+/// camera makes of it: retail transforms every primitive of a drawn mesh
+/// and links only the visible part, and across the ten states the mix
+/// moves a pass's price by up to `6%`.
+pub fn derived_field_frame_cost(f: &FieldFrameFeatures) -> i32 {
+    let kinds = |k: &[u32; 12], w: &[i64; 12]| -> i64 {
+        k.iter().zip(w).map(|(n, c)| i64::from(*n) * c).sum()
+    };
+    let n = |v: u32| i64::from(v);
+    let outside = n(f.decoration_loop_cells)
+        .saturating_sub(n(f.decoration_box_cells))
+        .max(0);
+    let decoration = 1622
+        + n(f.decoration_rows) * 24
+        + n(f.decoration_box_cells) * 99
+        + outside * 54
+        + n(f.decoration_draws) * DECORATION_DRAW_CYCLES
+        + n(f.decoration_groups) * GROUP_CYCLES
+        + kinds(&f.decoration_kinds, &DECORATION_PRIM_CYCLES);
+    let ground = 129
+        + n(f.ground_rows) * 24
+        + (n(f.ground_window_cells) - n(f.ground_cells)).max(0) * 35
+        + n(f.ground_cells) * GROUND_WALK_CELL_CYCLES;
+    let actors = 5 * 120
+        + LIST_ENTRY_CYCLES
+        + PLAYER_CYCLES
+        + n(f.placed_draws) * PLACED_CYCLES
+        + n(f.placed_objects) * PLACED_MESH_CYCLES
+        + n(f.placed_groups) * GROUP_CYCLES
+        + kinds(&f.placed_kinds, &ACTOR_PRIM_CYCLES)
+        + n(f.npcs) * NPC_CYCLES
+        + n(f.npc_objects) * NPC_OBJECT_CYCLES
+        + n(f.npc_groups) * GROUP_CYCLES
+        + kinds(&f.npc_kinds, &ACTOR_PRIM_CYCLES);
+    let fog = n(f.fog) * FOG_RECORD_CYCLES
+        + n(f.fog_quads) * FOG_KEPT_CYCLES
+        + (2 * n(f.fog) - n(f.fog_quads)).max(0) * FOG_CULLED_CYCLES;
+    let cycles = decoration + ground + actors + fog;
+    // The measured and fitted terms the field model carries, in 1/1024 hblank.
+    let ticked = n(f.cycler_calls) * COST_PER_CYCLER_CALL
+        + n(f.cycler_texels) * COST_PER_CYCLER_TEXEL
+        + n(f.cycler_zero_texels) * COST_PER_CYCLER_ZERO_TEXEL
+        + n(f.parts) * COST_PER_PART;
+    let work_x100 = cycles * 10_000 / CYCLES_PER_HBLANK_X100
+        + (ticked >> 10) * 100
+        + (TICK_BASE_HBLANKS + OTHER_HBLANKS) * 100;
+    // Each 263 hblanks of work takes one vblank interrupt and the vsync's
+    // others.
+    let irq = i64::from(VBLANK_INTERRUPT_CYCLES + OTHER_INTERRUPT_CYCLES_PER_VSYNC);
+    let total_x100 = work_x100 + work_x100 * irq * 100 / (263 * CYCLES_PER_HBLANK_X100);
+    (total_x100 / 100).clamp(0, FIELD_FRAME_COST_MAX) as i32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,5 +273,45 @@ mod tests {
             assert!(*n > 0 && *c > 0, "{u}");
         }
         assert_eq!(unit_cycles("decoration.cell[inbox]"), Some(99.0));
+    }
+
+    /// `son_field_door_hop`'s first frame as retail counts it (the runner's
+    /// units: `2480` decoration primitives in `92` draws and `247` groups,
+    /// `2173` span cells all in the box over `53` rows, `1333` ground window
+    /// cells none walkable, `6` models besides the player's with `76` objects and `285` groups,
+    /// `2158` actor primitives, the player's among them) prices within a tenth of
+    /// its ring (`610..621` hblanks with interrupts); the models' objects are
+    /// priced posed at the pool's mean, where `son` poses `56` of its `86` at
+    /// `16` tracks each against the pool's `28`.
+    #[test]
+    fn son_prices_near_its_ring() {
+        let mut f = FieldFrameFeatures {
+            decoration_draws: 92,
+            decoration_loop_cells: 2173,
+            decoration_box_cells: 2173,
+            decoration_rows: 53,
+            decoration_groups: 247,
+            ground_window_cells: 1333,
+            ground_rows: 43,
+            npcs: 6,
+            npc_objects: 76,
+            npc_groups: 285,
+            list_actors: 41,
+            parts: 1,
+            ..FieldFrameFeatures::default()
+        };
+        f.decoration_kinds[17 - 8] = 504;
+        f.decoration_kinds[18 - 8] = 736;
+        f.decoration_kinds[19 - 8] = 1240;
+        // Less the player's `388`, which the table prices apart.
+        f.npc_kinds[14 - 8] = 422;
+        f.npc_kinds[15 - 8] = 369;
+        f.npc_kinds[18 - 8] = 436;
+        f.npc_kinds[19 - 8] = 180;
+        f.npc_kinds[12 - 8] = 208;
+        f.npc_kinds[13 - 8] = 111;
+        f.npc_kinds[17 - 8] = 44;
+        let c = derived_field_frame_cost(&f);
+        assert!((560..680).contains(&c), "{c}");
     }
 }

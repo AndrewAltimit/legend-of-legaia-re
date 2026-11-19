@@ -360,7 +360,7 @@ impl WalkFilm {
                 let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
                 writeln!(
                     w,
-                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads,placed_near_draws,placed_near_prims,placed_unlisted_draws,placed_unlisted_prims,placed_parked_draws"
+                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads,placed_near_draws,placed_near_prims,placed_unlisted_draws,placed_unlisted_prims,placed_parked_draws,fitted,derived,box_cells,dec_groups,ground_window,npc_objects,npc_groups,placed_objects,placed_groups,list_actors"
                 )?;
                 Some(w)
             }
@@ -469,7 +469,7 @@ impl WalkFilm {
             if let Some(w) = cost.as_mut() {
                 let world = &session.host.world;
                 let f = world.field_frame_features().unwrap_or_default();
-                writeln!(
+                write!(
                     w,
                     "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                     u8::from(world.clock.game_tick_fired),
@@ -499,6 +499,22 @@ impl WalkFilm {
                     f.placed_unlisted_draws,
                     f.placed_unlisted_prims,
                     f.placed_parked_draws,
+                )?;
+                // B3: both models' price of the same counts, and the derived
+                // model's finer counts (`field_frame_units`).
+                writeln!(
+                    w,
+                    ",{},{},{},{},{},{},{},{},{},{}",
+                    legaia_engine_core::world::field_frame_cost::field_frame_cost(&f),
+                    legaia_engine_core::world::field_frame_units::derived_field_frame_cost(&f),
+                    f.decoration_box_cells,
+                    f.decoration_groups,
+                    f.ground_window_cells,
+                    f.npc_objects,
+                    f.npc_groups,
+                    f.placed_objects,
+                    f.placed_groups,
+                    f.list_actors,
                 )?;
             }
             if session.host.world.active_scene_label != n0_scene {

@@ -1589,6 +1589,28 @@ pub fn field_cost_table(
         })
     };
     let clamp16 = |v: u32| v.min(u32::from(u16::MAX)) as u16;
+    // What one pack mesh hands the prim dispatcher: objects, groups and
+    // primitives by leaf kind (`flags >> 1`, kinds `8..=19`).
+    let mesh = |ti: usize| {
+        let mut m = legaia_engine_core::world::field_frame_cost::MeshCost::default();
+        if let Some(t) = res.tmds.get(ti) {
+            m.objects = clamp16(t.tmd.objects.len() as u32);
+            for o in &t.tmd.objects {
+                for g in legaia_tmd::legaia_prims::iter_groups_lenient(
+                    &t.raw,
+                    o.primitives_byte_offset,
+                    o.primitives_byte_size,
+                ) {
+                    m.groups = m.groups.saturating_add(1);
+                    let kind = usize::from(g.header.flags >> 1);
+                    if (8..=19).contains(&kind) {
+                        m.kinds[kind - 8] = m.kinds[kind - 8].saturating_add(g.header.count);
+                    }
+                }
+            }
+        }
+        m
+    };
     let terrain: Vec<_> = scene
         .field_terrain_tiles(index)
         .ok()
@@ -1607,6 +1629,19 @@ pub fn field_cost_table(
     // window sweep's key for the placements it owns.
     let binds = scene.field_object_binds(index).ok().flatten();
     let (placed, _) = field_env::resolve_placed_env_draws(&env, &placed, lut, binds.as_ref());
+    let npc_prims = {
+        let placements = legaia_engine_scene::npc_catalog::live_scene_placements(index, scene);
+        let n = placements.iter().map(|p| p.index + 1).max().unwrap_or(0);
+        let mut v = vec![0u16; n];
+        let mut m = vec![legaia_engine_core::world::field_frame_cost::MeshCost::default(); n];
+        for p in &placements {
+            if !p.special_model {
+                v[p.index] = clamp16(size(usize::from(p.model_index))[0]);
+                m[p.index] = mesh(usize::from(p.model_index));
+            }
+        }
+        (v, m)
+    };
     Some(FieldCostTable {
         decorations: terrain
             .iter()
@@ -1620,6 +1655,7 @@ pub fn field_cost_table(
                     verts: clamp16(v),
                     quads: clamp16(q),
                     lit: clamp16(l),
+                    mesh: mesh(d.res_tmd),
                 }
             })
             .collect(),
@@ -1640,20 +1676,13 @@ pub fn field_cost_table(
                     verts: clamp16(v),
                     quads: clamp16(q),
                     lit: clamp16(l),
+                    mesh: mesh(d.res_tmd),
                 }
             })
             .collect(),
         ground: FieldCostTable::ground_from_map(&map),
-        npc_prims: {
-            let placements = legaia_engine_scene::npc_catalog::live_scene_placements(index, scene);
-            let mut v = vec![0u16; placements.iter().map(|p| p.index + 1).max().unwrap_or(0)];
-            for p in &placements {
-                if !p.special_model {
-                    v[p.index] = clamp16(size(usize::from(p.model_index))[0]);
-                }
-            }
-            v
-        },
+        npc_prims: npc_prims.0,
+        npc_meshes: npc_prims.1,
     })
 }
 
