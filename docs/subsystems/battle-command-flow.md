@@ -426,6 +426,17 @@ the special word's `0x100`, the magic arm for a member with no Ra-Seru marker
 `0x200`, and `Attack` with all three limbs rotted. The press-by-press table
 and the port: [`audio.md`](audio.md#every-press-surface-by-surface).
 
+**When a press is read.** The flow builds its pad word from the edge word the
+pad builder latched at the previous frame's end (`_DAT_8007B874 |
+_DAT_8007B938`, `0x801D07FC..0x801D080C` and `0x801D0B0C..0x801D0B20`), so a
+battle press waits on the same pipeline as a field one
+([field-locomotion.md](field-locomotion.md#when-the-game-sees-a-press)). A
+PCSX-Redux film from `battle_menu_rugi_barra_retail` (step `3`) pushes the
+round prompt's cue three vsyncs after a Right and after a Left. The port's
+retail-faithful mode runs the pipeline on the field and the overworld only:
+in a fight it takes the press on its tick, so the same presses sound on the
+press's own vsync.
+
 ### The ring's cancel steps back a member
 
 The cancel mask is the ring handler's first test (`0x801D11B4`, ahead of the
