@@ -100,6 +100,12 @@ pub struct InputState {
     /// immediately even in the retail-faithful mode, while the field keeps
     /// its pipeline. Never set by a play path.
     screen_immediate: bool,
+    /// A harness whose battle presses are one-tick edges authored for a
+    /// fight that reads them on their tick (a battle drive's even-tick
+    /// presses): the fight takes the pad immediately even in the
+    /// retail-faithful mode, while the field keeps its pipeline. Never set
+    /// by a play path.
+    battle_immediate: bool,
 }
 
 /// The cursor bits of a menu edge word: the D-pad and the four shoulders,
@@ -205,6 +211,17 @@ impl InputState {
     /// Set [`Self::screen_immediate`] (a harness seat); returns the old value.
     pub fn set_screen_immediate(&mut self, on: bool) -> bool {
         std::mem::replace(&mut self.screen_immediate, on)
+    }
+
+    /// [`Self::battle_immediate`]: whether a harness has the fight read its
+    /// presses on their tick in the retail-faithful mode.
+    pub fn battle_immediate(&self) -> bool {
+        self.battle_immediate
+    }
+
+    /// Set [`Self::battle_immediate`] (a harness seat); returns the old value.
+    pub fn set_battle_immediate(&mut self, on: bool) -> bool {
+        std::mem::replace(&mut self.battle_immediate, on)
     }
 
     /// Note the host's held word for this sim tick, whoever owns the tick:
