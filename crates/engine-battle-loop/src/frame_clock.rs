@@ -677,6 +677,37 @@ pub const ARTS_SHOUT_PARKED_POLL_HBLANKS: u32 = 31;
 /// `0.66` vsyncs into the pass after the cue, which runs `7` vsyncs).
 pub const ARTS_SHOUT_SEEK_POLL_HBLANKS: u32 = 983;
 
+/// Vsyncs an arts shout's polls run past its span, counted from its
+/// `CdlReadS`: the stop watch `FUN_8003D764` polls `GetlocL` / `GetStat` until
+/// the head passes the end sector the player set `span * 150 / 60` sectors on
+/// (`0x8003D698..0x8003D6D8`), then issues the `Pause`. `--cd-trace`
+/// recordings of Gala's Chain (`jou_gala_chain_open`, span `48`) and Sonic
+/// Javelin (`ropeway_noa_sonic_javelin_open`, span `44`) read `62.3` and
+/// `58.2` vsyncs from `CdlReadS` to `Pause`, both `14` past the span; the
+/// seek's `3.24` vsyncs come before the read. [`XA_READ_TAIL_VSYNCS`] is the
+/// drive word's later clear, counted from the cue.
+pub const ARTS_SHOUT_READ_TAIL_VSYNCS: u16 = 14;
+
+/// What a frame an arts shout's polls load costs over the work of the same
+/// pass unloaded, in thousandths. The same two recordings' fully polled
+/// frames run `1851..1930` hblanks (eight vsyncs) where the passes beside the
+/// line cost `624..671`: `2.85` to `3.04`, median `2.97`.
+/// [`XA_POLL_WORK_RATIO_MILLI`] reads lower because it divides by the cost
+/// less the CD interrupt spans, which here is `511..577`, under the
+/// unloaded passes' own work: the exception exits are the poll's too.
+pub const ARTS_SHOUT_POLL_WORK_RATIO_MILLI: u32 = 2970;
+
+/// What a frame of `work` hblanks costs under an arts shout's polls
+/// ([`ARTS_SHOUT_POLL_WORK_RATIO_MILLI`]).
+pub const fn arts_shout_polled_work_cost(work: u16) -> u16 {
+    let c = (work as u32 * ARTS_SHOUT_POLL_WORK_RATIO_MILLI + 500) / 1000;
+    if c > u16::MAX as u32 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
 /// What a frame of `work` hblanks costs when the clip's polls open `wait`
 /// hblanks into it, `polled` pricing the work they load: the work before the
 /// first poll runs at full speed, the rest under the polls' share.
@@ -685,6 +716,21 @@ pub fn xa_partly_polled_cost(wait: u32, work: u16, polled: impl Fn(u16) -> u16) 
         Ok(w) if w < work => w.saturating_add(polled(work - w)),
         _ => work,
     }
+}
+
+/// What a frame the polls load from its opening costs when the read ends
+/// `left` vsyncs into it: the stop watch's sequencer `FUN_8003D764` issues the
+/// `Pause` once the head passes the end sector, and the frame's work past that
+/// point runs at full speed. `loaded` is the frame's cost polled throughout,
+/// `work` its own work; the share of `work` done inside the first `left`
+/// vsyncs is `left / loaded` of it.
+pub fn xa_poll_tail_cost(left: u32, work: u16, loaded: u16) -> u16 {
+    let left = left * HBLANKS_PER_VSYNC;
+    if loaded <= work || u32::from(loaded) <= left {
+        return loaded;
+    }
+    let done = left * u32::from(work) / u32::from(loaded);
+    (left + (u32::from(work) - done)).min(u32::from(u16::MAX)) as u16
 }
 
 /// Hblanks one after-image ghost adds to a frame: the draw tick's walk

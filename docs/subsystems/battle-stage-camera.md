@@ -2288,6 +2288,31 @@ arts films' sustained camera error read `8.4` px; timed from the seek it reads `
 `15.3` to `1.1` and Tornado Flame `15.6` to `0.9`. Grade `capture` for the seek times and the
 films, `disassembly` for the parked bank.
 
+<a id="an-arts-shouts-read"></a>
+
+**An arts shout's read.** `--cd-trace` recordings of Gala's Chain
+(`jou_gala_chain_open`, span `48`) and Sonic Javelin (`ropeway_noa_sonic_javelin_open`,
+span `44`) time the whole read: the cue pass issues `CdlSetloc` and `CdlSeekL`, the seek
+answers `3.24` vsyncs later and the next frame issues `CdlSetmode`, `CdlSetloc`,
+`CdlSetfilter` and `CdlReadS`, and the stop watch `FUN_8003D764` polls `GetlocL` /
+`GetStat` until the `Pause` (`0x09`), `62.3` and `58.2` vsyncs after the read: `14` past
+the span both times. [`XA_READ_TAIL_VSYNCS`](#the-cd-stop-watch)'s `20` is the drive word's
+clear counted from the cue, which runs the port's polls two or three vsyncs past retail's on
+a seeking shout. The fully polled frames run eight vsyncs, `1851..1930` hblanks, where the
+passes beside the line cost `624..671`: `2.97` over the unloaded work, where the port prices
+`2.78`. Cost less the interrupt spans reads `511..577` there, under the unloaded work,
+because the exception exits are the poll's too, which is why that measure read the share
+low. The cue pass costs its keyframe decode over its neighbours
+([an art's keyframe decode](#an-arts-keyframe-decode)): `715` against `629`, `743` against
+`628`. Port: `ARTS_SHOUT_READ_TAIL_VSYNCS`, `ARTS_SHOUT_POLL_WORK_RATIO_MILLI` and
+`xa_poll_tail_cost`, behind `WorldToggles::battle_arts_shout_cd`
+(`LEGAIA_BATTLE_ARTS_SHOUT_CD=1`), off by default: on the arts films it lifts the image
+(`.9455` to `.9476`, Slash Kick `.911` to `.976`) and the port's voiced frames read retail's
+lengths (Ironhead's clip-`5` frames `7, 7, 7` beside retail's), but the Super Arts' camera
+falls (sustained error `1.46` to `1.88` px, Tri-Somersault `7.2` to `12.0`), whose Super
+line's frames still run a vsync under retail's `9`. Grade `capture` for the timings,
+`disassembly` for the sequencer.
+
 **Port.** `WorldToggles::battle_cd_timing` (`CdTiming`) picks the machine. `PcsxRedux`, the
 default, keeps the recordings' tables, the clamp `1063` and the overrun. On `Console`, an opt-in
 (`LEGAIA_BATTLE_CD_TIMING=console` on a native session, `cast-sequence.py --console-cd`), the

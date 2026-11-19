@@ -192,6 +192,10 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             "LEGAIA_BATTLE_ME_DECODE",
             &mut toggles.battle_me_decode_cost,
         ),
+        (
+            "LEGAIA_BATTLE_ARTS_SHOUT_CD",
+            &mut toggles.battle_arts_shout_cd,
+        ),
     ] {
         match std::env::var(var).as_deref().map(str::trim) {
             Ok("1") => *slot = true,

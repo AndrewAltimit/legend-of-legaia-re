@@ -166,6 +166,14 @@ pub struct WorldToggles {
     /// (`battle-stage-camera.md`, an art's keyframe decode). The native
     /// session sets it either way from `LEGAIA_BATTLE_ME_DECODE`.
     pub battle_me_decode_cost: bool,
+    /// Opt-in, off by default: an arts shout's CD read priced from its own
+    /// `--cd-trace` recordings, the polls running from the read the seek opens
+    /// to `14` vsyncs past the span (`frame_clock::ARTS_SHOUT_READ_TAIL_VSYNCS`)
+    /// at `frame_clock::ARTS_SHOUT_POLL_WORK_RATIO_MILLI` and stopping where the
+    /// read ends (`frame_clock::xa_poll_tail_cost`). Retail's numbers, but over
+    /// the arts films it lifts the image and costs the Super Arts' camera. The
+    /// native session sets it either way from `LEGAIA_BATTLE_ARTS_SHOUT_CD`.
+    pub battle_arts_shout_cd: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
     /// CD-XA voice clip plays: PCSX-Redux's by default, where the clip player's
     /// stop watch polls the drive on two thirds of the CPU and a voiced arm's
@@ -552,6 +560,7 @@ impl WorldToggles {
             battle_party_cost_step: true,
             battle_gpu_cost_step: false,
             battle_me_decode_cost: false,
+            battle_arts_shout_cd: false,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: true,
             battle_poly_frame_cost: true,

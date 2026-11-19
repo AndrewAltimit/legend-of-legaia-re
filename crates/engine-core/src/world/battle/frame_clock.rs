@@ -180,11 +180,24 @@ impl World {
                     // A clip whose seek the port times: its polls open `wait`
                     // hblanks into this pass, from the cue's own pass on.
                     (Some(_), CdTiming::PcsxRedux, Some(wait)) => {
-                        legaia_engine_battle_loop::frame_clock::xa_partly_polled_cost(
-                            wait,
-                            work,
-                            xa_polled_work_cost,
-                        )
+                        use legaia_engine_battle_loop::frame_clock as fc;
+                        if !self.toggles.battle_arts_shout_cd {
+                            fc::xa_partly_polled_cost(wait, work, xa_polled_work_cost)
+                        } else {
+                            let c = fc::xa_partly_polled_cost(
+                                wait,
+                                work,
+                                fc::arts_shout_polled_work_cost,
+                            );
+                            // The polls stop at the `Pause` past the end
+                            // sector, part way into the pass the window
+                            // closes in.
+                            fc::xa_poll_tail_cost(
+                                u32::from(self.audio.battle_xa_load_frames),
+                                work,
+                                c,
+                            )
+                        }
                     }
                     (None, CdTiming::PcsxRedux, Some(wait)) => {
                         legaia_engine_battle_loop::frame_clock::xa_partly_polled_cost(
