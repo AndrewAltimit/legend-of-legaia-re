@@ -178,12 +178,15 @@ impl LegaiaRuntime {
         if a.object_ids.is_empty() {
             return Vec::new();
         }
-        if let Some(pose) = self
-            .scene_host
-            .host()
-            .and_then(|h| h.world.actors.get(a.actor_idx))
-            .and_then(|actor| actor.pose_frame.as_ref())
-            && !pose.bone_outputs.is_empty()
+        // The drawn pose (`World::battle_draw_pose_frame`): under the smooth
+        // camera the parts step on the camera's phase, as the native
+        // window's posed overrides do.
+        let host = self.scene_host.host();
+        let lerped = host.and_then(|h| h.world.battle_draw_pose_frame(a.actor_idx));
+        if let Some(pose) = lerped.as_ref().or_else(|| {
+            host.and_then(|h| h.world.actors.get(a.actor_idx))
+                .and_then(|actor| actor.pose_frame.as_ref())
+        }) && !pose.bone_outputs.is_empty()
         {
             let mut out = Vec::with_capacity(pose.bone_outputs.len() * 6);
             for (t, r) in &pose.bone_outputs {

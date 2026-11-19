@@ -54,6 +54,16 @@ enum CamSource {
 /// One body's root: position `(x, y, z)` and facing (12-bit units).
 type Root = [f32; 4];
 
+/// One part of a body's pose: translation and rotation trio (12-bit units),
+/// as `PoseFrame::bone_outputs` holds it.
+type Bone = ([i16; 3], [i16; 3]);
+
+/// A part translation step at least this long, or a rotation step at least
+/// [`SNAP_PART_ANGLE`], draws the part where it landed.
+pub const SNAP_PART_MOVE: i32 = 512;
+/// See [`SNAP_PART_MOVE`].
+pub const SNAP_PART_ANGLE: i32 = 1024;
+
 /// The draw-side state of one tick.
 #[derive(Debug, Clone, Default)]
 struct PresentSnap {
@@ -62,6 +72,8 @@ struct PresentSnap {
     pose: Option<BattleCamPose>,
     /// Every actor slot's root, `None` for an inactive slot.
     roots: Vec<Option<Root>>,
+    /// Every actor slot's pose (`Actor::pose_frame`), empty for none.
+    poses: Vec<Vec<Bone>>,
 }
 
 /// The smooth battle camera's two states and the phase between them
@@ -107,10 +119,17 @@ pub fn is_camera_cut(from: &BattleCamPose, to: &BattleCamPose) -> bool {
 
 impl BattlePresent {
     fn reset(&mut self) {
+        if self.frame.is_none() {
+            return;
+        }
         self.frame = None;
         self.phase = 1.0;
         self.prev.pose = None;
         self.cur.pose = None;
+        self.prev.roots.clear();
+        self.cur.roots.clear();
+        self.prev.poses.clear();
+        self.cur.poses.clear();
     }
 
     /// The share of the old frame still to draw, `None` when the draw is the
@@ -200,6 +219,15 @@ impl World {
                 ]
             })
         }));
+        bp.cur.poses.resize_with(self.actors.len(), Vec::new);
+        for (out, a) in bp.cur.poses.iter_mut().zip(&self.actors) {
+            out.clear();
+            if a.active
+                && let Some(p) = a.pose_frame.as_ref()
+            {
+                out.extend_from_slice(&p.bone_outputs);
+            }
+        }
         if fresh {
             bp.prev.clone_from(&bp.cur);
         } else {
@@ -210,18 +238,25 @@ impl World {
                 bp.prev.source = bp.cur.source;
                 bp.prev.pose = bp.cur.pose;
             }
-            // So does a body placed rather than moved, or turned about.
+            // So does a body placed rather than moved, or turned about, and
+            // its pose with it; a pose whose skeleton changed lands too.
             bp.prev.roots.resize(bp.cur.roots.len(), None);
-            for (p, c) in bp.prev.roots.iter_mut().zip(&bp.cur.roots) {
-                let snap = match (*p, *c) {
+            bp.prev.poses.resize_with(bp.cur.poses.len(), Vec::new);
+            for i in 0..bp.cur.roots.len() {
+                let (p, c) = (bp.prev.roots[i], bp.cur.roots[i]);
+                let placed = match (p, c) {
                     (Some(p), Some(c)) => {
                         dist(&p[..3], &c[..3]) >= SNAP_ROOT
                             || wrap_angle(c[3] - p[3]).abs() >= SNAP_FACING
                     }
                     _ => true,
                 };
-                if snap {
-                    *p = *c;
+                if placed {
+                    bp.prev.roots[i] = c;
+                }
+                if placed || bp.prev.poses[i].len() != bp.cur.poses[i].len() {
+                    let (prev, cur) = (&mut bp.prev.poses, &bp.cur.poses);
+                    prev[i].clone_from(&cur[i]);
                 }
             }
         }
@@ -274,6 +309,60 @@ impl World {
             facing -= lag * d[3];
         }
         Some((pos, facing))
+    }
+}
+
+impl BattlePresent {
+    /// Slot `i`'s pose stepped `lag` of the way back toward the frame
+    /// before, part by part; a part that moved past [`SNAP_PART_MOVE`] or
+    /// turned past [`SNAP_PART_ANGLE`] draws where it landed. `None` when
+    /// the slot draws its live pose.
+    fn lerp_pose(&self, i: usize, lag: f32) -> Option<Vec<Bone>> {
+        let p = self.prev.poses.get(i)?;
+        let c = self.cur.poses.get(i)?;
+        if c.is_empty() || p.len() != c.len() || p == c {
+            return None;
+        }
+        let back = |c: i16, d: i32| (f32::from(c) - lag * d as f32).round() as i16;
+        Some(
+            p.iter()
+                .zip(c)
+                .map(|(p, c)| {
+                    let dt: [i32; 3] =
+                        std::array::from_fn(|k| i32::from(c.0[k]) - i32::from(p.0[k]));
+                    let dr: [i32; 3] = std::array::from_fn(|k| {
+                        (i32::from(c.1[k]) - i32::from(p.1[k]) + 2048).rem_euclid(4096) - 2048
+                    });
+                    if dt.iter().any(|d| d.abs() >= SNAP_PART_MOVE)
+                        || dr.iter().any(|d| d.abs() >= SNAP_PART_ANGLE)
+                    {
+                        return *c;
+                    }
+                    (
+                        std::array::from_fn(|k| back(c.0[k], dt[k])),
+                        std::array::from_fn(|k| back(c.1[k], dr[k])),
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
+impl World {
+    /// Battle body `slot`'s pose this vsync **draws**: the live
+    /// `pose_frame` carried back toward the last frame's on the same phase
+    /// as [`Self::battle_draw_pose`], so a body's parts move with its root
+    /// and the camera. `None` when the body draws its live pose (off, on the
+    /// vsync a frame opens on its last frame's pose, or no pose).
+    pub fn battle_draw_pose_frame(&self, slot: usize) -> Option<legaia_anm::PoseFrame> {
+        let lag = self.battle_present.lag()?;
+        let live = self.actors.get(slot)?.pose_frame.as_ref()?;
+        let bones = self.battle_present.lerp_pose(slot, lag)?;
+        (bones.len() == live.bone_outputs.len()).then_some(legaia_anm::PoseFrame {
+            bone_outputs: bones,
+            factor: live.factor,
+            finished: live.finished,
+        })
     }
 }
 
@@ -414,6 +503,48 @@ mod tests {
         assert_eq!(w.battle_draw_pose().yaw, 1124.0);
         assert!((w.battle_draw_root(0).unwrap().0[0] - 30.0).abs() < 1e-3);
         assert_eq!(w.battle_draw_root(1).unwrap().0[0], 3000.0);
+    }
+
+    /// A body's parts step with its root: a part between two frames draws
+    /// part way along, the vsync a frame opens draws the old frame's pose,
+    /// and a part that swung past the snap draws where it landed.
+    #[test]
+    fn the_pose_steps_with_the_camera() {
+        let pose = |t: i16, r: i16| legaia_anm::PoseFrame {
+            bone_outputs: vec![([t, 0, 0], [0, r, 0]), ([0, 0, 0], [0, 0, 0])],
+            factor: 0,
+            finished: false,
+        };
+        let mut w = battle_world();
+        w.actors[0].active = true;
+        w.actors[0].pose_frame = Some(pose(0, 4090));
+        w.observe_battle_present();
+        while w.battle_present.phase > 0.0 {
+            vsync(&mut w);
+        }
+        for _ in 0..3 {
+            vsync(&mut w);
+        }
+        w.actors[0].pose_frame = Some(pose(30, 4096 + 26));
+        if let Some(p) = w.actors[0].pose_frame.as_mut() {
+            p.bone_outputs[1].1[0] = 2000;
+        }
+        w.observe_battle_present();
+        let drawn = w.battle_draw_pose_frame(0).unwrap();
+        assert_eq!(drawn.bone_outputs[0], ([0, 0, 0], [0, 4090, 0]));
+        assert_eq!(
+            drawn.bone_outputs[1].1[0], 2000,
+            "a swing past the snap lands"
+        );
+        vsync(&mut w);
+        let drawn = w.battle_draw_pose_frame(0).unwrap();
+        assert_eq!(drawn.bone_outputs[0], ([10, 0, 0], [0, 4101, 0]));
+        vsync(&mut w);
+        vsync(&mut w);
+        assert!(
+            w.battle_draw_pose_frame(0).is_none(),
+            "the next frame opens on it"
+        );
     }
 
     /// Retail mode, the per-vsync cadence and the field draw the live state.
