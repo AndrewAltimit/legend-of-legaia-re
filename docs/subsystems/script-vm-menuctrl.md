@@ -805,8 +805,13 @@ the player path, via the `0x801E00B8` entry on the NPC path).
 The port applies it in `FieldHostImpl::teleport_to_actor`:
 a placement destination takes the source's live position and heading
 (`stone` `P2[6]` seats Noa and Gala on Vahn with `CC 09 E3 F8` /
-`CC 0A E3 F8`), a player destination moves the player actor; the player
-arm's camera-scroll refresh is not modelled. A placement destination on the
+`CC 0A E3 F8`), a player destination moves the player actor. The player
+takes the source's `+0x16` as it is, with no floor sample under the landing,
+and its `+0x8E` on the held-height arm, as a placement does; its re-centre is
+`World::recentre_field_window` on `(x >> 7, z >> 7)`. The disc's player
+copies are `chitei2`'s Rapid Transport switches (`P0[32..34]`,
+`CC F8 E3 39`), `koin1` `P2[9]` / `P2[10]` (`CC F8 E3 45`) and `taiku`
+`P2[29]` (`CC F8 E3 3E`). A placement destination on the
 held-height arm takes the `+0x8E` write too, so it keeps the source's height:
 `juui1` `P2[0]` seats Noa at `+0x8E = -32` and then stacks her on Vahn with
 `CC 0A E3 09`, and retail's RAM holds all three party members at `+0x8E = 64`

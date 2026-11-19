@@ -449,6 +449,46 @@ fn position_copy_onto_a_held_height_actor_takes_the_source_height() {
     assert_eq!(w.field_npc_render_y(3, 13376, 7510), -64);
 }
 
+/// The player arm of the copy (`CC F8 E3 <src>`) takes the source's height
+/// `+0x16` as it is, not a floor sample under the landing, and a player on
+/// the held-height arm also takes `+0x8E = -src+0x16`
+/// (`0x801E3108..0x801E3170`, one arm for every destination).
+#[test]
+fn position_copy_onto_the_player_takes_the_source_height() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
+    use legaia_engine_vm::field::FieldCtx;
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    w.spawn_actor(0);
+    w.player_actor_slot = Some(0);
+    w.actors[0].move_state.flags |= crate::world::field_loop::PLAYER_Y_FROM_8E;
+    w.field_vm.channels = vec![FieldChannel {
+        placement_index: 2,
+        ctx: FieldCtx {
+            script_id: 0x3E,
+            flags: 0x2000_0000,
+            field_8e: 64,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    }];
+    w.npcs.positions.insert(2, (2112, 2752));
+    w.tick_field_npc_heights();
+    assert_eq!(w.field_npc_render_y(2, 2112, 2752), -64);
+    let bc = vec![0xCC, 0xF8, 0xE3, 0x3E, 0x4A, 0xFF, 0x7F];
+    w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+    w.step_cutscene_timeline();
+    let p = &w.actors[0].move_state;
+    assert_eq!((p.world_x, p.world_y, p.world_z), (2112, -64, 2752));
+    assert_eq!(w.locomotion.player_8e, 64, "+0x8E = -src Y");
+}
+
 /// A placement's spawn section that turns its own actor toward another
 /// (`4C 85 00 00 16` in `rikuroa` `P1[3]`, Noa facing the placement she
 /// is seated beside) arms the walk kernel's FaceTarget leg on that
