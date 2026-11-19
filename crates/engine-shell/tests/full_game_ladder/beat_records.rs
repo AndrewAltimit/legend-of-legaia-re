@@ -119,6 +119,19 @@ pub(super) fn flow_reachable(
     out
 }
 
+/// Is `flag` one phase of a rotating one-hot word rather than a story beat?
+/// `map03` P1[1] (Zora's Floating Castle) steps `0x56D -> 0x56E -> 0x56F ->
+/// 0x570 -> 0x56D` on every run - test, clear, set the next (`75 6D` /
+/// `65 6D` / `55 6E` at record `+0x0C..+0x15`, and so on round to `55 6D` at
+/// `+0x3F`) - so which bit is up says how many times the overworld was
+/// entered, not what the run has played. `nilboa` P2[25] parks it on `0x56D`
+/// after the Delilas family's challenge, which is why the `zora_castle`
+/// anchor carries it; a run that merely entered `map03` the right number of
+/// times has not played that beat.
+pub(super) fn is_rotating_phase(flag: u16) -> bool {
+    (0x56D..=0x570).contains(&flag)
+}
+
 /// Does the next anchor carry `flag`? `true` when there is no anchor to ask.
 pub(super) fn next_anchor_has(flag: u16) -> bool {
     NEXT_ANCHOR_FLAGS.with(|a| a.borrow().as_ref().is_none_or(|f| f.contains(&flag)))
@@ -383,7 +396,7 @@ pub(super) fn overreaching_records(
                         && s.kind == FlagKind::Set
                         && s.clean
                         && !s.debug_menu
-                        && !w.system_flag_test(s.flag)
+                        && (!w.system_flag_test(s.flag) || is_rotating_phase(s.flag))
                         && NEXT_ANCHOR_FLAGS
                             .with(|a| a.borrow().as_ref().is_some_and(|f| f.contains(&s.flag)))
                 })
