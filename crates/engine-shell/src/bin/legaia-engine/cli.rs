@@ -1024,6 +1024,8 @@ pub(crate) enum Cmd {
         /// order - e.g. `--party noa,terra`. Battle ordinal i renders in
         /// VRAM texture band i with member i's own player-file mesh /
         /// palette / spells (the live-verified retail banding rule).
+        /// `terra` seats as retail seats her: the AI battle companion,
+        /// last, beside one or two other members (system flag `0x13`).
         /// Caps at the 3 on-screen positions. Default: the save's
         /// composition (identity Vahn/Noa/Gala when none is recorded).
         #[arg(long)]

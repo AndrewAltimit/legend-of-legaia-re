@@ -184,7 +184,8 @@ const SHOWN: usize = 13;
 /// field list, `field_loop::AI_COMPANION_SYSTEM_FLAG`). A pick that seated her
 /// in the field list would be a party retail cannot reach - her as a field
 /// leader, or ahead of a member the companion always follows. The play page's
-/// free-text party field still takes `terra` as a debug seat.
+/// free-text party field and `--party` take `terra` and seat her that same
+/// way, as the companion (`party_spec::split_ai_companion`).
 const PARTY_PICKS: [&str; 7] = [
     "vahn",
     "vahn,noa",
