@@ -1008,6 +1008,14 @@ before the fighter learned to guard against Stone
 attempt of its own only when Cort wipes the party, as the Cort notes above
 describe; the switch to Run at `jouind`'s switch pair is not one.
 
+### What re-deals a seed
+
+The deal is a function of the stream's seed, the pad and what the code means, and of nothing else. Each `[run N]` line ends on the deal so far, the session's frame and the world rand state on arrival (`frame 14337 rng 798B2BDE`): two runs that print the same pair at a milestone played the same hand to it.
+
+- **Code that only moves does not re-deal.** Builds that differ by a dead function, a codegen change inside `World::next_rand`, an unrelated crate's new call, or the hand's line numbers play seeds 5 and 16 to the credits with every line of the stripped trace identical. So do runs of one binary under the trace switches, with no trace at all, and with part C sharing the process with part B on other test threads.
+- **A change that re-deals moved a frame or a draw.** Retail has one `rand()` stream for every caller, the battle presentation's and the camera's among them, and the engine keeps it one stream, so a retail-faithful change to an effect's draws or a battle frame's length re-deals every encounter after it, as it would on the console. A hand change that moves one press by one frame does the same. Diff the two runs' `[run N]` lines: the first milestone whose pair differs bounds the stretch, and `LEGAIA_FGL_TRACE=1` on that stretch finds the frame.
+- **The guard.** `full_game_ladder::continuous::the_opening_deals_alike_in_two_processes` plays the opening stretches (New Game to Drake Castle) in two processes of one binary side by side and asserts the same pair at every milestone. Each process draws its own `HashMap` keys and addresses and the two contend for the cores, so a path that followed hash order, an address, the clock or a thread's timing fails it. It needs the disc, like the rest of the ladder.
+
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
 
 ### What the time goes to

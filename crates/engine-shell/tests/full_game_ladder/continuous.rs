@@ -680,11 +680,18 @@ fn part_c_continuous_run() {
                     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                         print_state_diff(&mut session, &inp, to);
                     }
+                    // The deal so far: the session's frame and the world
+                    // rand state on arrival. Two runs that print the same
+                    // pair here played the same hand to this milestone; the
+                    // first milestone whose pair differs is where a change
+                    // re-dealt the run ([`the_opening_deals_alike_in_two_processes`]).
                     eprintln!(
-                        "[run {i:2}] {:24} -> {:24} reached ({:.1}s, attempt {attempt})",
+                        "[run {i:2}] {:24} -> {:24} reached ({:.1}s, attempt {attempt}) frame {} rng {:08X}",
                         spine[i].id,
                         to.id,
-                        t0.elapsed().as_secs_f32()
+                        t0.elapsed().as_secs_f32(),
+                        session.frames,
+                        session.host.world.rng_state
                     );
                     if until.as_deref() == Some(to.id.as_str()) {
                         break 'spine;
@@ -881,5 +888,77 @@ fn part_c_continuous_run() {
         reached_count >= want,
         "continuous run reached {reached_count} milestone(s), baseline {want}: {}",
         stall.as_deref().unwrap_or("no stall recorded")
+    );
+}
+
+/// The deal is a function of the stream's seed, the pad and the code's
+/// meaning, and of nothing else: two processes of one binary, run side by
+/// side, play the opening stretches to the same frame and rand state at
+/// every milestone. Each child draws its own `HashMap` keys and heap and
+/// stack addresses, and the two contend for the same cores, so a hand or
+/// engine path that followed hash order, an address, the wall clock or a
+/// thread's timing shows up here as a fingerprint that differs.
+///
+/// A build that only moves code (a dead function, a line shift, an inlining
+/// change) deals the same hand too; that takes two builds, so it is the
+/// procedure in `docs/tooling/full-game-ladder.md#what-re-deals-a-seed`, not a test.
+#[test]
+fn the_opening_deals_alike_in_two_processes() {
+    const CHILD: &str = "LEGAIA_FGL_DEAL_CHILD";
+    if std::env::var_os(CHILD).is_some() || inputs().is_none() {
+        return;
+    }
+    let exe = std::env::current_exe().expect("test executable");
+    let spawn = || {
+        let mut cmd = std::process::Command::new(&exe);
+        cmd.args([
+            "full_game_ladder::continuous::part_c_continuous_run",
+            "--exact",
+            "--nocapture",
+            "--test-threads",
+            "1",
+        ])
+        .env(CHILD, "1")
+        .env("LEGAIA_FGL_CONTINUOUS_UNTIL", "drake_castle")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+        for var in [
+            "LEGAIA_FGL_RNG_SEED",
+            "LEGAIA_FGL_CONTINUOUS_FROM",
+            "LEGAIA_FGL_CONTINUOUS_RESUME",
+            "LEGAIA_FGL_CHECKPOINT_DIR",
+        ] {
+            cmd.env_remove(var);
+        }
+        cmd.spawn().expect("spawn the continuous run")
+    };
+    let children = [spawn(), spawn()];
+    let deals: Vec<Vec<String>> = children
+        .into_iter()
+        .map(|child| {
+            let out = child
+                .wait_with_output()
+                .expect("wait for the continuous run");
+            String::from_utf8_lossy(&out.stderr)
+                .lines()
+                .filter(|l| l.starts_with("[run "))
+                .map(|l| {
+                    // Drop the wall-clock field, `12.3s, `.
+                    match (l.find(" ("), l.find("s, attempt")) {
+                        (Some(a), Some(b)) if a < b => format!("{} ({}", &l[..a], &l[b + 3..]),
+                        _ => l.to_string(),
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    assert!(
+        deals[0].len() >= 4,
+        "the opening run reached too few milestones to compare: {:?}",
+        deals[0]
+    );
+    assert_eq!(
+        deals[0], deals[1],
+        "two processes of one binary dealt the opening differently"
     );
 }
