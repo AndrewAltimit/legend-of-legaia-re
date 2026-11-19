@@ -1960,6 +1960,9 @@ pub(super) fn pad_equip_goods(session: &mut NativeSession) -> usize {
 /// the rest. The segmented passes heal with [`pad_field_heal`] alone.
 pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, String> {
     if !continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        if let Some(s) = pad_grow_for_race(session)? {
+            return Ok(Some(s));
+        }
         pad_dress_for_race(session, true);
         if let Some(s) = pad_charge_for_race(session)? {
             return Ok(Some(s));
@@ -1983,6 +1986,9 @@ pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, S
         pad_dress_for_duels(session);
     } else if !race_ahead(session) {
         pad_undress_after_duels(session);
+    }
+    if let Some(s) = pad_grow_for_race(session)? {
+        return Ok(Some(s));
     }
     pad_dress_for_race(session, true);
     if let Some(s) = pad_charge_for_race(session)? {

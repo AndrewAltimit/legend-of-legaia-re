@@ -48,6 +48,65 @@ fn typists_charged(session: &NativeSession) -> bool {
     })
 }
 
+/// Outings the hand spends at a race's door growing a Miracle wearer into a
+/// typist ([`miracle_short`]) before it dresses for the race.
+const GROW_OUTINGS: usize = 16;
+
+/// Whether a present member wears a Miracle it cannot type under a Fury Boost
+/// ([`race_typist`]): AGL is what a level-up raises.
+fn miracle_short(session: &NativeSession) -> bool {
+    let w = &session.host.world;
+    w.present_party_list().into_iter().any(|m| {
+        !race_typist(w, m)
+            && w.party.roster.members.get(usize::from(m)).is_some_and(|r| {
+                legaia_engine_battle_vm::battle_action::miracle_marker_armed(
+                    m.wrapping_add(1),
+                    &r.equipment().slots,
+                )
+            })
+    })
+}
+
+/// At a race's door ([`race_ahead`]), fight the scene's encounters until every
+/// Miracle wearer can type it, before the hand dresses for the race
+/// ([`pad_dress_for_race`] reads who types). A dealt run met Koru with Vahn
+/// at level 31 and AGL 185 against the 188 a Fury Boost needs for nine
+/// presses, dressed him as a caster, and lost twelve times with Noa typing
+/// alone; one level took him to 189. Plain fights: the walk is for the
+/// experience, and a player who has watched the finisher land does the same.
+pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<String>, String> {
+    if !race_ahead(session)
+        || session.host.world.party.party_count < 3
+        || !walking(session)
+        || !released(session)
+        || !session.host.world.scene_can_roll_encounters()
+        || !miracle_short(session)
+    {
+        return Ok(None);
+    }
+    let here = scene_name(session);
+    let mut outings = 0;
+    let mut left = Ok(None);
+    while outings < GROW_OUTINGS && miracle_short(session) && charge_affordable(session) {
+        outings += 1;
+        pad_field_heal(session, 900);
+        left = outing(session, 400);
+        if !matches!(&left, Ok(None)) || scene_name(session) != here || !walking(session) {
+            break;
+        }
+    }
+    if matches!(&left, Ok(None)) && walking(session) {
+        pad_field_heal(session, 900);
+    }
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [grow] {outings} outing(s) for the race; short now {}",
+            miracle_short(session)
+        );
+    }
+    left.map(|s| s.filter(|s| *s != here))
+}
+
 /// Whether the party still holds half its MP. Charging pays for its fights out of
 /// what would heal it, and a party that spends it all meets the boss hurt.
 fn charge_affordable(session: &NativeSession) -> bool {
