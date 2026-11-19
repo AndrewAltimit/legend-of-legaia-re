@@ -494,6 +494,17 @@ A recording that opens on a state's own instant can open on a frame whose pass r
 the first row; no `rand()` draw lands in it (every battle pass makes the frame driver's
 discarded draw), and the track leaves it out. Handed on, its step ran Lip King's first
 arm-1 pass on the leftover step `3`, and Kiss of Death read `.899` where it reads `.993`.
+The rows cannot see a draw on the first row itself, though: a first frame of one row is
+its logic's own row and shows one word throughout. The state's seed word (`0x80009010`)
+can. Where a one-row first frame's word differs from the state's, that frame's pass drew
+between the state and the recording, the engine runs it from the gate (its first pass
+draws onto the first row's word), and the track keeps it. Left out, every later pass of
+`battle_garmel_zenoir_fire_claw_mid_cast`'s film ran the step of the frame after
+retail's: the projectile flew a step-`3` pass where retail's flew a step-`2` one, and the
+trail it drops stood `29` units along the flight. On `--retail-steps`, `0x2B` reads
+`.883` to `.973` and the film `.933` to `.970`; Moldy Breath `.977` to `.997`, Thunder
+Burst `.986` to `.990`; Kiss of Death, Twin Tomb's strike, Kemaro's `0x90` and Plasma
+Strike read the same. A harness seat.
 
 `body.csv` and `seats.csv` are read at another point in the vsync than `rates.csv`, so on a
 commit vsync the clip column can still name the outgoing clip while the cursor is already
