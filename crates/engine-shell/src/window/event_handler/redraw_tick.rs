@@ -224,6 +224,14 @@ impl PlayWindowApp {
                 held_pad
             };
             self.tick_no += 1;
+            // `LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL=<tick>`: a one-tick drive ends
+            // on its tick and the retail pad pipeline takes over, so a film
+            // can press on retail's latency from a screen the drive reached.
+            if let Some(until) = immediate_pad_until()
+                && self.tick_no == until
+            {
+                self.session.host.world.toggles.immediate_pad = false;
+            }
             // A tick the field sat frozen under (a shop, the naming prompt,
             // the pause menu) returns before its tail, so it moves no NPC
             // clip: the players step in the tail's `drain_anim_cues`.
@@ -1119,4 +1127,14 @@ fn part_ages_match(world: &legaia_engine_core::world::World, ages: &[(u32, i16)]
     live.sort_unstable();
     want.sort_unstable();
     live == want
+}
+
+/// `LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL`, read once.
+fn immediate_pad_until() -> Option<u64> {
+    static UNTIL: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    *UNTIL.get_or_init(|| {
+        std::env::var("LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL")
+            .ok()
+            .and_then(|v| v.parse().ok())
+    })
 }
