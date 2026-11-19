@@ -52,6 +52,8 @@ const RING: u32 = 0x8008_4098;
 const RING_CURSOR: u32 = 0x8007_B758;
 /// libetc's vblank counter (`VSync(-1)`, the word `FUN_8005FCCC` waits on).
 const VSYNC_COUNTER: u32 = 0x8007_A894;
+/// The pad / card interrupt handler the kernel chains on the vblank.
+const SIO_INTERRUPT: u32 = 0x8006_CFC8;
 /// The frame step byte.
 const STEP: u32 = 0x1F80_0393;
 /// The frame's ordering table: its base (`*(0x1F8003F4)`) and its length in
@@ -183,6 +185,22 @@ impl FrameRunner {
             pc: state.pc,
             budget: 200_000_000,
         }
+    }
+
+    /// Take the vblank interrupt from here on (`Cpu::vblank_irq`): the
+    /// kernel's dispatch and libetc's vblank callbacks run, so what they
+    /// advance (the sound sequencer, the game's own vsync counters) moves as
+    /// it does on the emulator, and their time lands in whatever routine was
+    /// running, as the emulator's profile reads it before its interrupt time
+    /// is taken out. The pad and card exchange over SIO
+    /// (`FUN_8006CFC8`, reached from the kernel's interrupt chain) would wait
+    /// on a serial port nothing answers; it returns at once instead. The rest
+    /// of the vblank interrupt costs about `24100` cycles here against
+    /// PCSX-Redux's `24400..26200`, so the exchange is a small part of it.
+    pub fn take_interrupts(&mut self) {
+        self.cpu.vblank_counter = None;
+        self.cpu.vblank_irq = true;
+        self.cpu.stub(SIO_INTERRUPT, 0);
     }
 
     /// The run's last distinct calls, newest first, for a stop's message.

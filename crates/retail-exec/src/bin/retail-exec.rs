@@ -16,6 +16,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Break the first whole frame's field passes into their repeated units
+    /// (loop iterations by path, dispatcher draws and groups, prim-leaf
+    /// iterations by kind and outcome), each with its count and its
+    /// PCSX-Redux cycles: `pass,unit,count,cycles,cycles_per_unit`.
+    FieldUnits(UnitsArgs),
     /// Print where a PCSX-Redux state's CPU stood and the interrupt and
     /// counter registers it saved.
     StateInfo {
@@ -34,17 +39,42 @@ enum Cmd {
         /// Whole frames to run after the state's frame in progress.
         #[arg(long, default_value_t = 4)]
         frames: usize,
+        /// Take the vblank interrupt (kernel dispatch and libetc callbacks;
+        /// the SIO pad exchange returns at once).
+        #[arg(long)]
+        interrupts: bool,
         /// One CSV row per routine per frame instead of the table.
         #[arg(long)]
         csv: bool,
         /// Also list every call of a listed routine with its own cost.
         #[arg(long)]
         calls: bool,
+        /// Write `pc,hits,accesses` for every instruction run inside this
+        /// routine (hex entry) on the first frame to `--hist-out`.
+        #[arg(long)]
+        hist: Option<String>,
+        #[arg(long, default_value = "hist.csv")]
+        hist_out: PathBuf,
+        /// Log every arrival at these addresses (hex, comma separated) on the
+        /// first frame, `pc,clock` to `--marks-out`.
+        #[arg(long, value_delimiter = ',')]
+        marks: Vec<String>,
+        #[arg(long, default_value = "marks.csv")]
+        marks_out: PathBuf,
+        /// The register each mark records beside the clock.
+        #[arg(long, default_value_t = 9)]
+        mark_reg: usize,
         /// More routines to price (hex entries, comma separated), beside the
         /// field passes.
         #[arg(long, value_delimiter = ',')]
         funcs: Vec<String>,
     },
+}
+
+#[derive(clap::Args)]
+struct UnitsArgs {
+    #[command(flatten)]
+    state: StateArg,
 }
 
 #[derive(clap::Args)]
@@ -93,6 +123,17 @@ impl StateArg {
 
 fn main() -> Result<()> {
     match Cli::parse().cmd {
+        Cmd::FieldUnits(a) => {
+            let s = a.state.load()?;
+            println!("pass,unit,count,cycles,cycles_per_unit");
+            for (p, pu) in psx_retail_exec::field_units::field_units(&s)? {
+                println!("{p},total,{},{},", pu.calls, pu.total);
+                for (u, (n, c)) in &pu.units {
+                    let per = if *n > 0 { *c as f64 / *n as f64 } else { 0.0 };
+                    println!("{p},{u},{n},{c},{per:.1}");
+                }
+            }
+        }
         Cmd::StateInfo { state } => {
             let s = state.load()?;
             let h = |o: usize| {
@@ -125,8 +166,14 @@ fn main() -> Result<()> {
             state,
             frames,
             csv,
+            interrupts,
             calls,
             funcs,
+            hist,
+            hist_out,
+            marks,
+            marks_out,
+            mark_reg,
         } => {
             let s = state.load()?;
             let extra: Vec<Routine> = funcs
@@ -141,8 +188,27 @@ fn main() -> Result<()> {
                 })
                 .collect();
             let routines: Vec<Routine> = FIELD_ROUTINES.iter().copied().chain(extra).collect();
+            let hist_va = hist
+                .map(|h| u32::from_str_radix(h.trim_start_matches("0x"), 16))
+                .transpose()?;
+            let mut routines = routines;
+            if let Some(va) = hist_va
+                && !routines.iter().any(|r| r.va == va)
+            {
+                routines.push(Routine { va, name: "(hist)" });
+            }
             let mut run = FrameRunner::with_routines(&s, &routines);
+            if interrupts {
+                run.take_interrupts();
+            }
             run.settle()?;
+            run.cpu.hist_within = hist_va;
+            run.cpu.mark_reg = mark_reg;
+            for m in &marks {
+                run.cpu
+                    .marks
+                    .insert(u32::from_str_radix(m.trim_start_matches("0x"), 16)?);
+            }
             if csv {
                 println!(
                     "frame,ring,step,func,name,calls,steps,ram,scratch,io,bios,cycles,hblanks,linked"
@@ -150,6 +216,24 @@ fn main() -> Result<()> {
             }
             for f in 0..frames {
                 let fc = run.frame()?;
+                if f == 0 && !run.cpu.marks.is_empty() {
+                    let mut out = String::from("pc,clock,reg\n");
+                    for (pc, c, r) in &run.cpu.mark_log {
+                        out.push_str(&format!("{pc:08X},{c},{r:08X}\n"));
+                    }
+                    std::fs::write(&marks_out, out)?;
+                    run.cpu.marks.clear();
+                }
+                if f == 0 && hist_va.is_some() {
+                    let mut rows: Vec<_> = run.cpu.hist.iter().map(|(k, v)| (*k, *v)).collect();
+                    rows.sort();
+                    let mut out = String::from("pc,hits,accesses\n");
+                    for (pc, (h, a)) in rows {
+                        out.push_str(&format!("{pc:08X},{h},{a}\n"));
+                    }
+                    std::fs::write(&hist_out, out)?;
+                    run.cpu.hist_within = None;
+                }
                 if !csv {
                     println!(
                         "frame {f}: {:.1} hb ({} cycles, {} instructions, VSync waits included), ring {} step {}",

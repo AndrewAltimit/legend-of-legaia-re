@@ -183,6 +183,7 @@ mod field_scus_leaves;
 mod field_spawners;
 mod field_stores;
 mod field_timers;
+mod field_units;
 mod field_vm;
 mod field_walls;
 mod final_heal;

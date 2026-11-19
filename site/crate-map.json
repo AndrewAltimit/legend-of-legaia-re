@@ -4305,6 +4305,7 @@
    "lib": true,
    "modules": [
     "gte",
+    "field_units",
     "frame_runner",
     "ledger",
     "pcsx_state"

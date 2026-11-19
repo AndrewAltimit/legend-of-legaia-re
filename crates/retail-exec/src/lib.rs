@@ -18,6 +18,7 @@ pub mod gte;
 
 use std::collections::HashMap;
 
+pub mod field_units;
 pub mod frame_runner;
 pub mod ledger;
 pub mod pcsx_state;
@@ -450,6 +451,27 @@ pub struct Cpu {
     halt: Option<(u32, u64)>,
     /// The clock reading at which the next vblank arrives.
     pub next_vblank: u64,
+    /// With [`Cpu::hist_within`] set, every instruction run while a profiled
+    /// call of that entry is open: `pc -> (times run, data accesses it made)`.
+    pub hist: HashMap<u32, (u64, u64)>,
+    pub hist_within: Option<u32>,
+    /// Addresses whose every arrival (inside [`Cpu::hist_within`] when that
+    /// is set) is logged with the clock
+    /// ([`Memory::clock`] before the instruction there runs) into
+    /// [`Cpu::mark_log`]: the cost between two arrivals at a loop head is
+    /// one iteration's, and the marks between them say which path it took.
+    pub marks: std::collections::HashSet<u32>,
+    pub mark_log: Vec<(u32, u64, u32)>,
+    /// The register each [`Cpu::mark_log`] entry also records (`t1`, a
+    /// packet cursor the prim leaves keep in a register, say).
+    pub mark_reg: usize,
+    /// With no [`Cpu::vblank_counter`], raise the vblank interrupt (`I_STAT`
+    /// bit 0) each time the clock passes [`Cpu::next_vblank`] and take any
+    /// pending unmasked interrupt as PCSX-Redux does: after a delay slot,
+    /// with `SR` bits 0 and 10 set, through the vector `0x8000_0080`, into
+    /// the kernel the state holds. [`Cpu::irqs`] counts them.
+    pub vblank_irq: bool,
+    pub irqs: u64,
     /// The word the vblank interrupt handler counts vblanks in (libetc's
     /// `VSync` counter). No interrupt is taken: each time [`Memory::clock`]
     /// passes [`Cpu::next_vblank`] one is added there at no cost, so a
@@ -653,6 +675,9 @@ impl Cpu {
         // Where the instruction after the current one lives: a taken branch
         // lands here one instruction late, which is the delay slot.
         let mut next = pc.wrapping_add(4);
+        // Whether the instruction just run sat in a delay slot: PCSX-Redux
+        // tests for an interrupt only there (`branchTest` in `execBlock`).
+        let mut after_delay = false;
         loop {
             if pc == RETURN_SENTINEL {
                 return Stop::Returned;
@@ -663,7 +688,25 @@ impl Cpu {
                     self.mem.wr32(a, n.wrapping_add(1));
                     self.next_vblank += PCSX_CYCLES_PER_VBLANK;
                 }
+            } else if self.vblank_irq {
+                while self.mem.clock >= self.next_vblank {
+                    self.mem.i_stat |= 1;
+                    self.next_vblank += PCSX_CYCLES_PER_VBLANK;
+                }
+                if after_delay
+                    && self.mem.i_stat & self.mem.i_mask != 0
+                    && self.cop0[12] & 0x401 == 0x401
+                {
+                    self.cop0[14] = pc;
+                    self.cop0[13] = (self.cop0[13] & !0x8000_007C) | 0x400;
+                    let sr = self.cop0[12];
+                    self.cop0[12] = (sr & !0x3F) | ((sr << 2) & 0x3F);
+                    pc = 0x8000_0080;
+                    next = pc.wrapping_add(4);
+                    self.irqs += 1;
+                }
             }
+            after_delay = false;
             if let Some((at, left)) = self.halt
                 && pc == at
             {
@@ -674,6 +717,15 @@ impl Cpu {
             }
             if !self.profiled.is_empty() {
                 self.note_profile(pc);
+            }
+            if !self.marks.is_empty()
+                && self.marks.contains(&pc)
+                && self
+                    .hist_within
+                    .is_none_or(|t| self.open_calls.iter().any(|c| c.0 == t))
+            {
+                self.mark_log
+                    .push((pc, self.mem.clock, self.regs.r[self.mark_reg]));
             }
             if let Some(mut p) = self.probes.remove(&pc) {
                 p(&self.regs, &mut self.mem, &self.gte);
@@ -729,9 +781,18 @@ impl Cpu {
                 continue;
             }
             let after = next.wrapping_add(4);
+            after_delay = next != pc.wrapping_add(4);
             let touched = self.accesses.total();
             let stepped = self.step(pc, w, next);
-            self.mem.clock += self.accesses.total() - touched;
+            let made = self.accesses.total() - touched;
+            self.mem.clock += made;
+            if let Some(t) = self.hist_within
+                && self.open_calls.iter().any(|c| c.0 == t)
+            {
+                let e = self.hist.entry(pc).or_default();
+                e.0 += 1;
+                e.1 += made;
+            }
             match stepped {
                 Ok(Some(target)) => {
                     pc = next;
