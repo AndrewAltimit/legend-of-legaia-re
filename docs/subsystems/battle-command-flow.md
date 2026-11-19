@@ -460,10 +460,14 @@ The port's retail-faithful mode runs the pipeline in a fight
 (`World::retail_frame_pad`, on the battle frame clock and the frame-cost
 ring's newest push); the default hands a press to the flow on its own vsync.
 The port column is a `play-window --retail` child on the state's own cost
-ring and frame phase, the seats every gate film takes
-(`LEGAIA_BATTLE_COST_RING`, `LEGAIA_DIAG_CAST_SEQ_PASS_LEFT`, the phase read
-off the recording's first ring push less its whole vsyncs of cost); a film
-off that phase lands its cues a vsync either side.
+ring and frame phase. The three states a menu drive reaches take the seats
+every gate film takes (`LEGAIA_BATTLE_COST_RING`,
+`LEGAIA_DIAG_CAST_SEQ_PASS_LEFT`, the phase read off the recording's first
+ring push less its whole vsyncs of cost), and the frames after the gate run
+on the step the port prices. `battle_menu_rugi_barra_retail`'s child has no
+drive and so no gate to seat on, and stands on the recording's grid with
+`LEGAIA_DIAG_BATTLE_STEP_AT`. A film off the phase lands its cues a vsync
+either side.
 
 Retail's frame on a surface is a whole battle frame: the frame driver runs
 the menu SM and the action SM, the stage, the bodies and the HUD draw, and
