@@ -810,14 +810,16 @@ A field entered from a priced field opens on the departing scene's step: the fie
 ### The derived field frame-cost model
 
 `WorldToggles::derived_frame_cost` (off; `LEGAIA_DERIVED_FRAME_COST=1`) prices a field frame from the per-unit cycle table `world::field_frame_units` derives off the retail passes' instruction counts ([retail frame cost](../tooling/retail-frame-cost.md#per-unit-costs)), on PCSX-Redux's scale.
-It prices the decoration pass's rows, box and out-of-box cells, draws, groups and primitives by leaf kind; the ground emitter's window and walk cells; the placed actors and the models (the player's among them, which the placement counts leave out) with their objects, groups and primitives; the morph stage; the fog records and half-sheets; the CLUT-cell cyclers' measured terms; and, once every `263` hblanks of that work, the vblank interrupt and the vsync's others (`13.9` hblanks). The scene's cost table carries each mesh's dispatcher view for it (`MeshCost`: objects, vertices, groups, primitives by `flags >> 1`).
+It prices the decoration pass's rows, box and out-of-box cells, draws, groups and primitives by leaf kind; the ground emitter's window and walk cells; the placed actors and the models (the player's among them, which the placement counts leave out) with their objects, groups and primitives; the morph stage; the move-VM parts' sprite draws; the fog records and half-sheets; the tick passes; the CLUT-cell cyclers' measured terms; and, once every `263` hblanks of that work, the vblank interrupt and the vsync's others (`13.9` hblanks). The scene's cost table carries each mesh's dispatcher view for it (`MeshCost`: objects, vertices, groups, primitives by `flags >> 1`).
 A primitive is priced at its kind's mix of outcomes over the profiled states, not at what the camera makes of it. Per primitive, retail's cost is set by whether it faces the camera and lands on screen (`96` cycles rejected by winding against `331` linked for a `k19` quad), but at that mix a pass moves by at most `6%` on the ten states, while the engine's decoration and ground counts already match retail's to the unit there (`son`: `92` draws, `2480` primitives, `2173` cells; `stone`: `2075` walk cells). A per-primitive outcome would need each primitive projected every frame.
-Three things the frame's state decides are counted per frame:
+What the frame's state decides is counted per frame:
 - **The leaf bank of a placed mesh.** A placement with a cull radius raises its colour word's off-screen-test bit, so its primitives take the depth-cued leaves' test and price at that bank's pool (`190..210` cycles a gouraud primitive, against `104..152` on the opaque bank). On `rim_elm_zoom_intro_pcsx` `1992` of the `2022` placed primitives are on it, as retail's actor lists hold them.
 - **The morph stage.** A placed object's bind record or an NPC's placement slot that holds armed op-`0x4B` lanes stages every object of its mesh (`FUN_8001C604`, the copy) and blends every record of every armed lane, whatever the weights (`FUN_8005B038`). The engine's counts land on retail's: `1344` blended vertices on the zoom shot, `2055` on `jou`, `120` on `son`.
 - **The ground near test.** Each walk cell's `(col, row + 1)` corner goes through the camera the cull view publishes (`placed_cull_gte`) at the live floor ladder's height; one nearer than `SZ 0x40` takes the emitter's short path, and a cell past it with the depth-sorted bit (`0x8000`) the sorted one. `concnow_field_door_hop_settled` drops `257` of `1038` against retail's `256` and sorts `181` (retail `181`); `stone` sorts all `2075`.
+- **The models drawn.** Every placement the hosts draw a mesh for counts, at its live anchor or its spawn (`World::field_npc_live_anchor`), so a placement with no talk text and no `npcs.positions` anchor draws too: `teien`'s withered Genesis tree `P1[1]`, whose `4B 07 00` lanes stage `2128` vertices a frame. A model behind the near reject (view depth under `0xA1`), or one whose `+0x10 & 4` is up and whose box lands wholly off screen (`FUN_8001B73C`, `actor_box_on_screen`), is not drawn; one whose clip binds fewer bones than its mesh holds objects (`World::npcs.clip_bones`) draws that many (`MeshCost::cut_to`). A model whose colour word (the channel's `field_74`) has a non-zero mode byte takes the depth-cued bank (`koin1b`'s `0x10808080` pair).
+- **The tick passes.** One entry a live script actor (`485` cycles through `FUN_8003BC08`), the player's tick (`5071` standing, `31115` walking), the system actors (`12300`), a sprite part (`1475`) and any other part (`2243`), all measured with `retail-exec actor-ticks`; the render lists walk the same entries (`59` cycles each).
 
-Two shares are fitted, not derived: the tick passes' base (`10` hblanks besides the parts and cyclers) and the frame driver's other work (`4`).
+Only the frame driver's other work (`4` hblanks) stays fitted.
 
 The models' counts are the scene's: each placement's spawn mesh, a party or savepoint head (`model >= 0xF0`) out of the PROT 0874 §0 pool the field keeps (`World::field_head_pool`), and the player's own head (`0`), which the actor passes draw every frame and no placement holds. On the ten profiled states the engine's model primitives then land on what retail's actor lists draw (`retail-exec actor-draws`, one row per list entry): `son` `2284` against `2142`, `kor3` `1779` against `1743`, `stone` `424` against `388`.
 
@@ -825,24 +827,25 @@ Against the fitted model on the frame-cost gates (`scripts/ci/field-cost-films.p
 
 | Gate | Fitted (default) | Derived |
 |---|---:|---:|
-| films, fit set: rung | `11107` / `11164` | `10951` / `11164` |
+| films, fit set: rung | `11107` / `11164` | `11135` / `11164` |
 | films, held out: rung | `1586` / `1602` | `1586` / `1602` |
-| unanchored step | `29878` / `30131` | `29372` / `30131` |
-| state rings | `133` / `139` | `131` / `139` |
-| state price rms (bias) | `65.4` (`+2.1`) hblanks | `54.3` (`-2.4`) hblanks |
-| walk-film `rand()` | `8213` / `8892` | `8213` / `8892` |
-| `son_field_door_hop` (ring `613`, step `3`) | `524`, `3` | `642`, `3` |
-| `vahn_walks_out` (PCSX-Redux `471..480`, step `2`) | `506`, `2` | `480`, `2` |
-| `rim_elm_zoom_intro_pcsx` (PCSX-Redux `774`, step `4`) | `770`, `4` | `755`, `4` |
+| unanchored step | `29936` / `30188` | `29973` / `30188` |
+| state rings | `133` / `139` | `134` / `139` |
+| state price rms (bias) | `65.4` (`+2.1`) hblanks | `50.2` (`-1.2`) hblanks |
+| walk-film `rand()` | `8218` / `8914` | `8218` / `8914` |
+| `son_field_door_hop` (ring `613`, step `3`) | `524`, `3` | `632`, `3` |
+| `vahn_walks_out` (PCSX-Redux `471..480`, step `2`) | `506`, `2` | `499`, `2` |
+| `rim_elm_zoom_intro_pcsx` (PCSX-Redux `774`, step `4`) | `770`, `4` | `771`, `4` |
 | `doman_field_card_boot` film rung | `88` / `139` | `116` / `139` |
 
-The derived model sits closer to the rings (rms `54.3` against `65.4`), ties the held-out films, gets `doman` right (the fitted weights charge its CLUT cycler and cross the `0x1FE` rung `133` vsyncs into the film, where retail crosses it about `241` in) and prices the zoom shot's step. It still loses the fit-set films, the unanchored step and two rings, each a measured gap:
-- **`teien_field_run`** (`493` against `589`): one kind-`5` actor at `(5504, -64, 6336)` with `299` primitives runs the morph stage over `2128` vertices (`92` hblanks in all), and the engine holds no armed lane for it. The decoration, ground and fog passes land within `9` hblanks of what they run.
-- **`concnow_field_door_hop_settled`** (`722` against `688`): its ground lands to the cell, but the decoration pass prices `296` against `274` and the actor passes `220` against `188`, while the tick passes run `41` against the fitted `18`.
-- **NPC banks.** `koin1b_field_route_walk`'s two models with colour word `0x10808080` draw on the depth-cued bank with the off-screen test; the engine has no source for a model's colour word and prices every model on the opaque bank.
-- **`rim_elm_zoom_intro`** (ring `694`): its library state holds a lighter moment of the shot than the PCSX-Redux state (`774` hblanks of work, which the model prices at `755`), and both models price it near `760`.
+The derived model matches or beats the fitted one on every gate. The films it still loses frames on lose them under both models:
+- **`doman_field_card_boot`** (`23` frames): retail crosses the `0x1FE` rung about `241` vsyncs in as the scene's CLUT cycler fills; the derived price (`456` against a median `483`) crosses later.
+- **`nilboa_delilas_family_after_pose`** (`16`) and **`garmel_zeto_appears_rising`** (`6`): the two models miss the same frames (nilboa `418` and `417` against a median `441`, garmel `366` and `371` against `312`), so the miss is not in anything the derived table prices differently; it is open.
 
-The tick passes stay a fitted share: what they run is each actor's own tick routine, which the counts do not carry. The fitted model stays the default.
+Five rings miss under both: `concend_field_door_hop`, `ending_vignette_fullscreen`, `garmel_zeto_appears_rising`, `rikuroa_post_caruban` and `rim_elm_zoom_intro`, whose library state holds a lighter moment of the shot than the PCSX-Redux state (`774` hblanks of work, which the model prices at `771`).
+A ring sampled soon after scene entry can also catch the engine short of retail's steady state: `uru2_field_door_hop`'s mist emitter holds `33` sprite parts on the engine's ring frame against retail's `68`, and reaches `62..68` within `130` frames.
+
+The fitted model stays the default.
 
 ### Where a field frame's time goes
 

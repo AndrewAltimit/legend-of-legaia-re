@@ -256,6 +256,26 @@ groups, primitives and cycles its drawing ran, the vertices the morph blend ran
 over, and its colour word. It is what the engine's model, placed, bank and
 morph counts are checked against.
 
+`retail-exec actor-ticks --scenario <label>` lists every entry the five tick
+passes (`FUN_8002519C`) walk: the record, its tick handler (`+0x0C`), draw
+kind, sub-mode, flags and the cycles its tick ran. Over thirteen states a
+script actor's tick (`FUN_8003BC08`) costs `485` cycles on the mean; the
+player's (`FUN_801D1344`) `3106..6010` standing and `17350..44018` walking or
+running; a move-VM part (`FUN_80021DF4`) `689..3940` off a cycler upload and
+`10..20k` on one, `1475` on draw kind `4`; the system actors (the ambient
+emitter `FUN_801D6058`, `FUN_801DA51C`, `FUN_801D84D0` and the rest) `2967..24399`
+together. The engine's live field-VM channels land within a few entries of the
+script actors retail ticks (`son` `30` against `31`, `town01` `89` against `89`,
+`concnow` `91` against `97`).
+
+A model actor whose `+0x10 & 4` is up passes the render dispatcher's on-screen
+probe `FUN_8001B73C` before its draw (`0x8001AEBC..0x8001AED8`): the eight
+corners of a box `(r + 1) * 64` either side of its origin in X and Z and
+`(r + 1) * 128` up (`r` the cull radius `+0x58`) are projected, and a model none
+of whose corners lands at `0..320` across and `0..=240` down is not drawn (its
+list entry costs `533` cycles). A move-VM part on draw kind `4` (the sprite
+emitter) costs `3300` cycles drawn and `705` off screen.
+
 The morph stage runs on every object of a gated actor, whatever its lanes
 weigh: `FUN_8001C604` copies the object's vertices to scratch, then for each
 armed lane (`+0x6C`) walks the lane's VDF entry and blends each record naming

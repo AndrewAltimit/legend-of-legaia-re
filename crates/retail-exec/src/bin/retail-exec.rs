@@ -25,6 +25,10 @@ enum Cmd {
     /// frame: record, draw kind, flags, origin, view depth, and the
     /// dispatcher draws, groups, primitives and cycles its drawing ran.
     ActorDraws(UnitsArgs),
+    /// Every entry the field actor tick passes walk on the first whole
+    /// frame: record, tick handler, draw kind, sub-mode, flags and the
+    /// cycles its tick ran.
+    ActorTicks(UnitsArgs),
     /// Print where a PCSX-Redux state's CPU stood and the interrupt and
     /// counter registers it saved.
     StateInfo {
@@ -146,6 +150,16 @@ impl StateArg {
 
 fn main() -> Result<()> {
     match Cli::parse().cmd {
+        Cmd::ActorTicks(a) => {
+            let s = a.state.load()?;
+            println!("actor,handler,kind,submode,flags,cycles");
+            for t in psx_retail_exec::field_units::actor_ticks(&s)? {
+                println!(
+                    "{:08X},{:08X},{},{},{:08X},{}",
+                    t.actor, t.handler, t.kind, t.submode, t.flags, t.cycles
+                );
+            }
+        }
         Cmd::ActorDraws(a) => {
             let s = a.state.load()?;
             println!(

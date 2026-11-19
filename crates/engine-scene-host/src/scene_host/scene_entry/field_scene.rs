@@ -1627,6 +1627,16 @@ pub fn field_cost_table(
             .and_then(|g| g.as_ref())
             .map(|g| mesh_of(&g.tmd, &g.raw))
     };
+    // The primitives of a mesh's first `i + 1` objects, at `[i]`.
+    let prims_through = |tmd: &legaia_tmd::Tmd| {
+        tmd.objects
+            .iter()
+            .scan(0u32, |acc, o| {
+                *acc += o.header.n_primitive;
+                Some(clamp16(*acc))
+            })
+            .collect::<Vec<u16>>()
+    };
     let prims_of = |m: &legaia_engine_core::world::field_frame_cost::MeshCost| {
         clamp16(m.kinds.iter().map(|&k| u32::from(k)).sum())
     };
@@ -1653,11 +1663,24 @@ pub fn field_cost_table(
         let n = placements.iter().map(|p| p.index + 1).max().unwrap_or(0);
         let mut v = vec![0u16; n];
         let mut m = vec![legaia_engine_core::world::field_frame_cost::MeshCost::default(); n];
+        let mut at = vec![(0i16, 0i16); n];
+        let mut through = vec![Vec::new(); n];
         for p in &placements {
+            at[p.index] = (p.world_x, p.world_z);
             if !p.special_model {
                 v[p.index] = clamp16(size(usize::from(p.model_index))[0]);
                 m[p.index] = mesh(usize::from(p.model_index));
+                if let Some(t) = res.tmds.get(usize::from(p.model_index)) {
+                    through[p.index] = prims_through(&t.tmd);
+                }
             } else if let Some(h) = usize::from(p.model_index).checked_sub(0xF0).and_then(head) {
+                if let Some(g) = usize::from(p.model_index)
+                    .checked_sub(0xF0)
+                    .and_then(|i| head_pool.get(i))
+                    .and_then(|g| g.as_ref())
+                {
+                    through[p.index] = prims_through(&g.tmd);
+                }
                 // The cost table counts a party / savepoint head's mesh as
                 // the actor pass draws it; the NPC catalog's prims count
                 // keeps the scene's own meshes only.
@@ -1665,7 +1688,7 @@ pub fn field_cost_table(
                 m[p.index] = h;
             }
         }
-        (v, m)
+        (v, m, at, through)
     };
     let (ground_tiers, ground_sorted) = FieldCostTable::ground_tiers_from_map(&map);
     Some(FieldCostTable {
@@ -1715,6 +1738,8 @@ pub fn field_cost_table(
         ground_sorted,
         npc_prims: npc_prims.0,
         npc_meshes: npc_prims.1,
+        npc_spawns: npc_prims.2,
+        npc_prims_through: npc_prims.3,
         player: head(0),
     })
 }

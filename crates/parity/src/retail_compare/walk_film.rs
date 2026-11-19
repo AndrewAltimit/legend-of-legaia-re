@@ -360,7 +360,7 @@ impl WalkFilm {
                 let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
                 writeln!(
                     w,
-                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads,placed_near_draws,placed_near_prims,placed_unlisted_draws,placed_unlisted_prims,placed_parked_draws,fitted,derived,box_cells,dec_groups,ground_window,npc_objects,npc_groups,placed_objects,placed_groups,list_actors,player_prims,d_dec,d_ground,d_actor,d_fog,d_tick,morph_vertices,placed_offtest_prims,ground_far,ground_sorted"
+                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads,placed_near_draws,placed_near_prims,placed_unlisted_draws,placed_unlisted_prims,placed_parked_draws,fitted,derived,box_cells,dec_groups,ground_window,npc_objects,npc_groups,placed_objects,placed_groups,list_actors,player_prims,d_dec,d_ground,d_actor,d_fog,d_tick,morph_vertices,placed_offtest_prims,ground_far,ground_sorted,npc_models"
                 )?;
                 Some(w)
             }
@@ -506,7 +506,7 @@ impl WalkFilm {
                 // model's finer counts (`field_frame_units`).
                 writeln!(
                     w,
-                    ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                     legaia_engine_core::world::field_frame_cost::field_frame_cost(&f),
                     legaia_engine_core::world::field_frame_units::derived_field_frame_cost(&f),
                     f.decoration_box_cells,
@@ -528,6 +528,7 @@ impl WalkFilm {
                     f.placed_offtest_kinds.iter().sum::<u32>(),
                     f.ground_far_cells,
                     f.ground_sorted_cells,
+                    f.npc_models,
                 )?;
             }
             if session.host.world.active_scene_label != n0_scene {

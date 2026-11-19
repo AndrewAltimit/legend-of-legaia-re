@@ -142,8 +142,8 @@ pub const VBLANK_INTERRUPT_CYCLES: u32 = 24_900;
 pub const OTHER_INTERRUPT_CYCLES_PER_VSYNC: u32 = 5_000;
 
 use super::field_frame_cost::{
-    COST_PER_CYCLER_CALL, COST_PER_CYCLER_TEXEL, COST_PER_CYCLER_ZERO_TEXEL, COST_PER_PART,
-    FIELD_FRAME_COST_MAX, FieldFrameFeatures,
+    COST_PER_CYCLER_CALL, COST_PER_CYCLER_TEXEL, COST_PER_CYCLER_ZERO_TEXEL, FIELD_FRAME_COST_MAX,
+    FieldFrameFeatures,
 };
 
 /// PCSX-Redux cycles a scanline, x 100 (`33868800 / 60 / 263`).
@@ -199,6 +199,10 @@ const PLACED_MESH_CYCLES: i64 = 75 + 200;
 const MORPH_CALL_CYCLES: i64 = 396 + 333;
 const MORPH_COPY_CYCLES: i64 = 22;
 const MORPH_VERTEX_CYCLES: i64 = 61;
+/// A move-VM part on draw kind `4`, its sprite-emitter draw through the
+/// actor pass: `3300` drawn, `705` off screen, `3071` at
+/// `uru2_field_door_hop`'s `62` drawn of `68`.
+const SPRITE_PART_CYCLES: i64 = 3071;
 /// A fog record, its half-sheets kept (`233`) and culled (`149`); each
 /// record emits two.
 const FOG_RECORD_CYCLES: i64 = 655;
@@ -209,20 +213,34 @@ const FOG_CULLED_CYCLES: i64 = 149;
 /// actor of `10` objects and `388` primitives at the actor pool's mean
 /// (`136` a primitive), the shape of `stone_field_door_hop`'s only model.
 const PLAYER_CYCLES: i64 = NPC_CYCLES + 10 * NPC_OBJECT_CYCLES + 10 * GROUP_CYCLES + 388 * 136;
-/// The render lists' entries the walk tests (`50..61` cycles each): the
-/// ten states hold `30..97`, their mean `59`.
-const LIST_ENTRY_CYCLES: i64 = 59 * 58;
+/// A render-list entry the walk tests (`50..61` cycles, mean `59`).
+const LIST_ENTRY_CYCLES: i64 = 59;
+/// The lists' entries besides the script actors and the parts: the player
+/// and the system actors.
+const LIST_FIXED_ENTRIES: i64 = 5;
 
-/// Fitted, not derived: the tick passes' own work besides the ambient parts
-/// and the cyclers (`son_field_door_hop`'s actor tick passes, `11.9`
-/// hblanks), and the frame driver's work outside the priced passes and the
-/// pacer's measure past it (`2..6` hblanks over the ten states).
-const TICK_BASE_HBLANKS: i64 = 10;
+/// The tick passes (`FUN_8002519C`, `retail-exec actor-ticks` over thirteen
+/// states): a script actor's tick through `FUN_8003BC08` (`485`, `669`
+/// entries), the player's (`FUN_801D1344`: `5071` standing, `31115`
+/// walking or running, `3106..44018` in all), the system actors' (the
+/// ambient emitter, the camera and the rest: `2967..24399`, mean `12300`),
+/// a sprite part's (`1475`), and any other move-VM part's own tick off a
+/// cycler upload (`689..3940`, mean `2243` over `35`; an upload frame adds
+/// the cycler terms).
+const TICK_ACTOR_CYCLES: i64 = 485;
+const TICK_PLAYER_STILL_CYCLES: i64 = 5_071;
+const TICK_PLAYER_MOVING_CYCLES: i64 = 31_115;
+const TICK_SYSTEM_CYCLES: i64 = 12_300;
+const TICK_SPRITE_PART_CYCLES: i64 = 1_475;
+const TICK_PART_CYCLES: i64 = 2_243;
+
+/// Fitted, not derived: the frame driver's work outside the priced passes
+/// and the pacer's measure past it (`2..6` hblanks over the ten states).
 const OTHER_HBLANKS: i64 = 4;
 
 /// The frame time, in hblanks, a field frame that draws `f` costs on
 /// PCSX-Redux's clock, priced from the derived per-unit table: the work of
-/// each pass from its counts, the fitted tick share, and the interrupts the
+/// each pass from its counts, the tick passes, the fitted other work, and the interrupts the
 /// work spans (`VBLANK_INTERRUPT_CYCLES` and `OTHER_INTERRUPT_CYCLES_PER_VSYNC`
 /// once every `263` hblanks of work).
 ///
@@ -236,7 +254,7 @@ pub fn derived_field_frame_cost(f: &FieldFrameFeatures) -> i32 {
 
 /// [`derived_field_frame_cost`] by part, in hblanks: the decoration pass,
 /// the ground emitter, the actor render passes, the fog walk, the tick share
-/// (cyclers, parts, the fitted base and other work), and the whole price
+/// (the tick passes, the cyclers and the fitted other work), and the whole price
 /// with the interrupt term.
 pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
     let kinds = |k: &[u32; 12], w: &[i64; 12]| -> i64 {
@@ -248,7 +266,9 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         .max(0);
     let decoration = 1622
         + n(f.decoration_rows) * 24
-        + n(f.decoration_box_cells) * 99
+        // A drawn cell's path (`503`) is the whole iteration, its box test
+        // among it: the box's other cells take the `99` one.
+        + (n(f.decoration_box_cells) - n(f.decoration_draws)).max(0) * 99
         + outside * 54
         + n(f.decoration_draws) * DECORATION_DRAW_CYCLES
         + n(f.decoration_groups) * GROUP_CYCLES
@@ -261,7 +281,7 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + (n(f.ground_cells) - n(f.ground_far_cells) - n(f.ground_sorted_cells)).max(0)
             * GROUND_WALK_CELL_CYCLES;
     let actors = 5 * 120
-        + LIST_ENTRY_CYCLES
+        + (n(f.tick_actors) + n(f.parts) + LIST_FIXED_ENTRIES) * LIST_ENTRY_CYCLES
         + f.player.map_or(PLAYER_CYCLES, |m| {
             let k: [u32; 12] = m.kinds.map(u32::from);
             NPC_CYCLES
@@ -274,25 +294,33 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + n(f.placed_groups) * GROUP_CYCLES
         + kinds(&f.placed_kinds, &ACTOR_PRIM_CYCLES)
         + kinds(&f.placed_offtest_kinds, &ACTOR_OFFTEST_PRIM_CYCLES)
-        + n(f.npcs) * NPC_CYCLES
+        + n(f.npc_models) * NPC_CYCLES
         + n(f.npc_objects) * NPC_OBJECT_CYCLES
         + n(f.npc_groups) * GROUP_CYCLES
         + kinds(&f.npc_kinds, &ACTOR_PRIM_CYCLES)
+        + kinds(&f.npc_cued_kinds, &ACTOR_OFFTEST_PRIM_CYCLES)
+        + n(f.sprite_parts) * SPRITE_PART_CYCLES
         + n(f.morph_calls) * MORPH_CALL_CYCLES
         + n(f.morph_copied) * MORPH_COPY_CYCLES
         + n(f.morph_vertices) * MORPH_VERTEX_CYCLES;
     let fog = n(f.fog) * FOG_RECORD_CYCLES
         + n(f.fog_quads) * FOG_KEPT_CYCLES
         + (2 * n(f.fog) - n(f.fog_quads)).max(0) * FOG_CULLED_CYCLES;
-    let cycles = decoration + ground + actors + fog;
-    // The measured and fitted terms the field model carries, in 1/1024 hblank.
+    let tick = if f.player_moving {
+        TICK_PLAYER_MOVING_CYCLES
+    } else {
+        TICK_PLAYER_STILL_CYCLES
+    } + n(f.tick_actors) * TICK_ACTOR_CYCLES
+        + TICK_SYSTEM_CYCLES
+        + n(f.sprite_parts) * TICK_SPRITE_PART_CYCLES
+        + n(f.parts).saturating_sub(n(f.sprite_parts)) * TICK_PART_CYCLES;
+    let cycles = decoration + ground + actors + fog + tick;
+    // The cyclers' measured terms, in 1/1024 hblank.
     let ticked = n(f.cycler_calls) * COST_PER_CYCLER_CALL
         + n(f.cycler_texels) * COST_PER_CYCLER_TEXEL
-        + n(f.cycler_zero_texels) * COST_PER_CYCLER_ZERO_TEXEL
-        + n(f.parts) * COST_PER_PART;
-    let work_x100 = cycles * 10_000 / CYCLES_PER_HBLANK_X100
-        + (ticked >> 10) * 100
-        + (TICK_BASE_HBLANKS + OTHER_HBLANKS) * 100;
+        + n(f.cycler_zero_texels) * COST_PER_CYCLER_ZERO_TEXEL;
+    let work_x100 =
+        cycles * 10_000 / CYCLES_PER_HBLANK_X100 + (ticked >> 10) * 100 + OTHER_HBLANKS * 100;
     // Each 263 hblanks of work takes one vblank interrupt and the vsync's
     // others.
     let irq = i64::from(VBLANK_INTERRUPT_CYCLES + OTHER_INTERRUPT_CYCLES_PER_VSYNC);
@@ -303,7 +331,7 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         hb(ground),
         hb(actors),
         hb(fog),
-        ((ticked >> 10) + TICK_BASE_HBLANKS + OTHER_HBLANKS) as i32,
+        hb(tick) + ((ticked >> 10) + OTHER_HBLANKS) as i32,
         (total_x100 / 100).clamp(0, FIELD_FRAME_COST_MAX) as i32,
     ]
 }
@@ -340,6 +368,7 @@ mod tests {
             ground_window_cells: 1333,
             ground_rows: 43,
             npcs: 6,
+            npc_models: 6,
             npc_objects: 76,
             npc_groups: 285,
             list_actors: 41,

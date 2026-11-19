@@ -43,6 +43,29 @@ pub struct MeshCost {
     pub kinds: [u16; 12],
 }
 
+impl MeshCost {
+    /// The mesh as an actor whose clip binds `bones` objects draws it: the
+    /// object loop runs over the clip's bone count (`FUN_8001B964`), so the
+    /// objects past it are not drawn. Groups and primitives by kind scale by
+    /// the drawn objects' share of the primitives.
+    /// `prims_through[i]` is the primitives of its first `i + 1` objects.
+    pub fn cut_to(&self, bones: usize, prims_through: &[u16]) -> MeshCost {
+        let n = usize::from(self.objects);
+        if bones == 0 || bones >= n || prims_through.len() < n {
+            return *self;
+        }
+        let total = u32::from(prims_through[n - 1]).max(1);
+        let kept = u32::from(prims_through[bones - 1]);
+        let scale = |v: u16| (u32::from(v) * kept / total) as u16;
+        MeshCost {
+            objects: bones as u16,
+            verts: scale(self.verts),
+            groups: scale(self.groups),
+            kinds: self.kinds.map(scale),
+        }
+    }
+}
+
 /// One decoration draw of the scene's terrain layer: its `.MAP` cell, its
 /// record's cull radius and its pack mesh's size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -114,6 +137,11 @@ pub struct FieldCostTable {
     pub npc_prims: Vec<u16>,
     /// Each placement slot's spawn mesh as the dispatcher sees it, by slot.
     pub npc_meshes: Vec<MeshCost>,
+    /// Each placement slot's spawn tile centre `(x, z)`, by slot.
+    pub npc_spawns: Vec<(i16, i16)>,
+    /// Each placement slot's spawn mesh, the primitives of its first
+    /// `i + 1` objects at `[i]` ([`MeshCost::cut_to`]).
+    pub npc_prims_through: Vec<Vec<u16>>,
     /// The player's model (PROT 0874 §0 head `0`), which the actor passes
     /// draw every field frame and no placement holds.
     pub player: Option<MeshCost>,
@@ -296,6 +324,29 @@ pub fn placed_near_rejected(
     depth < if p.posed { 0xA1 } else { 0xA0 }
 }
 
+/// The render dispatcher's on-screen probe `FUN_8001B73C` for an actor at
+/// `[x, y, z]` with cull radius `r` (`+0x58`): the eight corners of the box
+/// `(r + 1) * 64` either side in X and Z and `(r + 1) * 128` up from its
+/// origin, projected; on screen when any lands at `0..320` across and
+/// `0..=240` down.
+// PORT: FUN_8001B73C
+pub fn actor_box_on_screen(
+    g: &legaia_render_kernels::gte::FieldGteView,
+    [x, y, z]: [i16; 3],
+    r: i16,
+) -> bool {
+    let half = (r + 1) << 6;
+    let up = (r + 1) << 7;
+    [y, y.wrapping_sub(up)].into_iter().any(|cy| {
+        [(-half, -half), (half, -half), (-half, half), (half, half)]
+            .into_iter()
+            .any(|(dx, dz)| {
+                let (sx, sy) = g.rtps([x.wrapping_add(dx), cy, z.wrapping_add(dz)]).sxy;
+                (0..0x140).contains(&sx) && (0..0xF1).contains(&sy)
+            })
+    })
+}
+
 /// The matrix `FUN_800172C0` builds from the camera globals `g`: the field
 /// base matrix times the angles' rotation, the eye trio as `TR` past the
 /// focus. Only its `MAC3` is read, so the screen constants are the field's.
@@ -413,10 +464,23 @@ pub struct FieldFrameFeatures {
     /// The placed meshes' primitives that take the off-screen-tested
     /// depth-cued leaves (a non-zero cull radius).
     pub placed_offtest_kinds: [u32; 12],
+    /// The placements whose meshes the hosts draw this frame (the derived
+    /// model's count; [`Self::npcs`] is the fitted model's).
+    pub npc_models: u32,
     pub npc_objects: u32,
     pub npc_groups: u32,
     pub npc_kinds: [u32; 12],
+    /// The models' primitives through the depth-cued leaves (a colour word
+    /// with a non-zero mode byte).
+    pub npc_cued_kinds: [u32; 12],
     pub list_actors: u32,
+    /// The live script actors (field-VM channels: placements and bound
+    /// objects), each an entry of the tick and render lists.
+    pub tick_actors: u32,
+    /// Whether the player moved on the last tick.
+    pub player_moving: bool,
+    /// The live move-VM parts on draw kind `4` (the sprite emitter).
+    pub sprite_parts: u32,
     /// The draws' morph substitution: `FUN_8001C604` calls, the vertices
     /// they copy, and the vertices `FUN_8005B038` blends.
     pub morph_calls: u32,
@@ -677,17 +741,84 @@ impl World {
                 f.npcs += 1;
                 f.npc_prims +=
                     u32::from(table.npc_prims.get(usize::from(slot)).copied().unwrap_or(0));
-                if let Some(m) = table.npc_meshes.get(usize::from(slot)) {
-                    f.add_morph(self.field_morph_work(MorphOwner::Placement(slot), m));
-                    f.npc_objects += u32::from(m.objects);
-                    f.npc_groups += u32::from(m.groups);
-                    for (k, n) in f.npc_kinds.iter_mut().zip(m.kinds) {
-                        *k += u32::from(n);
-                    }
+            }
+        }
+        // The derived counts take every placement the hosts draw a mesh for
+        // (a placement with no talk text, such as `teien`'s Genesis tree
+        // `P1[1]`, holds no `npcs.positions` anchor and stands at its spawn),
+        // where the hosts draw it (`field_npc_live_anchor`: none while
+        // parked or at zero scale).
+        for (i, m) in table.npc_meshes.iter().enumerate() {
+            let (Ok(slot), Some(&spawn)) = (u8::try_from(i), table.npc_spawns.get(i)) else {
+                continue;
+            };
+            if m.objects == 0 {
+                continue;
+            }
+            let Some([x, y, z]) = self.field_npc_live_anchor(slot, spawn) else {
+                continue;
+            };
+            if self.field_npc_culled(x as i16, z as i16) {
+                continue;
+            }
+            // The dispatcher's near reject on the actor's view depth
+            // (`slti v0,v0,0xa1` at `0x8001AE9C`).
+            let at = [x as i16, y as i16, z as i16];
+            if gte.as_ref().is_some_and(|g| g.rtps(at).mac[2] < 0xA1) {
+                continue;
+            }
+            // A model whose `+0x10 & 4` is up draws only when its box
+            // reaches the screen (`0x8001AEBC..0x8001AED8`).
+            let probed = self.field_vm.channels.iter().any(|c| {
+                !c.object_bind && c.placement_index == usize::from(slot) && c.ctx.flags & 4 != 0
+            });
+            if probed && gte.as_ref().is_some_and(|g| !actor_box_on_screen(g, at, 0)) {
+                continue;
+            }
+            let cut;
+            let m = match self.npcs.clip_bones.get(&slot) {
+                Some(&bones) => {
+                    cut = m.cut_to(
+                        bones,
+                        table.npc_prims_through.get(i).map_or(&[][..], |v| &v[..]),
+                    );
+                    &cut
                 }
+                None => m,
+            };
+            f.npc_models += 1;
+            f.add_morph(self.field_morph_work(MorphOwner::Placement(slot), m));
+            f.npc_objects += u32::from(m.objects);
+            f.npc_groups += u32::from(m.groups);
+            // The actor's colour word `+0x74` (the channel's `field_74`): a
+            // non-zero mode byte sends its primitives through the depth-cued
+            // leaves (`koin1b`'s `0x10808080` models).
+            let cued = self.field_vm.channels.iter().any(|c| {
+                !c.object_bind
+                    && c.placement_index == usize::from(slot)
+                    && c.ctx.field_74 & 0xFF00_0000 != 0
+            });
+            let bank = if cued {
+                &mut f.npc_cued_kinds
+            } else {
+                &mut f.npc_kinds
+            };
+            for (k, n) in bank.iter_mut().zip(m.kinds) {
+                *k += u32::from(n);
             }
         }
         f.list_actors = self.actors.iter().filter(|a| a.active).count() as u32;
+        // The tick passes' entries (`FUN_8002519C`), one per live script
+        // actor: the placements and the bound objects.
+        f.tick_actors = self
+            .field_vm
+            .channels
+            .iter()
+            .filter(|c| c.is_live())
+            .count() as u32;
+        f.player_moving = self
+            .player_actor_slot
+            .is_some_and(|s| self.locomotion.actor_moving.contains(&s));
         f.player = table.player;
         f.fog = u32::from(self.fog.live);
         // The quads the last walk left; a closed gate runs no walk.
@@ -697,6 +828,14 @@ impl World {
             0
         };
         f.parts = self.ambient.fx.iter().filter(|p| !p.finished).count() as u32;
+        // The move-VM parts the actor passes draw through the procedural
+        // sprite emitter (draw kind `+0x56 == 4`).
+        f.sprite_parts = self
+            .ambient
+            .fx
+            .iter()
+            .filter(|p| !p.finished && p.state.move_substate == 4)
+            .count() as u32;
         // The CLUT-cell cyclers that upload on this frame's tick: the arm runs
         // `FUN_80019D50` on a part whose gate `+0x9C` already reads past `1`
         // (the tick has not run yet, so the gate is the last tick's).
@@ -774,6 +913,8 @@ mod tests {
             ground_sorted: Vec::new(),
             npc_prims: Vec::new(),
             npc_meshes: Vec::new(),
+            npc_spawns: Vec::new(),
+            npc_prims_through: Vec::new(),
             player: None,
         }));
         assert_eq!(w.field_frame_features(), None, "no view published");

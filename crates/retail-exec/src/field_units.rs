@@ -618,3 +618,49 @@ pub fn actor_draws(state: &PcsxState) -> Result<Vec<ActorDraw>> {
     }
     Ok(out)
 }
+
+/// One entry the field actor tick passes (`FUN_8002519C`) walk.
+#[derive(Debug, Clone, Default)]
+pub struct ActorTick {
+    pub actor: u32,
+    /// Its tick handler (`+0x0C`), which the pass calls for an actor with
+    /// `+0x10 & 8` clear.
+    pub handler: u32,
+    pub kind: u16,
+    pub submode: u16,
+    pub flags: u32,
+    /// Cycles from the entry's loop head to the next's, its handler's
+    /// whole tick among them.
+    pub cycles: u64,
+}
+
+/// Every entry the five actor tick passes walk on the first whole frame,
+/// in walk order.
+pub fn actor_ticks(state: &PcsxState) -> Result<Vec<ActorTick>> {
+    const HEAD: u32 = 0x8002_51D4;
+    const EXIT: u32 = 0x8002_52C4;
+    const S0: usize = 16;
+    let mut run = FrameRunner::with_routines(state, &[]);
+    run.settle()?;
+    run.cpu.marks = [HEAD, EXIT].into_iter().collect();
+    run.cpu.mark_reg = S0;
+    run.frame()?;
+    let log = std::mem::take(&mut run.cpu.mark_log);
+    let mut out = Vec::new();
+    for w in log.windows(2) {
+        if w[0].0 != HEAD {
+            continue;
+        }
+        let a = w[0].2;
+        let mem = &mut run.cpu.mem;
+        out.push(ActorTick {
+            actor: a,
+            handler: mem.rd32(a + 0x0C),
+            kind: mem.rd16(a + 0x56),
+            submode: mem.rd16(a + 0x5A),
+            flags: mem.rd32(a + 0x10),
+            cycles: w[1].1 - w[0].1,
+        });
+    }
+    Ok(out)
+}
