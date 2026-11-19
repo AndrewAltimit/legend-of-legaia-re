@@ -418,6 +418,23 @@ not model (the drive never answers it): see
 The runner reaches no state inside the KO's special; a fighter's mesh on the
 depth-cued leaves its ghosts draw through is priced off the leaf table above.
 
+The other minigame states in the library, twenty frames each with the
+interrupts in, against the floor each venue stores (`_DAT_8007B9D8`):
+
+| States | Runner's frames | Law alone | Floor | Step |
+|---|---:|---:|---:|---:|
+| Dance hall (`minigame_dance_retail_*`, five states) | `458..478` | `2` | `3` | `3` |
+| Fishing shore, cast and fight (`minigame_fishing_retail_*`) | `487..620` | `3` | `2` | `3` |
+| Fishing landing (`..._catch_lift`) | `632..700` | `3` | `2` | `3` |
+| Fishing plate (`..._catch_plate`) | `501..506` | `2` | `2` | `2` |
+| Muscle Dome hub cards | `6..11` | `1` | `2` | `2` |
+| Baka Fighter attract card | `6..7` | `1` | `1` | `1` |
+
+The dance hall's step is its floor on any machine, so the port's pinned `3`
+is retail's. The pond's frames read `3` on their own work, with the drive
+idle: on PCSX-Redux's scale the venue runs above the floor of `2` the port
+pins ([fishing](../subsystems/minigame-fishing.md#the-venues-game-tick)).
+
 ## Limits
 
 - PCSX-Redux states only; a Mednafen state carries no register file this
