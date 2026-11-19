@@ -144,6 +144,16 @@ it leaves empty `10`, with the triangle walk, the texture cache (off the meshes'
 TSB and CBA words) and the CLUT cache as above. Over a retail table's polygons it gives
 the Python price to the hundredth of an hblank (`keikoku_chest_pre` `255.72`,
 `zenoir_summon_mid_cast` `234.85`, polygons only).
+
+Over the engine's own table (the window's frame on the seeded state, `retail-compare
+--images` with `LEGAIA_DIAG_GPU_COST`, whose last column is this price) it lands near the
+entries mednafen's films record on the same states, though the engine links more polygons
+than retail does:
+
+| State | Mednafen entry (film median) | Engine, Mednafen price | Engine, DuckStation price | Polygons, retail / engine |
+|---|---:|---:|---:|---:|
+| `keikoku_chest_pre` | `271` | `262` | `280` | `1130` / `1776` |
+| `zenoir_summon_mid_cast`, action state `0x35` phase `3` | `241` | `248` | `277` | `676` / `1305` |
 `WorldToggles::gpu_cost_timing` (`LEGAIA_GPU_COST_TIMING=mednafen`) hands that figure to the
 GPU-cost frame steps in place of DuckStation's, and `WorldToggles::field_gpu_cost_step`
 (`LEGAIA_FIELD_GPU_COST=1`) gives the field the same `max(cpu, gpu of the previous table)`
