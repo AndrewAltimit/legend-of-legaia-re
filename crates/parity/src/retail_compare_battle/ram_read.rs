@@ -234,6 +234,16 @@ const HEAL_CUE_PROGRAM_OFFSETS: [u16; 14] = [
     0x70, 0x72, 0x74, 0x76, 0x78, 0x80, 0x82, 0x84, 0x90, 0x92, 0x94, 0x96, 0x98, 0x9A,
 ];
 
+/// A heal cue pillar's first morph lane `+0xA0`, the ring's width: it grows
+/// its up rate `+0xB8` (`91`) a vsync for the cue's whole wait, so like the
+/// banks it is a clock of the part's age and is seated taken back the display
+/// lag ([`displayed_morph_halfword`]). A `--retail-parts` film of the cue
+/// (`battle_rugi_barra_strike` played on to the round-end regen) steps it
+/// `0x111` a step-`3` pass and `0x16C` a step-`4` one; the RAM of
+/// `battle_menu_rugi_barra_retail` holds `0xC71`, two passes ahead of the
+/// rings on screen.
+const HEAL_CUE_LANE: u16 = 0xA0;
+
 /// The art speed lines: the effect-script table arm's codes `10`, `45`,
 /// `46` and `47` (`0x801F6324[10]`, `[45..=47]`), each a library mesh `13`
 /// ray fan seated by `FUN_801DEA50` on the acting actor's facing turned
@@ -427,7 +437,10 @@ pub(super) fn retail_action_fx_parts(
                     pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
                         .iter()
                         .chain(&HEAL_CUE_PROGRAM_OFFSETS)
-                        .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                        .map(|&o| match o {
+                            HEAL_CUE_LANE => (o, displayed_morph_halfword(ram, n, o, lag)),
+                            _ => (o, displayed_part_halfword(ram, n, o, lag)),
+                        })
                         .collect(),
                 };
             }
