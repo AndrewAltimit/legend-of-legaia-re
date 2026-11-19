@@ -143,10 +143,12 @@ fn main() -> Result<()> {
     match Cli::parse().cmd {
         Cmd::ActorDraws(a) => {
             let s = a.state.load()?;
-            println!("actor,kind,flags,flags52,x,y,z,depth,draws,groups,prims,cycles");
+            println!(
+                "actor,kind,flags,flags52,x,y,z,depth,draws,groups,prims,cycles,view_x,view_y,morph_vertices,colour"
+            );
             for d in psx_retail_exec::field_units::actor_draws(&s)? {
                 println!(
-                    "{:08X},{},{:08X},{:04X},{},{},{},{},{},{},{},{}",
+                    "{:08X},{},{:08X},{:04X},{},{},{},{},{},{},{},{},{},{},{},{:08X}",
                     d.actor,
                     d.kind,
                     d.flags,
@@ -158,7 +160,11 @@ fn main() -> Result<()> {
                     d.draws,
                     d.groups,
                     d.prims,
-                    d.cycles
+                    d.cycles,
+                    d.view[0],
+                    d.view[1],
+                    d.morph_vertices,
+                    d.colour
                 );
             }
         }

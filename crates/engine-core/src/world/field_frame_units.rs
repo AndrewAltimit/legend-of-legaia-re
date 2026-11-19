@@ -35,10 +35,10 @@ pub const FIELD_UNIT_CYCLES_X10: &[(&str, u32, u32)] = &[
     ("actor.morph lane[-]", 60, 34),
     ("actor.morph vertex[-]", 610, 2215),
     ("actor.object[-]", 9188, 287),
-    ("actor.object[posed]", 12519, 56),
+    ("actor.object[morph]", 12519, 56),
     ("actor.placed mesh[drawn]", 748, 87),
-    ("actor.pose[-]", 2532, 69),
-    ("actor.track[-]", 220, 1939),
+    ("actor.morph stage[-]", 2532, 69),
+    ("actor.morph copy[-]", 220, 1939),
     ("decoration.call", 16220, 10),
     ("decoration.cell[-]", 543, 4420),
     ("decoration.cell[drawn+inbox+record]", 5031, 461),
@@ -156,10 +156,18 @@ const CYCLES_PER_HBLANK_X100: i64 = 214_631;
 /// the actor figure.
 pub const DECORATION_PRIM_CYCLES: [i64; 12] =
     [120, 204, 120, 141, 157, 137, 100, 166, 179, 152, 168, 188];
-/// The same for the actor render passes, mostly the opaque leaves with no
-/// off-screen test.
+/// The same for the actor render passes' opaque leaves (an actor whose colour
+/// word `+0x74` has a zero high byte: the models, and the placed meshes with
+/// no cull radius), pooled over the fourteen profiled states.
 pub const ACTOR_PRIM_CYCLES: [i64; 12] =
-    [120, 204, 120, 141, 99, 115, 109, 129, 140, 144, 153, 174];
+    [120, 204, 120, 141, 98, 112, 104, 125, 118, 130, 122, 152];
+/// The actor passes' depth-cued leaves with the off-screen test, which a
+/// placed mesh with a cull radius takes (`+0x1E != 0` ORs `+0x74` bit
+/// `0x40000000`), pooled the same way. Kinds `12`/`13` never drew there and
+/// take kinds `14`/`15`'s figures; the light-source kinds are bank-invariant
+/// but for kind `11`'s test.
+pub const ACTOR_OFFTEST_PRIM_CYCLES: [i64; 12] =
+    [120, 184, 151, 213, 133, 145, 189, 209, 199, 188, 196, 199];
 
 /// A primitive group through the dispatcher: its decode (`71`) and the
 /// leaf's set-up (`40` a triangle group, `46` a quad one).
@@ -167,14 +175,15 @@ const GROUP_CYCLES: i64 = 71 + 43;
 /// A drawn decoration cell's own path (`503`) and its dispatcher draw
 /// (`200`).
 const DECORATION_DRAW_CYCLES: i64 = 503 + 200;
-/// A ground walk cell, the plain (`282`) and sorted (`314`) paths averaged
-/// as the ten states hold them.
-const GROUND_WALK_CELL_CYCLES: i64 = 298;
-/// A model object, at the ten states' mix: `287` of their `343` objects
-/// unposed (`919`), `56` posed (`1252`), with `69` poses (`253`) and `1939`
-/// tracks (`22`) among them, `1150` a mean object, and its dispatcher draw
-/// (`200`).
-const NPC_OBJECT_CYCLES: i64 = 1150 + 200;
+/// A ground walk cell: the plain path (`282`), the depth-sorted one
+/// (`314`), and one the near test drops after its corners' transform
+/// (`221`).
+const GROUND_WALK_CELL_CYCLES: i64 = 282;
+const GROUND_SORTED_CELL_CYCLES: i64 = 314;
+const GROUND_FAR_CELL_CYCLES: i64 = 221;
+/// A model object off the morph stage, the ten states' `287` such objects'
+/// mean (`919`), and its dispatcher draw (`200`).
+const NPC_OBJECT_CYCLES: i64 = 919 + 200;
 /// A drawn model actor: its list entry's path (`148`) and the model set-up
 /// (`1297`).
 const NPC_CYCLES: i64 = 148 + 1297;
@@ -182,6 +191,14 @@ const NPC_CYCLES: i64 = 148 + 1297;
 /// draw, `200`).
 const PLACED_CYCLES: i64 = 1202;
 const PLACED_MESH_CYCLES: i64 = 75 + 200;
+/// The draw's morph substitution: per object, the `FUN_8001C604` call
+/// (`396` besides its copy, `rim_elm_zoom_intro_pcsx`'s four tide meshes)
+/// and the object path's own share (`son_field_door_hop`'s `56` objects on
+/// the stage cost `1252` against the pool's `919`); a vertex the call
+/// copies (`22`), a vertex `FUN_8005B038` blends (`61`).
+const MORPH_CALL_CYCLES: i64 = 396 + 333;
+const MORPH_COPY_CYCLES: i64 = 22;
+const MORPH_VERTEX_CYCLES: i64 = 61;
 /// A fog record, its half-sheets kept (`233`) and culled (`149`); each
 /// record emits two.
 const FOG_RECORD_CYCLES: i64 = 655;
@@ -239,7 +256,10 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
     let ground = 129
         + n(f.ground_rows) * 24
         + (n(f.ground_window_cells) - n(f.ground_cells)).max(0) * 35
-        + n(f.ground_cells) * GROUND_WALK_CELL_CYCLES;
+        + n(f.ground_far_cells) * GROUND_FAR_CELL_CYCLES
+        + n(f.ground_sorted_cells) * GROUND_SORTED_CELL_CYCLES
+        + (n(f.ground_cells) - n(f.ground_far_cells) - n(f.ground_sorted_cells)).max(0)
+            * GROUND_WALK_CELL_CYCLES;
     let actors = 5 * 120
         + LIST_ENTRY_CYCLES
         + f.player.map_or(PLAYER_CYCLES, |m| {
@@ -253,10 +273,14 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + n(f.placed_objects) * PLACED_MESH_CYCLES
         + n(f.placed_groups) * GROUP_CYCLES
         + kinds(&f.placed_kinds, &ACTOR_PRIM_CYCLES)
+        + kinds(&f.placed_offtest_kinds, &ACTOR_OFFTEST_PRIM_CYCLES)
         + n(f.npcs) * NPC_CYCLES
         + n(f.npc_objects) * NPC_OBJECT_CYCLES
         + n(f.npc_groups) * GROUP_CYCLES
-        + kinds(&f.npc_kinds, &ACTOR_PRIM_CYCLES);
+        + kinds(&f.npc_kinds, &ACTOR_PRIM_CYCLES)
+        + n(f.morph_calls) * MORPH_CALL_CYCLES
+        + n(f.morph_copied) * MORPH_COPY_CYCLES
+        + n(f.morph_vertices) * MORPH_VERTEX_CYCLES;
     let fog = n(f.fog) * FOG_RECORD_CYCLES
         + n(f.fog_quads) * FOG_KEPT_CYCLES
         + (2 * n(f.fog) - n(f.fog_quads)).max(0) * FOG_CULLED_CYCLES;
@@ -302,10 +326,9 @@ mod tests {
     /// units: `2480` decoration primitives in `92` draws and `247` groups,
     /// `2173` span cells all in the box over `53` rows, `1333` ground window
     /// cells none walkable, `6` models besides the player's with `76` objects and `285` groups,
-    /// `2158` actor primitives, the player's among them) prices within a tenth of
-    /// its ring (`610..621` hblanks with interrupts); the models' objects are
-    /// priced posed at the pool's mean, where `son` poses `56` of its `86` at
-    /// `16` tracks each against the pool's `28`.
+    /// `2158` actor primitives, the player's among them, and four models' `56`
+    /// objects through the morph stage: `893` vertices copied, `120` blended)
+    /// prices within a tenth of its ring (`610..621` hblanks with interrupts).
     #[test]
     fn son_prices_near_its_ring() {
         let mut f = FieldFrameFeatures {
@@ -321,6 +344,9 @@ mod tests {
             npc_groups: 285,
             list_actors: 41,
             parts: 1,
+            morph_calls: 56,
+            morph_copied: 893,
+            morph_vertices: 120,
             ..FieldFrameFeatures::default()
         };
         f.decoration_kinds[17 - 8] = 504;

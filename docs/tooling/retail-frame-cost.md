@@ -185,19 +185,26 @@ on every state to the cycle; the rest vary by what the path computes:
 | ground row / window cell | `24` / `35` | `0.011` / `0.016` | the emitter's window, rows and cells |
 | ground walk-visible cell | `282` | `0.131` | cells with `0x1000` |
 | ... with the sort bit | `314` | `0.146` | those whose sorted path runs (`0x801F6FA0`) |
+| ... dropped by the near test | `221` | `0.103` | those whose `(col, row + 1)` corner transforms nearer than `SZ 0x40` (`0x801F6F6C`) |
 | actor list entry | `50..61` | `0.025` | every entry of the five lists |
 | model actor | `148 + 1297` | `0.67` | each NPC / skinned actor drawn |
-| model object | `919` / `1252` posed | `0.43` / `0.58` | each object of a drawn model |
-| pose | `253` + `22` a track | `0.12` | each posed object, its tracks |
-| morph vertex | `61` | `0.028` | each vertex a morph lane blends (`FUN_8005B038`) |
+| model object | `919` / `1252` on the morph stage | `0.43` / `0.58` | each object of a drawn model |
+| morph stage | `235..404` + `22` a vertex copied | `0.11..0.19` | each object of an actor whose `+0x10 & 0x1000` is up (`FUN_8001C604`), its vertices |
+| morph vertex | `61` | `0.028` | each vertex of an armed lane's VDF records (`FUN_8005B038`), whatever the lane's weight |
 | placed actor | `1202` | `0.56` | each placed object drawn |
 | placed mesh | `75` | `0.035` | each of its meshes |
 | fog record | `635..677` | `0.30` | each live fog record |
 | fog half-sheet | `149` culled / `233` kept | `0.069` / `0.109` | each half-sheet the walk emits |
 
 A primitive costs by its leaf (kind `flags >> 1`, bank) and what became of it.
-The decoration draws through the depth-cued leaves with the off-screen test
-(colour word `0x40`), the actors through the opaque leaves without it:
+The colour word `+0x74` picks the bank: a non-zero high byte the depth-cued
+leaves, and bit `0x40000000` the off-screen test inside them. The decoration
+draws through the depth-cued leaves with the test, the models through the
+opaque leaves, and a placed actor through whichever its descriptor raises: a
+cull radius (`+0x1E`) sets the test bit, flags `0x800` bit `0x10000000`. A
+primitive the winding rejects never reaches the test, so a mesh on the tested
+bank pools at `190..210` cycles a gouraud primitive where the opaque bank's is
+`104..152`:
 
 | Leaf | Rejected (back face, near) | Off-screen rejected | Linked |
 |---|---:|---:|---:|
@@ -243,9 +250,18 @@ vary with the model (`695..1785` and `777..1084` cycles), and a non-model kind
 
 `retail-exec actor-draws --scenario <label>` lists every entry the five actor
 render lists walk on the first whole frame: the record, its draw kind
-(`+0x56`), flags, origin and view depth, and the dispatcher draws, groups,
-primitives and cycles its drawing ran. It is what the engine's model and
-placed counts are checked against.
+(`+0x56`), flags, origin, view-space position and depth, the dispatcher draws,
+groups, primitives and cycles its drawing ran, the vertices the morph blend ran
+over, and its colour word. It is what the engine's model, placed, bank and
+morph counts are checked against.
+
+The morph stage runs on every object of a gated actor, whatever its lanes
+weigh: `FUN_8001C604` copies the object's vertices to scratch, then for each
+armed lane (`+0x6C`) walks the lane's VDF entry and blends each record naming
+that object (`FUN_8005B038`), with no test of the weight
+(`0x8001C680..0x8001C730`). `rim_elm_zoom_intro_pcsx`'s four tide meshes copy
+`448` vertices and blend `1344`; `son_field_door_hop`'s four animated models
+stage `56` objects, copying `893` and blending `120`.
 
 ### Against the fitted weights
 

@@ -1596,6 +1596,7 @@ pub fn field_cost_table(
     let mesh_of = |tmd: &legaia_tmd::Tmd, raw: &[u8]| {
         let mut m = legaia_engine_core::world::field_frame_cost::MeshCost {
             objects: clamp16(tmd.objects.len() as u32),
+            verts: clamp16(tmd.objects.iter().map(|o| o.vertices.len() as u32).sum()),
             ..Default::default()
         };
         for o in &tmd.objects {
@@ -1666,6 +1667,7 @@ pub fn field_cost_table(
         }
         (v, m)
     };
+    let (ground_tiers, ground_sorted) = FieldCostTable::ground_tiers_from_map(&map);
     Some(FieldCostTable {
         decorations: terrain
             .iter()
@@ -1696,6 +1698,10 @@ pub fn field_cost_table(
                     near_exempt: d.near_reject_exempt,
                     window: field_env::placed_window_key(d, binds.as_ref()),
                     object: field_env::placed_object_key(d, binds.as_ref()),
+                    bind: binds
+                        .as_ref()
+                        .and_then(|b| b.get(&d.anchor))
+                        .map(|b| u16::from(b.record)),
                     prims: clamp16(p),
                     verts: clamp16(v),
                     quads: clamp16(q),
@@ -1705,6 +1711,8 @@ pub fn field_cost_table(
             })
             .collect(),
         ground: FieldCostTable::ground_from_map(&map),
+        ground_tiers,
+        ground_sorted,
         npc_prims: npc_prims.0,
         npc_meshes: npc_prims.1,
         player: head(0),

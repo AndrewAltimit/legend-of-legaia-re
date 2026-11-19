@@ -107,7 +107,7 @@ const fn lp(
 }
 
 const DISP_SPAN: (u32, u32) = (DISP, DEND);
-const POSE_SPAN: (u32, u32) = (0x8001_C604, 0x8001_C798);
+const MORPH_STAGE_SPAN: (u32, u32) = (0x8001_C604, 0x8001_C798);
 
 /// A pass: its entry, the mark its call ends on, its loops.
 #[derive(Debug, Clone, Copy)]
@@ -196,7 +196,7 @@ pub const PASSES: &[PassSpec] = &[
                 0x8001_B430,
                 &[0x8001_B5D8],
                 &[(0x8001_B474, "drawn")],
-                &[DISP_SPAN, POSE_SPAN],
+                &[DISP_SPAN, MORPH_STAGE_SPAN],
             ),
             lp(
                 "model",
@@ -209,17 +209,17 @@ pub const PASSES: &[PassSpec] = &[
                 "object",
                 0x8001_BB14,
                 &[0x8001_BDCC],
-                &[(0x8001_BC58, "posed")],
-                &[DISP_SPAN, POSE_SPAN],
+                &[(0x8001_BC58, "morph")],
+                &[DISP_SPAN, MORPH_STAGE_SPAN],
             ),
             lp(
-                "pose",
+                "morph stage",
                 0x8001_C604,
                 &[0x8001_C798],
                 &[],
                 &[(0x8001_C680, 0x8001_C6A4), (0x8005_B038, 0x8005_B0B0)],
             ),
-            lp("track", 0x8001_C680, &[0x8001_C6A4], &[], &[]),
+            lp("morph copy", 0x8001_C680, &[0x8001_C6A4], &[], &[]),
             lp(
                 "morph lane",
                 0x8005_B038,
@@ -544,7 +544,8 @@ pub struct ActorDraw {
     pub flags52: u16,
     /// The origin the walk transforms (`+0x14..+0x18`).
     pub pos: [i16; 3],
-    /// The view depth the walk stored (`+0x34`).
+    /// The view-space origin the walk stored (`+0x2C`, `+0x30`, `+0x34`).
+    pub view: [i32; 2],
     pub depth: i32,
     /// Dispatcher draws, primitive groups and primitives (leaf iterations)
     /// its iteration ran, and the iteration's cycles, everything nested in.
@@ -552,6 +553,11 @@ pub struct ActorDraw {
     pub groups: u32,
     pub prims: u32,
     pub cycles: u64,
+    /// The colour word `+0x74`: a non-zero high byte selects the depth-cue
+    /// handler bank, bit `0x40000000` the off-screen test.
+    pub colour: u32,
+    /// Vertices the morph blend `FUN_8005B038` ran over for it.
+    pub morph_vertices: u32,
 }
 
 /// What each actor the five render lists walk draws on the first whole
@@ -562,7 +568,10 @@ pub fn actor_draws(state: &PcsxState) -> Result<Vec<ActorDraw>> {
     const S6: usize = 22;
     let mut run = FrameRunner::with_routines(state, &[]);
     run.settle()?;
-    let mut m: BTreeSet<u32> = [HEAD, EXIT, DISP, GROUP].into_iter().collect();
+    const MORPH_VERTEX: u32 = 0x8005_B044;
+    let mut m: BTreeSet<u32> = [HEAD, EXIT, DISP, GROUP, MORPH_VERTEX]
+        .into_iter()
+        .collect();
     m.extend(LEAVES.iter().map(|l| l.head));
     run.cpu.marks = m.into_iter().collect();
     run.cpu.mark_reg = S6;
@@ -584,6 +593,7 @@ pub fn actor_draws(state: &PcsxState) -> Result<Vec<ActorDraw>> {
         while j < log.len() && log[j].0 != HEAD && log[j].0 != EXIT {
             match log[j].0 {
                 DISP => d.draws += 1,
+                MORPH_VERTEX => d.morph_vertices += 1,
                 GROUP => d.groups += 1,
                 _ => d.prims += 1,
             }
@@ -599,8 +609,10 @@ pub fn actor_draws(state: &PcsxState) -> Result<Vec<ActorDraw>> {
         d.kind = mem.rd16(a + 0x56);
         d.flags = mem.rd32(a + 0x10);
         d.flags52 = mem.rd16(a + 0x52);
+        d.colour = mem.rd32(a + 0x74);
         d.pos = [0x14, 0x16, 0x18].map(|o| mem.rd16(a + o) as i16);
         d.depth = mem.rd32(a + 0x34) as i32;
+        d.view = [mem.rd32(a + 0x2C) as i32, mem.rd32(a + 0x30) as i32];
         out.push(d);
         i = j;
     }

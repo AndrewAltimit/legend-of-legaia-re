@@ -38,6 +38,8 @@ cargo run --release -p psx-retail-exec -- frame-cost --scenario son_field_door_h
 by kind and outcome), each priced from its own instructions
 (`retail-exec field-units --scenario <label>`); `--interrupts` on
 `frame-cost` takes the vblank interrupt through the state's kernel.
+`retail-exec actor-draws --scenario <label>` lists each actor-list entry's
+draws, groups, primitives, cycles, morph vertices and colour word.
 
 Held against the emulator's own profile in
 [`docs/tooling/retail-frame-cost.md`](../../docs/tooling/retail-frame-cost.md).

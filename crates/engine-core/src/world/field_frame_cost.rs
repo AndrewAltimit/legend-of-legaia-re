@@ -26,6 +26,7 @@
 //! REF: FUN_80016B6C, FUN_801F7088, FUN_801F6D48, FUN_801D79E8
 
 use super::World;
+use super::npc_morph::MorphOwner;
 use legaia_engine_scene::field_view_window::{ViewCells, view_cells};
 
 /// What a mesh hands the prim dispatcher `FUN_80043390`: its TMD objects
@@ -36,6 +37,8 @@ use legaia_engine_scene::field_view_window::{ViewCells, view_cells};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MeshCost {
     pub objects: u16,
+    /// The vertices of all its objects.
+    pub verts: u16,
     pub groups: u16,
     pub kinds: [u16; 12],
 }
@@ -77,6 +80,9 @@ pub struct CostPlaced {
     /// The object key the bound actor's state is found under
     /// (`field_env::placed_object_key`); `None` for a window-owned placement.
     pub object: Option<usize>,
+    /// The partition-0 record the anchor tile binds, which owns the actor's
+    /// op-`0x4B` morph lanes ([`MorphOwner::Object`]).
+    pub bind: Option<u16>,
     pub prims: u16,
     pub verts: u16,
     /// Of [`Self::prims`]: the quads, and the light-source rows (group
@@ -96,6 +102,13 @@ pub struct FieldCostTable {
     /// The walk-visible ground cells, one bit a cell: row `r`'s bit `c`.
     /// Empty for a scene with no `.MAP` grid.
     pub ground: Vec<u128>,
+    /// The ground emitter's per-cell inputs beside [`Self::ground`]: each
+    /// cell's height tier (the low nibble of the `.MAP` byte at `+0x4000`,
+    /// `128 * row + col`), and its depth-sorted bit (object-grid word bit
+    /// `0x8000`) one bit a cell as `ground` holds them. Empty when the scene
+    /// has no grid.
+    pub ground_tiers: Vec<u8>,
+    pub ground_sorted: Vec<u128>,
     /// Each placement slot's spawn mesh size in primitives, by slot (`0` for
     /// a slot with no resolvable mesh).
     pub npc_prims: Vec<u16>,
@@ -131,6 +144,46 @@ impl FieldCostTable {
                 })
             })
             .collect()
+    }
+
+    /// The `.MAP` image's height tiers and depth-sorted bits
+    /// ([`Self::ground_tiers`], [`Self::ground_sorted`]).
+    pub fn ground_tiers_from_map(map: &[u8]) -> (Vec<u8>, Vec<u128>) {
+        use legaia_scene_formats::field_objects::{
+            CELL_GROUND_DEPTH_SORTED, COLLISION_GRID_OFFSET, GRID_DIM, OBJECT_GRID_OFFSET,
+        };
+        let (Some(tiers), Some(grid)) = (
+            map.get(COLLISION_GRID_OFFSET..COLLISION_GRID_OFFSET + GRID_DIM * GRID_DIM),
+            map.get(OBJECT_GRID_OFFSET..OBJECT_GRID_OFFSET + GRID_DIM * GRID_DIM * 2),
+        ) else {
+            return (Vec::new(), Vec::new());
+        };
+        let sorted = (0..GRID_DIM)
+            .map(|row| {
+                (0..GRID_DIM).fold(0u128, |bits, col| {
+                    let off = (row * GRID_DIM + col) * 2;
+                    let cell = u16::from_le_bytes([grid[off], grid[off + 1]]);
+                    bits | (u128::from(cell & CELL_GROUND_DEPTH_SORTED != 0) << col)
+                })
+            })
+            .collect();
+        (tiers.iter().map(|b| b & 0xF).collect(), sorted)
+    }
+
+    fn ground_sorted_at(&self, col: i32, row: i32) -> bool {
+        (0..128).contains(&col)
+            && self
+                .ground_sorted
+                .get((row & 0x7F) as usize)
+                .is_some_and(|bits| bits >> col & 1 != 0)
+    }
+
+    /// The height of the corner at `(col, row)` under the live floor ladder.
+    fn ground_height(&self, col: i32, row: i32, lut: &[i16; 16]) -> i16 {
+        let i = ((row & 0x7F) * 128 + (col & 0x7F)) as usize;
+        self.ground_tiers
+            .get(i)
+            .map_or(0, |&t| lut[usize::from(t & 0xF)])
     }
 
     fn ground_at(&self, col: i32, row: i32) -> bool {
@@ -265,10 +318,23 @@ pub fn placed_cull_gte(
 }
 
 impl FieldFrameFeatures {
+    fn add_morph(&mut self, [calls, copied, verts]: [u32; 3]) {
+        self.morph_calls += calls;
+        self.morph_copied += copied;
+        self.morph_vertices += verts;
+    }
+
     fn add_placed(&mut self, p: &CostPlaced) {
         self.placed_objects += u32::from(p.mesh.objects);
         self.placed_groups += u32::from(p.mesh.groups);
-        for (k, n) in self.placed_kinds.iter_mut().zip(p.mesh.kinds) {
+        // A cull radius raises the colour word's off-screen-test bit, which
+        // sends every primitive through the depth-cued leaves' test.
+        let bank = if p.radius != 0 {
+            &mut self.placed_offtest_kinds
+        } else {
+            &mut self.placed_kinds
+        };
+        for (k, n) in bank.iter_mut().zip(p.mesh.kinds) {
             *k += u32::from(n);
         }
         self.placed_draws += 1;
@@ -336,13 +402,26 @@ pub struct FieldFrameFeatures {
     pub decoration_kinds: [u32; 12],
     pub ground_rows: u32,
     pub ground_window_cells: u32,
+    /// Of [`Self::ground_cells`]: those the emitter's near test drops before
+    /// the quad, and those it draws through the depth-sorted path.
+    pub ground_far_cells: u32,
+    pub ground_sorted_cells: u32,
     pub placed_objects: u32,
     pub placed_groups: u32,
+    /// The placed meshes' primitives through the opaque leaves.
     pub placed_kinds: [u32; 12],
+    /// The placed meshes' primitives that take the off-screen-tested
+    /// depth-cued leaves (a non-zero cull radius).
+    pub placed_offtest_kinds: [u32; 12],
     pub npc_objects: u32,
     pub npc_groups: u32,
     pub npc_kinds: [u32; 12],
     pub list_actors: u32,
+    /// The draws' morph substitution: `FUN_8001C604` calls, the vertices
+    /// they copy, and the vertices `FUN_8005B038` blends.
+    pub morph_calls: u32,
+    pub morph_copied: u32,
+    pub morph_vertices: u32,
     /// The player's model, when the scene's table holds it.
     pub player: Option<MeshCost>,
 }
@@ -441,6 +520,50 @@ impl World {
         Some(self.field_cost_offset)
     }
 
+    /// What the draw's morph substitution runs for `owner`'s mesh `mesh`
+    /// while its `+0x10 & 0x1000` gate is up (`FUN_8001ADA4` `0x8001B424..`),
+    /// whatever the lane weights: per TMD object, one `FUN_8001C604` call
+    /// copying the object's vertices; per record of every armed lane's VDF
+    /// entry, `FUN_8005B038` over its deltas. `[calls, copied vertices,
+    /// morphed vertices]`.
+    // REF: FUN_8001C604, FUN_8005B038
+    fn field_morph_work(&self, owner: MorphOwner, mesh: &MeshCost) -> [u32; 3] {
+        let Some(st) = self.npcs.morphs.get(&owner) else {
+            return [0; 3];
+        };
+        if st.flags & legaia_engine_vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE == 0 {
+            return [0; 3];
+        }
+        // The lanes and records walked in place: this runs every frame for
+        // each gated actor, so it allocates nothing.
+        let lanes =
+            usize::from(st.keyframe_count).min(legaia_engine_vm::vdf_morph::ACTOR_MORPH_LANES);
+        let word = |b: &[u8], o: usize| {
+            b.get(o..o + 4)
+                .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]) as usize)
+        };
+        let mut verts = 0u32;
+        for lane in 0..lanes {
+            let Some(entry) = self.vdf_record_bytes(st.anim_block_u8(0x04 + lane)) else {
+                continue;
+            };
+            let mut off = 4;
+            for _ in 0..word(entry, 0).unwrap_or(0) {
+                let (Some(group), Some(n)) = (word(entry, off), word(entry, off + 8)) else {
+                    break;
+                };
+                off += 12 + n * 8;
+                if off > entry.len() {
+                    break;
+                }
+                if group < usize::from(mesh.objects) {
+                    verts += n as u32;
+                }
+            }
+        }
+        [u32::from(mesh.objects), u32::from(mesh.verts), verts]
+    }
+
     /// What the field frame about to run draws, counted through the retail
     /// gates against the cull view the follow camera last published. `None`
     /// without a cost table or a published view.
@@ -481,10 +604,34 @@ impl World {
             let r0 = (cells.first[1] - 1) & 0x7F;
             f.ground_rows = rows as u32;
             f.ground_window_cells = (cols * rows) as u32;
+            // The emitter's near test (`0x801F6F60..0x801F6F6C`): after the
+            // `RTPT` of the cell's corners, a third corner (`(col, row + 1)`)
+            // nearer than `SZ 0x40` drops the cell before its quad; the
+            // depth-sorted bit then picks the far corner's sort
+            // (`0x801F6F94..`).
+            let gte = self.npcs.cull_camera.as_ref().map(placed_cull_gte);
+            let lut = &self.terrain.floor_height_lut;
             for j in 0..rows {
                 for i in 0..cols {
-                    if table.ground_at(c0 + i, (r0 + j) & 0x7F) {
-                        f.ground_cells += 1;
+                    let (col, row) = (c0 + i, (r0 + j) & 0x7F);
+                    if !table.ground_at(col, row) {
+                        continue;
+                    }
+                    f.ground_cells += 1;
+                    let Some(g) = gte.as_ref() else {
+                        continue;
+                    };
+                    let row_z = r0 + j;
+                    let y = table.ground_height(col, row + 1, lut);
+                    let corner = [
+                        (col * 128).clamp(-0x8000, 0x7FFF) as i16,
+                        y,
+                        ((row_z + 1) * 128).clamp(-0x8000, 0x7FFF) as i16,
+                    ];
+                    if g.rtps(corner).sz < 0x40 {
+                        f.ground_far_cells += 1;
+                    } else if table.ground_sorted_at(col, row) {
+                        f.ground_sorted_cells += 1;
                     }
                 }
             }
@@ -515,6 +662,9 @@ impl World {
                 f.placed_near_prims += u32::from(p.prims);
             } else {
                 f.add_placed(p);
+                if let Some(r) = p.bind {
+                    f.add_morph(self.field_morph_work(MorphOwner::Object(r), &p.mesh));
+                }
                 continue;
             }
             if !self.toggles.field_cost_placed_walk {
@@ -528,6 +678,7 @@ impl World {
                 f.npc_prims +=
                     u32::from(table.npc_prims.get(usize::from(slot)).copied().unwrap_or(0));
                 if let Some(m) = table.npc_meshes.get(usize::from(slot)) {
+                    f.add_morph(self.field_morph_work(MorphOwner::Placement(slot), m));
                     f.npc_objects += u32::from(m.objects);
                     f.npc_groups += u32::from(m.groups);
                     for (k, n) in f.npc_kinds.iter_mut().zip(m.kinds) {
@@ -611,6 +762,7 @@ mod tests {
                 near_exempt: false,
                 window: None,
                 object: None,
+                bind: None,
                 prims: 7,
                 verts: 9,
                 quads: 0,
@@ -618,6 +770,8 @@ mod tests {
                 mesh: MeshCost::default(),
             }],
             ground,
+            ground_tiers: Vec::new(),
+            ground_sorted: Vec::new(),
             npc_prims: Vec::new(),
             npc_meshes: Vec::new(),
             player: None,
@@ -687,6 +841,7 @@ mod tests {
             near_exempt: false,
             window: None,
             object: None,
+            bind: None,
             prims,
             verts: 0,
             quads: 0,
