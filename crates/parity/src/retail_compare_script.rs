@@ -211,6 +211,13 @@ const PAGER_ROWS: u32 = 0x801F_3540;
 /// Slots of the row table read: the three-row window and the row a scroll
 /// brings in under it.
 const PAGER_ROW_SLOTS: u32 = 4;
+/// The pager actor's tick word (`FUN_801D84D0`, spawned from the template at
+/// `0x801F2760`).
+const PAGER_TICK: u32 = 0x801D_84D0;
+/// The pager actor's picker slide count (`+0x54`): the sentinel `0x309`
+/// before the slide's first call, then `0x18` down to `0` by the frame step
+/// ([`legaia_engine_dialog::dialog_picker_slide`]).
+const PAGER_SLIDE_COUNT: u32 = 0x54;
 
 /// The pager's arm and rows when it stands between a page's press and its
 /// wait in an arm other than the typing one ([`PagerPhase::applies`]),
@@ -229,11 +236,20 @@ pub fn pager_phase(ram: &[u8], base: u32) -> Option<PagerPhase> {
         }
         rows.push(usize::try_from(p.checked_sub(base)?).ok()?);
     }
+    // A picker arm's counter is the menu's slide count, not the reveal.
+    let counter = if PagerPhase::is_picker(state) {
+        let node = actor_nodes(ram)
+            .into_iter()
+            .find(|&n| game_anchors::u32_at(ram, n + 0x0C) == PAGER_TICK)?;
+        i32::from(game_anchors::i16_at(ram, node + PAGER_SLIDE_COUNT))
+    } else {
+        game_anchors::u32_at(ram, PAGER_REVEAL) as i32
+    };
     Some(PagerPhase {
         state,
         rows,
         scroll: game_anchors::u32_at(ram, PAGER_SCROLL) as i32,
-        counter: game_anchors::u32_at(ram, PAGER_REVEAL) as i32,
+        counter,
     })
 }
 

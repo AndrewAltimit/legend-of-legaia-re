@@ -998,6 +998,19 @@ player pressed through while it typed, so the seed presses once the engine's
 row has revealed as far as the capture's counter. The engine falls back to
 the waiting page when it never stands in the arm.
 
+**A picker on screen.** A prompt that ends on a picker byte waits in `0x19`
+like any page, and only the confirm press opens the menu
+([`mes.md`](../formats/mes.md#dialog-window-pager---fun_801d84d0)), so a
+capture in a slide arm (`0x11` / `0x13` / `0x15` / `0x17`) or an input arm
+(`0x12` / `0x14` / `0x16` / `0x18`) shows a menu the player opened. The seed
+presses once the prompt's page waits on the gate and meets the slide arm when
+the engine's slide count (`PickerSlide::count`) is down to the pager actor's
+`+0x54`, the input arm when the menu takes input. The input arm takes the
+met tick's own frame, not the displayed one: the slide ended frames before
+the capture, so retail's frame shows the box at rest with its hand.
+`doman_mrs_usha_quiz_picker_slide` / `_open` (Mrs. Usha's first question)
+read `0.831` / `0.769` on the waiting page and `0.997` / `0.998` on the arm.
+
 **A later page of a box.** The dialog SM moves the record's PC onto each
 page as the press turns to it: on pager state `3` / `6` / `9` it walks the
 shown lines from `+0x9E` and stores the byte after them back in `+0x9E`
