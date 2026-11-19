@@ -333,6 +333,9 @@ impl World {
         if run.as_ref().is_some_and(|r| r.camera_end_frame)
             && let Some(cam) = self.battle.camera.as_mut()
         {
+            // Case 8 reads `ctx[+0x6D0]` as it builds (`0x801D67C8`), after
+            // the module's own stores this pass.
+            cam.set_action_depth_raw(i32::from(self.battle.camera_frame_height));
             cam.arm_module_end_frame();
         }
         // The module's seat arm (`FUN_801F19EC`): a seat owed since the

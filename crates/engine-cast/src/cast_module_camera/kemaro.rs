@@ -184,7 +184,14 @@ pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
         st.ramp = 1;
         base.spawns = &KEMARO_ARM13_SPAWNS;
     }
-    let base = match kemaro_drift(phase, drained) {
+    // Retail drains the whole pass in one `subu` and then tests the word, so
+    // arm 4 drifts the whole pass or none of it: test the word the pass ends
+    // on, the ticks still owed after this one drained off it. Tested per
+    // tick, the pass that crosses `scalar << 5` drifted three of its four
+    // ticks (the `0x90` film's pitch `3970` and TR z `4316` against retail's
+    // `3976` / `4348`).
+    let pass_end = drained - i32::from(st.countdown.1) * MODULE_DRAIN_PER_TICK;
+    let base = match kemaro_drift(phase, if phase == 4 { pass_end } else { drained }) {
         Some(d) => base.drifted(d),
         None => base,
     };
@@ -361,5 +368,35 @@ mod tests {
         assert_eq!(first.spawns.len(), 3);
         let again = kemaro_direct(&mut st, 13, seats);
         assert!(again.spawns.is_empty());
+    }
+
+    #[test]
+    fn arm_four_drifts_the_whole_pass_or_none_of_it() {
+        let seats = ModuleCamSeats::default();
+        // The pass's four ticks bring the word from `(scalar << 5) + 2p` to
+        // `(scalar << 5) - 2p`: it ends under the gate, so none drifts.
+        let mut st = ModuleCamState {
+            countdown: ModuleCountdown((SPEED_SCALAR << 5) + 3 * SPEED_SCALAR, 3),
+            ..Default::default()
+        };
+        for owed in (0..4).rev() {
+            st.countdown.1 = owed;
+            let a = kemaro_direct(&mut st, 4, seats);
+            assert!(a.drift.is_none_or(|d| d.pitch == 0), "owed {owed}");
+        }
+        // A pass that ends above the gate drifts on every tick.
+        let mut st = ModuleCamState {
+            countdown: ModuleCountdown((SPEED_SCALAR << 5) + 6 * SPEED_SCALAR, 3),
+            ..Default::default()
+        };
+        for owed in (0..4).rev() {
+            st.countdown.1 = owed;
+            let a = kemaro_direct(&mut st, 4, seats);
+            assert_eq!(
+                a.drift.unwrap().pitch,
+                -(SPEED_SCALAR as i16) / 4,
+                "owed {owed}"
+            );
+        }
     }
 }

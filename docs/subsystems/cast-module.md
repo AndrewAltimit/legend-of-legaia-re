@@ -630,6 +630,13 @@ frame step of `4` (see [measured arm timing](#measured-arm-timing)).
 | 12 | drains that countdown, then waits for the victim to settle; case 8 on the caster every pass, at that depth | 87 |
 | `0xFF` | Done | - |
 
+Arm 11's `3/2` reads the victim's HP after the hit, and the port folds that hit on the
+pass behind it: arm 12's first tick finds the victim still standing, and its first
+case 8 framed on `0x1200` where retail's reads the bare `0xC00`, so the shot covered five
+sixths of its TR z gap on that pass for retail's third. The pass's correction to the
+depth now reaches case 8: it reads `ctx[+0x6D0]` as it builds (`0x801D67C8`), not the
+value the host installed ahead of the tick (`BattleCamera::set_action_depth_raw`).
+
 The run from arm 1 to the hit is about 500 display frames, so the module, not
 a fixed stager script, sets how long battle state `0x36` lasts. Arm details
 are under [spawn reports](#a-module-that-reports-its-spawns) and
@@ -2522,7 +2529,11 @@ once a vsync, drains the scalar alone. With the scalar at `8`:
 The holds that are not the countdown:
 
 - **Orb arm 4** holds on the creature's own height: arm 3 seats it at
-  `+0x36 = -0x320` (`0x801F70EC`), arm 4 adds `rate * speed` a pass and holds
+  `+0x36 = -0x320` (`0x801F70EC`), arms the clip's park (`+0x21B = 8`,
+  `+0x176 = 0x80`) and stands its cursor on the park frame (`+0x68 = 0x30`
+  through the anim node, `0x801F70D8..0x801F70E4`), so the orb holds its pose
+  from the drop's first pass; the port walked the cursor up to the frame and
+  released the park three passes late (`SeatArmWrite::cursor`), arm 4 adds `rate * speed` a pass and holds
   while it reads negative (`bltz` at `0x801F7408`), so the creature drops to
   the ground. Arm 5's pass steps it an eighth of a unit along its facing and
   lifts it to `-0x400`, then jumps to arm 9.
@@ -3164,7 +3175,10 @@ and the drifts the arms add to the camera globals (pitch / yaw `0x8007B790`
 / `0x8007B792`, TR `0x800840B8..C0`) on every pass, held or not - Puera's
 only while its countdown is still positive, since its drifts sit past the
 `blez`. Ports: `cast_module_camera::kemaro_direct`, `puera_direct`,
-`juggernaut_direct`. Juggernaut's cuts and drifts are PROT 0966's one for one
+`juggernaut_direct`. Kemaro's arm 4 drifts only while its drained countdown
+stays above `scalar << 5`, tested once a pass on the whole pass's drain, so the pass
+that crosses drifts none of its frames; tested per tick it drifted three of four
+(pitch `3970`, TR z `4316` against retail's `3976`, `4348`). Juggernaut's cuts and drifts are PROT 0966's one for one
 (the Evil Seru Magic body is the same choreography, numbered differently).
 
 Each director reports its spawn calls, so the records are seated on the arm

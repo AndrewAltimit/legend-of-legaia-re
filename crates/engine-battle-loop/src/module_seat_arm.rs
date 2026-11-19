@@ -45,6 +45,8 @@ pub struct SeatArmWrite {
     pub render_scale: Option<u16>,
     /// `(+0x21C, +0x0C)`: the tint state and blend word.
     pub tint: Option<(u8, u32)>,
+    /// The anim node's `+0x68`, the clip cursor in sixteenths of a keyframe.
+    pub cursor: Option<u16>,
 }
 
 pub const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
@@ -58,6 +60,7 @@ pub const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
         colour: None,
         render_scale: None,
         tint: None,
+        cursor: None,
     }
 }
 
@@ -99,7 +102,9 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
         // `0x801F70E8..0x801F70F0`: the height only (`-0x320`); and
         // `+0x21B = 8` / `+0x176 = 0x80` (`0x801F70C8..0x801F70D4`), which
         // parks the installer's clip on its window frame `3` for eight
-        // keyframes.
+        // keyframes. The same pass stands the cursor on that frame
+        // (`li v0,0x30` / `sh v0,0x68(v1)` at `0x801F70D8..0x801F70E4`,
+        // `v1` the anim node `+0x22C`), so the clip holds there at once.
         911 => SeatArmWrite {
             x: Keep,
             y: Lit(-0x320),
@@ -110,6 +115,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            cursor: Some(0x30),
         },
         // `0x801F6DC0..0x801F6E5C`: after the arm's two vortex records and its
         // shot, the creature steps a twenty-fourth of a unit along the
@@ -124,6 +130,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            cursor: None,
         },
         // `0x801F6C54`: the facing only.
         912 => SeatArmWrite {
@@ -136,6 +143,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            cursor: None,
         },
         // `0x801F6CC0..0x801F6CE0`: `0x400` across and `0x267` back off
         // the installer's seat.
@@ -158,6 +166,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            cursor: None,
         },
         // `0x801F6FC0..0x801F6FC8`.
         921 => seat(Lit(0), Lit(0), 0),
