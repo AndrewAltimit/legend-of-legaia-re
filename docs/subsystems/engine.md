@@ -804,6 +804,8 @@ A field entered from a priced field opens on the departing scene's step: the fie
 | Actors | the render passes `FUN_8001D140` | about `41 + 0.091` a placed-object primitive `+ 15` an NPC; an NPC's cost follows its mesh |
 | Tick | the tick passes `FUN_8002519C` | about `37 + 1.2` an ambient part |
 
+Those times include the interrupts that land inside each pass: on PCSX-Redux the vblank handler (the pad exchange over SIO among it) costs `11.6` hblanks a vblank and a DMA or CD-ROM interrupt about one, so `son`'s frame driver spends `580` hblanks of its own work and `610` with them. `retail-exec frame-cost` prices each pass's own work off a library state, to the cycle of the profile with the interrupt time taken out ([retail frame cost](../tooling/retail-frame-cost.md)).
+
 `son`'s frames, which the counts priced at `450`, cost `610`: its decoration pass is the counts' (`382` hblanks for `2480` primitives) and its six NPCs draw `210` hblanks where six of an ordinary size draw `130`. Pricing each NPC by its spawn mesh's primitives (`FieldFrameFeatures::npc_prims`) and the decoration loop's cells (`decoration_loop_cells`) moves `son` to `550` and `3`, but it also steps `ending_vignette_fullscreen` (`502`, eight hblanks under the rung) to `3`, so the price keeps the counts above. The two counts are computed and written by the walk film for the next fit.
 `teien` (`589`, priced `471`) spends its excess in the ground emitter (`84` hblanks for `370` cells, `0.23` a cell) and the render passes (`182` for three placed objects and four NPCs); `jou` (`643`, priced `462`) in the tick passes (`116`, nineteen ambient parts) and the render passes (`224` for `1015` placed primitives and one NPC).
 
