@@ -3817,7 +3817,11 @@ sides, with the samples where the port's bank put them (the bank's program table
 VAG address onto the port's). Retail's writes are applied to one copy, and that copy's envelopes
 go back as `ENVX`, which is the input the allocation scan feeds on. Both sides start the score
 from the top on an idle voice file. The port's KON falls one vsync ahead by construction
-(retail flushes at the top of the next calc), and the lag is measured off the first key-on.
+(retail flushes at the top of the next calc), and the lag is measured off the first key-on. The
+port's sample clock starts that vsync on as well, so each of its steps renders the samples of the
+retail vsync it pairs with: on a clock started level with retail's, every vsync whose share of
+the `44100 / 59.94` samples rounds differently on the two sides ended a release tail one vsync
+apart (level `1` against `0`), and the next note took the next free voice up.
 
 | Channel | Counts vsyncs where |
 |---|---|
@@ -3839,11 +3843,12 @@ Both sides run their flushes from the state's own silent-history index `_DAT_801
 ([below](#the-silent-historys-phase)): the harness leaves retail's where the RAM holds it and
 stands the port's beside it (`Sequencer::set_silent_ring_phase`).
 
-Over every track the library holds, four minutes each, it reads zero in `key` and `release`,
-`sound` on four vsyncs of one track, and `voice` on about one vsync in twelve hundred, nearly all
-of them on `2068`. Every such voice row is a tail ending inside one vsync's lag on one side: on `2068` a
-release reaches zero a vsync apart on the two sides (level `1` against `0`), so the next note
-takes the next free voice up.
+Over every track the library holds, four minutes each, it reads zero in `key`, `voice`,
+`release` and `sound`. With `--cues` it reads zero in the first three and `sound` on a dozen
+single vsyncs over six tracks, each a cue's tail retail still holds for one vsync. Before the
+sample clock was seated, the voice and sound rows the cues raised on `2006`, `2036` and `2068`
+were that rounding: a tail ending a vsync apart sent the next note, and every cue after it, to
+other voices.
 
 `--track` takes the library out of the choice: each listed `music_01` track (or `all`) is
 seated into one state's RAM (`--host`, `mei_house_inside` by default) through retail's own
@@ -3866,8 +3871,12 @@ That run found two port defects, both on tracks no library state was saved under
   such indices: `-25` (`2030`), a word every library state holds at zero, and `-23` (`2072`,
   `36` key-ons over four minutes), the high half of libsnd's tick-function pointer at
   `0x8007A910`, which holds `FUN_80062F98` in every state. That note sounds at `0x8006 >> 5 =
-  0x400` in retail; the port read zero for every such word and keyed it still
-  (`vab_bind::table_front_word`).
+  0x400` in retail; the port read zero for every such word and keyed it still. A cue keyed
+  as far under its tone reaches the rest: `--cues` on `2006` keyed one at index `-14`, the low
+  half of timer 0's address `0x1F801100`, which sounds at `0x88` where the port, reading zero
+  for every word but `-23`, held it still. Every index a key can reach (`-176..=-1`) is a
+  libsnd or libapi word that holds one value in all 498 PCSX-Redux library states, and the
+  port reads that value (`vab_bind::table_front_word`).
 
 What it leaves open:
 

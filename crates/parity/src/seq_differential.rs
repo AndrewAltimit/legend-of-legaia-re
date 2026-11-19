@@ -949,6 +949,12 @@ fn run_one(
     let mut port = PortSide::new(track, entry, vol);
     let mut retail = RetailSide::seated(ram, &port, slot, vol, seat.then_some(entry))?;
     port.seat_silent_ring_phase(&mut retail);
+    // The port's step `i` is retail's calc `i + 1`, so its sample clock
+    // starts a vsync on: each step then renders the samples retail's
+    // matching vsync does, and a release tail ends on the same vsync on both
+    // sides (one sample of carry had left one a vsync long, level `1`
+    // against `0`, and the next note took the next voice up).
+    port.carry = RETAIL_VSYNC_SAMPLES.fract();
     let mut rv = Vec::with_capacity(vsyncs);
     let mut pv = Vec::with_capacity(vsyncs);
     let mut rng = 0x5EED_u32 ^ u32::from(track);
