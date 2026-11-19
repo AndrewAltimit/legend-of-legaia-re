@@ -508,6 +508,12 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
         match walk {
             Ok(Walk::Entered(s)) => return Run::Entered(s),
             Ok(Walk::Arrived) => {}
+            // A fight on the walk that wiped the party ends the talk: the
+            // next side's walk only met the same game over again, reported
+            // as a fresh wipe ("wiped after 0 ticks", `taiku` P1[35]).
+            Err(e) if e.contains("party wiped") => {
+                return Run::Battle(e);
+            }
             Err(e) => {
                 if !talked {
                     last = Run::Parked(format!("pad walk to talk P1[{slot}]: {e}"));

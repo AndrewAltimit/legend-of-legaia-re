@@ -782,6 +782,12 @@ pub(super) fn drain_battle(session: &mut NativeSession) -> Option<Run> {
     } else {
         0
     };
+    // A game over already standing is the wipe the last fight reported,
+    // not another one: re-entering the fight loop on it counted it again
+    // and re-learned nothing.
+    if let Some(e) = super::segment::wiped(session) {
+        return Some(Run::Battle(e));
+    }
     PAD_DEADLINE.with(|d| d.set(d.get().saturating_add(lent)));
     let start = session.frames;
     let r = fight_battle(session);

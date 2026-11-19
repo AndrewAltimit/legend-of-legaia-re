@@ -26,6 +26,11 @@ pub(super) fn play_beats(
     log: &mut Vec<String>,
 ) -> Result<Option<String>, String> {
     use legaia_engine_field::man_field_scripts::{boss_stager_placements, partition2_record_gates};
+    // The arrival pass's upkeep (Best Equipment, the shop, a heal) closes
+    // its menu just before this, and the retail-faithful close holds `Menu`
+    // for the field's reload: `garmel` was read as no field and left
+    // unplayed.
+    wait_out_menu_close(session);
     if session.host.world.mode != SceneMode::Field {
         return Ok(None);
     }

@@ -174,6 +174,10 @@ pub(super) fn traverse(
     while steps < MAX_HOPS + vias.len() * 4 + dead.len() * 4 + upkept {
         steps += 1;
         pad_budget(session)?;
+        // A pause menu the hand closed before the pass (the stretch's Best
+        // Equipment) still holds `Menu` for its retail close: the arrival
+        // pass below reads the mode.
+        wait_out_menu_close(session);
         // Let whatever the last landing started finish first.
         let here = scene_name(session);
         if here != last_here {
@@ -321,6 +325,16 @@ pub(super) fn traverse(
             pad_equip_best(session);
             if let Some(s) = pad_rest(session).map_err(|e| format!("in {cur}, resting: {e}"))? {
                 trail.push(format!("{s}(rest)"));
+                beaten.remove(&cur);
+                continue;
+            }
+            // A party with no group heal fights for one where it rolls.
+            if !train_only
+                && scene_name(session) == cur
+                && let Some(s) = pad_hunt_group_heal(session)
+                    .map_err(|e| format!("in {cur}, hunting a group heal: {e}"))?
+            {
+                trail.push(format!("{s}(heal hunt)"));
                 beaten.remove(&cur);
                 continue;
             }

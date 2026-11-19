@@ -450,6 +450,7 @@ fn part_c_continuous_run() {
     });
     reset_shopping();
     reset_duel_dress();
+    HEAL_HUNTED.with(|h| h.borrow_mut().clear());
     let mut session = open_session(&inp.extracted);
     // `LEGAIA_FGL_CONTINUOUS_FROM=<milestone>` starts the run at a later
     // milestone, seeded once from that milestone's retail anchor and never
