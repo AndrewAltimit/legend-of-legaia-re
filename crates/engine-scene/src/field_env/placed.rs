@@ -490,17 +490,25 @@ impl PlacedWindowKey {
 /// `-423` and draws nothing, while a port that near-clips per pixel painted
 /// the shell's inside over the whole frame as a blue-violet wash.
 ///
+/// The threshold is in **retail** view units. The field's base matrix
+/// `DAT_8007BF10` folds a `6x` world scale into the rotation, so `+0x34` is six
+/// times the depth the port's `1x` camera measures
+/// ([`legaia_engine_field::camera::CUTSCENE_WORLD_SCALE`]):
+/// `vozz`'s Genesis Tree close-up holds the sky shell at `(13248, -480, 13248)`
+/// at `+0x34 = 344` against a port clip `w` of `57.4`, and draws it.
+///
 /// REF: FUN_8001ADA4
 pub const PLACED_NEAR_DEPTH: f32 = 160.0;
 
 /// Whether retail's placed-object near reject ([`PLACED_NEAR_DEPTH`]) drops a
 /// placed draw whose origin sits at `origin_view_depth` this frame - the
-/// origin's clip `w` under the frame's retail camera. The one test both play
-/// hosts ask per placed draw.
+/// origin's clip `w` under the frame's retail camera, in the port's `1x`
+/// world units, scaled here to retail's `6x` view space before the compare.
+/// The one test both play hosts ask per placed draw.
 ///
 /// REF: FUN_8001ADA4
 pub fn placed_origin_near_culled(origin_view_depth: f32) -> bool {
-    origin_view_depth < PLACED_NEAR_DEPTH
+    origin_view_depth * legaia_engine_field::camera::CUTSCENE_WORLD_SCALE < PLACED_NEAR_DEPTH
 }
 
 /// [`placed_origin_near_culled`] for one placed draw: never for a draw whose

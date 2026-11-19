@@ -215,8 +215,9 @@ impl<'m> DrawCtx<'_, 'm> {
         // `resolve_field_placement_draws`).
         // Retail's placed-object near reject
         // (`field_env::placed_origin_near_culled`): an object
-        // whose origin sits within 160 units of the eye, or
-        // behind it, is not drawn. Judged from retail's vantage
+        // whose origin sits within 160 retail view units of the
+        // eye (the field's `6x` world scale: about 27 port units),
+        // or behind it, is not drawn. Judged from retail's vantage
         // only (`field_view_window::retail_vantage`): under a
         // swung / tilted / zoomed follow camera, a wider distance
         // preset or the `F3` debug orbit, a ground slab's origin
