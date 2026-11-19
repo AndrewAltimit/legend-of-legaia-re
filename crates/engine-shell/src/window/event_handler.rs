@@ -122,6 +122,7 @@ impl ApplicationHandler for PlayWindowApp {
             let t = &self.session.host.world.toggles;
             r.set_keep_cpu_meshes(
                 t.battle_gpu_cost_step
+                    || t.field_gpu_cost_step
                     || (t.battle_poly_frame_cost && t.battle_poly_window_count)
                     || redraw_gpu_cost::gpu_cost_diag_path().is_some(),
             );

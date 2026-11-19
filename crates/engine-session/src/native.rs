@@ -175,6 +175,16 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if std::env::var("LEGAIA_BATTLE_GPU_COST").is_ok_and(|v| v.trim() == "1") {
         toggles.battle_gpu_cost_step = true;
     }
+    // Opt-in: the same `max(cpu, gpu)` over a field frame
+    // (`WorldToggles::field_gpu_cost_step`), and mednafen's GPU rules in
+    // place of DuckStation's costs for either step
+    // (`WorldToggles::gpu_cost_timing`).
+    if std::env::var("LEGAIA_FIELD_GPU_COST").is_ok_and(|v| v.trim() == "1") {
+        toggles.field_gpu_cost_step = true;
+    }
+    if std::env::var("LEGAIA_GPU_COST_TIMING").is_ok_and(|v| v.trim() == "mednafen") {
+        toggles.gpu_cost_timing = legaia_engine_system::gpu_draw_cost::GpuTiming::Mednafen;
+    }
     // Opt-in: price the effect pool on the retail walker's branches
     // (`WorldToggles::battle_effect_walk_cost`).
     if std::env::var("LEGAIA_BATTLE_WALK_COST").is_ok_and(|v| v.trim() == "1") {

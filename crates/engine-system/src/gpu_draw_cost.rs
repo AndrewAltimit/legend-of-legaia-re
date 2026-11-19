@@ -22,7 +22,27 @@
 //! pairs back into one quad, so a quad takes the quad setup once. Rectangles (`SPRT`), lines and fills, which the
 //! Python model also prices, have no engine source here.
 //!
+//! A second price rides along: the same table on mednafen's own rules
+//! ([`mednafen`], `GpuTiming::Mednafen`), the rules the mednafen captures
+//! measure. It is what [`TableCost::total_hblanks_for`] hands over when the
+//! opt-in `WorldToggles::gpu_cost_timing` asks for it; the DuckStation figure
+//! stays the default.
+//!
 //! REF: DrawOTag (the table walk this prices)
+
+pub mod mednafen;
+
+/// Whose GPU timing rules price a table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GpuTiming {
+    /// DuckStation's measured v2 GPU costs, a table's draw plus its DMA
+    /// (`scripts/mednafen/gpu_cost.py`'s `ot_cost`).
+    #[default]
+    DuckStation,
+    /// Mednafen's own rules ([`mednafen`]): the drawing and the DMA in
+    /// series, texture and CLUT cache misses, mednafen's line length.
+    Mednafen,
+}
 
 /// One NTSC scanline in CPU cycles (the video clock is the CPU's `* 11 / 7`).
 pub const HBLANK_CPU_CYCLES: f64 = 3413.0 * 7.0 / 11.0;
@@ -30,6 +50,10 @@ pub const HBLANK_CPU_CYCLES: f64 = 3413.0 * 7.0 / 11.0;
 /// The battle ordering table's length (`0x1F8003A6`, `4096` in every
 /// battle state): every bucket is a list node the DMA walks, empty or not.
 pub const BATTLE_OT_LEN: u32 = 4096;
+
+/// The field ordering table's length (`0x1F8003A6`, `2048` in every field
+/// state).
+pub const FIELD_OT_LEN: u32 = 2048;
 
 /// DMA2 linked-list costs: a node's header read, a non-empty block's setup.
 const LL_HEADER: u64 = 8;
@@ -128,6 +152,16 @@ pub struct TableCost {
     pub draw: u64,
     pub dma: u64,
     pub polys: u32,
+    /// The same table on mednafen's rules.
+    pub med: mednafen::MedTable,
+}
+
+/// A textured packet's page and palette words: its TSB (texture page and
+/// colour mode as the GPU's `E1` word lays them out) and CBA (CLUT).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TexWords {
+    pub tsb: u16,
+    pub cba: u16,
 }
 
 impl TableCost {
@@ -137,7 +171,45 @@ impl TableCost {
             draw: 0,
             dma: u64::from(ot_len) * LL_HEADER,
             polys: 0,
+            med: mednafen::MedTable::new(ot_len),
         }
+    }
+
+    /// Mednafen's price of a packet's first triangle: its node, setup,
+    /// palette load and raster.
+    fn med_first(&mut self, c: [mednafen::Corner; 3], kind: PolyKind, tex: Option<TexWords>) {
+        let mut units = mednafen::setup_units(kind, false);
+        let cache = match tex {
+            Some(t) if kind.textured => {
+                self.med.cache.set_page(t.tsb);
+                units += self.med.cache.load_clut(t.cba);
+                Some(&mut self.med.cache)
+            }
+            _ => None,
+        };
+        units += mednafen::triangle_units(c, kind, DISPLAY_AREA, cache);
+        self.med.open_packet(kind.words(), units);
+    }
+
+    /// Mednafen's price of a quad's second triangle.
+    fn med_second(&mut self, c: [mednafen::Corner; 3], kind: PolyKind, tex: Option<TexWords>) {
+        let cache = (kind.textured && tex.is_some()).then_some(&mut self.med.cache);
+        let units = mednafen::setup_units(kind, true)
+            + mednafen::triangle_units(c, kind, DISPLAY_AREA, cache);
+        self.med.add_to_packet(units);
+    }
+
+    /// The figure `timing` gives for the GPU's whole wait, in hblanks,
+    /// rounded, as the frame-cost ring stores a duration.
+    pub fn total_hblanks_for(&self, timing: GpuTiming) -> u16 {
+        let h = match timing {
+            GpuTiming::DuckStation => {
+                let (d, m) = self.hblanks();
+                d + m
+            }
+            GpuTiming::Mednafen => self.med.hblanks().0,
+        };
+        h.round().clamp(0.0, f64::from(u16::MAX)) as u16
     }
 
     /// One packet's node: its header, block setup and words.
@@ -152,6 +224,21 @@ impl TableCost {
             quad: false,
             ..kind
         };
+        self.add_tri_tex(v.map(|p| (p, [0, 0])), kind, None);
+    }
+
+    /// One three-corner packet with its corners' UVs and, when textured,
+    /// its page words (the mednafen price walks the texture cache with
+    /// them; the DuckStation price reads positions only).
+    pub fn add_tri_tex(&mut self, c: [mednafen::Corner; 3], kind: PolyKind, tex: Option<TexWords>) {
+        let kind = PolyKind {
+            quad: false,
+            ..kind
+        };
+        // Mednafen sets an oversized triangle up and drops its raster
+        // (`DrawTriangle`); DuckStation drops the packet.
+        self.med_first(c, kind, tex);
+        let v = c.map(|(p, _)| p);
         if oversized(&v) {
             return;
         }
@@ -163,6 +250,9 @@ impl TableCost {
     /// `(v0, v1, v2)` and `(v1, v2, v3)` under one setup.
     pub fn add_quad(&mut self, v: [[i32; 2]; 4], kind: PolyKind) {
         let kind = PolyKind { quad: true, ..kind };
+        let c = v.map(|p| (p, [0, 0]));
+        self.med_first([c[0], c[1], c[2]], kind, None);
+        self.med_second([c[1], c[2], c[3]], kind, None);
         if oversized(&v) {
             return;
         }
@@ -175,17 +265,42 @@ impl TableCost {
     /// The second triangle of a quad already added by its first
     /// ([`Self::add_quad_first`]): its pixels only.
     pub fn add_quad_second(&mut self, v: [[i32; 2]; 3], kind: PolyKind) {
+        self.add_quad_second_tex(v.map(|p| (p, [0, 0])), kind, None);
+    }
+
+    /// [`Self::add_quad_second`] with UVs and page words.
+    pub fn add_quad_second_tex(
+        &mut self,
+        c: [mednafen::Corner; 3],
+        kind: PolyKind,
+        tex: Option<TexWords>,
+    ) {
+        let kind = PolyKind { quad: true, ..kind };
+        self.med_second(c, kind, tex);
+        let v = c.map(|(p, _)| p);
         if oversized(&v) {
             return;
         }
-        self.draw += tri_cycles(v, PolyKind { quad: true, ..kind });
+        self.draw += tri_cycles(v, kind);
     }
 
     /// The first triangle of a quad whose second arrives on its own
     /// ([`Self::add_quad_second`]): the quad's node and setup and this
     /// triangle's pixels.
     pub fn add_quad_first(&mut self, v: [[i32; 2]; 3], kind: PolyKind) {
+        self.add_quad_first_tex(v.map(|p| (p, [0, 0])), kind, None);
+    }
+
+    /// [`Self::add_quad_first`] with UVs and page words.
+    pub fn add_quad_first_tex(
+        &mut self,
+        c: [mednafen::Corner; 3],
+        kind: PolyKind,
+        tex: Option<TexWords>,
+    ) {
         let kind = PolyKind { quad: true, ..kind };
+        self.med_first(c, kind, tex);
+        let v = c.map(|(p, _)| p);
         if oversized(&v) {
             return;
         }
@@ -244,6 +359,9 @@ pub struct MeshStreams<'a> {
     pub colors: &'a [[u8; 3]],
     pub indices: &'a [u32],
     pub textured: bool,
+    /// Corner UVs, for the mednafen price's texture cache; empty when the
+    /// host kept none (that price then leaves the cache misses out).
+    pub uvs: &'a [[u8; 2]],
 }
 
 /// The Gouraud tag of a TSB word (`legaia_tmd::mesh::TSB_GOURAUD_BIT`).
@@ -311,22 +429,30 @@ pub fn add_mesh_draw(cost: &mut TableCost, mesh: MeshStreams<'_>, m: &[f32; 16],
             textured: mesh.textured,
             semi: word[1] & WORD_SEMI != 0,
         };
-        let screen = |c: [([i32; 2], [f32; 2]); 3]| [c[0].0, c[1].0, c[2].0];
+        let uv = |i: u32| mesh.uvs.get(i as usize).copied().unwrap_or([0, 0]);
+        let screen = |c: [([i32; 2], [f32; 2]); 3], t: [u32; 3]| {
+            [(c[0].0, uv(t[0])), (c[1].0, uv(t[1])), (c[2].0, uv(t[2]))]
+        };
+        let tex = (mesh.textured && !mesh.uvs.is_empty()).then_some(TexWords {
+            tsb: word[1] & !(TSB_GOURAUD | WORD_SEMI),
+            cba: word[0],
+        });
         let first = corners(t).filter(kept);
         if paired && let Some(b) = next {
             let second = corners(b).filter(kept);
             match (first, second) {
                 (Some(f), Some(s)) => {
-                    cost.add_quad_first(screen(f), kind);
-                    cost.add_quad_second(screen(s), kind);
+                    cost.add_quad_first_tex(screen(f, t), kind, tex);
+                    cost.add_quad_second_tex(screen(s, b), kind, tex);
                 }
-                (Some(c), None) | (None, Some(c)) => cost.add_tri(screen(c), kind),
+                (Some(c), None) => cost.add_tri_tex(screen(c, t), kind, tex),
+                (None, Some(c)) => cost.add_tri_tex(screen(c, b), kind, tex),
                 (None, None) => {}
             }
             k += 2;
         } else {
             if let Some(f) = first {
-                cost.add_tri(screen(f), kind);
+                cost.add_tri_tex(screen(f, t), kind, tex);
             }
             k += 1;
         }
@@ -415,6 +541,7 @@ mod tests {
             colors: &colors,
             indices: &[0, 1, 2, 1, 3, 2],
             textured: true,
+            uvs: &[],
         };
         let mut both = TableCost::new(0);
         add_mesh_draw(&mut both, mesh, &ident, Faces::Both);
@@ -428,6 +555,63 @@ mod tests {
         let mut cw = TableCost::new(0);
         add_mesh_draw(&mut cw, mesh, &ident, Faces::Cw);
         assert_eq!(cw, whole);
+    }
+
+    /// The DuckStation figure is the default and what `total_hblanks`
+    /// gives; the mednafen one rides along and differs.
+    #[test]
+    fn timing_picks_the_figure() {
+        let mut t = TableCost::new(BATTLE_OT_LEN);
+        t.add_quad([[80, 60], [240, 60], [80, 180], [240, 180]], GT);
+        assert_eq!(GpuTiming::default(), GpuTiming::DuckStation);
+        assert_eq!(
+            t.total_hblanks_for(GpuTiming::DuckStation),
+            t.total_hblanks()
+        );
+        // Mednafen: 4095 empty buckets at 10 cycles, the quad's packet at
+        // (2 + 532 + 496 + 2 * 160 * 120) / 2 cycles, over a 2152.6-cycle line.
+        let med = t.total_hblanks_for(GpuTiming::Mednafen);
+        let want =
+            (4095.0 * 10.0 + (2.0 + 532.0 + 496.0 + 38_400.0) / 2.0) / mednafen::HBLANK_CPU_CYCLES;
+        assert!((f64::from(med) - want).abs() <= 1.0, "{med} vs {want}");
+        assert_eq!(t.med.packets(), 1);
+    }
+
+    /// With UVs the mednafen price walks the texture cache: a 64 x 48-pixel
+    /// quad over a 64 x 64 4-bit texture samples 48 texel rows of four
+    /// sixteen-texel blocks each, a miss apiece.
+    #[test]
+    fn uvs_add_texture_misses() {
+        let mut ident = [0.0f32; 16];
+        ident[0] = 1.0;
+        ident[5] = 1.0;
+        ident[10] = 1.0;
+        ident[15] = 1.0;
+        let positions = [
+            [-0.2, 0.2, 0.5],
+            [0.2, 0.2, 0.5],
+            [-0.2, -0.2, 0.5],
+            [0.2, -0.2, 0.5],
+        ];
+        let words = [[0x7EC1, 0x4005]; 4];
+        let colors = [[0x80; 3]; 4];
+        let uvs = [[0, 0], [63, 0], [0, 63], [63, 63]];
+        let mesh = |uvs| MeshStreams {
+            positions: &positions,
+            words: &words,
+            colors: &colors,
+            indices: &[0, 1, 2, 1, 3, 2],
+            textured: true,
+            uvs,
+        };
+        let mut bare = TableCost::new(0);
+        add_mesh_draw(&mut bare, mesh(&[]), &ident, Faces::Both);
+        let mut with = TableCost::new(0);
+        add_mesh_draw(&mut with, mesh(&uvs), &ident, Faces::Both);
+        assert_eq!(bare.draw, with.draw, "the DuckStation price reads no UVs");
+        let extra = with.med.cycles() - bare.med.cycles();
+        // 48 * 4 misses at 2 cycles, plus the 8-cycle palette load.
+        assert_eq!(extra, 48.0 * 4.0 * 2.0 + 8.0);
     }
 
     /// The empty battle table alone is the DMA walk of its buckets, about

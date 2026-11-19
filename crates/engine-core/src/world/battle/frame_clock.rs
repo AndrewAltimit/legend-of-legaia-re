@@ -318,10 +318,14 @@ impl World {
     /// `WorldToggles::battle_gpu_cost_step` is up: retail's entry is
     /// `max(cpu, dma + draw of the previous pass's table)`, the table the GPU
     /// draws while the pass runs (`DrawOTag` at `0x80017288`, `DrawSync(0)`
-    /// at `0x800174D8`). A no-op outside a battle.
+    /// at `0x800174D8`). In a field or cutscene the figure goes to the field
+    /// price instead (`WorldToggles::field_gpu_cost_step`); a no-op in any
+    /// other mode.
     pub fn note_drawn_table_cost(&mut self, hblanks: u16) {
         if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
             self.battle.drawn_table_cost = Some(hblanks);
+        } else if self.field_frame_priced_mode() {
+            self.field_drawn_table_cost = Some(hblanks);
         }
     }
 

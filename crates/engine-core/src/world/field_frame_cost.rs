@@ -220,6 +220,7 @@ impl World {
     /// `son_arrival_from_doman`).
     pub fn install_field_cost_table(&mut self, table: Option<FieldCostTable>) {
         self.field_cost_offset = 0;
+        self.field_drawn_table_cost = None;
         if table.is_some() {
             self.clock.frame_step_telemetry =
                 legaia_engine_vm::actor_tick::FrameStepTelemetry::new();
@@ -246,12 +247,19 @@ impl World {
         }
         if let Some(f) = self.field_frame_features() {
             let cost = field_frame_cost(&f) + self.field_cost_offset;
+            // Retail's entry is `max(cpu, gpu of the previous table)`.
+            let cost = match self.field_drawn_table_cost {
+                Some(gpu) if self.toggles.field_gpu_cost_step => cost.max(i32::from(gpu)),
+                _ => cost,
+            };
             self.clock.frame_cost = Some(cost.clamp(0, 0x7FFF));
             self.field_cost_priced = true;
         }
     }
 
-    fn field_frame_priced_mode(&self) -> bool {
+    /// Whether the field model prices this mode's frames: a field or a
+    /// cutscene.
+    pub fn field_frame_priced_mode(&self) -> bool {
         matches!(
             self.mode,
             legaia_engine_mode::mode::SceneMode::Field
@@ -476,6 +484,33 @@ mod tests {
         assert_eq!(s[0], 2, "the first frame runs on the step it opened with");
         assert!(s[1..].iter().all(|&x| x == 3), "{s:?}");
         assert!(steps(heavy, false, 24).iter().all(|&x| x == 2));
+    }
+
+    /// The opt-in field GPU step prices a frame at the larger of the model
+    /// and the drawn table's GPU wait; down (the default) the drawn table
+    /// changes nothing, and a scene entry forgets it.
+    #[test]
+    fn the_field_gpu_step_takes_the_larger_wait() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Field;
+        w.toggles.field_frame_cost = true;
+        w.install_field_cost_table(Some(FieldCostTable::default()));
+        w.npcs.cull_view = Some(town01_view());
+        w.price_field_frame();
+        let model = w.clock.frame_cost.unwrap();
+        w.note_drawn_table_cost(600);
+        w.price_field_frame();
+        assert_eq!(w.clock.frame_cost, Some(model), "off by default");
+        w.toggles.field_gpu_cost_step = true;
+        w.price_field_frame();
+        assert_eq!(w.clock.frame_cost, Some(600));
+        w.note_drawn_table_cost(1);
+        w.price_field_frame();
+        assert_eq!(w.clock.frame_cost, Some(model));
+        w.note_drawn_table_cost(600);
+        w.install_field_cost_table(Some(FieldCostTable::default()));
+        w.price_field_frame();
+        assert_eq!(w.clock.frame_cost, Some(model));
     }
 
     /// Leaving the field for a mode the model does not price drops its price

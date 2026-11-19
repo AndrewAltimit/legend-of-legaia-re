@@ -158,6 +158,23 @@ pub struct WorldToggles {
     /// `max(cpu, dma + draw)` entry. The native session raises it from
     /// `LEGAIA_BATTLE_GPU_COST=1`; only the native window prices its frames.
     pub battle_gpu_cost_step: bool,
+    /// Whose GPU timing rules price the drawn table the GPU-cost steps read
+    /// ([`Self::battle_gpu_cost_step`], [`Self::field_gpu_cost_step`]): the
+    /// DuckStation costs by default, or mednafen's own rules
+    /// (`legaia_engine_system::gpu_draw_cost::mednafen`), a Mednafen- /
+    /// hardware-scale experiment. Neither touches a frame while both steps
+    /// are down. The native session takes `LEGAIA_GPU_COST_TIMING=mednafen`.
+    pub gpu_cost_timing: legaia_engine_system::gpu_draw_cost::GpuTiming,
+    /// Opt-in, off by default: a field or cutscene frame's cost is the larger
+    /// of the field model's price ([`Self::field_frame_cost`]) and the
+    /// modelled GPU wait over the table the host drew last
+    /// (`World::note_drawn_table_cost`), retail's `max(cpu, dma + draw of
+    /// the previous pass's table)` entry (`FUN_800173BC`'s `DrawSync(0)` at
+    /// `0x800174D8`). The field model is on PCSX-Redux's scale, whose GPU is
+    /// free; this is for a Mednafen- / hardware-scale run. The native session
+    /// raises it from `LEGAIA_FIELD_GPU_COST=1`; only the native window
+    /// prices its frames.
+    pub field_gpu_cost_step: bool,
     /// Opt-in, off by default: a party art commit's `"ME"` keyframe decode
     /// priced into its battle frame (`frame_clock::me_decode_work`;
     /// `FUN_8002B28C` from `FUN_8004AD80`). Retail-correct, but over the
@@ -571,6 +588,8 @@ impl WorldToggles {
             battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
             battle_party_cost_step: true,
             battle_gpu_cost_step: false,
+            gpu_cost_timing: legaia_engine_system::gpu_draw_cost::GpuTiming::DuckStation,
+            field_gpu_cost_step: false,
             battle_me_decode_cost: false,
             battle_arts_shout_cd: false,
             battle_effect_walk_cost: false,
