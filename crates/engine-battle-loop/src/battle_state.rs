@@ -1561,11 +1561,18 @@ pub struct CaptureApproach {
     /// the walk's cycle stands at the arrival decides how many passes it
     /// walks on into the loop.
     pub walk_phase: Option<(u16, u16)>,
+    /// A strike-loop capture past its arrival: the walk's node cursor
+    /// `+0x68` as the arrival pass advanced it, the pass whose bit-0 cut
+    /// committed the arrival's idle. The ring `+0x17A` holds the walk's last
+    /// pass and its advance; past the clip's count it is the crossing tick,
+    /// whose effect-script walk fires the cycle's last record and no new
+    /// cycle's first.
+    pub arrival_walk: Option<u16>,
 }
 
 impl CaptureApproach {
     /// `arrive:target:sx:sz:tx:tz`, then `:yaw:cursor` for a
-    /// [`Self::walk_phase`].
+    /// [`Self::walk_phase`] or `:a<cursor>` for a [`Self::arrival_walk`].
     pub fn to_env(&self) -> String {
         let mut s = format!(
             "{}:{}:{}:{}:{}:{}",
@@ -1578,6 +1585,8 @@ impl CaptureApproach {
         );
         if let Some((yaw, cursor)) = self.walk_phase {
             s.push_str(&format!(":{yaw}:{cursor}"));
+        } else if let Some(cursor) = self.arrival_walk {
+            s.push_str(&format!(":a{cursor}"));
         }
         s
     }
@@ -1586,15 +1595,22 @@ impl CaptureApproach {
     pub fn from_env(v: &str) -> Option<Self> {
         let mut it = v.trim().split(':');
         let mut next = || it.next().map(str::trim);
+        let arrive = next()?.parse().ok()?;
+        let target = next()?.parse().ok()?;
+        let strike = [next()?.parse().ok()?, next()?.parse().ok()?];
+        let target_ground = [next()?.parse().ok()?, next()?.parse().ok()?];
+        let (walk_phase, arrival_walk) = match (next(), next()) {
+            (Some(a), _) if a.starts_with('a') => (None, Some(a[1..].parse().ok()?)),
+            (Some(y), Some(c)) => (Some((y.parse().ok()?, c.parse().ok()?)), None),
+            _ => (None, None),
+        };
         Some(Self {
-            arrive: next()?.parse().ok()?,
-            target: next()?.parse().ok()?,
-            strike: [next()?.parse().ok()?, next()?.parse().ok()?],
-            target_ground: [next()?.parse().ok()?, next()?.parse().ok()?],
-            walk_phase: match (next(), next()) {
-                (Some(y), Some(c)) => Some((y.parse().ok()?, c.parse().ok()?)),
-                _ => None,
-            },
+            arrive,
+            target,
+            strike,
+            target_ground,
+            walk_phase,
+            arrival_walk,
         })
     }
 }
@@ -1608,6 +1624,7 @@ fn capture_approach_env_round_trips() {
         strike: [168, 290],
         target_ground: [0, -12],
         walk_phase: None,
+        arrival_walk: None,
     };
     assert_eq!(CaptureApproach::from_env(&a.to_env()), Some(a));
     assert_eq!(CaptureApproach::from_env("656:2:168"), None);
@@ -1617,6 +1634,12 @@ fn capture_approach_env_round_trips() {
     };
     assert_eq!(walking.to_env(), "656:2:168:290:0:-12:638:72");
     assert_eq!(CaptureApproach::from_env(&walking.to_env()), Some(walking));
+    let arrived = CaptureApproach {
+        arrival_walk: Some(200),
+        ..a
+    };
+    assert_eq!(arrived.to_env(), "656:2:168:290:0:-12:a200");
+    assert_eq!(CaptureApproach::from_env(&arrived.to_env()), Some(arrived));
 }
 
 /// One combatant of [`BattleState::capture_reseat_bars`]: engine slot, HP,

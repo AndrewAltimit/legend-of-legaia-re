@@ -86,6 +86,7 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 - [Dome ringside panel stills PROT 1221 and 1222](#dome-ringside-panel-stills-prot-1221-and-1222)
 - [The display object's sound-bank category](#the-display-objects-sound-bank-category)
 - [The evolved-Cort flow park](#the-evolved-cort-flow-park)
+- [A walk that arrives on its crossing stomps once](#a-walk-that-arrives-on-its-crossing-stomps-once)
 
 ## Threads
 
@@ -2657,4 +2658,29 @@ re-commits the loop and walks frame `0` on the same pass (`0x80047B54`, then the
 `0x80047C08`); no recording holds that pass.
 
 Owning page: [`battle-action.md`](../../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50).
+
+### A walk that arrives on its crossing stomps once
+
+*Status:* resolved - the engine re-committed the loop ahead of the cut, and the replay crossed a pass early. Evidence: `disassembly` + `capture`
+
+The question was why `battle_jou_cort_181_strike`'s replay drew a walk ring retail's frame lacks.
+Both halves were the port's. In `FUN_80047430` the bit-0 test comes first: `andi v0,v1,0x1` /
+`bne v0,zero,0x80047940` at `0x800478F4`, the cut's displacement and the commit
+`jal 0x8004AD80` at `0x80047A3C`, then `lw s3,0x4c(s5)` reloads the record the commit installed and
+falls into the natural-end test at `0x80047A48` on that clip, at the zeroed cursor. A loop crossing its
+end on the pass a bit-0 cut is staged is therefore never re-committed: its first walk fires the ending
+cycle's last record and the post-commit walk reads the staged clip. The engine's looping player took
+its natural end first, re-committed the walk, and its next walk read the new cycle's frame `0`, so
+gate `1` stomped beside gate `13`; the staged idle then committed behind it. The natural end now
+re-commits only with no bit-0 cut staged (`World::tick_battle_animations_walk`, `cut_first`).
+
+The capture's history rings date the arrival: Cort's walk cursors run `.., 164, 176, 188` and the next
+slot holds the idle at `0`, so the arrival pass advanced the walk to `200` of `192` and fired gate
+`13` there. The replay, seated on distance alone, walked on its own step and crossed a pass short of
+its arrival. Seated on the ring's phase (`CaptureApproach::arrival_walk`), with the cut ordered as
+retail's, it stomps once on the arrival pass and holds the capture's two live rings with or without
+the snapshot's retirement; with the old order it held three, and the still read `.949` unretired.
+`image` stays `.963`, the score the retirement already gave.
+
+Owning pages: [`battle-action.md`](../../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50), [`retail-compare.md`](../../tooling/retail-compare.md#a-turning-effect-parts-banks-are-a-clock).
 

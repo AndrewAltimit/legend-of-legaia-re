@@ -962,6 +962,8 @@ impl World {
         ms.world_z = (pz as f32 + uz / len * back).round() as i16;
         if let Some((yaw, cursor)) = app.walk_phase {
             self.seat_capture_walk_phase(slot, counter, yaw, cursor, step);
+        } else if let Some(cursor) = app.arrival_walk {
+            self.seat_capture_arrival_phase(slot, counter, app.arrive, cursor, step);
         }
         self.refresh_battle_body_pairs_now();
     }
@@ -1006,6 +1008,58 @@ impl World {
         let total = (p.frame_count() * 16) as i32;
         let passes = (i32::from(yaw) - counter) / inc;
         if let Some(want) = capture_walk_cursor(i32::from(cursor), passes, advance, total) {
+            a.pose_frame = Some(p.seat_cursor(want));
+        }
+    }
+
+    /// [`Self::seat_capture_walk_phase`] for a capture past its arrival
+    /// ([`CaptureApproach::arrival_walk`]): stand the walk's cursor where,
+    /// stepping a pass at a time, the pass after the counter reaches
+    /// `arrive` - the arrival pass, whose poll stages idle under `+0x1DC`
+    /// bit 0 (`0x801E35BC..0x801E35C8`) - advances it onto the capture's
+    /// arrival cursor. That pass's effect-script walk reads the advanced
+    /// cursor ahead of the cut (`0x800478B8`, then `0x800478F4`), so whether
+    /// the walk's last record fires there depends on the cycle's phase: the
+    /// replay, seated on distance alone, crossed its clip's end a pass short
+    /// of the arrival, re-committed the loop and stomped the new cycle's
+    /// gate `1` beside the old one's `13` (`battle_jou_cort_181_strike`'s
+    /// Cort, whose ring holds the walk at `188` and the arrival's idle
+    /// committed on the next pass, the advance reading `200` of `192`). A
+    /// cursor past the clip's end is a crossing, kept inside one pass's
+    /// advance at the replay's step. A harness seat.
+    ///
+    /// [`CaptureApproach::arrival_walk`]: legaia_engine_battle_loop::battle_state::CaptureApproach::arrival_walk
+    fn seat_capture_arrival_phase(
+        &mut self,
+        slot: usize,
+        counter: i32,
+        arrive: u16,
+        cursor: u16,
+        step: u8,
+    ) {
+        let inc =
+            i32::from(legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step))
+                .max(1);
+        let a = &mut self.actors[slot];
+        let rate = a.battle.anim_rate;
+        let Some(p) = a.battle_animation.as_mut().filter(|p| p.is_looping()) else {
+            return;
+        };
+        let advance = i32::from(p.pass_advance_sixteenths(rate, step));
+        let total = (p.frame_count() * 16) as i32;
+        if advance <= 0 {
+            return;
+        }
+        let cursor = i32::from(cursor);
+        let at_arrival = if cursor >= total {
+            total + (cursor - total).min(advance - 1)
+        } else {
+            cursor
+        };
+        // The walk's last pass, `passes` passes from now, stands one advance
+        // short of the arrival's reading.
+        let passes = (i32::from(arrive) - counter) / inc;
+        if let Some(want) = capture_walk_cursor(at_arrival - advance, passes, advance, total) {
             a.pose_frame = Some(p.seat_cursor(want));
         }
     }

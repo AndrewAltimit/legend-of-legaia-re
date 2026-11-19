@@ -2238,17 +2238,27 @@ position `+0x14..+0x18` and its level `+0x78` taken back the lag
 (`is_floor_ring`). `battle_jou_cort_181_strike`'s Cort walks three rings down
 his approach. A third ring on its way out (`+0x10` bit 3) is not seated.
 
-A ring the replay stomped past the capture's count is retired. The capture
-holds every ring its walk left live, and the replay's walk is not retail's: it
-starts where the yaw counter places it and runs on the replay's frame step, so
-on a finer step than retail's it is longer. Cort's walk is one cycle of his
-12-keyframe clip in retail, five stomps with the last (gate `13`, read on the
-crossing's frame `12`) on the pass he arrives; the replay, on step `2` where
-retail's sixteen-entry history reads `3`, walks a third further, re-commits
-the loop and stomps gate `13` and the new cycle's gate `1` on one pass. The
-snapshot seats the capture's rings over the replay's first and marks the rest
-finished (`World::install_action_fx_part_snapshot`), only for a capture that
-holds a ring at all.
+A walk's phase at its arrival decides its last stomp. Cort's walk is one
+cycle of his 12-keyframe clip in retail, five stomps with the last (gate `13`,
+read on the crossing's frame `12`) on the pass he arrives: the arrival's idle,
+staged under `+0x1DC` bit 0, is cut in ahead of the natural-end test, so the
+walk is not re-committed and the new cycle's gate `1` does not fire
+([settled](../reference/re-settled-threads/battle.md#a-walk-that-arrives-on-its-crossing-stomps-once)).
+The replay starts its walk where the yaw counter places it, on its own step,
+so seated on distance alone its cycle crossed a pass short of the arrival and
+stomped gates `13` and `1` together. A capture past its arrival therefore
+carries the walk's cursor on the arrival pass, read off the history rings
+(`ram_read::arrival_walk_cursor`: Cort's `.., 176, 188`, then the idle at `0`,
+so `200`), and the replay's walk is stood on the phase that crosses on its own
+arrival pass (`CaptureApproach::arrival_walk`,
+`World::seat_capture_arrival_phase`). Cort's replay then holds the capture's
+two live rings.
+
+A ring the replay stomped past the capture's count is still retired, as a
+guard for walks no seat reaches: the snapshot seats the capture's rings over
+the replay's first and marks the rest finished
+(`World::install_action_fx_part_snapshot`), only for a capture that holds a
+ring at all.
 
 A ring the replay never stomped is seated outright. The seed carries the ring's
 scale `+0x72` beside its ground point, and the snapshot seats each ring past the

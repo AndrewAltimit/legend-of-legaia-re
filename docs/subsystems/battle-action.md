@@ -1627,7 +1627,10 @@ Its inputs resolve entirely out of state this page already names:
   approach holds that stomp on frame `12`, on the pass he arrives: the arrival's
   staged idle cuts the walk there (`+0x1DC` bit 0, `0x800478F4`), so the commit
   is the idle's and the walk's gate `1` does not fire beside it
-  ([settled](../reference/re-settled-threads/battle.md#which-frame-the-effect-script-walk-reads-as-a-loop-ends)). Party reaction entries carry the same
+  ([settled](../reference/re-settled-threads/battle.md#which-frame-the-effect-script-walk-reads-as-a-loop-ends)).
+  Port: a loop's natural end in `World::tick_battle_animations_walk` re-commits
+  only when no bit-0 cut is staged
+  ([a walk that arrives on its crossing stomps once](../reference/re-settled-threads/battle.md#a-walk-that-arrives-on-its-crossing-stomps-once)). Party reaction entries carry the same
   shape: the get-up (entry 5) spawns a direct effect `7` (`0x87`) on its
   crossing (frame 28), and the flinches (entries 2 and 3) one on theirs (frame 9). Port:
   `MonsterAnimPlayer::crossing_frame`, census

@@ -277,13 +277,11 @@ impl World {
     /// holds rings holds every ring its walk left live, each with its ground
     /// point, so a ring the replay stomped past that count is a footfall
     /// retail's walk never took: the replay walks on its own frame step from
-    /// where the yaw counter places it, and a walk run on a finer step than
-    /// retail's is longer and crosses its clip's end where retail's arrived
-    /// on it. `battle_jou_cort_181_strike`'s Cort walks one cycle of his
-    /// 12-keyframe clip in retail and arrives on its crossing tick, where
-    /// the last of five stomps (gates `1`, `4`, `7`, `10`, `13`) lands; the
-    /// replay's walk runs a third longer, re-commits the loop and stomps the
-    /// crossing's gate `13` and the new cycle's gate `1` on one tick.
+    /// where the yaw counter places it, and a walk no seat stands on retail's
+    /// phase can cross its clip's end where retail's arrived on it. A guard:
+    /// `battle_jou_cort_181_strike`'s Cort, whose walk arrives on its crossing
+    /// tick, is seated on that phase (`World::seat_capture_arrival_phase`)
+    /// and stomps the capture's count without it.
     pub fn install_action_fx_part_snapshot(
         &mut self,
         seeds: &[legaia_engine_effects::summon::CastPartSeed],

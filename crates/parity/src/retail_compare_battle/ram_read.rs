@@ -619,6 +619,40 @@ fn displayed_monster_clip(ram: &[u8], slot: u32) -> Option<(u8, u16)> {
 }
 /// The ring's depth (`0x1F` shifts and slot 0).
 const RING_SLOTS: u32 = 32;
+/// The walk entry a monster's approach plays: the tag-`1` entry `0x14`
+/// stages (`FUN_80050E2C`, the fallback at `0x801E32B0`).
+const MONSTER_WALK_ENTRY: u32 = 1;
+
+/// Monster pool slot `slot`'s walk cursor on its arrival pass, as that pass's
+/// advance left it ahead of the cut ([`legaia_engine_battle_loop::battle_state::CaptureApproach::arrival_walk`]).
+/// The history rings hold one slot a pass, slot `0` the live one: the
+/// newest walk slot `k` follows a commit at slot `k - 1` (another record, at
+/// cursor `0`), and the walk's last advance is slot `k` less slot `k + 1` on
+/// the same record. The arrival pass's walk reads one more such advance
+/// (`FUN_801DEA50` at `0x800478B8`, ahead of the bit-0 cut at `0x800478F4`).
+/// `battle_jou_cort_181_strike`'s Cort: walk cursors `.., 176, 188`, then
+/// the idle at `0`, `16`, `32`, so the arrival read `200`. `None` for a party
+/// slot, a ring with no walk behind a commit, or a walk advance the ring
+/// cannot read.
+pub(super) fn arrival_walk_cursor(ram: &[u8], slot: u32) -> Option<u16> {
+    if !(3..8).contains(&slot) {
+        return None;
+    }
+    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+    let record = game_anchors::u32_at(ram, 0x801C_9348 + (slot - 3) * 4);
+    if !in_ram(p) || !in_ram(record) {
+        return None;
+    }
+    let walk = game_anchors::u32_at(ram, record + 0x4C + MONSTER_WALK_ENTRY * 4);
+    let rec = |k: u32| game_anchors::u32_at(ram, p + RING_RECORD + k * 4);
+    let cur = |k: u32| game_anchors::u16_at(ram, p + RING_CURSOR + k * 2);
+    let k = (1..RING_SLOTS - 1).find(|&k| rec(k) == walk && rec(k - 1) != walk)?;
+    if !in_ram(walk) || cur(k - 1) != 0 || rec(k + 1) != walk {
+        return None;
+    }
+    let advance = cur(k).checked_sub(cur(k + 1)).filter(|&a| a > 0)?;
+    Some(cur(k) + advance)
+}
 /// The lowest ring id the ghost walk draws (`sltiu v0,v0,0x11` at
 /// `0x80049460`).
 const GHOST_RING_ID_MIN: u8 = 0x11;
@@ -1321,6 +1355,7 @@ impl RetailBattle {
                 .map(|p| game_anchors::u32_at(ram, p + 0x22C))
                 .filter(|&node| in_ram(node))
                 .map_or(0, |node| game_anchors::u16_at(ram, node + 0x68)),
+            arrival_walk_cursor: arrival_walk_cursor(ram, u32::from(active_actor)),
             caster_latched: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DB)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
             swing_reseed_entry: active_actor < 3 && {

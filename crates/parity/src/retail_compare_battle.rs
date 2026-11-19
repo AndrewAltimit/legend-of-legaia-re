@@ -516,6 +516,9 @@ pub struct RetailBattle {
     /// sixteenths of a keyframe) in the RAM, not taken back to the displayed
     /// frame as [`Self::clip_cursors`] are.
     pub caster_cursor: u16,
+    /// The active monster's walk cursor as its arrival pass advanced it,
+    /// read off the history rings ([`ram_read::arrival_walk_cursor`]).
+    pub arrival_walk_cursor: Option<u16>,
     /// The active seat's latched raw staged id `+0x1DB` - the byte its last
     /// commit installed, before an art id was rewritten to a dynamic slot.
     pub caster_latched: u8,
