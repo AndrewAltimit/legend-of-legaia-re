@@ -2236,6 +2236,7 @@ answered from the extracted image at its mapped base.
 | Baka state `0x6D` is the match-result state | falsified (it is the secret opponent's tally variant) | Plausible: it follows the duel. The ordinary tally exit is `0x801D0A38`; `0x6D` is its variant gated on `0x801DBF06`, and the win flourish is stored at both (`0x801D0AA4`). |
 | The play page's black ground in Rim Elm's shop and Hunter's Spring follows a story point (after Drake Castle) | falsified (the odds of one tick) | Plausible: the reporter first saw it after coming back from Drake Castle, and it came only sometimes. The page stepped the previous scene's CLUT walker once against the entered scene's image before rebuilding its render state, and the kingdom table's destination `(32, 509)` is a ground palette in `izumi` and `town0c`; whenever the walker was due on the entry tick the copy blanked it, at any point of the story. A scripted re-entry loop in Chromium reproduces it and the retirement on the entry tick clears it ([field ambient FX](../subsystems/field-ambient-fx.md)). |
 | `zeto_big_wave_mid_cast`'s screen shows Zeto's idle one pass older than the display lag says | falsified (the frame carries no idle pose) | Plausible: the image once fit Zeto seated at cursor `48` (`.980`) over the lag's `52` (`.962`). A film of the cut draws `52`, and the still now reads `1.000` with Zeto seated anywhere from `44` to `99`: the near plate covers the body on both sides. See [below](#zetos-big-wave-idle-is-not-a-pass-older). |
+| The engine's Big Wave opening runs `0x0A..0x28` a pass longer than retail's | falsified (the setup seat closed it) | Plausible: a `--physical` film from `garmel_zeto_pre_big_wave` stood Zeto three passes ahead of retail at the cut, and one pass had no other home. It was the idle the action SM rebuilt at keyframe `0`; with battle setup seating each idle on its drawn phase, the re-shot film reads Zeto's cursor on retail's pass from `0x28` on (`228`, `236`, `0`), `.985` over the cast. See [below](#the-engines-big-wave-opening-is-not-a-pass-longer). |
 
 ### Zeto's Big Wave idle is not a pass older
 
@@ -2243,7 +2244,7 @@ answered from the extracted image at its mapped base.
 
 The still that raised the question no longer witnesses Zeto's pose. The image child seats Zeto's idle at the displayed cursor, two passes back of the RAM's (`52`), and `zeto_big_wave_mid_cast` reads `image` `1.000`. Seated instead at `44`, `48`, `56` or `99` (a one-off override of the child's `LEGAIA_SEAT_BATTLE_CLIPS`), it reads `1.000` with the same `mae` each time:
 the near plate fills the close-up and covers the body on retail's frame and the engine's alike. The `48` fit below was taken on an engine frame that drew some of the body where retail's draws none, and the PCSX-Redux film of the cut already showed the cut pass drawing `52`, as the display lag says.
-What is left of the earlier reading is the engine's opening running a pass longer than retail's, an open thread of its own ([open threads](open-rev-eng-threads.md#battle--rendering)).
+What was left of the earlier reading, the engine's opening running a pass longer than retail's, is falsified too ([below](#the-engines-big-wave-opening-is-not-a-pass-longer)).
 
 The earlier investigation follows; its readings stand, but none of them now asks for an older pass.
 
@@ -2368,8 +2369,8 @@ the cut pair `.849`, and Zeto stands at `90` on the cut pass against the
 recording's `78`: the one pass the engine's opening runs longer (`0x0A..0x28`
 in three passes where retail runs two). The engine now keeps it: battle setup
 seats each body's idle at the phase it drew (`World::seat_battle_setup_idle`),
-so the SM's requests find the loop playing; the film has not been re-shot on
-that seat
+so the SM's requests find the loop playing, and the film re-shot on that
+seat runs the opening as retail does ([below](#the-engines-big-wave-opening-is-not-a-pass-longer))
 ([settled](re-settled-threads/battle.md#the-action-sms-idle-request-keeps-a-playing-idle)).
 Grade `capture` (the film) and `disassembly` (`FUN_801D5854`'s stores, see
 `ghidra/scripts/funcs/overlay_battle_action_801d5854.txt`).
@@ -2394,6 +2395,20 @@ body's matrix, or the metric trading sway against framing). Grade
 pair, against a recording that opens on cast begin `0x28` as the oracle
 pairs it (this one opens on the state's `0x0A`, and the oracle pairs it at
 `.46` throughout).
+
+### The engine's Big Wave opening is not a pass longer
+
+*Status:* falsified. Evidence: `capture`.
+
+Re-shot on the setup seat, the opening is retail's. The `--physical` film
+from `garmel_zeto_pre_big_wave` reads `.985` over `488` pairs (`.874`
+before the seat), cues `11` of `11`, and Zeto's idle cursor stands where
+retail's does on every pass from the cast begin: `228` on `0x28`, `236` on
+the `0x6E` entry, then `0`, `12`, `24`, `36`, `48` (the `0x6F` entry), at the
+same pass on both sides. The state opens inside `0x0A` on cursor `212`, and
+both sides reach `0x28`'s `228` two advances on (the engine's `0x0C` pass
+draws `220`), so no pass is extra. `0x0C` and `0x28` run two vsyncs each on
+both sides. Grade `capture`.
 
 
 ## Measurement readings

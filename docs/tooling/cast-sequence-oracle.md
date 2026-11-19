@@ -1591,6 +1591,24 @@ when the gate opens (`LEGAIA_FILM_YAW`), beside the state's `rand()` word. Scyth
 reads `.953` to `.982` and V-Windhash `.933` to `.961`; of the set's other `--physical`
 films none falls by more than `.001` and none rises by more than `.004`. A harness seat.
 
+### The backdrop angle at the cast begin
+
+A stage that keeps backdrop object 1 (`0x8007B64B`) turns it by `step >> 1` every
+battle pass, the angle `0x800891D2` running on from boot (`World::tick_battle_backdrop_spin`).
+The film's child holds the state's angle (`LEGAIA_BATTLE_BACKDROP_YAW`) until the cast
+begins and lets it wind from there, which is retail's angle only when the recording
+opens on the state's instant. A `--monster-pick` recording plays rounds to its pick:
+Zenoir's Fire Claw from `battle_garmel_zenoir_strike` begins `1628` vsyncs on, at
+`942` where the state held `403`, and `garmel`'s cave mist, the object's textured
+band (CLUT `0x77C1`), stood an eighth of a turn off retail's behind the whole cast.
+
+A pick run therefore keeps its RAM at the cast begin (the driver sets
+`LEGAIA_RAM_AT=0`, so `retail/ram_<cast>.bin` sits beside the frames), and the driver
+hands the child that image's angle less the two passes the display lags it by
+(`recording_cast_backdrop_yaw`). The Fire Claw film reads `.909` (`.802` before),
+`0x28` `.946` (`.832`), and `.973` on `--retail-steps` (`.855`), cues unchanged. A
+harness seat.
+
 ### The enemy set on the plain seat, and what holds it
 
 On the plain seat (the engine's own steps and stream, the cast-begin seat on the spell
