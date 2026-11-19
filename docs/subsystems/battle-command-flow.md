@@ -426,16 +426,45 @@ the special word's `0x100`, the magic arm for a member with no Ra-Seru marker
 `0x200`, and `Attack` with all three limbs rotted. The press-by-press table
 and the port: [`audio.md`](audio.md#every-press-surface-by-surface).
 
-**When a press is read.** The flow builds its pad word from the edge word the
+### The flow reads the pad once a battle frame
+
+The flow builds its pad word from the edge word the
 pad builder latched at the previous frame's end (`_DAT_8007B874 |
 _DAT_8007B938`, `0x801D07FC..0x801D080C` and `0x801D0B0C..0x801D0B20`), so a
 battle press waits on the same pipeline as a field one
-([field-locomotion.md](field-locomotion.md#when-the-game-sees-a-press)). A
-PCSX-Redux film from `battle_menu_rugi_barra_retail` (step `3`) pushes the
-round prompt's cue three vsyncs after a Right and after a Left. The port's
-retail-faithful mode runs the pipeline on the field and the overworld only:
-in a fight it takes the press on its tick, so the same presses sound on the
-press's own vsync.
+([field-locomotion.md](field-locomotion.md#when-the-game-sees-a-press)). Every
+other battle reader takes the same latched words from inside the battle
+frame: the flow's third read at `0x801D21B8`, the action SM `FUN_801E295C`
+(`0x801E5988`, `0x801E608C`, `0x801E63A8`), the side-band pass `FUN_80056208`
+(`0x80056384`), the frame driver `FUN_80046A20` (`0x80046D80`, `0x800472A4`),
+the window and list kernels the item and magic windows run (`FUN_80031D00`,
+`FUN_80032A44`, `FUN_80035C24`) and the tutorial module (`0x801F720C`); a
+scan of the battle overlay finds no other access to the pad words. The flow's
+commit arms clear the edge word (`sw zero` at `0x801D13F4`, `0x801D14CC` and
+six more) so the action SM's pass does not read the same press again.
+
+So a frame that opens on tick `T` acts on the host pad of `T_prev - 1 + k`,
+`k` the frame before's cost in whole vsyncs, one short of its span at most.
+PCSX-Redux films at step `3` (frames of `530..650` hblanks, `k = 2`) push each
+surface's cue three vsyncs after a press three before a frame opens, two after
+one two before, and four after one a vsync before:
+
+| State | Presses | Cue | Retail dt | Retail-faithful port |
+|---|---|---|---|---|
+| `battle_menu_rugi_barra_retail` (round prompt `0x1E`) | Right, Left | `0x20` | `3`, `3`; `2`, `4` | same |
+| `battle_auto_prompt_gaza2_retail` (`0x78`, then the arts entry) | Right, Left, Right, Down, Up, Cross | `0x20` | `4` each | same |
+| `battle_target_cursor_rugi_barra_retail` (target cursor) | Right, Left, Right, Left | `0x21` | `4`, `4`, `4`, `3` | same |
+| `battle_item_window_gaza2_retail` (item window `0x3C`) | Down, Up, Down, Up | `0x21` | `4`, `4`, `3`, `2` | same |
+
+The port's retail-faithful mode runs the pipeline in a fight
+(`World::retail_frame_pad`, on the battle frame clock and the frame-cost
+ring's newest push); the default hands a press to the flow on its own vsync.
+The port column is a `play-window --retail` child stood on each state's
+frame grid (`LEGAIA_DIAG_BATTLE_STEP_AT`): a child that opens on a prompt has
+priced no battle pass, so it runs the default step `2` there where retail's
+frames run `3`, and a film off that grid lands its cues a vsync either side.
+The engine prices no frame while a command surface is up; its step there is
+the one the last action-SM pass left.
 
 ### The ring's cancel steps back a member
 
