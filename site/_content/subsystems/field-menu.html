@@ -241,6 +241,18 @@
     <li><strong>Equip</strong>: the character pick confirms <code>0x20</code>; Best Equipment and a fitted candidate sound <code>0x24</code>, or <code>0x23</code> when nothing would change; an empty Remove sounds <code>0x37</code> and the worn row is silent.</li>
   </ul>
   <p>The <a href="shop.html">shop</a> and the <a href="save-screen.html">card grid</a> follow the same overwrite rule with their own cue sets. Engine: <code>field_menu_dispatch::pause_frame_blip</code>, which asks the open screen for its confirm cue before the generic edge cue, on both hosts.</p>
+  <h3>When a blip sounds</h3>
+  <p>Filmed on both sides, each cue lands this many vsyncs after its press:</p>
+  <table class="data-table">
+    <thead><tr><th>Press</th><th>Retail</th><th>Engine, retail-faithful</th><th>Engine, default</th></tr></thead>
+    <tbody>
+      <tr><td>Up / Down on the pause root or a shop's root (<code>0x21</code>)</td><td>3</td><td>3</td><td>0</td></tr>
+      <tr><td>Cross into a screen (<code>0x36</code>), Circle out (<code>0x37</code>)</td><td>2</td><td>2</td><td>0</td></tr>
+      <tr><td>A step or Circle on the Save grid</td><td>2</td><td>2</td><td>0</td></tr>
+      <tr><td>Triangle on the field (the open, <code>0x20</code>)</td><td>4</td><td>2</td><td>0</td></tr>
+    </tbody>
+  </table>
+  <p>Retail's screens read the word the frame before latched (<code>FUN_8001822C</code> at the frame body's end), so a press reaches them two vsyncs on. The picker <code>FUN_801D688C</code> tests confirm and cancel on that frame's edge word <code>_DAT_8007B874</code> and the step on the cursor word <code>_DAT_8007BB84</code>, which the window kernel <code>FUN_80031D00</code> rebuilds at its top; every screen handler calls the picker before the kernel, so a step reads the frame before's word, a vsync later than a confirm. The Save grid steps on the frame's own word. The engine's retail-faithful mode reads host screens through that pipeline (<code>World::screen_edge</code>) on both hosts; the default takes a press on its tick.</p>
 </section>
 
 <section class="doc-section" id="record-fields">
