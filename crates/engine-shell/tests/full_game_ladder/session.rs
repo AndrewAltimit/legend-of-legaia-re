@@ -34,6 +34,13 @@ pub(super) fn open_session(extracted: &Path) -> NativeSession {
     if std::env::var_os("LEGAIA_FGL_PIN_RETAIL").is_some_and(|v| v != "0") {
         session.host.world.toggles.pin_retail();
     }
+    // The hand's menu and shop presses are one-tick edges it decides on the
+    // screen state of the tick before (`tap_pad`, `service_shop`): host
+    // screens read them on their tick under every tier, as before the
+    // retail-faithful mode ran them through the pad pipeline
+    // (`World::screen_edge`). The field keeps the tier's pipeline. A harness
+    // seat.
+    session.host.world.input.set_screen_immediate(true);
     // `LEGAIA_BATTLE_MEMO_VERIFY=1`: every hit of the battle edge's memos is
     // rebuilt behind and compared.
     session.host.world.toggles.battle_memo_verify =

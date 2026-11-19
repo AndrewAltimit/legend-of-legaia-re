@@ -159,6 +159,13 @@ pub(super) fn drive_pause_menu(
         return Ok(armed.then_some(menu.subscreen));
     }
     let presses = pause_menu_presses(menu);
+    // The drive's presses are one-tick edges authored for a menu that reads
+    // the pad on its tick: past the retail pad pipeline a screen reads them
+    // two and three ticks late (`World::screen_edge`), and the drive's
+    // settle no longer covers its last. A harness seat
+    // (`InputState::set_screen_immediate`), as the children's
+    // `LEGAIA_DIAG_IMMEDIATE_PAD`.
+    let immediate = session.host.world.input.set_screen_immediate(true);
     for t in 0..=pause_menu_drive_ticks(menu) {
         let mask = presses
             .iter()
@@ -168,6 +175,7 @@ pub(super) fn drive_pause_menu(
         session.tick()?;
     }
     session.host.world.input.set_pad(0);
+    session.host.world.input.set_screen_immediate(immediate);
     if menu.map_display {
         return Ok(session.host.world.map_display_owns_pad().then_some(0));
     }

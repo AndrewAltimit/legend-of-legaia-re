@@ -137,8 +137,11 @@ impl World {
     ///
     /// REF: FUN_80034A6C
     pub fn set_pad(&mut self, mask: u16) {
+        // The host's own word, before the pipeline: a host screen reads its
+        // presses off these (`World::screen_edge`).
+        self.input.record_screen_held(mask);
         let mask = self.retail_frame_pad(mask);
-        self.input.set_pad(mask);
+        self.input.set_pad_unrecorded(mask);
         self.locomotion.run_button_held = mask & self.locomotion.run_button_mask != 0;
     }
 }

@@ -332,8 +332,14 @@ impl<S: AudioSink> BootSession<S> {
     /// edge through here: this session's own step and both play hosts'
     /// menu screens. The repeat is raised by the tick's pad pump
     /// (`claim_tick` on a host, `set_pad` under a headless driver).
-    pub fn pause_menu_edge(&mut self, edge: u16) -> u16 {
-        edge | self.host.world.input.take_menu_repeat()
+    ///
+    /// `sub` is the open sub-screen (`None` on the root list): in the
+    /// retail-faithful mode the root's and most screens' cursor reads the
+    /// window kernel's word a frame late, the Save / Load grid the frame's
+    /// own (`World::screen_edge_with`).
+    pub fn pause_menu_edge(&mut self, edge: u16, sub: Option<&FieldMenuSubsession>) -> u16 {
+        let cursor_lags = !matches!(sub, Some(FieldMenuSubsession::Save(_)));
+        self.host.world.screen_edge_with(edge, cursor_lags)
     }
 
     /// Drive one frame of the open pause menu, both levels. Returns `true`
@@ -357,7 +363,8 @@ impl<S: AudioSink> BootSession<S> {
         // window kernel's cursor auto-repeat folded in (`gp+0x86C`).
         let pad = &self.host.world.input;
         let edge = pad.pad() & !pad.pad_prev();
-        let mut pressed = self.pause_menu_edge(edge);
+        let sub_is_save = matches!(self.field_menu_sub, Some(FieldMenuSubsession::Save(_)));
+        let mut pressed = self.host.world.screen_edge_with(edge, !sub_is_save);
         // Retail's sub-screens read nothing while a window slides
         // (`_DAT_8007BB80`); the lock is stepped every menu frame.
         if !pause_slide_gate(

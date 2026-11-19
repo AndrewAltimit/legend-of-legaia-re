@@ -86,8 +86,10 @@ impl MenuRuntime {
         // window slides (`_DAT_8007BB80`).
         let open = self.session_slide_gate(world);
         if self.is_open() {
-            // The window kernel's cursor auto-repeat (`gp+0x86C`).
-            let edge = edge | world.input.take_menu_repeat();
+            // The window kernel's cursor auto-repeat (`gp+0x86C`), and in
+            // the retail-faithful mode the pad pipeline's latency
+            // (`World::screen_edge`).
+            let edge = world.screen_edge(edge);
             let edge = if open { edge } else { 0 };
             self.tick(world, menu_input_from_pad_edges(edge));
             cue = self.take_ui_cue();
