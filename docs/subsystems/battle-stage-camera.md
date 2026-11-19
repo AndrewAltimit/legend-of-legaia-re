@@ -2215,6 +2215,11 @@ GPU draws that table; at its own end `VSync(1)` (`0x800174CC`) is the CPU's fini
 the entry. So the entry is `max(cpu, dma + draw of the previous pass's table)`, both counted
 from the same vsync.
 
+How each emulator times both halves, from its source, is in
+[emulator timing](../tooling/emulator-timing.md). On mednafen the model to use is its own
+rules (`gpu_cost.py`'s `med_ot_cost`), which read the GPU-bound entries `0.9` hblanks
+under at the median over `303` passes; the DuckStation costs below read `20` over.
+
 The GPU half has a model with no free constant
 ([`scripts/mednafen/gpu_cost.py`](../../scripts/mednafen/gpu_cost.py), the same in the probe
 library's `gpu_cost.lua`). It walks the table and prices each command on the v2 GPU's
