@@ -150,6 +150,9 @@ impl<'a> HostView<'a> {
             // the vsyncs between the pool's passes.
             let drawn = self.frame(cutscene).field_view();
             let reproject = world.fog_reprojection(drawn.as_ref());
+            // A `filter_map` gives `extend` no size, and the per-frame vec
+            // would grow by doubling: one allocation, as before the cull.
+            out.reserve(world.fog_quads().len());
             out.extend(
                 world
                     .fog_quads()
