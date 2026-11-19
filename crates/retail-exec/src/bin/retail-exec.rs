@@ -69,6 +69,20 @@ enum Cmd {
         #[arg(long, value_delimiter = ',')]
         funcs: Vec<String>,
     },
+    /// Price a battle frame by unit (see `battle_cost`).
+    BattleCost {
+        #[command(flatten)]
+        state: StateArg,
+        /// Whole frames to run after the state's frame in progress.
+        #[arg(long, default_value_t = 2)]
+        frames: usize,
+        /// `parts` (every unit of each frame, its own cycles), `reached`
+        /// (every routine a frame reaches, inclusive), `series` (those per
+        /// frame with the pool's live children), `walker`, `prims`,
+        /// `groups`, `groupcsv`, `bodies`, `builds`, `spans`.
+        #[arg(long, default_value = "reached")]
+        mode: String,
+    },
 }
 
 #[derive(clap::Args)]
@@ -162,6 +176,11 @@ fn main() -> Result<()> {
                 h(0x1814)
             );
         }
+        Cmd::BattleCost {
+            state,
+            frames,
+            mode,
+        } => battle_cost(&state.load()?, frames, &mode)?,
         Cmd::FrameCost {
             state,
             frames,
@@ -297,6 +316,283 @@ fn main() -> Result<()> {
                 }
             }
         }
+    }
+    Ok(())
+}
+
+fn battle_cost(s: &PcsxState, frames: usize, mode: &str) -> Result<()> {
+    use psx_retail_exec::battle_cost as bc;
+    match mode {
+        "reached" => {
+            for (f, rows) in bc::reached_routines(s, frames)?.iter().enumerate() {
+                println!("frame {f}");
+                let mut rows = rows.clone();
+                rows.sort_by_key(|r| std::cmp::Reverse(r.1.cycles_pcsx()));
+                for (va, sp, linked) in rows {
+                    println!(
+                        "  {va:08X} calls {:>5} {:>9} cycles {:>7.1} hb linked {linked}",
+                        sp.calls,
+                        sp.cycles_pcsx(),
+                        sp.hblanks_pcsx()
+                    );
+                }
+            }
+        }
+        "series" => {
+            let vas = bc::reached(s, frames)?;
+            let routines: Vec<Routine> = vas.iter().map(|&va| Routine { va, name: "" }).collect();
+            let mut run = FrameRunner::with_routines(s, &routines);
+            run.settle()?;
+            println!("frame,ring,step,children,masters,func,calls,cycles,linked");
+            for f in 0..frames {
+                let (c, m) = bc::pool_live(&mut run.cpu.mem);
+                let fc = run.frame()?;
+                for row in fc.rows.iter().filter(|r| r.spent.calls > 0) {
+                    println!(
+                        "{f},{},{},{c},{m},{:08X},{},{},{}",
+                        fc.ring,
+                        fc.step,
+                        row.routine.va,
+                        row.spent.calls,
+                        row.spent.cycles_pcsx(),
+                        row.linked
+                    );
+                }
+            }
+        }
+        "groupcsv" => {
+            let mut run = bc::BattleRunner::new(s, bc::CONTEXTS)?;
+            println!("frame,ctx,leaf,ds,top,prims,linked,cycles");
+            for f in 0..frames {
+                let bf = run.frame()?;
+                for g in &bf.groups {
+                    let c = bf.context_of(g.at).map_or(0, |s| s.entry);
+                    println!(
+                        "{f},{c:08X},{:08X},{},{:02X},{},{},{}",
+                        g.leaf,
+                        u8::from(g.double_sided),
+                        g.word >> 24,
+                        g.prims,
+                        g.linked,
+                        g.cycles
+                    );
+                }
+            }
+        }
+        "walker" => {
+            let mut run = FrameRunner::with_routines(
+                s,
+                &[Routine {
+                    va: bc::walker::ENTRY,
+                    name: "walker",
+                }],
+            );
+            run.settle()?;
+            let probe = bc::WalkerProbe::arm(&mut run);
+            println!("frame,ring,step,walker_cycles,sweeps,visit,cycles,advances");
+            for f in 0..frames {
+                let fc = run.frame()?;
+                let (sweeps, visits) = probe.take();
+                let w = fc.of(bc::walker::ENTRY).cycles_pcsx();
+                println!("{f},{},{},{w},{sweeps},frame,0,0", fc.ring, fc.step);
+                for v in visits {
+                    match v {
+                        bc::Visit::Step { cycles, advances } => {
+                            println!(
+                                "{f},{},{},{w},{sweeps},step,{cycles},{advances}",
+                                fc.ring, fc.step
+                            )
+                        }
+                        bc::Visit::Draw { cycles } => {
+                            println!("{f},{},{},{w},{sweeps},draw,{cycles},0", fc.ring, fc.step)
+                        }
+                    }
+                }
+            }
+        }
+        "prims" => {
+            let mut run = bc::BattleRunner::new(s, bc::CONTEXTS)?;
+            let probe = bc::LeafProbe::arm(&mut run.run);
+            println!("frame,leaf,fate,n,cycles,min,max");
+            for f in 0..frames {
+                run.frame()?;
+                let mut agg: std::collections::BTreeMap<(u32, bc::PrimFate), (u64, u64, u64, u64)> =
+                    Default::default();
+                for v in probe.take() {
+                    let e = agg.entry((v.leaf, v.fate)).or_insert((0, 0, u64::MAX, 0));
+                    e.0 += 1;
+                    e.1 += v.cycles;
+                    e.2 = e.2.min(v.cycles);
+                    e.3 = e.3.max(v.cycles);
+                }
+                for ((leaf, fate), (n, c, lo, hi)) in agg {
+                    println!("{f},{leaf:08X},{fate:?},{n},{c},{lo},{hi}");
+                }
+            }
+        }
+        "parts" => {
+            let mut run = bc::PartRunner::new(s)?;
+            println!("frame,ring,step,sweeps,part,n,cycles,extra,children,inclusive");
+            for f in 0..frames {
+                let fp = run.frame()?;
+                let (ring, step) = (fp.ring, fp.step);
+                for (p, (n, c)) in &fp.parts {
+                    let name = match p {
+                        bc::Part::Call(va) => format!("call {va:08X}"),
+                        bc::Part::Prim(leaf, fate) => format!("prim {leaf:08X} {fate:?}"),
+                        other => format!("{other:?}"),
+                    };
+                    let extra = match p {
+                        bc::Part::ChildOverrun => fp.overrun_advances as i64,
+                        // Segments of the shape-0 builds; the other shapes'
+                        // builds are counted on their own row below.
+                        bc::Part::Call(bc::MESH_BUILDER) => fp
+                            .builds
+                            .iter()
+                            .filter(|b| b.0 == 0)
+                            .map(|b| i64::from(b.1))
+                            .sum(),
+                        bc::Part::Call(va) if *va != 0x8004_8A08 => {
+                            fp.linked.get(va).copied().unwrap_or(0)
+                        }
+                        other => fp.objects.get(other).copied().unwrap_or(0) as i64,
+                    };
+                    println!(
+                        "{f},{ring},{step},{},{name},{n},{c},{extra},{},{}",
+                        fp.sweeps,
+                        fp.children,
+                        fp.inclusive.get(p).copied().unwrap_or(0)
+                    );
+                }
+                let other = fp.builds.iter().filter(|b| b.0 != 0).count();
+                if other > 0 {
+                    println!(
+                        "{f},{ring},{step},{},mesh builds of other shapes,{other},0,0,{},0",
+                        fp.sweeps, fp.children
+                    );
+                }
+            }
+        }
+        "spans" => {
+            let vas = bc::reached(s, frames)?;
+            let routines: Vec<Routine> = vas.iter().map(|&va| Routine { va, name: "" }).collect();
+            let mut run = bc::BattleRunner::new(s, &routines)?;
+            println!("frame,entry,start,end,cycles");
+            for f in 0..frames {
+                let bf = run.frame()?;
+                for sp in &bf.spans {
+                    println!(
+                        "{f},{:08X},{},{},{}",
+                        sp.entry,
+                        sp.start,
+                        sp.end,
+                        sp.spent.cycles_pcsx()
+                    );
+                }
+            }
+        }
+        "bodies" => {
+            let mut run = bc::BattleRunner::new(s, bc::CONTEXTS)?;
+            println!("frame,ring,body,cycles,prims,linked,tmd_calls,tmd_cycles");
+            for f in 0..frames {
+                let bf = run.frame()?;
+                for (i, b) in bf.spans_of(0x8004_8A08).enumerate() {
+                    let (mut p, mut l) = (0u64, 0u64);
+                    for g in bf.groups.iter().filter(|g| b.holds(g.at)) {
+                        p += u64::from(g.prims);
+                        l += u64::from(g.linked);
+                    }
+                    let tmd: Vec<_> = bf
+                        .spans_of(0x8002_735C)
+                        .filter(|t| b.holds(t.start))
+                        .collect();
+                    let tc: u64 = tmd.iter().map(|t| t.spent.cycles_pcsx()).sum();
+                    println!(
+                        "{f},{},{i},{},{p},{l},{},{tc}",
+                        bf.cost.ring,
+                        b.spent.cycles_pcsx(),
+                        tmd.len()
+                    );
+                }
+            }
+        }
+        "builds" => {
+            let mut run = bc::BattleRunner::new(s, bc::CONTEXTS)?;
+            let args = std::rc::Rc::new(std::cell::RefCell::new(Vec::<(u64, u32, u32)>::new()));
+            let a = args.clone();
+            run.run.cpu.probe(bc::MESH_BUILDER, move |r, m, _| {
+                a.borrow_mut().push((m.clock, r.r[5], r.r[6]))
+            });
+            println!("frame,shape,mode,count,cycles");
+            for f in 0..frames {
+                let bf = run.frame()?;
+                let got = std::mem::take(&mut *args.borrow_mut());
+                for sp in bf.spans_of(bc::MESH_BUILDER) {
+                    if let Some(&(_, mode, packed)) = got.iter().find(|g| g.0 == sp.start) {
+                        println!(
+                            "{f},{},{mode:#x},{},{}",
+                            (mode >> 3) & 0xF,
+                            packed & 0xFF,
+                            sp.spent.cycles_pcsx()
+                        );
+                    }
+                }
+            }
+        }
+        "groups" => {
+            let ctx: Vec<Routine> = bc::CONTEXTS.to_vec();
+            let mut run = bc::BattleRunner::new(s, &ctx)?;
+            for f in 0..frames {
+                let bf = run.frame()?;
+                println!(
+                    "frame {f}: ring {} step {} groups {}",
+                    bf.cost.ring,
+                    bf.cost.step,
+                    bf.groups.len()
+                );
+                let mut agg: std::collections::BTreeMap<(u32, u32, bool, u8), [u64; 4]> =
+                    Default::default();
+                for g in &bf.groups {
+                    let c = bf.context_of(g.at).map_or(0, |s| s.entry);
+                    let e = agg
+                        .entry((c, g.leaf, g.double_sided, (g.word >> 24) as u8))
+                        .or_default();
+                    e[0] += 1;
+                    e[1] += u64::from(g.prims);
+                    e[2] += u64::from(g.linked);
+                    e[3] += g.cycles;
+                }
+                for ((c, leaf, ds, top), e) in agg {
+                    println!(
+                        "  ctx {c:08X} leaf {leaf:08X} ds {} top {top:02X} groups {:>3} prims {:>5} linked {:>5} cycles {:>8} ({:.1}/prim)",
+                        u8::from(ds),
+                        e[0],
+                        e[1],
+                        e[2],
+                        e[3],
+                        e[3] as f64 / e[1].max(1) as f64
+                    );
+                }
+                for r in bc::CONTEXTS {
+                    let sp: Vec<_> = bf.spans_of(r.va).collect();
+                    if sp.is_empty() {
+                        continue;
+                    }
+                    let cyc: u64 = sp.iter().map(|s| s.spent.cycles_pcsx()).sum();
+                    let inner: u64 = bf.groups_in(r.va).map(|g| g.cycles).sum();
+                    println!(
+                        "  {:08X} {:<22} calls {:>4} cycles {:>8} ({:>6.1} hb) groups' {:>8}",
+                        r.va,
+                        r.name,
+                        sp.len(),
+                        cyc,
+                        cyc as f64 / PCSX_CYCLES_PER_HBLANK,
+                        inner
+                    );
+                }
+            }
+        }
+        _ => bail!("unknown mode {mode}"),
     }
     Ok(())
 }

@@ -20,6 +20,7 @@ pub mod cast_band;
 pub mod cast_fx_state;
 pub mod cast_seat_map;
 pub mod clip_ladder;
+pub mod derived_cost;
 pub mod frame_clock;
 pub mod hud_glides;
 pub mod message_banner;

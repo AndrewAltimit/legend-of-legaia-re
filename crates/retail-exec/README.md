@@ -41,3 +41,11 @@ by kind and outcome), each priced from its own instructions
 
 Held against the emulator's own profile in
 [`docs/tooling/retail-frame-cost.md`](../../docs/tooling/retail-frame-cost.md).
+
+`battle_cost::PartRunner` splits a battle frame into its units: every
+dispatcher primitive by leaf and fate (linked, off-screen, culled), every
+group, call and body draw, the grid, the shadows, the effect walker visit by
+visit, the kind-4 mesh builds. `retail-exec battle-cost --mode parts` prints
+them (`series`, `walker`, `prims`, `bodies`, `builds` and `spans` are narrower
+views); the derived table they price is
+`legaia_engine_battle_loop::derived_cost`.
