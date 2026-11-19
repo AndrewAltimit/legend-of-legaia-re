@@ -137,6 +137,16 @@ const HALT: u32 = 0x400;
 /// how far the leg has run; its `+0x54` does. `town0c`'s queen-bee beat
 /// (`rim_elm_queen_bee_battle`) is parked on `C1 3B 02 41` with flat 59
 /// eight units into the `C1 3B 02 46` leg before it.
+///
+/// A target whose seat is a FaceTarget leg (`CC <id> 85|8E|8F`) and whose
+/// halt is already down has turned all the way: the leg's terminal frame
+/// clears `0x400` in the actor tick (`FUN_8003774C`, `0x80038004`), after
+/// the record's slice, so the record still stands on the op it held there
+/// for the frame. The gate then carries [`FACE_LANDED`], met once the
+/// engine's leg on that placement has landed too: `eddoman` `P2[7]` is
+/// parked on `AC 14 07` with flat 20 turned onto flat 21 (`0x92E`) by the
+/// `CC 14 85 0F 00 15` before it, and the PC alone met the gate on the
+/// turn's first frame (`0xD5C`).
 fn walking_target(ram: &[u8], nodes: &[u32], op: u8, target: Option<u8>) -> Option<(u8, i16)> {
     if op & 0x80 == 0 {
         return None;
@@ -145,13 +155,16 @@ fn walking_target(ram: &[u8], nodes: &[u32], op: u8, target: Option<u8>) -> Opti
     nodes.iter().find_map(|&n| {
         if game_anchors::u32_at(ram, n + 0x0C) != FIELD_ACTOR_TICK
             || game_anchors::u16_at(ram, n + 0x50) != u16::from(target)
-            || game_anchors::u32_at(ram, n + 0x10) & HALT == 0
         {
             return None;
         }
         let seat = game_anchors::u32_at(ram, n + 0x94);
-        let walk_op = in_ram(seat).then(|| game_anchors::u8_at(ram, seat))?;
-        (walk_op & 0x80 != 0 && matches!(walk_op & 0x7F, 0x37 | 0x41))
+        let leg = in_ram(seat).then(|| bytes_at(ram, seat, 3)).flatten()?;
+        if game_anchors::u32_at(ram, n + 0x10) & HALT == 0 {
+            return (leg[..2] == [0xCC, target] && matches!(leg[2], 0x85 | 0x8E | 0x8F))
+                .then_some((target, FACE_LANDED));
+        }
+        (leg[0] & 0x80 != 0 && matches!(leg[0] & 0x7F, 0x37 | 0x41))
             .then(|| (target, game_anchors::i16_at(ram, n + 0x54)))
     })
 }
@@ -456,7 +469,7 @@ pub fn displayed_script_gate_from_retail(scripts: &RetailScripts) -> Option<Scri
     }
     // A leg spends one unit a vsync, so the displayed frame's leg had
     // `display_lag` units fewer behind it.
-    if let Some((_, accum)) = g.walk.as_mut() {
+    if let Some((_, accum)) = g.walk.as_mut().filter(|(_, a)| *a != FACE_LANDED) {
         *accum = (i32::from(*accum) - i32::from(scripts.display_lag)).max(0) as i16;
     }
     Some(g)

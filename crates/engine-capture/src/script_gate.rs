@@ -109,6 +109,11 @@ pub fn engine_contexts(world: &legaia_engine_core::world::World) -> Vec<EngineCo
 /// Engine ticks a script-gated seed runs before giving up on the phase.
 pub const SCRIPT_GATE_DEADLINE: u64 = 9000;
 
+/// A [`ScriptGate::walk`] whose target's FaceTarget leg (`4C 85` / `8E` /
+/// `8F`) had landed in retail's state: met once the engine's leg on that
+/// placement has landed too.
+pub const FACE_LANDED: i16 = i16::MAX;
+
 /// A retail capture's script phase: the running record (by its head bytes),
 /// the PC it is parked on and how far into an op-`0x4A` wait it is. The seed
 /// runs the engine until its own context for that record holds the same
@@ -358,7 +363,8 @@ impl ScriptGate {
     /// A gate whose displayed frame the image child takes `display_lag`
     /// ticks before the tick it meets the gate on
     /// (`LEGAIA_CAPTURE_DISPLAY_LAG`): one on the player's clip latch, met on
-    /// the RAM's cursor, and a text gate mid-page, met on the RAM's pager
+    /// the RAM's cursor, one behind a landed face leg ([`FACE_LANDED`]), met
+    /// on the RAM's landing, and a text gate mid-page, met on the RAM's pager
     /// phase. Each tick since the engine took up the gate's record is a
     /// frame retail drew too.
     ///
@@ -374,6 +380,7 @@ impl ScriptGate {
                 .as_ref()
                 .is_some_and(|p| !PagerPhase::is_picker(p.state) || p.state & 1 == 1)
             || self.tile_walk.is_some()
+            || self.walk.is_some_and(|(_, a)| a == FACE_LANDED)
     }
 
     /// The per-tick resume drive both seeds run: start the gate's record
@@ -452,6 +459,9 @@ impl ScriptGate {
     /// gate, and once the engine's leg has landed.
     fn walk_reached(&self, world: &legaia_engine_core::world::World) -> bool {
         self.walk.is_none_or(|(target, accum)| {
+            if accum == FACE_LANDED {
+                return !world.npc_face_leg_in_flight(target);
+            }
             world
                 .npc_compass_walk_accum(target)
                 .is_none_or(|a| a as i16 >= accum)
