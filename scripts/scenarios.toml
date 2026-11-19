@@ -2247,6 +2247,15 @@ description = "S1 of the trace-driven playthrough: a fresh NEW GAME driven cold 
 topics = ["playthrough", "trace-coverage", "S1", "cold-boot", "new-game", "pcsx-redux"]
 
 [[scenarios]]
+label = "opstati_field_cycler_long_frames"
+backup_fingerprint = "15bc19c303da8377b32aa40e3c55f8d75340b782dee17fd8c3011d0840482088"
+phase = "field"
+expected_game_mode = 0x02
+expected_active_scene = "opstati"
+description = "New Game opening, scene 'opstati', saved in the load (mode 2) one vsync before its field frames start. RETAIL disc: s1_newgame_field played forward with the pad alone (autorun_story_forward.lua, LEGAIA_CKPT_SCENES=opstati, checkpoint e205, --turbo); inherits that state's retail executable (patch_taint_audit.py states / scan: retail, site-clean). Its first field frames run the CLUT-cell cycler FUN_80019D50 on the narrow (0, 473, 320, 2) and wide (0, 476, 320, 34) strips: the cycler's cost gate in crates/retail-exec/tests/clut_cell.rs."
+topics = ["field", "opstati", "new game", "clut cycler", "frame cost", "pcsx-redux"]
+
+[[scenarios]]
 slot = 255
 label = "s2_rimelm_town01"
 backup_fingerprint = "72d0201ab5224af86a8370256b2fb9386654355aa9d8301f3c3ebe02e4286ec5"
