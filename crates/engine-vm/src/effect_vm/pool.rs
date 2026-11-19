@@ -229,6 +229,52 @@ pub struct Pool {
     /// an older one still releasing children included - reads the newest
     /// draw. The buffer is reloaded with each battle, as this pool is rebuilt.
     pub scribbled_legs: std::collections::BTreeMap<u8, Vec<(i16, i16)>>,
+    /// The walker's branches taken since the pool was built, counted as
+    /// [`Pool::tick_retail`] and [`Pool::catch_up_master`] run them: what a
+    /// frame's walk cost on the CPU follows from the branches it took
+    /// ([`WalkWork`]). Bookkeeping only; no walk reads it.
+    pub work: WalkWork,
+}
+
+/// Running counts of the branches the effect walker `FUN_801E0080` takes,
+/// one per visit: the sweeps of its first pass (each walks all `32` master
+/// and `128` child slots), the active masters it visits, the spawn records it
+/// consumes, the children on the countdown branch and the frame advances
+/// (each with its motion step). A frame's share is the difference of two
+/// reads.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WalkWork {
+    pub calls: u64,
+    pub sweeps: u64,
+    /// Sweeps that found a live master or child (an all-idle sweep is the
+    /// early-out every walk makes).
+    pub live_sweeps: u64,
+    pub masters: u64,
+    pub spawns: u64,
+    pub child_waits: u64,
+    pub advances: u64,
+    pub retires: u64,
+    /// Frame advances past a retired child's batch end
+    /// ([`EffectCatalog::anim_overrun`]), which the port does not step.
+    pub overruns: u64,
+}
+
+impl WalkWork {
+    /// The counts run between `before` and `self` (a rebuilt pool, whose
+    /// counts restarted, reads zero).
+    pub fn since(&self, before: &WalkWork) -> WalkWork {
+        WalkWork {
+            calls: self.calls.saturating_sub(before.calls),
+            sweeps: self.sweeps.saturating_sub(before.sweeps),
+            live_sweeps: self.live_sweeps.saturating_sub(before.live_sweeps),
+            masters: self.masters.saturating_sub(before.masters),
+            spawns: self.spawns.saturating_sub(before.spawns),
+            child_waits: self.child_waits.saturating_sub(before.child_waits),
+            advances: self.advances.saturating_sub(before.advances),
+            retires: self.retires.saturating_sub(before.retires),
+            overruns: self.overruns.saturating_sub(before.overruns),
+        }
+    }
 }
 
 /// 16-byte pool-head record (`_DAT_8007BD30 + 0`). Retail layout:
@@ -280,6 +326,7 @@ impl Default for Pool {
             master_slots: std::array::from_fn(|_| MasterSlot::default()),
             children: std::array::from_fn(|_| ChildSlot::default()),
             scribbled_legs: Default::default(),
+            work: WalkWork::default(),
         }
     }
 }
@@ -593,7 +640,9 @@ impl Pool {
         }
 
         let mut sweep: u32 = 0;
+        self.work.calls += 1;
         while (sweep & 0xFF) < frame_skip as u32 {
+            self.work.sweeps += 1;
             let mut live_slots = 0usize;
             // Child-slot allocation cursor: scans forward, persists across
             // masters within one sweep (retail `s4`).
@@ -605,6 +654,7 @@ impl Pool {
                     continue;
                 }
                 live_slots += 1;
+                self.work.masters += 1;
                 let wait = self.master_slots[mi].state;
                 if wait != 0 {
                     // 5.3 countdown: -8, clamping values < 8 to zero.
@@ -613,6 +663,7 @@ impl Pool {
                 }
                 // Spawn loop: consume records while the running wait is 0.
                 loop {
+                    self.work.spawns += 1;
                     let m = &self.master_slots[mi];
                     let idx = m.spawn_cursor as usize;
                     let rec = catalog
@@ -686,6 +737,7 @@ impl Pool {
                 live_slots += 1;
                 let wait = self.children[ci].wait;
                 if wait != 0 {
+                    self.work.child_waits += 1;
                     // Countdown branch still takes one motion step - a child
                     // keeps drifting while its frame holds.
                     let c = &mut self.children[ci];
@@ -693,10 +745,13 @@ impl Pool {
                     Self::motion_step(c, catalog, motion_scale);
                 } else {
                     loop {
+                        self.work.advances += 1;
                         let c = &mut self.children[ci];
                         // Advance one anim frame.
                         c.frame_cursor = c.frame_cursor.wrapping_add(1);
                         if c.frame_cursor == c.frame_count {
+                            self.work.retires += 1;
+                            self.work.overruns += u64::from(catalog.anim_overrun(c.anim_id));
                             // Retire the slot (retail zeroes wait + count and
                             // keeps scanning; see the divergence note above).
                             c.wait = 0;
@@ -721,6 +776,8 @@ impl Pool {
             // counter, short-circuiting the remaining catch-up iterations.
             if live_slots == 0 {
                 sweep = sweep.wrapping_add(4);
+            } else {
+                self.work.live_sweeps += 1;
             }
             sweep = sweep.wrapping_add(1);
         }

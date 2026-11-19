@@ -317,3 +317,152 @@ fn the_effect_pool_matches_retail() {
         "spawned {spawned} children {seeded_max} drawn {drawn} side {side}"
     );
 }
+
+/// What the walker's branches cost on PCSX-Redux's timing (two cycles an
+/// instruction, one more a data access, the GTE free): random spawns and
+/// walks at steps `1..=4` run on the retail walker, the projector
+/// `FUN_800195A8` and the ordering-table link included, beside the port's
+/// pool, whose [`WalkWork`] counts the branches each walk took. A
+/// least-squares fit of the cycles over those counts and the children pass 2
+/// draws prices each branch (`frame_clock::EFFECT_WALK_*`).
+#[test]
+fn the_walker_costs_its_branches() {
+    not_a_differential!(
+        "counts the retail walker's cycles to price the census's pool term; the walker is held to the port by the_effect_pool_matches_retail"
+    );
+    let stream: Stream = Rc::default();
+    let parts: Parts = Rc::default();
+    let Some(mut cpu) = retail_cpu(&stream, &parts) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let catalog = EffectCatalog::from_efect_dat_bytes(&disc().unwrap().read_entry(873).unwrap());
+    let mut rng = Rng(0x0C05_7C05);
+    // (cycles, [call, sweeps, masters, spawns, child waits, advances,
+    // overrun advances, drawn])
+    let mut rows: Vec<(f64, [f64; N])> = Vec::new();
+    for run in 0..30 {
+        assert_eq!(cpu.call(INIT, &[0x1000, 0xA00]), Stop::Returned);
+        let mut pool = Pool::new();
+        let mut host = Host {
+            stream: stream.clone(),
+            parts: Vec::new(),
+        };
+        let busy = 1 + run % 6;
+        for _frame in 0..120 {
+            for _ in 0..rng.below(busy as u32) {
+                let id = rng.below(catalog.len() as u32) as u8;
+                if id == 4 || id == 0x13 {
+                    continue;
+                }
+                let pos: [i16; 3] = std::array::from_fn(|_| rng.next() as i16 >> 6);
+                for (k, v) in pos.iter().enumerate() {
+                    cpu.mem.wr16(POS + 2 * k as u32, *v as u16);
+                }
+                let draws: Vec<u32> = (0..1024).map(|_| rng.next() & 0x7FFF).collect();
+                *stream.borrow_mut() = draws.iter().copied().collect();
+                cpu.call(SPAWN, &[u32::from(id), POS, 0]);
+                *stream.borrow_mut() = draws.into_iter().collect();
+                pool.spawn_by_ui_id(&mut host, id, pos, 0, &catalog);
+            }
+            let dt = 1 + rng.below(4) as u8;
+            cpu.mem.wr8(DT, dt);
+            cpu.mem.wr32(PRIM_PTR, PRIMS);
+            let draws: Vec<u32> = (0..4096).map(|_| rng.next() & 0x7FFF).collect();
+            *stream.borrow_mut() = draws.iter().copied().collect();
+            assert_eq!(cpu.call(WALK, &[]), Stop::Returned);
+            let cycles = (2 * cpu.steps + cpu.mem_ops) as f64;
+            *stream.borrow_mut() = draws.into_iter().collect();
+            let before = pool.work;
+            pool.tick_retail(&mut host, &catalog, dt);
+            let w = pool.work.since(&before);
+            let drawn = pool.active_child_count();
+            rows.push((
+                cycles,
+                [
+                    w.calls,
+                    w.sweeps,
+                    w.masters,
+                    w.spawns,
+                    w.child_waits,
+                    w.advances,
+                    w.overruns,
+                    drawn as u64,
+                ]
+                .map(|v| v as f64),
+            ));
+        }
+    }
+    if let Ok(path) = std::env::var("LEGAIA_WALKER_ROWS") {
+        let text: String = rows
+            .iter()
+            .map(|(y, x)| format!("{y} {}\n", x.map(|v| v.to_string()).join(" ")))
+            .collect();
+        let _ = std::fs::write(path, text);
+    }
+    let beta = least_squares(&rows);
+    const CYCLES_PER_HBLANK: f64 = 3413.0 * 7.0 / 11.0;
+    let names = [
+        "call",
+        "sweep",
+        "master",
+        "spawn",
+        "child wait",
+        "advance",
+        "overrun",
+        "drawn",
+    ];
+    for (n, b) in names.iter().zip(beta) {
+        eprintln!(
+            "walker {n}: {b:.1} cycles ({:.4} hblanks)",
+            b / CYCLES_PER_HBLANK
+        );
+    }
+    let rms = (rows
+        .iter()
+        .map(|(y, x)| (y - x.iter().zip(beta).map(|(a, b)| a * b).sum::<f64>()).powi(2))
+        .sum::<f64>()
+        / rows.len() as f64)
+        .sqrt();
+    eprintln!("walker fit rms {rms:.0} cycles over {} walks", rows.len());
+    assert!(rows.len() > 3000 && rms < 3000.0, "{rms}");
+}
+
+/// The walker cost fit's regressors.
+const N: usize = 8;
+
+/// Ordinary least squares (normal equations, Gaussian elimination with
+/// partial pivoting).
+fn least_squares(rows: &[(f64, [f64; N])]) -> [f64; N] {
+    let mut a = [[0.0f64; N + 1]; N];
+    for (y, x) in rows {
+        for i in 0..N {
+            for j in 0..N {
+                a[i][j] += x[i] * x[j];
+            }
+            a[i][N] += x[i] * y;
+        }
+    }
+    for c in 0..N {
+        let p = (c..N)
+            .max_by(|&i, &j| a[i][c].abs().total_cmp(&a[j][c].abs()))
+            .unwrap();
+        a.swap(c, p);
+        for r in 0..N {
+            if r != c && a[c][c] != 0.0 {
+                let f = a[r][c] / a[c][c];
+                let pivot = a[c];
+                for (x, p) in a[r].iter_mut().zip(pivot).skip(c) {
+                    *x -= f * p;
+                }
+            }
+        }
+    }
+    std::array::from_fn(|i| {
+        if a[i][i] != 0.0 {
+            a[i][N] / a[i][i]
+        } else {
+            0.0
+        }
+    })
+}

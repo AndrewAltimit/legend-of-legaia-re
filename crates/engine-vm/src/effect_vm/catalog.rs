@@ -73,6 +73,9 @@ pub struct EffectCatalog {
     entries: Vec<(EffectScript, Vec<ChildSprite>)>,
     atlas: Vec<SpriteAtlasEntry>,
     anims: Vec<AnimBatch>,
+    /// Per pack0 batch, the frame advances the walker makes past the batch's
+    /// end once a child retires on it ([`Self::anim_overrun`]).
+    overruns: Vec<u16>,
 }
 
 impl EffectCatalog {
@@ -98,6 +101,7 @@ impl EffectCatalog {
             entries,
             atlas,
             anims,
+            overruns: Vec::new(),
         }
     }
 
@@ -126,6 +130,17 @@ impl EffectCatalog {
     /// this list (`None` when out of range).
     pub fn anim(&self, sprite_id: u16) -> Option<&AnimBatch> {
         self.anims.get(sprite_id as usize)
+    }
+
+    /// The walker's retirement overrun on batch `sprite_id`: retiring a child
+    /// zeroes its wait and count, but the frame-advance loop tests the wait
+    /// alone, so retail keeps stepping 6-byte strides past the batch's end,
+    /// each with a motion step, until a stride's delay byte reads non-zero
+    /// once shifted into the byte-wide wait (`(delay << 3) & 0xFF`). The
+    /// strides it reads are the resident `efect.dat` bytes after the batch.
+    /// `0` for a catalog built without the buffer.
+    pub fn anim_overrun(&self, sprite_id: u16) -> u16 {
+        self.overruns.get(sprite_id as usize).copied().unwrap_or(0)
     }
 
     /// Number of pack0 animation batches.
@@ -180,11 +195,21 @@ impl EffectCatalog {
 
         // pack0 - animation batches.
         let mut anims = Vec::new();
+        let mut overruns = Vec::new();
         for entry in Self::pack_entries(buf, pack0_off)? {
             if entry.len() < 2 {
                 anims.push(AnimBatch::default());
+                overruns.push(0);
                 continue;
             }
+            // The strides past the batch, read on through the buffer.
+            let start = entry.as_ptr() as usize - buf.as_ptr() as usize;
+            let past = |k: usize| {
+                buf.get(start + 2 + (entry[0] as usize + k) * 6 + 1)
+                    .copied()
+                    .unwrap_or(1)
+            };
+            overruns.push((1..=0x100).find(|&k| (past(k) << 3) != 0).unwrap_or(0x100) as u16);
             let frame_count = entry[0] as usize;
             let flags = entry[1];
             let mut frames = Vec::with_capacity(frame_count);
@@ -211,6 +236,7 @@ impl EffectCatalog {
             entries,
             atlas,
             anims,
+            overruns,
         })
     }
 

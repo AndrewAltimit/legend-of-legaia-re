@@ -154,6 +154,11 @@ pub struct Cpu {
     hooks: HashMap<u32, Hook>,
     /// Instructions executed by the last [`Cpu::call`].
     pub steps: u64,
+    /// Loads and stores among [`Self::steps`]: PCSX-Redux's interpreter charges
+    /// each instruction two cycles and each data access one more, so
+    /// `2 * steps + mem_ops` is a routine's time on the machine the films
+    /// record (lwc2 / swc2 are not counted).
+    pub mem_ops: u64,
     /// The addresses reached by a `jal` / `jalr` with no hook, in order.
     pub calls: Vec<u32>,
     /// Run a `div` / `divu` by zero as the R3000 does (`hi` = the dividend, `lo`
@@ -227,6 +232,7 @@ impl Cpu {
         self.regs.r[SP] = STACK_TOP;
         self.regs.r[RA] = RETURN_SENTINEL;
         self.steps = 0;
+        self.mem_ops = 0;
         self.calls.clear();
         self.gte_ops = 0;
         let budget = if self.step_budget == 0 {
@@ -313,6 +319,9 @@ impl Cpu {
         let r = &mut self.regs;
         let (vs, vt) = (r.r[rs], r.r[rt]);
         let ea = vs.wrapping_add(simm);
+        if (0x20..=0x2E).contains(&op) {
+            self.mem_ops += 1;
+        }
         let btarget = next.wrapping_add(simm << 2);
         let jtarget = (next & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2);
         let taken = |c: bool| if c { Some(btarget) } else { None };
