@@ -440,9 +440,16 @@ tick's packets, `266` cycles each. On the library's full-party menu states
 | `battle_auto_prompt_gaza2_retail` | `0x78` | `502` | `162` | `18.3` |
 
 The rest of each ring entry is the stage and the bodies under the framing the
-surface holds, which the census counts. The arts entry also draws a fourth
-body pass through the bank-2 leaves (`339` linked kind-18 primitives,
-`0x800457C4` and `0x80045988`), about `75` hblanks with its decode, which the census does not count. The port prices
+surface holds, which the census counts. The framing decides which bodies
+draw at all: the actor-list walk `FUN_8001ADA4` drops a body node (kind
+`+0x56 = 2`) whose origin transforms nearer than `0xA1` (`+0x34`, the
+`RTPS` depth stored at `0x8001AE2C`; the test at `0x8001AE94..0x8001AEB4`,
+`+0x52 & 0x20` exempting), before its draw callback runs. Gaza's origin
+stands behind the eye (`-3601`) under the item window, the magic window and
+the Auto / Command prompt, so three bodies draw there; under the round
+prompt, the target cursor and the arts entry it stands in front (`9988`,
+`9280`) and Gaza's `854` primitives draw too (`475..500` linked, about `87`
+hblanks). The port prices
 these frames on the census line plus the surface's packets over the bare
 HUD's (`frame_clock::surface_frame_work`,
 [battle-command-flow](../subsystems/battle-command-flow.md#the-flow-reads-the-pad-once-a-battle-frame)).
