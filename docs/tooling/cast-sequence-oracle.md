@@ -2278,7 +2278,11 @@ over the id multisets alone, whatever the time.
 
 `--calc-clock` (retail only) writes `calc.csv`: every entry of the libsnd calc `FUN_80062F98` and every
 KON write `FUN_8006B854(1, mask)` with the CPU cycle, the action state and the module phase, so a calc
-skipped or doubled across a cast's blocking arms reads as a cycle gap of `0` or `2` vsyncs.
+skipped or doubled across a cast's blocking arms reads as a cycle gap of `0` or `2` vsyncs. Every row
+also carries the calc's lock word `0x801CD2B4` and the flush's history index `_DAT_801CE204` as they
+stand, and the cue key-on `FUN_80065034`'s lock and free stores (`0x800650A4`, `0x80065288` /
+`0x80065388`) are rows `lock` and `free`: a calc entered with `lock` at `1` returns at once and runs no
+flush ([the calc's lock](../subsystems/audio.md#seq-internals)).
 
 `rates.csv` (retail only) holds each seat's rate `+0x21D` and node cursor `+0x68`
 per vsync: a same-id timing miss on a reaction is usually the rate, read straight off it.

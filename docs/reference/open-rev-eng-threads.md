@@ -250,7 +250,7 @@ Answered questions: [settled audio](re-settled-threads/audio.md); falsified read
 
 ### How long does a summon's seek hold its voice?
 
-*Status:* partial (measured; the seek's length waits on a real console, the band ahead of the module on the cast's own pace)
+*Status:* partial (measured; the band ahead of the module is retail's from the cast's top on PCSX-Redux, and the seek's length waits on a real console)
 
 The drive's two seeks ahead of the head cue are modelled
 ([the drive holds a summon's voice](../subsystems/audio.md#the-drive-holds-a-summons-voice)), and so is
@@ -266,9 +266,17 @@ not one length either: from the state to the flash, Theeder's `0x33` runs `7` vs
 `~128`), and Swordie's `0x34` `5` longer to arm 1, while Orb's matches. `0x34`'s hold on the caster's
 `+0x1D9` is the port's now: the invoke clip's natural end commits idle in the pass that crosses it, and
 `0x34` leaves on the next (`0x80047A48..0x80047B58`, `0x801E4AD4..0x801E4ADC`), which is `60` vsyncs on the
-`0x86` film as on retail; the first-slot seek is refitted to `7` on that band. What closes the rest: the
-invoke clip's first passes after its commit against retail's (the caster's `+0x68` cursor beside
-`ctx[+0x87C]`).
+`0x86` film as on retail; the first-slot seek is refitted to `7` on that band.
+
+From the cast's top the band is retail's. A PCSX-Redux film of Theeder from
+`theeder_pre_cast_vs_gobu_gobu` (`cast-sequence.py`, the drive's seek seated on the recording's, a
+harness seat) runs `0x32`, `0x33` and `0x34` `16`, `34` and `60` vsyncs on both sides, the
+caster's invoke clip on the same cursor every vsync (held at `0` for one frame after the commit,
+then `8` a frame, the `ctx[+0x87C]` pair beside it), the side-band stage dropping `106` vsyncs after
+`0x32` opens, arm 1 at `+110`, arm 3 at `+230` and the voice at `+231` on both. So the `7` vsyncs of
+`0x33` and the cursor's three-tick hold read on `theeder_summon_mid_cast` belong to that state's seat
+and mednafen's frame cost, not to a band rule the port lacks. What is left is the drive alone: the
+seek's length on a console, against which neither emulator's is evidence.
 
 On the PCSX-Redux summon films the module's own poll arm waits `4` vsyncs where
 the mednafen-fitted model holds it `22` (Nova, Freed) to `30` (Orb) ticks. The
@@ -297,7 +305,7 @@ seek time, and the band ahead of the module above.
 
 ### Why does Theeder's score not subtract out of its recording?
 
-*Status:* open (narrowed: a lost calc is the measured mechanism)
+*Status:* open (narrowed: a lost calc is the measured mechanism on mednafen; PCSX-Redux loses none over the same cast)
 
 `theeder_summon_mid_cast` reads `0.71` on the [cast channel](../subsystems/audio.md#the-cast-channel)
 with the state's [Monaural](../subsystems/audio.md#the-monaural-states) seated and its cast offset free
@@ -332,9 +340,20 @@ out (`seq-differential --duck` keys `2013` alike under any ramp), and so is cue 
 the voices (the seated `--cues` run keys `2013` alike). A PCSX-Redux Theeder cast (`0x82` from
 `party_basic_attack_vs_gobu_gobu`, `cast-sequence.py --calc-clock`) enters `FUN_80062F98` once a
 vsync across `1451` vsyncs, which the lock does not contradict: a locked call is entered and returns
-at its first branch. What closes it: a state from the battle that leads into this cast, run under
-the same clock with the flush index and that voice's pitch and KON bits watched; the library holds
-no state of that fight before the cast.
+at its first branch.
+
+On PCSX-Redux's clock the cast loses no calc. `theeder_pre_cast_vs_gobu_gobu` (that cast, saved
+`248` vsyncs before it begins) run under `--calc-clock`, which reads the lock word and the flush
+index at every calc entry, enters all `1451` calcs with the lock clear and steps the flush index
+once a calc. Its `22` cue key-ons hold the lock `1628` to `5421` cycles each, and the nearest one
+lets it go `41606` cycles (about `19` hblanks) before a vblank. So which drains straddle is the
+emulated machine's frame cost to within a few hblanks: two of nine on mednafen, none on the
+emulator whose cost scale the frame-cost model takes. The port's calc never skips, which is what
+that scale measures; a model of the straddle would have to place each drain inside its frame
+finer than any frame-cost model does. What closes it: a state from the mednafen battle that leads
+into `theeder_summon_mid_cast`, run under mednafen's clock with the flush index and that voice's
+pitch and KON bits watched, to tie the late note to a measured loss; and a console's frame cost to
+say whether retail loses calcs at all. The library holds no state of that fight before the cast.
 
 ## Title / boot / overlays
 

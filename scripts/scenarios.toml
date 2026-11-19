@@ -8924,3 +8924,11 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "doman"
 topics = ["field", "doman", "inn", "HUD"]
+
+[[scenarios]]
+label = "theeder_pre_cast_vs_gobu_gobu"
+backup_fingerprint = "fccc47f8effc94a81f4c7f47cfa0a1bf16c4130f38749ce64fa1177f6e403f51"
+description = "RETAIL disc, probe-poked: party_basic_attack_vs_gobu_gobu played forward on PCSX-Redux (Begin pressed by the probe), where autorun_cast_sequence.lua rewrote Vahn's queued action at action state 0x0A to category 2, spell 0x82 (Theeder, PROT 0904) on seat 3, and topped his MP to 999 (LEGAIA_MP_TOPUP); saved one vsync later (LEGAIA_SAVE_INJECT, cast-sequence.py --save-inject). Load and wait: the cast begins 248 vsyncs on and its Done band is reached 1340 vsyncs on. The action and MP are the probe's; everything else is retail. The pre-cast state the Theeder calc-lock thread asked for: the battle score has run since the fight's start and the cast starts from its top."
+phase = "battle"
+expected_game_mode = 0x15
+topics = ["battle", "summon", "Theeder", "spell 0x82", "pre-cast", "calc lock", "audio"]

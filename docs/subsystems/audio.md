@@ -1315,7 +1315,9 @@ its first branch (`0x80062FCC`), and that vsync's flush and score events are not
 later. The one-shot cue key-on `FUN_80065034` holds the word while it allocates and stages
 (`0x800650A4` to `0x80065288` / `0x80065388`), so a vblank that lands inside the ring drainer's
 key-on costs the score a vsync ([settled](../reference/re-settled-threads/audio.md#does-the-scores-calc-run-once-a-vsync-across-a-summon)).
-Which drains do is the frame's CPU time; the port's calc never skips.
+Which drains do is the frame's CPU time, to a few hblanks: mednafen loses two calcs over a Theeder
+cast, PCSX-Redux none over the same cast from its pre-cast state. The port's calc never skips, as
+PCSX-Redux's scale, the one the frame-cost model takes, measures.
 
 **Per-frame tick call graph.** The concrete chain behind the prose "hand the
 payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) →

@@ -594,7 +594,14 @@ probe.run({
             -- each KON write FUN_8006B854(1, mask), with the CPU cycle: a calc
             -- skipped or doubled across a cast's blocking arms shows as a
             -- cycle gap of 0 or 2 vsyncs (breakpoint core). The mask is a1.
-            local calc_csv = probe.csv_open(probe.out_path("calc.csv"), "vsync,st7,phase,kind,cycle,mask,ra")
+            -- Each row also carries the calc's lock word 0x801CD2B4 and the
+            -- flush's history index _DAT_801CE204 as they stand: a calc
+            -- entered with the lock at 1 returns at 0x80062FCC and runs no
+            -- flush. The cue key-on FUN_80065034 takes the lock at
+            -- 0x800650A4 and frees it at 0x80065288 / 0x80065388 (rows
+            -- `lock` / `free`), so a lost calc sits inside a lock..free span.
+            local calc_csv = probe.csv_open(probe.out_path("calc.csv"),
+                "vsync,st7,phase,kind,cycle,mask,ra,lock,flush")
             local function calc_row(kind)
                 local R = PCSX.getRegisters()
                 local n = R.GPR.n
@@ -604,11 +611,15 @@ probe.run({
                 end
                 local c = u32(CTX_PTR)
                 local ok = c >= 0x80000000
-                calc_csv:row("%d,%d,%d,%s,%.0f,0x%06X,0x%08X", probe.cast_elapsed or 0,
+                calc_csv:row("%d,%d,%d,%s,%.0f,0x%06X,0x%08X,%d,%d", probe.cast_elapsed or 0,
                     ok and u8(c + 7) or -1, ok and u8(c + 0x279) or -1, kind,
-                    tonumber(PCSX.getCPUCycles()), kind == "kon" and w(n.a1) or 0, w(n.ra))
+                    tonumber(PCSX.getCPUCycles()), kind == "kon" and w(n.a1) or 0, w(n.ra),
+                    u32(0x801CD2B4), u32(0x801CE204))
             end
             probe.arm_breakpoint(0x80062F98, "Exec", 4, "calc", function() calc_row("calc") end)
+            probe.arm_breakpoint(0x800650A4, "Exec", 4, "calclock", function() calc_row("lock") end)
+            probe.arm_breakpoint(0x80065288, "Exec", 4, "calcfree", function() calc_row("free") end)
+            probe.arm_breakpoint(0x80065388, "Exec", 4, "calcfree2", function() calc_row("free") end)
             probe.arm_breakpoint(0x8006B854, "Exec", 4, "kon", function()
                 local R = PCSX.getRegisters()
                 if (tonumber(R.GPR.n.a0) or 0) == 1 then calc_row("kon") end
