@@ -2035,6 +2035,74 @@ the census on the same fight counts `1990`, `315` and `2270` (`units.csv` beside
 parts as a fit across states suggests: on Cort's strike fourteen parts read `1.9` hblanks
 on one frame and three read `15` on another, so they stay at their mean.
 
+<a id="the-leaves-own-rules"></a>
+
+**The leaves' own rules.** The census's float rules drop about `500` primitives a
+full-party frame that retail's dispatcher transforms whole, and never send a body's
+primitive to the off-screen test. Under `WorldToggles::battle_census_retail_culls`
+(`LEGAIA_CENSUS_RETAIL_CULLS=1`), and always under the derived pricing, the census decides
+each primitive as its leaf does, on the GTE's integer corners (`IR1` / `IR2` clamped, `SZ3`
+clamped, the `H / SZ` quotient capped at `0x1FFFF`, the screen pair truncated to
+`-0x400..=0x3FF`), so a corner at or behind the eye projects as it saturates instead of
+dropping the primitive:
+
+| Leaf | Winding | Then |
+|---|---|---|
+| A triangle, kinds `14`, `16`, `18` | kept on `NCLIP >= 0` | the near floor, then the off-screen test on every word |
+| Kind `12` (`0x800448B0`) | kept on `NCLIP >= 0` | the near floor; no off-screen test |
+| A quad, kinds `15`, `17` | kept on the first half's `NCLIP > 0`, else the second's `< 0` | the near floor, then the off-screen test on every word |
+| Kind `13` (`0x80044A3C`) | as kinds `15` / `17` | the near floor; no off-screen test |
+| A kind-`19` quad | kept on the first half's `>= 0`, else the second's `<= 0` | the off-screen test under a word carrying `0x40`, then the near floor |
+
+A double-sided word masks `NCLIP` with `0x7FFFFFFF` before the test, so it never reads
+negative and a strict quad still drops a half of zero area. The near floor is `OTZ < 0x10`
+on `ZSF3 * sum SZ >> 12` (`0x155`) or `ZSF4 * sum SZ >> 12` (`0x100`) at the battle's shift
+`2`; none of the words read on Medusa's strike carries the far-corner bit `0x10` (bodies `0x00` / `0x04`, the
+backdrop `0x40`, the shadows `0x8A`). Disassembly: the leaves at `0x80044C14` (`bltz` at
+`0x80044CBC`, the near test at `0x80044D68`, `jal 0x80044798` at `0x80044D80`),
+`0x80044DC8` (`blez` / `bgez` at `0x80044E78` / `0x80044EAC`, `jal` at `0x80044F48`) and
+`0x80045584` (`bltz` / `bgtz` at `0x80045634` / `0x80045668`, the `0x40` test at
+`0x800456EC`, the near test at `0x8004570C`).
+
+Held against the runner's per-fate counts (`retail-exec battle-cost --mode fates`) on
+twelve monster-strike states, each played on in both and read by action state (the median
+frame of each band, the engine's from the film's `units.csv`), summed over the bands:
+
+| Count | Stage linked / off-screen / culled | Bodies linked / off-screen / culled |
+|---|---|---|
+| Retail | `4938` / `14442` / `13712` | `70218` / `11497` / `63509` |
+| The leaves' rules | `4578` / `14406` / `13699` | `70333` / `10558` / `62794` |
+| The float rules | `4409` / `11481` / `16802` | `71735` / `0` / `71963` |
+
+On the strike bands themselves (`0x1E..=0x20`) a body's three counts land within a few
+primitives of retail's; the Done band moves more, where the engine's and retail's frames
+stand on different shots. Grade `disassembly` for the rules, `capture` (runner) for the
+counts.
+
+On those counts the four film sets read (image, cue, camera, step-right; the key rms in
+hblanks), the census line and the derived pricing each on the float rules and on the
+leaves' rules:
+
+| Set | Census, float | Census, leaves | Derived, float | Derived, leaves |
+|---|---|---|---|---|
+| Party arts | `.9454` `.998` `1.46` `.938` `35` | `.9317` `.998` `2.19` `.875` `51` | `.9457` `1.0` `1.78` `.953` `38` | `.9467` `1.0` `1.91` `.953` `39` |
+| Enemy casts | `.9513` `1.0` `2.50` `.767` `116` | `.9431` `1.0` `3.36` `.698` `126` | `.9440` `.990` `2.18` `.772` `118` | `.9518` `1.0` `2.11` `.772` `118` |
+| Seru casts | `.9721` `1.0` `5.91` `1.0` `35` | `.9721` `1.0` `5.91` `1.0` `43` | `.9721` `1.0` `5.91` `1.0` `15` | `.9721` `1.0` `5.91` `1.0` `15` |
+| Monster strikes | `.9847` `1.0` `.35` `.981` `29` | `.9720` `.999` `.75` `.883` `50` | `.9830` `1.0` `.58` `.942` `32` | `.9808` `.999` `.61` `.942` `33` |
+
+The step agreement over all four reads `.960`, `.935`, `.956` and `.962`. The census line
+loses on every set with retail's counts under it: its `.200` a link was fitted on the float
+rules' counts. So the leaves' rules ride the derived pricing only, and the census line keeps
+the float rules by default. The derived pricing on them takes the enemy casts (image over
+the line's, every cue, camera `2.50` to `2.11`, Kor's Gaza's Astral Slash back to `1.0`,
+Zenoir's Fire Claw back to the line's `.9165`, Rogue Wind's `.9327` against `.9312`), the
+arts' image and cues, the Seru frames and the overall step agreement, but not the strikes
+(image `.9808` against `.9847`, a cue, camera `.61` against `.35`) or the arts' camera.
+Its strike bands now read retail's counts, and their frames price within a few percent
+either side of the recordings' (Devil Pump's `0x1F` `629` against `643`, Orb's `698`
+against `679`, Ironman's `658` against `670`); the Done band (`0x51`) still reads `16`
+hblanks under. So it stays opt-in.
+
 **The three opt-in terms under the derived pricing.** The `"ME"` decode and the walker's
 branches are the derived pricing's own terms (`derived_cost::me_decode_cycles`,
 `derived_cost::walker_cycles`) and run under `derived_frame_cost` whatever the two
