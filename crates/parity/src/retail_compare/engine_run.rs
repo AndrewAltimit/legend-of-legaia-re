@@ -429,7 +429,15 @@ fn seed_and_settle(
         && matches!(retail.class, StateClass::Field | StateClass::WorldMap))
     .then(|| crate::retail_compare_script::script_gate_from_retail(&retail.scripts))
     .flatten();
-    let deadline = if gate.is_some() {
+    // A state taken with a scene change in flight (`pending_scene`) holds the
+    // outgoing scene's records, which the engine leaves with the change the
+    // gate's resume replays: `doman_arrival_from_korb2` holds map03's flat 49
+    // on its idle `26` at `+0x2E` 60 vsyncs before doman loads. Waiting on
+    // that record ran the seed to the deadline and returned the settle
+    // sample, so no walk film ever started behind it. Such a gate keeps its
+    // resume and ends at the settle window, where the sample and the film
+    // both stand.
+    let deadline = if gate.is_some() && retail.pending_scene.is_none() {
         legaia_engine_capture::script_gate::SCRIPT_GATE_DEADLINE
     } else {
         SETTLE_TICKS
@@ -578,7 +586,11 @@ fn seed_and_settle(
         met_at,
         resumed,
     });
-    if let (Some(_), None, Some(mut obs)) = (&gate, met_at, at_settle) {
+    // The still is the settle sample; a walk film behind a pending-scene
+    // gate runs on from the settle tick instead (the deadline is that tick).
+    let film_from_settle =
+        deadline == SETTLE_TICKS && std::env::var_os("LEGAIA_RC_WALK_OUT").is_some();
+    if let (Some(_), None, Some(mut obs), false) = (&gate, met_at, at_settle, film_from_settle) {
         obs.script = script;
         if let (Some(audio), Some(a)) = (listen, audio_at_settle) {
             *audio = a;
