@@ -129,11 +129,19 @@ pub struct BakaFight {
     pub(super) cabinet_hold: legaia_engine_system::retail_pad::RetailPadState,
     /// The frame-step floor the cabinet last stored (`_DAT_8007B9D8`):
     /// [`SECRET_TALLY_FRAME_STEP`] once the secret opponent's tally arm has
-    /// run, `1` again once the opponent install has. [`Self::frame`] runs a
-    /// game tick every `step_floor` vsyncs, on that step.
+    /// run, `1` again once the opponent install has. The pacing tail raises
+    /// the measured step to it ([`super::pacing::BakaPacer::end_frame`]).
     pub(super) step_floor: i32,
     /// Vsyncs since [`Self::frame`]'s last game tick.
     pub(super) vsync_phase: i32,
+    /// Vsyncs the last game frame spans ([`super::pacing::BakaPacer::end_frame`]).
+    pub(super) frame_span: i32,
+    /// The frame driver's step law over the cabinet's frames.
+    pub(super) pacer: super::pacing::BakaPacer,
+    /// Retail's pad pipeline ([`Self::set_retail_pad`]): the held words of
+    /// the vsyncs since the frame before opened, the vsync each frame samples
+    /// and the word the last sample took.
+    pub(super) retail_pad: Option<super::pacing::FramePad>,
     /// Pad edges seen on vsyncs between two game ticks, held for the next.
     pub(super) held_edge: u16,
     /// Hold the opponent install `0x1E` for its CD load
@@ -263,6 +271,9 @@ impl BakaFight {
             cabinet_hold: Default::default(),
             step_floor: 1,
             vsync_phase: 0,
+            frame_span: 1,
+            pacer: super::pacing::BakaPacer::default(),
+            retail_pad: None,
             held_edge: 0,
             install_load_hold: false,
             install_wait: 0,
@@ -409,6 +420,33 @@ impl BakaFight {
         if !on {
             self.install_wait = 0;
         }
+    }
+
+    /// Which machine's CD response the announcer's polls pace the frames
+    /// against ([`super::pacing::CdPollTiming`]; PCSX-Redux's by default).
+    pub fn set_cd_timing(&mut self, timing: super::pacing::CdPollTiming) {
+        self.pacer.set_timing(timing);
+    }
+
+    /// Read the pad as retail's frame driver does: once a frame, at the end
+    /// of the frame body (`FUN_8001822C` from `FUN_80016B6C`), acted on by
+    /// the frame after ([`super::pacing::FramePad`]). Off (the default), a
+    /// press reaches the cabinet's next game tick from the vsync it lands
+    /// on. The play hosts raise it with `WorldToggles::immediate_pad` down.
+    pub fn set_retail_pad(&mut self, on: bool) {
+        if on != self.retail_pad.is_some() {
+            self.retail_pad = on.then(super::pacing::FramePad::default);
+        }
+    }
+
+    /// The frame step the next game frame runs on (`DAT_1F800393`).
+    pub fn frame_step(&self) -> u8 {
+        self.pacer.step()
+    }
+
+    /// What the last game frame stored in the frame driver's ring.
+    pub fn frame_cost(&self) -> u16 {
+        self.pacer.newest()
     }
 
     pub fn set_held_pad(&mut self, packed: u16) {

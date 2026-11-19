@@ -157,7 +157,7 @@ pub(super) fn columns(sub: MinigameSubId) -> Vec<&'static str> {
         ],
         MinigameSubId::BakaFighter => vec![
             "state", "scene", "stimer", "intro", "round", "mphase", "hp0", "hp1", "wins0", "wins1",
-            "type0", "type1", "combo0", "combo1", "rng",
+            "type0", "type1", "combo0", "combo1", "rng", "dt", "cost",
         ],
         _ => vec!["mode"],
     }
@@ -446,5 +446,10 @@ fn baka_values(w: &legaia_engine_core::world::World) -> Vec<i64> {
         i64::from(f.combo(0)),
         i64::from(f.combo(1)),
         i64::from(f.rng_state()),
+        // The step the next game frame runs on and what the last one stored
+        // in the frame ring (engine-only: the driver's set films `dt` read
+        // off retail's step byte).
+        i64::from(f.frame_step()),
+        i64::from(f.frame_cost()),
     ]
 }

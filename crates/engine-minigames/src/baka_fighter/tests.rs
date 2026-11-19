@@ -1556,27 +1556,37 @@ fn a_held_direction_scrolls_the_player_select_once_the_window_fills() {
         ST_SELECT,
         "the attract never reached the select"
     );
+    // The live select prices at `280` hblanks a frame (`pacing::frame_work`),
+    // so it runs a game frame every second vsync; the window is the pad
+    // pump's, one slot a vsync. Record the vsync of every cursor move.
     let start = f.cabinet().select_cursor();
-    f.frame(CABINET_RIGHT, CABINET_RIGHT, 0);
-    assert_eq!(
-        f.cabinet().select_cursor(),
-        (start + 1) % 3,
-        "the press steps once"
-    );
+    let mut moves = Vec::new();
+    let mut cursor = start;
+    for v in 1..=REPEAT_WINDOW + 8 {
+        let edge = if v == 1 { CABINET_RIGHT } else { 0 };
+        f.frame(edge, CABINET_RIGHT, 0);
+        if f.cabinet().select_cursor() != cursor {
+            assert_eq!(
+                f.cabinet().select_cursor(),
+                (cursor + 1) % 3,
+                "one step a move"
+            );
+            cursor = f.cabinet().select_cursor();
+            moves.push(v);
+        }
+    }
+    // The press steps once, on the game frame that takes it.
+    assert!(moves[0] <= 2, "the press steps on its frame: {moves:?}");
     // Held with no new edge: nothing until the ring holds Right in every one
-    // of its slots, which the press frame plus `REPEAT_WINDOW - 1` more fill.
-    for _ in 1..REPEAT_WINDOW - 1 {
-        f.frame(0, CABINET_RIGHT, 0);
-        assert_eq!(f.cabinet().select_cursor(), (start + 1) % 3);
-    }
-    // The window fills on the next pump and stays full: one step per frame.
-    let mut cursor = (start + 1) % 3;
-    for _ in 0..4 {
-        f.frame(0, CABINET_RIGHT, 0);
-        cursor = (cursor + 1) % 3;
-        assert_eq!(f.cabinet().select_cursor(), cursor);
-    }
+    // of its slots, then one step a game frame.
+    assert!(moves[1] >= REPEAT_WINDOW, "{moves:?}");
+    assert!(moves.len() >= 4, "{moves:?}");
+    assert!(
+        moves[1..].windows(2).all(|w| w[1] - w[0] == 2),
+        "one step a game frame: {moves:?}"
+    );
     // Letting go clears the window at once.
+    f.frame(0, 0, 0);
     f.frame(0, 0, 0);
     assert_eq!(f.cabinet().select_cursor(), cursor);
 }
@@ -1600,17 +1610,22 @@ fn the_secret_tally_runs_a_game_tick_every_fourth_vsync() {
             .unwrap()
             .1
     };
-    // The arm's first frame runs on the floor the frame found.
+    // The arm's first frame runs on the floor the frame found, and waits
+    // `VSync` on the step it ran on.
     f.frame(0, 0, 0);
     assert_eq!(f.step_floor, SECRET_TALLY_FRAME_STEP);
     assert_eq!(timer(&f), 2, "seeded at 1, stepped by 1");
+    // Its tail stored the floor: the next frame runs on a step of four and
+    // spans four vsyncs.
+    f.frame(0, 0, 0);
+    assert_eq!(timer(&f), 6, "the next frame steps by 4");
     for _ in 0..3 {
         f.frame(0, 0, 0);
-        assert_eq!(timer(&f), 2, "no game tick between two of the floor's");
+        assert_eq!(timer(&f), 6, "no game tick between two of the floor's");
     }
     f.frame(0, 0, 0);
-    assert_eq!(timer(&f), 6, "the fourth vsync steps by 4");
-    let mut vsyncs = 5;
+    assert_eq!(timer(&f), 10, "the fourth vsync on steps by 4 again");
+    let mut vsyncs = 6;
     while f.cabinet.state() == ST_CHOICE_SECRET {
         f.frame(0, 0, 0);
         vsyncs += 1;

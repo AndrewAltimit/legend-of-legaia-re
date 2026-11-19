@@ -175,13 +175,24 @@ fn select_in_a_seated_duel_opens_the_pause_menu() {
     }
     assert_eq!(state(&host), Some(ST_DUEL), "the duel state");
 
+    // The cabinet runs a game tick once the frame before has spanned its
+    // vsyncs (the announcer's line paces the duel's opening at step `3`), and
+    // holds a press for the next tick.
     host.world.set_pad(PadButton::Select.mask());
     let _ = host.tick();
     host.world.set_pad(0);
+    for _ in 0..6 {
+        if state(&host) != Some(ST_DUEL) {
+            break;
+        }
+        let _ = host.tick();
+    }
     assert_eq!(state(&host), Some(ST_PAUSE_3), "Select opens the menu");
     // The press lands in the duel arm, whose epilogue still draws the HUD that
     // frame; the menu's own arm leaves the flag clear from the next one.
-    let _ = host.tick();
+    for _ in 0..6 {
+        let _ = host.tick();
+    }
     let fight = host.world.minigames.baka_fighter.as_ref().expect("duel");
     let (_, lines) = fight.pause_panel().expect("the disc's menu text");
     assert_eq!(lines.len(), 4, "three rows and the cursor");
@@ -208,6 +219,12 @@ fn select_in_a_seated_duel_opens_the_pause_menu() {
     host.world.set_pad(PadButton::Circle.mask());
     let _ = host.tick();
     host.world.set_pad(0);
+    for _ in 0..6 {
+        if state(&host) == Some(ST_DUEL) {
+            break;
+        }
+        let _ = host.tick();
+    }
     assert_eq!(state(&host), Some(ST_DUEL), "Circle backs out");
 }
 

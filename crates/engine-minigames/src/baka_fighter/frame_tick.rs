@@ -101,13 +101,17 @@ impl BakaFight {
     /// [`BakaFrameOutcome::paid`], clear it on a forfeit, and leave the
     /// cabinet on [`BakaFrameOutcome::exit`].
     pub fn frame(&mut self, edge: u16, held: u16, pot: u32) -> BakaFrameOutcome {
-        use legaia_engine_system::pad::{PACK_CIRCLE, PACK_CROSS, PACK_SQUARE, PACK_TRIANGLE};
         // The held word's 32-vsync window (`_DAT_8007B938`), pumped on every
         // frame whatever the cabinet is doing, as retail's pad pump is.
         self.cabinet_hold.pump_packed(u32::from(held), 1);
+        if let Some(p) = self.retail_pad.as_mut() {
+            p.push(held);
+        }
         // The opponent install loads its fighter synchronously: under
         // retail's load holds the state word stands at `0x1E` for the read
-        // (`OPPONENT_INSTALL_LOAD_VSYNCS`) before the arm runs on.
+        // (`OPPONENT_INSTALL_LOAD_VSYNCS`) before the arm runs on. The
+        // loader's own waits reset the vsync count the frame ring measures
+        // from, so the hold is no frame of the pacer's.
         if self.install_load_hold
             && self.cabinet.state() == crate::baka_cabinet::ST_OPPONENT_INSTALL
         {
@@ -117,20 +121,63 @@ impl BakaFight {
             self.install_wait -= 1;
             if self.install_wait > 0 {
                 self.held_edge |= edge;
+                self.pacer.skip(1);
+                self.chrome_frame.xa = None;
                 return BakaFrameOutcome::default();
             }
         }
-        // A game tick every `step_floor` vsyncs, on that step: the cabinet's
-        // floor is `1` but for the secret tally's `4`. A press between two
-        // ticks is held for the next, as the pad pump's edge word holds it.
-        let step = self.step_floor.max(1);
+        // A game tick once the frame before has spanned its vsyncs
+        // ([`super::pacing`]): its step, or longer when its cost ran past
+        // it. A press between two ticks is held for the next, as the pad
+        // pump's edge word holds it, and a held vsync starts no announcer
+        // line.
         self.vsync_phase += 1;
-        if self.vsync_phase < step {
+        if self.vsync_phase < self.frame_span {
             self.held_edge |= edge;
+            self.chrome_frame.xa = None;
             return BakaFrameOutcome::default();
         }
         self.vsync_phase = 0;
-        let edge = edge | std::mem::take(&mut self.held_edge);
+        let step = i32::from(self.pacer.step());
+        let (edge, held) = match self.retail_pad.as_mut() {
+            Some(p) => {
+                self.held_edge = 0;
+                let (h, e) = p.open();
+                (e, h)
+            }
+            None => (edge | std::mem::take(&mut self.held_edge), held),
+        };
+        let out = self.frame_tick(edge, held, pot, step);
+        self.end_frame();
+        out
+    }
+
+    /// The frame driver's pacing tail on the frame just run: a line the
+    /// frame cued opens the polls' window, the frame's work is priced
+    /// ([`super::pacing::frame_work`]) under it, and the law reads the step
+    /// the next frame runs on and how long this one spans.
+    fn end_frame(&mut self) {
+        if let Some(xa) = self.chrome_frame.xa {
+            self.pacer.cue_xa(xa.dur);
+        }
+        let passes: usize = self
+            .afterimage_frames
+            .iter()
+            .map(|(_, f)| f.passes.len())
+            .sum();
+        let work = super::pacing::frame_work(self.cabinet.state(), passes as u32);
+        let cost = self.pacer.frame_cost(work);
+        let span = self.pacer.end_frame(cost, self.step_floor);
+        if let Some(p) = self.retail_pad.as_mut() {
+            p.close(cost, span);
+        }
+        self.frame_span = span as i32;
+    }
+
+    /// The game tick of [`Self::frame`] on the frame's step and its edge
+    /// word (with the presses held since the last tick folded in).
+    fn frame_tick(&mut self, edge: u16, held: u16, pot: u32, step: i32) -> BakaFrameOutcome {
+        use legaia_engine_system::pad::{PACK_CIRCLE, PACK_CROSS, PACK_SQUARE, PACK_TRIANGLE};
         if self.cabinet.front_end() {
             self.set_cabinet_pad(edge);
             self.tick(step);

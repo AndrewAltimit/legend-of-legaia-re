@@ -41,6 +41,7 @@ mod fighter;
 mod fighter_pack;
 mod frame_tick;
 mod hud_widgets;
+pub mod pacing;
 mod score;
 mod strike_clock;
 mod tally;
