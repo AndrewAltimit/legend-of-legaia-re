@@ -1,0 +1,128 @@
+# The field frame-cost model's film set (scripts/ci/field-cost-films.py): one idle film per
+# state (`--pad 900-901:L2`, 300 vsyncs, PCSX-Redux recompiler), the retail side cached under
+# captures/film-retail/field-cost/<state>/walk_film.csv. Each line: state, then its set.
+#   fit    the films the weights climb on (rung agreement, unanchored step)
+#   extra  held out of the fit (rung agreement, unanchored step), scored over its first
+#          150 vsyncs (the third column; the cache holds 300)
+# Retail states only: the states captured on a patched disc (`resident_patch` in
+# scripts/scenarios.toml) are not filmed. See docs/subsystems/engine.md,
+# "The field frame-cost model", and docs/tooling/walk-film.md.
+balden_field_route_walk fit
+bubu2_field_door_hop fit
+bylon_mist_gala_goes_ahead fit
+bylon_mist_noa_vahn fit
+cave01_attached_light fit
+chapter2_garmel_pre_songi fit
+chapter2_garmel_pre_zeto fit
+chest_open_trace_pcsx fit
+chitei2_corridor_pillars_before fit
+chitei2_corridor_pillars_lit fit
+chitei2_field_card_boot fit
+conc2_field_route_walk fit
+concend_field_door_hop fit
+conc_field_card_boot fit
+concnow_field_door_hop fit
+concnow_field_door_hop_settled fit
+deene_field_card_walk fit
+deroa_field_door_hop fit
+dohaty_field_card_walk fit
+dolk2_field_door_hop fit
+doman_arrival_from_korb2 fit
+doman_field_card_boot fit
+drake_castle_to_worldmap fit
+field_walled_collision_pin fit
+first_town_interactive fit
+garmel_field_card_boot fit
+garmel_zeto_appears_rising fit
+garmel_zeto_appears_taunt fit
+geremi_field_door_hop fit
+jagaroom_field_door_hop fit
+jou_field_card_walk fit
+jouina_field_door_hop fit
+jouinb_field_door_hop fit
+jouinc_field_door_hop_settled fit
+jouind_field_card_boot fit
+koin1_field_route_walk fit
+koin3_gold_card_guard_talk fit
+koin4_field_route_walk fit
+koin6_field_route_walk fit
+kor3_field_route_walk fit
+kor4_field_route_walk fit
+kor5_post_436_organic fit
+kor5_post_43a_checkpoint fit
+korb2_field_card_boot fit
+korb3_field_walk fit
+kor_field_route_walk fit
+korout_field_door_hop fit
+map01_field_door_hop fit
+map01_tree_revival_cutscene fit
+map02_field_door_hop fit
+map03_field_door_hop fit
+mei_house_door_pcsx fit
+mei_house_inside_pcsx fit
+nilboa_field_door_hop fit
+noaru_field_card_walk fit
+overworld_into_town_man_load fit
+retock_field_card_boot fit
+retock_innkeeper_talk_open fit
+retock_inn_stay_prompt fit
+retona_field_card_boot fit
+rikuroa2_field_door_hop fit
+rikuroa_field_card_walk fit
+rikuroa_field_cave_exit_arrival fit
+rim_elm_queen_bee_battle fit
+ropeway2_field_door_hop fit
+ropeway_field_route_walk fit
+rugi_field_card_boot fit
+s1_newgame_field fit
+s2_rimelm_town01 fit
+s4_rimelm_door_transition fit
+son_arrival_from_doman fit
+son_field_door_hop fit
+stone_field_door_hop fit
+stone_field_route_walk fit
+suimon_field_door_hop fit
+taiku2_field_door_hop fit
+taiku_field_card_walk fit
+teien_field_run fit
+tower_field_walk fit
+town01_field_card_boot fit
+town01_npc16_dialogue_first_page fit
+town01_tetsu_topic_prompt fit
+tunnela_field_door_hop fit
+tunnelb_field_card_boot fit
+uru2_field_door_hop fit
+vell_dead_genesis_tree fit
+vell_fog_field fit
+vozz_field_card_boot fit
+vozz_genesis_tree_gala_at_tree fit
+vozz_genesis_tree_songi fit
+vozz_ozma_hatching_crawl fit
+vozz_ozma_hatching_hover fit
+vozz_tree_revival_return fit
+balden2_field_door_hop extra 150
+bubu1_field_door_hop extra 150
+bylon_field_door_hop extra 150
+chapter2_garmel_post_zeto extra 150
+conc3_field_inn_night extra 150
+deroa_field_route_walk extra 150
+doman_pre_entry_card_boot extra 150
+jiji_field_door_hop extra 150
+jouinc_field_door_hop extra 150
+koin1b_field_route_walk extra 150
+koin2_field_door_hop extra 150
+kor5_field_card_boot extra 150
+nilboa2_field_door_hop extra 150
+nilboa_delilas_family_after_pose extra 150
+nilboa_delilas_family_pose extra 150
+nilboa_pre_entry_card_boot extra 150
+nivora_cutscene_delilas_intro extra 150
+rayman2_field_door_hop extra 150
+rayman_field_door_hop extra 150
+retockin_field_route_walk extra 150
+retock_pre_entry_card_boot extra 150
+station3_field_door_hop extra 150
+station_field_door_hop extra 150
+town0b_field_door_hop extra 150
+tunnelc_field_route_walk extra 150
+uru_field_run extra 150
