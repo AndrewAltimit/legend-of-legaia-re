@@ -8688,3 +8688,239 @@ expected_game_mode = 0x03
 expected_active_scene = "town0d"
 ram_poked = ["system flag 0x4C8 set, 0x3F2 and 0x6C2 cleared (concend_field_door_hop's portal arm), before this state"]
 topics = ["field", "story beat", "town0d", "Rim Elm", "cutscene", "interior", "scene coverage"]
+
+# ----------------------------------------------------------------------
+# The dream scenes (urudre1 / urudre2 / urudre3, and Noa's dream `dream`),
+# which no retail state stood in. Uru Mais's dream doors open on 0x3FC,
+# set by uru P2[38] (C2 0x379 + 0x4FF, C1 0x3FC): Dr. Usha's talk (doman
+# P1[15]) sets 0x379 and Mrs. Usha's quiz (P1[3], rows 2,1,3,1) sets 0x4FF.
+# The hub's three door objects (P0[16] / P0[18] / P0[20], bound by gate-0
+# kind-1 records) warp the party to the three wings. Noa's dream comes from
+# an inn stay whose gate ends in a random roll (op 4E sub-op 4): retock's
+# second arm takes Rand() & 0xFF < 0x66, the Usha Research Center's < 0x7F.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+label = "doman_mrs_usha_quiz_picker_slide"
+backup_fingerprint = "c61d7043bfb20c6a6cb4384e418856f2f9b6833c5f59b7dafda1668fbcb3858c"
+description = "Doman, Usha Research Center: Mrs. Usha's first quiz question, its four-row picker sliding in under the question box. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), talked to (a Down press to face her, then Cross every 20 vsyncs); saved 360 vsyncs into that drive."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "doman"
+topics = ["field", "doman", "dialog", "picker", "quiz"]
+
+[[scenarios]]
+label = "doman_mrs_usha_quiz_picker_open"
+backup_fingerprint = "8d1b02b9876a9e308eea523985a6d1457df74c016ad676fe3863cf48740e8d4e"
+description = "Doman, Usha Research Center: Mrs. Usha's first quiz question with its four-row picker open and the cursor on row 0. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), talked to (a Down press to face her, then Cross every 20 vsyncs); saved 374 vsyncs into that drive."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "doman"
+topics = ["field", "doman", "dialog", "picker", "quiz"]
+
+[[scenarios]]
+label = "urudre2_jette_dialog"
+backup_fingerprint = "0fcb90764011f3a0b99f26e848986ec9d990f7fdab3433c9568299af4b6e8a68"
+description = "Dream of the past (urudre2): the palace, a dialog box over Jette, the King and the queen holding the baby. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's west door (object P0[16]) and the walk-on band (10..12, 98), P2[33], played on with Cross every 20 vsyncs; saved 600 vsyncs after urudre2 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre2"
+topics = ["field", "dream", "urudre2", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre2_palace_family"
+backup_fingerprint = "51e817f02ab89299410ecb4bdabe566a0929732a2fb097ab9129b14d546aa381"
+description = "Dream of the past (urudre2): the palace room, the King, the queen with the baby and a guard, no box. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's west door (object P0[16]) and the walk-on band (10..12, 98), P2[33], played on with Cross every 20 vsyncs; saved 1200 vsyncs after urudre2 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre2"
+topics = ["field", "dream", "urudre2", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre2_palace_walk"
+backup_fingerprint = "9c14553ea0d09f6f654865f7a117066691305ccddb2553cc71234a13c53ba82a"
+description = "Dream of the past (urudre2): the palace room from behind, a figure walking to the far door. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's west door (object P0[16]) and the walk-on band (10..12, 98), P2[33], played on with Cross every 20 vsyncs; saved 1800 vsyncs after urudre2 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre2"
+topics = ["field", "dream", "urudre2", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre2_king_nebular_dialog"
+backup_fingerprint = "d50574e54ce7883276917d150802160aaa048d2a07da6650ca44a26fc340f9af"
+description = "Dream of the past (urudre2): King Nebular's dialog box over the King and the queen. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's west door (object P0[16]) and the walk-on band (10..12, 98), P2[33], played on with Cross every 20 vsyncs; saved 2400 vsyncs after urudre2 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre2"
+topics = ["field", "dream", "urudre2", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre2_dark_floor"
+backup_fingerprint = "85794069365e5d2a2597dc3dc4b4ea998b49b3c7d45dac1e5e482a469d9903b4"
+description = "Dream of the past (urudre2): the dark purple-lit floor, two small figures. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's west door (object P0[16]) and the walk-on band (10..12, 98), P2[33], played on with Cross every 20 vsyncs; saved 4000 vsyncs after urudre2 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre2"
+topics = ["field", "dream", "urudre2", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre2_rampart_flyer"
+backup_fingerprint = "ea899b178dc7b7d506edd7cd43362bfb1b3803752f5a860f05d2c65fe620cb35"
+description = "Dream of the past (urudre2): the blue night rampart, a winged figure flying overhead. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's west door (object P0[16]) and the walk-on band (10..12, 98), P2[33], played on with Cross every 20 vsyncs; saved 5740 vsyncs after urudre2 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre2"
+topics = ["field", "dream", "urudre2", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre1_house_cutscene"
+backup_fingerprint = "fae5bd4e36153d3d4af12c3b008b31d6fe3df297401efa68a22ccb5f5d3e211b"
+description = "Vahn's dream (urudre1): the cutscene in the house, the elder, the father and young Vahn. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's east door (object P0[18]) and the walk-on band (110..112, 35), P2[29], played on with Cross every 20 vsyncs; saved 1200 vsyncs after urudre1 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre1"
+topics = ["field", "dream", "urudre1", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre1_house_free"
+backup_fingerprint = "2a10d93a1cde7205207b2dea21818ec2ccea3e22b9843561f34247e4be61fc8c"
+description = "Vahn's dream (urudre1): the round house from the high camera, young Vahn free to walk. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's east door (object P0[18]) and the walk-on band (110..112, 35), P2[29], played on with Cross every 20 vsyncs; saved 1800 vsyncs after urudre1 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre1"
+topics = ["field", "dream", "urudre1", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre3_zopu_box_black"
+backup_fingerprint = "ce5f94c62038ed1e17e3662900e0afa2c41e4d339ec94230ac0a5c5b1c563783"
+description = "Gala's dream (urudre3): a dialog box over black before the hall fades in. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's south door (object P0[20]) and the walk-on band (80..82, 99), P2[31], played on with Cross every 20 vsyncs; saved 600 vsyncs after urudre3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre3"
+topics = ["field", "dream", "urudre3", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre3_zopu_hall"
+backup_fingerprint = "7f42698f83c2b80e06d16ea618657596002cfbfcefe83e071bda556ede1b4b74"
+description = "Gala's dream (urudre3): Master Zopu before the rows of monks. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's south door (object P0[20]) and the walk-on band (80..82, 99), P2[31], played on with Cross every 20 vsyncs; saved 1200 vsyncs after urudre3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre3"
+topics = ["field", "dream", "urudre3", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre3_dojo_floor"
+backup_fingerprint = "e1b7a08ddad7649841c54ff3653c32cf2b77c19442a858f15941929b01d71eb8"
+description = "Gala's dream (urudre3): the dojo floor from the high camera, two figures by the pillars. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's south door (object P0[20]) and the walk-on band (80..82, 99), P2[31], played on with Cross every 20 vsyncs; saved 1800 vsyncs after urudre3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre3"
+topics = ["field", "dream", "urudre3", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre3_dojo_pair"
+backup_fingerprint = "d65444bb887ab9d0818ecd54505d28e05cf9ad2f9ca412424cd852442daa3975"
+description = "Gala's dream (urudre3): the two young monks face to face between the urns. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's south door (object P0[20]) and the walk-on band (80..82, 99), P2[31], played on with Cross every 20 vsyncs; saved 2400 vsyncs after urudre3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre3"
+topics = ["field", "dream", "urudre3", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre3_dojo_walk"
+backup_fingerprint = "13ef27c6134007c7a5970d8b55b7c2f86b164cca39059a25e8737effa13240cc"
+description = "Gala's dream (urudre3): young Gala walking past the pillars, seen from behind. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's south door (object P0[20]) and the walk-on band (80..82, 99), P2[31], played on with Cross every 20 vsyncs; saved 3000 vsyncs after urudre3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre3"
+topics = ["field", "dream", "urudre3", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre3_jigul_dialog"
+backup_fingerprint = "e4c9f703f6e4aa24c233fc4b1b72561aa3454a06ad9294b70ed41eada90504a3"
+description = "Gala's dream (urudre3): a dialog box over young Gala and Songi's sister in the house. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's south door (object P0[20]) and the walk-on band (80..82, 99), P2[31], played on with Cross every 20 vsyncs; saved 4000 vsyncs after urudre3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre3"
+topics = ["field", "dream", "urudre3", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre3_songi_room"
+backup_fingerprint = "67717d513792dd88a08e75633e352aac03f0686c5f524cc6e00c288bb6f0a811"
+description = "Gala's dream (urudre3): the girl alone in the wooden room. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's south door (object P0[20]) and the walk-on band (80..82, 99), P2[31], played on with Cross every 20 vsyncs; saved 5000 vsyncs after urudre3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre3"
+topics = ["field", "dream", "urudre3", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "urudre3_songi_dialog_black"
+backup_fingerprint = "f11637497a3c4caacd195ce90324219c30c559ba8b851729f334c48bdf5ea4d3"
+description = "Gala's dream (urudre3): a dialog box over black between beats. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); the lift (walk-on (71,90), P2[1]), map03 and uru walked by autorun_walk_route.lua (random fights won with Attack); uru P2[28] and P2[38] (the voice beat, sets 0x3FC) played with Cross every 20 vsyncs; then the hub's south door (object P0[20]) and the walk-on band (80..82, 99), P2[31], played on with Cross every 20 vsyncs; saved 5560 vsyncs after urudre3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "urudre3"
+topics = ["field", "dream", "urudre3", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "dream_noa_small"
+backup_fingerprint = "b9b911e3f5640e14a4402ddfc7297aa6939a3b10a9915c1897813cd6c19cf719"
+description = "Noa's dream (dream): Noa small and alone in the dark. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); then the Usha Research Center's cook (P1[5]) talked to with the stay picker answered (rows 1 then 0: no meal, sleep), Cross every 20 vsyncs. The stay's dream gate (0x35D set, 0x35E / 0x3EF / 0x57F clear) passed its random roll (field op 4E sub-op 4, Rand() & 0xFF < 0x7F) and changed the scene to dream; saved 600 vsyncs after dream loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "dream"
+topics = ["field", "dream", "Noa", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "dream_noa_lights"
+backup_fingerprint = "47e3dccb257a37dea853dc88272b18356f3a762b8b5b38196020b59a6254962a"
+description = "Noa's dream (dream): Noa under two pale lights. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); then the Usha Research Center's cook (P1[5]) talked to with the stay picker answered (rows 1 then 0: no meal, sleep), Cross every 20 vsyncs. The stay's dream gate (0x35D set, 0x35E / 0x3EF / 0x57F clear) passed its random roll (field op 4E sub-op 4, Rand() & 0xFF < 0x7F) and changed the scene to dream; saved 1100 vsyncs after dream loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "dream"
+topics = ["field", "dream", "Noa", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "dream_noa_name_dialog"
+backup_fingerprint = "47cfba8bfebbbdc7e36f2aa50681dd29128680fcaa6d6220ea25b74e5d6e1a63"
+description = "Noa's dream (dream): a dialog box over Noa between the lights. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); then the Usha Research Center's cook (P1[5]) talked to with the stay picker answered (rows 1 then 0: no meal, sleep), Cross every 20 vsyncs. The stay's dream gate (0x35D set, 0x35E / 0x3EF / 0x57F clear) passed its random roll (field op 4E sub-op 4, Rand() & 0xFF < 0x7F) and changed the scene to dream; saved 1600 vsyncs after dream loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "dream"
+topics = ["field", "dream", "Noa", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "dream_noa_dark"
+backup_fingerprint = "cdc069c15433eebf844486a05ac02c0589c4935fd0fa9b176879ee37970046d9"
+description = "Noa's dream (dream): Noa alone in the dark, before the voice answers. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); then the Usha Research Center's cook (P1[5]) talked to with the stay picker answered (rows 1 then 0: no meal, sleep), Cross every 20 vsyncs. The stay's dream gate (0x35D set, 0x35E / 0x3EF / 0x57F clear) passed its random roll (field op 4E sub-op 4, Rand() & 0xFF < 0x7F) and changed the scene to dream; saved 2100 vsyncs after dream loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "dream"
+topics = ["field", "dream", "Noa", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "dream_noa_desperate_dialog"
+backup_fingerprint = "8239a437f85ee14c7aaf2826a32e87a7484d7a2243f53c503f1149b9b58bccb1"
+description = "Noa's dream (dream): the voice's dialog box over Noa on the purple glow. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); then the Usha Research Center's cook (P1[5]) talked to with the stay picker answered (rows 1 then 0: no meal, sleep), Cross every 20 vsyncs. The stay's dream gate (0x35D set, 0x35E / 0x3EF / 0x57F clear) passed its random roll (field op 4E sub-op 4, Rand() & 0xFF < 0x7F) and changed the scene to dream; saved 2600 vsyncs after dream loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "dream"
+topics = ["field", "dream", "Noa", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "dream_noa_purple"
+backup_fingerprint = "636f7d45a2b6c638f01f485b97bc354d1e3d283b12aecc3f298d9b4cc6e54de2"
+description = "Noa's dream (dream): Noa running on the purple-lit floor. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); then the Usha Research Center's cook (P1[5]) talked to with the stay picker answered (rows 1 then 0: no meal, sleep), Cross every 20 vsyncs. The stay's dream gate (0x35D set, 0x35E / 0x3EF / 0x57F clear) passed its random roll (field op 4E sub-op 4, Rand() & 0xFF < 0x7F) and changed the scene to dream; saved 3100 vsyncs after dream loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "dream"
+topics = ["field", "dream", "Noa", "cutscene", "scene coverage"]
+
+[[scenarios]]
+label = "doman_inn_wake_hud"
+backup_fingerprint = "edf9083620603a11d67b702484381bce49c62224b766032b671bfe352afc5a8f"
+description = "Doman, Usha Research Center: Vahn awake in the guest room after Noa's dream, party HUD up. RETAIL disc: doman_field_card_boot played forward on PCSX-Redux, pad only, no RAM pokes: autorun_walk_route.lua walked to Dr. Usha (doman P1[15]) and paged his talk with Cross (sets 0x379), then to Mrs. Usha (P1[3]), whose quiz autorun_story_forward.lua's picker drive answers rows 2,1,3,1 (sets 0x4FF); then the Usha Research Center's cook (P1[5]) talked to with the stay picker answered (rows 1 then 0: no meal, sleep), Cross every 20 vsyncs. The stay's dream gate (0x35D set, 0x35E / 0x3EF / 0x57F clear) passed its random roll (field op 4E sub-op 4, Rand() & 0xFF < 0x7F) and changed the scene to dream, which returns to doman; saved 1307 vsyncs after doman reloaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "doman"
+topics = ["field", "doman", "inn", "HUD"]
