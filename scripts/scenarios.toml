@@ -8480,3 +8480,153 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "izumi"
 topics = ["field", "izumi", "walkers", "scene coverage"]
+
+[[scenarios]]
+label = "credits_rimelm_walkaway_pcsx"
+backup_fingerprint = "4e93a2511d8752d1052590d3b96d3c8fbb7e07cb057dee8735863243074aaba2"
+description = "End credits on PCSX-Redux: Vahn walking away from Rim Elm on the overworld, the credits' first shot. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 200 vsyncs after map01 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map01"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "map01"]
+
+[[scenarios]]
+label = "credits_edteien_panel_pcsx"
+backup_fingerprint = "f2865ad31475d7eed8b848bb7aeb3b8f264ae7e7fd28de0a88e210de93c82ea2"
+description = "End credits on PCSX-Redux: the Sky Gardens vignette shrunk to its corner panel beside the Director credit. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edteien loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edteien"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edteien"]
+
+[[scenarios]]
+label = "credits_edbylon_fullscreen_pcsx"
+backup_fingerprint = "e04be7aa18dc6183b38a95376d2bd0d02224047927130c63d17b8eea3cfd09c8"
+description = "End credits on PCSX-Redux: the Biron Monastery vignette full screen: the monks before the Master. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edbylon loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edbylon"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edbylon"]
+
+[[scenarios]]
+label = "credits_edbylon_panel_pcsx"
+backup_fingerprint = "99a7e0b888a68fc24b4b84214dfa52cd27bee858fdc1739aecc0253431811791"
+description = "End credits on PCSX-Redux: the Biron vignette in its corner panel under the MAP SECTION banner. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edbylon loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edbylon"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edbylon"]
+
+[[scenarios]]
+label = "credits_edbubu_fullscreen_pcsx"
+backup_fingerprint = "9627d6fe70d3d2a661b75c0fd5f6f175d5bfe4c917034a5749224d13a12a2eb9"
+description = "End credits on PCSX-Redux: the Buma vignette full screen: the hut by the fire. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edbubu loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edbubu"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edbubu"]
+
+[[scenarios]]
+label = "credits_edretoin_fullscreen_pcsx"
+backup_fingerprint = "112e345691a2b6cac0393d7594b8853c374adca0f668b8cc6bbcf3c2cb8ab01c"
+description = "End credits on PCSX-Redux: the Ratayu wedding vignette full screen. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edretoin loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edretoin"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edretoin"]
+
+[[scenarios]]
+label = "credits_edretoin_panel_pcsx"
+backup_fingerprint = "1ba59e258a9e28d35d742699c219c799a39b444cc35ea091d042606745e54c51"
+description = "End credits on PCSX-Redux: the Ratayu vignette in its corner panel under the BATTLE SECTION banner. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edretoin loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edretoin"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edretoin"]
+
+[[scenarios]]
+label = "credits_edkorout_window_pcsx"
+backup_fingerprint = "48f68c20eae20d15ac5c80263d7acbc3210a7f550328e5608adeb2af2f837d3d"
+description = "End credits on PCSX-Redux: the Sol Tower window shot with the sky through the window. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edkorout loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edkorout"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edkorout"]
+
+[[scenarios]]
+label = "credits_edkorout_panel_pcsx"
+backup_fingerprint = "bfefa85d754d656ae65607607d7badc5e2c99a617403b1a4c112328bf4ddf19b"
+description = "End credits on PCSX-Redux: the Sol vignette in its corner panel under the SUBGAME SECTION banner. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edkorout loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edkorout"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edkorout"]
+
+[[scenarios]]
+label = "credits_eddoman_fullscreen_pcsx"
+backup_fingerprint = "3672708c622e1d1796ba1543b547d0c880592f85c4e22580088e8ac03bee8af9"
+description = "End credits on PCSX-Redux: the Usha lab vignette full screen. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after eddoman loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "eddoman"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "eddoman"]
+
+[[scenarios]]
+label = "credits_edstati3_fullscreen_pcsx"
+backup_fingerprint = "750e0e3f9b63c25371851937be2f4ef8a443de2ae73c92189ec234c243a52b64"
+description = "End credits on PCSX-Redux: the Karisto station vignette full screen at sunset. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edstati3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edstati3"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edstati3"]
+
+[[scenarios]]
+label = "credits_edstati3_panel_pcsx"
+backup_fingerprint = "3a56b78d1dcfb88755ddd9f7d16980ee5812a90751538285a5c5f5c800b399fb"
+description = "End credits on PCSX-Redux: the Karisto vignette in its corner panel beside the Sound Effect credit. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edstati3 loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edstati3"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edstati3"]
+
+[[scenarios]]
+label = "credits_edson_fullscreen_pcsx"
+backup_fingerprint = "d6caafb233ac77183e8f0c07a2b0a1a5f0537f1425ac968df90e5605eabfdc57"
+description = "End credits on PCSX-Redux: the Soren camp vignette full screen, the party and the Ra-Seru. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edson loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edson"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edson"]
+
+[[scenarios]]
+label = "credits_edson_panel_pcsx"
+backup_fingerprint = "1b0dc8cf2055327e6a71f94f6121de6c1a85c159eabe501df540d2e2834c6924"
+description = "End credits on PCSX-Redux: the Soren vignette in its corner panel beside the CG Movie Creation credit. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 1400 vsyncs after edson loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edson"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edson"]
+
+[[scenarios]]
+label = "credits_edlast_casting_pcsx"
+backup_fingerprint = "6f812b85287c18c882dca57cb2c5026dfc03343343cecc74645b2de5ae03e250"
+description = "End credits on PCSX-Redux: the closing crawl's Casting block over black. RETAIL disc, pad only but for the final fight's HP poke: town0e_epilogue_vahn_alone walked by autorun_walk_route.lua to the south gate, the Village Elder talked to (town0e P1[24]) and his talk paged to its end, which lets the gate band P2[6] carry Vahn out, then autorun_story_forward.lua through the credits; saved 700 vsyncs after edlast loaded."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "edlast"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["ending", "credits", "cutscene", "edlast"]
