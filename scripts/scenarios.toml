@@ -2267,6 +2267,15 @@ topics = ["playthrough", "trace-coverage", "S2", "rim-elm", "town01", "segment-c
 arrival = { from = "opurud", door = 9 }
 
 [[scenarios]]
+label = "rim_elm_zoom_intro_pcsx"
+backup_fingerprint = "0b6a687a94d8b88b9c40b2eb1be409a84cf7a59a65e75e11108506607a7054f9"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town01"
+description = "The New Game opening's town01 zoom shot on PCSX-Redux, the PCSX-Redux twin of the Mednafen rim_elm_zoom_intro. RETAIL disc: s2_rimelm_town01 played forward with the pad alone (autorun_story_forward.lua, LEGAIA_CKPT_SCENES=town01, checkpoint e500, --turbo); inherits that state's retail executable (patch_taint_audit.py states / scan: retail, site-clean). Every frame of the shot steps 4 on PCSX-Redux (frame driver 774 hblanks of work)."
+topics = ["field", "town01", "new game", "frame cost", "pcsx-redux"]
+
+[[scenarios]]
 slot = 255
 label = "s3_rimelm_freeroam"
 backup_fingerprint = "e9e526595d0479ce1af9619418922ca337019ba0d1078169bc65235c22d75fc8"
