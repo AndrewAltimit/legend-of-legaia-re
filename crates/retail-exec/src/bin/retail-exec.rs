@@ -72,6 +72,11 @@ enum Cmd {
         /// field passes.
         #[arg(long, value_delimiter = ',')]
         funcs: Vec<String>,
+        /// RAM words (hex, comma separated) printed at each frame's end,
+        /// `name=ADDR` or `ADDR`, read as `u32` (`ADDR:u8` / `ADDR:s16`
+        /// for a narrower kind).
+        #[arg(long, value_delimiter = ',')]
+        watch: Vec<String>,
     },
     /// Price a battle frame by unit (see `battle_cost`).
     BattleCost {
@@ -224,7 +229,9 @@ fn main() -> Result<()> {
             marks,
             marks_out,
             mark_reg,
+            watch,
         } => {
+            let watch = parse_watch(&watch)?;
             let s = state.load()?;
             let extra: Vec<Routine> = funcs
                 .iter()
@@ -286,12 +293,13 @@ fn main() -> Result<()> {
                 }
                 if !csv {
                     println!(
-                        "frame {f}: {:.1} hb ({} cycles, {} instructions, VSync waits included), ring {} step {}",
+                        "frame {f}: {:.1} hb ({} cycles, {} instructions, VSync waits included), ring {} step {}{}",
                         fc.cycles as f64 / PCSX_CYCLES_PER_HBLANK,
                         fc.cycles,
                         fc.steps,
                         fc.ring,
-                        fc.step
+                        fc.step,
+                        watch_line(&mut run.cpu.mem, &watch)
                     );
                 }
                 for row in &fc.rows {
@@ -626,4 +634,47 @@ fn battle_cost(s: &PcsxState, frames: usize, mode: &str) -> Result<()> {
         _ => bail!("unknown mode {mode}"),
     }
     Ok(())
+}
+
+/// One `--watch` word: its label, address and width.
+struct Watch {
+    name: String,
+    va: u32,
+    kind: String,
+}
+
+fn parse_watch(specs: &[String]) -> Result<Vec<Watch>> {
+    specs
+        .iter()
+        .map(|spec| {
+            let (name, rest) = match spec.split_once('=') {
+                Some((n, r)) => (n.to_string(), r),
+                None => (spec.clone(), spec.as_str()),
+            };
+            let (addr, kind) = rest.split_once(':').unwrap_or((rest, "u32"));
+            let va = u32::from_str_radix(addr.trim_start_matches("0x"), 16)?;
+            Ok(Watch {
+                name,
+                va,
+                kind: kind.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn watch_line(mem: &mut psx_retail_exec::Memory, watch: &[Watch]) -> String {
+    let mut out = String::new();
+    for w in watch {
+        let b = mem.read(w.va, 4);
+        let v = match w.kind.as_str() {
+            "u8" => i64::from(b[0]),
+            "s8" => i64::from(b[0] as i8),
+            "u16" => i64::from(u16::from_le_bytes([b[0], b[1]])),
+            "s16" => i64::from(i16::from_le_bytes([b[0], b[1]])),
+            "s32" => i64::from(i32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+            _ => i64::from(u32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+        };
+        out.push_str(&format!(" {}={v:#x}", w.name));
+    }
+    out
 }
