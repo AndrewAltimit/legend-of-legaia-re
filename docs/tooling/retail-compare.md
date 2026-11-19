@@ -2214,10 +2214,11 @@ youngest wave not yet seated, the oldest still at radii `256 / 384`, out
 past the screen's corners. The replay's waves stood on its own passes and
 drew rays into the top corners where retail's frame has none; seated off
 the RAM a lag back the top `60` rows read mae `.13` (`.53`), `image` `.937`
-to `.938`. What is left of that still is a cream body near the camera at
-`x >= 256`, rows `112..140`: hiding every module record
-(`LEGAIA_DIAG_CAST_HIDE`) leaves it drawn, so it is no part, and the engine
-draws it short of where retail's tables step it in each pass (TR z `+112`).
+to `.938`. What was left of that still, a cream body near the camera at
+`x >= 256` in rows `112..140`, was the camera's walk back, not the body:
+the dolly the cast walks moves the eye alone, and the walk back reads it
+as the table it is ([a shot that moves the eye alone](#a-shot-that-moves-the-eye-alone)),
+`.988`.
 
 **A rate the program switched inside the lag.** A channel is taken back on
 its current rate only while the lag stays inside the part's current wait
@@ -3293,6 +3294,26 @@ The drift is read off the body's camera director on a held pass, and only
 where no component it moves sits more than one increment off its endpoint:
 Glare's arm 1 (PROT 0940) drifts while arm 0's twelve-frame shot still walks,
 and stays on the table.
+
+<a id="a-shot-that-moves-the-eye-alone"></a>
+A shot that moves the eye alone walks on the table too. Big Wave's arm 4
+(PROT 0946, `wave_camera`) builds a dolly from TR z `z / 2` to `2z` over
+`0x100` units with its angles and focus already home, so only the translation
+stands off its endpoints while it walks. The walker `FUN_8002149C` adds
+`increment * step` to each translation word and stores the endpoint back once
+the word passes it in the increment's direction (`0x80021598..0x800215C8`), so a
+word short of its endpoint on the increment's side, more than one increment
+out, is a table still walking; a drift that moved the eye off a landed table
+does not stand there (`module_shot_walking`). Read as a re-armed ease instead,
+`battle_noaru_slippery_v2_big_wave_mid_cast` (TR z `4928` on increment `28`
+with `4595` to go) drew at `4613`. Its history holds sixteen clamped
+entries (`0x2BC`), which the floor would settle, but the stage draws no grid
+to confirm against, so a module shot whose history ran one step through the
+display lag and the pass before it walks back on that step: two step-`4`
+passes, TR z `4704`, where the frame on screen stands (a TR z sweep of the
+still reads `.938` at `4613`, `.954` at `4760` and `.988` at `4704`). `image`
+`.938` to `.988`; the near body at the frame's right edge, the cream body the
+dolly carries in, was this walk back. A harness seat.
 
 Neo Star Slash and Doomsday do gate on module words, which their directors
 carry in the countdown the gate reads: PROT 0960's `0x801F8E50` (`scalar *

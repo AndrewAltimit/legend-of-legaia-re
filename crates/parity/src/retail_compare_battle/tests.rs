@@ -348,6 +348,32 @@ fn the_chain_terminator_pass_walks_back_on_the_table_it_found() {
     assert_eq!(p.tr[2], 5493.0);
 }
 
+/// `battle_noaru_slippery_v2_big_wave_mid_cast`: Big Wave's arm-4 dolly moves
+/// TR z alone (increment `28`, endpoint `9523`), its angles and focus home.
+/// The translation word short of its endpoint on the increment's side is a
+/// table still walking; the same word past it is a drift off a landed table.
+#[test]
+fn an_eye_only_module_shot_still_walks() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, 0x8007_B790, 32);
+    put16(&mut ram, rec(0) + 2, 32);
+    put16(&mut ram, 0x8007_B792, 3307);
+    put16(&mut ram, rec(1) + 2, 3307);
+    put32(&mut ram, 0x8008_40C0, 4928);
+    put16(&mut ram, rec(5), 28);
+    put16(&mut ram, rec(5) + 2, 9523);
+    assert!(camera_align::module_shot_walking(&ram, ctx));
+    let p = camera_align::displayed_module_cam_live(&ram, ctx, &[4, 4]);
+    assert_eq!(p.tr[2], 4704.0);
+    // Past the endpoint (a drift), or within one increment of it: landed.
+    put32(&mut ram, 0x8008_40C0, 9600);
+    assert!(!camera_align::module_shot_walking(&ram, ctx));
+    put32(&mut ram, 0x8008_40C0, 9500);
+    assert!(!camera_align::module_shot_walking(&ram, ctx));
+}
+
 /// `battle_map01_frog_strike`: one pass past the strike commit its eye walks
 /// the pull-in's first table, so the frame on screen still stands on the depth
 /// the shot had landed on (`4915`), and walks no further back than that.
