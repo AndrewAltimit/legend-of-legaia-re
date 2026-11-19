@@ -16,6 +16,21 @@ pub(super) const EXIT_TICKS: usize = 2_400;
 pub(super) const DEEP_EXIT_TICKS: usize = 24_000;
 /// Consecutive idle ticks that end a post-step wait.
 pub(super) const EXIT_IDLE_TICKS: usize = 4;
+
+/// [`EXIT_IDLE_TICKS`] as game frames: in the retail-faithful mode a frame is
+/// the step the frame-cost model prices, up to three vsyncs, and a scene's
+/// system script hands its next record off a frame or two after the last
+/// one ends. Four vsyncs read a gap of two frames at step 3 as the end:
+/// `taiku`'s post-Koru chain (`P2[27]` raises `0x392`, `P1[0]` runs `P2[12]`
+/// and then `P2[29]`, whose `0x38F` every `station` placement waits on) was
+/// left before `P2[29]`, once `taiku` stepped at three.
+pub(super) fn exit_idle_ticks(session: &NativeSession) -> usize {
+    if session.host.world.toggles.immediate_pad {
+        EXIT_IDLE_TICKS
+    } else {
+        EXIT_IDLE_TICKS * 3
+    }
+}
 /// A battle's tick budget under the pad fighter. A boss the fighter wears
 /// down with summons, arts and heals runs well past 30 000 ticks.
 pub(super) const BATTLE_TICKS: usize = 60_000;
@@ -57,7 +72,18 @@ pub(super) fn script_pad(session: &NativeSession, f: usize) -> u16 {
     if let Some(pad) = held_pad_poll(session) {
         return pad;
     }
-    if f % 16 >= 2 {
+    // The press is held across a whole game frame. The field reads the pad
+    // once a frame, and in the retail-faithful mode a frame is the step the
+    // frame-cost model prices (two or three vsyncs, `World::clock`), latched
+    // at its end (`WorldToggles::immediate_pad` off): a two-tick press could
+    // fall between two reads, and a `tunnelc` box and `taiku` P1[4]'s talk
+    // took none of them once those scenes stepped at three.
+    let width = if session.host.world.toggles.immediate_pad {
+        2
+    } else {
+        4
+    };
+    if f % 16 >= width {
         return 0;
     }
     if let Some(pad) = picker_pad(session) {
@@ -998,7 +1024,7 @@ pub(super) fn run(session: &mut NativeSession, budget: usize, stop_on_release: b
         }
         if f >= 2 && released(session) {
             idle += 1;
-            if stop_on_release && idle >= EXIT_IDLE_TICKS {
+            if stop_on_release && idle >= exit_idle_ticks(session) {
                 session.host.world.set_pad(0);
                 return Run::Released;
             }
