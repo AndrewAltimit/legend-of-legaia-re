@@ -1060,7 +1060,7 @@ after), each press's cue lands this many vsyncs after it:
 | Up / Down on the pause root, a shop's root (`0x21`) | `3` | `3` | `0` |
 | Cross into a screen (`0x36`), Circle out (`0x37`) | `2` | `2` | `0` |
 | Up / Down / Left / Right on the Save grid (`0x21`), its Circle (`0x37`) | `2` | `2` | `0` |
-| Triangle on the field (the open, `0x20`) | `4` | `2` | `0` |
+| Triangle on the field (the open, `0x20`), frames under a vblank | `4` (`3` from an odd vsync) | `4` (`3`) | `0` |
 
 Retail's screens run a frame a vsync and read the word the frame before latched (`FUN_8001822C`
 at the body's end), so a press reaches them two vsyncs on. The picker `FUN_801D688C` tests the
@@ -1072,8 +1072,19 @@ reads the frame before's word, a vsync later than a confirm. The Save grid steps
 own word. Port: `World::screen_edge` (`InputState::retail_screen_edge`) in the retail-faithful
 mode, for the pause menu, its sub-screens and the menu-overlay screens on both hosts
 (`BootSession::pause_menu_edge`, `MenuRuntime::step_field_session`); the default takes the press
-on its tick, the better experience. The open is the field's accept, two vsyncs behind its press
-on the field's own pipeline; retail's further two are not traced.
+on its tick, the better experience.
+
+The open is the field's accept (`0x801D0250`), which pushes `0x20` on the frame that tests the edge
+word, so its delay is the field's pad pipeline and moves with the frame's cost
+([field-locomotion.md](field-locomotion.md#when-the-game-sees-a-press)): a frame that ends before
+its vblank samples the buffer as of the vblank it opened on, so a press waits a whole frame more
+than under one that runs past it. The table's films (`town01_field_card_boot`,
+`conc_field_card_boot`) run frames of about `130` and `210` hblanks, under a vblank; on
+`kor_field_route_walk` (about `350`) the open lands two vsyncs after a press. The engine follows
+both through the field frame-cost model (`World::retail_frame_pad`). A frame with no cost to read
+falls back to a body that runs past one vblank, which is what the comparison corpus's image child
+gets, since it holds the model off (`LEGAIA_FIELD_FRAME_COST=0`): a press filmed there opens two
+vsyncs on, a reading of the harness and not of play.
 
 The four apply screens sound their own cue. As an item lands or a spell is cast,
 each overwrites the pick with `0` and pushes `0x25`: the single-target apply at

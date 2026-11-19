@@ -163,3 +163,60 @@ impl World {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_engine_system::input::PadButton;
+
+    /// Vsyncs from a four-vsync press opening on host tick `press` to the
+    /// first tick the game word holds it, on a step-2 field whose frames
+    /// cost `cost` hblanks. The ticks advance as `World::tick` moves them:
+    /// `set_pad` on the tick about to run, then the actor accumulator.
+    fn latency(cost: i32, press: u32) -> u32 {
+        let mut w = World::new();
+        w.toggles.immediate_pad = false;
+        w.mode = SceneMode::Field;
+        w.clock.game_tick_live = true;
+        w.clock.frame_step = 2;
+        w.clock.frame_cost = Some(cost);
+        let tri = PadButton::Triangle.mask();
+        for _ in 0..200 {
+            let tick = w.clock.sim_ticks + 1;
+            let host = if (press..press + 4).contains(&tick) {
+                tri
+            } else {
+                0
+            };
+            if w.retail_frame_pad(host) & tri != 0 {
+                return tick - press;
+            }
+            w.clock.sim_ticks = tick;
+            w.clock.actor_vsync_accum += 1;
+            if w.clock.actor_vsync_accum >= w.clock.game_frame_wait() {
+                w.clock.actor_vsync_accum = 0;
+            }
+        }
+        panic!("press at {press} never reached the game word");
+    }
+
+    /// The field's menu accept (`0x801D0250`) reads the edge the pad builder
+    /// latched at the frame before's end, so how long a Triangle press takes
+    /// to open the menu is the frame's cost, not a constant. PCSX-Redux walk
+    /// films: `town01_field_card_boot` and `conc_field_card_boot` (frames
+    /// about 130 and 210 hblanks, under a vblank) push the open's cue `0x20`
+    /// four vsyncs after a press on an even vsync, three after one on an odd
+    /// one; `kor_field_route_walk` (about 350, past a vblank) raises the
+    /// engaged bit two vsyncs after a press.
+    ///
+    /// REF: FUN_801D01B0, FUN_8001822C
+    #[test]
+    fn a_menu_press_waits_on_the_frames_cost() {
+        let short: Vec<u32> = (40..44).map(|p| latency(130, p)).collect();
+        assert_eq!(short.iter().min(), Some(&3));
+        assert_eq!(short.iter().max(), Some(&4));
+        let long: Vec<u32> = (40..44).map(|p| latency(350, p)).collect();
+        assert_eq!(long.iter().min(), Some(&2));
+        assert_eq!(long.iter().max(), Some(&3));
+    }
+}

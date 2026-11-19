@@ -249,10 +249,11 @@
       <tr><td>Up / Down on the pause root or a shop's root (<code>0x21</code>)</td><td>3</td><td>3</td><td>0</td></tr>
       <tr><td>Cross into a screen (<code>0x36</code>), Circle out (<code>0x37</code>)</td><td>2</td><td>2</td><td>0</td></tr>
       <tr><td>A step or Circle on the Save grid</td><td>2</td><td>2</td><td>0</td></tr>
-      <tr><td>Triangle on the field (the open, <code>0x20</code>)</td><td>4</td><td>2</td><td>0</td></tr>
+      <tr><td>Triangle on the field (the open, <code>0x20</code>), frames under a vblank</td><td>4 (3 from an odd vsync)</td><td>4 (3)</td><td>0</td></tr>
     </tbody>
   </table>
   <p>Retail's screens read the word the frame before latched (<code>FUN_8001822C</code> at the frame body's end), so a press reaches them two vsyncs on. The picker <code>FUN_801D688C</code> tests confirm and cancel on that frame's edge word <code>_DAT_8007B874</code> and the step on the cursor word <code>_DAT_8007BB84</code>, which the window kernel <code>FUN_80031D00</code> rebuilds at its top; every screen handler calls the picker before the kernel, so a step reads the frame before's word, a vsync later than a confirm. The Save grid steps on the frame's own word. The engine's retail-faithful mode reads host screens through that pipeline (<code>World::screen_edge</code>) on both hosts; the default takes a press on its tick.</p>
+  <p>The open is the field's own accept (<code>0x801D0250</code>), which pushes <code>0x20</code> on the frame that tests the edge word, so its delay follows the field's pad pipeline and the frame's cost: a frame that ends before its vblank samples the pad a whole frame earlier than one that runs past it. The filmed towns run frames under a vblank (four vsyncs, three from an odd one); a heavier field such as the Sol Tower stairs opens two vsyncs after the press. The engine follows both through its field frame-cost model.</p>
 </section>
 
 <section class="doc-section" id="record-fields">
