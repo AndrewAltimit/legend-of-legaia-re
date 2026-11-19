@@ -290,6 +290,13 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
                free-roam captures show retail seats them",
     },
     KnownDivergence {
+        label: "rim_elm_zoom_intro_pcsx",
+        key: "vis:*",
+        class: "b",
+        note: "the same opening shot on PCSX-Redux (from s2_rimelm_town01): the same \
+               mid-opening-timeline park cohort as rim_elm_zoom_intro",
+    },
+    KnownDivergence {
         label: "vahn_walks_out",
         key: "vis:*",
         class: "b",
