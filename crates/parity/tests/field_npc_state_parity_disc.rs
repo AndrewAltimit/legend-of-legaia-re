@@ -172,6 +172,25 @@ const CREDITS_PCSX: &str = "end-credits vignette capture (PCSX-Redux, entered by
      not run. Open: the engine's own credits path is not yet held to these placements \
      (edson / edstati3 image rows are low)";
 
+const DREAM_URUDRE: &str = "mid-beat capture inside an Uru Mais dream (urudre1 / urudre2 / \
+     urudre3, entered through the hub door objects P0[16] / P0[18] / P0[20] after uru P2[38] \
+     raised 0x3FC): the dream's opening record places its cast on the shot's marks after \
+     retail's entry, where a cold entry against the bank holds them parked (inference, not \
+     traced per slot)";
+
+const DREAM_URUDRE_FREE: &str = "visit history: Vahn's dream (urudre1) after its opening record \
+     has run and handed control back; the record's placements persist past it, which a cold \
+     entry against the bank does not replay (inference)";
+
+const DREAM_URUDRE2_0X1F: &str = "urudre2 P2[9] sets 0x01F (+0x08B2 / +0x08E1) mid-beat and the \
+     entry script P1[0] clears it (+0x0062): the cold entry clears what the running beat \
+     holds set (disassembly)";
+
+const DREAM_NOA: &str = "mid-beat capture inside Noa's dream (dream, entered from the Usha \
+     Research Center stay, doman P1[5]): the dream's records place the lights and the voice \
+     on their marks after retail's entry, where a cold entry holds them parked (inference, \
+     not traced per slot)";
+
 const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
         label: "son_field_door_hop",
@@ -1233,6 +1252,252 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         class: "c",
         note: "the capture holds 0x6A9..0x6AC set, the cold entry against its bank \
                clears them; which epilogue beat raises them is not traced",
+    },
+    KnownDivergence {
+        label: "urudre2_jette_dialog",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_jette_dialog",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_palace_family",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_palace_family",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_palace_walk",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_palace_walk",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_king_nebular_dialog",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_king_nebular_dialog",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_dark_floor",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_dark_floor",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_rampart_flyer",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre2_rampart_flyer",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre1_house_cutscene",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre1_house_cutscene",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_zopu_hall",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_zopu_hall",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_dojo_floor",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_dojo_floor",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_dojo_pair",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_dojo_pair",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_dojo_walk",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_dojo_walk",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_jigul_dialog",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_jigul_dialog",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_songi_room",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_songi_room",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_songi_dialog_black",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre3_songi_dialog_black",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE,
+    },
+    KnownDivergence {
+        label: "urudre1_house_free",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_URUDRE_FREE,
+    },
+    KnownDivergence {
+        label: "urudre1_house_free",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_URUDRE_FREE,
+    },
+    KnownDivergence {
+        label: "urudre2_dark_floor",
+        key: "flag:31",
+        class: "b",
+        note: DREAM_URUDRE2_0X1F,
+    },
+    KnownDivergence {
+        label: "dream_noa_lights",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_NOA,
+    },
+    KnownDivergence {
+        label: "dream_noa_lights",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_NOA,
+    },
+    KnownDivergence {
+        label: "dream_noa_name_dialog",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_NOA,
+    },
+    KnownDivergence {
+        label: "dream_noa_name_dialog",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_NOA,
+    },
+    KnownDivergence {
+        label: "dream_noa_dark",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_NOA,
+    },
+    KnownDivergence {
+        label: "dream_noa_dark",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_NOA,
+    },
+    KnownDivergence {
+        label: "dream_noa_desperate_dialog",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_NOA,
+    },
+    KnownDivergence {
+        label: "dream_noa_desperate_dialog",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_NOA,
+    },
+    KnownDivergence {
+        label: "dream_noa_purple",
+        key: "vis:*",
+        class: "b",
+        note: DREAM_NOA,
+    },
+    KnownDivergence {
+        label: "dream_noa_purple",
+        key: "pos:*",
+        class: "b",
+        note: DREAM_NOA,
     },
 ];
 
