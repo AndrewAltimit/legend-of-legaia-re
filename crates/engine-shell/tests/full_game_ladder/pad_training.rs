@@ -52,8 +52,16 @@ fn typists_charged(session: &NativeSession) -> bool {
 /// typist ([`miracle_short`]) before it dresses for the race.
 const GROW_OUTINGS: usize = 16;
 
+/// The AGL a Fury Boost lifts to the nine presses' price
+/// (`base * 7 / 5 + 8 >= 270`), and how far below it a wearer still trains
+/// for it: a level or two.
+const TYPIST_AGL: u16 = 188;
+const TYPIST_AGL_REACH: u16 = 8;
+
 /// Whether a present member wears a Miracle it cannot type under a Fury Boost
-/// ([`race_typist`]): AGL is what a level-up raises.
+/// ([`race_typist`]) but is within a level or two of the AGL that pays for
+/// it. One further off (Gala, a caster at AGL 172) spends its Spirit on Arts
+/// instead, and walking for it only met Koru with the bag spent.
 fn miracle_short(session: &NativeSession) -> bool {
     let w = &session.host.world;
     w.present_party_list().into_iter().any(|m| {
@@ -62,7 +70,7 @@ fn miracle_short(session: &NativeSession) -> bool {
                 legaia_engine_battle_vm::battle_action::miracle_marker_armed(
                     m.wrapping_add(1),
                     &r.equipment().slots,
-                )
+                ) && r.live_stats().agl + TYPIST_AGL_REACH >= TYPIST_AGL
             })
     })
 }
