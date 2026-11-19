@@ -235,6 +235,10 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_PARTY_SPD"] = str(a.party_spd)
     if a.monster_pick:
         env["LEGAIA_MONSTER_PICK"] = "1"
+        # A pick played rounds on from the state: keep its RAM at the cast
+        # begin, which the engine half reads clocks off the state cannot give
+        # ([`recording_cast_backdrop_yaw`]).
+        env.setdefault("LEGAIA_RAM_AT", "0")
         if a.cast_queue:
             env["LEGAIA_CAST_QUEUE"] = a.cast_queue
     if a.physical:
@@ -1147,6 +1151,39 @@ def recording_first_state(out: Path) -> int | None:
         return None
 
 
+def recording_cast_backdrop_yaw(out: Path) -> int | None:
+    """The backdrop's slot-1 angle retail's screen showed at the cast begin.
+
+    `0x800891D2` winds `step >> 1` a battle pass from boot while the stage
+    keeps object 1 (`0x8007B64B`; `garmel`'s cave mist, `nilboa`'s horizon
+    ribbon), so a `--monster-pick` recording that plays rounds to its pick
+    meets the cast on another angle than the state's: Zenoir's Fire Claw from
+    `battle_garmel_zenoir_strike` opens on `942` where the state held `403`.
+    Read off the recording's RAM image at the cast begin (`LEGAIA_RAM_AT=0`,
+    `ram_<cast>.bin`), less the two passes the display lags it by. `None`
+    without that image or on a stage that drops the object.
+    """
+    done = read_kv(out / "retail" / "done.txt")
+    try:
+        cast = int(done["cast"])
+        ram = (out / "retail" / f"ram_{cast:05d}.bin").read_bytes()
+    except (KeyError, ValueError, OSError):
+        return None
+    if len(ram) < 0x0020_0000 or ram[0x7B64B] == 0:
+        return None
+    yaw = int.from_bytes(ram[0x891D2:0x891D4], "little")
+    step = 2
+    try:
+        with open(out / "retail" / "meta.csv", newline="") as f:
+            for row in csv.DictReader(f):
+                if int(row["vsync"]) >= cast:
+                    step = int(row["step"])
+                    break
+    except (OSError, KeyError, ValueError):
+        pass
+    return (yaw - 2 * (step >> 1)) & 0xFFFF
+
+
 def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     """One engine recording: `(ran, frames, the child carried the step pin)`."""
     kept = child_cmd(a, out)
@@ -1200,6 +1237,12 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
             and not clip_gated and not a.played_queue
             and (q := state_strike_queue(out))):
         env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
+    # The backdrop's slot-1 angle at the cast begin, off the recording's RAM
+    # image there: the child holds the state's until the cast begins, and a
+    # recording that played rounds to its pick met the cast on another
+    # angle ([`recording_cast_backdrop_yaw`]). A harness seat.
+    if "LEGAIA_BATTLE_BACKDROP_YAW" in env and (yaw := recording_cast_backdrop_yaw(out)) is not None:
+        env["LEGAIA_BATTLE_BACKDROP_YAW"] = str(yaw)
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
         env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION"] = "1"
         # The rects are the state's own instant, the recording's first row:
