@@ -101,6 +101,9 @@ pub struct FieldCostTable {
     pub npc_prims: Vec<u16>,
     /// Each placement slot's spawn mesh as the dispatcher sees it, by slot.
     pub npc_meshes: Vec<MeshCost>,
+    /// The player's model (PROT 0874 §0 head `0`), which the actor passes
+    /// draw every field frame and no placement holds.
+    pub player: Option<MeshCost>,
 }
 
 impl FieldCostTable {
@@ -340,6 +343,8 @@ pub struct FieldFrameFeatures {
     pub npc_groups: u32,
     pub npc_kinds: [u32; 12],
     pub list_actors: u32,
+    /// The player's model, when the scene's table holds it.
+    pub player: Option<MeshCost>,
 }
 
 impl World {
@@ -532,6 +537,7 @@ impl World {
             }
         }
         f.list_actors = self.actors.iter().filter(|a| a.active).count() as u32;
+        f.player = table.player;
         f.fog = u32::from(self.fog.live);
         // The quads the last walk left; a closed gate runs no walk.
         f.fog_quads = if self.fog.gate {
@@ -614,6 +620,7 @@ mod tests {
             ground,
             npc_prims: Vec::new(),
             npc_meshes: Vec::new(),
+            player: None,
         }));
         assert_eq!(w.field_frame_features(), None, "no view published");
         w.npcs.cull_view = Some(FieldCullView {

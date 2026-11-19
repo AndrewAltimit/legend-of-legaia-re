@@ -528,3 +528,81 @@ pub fn field_units(state: &PcsxState) -> Result<BTreeMap<&'static str, PassUnits
     }
     Ok(out)
 }
+
+/// One actor the render lists walked on a frame: its record, the fields the
+/// walk reads to pick its arm, and what drawing it ran.
+#[derive(Debug, Clone, Default)]
+pub struct ActorDraw {
+    /// The actor record (`s6` at the list walk's head `0x8001ADF4`).
+    pub actor: u32,
+    /// `+0x56`, the draw kind the walk's jump table takes (`1..=11`).
+    pub kind: u16,
+    /// `+0x10`, the flags the walk gates on (`& 0x80` transform, `& 0xA`
+    /// skip).
+    pub flags: u32,
+    /// `+0x52`.
+    pub flags52: u16,
+    /// The origin the walk transforms (`+0x14..+0x18`).
+    pub pos: [i16; 3],
+    /// The view depth the walk stored (`+0x34`).
+    pub depth: i32,
+    /// Dispatcher draws, primitive groups and primitives (leaf iterations)
+    /// its iteration ran, and the iteration's cycles, everything nested in.
+    pub draws: u32,
+    pub groups: u32,
+    pub prims: u32,
+    pub cycles: u64,
+}
+
+/// What each actor the five render lists walk draws on the first whole
+/// frame after `state`: one row per list entry, in walk order.
+pub fn actor_draws(state: &PcsxState) -> Result<Vec<ActorDraw>> {
+    const HEAD: u32 = 0x8001_ADF4;
+    const EXIT: u32 = 0x8001_B70C;
+    const S6: usize = 22;
+    let mut run = FrameRunner::with_routines(state, &[]);
+    run.settle()?;
+    let mut m: BTreeSet<u32> = [HEAD, EXIT, DISP, GROUP].into_iter().collect();
+    m.extend(LEAVES.iter().map(|l| l.head));
+    run.cpu.marks = m.into_iter().collect();
+    run.cpu.mark_reg = S6;
+    run.frame()?;
+    let log = std::mem::take(&mut run.cpu.mark_log);
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < log.len() {
+        if log[i].0 != HEAD {
+            i += 1;
+            continue;
+        }
+        let a = log[i].2;
+        let mut d = ActorDraw {
+            actor: a,
+            ..ActorDraw::default()
+        };
+        let mut j = i + 1;
+        while j < log.len() && log[j].0 != HEAD && log[j].0 != EXIT {
+            match log[j].0 {
+                DISP => d.draws += 1,
+                GROUP => d.groups += 1,
+                _ => d.prims += 1,
+            }
+            j += 1;
+        }
+        if j >= log.len() {
+            break;
+        }
+        // The group test runs once more than the groups, at each draw's end.
+        d.groups = d.groups.saturating_sub(d.draws);
+        d.cycles = log[j].1 - log[i].1;
+        let mem = &mut run.cpu.mem;
+        d.kind = mem.rd16(a + 0x56);
+        d.flags = mem.rd32(a + 0x10);
+        d.flags52 = mem.rd16(a + 0x52);
+        d.pos = [0x14, 0x16, 0x18].map(|o| mem.rd16(a + o) as i16);
+        d.depth = mem.rd32(a + 0x34) as i32;
+        out.push(d);
+        i = j;
+    }
+    Ok(out)
+}

@@ -813,24 +813,30 @@ It prices the decoration pass's rows, box and out-of-box cells, draws, groups an
 A primitive is priced at its kind's mix of outcomes over the ten profiled states, not at what the camera makes of it. Per primitive, retail's cost is set by whether it faces the camera and lands on screen (`96` cycles rejected by winding against `331` linked for a `k19` quad), but at that mix a pass moves by at most `6%` on the ten states, while the engine's decoration and ground counts already match retail's to the unit there (`son`: `92` draws, `2480` primitives, `2173` cells; `stone`: `2075` walk cells). A per-primitive outcome would need each primitive projected every frame.
 Two shares are fitted, not derived: the tick passes' base (`10` hblanks besides the parts and cyclers) and the frame driver's other work (`4`).
 
+The models' counts are the scene's: each placement's spawn mesh, a party or savepoint head (`model >= 0xF0`) out of the PROT 0874 §0 pool the field keeps (`World::field_head_pool`), and the player's own head (`0`), which the actor passes draw every frame and no placement holds. On the ten profiled states the engine's model primitives then land on what retail's actor lists draw (`retail-exec actor-draws`, one row per list entry): `son` `2284` against `2142`, `kor3` `1779` against `1743`, `stone` `424` against `388`.
+
 Against the fitted model on the frame-cost gates (`scripts/ci/field-cost-films.py`):
 
 | Gate | Fitted (default) | Derived |
 |---|---:|---:|
-| films, fit set: rung | `11107` / `11164` | `10976` / `11164` |
+| films, fit set: rung | `11107` / `11164` | `10951` / `11164` |
 | films, held out: rung | `1586` / `1602` | `1511` / `1602` |
-| unanchored step | `29878` / `30131` | `29220` / `30131` |
-| state rings | `133` / `139` | `131` / `139` |
-| state price rms (bias) | `65.4` (`+2.1`) hblanks | `66.2` (`-27.2`) hblanks |
+| unanchored step | `29878` / `30131` | `29219` / `30131` |
+| state rings | `133` / `139` | `130` / `139` |
+| state price rms (bias) | `65.4` (`+2.1`) hblanks | `57.8` (`-9.8`) hblanks |
 | walk-film `rand()` | `8213` / `8892` | `8213` / `8892` |
-| `son_field_door_hop` (ring `613`, step `3`) | `524`, `3` | `561`, `3` |
-| `vahn_walks_out` (PCSX-Redux `471..480`, step `2`) | `506`, `2` | `457`, `2` |
-| `rim_elm_zoom_intro` (PCSX-Redux `805..815`, step `4`) | `770`, `4` | `673`, `3` |
+| `son_field_door_hop` (ring `613`, step `3`) | `524`, `3` | `632`, `3` |
+| `vahn_walks_out` (PCSX-Redux `471..480`, step `2`) | `506`, `2` | `459`, `2` |
+| `rim_elm_zoom_intro_pcsx` (PCSX-Redux, step `4`) | `770`, `4` | `675`, `3` |
 | `doman_field_card_boot` film rung | `88` / `139` | `116` / `139` |
 
-The derived model gets `doman` right where the fitted one does not: the fitted weights charge its CLUT cycler and cross the `0x1FE` rung `133` vsyncs into the film, where retail crosses it about `241` in; the derived price (`428` against retail's `483` on the film) stays under it.
-It loses three films outright. `teien_field_run` prices `466` against `589`, as `teien` draws its ground through the `_DAT_8007BB4C` twin emitter `FUN_801F69EC`, which the table does not price; `koin1b_field_route_walk` (`513` against `472`) is a scene of nine models, priced at the pool's object mix; `concend_field_door_hop` prices `702` against retail's `700` and steps `3` where retail steps `4`.
-It prices low overall (`-27` hblanks on the state rings): retail's actor passes draw `200..700` more primitives on most states than the placement and player counts hold, and the tick passes are not derived. The zoom intro falls to step `3`, short of PCSX-Redux's `4`, for the same reason. The fitted model stays the default.
+The derived model sits closer to the rings (rms `57.8` against `65.4`) and gets `doman` right: the fitted weights charge its CLUT cycler and cross the `0x1FE` rung `133` vsyncs into the film, where retail crosses it about `241` in. It loses four films and the zoom shot's step, each a measured gap:
+- **The zoom shot** (`rim_elm_zoom_intro_pcsx`, `774` hblanks of work, step `4`): its placed cliff sections draw through the depth-cued leaves with the off-screen test and mostly link (`300..330` cycles a primitive, where the pool's actor primitive is `140`), and morph lanes blend `1344` vertices (`FUN_8005B038`, `38` hblanks). The table prices neither: the derived price is `675`, step `3`.
+- **`teien_field_run`** (`492` against `589`): its ground runs through `FUN_801F6D48` like every other scene's and lands on the table to the cycle; the gap is the actor passes (`110` priced, `183` run) and the tick passes (`28`).
+- **`koin1b_field_route_walk`** (`515` against `472`): nine models priced at the pool's object mix (`1350` cycles an object), where retail's objects run `0..3000` past their primitives with the model's animation and morph state.
+- **`concnow_field_door_hop_settled`** (`746` against `688`): `256` of its `1038` walk cells fail the ground emitter's depth test and take the short path, which the table prices as full cells.
+
+The tick passes stay a fitted share: what they run is each actor's own tick routine, which the counts do not carry. The fitted model stays the default.
 
 ### Where a field frame's time goes
 

@@ -1310,7 +1310,8 @@ impl SceneHost {
                 // What the frame-cost model counts the scene's frames by
                 // (`World::field_frame_features`).
                 if let Some(scene) = self.scene.as_ref() {
-                    let table = field_cost_table(&self.index, scene, &res);
+                    let table =
+                        field_cost_table(&self.index, scene, &res, &self.world.field_head_pool);
                     self.world.install_field_cost_table(table);
                 }
                 self.resources = Some(res);
@@ -1556,6 +1557,7 @@ pub fn field_cost_table(
     index: &ProtIndex,
     scene: &Scene,
     res: &legaia_engine_scene::scene_resources::SceneResources,
+    head_pool: &[Option<std::sync::Arc<legaia_engine_scene::model_bank::GlobalTmd>>],
 ) -> Option<legaia_engine_core::world::field_frame_cost::FieldCostTable> {
     use legaia_engine_core::world::field_frame_cost::{CostCell, CostPlaced, FieldCostTable};
     use legaia_engine_scene::field_env;
@@ -1589,27 +1591,43 @@ pub fn field_cost_table(
         })
     };
     let clamp16 = |v: u32| v.min(u32::from(u16::MAX)) as u16;
-    // What one pack mesh hands the prim dispatcher: objects, groups and
+    // What one mesh hands the prim dispatcher: objects, groups and
     // primitives by leaf kind (`flags >> 1`, kinds `8..=19`).
-    let mesh = |ti: usize| {
-        let mut m = legaia_engine_core::world::field_frame_cost::MeshCost::default();
-        if let Some(t) = res.tmds.get(ti) {
-            m.objects = clamp16(t.tmd.objects.len() as u32);
-            for o in &t.tmd.objects {
-                for g in legaia_tmd::legaia_prims::iter_groups_lenient(
-                    &t.raw,
-                    o.primitives_byte_offset,
-                    o.primitives_byte_size,
-                ) {
-                    m.groups = m.groups.saturating_add(1);
-                    let kind = usize::from(g.header.flags >> 1);
-                    if (8..=19).contains(&kind) {
-                        m.kinds[kind - 8] = m.kinds[kind - 8].saturating_add(g.header.count);
-                    }
+    let mesh_of = |tmd: &legaia_tmd::Tmd, raw: &[u8]| {
+        let mut m = legaia_engine_core::world::field_frame_cost::MeshCost {
+            objects: clamp16(tmd.objects.len() as u32),
+            ..Default::default()
+        };
+        for o in &tmd.objects {
+            for g in legaia_tmd::legaia_prims::iter_groups_lenient(
+                raw,
+                o.primitives_byte_offset,
+                o.primitives_byte_size,
+            ) {
+                m.groups = m.groups.saturating_add(1);
+                let kind = usize::from(g.header.flags >> 1);
+                if (8..=19).contains(&kind) {
+                    m.kinds[kind - 8] = m.kinds[kind - 8].saturating_add(g.header.count);
                 }
             }
         }
         m
+    };
+    let mesh = |ti: usize| {
+        res.tmds
+            .get(ti)
+            .map_or_else(Default::default, |t| mesh_of(&t.tmd, &t.raw))
+    };
+    // A party / savepoint head from PROT 0874 \u{a7}0 (model `0xF0 + i`), the
+    // player's model at `0xF0`.
+    let head = |i: usize| {
+        head_pool
+            .get(i)
+            .and_then(|g| g.as_ref())
+            .map(|g| mesh_of(&g.tmd, &g.raw))
+    };
+    let prims_of = |m: &legaia_engine_core::world::field_frame_cost::MeshCost| {
+        clamp16(m.kinds.iter().map(|&k| u32::from(k)).sum())
     };
     let terrain: Vec<_> = scene
         .field_terrain_tiles(index)
@@ -1638,6 +1656,12 @@ pub fn field_cost_table(
             if !p.special_model {
                 v[p.index] = clamp16(size(usize::from(p.model_index))[0]);
                 m[p.index] = mesh(usize::from(p.model_index));
+            } else if let Some(h) = usize::from(p.model_index).checked_sub(0xF0).and_then(head) {
+                // The cost table counts a party / savepoint head's mesh as
+                // the actor pass draws it; the NPC catalog's prims count
+                // keeps the scene's own meshes only.
+                v[p.index] = prims_of(&h);
+                m[p.index] = h;
             }
         }
         (v, m)
@@ -1683,6 +1707,7 @@ pub fn field_cost_table(
         ground: FieldCostTable::ground_from_map(&map),
         npc_prims: npc_prims.0,
         npc_meshes: npc_prims.1,
+        player: head(0),
     })
 }
 

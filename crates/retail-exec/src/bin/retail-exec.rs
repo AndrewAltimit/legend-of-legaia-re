@@ -21,6 +21,10 @@ enum Cmd {
     /// iterations by kind and outcome), each with its count and its
     /// PCSX-Redux cycles: `pass,unit,count,cycles,cycles_per_unit`.
     FieldUnits(UnitsArgs),
+    /// Every entry the field actor render lists walk on the first whole
+    /// frame: record, draw kind, flags, origin, view depth, and the
+    /// dispatcher draws, groups, primitives and cycles its drawing ran.
+    ActorDraws(UnitsArgs),
     /// Print where a PCSX-Redux state's CPU stood and the interrupt and
     /// counter registers it saved.
     StateInfo {
@@ -137,6 +141,27 @@ impl StateArg {
 
 fn main() -> Result<()> {
     match Cli::parse().cmd {
+        Cmd::ActorDraws(a) => {
+            let s = a.state.load()?;
+            println!("actor,kind,flags,flags52,x,y,z,depth,draws,groups,prims,cycles");
+            for d in psx_retail_exec::field_units::actor_draws(&s)? {
+                println!(
+                    "{:08X},{},{:08X},{:04X},{},{},{},{},{},{},{},{}",
+                    d.actor,
+                    d.kind,
+                    d.flags,
+                    d.flags52,
+                    d.pos[0],
+                    d.pos[1],
+                    d.pos[2],
+                    d.depth,
+                    d.draws,
+                    d.groups,
+                    d.prims,
+                    d.cycles
+                );
+            }
+        }
         Cmd::FieldUnits(a) => {
             let s = a.state.load()?;
             println!("pass,unit,count,cycles,cycles_per_unit");

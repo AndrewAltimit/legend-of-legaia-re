@@ -188,7 +188,7 @@ const FOG_RECORD_CYCLES: i64 = 655;
 const FOG_KEPT_CYCLES: i64 = 233;
 const FOG_CULLED_CYCLES: i64 = 149;
 
-/// The player's model, which the placement counts leave out: one model
+/// The player's model when the scene's table lacks it: one model
 /// actor of `10` objects and `388` primitives at the actor pool's mean
 /// (`136` a primitive), the shape of `stone_field_door_hop`'s only model.
 const PLAYER_CYCLES: i64 = NPC_CYCLES + 10 * NPC_OBJECT_CYCLES + 10 * GROUP_CYCLES + 388 * 136;
@@ -214,6 +214,14 @@ const OTHER_HBLANKS: i64 = 4;
 /// and links only the visible part, and across the ten states the mix
 /// moves a pass's price by up to `6%`.
 pub fn derived_field_frame_cost(f: &FieldFrameFeatures) -> i32 {
+    derived_field_frame_parts(f)[5]
+}
+
+/// [`derived_field_frame_cost`] by part, in hblanks: the decoration pass,
+/// the ground emitter, the actor render passes, the fog walk, the tick share
+/// (cyclers, parts, the fitted base and other work), and the whole price
+/// with the interrupt term.
+pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
     let kinds = |k: &[u32; 12], w: &[i64; 12]| -> i64 {
         k.iter().zip(w).map(|(n, c)| i64::from(*n) * c).sum()
     };
@@ -234,7 +242,13 @@ pub fn derived_field_frame_cost(f: &FieldFrameFeatures) -> i32 {
         + n(f.ground_cells) * GROUND_WALK_CELL_CYCLES;
     let actors = 5 * 120
         + LIST_ENTRY_CYCLES
-        + PLAYER_CYCLES
+        + f.player.map_or(PLAYER_CYCLES, |m| {
+            let k: [u32; 12] = m.kinds.map(u32::from);
+            NPC_CYCLES
+                + i64::from(m.objects) * NPC_OBJECT_CYCLES
+                + i64::from(m.groups) * GROUP_CYCLES
+                + kinds(&k, &ACTOR_PRIM_CYCLES)
+        })
         + n(f.placed_draws) * PLACED_CYCLES
         + n(f.placed_objects) * PLACED_MESH_CYCLES
         + n(f.placed_groups) * GROUP_CYCLES
@@ -259,7 +273,15 @@ pub fn derived_field_frame_cost(f: &FieldFrameFeatures) -> i32 {
     // others.
     let irq = i64::from(VBLANK_INTERRUPT_CYCLES + OTHER_INTERRUPT_CYCLES_PER_VSYNC);
     let total_x100 = work_x100 + work_x100 * irq * 100 / (263 * CYCLES_PER_HBLANK_X100);
-    (total_x100 / 100).clamp(0, FIELD_FRAME_COST_MAX) as i32
+    let hb = |c: i64| (c * 100 / CYCLES_PER_HBLANK_X100) as i32;
+    [
+        hb(decoration),
+        hb(ground),
+        hb(actors),
+        hb(fog),
+        ((ticked >> 10) + TICK_BASE_HBLANKS + OTHER_HBLANKS) as i32,
+        (total_x100 / 100).clamp(0, FIELD_FRAME_COST_MAX) as i32,
+    ]
 }
 
 #[cfg(test)]

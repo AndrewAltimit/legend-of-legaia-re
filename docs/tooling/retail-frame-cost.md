@@ -241,6 +241,12 @@ The actor rows carry what the table averages: a model's set-up and its objects
 vary with the model (`695..1785` and `777..1084` cycles), and a non-model kind
 (`gate1+gate2+kind`, `103..1670`) with what it draws.
 
+`retail-exec actor-draws --scenario <label>` lists every entry the five actor
+render lists walk on the first whole frame: the record, its draw kind
+(`+0x56`), flags, origin and view depth, and the dispatcher draws, groups,
+primitives and cycles its drawing ran. It is what the engine's model and
+placed counts are checked against.
+
 ### Against the fitted weights
 
 | Fitted term | Fitted hb | Derived | Reading |
