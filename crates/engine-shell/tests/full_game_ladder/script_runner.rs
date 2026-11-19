@@ -82,6 +82,23 @@ pub(super) fn script_pad(session: &NativeSession, f: usize) -> u16 {
     if released(session) {
         return 0;
     }
+    // A talk between boxes is running its ops: nothing reads a confirm. In
+    // the retail-faithful mode the pad reaches the field a frame late
+    // (`WorldToggles::immediate_pad` off), so a Cross pressed while the
+    // talk's last ops run lands after it has ended, on the speaker, and
+    // opens the talk again: Tetsu's spar (`town01` P1[10]) ends on the `21`
+    // past its `3E FF 04` on the fight's return, and the press re-entered
+    // the record at its loop head and its menu for as long as the hand had.
+    if session
+        .host
+        .world
+        .dialog
+        .inline
+        .as_ref()
+        .is_some_and(|d| d.panel.is_none() && d.held_box.is_none())
+    {
+        return 0;
+    }
     PadButton::Cross.mask()
 }
 
