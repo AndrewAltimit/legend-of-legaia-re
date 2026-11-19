@@ -415,7 +415,7 @@ pub struct ScreenshotConfig {
     pub seat_popup_cells: Vec<(i32, i32, u32, u8)>,
     /// Set on the frame the capture is due, for [`Self::seat_popup_cells`].
     pub popup_cells_due: std::cell::Cell<bool>,
-    /// Set once [`Self::seat_sprite_lead`] has run the sprites on.
+    /// Set once [`Self::seat_sprite_wait`] has run the sprites on.
     pub sprite_lead_seated: std::cell::Cell<bool>,
     /// Whether [`Self::seat_popup_age`] has aged the popup yet: once, on the
     /// frame the capture is due.
@@ -504,13 +504,13 @@ pub struct ScreenshotConfig {
     /// stood on the capture frame (`World::seat_held_scene_grade`) - a grade
     /// a finished record left, which the entry script does not repaint.
     pub seat_grade: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
-    /// `LEGAIA_SEAT_SPRITE_LEAD=<vsyncs>`: run the screen-effect sprite
-    /// widgets that many vsyncs (in frame steps) past the capture frame. The
-    /// field gate stands the scene on the displayed frame, the record's wait
-    /// less the display lag, but a PCSX-Redux film of the ending crawl shows
-    /// each line where the RAM holds it at the same vsync, so the lines run
-    /// on by the lag the gate took off.
-    pub seat_sprite_lead: u16,
+    /// `LEGAIA_SEAT_SPRITE_WAIT=<units>`: the gate record's wait in the
+    /// retail state's RAM. The field gate stands the scene on the displayed
+    /// frame, the wait less the display lag, but a PCSX-Redux film of the
+    /// ending crawl shows each line where the RAM holds it at the same vsync,
+    /// so on the capture frame the screen-effect sprites run on, in frame
+    /// steps, by this wait less the engine context's.
+    pub seat_sprite_wait: Option<i16>,
     /// `LEGAIA_SEAT_CLEAR=r,g,b`: a retail state's frame clear colour (the
     /// draw environment's `r0 / g0 / b0`), written over the engine's on the
     /// capture frame - the system script's op-`4C 13` history.
@@ -1420,10 +1420,9 @@ impl ScreenshotConfig {
             seat_grade: std::env::var("LEGAIA_SEAT_GRADE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::field_seeds::grade_from_env(&v)),
-            seat_sprite_lead: std::env::var("LEGAIA_SEAT_SPRITE_LEAD")
+            seat_sprite_wait: std::env::var("LEGAIA_SEAT_SPRITE_WAIT")
                 .ok()
-                .and_then(|v| v.trim().parse().ok())
-                .unwrap_or(0),
+                .and_then(|v| v.trim().parse().ok()),
             seat_walkers: std::env::var("LEGAIA_SEAT_WALKERS")
                 .map(|v| legaia_engine_capture::field_seeds::walkers_from_env(&v))
                 .unwrap_or_default(),

@@ -915,11 +915,13 @@ engine verdict:
   one. A PCSX-Redux film of `edlast` (a shot every two vsyncs) puts each
   line's top row at its `+0x16` plus the glyph's offset on the same vsync,
   from `t408` to `t448`, so a state holding a sprite widget
-  (`retail_has_sprite_widget`) hands the child `LEGAIA_SEAT_SPRITE_LEAD`,
-  the display lag, and the child runs the sprites alone on by it in frame
-  steps on the capture frame. On the gate's frame alone the `Casting` line
-  stood two rows low (`credits_edlast_casting_pcsx` image `.925`, `.996`
-  led).
+  (`retail_has_sprite_widget`) hands the child the record's RAM wait as
+  `LEGAIA_SEAT_SPRITE_WAIT`, and on the capture frame the child runs the
+  sprites alone on, in frame steps, by that wait less its own context's: the
+  lag the gate took off, none where a wait under the lag kept the gate on
+  the PC's first frame (`credits_edstati3_panel_pcsx`, wait `2`). On the
+  gate's frame alone the `Casting` line stood two rows low
+  (`credits_edlast_casting_pcsx` image `.925`, `.996` led).
 
   So is the scene's held op-`0x34` grade. It is the history of the record
   that ran it: `urudre1`'s entry script grades `(48, 48, 0)` or
@@ -930,8 +932,11 @@ engine verdict:
   fields: `from` `+0xB8`, `to` `+0xBE`, delay `+0xC4`, hold `+0xC6`, clock
   `+0xC8`, duration `+0xD4`, blend `+0xD2`, kind `+0xD6`) goes to the child as
   `LEGAIA_SEAT_GRADE`, its clock taken back by the display lag, and stands on
-  the capture frame (`retail_scene_grade`, `World::seat_held_scene_grade`;
-  `urudre1_house_free` image `.466` to `.994`).
+  the capture frame where the engine's held target differs
+  (`retail_scene_grade`, `World::seat_held_scene_grade`; `urudre1_house_free`
+  image `.466` to `.994`). A grade the replay set itself is left on its own
+  clock: seated over it, four states whose tween had just landed fell
+  (`minigame_dance_pcsx` `.830` to `.786`).
 
   So is the frame's clear colour, the draw environment's `r0 / g0 / b0`
   (`0x8007BF5D..5F`) that op `4C 13` writes and the MAN loader zeroes: the

@@ -308,12 +308,21 @@ impl PlayWindowApp {
             if due && let Some(t) = sc.seat_grade {
                 self.session.host.world.seat_held_scene_grade(t);
             }
-            if due && sc.seat_sprite_lead > 0 && !sc.sprite_lead_seated.get() {
+            if due
+                && let Some(want) = sc.seat_sprite_wait
+                && !sc.sprite_lead_seated.get()
+            {
                 sc.sprite_lead_seated.set(true);
                 let world = &mut self.session.host.world;
+                let have = sc
+                    .script_gate
+                    .as_ref()
+                    .and_then(|g| g.context(world))
+                    .map_or(want, |c| c.wait);
                 let step = world.clock.frame_step.max(1);
+                let lead = (want - have).max(0) as u16 / u16::from(step);
                 let mut fx = std::mem::take(&mut world.presentation.fx);
-                for _ in 0..sc.seat_sprite_lead / u16::from(step) {
+                for _ in 0..lead {
                     fx.advance_sprites(step, |i| world.system_flag_test(i));
                 }
                 world.presentation.fx_frame = fx.tick(0, |i| world.system_flag_test(i));

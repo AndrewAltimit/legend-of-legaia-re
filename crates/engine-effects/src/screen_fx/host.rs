@@ -92,7 +92,7 @@ impl ScreenFxHost {
     /// Advance the sprite widgets alone one frame of `frame_delta`, drawing
     /// nothing: a seat that runs the sprites' clocks on past the frame the
     /// rest of the scene stands on (the retail-compare image child's
-    /// `LEGAIA_SEAT_SPRITE_LEAD`).
+    /// `LEGAIA_SEAT_SPRITE_WAIT`).
     pub fn advance_sprites(&mut self, frame_delta: u8, mut flag_test: impl FnMut(u16) -> bool) {
         for (w, rec) in &mut self.sprites {
             w.tick(rec, frame_delta, &mut flag_test);

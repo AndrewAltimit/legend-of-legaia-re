@@ -503,14 +503,15 @@ pub(super) fn run_one(
                             "LEGAIA_CAPTURE_DISPLAY_LAG",
                             retail.scripts.display_lag.to_string(),
                         ));
-                    } else if retail.sprite_widgets {
-                        // The crawl lines show the RAM's frame, not the
-                        // displayed one the gate stands the scene on
-                        // (`retail_has_sprite_widget`).
-                        env.push((
-                            "LEGAIA_SEAT_SPRITE_LEAD",
-                            retail.scripts.display_lag.to_string(),
-                        ));
+                    }
+                    // The crawl lines show the RAM's frame, not the displayed
+                    // one the gate stands the scene on
+                    // (`retail_has_sprite_widget`): the child runs them on to
+                    // the record's own wait in retail's RAM.
+                    if retail.sprite_widgets
+                        && let Some(s) = retail.scripts.running.first()
+                    {
+                        env.push(("LEGAIA_SEAT_SPRITE_WAIT", s.wait.max(0).to_string()));
                     }
                     env.extend(retail.seat_env(opts.out_dir, &entry.label));
                     if let Some(n) = retail.hud_countdown {

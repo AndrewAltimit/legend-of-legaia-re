@@ -320,7 +320,7 @@ pub struct RetailObs {
     pub grade: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
     /// Whether the state holds a live screen-effect sprite widget
     /// ([`retail_has_sprite_widget`], the ending crawl's lines): the image
-    /// child runs those on by the display lag (`LEGAIA_SEAT_SPRITE_LEAD`).
+    /// child runs those on to the record's RAM wait (`LEGAIA_SEAT_SPRITE_WAIT`).
     pub sprite_widgets: bool,
     /// The frame's clear colour - the draw environment's `r0 / g0 / b0`
     /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
