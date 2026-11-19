@@ -568,22 +568,33 @@ fn cast_ribbon_prims_at(
     // Each ring replays the words its pass dealt it
     // (`World::deal_cast_ribbon_rands`, `World::deal_flight_ribbon_rands`).
     let rings = [
-        (world.battle.cast_ribbons, world.battle.cast_ribbon_seeds),
         (
+            false,
+            world.battle.cast_ribbons,
+            world.battle.cast_ribbon_seeds,
+        ),
+        (
+            true,
             world.battle.flight_ribbons,
             world.battle.flight_ribbon_seeds,
         ),
     ];
-    let points = rings.iter().flat_map(|(ring, seeds)| {
+    let points = rings.iter().flat_map(|(flight, ring, seeds)| {
         ring.iter().flat_map(move |ring| {
             ring.points
                 .iter()
                 .take(usize::from(ring.count))
                 .enumerate()
-                .map(move |(k, p)| (*p, ring.trail_id, seeds.map(|s| s[k])))
+                .map(move |(k, p)| ((*flight, k), *p, ring.trail_id, seeds.map(|s| s[k])))
         })
     });
-    for (i, (p, trail_id, seed)) in points.enumerate() {
+    for (i, ((flight, k), mut p, trail_id, seed)) in points.enumerate() {
+        // On the drawn frame each point stands where the drawn phase puts
+        // it (`World::battle_ribbon_point_shift`), so a ribbon riding a body
+        // or a projectile stays on it; the live point otherwise.
+        if drawn && let Some(d) = world.battle_ribbon_point_shift(flight, k) {
+            p = std::array::from_fn(|k| (f32::from(p[k]) + d[k]).round() as i16);
+        }
         // The points are retail battle space (Y down, the stack trio the arm
         // hands `FUN_801E1D98`); the battle view-projection takes the drawn
         // frame, whose models carry the `scale(1,-1,1)` it cancels

@@ -109,6 +109,19 @@ pub const FX_SCENE_STAGE: u32 = 4;
 pub const FX_SCENE_ACTION: u32 = 0x10;
 /// The key an effect-pool child's node carries above its slot.
 pub const FX_POOL_CHILD: u32 = 0xFFFF;
+/// The key a cast arm's ribbon ring point carries above its index
+/// (`BattleState::cast_ribbons`), and [`FX_FLIGHT_RIBBON`] a landed move
+/// projectile's (`BattleState::flight_ribbons`): the anchors
+/// `FUN_801E1D98` draws its streak ribbon on, which ride the bodies and
+/// projectiles they were taken from.
+pub const FX_CAST_RIBBON: u32 = 0xFFFE;
+/// See [`FX_CAST_RIBBON`].
+pub const FX_FLIGHT_RIBBON: u32 = 0xFFFD;
+
+/// A step against the frame before's ([`World::battle_fx_shift`]'s wrap
+/// test) at least this long, and at least twice as long as that step plus
+/// this, is a looping node going back to its start, drawn where it landed.
+pub const WRAP_MIN_STEP: f32 = 32.0;
 
 /// A scene part's node: the scene key over the part's index.
 pub fn fx_node(scene: u32, part: u32) -> u32 {
@@ -124,6 +137,10 @@ pub struct BattlePresent {
     prev: PresentSnap,
     /// The state the latest tick left.
     cur: PresentSnap,
+    /// The effect nodes of the frame before [`Self::prev`]'s, for the wrap
+    /// test ([`World::battle_fx_shift`]): a node's last step tells a looping
+    /// node's jump back to its start from a move.
+    pprev_fx: Vec<FxRec>,
     /// The battle frame `cur` belongs to; `None` while inactive.
     frame: Option<u64>,
     /// The display tick that frame opened on.
@@ -135,6 +152,23 @@ pub struct BattlePresent {
     /// Each slot's drawn pose for this tick
     /// ([`World::battle_draw_pose_frame`]).
     drawn: Vec<Option<legaia_anm::PoseFrame>>,
+}
+
+/// Whether a node that stood at `q`, then `p`, then `c` on three battle
+/// frames went back to its start on the last: the step `p -> c` turns
+/// against the step `q -> p` and is at least twice as long, plus
+/// [`WRAP_MIN_STEP`]. A looping particle (a spark that rises and drops back
+/// to its emitter, a ring point that runs round and re-seats) steps steadily
+/// one way and then jumps the other; drawn on the line between, it would
+/// sweep back across its path for the frame. A bounce turns too but keeps
+/// its speed, and a node starting from rest has no last step, so both
+/// still step.
+pub fn is_wrap(q: [f32; 3], p: [f32; 3], c: [f32; 3]) -> bool {
+    let last: [f32; 3] = std::array::from_fn(|k| p[k] - q[k]);
+    let step: [f32; 3] = std::array::from_fn(|k| c[k] - p[k]);
+    let dot: f32 = (0..3).map(|k| last[k] * step[k]).sum();
+    let len = |v: &[f32; 3]| v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    dot < 0.0 && len(&step) >= 2.0 * len(&last) + WRAP_MIN_STEP
 }
 
 /// `d` folded onto the short way round a 12-bit turn.
@@ -174,6 +208,7 @@ impl BattlePresent {
         self.cur.poses.clear();
         self.prev.fx.clear();
         self.cur.fx.clear();
+        self.pprev_fx.clear();
         self.drawn.clear();
     }
 
@@ -249,6 +284,10 @@ impl World {
         let fresh = bp.frame.is_none() || now.saturating_sub(bp.last_tick) > span;
         if bp.frame != Some(frame) {
             std::mem::swap(&mut bp.prev, &mut bp.cur);
+            // `cur` now holds the frame before `prev`: its nodes are the
+            // wrap test's last step. The buffers swap, so a steady fight
+            // allocates nothing here.
+            std::mem::swap(&mut bp.pprev_fx, &mut bp.cur.fx);
             bp.open_tick = now;
         }
         bp.cur.source = source;
@@ -308,9 +347,35 @@ impl World {
                     rot: [0.0; 3],
                 }),
         );
+        // The streak ribbon's anchors: a cast arm's ring and a landed
+        // projectile's bolts. A ring whose trail or point count changed is a
+        // new ring (`kind`), so no point steps from another's.
+        for (scene, ring) in [
+            (FX_CAST_RIBBON, self.battle.cast_ribbons),
+            (FX_FLIGHT_RIBBON, self.battle.flight_ribbons),
+        ] {
+            let Some(ring) = ring else {
+                continue;
+            };
+            let kind = i32::from(ring.trail_id) | i32::from(ring.count) << 8;
+            bp.cur.fx.extend(
+                ring.points
+                    .iter()
+                    .take(usize::from(ring.count))
+                    .enumerate()
+                    .map(|(k, p)| FxRec {
+                        key: fx_node(scene, k as u32),
+                        kind,
+                        age: 0,
+                        pos: p.map(f32::from),
+                        rot: [0.0; 3],
+                    }),
+            );
+        }
         bp.cur.fx.sort_unstable_by_key(|r| r.key);
         if fresh {
             bp.prev.clone_from(&bp.cur);
+            bp.pprev_fx.clear();
         } else {
             // A cut, or a change of owner, draws its landing at once.
             let cut = bp.prev.source != bp.cur.source
@@ -486,14 +551,21 @@ impl World {
     /// node on the same phase as the bodies and the camera stays on the body
     /// it rides. `None` when it draws live: off, no frame behind, a node
     /// born this frame (it draws where it spawned), a new node in a reused
-    /// slot, or one moved [`SNAP_ROOT`] in a frame. A rotation turned
-    /// [`SNAP_PART_ANGLE`] lands; the position still steps.
+    /// slot, one moved [`SNAP_ROOT`] in a frame, or a looping node going back
+    /// to its start ([`is_wrap`]). A rotation turned [`SNAP_PART_ANGLE`]
+    /// lands; the position still steps.
     pub fn battle_fx_shift(&self, node: u32) -> Option<([f32; 3], [f32; 3])> {
         let bp = &self.battle_present;
         let lag = bp.lag()?;
         let find = |v: &[FxRec]| v.binary_search_by_key(&node, |r| r.key).ok().map(|i| v[i]);
         let (p, c) = (find(&bp.prev.fx)?, find(&bp.cur.fx)?);
         if p.kind != c.kind || c.age < p.age || dist(&p.pos, &c.pos) >= SNAP_ROOT {
+            return None;
+        }
+        // The same node one frame further back: its last step.
+        if let Some(q) = find(&bp.pprev_fx).filter(|q| q.kind == p.kind && q.age <= p.age)
+            && is_wrap(q.pos, p.pos, c.pos)
+        {
             return None;
         }
         let dr: [f32; 3] = std::array::from_fn(|k| wrap_angle(c.rot[k] - p.rot[k]));
@@ -503,6 +575,19 @@ impl World {
             dr.map(|d| -lag * d * std::f32::consts::TAU / 4096.0)
         };
         Some((std::array::from_fn(|k| -lag * (c.pos[k] - p.pos[k])), turn))
+    }
+
+    /// [`Self::battle_fx_shift`]'s position half for point `k` of the cast
+    /// arm's ribbon ring (`flight = false`) or of a landed projectile's
+    /// (`flight = true`), `None` when it draws live.
+    pub fn battle_ribbon_point_shift(&self, flight: bool, k: usize) -> Option<[f32; 3]> {
+        let scene = if flight {
+            FX_FLIGHT_RIBBON
+        } else {
+            FX_CAST_RIBBON
+        };
+        self.battle_fx_shift(fx_node(scene, k as u32))
+            .map(|(d, _)| d)
     }
 
     /// [`Self::battle_fx_shift`]'s position half for an effect-pool child
@@ -725,6 +810,94 @@ mod tests {
         child(&mut w, 400, 0);
         w.observe_battle_present();
         assert_eq!(w.battle_sprite_shift(0), [0.0; 3]);
+    }
+
+    /// Run the current frame out and open the next, observing each vsync.
+    fn next_frame(w: &mut World) {
+        for _ in 0..8 {
+            vsync(w);
+            if w.battle_present.phase == 0.0 {
+                return;
+            }
+        }
+        panic!("no frame opened");
+    }
+
+    /// A looping child that steps steadily up and then drops back to its
+    /// start draws where it landed on the frame it wraps, not on the line
+    /// back across its path; a steady step and a bounce still step.
+    #[test]
+    fn a_looping_node_snaps_when_it_wraps() {
+        assert!(
+            !is_wrap([0.0; 3], [0.0, 40.0, 0.0], [0.0, -10.0, 0.0]),
+            "a bounce"
+        );
+        assert!(!is_wrap([0.0; 3], [0.0, 40.0, 0.0], [0.0, 0.0, 0.0]));
+        assert!(is_wrap(
+            [0.0, 80.0, 0.0],
+            [0.0, 120.0, 0.0],
+            [0.0, 0.0, 0.0]
+        ));
+        assert!(
+            !is_wrap([0.0; 3], [0.0, 0.0, 0.0], [0.0, 300.0, 0.0]),
+            "from rest"
+        );
+        let mut w = battle_world();
+        let child = |w: &mut World, y: i32, cursor: u8| {
+            let c = &mut w.effect_pool.children[0];
+            c.frame_count = 200;
+            c.anim_id = 3;
+            c.frame_cursor = cursor;
+            c.pos = [0, y << 8, 0];
+        };
+        child(&mut w, 0, 1);
+        w.observe_battle_present();
+        for (k, y) in [40, 80, 120].into_iter().enumerate() {
+            next_frame(&mut w);
+            child(&mut w, y, 2 + k as u8);
+            w.observe_battle_present();
+            vsync(&mut w);
+            let d = w.battle_sprite_shift(0);
+            assert!(d[1] < 0.0, "a steady rise steps: {d:?}");
+        }
+        // Back to its start: the wrap.
+        next_frame(&mut w);
+        child(&mut w, 0, 5);
+        w.observe_battle_present();
+        vsync(&mut w);
+        assert_eq!(w.battle_sprite_shift(0), [0.0; 3], "it lands at once");
+    }
+
+    /// A cast arm's ribbon ring point steps with the bodies; a ring whose
+    /// point count changed draws live.
+    #[test]
+    fn ribbon_points_step_with_the_camera() {
+        let ring = |x: i16, count: u8| legaia_engine_cast::cast_module_camera::CastRibbonRing {
+            points: [[x, -192, 0]; 16],
+            trail_id: 5,
+            count,
+        };
+        let mut w = battle_world();
+        w.battle.cast_ribbons = Some(ring(100, 4));
+        w.observe_battle_present();
+        next_frame(&mut w);
+        w.battle.cast_ribbons = Some(ring(160, 4));
+        w.observe_battle_present();
+        vsync(&mut w);
+        let d = w.battle_ribbon_point_shift(false, 2).unwrap();
+        assert!((d[0] + 40.0).abs() < 1e-3, "{d:?}");
+        assert!(
+            w.battle_ribbon_point_shift(true, 2).is_none(),
+            "no flight ring"
+        );
+        next_frame(&mut w);
+        w.battle.cast_ribbons = Some(ring(200, 5));
+        w.observe_battle_present();
+        vsync(&mut w);
+        assert!(
+            w.battle_ribbon_point_shift(false, 2).is_none(),
+            "a new ring"
+        );
     }
 
     /// Retail mode, the per-vsync cadence and the field draw the live state.

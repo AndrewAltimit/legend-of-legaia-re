@@ -3231,6 +3231,20 @@ lead to. The battle draw therefore runs **one battle frame behind**:
   the same handle (a new child in a reused slot, a new scene in a reused
   list place) or whose identity changed draws live, and a node gone from the
   live frame is gone from the draw, so nothing lingers past retail's frame.
+- A looping node draws its wrap at once. A spark that rises and drops back to
+  its emitter steps steadily one way and then jumps the other, and drawn on
+  the line between it would sweep back across its own path for a frame. A
+  step that turns against the node's step the frame before and is at least
+  twice as long plus `32` units is that jump (`present::is_wrap`), so the
+  node lands; a bounce keeps its speed and still steps.
+- The streak ribbon's anchors ride the same phase: each point of a cast
+  arm's ribbon ring and of a landed projectile's bolts
+  (`BattleState::cast_ribbons` / `flight_ribbons`, the trios `FUN_801E1D98`
+  is handed) is a node of its own (`World::battle_ribbon_point_shift`), so a
+  ribbon on a moving body or projectile stays on it. A ring whose trail or
+  point count changed is a new ring and draws live. The move-FX streak's
+  launch point and the clip-tag ribbon's seat are fixed for the effect's
+  life, so the drawn camera alone carries them.
 - A cut draws its landing at once: a change of camera owner (the phase camera,
   a stage module's camera), or a step of `480` angle units, `1800` TR units or
   `480` focus units in one frame (`present::CUT_*`). Across the film sets the
@@ -3241,7 +3255,8 @@ lead to. The battle draw therefore runs **one battle frame behind**:
   draw live.
 - It is presentation-only. The draw-side reads are `World::battle_draw_pose`,
   `battle_draw_root`, `battle_draw_shift`, `battle_draw_root_i16`,
-  `battle_draw_pose_frame`, `battle_fx_shift` and `battle_sprite_shift`, and
+  `battle_draw_pose_frame`, `battle_fx_shift`, `battle_sprite_shift` and
+  `battle_ribbon_point_shift`, and
   only the two hosts' draw paths and the shared draw kernels' `_drawn` entries
   take them (`effect_model_draws_drawn`, `weapon_trail_prims_drawn`,
   `cast_ribbon_prims_drawn`). The frame census counts what retail links from
