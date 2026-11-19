@@ -241,11 +241,9 @@ impl World {
             }
             return;
         }
-        let delta = self.clock.script_frame_delta();
-        if delta == 0 {
-            return;
-        }
-        let delta = u8::try_from(delta).unwrap_or(u8::MAX);
+        // Between two game frames the clocks hold; the draw list is still
+        // rebuilt, so a widget a script spawned on such a vsync draws on it.
+        let delta = u8::try_from(self.clock.script_frame_delta()).unwrap_or(u8::MAX);
         let mut fx = std::mem::take(&mut self.presentation.fx);
         self.presentation.fx_frame = fx.tick(delta, |idx| self.system_flag_test(idx));
         self.presentation.fx = fx;
