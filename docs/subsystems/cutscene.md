@@ -1586,6 +1586,46 @@ composed: retail's view builder `FUN_800172C0` reads the globals every frame, so
 while the scene's arrival actor still counts down for an engaged player (`izumi`'s opening) is
 on screen from its first frame (`ZoneFollow::script_view`).
 
+**Stepped moves.** A glide is the one camera move with a known next pose. The follow ease
+`FUN_801DB510` steps the globals once a game pass toward the composed shot, and a record that
+re-applies or re-stages its shot every frame (op `0x45` APPLY, or an `apply == 0` Configure in a
+loop) and the camera-register ramps feeding the composer do the same, so each lands a whole step
+on one vsync and holds on the vsyncs after it: a `town01` walk's follow pan holds on half its
+vsyncs. The smooth camera draws such a move behind instead (`Camera::observe_present`, the
+`lag` of `DrawLead`): from where the draw stood to the new stored pose, over the frame step after
+the move landed, as the battle draw does. A new move picks up the share of the last one not yet
+shown, so the drawn pose never jumps.
+
+- The focus a free-roam follow camera pins onto the player every vsync (`0x801DB820`) stays live:
+  under the smooth walk the figure moves every vsync, and a lagged focus would shake it on screen.
+  A mode-5 fixed shot's focus ease and a script's focus are stepped moves.
+- The shake jitter pair and focus Y stay live; a move a glide in flight made is the lead's.
+- A cut draws at once: a scene entry or a battle's return to the field, the follow camera's snap
+  (`FUN_801DB8EC`), or any step past `480` angle units, `1800` eye-space units of the eye trio,
+  `480` units of focus or `256` of `H` (the battle draw's cut rules,
+  [`present.rs`](../../crates/engine-field/src/camera/present.rs)).
+- Presentation-only, as the lead is: nothing the simulation reads takes it, and the
+  `smooth_follow_camera_disc` walk holds the stored globals, the player and the `rand()` stream
+  identical vsync for vsync with the smooth camera on and off.
+
+**Fog sheets.** The fog pool walks once a game pass and projects its sheets through the pass's
+camera ([field ambient FX](field-ambient-fx.md)), while the frame draws the scene through the
+camera of its vsync. Under the smooth camera and the smooth walk the two part between passes and
+the sheets stood on the screen while the scene slid under them, by up to `7` px on a `vell` walk.
+Each sheet keeps the inputs its half was emitted from (`FogQuad::source`), and under the smooth
+camera a draw through a moved camera projects it again through that camera
+(`World::fog_reprojection`, `FogQuad::reproject`, the same `FUN_8003F86C` port). Through the
+pass's own camera the sheets are the pass's, bit for bit.
+
+**The `izumi` arrival.** The port's `izumi` entry stages the glide above (`apply 120`, curve `1`,
+from pitch `275`, yaw `-120` and eye `(675, 1474, 14790)` to `155`, `-40`, `(275, 934, 7110)`)
+and runs it at step `4`. No retail state holds a first visit yet. A film of the revisit
+([`autorun_camera_glide_film.lua`](../../scripts/pcsx-redux/autorun_camera_glide_film.lua) on
+`izumi_arrival_revisit`, 240 vsyncs) finds no mover live, step `2`, and the camera standing on
+pitch `334`, yaw `0`, eye `(-111, 567, 14296)`, `H` `768` throughout - the pose the engine seeded
+from that state also holds - so the glide's start, end and per-frame poses on a first visit stay
+unmeasured.
+
 #### What a build census actually measures
 
 `FUN_800172c0` is **not** a once-per-frame builder. It has seventeen `jal` sites - four in

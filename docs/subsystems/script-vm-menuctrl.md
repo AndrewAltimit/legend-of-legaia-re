@@ -1320,6 +1320,19 @@ op `0x15` has no authored site, so the pitch is always this arm's, under the
 channel's `0x16` roll. `juui1` `P2[0]` turns all three party members with
 `CC 09..0B 43 B8 0B 2C 01` while the channel rolls two of them.
 
+A retail film settles the order question for `juui1`
+([`autorun_actor_angle_writers.lua`](../../scripts/pcsx-redux/autorun_actor_angle_writers.lua)
+on `juui1_vortex_entry`, 1500 vsyncs): every store to the three party
+members' `+0x24` and `+0x28` lands at `0x80036FBC`, inside the ramp
+scheduler `FUN_80036D80` (pool `0x801C66A0`), called from the actor walk
+(`ra` `0x800252BC`), and no frame carries two stores to one word. The pitch
+ramps to `0xBB8` and holds; all three rolls sway on their own phases
+(peaks `204`, `369` and `129`). Both writers install into the one scheduler
+pool, so a word two ramps shared would draw whichever ramp the walk
+reaches last (the walk stores in list order); in the filmed window no two
+ramps ever share one, and the drawn angle is the one ramp that holds the
+word.
+
 Aimed at the player (`CC F8 42 ..`), the slot is the player's own `+0x8E`,
 and it moves the player only while the player's `+0x10` carries
 `0x20000000`: raised by `B1 F8 1D` or `4C D9`, dropped by `B2 F8 1D` or
