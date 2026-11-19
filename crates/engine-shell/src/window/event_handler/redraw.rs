@@ -125,7 +125,8 @@ impl PlayWindowApp {
     }
 
     /// `LEGAIA_LEADIN_TABLE_COST` / `LEGAIA_LEADIN_SPAN_LAW`: hold the
-    /// polygon census / the span law off through the lead-in and give each
+    /// polygon census (with the command surfaces' pricing) / the span law
+    /// off through the lead-in and give each
     /// back, once, where the film starts: the capture's gate, or the
     /// cast-sequence recorder's cast begin (a seeded spell film has no gate).
     /// Each half returns to what the session asked for
@@ -158,6 +159,16 @@ impl PlayWindowApp {
                 .leadin_census_wanted
                 .get_or_insert(toggles.battle_poly_frame_cost);
             toggles.battle_poly_frame_cost = met && wanted;
+            // The command surfaces' frames are the census's too: priced
+            // through the lead-in, the drive's prompts run on the step their
+            // census reads where a table-priced lead-in held the step the
+            // last action pass left, and every round after them opens on
+            // another frame grid (`battle_vahn_tri_somersault_super`'s
+            // counter lands two vsyncs later, `.977` to `.932`).
+            let surface = *sc
+                .leadin_surface_wanted
+                .get_or_insert(toggles.battle_surface_frame_cost);
+            toggles.battle_surface_frame_cost = met && surface;
             if met {
                 sc.leadin_table_cost = false;
                 // The pass the film opened on ran before the census came

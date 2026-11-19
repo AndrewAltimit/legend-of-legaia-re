@@ -520,8 +520,10 @@ pub fn run_engine_battle(
     // The seed's replay is the lead-in to the capture: it runs the action
     // table and the default overrun, as the child's lead-in holds do
     // (`LEGAIA_LEADIN_TABLE_COST`, `LEGAIA_LEADIN_SPAN_LAW`), so the census
-    // and the span law re-deal none of the rounds it reaches the state on.
+    // (with the command surfaces' pricing) and the span law re-deal none
+    // of the rounds it reaches the state on.
     session.host.world.toggles.battle_poly_frame_cost = false;
+    session.host.world.toggles.battle_surface_frame_cost = false;
     session.host.world.toggles.battle_frame_span_law = false;
     if let Some((step, state, from, hold)) = battle.frame_step_seed() {
         session.host.world.seed_battle_frame_step(step, state);
