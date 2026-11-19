@@ -479,7 +479,15 @@ engine verdict:
   engine's). `kor5_post_43a_checkpoint` was played through `kor5` `P2[3]`,
   whose last `A3 0E 20 5D` stands Old Deez at `(4160, 11968)` where his head
   bytes `20 DC` spawn him at `(4160, 11904)` (`npcs` `.977` to `1`, `image`
-  `.986` to `1.000`). The off-map park literal is seated the same way: a
+  `.986` to `1.000`). A cross-context run-to-tile (`CC <flat> 51 xb zb`) is
+  the same teleport onto the same tile decode, so its target is a beat
+  literal too: `town0d` `P2[32]`, the Rim Elm revisit arrival, closes with
+  `CC 36 51 60 0F 07 42`, Mei on `(12352, 1984)` facing index `7`, where her
+  record `P1[21]` seats her on `(12288, 1984)` facing `0`; the heading seat
+  below then turns her (`town0d_house_interior` / `town0d_house_free`:
+  `npcs` `.983` to `1`, `facing` `.963` to `1`, `image` `.977` to `.993`). The
+  engine reaches the seat itself (`engine-scene-host`'s
+  `town0d_mei_arrival_seat_disc`). The off-map park literal is seated the same way: a
   placement retail holds on the park seat, whose flat a partition-2 beat
   parks (`A3 <flat> 7F 7F`, or the run-to-tile `CC <flat> 51 7F 7F`), is
   stood on retail's park coordinates with retail's heading, which the beat's
