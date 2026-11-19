@@ -360,7 +360,7 @@ impl WalkFilm {
                 let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
                 writeln!(
                     w,
-                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads"
+                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads,placed_near_draws,placed_near_prims,placed_unlisted_draws,placed_unlisted_prims,placed_parked_draws"
                 )?;
                 Some(w)
             }
@@ -471,7 +471,7 @@ impl WalkFilm {
                 let f = world.field_frame_features().unwrap_or_default();
                 writeln!(
                     w,
-                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                     u8::from(world.clock.game_tick_fired),
                     world.clock.frame_step,
                     f.decoration_draws,
@@ -494,6 +494,11 @@ impl WalkFilm {
                     f.npc_prims,
                     f.decoration_loop_cells,
                     f.fog_quads,
+                    f.placed_near_draws,
+                    f.placed_near_prims,
+                    f.placed_unlisted_draws,
+                    f.placed_unlisted_prims,
+                    f.placed_parked_draws,
                 )?;
             }
             if session.host.world.active_scene_label != n0_scene {

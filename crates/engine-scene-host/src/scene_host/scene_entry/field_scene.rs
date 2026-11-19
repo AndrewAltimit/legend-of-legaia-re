@@ -1578,7 +1578,10 @@ pub fn field_cost_table(
         .ok()
         .flatten()
         .unwrap_or_default();
-    let (placed, _) = field_env::resolve_env_draws(&env, &placed, lut);
+    // Bound, so each draw carries its bind's anim id (draw kind `1`) and the
+    // window sweep's key for the placements it owns.
+    let binds = scene.field_object_binds(index).ok().flatten();
+    let (placed, _) = field_env::resolve_placed_env_draws(&env, &placed, lut, binds.as_ref());
     Some(FieldCostTable {
         decorations: terrain
             .iter()
@@ -1601,8 +1604,13 @@ pub fn field_cost_table(
                 let [p, v, q, l] = size(d.res_tmd);
                 CostPlaced {
                     x: d.world_x.clamp(-0x8000, 0x7FFF) as i16,
+                    y: d.world_y.clamp(-0x8000, 0x7FFF) as i16,
                     z: d.world_z.clamp(-0x8000, 0x7FFF) as i16,
                     radius: d.cull_radius,
+                    posed: d.anim_id != 0,
+                    near_exempt: d.near_reject_exempt,
+                    window: field_env::placed_window_key(d, binds.as_ref()),
+                    object: field_env::placed_object_key(d, binds.as_ref()),
                     prims: clamp16(p),
                     verts: clamp16(v),
                     quads: clamp16(q),

@@ -43,12 +43,27 @@ pub struct CostCell {
     pub lit: u16,
 }
 
-/// One placed object: its world position, cull radius and mesh size.
+/// One placed object: its world position, cull radius, how the draw walk
+/// treats it, and its mesh size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CostPlaced {
     pub x: i16,
+    pub y: i16,
     pub z: i16,
     pub radius: u8,
+    /// Posed through a bound clip (draw kind `1`, `+0x5C != 0`); else the
+    /// static single-transform arm (draw kind `5`).
+    pub posed: bool,
+    /// The record's `+0x12 & 0x20` (actor `+0x52 & 0x20`): the walk's near
+    /// reject passes over it.
+    pub near_exempt: bool,
+    /// The window sweep's key for a placement it owns (no object bind on the
+    /// anchor tile, `field_env::placed_window_key`); `None` for the
+    /// scene-init sweep's, whose actor lives for the whole scene.
+    pub window: Option<legaia_engine_scene::field_env::PlacedWindowKey>,
+    /// The object key the bound actor's state is found under
+    /// (`field_env::placed_object_key`); `None` for a window-owned placement.
+    pub object: Option<usize>,
     pub prims: u16,
     pub verts: u16,
     /// Of [`Self::prims`]: the quads, and the light-source rows (group
@@ -178,6 +193,68 @@ pub const COST_PER_CYCLER_CALL: i64 = 1_311;
 pub const COST_PER_CYCLER_TEXEL: i64 = 234;
 pub const COST_PER_CYCLER_ZERO_TEXEL: i64 = 38;
 
+/// Whether the field draw walk `FUN_8001ADA4` drops placed object `p`
+/// before its primitives under the frame's camera `gte`, past the tile cull.
+///
+/// The walk transforms each actor's origin (`RTPS` at `0x8001AE20`, the
+/// view-space result into `+0x2C..+0x34`; every placed object carries
+/// `+0x10 & 0x80`) and its draw arms then test the depth `+0x34`:
+///
+/// ```text
+/// kind 5 (0x8001B1A8): +0x72 != 0 && depth < 0xA0 && !(+0x52 & 0x20) -> skip
+/// kind 1 (0x8001AE94): depth < 0xA1 && !(+0x52 & 0x20)              -> skip
+/// ```
+///
+/// A skipped object costs its origin's transform and none of its
+/// primitives. The render scale `+0x72` is the spawn's `0x1000`
+/// (`0x80020F30`), so the model takes the kind-5 test as live. A retail
+/// capture of `vahn_walks_out` (Mednafen) holds the four `town01` cliff
+/// sections at `(1408..5632, 0, 960)` at depths `-9999..-3731`, past the
+/// tile cull and dropped here.
+///
+/// REF: FUN_8001ADA4
+pub fn placed_near_rejected(
+    p: &CostPlaced,
+    gte: &legaia_render_kernels::gte::FieldGteView,
+) -> bool {
+    if p.near_exempt {
+        return false;
+    }
+    let depth = gte.rtps([p.x, p.y, p.z]).mac[2];
+    depth < if p.posed { 0xA1 } else { 0xA0 }
+}
+
+/// The matrix `FUN_800172C0` builds from the camera globals `g`: the field
+/// base matrix times the angles' rotation, the eye trio as `TR` past the
+/// focus. Only its `MAC3` is read, so the screen constants are the field's.
+///
+/// REF: FUN_800172C0
+pub fn placed_cull_gte(
+    g: &legaia_engine_camera::retail_cam::RetailCamGlobals,
+) -> legaia_render_kernels::gte::FieldGteView {
+    use legaia_render_kernels::gte::FieldGteView;
+    let a = g.angles().map(|v| (v & 0xFFF) as u16);
+    FieldGteView::from_globals(
+        a,
+        g.tr_eye(),
+        g.focus_stored(),
+        &FieldGteView::field_base(),
+        g.h().clamp(0, 0xFFFF) as u16,
+        legaia_render_kernels::gte::FIELD_OFX,
+        legaia_engine_camera::projection::GTE_OFY as i32,
+    )
+}
+
+impl FieldFrameFeatures {
+    fn add_placed(&mut self, p: &CostPlaced) {
+        self.placed_draws += 1;
+        self.placed_prims += u32::from(p.prims);
+        self.placed_verts += u32::from(p.verts);
+        self.placed_quads += u32::from(p.quads);
+        self.placed_lit += u32::from(p.lit);
+    }
+}
+
 /// What one field frame draws ([`World::field_frame_features`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FieldFrameFeatures {
@@ -192,6 +269,21 @@ pub struct FieldFrameFeatures {
     pub decoration_lit: u32,
     pub placed_quads: u32,
     pub placed_lit: u32,
+    /// Placed objects past the tile cull that retail's draw walk never
+    /// reaches, with their primitives: window-owned ones the window list
+    /// does not hold (`unlisted`), and ones the walk's near reject drops
+    /// ([`placed_near_rejected`], `near`). Counted whether or not
+    /// [`WorldToggles::field_cost_placed_walk`] takes them out of the placed
+    /// counts.
+    ///
+    /// [`WorldToggles::field_cost_placed_walk`]: super::WorldToggles::field_cost_placed_walk
+    pub placed_unlisted_draws: u32,
+    pub placed_unlisted_prims: u32,
+    /// Of the `unlisted`: bound placements whose actor its spawn prologue
+    /// parked at the off-map hide box or retired.
+    pub placed_parked_draws: u32,
+    pub placed_near_draws: u32,
+    pub placed_near_prims: u32,
     pub npcs: u32,
     /// Of [`Self::npcs`]: their spawn meshes' primitives.
     pub npc_prims: u32,
@@ -324,13 +416,36 @@ impl World {
                 }
             }
         }
+        let gte = self.npcs.cull_camera.as_ref().map(placed_cull_gte);
+        let sw = &self.terrain.static_window;
         for p in &table.placed {
-            if !self.field_actor_culled_at(p.x, p.z, i16::from(p.radius)) {
-                f.placed_draws += 1;
-                f.placed_prims += u32::from(p.prims);
-                f.placed_verts += u32::from(p.verts);
-                f.placed_quads += u32::from(p.quads);
-                f.placed_lit += u32::from(p.lit);
+            if self.field_actor_culled_at(p.x, p.z, i16::from(p.radius)) {
+                continue;
+            }
+            // Which of retail's reasons, if any, keeps the draw walk off
+            // this placement's primitives: no actor (a bound one parked or
+            // retired, a window-owned one the list the last re-centre
+            // planned does not hold, `FUN_801D7B50`), or the near reject.
+            // A parked actor stands at the hide box (`0x3FC0, 0x3FC0`), where
+            // the tile cull drops it; a retired one is off the list.
+            let is_parked = p.object.is_some_and(|k| self.placed_object_parked(k));
+            let unlisted = is_parked
+                || p.window
+                    .as_ref()
+                    .is_some_and(|k| sw.window.is_some() && !sw.draws(k));
+            if unlisted {
+                f.placed_unlisted_draws += 1;
+                f.placed_unlisted_prims += u32::from(p.prims);
+                f.placed_parked_draws += u32::from(is_parked);
+            } else if gte.as_ref().is_some_and(|g| placed_near_rejected(p, g)) {
+                f.placed_near_draws += 1;
+                f.placed_near_prims += u32::from(p.prims);
+            } else {
+                f.add_placed(p);
+                continue;
+            }
+            if !self.toggles.field_cost_placed_walk {
+                f.add_placed(p);
             }
         }
         f.decoration_loop_cells = (cells.span[0].max(0) * cells.span[1].max(0)) as u32;
@@ -405,8 +520,13 @@ mod tests {
             ],
             placed: vec![CostPlaced {
                 x: 4160,
+                y: 0,
                 z: 11840,
                 radius: 0,
+                posed: false,
+                near_exempt: false,
+                window: None,
+                object: None,
                 prims: 7,
                 verts: 9,
                 quads: 0,
@@ -461,6 +581,96 @@ mod tests {
     /// A cheap view holds the field floor; one priced past `0x1FE` runs at
     /// `3` once its cost is the ring's longest, and the model off holds the
     /// floor whatever the view.
+    /// The camera globals of a retail `vahn_walks_out` capture (Mednafen):
+    /// angles `(186, -170, 0)`, eye `(-2585, 3994, -380)`, stored focus
+    /// `(-3940, 0, -2014)`, `H = 0x200`.
+    fn vahn_camera() -> legaia_engine_camera::retail_cam::RetailCamGlobals {
+        legaia_engine_camera::retail_cam::RetailCamGlobals([
+            186, -170, 0, -2585, 3994, -380, -3940, 0, -2014, 0x200,
+        ])
+    }
+
+    fn placed(x: i16, y: i16, z: i16, prims: u16) -> CostPlaced {
+        CostPlaced {
+            x,
+            y,
+            z,
+            radius: 0,
+            posed: false,
+            near_exempt: false,
+            window: None,
+            object: None,
+            prims,
+            verts: 0,
+            quads: 0,
+            lit: 0,
+        }
+    }
+
+    #[test]
+    fn the_near_reject_reads_the_walks_view_depth() {
+        let g = placed_cull_gte(&vahn_camera());
+        // The capture's `+0x2C..+0x34` for three placed actors.
+        assert_eq!(g.rtps([1408, 0, 960]).mac, [-15632, 6813, -9999]);
+        assert_eq!(g.rtps([2880, -192, 2368]).mac, [-9278, 2772, -310]);
+        assert_eq!(g.rtps([4864, -192, 3208]).mac, [923, 539, 7305]);
+        // The cliff section behind the eye is dropped; Vahn's house is not.
+        assert!(placed_near_rejected(&placed(1408, 0, 960, 91), &g));
+        assert!(!placed_near_rejected(&placed(4864, -192, 3208, 177), &g));
+        // `+0x52 & 0x20` exempts it.
+        let exempt = CostPlaced {
+            near_exempt: true,
+            ..placed(1408, 0, 960, 91)
+        };
+        assert!(!placed_near_rejected(&exempt, &g));
+    }
+
+    #[test]
+    fn the_walk_count_drops_what_retail_never_draws() {
+        let mut w = World::new();
+        let listed = legaia_engine_scene::field_env::PlacedWindowKey {
+            anchor: (36, 37),
+            world_x: 4672,
+            world_z: 4800,
+        };
+        let unlisted = legaia_engine_scene::field_env::PlacedWindowKey {
+            anchor: (30, 44),
+            world_x: 3136,
+            world_z: 5696,
+        };
+        w.install_field_cost_table(Some(FieldCostTable {
+            placed: vec![
+                placed(4864, -192, 3208, 177),
+                placed(1408, 0, 960, 91),
+                CostPlaced {
+                    window: Some(listed),
+                    ..placed(4672, -128, 4800, 101)
+                },
+                CostPlaced {
+                    window: Some(unlisted),
+                    ..placed(3136, -128, 5696, 21)
+                },
+            ],
+            ..FieldCostTable::default()
+        }));
+        w.npcs.cull_view = Some(FieldCullView {
+            focus_stored: [-3940, -2014],
+            attr_box: [0, 0, 0x7F, 0x7F],
+            window: [-40, -40, 40, 40],
+        });
+        w.npcs.cull_camera = Some(vahn_camera());
+        w.terrain.static_window.window = Some([9, 0, 45, 60]);
+        w.terrain.static_window.set_drawn_for_test([listed]);
+        w.toggles.field_cost_placed_walk = false;
+        let f = w.field_frame_features().unwrap();
+        assert_eq!((f.placed_draws, f.placed_prims), (4, 390));
+        assert_eq!((f.placed_near_draws, f.placed_near_prims), (1, 91));
+        assert_eq!((f.placed_unlisted_draws, f.placed_unlisted_prims), (1, 21));
+        w.toggles.field_cost_placed_walk = true;
+        let f = w.field_frame_features().unwrap();
+        assert_eq!((f.placed_draws, f.placed_prims), (2, 278));
+    }
+
     #[test]
     fn the_scene_cost_sets_the_step_over_the_floor() {
         let cheap = FieldCostTable::default();

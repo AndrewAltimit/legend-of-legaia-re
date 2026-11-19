@@ -244,6 +244,19 @@ pub struct WorldToggles {
     /// [`Self::pin_retail`] leaves it alone; the native session takes
     /// `LEGAIA_FIELD_FRAME_COST=0` / `=1` over the default.
     pub field_frame_cost: bool,
+    /// Count a placed object into the field frame cost only when the draw
+    /// walk `FUN_8001ADA4` reaches its primitives: an actor holds it (the
+    /// scene-init sweep's bound objects, and the window sweep's while its
+    /// list holds them, whatever the host draws), the tile cull
+    /// `FUN_801D79E8` passes it, and its origin's view depth under the
+    /// frame's camera clears the walk's near reject
+    /// ([`field_frame_cost::placed_near_rejected`](super::field_frame_cost::placed_near_rejected)).
+    /// On by default; off, the count is the tile cull's over every
+    /// placement, the count the model was fitted on. A timing model, not a
+    /// fidelity knob, so [`Self::pin_retail`] leaves it alone; the native
+    /// session takes `LEGAIA_FIELD_COST_PLACED_WALK=0` / `=1` over the
+    /// default.
+    pub field_cost_placed_walk: bool,
     /// Diagnostic, off by default: [`Self::battle_poly_frame_cost`] reads the
     /// native window's own count of its drawn table
     /// (`World::note_drawn_polys`) in place of the census, the window-only
@@ -597,6 +610,7 @@ impl WorldToggles {
             battle_frame_span_law: true,
             battle_poly_frame_cost: true,
             field_frame_cost: true,
+            field_cost_placed_walk: true,
             battle_poly_window_count: false,
             arts_saved_list: false,
             hop_landing_guard: true,

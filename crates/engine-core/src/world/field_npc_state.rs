@@ -370,6 +370,11 @@ pub struct FieldNpcState {
     /// Published by [`legaia_engine_field::camera::Camera::route_camera_events`], which
     /// both play hosts call every frame; `None` culls nothing.
     pub cull_view: Option<legaia_engine_field::camera::FieldCullView>,
+    /// The camera globals published beside [`Self::cull_view`]
+    /// (`CameraWorld::set_cull_camera`): the matrix the draw walk
+    /// `FUN_8001ADA4` transforms each actor's origin through, which the field
+    /// frame-cost model's placed-object near reject reads.
+    pub cull_camera: Option<legaia_engine_camera::retail_cam::RetailCamGlobals>,
 }
 
 /// The heading a placement stands in before anything turns it, in the
@@ -438,6 +443,7 @@ impl FieldNpcState {
             clip_bones: std::collections::HashMap::new(),
             glide_y: std::collections::HashMap::new(),
             cull_view: None,
+            cull_camera: None,
         }
     }
 }
