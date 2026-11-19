@@ -133,6 +133,12 @@ scripts/ci/walk-film.py kor3_field_route_walk --pad 0-120:UP --no-retail   # eng
   <p class="hint">A film that parts early is not by itself a defect: an engage, a touch or a CD load the engine answers at once separates the two runs for good. The ratchet holds what agrees, so a consumer moved onto the wrong clock shows as a fall on every film that draws through it.</p>
 </section>
 
+<section class="doc-section" id="the-frame-cost-gates" data-doc="the-frame-cost-gates">
+  <h2>The frame-cost gates</h2>
+  <p>The field frame-cost model, which prices each field frame off what the engine draws, is scored on the pacer columns of its own idle films by <code>scripts/ci/field-cost-films.py</code>: each retail game frame priced off the engine's counts and run through the step law against the step retail stored, the engine's own unanchored step a vsync against retail's, and the price of each field state's first frames against the rung of the frame-time ring saved in the state.</p>
+  <p>The retail films are cached under <code>captures/film-retail/field-cost/</code>, one idle 300-vsync PCSX-Redux film per state; states captured on a patched disc are not filmed. Re-filmed, the retail side reads the same step on every game frame. The cache, and the rand ratchet's, are durable references that a disk cleanup must never delete: the gates have no other retail side.</p>
+</section>
+
 <section class="doc-section" id="see-also" data-doc="-">
   <h2>See also</h2>
   <div class="see-also">

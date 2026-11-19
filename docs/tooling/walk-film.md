@@ -207,4 +207,41 @@ the engine answers at once separates the two runs for good, and the count stops
 there ([where a film parts](#where-a-film-parts) names the cause film by film). The ratchet holds what agrees, so a consumer moved onto the wrong clock shows
 as a fall on every film that draws through it.
 
+## The frame-cost gates
+
+The [field frame-cost model](../subsystems/engine.md#the-field-frame-cost-model) is
+scored on the pacer columns of its own idle films, and
+[`field-cost-films.py`](../../scripts/ci/field-cost-films.py) runs every gate:
+
+```bash
+scripts/ci/field-cost-films.py record            # film the states the cache lacks
+scripts/ci/field-cost-films.py score             # engine side + every gate
+scripts/ci/field-cost-films.py score --only 'doman*' -v
+```
+
+| Gate | What it scores |
+|---|---|
+| films | each retail game frame priced off the engine's counts at that vsync, run through the ring from the state's own, against retail's step; the `fit` and `extra` sets apart |
+| unanchored step | the engine's own step a vsync, run as play runs it (`LEGAIA_RC_NO_COST_ANCHOR=1`), against retail's |
+| states | the price of the engine's first frames on each state against the rung of the state's saved ring, and the rms of price against the ring's median |
+
+The films are listed in
+[`film-sets/field-cost.txt`](../../scripts/ci/film-sets/field-cost.txt) and the states in
+[`film-sets/field-cost-states.txt`](../../scripts/ci/film-sets/field-cost-states.txt). A
+film is `--pad 900-901:L2` for `300` vsyncs on the PCSX-Redux recompiler, or on the
+interpreter when the recompiler wedges (`rim_elm_queen_bee_battle`); the `extra` set
+is scored over its first `150`. States captured on a patched disc are not filmed. A
+state saved inside a load (`doman_pre_entry_card_boot` and two more) parks the pacer
+for the whole film and scores no frame. The price scored is the engine's own
+(`engine.cost.csv`'s `cost`), cycler uploads included. Re-filmed, the retail side
+reads the same step on every game frame and the same cost on all but a few, a hblank
+or two apart.
+
+The retail films live in `captures/film-retail/field-cost/<state>/` (`walk_film.csv`,
+`walk_film_actors.csv`, `manifest.txt`), beside the cast-sequence films of the same
+cache, and the rand ratchet's in `captures/walk-film-retail/`. Both are durable
+references: never delete them in a disk cleanup, since the gates have no other retail
+side, and a re-film costs a full `record` run. The engine side is re-run on every
+`score` under `target/field-cost-films/`, which is disposable.
+
 See also [`retail-compare.md`](retail-compare.md), [`cast-sequence-oracle.md`](cast-sequence-oracle.md).
