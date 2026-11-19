@@ -312,6 +312,29 @@ fn the_view_window_comes_off_the_scratchpad_of_a_field_state() {
     assert_eq!(overworld.view_window, None);
 }
 
+/// The field menu lock is bit `0x0800_0000` of the scratchpad story word at
+/// `0x394`, read on a field state only, and reaches the image child.
+#[test]
+fn the_menu_lock_comes_off_the_scratchpad_story_word() {
+    let mut pad = vec![0u8; 0x400];
+    pad[0x394..0x398].copy_from_slice(&0x0800_080Au32.to_le_bytes());
+    let mut field = RetailObs::from_ram(&field_run_ram("town0e", 0), None);
+    field.seat_menu_lock(Some(&pad));
+    assert!(field.menu_lock);
+    assert_eq!(
+        field.menu_lock_env(),
+        Some(("LEGAIA_SEAT_MENU_LOCK", "1".to_string()))
+    );
+    pad[0x397] = 0;
+    field.seat_menu_lock(Some(&pad));
+    assert!(!field.menu_lock);
+    assert_eq!(field.menu_lock_env(), None);
+    let mut overworld = RetailObs::from_ram(&field_run_ram("map01", 0), None);
+    pad[0x397] = 0x08;
+    overworld.seat_menu_lock(Some(&pad));
+    assert!(!overworld.menu_lock);
+}
+
 /// The page mark's displayed frame: the RAM's frame taken back over the
 /// two-frame display lag, and none while no page waits or an automatic
 /// press counts down.

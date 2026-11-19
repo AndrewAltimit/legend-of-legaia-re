@@ -570,6 +570,12 @@ impl PlayWindowApp {
         {
             let _ = self.session.host.world.try_arm_field_shop(&instr);
         }
+        // The menu lock a finished record raised holds through the run, as
+        // in the retail state (`LEGAIA_SEAT_MENU_LOCK`).
+        if self.screenshot.as_ref().is_some_and(|sc| sc.seat_menu_lock) {
+            self.session.host.world.flags.story_flags |=
+                legaia_engine_core::world::FIELD_MENU_LOCK_BIT;
+        }
         if self.screenshot.is_some() {
             let scripted_pad = self
                 .screenshot

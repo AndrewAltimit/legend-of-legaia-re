@@ -414,6 +414,12 @@ fn seed_and_settle(
             .world
             .seed_placement_heading(w.flat, w.x, w.z, w.heading);
     }
+    // The menu lock a finished record raised (`2E 1B`) lives in the
+    // scratchpad story word, which the save does not carry
+    // ([`super::RetailObs::menu_lock`]).
+    if retail.menu_lock {
+        session.host.world.flags.story_flags |= legaia_engine_core::world::FIELD_MENU_LOCK_BIT;
+    }
     // A capture inside a running script is compared at the script's phase,
     // not after a fixed window ([`legaia_engine_capture::script_gate::ScriptGate`]):
     // the session runs until its own context for the record holds retail's

@@ -69,6 +69,13 @@ pub struct RetailObs {
     /// [`RetailObs::seat_view_window`] from the state's scratchpad, on a
     /// field state only - `None` when the state carries no scratchpad.
     pub view_window: Option<[i8; 4]>,
+    /// The field menu lock, bit `0x0800_0000` of the scratchpad story word
+    /// `_DAT_1F800394` ([`legaia_engine_core::world::FIELD_MENU_LOCK_BIT`]),
+    /// on a field state. A record raises it with `2E 1B` and the word is not
+    /// in the save, so a card load past the record comes up without it; the
+    /// field party HUD `FUN_801D0D38` bails on it (`0x801D0D98..0x801D0DAC`).
+    /// Set by [`RetailObs::seat_menu_lock`].
+    pub menu_lock: bool,
     /// The packets and fog sheets in the table the state's frame is building
     /// ([`retail_frame_table`]); `None` without a scratchpad image.
     pub frame_table: Option<(usize, usize)>,
@@ -434,6 +441,7 @@ impl RetailObs {
                 rd32(ram, ENTRY_OPERAND + 4) as i16,
             ),
             view_window: None,
+            menu_lock: false,
             frame_table: None,
             save,
             hud_countdown: matches!(class, StateClass::Field | StateClass::WorldMap)
@@ -811,6 +819,7 @@ impl RetailObs {
     /// scroller rects (the last through a file beside the child's frame).
     pub fn seat_env(&self, out_dir: Option<&Path>, label: &str) -> Vec<(&'static str, String)> {
         let mut env: Vec<(&'static str, String)> = self.seed_latches_env().into_iter().collect();
+        env.extend(self.menu_lock_env());
         if !self.cell_fx.is_empty() {
             env.push(("LEGAIA_SEAT_CLUT_FX", cell_fx_env(&self.cell_fx)));
         }
@@ -1192,6 +1201,22 @@ impl RetailObs {
             .flatten()
             .map(|b| [b[0] as i8, b[1] as i8, b[2] as i8, b[3] as i8]);
     }
+
+    /// Read the field menu lock off a state's scratchpad story word
+    /// (`0x1F800394`, index `0x394`). Field states only.
+    pub fn seat_menu_lock(&mut self, scratchpad: Option<&[u8]>) {
+        self.menu_lock = self.class == StateClass::Field
+            && scratchpad
+                .and_then(|s| s.get(0x394..0x398))
+                .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .is_some_and(|w| w & legaia_engine_core::world::FIELD_MENU_LOCK_BIT != 0);
+    }
+
+    /// [`Self::menu_lock`] as `LEGAIA_SEAT_MENU_LOCK` for `play-window`.
+    pub fn menu_lock_env(&self) -> Option<(&'static str, String)> {
+        self.menu_lock
+            .then(|| ("LEGAIA_SEAT_MENU_LOCK", "1".to_string()))
+    }
 }
 
 /// The displayed frame. A minigame state may be in the slot machine's
@@ -1277,6 +1302,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             obs.seat_scroll_rects(ram, gpu.vram_bytes());
             obs.seat_step_bytes(st.scratch_ram().ok());
             obs.seat_view_window(st.scratch_ram().ok());
+            obs.seat_menu_lock(st.scratch_ram().ok());
             obs.seat_walk_rewind(st.scratch_ram().ok());
             obs.frame_table = st
                 .scratch_ram()
@@ -1293,6 +1319,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
             obs.seat_step_bytes(st.scratchpad());
             obs.seat_view_window(st.scratchpad());
+            obs.seat_menu_lock(st.scratchpad());
             obs.seat_walk_rewind(st.scratchpad());
             obs.frame_table = st
                 .scratchpad()

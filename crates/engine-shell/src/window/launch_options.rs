@@ -441,6 +441,12 @@ pub struct ScreenshotConfig {
     /// the settle tick, where retail's state holds them
     /// (`RetailObs::seed_save`).
     pub seat_latches: Vec<u16>,
+    /// `LEGAIA_SEAT_MENU_LOCK=1`: the retail state's scratchpad story word
+    /// holds the field menu lock (`0x0800_0000`) a finished record raised;
+    /// the save does not carry the word, so the seed raises it at the
+    /// script-resume tick (`RetailObs::menu_lock`). Set by the
+    /// retail-compare image channel.
+    pub seat_menu_lock: bool,
     /// `LEGAIA_SEAT_OBJECT_MODELS=<record>:<model>,..`: a retail state's
     /// drawn actors' live model ids, written over the placed objects' stream
     /// swaps (`World::object_live_models`) on the capture frame.
@@ -1442,6 +1448,7 @@ impl ScreenshotConfig {
                         .collect()
                 })
                 .unwrap_or_default(),
+            seat_menu_lock: std::env::var_os("LEGAIA_SEAT_MENU_LOCK").is_some(),
             seat_latches: std::env::var("LEGAIA_SEAT_LATCHES")
                 .map(|v| {
                     v.split(',')

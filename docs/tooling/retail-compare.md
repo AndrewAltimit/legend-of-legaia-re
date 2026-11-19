@@ -525,6 +525,16 @@ engine verdict:
   its pillars blending ABR 3 (`image` `.815` to `1.000`); its twin
   `chitei2_corridor_pillars_before` stands at the corridor's door, the pillars
   opaque.
+  The field menu lock is the same kind of history. A record raises it with
+  `2E 1B` into the scratchpad story word `_DAT_1F800394` (`0x0800_0000`),
+  which the save does not hold, and the field party HUD `FUN_801D0D38` bails
+  while it is up (`0x801D0D98..0x801D0DAC`). `town0e` `P2[5]`, the ending's
+  epilogue, raises it at `+0x18` and never lowers it, so
+  `town0e_epilogue_vahn_alone`, taken after the record retired, shows no
+  readout where a card load past it does. The seed raises the bit when the
+  state's word holds it (`RetailObs::menu_lock`, the image child's
+  `LEGAIA_SEAT_MENU_LOCK`; `image` `.965` to `1.000`). A state whose word
+  lacks it, `keikoku_chest_open` among them, keeps the engine's own HUD.
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter
