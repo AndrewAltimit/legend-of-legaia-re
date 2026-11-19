@@ -296,6 +296,25 @@ pub(super) fn unrotate_rect(texels: &[u16], w: usize, h: usize, dx: usize, dy: u
         .collect()
 }
 
+/// The scripted sprite widget's handler (`FUN_801F7A9C`, PROT 0900).
+pub(super) const SPRITE_TICK: u32 = 0x801F_7A9C;
+
+/// Whether a retail state's actor lists hold a live sprite widget - the
+/// ending crawl's lines, each a `43 10` spawn from the credits record.
+///
+/// The image child meets the field gate on the displayed frame (the
+/// record's wait less the display lag), but a PCSX-Redux film of `edlast`
+/// (`captures/w49-F/edlast_from_edson_panel`, 2 vsyncs a shot) shows each
+/// crawl line at the RAM's `+0x16` (less its glyph's top row) on the same
+/// vsync: the `Casting` line's top row is `+0x16 + 5` at every shot from
+/// `t408` to `t448`, no lag. So the child runs the sprites on by the lag
+/// the gate took off.
+pub fn retail_has_sprite_widget(ram: &[u8]) -> bool {
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .any(|n| game_anchors::u32_at(ram, n + 0x0C) == SPRITE_TICK)
+}
+
 /// The image-panel widget's handler (`FUN_801F849C`, PROT 0900).
 pub(super) const PANEL_TICK: u32 = 0x801F_849C;
 

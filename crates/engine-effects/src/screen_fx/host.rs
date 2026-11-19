@@ -89,6 +89,17 @@ impl ScreenFxHost {
         self.letterbox = Letterbox::from_config(payload);
     }
 
+    /// Advance the sprite widgets alone one frame of `frame_delta`, drawing
+    /// nothing: a seat that runs the sprites' clocks on past the frame the
+    /// rest of the scene stands on (the retail-compare image child's
+    /// `LEGAIA_SEAT_SPRITE_LEAD`).
+    pub fn advance_sprites(&mut self, frame_delta: u8, mut flag_test: impl FnMut(u16) -> bool) {
+        for (w, rec) in &mut self.sprites {
+            w.tick(rec, frame_delta, &mut flag_test);
+        }
+        self.sprites.retain(|(w, _)| !w.killed);
+    }
+
     /// Advance every live widget one frame and collect the draw list.
     /// `frame_delta` is retail's per-frame byte (`DAT_1F800393`);
     /// `flag_test` is the story-flag probe the sprite scripts wait on

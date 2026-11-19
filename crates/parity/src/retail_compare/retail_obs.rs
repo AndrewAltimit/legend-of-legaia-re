@@ -314,6 +314,10 @@ pub struct RetailObs {
     /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
     /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
     pub panel: Option<legaia_engine_effects::screen_fx::PanelWidget>,
+    /// Whether the state holds a live screen-effect sprite widget
+    /// ([`retail_has_sprite_widget`], the ending crawl's lines): the image
+    /// child runs those on by the display lag (`LEGAIA_SEAT_SPRITE_LEAD`).
+    pub sprite_widgets: bool,
     /// The frame's clear colour - the draw environment's `r0 / g0 / b0`
     /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
     /// ([`retail_clear_rgb`]).
@@ -551,6 +555,7 @@ impl RetailObs {
             },
             cue_clut_source: None,
             panel: None,
+            sprite_widgets: false,
             scripted_seats: Vec::new(),
             scripted_headings: Vec::new(),
             movie: (class == StateClass::Cutscene)
@@ -792,6 +797,7 @@ impl RetailObs {
         {
             self.scroll_rects = retail_scroll_rects(ram, v);
             self.panel = retail_panel(ram);
+            self.sprite_widgets = retail_has_sprite_widget(ram);
             if let Some(p) = self.panel {
                 self.scroll_rects.extend(panel_source_rects(&p, v));
             }

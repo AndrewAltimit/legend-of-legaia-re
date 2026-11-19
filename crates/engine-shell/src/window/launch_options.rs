@@ -415,6 +415,8 @@ pub struct ScreenshotConfig {
     pub seat_popup_cells: Vec<(i32, i32, u32, u8)>,
     /// Set on the frame the capture is due, for [`Self::seat_popup_cells`].
     pub popup_cells_due: std::cell::Cell<bool>,
+    /// Set once [`Self::seat_sprite_lead`] has run the sprites on.
+    pub sprite_lead_seated: std::cell::Cell<bool>,
     /// Whether [`Self::seat_popup_age`] has aged the popup yet: once, on the
     /// frame the capture is due.
     pub popup_age_seated: std::cell::Cell<bool>,
@@ -497,6 +499,13 @@ pub struct ScreenshotConfig {
     /// the capture frame - the vignette record that spawned it ran before
     /// the record the seed resumes.
     pub seat_panel: Option<legaia_engine_effects::screen_fx::PanelWidget>,
+    /// `LEGAIA_SEAT_SPRITE_LEAD=<vsyncs>`: run the screen-effect sprite
+    /// widgets that many vsyncs (in frame steps) past the capture frame. The
+    /// field gate stands the scene on the displayed frame, the record's wait
+    /// less the display lag, but a PCSX-Redux film of the ending crawl shows
+    /// each line where the RAM holds it at the same vsync, so the lines run
+    /// on by the lag the gate took off.
+    pub seat_sprite_lead: u16,
     /// `LEGAIA_SEAT_CLEAR=r,g,b`: a retail state's frame clear colour (the
     /// draw environment's `r0 / g0 / b0`), written over the engine's on the
     /// capture frame - the system script's op-`4C 13` history.
@@ -1355,6 +1364,7 @@ impl ScreenshotConfig {
             ),
             seat_fog_due: std::cell::Cell::new(false),
             popup_age_seated: std::cell::Cell::new(false),
+            sprite_lead_seated: std::cell::Cell::new(false),
             seat_fade_lead: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_FADE_LEAD")
                     .ok()
@@ -1402,6 +1412,10 @@ impl ScreenshotConfig {
             seat_panel: std::env::var("LEGAIA_SEAT_PANEL")
                 .ok()
                 .and_then(|v| legaia_engine_capture::field_seeds::panel_from_env(&v)),
+            seat_sprite_lead: std::env::var("LEGAIA_SEAT_SPRITE_LEAD")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(0),
             seat_walkers: std::env::var("LEGAIA_SEAT_WALKERS")
                 .map(|v| legaia_engine_capture::field_seeds::walkers_from_env(&v))
                 .unwrap_or_default(),

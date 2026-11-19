@@ -305,6 +305,17 @@ impl PlayWindowApp {
             if due && let Some(f) = sc.seat_page_mark {
                 self.session.host.world.seat_page_mark_frame(f);
             }
+            if due && sc.seat_sprite_lead > 0 && !sc.sprite_lead_seated.get() {
+                sc.sprite_lead_seated.set(true);
+                let world = &mut self.session.host.world;
+                let step = world.clock.frame_step.max(1);
+                let mut fx = std::mem::take(&mut world.presentation.fx);
+                for _ in 0..sc.seat_sprite_lead / u16::from(step) {
+                    fx.advance_sprites(step, |i| world.system_flag_test(i));
+                }
+                world.presentation.fx_frame = fx.tick(0, |i| world.system_flag_test(i));
+                world.presentation.fx = fx;
+            }
             if due && let Some(p) = sc.seat_panel {
                 let world = &mut self.session.host.world;
                 let mut fx = std::mem::take(&mut world.presentation.fx);
