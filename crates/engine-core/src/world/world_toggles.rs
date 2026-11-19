@@ -174,6 +174,15 @@ pub struct WorldToggles {
     /// the arts films it lifts the image and costs the Super Arts' camera. The
     /// native session sets it either way from `LEGAIA_BATTLE_ARTS_SHOUT_CD`.
     pub battle_arts_shout_cd: bool,
+    /// Opt-in census term, off by default: the effect pool's share of a
+    /// census-priced battle frame is the retail walker's branches since the
+    /// last priced pass, each at its cycle count
+    /// (`frame_clock::effect_walk_cost`, counted in `retail-exec`), in place
+    /// of the flat `EFFECT_POOL_CHILD_COST_MILLI` a live child. Measured over
+    /// the four film sets it moves the image means by `.001` or less either
+    /// way, so the default keeps the flat price. The native session raises
+    /// it from `LEGAIA_BATTLE_WALK_COST=1`.
+    pub battle_effect_walk_cost: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
     /// CD-XA voice clip plays: PCSX-Redux's by default, where the clip player's
     /// stop watch polls the drive on two thirds of the CPU and a voiced arm's
@@ -564,6 +573,7 @@ impl WorldToggles {
             battle_gpu_cost_step: false,
             battle_me_decode_cost: false,
             battle_arts_shout_cd: false,
+            battle_effect_walk_cost: false,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: true,
             battle_poly_frame_cost: true,

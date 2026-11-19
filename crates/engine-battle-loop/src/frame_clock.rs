@@ -786,7 +786,86 @@ pub const GHOST_TRIANGLE_COST_MILLI: u32 = 92;
 /// burning body's puffs), in thousandths. Caruban's Fire Breath on a lone
 /// Vahn runs its pool from `0` to `50` children with the body and its ghosts
 /// unchanged, and its frames' cost follows at `1.6` a child (`R^2` `.71`).
+/// The action-state table's price, which counts no link of the child's; the
+/// census line prices the walker's branches instead ([`effect_walk_cost`]).
 pub const EFFECT_POOL_CHILD_COST_MILLI: u32 = 1600;
+
+/// CPU cycles in one hblank on PCSX-Redux's clock: `3413` video cycles a
+/// scanline, `3413 * 7 / 11` CPU cycles (psx-spx).
+pub const CYCLES_PER_HBLANK: u32 = 2172;
+
+/// What the effect walker `FUN_801E0080` spends on each branch it takes, in
+/// PCSX-Redux CPU cycles (two an instruction, one more a load or store, the
+/// GTE free). Counted, not fitted to the films: the retail walker run in
+/// `retail-exec` over `3600` random walks at steps `1..=4`, the projector
+/// `FUN_800195A8` and the ordering-table link `FUN_8003D2C4` included, against
+/// the port's pool counting the branches each walk took
+/// (`legaia_engine_vm::effect_vm::WalkWork`), fits to `1.2` hblanks rms
+/// (`the_walker_costs_its_branches`). The branches:
+///
+/// - a **sweep** of the first pass, which visits all `32` master and `128`
+///   child slots whatever they hold (`0x801E0104..0x801E06CC`), once per vsync
+///   of the frame step while anything is live;
+/// - an active **master** visit, a **spawn** record consumed, a **child** on
+///   its countdown branch (with its motion step), a **frame advance** (with
+///   its motion step);
+/// - an **overrun** advance: retiring a child zeroes its wait and count but
+///   the advance loop tests the wait alone, so retail steps on through the
+///   `efect.dat` bytes after the batch until a delay byte reads non-zero
+///   (`EffectCatalog::anim_overrun`); the port does not step them, but they
+///   cost the frame;
+/// - a **drawn** child of the second pass: one `POLY_FT4` built, projected
+///   and linked a child, no cull (`0x801E06D8..0x801E09C0`).
+pub const EFFECT_WALK_SWEEP_CYCLES: u32 = 4243;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_MASTER_CYCLES: u32 = 108;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_SPAWN_CYCLES: u32 = 179;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_CHILD_WAIT_CYCLES: u32 = 157;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_ADVANCE_CYCLES: u32 = 166;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_OVERRUN_CYCLES: u32 = 149;
+/// See [`EFFECT_WALK_SWEEP_CYCLES`].
+pub const EFFECT_WALK_DRAWN_CYCLES: u32 = 652;
+
+/// The branches one battle frame's walks took, as [`effect_walk_cost`]
+/// prices them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EffectWalkCounts {
+    pub live_sweeps: u32,
+    pub masters: u32,
+    pub spawns: u32,
+    pub child_waits: u32,
+    pub advances: u32,
+    pub overruns: u32,
+    pub drawn: u32,
+}
+
+/// What one battle frame's effect walk costs over the census line, in
+/// hblanks. An idle pool's walk (one call, one early-out sweep) is in the
+/// line's base already, so the first live sweep is too; and the census
+/// prices each drawn child's linked `POLY_FT4` at [`LINKED_WORK_MILLI`], so a
+/// drawn child adds only its second-pass work over that.
+pub const fn effect_walk_cost(c: EffectWalkCounts) -> u16 {
+    let sweeps = c.live_sweeps.saturating_sub(1);
+    let link = LINKED_WORK_MILLI * CYCLES_PER_HBLANK / 1000;
+    let drawn = EFFECT_WALK_DRAWN_CYCLES.saturating_sub(link);
+    let cycles = sweeps as u64 * EFFECT_WALK_SWEEP_CYCLES as u64
+        + c.masters as u64 * EFFECT_WALK_MASTER_CYCLES as u64
+        + c.spawns as u64 * EFFECT_WALK_SPAWN_CYCLES as u64
+        + c.child_waits as u64 * EFFECT_WALK_CHILD_WAIT_CYCLES as u64
+        + c.advances as u64 * EFFECT_WALK_ADVANCE_CYCLES as u64
+        + c.overruns as u64 * EFFECT_WALK_OVERRUN_CYCLES as u64
+        + c.drawn as u64 * drawn as u64;
+    let h = (cycles + CYCLES_PER_HBLANK as u64 / 2) / CYCLES_PER_HBLANK as u64;
+    if h > u16::MAX as u64 {
+        u16::MAX
+    } else {
+        h as u16
+    }
+}
 
 /// What one after-image ghost of a body of `triangles` costs a frame
 /// ([`GHOST_TRIANGLE_COST_MILLI`]); [`GHOST_DRAW_COST`] for a body whose

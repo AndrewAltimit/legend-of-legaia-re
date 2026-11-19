@@ -984,6 +984,10 @@ pub struct BattleState {
     /// A film's retail `rand()` word per battle frame (`RetailRandTrack`): a
     /// harness seat the frame driver's pass seats ahead of its draws.
     pub retail_rand_track: Option<crate::frame_clock::RetailRandTrack>,
+    /// What the effect walker's branches cost the newest census-priced pass,
+    /// in hblanks (`frame_clock::effect_walk_cost`): a diagnostic the
+    /// cast-sequence recorder logs (`walk`).
+    pub effect_walk_cost: u16,
     /// A capture's dealt Death Game table (`0x801FA288`, each `1..=4`): a
     /// harness seat PROT 0957's arm 0 lands its deal on, after drawing as
     /// retail did. A capture past that arm holds the deal its replay cannot
@@ -1821,6 +1825,7 @@ impl BattleState {
             pending_frame_step_from: 0,
             retail_step_track: None,
             retail_rand_track: None,
+            effect_walk_cost: 0,
             death_game_deal_seat: None,
             capture_read_until: 0,
             capture_read_frame_until: None,

@@ -1812,8 +1812,8 @@ The effects cost their ticks as well as their links. Every live move-VM part run
 tick `FUN_80021DF4` and every live child of the effect pool `_DAT_8007BD30` its walker step,
 whatever it links, and the census counts only the link (a spark's one or two primitives).
 Priced on its own, the tick is the action-state table's measured load
-(`World::battle_frame_tick_cost`: `EFFECT_PART_COST`, `2` hblanks a part, and
-`effect_pool_cost`, `1.6` a child), added over the census line. Against the arts films'
+(`World::battle_frame_tick_cost`: `EFFECT_PART_COST`, `2` hblanks a part, and the effect
+walker's own branches, [below](#the-effect-walkers-price)), added over the census line. Against the arts films'
 unloaded frames the residual over the line follows the live parts (correlation `.38` in
 `0x1E`, `.51` in `0x51`) and no other class. The same work is what a monster's strike frames
 once read as a flat `25` hblanks over the line, which the tick term replaces: its spark bursts
@@ -1821,6 +1821,46 @@ carry it. Over the arts films the image mean reads `.9395` to `.9442` (Vahn's la
 `.906` to `.967`, Sonic Javelin `.895` to `.942`), over the strike films `.9831` to `.9843`
 (Frog `.908` to `.964`); the step agreement reads `.951` to `.943` on the arts and `.961` to
 `.968` on the strikes. Grade `disassembly` for the walks, `capture` for the prices.
+
+<a id="the-effect-walkers-price"></a>
+
+**The effect walker's price.** The flat `1.6` a pool child is a fit to Caruban's flames, and
+other children cost retail less: `--retail-parts` recordings read over the census on the
+paired engine tick leave Koru's walk-in dust (`nilboa_koru_pre_blade_breath`, `118`
+children, step `2`) `86` hblanks under the engine's price on average, a child priced
+`1.0` over what retail's frames carry. PCSX-Redux's ring entry is its CPU word alone (the
+GPU is free), so the difference is the walker's own work, not the sprites' size or blend.
+The walker `FUN_801E0080` runs its first pass once per vsync of the frame step while
+anything is live (`lbu v1,0x393(v1)` / `sltu` / `bne` at `0x801E06C0..0x801E06CC`), each
+sweep visiting all `32` master and `128` child slots, and its second pass builds, projects
+and links one `POLY_FT4` a live child with no cull (`0x801E06D8..0x801E09C0`). A retired
+child keeps stepping: retiring zeroes its wait and count but the advance loop tests the
+wait alone, so retail reads on through the `efect.dat` bytes after the batch, a motion step
+each, until a delay byte reads non-zero shifted into the byte-wide wait
+(`EffectCatalog::anim_overrun`).
+
+Run in `retail-exec` beside the port's pool over `3600` random walks at steps `1..=4`,
+priced on PCSX-Redux's clock (two cycles an instruction, one more a load or store, the GTE
+free, `2172` cycles an hblank), the walker fits its branches to `1.2` hblanks rms
+(`the_walker_costs_its_branches`): a live sweep `4243` cycles, an active master `108`, a
+spawn record `179`, a child on its countdown `157`, a frame advance `166`, an overrun
+advance `149`, a drawn child `652`. The port's pool counts the branches each walk takes
+(`Pool::work`, `WalkWork`), and `frame_clock::effect_walk_cost` prices a frame's over the
+census line: the first live sweep is in the line's base, and a drawn child's link is in the
+census already. Over the same recordings the residual's slope against the child count goes
+from `-1.0` to `.24` hblanks a child on Koru's dust, `-.76` to `.06` on Kemaro's Lava
+Breath, `-.27` to `.04` on Slippery's Poisonous Breath and `.13` to `.34` on Thunder Blast.
+
+As a frame step source it moves the films little. Over re-recorded film sets, plain seat,
+one build each way: enemy casts `.9559` to `.9560` (Blade Breath `.928` to `.974`, Thunder
+Needle `.936` to `.945`, Gigaton Press `.919` to `.925`, Thunder Burst `.989` to `.941`),
+Seru casts `.9714` both ways, party arts `.9442` to `.9435` (Sonic Javelin `.942` to
+`.924`), monster strikes `.9846` to `.9845`, every cue kept. The falls are passes that
+cross a step's edge earlier once the dust stops lifting the frames around them. So the
+walker's price is an opt-in (`WorldToggles::battle_effect_walk_cost`,
+`LEGAIA_BATTLE_WALK_COST=1`) and the census keeps the flat price by default. Grade
+`disassembly` for the walker's passes and the overrun, `capture` (an interpreter count on
+PCSX-Redux's timing) for the prices.
 
 Weighing the ghosts' flat packets lighter, as a fit on the strike and arts frames suggests,
 moves the arts images down: a party ghost priced flat at `PARTY_GHOST_DRAW_COST` under the
@@ -2479,10 +2519,11 @@ live move-VM parts and `fxpool.csv`'s effect-pool children it reads three loads:
   cost falls back as the burst's parts retire.
 - **Effect-pool children.** Each live child of the effect pool `_DAT_8007BD30` (the 2D
   sprites the effect VM walks and draws: a breath's flames, a burning body's puffs)
-  costs about `1.6`. Caruban's Fire Breath on a lone Vahn
+  costs about `1.6` on the action-state table. Caruban's Fire Breath on a lone Vahn
   (`rikuroa_caruban_pre_fire_breath`) runs the pool from `0` to `50` children while the
   body and its ghosts stay put, and its frames follow at `1.6` a child (`R^2` `.71`)
-  from `503` to `599`.
+  from `503` to `599`. The census line prices the walker instead
+  ([the effect walker's price](#the-effect-walkers-price)).
 - **After-image ghosts.** The draw tick's walk `FUN_80049348` re-runs the body's whole
   object draw `FUN_80048A08` per ghost (`jal 0x80048A08` at `0x8004950C`, inside the
   loop `0x80049458..0x80049544`), so a ghost costs what the body's mesh does. The same

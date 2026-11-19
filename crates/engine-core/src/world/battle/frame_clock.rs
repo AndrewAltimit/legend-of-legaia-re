@@ -156,6 +156,10 @@ impl World {
         let poly = poly.map(|w| w.saturating_add(me_decode));
         let work = poly.unwrap_or(table_work.saturating_add(me_decode));
         self.battle.frame_work = work;
+        // The walker's branches up to here are this pass's.
+        self.battle.effect_walk_cost =
+            legaia_engine_battle_loop::frame_clock::effect_walk_cost(self.effect_walk_counts());
+        self.effect_walk_priced = self.effect_pool.work;
         // A frame the seek arm's `CdlSetloc` held for longer than one of
         // PCSX-Redux's ordinary seeks ran past its step. The full-party
         // Zenoir recording (`battle_tower_swordie_strike`) spends `11` vsyncs
@@ -422,24 +426,63 @@ impl World {
     /// ([`effect_pool_cost`](legaia_engine_battle_loop::frame_clock::effect_pool_cost)).
     /// The census prices what they link; this is the walk that runs them,
     /// which links nothing of its own.
+    ///
+    /// Under `WorldToggles::battle_effect_walk_cost` the pool is priced by
+    /// the branches its walks took since the last priced pass
+    /// ([`effect_walk_cost`](legaia_engine_battle_loop::frame_clock::effect_walk_cost)),
+    /// the retail walker's own cost counted in `retail-exec`.
     pub fn battle_frame_tick_cost(&self) -> u16 {
-        use legaia_engine_battle_loop::frame_clock::{EFFECT_PART_COST, effect_pool_cost};
+        use legaia_engine_battle_loop::frame_clock::{
+            EFFECT_PART_COST, effect_pool_cost, effect_walk_cost,
+        };
         let (parts, _) = self.battle_frame_load();
+        let pool = if self.toggles.battle_effect_walk_cost {
+            effect_walk_cost(self.effect_walk_counts())
+        } else {
+            effect_pool_cost(self.live_effect_pool_children())
+        };
+        parts.saturating_mul(EFFECT_PART_COST).saturating_add(pool)
+    }
+
+    /// The effect walker's branches since the last priced pass, and the
+    /// children its second pass draws now.
+    pub fn effect_walk_counts(&self) -> legaia_engine_battle_loop::frame_clock::EffectWalkCounts {
+        let w = self.effect_pool.work.since(&self.effect_walk_priced);
+        let n = |v: u64| u32::try_from(v).unwrap_or(u32::MAX);
+        legaia_engine_battle_loop::frame_clock::EffectWalkCounts {
+            live_sweeps: n(w.live_sweeps),
+            masters: n(w.masters),
+            spawns: n(w.spawns),
+            child_waits: n(w.child_waits),
+            advances: n(w.advances),
+            overruns: n(w.overruns),
+            drawn: u32::from(self.live_effect_pool_children()),
+        }
+    }
+
+    /// The effect pool's live children (`frame_count != 0`).
+    fn live_effect_pool_children(&self) -> u16 {
         let pool = self
             .effect_pool
             .children
             .iter()
             .filter(|c| c.frame_count != 0)
             .count();
-        parts
-            .saturating_mul(EFFECT_PART_COST)
-            .saturating_add(effect_pool_cost(u16::try_from(pool).unwrap_or(u16::MAX)))
+        u16::try_from(pool).unwrap_or(u16::MAX)
     }
 
+    /// The action-state table's draw load: live parts, pool children at the
+    /// flat [`effect_pool_cost`](legaia_engine_battle_loop::frame_clock::effect_pool_cost)
+    /// (the table counts no link of theirs), and each planned ghost.
     pub fn battle_frame_load_cost(&self) -> u16 {
         use legaia_engine_battle::battle_afterimage as ai;
-        use legaia_engine_battle_loop::frame_clock::{PARTY_GHOST_DRAW_COST, ghost_draw_cost};
-        let mut cost = self.battle_frame_tick_cost();
+        use legaia_engine_battle_loop::frame_clock::{
+            EFFECT_PART_COST, PARTY_GHOST_DRAW_COST, effect_pool_cost, ghost_draw_cost,
+        };
+        let (parts, _) = self.battle_frame_load();
+        let mut cost = parts
+            .saturating_mul(EFFECT_PART_COST)
+            .saturating_add(effect_pool_cost(self.live_effect_pool_children()));
         let per_frame = self.ghost_ring_slots_per_frame();
         for a in &self.actors {
             if a.battle_pose_history.is_empty()
@@ -2789,6 +2832,17 @@ mod tests {
         w.push_frame_cost(None);
         assert_eq!(w.battle_frame_tick_cost(), 3, "two live children at 1.6");
         assert_eq!(w.battle.frame_work, linked_frame_work(2600, true) + 3);
+        // Priced on the walker: two drawn children and no walk since the
+        // last pass cost their second pass over the census's link price.
+        w.toggles.battle_effect_walk_cost = true;
+        w.push_frame_cost(None);
+        let tick = legaia_engine_battle_loop::frame_clock::effect_walk_cost(
+            legaia_engine_battle_loop::frame_clock::EffectWalkCounts {
+                drawn: 2,
+                ..Default::default()
+            },
+        );
+        assert_eq!(w.battle.frame_work, linked_frame_work(2600, true) + tick);
     }
 
     /// A film's opening pass, priced on the table before the lead-in's census

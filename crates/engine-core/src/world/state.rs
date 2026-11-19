@@ -20,6 +20,10 @@ pub struct World {
     /// A blank pool that stands in for [`Self::effect_pool`] while a walk has
     /// it out of the world (`with_effect_pool`).
     pub effect_pool_spare: Option<Box<Pool>>,
+    /// [`Pool::work`] as the last priced battle pass left it: the walker's
+    /// branches since are the next pass's
+    /// (`World::battle_frame_tick_cost`).
+    pub effect_walk_priced: vm::effect_vm::WalkWork,
     /// Script catalog for the effect VM. Populated at battle-enter time
     /// from PROT 873 (`efect.dat`) pack1 data via
     /// [`legaia_engine_vm::effect_vm::EffectCatalog::from_pack1_bytes`].
@@ -425,6 +429,7 @@ impl World {
             battle_ctx: BattleActionCtx::new(),
             effect_pool: Box::new(Pool::new()),
             effect_pool_spare: None,
+            effect_walk_priced: vm::effect_vm::WalkWork::default(),
             effect_catalog: vm::effect_vm::EffectCatalog::default(),
             debug_effects: Vec::new(),
             field_ctx: FieldCtx::default(),
