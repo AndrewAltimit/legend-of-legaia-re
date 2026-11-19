@@ -103,6 +103,9 @@
       if (key === this._fieldLightKey) return;
       this._fieldLightKey = key;
       for (const rec of this.litEnvMeshes) this._uploadLitEnvMesh(rt, rec);
+      /* An animated lit prop went back to its rest pose with the upload:
+       * the next frame re-poses and re-shades it at its live cursor. */
+      if (this.animProps) for (const p of this.animProps) if (p.lit) p.lastFrame = -1;
     }
 
     _syncViewWindow(rt) {

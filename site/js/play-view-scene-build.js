@@ -165,8 +165,9 @@
              * (frame 0) and re-posed per frame from the engine's live cursor. */
             meshId = ANIM_PROP_BASE + i;
             /* A prop carrying light-source rows is shaded at frame 0 and
-             * at its own rotation (`field_mesh_posed_lit`); re-poses move
-             * its positions only. */
+             * at its own rotation (`field_mesh_posed_lit`); each re-pose
+             * re-shades it (`field_mesh_posed_frame_lit_rgba`), as the
+             * native window's off-rest rebuild does. */
             const litRec = (typeof rt.field_mesh_posed_lit === 'function'
               && rt.field_mesh_has_lit_rows(slots[i]))
               ? { meshId, slot: slots[i], anim,
@@ -177,7 +178,7 @@
               if (!this._uploadLitEnvMesh(rt, litRec)) continue;
               this.litEnvMeshes.push(litRec);
             } else if (!uploadPosedInstance(meshId, slots[i], anim)) continue;
-            animRec = { meshId, i, slot: slots[i], anim, lastFrame: 0 };
+            animRec = { meshId, i, slot: slots[i], anim, lastFrame: 0, lit: litRec };
           } else {
             meshId = ensureLit(slots[i], rots ? rots[i] : 0,
               rotsX ? rotsX[i] : 0, rotsZ ? rotsZ[i] : 0);

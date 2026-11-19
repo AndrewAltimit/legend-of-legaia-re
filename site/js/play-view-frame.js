@@ -450,6 +450,12 @@
           const posed = rt.field_mesh_posed_frame_positions(p.slot, p.anim, f);
           if (posed.length) {
             this.renderer.updateSceneMeshPositions(p.meshId, posed);
+            /* A prop with light-source rows re-shades at the pose: the lit
+             * rows' normals turn with the bones (a house door's swing). */
+            if (p.lit && typeof rt.field_mesh_posed_frame_lit_rgba === 'function') {
+              const flat = rt.field_mesh_posed_frame_lit_rgba(p.slot, p.anim, f, p.lit.rx, p.lit.ry, p.lit.rz);
+              if (flat.length) this.renderer.updateSceneMeshFlat(p.meshId, flat);
+            }
             p.lastFrame = f;
           }
         }
