@@ -79,9 +79,10 @@ common cases with buttons:
 Messages on the status line under the path: a confirmation (an export
 written, the game started) clears itself after a few seconds; an error stays
 until you press *Dismiss*, and *Copy* puts its text on the clipboard for a bug
-report. *View* chooses a light or dark theme (or follows the desktop), the
-same choice as the game launcher's *Menu colours* row, and
-zooms the whole window, as do Ctrl+= / Ctrl+- / Ctrl+0; both are remembered.
+report. *View* > *Menu colours* chooses *System* (follow the desktop), *Light* or
+*Dark*: the same choice, under the same name, as the game launcher's *Menu
+colours* row. *View* also zooms the whole window, as do Ctrl+= / Ctrl+- /
+Ctrl+0; both are remembered.
 
 The window remembers its size and the view you left it on. *About* (F1) shows
 the version and where the third-party license notices

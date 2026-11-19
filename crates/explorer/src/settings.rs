@@ -88,9 +88,11 @@ pub enum Theme {
 impl Theme {
     pub const ALL: [Theme; 3] = [Theme::System, Theme::Light, Theme::Dark];
 
+    /// The value's label, as the game's *Menu colours* row names it
+    /// (`UiTheme::name`): the two programs share the one choice.
     pub fn name(self) -> &'static str {
         match self {
-            Theme::System => "Follow system",
+            Theme::System => "System",
             Theme::Light => "Light",
             Theme::Dark => "Dark",
         }

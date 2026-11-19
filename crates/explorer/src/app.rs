@@ -1527,11 +1527,13 @@ impl App {
         open
     }
 
-    /// The View menu: theme and UI zoom, both remembered.
+    /// The View menu: *Menu colours* (the game's own name for the shared
+    /// light / dark choice, with its `System` / `Light` / `Dark` values) and
+    /// UI zoom, both remembered.
     /// `focus_first`: the menu was opened from the keyboard or a
     /// controller, and its first choice takes the focus.
     fn view_menu(&mut self, ui: &mut egui::Ui, focus_first: bool) {
-        ui.label(RichText::new("Theme").strong());
+        ui.label(RichText::new("Menu colours").strong());
         let mut theme = self.explorer.settings.theme;
         for (i, t) in crate::settings::Theme::ALL.into_iter().enumerate() {
             let r = ui.radio_value(&mut theme, t, t.name());
