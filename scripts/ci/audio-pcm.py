@@ -46,6 +46,14 @@ Two channels per state:
     scripts/ci/audio-pcm.py --check               # fail below the baseline
     scripts/ci/audio-pcm.py --propose PATH        # candidate baseline (never the committed one)
 
+Retail recordings (and the scratch states and frame steps they were recorded
+from) live in `--out`; everything the engine writes - its cast renders, their
+logs, the retail-compare seeds and the score JSONs - goes to `--work`, which
+may not be `--out`. `captures/` is shared between checkouts, so a check reads
+the retail folder and writes nothing into it; only `--capture` adds recordings
+there. Paths under `--work` are never resolved through symlinks, so a link to a
+retail file can not carry an engine render into the retail folder.
+
 Exit 0 and a `[skip]` line when the recordings or the disc are missing, matching
 the repo's disc-gated convention.
 """
@@ -393,7 +401,7 @@ def score(exe: Path, args: list[str], wav: Path, samples: int, out: Path) -> dic
     return json.loads(out.read_text())
 
 
-def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path,
+def engine_cast_wav(exe: Path, label: str, eng: Path, library: Path, disc: Path,
                     steps: Path | None = None) -> Path | None:
     """The engine's mix of a battle state's cast, the music bus silent.
 
@@ -402,8 +410,10 @@ def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path,
     device-less output, reading the disc's CD-XA, and records from its gate on.
     With `steps`, the recorded run takes that frame-step track
     (`LEGAIA_CAST_STEP_TRACK`) and writes `<label>.steps.cast.wav`.
+
+    Every file lands in `eng` (the engine side, `--work`), never beside the retail WAVs.
     """
-    rc = out / f"{label}.rc"
+    rc = eng / f"{label}.rc"
     extracted = REPO / "extracted"
     env = dict(os.environ, LEGAIA_RC_CHILD_LOG="1", RUST_LOG="error", XMODIFIERS="@im=none")
     subprocess.run([str(exe), "retail-compare", "--out", str(rc), "--library", str(library),
@@ -429,7 +439,9 @@ def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path,
         j = args.index("--extracted-root")
         args[j : j + 2] = ["--disc", str(disc)]
     stem = f"{label}.steps.cast" if steps else f"{label}.cast"
-    wav = (out / f"{stem}.wav").resolve()
+    # Absolute for the child (it runs in its own work dir), but not resolved:
+    # a symlink here is unlinked, not followed into the folder it points at.
+    wav = Path(os.path.abspath(eng / f"{stem}.wav"))
     wav.unlink(missing_ok=True)
     if steps:
         env["LEGAIA_CAST_STEP_TRACK"] = str(steps.resolve())
@@ -451,7 +463,7 @@ def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path,
         "LEGAIA_DIAG_AUDIO_WAV_SECONDS": str(CAST_RECORD_SECONDS),
         "LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL": str(CAST_DONE_TAIL),
     })
-    log = out / f"{stem}.log"
+    log = eng / f"{stem}.log"
     with log.open("w") as f:
         subprocess.run([str(exe), *args], cwd=work, env=env, stdout=f, stderr=subprocess.STDOUT,
                        timeout=900)
@@ -468,7 +480,10 @@ def main() -> int:
     ap.add_argument("--propose", help="write a candidate baseline to this path")
     ap.add_argument("--filter", help="only labels containing this (comma = any of several)")
     ap.add_argument("--jobs", type=int, default=4, help="--capture: recordings side by side")
-    ap.add_argument("--out", default=str(REPO / "captures" / "audio-pcm"))
+    ap.add_argument("--out", default=str(REPO / "captures" / "audio-pcm"),
+                    help="the retail recordings (written only by --capture)")
+    ap.add_argument("--work", default=str(REPO / "target" / "audio-pcm"),
+                    help="the engine's renders, logs and score JSONs (never --out)")
     ap.add_argument("--no-build", action="store_true")
     a = ap.parse_args()
     if a.propose and Path(a.propose).resolve() == BASELINE.resolve():
@@ -481,7 +496,25 @@ def main() -> int:
         return 0
     disc = Path(disc)
     out = Path(a.out)
+    if not a.capture and not out.is_dir():
+        print(f"[skip] no recordings folder {out} (run with --capture)")
+        return 0
     out.mkdir(parents=True, exist_ok=True)
+    work = Path(a.work)
+    work.mkdir(parents=True, exist_ok=True)
+    if work.resolve() == out.resolve():
+        ap.error("--work must not be the retail folder --out")
+
+    def silenced(label: str, kind: str, state: Path, stop_score: bool = False) -> Path:
+        """The silenced scratch state: the retail folder's when it was recorded
+        from one, otherwise a fresh copy on the engine side."""
+        kept = out / f"{label}.{kind}.mcr"
+        if kept.exists():
+            return kept
+        made = work / f"{label}.{kind}.mcr"
+        if not made.exists():
+            silenced_copy(state, made, stop_score=stop_score)
+        return made
     manifest = tomllib.loads((REPO / "scripts" / "scenarios.toml").read_text())
 
     if not a.no_build:
@@ -510,7 +543,7 @@ def main() -> int:
         # a state whose wait no pass reproduces takes whichever early pass fits.
         seconds = SHORT_WINDOWS.get(label, TRACK_SECONDS)
         s = max(
-            (score(exe, ["--label", label, "--pass", p], wav, seconds * 44100, out / f"{label}.json")
+            (score(exe, ["--label", label, "--pass", p], wav, seconds * 44100, work / f"{label}.json")
              for p in ("0", "1", "2")),
             key=lambda r: r["corr_median"],
         )
@@ -518,7 +551,7 @@ def main() -> int:
         if label in EMITTER_STATES:
             e = max(
                 (score(exe, ["--label", label, "--pass", p, "--cue-voices"], wav, seconds * 44100,
-                       out / f"{label}.emitter.json")
+                       work / f"{label}.emitter.json")
                  for p in ("0", "1", "2")),
                 key=lambda r: r["corr_median"],
             )
@@ -532,13 +565,13 @@ def main() -> int:
             if not a.capture:
                 continue
             record(state, wav, CAST_RECORD_SECONDS, disc)
-        cast = engine_cast_wav(exe, label, out, library, disc)
+        cast = engine_cast_wav(exe, label, work, library, disc)
         if cast is None:
             continue
         samples = (cast.stat().st_size - 44) // 4
         c = max(
             (score(exe, ["--label", label, "--pass", p, "--cast-wav", str(cast)], wav, samples,
-                   out / f"{label}.cast.json")
+                   work / f"{label}.cast.json")
              for p in ("0", "1", "2")),
             key=lambda r: r["corr_median"],
         )
@@ -551,20 +584,19 @@ def main() -> int:
                   f"window {d['window'][0] / vs:+.1f}..{d['window'][1] / vs:+.1f} vsyncs")
         results.setdefault(label, {})
         results[label] |= {"cast_corr": c["corr_median"], "cast_level": c["level_db"]}
-        core_wav, silent = out / f"{label}.castcore.wav", out / f"{label}.castcore.mcr"
+        core_wav = out / f"{label}.castcore.wav"
         if core_wav.exists():
-            if not silent.exists():
-                silenced_copy(state, silent, stop_score=True)
+            silent = silenced(label, "castcore", state, stop_score=True)
             k = score(exe, ["--resume-state", str(silent), "--cast-wav", str(cast)], core_wav, samples,
-                      out / f"{label}.castcore.json")
+                      work / f"{label}.castcore.json")
             if k["corr_median"] >= 0:
                 results[label] |= {"cast_core_corr": k["corr_median"], "cast_core_level": k["level_db"]}
         steps = out / f"{label}.steps"
-        if steps.exists() and (sc := engine_cast_wav(exe, label, out, library, disc, steps)):
+        if steps.exists() and (sc := engine_cast_wav(exe, label, work, library, disc, steps)):
             samples = (sc.stat().st_size - 44) // 4
             c = max(
                 (score(exe, ["--label", label, "--pass", p, "--cast-wav", str(sc)], wav, samples,
-                       out / f"{label}.steps.cast.json")
+                       work / f"{label}.steps.cast.json")
                  for p in ("0", "1", "2")),
                 key=lambda r: r["corr_median"],
             )
@@ -572,25 +604,23 @@ def main() -> int:
                                "cast_steps_level": c["level_db"]}
             if core_wav.exists():
                 k = score(exe, ["--resume-state", str(silent), "--cast-wav", str(sc)], core_wav, samples,
-                          out / f"{label}.steps.castcore.json")
+                          work / f"{label}.steps.castcore.json")
                 if k["corr_median"] >= 0:
                     results[label] |= {"cast_core_steps_corr": k["corr_median"],
                                        "cast_core_steps_level": k["level_db"]}
     for label in filter(want, CORE_STATES):
         state = state_file(label, library, manifest)
         wav = out / f"{label}.core.wav"
-        silent = out / f"{label}.core.mcr"
         if state is None:
             continue
         if not wav.exists():
             if not a.capture:
                 continue
-            silenced_copy(state, silent)
-            record(silent, wav, CORE_SECONDS, disc)
-        if not silent.exists():
-            silenced_copy(state, silent)
+            silenced_copy(state, out / f"{label}.core.mcr")
+            record(out / f"{label}.core.mcr", wav, CORE_SECONDS, disc)
+        silent = silenced(label, "core", state)
         s = score(exe, ["--resume-state", str(silent)], wav, CORE_SECONDS * 44100,
-                  out / f"{label}.core.json")
+                  work / f"{label}.core.json")
         results.setdefault(label, {})
         results[label].update(core_corr=s["corr_median"], core_level=s["level_db"])
     for label, (channel, start, samples) in XA_STATES.items():
@@ -598,19 +628,17 @@ def main() -> int:
             continue
         state = state_file(label, library, manifest)
         wav = out / f"{label}.core.wav"
-        silent = out / f"{label}.core.mcr"
         decoded = REPO / "extracted" / "XA_WAV" / channel
         if state is None or not decoded.exists():
             continue
         if not wav.exists():
             if not a.capture:
                 continue
-            silenced_copy(state, silent)
-            record(silent, wav, CORE_SECONDS, disc)
-        if not silent.exists():
-            silenced_copy(state, silent)
+            silenced_copy(state, out / f"{label}.core.mcr")
+            record(out / f"{label}.core.mcr", wav, CORE_SECONDS, disc)
+        silent = silenced(label, "core", state)
         s = score(exe, ["--resume-state", str(silent), "--xa-wav", str(decoded),
-                        "--xa-start", str(start)], wav, samples, out / f"{label}.xa.json")
+                        "--xa-start", str(start)], wav, samples, work / f"{label}.xa.json")
         results[label] = {"xa_corr": s["corr_median"], "xa_level": s["level_db"]}
 
     if not results:

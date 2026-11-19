@@ -798,18 +798,16 @@ def reuse_from_disc_log(disc_log: Path, test: str) -> tuple[str, str] | None:
 
 
 def audio_pcm_cmd(p: Plan) -> str:
-    """The scorer writes beside the recordings, and `captures/` is shared between
-    checkouts: score from a directory of links to them. A cast state's frame
-    steps (`<label>.steps`) are linked too: without them its `cast_steps`
-    rows are not measured, and an unmeasured row is a skip, not a pass."""
+    """`captures/` is shared between checkouts, so the scorer reads the retail
+    recordings (and a cast state's frame steps, `<label>.steps`, without which
+    its `cast_steps` rows are a skip, not a pass) where they are and writes
+    nothing beside them: its engine renders, logs and score JSONs go to `--work`,
+    this run's report folder."""
     work = p.out / "reports" / "audio-pcm"
     return f"""\
 rm -rf "{work}"
 mkdir -p "{work}"
-if [ -d captures/audio-pcm ]; then
-    find "$(realpath captures/audio-pcm)" -maxdepth 1 \\( -name '*.wav' -o -name '*.mcr' -o -name '*.steps' \\) -exec ln -s -t "{work}" {{}} +
-fi
-python3 scripts/ci/audio-pcm.py --check --no-build --out "{work}"
+python3 scripts/ci/audio-pcm.py --check --no-build --out captures/audio-pcm --work "{work}"
 """
 
 
