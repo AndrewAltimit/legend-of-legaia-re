@@ -8412,3 +8412,53 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "juui1"
 topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "flash", "particles"]
+
+[[scenarios]]
+label = "town0e_epilogue_narration"
+backup_fingerprint = "66743c7abd0df47e8425c58ff10a13d36ad9ae1773a31dc329196ac01a26f0cf"
+description = "The ending's Rim Elm (town0e): the narration box over black, before the town fades in. RETAIL disc, pad only but for the fight's HP poke: cort_evolved_card_first_menu played forward by autorun_story_forward.lua (LEGAIA_FINISH=1: Cort's HP written to 1 at round 1's prompt, Attack through the fight), through the ending FMV (game mode 0x1A) into town0e, then Cross and Circle in turn every 20 vsyncs from 150 vsyncs after the field resumed; saved 300 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0e"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["field", "story beat", "town0e", "ending", "cutscene", "dialog", "fade"]
+
+[[scenarios]]
+label = "town0e_epilogue_tree"
+backup_fingerprint = "209c8adff20b6bfe30e74c0f0197ffa9f242f01fa22779990afb7bc368669b63"
+description = "The ending's Rim Elm: Vahn, Mei and Tetsu at the Genesis Tree in the plaza. RETAIL disc, pad only but for the fight's HP poke: cort_evolved_card_first_menu played forward by autorun_story_forward.lua (LEGAIA_FINISH=1: Cort's HP written to 1 at round 1's prompt, Attack through the fight), through the ending FMV (game mode 0x1A) into town0e, then Cross and Circle in turn every 20 vsyncs from 150 vsyncs after the field resumed; saved 600 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0e"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["field", "story beat", "town0e", "ending", "cutscene", "Genesis Tree"]
+
+[[scenarios]]
+label = "town0e_epilogue_mei_closeup"
+backup_fingerprint = "40592fe0e6809f4dbae06d7ac59234e596d985ad1013c054d969326105a2627c"
+description = "The ending's Rim Elm: the close-up on Mei and Vahn at the tree. RETAIL disc, pad only but for the fight's HP poke: cort_evolved_card_first_menu played forward by autorun_story_forward.lua (LEGAIA_FINISH=1: Cort's HP written to 1 at round 1's prompt, Attack through the fight), through the ending FMV (game mode 0x1A) into town0e, then Cross and Circle in turn every 20 vsyncs from 150 vsyncs after the field resumed; saved 1200 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0e"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["field", "story beat", "town0e", "ending", "cutscene", "close-up", "camera"]
+
+[[scenarios]]
+label = "town0e_epilogue_usha_box"
+backup_fingerprint = "273f3204f6ee8b2310060d203c7af5c0efd27177b09a6f086fcbb3e706853310"
+description = "The ending's Rim Elm: Dr. Usha's box open beside Vahn, Mei and Tetsu at the tree. RETAIL disc, pad only but for the fight's HP poke: cort_evolved_card_first_menu played forward by autorun_story_forward.lua (LEGAIA_FINISH=1: Cort's HP written to 1 at round 1's prompt, Attack through the fight), through the ending FMV (game mode 0x1A) into town0e, then Cross and Circle in turn every 20 vsyncs from 150 vsyncs after the field resumed; saved 2000 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0e"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["field", "story beat", "town0e", "ending", "cutscene", "dialog"]
+
+[[scenarios]]
+label = "town0e_epilogue_vahn_alone"
+backup_fingerprint = "276f2ca04b96071a95c7c26058ce7a10ef43ad0df0734876ac0144ec774dad56"
+description = "The ending's Rim Elm: Vahn alone before the Genesis Tree after the epilogue, the high plaza shot. RETAIL disc, pad only but for the fight's HP poke: cort_evolved_card_first_menu played forward by autorun_story_forward.lua (LEGAIA_FINISH=1: Cort's HP written to 1 at round 1's prompt, Attack through the fight), through the ending FMV (game mode 0x1A) into town0e, then Cross and Circle in turn every 20 vsyncs from 150 vsyncs after the field resumed; saved 4000 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0e"
+ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
+topics = ["field", "story beat", "town0e", "ending", "cutscene", "Genesis Tree", "camera"]
