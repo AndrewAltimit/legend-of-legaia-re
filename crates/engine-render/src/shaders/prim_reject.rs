@@ -176,8 +176,11 @@ fn prim_near_rejected(
     let s2 = prim_sxy(m, c2, p.y, p.x);
     // A PCSX-Redux capture runs its own limit in place of the console's: it
     // drops more (a whole quad on one corner pair) and less (no pair counts
-    // unless one of its corners is negative).
-    if (u.psx_params.z > 2.5) {
+    // unless one of its corners is negative). PSX mode takes it with that
+    // emulator's texel rule (`psx_params.z = 3`); a clean or enhanced frame
+    // scored beside such a capture takes it from the scene block
+    // (`gte_sat.z`, `Renderer::set_pcsx_polygon_limit`).
+    if (u.psx_params.z > 2.5 || gte_sat_params().z > 0.5) {
         if (c0.w > 3.5) {
             return pcsx_quad_rejected(s0, s1, s2, prim_sxy(m, c3, p.y, p.x));
         }

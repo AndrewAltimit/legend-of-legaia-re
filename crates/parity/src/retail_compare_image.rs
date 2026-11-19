@@ -540,7 +540,12 @@ pub fn engine_frame_with(
     // 320x240 with retail's snap and dither (`FrameRender`).
     let render = frame_render();
     let pcsx_redux = CAPTURE_EMULATOR.with(|c| c.get()) == "pcsx-redux";
-    if render == FrameRender::Psx && pcsx_redux {
+    // Every mode: the accuracy child samples that emulator's texel rule and
+    // runs its polygon-size limit, and a smoke-tier child runs the same
+    // limit, so a primitive the console skips and that emulator draws (the
+    // Genesis Tree burst's long rays in `vozz_tree_burst`) does not read as
+    // a smoke-tier break.
+    if pcsx_redux {
         cmd.env("LEGAIA_PSX_CAPTURE_RASTER", "pcsx-redux");
     }
     // A PCSX-Redux capture's frames ran on its CD response time: a voice

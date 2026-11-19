@@ -93,6 +93,10 @@ impl Renderer {
         u.ambient = mood.uniforms(true)[2];
         u.prim_near = self.prim_near.get();
         u.gte_sat = self.gte_sat.get();
+        // `.z`: the span test's PCSX-Redux limit (`set_pcsx_polygon_limit`).
+        if self.pcsx_polygon_limit.get() {
+            u.gte_sat[2] = 1.0;
+        }
         u.ground_drop = self.ground_drop.get();
         // Camera-occlusion fade focus: project the host-staged player clip
         // position to framebuffer pixels + view depth, carrying the host's

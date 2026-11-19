@@ -2750,7 +2750,9 @@ with no negative `y`, as the light wedge in the frame's bottom-left; the
 console would skip both halves. The child of a PCSX-Redux state takes that
 rule in place of the console's, beside its texel rule
 (`PsxTexelRule::PcsxRedux`, `pcsx_quad_rejected` / `pcsx_tri_rejected` in
-the WGSL). The sign tests read the packet's own screen frame, Y down; the
+the WGSL), and its clean and enhanced smoke children take the rule alone
+(`Renderer::set_pcsx_polygon_limit`, the scene block's `gte_sat.z`;
+[smoke tier](../tooling/retail-compare.md#the-smoke-tier)). The sign tests read the packet's own screen frame, Y down; the
 vertex stage's offsets are Y up and are flipped first. Read in the Y-up
 frame, the floor quad's `y = 887` corner tested as negative and the wedge
 dropped. On the field the console rule keeps `rim_elm_queen_bee_battle`'s frame

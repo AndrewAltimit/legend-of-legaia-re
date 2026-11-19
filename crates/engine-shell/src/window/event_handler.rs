@@ -93,6 +93,14 @@ impl ApplicationHandler for PlayWindowApp {
             }
             log::info!("play-window: PSX-faithful render mode enabled (native 320x240)");
         }
+        // Instrument: a PCSX-Redux capture's polygon-size limit holds in every
+        // render mode, so a smoke-tier frame differs from the accuracy frame
+        // it is measured against by the render mode alone.
+        if std::env::var("LEGAIA_PSX_CAPTURE_RASTER").as_deref() == Ok("pcsx-redux")
+            && let Some(r) = self.win.renderer.as_ref()
+        {
+            r.set_pcsx_polygon_limit(true);
+        }
         self.fit_frame_target();
         // Opt-in dynamic-lighting enhancement (`--dynamic-lighting`, or the
         // `I` key at runtime): soft warm directional light + screen-centred

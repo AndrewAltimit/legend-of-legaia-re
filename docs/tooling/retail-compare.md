@@ -4419,6 +4419,19 @@ light from black, the Baka Fighter scenes on big change. Scenes that defect
 touched more mildly (`koin4`, `korb2`, `keikoku`) stay under them, so the tier
 catches a flood and not a mild over-brightness.
 
+A PCSX-Redux state's smoke child runs that emulator's polygon-size limit, as
+its accuracy child does (`LEGAIA_PSX_CAPTURE_RASTER=pcsx-redux` in every mode,
+`Renderer::set_pcsx_polygon_limit`). The emulator draws a primitive with no
+negative corner at any size where the console skips one past `1023 x 511`
+([renderer](../subsystems/renderer.md#the-gpu-polygon-size-limit)), so a smoke
+frame on the console's limit differs from its reference by the capture's
+emulator, not by the render mode. `vozz_tree_burst` is the case: two of the
+Genesis Tree burst's rays run off the screen's foot, `620` and `855` rows
+tall with no corner above it, and on the console's limit the frame lost them,
+the white centre they add to and the wedge they draw (`0.107` of the frame
+moved far). The player's clean frame keeps the console's
+limit.
+
 It never writes or checks the ratchet: `--render` with `--bless` / `--check` is
 refused. Patched-disc states are left out, as they are of the ratchet.
 
