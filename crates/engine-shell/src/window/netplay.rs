@@ -56,6 +56,9 @@ impl NetMenu {
             name.unwrap_or(&remembered.name),
         );
         menu.address = remembered.address.clone();
+        // The release this window ships in, so two players can check
+        // they run the same one before a join.
+        menu.release = Some(legaia_release_version::VERSION.to_string());
         Self {
             menu,
             prev_pad: u16::MAX,

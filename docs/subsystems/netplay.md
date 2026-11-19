@@ -231,7 +231,9 @@ what is turn-based or what only the host can resolve.
 The relay runs in two places:
 
 - **Standalone:** `legaia-relay --bind 0.0.0.0:7462` (the default port),
-  for a dedicated machine on a LAN or a small server.
+  for a dedicated machine on a LAN or a small server. Its `--version` and
+  its start-up line name the release it was built for
+  (`legaia_release_version::VERSION`).
 - **In-process:** the hosting game calls `RelayServer::spawn(addr)` and gets
   a `RelayHandle` with the bound address; it then connects to
   `127.0.0.1:<port>` like any other client, creates the room and shows the

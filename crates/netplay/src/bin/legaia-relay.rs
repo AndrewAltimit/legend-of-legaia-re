@@ -27,7 +27,7 @@ mod native {
     /// friends, and put a TLS-terminating proxy in front of it for browser
     /// clients on an https page.
     #[derive(Parser)]
-    #[command(version)]
+    #[command(name = "legaia-relay", version = legaia_release_version::VERSION)]
     struct Args {
         /// Address to listen on.
         #[arg(long, default_value_t = format!("0.0.0.0:{DEFAULT_PORT}"))]
@@ -55,7 +55,11 @@ mod native {
         };
         match RelayServer::spawn_with(args.bind.as_str(), config) {
             Ok(handle) => {
-                eprintln!("legaia-relay listening on {}", handle.local_addr());
+                eprintln!(
+                    "legaia-relay {} listening on {}",
+                    legaia_release_version::VERSION,
+                    handle.local_addr()
+                );
                 handle.wait();
                 ExitCode::SUCCESS
             }

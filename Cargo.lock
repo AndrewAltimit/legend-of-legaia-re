@@ -2939,6 +2939,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "js-sys",
+ "legaia-release-version",
  "wasm-bindgen",
  "web-sys",
 ]

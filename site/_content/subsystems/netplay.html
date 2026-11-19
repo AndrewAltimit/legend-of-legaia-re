@@ -174,7 +174,7 @@
     <figcaption>Where the relay runs. A page cannot listen on a socket, so a browser always joins; a native window or <code>legaia-relay</code> hosts.</figcaption>
   </figure>
   <ul class="bullets">
-    <li><strong>Standalone:</strong> <code>legaia-relay --bind 0.0.0.0:7462</code> (the default port), for a dedicated machine on a LAN or a small server.</li>
+    <li><strong>Standalone:</strong> <code>legaia-relay --bind 0.0.0.0:7462</code> (the default port), for a dedicated machine on a LAN or a small server. Its <code>--version</code> and its start-up line name the release it was built for.</li>
     <li><strong>In-process:</strong> the hosting game calls <code>RelayServer::spawn(addr)</code> and gets a <code>RelayHandle</code> with the bound address; it then connects to <code>127.0.0.1:&lt;port&gt;</code> like any other client, creates the room and shows the room code and its address. Dropping the handle (or <code>shutdown()</code>) closes every room, tells each client <code>RoomClosed(ServerShutdown)</code>, and joins every thread; nothing is left listening.</li>
   </ul>
   <p>Native clients connect with <code>StreamTransport::connect_tcp</code> or <code>connect_ws</code>; the browser host connects with <code>WebSocketTransport::connect("ws://host:port/")</code>. A page served over <code>https://</code> may only open <code>wss://</code> sockets (loopback excepted), and the relay does not do TLS itself, so a relay reached from the published site sits behind a TLS-terminating reverse proxy that forwards the WebSocket upgrade.</p>

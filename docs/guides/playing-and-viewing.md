@@ -958,8 +958,10 @@ Without the flags, `Tab` (or the launcher's **Play online** button)
 opens the Multiplayer screen, which hosts a room or joins one by address
 and code from inside the game. It opens with the address you last joined
 and the name you last played under (`--name` wins over the remembered
-name); a room code is new for every room and is typed each time. The
-browser play page's Online panel remembers the same two.
+name); a room code is new for every room and is typed each time. Its last
+line names the release the window is, so two players can check they run
+the same one before a join. The browser play page's Online panel remembers
+the same two.
 
 In a room, `Tab` opens the room screen: the room code and the address to join at,
 the players, Ready (guests), the game pick and Start (the host), emotes,
