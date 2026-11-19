@@ -107,13 +107,24 @@ pub(crate) fn retail_part_ages(ram: &[u8]) -> Vec<(u32, i16)> {
 /// are seated the same way, their lean rate `+0x84` with them: Call Wave's
 /// rays fan at angles the replay's own stream does not deal.
 ///
+/// PROT 0946's Big Wave waves
+/// ([`CALL_WAVE_WAVE_RECORD`](legaia_engine_cast::cast_module_ticks::CALL_WAVE_WAVE_RECORD))
+/// as well: the stager seats one every five frames, and each closes its
+/// radii `+0xB4` / `+0xB6` on the caster at `+0xC0` / `+0xC2` (`-16`) a vsync
+/// while its level fades in at `-64`, so a wave's radii and level are a
+/// clock of its age. A `--retail-parts` film of the cast has the displayed
+/// frame of `battle_noaru_slippery_v2_big_wave_mid_cast` two passes behind
+/// its RAM, its youngest wave not yet seated and the oldest still out at
+/// radii `256 / 384`, past the screen's corners; the replay's waves stood on
+/// its own passes and drew the rays into the top corners.
+///
 /// The lag is [`cast_part_lag_vsyncs`]'s.
 pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
     use legaia_engine_cast::cast_module_camera::{
         ULTRA_CHARGE_SHOT_DISCS, VERA_OPEN_GLOWS, VOID_RECORDS,
     };
     use legaia_engine_cast::cast_module_ticks::{
-        ROLLED_STAGER_EXTRA_OFFSETS, ROLLED_STAGER_RECORDS,
+        CALL_WAVE_WAVE_RECORD, ROLLED_STAGER_EXTRA_OFFSETS, ROLLED_STAGER_RECORDS,
     };
     let per_pass: Vec<u32> =
         legaia_engine_cast::cast_module_camera::per_pass_spawn_records().collect();
@@ -129,7 +140,8 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
                     || ROLLED_STAGER_RECORDS.contains(&rec)
                     || ULTRA_CHARGE_SHOT_DISCS.contains(&rec)
                     || VERA_OPEN_GLOWS.contains(&rec)
-                    || VOID_RECORDS.contains(&rec))
+                    || VOID_RECORDS.contains(&rec)
+                    || rec == CALL_WAVE_WAVE_RECORD)
                 && !length_restarted_inside_lag(ram, n, lag)
         })
         .map(|n| {
