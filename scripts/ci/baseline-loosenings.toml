@@ -1766,3 +1766,10 @@ changes = [
   ["counts/native/world_map/retail/alloc_kb_per_frame", 1228.0, 1229.6],
   ["counts/native/world_map/retail/allocs_per_frame", 1760.0, 1760.1],
 ]
+
+[[loosening]]
+file = "scripts/ci/walk-film-rand-baseline.json"
+reason = "The field frame cost is reweighted from a per-routine PCSX-Redux profile, which puts one more vsync's pass before s2_rimelm_town01's retail vsync 32 and parts its rand() stream one draw earlier (17 -> 16 of 18). The wave's field work (the reweighting, the departure and latched-pad seats) lifts eight other films (balden, concnow, koin1, koin6 and the two retock inn films to full agreement, tower +106, doman card boot +6), the set 7551 -> 8213 agreeing draws over the 92 baselined films; measured again on the wave's tip, identical to the lane's proposal."
+changes = [
+  ["films/s2_rimelm_town01/agree", 17, 16],
+]
