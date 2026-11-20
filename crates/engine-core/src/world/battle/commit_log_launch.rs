@@ -402,6 +402,8 @@ impl World {
             select_attack: self.toggles.select_attack,
             // The ring's refusals are filled where the ring reads the word.
             gates: Default::default(),
+            cross_entry: self.toggles.battle_command
+                == legaia_engine_system::option_values::BattleCommandOpt::CrossButton,
         }
     }
 

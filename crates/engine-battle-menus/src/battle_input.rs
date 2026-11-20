@@ -226,6 +226,10 @@ pub struct BattleCommandInput {
     /// What the command ring refuses this member ([`RingGates`]); the host
     /// fills it while the ring is up. The default refuses nothing.
     pub gates: RingGates,
+    /// The Battle Command option's cross-button entry (`_DAT_800846C8 != 0`).
+    /// Under the default directional entry an Up or Down on the attack
+    /// target cursor commits the target (`0x801D2280..0x801D228C`).
+    pub cross_entry: bool,
 }
 
 /// The command ring's refusals for the member on the ring, the tests
@@ -664,14 +668,49 @@ impl BattleCommandSession {
             }
             CommandPhase::Targeting { command, picker } => {
                 let command = *command;
-                picker.input(PickerInput {
-                    up: ev.up,
-                    down: ev.down,
-                    left: ev.left,
-                    right: ev.right,
-                    cross: ev.cross,
-                    circle: ev.circle,
-                });
+                // State `0x5A` tests Right, then Left (each stepping the ring
+                // through `FUN_801D8D00`, the frame ending only when the seat
+                // moved: `beq s0,v0` at `0x801D2204` / `0x801D2250`), then
+                // Up or Down, which commit under the directional entry when
+                // neither side direction is held (`0x801D226C..0x801D228C`),
+                // then the confirm mask, then the cancel mask.
+                let press = |right: bool, left: bool, cross: bool, circle: bool| PickerInput {
+                    up: false,
+                    down: false,
+                    left,
+                    right,
+                    cross,
+                    circle,
+                };
+                let at = picker.state();
+                if ev.right {
+                    picker.input(press(true, false, false, false));
+                }
+                if picker.state() == at && ev.left {
+                    picker.input(press(false, true, false, false));
+                }
+                if picker.state() == at {
+                    let vertical_commit =
+                        !ev.cross_entry && (ev.up || ev.down) && !(ev.left || ev.right);
+                    if vertical_commit || ev.cross {
+                        picker.input(press(false, false, true, false));
+                    } else if ev.circle {
+                        // The cancel goes back where the Attack arm came from
+                        // (`0x801D2364..0x801D23D4`): the ring under the
+                        // `Automatic` option word, the `Auto | Command` prompt
+                        // once its `Auto` set `ctx[+0x266 + seat]`.
+                        self.phase = if ev.select_attack
+                            == legaia_engine_system::option_values::SelectAttackOpt::Automatic
+                        {
+                            CommandPhase::Menu {
+                                cursor: menu_index(command),
+                            }
+                        } else {
+                            CommandPhase::AttackMode { cursor: 0 }
+                        };
+                        return;
+                    }
+                }
                 if let Some(outcome) = picker.outcome() {
                     self.phase = match outcome {
                         PickerOutcome::Single { slot, row } => CommandPhase::Confirmed {
@@ -1369,16 +1408,32 @@ mod tests {
         );
     }
 
+    /// The cancel goes back where the Attack arm came from: the prompt its
+    /// `Auto` opened the cursor from, or the ring under the `Automatic`
+    /// option word (`0x801D2364..0x801D23D4`).
     #[test]
-    fn circle_in_targeting_returns_to_the_ring() {
+    fn circle_in_targeting_returns_to_where_the_attack_arm_came_from() {
+        use legaia_engine_system::option_values::SelectAttackOpt;
         let mut monsters = one_monster();
         monsters[1] = alive(true);
         let mut s = on_attack_mode();
         s.input(press(|e| e.left = true), party3(), monsters);
         assert!(matches!(s.phase, CommandPhase::Targeting { .. }));
         s.input(press(|e| e.circle = true), party3(), monsters);
-        assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
+        assert!(matches!(s.phase, CommandPhase::AttackMode { cursor: 0 }));
         assert!(s.resolved().is_none());
+
+        let mut s = on_attack_mode();
+        s.input(press(|e| e.left = true), party3(), monsters);
+        s.input(
+            press(|e| {
+                e.circle = true;
+                e.select_attack = SelectAttackOpt::Automatic;
+            }),
+            party3(),
+            monsters,
+        );
+        assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
     }
 
     #[test]

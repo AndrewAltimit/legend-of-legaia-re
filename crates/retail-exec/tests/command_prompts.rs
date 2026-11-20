@@ -49,6 +49,7 @@ const CROSS_OUT: u32 = 0x801D_BC30;
 const ROT_MARK: u32 = 0x801D_BD04;
 const CURSE_MARK: u32 = 0x801D_BEC4;
 const GLIDE: u32 = 0x801D_9BBC;
+const RING_STEP: u32 = 0x801D_8D00;
 const CONFIRM: u32 = 0x0040;
 const CANCEL: u32 = 0x0020;
 const LEFT: u32 = 0x8000;
@@ -300,6 +301,7 @@ fn the_command_prompts_go_where_retail_goes() {
                 _ => SelectAttackOpt::Command,
             },
             gates: RingGates::default(),
+            cross_entry,
         };
         let moved = cross_entry && session.walk_highlight(&mut ev);
         let mut refused = false;
@@ -401,4 +403,219 @@ fn the_command_prompts_go_where_retail_goes() {
         );
     }
     assert!(moved_n > 200 && refused_n > 100, "{moved_n} {refused_n}");
+}
+
+/// The attack target cursor `0x5A` (`0x801D21CC..0x801D23EC`), with the ring
+/// step `FUN_801D8D00` run for real over a ring seeded from the port's builder
+/// (`build_attack_target_queue`, held to `FUN_801D8A88` by `battle_leaves`),
+/// against the session's `Targeting` phase: Right and Left step the ring,
+/// Up or Down commit under the directional entry, the confirm mask commits,
+/// and the cancel mask goes back where the Attack arm came from.
+#[test]
+fn the_attack_target_cursor_steps_and_commits_as_retail() {
+    differential!(prot(898, STATE_MACHINE), prot(898, RING_STEP));
+    use legaia_engine_battle::target_picker::{
+        CursorRow, PickerState, TargetKind, TargetPickerSession,
+    };
+    use legaia_engine_battle_vm::battle_action::{
+        PoolActor, bearing_12bit_approx, build_attack_target_queue,
+    };
+    let Some((mut cpu, windows, cues, _)) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The step runs nested; the ledger notes it as it is entered.
+    cpu.watched.insert(RING_STEP);
+    let mut rng = Rng(0x5441_5247);
+    let mut seen = std::collections::HashMap::<&str, u32>::new();
+    for round in 0..6000 {
+        let party = 1 + rng.below(3) as u8;
+        let seat = rng.below(u32::from(party)) as u8;
+        let count = 1 + rng.below(4) as usize;
+        let cross_entry = rng.below(2) == 1;
+        let automatic = rng.below(2) == 1;
+        let mut alive = [false; 4];
+        for a in alive.iter_mut().take(count) {
+            *a = rng.below(4) != 0;
+        }
+        let live: Vec<u8> = (0..count as u8)
+            .filter(|&i| alive[usize::from(i)])
+            .collect();
+        if live.is_empty() {
+            continue;
+        }
+        let cur = live[rng.below(live.len() as u32) as usize];
+        let span = 0x800;
+        let mut pos = || {
+            (
+                (rng.below(span * 2) as i32 - span as i32) as i16,
+                (rng.below(span * 2) as i32 - span as i32) as i16,
+            )
+        };
+        let me = pos();
+        let monster_pos: [(i16, i16); 4] = std::array::from_fn(|_| pos());
+        let dirs = [
+            0,
+            LEFT,
+            RIGHT,
+            UP,
+            DOWN,
+            LEFT | UP,
+            RIGHT | DOWN,
+            LEFT | DOWN,
+        ];
+        let mut pad = dirs[rng.below(dirs.len() as u32) as usize];
+        if rng.below(3) == 0 {
+            pad |= CONFIRM;
+        }
+        if rng.below(4) == 0 {
+            pad |= CANCEL;
+        }
+
+        // The ring as the state's entry built it.
+        let mut pool = [PoolActor::default(); 8];
+        pool[0] = PoolActor {
+            alive: true,
+            x: me.0,
+            z: me.1,
+            target_slot: 3 + cur,
+            status: 0,
+        };
+        for i in 0..4 {
+            pool[3 + i] = PoolActor {
+                alive: alive[i],
+                x: monster_pos[i].0,
+                z: monster_pos[i].1,
+                target_slot: 0,
+                status: 0,
+            };
+        }
+        let q = build_attack_target_queue(&pool, 0, bearing_12bit_approx);
+
+        // Retail.
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        let actor = ACTOR + STRIDE * u32::from(seat);
+        cpu.mem.wr8(CTX, party);
+        cpu.mem.wr8(CTX + 0x06, 0x5A);
+        cpu.mem.wr8(CTX + 0x13, seat);
+        cpu.mem.wr8(CTX + 0x266 + u32::from(seat), 1);
+        for (i, b) in [
+            q.count,
+            q.wrap_slot,
+            q.ordered[0],
+            q.ordered[1],
+            q.ordered[2],
+        ]
+        .iter()
+        .enumerate()
+        {
+            cpu.mem.wr8(CTX + 0x244 + i as u32, *b);
+        }
+        cpu.mem.wr8(actor + 0x1DD, 3 + cur);
+        cpu.mem.wr32(PAD, pad);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(SELECT_ATTACK, u32::from(automatic));
+        cpu.mem.wr32(CROSS_ENTRY, u32::from(cross_entry));
+        cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
+        cpu.mem.wr32(CANCEL_MASK, CANCEL);
+        cpu.mem.wr8(BATTLE_ID, 0);
+        cpu.stub(NEXT_ABLE, u32::from(party));
+        windows.borrow_mut().clear();
+        cues.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let after = cpu.mem.rd8(CTX + 0x06);
+        let target = cpu.mem.rd8(actor + 0x1DD);
+
+        // The port.
+        let dead = SlotState::dead(false);
+        let party_rows = [SlotState::alive(true, true).with_seat(me.0, me.1); 3];
+        let mut monsters = [dead; 5];
+        for i in 0..count {
+            monsters[i] =
+                SlotState::alive(true, alive[i]).with_seat(monster_pos[i].0, monster_pos[i].1);
+        }
+        let mut picker = TargetPickerSession::new(TargetKind::SingleEnemy, 0, party_rows, monsters);
+        assert!(picker.seat_cursor(CursorRow::Enemy, cur), "round {round}");
+        let mut session = BattleCommandSession::new(0, 0);
+        session.phase = CommandPhase::Targeting {
+            command: BattleCommand::Attack,
+            picker,
+        };
+        let ev = BattleCommandInput {
+            up: pad & UP != 0,
+            down: pad & DOWN != 0,
+            left: pad & LEFT != 0,
+            right: pad & RIGHT != 0,
+            cross: pad & CONFIRM != 0,
+            circle: pad & CANCEL != 0,
+            select_attack: if automatic {
+                SelectAttackOpt::Automatic
+            } else {
+                SelectAttackOpt::Select
+            },
+            gates: RingGates::default(),
+            cross_entry,
+        };
+        session.input(ev, party_rows, monsters);
+        let label = format!(
+            "round {round}: pad {pad:#x} cross-entry {cross_entry} automatic {automatic} \
+             cur {cur} alive {alive:?} ring {:?} windows {:x?} cues {:x?} -> {after:#x} target {target}",
+            [
+                q.count,
+                q.wrap_slot,
+                q.ordered[0],
+                q.ordered[1],
+                q.ordered[2]
+            ],
+            windows.borrow(),
+            cues.borrow()
+        );
+        let outcome = match (&session.phase, after) {
+            (CommandPhase::Targeting { picker, .. }, 0x5A) => {
+                let PickerState::Cursor { slot, .. } = picker.state() else {
+                    panic!("{label}");
+                };
+                assert_eq!(target, 3 + slot, "cursor: {label}");
+                assert_eq!(
+                    cues.borrow().contains(&0x22),
+                    slot != cur,
+                    "step cue: {label}"
+                );
+                if slot == cur { "stay" } else { "step" }
+            }
+            (
+                CommandPhase::Confirmed {
+                    target_row: CursorRow::Enemy,
+                    target_slot,
+                    ..
+                },
+                0x28 | 0x6E,
+            ) => {
+                assert_eq!(target, 3 + target_slot, "commit target: {label}");
+                "commit"
+            }
+            (CommandPhase::Menu { .. }, 0x28) => "cancel to ring",
+            (CommandPhase::AttackMode { .. }, 0x78) => "cancel to prompt",
+            (phase, after) => panic!("port {phase:?} retail {after:#x}: {label}"),
+        };
+        *seen.entry(outcome).or_default() += 1;
+    }
+    for o in [
+        "stay",
+        "step",
+        "commit",
+        "cancel to ring",
+        "cancel to prompt",
+    ] {
+        assert!(seen.get(o).copied().unwrap_or(0) > 30, "{o}: {seen:?}");
+    }
 }

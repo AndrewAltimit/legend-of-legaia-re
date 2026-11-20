@@ -399,6 +399,19 @@ nothing either: `battle_run_confirm_gaza2_retail` and pad walks from
 `gaza2_card_first_menu` show each. Port: `battle_input::CommandPhase::RunConfirm`,
 `World::tick_battle_command` for the glide, `battle_hud::battle_run_tab_alone`.
 
+The attack target cursor `0x5A` (`0x801D21CC..0x801D23EC`) tests Right, then
+Left, each stepping the ring through `FUN_801D8D00` and ending the pass only
+when the target moved, so a side press at the ring's end falls on to the next
+test. Under the directional entry an Up or Down with no side direction then
+commits the target as the confirm mask does (`0x801D226C..0x801D228C`); under the
+cross-button entry only the confirm mask commits. The cancel mask goes back
+where the Attack arm came from (`0x801D2364..0x801D23D4`): the ring (`0x28`)
+under the `Automatic` option word, the `Auto | Command` prompt (`0x78`) once its
+`Auto` set `ctx[+0x266 + seat]`, and the arts entry (`0x50`) for a string the
+entry's review sent here. Port: the `Targeting` arm of
+`battle_input::BattleCommandSession::input`, the review's cancel in the arts
+entry's own session.
+
 The ring's four arms sit on the same four masks, and every one of them commits
 through the same idiom - **advance to the next member that still owes a
 command, or raise the [commit confirm](#the-commit-confirm-screen-0x6e)**:
