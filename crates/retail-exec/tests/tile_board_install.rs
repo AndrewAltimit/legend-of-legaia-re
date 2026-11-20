@@ -8,7 +8,8 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::world::World;
 use legaia_engine_minigames::tile_board::{
-    FADE_FULL, TileBoardHeader, fade_exempt_value, fade_in_step, fade_out_step, sm,
+    ArrivalAction, FADE_FULL, TileBoardHeader, advance_animated_cells, arrival_action,
+    event_cell_flag_writes, fade_exempt_value, fade_in_step, fade_out_step, sm,
 };
 use legaia_engine_system::rand::{bios_rand_shape, world_lcg_step};
 use psx_retail_exec::{A0, A1, Stop, V0};
@@ -75,6 +76,7 @@ fn the_board_install_matches_retail() {
     let mut g = Rng(0x5449_4C45);
     let mut events = 0usize;
     let (mut fades, mut exempted) = (0usize, 0usize);
+    let mut arrivals = [0usize; 3];
     for round in 0..600 {
         let width = 1 + g.below(14) as u8;
         let height = 1 + g.below(14) as u8;
@@ -165,6 +167,11 @@ fn the_board_install_matches_retail() {
         let table = cpu.mem.rd32(TABLE_PTR);
         let tiles: Vec<u32> = (2..15u32).map(|v| cpu.mem.rd32(table + 4 * v)).collect();
         let exempt = fade_exempt_value(board.cell_under_player());
+        // A start cell past the buffer's end (a board under five cells
+        // wide and one row high) reads the heap after it in retail, which
+        // the port does not hold: those tiles' scales are not compared.
+        let past =
+            usize::from(board.player_row) * usize::from(width) + usize::from(board.player_col) >= n;
         let mut fade = w.board.fade;
         let mut frame = 0;
         loop {
@@ -196,7 +203,7 @@ fn the_board_install_matches_retail() {
             fade = next;
             let c = format!("{ctx} fade-out step {step}");
             assert_eq!(cpu.mem.rd16(ACTOR + 0x9C) as i16, fade, "{c}");
-            for (k, &t) in tiles.iter().enumerate() {
+            for (k, &t) in tiles.iter().enumerate().filter(|_| !past) {
                 let v = k as u8 + 2;
                 let want = if exempt == Some(v) { FADE_FULL } else { fade };
                 assert_eq!(cpu.mem.rd16(t + 0x72) as i16, want, "{c} tile {v}");
@@ -208,7 +215,56 @@ fn the_board_install_matches_retail() {
             }
         }
         exempted += usize::from(exempt.is_some());
+
+        // The arrival (state 3) on cells across the board, against
+        // `arrival_action` and `advance_animated_cells`, and the event arm
+        // (state 8) after it against `event_cell_flag_writes` over the
+        // flag bank, with the port's own flag test and set.
+        for _ in 0..6 {
+            let board = w.board.grid.as_mut().expect("installed");
+            board.player_col = g.below(u32::from(width)) as u8;
+            board.player_row = g.below(u32::from(height)) as u8;
+            let cell = board.cell_under_player().expect("on the board");
+            cpu.mem.wr32(PLAYER_CELL, u32::from(board.player_col));
+            cpu.mem.wr32(PLAYER_CELL + 4, u32::from(board.player_row));
+            cpu.mem.load(at, &board.cells);
+            cpu.mem.load(FLAGS, &w.flags.system_flags[..flags.len()]);
+            cpu.mem.wr16(ACTOR + 0x54, 3);
+            assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+            let c = format!("{ctx} arrival on {cell:#x}");
+            let action = arrival_action(cell);
+            let state = match action {
+                ArrivalAction::Continue => {
+                    advance_animated_cells(&mut board.cells);
+                    sm::WALK
+                }
+                ArrivalAction::ExitTrigger => sm::TRIGGER_EXIT,
+                ArrivalAction::ExitEvent => 8,
+            };
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54), u16::from(state), "{c}");
+            assert_eq!(cpu.mem.read(at, n), board.cells, "{c}: the cells");
+            arrivals[match action {
+                ArrivalAction::Continue => 0,
+                ArrivalAction::ExitTrigger => 1,
+                ArrivalAction::ExitEvent => 2,
+            }] += 1;
+            if action != ArrivalAction::ExitEvent {
+                continue;
+            }
+            assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{c}");
+            let writes = event_cell_flag_writes(&header, cell, |i| w.system_flag_test(i));
+            for i in writes {
+                w.system_flag_set(i);
+            }
+            assert_eq!(
+                cpu.mem.read(FLAGS, flags.len()),
+                w.flags.system_flags[..flags.len()],
+                "{c}: the event flags"
+            );
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54), u16::from(sm::EVENT_STEP), "{c}");
+        }
     }
+    assert!(arrivals.iter().all(|&n| n > 20), "arrivals {arrivals:?}");
     assert!(events > 1000, "event cells {events}");
     assert!(
         fades > 100 && exempted > 5,
