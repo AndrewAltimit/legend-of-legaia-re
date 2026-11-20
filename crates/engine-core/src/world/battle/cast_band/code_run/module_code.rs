@@ -2502,7 +2502,7 @@ impl World {
             body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
             phase_in,
             ctx.phase != phase_in,
-            countdown_before,
+            self.casting.module_cam.countdown.0,
             caster_slot,
             victim_slot,
             seat_slot,

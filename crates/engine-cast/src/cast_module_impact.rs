@@ -39,7 +39,8 @@ pub enum ImpactEdge {
     Pass,
     /// Every pass of the arm, held or not.
     EveryPass,
-    /// Every pass whose module countdown reads at most this.
+    /// Every pass whose module countdown, read after the pass's drain,
+    /// reads at most this.
     CountdownAtMost(i32),
 }
 
