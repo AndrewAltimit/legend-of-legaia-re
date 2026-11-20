@@ -413,6 +413,26 @@ pub struct FieldNpcAmbient {
 }
 
 impl FieldNpcAmbient {
+    /// The preamble's deferral gate: with the binding's `+0x8A` bit 0 set
+    /// ([`Self::defers`]) the tick returns before the variant scan while the
+    /// player is `engaged` (`*0x8007C364 + 0x10 & 0x80000`, which the host
+    /// widens to its own talk and release holds), while the actor's own
+    /// `+0x10 & 0x500` is up, or while it stands on the off-map park (both
+    /// `lh` coordinates `>= 0x3F81`).
+    ///
+    /// PORT: FUN_80038158 (`0x80038188..0x800381F4`)
+    pub fn defer_gate(
+        defers: bool,
+        engaged: bool,
+        actor_flags: u32,
+        seat: Option<(i16, i16)>,
+    ) -> bool {
+        defers
+            && (engaged
+                || actor_flags & 0x500 != 0
+                || seat.is_some_and(|(x, z)| x >= 0x3F81 && z >= 0x3F81))
+    }
+
     /// Retail's per-tick variant re-selection: the first flag-gated variant
     /// whose system flag is set, else the `0xFFFF` default. Returns an index
     /// into [`Self::variants`].

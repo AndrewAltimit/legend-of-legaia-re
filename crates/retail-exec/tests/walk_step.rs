@@ -1,9 +1,14 @@
 //! `FUN_801D01B0`, the field pad controller, with its helpers `FUN_800467E8`,
 //! `FUN_80046494` and `FUN_801CFE4C`, against `World::step_field_locomotion`:
 //! where one tick of a held pad leaves the player, over generated grids.
+//! The first test also compares the clip base the step writes
+//! (`field_player_clip::locomotion_clip_base`), and runs some rounds with the
+//! debug-mode word up: its freeze and no-clip pad bits stay clear, and the
+//! dev word the turbo arm also needs stays at retail's zero.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::world::{Actor, World};
+use legaia_engine_field::world_map::WorldMapController;
 use legaia_engine_system::input::PadButton;
 use psx_retail_exec::{Cpu, GP, Stop};
 
@@ -27,6 +32,9 @@ const STEP_DELTA: u32 = 0x8007_BDE0;
 const RUN_BUTTON: u32 = 0x8008_46DC;
 const RUN_DEFAULT: u32 = 0x8008_46CC;
 const OCTANT: u32 = 0x2D8;
+const DEBUG_WORD: u32 = 0x8007_B98C;
+const DEV_WORD: u32 = 0x8007_B868;
+const CLIP_BASE: u32 = 0x8007_BDD8;
 
 fn retail_cpu() -> Option<Cpu> {
     let mut cpu = scus_cpu()?;
@@ -99,10 +107,15 @@ fn a_held_pad_walks_where_retail_walks() {
             let slow = rng.below(8) == 0;
             let run_default = rng.below(4) == 0;
             let mode = [0x40u8, 0x40, 0x10, 0x50, 0x00][rng.below(5) as usize];
-            let rate: u16 = [0x1000, 0x1000, 0x800, 0x1800][rng.below(4) as usize];
+            // A rate under `0x1000 / base` scales the step to nothing.
+            let rate: u16 = [0x1000, 0x1000, 0x800, 0x1800, 0x100, 0x200][rng.below(6) as usize];
             let frame_step = [1u8, 2, 2, 3][rng.below(4) as usize];
             let octant = if rng.below(2) == 0 { 0 } else { rng.below(8) };
             let scene_61 = [0u8, 1, 1, 2][rng.below(4) as usize];
+            // The debug-mode word. Held bits `1` / `2` (the debug freeze and
+            // no-clip) stay clear.
+            let debug = rng.below(6) == 0;
+            let clip = [0i16, -1, 1, 0x23][rng.below(4) as usize];
 
             cpu.mem.wr16(ACTOR + 0x14, x as u16);
             cpu.mem.wr16(ACTOR + 0x18, z as u16);
@@ -120,12 +133,22 @@ fn a_held_pad_walks_where_retail_walks() {
             cpu.mem.wr8(SCENE + 0x61, scene_61);
             cpu.mem.wr32(SCRATCH_FLAGS, 0);
             cpu.mem.wr32(gp + OCTANT, octant);
+            cpu.mem.wr32(DEBUG_WORD, u32::from(debug));
+            cpu.mem.wr32(DEV_WORD, 0);
+            cpu.mem.wr16(ACTOR + 0x5C, clip as u16);
+            cpu.mem.wr16(ACTOR + 0x6A, 0);
+            cpu.mem.wr32(CLIP_BASE, 0x55);
             let stop = cpu.call(WALK, &[ACTOR]);
             assert_eq!(stop, Stop::Returned, "grid {grid_round} round {round}");
             let retail = (
                 cpu.mem.rd16(ACTOR + 0x14) as i16,
                 cpu.mem.rd16(ACTOR + 0x18) as i16,
                 cpu.mem.rd16(ACTOR + 0x26) as i16 & 0xFFF,
+            );
+            let retail_clip = (
+                cpu.mem.rd32(CLIP_BASE) as u16,
+                cpu.mem.rd16(ACTOR + 0x6A) as i16,
+                cpu.mem.rd32(ACTOR + 0x10) & 0x0100_0000 != 0,
             );
 
             {
@@ -144,6 +167,14 @@ fn a_held_pad_walks_where_retail_walks() {
             w.party.scene_save_allowed = slow;
             w.locomotion.camera_mode_byte = Some(mode);
             w.locomotion.scene_ctrl_61 = scene_61;
+            w.world_map.ctrl = debug.then(|| WorldMapController {
+                debug_enabled: true,
+                ..WorldMapController::new()
+            });
+            w.locomotion.player_clip = clip;
+            w.locomotion.player_clip_rate = 0;
+            w.locomotion.clip_base = 0x55;
+            w.locomotion.player_party_bank = false;
             let mut mask = 0u16;
             for (bit, button) in [
                 (0x1000u32, PadButton::Up),
@@ -169,7 +200,18 @@ fn a_held_pad_walks_where_retail_walks() {
             assert_eq!(
                 retail, port,
                 "grid {grid_round} round {round}: at ({x}, {z}) held {held:#x} octant {octant} \
-                 run {run} default {run_default} slow {slow} mode {mode:#x} rate {rate:#x} step {frame_step}"
+                 run {run} default {run_default} slow {slow} mode {mode:#x} rate {rate:#x} step {frame_step} \
+                 debug {debug}"
+            );
+            let port_clip = (
+                w.locomotion.clip_base,
+                w.locomotion.player_clip_rate,
+                w.locomotion.player_party_bank,
+            );
+            assert_eq!(
+                retail_clip, port_clip,
+                "grid {grid_round} round {round}: clip {clip} held {held:#x} slow {slow}: \
+                 (clip base, clip rate, party bank)"
             );
             if (retail.0, retail.1) != (x, z) {
                 moved += 1;

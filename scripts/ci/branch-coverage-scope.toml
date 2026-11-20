@@ -1335,4 +1335,166 @@ reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `
 
 # lane C: 801D84D0 80039B7C
 # lane C: 80038158 8003774C 801D01B0
+[[arm]]
+entry = "801D01B0"
+range = "0x801D01F0..0x801D01F0"
+verdict = "unreachable"
+reason = "PROT 0897: `bnez` on the player's engaged bit *0x8007C364+0x10 & 0x80000; the routine's only caller (0x801D16F4 in the player tick FUN_801D1344) has already returned on that bit of the same actor at 0x801D16A0"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D0204..0x801D0330"
+verdict = "unported"
+reason = "PROT 0897: the pre-movement header - the map-display arm (_DAT_8007B6A8 and edge bit 4: cue 0x20, _DAT_8007BAF4 = 1), the menu accept on edge & (_DAT_800846D8 | 0x100) with its debug-word hold, the 0x8000000 lock's deny buzz and the menu actor spawn; the engine runs these as host-called predicates on a Start edge (World::field_menu_open_allowed / field_menu_press_denied, REF-tagged) and the map display in worldmap.rs, not inside the step"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D03C0..0x801D03DC"
+verdict = "unreachable"
+reason = "PROT 0897: the debug-turbo base step needs, past the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it, the dev word _DAT_8007B868, which retail boots to zero and only ever clears"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D0414..0x801D0420"
+verdict = "unreachable"
+reason = "PROT 0897: the debug freeze (held & 1 drops the direction) behind the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D047C..0x801D047C"
+verdict = "unreachable"
+reason = "PROT 0897: the clip-base walk arm's re-test of _DAT_8007B6A8 with s4 == 8; that byte forces s4 = 5 at 0x801D0354, so the walk step and the flag never meet"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D04B0..0x801D04B0"
+verdict = "unported"
+reason = "PROT 0897: system flag 0xE (the battle mode request FUN_8003CE08(0xE) raised by op 0x3E and the encounter commit) ends the step after the clip-base write; the engine stands it in with World::field_scripts_held_for_battle, which returns before the clip-base write"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D0670..0x801D0670"
+verdict = "unreachable"
+reason = "PROT 0897: the +Z step's debug no-clip (held & 2 commits a blocked step) behind the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D06D0..0x801D06D0"
+verdict = "unreachable"
+reason = "PROT 0897: the -Z step's debug no-clip behind the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D0730..0x801D0730"
+verdict = "unreachable"
+reason = "PROT 0897: the +X step's debug no-clip behind the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D07A0..0x801D07A0"
+verdict = "unreachable"
+reason = "PROT 0897: the -X step's debug no-clip behind the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D07CC..0x801D07FC"
+verdict = "unported"
+reason = "PROT 0897: the per-step re-tests of the engaged bit, the scratch lock 0x400 and scene byte +0x62 ahead of the touch and interact block, which only change mid-loop through a touch posted on an earlier 2-unit step; the engine queues its touch (FieldPropState::pending_touch) and never re-reads them inside the step"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D0824..0x801D088C"
+verdict = "unported"
+reason = "PROT 0897: the in-step interact probe (edge & _DAT_800846D0, FUN_801CF9F4 ahead at the heading, the touch post and the turn-to-face of a moving-class actor, scene +0x60 = 1); the engine runs the talk probe outside the step (World::field_interact_probe_slot)"
+
+[[arm]]
+entry = "8003774C"
+range = "0x800377D8..0x80037850"
+verdict = "unported"
+reason = "the target-select prefix's list lookups: `0xFB` walks the list at *0x8007C34C for the node whose handler +0xC is 0x801DA51C, any other id walks *0x8007C354 for its +0x50; the port decodes the selector (motion_vm::target_selector) and leaves resolving it to the host, which steps own-actor programs only (scripted_motion.rs), so no list walk has a port"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037924..0x8003793C"
+verdict = "unreachable"
+reason = "the compass walk's compiler-emitted divide guards (`break 0x1C00` / `break 0x1800`): the divisor is 4 << sel, never 0 or -1"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037AD8..0x80037AF0"
+verdict = "unreachable"
+reason = "op 0x38's divide guards on the decreasing arm: the divisor is budget - accum, which 0x80037A14 (`bgtz` on divisor - step) has already made positive"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037B40..0x80037B58"
+verdict = "unreachable"
+reason = "op 0x38's divide guards on the increasing arm, under the same positive divisor as 0x80037AD8"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037BC0..0x80037BD8"
+verdict = "unreachable"
+reason = "op 0x47's divide guards: 0x80 divided by 4 << (b2 & 7), never 0 or -1"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037DF8..0x80037DF8"
+verdict = "unported"
+reason = "op 0x4C with a sub-mode other than 0x85 / 0x8E / 0x8F returns 0 with the PC unmoved, parking the script for ever; the port ends the leg instead, a disclosed departure (docs/subsystems/motion-vm.md)"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037E08..0x80037EAC"
+verdict = "unported"
+reason = "op 0x4C's target lookup by its fourth byte (0xF8 the player, 0xFB the world-map entity, else the actor list by +0x50; none ends the leg): the port takes the target from its caller as MotionTarget and has no lookup"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037F64..0x80037F7C"
+verdict = "unreachable"
+reason = "op 0x4C's divide guards on the decreasing arm: the divisor is budget - accum, positive after 0x80037EF8 (`bgtz` on divisor - step)"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037FB4..0x80037FCC"
+verdict = "unreachable"
+reason = "op 0x4C's divide guards on the increasing arm, under the same positive divisor as 0x80037F64"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80038014..0x80038014"
+verdict = "unported"
+reason = "a leg that ends on the player (target-select `0xF8`) also zeroes the script actor's own +0x54 and clears its +0x10 bit 0x400; the engine runs no cross-context motion-VM legs, so nothing ports the second clear"
+
+[[arm]]
+entry = "80038158"
+range = "0x800382DC..0x800382DC"
+verdict = "unreachable"
+reason = "`bne s8,zero` after the variant switch: s8 is cleared in the entry's delay slot (0x80038198) and the epilogue's loop-back at 0x80039B44 targets 0x800382F0, past this test, so s8 is always zero here"
+
+[[arm]]
+entry = "80038158"
+range = "0x80038310..0x80038310"
+verdict = "unreachable"
+reason = "the dispatch bound `sltiu (op-1),0x20`: an op byte outside 0x01..0x20 lands on the epilogue with s8 still zero and re-dispatches the same byte for ever (a hang); every shipped variant decodes to its end through the width table (the op census in engine-scene's ambient_motion_op_census_disc walks all 573 cleanly)"
+
+[[arm]]
+entry = "80038158"
+range = "0x80038644..0x80038644"
+verdict = "unreachable"
+reason = "op 0x04's compiler-emitted divide-by-zero guard (`bne s4,zero` ahead of `break 0x1C00`): s4 = frames - cursor is non-zero here because 0x800385F8 already sent s4 == 0 to the terminal snap"
+
+[[arm]]
+entry = "80038158"
+range = "0x80038680..0x80038680"
+verdict = "unreachable"
+reason = "the increasing-direction copy of op 0x04's divide-by-zero guard; s4 == 0 left at 0x800385F8"
+
+[[arm]]
+entry = "80038158"
+range = "0x80038D9C..0x80038DAC"
+verdict = "unreachable"
+reason = "op 0x18's phase dispatch at 0x80038D7C exits on a phase below 1 or above 3, but it is reached only from 0x80038C58 with the phase non-zero or from 0x80038D44/0x80038D78 having just stored 1 or 2, and every writer of the record's byte 2 (this routine, the scene reset at 0x8003B74C) stores 0..3"
+
 # lane C: 80021DF4 800520F0 8001ADA4 800243F0 8001822C

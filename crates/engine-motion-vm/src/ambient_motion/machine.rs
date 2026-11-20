@@ -411,11 +411,14 @@ impl AmbientMotion {
                     }
                 }
                 Some(AmbientOp::DefaultMove) => {
-                    // `0x80039AF8`. Guarded `+0x50 < 0x8C` in retail (the
-                    // arena bound); the port's channel keys are placement
-                    // slots, already inside it. No did-work increment, so
-                    // the next op runs in the same tick.
-                    self.default_move = [body[1], body[2]];
+                    // `0x80039AF8`. Guarded `+0x50 < 0x8C` (`0x80039B04`):
+                    // the record table `0x801C6470` holds `0x8C` entries and
+                    // the ramp pool follows it, so a higher actor id writes
+                    // nothing. No did-work increment, so the next op runs in
+                    // the same tick.
+                    if self.owner < u32::from(DEFAULT_MOVE_UNSET) {
+                        self.default_move = [body[1], body[2]];
+                    }
                     self.pc = self.pc.wrapping_add(3);
                 }
                 Some(AmbientOp::DirStep) => {
@@ -467,6 +470,23 @@ impl AmbientMotion {
             }
         }
         AmbientTick::Yield
+    }
+
+    /// The preamble's variant switch, retail `0x80038298..0x800382D8`: on a
+    /// tick whose selected variant differs from the one `actor+0x86` holds,
+    /// the PC goes to the new variant's first op, the cursor's low byte
+    /// (`+0x8B`, a `sb`; `+0xB7` stands) clears, `+0x86` takes the bare
+    /// selector (so the wander's direction bits 12-13 clear), and the
+    /// actor's `0x801C6470` record resets to `[0x8C, 0x8C, 0, 0]` - the
+    /// default move unset and the wander phase back to `0`.
+    ///
+    /// PORT: FUN_80038158 (`0x80038298..0x800382D8`)
+    pub fn rebind_variant(&mut self) {
+        self.pc = 0;
+        self.cursor &= 0xFF00;
+        self.wander_dir = 0;
+        self.default_move = [DEFAULT_MOVE_UNSET; 2];
+        self.wander_phase = 0;
     }
 
     /// The `0x05` wait arm's **touch-wake** head, retail
@@ -545,11 +565,12 @@ impl AmbientMotion {
 
         if self.cursor == 0 {
             let target = heading_lut_retail(b1 & 7);
-            // Retail compares the sign-extended `lh` values with `sltu`.
-            // Both operands are non-negative for every reachable heading,
-            // so this is the plain ordering.
-            let cur = i32::from(self.heading as i16);
-            let tgt = i32::from(target as i16);
+            // Retail compares the sign-extended `lh` values with `sltu`
+            // (`0x800386E8`, `0x80038704`): a heading an earlier unwind left
+            // negative reads as a huge unsigned value, so it is never parked
+            // a further turn round.
+            let cur = i32::from(self.heading as i16) as u32;
+            let tgt = i32::from(target as i16) as u32;
             let unwrapped = if b1 & 0x80 != 0 {
                 // Force decreasing: park the start above the target.
                 if cur < tgt {
@@ -578,7 +599,9 @@ impl AmbientMotion {
             });
         }
 
-        if i32::from(self.cursor) >= duration {
+        // `sltu` against the sign-extended duration (`0x800387EC`): a
+        // negative duration never retires the op.
+        if u32::from(self.cursor) >= duration as u32 {
             self.cursor = 0;
             self.pc = self.pc.wrapping_add(4);
             return false;

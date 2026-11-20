@@ -3,12 +3,20 @@
 //! ramp `0x38`, the hold `0x43`, the tile walk `0x47` and the face-target ramp
 //! `0x4C`, over generated operands, start positions, headings and frame steps.
 //!
+//! Some legs carry the target-select prefix (`op | 0x80`, then an actor id),
+//! decoded by `motion_vm::target_selector`: the script's own id runs the body
+//! on itself, `0xF8` on the player, and an id no list holds ends the call
+//! with nothing moved. Op bytes outside the table, and the table's empty
+//! slots, end the leg at once.
+//!
 //! The port's headings sit a half-turn from retail's (`engine = retail +
 //! 0x800`, `heading_lut_engine`), so headings compare modulo `0x1000` across
 //! that offset.
 
 use crate::common::{Rng, scus_cpu};
-use legaia_engine_motion_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
+use legaia_engine_motion_vm::motion_vm::{
+    MotionState, MotionTarget, StepResult, TargetSelector, step, target_selector,
+};
 use psx_retail_exec::Stop;
 
 const ENTRY: u32 = 0x8003_774C;
@@ -17,6 +25,12 @@ const TARGET: u32 = 0x8013_1000;
 const SCRIPT: u32 = 0x8014_0000;
 const PLAYER_PTR: u32 = 0x8007_C364;
 const FRAME_STEP: u32 = 0x1F80_0393;
+/// The two actor lists the selector scans: `*0x8007C34C` for `0xFB`,
+/// `*0x8007C354` for any other id. Both hold no node here.
+const LIST_WORLD: u32 = 0x8007_C34C;
+const LIST_ACTORS: u32 = 0x8007_C354;
+const EMPTY_LIST: u32 = 0x8013_2000;
+const OWN_ID: u8 = 0x10;
 const MAX_FRAMES: usize = 400;
 
 /// One leg's script and the inputs the port's caller derives from it.
@@ -78,7 +92,7 @@ fn gen_leg(rng: &mut Rng, op: u8, actor_xz: (i16, i16)) -> Leg {
                 target: (tile(b0), tile(b1)),
             }
         }
-        _ => {
+        0x4C => {
             // A sub-mode the arm does not take parks retail's script for
             // ever; the port ends the leg instead, a disclosed departure
             // (`docs/subsystems/motion-vm.md`), so the generator leaves it out.
@@ -95,6 +109,22 @@ fn gen_leg(rng: &mut Rng, op: u8, actor_xz: (i16, i16)) -> Leg {
                 ),
             }
         }
+        // A byte outside the table, or one of its empty slots.
+        _ => {
+            let op = loop {
+                let b = rng.below(0x80) as u8;
+                if !matches!(b, 0x37 | 0x38 | 0x41 | 0x43 | 0x47 | 0x4C) {
+                    break b;
+                }
+            };
+            Leg {
+                bytes: vec![op, b(rng), b(rng), b(rng), b(rng)],
+                s2,
+                speed: u16::from(s2),
+                approach: 0,
+                target: (0, 0),
+            }
+        }
     }
 }
 
@@ -106,25 +136,69 @@ fn the_motion_vm_walks_and_turns_as_retail_does() {
         return;
     };
     cpu.mem.wr32(PLAYER_PTR, TARGET);
+    cpu.mem.wr32(LIST_WORLD, EMPTY_LIST);
+    cpu.mem.wr32(LIST_ACTORS, EMPTY_LIST);
+    cpu.mem.wr32(EMPTY_LIST, 0);
     let mut rng = Rng(0x4D4F_5449);
-    let mut done = [0u32; 6];
-    for round in 0..6000 {
-        let op = [0x37u8, 0x41, 0x38, 0x43, 0x47, 0x4C][round % 6];
+    let mut done = [0u32; 7];
+    let mut redirected = [0u32; 3];
+    for round in 0..7000 {
+        let kind = round % 7;
+        let op = [0x37u8, 0x41, 0x38, 0x43, 0x47, 0x4C, 0][kind];
         let x = rng.below(0x3000) as i16;
         let z = rng.below(0x3000) as i16;
         let yaw = rng.below(0x1000) as u16;
-        let leg = gen_leg(&mut rng, op, (x, z));
+        let mut leg = gen_leg(&mut rng, op, (x, z));
+        // A third of the table's legs name the actor they run on.
+        if kind < 6 && rng.below(3) == 0 {
+            let id = [OWN_ID, 0xF8, 0xFB, 0x22][rng.below(4) as usize];
+            leg.bytes[0] |= 0x80;
+            leg.bytes.insert(1, id);
+        }
+        let selector = target_selector(&leg.bytes, 0, u16::from(OWN_ID));
 
         cpu.mem.load(SCRIPT, &leg.bytes);
         cpu.mem.wr32(ACTOR + 0x94, SCRIPT);
-        cpu.mem.wr16(ACTOR + 0x50, 0x10);
+        cpu.mem.wr16(ACTOR + 0x50, u16::from(OWN_ID));
         cpu.mem.wr16(ACTOR + 0x14, x as u16);
         cpu.mem.wr16(ACTOR + 0x18, z as u16);
         cpu.mem.wr16(ACTOR + 0x26, yaw);
         cpu.mem.wr16(ACTOR + 0x54, 0);
+        let target_yaw = rng.below(0x1000) as u16;
+        cpu.mem.wr16(TARGET + 0x50, 0);
         cpu.mem.wr16(TARGET + 0x14, leg.target.0 as u16);
         cpu.mem.wr16(TARGET + 0x18, leg.target.1 as u16);
+        cpu.mem.wr16(TARGET + 0x26, target_yaw);
+        cpu.mem.wr16(TARGET + 0x54, 0);
         cpu.mem.wr8(FRAME_STEP, leg.s2);
+
+        // The actor the body runs on: the script's own, or the player.
+        let (runs_on, start, start_yaw) = match selector {
+            TargetSelector::Own => (ACTOR, (x, z), yaw),
+            TargetSelector::Player => (TARGET, leg.target, target_yaw),
+            TargetSelector::WorldMapEntity | TargetSelector::Id(_) => {
+                // No list holds the id: the call returns 0 before the
+                // dispatch and writes nothing.
+                assert_eq!(cpu.call(ENTRY, &[ACTOR]), Stop::Returned, "round {round}");
+                assert_eq!(cpu.regs.r[psx_retail_exec::V0], 0, "round {round}");
+                assert_eq!(
+                    (
+                        cpu.mem.rd16(ACTOR + 0x14) as i16,
+                        cpu.mem.rd16(ACTOR + 0x18) as i16,
+                        cpu.mem.rd16(ACTOR + 0x26),
+                        cpu.mem.rd16(ACTOR + 0x54),
+                    ),
+                    (x, z, yaw, 0),
+                    "round {round}: an unresolved target leaves the actor"
+                );
+                redirected[2] += 1;
+                continue;
+            }
+        };
+        if leg.bytes[0] & 0x80 != 0 {
+            redirected[usize::from(runs_on == TARGET)] += 1;
+        }
+        let (x, z, yaw) = (start.0, start.1, start_yaw);
 
         let mut st = MotionState {
             world_x: x,
@@ -144,10 +218,10 @@ fn the_motion_vm_walks_and_turns_as_retail_does() {
             assert_eq!(cpu.call(ENTRY, &[ACTOR]), Stop::Returned, "round {round}");
             let retail_done = cpu.regs.r[psx_retail_exec::V0] != 0;
             let retail = (
-                cpu.mem.rd16(ACTOR + 0x14) as i16,
-                cpu.mem.rd16(ACTOR + 0x18) as i16,
-                cpu.mem.rd16(ACTOR + 0x26),
-                cpu.mem.rd16(ACTOR + 0x54),
+                cpu.mem.rd16(runs_on + 0x14) as i16,
+                cpu.mem.rd16(runs_on + 0x18) as i16,
+                cpu.mem.rd16(runs_on + 0x26),
+                cpu.mem.rd16(runs_on + 0x54),
             );
             let port_done = step(&mut st, target, &leg.bytes) == StepResult::Done;
             let ctx = format!(
@@ -167,16 +241,18 @@ fn the_motion_vm_walks_and_turns_as_retail_does() {
                 st.yaw
             );
             if retail_done {
-                done[round % 6] += 1;
+                done[kind] += 1;
                 break;
             }
         }
     }
-    // Every op but the hold ends its legs.
+    // Every op but the hold ends its legs; a byte outside the table ends its
+    // leg on the first call.
     assert!(
         done.iter()
             .enumerate()
             .all(|(i, &n)| (i == 3) == (n == 0) && (i == 3 || n > 300)),
         "{done:?}"
     );
+    assert!(redirected.iter().all(|&n| n > 200), "{redirected:?}");
 }
