@@ -210,3 +210,123 @@ entry = "0x801DD35C"
 range = "0x801DFEFC..0x801DFEFC"
 verdict = "unreachable"
 reason = "PROT 0899 title tick epilogue: rewrites a cancel target of 2 only while the entry word 0x8007BB00 is up, and the one handler that sets s3 = 2 (0x14 at 0x801DE06C) does so only when that word is zero; nothing between changes it"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002C6EC..0x8002C750"
+verdict = "unported"
+reason = "Styles 0x31 and 0x33..0x35 (kind-5 sprites) first draw FUN_8002C0B0 / FUN_8002C2E4 extras; the port's emitter covers the kind-6 reading box only and the engine draws those sprites from its atlas"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002C7DC..0x8002C7DC"
+verdict = "unported"
+reason = "A style record whose kind byte is 7 or more skips the JT straight to the chain tail at 0x8002FF00; the port's emitter covers kind 6 only"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002C800..0x8002EE3C"
+verdict = "unported"
+reason = "JT kinds 0..5 (jump table 0x80010D18): the other window skins' tile walks (kinds 0..4, styles 0x00..0x17, 0x2A, 0x2F, 0x30, 0x43, 0x44) and the single SPRT icons (kind 5); the engine draws its menu windows from atlas nine-slices (engine-ui title_save::panel) and its icons from atlas rects, without porting these walks (port gap)"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002EEB8..0x8002F210"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F25C..0x8002F28C"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F32C..0x8002F39C"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F3E8..0x8002F418"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F4AC..0x8002F7E8"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F7EC..0x8002F7EC"
+verdict = "unported"
+reason = "A centre width of -8 inflates to zero and the edge walks substitute one tile width (0x8002F7F4 / 0x8002F978); the port's footprint is the centre rect inflated by 8 on every side and does not model the substitution, and the dialog pager never passes a negative width"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F7F0..0x8002F848"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F894..0x8002F8C4"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F95C..0x8002F95C"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F970..0x8002F970"
+verdict = "unported"
+reason = "A centre width of -8 inflates to zero and the edge walks substitute one tile width (0x8002F7F4 / 0x8002F978); the port's footprint is the centre rect inflated by 8 on every side and does not model the substitution, and the dialog pager never passes a negative width"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F9A4..0x8002F9CC"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FA18..0x8002FA48"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FADC..0x8002FB24"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FB4C..0x8002FC44"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FC7C..0x8002FCA8"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FCD0..0x8002FDC8"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FF08..0x8002FF08"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
