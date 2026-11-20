@@ -370,7 +370,7 @@ pub struct UploadedVramMesh {
 
 /// The CPU streams of one uploaded mesh, what the frame-cost model reads
 /// (`legaia_engine_system::gpu_draw_cost`). A textured mesh carries its
-/// per-vertex `[cba, tsb]` words in `words`; an untextured one its blend
+/// per-vertex `[cba, tsb]` words in `words` and its UVs in `uvs`; an untextured one its blend
 /// words (`[0, blend]`, ABE in bit 15 of the second).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MeshCpuCopy {
@@ -379,6 +379,9 @@ pub struct MeshCpuCopy {
     pub colors: Vec<[u8; 3]>,
     pub indices: Vec<u32>,
     pub textured: bool,
+    /// A textured mesh's corner UVs (the mednafen price walks the texture
+    /// cache with them); empty on an untextured one.
+    pub uvs: Vec<[u8; 2]>,
 }
 
 impl UploadedVramMesh {

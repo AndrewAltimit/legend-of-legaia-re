@@ -117,6 +117,33 @@ different rules and diverge on the first frame that touches them. A joiner
 takes the lowest free seat, or spectates when the seats are full; the host
 can move anyone with `AssignSeat`.
 
+### The engine build id
+
+The build id is `legaia-engine/<release>`
+(`legaia_engine_netplay::room::engine_build`), the release the build was
+made for (`legaia_release_version::RELEASE`, baked in at compile time from
+`LEGAIA_RELEASE_VERSION`). The desktop archives and the site's play bundle
+of one release take that value from the same source, the release's `v*` tag
+(`scripts/ci/release-version.sh`), so a desktop player and a browser player
+of one release share a room and two releases never do:
+
+- **Desktop archives:** `release.yml` derives the version from the tag it
+  builds and `release-build.sh` exports it.
+- **Site bundles:** `build-wasm.sh` takes the `v*` tag on the commit it
+  builds. The deploy job asks `origin` for it, since its shallow checkout
+  has no tags, and `release.yml` dispatches a pages-only `main-ci.yml` run
+  once a release publishes, so a tag pushed after main's own deploy still
+  reaches the site. While main stands past the latest release, the site is
+  a development build.
+- **Development builds:** a build made for no release (a local
+  `cargo build`, a site bundle from an untagged commit) names the crate
+  version marked `-dev` (`legaia-engine/0.1.0-dev`). Development builds
+  join each other, whatever commit each was built from, and no release
+  build joins one.
+
+A refused joiner gets `BuildMismatch` carrying the host's build id, and the
+notice names both: "The host runs release 1.29.0; this is release 1.30.0".
+
 `Start` is the host's alone, and only once every seated member other than
 the host is ready. The relay replaces the start order's seat map with the
 lobby's (seat index to player, empty seats to the AI) and sends it to the
@@ -231,7 +258,9 @@ what is turn-based or what only the host can resolve.
 The relay runs in two places:
 
 - **Standalone:** `legaia-relay --bind 0.0.0.0:7462` (the default port),
-  for a dedicated machine on a LAN or a small server.
+  for a dedicated machine on a LAN or a small server. Its `--version` and
+  its start-up line name the release it was built for
+  (`legaia_release_version::VERSION`).
 - **In-process:** the hosting game calls `RelayServer::spawn(addr)` and gets
   a `RelayHandle` with the bound address; it then connects to
   `127.0.0.1:<port>` like any other client, creates the room and shows the

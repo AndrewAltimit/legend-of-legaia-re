@@ -137,23 +137,53 @@ impl World {
                 );
                 // The resident module's scanline wash, a screen layer the
                 // census does not count (`SCANLINE_WASH_WORK`).
-                if wash {
+                let w = if wash {
                     w.saturating_add(legaia_engine_battle_loop::frame_clock::SCANLINE_WASH_WORK)
                 } else {
                     w
+                };
+                // Under the derived pricing the census's units are priced
+                // from retail's instruction counts instead, the wash an
+                // instruction count already.
+                match (
+                    self.toggles.battle_derived_frame_cost,
+                    self.battle.derived_units,
+                ) {
+                    (true, Some(units)) => self.derived_battle_work(&units, wash),
+                    _ => w,
                 }
             })
         };
+        // A command surface's frame draws the surface's own windows, rows
+        // and cursors through the battle template's tick (`FUN_8004DA00`),
+        // over the HUD the line's base holds
+        // (`frame_clock::surface_frame_work`).
+        let surface = if std::mem::take(&mut self.battle.surface_pass_due) {
+            legaia_engine_battle_loop::frame_clock::surface_frame_work(self.battle.flow.raw())
+        } else {
+            0
+        };
+        let census = census.map(|w| w.saturating_add(surface));
         // An arm table's frames still have the census's work: what spans
         // them under a capture-band module's line (below).
         let arm_census = census.filter(|_| self.toggles.battle_poly_frame_cost);
         let census = census.filter(|_| !table_kept);
         let poly = census.filter(|_| self.toggles.battle_poly_frame_cost);
         let table_work = measured_frame_cost_at(self.party.party_count, state, passes)
-            .saturating_add(self.battle_frame_load_cost());
-        // The art commits' `"ME"` decodes, which link nothing.
+            .saturating_add(self.battle_frame_load_cost())
+            .saturating_add(surface);
+        // The art commits' `"ME"` decodes, which link nothing. The derived
+        // work holds its own (`derived_battle_work`).
         let me_decode = std::mem::take(&mut self.battle.me_decode_work);
-        let poly = poly.map(|w| w.saturating_add(me_decode));
+        let derived = self.toggles.battle_derived_frame_cost && self.battle.derived_units.is_some();
+        self.battle.me_decode_cycles = 0;
+        let poly = poly.map(|w| {
+            if derived {
+                w
+            } else {
+                w.saturating_add(me_decode)
+            }
+        });
         let work = poly.unwrap_or(table_work.saturating_add(me_decode));
         self.battle.frame_work = work;
         // The walker's branches up to here are this pass's.
@@ -269,6 +299,45 @@ impl World {
         }
     }
 
+    /// A battle frame's work priced from the derived per-unit table
+    /// (`legaia_engine_battle_loop::derived_cost`): the census's units, each
+    /// live move-VM part's tick, the effect walker's branches since the last
+    /// priced pass, the pass's `"ME"` decodes and the scanline wash, with the
+    /// vblank interrupts the work spans, in hblanks of PCSX-Redux's clock
+    /// (`2146.3` cycles, not [`CYCLES_PER_HBLANK`](legaia_engine_battle_loop::frame_clock::CYCLES_PER_HBLANK)).
+    fn derived_battle_work(
+        &self,
+        units: &legaia_engine_battle_loop::derived_cost::DerivedUnits,
+        wash: bool,
+    ) -> u16 {
+        use legaia_engine_battle_loop::derived_cost as dc;
+        let (parts, _) = self.battle_frame_load();
+        let wash = if wash {
+            // `SCANLINE_WASH_WORK` is an instruction count over `2152`.
+            u64::from(legaia_engine_battle_loop::frame_clock::SCANLINE_WASH_WORK) * 2152
+        } else {
+            0
+        };
+        dc::frame_hblanks(
+            units,
+            u32::from(parts),
+            &self.effect_walk_counts(),
+            self.battle.me_decode_cycles + wash,
+        )
+    }
+
+    /// Note the census's count of the frame by the derived pricing's units
+    /// (`legaia_engine_scene_host::battle_link_census`). A no-op outside a
+    /// battle.
+    pub fn note_derived_units(
+        &mut self,
+        units: legaia_engine_battle_loop::derived_cost::DerivedUnits,
+    ) {
+        if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
+            self.battle.derived_units = Some(units);
+        }
+    }
+
     /// Whether the battle frame draws its backdrop pair or its ground grid,
     /// the gates the census counts them under
     /// ([`LINKED_BACKDROP_WORK`](legaia_engine_battle_loop::frame_clock::LINKED_BACKDROP_WORK)).
@@ -318,10 +387,14 @@ impl World {
     /// `WorldToggles::battle_gpu_cost_step` is up: retail's entry is
     /// `max(cpu, dma + draw of the previous pass's table)`, the table the GPU
     /// draws while the pass runs (`DrawOTag` at `0x80017288`, `DrawSync(0)`
-    /// at `0x800174D8`). A no-op outside a battle.
+    /// at `0x800174D8`). In a field or cutscene the figure goes to the field
+    /// price instead (`WorldToggles::field_gpu_cost_step`); a no-op in any
+    /// other mode.
     pub fn note_drawn_table_cost(&mut self, hblanks: u16) {
         if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
             self.battle.drawn_table_cost = Some(hblanks);
+        } else if self.field_frame_priced_mode() {
+            self.field_drawn_table_cost = Some(hblanks);
         }
     }
 
@@ -682,8 +755,14 @@ impl World {
     pub(in crate::world) fn stage_pass_frame_cost(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
         self.battle.pass_frame_cost_due = None;
+        self.battle.surface_pass_due = false;
         if !self.toggles.battle_sm_frame_cadence {
             self.battle.pending_frame_step = None;
+            return;
+        }
+        // A frame a command surface already priced (the surface committed
+        // on a tick inside it): retail's pacer stores one cost a frame.
+        if self.battle.surface_pass_frame == Some(self.battle_frame_id()) {
             return;
         }
         // A recording's own steps outrank a capture's seeded one: the track
@@ -1347,6 +1426,54 @@ impl World {
         starts[0] = Some(self.clock.display_frames);
         self.take_pending_frame_step();
         true
+    }
+
+    /// Price the battle frame a command surface stands on, once a frame on
+    /// its first tick ([`WorldToggles::battle_surface_frame_cost`](crate::world::WorldToggles::battle_surface_frame_cost)).
+    ///
+    /// Retail's frame driver `FUN_80046A20` runs the menu SM `FUN_801D0748`
+    /// and the action SM on every battle frame, and the master loop draws the
+    /// stage, the bodies, their shadows and the HUD with the surface's
+    /// windows behind them; `FUN_80016B6C` stores that frame's cost like any
+    /// other. The port's live loop parks the action SM while a surface owns
+    /// the pad, so no pass priced those frames and a prompt ran on whatever
+    /// step the last action-SM pass left (`2` on a fight that opens on it)
+    /// where a full party's runs `3`: `retail-exec battle-cost` prices the
+    /// Gaza fight's item window at `548` hblanks, interrupts out, and the
+    /// PCSX-Redux films of four surfaces store `527..650` on every frame.
+    /// The push is the pass's own close (`Self::close_pass_frame_cost`),
+    /// after the census of the tick, and its work is the census line plus
+    /// the surface's packets (`frame_clock::surface_frame_work`). The step
+    /// the push reads opens the next frame, as an action-SM pass's does. A
+    /// replay's retail step track or seeded step owns its frames and is left
+    /// alone.
+    // PORT: FUN_80016B6C (the frame cost a command surface's frame stores)
+    pub(in crate::world) fn price_command_surface_frame(&mut self) {
+        if !self.toggles.battle_sm_frame_cadence || !self.toggles.battle_surface_frame_cost {
+            return;
+        }
+        let frame = self.battle_frame_id();
+        if self.battle.surface_pass_frame == Some(frame) || self.battle.sm_pass_frame == Some(frame)
+        {
+            return;
+        }
+        if self
+            .battle
+            .retail_step_track
+            .as_ref()
+            .is_some_and(|t| t.armed())
+            || self
+                .clock
+                .battle_frame_step_seed
+                .is_some_and(|(_, state)| self.battle_frame_step_seed_holds(state))
+        {
+            return;
+        }
+        self.battle.surface_pass_frame = Some(frame);
+        self.settle_battle_frame_stretch();
+        self.take_pending_frame_step();
+        self.battle.pass_frame_cost_due = Some(None);
+        self.battle.surface_pass_due = true;
     }
 
     /// Whether the next world tick runs an action-SM pass on retail's
@@ -2760,6 +2887,52 @@ mod tests {
         assert_eq!(w.battle.frame_work, linked_frame_work(3000, true));
     }
 
+    /// A command surface's frame is priced once a frame, on the census line
+    /// plus the surface's packets, and the step it reads opens the next
+    /// frame: a full party's item window (`518` packets, the census near
+    /// `1990` primitives on `battle_item_window_gaza2_retail`) runs step `3`
+    /// as retail's does, where a fight that opened on the prompt held `2`.
+    #[test]
+    fn a_command_surfaces_frame_is_priced_once_a_frame() {
+        use legaia_engine_battle_loop::frame_clock::{linked_frame_work, surface_frame_work};
+        use legaia_engine_battle_menus::battle_flow::BattleFlowState;
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 3;
+        w.toggles.battle_poly_frame_cost = true;
+        w.toggles.battle_sm_frame_cadence = true;
+        w.toggles.battle_party_cost_step = true;
+        w.battle.set_battle_flow(BattleFlowState::ItemWindow);
+        assert_eq!(w.battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
+        w.note_linked_polys(1990);
+        w.price_command_surface_frame();
+        w.close_pass_frame_cost();
+        let line = linked_frame_work(1990, w.battle_backdrop_drawn());
+        assert_eq!(w.battle.frame_work, line + surface_frame_work(0x3C));
+        assert_eq!(w.battle.frame_cost_step, 3);
+        // One push a frame.
+        let ring = w.battle.frame_cost_ring;
+        w.price_command_surface_frame();
+        w.close_pass_frame_cost();
+        assert_eq!(w.battle.frame_cost_ring, ring);
+        // The next frame opens on the step the push read, and an action-SM
+        // pass inside a frame a surface priced pushes nothing more.
+        w.advance_battle_pass();
+        w.price_command_surface_frame();
+        assert_eq!(w.battle_frame_step(), 3);
+        w.close_pass_frame_cost();
+        let ring = w.battle.frame_cost_ring;
+        w.stage_pass_frame_cost();
+        w.close_pass_frame_cost();
+        assert_eq!(w.battle.frame_cost_ring, ring);
+        // Off, the prompt pushes nothing.
+        w.toggles.battle_surface_frame_cost = false;
+        w.advance_battle_pass();
+        w.price_command_surface_frame();
+        w.close_pass_frame_cost();
+        assert_eq!(w.battle.frame_cost_ring, ring);
+    }
+
     /// A pass the census prices closes on the census of its own tick: the
     /// world leaves the close for the host, which counts the frame first
     /// (`World::close_pass_after_census`). A close no host ran is made at
@@ -2843,6 +3016,58 @@ mod tests {
             },
         );
         assert_eq!(w.battle.frame_work, linked_frame_work(2600, true) + tick);
+    }
+
+    /// Under the derived pricing a census-priced frame's work is the derived
+    /// table's price of the census's units, the effects and the `"ME"`
+    /// decodes in it, and the default census line is untouched with the
+    /// toggle down.
+    #[test]
+    fn the_derived_pricing_replaces_the_census_line() {
+        use legaia_engine_battle_loop::derived_cost::{self as dc, DerivedUnits, PrimTally};
+        use legaia_engine_battle_loop::frame_clock::{EffectWalkCounts, linked_frame_work};
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x1E;
+        w.toggles.battle_poly_frame_cost = true;
+        let units = DerivedUnits {
+            prims: PrimTally {
+                tris_linked: 900,
+                tris_culled: 700,
+                quads_linked: 600,
+                ..Default::default()
+            },
+            objects: 70,
+            bodies: 4,
+            body_objects: 60,
+            grid_cells: Some(117),
+            ..Default::default()
+        };
+        w.note_linked_polys(2600);
+        w.note_derived_units(units);
+        w.push_frame_cost(None);
+        assert_eq!(
+            w.battle.frame_work,
+            linked_frame_work(2600, true),
+            "off: the census"
+        );
+        w.toggles.battle_derived_frame_cost = true;
+        w.push_frame_cost(None);
+        let want = dc::frame_hblanks(&units, 0, &EffectWalkCounts::default(), 0);
+        assert_eq!(w.battle.frame_work, want);
+        assert!((400..700).contains(&want), "{want}");
+        // An art's decode lands in the derived work at its cycles.
+        w.battle.me_decode_cycles = dc::me_decode_cycles(15, 13);
+        w.push_frame_cost(None);
+        let with_me = dc::frame_hblanks(
+            &units,
+            0,
+            &EffectWalkCounts::default(),
+            dc::me_decode_cycles(15, 13),
+        );
+        assert_eq!(w.battle.frame_work, with_me);
+        assert_eq!(w.battle.me_decode_cycles, 0, "the push takes it");
     }
 
     /// A film's opening pass, priced on the table before the lead-in's census

@@ -942,6 +942,13 @@ pub struct BattleState {
     /// `"ME"` keyframe streams (`frame_clock::me_decode_work`), taken by the
     /// pass's push.
     pub me_decode_work: u16,
+    /// The same decodes in PCSX-Redux cycles
+    /// (`derived_cost::me_decode_cycles`), for the derived pricing.
+    pub me_decode_cycles: u64,
+    /// The census's count of the frame by the derived pricing's units
+    /// (`World::note_derived_units`), read while
+    /// `WorldToggles::battle_derived_frame_cost` is up. `None` before the first.
+    pub derived_units: Option<crate::derived_cost::DerivedUnits>,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
@@ -1010,6 +1017,16 @@ pub struct BattleState {
     /// (`World::battle_sm_pass_due`) - one pass a battle
     /// frame, however many vsyncs it spans.
     pub sm_pass_frame: Option<u64>,
+    /// The battle frame a command surface last priced
+    /// (`World::price_command_surface_frame`): retail's frame driver runs the
+    /// menu SM, the action SM and the draw on every frame a surface is up, and
+    /// the pacer stores each one's cost, so the port prices one push a frame
+    /// there too.
+    pub surface_pass_frame: Option<u64>,
+    /// The pass due to close (`World::close_pass_frame_cost`) is a command
+    /// surface's, whose push adds the surface's own packets
+    /// (`frame_clock::surface_frame_work`).
+    pub surface_pass_due: bool,
     /// The display ticks the last three battle frames opened on, newest
     /// first (`World::battle_sm_pass_due`): where the page two battle frames
     /// back was drawn (`World::cast_frame_persist_vsyncs`).
@@ -1816,6 +1833,8 @@ impl BattleState {
             drawn_polys: None,
             linked_polys: None,
             floor_clip_walk: 0,
+            me_decode_cycles: 0,
+            derived_units: None,
             me_decode_work: 0,
             cast_arm_pass: None,
             pending_frame_step: None,
@@ -1831,6 +1850,8 @@ impl BattleState {
             capture_read_frame_until: None,
             pass_draw_frame: None,
             sm_pass_frame: None,
+            surface_pass_frame: None,
+            surface_pass_due: false,
             frame_start_ticks: [None; 3],
             anim_pass_frame: None,
             action_fx_pass_frame: None,

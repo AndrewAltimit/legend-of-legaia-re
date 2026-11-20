@@ -313,6 +313,7 @@ impl Renderer {
                 colors: colors.to_vec(),
                 indices: indices.to_vec(),
                 textured: true,
+                uvs: uvs.to_vec(),
             })
         });
         Ok(UploadedVramMesh {
@@ -484,6 +485,7 @@ impl Renderer {
                 colors: colors.to_vec(),
                 indices: indices.to_vec(),
                 textured: false,
+                uvs: Vec::new(),
             })
         });
         Ok(UploadedColorMesh {

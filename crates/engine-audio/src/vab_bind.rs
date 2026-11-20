@@ -735,21 +735,90 @@ pub fn pitch_from_key(key: i32, fine: u32, tone: &VagAtr) -> u16 {
 
 /// The halfword a negative table index reads in retail: `DAT_8007A940 + 2 *
 /// index` lands on the globals below the table (`lhu -0x56C0` off `0x80080000`
-/// at `0x80066E14`, with no bound). Only two such indices are reached by the
-/// disc's scores, both on the sequencer arm: `-25` (track `2030`), a word every
-/// state holds at zero, and `-23` (track `2072`), the high half of the word at
-/// `0x8007A910`. That word is libsnd's tick-function pointer, statically
-/// initialised to `SsSeqCalc` (`FUN_80062F98`) and never rewritten in any
-/// library state, so it reads `0x8006` and the note sounds at `0x8006 >> 5`,
-/// two octaves under unity, where reading zero left the voice keyed and still.
-/// Every other word is taken as zero.
+/// at `0x80066E14`, with no bound). A remainder of `-11..=-1` semitones and a
+/// fine index of `0..=15` reach indices `-176..=-1`, `0x8007A7E0..0x8007A93E`.
+///
+/// Those words are libsnd / libapi globals that hold one value in every
+/// state the game runs (all 498 PCSX-Redux states of the library): function
+/// pointers (`-24` / `-23` is libsnd's tick-function pointer, statically
+/// initialised to `SsSeqCalc` `FUN_80062F98`), hardware-register addresses
+/// (`-16..=-13` hold `0x1F801070` and `0x1F801100`), and a few small
+/// settings, the rest zero. The score's sequencer arm reaches `-25` (track
+/// `2030`, zero: the voice keys still) and `-23` (track `2072`, `0x8006`:
+/// the note sounds at `0x400`); a cue keyed far under its tone's centre
+/// reaches the others (`-14`, `0x1100`, at `0x88` on track `2006`). Six
+/// words below `-72` move in a handful of states and read here as their
+/// common value, zero.
 fn table_front_word(index: i32) -> u32 {
-    /// `FUN_80062F98`, the pointer's value.
-    const SS_SEQ_CALC: u32 = 0x8006_2F98;
-    match index {
-        -23 => SS_SEQ_CALC >> 16,
-        _ => 0,
-    }
+    /// `(index, halfword)` for every non-zero word of `-176..=-1`.
+    const FRONT: &[(i32, u16)] = &[
+        (-170, 0xFF98),
+        (-169, 0x8005),
+        (-128, 0x5C9C),
+        (-127, 0x8001),
+        (-126, 0x07F4),
+        (-125, 0x8006),
+        (-124, 0x01E4),
+        (-123, 0x8006),
+        (-122, 0xFF20),
+        (-121, 0x8005),
+        (-120, 0x0338),
+        (-119, 0x8006),
+        (-118, 0x05C8),
+        (-117, 0x8006),
+        (-116, 0x03E4),
+        (-115, 0x8006),
+        (-114, 0x97D8),
+        (-113, 0x8007),
+        (-112, 0xA840),
+        (-111, 0x8007),
+        (-110, 0x1070),
+        (-109, 0x1F80),
+        (-108, 0x1074),
+        (-107, 0x1F80),
+        (-106, 0x10F0),
+        (-105, 0x1F80),
+        (-94, 0x8DB0),
+        (-93, 0x8001),
+        (-84, 0x1114),
+        (-83, 0x1F80),
+        (-82, 0x10F4),
+        (-81, 0x1F80),
+        (-76, 0xA4A0),
+        (-75, 0x8005),
+        (-72, 0x99AC),
+        (-71, 0x8006),
+        (-64, 0x1080),
+        (-63, 0x1F80),
+        (-60, 0x8000),
+        (-57, 0x0080),
+        (-56, 0x7350),
+        (-55, 0x1710),
+        (-54, 0x97E4),
+        (-53, 0x4040),
+        (-50, 0x1000),
+        (-49, 0x3000),
+        (-48, 0x00BF),
+        (-44, 0x3FFF),
+        (-43, 0x3FFF),
+        (-28, 0x0005),
+        (-24, 0x2F98),
+        (-23, 0x8006),
+        (-22, 0x0550),
+        (-21, 0x8006),
+        (-16, 0x1070),
+        (-15, 0x1F80),
+        (-14, 0x1100),
+        (-13, 0x1F80),
+        (-12, 0x0010),
+        (-10, 0x0020),
+        (-8, 0x0040),
+        (-6, 0x0001),
+    ];
+    FRONT
+        .iter()
+        .find(|&&(i, _)| i == index)
+        .map_or(0, |&(_, w)| u32::from(w))
 }
 
 fn pitch_at_index(key: i32, fine_index: i32, tone: &VagAtr) -> u16 {
@@ -880,6 +949,10 @@ mod tests {
     /// (track `2030`).
     #[test]
     fn a_note_past_the_tables_front_reads_the_globals_below_it() {
+        // The tick-function pointer's high half is the table's own word.
+        assert_eq!(table_front_word(-23), 0x8006);
+        // Index -14, timer 0's address low half: a cue at `0x88`.
+        assert_eq!(table_front_word(-14), 0x1100);
         // n = note + 60 - center = -2.
         assert_eq!(
             compute_pitch(10, &tone_with_shift(72, 9 << 3), PitchPath::Sequencer),

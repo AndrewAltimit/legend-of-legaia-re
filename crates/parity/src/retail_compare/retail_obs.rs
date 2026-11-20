@@ -69,6 +69,13 @@ pub struct RetailObs {
     /// [`RetailObs::seat_view_window`] from the state's scratchpad, on a
     /// field state only - `None` when the state carries no scratchpad.
     pub view_window: Option<[i8; 4]>,
+    /// The field menu lock, bit `0x0800_0000` of the scratchpad story word
+    /// `_DAT_1F800394` ([`legaia_engine_core::world::FIELD_MENU_LOCK_BIT`]),
+    /// on a field state. A record raises it with `2E 1B` and the word is not
+    /// in the save, so a card load past the record comes up without it; the
+    /// field party HUD `FUN_801D0D38` bails on it (`0x801D0D98..0x801D0DAC`).
+    /// Set by [`RetailObs::seat_menu_lock`].
+    pub menu_lock: bool,
     /// The packets and fog sheets in the table the state's frame is building
     /// ([`retail_frame_table`]); `None` without a scratchpad image.
     pub frame_table: Option<(usize, usize)>,
@@ -307,6 +314,14 @@ pub struct RetailObs {
     /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
     /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
     pub panel: Option<legaia_engine_effects::screen_fx::PanelWidget>,
+    /// The scene's live scripted grade ([`retail_scene_grade`]), handed to
+    /// the image child as `LEGAIA_SEAT_GRADE`, its clock taken back by the
+    /// display lag.
+    pub grade: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
+    /// Whether the state holds a live screen-effect sprite widget
+    /// ([`retail_has_sprite_widget`], the ending crawl's lines): the image
+    /// child runs those on to the record's RAM wait (`LEGAIA_SEAT_SPRITE_WAIT`).
+    pub sprite_widgets: bool,
     /// The frame's clear colour - the draw environment's `r0 / g0 / b0`
     /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
     /// ([`retail_clear_rgb`]).
@@ -434,6 +449,7 @@ impl RetailObs {
                 rd32(ram, ENTRY_OPERAND + 4) as i16,
             ),
             view_window: None,
+            menu_lock: false,
             frame_table: None,
             save,
             hud_countdown: matches!(class, StateClass::Field | StateClass::WorldMap)
@@ -543,6 +559,10 @@ impl RetailObs {
             },
             cue_clut_source: None,
             panel: None,
+            sprite_widgets: false,
+            grade: matches!(class, StateClass::Field)
+                .then(|| retail_scene_grade(ram))
+                .flatten(),
             scripted_seats: Vec::new(),
             scripted_headings: Vec::new(),
             movie: (class == StateClass::Cutscene)
@@ -784,6 +804,7 @@ impl RetailObs {
         {
             self.scroll_rects = retail_scroll_rects(ram, v);
             self.panel = retail_panel(ram);
+            self.sprite_widgets = retail_has_sprite_widget(ram);
             if let Some(p) = self.panel {
                 self.scroll_rects.extend(panel_source_rects(&p, v));
             }
@@ -811,6 +832,7 @@ impl RetailObs {
     /// scroller rects (the last through a file beside the child's frame).
     pub fn seat_env(&self, out_dir: Option<&Path>, label: &str) -> Vec<(&'static str, String)> {
         let mut env: Vec<(&'static str, String)> = self.seed_latches_env().into_iter().collect();
+        env.extend(self.menu_lock_env());
         if !self.cell_fx.is_empty() {
             env.push(("LEGAIA_SEAT_CLUT_FX", cell_fx_env(&self.cell_fx)));
         }
@@ -933,8 +955,20 @@ impl RetailObs {
         if let Some(f) = self.page_mark {
             env.push(("LEGAIA_SEAT_PAGE_MARK", f.to_string()));
         }
+        if let Some(mut t) = self.grade {
+            let back =
+                u16::from(self.frame_step()) * crate::retail_compare_battle::DISPLAY_LAG_PASSES;
+            t.clock = (t.clock as i16).saturating_sub(back as i16).max(0) as u16;
+            env.push((
+                "LEGAIA_SEAT_GRADE",
+                legaia_engine_capture::field_seeds::grade_env(&t),
+            ));
+        }
         if let Some(p) = self.panel {
-            env.push(("LEGAIA_SEAT_PANEL", panel_env(&p)));
+            // The display shows the tween two game frames back.
+            let back = i16::from(self.frame_step())
+                * crate::retail_compare_battle::DISPLAY_LAG_PASSES as i16;
+            env.push(("LEGAIA_SEAT_PANEL", panel_env(&rewind_panel(p, back))));
         }
         // The frame child always stands in retail's heading: it seats no
         // arrival facing of its own, and the image channel scores no heading.
@@ -1192,6 +1226,22 @@ impl RetailObs {
             .flatten()
             .map(|b| [b[0] as i8, b[1] as i8, b[2] as i8, b[3] as i8]);
     }
+
+    /// Read the field menu lock off a state's scratchpad story word
+    /// (`0x1F800394`, index `0x394`). Field states only.
+    pub fn seat_menu_lock(&mut self, scratchpad: Option<&[u8]>) {
+        self.menu_lock = self.class == StateClass::Field
+            && scratchpad
+                .and_then(|s| s.get(0x394..0x398))
+                .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .is_some_and(|w| w & legaia_engine_core::world::FIELD_MENU_LOCK_BIT != 0);
+    }
+
+    /// [`Self::menu_lock`] as `LEGAIA_SEAT_MENU_LOCK` for `play-window`.
+    pub fn menu_lock_env(&self) -> Option<(&'static str, String)> {
+        self.menu_lock
+            .then(|| ("LEGAIA_SEAT_MENU_LOCK", "1".to_string()))
+    }
 }
 
 /// The displayed frame. A minigame state may be in the slot machine's
@@ -1277,6 +1327,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             obs.seat_scroll_rects(ram, gpu.vram_bytes());
             obs.seat_step_bytes(st.scratch_ram().ok());
             obs.seat_view_window(st.scratch_ram().ok());
+            obs.seat_menu_lock(st.scratch_ram().ok());
             obs.seat_walk_rewind(st.scratch_ram().ok());
             obs.frame_table = st
                 .scratch_ram()
@@ -1293,6 +1344,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
             obs.seat_step_bytes(st.scratchpad());
             obs.seat_view_window(st.scratchpad());
+            obs.seat_menu_lock(st.scratchpad());
             obs.seat_walk_rewind(st.scratchpad());
             obs.frame_table = st
                 .scratchpad()

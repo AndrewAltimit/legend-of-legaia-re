@@ -81,6 +81,7 @@ mod config;
 mod cutscene_state;
 mod disc_tables;
 pub mod field_frame_cost;
+pub mod field_frame_units;
 mod field_locomotion;
 mod field_npc_state;
 mod field_prop_state;

@@ -37,6 +37,9 @@
 --                it, so the edge into that condition is one cue. `drain`
 --                is the drainer's own gate (0x8007BABC == 0x8007BAA0,
 --                0x80016BC0..0x80016BD4).
+--   fxspawn.csv  with LEGAIA_FX_SPAWNS=1 (breakpoint core): every effect-pool
+--                spawn (FUN_801DFDF0 / FUN_801DFDF8) and prototype seat
+--                (FUN_80050ED4), a0..a3, ra and the rand() seed word.
 --   sfxcall.csv  with LEGAIA_SFX_CALLERS=1 (breakpoint core): every call
 --                into the cue producers FUN_80035B50 / FUN_80035BD0, the
 --                battle router FUN_8004FE5C and the dispatcher FUN_8004FCC8,
@@ -594,7 +597,14 @@ probe.run({
             -- each KON write FUN_8006B854(1, mask), with the CPU cycle: a calc
             -- skipped or doubled across a cast's blocking arms shows as a
             -- cycle gap of 0 or 2 vsyncs (breakpoint core). The mask is a1.
-            local calc_csv = probe.csv_open(probe.out_path("calc.csv"), "vsync,st7,phase,kind,cycle,mask,ra")
+            -- Each row also carries the calc's lock word 0x801CD2B4 and the
+            -- flush's history index _DAT_801CE204 as they stand: a calc
+            -- entered with the lock at 1 returns at 0x80062FCC and runs no
+            -- flush. The cue key-on FUN_80065034 takes the lock at
+            -- 0x800650A4 and frees it at 0x80065288 / 0x80065388 (rows
+            -- `lock` / `free`), so a lost calc sits inside a lock..free span.
+            local calc_csv = probe.csv_open(probe.out_path("calc.csv"),
+                "vsync,st7,phase,kind,cycle,mask,ra,lock,flush")
             local function calc_row(kind)
                 local R = PCSX.getRegisters()
                 local n = R.GPR.n
@@ -604,11 +614,15 @@ probe.run({
                 end
                 local c = u32(CTX_PTR)
                 local ok = c >= 0x80000000
-                calc_csv:row("%d,%d,%d,%s,%.0f,0x%06X,0x%08X", probe.cast_elapsed or 0,
+                calc_csv:row("%d,%d,%d,%s,%.0f,0x%06X,0x%08X,%d,%d", probe.cast_elapsed or 0,
                     ok and u8(c + 7) or -1, ok and u8(c + 0x279) or -1, kind,
-                    tonumber(PCSX.getCPUCycles()), kind == "kon" and w(n.a1) or 0, w(n.ra))
+                    tonumber(PCSX.getCPUCycles()), kind == "kon" and w(n.a1) or 0, w(n.ra),
+                    u32(0x801CD2B4), u32(0x801CE204))
             end
             probe.arm_breakpoint(0x80062F98, "Exec", 4, "calc", function() calc_row("calc") end)
+            probe.arm_breakpoint(0x800650A4, "Exec", 4, "calclock", function() calc_row("lock") end)
+            probe.arm_breakpoint(0x80065288, "Exec", 4, "calcfree", function() calc_row("free") end)
+            probe.arm_breakpoint(0x80065388, "Exec", 4, "calcfree2", function() calc_row("free") end)
             probe.arm_breakpoint(0x8006B854, "Exec", 4, "kon", function()
                 local R = PCSX.getRegisters()
                 if (tonumber(R.GPR.n.a0) or 0) == 1 then calc_row("kon") end
@@ -751,6 +765,22 @@ probe.run({
                 calls:row("%d,store,%d,%d,0x%08X", last_elapsed, tou32(r.pc),
                     -1, tou32(r.GPR.n.ra))
             end)
+        end
+        if probe.getenv_num("LEGAIA_FX_SPAWNS", 0) ~= 0 then
+            -- Every effect spawn, in call order: the pool's public entry
+            -- FUN_801DFDF0 and the spawn API FUN_801DFDF8 it falls into, and
+            -- the prototype-table seat FUN_80050ED4, each with a0..a3, ra and
+            -- the BIOS seed word 0x80009010 at entry (breakpoint core).
+            local fx = probe.csv_open(probe.out_path("fxspawn.csv"), "vsync,fn,a0,a1,a2,a3,ra,seed")
+            for _, f in ipairs({ { 0x801DFDF0, "pool" }, { 0x801DFDF8, "spawn" },
+                                  { 0x80050ED4, "proto" } }) do
+                probe.arm_breakpoint(f[1], "Exec", 4, "fx_" .. f[2], function()
+                    local r = PCSX.getRegisters()
+                    fx:row("%d,%s,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X,%d", last_elapsed, f[2],
+                        tou32(r.GPR.n.a0), tou32(r.GPR.n.a1), tou32(r.GPR.n.a2), tou32(r.GPR.n.a3),
+                        tou32(r.GPR.n.ra), u32(0x80009010))
+                end)
+            end
         end
         if probe.getenv_num("LEGAIA_HIT_TRACE", 0) ~= 0 then
             -- Each melee hit the strike kernel FUN_801EC3E4 resolves

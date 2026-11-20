@@ -1586,6 +1586,46 @@ composed: retail's view builder `FUN_800172C0` reads the globals every frame, so
 while the scene's arrival actor still counts down for an engaged player (`izumi`'s opening) is
 on screen from its first frame (`ZoneFollow::script_view`).
 
+**Stepped moves.** A glide is the one camera move with a known next pose. The follow ease
+`FUN_801DB510` steps the globals once a game pass toward the composed shot, and a record that
+re-applies or re-stages its shot every frame (op `0x45` APPLY, or an `apply == 0` Configure in a
+loop) and the camera-register ramps feeding the composer do the same, so each lands a whole step
+on one vsync and holds on the vsyncs after it: a `town01` walk's follow pan holds on half its
+vsyncs. The smooth camera draws such a move behind instead (`Camera::observe_present`, the
+`lag` of `DrawLead`): from where the draw stood to the new stored pose, over the frame step after
+the move landed, as the battle draw does. A new move picks up the share of the last one not yet
+shown, so the drawn pose never jumps.
+
+- The focus a free-roam follow camera pins onto the player every vsync (`0x801DB820`) stays live:
+  under the smooth walk the figure moves every vsync, and a lagged focus would shake it on screen.
+  A mode-5 fixed shot's focus ease and a script's focus are stepped moves.
+- The shake jitter pair and focus Y stay live; a move a glide in flight made is the lead's.
+- A cut draws at once: a scene entry or a battle's return to the field, the follow camera's snap
+  (`FUN_801DB8EC`), or any step past `480` angle units, `1800` eye-space units of the eye trio,
+  `480` units of focus or `256` of `H` (the battle draw's cut rules,
+  [`present.rs`](../../crates/engine-field/src/camera/present.rs)).
+- Presentation-only, as the lead is: nothing the simulation reads takes it, and the
+  `smooth_follow_camera_disc` walk holds the stored globals, the player and the `rand()` stream
+  identical vsync for vsync with the smooth camera on and off.
+
+**Fog sheets.** The fog pool walks once a game pass and projects its sheets through the pass's
+camera ([field ambient FX](field-ambient-fx.md)), while the frame draws the scene through the
+camera of its vsync. Under the smooth camera and the smooth walk the two part between passes and
+the sheets stood on the screen while the scene slid under them, by up to `7` px on a `vell` walk.
+Each sheet keeps the inputs its half was emitted from (`FogQuad::source`), and under the smooth
+camera a draw through a moved camera projects it again through that camera
+(`World::fog_reprojection`, `FogQuad::reproject`, the same `FUN_8003F86C` port). Through the
+pass's own camera the sheets are the pass's, bit for bit.
+
+**The `izumi` arrival.** The port's `izumi` entry stages the glide above (`apply 120`, curve `1`,
+from pitch `275`, yaw `-120` and eye `(675, 1474, 14790)` to `155`, `-40`, `(275, 934, 7110)`)
+and runs it at step `4`. No retail state holds a first visit yet. A film of the revisit
+([`autorun_camera_glide_film.lua`](../../scripts/pcsx-redux/autorun_camera_glide_film.lua) on
+`izumi_arrival_revisit`, 240 vsyncs) finds no mover live, step `2`, and the camera standing on
+pitch `334`, yaw `0`, eye `(-111, 567, 14296)`, `H` `768` throughout - the pose the engine seeded
+from that state also holds - so the glide's start, end and per-frame poses on a first visit stay
+unmeasured.
+
 #### What a build census actually measures
 
 `FUN_800172c0` is **not** a once-per-frame builder. It has seventeen `jal` sites - four in
@@ -1975,12 +2015,25 @@ logs the sound-flag word at each mode change) read mode `0x02` for `184`
 vsyncs behind every door that kept the music (`kor` -> `koin2`, `balden` ->
 `balden2`, `jouind` -> `jouinc`; `map03` -> `son` `185`) and `241` or `242`
 behind every door that did not (`ropeway` -> `map02` -> `stone` ->
-`tunnela` -> `rayman2`, `retockin` -> `jagaroom`, `korb2` -> `doman`;
-`map01` -> `town01` reads `256`), whatever the scene. The retail-faithful mode
+`tunnela` -> `rayman2`, `retockin` -> `jagaroom`, `korb2` -> `doman`),
+whatever the scene. The retail-faithful mode
 (`WorldToggles::skip_load_holds` off, as `--retail` sets it) arms
 `field_init_hold` for those two figures
 (`mode_entry_init::door_field_init_hold_vsyncs`); the default keeps the load
 instant.
+
+A destination that streams a pack the floor cannot hide holds longer. The
+init reads the block's `+4` entry when the scene's asset table carries a
+`Flag(0x14)` / `Flag(0x0A)` descriptor (`FUN_8002541C`, `0x801D6C18`),
+before the floor test. Cycle-stamped on PCSX-Redux with exec breakpoints
+through the init, `map02` -> `stone` reaches the floor test `52` vsyncs in
+and waits it out to `127`; `map01` -> `town01` (`s2_rimelm_town01`) spends
+`38.3..124.2` inside `FUN_8002541C(0x14)` reading town01's `180`-sector
+pack, reaches the floor test at `141`, past the floor, and stores mode `3`
+at `256`. The BGM poll after the floor runs `109` vsyncs on both. The
+retail-faithful hold adds what the pack read runs past the floor
+(`door_pack_overrun_vsyncs`, `254` for town01); `doman`'s and `balden2`'s
+smaller packs are read under it.
 
 The departure before the init has a CD wait of its own. The streaming
 actor `FUN_80021934` seeds its `0x46`-frame countdown in state 0, streams
@@ -1993,8 +2046,14 @@ read the countdown at `-26` when `tunnela` hands off to `rayman2` (`181`
 sectors, `96` vsyncs after the seed) and `-2` behind every chunk of `82..106`
 sectors (`72` vsyncs). About two sectors a vsync
 (`CHUNK_SECTORS_PER_VSYNC_X100`) fits `jagaroom` (`143`, `76`), `koin2` and
-`balden2` (`163`, `84`) to two vsyncs; `map02` -> `stone` (`127`, `78` at
-step `3`) reads six past it. The retail-faithful mode sets the hold's
+`balden2` (`163`, `84`) to two vsyncs. `map02` -> `stone` (`127`, `78` at
+step `3`) reads six past it, and the six are not the door's: breakpoints on
+the actor's states put its state-1 CD wait at `6` vsyncs there (none on
+`ropeway` -> `map02`), behind a `4`-sector read of the battle-mesh assembly
+`FUN_80052770` (through `FUN_800559EC`), which streams the party's battle
+data in steps for about `190` vsyncs after a scene entry. The hop left
+`map02` inside that window; a departure taken later finds the CD idle. The
+engine does not stream the assembly, so it does not model the wait. The retail-faithful mode sets the hold's
 `stream_vsyncs` from the chunk's size, the default reads the chunk at once.
 
 A battle's return to the field runs the same init with the field-entry word

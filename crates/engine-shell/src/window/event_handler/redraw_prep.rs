@@ -305,6 +305,29 @@ impl PlayWindowApp {
             if due && let Some(f) = sc.seat_page_mark {
                 self.session.host.world.seat_page_mark_frame(f);
             }
+            if due && let Some(t) = sc.seat_grade {
+                self.session.host.world.seat_held_scene_grade(t);
+            }
+            if due
+                && let Some(want) = sc.seat_sprite_wait
+                && !sc.sprite_lead_seated.get()
+            {
+                sc.sprite_lead_seated.set(true);
+                let world = &mut self.session.host.world;
+                let have = sc
+                    .script_gate
+                    .as_ref()
+                    .and_then(|g| g.context(world))
+                    .map_or(want, |c| c.wait);
+                let step = world.clock.frame_step.max(1);
+                let lead = (want - have).max(0) as u16 / u16::from(step);
+                let mut fx = std::mem::take(&mut world.presentation.fx);
+                for _ in 0..lead {
+                    fx.advance_sprites(step, |i| world.system_flag_test(i));
+                }
+                world.presentation.fx_frame = fx.tick(0, |i| world.system_flag_test(i));
+                world.presentation.fx = fx;
+            }
             if due && let Some(p) = sc.seat_panel {
                 let world = &mut self.session.host.world;
                 let mut fx = std::mem::take(&mut world.presentation.fx);
@@ -438,6 +461,21 @@ impl PlayWindowApp {
                 && let Some(sc) = self.screenshot.as_mut()
             {
                 sc.battle_backdrop_yaw = None;
+            }
+        }
+        // The burning-puff accumulator is a clock too
+        // (`LEGAIA_BATTLE_BURN_ACCUM`): seated once, where the cast film
+        // begins, then left to the frame driver. Held through the replay
+        // before it, the puffs the replayed rounds shed moved the stream the
+        // replay reaches its gate on (`balden_orb_v2_strike`).
+        if let Some(acc) = self.screenshot.as_ref().and_then(|sc| sc.battle_burn_accum)
+            && self.session.host.world.mode == SceneMode::Battle
+            && std::env::var_os("LEGAIA_DIAG_CAST_SEQ").is_some()
+            && self.cast_film_begun()
+        {
+            self.session.host.world.battle.burn_emit_accum = acc;
+            if let Some(sc) = self.screenshot.as_mut() {
+                sc.battle_burn_accum = None;
             }
         }
         // ... and, once a cast capture's gate holds, the summon close-up's

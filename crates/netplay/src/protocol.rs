@@ -13,7 +13,7 @@ use crate::codec::{CodecError, Reader, Writer};
 
 /// The protocol revision this build speaks. Bumped on any change to a
 /// message's layout or meaning.
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 /// Largest encoded message, tag included. Transports refuse a frame over it.
 pub const MAX_MESSAGE_LEN: usize = 16 * 1024;
 /// Player display name, in bytes.
@@ -127,14 +127,17 @@ pub struct Hello {
 
 /// Why the relay refused a request. Some close the connection (see
 /// [`RejectReason::is_fatal`]); the rest only refuse that one request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RejectReason {
     /// The client speaks another protocol revision; `server` is the relay's.
     ProtocolMismatch {
         server: u16,
     },
-    /// Not the host's engine build.
-    BuildMismatch,
+    /// Not the host's engine build; `host` is the host's build id, so the
+    /// refused player can be told which release the room runs.
+    BuildMismatch {
+        host: String,
+    },
     /// Not the host's expansion pack (id or content hash).
     PackMismatch,
     NoSuchRoom,
@@ -161,7 +164,7 @@ impl RejectReason {
     /// Whether the relay closes the connection after sending this. The
     /// rest leave the connection open so the client can retry (another
     /// room code, another room).
-    pub fn is_fatal(self) -> bool {
+    pub fn is_fatal(&self) -> bool {
         matches!(
             self,
             Self::ProtocolMismatch { .. } | Self::ServerFull | Self::RateLimited | Self::Malformed
@@ -445,10 +448,10 @@ fn get_seat(r: &mut Reader<'_>) -> Result<u8, CodecError> {
     }
 }
 
-fn reject_code(reason: RejectReason) -> u8 {
+fn reject_code(reason: &RejectReason) -> u8 {
     match reason {
         RejectReason::ProtocolMismatch { .. } => 0,
-        RejectReason::BuildMismatch => 1,
+        RejectReason::BuildMismatch { .. } => 1,
         RejectReason::PackMismatch => 2,
         RejectReason::NoSuchRoom => 3,
         RejectReason::RoomFull => 4,
@@ -499,9 +502,11 @@ impl Message {
             }
             Self::Reject(reason) => {
                 w.u8(tag::REJECT);
-                w.u8(reject_code(*reason));
-                if let RejectReason::ProtocolMismatch { server } = reason {
-                    w.u16(*server);
+                w.u8(reject_code(reason));
+                match reason {
+                    RejectReason::ProtocolMismatch { server } => w.u16(*server),
+                    RejectReason::BuildMismatch { host } => w.str(host),
+                    _ => {}
                 }
             }
             Self::Ping { nonce } => {
@@ -727,7 +732,9 @@ impl Message {
             },
             tag::REJECT => Self::Reject(match r.u8()? {
                 0 => RejectReason::ProtocolMismatch { server: r.u16()? },
-                1 => RejectReason::BuildMismatch,
+                1 => RejectReason::BuildMismatch {
+                    host: r.string("engine_build", MAX_ID_LEN)?,
+                },
                 2 => RejectReason::PackMismatch,
                 3 => RejectReason::NoSuchRoom,
                 4 => RejectReason::RoomFull,

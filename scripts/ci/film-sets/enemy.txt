@@ -20,7 +20,7 @@ jouind_gilium_lv3_thunder_storm --physical --state battle_jouind_gilium_lv3_thun
 kor_gaza_166_astral_wave --physical --state battle_kor_gaza_166_astral_wave_mid_cast --caster 3 --target 1 --pin-seed 0x12345678
 kor_ghost_knight_v_windhash --physical --state battle_kor_ghost_knight_v_windhash_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 korb2_ghost_knight_windhash --physical --state battle_korb2_ghost_knight_windhash_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
-map01_lippian_kiss_of_death --physical --state battle_map01_lippian_kiss_of_death_mid_cast --caster 5 --target 0 --pin-seed 0x12345678 --retail-from captures/w29-A/lippian_kiss/retail
+map01_lippian_kiss_of_death --physical --state battle_map01_lippian_kiss_of_death_mid_cast --caster 5 --target 0 --pin-seed 0x12345678 --retail-from captures/film-retail/map01_lippian_kiss_of_death/retail
 map02_ogre_power_charge --physical --state battle_map02_ogre_power_charge_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 map03_acid_slime_melt_spray --physical --state battle_map03_acid_slime_melt_spray_mid_cast --caster 3 --target 0 --pin-seed 0x12345678
 noaru_gilium_lv2_thunder_storm --physical --state battle_noaru_gilium_lv2_thunder_storm_mid_cast --caster 4 --target 0 --pin-seed 0x12345678

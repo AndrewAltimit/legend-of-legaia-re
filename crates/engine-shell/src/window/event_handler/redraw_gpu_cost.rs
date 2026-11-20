@@ -37,18 +37,20 @@ fn streams(cpu: &legaia_engine_render::MeshCpuCopy) -> MeshStreams<'_> {
         colors: &cpu.colors,
         indices: &cpu.indices,
         textured: cpu.textured,
+        uvs: &cpu.uvs,
     }
 }
 
-/// The mesh draws' part of a battle frame's table.
+/// The mesh draws' part of a frame's table of `ot_len` buckets.
 pub(super) fn price_scene_draws(
     draws: &[SceneDraw<'_>],
     color_draws: &[ColorSceneDraw<'_>],
     nclip: &[(usize, u32)],
     color_nclip: &[(usize, u32)],
     frame_word: u32,
+    ot_len: u32,
 ) -> TableCost {
-    let mut cost = TableCost::new(gc::BATTLE_OT_LEN);
+    let mut cost = TableCost::new(ot_len);
     for (i, d) in draws.iter().enumerate() {
         if let Some(cpu) = d.mesh.cpu_copy() {
             let m = d.mvp.to_cols_array();
@@ -95,23 +97,42 @@ pub(super) fn price_screen_prims(
 }
 
 impl PlayWindowApp {
-    /// Whether this redraw prices its battle frame: for the world's frame
-    /// step (`WorldToggles::battle_gpu_cost_step`) or for the diagnostic
-    /// alone ([`gpu_cost_diag_path`]), in a battle.
+    /// Whether this redraw prices its frame: a battle frame for the world's
+    /// frame step (`WorldToggles::battle_gpu_cost_step`) or for the
+    /// diagnostic alone ([`gpu_cost_diag_path`]), a field or cutscene frame
+    /// for the opt-in field step (`WorldToggles::field_gpu_cost_step`).
     pub(super) fn gpu_cost_pricing(&self) -> bool {
         let w = &self.session.host.world;
-        (w.toggles.battle_gpu_cost_step
-            || (w.toggles.battle_poly_frame_cost && w.toggles.battle_poly_window_count)
-            || gpu_cost_diag_path().is_some())
-            && w.mode == SceneMode::Battle
+        if w.mode == SceneMode::Battle {
+            w.toggles.battle_gpu_cost_step
+                || (w.toggles.battle_poly_frame_cost && w.toggles.battle_poly_window_count)
+                || gpu_cost_diag_path().is_some()
+        } else {
+            w.field_frame_priced_mode()
+                && (w.toggles.field_gpu_cost_step || gpu_cost_diag_path().is_some())
+        }
+    }
+
+    /// The ordering table's bucket count the priced frame walks
+    /// (`0x1F8003A6`): `4096` in every battle state, `2048` in every field
+    /// one.
+    pub(super) fn gpu_cost_ot_len(&self) -> u32 {
+        if self.session.host.world.mode == SceneMode::Battle {
+            gc::BATTLE_OT_LEN
+        } else {
+            gc::FIELD_OT_LEN
+        }
     }
 
     /// Hand the priced frame to the world. `LEGAIA_DIAG_GPU_COST=<path>`
     /// appends a row a frame: the tick, the battle frame, action state, module
     /// phase and frame step, the draw and DMA hblanks and the polygons, beside
-    /// a retail `gpu.csv`'s `draw` / `dma` / `polys`.
+    /// a retail `gpu.csv`'s `draw` / `dma` / `polys`, and the census by class;
+    /// last, `med`, the whole wait on mednafen's rules (a mednafen film's
+    /// `med_drawn`).
     pub(super) fn note_battle_gpu_cost(&mut self, cost: TableCost) {
         let (draw, dma) = cost.hblanks();
+        let med = cost.med.hblanks().0;
         if let Some(path) = gpu_cost_diag_path() {
             use std::io::Write;
             let new = !path.exists();
@@ -123,14 +144,14 @@ impl PlayWindowApp {
                 if new {
                     let _ = writeln!(
                         f,
-                        "tick,frame,state,phase,step,draw,dma,polys,census,stage,grid,bodies,ghosts,shadows,effects,sprites,trails"
+                        "tick,frame,state,phase,step,draw,dma,polys,census,stage,grid,bodies,ghosts,shadows,effects,sprites,trails,med"
                     );
                 }
                 let w = &self.session.host.world;
                 let c = self.session.host.battle_link_last;
                 let _ = writeln!(
                     f,
-                    "{},{},{},{},{},{draw:.1},{dma:.1},{},{},{},{},{},{},{},{},{},{}",
+                    "{},{},{},{},{},{draw:.1},{dma:.1},{},{},{},{},{},{},{},{},{},{},{med:.1}",
                     self.tick_no,
                     w.battle_frame_id(),
                     w.battle_ctx.action_state,
@@ -150,10 +171,11 @@ impl PlayWindowApp {
             }
         }
         // Stored either way; the next pass reads it only under the toggle.
+        let timing = self.session.host.world.toggles.gpu_cost_timing;
         self.session
             .host
             .world
-            .note_drawn_table_cost(cost.total_hblanks());
+            .note_drawn_table_cost(cost.total_hblanks_for(timing));
         self.session.host.world.note_drawn_polys(cost.polys);
     }
 }

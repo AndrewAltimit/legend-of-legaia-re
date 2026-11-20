@@ -2758,6 +2758,33 @@ clear: its camera stands beside a decoration rock whose near face projects
 past the span. The dance hall applies the same rule to its baked hall on the
 CPU ([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).
 
+**Clean and enhanced frames keep the long primitives.** The limit is the
+console's hardware, and clean rasterisation is not bound by it. A frame without
+the PSX snap skips an oversize half only when it is an artefact the limit keeps
+off a retail screen (`prim_near_reject::clean_span_rejected`, the WGSL
+`clean_half_rejected` and the GLSL `cleanHalfRejected`):
+
+- one of its corners is garbled by the GTE: its divide is capped (`SZ` under
+  `H / 2`, a corner at, behind or just in front of the eye) or its `SX` / `SY`
+  saturates, so it lands where the scene does not put it
+  (`gte_corner_garbled`);
+- or it fails PCSX-Redux's limit: a corner pair past `1024 x 512` from a
+  corner with a negative screen coordinate. Scene geometry beside the camera
+  that the limit hides runs off the screen's top or left edge this way:
+  `conc3_ceremony_mist_pillar` frames the ceremony past a pillar just right
+  of the eye, every corner in front of it, which the clean frame would
+  otherwise paint across the right third of the screen.
+
+The near reject ahead of it is unchanged. `vozz_tree_burst` is the case the
+rule keeps: the Genesis Tree burst throws two rays off the screen's foot, `620`
+and `855` rows tall, every corner well in front of the eye and none negative.
+The console skips both, a PCSX-Redux capture draws them, and so does the clean
+frame, with the white centre they add to. The rule draws what PCSX-Redux
+draws beyond that, garbled corners aside: `orb_summon_mid_cast`'s clean frame
+shows a sliver of a near body in its bottom-left corner that the console, and
+the Mednafen capture, leave out. PSX mode keeps the console's limit, or the
+capture's emulator's.
+
 **A near body that survives the limit.** `theeder_summon_mid_cast` puts
 monster `0xA1` (Gilium) between the eye and the caster. Its render node's
 colour word reads `0x87FF2020` - Venom's `0xFF2020`, the ghost's `0x83` and

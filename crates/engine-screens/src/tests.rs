@@ -443,3 +443,87 @@ fn no_overlay_no_shop_labels() {
     assert!(!l.is_installed());
     assert!(l.bag_row.plain().is_empty() && l.cannot_equip.plain().is_empty());
 }
+
+/// Issue #645: under the sell quantity stepper, window 38 shows the page and
+/// row the stack was confirmed on. Retail's stepper (`FUN_801DBD94` phase 0)
+/// idles the kind-4 list without touching its scroll / selection, so the list
+/// kernel goes on drawing the same page; the port drew page one with the hand
+/// on row 0 (the menu VM's cursor reset) until the stepper closed. Both hosts
+/// draw this composition.
+#[test]
+fn sell_list_holds_its_page_under_the_quantity_stepper() {
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_engine_system::input::PadButton;
+    let Some(mut world) = disc_world() else {
+        return;
+    };
+    // Fifteen stacks: window 38 pages eleven rows, so two pages.
+    for id in 0x80..0x8F {
+        world.party.inventory.insert(id, 3);
+    }
+    world.shops.shop_armed = true;
+    world.shops.shop_open = true;
+    world.shops.pending_shop = Some(ShopSession::new(ShopInventory::new(
+        0,
+        vec![ShopItem {
+            item_id: 0x80,
+            price: 10,
+        }],
+    )));
+    let mut menu = MenuRuntime::new(std::env::temp_dir());
+    assert!(menu.poll_field_overlay(&mut world).is_some());
+    let font = legaia_font::Font::placeholder();
+    let chrome = chrome_rects();
+    let disc = std::env::var_os("LEGAIA_DISC_BIN").expect("disc_world checked it");
+    let overlay =
+        legaia_engine_scene_host::scene_host::SceneHost::open_disc(std::path::Path::new(&disc))
+            .expect("open disc")
+            .index
+            .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+            .expect("PROT 0899");
+    let table = legaia_game_tables::menu_windows::parse(&overlay).expect("window table parses");
+    let list = legaia_engine_ui::pause_menu::MenuRects::new(Some(&table)).rect(38);
+    let settle = |menu: &mut MenuRuntime, world: &mut World, edge: u16| {
+        menu.step_field_session(world, edge);
+        for _ in 0..30 {
+            menu.step_field_session(world, 0);
+        }
+    };
+    // The list window's texts (PAGE header, rows), stage pixels.
+    type Glyph = ((i32, i32, u32, u32), (u32, u32, u32, u32));
+    let list_texts = |menu: &MenuRuntime, world: &World| -> Vec<Glyph> {
+        let i = inputs(world, menu, &font, Some(&table), Some(&chrome), &[]);
+        let draws = crate::shop::gold_shop_screen(&i, 320, 240).expect("a shop screen");
+        draws
+            .texts
+            .into_iter()
+            .filter(|d| {
+                let (x, y) = (d.dst.0, d.dst.1);
+                x >= list.0 && x < list.0 + list.2 && y >= list.1 && y < list.1 + list.3
+            })
+            .map(|d| (d.dst, d.src))
+            .collect()
+    };
+    settle(&mut menu, &mut world, 0);
+    settle(&mut menu, &mut world, PadButton::Down.mask());
+    settle(&mut menu, &mut world, PadButton::Cross.mask());
+    assert_eq!(menu.ctx_state(), MenuState::ShopSell.as_byte());
+    settle(&mut menu, &mut world, PadButton::Right.mask());
+    settle(&mut menu, &mut world, PadButton::Down.mask());
+    settle(&mut menu, &mut world, PadButton::Down.mask());
+    assert!(menu.cursor() >= 11, "the hand is on page two");
+    let browsing = list_texts(&menu, &world);
+    assert!(!browsing.is_empty(), "the sell list draws");
+    settle(&mut menu, &mut world, PadButton::Cross.mask());
+    assert!(menu.quantity_view().is_some(), "the sell stepper is up");
+    // Every glyph of the confirmed page (its rows and the PAGE digit) is
+    // still drawn. The stepper's own prompt may run into the list's rect
+    // with the placeholder font's wide advance, so glyphs are only checked
+    // one way.
+    let stepper = list_texts(&menu, &world);
+    let lost: Vec<_> = browsing.iter().filter(|g| !stepper.contains(g)).collect();
+    assert!(
+        lost.is_empty(),
+        "the list under the stepper is the page it was confirmed on; lost {lost:?}"
+    );
+}

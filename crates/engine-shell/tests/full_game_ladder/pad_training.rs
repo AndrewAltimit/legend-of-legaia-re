@@ -840,3 +840,114 @@ fn pad_train_from(
     }
     Ok((here != home).then_some(here))
 }
+
+/// Outings a party with no group heal takes where a Seru that teaches one
+/// rolls ([`pad_hunt_group_heal`]).
+const HEAL_HUNT_OUTINGS: usize = 8;
+
+thread_local! {
+    /// Scenes the continuous run has already hunted a group heal in.
+    pub(super) static HEAL_HUNTED: std::cell::RefCell<BTreeSet<String>> =
+        const { std::cell::RefCell::new(BTreeSet::new()) };
+}
+
+/// Does a present member know a party-wide heal?
+pub(super) fn knows_group_heal(w: &legaia_engine_core::world::World) -> bool {
+    use legaia_engine_battle::spells::SpellEffect;
+    w.present_party_list().into_iter().any(|ch| {
+        w.party
+            .roster
+            .members
+            .get(usize::from(ch))
+            .is_some_and(|m| {
+                let list = m.spell_list();
+                list.ids[..usize::from(list.count).min(list.ids.len())]
+                    .iter()
+                    .any(|&id| {
+                        w.tables
+                            .spell_catalog
+                            .get(id)
+                            .is_some_and(|d| matches!(d.effect, SpellEffect::HealAll { .. }))
+                    })
+            })
+    })
+}
+
+/// Does this scene's encounter table hold a monster whose Seru teaches a
+/// party-wide heal (the absorbed Seru is learned as spell `seru + 0x80`)?
+/// `kor` and `koin2`'s monster 120 carries Spoon.
+pub(super) fn group_heal_rolls_here(w: &legaia_engine_core::world::World) -> bool {
+    use legaia_engine_battle::spells::SpellEffect;
+    w.registered_formation_ids().into_iter().any(|id| {
+        w.tables.formation_table.formation(id).is_some_and(|f| {
+            f.slots.iter().any(|s| {
+                w.tables
+                    .monster_catalog
+                    .get(s.monster_id)
+                    .filter(|d| d.absorb_seru != 0 && d.absorb_chance_pct > 0)
+                    .and_then(|d| w.tables.spell_catalog.get(d.absorb_seru.wrapping_add(0x80)))
+                    .is_some_and(|d| matches!(d.effect, SpellEffect::HealAll { .. }))
+            })
+        })
+    })
+}
+
+/// A party of two or more with no group heal, standing where a Seru that
+/// teaches one rolls, fights here until a member learns it (at most
+/// [`HEAL_HUNT_OUTINGS`] outings, once a scene). The absorb is a per-kill
+/// roll on the monster record's catch rate (`FUN_801EC3E4`,
+/// `World::roll_seru_absorb`), so a run whose kills of `kor`'s monster 120
+/// all missed it walked on with no Spoon, met Zora (`taiku`, 22422 HP,
+/// ~1150 a member a Darkness Typhoon) healing from a thin bag, and lost every
+/// one of its twelve attempts (dealt stream 7). A player who wants the heal
+/// fights on where it is caught. Returns the scene, when an outing left this
+/// one.
+pub(super) fn pad_hunt_group_heal(session: &mut NativeSession) -> Result<Option<String>, String> {
+    let here = scene_name(session);
+    {
+        let w = &session.host.world;
+        if !continuous::PLAYS_ON.with(std::cell::Cell::get)
+            || w.mode != SceneMode::Field
+            || w.party.party_count < 2
+            || !walking(session)
+            || !released(session)
+            || !w.scene_can_roll_encounters()
+            || knows_group_heal(w)
+            || HEAL_HUNTED.with(|h| h.borrow().contains(&here))
+            || !group_heal_rolls_here(w)
+        {
+            return Ok(None);
+        }
+    }
+    HEAL_HUNTED.with(|h| h.borrow_mut().insert(here.clone()));
+    let mut left = Ok(None);
+    let mut outings = 0;
+    for _ in 0..HEAL_HUNT_OUTINGS {
+        if knows_group_heal(&session.host.world) {
+            break;
+        }
+        pad_field_heal(session, 900);
+        if party_hp_permille(session) < 600 {
+            break;
+        }
+        outings += 1;
+        left = outing(session, 400);
+        if !matches!(&left, Ok(None)) || scene_name(session) != here || !walking(session) {
+            break;
+        }
+    }
+    if matches!(&left, Ok(None)) && walking(session) {
+        pad_field_heal(session, 900);
+    }
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [heal-hunt] {here}: {outings} outing(s), group heal {}",
+            if knows_group_heal(&session.host.world) {
+                "learned"
+            } else {
+                "still missing"
+            }
+        );
+    }
+    left.map(|s| s.filter(|s| *s != here))
+}

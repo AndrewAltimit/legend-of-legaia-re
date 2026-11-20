@@ -329,6 +329,9 @@ entry), the step, the action state and module phase, the GPU draw-time model
 and of the one the CPU builds, and the PC at the frame boundary. The agreement script runs
 the step law over the CPU word alone, over `max(cpu, model)` and over the entry, against
 the step mednafen stored ([a real console's frame cost](../subsystems/battle-stage-camera.md#what-a-real-consoles-frame-costs)).
+Each table is priced twice: on DuckStation's costs (`gpu_*` + `dma_*`) and on mednafen's own
+rules (`med_*`, the whole wait), which `--model mednafen` scores
+([emulator timing](emulator-timing.md#the-gpu-model-against-these-rules)).
 
 ### Byte-match a player battle file (`battle_data` block) against VRAM
 

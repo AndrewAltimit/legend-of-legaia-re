@@ -27,6 +27,7 @@ use legaia_engine_camera::retail_cam::RetailCamGlobals;
 
 mod event_routing;
 mod manual_knobs;
+mod present;
 mod resets;
 mod state;
 mod tick;
@@ -34,6 +35,7 @@ mod world_seam;
 mod zone_arrival;
 mod zone_follow;
 
+pub use present::{CUT_ANGLE, CUT_EYE, CUT_FOCUS, CUT_H, PresentMark};
 pub use state::*;
 pub use world_seam::*;
 pub use zone_arrival::*;

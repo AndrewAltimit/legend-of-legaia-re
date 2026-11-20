@@ -300,6 +300,46 @@ pub struct FogQuad {
     /// buried particle covers it (`vell`'s band under the party HUD). `None`
     /// only when the depth does not project (`SZ <= 0`).
     pub depth: Option<f32>,
+    /// The half as the pass emitted it, so a draw through a camera that has
+    /// moved since the pass can project it again ([`Self::reproject`]);
+    /// `None` for a quad built at draw time.
+    pub source: Option<FogSheetSource>,
+}
+
+/// One half-sheet's inputs to [`emit_half`]: the particle's world position,
+/// the half's view-space span, its texel row and the overworld curvature
+/// bias.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FogSheetSource {
+    pub p: [i32; 3],
+    pub dx: [i32; 2],
+    pub row: usize,
+    pub curve_bias: Option<i16>,
+}
+
+impl FogQuad {
+    /// This sheet half through `view`, a camera that has moved since the
+    /// pass that emitted it: the smooth camera's draw between two passes
+    /// (the pool walks once a game pass, the camera the frame draws through
+    /// moves every vsync). The same [`emit_half`] over the same inputs, so
+    /// the pass's own view gives the pass's quad back; `None` where the
+    /// half culls through `view`, and `self` for a quad with no
+    /// [`Self::source`].
+    pub fn reproject(&self, view: &FogView) -> Option<FogQuad> {
+        let Some(src) = self.source else {
+            return Some(*self);
+        };
+        emit_half(
+            view,
+            src.p,
+            src.dx[0],
+            src.dx[1],
+            src.row,
+            self.rgb,
+            src.curve_bias,
+        )
+        .1
+    }
 }
 
 /// The camera this frame's fog is projected through - the same
@@ -527,6 +567,11 @@ pub struct FogPool {
     /// overworld arm's depth test transforms the new particle through the
     /// GTE's resident camera matrix; this is the port's copy of it.
     pub depth_view: Option<FieldCameraView>,
+    /// The camera [`Self::quads`] were projected through (the pass's own,
+    /// field frame), which [`Self::depth_view`] is only on the vsync the
+    /// pass ran: a draw through another camera re-projects them
+    /// ([`FogQuad::reproject`]).
+    pub quads_view: Option<FieldCameraView>,
     /// The camera's visible-tile window (`0x1F8003E8..EB`) as the host's
     /// camera last published it - the span the ambient emitter's burst arm
     /// samples. `None` until a camera has published one; the emitter then
@@ -561,6 +606,7 @@ impl FogPool {
             overworld: false,
             curve_bias: 0,
             depth_view: None,
+            quads_view: None,
             view_window: None,
         };
         pool.reset();
@@ -997,6 +1043,12 @@ pub fn emit_half(
             } else {
                 view.ndc_at_sz(sz)
             },
+            source: Some(FogSheetSource {
+                p,
+                dx: [dx0, dx1],
+                row,
+                curve_bias,
+            }),
         }),
     )
 }
@@ -1279,6 +1331,44 @@ mod tests {
         // `rand() == 0x7F` seeds rate `(0x7F & 7) + 8 = 15`.
         assert_eq!(pool.records[slot].rate, 15);
         assert_eq!(pool.records[slot].age, 0x800 + 15);
+    }
+
+    /// A sheet projected again through the pass's own camera is the pass's
+    /// sheet, bit for bit; through a camera panned sideways it slides with
+    /// the scene and keeps its shape.
+    #[test]
+    fn a_reprojected_sheet_follows_the_drawn_camera() {
+        let trig = lut();
+        let mut pool = FogPool::new();
+        pool.regions = vec![region()];
+        let mut rand = || 0x7Fu32;
+        assert!(pool.spawn(10, 10, [0, 0, 0x7F, 0x7F], trig, &mut rand));
+        let slot = FOG_POOL_SLOTS - 1;
+        pool.records[slot].x = 0;
+        pool.records[slot].z = 2000 << 4;
+        pool.records[slot].age = 0x800;
+        let quads = pool.render_step(&plain_view(), &env()).to_vec();
+        assert_eq!(quads.len(), 2);
+        for q in &quads {
+            assert_eq!(q.reproject(&plain_view()), Some(*q));
+        }
+        // The camera panned: every world point at depth 2000 moves 64 px
+        // left (`clip.x += -250 * h / 160` at `w = 2000`).
+        let mut m = [0.0f32; 16];
+        m[0] = 512.0 / 160.0;
+        m[5] = 512.0 / 120.0;
+        m[11] = 1.0;
+        m[10] = 1.0;
+        m[12] = -250.0 * 512.0 / 160.0;
+        let panned = FogView::from_vp(m);
+        for q in &quads {
+            let r = q.reproject(&panned).expect("still on screen");
+            for (a, b) in q.xy.iter().zip(r.xy) {
+                assert_eq!(b.0, a.0 - 64);
+                assert_eq!(b.1, a.1);
+            }
+            assert_eq!((r.uv, r.rgb, r.ot_index), (q.uv, q.rgb, q.ot_index));
+        }
     }
 
     /// Both arms' sheets carry a scene depth for the hosts' depth test:

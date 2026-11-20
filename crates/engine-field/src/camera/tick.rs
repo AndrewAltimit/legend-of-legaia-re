@@ -292,8 +292,18 @@ impl Camera {
     /// mover leaves it ([`CameraMover::write_globals`]); angles move on the
     /// mover's own linear 12-bit line, which takes no short arc, so a glide
     /// across `0` / `4096` sweeps the way retail's does.
+    ///
+    /// A move the globals made in one step outside a glide (the follow
+    /// ease, a re-staged shot) is drawn behind instead: `lead.lag` of it is
+    /// taken back off the stored pose ([`Self::observe_present`]).
     pub fn led_delta(&self, lead: DrawLead) -> [f32; AXIS_COUNT] {
         let mut out = [0.0; AXIS_COUNT];
+        let lag = lead.lag.clamp(0.0, 1.0);
+        if lag > 0.0 {
+            for (o, j) in out.iter_mut().zip(self.present.jump) {
+                *o = -j * lag;
+            }
+        }
         if lead.phase <= 0.0 || lead.dt <= 0 {
             return out;
         }
@@ -306,7 +316,7 @@ impl Camera {
         let next = ahead.values();
         for (k, o) in out.iter_mut().enumerate() {
             if k != legaia_engine_camera::camera_mover::FOCUS_Y_AXIS {
-                *o = (next[k] - now[k]) as f32 * lead.phase;
+                *o += (next[k] - now[k]) as f32 * lead.phase;
             }
         }
         out

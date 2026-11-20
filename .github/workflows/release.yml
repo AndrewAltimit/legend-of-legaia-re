@@ -121,9 +121,9 @@ jobs:
         id: version
         run: |
           tag="${RELEASE_TAG}"
-          version="${tag#v}"
-          # A dry run may name a branch; keep the archive name one path segment.
-          version="${version//\//-}"
+          # The rule the site's build uses too (build-wasm.sh): strip the
+          # `v`; a dry run's branch becomes one path segment.
+          version="$(scripts/ci/release-version.sh "$tag")"
           if [ -z "$version" ]; then
             echo "ERROR: could not derive a version from tag '$tag'" >&2
             exit 1
@@ -181,8 +181,9 @@ jobs:
         id: version
         run: |
           tag="${RELEASE_TAG}"
-          version="${tag#v}"
-          version="${version//\//-}"
+          # The rule the site's build uses too (build-wasm.sh): strip the
+          # `v`; a dry run's branch becomes one path segment.
+          version="$(scripts/ci/release-version.sh "$tag")"
           if [ -z "$version" ]; then
             echo "ERROR: could not derive a version from tag '$tag'" >&2
             exit 1
@@ -224,6 +225,10 @@ jobs:
     needs: [verify, build-cross, build-macos]
     runs-on: self-hosted
     timeout-minutes: 30
+    permissions:
+      contents: write
+      # The site redeploy below dispatches main-ci.yml.
+      actions: write
     steps:
       # The runner's workspace persists: clear a dist/ an earlier run left.
       - name: Clear dist
@@ -312,4 +317,26 @@ jobs:
             echo "See docs/tooling/releases.md for what each archive carries." > "${notes}"
             gh release create "${RELEASE_TAG}" "${files[@]}" --repo "${GITHUB_REPOSITORY}" \
               --verify-tag --title "${RELEASE_TAG}" --notes-file "${notes}" "${prerelease[@]}"
+          fi
+
+      - name: Redeploy the site with the release's version
+        # The play page's netplay build id is the release its bundle was built
+        # for (scripts/ci/release-version.sh --head). main's own deploy ran
+        # when the commit landed, usually before this tag existed, and so
+        # built a development bundle; a pages-only main-ci run rebuilds it
+        # now. Only when main still is the release's commit: a later main is
+        # not this release, and its site stays a development build. A failed
+        # dispatch does not fail the release.
+        if: github.event_name == 'push' || inputs.publish
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+          tagged="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}" --jq .sha)"
+          if [ "$main" = "$tagged" ]; then
+            gh workflow run main-ci.yml --repo "${GITHUB_REPOSITORY}" --ref main -f pages_only=true
+            echo "Dispatched a pages-only main-ci run for ${RELEASE_TAG}"
+          else
+            echo "::warning::main (${main}) is past ${RELEASE_TAG} (${tagged}); the site stays a development build"
           fi

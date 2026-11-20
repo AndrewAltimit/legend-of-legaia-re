@@ -1315,7 +1315,9 @@ its first branch (`0x80062FCC`), and that vsync's flush and score events are not
 later. The one-shot cue key-on `FUN_80065034` holds the word while it allocates and stages
 (`0x800650A4` to `0x80065288` / `0x80065388`), so a vblank that lands inside the ring drainer's
 key-on costs the score a vsync ([settled](../reference/re-settled-threads/audio.md#does-the-scores-calc-run-once-a-vsync-across-a-summon)).
-Which drains do is the frame's CPU time; the port's calc never skips.
+Which drains do is the frame's CPU time, to a few hblanks: mednafen loses two calcs over a Theeder
+cast, PCSX-Redux none over the same cast from its pre-cast state. The port's calc never skips, as
+PCSX-Redux's scale, the one the frame-cost model takes, measures.
 
 **Per-frame tick call graph.** The concrete chain behind the prose "hand the
 payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) →
@@ -3817,7 +3819,11 @@ sides, with the samples where the port's bank put them (the bank's program table
 VAG address onto the port's). Retail's writes are applied to one copy, and that copy's envelopes
 go back as `ENVX`, which is the input the allocation scan feeds on. Both sides start the score
 from the top on an idle voice file. The port's KON falls one vsync ahead by construction
-(retail flushes at the top of the next calc), and the lag is measured off the first key-on.
+(retail flushes at the top of the next calc), and the lag is measured off the first key-on. The
+port's sample clock starts that vsync on as well, so each of its steps renders the samples of the
+retail vsync it pairs with: on a clock started level with retail's, every vsync whose share of
+the `44100 / 59.94` samples rounds differently on the two sides ended a release tail one vsync
+apart (level `1` against `0`), and the next note took the next free voice up.
 
 | Channel | Counts vsyncs where |
 |---|---|
@@ -3839,11 +3845,12 @@ Both sides run their flushes from the state's own silent-history index `_DAT_801
 ([below](#the-silent-historys-phase)): the harness leaves retail's where the RAM holds it and
 stands the port's beside it (`Sequencer::set_silent_ring_phase`).
 
-Over every track the library holds, four minutes each, it reads zero in `key` and `release`,
-`sound` on four vsyncs of one track, and `voice` on about one vsync in twelve hundred, nearly all
-of them on `2068`. Every such voice row is a tail ending inside one vsync's lag on one side: on `2068` a
-release reaches zero a vsync apart on the two sides (level `1` against `0`), so the next note
-takes the next free voice up.
+Over every track the library holds, four minutes each, it reads zero in `key`, `voice`,
+`release` and `sound`. With `--cues` it reads zero in the first three and `sound` on a dozen
+single vsyncs over six tracks, each a cue's tail retail still holds for one vsync. Before the
+sample clock was seated, the voice and sound rows the cues raised on `2006`, `2036` and `2068`
+were that rounding: a tail ending a vsync apart sent the next note, and every cue after it, to
+other voices.
 
 `--track` takes the library out of the choice: each listed `music_01` track (or `all`) is
 seated into one state's RAM (`--host`, `mei_house_inside` by default) through retail's own
@@ -3852,9 +3859,9 @@ its score by `_SsSeqInit`, with the samples in both SPUs where the port's bank p
 open leaves the bank at `2` in its in-use byte (`0x801CE368 + vab`), header only, and the
 program reads behind a key-on (`FUN_80068B98`) refuse anything but `1`, the value
 `SsVabTransBody` stores once the bodies are sent, so the harness stores `1`. Seated, a track a
-state holds reads what the state reads (`2013`'s four `sound` rows among them), and the
-seventy-seven tracks with a score of their own read zero in `key`, `release` and `sound` over
-four minutes each, `2013` and `2071` (three single-vsync rows) aside.
+state holds reads what the state reads, and the seventy-seven tracks with a score of their own
+read zero in `key`, `voice`, `release` and `sound` over four minutes each, two single-vsync
+`sound` rows of `2071` aside.
 
 That run found two port defects, both on tracks no library state was saved under:
 
@@ -3866,14 +3873,17 @@ That run found two port defects, both on tracks no library state was saved under
   such indices: `-25` (`2030`), a word every library state holds at zero, and `-23` (`2072`,
   `36` key-ons over four minutes), the high half of libsnd's tick-function pointer at
   `0x8007A910`, which holds `FUN_80062F98` in every state. That note sounds at `0x8006 >> 5 =
-  0x400` in retail; the port read zero for every such word and keyed it still
-  (`vab_bind::table_front_word`).
+  0x400` in retail; the port read zero for every such word and keyed it still. A cue keyed
+  as far under its tone reaches the rest: `--cues` on `2006` keyed one at index `-14`, the low
+  half of timer 0's address `0x1F801100`, which sounds at `0x88` where the port, reading zero
+  for every word but `-23`, held it still. Every index a key can reach (`-176..=-1`) is a
+  libsnd or libapi word that holds one value in all 498 PCSX-Redux library states, and the
+  port reads that value (`vab_bind::table_front_word`).
 
 What it leaves open:
 
-- `2013`, four single-vsync rows of a held voice sounding on one side alone, two each way: a
-  one-shot sample ending on a vsync boundary, a sample or two apart under the two sides' KON
-  lag estimates.
+- `2071`, two single-vsync rows of a voice sounding on one side alone, and the dozen under
+  `--cues`: a one-shot sample ending on a vsync boundary, a sample or two apart.
 
 ## The cue differential
 
@@ -3939,6 +3949,10 @@ identity. A resumed SPU fits the recording at correlation `1.0000`, lag `0`, lev
 **`0.750`**, in every band, in every state tried, which puts that factor in the
 recorder and not in the console; the oracle divides it out
 (`MEDNAFEN_RECORD_GAIN`). The WAVs are Sony-derived and stay under `captures/`.
+The driver reads them from `--out` (`captures/audio-pcm`) and writes nothing
+there unless it is recording: the engine's cast renders, their logs and the score
+JSONs go to `--work` (`target/audio-pcm` by default), whose paths it never
+resolves through a symlink, so an engine render cannot land among the retail WAVs.
 Each recording has a private home, disc stage and X server, so `--capture --jobs N`
 runs them side by side with the same bytes. `-nothrottle` changes neither the bytes
 nor the speed: the emulator is not being held back by its throttle here.

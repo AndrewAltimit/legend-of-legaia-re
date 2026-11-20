@@ -93,13 +93,24 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
 /// draw-side camera resolve ([`resolve_field_camera_led`],
 /// [`crate::screen_passes::HostView::presented`]) and nothing the
 /// simulation reads takes it. A battle draws through its own camera.
+///
+/// Outside a glide, `lag` is the share of the camera's last stepped move
+/// (the follow ease's pass, a re-staged shot) still to draw
+/// ([`Camera::present_lag`]): the draw shows such a move over the vsyncs
+/// after it rather than on the one it landed.
 pub fn camera_present_lead(world: &World, cam: &Camera) -> DrawLead {
     if !world.toggles.smooth_camera
-        || cam.mover.is_none()
         || !world.clock.game_tick_live
         || world.mode == SceneMode::Battle
     {
         return DrawLead::NONE;
+    }
+    let lag = cam.present_lag(world.clock.display_frames);
+    if cam.mover.is_none() {
+        return DrawLead {
+            lag,
+            ..DrawLead::NONE
+        };
     }
     // The frame's wall length (its step, or the work a long frame waits
     // out) and the credit the next game frame lands: under the seeded
@@ -114,6 +125,7 @@ pub fn camera_present_lead(world: &World, cam: &Camera) -> DrawLead {
     DrawLead {
         phase: f32::from(vsync) / f32::from(wait),
         dt: i32::from(dt),
+        lag,
     }
 }
 
@@ -1010,7 +1022,11 @@ mod tests {
         assert!(w.toggles.smooth_camera);
         assert_eq!(
             camera_present_lead(&w, &cam),
-            DrawLead { phase: 0.5, dt: 4 }
+            DrawLead {
+                phase: 0.5,
+                dt: 4,
+                lag: 0.0
+            }
         );
         w.clock.frame_vsync = 0;
         assert_eq!(camera_present_lead(&w, &cam).phase, 0.0);
@@ -1045,11 +1061,72 @@ mod tests {
         let stored = field_follow_view(&cam, &w).unwrap();
         assert_eq!(stored.pitch, to_rad(f32::from(cam.globals.0[0] as i16)));
         assert_eq!(stored.focus, [10.0, 0.0, 20.0]);
-        let led = field_follow_view_led(&cam, &w, DrawLead { phase: 0.5, dt: 4 }).unwrap();
+        let led = field_follow_view_led(
+            &cam,
+            &w,
+            DrawLead {
+                phase: 0.5,
+                dt: 4,
+                lag: 0.0,
+            },
+        )
+        .unwrap();
         assert!(led.pitch < stored.pitch && led.yaw > stored.yaw);
         assert_eq!(
             resolve_field_camera(&w, &cam, None, [0.0, 0.0]),
             FieldCameraFrame::Follow(stored)
         );
+    }
+
+    /// A move the globals make in one step outside a glide (the follow
+    /// ease's pass) draws over the vsyncs after it, from where the draw
+    /// stood; a free-roam focus pin and a cut draw at once, and retail
+    /// draws the stored pose.
+    #[test]
+    fn a_stepped_camera_move_draws_over_the_frame_after_it() {
+        let mut w = world_with_player(10, 20);
+        w.mode = SceneMode::Field;
+        w.clock.game_tick_live = true;
+        w.clock.frame_step = 2;
+        w.clock.display_frames = 100;
+        let mut cam = Camera::default();
+        cam.zone.active = true;
+        cam.globals.0[1] = 100;
+        cam.globals.0[5] = 16000;
+        // One ease pass: yaw +40, depth -300, and the focus pinned onto a
+        // player who walked 16 units.
+        let mark = cam.present_mark();
+        cam.globals.0[1] = 140;
+        cam.globals.0[5] = 15700;
+        cam.globals.0[6] -= 16;
+        cam.observe_present(&w, mark);
+        let d = cam.led_delta(camera_present_lead(&w, &cam));
+        assert_eq!((d[1], d[5], d[6]), (-40.0, 300.0, 0.0));
+        w.clock.display_frames = 101;
+        let d = cam.led_delta(camera_present_lead(&w, &cam));
+        assert_eq!((d[1], d[5]), (-20.0, 150.0));
+        // The next pass lands halfway: what was still to show carries in,
+        // so the draw does not jump.
+        let drawn = cam.globals.0[1] as f32 + d[1];
+        let mark = cam.present_mark();
+        cam.globals.0[1] = 180;
+        cam.observe_present(&w, mark);
+        let d = cam.led_delta(camera_present_lead(&w, &cam));
+        assert_eq!(cam.globals.0[1] as f32 + d[1], drawn);
+        w.clock.display_frames = 103;
+        assert_eq!(camera_present_lead(&w, &cam), DrawLead::NONE);
+        // A cut draws at once.
+        w.clock.display_frames = 104;
+        let mark = cam.present_mark();
+        cam.globals.0[1] = 180 + 1024;
+        cam.observe_present(&w, mark);
+        assert_eq!(camera_present_lead(&w, &cam), DrawLead::NONE);
+        // Retail draws the stored pose.
+        let mark = cam.present_mark();
+        cam.globals.0[1] += 40;
+        cam.observe_present(&w, mark);
+        assert!(camera_present_lead(&w, &cam).lag > 0.0);
+        w.toggles.pin_retail();
+        assert_eq!(camera_present_lead(&w, &cam), DrawLead::NONE);
     }
 }

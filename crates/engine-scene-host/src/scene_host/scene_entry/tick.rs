@@ -114,11 +114,20 @@ impl SceneHost {
     ///
     /// REF: FUN_801D6704 (the floor `0x801D7110..0x801D713C`, the BGM poll `0x801D72D4..0x801D731C`)
     fn arm_door_field_init_hold(&mut self, keeps_music: bool) {
+        let pack = self.entered_scene_pack_vsyncs();
         self.world.field_init_hold = legaia_engine_system::mode_entry_init::field_init_hold_vsyncs(
             self.world.audio.credits_latch,
             self.world.toggles.skip_load_holds,
             keeps_music,
+            pack,
         );
+    }
+
+    /// [`super::streamed_pack_read_vsyncs`] of the scene just entered.
+    fn entered_scene_pack_vsyncs(&self) -> u32 {
+        self.scene.as_ref().map_or(0, |scene| {
+            super::streamed_pack_read_vsyncs(&self.index, scene)
+        })
     }
 
     /// Arm the field MAIN INIT hold of a battle's return to the field, in the

@@ -231,8 +231,9 @@ impl RelayCore {
 
     /// Sends `reason`; a fatal one also closes and forgets the connection.
     fn reject(&mut self, conn: ConnId, reason: RejectReason) {
+        let fatal = reason.is_fatal();
         self.send(conn, Message::Reject(reason));
-        if reason.is_fatal() {
+        if fatal {
             self.out.push(RelayOutput::Close(conn));
             self.disconnect(conn);
         }
@@ -369,7 +370,9 @@ impl RelayCore {
                     Some(room) if !matches!(room.phase, Phase::Lobby) => Some(RejectReason::InGame),
                     Some(room) if room.members.len() >= max_members => Some(RejectReason::RoomFull),
                     Some(room) if room.engine_build != hello.engine_build => {
-                        Some(RejectReason::BuildMismatch)
+                        Some(RejectReason::BuildMismatch {
+                            host: room.engine_build.clone(),
+                        })
                     }
                     Some(room) if room.pack != hello.pack => Some(RejectReason::PackMismatch),
                     Some(_) => None,

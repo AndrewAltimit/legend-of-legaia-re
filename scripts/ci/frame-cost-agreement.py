@@ -41,17 +41,21 @@ def ring_steps(entries):
     return out
 
 
-def load(path: Path, mednafen: bool):
+def load(path: Path, mednafen: bool, model: str = "duckstation"):
     """One record per pass end: the row where the cost words change. The table the GPU
-    waited on is the one the row before showed as drawn."""
+    waited on is the one the row before showed as drawn. `model` picks the GPU model:
+    DuckStation's costs (`gpu_drawn + dma_drawn`) or mednafen's own rules (`med_drawn`,
+    mednafen recordings made since `frame-cost-film.py` logs it)."""
     rows = list(csv.DictReader(path.open()))
     draw_key, dma_key = ("gpu_drawn", "dma_drawn") if mednafen else ("draw", "dma")
     out, prev = [], None
     for r in rows:
         if prev is not None and (r["cpu"], r["tot"]) != (prev["cpu"], prev["tot"]) and \
                 (mednafen or r["frame"] != prev["frame"]):
+            gpu = float(prev["med_drawn"]) if model == "mednafen" else \
+                float(prev[draw_key]) + float(prev[dma_key])
             out.append(dict(cpu=float(r["cpu"]), tot=float(r["tot"]), step=int(float(r["step"])),
-                            gpu=float(prev[draw_key]) + float(prev[dma_key])))
+                            gpu=gpu))
         prev = r
     return out
 
@@ -66,6 +70,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--mednafen", nargs="*", default=[], type=Path)
     ap.add_argument("--redux", nargs="*", default=[], type=Path)
+    ap.add_argument("--model", choices=("duckstation", "mednafen"), default="duckstation",
+                    help="GPU model of mednafen recordings (PCSX-Redux ones carry DuckStation's)")
     a = ap.parse_args()
     films = [(p, True) for p in a.mednafen] + [(p, False) for p in a.redux]
     if not films:
@@ -73,7 +79,7 @@ def main() -> int:
     print("| Recording | Emulator | Passes | `cpu` | `cpu+gpu` | `entry` | GPU-bound | `3AC - model` median |")
     print("|---|---|---:|---:|---:|---:|---:|---:|")
     for path, med in films:
-        passes = load(path, med)
+        passes = load(path, med, a.model if med else "duckstation")
         cols = [score(passes, c)[0] for c in (lambda p: p["cpu"],
                                               lambda p: max(p["cpu"], p["gpu"]),
                                               lambda p: p["tot"])]

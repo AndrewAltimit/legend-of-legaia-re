@@ -149,14 +149,13 @@ No open threads. Answered questions: [settled field / locomotion](re-settled-thr
 | What holds the party arts' films under retail's? | open (measured) | Three frame-cost terms read off the Super and Hyper Art recordings: the base under a close shot, an arts shout's own pass, and a voice line's span counted in passes ([below](#the-party-arts-frame-cost)). |
 | What does a full party cost a summon arm? | open (narrowed) | Six full-party recordings set against the lone caster's read the same on every clamped arm and `14`..`25` hblanks dearer on some arms under the clamp, `29`..`135` on four (Barra's arms 3 and 4 in both fights, Gimard's arm 6, Iota's arm 3), nothing on others (Zenoir's edge arm 7) ([the arm step table](../subsystems/battle-stage-camera.md#what-the-arm-step-table-is)). The engine hides all three members through the band, so the members it draws do not tell the arms apart; the term is not priced. An arm a longer fight runs past the lone recording's length also runs its tail on the closing frame's row (Gimard's arm 12, [the arm step table](../subsystems/battle-stage-camera.md#what-the-arm-step-table-is)). |
 | What does a real console's frame cost read? | partial (measured) | The entry is `max(cpu, dma + draw of the previous pass's table)` from one vsync, and the GPU half is modelled on the v2 GPU's measured costs with no free constant, which reads mednafen's waits to `8` hblanks at the median ([what a real console's frame costs](../subsystems/battle-stage-camera.md#what-a-real-consoles-frame-costs)). The CD half is PCSX-Redux's response time ([the CD stop watch](../subsystems/battle-stage-camera.md#the-cd-stop-watch)). Left: the instruction cost, two cycles an instruction on PCSX-Redux and about `.8` of that on mednafen. A real console's ring (`0x80084098`) with `gp+0x3A8` / `gp+0x3AC` in a full party's strike and a cast's voice decides both. |
-| What is left of `minigame_dance_retail_go_out`'s `.988`? | open (narrowed to the beams' edges) | The beams, shadows, clip phase and camera are retail's ([dance](../subsystems/minigame-dance.md#the-halls-animated-props), [film](../tooling/minigame-film.md)). The top band is no brightness rule: rasterised, the score panels are PCSX-Redux's rule and the engine's match the capture to the pixel; what is off sits on the lamps' beam edges at a mean luma offset of `0.6`, and on the dancers' outlines ([the top band](../tooling/retail-compare.md#the-dance-halls-top-band)). A film of the lamp cells would say whether the edges are the sweep's phase or its geometry. |
+| What is left of `minigame_dance_retail_go_out`'s `.988`? | open (narrowed to the beams' edges) | The beams, shadows, clip phase and camera are retail's ([dance](../subsystems/minigame-dance.md#the-halls-animated-props), [film](../tooling/minigame-film.md)). The top band is no brightness rule: rasterised, the score panels are PCSX-Redux's rule and the engine's match the capture to the pixel; what is off sits on the lamps' beam edges at a mean luma offset of `0.6`, and on the dancers' outlines ([the top band](../tooling/retail-compare.md#the-dance-halls-top-band)). The top drum's scroll is seated and does not move this state. A film of the lamp cells would say whether the edges are the sweep's phase or its geometry. |
 | What is left of Koru's Gigaton Press film? | open (narrowed to the frame span) | `koru_pre_gigaton_press` reads `.853`, `.914` on `--rand-track`. The column reaching the red ring early is the stream: seated only on the word retail's phase 3 ended on (`--rand-at 0x70:3`) phase 4 reads `.889` and draws retail's burst in order. The engine's stream parts inside the cast, one frame-driver draw short in `0x6E`, which is the [frame span](../subsystems/battle-stage-camera.md#a-frames-span)'s ([the rand stream](../tooling/cast-sequence-oracle.md#the-rand-stream)). The gold ellipse in the `koru_*_mid_cast` stills is the walk's [floor rings](../tooling/retail-compare.md#a-turning-effect-parts-banks-are-a-clock). |
 | What is left of the battle camera against retail? | open (measured) | Ranked by `cast-camera-rank.py` over the strike, arts, Seru and enemy film sets, the residue is pacing, not framing law: where the worst films part, the engine holds retail's pose of the pass before or after to the unit (`kor_shade_pre_fatal_decision`'s `0x6E` chase, the arts openers' `0x1E` walk). What sets the pass is the frame step (retail `4` against the engine's `3` on an art's first `0x1F` pass, a heavy arm's overrun, [a heavy fight's hit frames](../subsystems/battle-stage-camera.md#a-heavy-fights-hit-frames)), film openers (harness), and summon arms whose first pass lands a frame apart. Next: per-arm films of the player summons (`--retail-parts`). |
-| What is left of Zenoir's Fire Claw film? | open (narrowed to the frame step) | The roll is closed: on `--retail-steps` the engine lands retail's `91` on retail's pass and word; plain, `33` frames run step `3` where retail's `0x2B` runs `2` ([the frame step](../subsystems/battle-stage-camera.md#a-frames-span)). The cave mist is closed: it is the backdrop's kept object, whose angle the pick's rounds had wound on ([the backdrop angle](../tooling/cast-sequence-oracle.md#the-backdrop-angle-at-the-cast-begin)); seated, the film reads `.909` (`.973` on `--retail-steps`), cues `8` of `8`. Left: plain `0x2B` at `.844`, and `0x2C` / `0x2D` at `.74` / `.75` on every seat. |
+| Why does Kemaro's TR z stand `16` past retail's through arms 1 to 5? | open (mechanism found, the rule not yet general) | Arm 0 (PROT 0918) cuts the camera round over one frame; arm 1 adds `2 * scalar * step` to TR z from the next pass (`0x801F6F04`). Retail's TR z holds the cut's `3276` a pass more: the walker `FUN_8002149C` lands an angle lane only once its arc goes negative (`bgez` at `0x8002151C`), a step-`1` cut spends its arc exactly, so the task lives a pass more and stores every lane back, spending that drift. Kept alive so on every exact-arc cut, the `0x90` camera matches retail's row for row, but the `0x8F` film's arm-5 cut then spends a TR z drift retail keeps (`.933` to `.924`). `FUN_80021248`'s half-turn arc, or that drift's place against the walker, would say which. |
 | What holds Seru arms low on every film seat? | open (narrowed) | The plain seat reads what `--retail-steps` does on most films ([pass count](../tooling/cast-sequence-oracle.md#the-bands-pass-count)). Still low on both: Barra's arm `0xE` (`.75`; not its frames' span, arm 12 runs the same tick gap at `.96`), Nova's arm 16 (`.83`; the victim's spin matches a watch of its `+0x46` store), Ozma's arm 21 (`.77`; sprays, camera and draws match), Viguro's arm 12 (`.75` on the rand track; its ring parts match retail's, the disc draws darker), Mushura's arm 12 chase (`.80`) and Gizam's arm 13 (`.64`, the bubbles' deal). Open draw timings: [where a film leaves retail's words](../tooling/cast-sequence-oracle.md#where-a-plain-film-leaves-retails-words). |
 | Why do Caruban's Fire Breath stills sit four yaw units off? | open (narrowed) | The camera law is settled forward by a film; what is left is the near bodies' placement or the displayed pass ([below](#caruban-fire-breath-stills-four-yaw-units-off)). A `LEGAIA_RAM_AT` film over `0x2B` would pin the pass. |
-| What holds the Delilas and Cort casts' arms low on every film seat? | open (narrowed) | Seven classes are closed, the latest [Blazing Slash's](../subsystems/cast-module.md#prot-0958-blazing-slash) flames. On `--retail-steps --rand-track` the films read Megaton Press `.959`, Plasma Strike `.938`, Blazing Slash `.972`, Mystic Shield `.975`, Guilty Cross `.940`, Mystic Circle `.906`; what holds plain is the deal. Blazing Slash's arms `0x0D` / `0x0E` read `.967` / `.948`, so the puffs no longer hold them; arm `0x15` does (`.784`, Gi Delilas' hop stands turned off retail's, luma matched), and arm `0x16` (`.797`, the paced flame hits leave the victim `2` HP off by the third numeral). |
-| Why does Big Wave's still read darker over the sheet's rows? | open (narrowed to a near body) | The upper frame is closed: PROT 0898's band wash draws at retail's alpha, scroll and dither ([the presentation calls](../subsystems/cast-module.md#presentation-calls)), and the speed lines are PROT 0946's waves, now seated a lag back off the RAM ([Big Wave's waves](../tooling/retail-compare.md#big-waves-waves)). What is left (`.938`) is a cream body near the camera at `x >= 256` in rows `112..140`, no module part, which the engine draws short of where retail's tables step it in. A film of its placement would say whether it is the camera's depth or the body's own. |
+| What holds the Delilas and Cort casts' arms low on every film seat? | open (narrowed) | Eight classes are closed, the latest [Blazing Slash's](../subsystems/cast-module.md#prot-0958-blazing-slash) hop: arm `0x15` stored Gi Delilas' height every tick off a drained word where retail stores it once a pass (`.784` to `.975`). On `--retail-steps --rand-track` the films read Megaton Press `.959`, Plasma Strike `.938`, Blazing Slash `.977`, Mystic Shield `.975`, Guilty Cross `.940`, Mystic Circle `.906`; what holds plain is the deal. Left: arm `0x16` (`.804`). Its paced flame hits roll off words the pass's other draws (the victim's burning puffs, the flame record) have moved: the third numeral reads `30` for `24` (`--fx-spawns --wrapper-trace`). |
 
 
 ### Caruban Fire Breath stills four yaw units off
@@ -250,7 +249,7 @@ Answered questions: [settled audio](re-settled-threads/audio.md); falsified read
 
 ### How long does a summon's seek hold its voice?
 
-*Status:* partial (measured; the seek's length waits on a real console, the band ahead of the module on the cast's own pace)
+*Status:* partial (measured; the band ahead of the module is retail's from the cast's top on PCSX-Redux, and the seek's length waits on a real console)
 
 The drive's two seeks ahead of the head cue are modelled
 ([the drive holds a summon's voice](../subsystems/audio.md#the-drive-holds-a-summons-voice)), and so is
@@ -266,9 +265,17 @@ not one length either: from the state to the flash, Theeder's `0x33` runs `7` vs
 `~128`), and Swordie's `0x34` `5` longer to arm 1, while Orb's matches. `0x34`'s hold on the caster's
 `+0x1D9` is the port's now: the invoke clip's natural end commits idle in the pass that crosses it, and
 `0x34` leaves on the next (`0x80047A48..0x80047B58`, `0x801E4AD4..0x801E4ADC`), which is `60` vsyncs on the
-`0x86` film as on retail; the first-slot seek is refitted to `7` on that band. What closes the rest: the
-invoke clip's first passes after its commit against retail's (the caster's `+0x68` cursor beside
-`ctx[+0x87C]`).
+`0x86` film as on retail; the first-slot seek is refitted to `7` on that band.
+
+From the cast's top the band is retail's. A PCSX-Redux film of Theeder from
+`theeder_pre_cast_vs_gobu_gobu` (`cast-sequence.py`, the drive's seek seated on the recording's, a
+harness seat) runs `0x32`, `0x33` and `0x34` `16`, `34` and `60` vsyncs on both sides, the
+caster's invoke clip on the same cursor every vsync (held at `0` for one frame after the commit,
+then `8` a frame, the `ctx[+0x87C]` pair beside it), the side-band stage dropping `106` vsyncs after
+`0x32` opens, arm 1 at `+110`, arm 3 at `+230` and the voice at `+231` on both. So the `7` vsyncs of
+`0x33` and the cursor's three-tick hold read on `theeder_summon_mid_cast` belong to that state's seat
+and mednafen's frame cost, not to a band rule the port lacks. What is left is the drive alone: the
+seek's length on a console, against which neither emulator's is evidence.
 
 On the PCSX-Redux summon films the module's own poll arm waits `4` vsyncs where
 the mednafen-fitted model holds it `22` (Nova, Freed) to `30` (Orb) ticks. The
@@ -297,7 +304,7 @@ seek time, and the band ahead of the module above.
 
 ### Why does Theeder's score not subtract out of its recording?
 
-*Status:* open (narrowed: a lost calc is the measured mechanism)
+*Status:* open (narrowed: a lost calc is the measured mechanism on mednafen; PCSX-Redux loses none over the same cast)
 
 `theeder_summon_mid_cast` reads `0.71` on the [cast channel](../subsystems/audio.md#the-cast-channel)
 with the state's [Monaural](../subsystems/audio.md#the-monaural-states) seated and its cast offset free
@@ -332,9 +339,20 @@ out (`seq-differential --duck` keys `2013` alike under any ramp), and so is cue 
 the voices (the seated `--cues` run keys `2013` alike). A PCSX-Redux Theeder cast (`0x82` from
 `party_basic_attack_vs_gobu_gobu`, `cast-sequence.py --calc-clock`) enters `FUN_80062F98` once a
 vsync across `1451` vsyncs, which the lock does not contradict: a locked call is entered and returns
-at its first branch. What closes it: a state from the battle that leads into this cast, run under
-the same clock with the flush index and that voice's pitch and KON bits watched; the library holds
-no state of that fight before the cast.
+at its first branch.
+
+On PCSX-Redux's clock the cast loses no calc. `theeder_pre_cast_vs_gobu_gobu` (that cast, saved
+`248` vsyncs before it begins) run under `--calc-clock`, which reads the lock word and the flush
+index at every calc entry, enters all `1451` calcs with the lock clear and steps the flush index
+once a calc. Its `22` cue key-ons hold the lock `1628` to `5421` cycles each, and the nearest one
+lets it go `41606` cycles (about `19` hblanks) before a vblank. So which drains straddle is the
+emulated machine's frame cost to within a few hblanks: two of nine on mednafen, none on the
+emulator whose cost scale the frame-cost model takes. The port's calc never skips, which is what
+that scale measures; a model of the straddle would have to place each drain inside its frame
+finer than any frame-cost model does. What closes it: a state from the mednafen battle that leads
+into `theeder_summon_mid_cast`, run under mednafen's clock with the flush index and that voice's
+pitch and KON bits watched, to tie the late note to a measured loss; and a console's frame cost to
+say whether retail loses calcs at all. The library holds no state of that fight before the cast.
 
 ## Title / boot / overlays
 

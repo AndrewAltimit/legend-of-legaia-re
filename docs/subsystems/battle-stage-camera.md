@@ -1910,6 +1910,213 @@ agree with retail on `.90` to `.94` of their game time and Tri-Somersault's arts
 (`.964` to `1.0`); the enemy casts' `0x2B..0x2E` and Done band agree further, and Gimard's
 Tail Flare plays all fifteen cues with no window.
 
+<a id="the-derived-table"></a>
+
+**The derived table.** The census's terms are fits to films. `retail-exec` counts what each
+unit of a battle frame costs retail on PCSX-Redux's clock, off library states played on
+([battle frames by unit](../tooling/retail-frame-cost.md#battle-frames-by-unit)), and the
+table it gives (`legaia_engine_battle_loop::derived_cost`, not wired) reproduces those states'
+ring entries to `7` hblanks rms. Beside the fitted terms (derived in hblanks, interrupts out
+unless named):
+
+| Term | Fitted | Derived |
+|---|---|---|
+| `LINKED_WORK_MILLI` | `.200` a link | `.202`: its own pass `.116`, the rejected primitives beside it `.072`, groups and calls `.014` |
+| `LINKED_FRAME_BASE` | `75` | `23.8`, `11.3` a body, `3.4` an idle walk, `11.6` a vblank interrupt the work spans |
+| `LINKED_BACKDROP_WORK` | `42` | the stage's unlinked primitives, `17..55` over `.200` a link; the grid `-5` |
+| `EFFECT_PART_COST` | `2` a part | its tick `.74` (mean), a kind-4 build `3.0` |
+| `effect_pool_cost` | `1.6` a child | a draw `.31`, a step `.07` a sweep, `1.8` a retire |
+| `FLOOR_CLIP_WALK_MILLI` | `.16` a primitive | `.21..34` a primitive walked, `.127` through the dispatcher |
+| `SCANLINE_WASH_WORK` | `60` | not read: no library state stands under the wash |
+| `PARTY_GHOST_DRAW_COST` | `90` a ghost | `70` (Gala), `81` (Noa), `97` (Vahn); a monster's `32..75` |
+
+The slope is the dispatcher's own price: a link, its share of the culled and off-screen
+primitives, groups and calls come to the fitted `.200`. The intercept is where the fit
+stands in for structure. A body costs about `11.3` hblanks whatever it links (the draw's
+fixed part, fifteen objects' matrices at `.32`, the keyframe decode `2.9`, the draw tick,
+its share of the base), and the five actor-list walks `FUN_8001ADA4` add `5.3` a frame, so
+the derived base runs from about `61` on two bodies at one interrupt to `107` on five at
+two, where the census holds `75` for every frame. The backdrop share is the stage: Gobu Gobu's backdrop walks `648` primitives a
+frame and links `82`, `55` hblanks against the `16` its links are priced at, while the grid
+costs `68` fixed and `.18` a visible cell, `89` hblanks against the `94` its `470` links are
+priced at. Grade `capture` (an interpreter count on PCSX-Redux's timing).
+
+**What a pool child costs, by kind.** The walker runs one path for every child: a draw `665`
+cycles, a step `150` a sweep (the frame step's), and on the child's retire the overrun, `26`
+advances (`3895` cycles) on every batch read but one of `34`. Children differ by how often
+they retire. Timed visit by visit, Koru's dust (`koru_pre_blade_breath`) costs `.31` to draw,
+`.175` to step and `.146` in overruns, `.63` hblanks a child-frame; Caruban's flames
+(`battle_rikuroa_caruban_fire_breath_mid_cast`) `.31`, `.206` and `.201`, `.72`. So the films'
+`.68` against `1.8` a child is not the walker: as Caruban's flames rise from `3` to `50` its
+frames also draw three more dispatcher objects (the breath's meshes, `19.5` hblanks) and the
+caster's ghosts, and a fit by child count carries them. Grade `capture`.
+
+Rock Lizard's Earthquake (`battle_nilboa_rock_lizard_earthquake_mid_cast`, forty frames, the
+pool from `0` to `112` children) grows `3.43` hblanks a child: its links `1.57` (`12.7` a
+child, the rocks each puff bursts with), the kind-4 mesh builds `.59` (`.16` builds a child
+at about `3.7` each), the walker `.81`, the part ticks `.10`, the dispatcher's groups, calls
+and culled primitives `.14`. The cast module's own tick does not grow (`.01` a child). Of
+these the census prices the links, the walker and the parts; nothing in it prices a kind-4
+node's build (`FUN_80028158`, `6386` cycles and `59` a segment), which is the size of the
+`.38` a child the engine's Earthquake frames fall short by. Grade `capture` for the costs,
+inference for the shortfall's owner.
+
+**The three opt-in terms on this clock.** `WorldToggles::battle_me_decode_cost` prices an
+art commit's `"ME"` keyframe decode (`FUN_8002B28C`): real CPU work, `95` to `122` hblanks
+on the commit passes of Noa's Frost Breath, Gala's Thunder Punch and Vahn's Slash Kick, at
+`2.27` cycles an instruction with its data accesses where `frame_clock::me_decode_work`
+charges `2` over `2152` cycles an hblank, `13%` low. `battle_effect_walk_cost` prices the
+walker's branches: real, the in-frame visits read the random-walk fit within `5%` (a step
+`150` against `157` and `166`, an overrun advance `150` against `149`, a draw `665` against
+`652`, a sweep `4446` against `4243`), and the flat price it replaces runs about `.9` a child
+over these for a child that lives. `frame_clock::CYCLES_PER_HBLANK` (`2172`) is the
+video clock's hblank, `1.2%` longer than PCSX-Redux's `2146.3`. `battle_arts_shout_cd` prices
+a CD read's polls, whose length is the emulator's CD timing and no instruction count: the
+interpreter takes no CD interrupt and cannot read it, so it stays the `--cd-trace`
+recordings' measurement. Grade `capture`.
+
+<a id="the-derived-pricing"></a>
+
+**The derived pricing.** `WorldToggles::battle_derived_frame_cost` (`LEGAIA_BATTLE_DERIVED_FRAME_COST=1`,
+off by default; the field's own `derived_frame_cost` is on) prices a census-priced battle frame from the derived table instead of the
+fitted line. The census counts the frame by the table's units as it counts its links
+(`LinkCount::units`, `World::note_derived_units`), and `derived_cost::frame_hblanks` prices
+them on PCSX-Redux's clock (`2146.3` cycles an hblank) with the vblank interrupts the work
+spans. Where the census has no count of its own the pricing reads one of two stand-ins:
+
+| Unit | Engine count | Source |
+|---|---|---|
+| A primitive's fate | each census primitive by topology: linked, off-screen (the backdrop's reject), culled (near floor, behind the eye, winding) | engine geometry |
+| A primitive's leaf | the class mean over the leaves, weighted by how often each ran | measured ratio |
+| Groups | `1.92` an object (`13900` groups over `7246` calls) | measured ratio |
+| A body's off-screen primitives | linked: the census applies no off-screen test to a body, and the two paths cost within `7%` | engine geometry |
+| A body, a ghost | each drawn body and ghost, its drawn objects | engine geometry |
+| The grid | its visible cells | engine geometry |
+| A shadow | a `24`-segment build and `24` linked quads, one object | engine geometry |
+| A kind-4 node | one build a frame, a segment a quad of its mesh, its quads linked | engine geometry, segments approximated |
+| A swept band | each packet at a linked triangle's price | engine count |
+| A floor-clipped body | its walked primitives at the mean of `445` and `740` | engine geometry |
+| Move-VM parts | each live part's tick at the mean | engine count |
+| The walker | the branches its walks took since the last priced pass | engine count |
+| An art's `"ME"` decode | `parts * frames * 1162` cycles | engine count |
+| The template tick, the actor-list walks | their means a frame | measured |
+
+The measured ratios are the leaf mix, the groups an object and the template tick's and
+list walks' means; every other count is the census's own, on every host.
+
+Against the four film sets (the same recordings, one build, the census line against the
+derived pricing; camera is the sustained law error in pixels, key rms and step-right the
+retail unloaded frames' state-and-phase medians against the engine's priced work):
+
+| Set | Films | Image | Cue | Camera | Step agreement | Key rms | Step right |
+|---|---:|---|---|---|---|---|---|
+| Party arts | 20 | `.9454` / `.9457` | `.9982` / `1.0` | `1.46` / `1.78` | `.943` / `.948` | `35` / `38` | `.938` / `.953` |
+| Enemy casts | 65 | `.9513` / `.9440` | `1.0` / `.9904` | `2.50` / `2.18` | `.915` / `.904` | `116` / `118` | `.767` / `.772` |
+| Seru casts | 29 | `.9721` / `.9721` | `1.0` / `1.0` | `5.91` / `5.91` | `.992` / `.992` | `35` / `15` | `1.0` / `1.0` |
+| Monster strikes | 65 | `.9847` / `.9830` | `1.0` / `1.0` | `.35` / `.58` | `.969` / `.966` | `29` / `32` | `.981` / `.942` |
+
+Over all sets the key rms reads `80.5` against `81.0` and the step agreement `.960`
+against `.956`. The `387` battle stills read the same under both, every state's image to the
+last digit: a still prices no frame. The derived bias is a few hblanks under where the line's was `17` over, but
+it is not a strict win: the Seru frames come in (`35` to `15` hblanks rms), the strikes and
+the enemy films' Done band (`0x51`, `30` hblanks under) go out, and Kor's Gaza's Astral
+Slash loses a cue. Zenoir's Fire Claw is the row it fixes: retail's `0x2B` frames cost
+`504` (step `2`), the line `529` (step `3`) and the derived pricing `506`. Rogue Wind's
+first `0x70` passes keep the arm table's step under both, so neither reaches retail's
+`692`. So the derived pricing stays opt-in.
+
+The strikes' and the Done band's shortfall is the census's count, not the table's price.
+On Medusa's strike (`battle_korb2_medusa_strike`) the runner reads retail's dispatcher
+walking about `2100` linked, `720` off-screen and `1750` culled primitives a frame, where
+the census on the same fight counts `1990`, `315` and `2270` (`units.csv` beside a film's
+`meta.csv`): some `500` primitives retail transforms whole (linked or dropped off screen,
+`210` to `270` cycles) the census drops at the winding or near test (`68` to `92`), about
+`40` hblanks on a full-party frame. The actor render's list walks do not follow the live
+parts as a fit across states suggests: on Cort's strike fourteen parts read `1.9` hblanks
+on one frame and three read `15` on another, so they stay at their mean.
+
+<a id="the-leaves-own-rules"></a>
+
+**The leaves' own rules.** The census's float rules drop about `500` primitives a
+full-party frame that retail's dispatcher transforms whole, and never send a body's
+primitive to the off-screen test. Under `WorldToggles::battle_census_retail_culls`
+(`LEGAIA_CENSUS_RETAIL_CULLS=1`), and always under the derived pricing, the census decides
+each primitive as its leaf does, on the GTE's integer corners (`IR1` / `IR2` clamped, `SZ3`
+clamped, the `H / SZ` quotient capped at `0x1FFFF`, the screen pair truncated to
+`-0x400..=0x3FF`), so a corner at or behind the eye projects as it saturates instead of
+dropping the primitive:
+
+| Leaf | Winding | Then |
+|---|---|---|
+| A triangle, kinds `14`, `16`, `18` | kept on `NCLIP >= 0` | the near floor, then the off-screen test on every word |
+| Kind `12` (`0x800448B0`) | kept on `NCLIP >= 0` | the near floor; no off-screen test |
+| A quad, kinds `15`, `17` | kept on the first half's `NCLIP > 0`, else the second's `< 0` | the near floor, then the off-screen test on every word |
+| Kind `13` (`0x80044A3C`) | as kinds `15` / `17` | the near floor; no off-screen test |
+| A kind-`19` quad | kept on the first half's `>= 0`, else the second's `<= 0` | the off-screen test under a word carrying `0x40`, then the near floor |
+
+A double-sided word masks `NCLIP` with `0x7FFFFFFF` before the test, so it never reads
+negative and a strict quad still drops a half of zero area. The near floor is `OTZ < 0x10`
+on `ZSF3 * sum SZ >> 12` (`0x155`) or `ZSF4 * sum SZ >> 12` (`0x100`) at the battle's shift
+`2`; none of the words read on Medusa's strike carries the far-corner bit `0x10` (bodies `0x00` / `0x04`, the
+backdrop `0x40`, the shadows `0x8A`). Disassembly: the leaves at `0x80044C14` (`bltz` at
+`0x80044CBC`, the near test at `0x80044D68`, `jal 0x80044798` at `0x80044D80`),
+`0x80044DC8` (`blez` / `bgez` at `0x80044E78` / `0x80044EAC`, `jal` at `0x80044F48`) and
+`0x80045584` (`bltz` / `bgtz` at `0x80045634` / `0x80045668`, the `0x40` test at
+`0x800456EC`, the near test at `0x8004570C`).
+
+Held against the runner's per-fate counts (`retail-exec battle-cost --mode fates`) on
+twelve monster-strike states, each played on in both and read by action state (the median
+frame of each band, the engine's from the film's `units.csv`), summed over the bands:
+
+| Count | Stage linked / off-screen / culled | Bodies linked / off-screen / culled |
+|---|---|---|
+| Retail | `4938` / `14442` / `13712` | `70218` / `11497` / `63509` |
+| The leaves' rules | `4578` / `14406` / `13699` | `70333` / `10558` / `62794` |
+| The float rules | `4409` / `11481` / `16802` | `71735` / `0` / `71963` |
+
+On the strike bands themselves (`0x1E..=0x20`) a body's three counts land within a few
+primitives of retail's; the Done band moves more, where the engine's and retail's frames
+stand on different shots. Grade `disassembly` for the rules, `capture` (runner) for the
+counts.
+
+On those counts the four film sets read (image, cue, camera, step-right; the key rms in
+hblanks), the census line and the derived pricing each on the float rules and on the
+leaves' rules:
+
+| Set | Census, float | Census, leaves | Derived, float | Derived, leaves |
+|---|---|---|---|---|
+| Party arts | `.9454` `.998` `1.46` `.938` `35` | `.9317` `.998` `2.19` `.875` `51` | `.9457` `1.0` `1.78` `.953` `38` | `.9467` `1.0` `1.91` `.953` `39` |
+| Enemy casts | `.9513` `1.0` `2.50` `.767` `116` | `.9431` `1.0` `3.36` `.698` `126` | `.9440` `.990` `2.18` `.772` `118` | `.9518` `1.0` `2.11` `.772` `118` |
+| Seru casts | `.9721` `1.0` `5.91` `1.0` `35` | `.9721` `1.0` `5.91` `1.0` `43` | `.9721` `1.0` `5.91` `1.0` `15` | `.9721` `1.0` `5.91` `1.0` `15` |
+| Monster strikes | `.9847` `1.0` `.35` `.981` `29` | `.9720` `.999` `.75` `.883` `50` | `.9830` `1.0` `.58` `.942` `32` | `.9808` `.999` `.61` `.942` `33` |
+
+The step agreement over all four reads `.960`, `.935`, `.956` and `.962`. The census line
+loses on every set with retail's counts under it: its `.200` a link was fitted on the float
+rules' counts. So the leaves' rules ride the derived pricing only, and the census line keeps
+the float rules by default. The derived pricing on them takes the enemy casts (image over
+the line's, every cue, camera `2.50` to `2.11`, Kor's Gaza's Astral Slash back to `1.0`,
+Zenoir's Fire Claw back to the line's `.9165`, Rogue Wind's `.9327` against `.9312`), the
+arts' image and cues, the Seru frames and the overall step agreement, but not the strikes
+(image `.9808` against `.9847`, a cue, camera `.61` against `.35`) or the arts' camera.
+Its strike bands now read retail's counts, and their frames price within a few percent
+either side of the recordings' (Devil Pump's `0x1F` `629` against `643`, Orb's `698`
+against `679`, Ironman's `658` against `670`); the Done band (`0x51`) still reads `16`
+hblanks under. So it stays opt-in.
+
+**The three opt-in terms under the derived pricing.** The `"ME"` decode and the walker's
+branches are the derived pricing's own terms (`derived_cost::me_decode_cycles`,
+`derived_cost::walker_cycles`) and run under `battle_derived_frame_cost` whatever the two
+toggles say; the toggles keep their meaning on the census line. Taken out of the derived
+pricing, the decode moves the arts films from `.9457` to `.9462`, camera `1.78` to
+`1.38`, with a cue lost and the step agreement `.948` to `.945`: the trade the census line
+showed. The walker's branches against the flat `1.6` a child, over the thirteen enemy films
+whose pools fill: image `.9447` against `.9478`, camera `.87` against `1.14` (Koru's
+Blade Breath `.973` against `.934`, Zeto's Poisonous Bubbles `.850` against `.923`). Both
+stay folded, retail's costs as the runner counts them. `battle_arts_shout_cd` is a CD
+timing and stays a measured term; on with the derived pricing it moves the arts films
+`.9457` to `.9471` and camera `1.78` to `1.68`, so a derived run takes it on. Grade
+`capture` for each film row, `capture` (runner) for the census's count against retail's.
+
 **The film's lead-in.** A film replays rounds to reach its state (a physical strike) or the
 cast it seeds, and those rounds draw `rand()` on the frame step, so pricing them moves the
 round the film reaches its gate on. Ghost Knight's film reached its gate at tick `15705`
@@ -2214,6 +2421,11 @@ GPU draws that table; at its own end `VSync(1)` (`0x800174CC`) is the CPU's fini
 `DrawSync(0)` (`0x800174D8`) waits for the table, and the second `VSync(1)` (`0x800174E0`) is
 the entry. So the entry is `max(cpu, dma + draw of the previous pass's table)`, both counted
 from the same vsync.
+
+How each emulator times both halves, from its source, is in
+[emulator timing](../tooling/emulator-timing.md). On mednafen the model to use is its own
+rules (`gpu_cost.py`'s `med_ot_cost`), which read the GPU-bound entries `0.9` hblanks
+under at the median over `303` passes; the DuckStation costs below read `20` over.
 
 The GPU half has a model with no free constant
 ([`scripts/mednafen/gpu_cost.py`](../../scripts/mednafen/gpu_cost.py), the same in the probe
@@ -3024,7 +3236,15 @@ tick between holds:
   ribbons, the victim's tint, the landing cue). A node it links - the landing
   flash's fade actor, a list's effect children - first ticks on the next pass's
   walk and first shows there: Astral Wave's recording brightens one frame after
-  the landing pass (`World::release_draw_spawns`).
+  the landing pass (`World::release_draw_spawns`). A bit-7 list byte is not a
+  node: it seats an effect-pool master on the spot (`jal 0x801DFDF0` at
+  `0x801E11A0` / `0x801E1434`), behind the pass's walker sweep (`0x80048128`)
+  and ahead of the burning puffs the same draw sheds (`0x8004A820`), so its
+  children still first show on the next pass, but the pool takes them in that
+  order. A `--fx-spawns` recording of Zenoir's Fire Claw holds the flight's
+  `0x11`, the landing's `0x11` and then the victim's `0x0B` on the landing
+  pass; held back with the nodes, the port seated the puff first, and every
+  later child slot and `rand()` draw of the burst parted from retail's.
   Every commit `FUN_80047430` makes sits after the advance
   (`0x800478EC..0x80047A44`) and `FUN_8004AD80` zeroes the cursor
   (`sh zero,0x68` at `0x8004B068`), so a clip the SM stages starts the next
@@ -3226,6 +3446,20 @@ lead to. The battle draw therefore runs **one battle frame behind**:
   the same handle (a new child in a reused slot, a new scene in a reused
   list place) or whose identity changed draws live, and a node gone from the
   live frame is gone from the draw, so nothing lingers past retail's frame.
+- A looping node draws its wrap at once. A spark that rises and drops back to
+  its emitter steps steadily one way and then jumps the other, and drawn on
+  the line between it would sweep back across its own path for a frame. A
+  step that turns against the node's step the frame before and is at least
+  twice as long plus `32` units is that jump (`present::is_wrap`), so the
+  node lands; a bounce keeps its speed and still steps.
+- The streak ribbon's anchors ride the same phase: each point of a cast
+  arm's ribbon ring and of a landed projectile's bolts
+  (`BattleState::cast_ribbons` / `flight_ribbons`, the trios `FUN_801E1D98`
+  is handed) is a node of its own (`World::battle_ribbon_point_shift`), so a
+  ribbon on a moving body or projectile stays on it. A ring whose trail or
+  point count changed is a new ring and draws live. The move-FX streak's
+  launch point and the clip-tag ribbon's seat are fixed for the effect's
+  life, so the drawn camera alone carries them.
 - A cut draws its landing at once: a change of camera owner (the phase camera,
   a stage module's camera), or a step of `480` angle units, `1800` TR units or
   `480` focus units in one frame (`present::CUT_*`). Across the film sets the
@@ -3236,7 +3470,8 @@ lead to. The battle draw therefore runs **one battle frame behind**:
   draw live.
 - It is presentation-only. The draw-side reads are `World::battle_draw_pose`,
   `battle_draw_root`, `battle_draw_shift`, `battle_draw_root_i16`,
-  `battle_draw_pose_frame`, `battle_fx_shift` and `battle_sprite_shift`, and
+  `battle_draw_pose_frame`, `battle_fx_shift`, `battle_sprite_shift` and
+  `battle_ribbon_point_shift`, and
   only the two hosts' draw paths and the shared draw kernels' `_drawn` entries
   take them (`effect_model_draws_drawn`, `weapon_trail_prims_drawn`,
   `cast_ribbon_prims_drawn`). The frame census counts what retail links from

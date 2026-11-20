@@ -782,6 +782,12 @@ pub(super) fn drain_battle(session: &mut NativeSession) -> Option<Run> {
     } else {
         0
     };
+    // A game over already standing is the wipe the last fight reported,
+    // not another one: re-entering the fight loop on it counted it again
+    // and re-learned nothing.
+    if let Some(e) = super::segment::wiped(session) {
+        return Some(Run::Battle(e));
+    }
     PAD_DEADLINE.with(|d| d.set(d.get().saturating_add(lent)));
     let start = session.frames;
     let r = fight_battle(session);
@@ -840,6 +846,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     };
     let mut party_prev = party_hp(session);
     let mut prev = 0u16;
+    let mut releasing = false;
     // The element of a boss (a fight that forbids running): its record's
     // `+0x1D`, read while its seat is still filled.
     let boss_element = {
@@ -929,7 +936,30 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
                 w.battle_ctx.action_state,
             );
         }
-        let pad = if prev == 0 { want } else { 0 };
+        // The default mode alternates one tick on, one off. The
+        // retail-faithful battle reads the pad once a battle frame
+        // (`World::retail_frame_pad`), so a one-tick press there fell
+        // between reads and the command window never moved: the press is
+        // held until the word the game reads carries it, then neutral until
+        // that word clears.
+        let pad = if session.host.world.toggles.immediate_pad {
+            if prev == 0 { want } else { 0 }
+        } else {
+            let read = session.host.world.input.pad();
+            if releasing {
+                if read == 0 {
+                    releasing = false;
+                    want
+                } else {
+                    0
+                }
+            } else if want != 0 && read & want == want {
+                releasing = true;
+                0
+            } else {
+                want
+            }
+        };
         prev = pad;
         session.host.world.set_pad(pad);
         if let Err(e) = session.tick() {

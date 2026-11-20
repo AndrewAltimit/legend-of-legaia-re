@@ -27,6 +27,7 @@ re-export them.
 | `auto_combo` | The Auto attack's disc inputs, flag and per-seat queues (`FUN_801F0450`). |
 | `round_flow` | `RoundFlow`: the command / execution band split and the party's committed commands. |
 | `frame_clock` | `BattleFrameClock`: how one-vsync ticks group into retail's battle frames (`FUN_80016B6C`). |
+| `derived_cost` | A battle frame's CPU work by unit, counted off retail code in `retail-exec` on PCSX-Redux's clock; not wired into pricing. |
 | `clip_ladder` | The staged-anim commit's clip-tag ladder and reaction maps (`FUN_8004AD80`). |
 | `ui_cues` | The SFX cue each command-surface phase submits (`FUN_801D0748`). |
 | `cast_fx_state` | `CastFxState`: the active summon scene, the slot-B module phase bytes and carried words, the cast stager and move-FX spawns. |

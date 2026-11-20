@@ -55,7 +55,7 @@ fn mismatched_build_pack_and_code_are_refused() {
         net.clients[1].rejects,
         vec![
             RejectReason::PackMismatch,
-            RejectReason::BuildMismatch,
+            RejectReason::BuildMismatch { host: BUILD.into() },
             RejectReason::NoSuchRoom
         ]
     );

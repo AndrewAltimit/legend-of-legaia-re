@@ -143,6 +143,7 @@ Flags worth knowing:
 | `--console-cd` | Engine: price a voice clip's CD stop watch at a console's response time (`LEGAIA_BATTLE_CD_TIMING=console`, opt-in). Without it the film runs the engine's default PCSX-Redux timing, the machine the recordings ran on ([the CD stop watch](../subsystems/battle-stage-camera.md#the-cd-stop-watch)) |
 | `--gpu-cost-step` | Engine: a battle pass's ring entry is `max(cpu, gpu)`, the GPU half priced over the frame the window drew last (`LEGAIA_BATTLE_GPU_COST=1`, `WorldToggles::battle_gpu_cost_step`, opt-in). Not a harness seat: it changes the engine's own clock ([the engine's GPU source](../subsystems/battle-stage-camera.md#the-engines-gpu-frame-step-source)) |
 | `--retail-parts` | Retail: `parts.csv`, every live move-VM part per vsync (`+0x10`, colour word, level, draw kind, `+0x5A`, `+0x9E`, packed colours, `+0xB4..+0xBA`, the position halfwords `+0x14..+0x18`, scale, `+0x52`, `+0x9C`, UV / tpage / CLUT, H / S / V adds, view depth `+0x34`, `+0x7A`, `+0x6D`, `+0x42`, the rotation banks `+0x24..+0x28`, the draw-kind-4 phase `+0xC8` and its rate `+0xCA`): the retail half of `LEGAIA_DIAG_CAST_PARTS`. Beside it `fxpool.csv`, every live child of the effect pool `_DAT_8007BD30` (slot, frame count, cursor, position `>> 8`): where the 2D sprites, a burning body's puffs among them, sit |
+| `--fx-spawns` | Retail: `fxspawn.csv` (breakpoint core), every call into the effect pool's entry `FUN_801DFDF0`, its spawn API `FUN_801DFDF8` and the prototype seat `FUN_80050ED4`, in call order, with `a0..a3`, `ra` and the `rand()` seed word: which caller seated which effect, and in what order the pool took them |
 | `--pose-objects` | Retail: `pose.csv` (breakpoint core), at each burning-body emit (`0x8004A61C`) on the summon creature, its cursor, live pair, facing and decoded object table; `LEGAIA_DIAG_CAST_PARTS` writes the engine's `pose.csv` from `stream_pose` |
 | `--body-decode` | Retail: `decode.csv` (breakpoint core), each seat's body-pair store in the draw's decode `FUN_8004998C` (`0x8004A5FC`, after the `+0x3C` / `+0x40` stores): clip, node cursor, the pose centroid the store rotated, facing, live and body pairs. The pose a range law or separation pass reads next pass. `body.csv` carries the target's facing `+0x46` as `tfacing` on both sides |
 | `--prim-calls` | Retail: `primcall.csv` (breakpoint core), each prim dispatcher entry with its word, level, caller and first group words, and each cued leaf: whether a part reached the dispatcher at all, and by which leaf |
@@ -152,7 +153,7 @@ Flags worth knowing:
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
 | `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
 | `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
-| `LEGAIA_LEADIN_TABLE_COST=1` (engine child, beside `LEGAIA_BATTLE_POLY_COST=1`) | Engine: price the replay's lead-in on the action-state table and raise the polygon census where the film starts (the capture's gate, or the cast begin), so a census-priced film reaches its gate on the round a table-priced one does. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
+| `LEGAIA_LEADIN_TABLE_COST=1` (engine child, beside `LEGAIA_BATTLE_POLY_COST=1`) | Engine: price the replay's lead-in on the action-state table, with the command surfaces' frames unpriced, and raise the polygon census and the surfaces' pricing where the film starts (the capture's gate, or the cast begin), so a census-priced film reaches its gate on the round a table-priced one does. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `LEGAIA_FILM_COST_RING=e0,..,e15;cursor` (engine child) | The recording state's frame-cost ring, which the driver reads off the state for a film no `LEGAIA_BATTLE_COST_RING` seeds; under `LEGAIA_LEADIN_TABLE_COST` the film's opening pass is priced again on the census from it. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `LEGAIA_FILM_COIN=coin@vsync,..` (engine child) | The attack camera's track coin `ctx[+0x26D]` through the recording, dealt from the gate on a film no `--strike-deal` carries; the driver sets it whenever the recording has the `coin` column ([the track coin](#the-track-coin-on-a-film)). A harness seat |
 | `LEGAIA_FILM_YAW=<counter>` (engine child) | A `--physical` film's action yaw counter `ctx[+0x6DA]`, read off the state and stood on the camera at the gate (`--no-state-yaw` leaves the replay's own) ([the yaw counter](#the-yaw-counter-on-a-physical-film)). A harness seat |
@@ -494,6 +495,17 @@ A recording that opens on a state's own instant can open on a frame whose pass r
 the first row; no `rand()` draw lands in it (every battle pass makes the frame driver's
 discarded draw), and the track leaves it out. Handed on, its step ran Lip King's first
 arm-1 pass on the leftover step `3`, and Kiss of Death read `.899` where it reads `.993`.
+The rows cannot see a draw on the first row itself, though: a first frame of one row is
+its logic's own row and shows one word throughout. The state's seed word (`0x80009010`)
+can. Where a one-row first frame's word differs from the state's, that frame's pass drew
+between the state and the recording, the engine runs it from the gate (its first pass
+draws onto the first row's word), and the track keeps it. Left out, every later pass of
+`battle_garmel_zenoir_fire_claw_mid_cast`'s film ran the step of the frame after
+retail's: the projectile flew a step-`3` pass where retail's flew a step-`2` one, and the
+trail it drops stood `29` units along the flight. On `--retail-steps`, `0x2B` reads
+`.883` to `.973` and the film `.933` to `.970`; Moldy Breath `.977` to `.997`, Thunder
+Burst `.986` to `.990`; Kiss of Death, Twin Tomb's strike, Kemaro's `0x90` and Plasma
+Strike read the same. A harness seat.
 
 `body.csv` and `seats.csv` are read at another point in the vsync than `rates.csv`, so on a
 commit vsync the clip column can still name the outgoing clip while the cursor is already
@@ -2008,6 +2020,19 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   so stood on `192` against the RAM's `168`, reached its walk's natural end a
   pass early and struck from `(130, 335)` where retail's strikes from
   `(136, 325)` (`.955`); on `168` it walks retail's passes and reads `.994`.
+- **Burning puffs.** A burning body sheds one effect-pool puff per `0x10` of the
+  frame driver's accumulator `ctx[+0x328]`, which gains `step << 3` a frame and keeps
+  its low nibble (`FUN_8004998C`, `0x8004A5FC..0x8004A8D8`), so a step-`3` pass sheds
+  one or two by the nibble's phase. That phase is time the replay's fight does not
+  keep: Zenoir's Fire Claw victim shed two where retail shed one on the landing pass,
+  and every later child and `rand()` draw of the burst parted. The child seats the
+  state's word once, where the film begins (`LEGAIA_BATTLE_BURN_ACCUM`, which the
+  driver reads off the state for every `--physical` film); held through the replay
+  before the gate, the puffs the replayed rounds shed moved the stream the replay
+  meets its gate on, and `balden_orb_v2_strike` read `.927` for `.986`. On `--retail-steps` Fire Claw's
+  `0x2C` / `0x2D` read `.795` / `.834` to `.945` / `.960` (the film `.970` to `.990`);
+  plain, the film `.9169` to `.9210`. Over the enemy set's other physical films only
+  Hyper Lightning moves (`-.0007`). A harness seat.
 - **Target bytes.** The release at the gate also aims every seat but the acting
   one at the target its RAM holds (`+0x1DD`, `LEGAIA_BATTLE_SEAT_TARGETS`, a
   physical film only: an injected cast acts from another seat). The replay
@@ -2267,7 +2292,11 @@ over the id multisets alone, whatever the time.
 
 `--calc-clock` (retail only) writes `calc.csv`: every entry of the libsnd calc `FUN_80062F98` and every
 KON write `FUN_8006B854(1, mask)` with the CPU cycle, the action state and the module phase, so a calc
-skipped or doubled across a cast's blocking arms reads as a cycle gap of `0` or `2` vsyncs.
+skipped or doubled across a cast's blocking arms reads as a cycle gap of `0` or `2` vsyncs. Every row
+also carries the calc's lock word `0x801CD2B4` and the flush's history index `_DAT_801CE204` as they
+stand, and the cue key-on `FUN_80065034`'s lock and free stores (`0x800650A4`, `0x80065288` /
+`0x80065388`) are rows `lock` and `free`: a calc entered with `lock` at `1` returns at once and runs no
+flush ([the calc's lock](../subsystems/audio.md#seq-internals)).
 
 `rates.csv` (retail only) holds each seat's rate `+0x21D` and node cursor `+0x68`
 per vsync: a same-id timing miss on a reaction is usually the rate, read straight off it.

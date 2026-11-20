@@ -6,7 +6,8 @@ One CSV row per emulated frame: libetc's VSync counter, the main loop's frame co
 size `ctx[+0x00]`, the frame step `0x1F800393`, the frame-cost words `gp+0x3A8` (the
 hblanks to the CPU's end of frame) and `gp+0x3AC` (after `DrawSync`, the ring's entry),
 the ring's newest entry, the GPU draw-time model (`gpu_cost.py`) of the table the GPU
-was handed last (`*_drawn`) and of the one the CPU builds (`*_cur`), in hblanks, and the
+was handed last (`*_drawn`) and of the one the CPU builds (`*_cur`), in hblanks (`gpu_*` +
+`dma_*` on DuckStation's costs, `med_*` the whole wait on mednafen's own rules), and the
 CPU's PC and `ra` at the frame boundary. Numbers only: it changes nothing and gates
 nothing. Steps the emulator as `drive-timeline.py` does (advance-frame and save-state
 keys through xdotool on a private Xvfb).
@@ -20,7 +21,7 @@ import argparse, gzip, os, shutil, struct, subprocess, sys, tempfile, time, toml
 from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gpu_cost import ot_cost, HBLANK_CPU  # noqa: E402
+from gpu_cost import ot_cost, HBLANK_CPU, med_ot_cost, MED_HBLANK_CPU  # noqa: E402
 import importlib.util  # noqa: E402
 spec = importlib.util.spec_from_file_location("audio_pcm", REPO / "scripts" / "ci" / "audio-pcm.py")
 audio_pcm = importlib.util.module_from_spec(spec); sys.modules["audio_pcm"] = audio_pcm; spec.loader.exec_module(audio_pcm)
@@ -41,7 +42,8 @@ def row(path):
     for r in (idx ^ 1, idx):
         base = u32(ram, 0x8007BF30 + r * 0x74 + 0x70)
         gpu, dma, st = ot_cost(ram, base + otlen * 4 - 4, limit=40000) if otlen else (0, 0, {'poly': 0})
-        g += [round(gpu / HBLANK_CPU, 1), round(dma / HBLANK_CPU, 1), st['poly']]
+        med = med_ot_cost(ram, base + otlen * 4 - 4)[0] if otlen else 0
+        g += [round(gpu / HBLANK_CPU, 1), round(dma / HBLANK_CPU, 1), st['poly'], round(med / MED_HBLANK_CPU, 1)]
     cur = u32(ram, 0x8007B758) & 0xF
     newest = struct.unpack_from('<h', ram, 0x84098 + 2 * ((cur - 1) & 15))[0]
     cx = ctx & 0x1FFFFF
@@ -49,7 +51,8 @@ def row(path):
     gi = b.find(bytes([3]) + b'GPR'); ra = struct.unpack_from('<I', b, gi + 4 + 4 + 31 * 4)[0] if gi >= 0 else 0
     return dict(vsync=u32(ram, 0x8007A894), frame=u32(ram, 0x8007B798), st7=ram[cx + 7], phase=ram[cx + 0x279],
                 party=ram[cx], step=scr[0x393], cpu=u32(ram, 0x8007B6C0), tot=u32(ram, 0x8007B6C4), newest=newest,
-                gpu_drawn=g[0], dma_drawn=g[1], polys_drawn=g[2], gpu_cur=g[3], dma_cur=g[4], polys_cur=g[5], pc=hex(pc), ra=hex(ra))
+                gpu_drawn=g[0], dma_drawn=g[1], polys_drawn=g[2], gpu_cur=g[4], dma_cur=g[5], polys_cur=g[6],
+                med_drawn=g[3], med_cur=g[7], pc=hex(pc), ra=hex(ra))
 
 def main():
     ap = argparse.ArgumentParser()

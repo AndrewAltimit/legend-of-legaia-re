@@ -313,6 +313,15 @@ incoming label, so the corpus scores it as the scene the define names and
 records the label as `pending_scene` in the detail
 (`RetailObs::settle_on_loaded_scene`;
 [the arrival states](#arrival-states-are-captured-before-the-town-runs)).
+Such a state holds the outgoing scene's records, which the engine leaves
+with the change the gate's resume replays. A still keeps the deadline. Under
+a [walk film](walk-film.md) a gate the engine meets films from its gate as
+any other (`s2_rimelm_town01` and `son_arrival_from_doman` meet theirs on
+the outgoing world map, deep into its cutscene), while one it never meets
+is seeded again with the gate ending at the settle window, where the film
+runs on from: `doman_arrival_from_korb2` holds map03's flat `49` on its
+idle `26` at `+0x2E`, a record the engine's map03 never runs as a context,
+so the seed ran to the deadline and no film ever started behind it.
 
 ## Retail observables
 
@@ -479,7 +488,15 @@ engine verdict:
   engine's). `kor5_post_43a_checkpoint` was played through `kor5` `P2[3]`,
   whose last `A3 0E 20 5D` stands Old Deez at `(4160, 11968)` where his head
   bytes `20 DC` spawn him at `(4160, 11904)` (`npcs` `.977` to `1`, `image`
-  `.986` to `1.000`). The off-map park literal is seated the same way: a
+  `.986` to `1.000`). A cross-context run-to-tile (`CC <flat> 51 xb zb`) is
+  the same teleport onto the same tile decode, so its target is a beat
+  literal too: `town0d` `P2[32]`, the Rim Elm revisit arrival, closes with
+  `CC 36 51 60 0F 07 42`, Mei on `(12352, 1984)` facing index `7`, where her
+  record `P1[21]` seats her on `(12288, 1984)` facing `0`; the heading seat
+  below then turns her (`town0d_house_interior` / `town0d_house_free`:
+  `npcs` `.983` to `1`, `facing` `.963` to `1`, `image` `.977` to `.993`). The
+  engine reaches the seat itself (`engine-scene-host`'s
+  `town0d_mei_arrival_seat_disc`). The off-map park literal is seated the same way: a
   placement retail holds on the park seat, whose flat a partition-2 beat
   parks (`A3 <flat> 7F 7F`, or the run-to-tile `CC <flat> 51 7F 7F`), is
   stood on retail's park coordinates with retail's heading, which the beat's
@@ -517,6 +534,16 @@ engine verdict:
   its pillars blending ABR 3 (`image` `.815` to `1.000`); its twin
   `chitei2_corridor_pillars_before` stands at the corridor's door, the pillars
   opaque.
+  The field menu lock is the same kind of history. A record raises it with
+  `2E 1B` into the scratchpad story word `_DAT_1F800394` (`0x0800_0000`),
+  which the save does not hold, and the field party HUD `FUN_801D0D38` bails
+  while it is up (`0x801D0D98..0x801D0DAC`). `town0e` `P2[5]`, the ending's
+  epilogue, raises it at `+0x18` and never lowers it, so
+  `town0e_epilogue_vahn_alone`, taken after the record retired, shows no
+  readout where a card load past it does. The seed raises the bit when the
+  state's word holds it (`RetailObs::menu_lock`, the image child's
+  `LEGAIA_SEAT_MENU_LOCK`; `image` `.965` to `1.000`). A state whose word
+  lacks it, `keikoku_chest_open` among them, keeps the engine's own HUD.
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter
@@ -775,6 +802,20 @@ engine verdict:
   undone (`scroll_fires_within`, `unrotate_rect`). `jouine`'s two flesh
   columns, period `2` on a step-`3` frame, fire every tick.
 
+  A program that switched its rates inside those two frames rolled the
+  frame before the switch at the old ones. The dance hall's top drum,
+  the scroller on `(640, 0, 8, 256)`, alternates `dy 2` and `dy 0` two
+  ticks each (op `0x1E` then a `09 4` wait, `32` units at `24` a tick),
+  and the scroll rolls on the tick its op runs. A state taken on the tick
+  of the switch (the wait `+0x54` still at its set value) has one lag
+  tick at the new rates and one at the other pair of the program's two
+  (`scroll_ticks_before_set`, `scroll_previous_rates`). Taken back at the
+  current rates for both, the drum stood a roll off on four of the five
+  retail dance states: `minigame_dance_retail_ready` reads `.991` where
+  it read `.981`, `_judged` `.988` where `.971`, `_go_in` `.993` where
+  `.992`. No other state in the library carries such a program on such a
+  tick.
+
   So are the VDF vertex-morph envelopes field actors run off op `0x4B`
   ([field-ambient-fx](../subsystems/field-ambient-fx.md#the-vdf-vertex-morph-chain)).
   Where an envelope stands is time since the arm: `town01`'s shoreline
@@ -866,13 +907,52 @@ engine verdict:
   spawns the panel. The state's live panel widget (`retail_panel`, handler
   `FUN_801F849C`) goes to the child as `LEGAIA_SEAT_PANEL`, installed on the
   frame it captures, and the texels it samples ride the
-  `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects. The second
+  `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects. Its tween is
+  seated as the display drew it, two game frames back: the clock `+0x9C`
+  gains the frame step each frame and the five channels are linear
+  (`FUN_801DE4C8` mode `1`, `0x801F84EC..0x801F8650`), so the lag comes off
+  the clock, and a clock it takes past `0` stands on the start rect
+  (`rewind_panel`). A PCSX-Redux film of `edson` `P2[0]`'s shrink
+  (`43 14 A4 00 70 00 00 07 40 00`, step `3`) puts the displayed left edge
+  on the RAM clock less `6` at every frame; `credits_edson_fullscreen_pcsx`
+  holds clock `6` under a display that still shows the whole grab, and
+  seated on the RAM's clock the panel drew `15` px in (`image` `.606` to
+  `1.000`). The second
   page's rect runs to the far edge its quad reaches, not the image's: the
   handler starts that quad at `u + 0x100 + 0xE` and ends it at
   `u + w0 + 0x10` (`0x801F8838..0x801F88B0`), sixteen texels past the
   `320`-wide grab, and the `43 12` split copies source `+0xF0` for `0x60`
   columns to cover them. A seed cut at the image's width left those texels
   unseeded and the panel's right edge drew whatever the engine held there.
+
+  The ending crawl's lines are not seated: the child replays the credits
+  record that spawns them (`43 10`, the sprite widget `FUN_801F7A9C`). But
+  they show the RAM's frame where the gate stands the scene on the displayed
+  one. A PCSX-Redux film of `edlast` (a shot every two vsyncs) puts each
+  line's top row at its `+0x16` plus the glyph's offset on the same vsync,
+  from `t408` to `t448`, so a state holding a sprite widget
+  (`retail_has_sprite_widget`) hands the child the record's RAM wait as
+  `LEGAIA_SEAT_SPRITE_WAIT`, and on the capture frame the child runs the
+  sprites alone on, in frame steps, by that wait less its own context's: the
+  lag the gate took off, none where a wait under the lag kept the gate on
+  the PC's first frame (`credits_edstati3_panel_pcsx`, wait `2`). On the
+  gate's frame alone the `Casting` line stood two rows low
+  (`credits_edlast_casting_pcsx` image `.925`, `.996` led).
+
+  So is the scene's held op-`0x34` grade. It is the history of the record
+  that ran it: `urudre1`'s entry script grades `(48, 48, 0)` or
+  `(0, 16, 24)` on `0x146` / `0x22E` and spawns the dream opening `P2[0]`
+  only while `0x3F5` is set, clearing it, and `P2[0]` grades
+  `(0, 16, 24)` over it. A state taken after `P2[0]` ended reloads into the
+  entry script's grade. The live tween `_DAT_8007B62C` names (`FUN_801DDC20`'s
+  fields: `from` `+0xB8`, `to` `+0xBE`, delay `+0xC4`, hold `+0xC6`, clock
+  `+0xC8`, duration `+0xD4`, blend `+0xD2`, kind `+0xD6`) goes to the child as
+  `LEGAIA_SEAT_GRADE`, its clock taken back by the display lag, and stands on
+  the capture frame where the engine's held target differs
+  (`retail_scene_grade`, `World::seat_held_scene_grade`; `urudre1_house_free`
+  image `.466` to `.994`). A grade the replay set itself is left on its own
+  clock: seated over it, four states whose tween had just landed fell
+  (`minigame_dance_pcsx` `.830` to `.786`).
 
   So is the frame's clear colour, the draw environment's `r0 / g0 / b0`
   (`0x8007BF5D..5F`) that op `4C 13` writes and the MAN loader zeroes: the
@@ -970,6 +1050,19 @@ player pressed through while it typed, so the seed presses once the engine's
 row has revealed as far as the capture's counter. The engine falls back to
 the waiting page when it never stands in the arm.
 
+**A picker on screen.** A prompt that ends on a picker byte waits in `0x19`
+like any page, and only the confirm press opens the menu
+([`mes.md`](../formats/mes.md#dialog-window-pager---fun_801d84d0)), so a
+capture in a slide arm (`0x11` / `0x13` / `0x15` / `0x17`) or an input arm
+(`0x12` / `0x14` / `0x16` / `0x18`) shows a menu the player opened. The seed
+presses once the prompt's page waits on the gate and meets the slide arm when
+the engine's slide count (`PickerSlide::count`) is down to the pager actor's
+`+0x54`, the input arm when the menu takes input. The input arm takes the
+met tick's own frame, not the displayed one: the slide ended frames before
+the capture, so retail's frame shows the box at rest with its hand.
+`doman_mrs_usha_quiz_picker_slide` / `_open` (Mrs. Usha's first question)
+read `0.831` / `0.769` on the waiting page and `0.997` / `0.998` on the arm.
+
 **A later page of a box.** The dialog SM moves the record's PC onto each
 page as the press turns to it: on pager state `3` / `6` / `9` it walks the
 shown lines from `+0x9E` and stores the byte after them back in `+0x9E`
@@ -994,6 +1087,20 @@ engine's lands too. Three `concend` checkpoints 60 vsyncs apart had all
 met on the player's first tick of the walk (position `.175`, `0`, `0`; met
 on the walk, `1`), and `concnow` `P2[13]`'s wait on flat `50` at `+0x399`
 read image `.34` on the PC alone and `.84` on the walk.
+
+**A landed face leg.** `4C 85` / `8E` / `8F` aimed at a placement arms the
+walk kernel's FaceTarget leg on it, and the record's next cross-context op
+on that placement waits for the turn. The leg's terminal frame clears the
+placement's `0x400` in its actor tick (`FUN_8003774C`, `0x80038004`), after
+the record's slice, so a capture can hold the record on that op with the
+turn already done. A gate whose op aims at a placement seated on a face leg
+with its halt down carries `FACE_LANDED` in `ScriptGate::walk`, met once no
+face leg turns that placement in the engine
+(`World::npc_face_leg_in_flight`), and the child takes the displayed frame
+the lag back from it. `credits_eddoman_fullscreen_pcsx` is parked on
+`AC 14 07` behind `CC 14 85 0F 00 15`: on the PC alone flat `20` stood on
+the turn's first frame (`0xD5C` against retail's `0x92E`; facing `.8`,
+image `.985`), met on the landing both are `1.0` and `.992`.
 
 A capture with no camera mover on its
 lists holds a landed shot (retail frees the mover when its glide ends), so
@@ -2173,10 +2280,11 @@ youngest wave not yet seated, the oldest still at radii `256 / 384`, out
 past the screen's corners. The replay's waves stood on its own passes and
 drew rays into the top corners where retail's frame has none; seated off
 the RAM a lag back the top `60` rows read mae `.13` (`.53`), `image` `.937`
-to `.938`. What is left of that still is a cream body near the camera at
-`x >= 256`, rows `112..140`: hiding every module record
-(`LEGAIA_DIAG_CAST_HIDE`) leaves it drawn, so it is no part, and the engine
-draws it short of where retail's tables step it in each pass (TR z `+112`).
+to `.938`. What was left of that still, a cream body near the camera at
+`x >= 256` in rows `112..140`, was the camera's walk back, not the body:
+the dolly the cast walks moves the eye alone, and the walk back reads it
+as the table it is ([a shot that moves the eye alone](#a-shot-that-moves-the-eye-alone)),
+`.988`.
 
 **A rate the program switched inside the lag.** A channel is taken back on
 its current rate only while the lag stays inside the part's current wait
@@ -3252,6 +3360,26 @@ The drift is read off the body's camera director on a held pass, and only
 where no component it moves sits more than one increment off its endpoint:
 Glare's arm 1 (PROT 0940) drifts while arm 0's twelve-frame shot still walks,
 and stays on the table.
+
+<a id="a-shot-that-moves-the-eye-alone"></a>
+A shot that moves the eye alone walks on the table too. Big Wave's arm 4
+(PROT 0946, `wave_camera`) builds a dolly from TR z `z / 2` to `2z` over
+`0x100` units with its angles and focus already home, so only the translation
+stands off its endpoints while it walks. The walker `FUN_8002149C` adds
+`increment * step` to each translation word and stores the endpoint back once
+the word passes it in the increment's direction (`0x80021598..0x800215C8`), so a
+word short of its endpoint on the increment's side, more than one increment
+out, is a table still walking; a drift that moved the eye off a landed table
+does not stand there (`module_shot_walking`). Read as a re-armed ease instead,
+`battle_noaru_slippery_v2_big_wave_mid_cast` (TR z `4928` on increment `28`
+with `4595` to go) drew at `4613`. Its history holds sixteen clamped
+entries (`0x2BC`), which the floor would settle, but the stage draws no grid
+to confirm against, so a module shot whose history ran one step through the
+display lag and the pass before it walks back on that step: two step-`4`
+passes, TR z `4704`, where the frame on screen stands (a TR z sweep of the
+still reads `.938` at `4613`, `.954` at `4760` and `.988` at `4704`). `image`
+`.938` to `.988`; the near body at the frame's right edge, the cream body the
+dolly carries in, was this walk back. A harness seat.
 
 Neo Star Slash and Doomsday do gate on module words, which their directors
 carry in the countdown the gate reads: PROT 0960's `0x801F8E50` (`scalar *
@@ -4390,6 +4518,14 @@ on the worst of its scenes: `rugi` and `conc` on big change, the dance hall on
 light from black, the Baka Fighter scenes on big change. Scenes that defect
 touched more mildly (`koin4`, `korb2`, `keikoku`) stay under them, so the tier
 catches a flood and not a mild over-brightness.
+
+The clean and enhanced frames do not run the console's polygon-size limit:
+they skip an oversize primitive only when the projection garbles one of its
+corners or PCSX-Redux's limit rejects it
+([renderer](../subsystems/renderer.md#the-gpu-polygon-size-limit)).
+A primitive the console skips and a PCSX-Redux capture draws, such as the
+Genesis Tree burst's long rays in `vozz_tree_burst`, is drawn by both the
+smoke frame and that state's accuracy frame.
 
 It never writes or checks the ratchet: `--render` with `--bless` / `--check` is
 refused. Patched-disc states are left out, as they are of the ratchet.

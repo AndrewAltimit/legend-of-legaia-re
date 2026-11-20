@@ -1816,6 +1816,22 @@ impl World {
             .or_else(|| self.field_vm.helper_contexts.iter().find_map(in_timeline))
     }
 
+    /// Whether the placement a cross-context target byte names still turns
+    /// on a FaceTarget leg (`4C 85` / `8E` / `8F`), from a cutscene record or
+    /// any other context: retail holds its `0x400` until the leg's terminal
+    /// frame (`FUN_8003774C`, `0x80038004`).
+    pub fn npc_face_leg_in_flight(&self, t: u8) -> bool {
+        let Some(slot) = self.placement_slot_for_target(t) else {
+            return false;
+        };
+        let in_timeline = |tl: &legaia_engine_field::cutscene_timeline::CutsceneTimeline| {
+            tl.npc_faces.iter().any(|f| f.slot == slot)
+        };
+        self.npcs.face_legs.contains_key(&slot)
+            || self.cutscene.timeline.as_ref().is_some_and(in_timeline)
+            || self.field_vm.helper_contexts.iter().any(in_timeline)
+    }
+
     /// A facing op aimed at another placement from a context that is not a
     /// cutscene timeline (the scene's system script, a talk record):
     /// `B8 <id> <op0> <op1>` - the compass write, or with a budget the

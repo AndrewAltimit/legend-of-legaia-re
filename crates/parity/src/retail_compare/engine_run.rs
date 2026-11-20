@@ -304,8 +304,23 @@ fn seed_and_settle(
     retail: &RetailObs,
     order: SeedOrder,
     door: Option<&psx_ram_image::scenarios::ScenarioArrival>,
+    listen: Option<&mut crate::audio_sweep::EngineAudio>,
+    after: Option<AfterSettle<'_>>,
+) -> Result<EngineObs> {
+    seed_and_settle_cut(extracted, retail, order, door, listen, after, false)
+}
+
+/// [`seed_and_settle`]; `film_from_settle` ends a script gate at the settle
+/// window, where a walk film behind it then starts (the retry a
+/// pending-scene gate the engine never met takes).
+fn seed_and_settle_cut(
+    extracted: &Path,
+    retail: &RetailObs,
+    order: SeedOrder,
+    door: Option<&psx_ram_image::scenarios::ScenarioArrival>,
     mut listen: Option<&mut crate::audio_sweep::EngineAudio>,
     after: Option<AfterSettle<'_>>,
+    film_from_settle: bool,
 ) -> Result<EngineObs> {
     let cfg = BootConfig {
         scene: retail.scene.clone(),
@@ -414,6 +429,12 @@ fn seed_and_settle(
             .world
             .seed_placement_heading(w.flat, w.x, w.z, w.heading);
     }
+    // The menu lock a finished record raised (`2E 1B`) lives in the
+    // scratchpad story word, which the save does not carry
+    // ([`super::RetailObs::menu_lock`]).
+    if retail.menu_lock {
+        session.host.world.flags.story_flags |= legaia_engine_core::world::FIELD_MENU_LOCK_BIT;
+    }
     // A capture inside a running script is compared at the script's phase,
     // not after a fixed window ([`legaia_engine_capture::script_gate::ScriptGate`]):
     // the session runs until its own context for the record holds retail's
@@ -423,7 +444,20 @@ fn seed_and_settle(
         && matches!(retail.class, StateClass::Field | StateClass::WorldMap))
     .then(|| crate::retail_compare_script::script_gate_from_retail(&retail.scripts))
     .flatten();
-    let deadline = if gate.is_some() {
+    // A state taken with a scene change in flight (`pending_scene`) holds the
+    // outgoing scene's records, which the engine leaves with the change the
+    // gate's resume replays: `doman_arrival_from_korb2` holds map03's flat 49
+    // on its idle `26` at `+0x2E` 60 vsyncs before doman loads. Waiting on
+    // that record ran the seed to the deadline and returned the settle
+    // sample, so no walk film ever started behind it. Under a walk film such
+    // a gate the engine never meets is run again, keeping its resume and
+    // ending at the settle window, where the film starts (`film_from_settle`,
+    // below the loop). One the engine meets films from its gate's run as
+    // any other (`s2_rimelm_town01` meets map01 `P1[59]` 1540 ticks in,
+    // `son_arrival_from_doman` map03 `P1[58]` 1179 ticks in, both on the
+    // outgoing scene before the change): a settle cut starts those films
+    // inside the cutscene, 1480 and 1119 ticks early.
+    let deadline = if gate.is_some() && !film_from_settle {
         legaia_engine_capture::script_gate::SCRIPT_GATE_DEADLINE
     } else {
         SETTLE_TICKS
@@ -572,7 +606,19 @@ fn seed_and_settle(
         met_at,
         resumed,
     });
-    if let (Some(_), None, Some(mut obs)) = (&gate, met_at, at_settle) {
+    // A walk film behind a pending-scene gate the engine never met runs on
+    // from the settle tick of a second seed.
+    if gate.is_some()
+        && met_at.is_none()
+        && !film_from_settle
+        && listen.is_none()
+        && retail.pending_scene.is_some()
+        && std::env::var_os("LEGAIA_RC_WALK_OUT").is_some()
+    {
+        drop(session);
+        return seed_and_settle_cut(extracted, retail, order, door, None, after, true);
+    }
+    if let (Some(_), None, Some(mut obs), false) = (&gate, met_at, at_settle, film_from_settle) {
         obs.script = script;
         if let (Some(audio), Some(a)) = (listen, audio_at_settle) {
             *audio = a;

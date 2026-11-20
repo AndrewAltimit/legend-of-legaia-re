@@ -57,7 +57,10 @@ impl PondSession {
             lure_facing: 0,
             reel_held_for: [0; 2],
             reel_repeat_in: 8,
-            vsync_phase: VENUE_FRAME_STEP - 1,
+            vsync_phase: 1,
+            pacer: Default::default(),
+            frame_cost: true,
+            plate_frame: 0,
             pending_input: None,
             // A session no vsync has driven yet steps its venue at the
             // venue's own step.
@@ -541,13 +544,15 @@ impl PondSession {
         self.line
     }
 
-    /// One vsync of the venue: the pond runs a game tick every
-    /// [`VENUE_FRAME_STEP`] vsyncs, on that step, as the fishing init's
-    /// frame-step floor runs it. The first vsync after the session opens runs
-    /// one. A press on a vsync between game ticks is held for the next one,
-    /// as the pad pump's edge word holds it; the held bits are the newest
-    /// vsync's. Returns the step the pond ran at, `0` when this vsync ran no
-    /// game tick ([`Self::vsync_step`]).
+    /// One vsync of the venue. The pond runs a game frame when the last one
+    /// has spanned its vsyncs, on the step the frame driver's law gives
+    /// ([`PondPacer`]): the frame before's cost over the ring, raised to the
+    /// floor [`VENUE_FRAME_STEP`]. The frame then spans that step, or longer
+    /// when its own cost runs past it. The first vsync after the session
+    /// opens runs one. A press on a vsync between game frames is held for the
+    /// next one, as the pad pump's edge word holds it; the held bits are the
+    /// newest vsync's. Returns the step the pond ran at, `0` when this vsync
+    /// ran no game frame ([`Self::vsync_step`]).
     ///
     /// Every host drives the pond through this: the play hosts' world tick
     /// and the minigames page, so a cast flies, bites and breaks at retail's
@@ -557,36 +562,102 @@ impl PondSession {
             Some(earlier) => input.with_edges_of(earlier),
             None => input,
         };
-        self.vsync_phase += 1;
-        if self.vsync_phase < VENUE_FRAME_STEP {
+        if !self.next_vsync() {
             self.pending_input = Some(input);
-            self.vsync_step = 0;
             return 0;
         }
-        self.vsync_phase = 0;
-        self.tick(input, VENUE_FRAME_STEP, cast_step);
-        VENUE_FRAME_STEP
+        let step = self.frame_step();
+        let seen = self.events.len();
+        self.tick(input, step, cast_step);
+        let rings = self.events[seen..]
+            .iter()
+            .filter(|e| matches!(e, PondEvent::LureRing(..)))
+            .count();
+        self.end_frame(rings);
+        step
     }
 
     /// One vsync a sub-screen owns (the hub menu, the point exchange): the
-    /// game tick's cadence runs on, so the venue's actors keep their step,
+    /// game frame's cadence runs on, so the venue's actors keep their step,
     /// but the pond itself stands and the held edges go to the sub-screen.
     pub fn hold_vsync(&mut self) -> i32 {
         self.pending_input = None;
-        self.vsync_phase += 1;
-        if self.vsync_phase < VENUE_FRAME_STEP {
-            self.vsync_step = 0;
+        if !self.next_vsync() {
             return 0;
         }
-        self.vsync_phase = 0;
-        self.vsync_step = VENUE_FRAME_STEP;
-        VENUE_FRAME_STEP
+        let step = self.frame_step();
+        self.vsync_step = step;
+        self.end_frame(0);
+        step
     }
 
-    /// The step the pond last ran at: [`VENUE_FRAME_STEP`] on a vsync that
-    /// ran a game tick, `0` on one between them, and a direct
-    /// [`Self::tick`]'s own step. The venue's actors and the cue clock step
-    /// on it.
+    /// Whether each frame runs on the step its cost gives (the default,
+    /// retail's pace on PCSX-Redux's clock) or on the floor
+    /// [`VENUE_FRAME_STEP`].
+    pub fn set_frame_cost(&mut self, on: bool) {
+        self.frame_cost = on;
+    }
+
+    /// The frame pacer: its ring, step and live lure rings.
+    pub fn pacer(&self) -> &PondPacer {
+        &self.pacer
+    }
+
+    /// The step the next game frame runs on (`DAT_1F800393`).
+    pub fn frame_step(&self) -> i32 {
+        if self.frame_cost {
+            i32::from(self.pacer.step())
+        } else {
+            VENUE_FRAME_STEP
+        }
+    }
+
+    /// Count a vsync off the frame in flight; `true` when a frame starts on it.
+    fn next_vsync(&mut self) -> bool {
+        self.pacer.vsync();
+        self.vsync_phase -= 1;
+        if self.vsync_phase > 0 {
+            self.vsync_step = 0;
+            return false;
+        }
+        true
+    }
+
+    /// The frame's pacing tail: price what it ran and set the vsyncs it spans.
+    fn end_frame(&mut self, rings_seated: usize) {
+        let landed = self.tick_entry == PondPhase::Flight && self.phase != PondPhase::Flight;
+        self.pacer
+            .seat_rings(rings_seated + if landed { LANDING_SPLASH_RINGS } else { 0 });
+        let lifting = self.lift_timer.is_some();
+        if self.phase == PondPhase::Landed && !lifting {
+            self.plate_frame += 1;
+        } else {
+            self.plate_frame = 0;
+        }
+        // The landing frame ran the fight's work: the lift starts next frame.
+        let priced = if self.phase == PondPhase::Landed && self.tick_entry != PondPhase::Landed {
+            self.tick_entry
+        } else {
+            self.phase
+        };
+        let work = frame_work(
+            priced,
+            self.hub.is_some(),
+            lifting,
+            self.plate_frame.saturating_sub(1),
+            self.pacer.live_rings(),
+        );
+        let span = self.pacer.end_frame(work);
+        self.vsync_phase = if self.frame_cost {
+            span as i32
+        } else {
+            VENUE_FRAME_STEP
+        };
+    }
+
+    /// The step the pond last ran at: the frame's step on a vsync that ran a
+    /// game frame, `0` on one between them, and a direct [`Self::tick`]'s own
+    /// step. The venue's actors and the cue clock step on it.
     pub fn vsync_step(&self) -> i32 {
         self.vsync_step
     }

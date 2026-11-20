@@ -34,6 +34,15 @@ on:
     # is reserved for the `disc-test` job and runs nothing else.
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
+    inputs:
+      pages_only:
+        # release.yml dispatches this once a release publishes, so the site's
+        # play bundle is rebuilt with the release's version baked in (its
+        # netplay rooms then admit that release's desktop builds).
+        description: 'Redeploy the site only: skip the CI build and the disc tests.'
+        required: false
+        default: false
+        type: boolean
 
 # A PR push supersedes the previous push's lint run, so PR runs cancel per
 # PR; a label event gets its own group so adding `disc-test` never cancels
@@ -356,7 +365,8 @@ jobs:
     timeout-minutes: 120
     # The full build + test pass runs on push-to-main and workflow_dispatch;
     # pull requests get `pr-lint` (the same tests, without the release builds).
-    if: github.event_name != 'pull_request'
+    # A pages-only dispatch skips it: the commit it deploys already passed.
+    if: github.event_name != 'pull_request' && !inputs.pages_only
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -410,7 +420,7 @@ jobs:
     # Requires the `LEGAIA_DISC_BIN` repository variable to be set to the
     # disc image path on the self-hosted runner (Settings > Variables > Actions).
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && !inputs.pages_only) ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'disc-test'))
     env:
@@ -440,7 +450,10 @@ jobs:
   deploy-pages:
     name: Deploy GitHub Pages
     needs: [ci]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # After a green `ci`, or on a pages-only dispatch, which skips it.
+    if: >-
+      always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' &&
+      (needs.ci.result == 'success' || (inputs.pages_only && needs.ci.result == 'skipped'))
     runs-on: self-hosted
     # The runner is shared, so this job's wasm-pack build competes with any
     # other build on the box. 10 minutes was tight enough that contention
@@ -484,6 +497,18 @@ jobs:
 
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
+
+      # The release this commit is (its `v*` tag, asked of origin: the shallow
+      # checkout fetched no tags), baked into the bundles by build-wasm.sh so
+      # the play page's netplay build id is that release's. An untagged commit
+      # builds a development bundle; release.yml re-dispatches this job with
+      # pages_only once a release publishes, so a tag pushed after this run
+      # still reaches the site.
+      - name: Release version of this commit
+        run: |
+          v="$(scripts/ci/release-version.sh --head --remote)"
+          echo "LEGAIA_RELEASE_VERSION=${v}" >> "$GITHUB_ENV"
+          echo "site release: ${v:-none (a development build)}"
 
       # Both bundles, by the same script a local build runs: the play page loads
       # site/wasm/play/, so a deploy that built only the tool bundle would publish a

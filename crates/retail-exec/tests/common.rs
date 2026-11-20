@@ -299,3 +299,40 @@ pub mod gt4 {
             .collect()
     }
 }
+
+/// A PCSX-Redux library state by fingerprint, with the disc to check it
+/// against; `None` (the test skips) without either.
+pub fn library_state(fingerprint: &str) -> Option<psx_retail_exec::pcsx_state::PcsxState> {
+    disc()?;
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/library/pcsx-redux")
+        .join(format!("{fingerprint}.sstate"));
+    if !path.exists() {
+        eprintln!("[skip] library state {fingerprint} absent");
+        return None;
+    }
+    Some(psx_retail_exec::pcsx_state::PcsxState::from_path(&path).expect("state reads"))
+}
+
+/// Whether the state's resident code at `va` is the retail image's: the
+/// executable's, or PROT entry `prot` loaded at `base`.
+pub fn resident_is_retail(
+    state: &psx_retail_exec::pcsx_state::PcsxState,
+    va: u32,
+    prot: Option<(usize, u32)>,
+) -> bool {
+    let o = (va & 0x1F_FFFF) as usize;
+    let held = &state.ram[o..o + 64];
+    match prot {
+        None => scus().is_some_and(|exe| {
+            let off = (va - 0x8001_0000) as usize + 0x800;
+            exe.get(off..off + 64) == Some(held)
+        }),
+        Some((entry, base)) => disc()
+            .and_then(|d| d.read_entry(entry).ok())
+            .is_some_and(|img| {
+                let off = (va - base) as usize;
+                img.get(off..off + 64) == Some(held)
+            }),
+    }
+}

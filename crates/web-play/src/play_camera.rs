@@ -102,7 +102,7 @@ impl LegaiaRuntime {
         // The fog pool's next render step projects through this shot
         // (`BootSession::step_field_fog`). It is simulation, so it takes the
         // shot as the camera stored it, never the draw's lead.
-        let fog_shot = if lead.phase <= 0.0 {
+        let fog_shot = if lead.is_stored() {
             cutscene
         } else {
             scripted.then(|| legaia_engine_field::frame_step::scripted_view(camera, target))

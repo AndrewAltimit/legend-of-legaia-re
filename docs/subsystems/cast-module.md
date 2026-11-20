@@ -5674,7 +5674,9 @@ victim's cursor at `0x10` or past.
 
 Arm 18 stands the caster at `(-8, -0x400)` on clip `0x0A` behind a cut, arm
 19 lifts the camera, arm 21 hops the caster forward (`+2s` a vsync, height
-`-(sin(8 w) / 8)` off the countdown word `w`) and lands it at `z = -0x200`
+`-(sin(8 w) / 8)` off the countdown word `w`, stored once a pass from the word
+the pass opens on: `lw` at `0x801F85FC` ahead of the pass's one drain,
+`sh +0x36` at `0x801F8640`) and lands it at `z = -0x200`
 with cue `0x56` and two records. Arm 22 zooms out (`+4s` TR z) while the
 flame record `0x801F9348` is seated again each time the countdown falls to
 the pacing word `0x801F93BC` (seeded `84 s`, lowered `12 s` a call), then

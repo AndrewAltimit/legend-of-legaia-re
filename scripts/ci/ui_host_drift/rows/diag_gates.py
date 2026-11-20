@@ -54,6 +54,7 @@ DIAG_GATES: list[dict[str, object]] = [
         "note": "battle-event log + pose/HP diagnostic text over the frame",
     },
     # --- subtractive / logging only ----------------------------------------
+    {"env": "LEGAIA_DIAG_CENSUS_FATES", "additive": False, "note": "write the battle census's stage and body fates (linked, off-screen, culled, near) a refresh to a file; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_PRES", "additive": False, "note": "print one stderr line per cast-module arm that fires presentation calls; draws nothing"},
     {"env": "LEGAIA_DIAG_DRAWS", "additive": False, "note": "write the frame's draw census + CPU VRAM to a file; draws nothing"},
     {"env": "LEGAIA_DIAG_DAMAGE", "additive": False, "note": "print each strike roll's dealt word, inputs and both rolled sides to stderr; draws nothing"},
@@ -97,7 +98,8 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_NOSEMI", "additive": False, "note": "semi-transparent blend off"},
     {"env": "LEGAIA_DIAG_NO_LIT_ROWS", "additive": False, "note": "leave the light-source rows at the neutral texel (A/B attribution; the browser always shades them)"},
     {"env": "LEGAIA_DIAG_IMMEDIATE_PAD", "additive": False, "note": "lane W: the pad reaches the game on its tick under --retail, for one-tick harness press scripts; draws nothing"},
-    {"env": "LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL", "additive": False, "note": "lane C: LEGAIA_DIAG_IMMEDIATE_PAD until this tick, then the retail pad pipeline, for filming a screen a one-tick drive reached; draws nothing"},
+    {"env": "LEGAIA_DIAG_BATTLE_STEP_AT", "additive": False, "note": "lane O: run the fight on frames of a step from a tick, for filming a battle prompt on a retail state's frame grid; draws nothing"},
+    {"env": "LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL", "additive": False, "note": "lane C: LEGAIA_DIAG_IMMEDIATE_PAD until this tick, then the retail pad pipeline, for filming a screen a one-tick drive reached (a battle drive lets go there, lane O); draws nothing"},
     {"env": "LEGAIA_DIAG_NO_DECO_CUE", "additive": False, "note": "drop the overworld decoration depth cue (before/after frames)"},
     {"env": "LEGAIA_DIAG_LAYERS", "additive": False, "note": "draw only the named layers"},
     {"env": "LEGAIA_DIAG_PLACE_RANGE", "additive": False, "note": "draw only placements [a,b)"},

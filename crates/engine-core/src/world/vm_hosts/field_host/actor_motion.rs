@@ -19,7 +19,7 @@ impl FieldHostImpl<'_> {
     // takes `+0x8E = -src+0x16` (`0x801E3150..0x801E3170`), so it keeps the
     // source's height: `juui1` `P2[0]` stacks Noa and Gala on Vahn's
     // flying height (`CC 0A E3 09`, `CC 0B E3 09`) after seating them lower.
-    // REF: FUN_801DE840 (0x801E3108..0x801E31B0), FUN_8003C83C
+    // REF: FUN_801DE840 (0x801E3108..0x801E31B0), FUN_8003C83C, FUN_80017EC8
     pub(super) fn teleport_to_actor(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
         let w = &mut *self.world;
         let src = if actor_id == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
@@ -56,19 +56,30 @@ impl FieldHostImpl<'_> {
         let Some((x, z, heading, src_y)) = src else {
             return;
         };
+        // The player arm is the same copy - `+0x16` included, not a floor
+        // sample - with the same held-height write, then the camera
+        // re-centre `FUN_80017EC8(x >> 7, z >> 7, ..)` on the landed spot
+        // (`0x801E3178..0x801E31AC`, taken only when the context is the
+        // player object `*0x8007C364`). `chitei2`'s Rapid Transport switches
+        // (`P0[32..34]`) bring the player back from the car with
+        // `CC F8 E3 39`, `koin1` `P2[9]` / `P2[10]` with `CC F8 E3 45`, and
+        // `taiku` `P2[29]` with `CC F8 E3 3E`.
         if ctx.script_id == u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
             && w.field_vm.executing_channel.is_none()
         {
-            let y = w.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
             if let Some(a) = w
                 .player_actor_slot
                 .and_then(|s| w.actors.get_mut(usize::from(s)))
             {
                 a.move_state.world_x = x;
                 a.move_state.world_z = z;
-                a.move_state.world_y = y;
+                a.move_state.world_y = src_y;
                 a.move_state.render_26 = heading;
+                if a.move_state.flags & crate::world::field_loop::PLAYER_Y_FROM_8E != 0 {
+                    w.locomotion.player_8e = src_y.wrapping_neg();
+                }
             }
+            w.recentre_field_window(i32::from(x) >> 7, i32::from(z) >> 7);
             return;
         }
         ctx.world_x = x as u16;

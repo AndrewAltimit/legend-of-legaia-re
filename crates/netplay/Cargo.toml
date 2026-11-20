@@ -17,16 +17,18 @@ required-features = ["cli"]
 
 [features]
 default = ["cli"]
-# The relay's command-line binary and its argument parser. On by default so
-# `cargo build` builds the binary; library dependents (the play hosts) take
-# this crate through [workspace.dependencies] with default features off.
-cli = ["dep:clap"]
+# The relay's command-line binary, its argument parser and the release
+# version it reports. On by default so `cargo build` builds the binary;
+# library dependents (the play hosts) take this crate through
+# [workspace.dependencies] with default features off.
+cli = ["dep:clap", "dep:legaia-release-version"]
 # The browser WebSocket transport (`transport::web`). Its dependencies are
 # declared for wasm32 only, so the feature is inert on a native build.
 web = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]
 
 [dependencies]
 clap = { workspace = true, optional = true }
+legaia-release-version = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true, optional = true }

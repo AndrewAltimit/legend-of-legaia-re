@@ -221,6 +221,12 @@ pub struct ScreenshotConfig {
     /// [`Self::battle_orbit_yaw`]. Set by the retail-compare image channel
     /// from the battle state's `0x800891D2`.
     pub battle_backdrop_yaw: Option<u16>,
+    /// `LEGAIA_BATTLE_BURN_ACCUM=<word>`: the frame driver's burning-puff
+    /// accumulator `ctx[+0x328]` the capture holds, seated where a cast film
+    /// begins (lane J harness seat). Its low nibble is the phase of the
+    /// one-or-two puffs a step-`3` pass sheds (`World::emit_battle_burn_sprites`),
+    /// time a replayed fight does not keep.
+    pub battle_burn_accum: Option<u16>,
     /// `LEGAIA_BATTLE_CAM_ALIGN=<16 numbers>`: retail's live battle camera
     /// and its tween endpoints (pitch, yaw, eye trio, focus trio each), for
     /// starting the captured phase's glide where retail's stood
@@ -297,6 +303,9 @@ pub struct ScreenshotConfig {
     /// What the session asked of the census and the span law before the
     /// lead-in holds took them, read on the holds' first tick.
     pub leadin_census_wanted: Option<bool>,
+    /// What the session asked of the command surfaces' pricing
+    /// (`WorldToggles::battle_surface_frame_cost`), held off with the census.
+    pub leadin_surface_wanted: Option<bool>,
     pub leadin_span_wanted: Option<bool>,
     /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
     /// frame stands combatants on **after** the camera is aligned on
@@ -415,6 +424,8 @@ pub struct ScreenshotConfig {
     pub seat_popup_cells: Vec<(i32, i32, u32, u8)>,
     /// Set on the frame the capture is due, for [`Self::seat_popup_cells`].
     pub popup_cells_due: std::cell::Cell<bool>,
+    /// Set once [`Self::seat_sprite_wait`] has run the sprites on.
+    pub sprite_lead_seated: std::cell::Cell<bool>,
     /// Whether [`Self::seat_popup_age`] has aged the popup yet: once, on the
     /// frame the capture is due.
     pub popup_age_seated: std::cell::Cell<bool>,
@@ -441,6 +452,12 @@ pub struct ScreenshotConfig {
     /// the settle tick, where retail's state holds them
     /// (`RetailObs::seed_save`).
     pub seat_latches: Vec<u16>,
+    /// `LEGAIA_SEAT_MENU_LOCK=1`: the retail state's scratchpad story word
+    /// holds the field menu lock (`0x0800_0000`) a finished record raised;
+    /// the save does not carry the word, so the seed raises it at the
+    /// script-resume tick (`RetailObs::menu_lock`). Set by the
+    /// retail-compare image channel.
+    pub seat_menu_lock: bool,
     /// `LEGAIA_SEAT_OBJECT_MODELS=<record>:<model>,..`: a retail state's
     /// drawn actors' live model ids, written over the placed objects' stream
     /// swaps (`World::object_live_models`) on the capture frame.
@@ -491,6 +508,18 @@ pub struct ScreenshotConfig {
     /// the capture frame - the vignette record that spawned it ran before
     /// the record the seed resumes.
     pub seat_panel: Option<legaia_engine_effects::screen_fx::PanelWidget>,
+    /// `LEGAIA_SEAT_GRADE=<fields>`: a retail state's live op-`0x34` scene
+    /// grade tween (`legaia_parity::retail_compare::retail_scene_grade`),
+    /// stood on the capture frame (`World::seat_held_scene_grade`) - a grade
+    /// a finished record left, which the entry script does not repaint.
+    pub seat_grade: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
+    /// `LEGAIA_SEAT_SPRITE_WAIT=<units>`: the gate record's wait in the
+    /// retail state's RAM. The field gate stands the scene on the displayed
+    /// frame, the wait less the display lag, but a PCSX-Redux film of the
+    /// ending crawl shows each line where the RAM holds it at the same vsync,
+    /// so on the capture frame the screen-effect sprites run on, in frame
+    /// steps, by this wait less the engine context's.
+    pub seat_sprite_wait: Option<i16>,
     /// `LEGAIA_SEAT_CLEAR=r,g,b`: a retail state's frame clear colour (the
     /// draw environment's `r0 / g0 / b0`), written over the engine's on the
     /// capture frame - the system script's op-`4C 13` history.
@@ -1189,6 +1218,9 @@ impl ScreenshotConfig {
             battle_backdrop_yaw: std::env::var("LEGAIA_BATTLE_BACKDROP_YAW")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            battle_burn_accum: std::env::var("LEGAIA_BATTLE_BURN_ACCUM")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             battle_cam_align: std::env::var("LEGAIA_BATTLE_CAM_ALIGN")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
@@ -1223,6 +1255,7 @@ impl ScreenshotConfig {
             leadin_table_cost: std::env::var_os("LEGAIA_LEADIN_TABLE_COST").is_some(),
             leadin_span_law: std::env::var_os("LEGAIA_LEADIN_SPAN_LAW").is_some(),
             leadin_census_wanted: None,
+            leadin_surface_wanted: None,
             leadin_span_wanted: None,
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
@@ -1349,6 +1382,7 @@ impl ScreenshotConfig {
             ),
             seat_fog_due: std::cell::Cell::new(false),
             popup_age_seated: std::cell::Cell::new(false),
+            sprite_lead_seated: std::cell::Cell::new(false),
             seat_fade_lead: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_FADE_LEAD")
                     .ok()
@@ -1396,6 +1430,12 @@ impl ScreenshotConfig {
             seat_panel: std::env::var("LEGAIA_SEAT_PANEL")
                 .ok()
                 .and_then(|v| legaia_engine_capture::field_seeds::panel_from_env(&v)),
+            seat_grade: std::env::var("LEGAIA_SEAT_GRADE")
+                .ok()
+                .and_then(|v| legaia_engine_capture::field_seeds::grade_from_env(&v)),
+            seat_sprite_wait: std::env::var("LEGAIA_SEAT_SPRITE_WAIT")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             seat_walkers: std::env::var("LEGAIA_SEAT_WALKERS")
                 .map(|v| legaia_engine_capture::field_seeds::walkers_from_env(&v))
                 .unwrap_or_default(),
@@ -1442,6 +1482,7 @@ impl ScreenshotConfig {
                         .collect()
                 })
                 .unwrap_or_default(),
+            seat_menu_lock: std::env::var_os("LEGAIA_SEAT_MENU_LOCK").is_some(),
             seat_latches: std::env::var("LEGAIA_SEAT_LATCHES")
                 .map(|v| {
                     v.split(',')

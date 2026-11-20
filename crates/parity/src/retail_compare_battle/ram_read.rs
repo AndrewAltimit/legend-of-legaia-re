@@ -1102,7 +1102,23 @@ impl RetailBattle {
             // floor confirms the newest one; the history's largest entry
             // for every pass otherwise.
             let older = magic_band_older_steps(ram);
-            let steps = older.unwrap_or_else(|| display_pass_steps(ram));
+            // A module shot built once has no re-arm for the floor to
+            // confirm a clamped history against, so where the history ran
+            // one step through the display lag and the pass before it, its
+            // passes take that step (`0x2BC` the clamp, step `4`):
+            // `battle_noaru_slippery_v2_big_wave_mid_cast` holds sixteen
+            // clamped entries, and its frame stands two step-`4` passes back
+            // on Big Wave's dolly (TR z `4928` drawn at `4704`, `image`
+            // `.954` on two step-`3` passes, `.988` on these). A newest entry
+            // that breaks the run names the pass to come, not the passes on
+            // screen (`battle_map01_lippian_kiss_of_death_mid_cast`).
+            let steps = older.unwrap_or_else(|| {
+                if module_shot_walks_once(ram, ctx) && newest_step_run(ram).1 > 2 {
+                    pass_steps(ram)
+                } else {
+                    display_pass_steps(ram)
+                }
+            });
             // The older reading keeps the largest increment's own divisor (the
             // cast-effect shot's is not case 6's `0xC`).
             let confirmed = older.is_none() && steps != [frame_step(ram); 2];

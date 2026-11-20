@@ -252,8 +252,16 @@ pub struct PondSession {
     /// what stayed held through the last 32 vsyncs, every 8.
     pub(super) reel_held_for: [i32; 2],
     pub(super) reel_repeat_in: i32,
-    /// Vsyncs into the current game tick ([`PondSession::vsync`]).
+    /// Vsyncs left in the current game frame ([`PondSession::vsync`]).
     pub(super) vsync_phase: i32,
+    /// The frame driver's step law over the pond's frames
+    /// ([`super::PondPacer`]).
+    pub(super) pacer: super::PondPacer,
+    /// Run each frame on the step its cost gives ([`super::PondPacer`]);
+    /// off, every frame runs on the floor ([`VENUE_FRAME_STEP`]).
+    pub(super) frame_cost: bool,
+    /// Frames on the plate since the lift seated it.
+    pub(super) plate_frame: u32,
     /// The edges of the vsyncs the current game tick has not run yet.
     pub(super) pending_input: Option<PondInput>,
     /// The frame step the last [`PondSession::vsync`] ran the pond at, `0`
@@ -320,16 +328,17 @@ pub struct PondVenue {
     pub rod_mesh: Option<crate::fishing_actors::RodMesh>,
 }
 
-/// The venue's frame step: the fishing init stores `2` to the frame-step
-/// floor `_DAT_8007B9D8` (`li v0,2` / `sw v0,-0x4628(v1)` at
-/// `0x801CF33C..0x801CF344`), which the master frame driver's resolver writes
-/// to `DAT_1F800393` on every frame that keeps up with vsync. The pond runs a
-/// game tick every two vsyncs on a step of two ([`PondSession::vsync`]), the
-/// engine's deterministic arm of that resolver.
+/// The venue's frame-step floor: the fishing init stores `2` to
+/// `_DAT_8007B9D8` (`li v0,2` / `sw v0,-0x4628(v1)` at
+/// `0x801CF33C..0x801CF344`), so the master frame driver's resolver never
+/// writes a step under it to `DAT_1F800393`. The pond's frames run on the
+/// step their cost gives over it ([`super::PondPacer`]); with the frame cost
+/// off ([`PondSession::set_frame_cost`]) every frame runs on the floor.
 ///
-/// A cast reads it straight off the spawn: the lure starts `200 * step`
-/// units out (`FUN_801D7BB8`'s scale), and `minigame_fishing_retail_lure_cast`
-/// holds its spawn `400` in front of the lead (`z` `4880` against `4480`).
+/// A cast reads the step straight off the spawn: the lure starts
+/// `200 * step` units out (`FUN_801D7BB8`'s scale), and
+/// `minigame_fishing_retail_lure_cast` holds its spawn `400` in front of the
+/// lead (`z` `4880` against `4480`): the lock frame ran on `2`.
 pub const VENUE_FRAME_STEP: i32 = 2;
 
 /// Wind-up frames before the power meter opens: state `0xd` adds the frame

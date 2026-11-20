@@ -221,10 +221,19 @@ impl World {
     /// Advance the screen-effect widgets one frame and refresh
     /// [`crate::world::ScreenFxState::fx_frame`]. Runs in the Field / Cutscene tick after
     /// the script step (so a sub-op spawned this frame draws this frame,
-    /// matching retail's actor-pool order). The engine ticks the widget
-    /// clocks by 1 per world tick (retail's per-frame byte
-    /// `DAT_1F800393`); the sprite scripts' flag waits probe the shared
-    /// system flag bank ([`Self::system_flag_test`], `FUN_8003CE64`).
+    /// matching retail's actor-pool order); the sprite scripts' flag waits
+    /// probe the shared system flag bank ([`Self::system_flag_test`],
+    /// `FUN_8003CE64`).
+    ///
+    /// The widgets are actors, ticked once a game frame by the actor-list
+    /// walk, and each adds the frame step `DAT_1F800393` to its clock (the
+    /// sprite at `0x801F7BB4..0x801F7BD0`). So they take the step on the
+    /// vsync that is a game frame and hold between two
+    /// ([`legaia_engine_vm::frame_clock::FrameClock::script_frame_delta`],
+    /// the same credit the script's own waits take): a credit of one a
+    /// vsync ran the ending crawl's clocks a vsync off the script's on a
+    /// step-`2` frame (`edlast`'s newest line `t31` under the record's wait
+    /// `32`, where a PCSX-Redux film holds both on `32`).
     pub(super) fn tick_screen_fx(&mut self) {
         if !self.presentation.fx.is_active() {
             if !self.presentation.fx_frame.is_empty() {
@@ -232,8 +241,11 @@ impl World {
             }
             return;
         }
+        // Between two game frames the clocks hold; the draw list is still
+        // rebuilt, so a widget a script spawned on such a vsync draws on it.
+        let delta = u8::try_from(self.clock.script_frame_delta()).unwrap_or(u8::MAX);
         let mut fx = std::mem::take(&mut self.presentation.fx);
-        self.presentation.fx_frame = fx.tick(1, |idx| self.system_flag_test(idx));
+        self.presentation.fx_frame = fx.tick(delta, |idx| self.system_flag_test(idx));
         self.presentation.fx = fx;
     }
 

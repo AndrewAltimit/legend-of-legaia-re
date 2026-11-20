@@ -153,11 +153,11 @@ pub(super) fn columns(sub: MinigameSubId) -> Vec<&'static str> {
         ],
         MinigameSubId::Fishing => vec![
             "state", "power", "record", "height", "band", "bandcd", "tension", "casts", "rng",
-            "lx", "lz", "species", "strength", "pull", "sway", "points",
+            "lx", "lz", "species", "strength", "pull", "sway", "points", "edt", "ran", "cost",
         ],
         MinigameSubId::BakaFighter => vec![
             "state", "scene", "stimer", "intro", "round", "mphase", "hp0", "hp1", "wins0", "wins1",
-            "type0", "type1", "combo0", "combo1", "rng",
+            "type0", "type1", "combo0", "combo1", "rng", "dt", "cost",
         ],
         _ => vec!["mode"],
     }
@@ -314,6 +314,14 @@ fn fishing_values(w: &legaia_engine_core::world::World) -> Vec<i64> {
         lure.map_or(0, |l| i64::from(l.pull)),
         lure.map_or(0, |l| i64::from(l.sway.0)),
         i64::from(p.persist().record.points),
+        // Engine-only pace columns (no retail word shares their names, so
+        // the replay's rules table leaves them out): the step the next game
+        // frame runs on (retail's step byte), the step this vsync's frame ran
+        // on (`0` between frames), and what the last frame stored in the
+        // pacer's ring.
+        i64::from(p.frame_step()),
+        i64::from(p.vsync_step()),
+        i64::from(p.pacer().newest()),
     ]
 }
 
@@ -446,5 +454,10 @@ fn baka_values(w: &legaia_engine_core::world::World) -> Vec<i64> {
         i64::from(f.combo(0)),
         i64::from(f.combo(1)),
         i64::from(f.rng_state()),
+        // The step the next game frame runs on and what the last one stored
+        // in the frame ring (engine-only: the driver's set films `dt` read
+        // off retail's step byte).
+        i64::from(f.frame_step()),
+        i64::from(f.frame_cost()),
     ]
 }

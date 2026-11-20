@@ -232,6 +232,17 @@ impl PlayWindowApp {
             {
                 self.session.host.world.toggles.immediate_pad = false;
             }
+            // `LEGAIA_DIAG_BATTLE_STEP_AT=<tick>,<step>`: on that tick, run
+            // the fight on frames of `step` vsyncs, the first opening there,
+            // for filming a battle prompt on a retail state's frame grid (a
+            // child that opens on the prompt has run no pass to price its
+            // step). A harness seat (lane O).
+            if let Some((at, step)) = battle_step_at()
+                && self.tick_no == at
+                && self.session.host.world.mode == SceneMode::Battle
+            {
+                self.session.host.world.set_battle_frame_step(step);
+            }
             // A tick the field sat frozen under (a shop, the naming prompt,
             // the pause menu) returns before its tail, so it moves no NPC
             // clip: the players step in the tail's `drain_anim_cues`.
@@ -570,6 +581,12 @@ impl PlayWindowApp {
         {
             let _ = self.session.host.world.try_arm_field_shop(&instr);
         }
+        // The menu lock a finished record raised holds through the run, as
+        // in the retail state (`LEGAIA_SEAT_MENU_LOCK`).
+        if self.screenshot.as_ref().is_some_and(|sc| sc.seat_menu_lock) {
+            self.session.host.world.flags.story_flags |=
+                legaia_engine_core::world::FIELD_MENU_LOCK_BIT;
+        }
         if self.screenshot.is_some() {
             let scripted_pad = self
                 .screenshot
@@ -844,8 +861,21 @@ impl PlayWindowApp {
             gate.steer(&mut self.session.host.world);
         }
         self.release_battle_drive_at_gate();
+        // A drive's presses are one-tick edges on its own even ticks, as the
+        // headless seed's are (it sets the world's pad word directly): the
+        // fight takes them on their tick, past the retail pad pipeline,
+        // until the drive lets go (`InputState::battle_immediate`). A film
+        // that presses on from the drive's screen hands over at
+        // `LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL`: the drive lets go there and the
+        // fight reads the film's presses through the pipeline. A harness
+        // seat (lane O).
+        let handed_over = immediate_pad_until().is_some_and(|until| self.tick_no >= until);
+        let driving = self.screenshot.as_ref().is_some_and(|sc| {
+            sc.battle_drive.is_some() && !sc.battle_drive_released.get() && !handed_over
+        });
+        self.session.host.world.input.set_battle_immediate(driving);
         match self.screenshot.as_ref() {
-            Some(sc) if sc.battle_drive_released.get() => field_pad,
+            Some(sc) if sc.battle_drive_released.get() || handed_over => field_pad,
             Some(sc) if let Some(drive) = sc.battle_drive => {
                 // The drive's own start and press clock, in the headless
                 // seed's step order (`DriveClock::pad`): an odd window tick
@@ -1136,6 +1166,16 @@ fn part_ages_match(world: &legaia_engine_core::world::World, ages: &[(u32, i16)]
     live.sort_unstable();
     want.sort_unstable();
     live == want
+}
+
+/// `LEGAIA_DIAG_BATTLE_STEP_AT=<tick>,<step>`, read once.
+fn battle_step_at() -> Option<(u64, u8)> {
+    static AT: std::sync::OnceLock<Option<(u64, u8)>> = std::sync::OnceLock::new();
+    *AT.get_or_init(|| {
+        let v = std::env::var("LEGAIA_DIAG_BATTLE_STEP_AT").ok()?;
+        let (t, s) = v.split_once(',')?;
+        Some((t.trim().parse().ok()?, s.trim().parse().ok()?))
+    })
 }
 
 /// `LEGAIA_DIAG_IMMEDIATE_PAD_UNTIL`, read once.

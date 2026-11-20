@@ -805,8 +805,13 @@ the player path, via the `0x801E00B8` entry on the NPC path).
 The port applies it in `FieldHostImpl::teleport_to_actor`:
 a placement destination takes the source's live position and heading
 (`stone` `P2[6]` seats Noa and Gala on Vahn with `CC 09 E3 F8` /
-`CC 0A E3 F8`), a player destination moves the player actor; the player
-arm's camera-scroll refresh is not modelled. A placement destination on the
+`CC 0A E3 F8`), a player destination moves the player actor. The player
+takes the source's `+0x16` as it is, with no floor sample under the landing,
+and its `+0x8E` on the held-height arm, as a placement does; its re-centre is
+`World::recentre_field_window` on `(x >> 7, z >> 7)`. The disc's player
+copies are `chitei2`'s Rapid Transport switches (`P0[32..34]`,
+`CC F8 E3 39`), `koin1` `P2[9]` / `P2[10]` (`CC F8 E3 45`) and `taiku`
+`P2[29]` (`CC F8 E3 3E`). A placement destination on the
 held-height arm takes the `+0x8E` write too, so it keeps the source's height:
 `juui1` `P2[0]` seats Noa at `+0x8E = -32` and then stacks her on Vahn with
 `CC 0A E3 09`, and retail's RAM holds all three party members at `+0x8E = 64`
@@ -1314,6 +1319,19 @@ writers share one actor record, so each word draws the value it last took:
 op `0x15` has no authored site, so the pitch is always this arm's, under the
 channel's `0x16` roll. `juui1` `P2[0]` turns all three party members with
 `CC 09..0B 43 B8 0B 2C 01` while the channel rolls two of them.
+
+A retail film settles the order question for `juui1`
+([`autorun_actor_angle_writers.lua`](../../scripts/pcsx-redux/autorun_actor_angle_writers.lua)
+on `juui1_vortex_entry`, 1500 vsyncs): every store to the three party
+members' `+0x24` and `+0x28` lands at `0x80036FBC`, inside the ramp
+scheduler `FUN_80036D80` (pool `0x801C66A0`), called from the actor walk
+(`ra` `0x800252BC`), and no frame carries two stores to one word. The pitch
+ramps to `0xBB8` and holds; all three rolls sway on their own phases
+(peaks `204`, `369` and `129`). Both writers install into the one scheduler
+pool, so a word two ramps shared would draw whichever ramp the walk
+reaches last (the walk stores in list order); in the filmed window no two
+ramps ever share one, and the drawn angle is the one ramp that holds the
+word.
 
 Aimed at the player (`CC F8 42 ..`), the slot is the player's own `+0x8E`,
 and it moves the player only while the player's `+0x10` carries

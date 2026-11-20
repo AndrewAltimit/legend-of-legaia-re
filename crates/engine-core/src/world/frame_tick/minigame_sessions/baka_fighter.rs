@@ -119,9 +119,21 @@ impl World {
         // them (`0x801CF3CC..0x801CF3F4`).
         let vibration_off = self.event_vibration_off();
         let install_load_hold = !self.toggles.skip_load_holds;
+        // The announcer's polls pace the cabinet's frames against the same
+        // machine's CD response the battle's voiced frames read.
+        let cd_timing = match self.toggles.battle_cd_timing {
+            legaia_engine_battle_loop::frame_clock::CdTiming::Console => {
+                legaia_engine_minigames::baka_fighter::pacing::CdPollTiming::Console
+            }
+            legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux => {
+                legaia_engine_minigames::baka_fighter::pacing::CdPollTiming::PcsxRedux
+            }
+        };
         let out = match self.minigames.baka_fighter.as_mut() {
             Some(f) => {
                 f.set_install_load_hold(install_load_hold);
+                f.set_cd_timing(cd_timing);
+                f.set_retail_pad(!self.toggles.immediate_pad);
                 let [pulse, level] = if vibration_off { [0; 2] } else { f.rumble() };
                 self.rumble.motors = legaia_engine_system::rumble::RumbleMotors { pulse, level };
                 f.frame(edge, held, pot)

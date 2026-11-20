@@ -212,8 +212,17 @@ pub fn blazing_slash_camera(
             arm.drift = Some(drift(s / 4, 0, -4 * s, 0));
             arm.focus_z = s / 8;
             arm.caster_write.dz = 2 * s;
-            // The word as the pass finds it, ahead of the drain.
-            arm.caster_write.y = Some(blazing_slash_hop_height(st.countdown.0));
+            // The word as the pass finds it, ahead of the drain: retail
+            // stores the height once a battle frame (`sh v0,0x36(s2)` at
+            // `0x801F8640`, off the word `lw` at `0x801F85FC` ahead of the
+            // pass's one `subu` at `0x801F8658`). Stored on every tick, the
+            // pass's last store read the word three ticks drained and stood
+            // the hop a quarter-pass along its arc: a `--watch` of `+0x36`
+            // reads `-50, -241, .. -148` (word `248` down by `32`), the
+            // port drew `-195, -362, ..`.
+            if st.opens_pass {
+                arm.caster_write.y = Some(blazing_slash_hop_height(st.countdown.0));
+            }
         }
         22 => arm.drift = Some(drift(s / 4, 0, 0, 4 * s)),
         23 | 24 => arm.drift = Some(drift(0, 0, 0, s)),
@@ -668,6 +677,26 @@ mod tests {
         assert!(!a.hold);
         assert_eq!(st.countdown.0, SPEED_SCALAR << 5);
         assert_eq!(a.victim_write.rate, Some(0));
+    }
+
+    /// Arm 21 stores the hop's height once a battle frame, off the word the
+    /// pass opens on (`0x801F85FC` / `0x801F8640`): the pass's later ticks
+    /// leave it.
+    #[test]
+    fn the_hop_height_is_stored_on_the_pass_opening_tick() {
+        let mut st = ModuleCamState {
+            countdown: ModuleCountdown(SPEED_SCALAR * 31, 3),
+            opens_pass: true,
+            ..Default::default()
+        };
+        let a = blazing_slash_camera(&mut st, 21, seats());
+        assert_eq!(
+            a.caster_write.y,
+            Some(blazing_slash_hop_height(SPEED_SCALAR * 31))
+        );
+        st.opens_pass = false;
+        let b = blazing_slash_camera(&mut st, 21, seats());
+        assert_eq!(b.caster_write.y, None);
     }
 
     #[test]

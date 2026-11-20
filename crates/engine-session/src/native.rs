@@ -175,6 +175,16 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if std::env::var("LEGAIA_BATTLE_GPU_COST").is_ok_and(|v| v.trim() == "1") {
         toggles.battle_gpu_cost_step = true;
     }
+    // Opt-in: the same `max(cpu, gpu)` over a field frame
+    // (`WorldToggles::field_gpu_cost_step`), and mednafen's GPU rules in
+    // place of DuckStation's costs for either step
+    // (`WorldToggles::gpu_cost_timing`).
+    if std::env::var("LEGAIA_FIELD_GPU_COST").is_ok_and(|v| v.trim() == "1") {
+        toggles.field_gpu_cost_step = true;
+    }
+    if std::env::var("LEGAIA_GPU_COST_TIMING").is_ok_and(|v| v.trim() == "mednafen") {
+        toggles.gpu_cost_timing = legaia_engine_system::gpu_draw_cost::GpuTiming::Mednafen;
+    }
     // Opt-in: price the effect pool on the retail walker's branches
     // (`WorldToggles::battle_effect_walk_cost`).
     if std::env::var("LEGAIA_BATTLE_WALK_COST").is_ok_and(|v| v.trim() == "1") {
@@ -194,6 +204,10 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             &mut toggles.battle_poly_frame_cost,
         ),
         (
+            "LEGAIA_BATTLE_SURFACE_COST",
+            &mut toggles.battle_surface_frame_cost,
+        ),
+        (
             "LEGAIA_BATTLE_ME_DECODE",
             &mut toggles.battle_me_decode_cost,
         ),
@@ -201,6 +215,27 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             "LEGAIA_BATTLE_ARTS_SHOUT_CD",
             &mut toggles.battle_arts_shout_cd,
         ),
+        // The derived per-unit frame cost: the field's
+        // (`WorldToggles::derived_frame_cost`, on by default) and the
+        // battle's (`WorldToggles::battle_derived_frame_cost`, off).
+        ("LEGAIA_DERIVED_FRAME_COST", &mut toggles.derived_frame_cost),
+        // The census on the leaves' own cull rules alone
+        // (`WorldToggles::battle_census_retail_culls`).
+        (
+            "LEGAIA_CENSUS_RETAIL_CULLS",
+            &mut toggles.battle_census_retail_culls,
+        ),
+        (
+            "LEGAIA_BATTLE_DERIVED_FRAME_COST",
+            &mut toggles.battle_derived_frame_cost,
+        ),
+        (
+            "LEGAIA_FIELD_COST_PLACED_WALK",
+            &mut toggles.field_cost_placed_walk,
+        ),
+        // The fishing venue's frame step off its frame cost
+        // (`WorldToggles::fishing_frame_cost`).
+        ("LEGAIA_FISHING_FRAME_COST", &mut toggles.fishing_frame_cost),
     ] {
         match std::env::var(var).as_deref().map(str::trim) {
             Ok("1") => *slot = true,

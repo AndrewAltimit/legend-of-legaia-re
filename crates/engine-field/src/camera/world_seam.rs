@@ -166,6 +166,16 @@ pub trait CameraWorld {
     fn requeue_field_events(&mut self, events: Vec<FieldEvent>);
     /// Publish the field actor cull's camera view.
     fn set_npc_cull_view(&mut self, view: Option<FieldCullView>);
+    /// Publish the camera globals the frame's matrix `FUN_800172C0` builds
+    /// from (`_DAT_8007B790..`, `_DAT_800840B8..`, `_DAT_80089118..`,
+    /// `_DAT_8007B6F4`), alongside [`Self::set_npc_cull_view`] and under the
+    /// same ownership: the draw walk `FUN_8001ADA4` transforms each actor's
+    /// origin through that matrix before its near reject.
+    fn set_cull_camera(
+        &mut self,
+        _globals: Option<legaia_engine_camera::retail_cam::RetailCamGlobals>,
+    ) {
+    }
     /// Publish the parameter block's mode byte `0x8007B607` the walk step reads
     /// for its diagonal cut; `None` while the follow camera is not composing.
     fn set_camera_mode_byte(&mut self, _mode: Option<u8>) {}

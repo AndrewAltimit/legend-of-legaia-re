@@ -584,6 +584,13 @@ without a loss. So whether a cue costs the score a calc is where the drainer's k
 against the vblank, a matter of the frame's CPU time, and a lost calc lands every later score
 event, and the flush of the notes the vsync before staged, one vsync late.
 
+The emulators disagree on which drains straddle. On PCSX-Redux (`cast-sequence.py --calc-clock`
+from `theeder_pre_cast_vs_gobu_gobu`, the calc's rows carrying the lock word and the flush index,
+and the key-on's lock and free stores their own rows) all `1451` calcs of a Theeder cast enter
+with the lock clear and step the index; the `22` key-ons hold the lock `1628` to `5421` cycles,
+the nearest freeing it `41606` cycles before a vblank. The lock is the mechanism on both; the
+losses are each emulator's frame cost.
+
 The summon's duck does not move the keying. `seq-differential --duck START:FROM:TO` runs
 `SsSeqSetVol` (`FUN_80064890`, which re-volumes the sounding notes through `FUN_80067E9C`) once a
 vsync the level moves, as `FUN_8002657C` does, against the port's `Sequencer::set_master_vol`:

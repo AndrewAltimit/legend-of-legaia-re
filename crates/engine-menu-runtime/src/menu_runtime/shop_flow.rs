@@ -220,6 +220,27 @@ impl MenuRuntime {
         }
     }
 
+    /// The row the shop list's hand stands on this frame, absolute (its page
+    /// is derived from it).
+    ///
+    /// While a quantity stepper owns the pad, the VM's route into
+    /// `ShopQuantity` has dropped the menu cursor to `0`, but retail's list
+    /// keeps its own `(scroll_top, selected)` pair: the sell stepper's phase 0
+    /// (`FUN_801DBD94`, `0x801DBDE4..0x801DBE40`) only sets the kind-4 list
+    /// mode `_DAT_8007BB94` to `0` and touches neither `_DAT_8007BB90` nor
+    /// `_DAT_8007BB98`, and the kernel `FUN_80032A44` goes on drawing the
+    /// same page with the hand on the same row (`0x80032F5C..0x80032FB4`: a
+    /// static hand in mode 0, no page triangles). So the list window under
+    /// the stepper shows the row it was confirmed on - the row the hand also
+    /// returns to when the stepper closes.
+    pub fn shop_list_cursor(&self) -> u8 {
+        if self.quantity_session.is_some() {
+            self.quantity_list_row
+        } else {
+            self.ctx.cursor
+        }
+    }
+
     /// The live quantity screen's content, for the window a host draws over
     /// the parked list. `None` while no stepper owns the pad.
     pub fn quantity_view(&self) -> Option<QuantityView> {

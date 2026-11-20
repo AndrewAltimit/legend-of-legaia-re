@@ -134,20 +134,43 @@ stateDiagram-v2
 
 ### The venue's game tick
 
-The fishing init stores `2` to the frame-step floor `_DAT_8007B9D8` (`li v0,2` / `sw v0,-0x4628(v1)` at `0x801CF33C..0x801CF344`), so the master frame driver's resolver never writes a step under `2` to `DAT_1F800393` while the venue runs: the driver, the lure tick and the fish tick run once every two vsyncs or slower, each on that step. The dance hall's init does the same with `3` (`0x801CF068..0x801CF070` in PROT 0980). Every parked fishing capture reads a step of `3` or `4`, the resolver's measured arm above the floor *(captures)*.
+The fishing init stores `2` to the frame-step floor `_DAT_8007B9D8` (`li v0,2` / `sw v0,-0x4628(v1)` at `0x801CF33C..0x801CF344`), so the master frame driver's resolver never writes a step under `2` to `DAT_1F800393` while the venue runs: the driver, the lure tick and the fish tick run once every two vsyncs or slower, each on that step. The dance hall's init does the same with `3` (`0x801CF068..0x801CF070` in PROT 0980).
 
-A retail film of a cast and a catch (the [minigame film](../tooling/minigame-film.md), `--set fishing --replay`) reads the step game frame by game frame: `3` on the shore, through the wind-up and the meter's first sixteen frames (the resolver's sixteen-frame window), `2` for the rest of the meter and the flight, `2` in the water with the line idle, `3` through a reeled wait and the whole fight, `4` through the landing. The driver moves its frame counter `_DAT_8007B798` (`gp + 0x480`, `FUN_80016B6C`'s head) a vsync before it stores the frame's step, and the frame runs on that step.
+Above the floor the step is the resolver's law (`FUN_80016B6C`): each frame's hblanks go into the sixteen-entry ring `0x80084098`, and the next frame's step is the ring's longest entry against `0xF1` / `0x1FF` / `0x2D1` (`1` / `2` / `3`, else `4`). A frame waits `VSync(step)` on the step the frame before stored, so it spans its step, or longer when its own cost runs past it ([retail frame cost](../tooling/retail-frame-cost.md)).
 
-The step is in the cast itself. The spawn is `polar(facing, 200)` scaled by the step (`FUN_801D7BB8`, [The cast and the line](#the-cast-and-the-line)), and `minigame_fishing_retail_lure_cast` holds its spawn at `z = 4880` in front of a lead standing at `4480` facing `0x800`: `400` out, a cast thrown on a step of `2` *(capture)*.
+The venue's frames cost either side of the `0x1FF` rung, so the step moves with the phase. PCSX-Redux films of `minigame_fishing_retail_shore` with the ring beside the pond's words (the [minigame film](../tooling/minigame-film.md)'s driver with the ring's sixteen halfwords and the cursor `gp+0x440` added) read each frame's entry *(captures)*:
 
-What does not scale is every roll made once a game tick: the strike draw, the band re-roll, the line-break roll at the ceiling and the fish tick's draws. A frame step of `1` makes twice as many of them a second as the floor allows.
+| Phase | Ring entry (hblanks) | Step |
+|---|---:|---:|
+| Shore `0xC`, fade `0xB`, recast `0x32` / `0xA` | `566..636` | `3` |
+| Hub menu `0x64..0x66` | `589..650` | `3` |
+| Wind-up `0xD` | `569..592` | `3` |
+| Power meter `0x14` | `488..504` | `3` for sixteen frames, then `2` |
+| Flight `0x15` | `495..510` | `2` |
+| Lure in the water `0x19`, line idle | `487..496` | `2` |
+| `0x19`, a reel pull or the landing's splash live | `505..567` | `3` |
+| `0x19`, fish on | `529..714` | `3` |
+| Close-up `0x1E` (line-actor sub-state `4`) | `0x2BC` (clamped) | `4`, spans of `5..6` vsyncs |
+| Showcase `0x20` / `0x21` | `494..717` | `4` falling to `2` |
+| Plate `0x22` | `501..516` | `2` |
+
+The frame runner agrees on the states it reaches: `minigame_fishing_retail_shore` stores `581..584`, `..._lure_cast` `544` falling to `487` as its splash ends, `..._catch_plate` `502..506` (step `2` once the ring has turned over), and `..._catch_lift` prices the close-up's driver at `1241..1319` hblanks.
+
+What moves a waiting line across the rung is the lure's rings. Record `0x801D892C` is seated at the landing and on every frame of a live reel pull or a hooked fish (`0x801D39A4`, [Open](#open)), and each live part adds `8..13` hblanks to the frame (more on a short cast, whose rings stand nearer the eye) for the `60..66` vsyncs it lives. A tap of the reel seats two or three, enough to hold step `3` for twenty frames; a fight seats one a frame and sits near `690`. The driver moves its frame counter `_DAT_8007B798` (`gp + 0x480`, `FUN_80016B6C`'s head) a vsync before it stores the frame's step, and the frame runs on that step.
+
+The step is in the cast itself. The spawn is `polar(facing, 200)` scaled by the step (`FUN_801D7BB8`, [The cast and the line](#the-cast-and-the-line)): `minigame_fishing_retail_lure_cast` holds its spawn at `z = 4880` in front of a lead standing at `4480` facing `0x800`, `400` out, a lock on the meter's settled step `2`, and a film that locks eight meter frames in, while the wind-up's entries still hold the ring, throws to `5080`, `600` out on step `3` *(captures)*.
+
+What does not scale is every roll made once a game tick: the strike draw, the band re-roll, the line-break roll at the ceiling and the fish tick's draws. A reeled wait and a fight at step `3` make two thirds as many of them a second as the floor's `2` would.
 
 Driven on retail's own steps and pad words, frame by frame, with its `rand()` stream and the pad pump's auto-repeat clock `_DAT_8007B940` seated on the capture's (harness seats), the port's pond agrees with retail on every game frame of the cast, the wait, the strike, the fight and the landing: power, line record, lure accumulators, reel pull, rod sway, the band and strike rolls, the species, the fight strength, the tension and the award, and on through the close-up and the plate: the `rand()` word and the point total.
-What differs is the pace: on its pinned step of `2` the port runs a reeled wait and a fight half again as many game frames a second as the film's `3`, and every once-a-frame roll with them. The step is the resolver's measure of frame cost, which an emulator's timing does not pin for a console, so the port keeps its floor.
 
-Port: `PondSession::vsync` runs a game tick every `VENUE_FRAME_STEP` (`2`) vsyncs on that step, the engine's deterministic arm of the resolver ([engine](engine.md#the-frame-model)), and every host drives the pond through it. A press between two game ticks is held for the next. The venue's actors (`tick_venue_actors`: the swell, the lead's wander, the camera, the line actor) and the pond's cue clock step on `PondSession::vsync_step`; the overlay's effect parts tick every vsync. Pinned by `fishing::tests::the_pond_ticks_every_second_vsync_and_holds_a_press_for_it` and `the_cast_spawns_the_lure_where_the_retail_cast_did`.
+Port: `PondSession::vsync` runs a game frame when the last one has spanned its vsyncs, on the step `PondPacer` gives: `frame_work` prices the frame by its phase, the hub, the close-up, the plate's opening frames and the live lure rings (`LURE_RING_WORK`, `LURE_RING_LIFE`, `LANDING_SPLASH_RINGS`), and `PondPacer::end_frame` runs `FUN_80016B6C`'s law over the floor `POND_STEP_FLOOR`. Every host drives the pond through it.
+A press between two game frames is held for the next. The venue's actors (`tick_venue_actors`: the swell, the lead's wander, the camera, the line actor) and the pond's cue clock step on `PondSession::vsync_step`; the overlay's effect parts tick every vsync.
+`WorldToggles::fishing_frame_cost` (on by default; `LEGAIA_FISHING_FRAME_COST=0` in the native session) is the switch: off, every frame runs on the floor, a game frame every second vsync. Pinned by `fishing::pacing::tests`, `fishing::tests::the_shore_runs_at_step_three_and_holds_a_press_for_it`, `the_floor_pace_ticks_every_second_vsync` and `the_cast_spawns_the_lure_where_the_retail_cast_did`.
 
-Measured over the disc tables at Buma, three rods and sixty seeds each, a full-power cast held on reel A until a strike: the first strike comes `1461` vsyncs in on average where a step of `1` gave `860`; holding reel A from the hook breaks `40` of the `180` fights (`19` at a step of `1`), and reeling only under a gauge of `0x800` lands all of them in `520` vsyncs (`413`).
+A minigame film of the shore state with one pad schedule on both sides (a cast tapped at vsync `30`, the meter locked at `140`, the reel held `600..640`, `900` vsyncs) reads `389` game frames on retail and `389` on the port, the last paired frame a vsync apart; on the floor the port runs `437`, `75` vsyncs ahead by the end. Per phase the port matches the film's frame counts (shore `11`, wind-up `5`, flight `17`) and its water frames' steps (`70` of `327` at `3` against retail's `69` of `326`). Fitted over three films, the ring model calls the next water frame's step right on `95%` of frames.
+
+Measured over the disc tables at Buma, three rods and sixty seeds each (`PondSession::from_tables` driven by `vsync`), casting at full power and holding reel A until a strike, recasting each empty line: the first strike comes `2336` vsyncs in on average, `1310` on the floor's pace; holding reel A from the hook breaks `42` of the `180` fights (`53`), and reeling only under a gauge of `0x800` lands all of them in `887` vsyncs (`1320`). The fight's frames span three vsyncs each.
 
 ### Shared tail
 

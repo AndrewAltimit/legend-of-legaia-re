@@ -234,20 +234,34 @@ pub fn retail_scroll_rects(ram: &[u8], vram: &[u8]) -> Vec<SeededVramRect> {
             .collect::<Vec<u16>>();
         // The displayed frame is two game frames older than the VRAM: take
         // back the rotations the scroller fired in between.
+        let period = game_anchors::i16_at(ram, n + 0xC4);
         let fires = scroll_fires_within(
-            game_anchors::i16_at(ram, n + 0xC4),
+            period,
             game_anchors::i16_at(ram, n + 0xC6),
             step,
             DISPLAY_LAG_FRAMES,
         );
-        let back = |per_tick: i16, extent: u16| -> usize {
-            let e = i32::from(extent).max(1);
-            (i32::from(per_tick) * i32::from(step) * fires).rem_euclid(e) as usize
+        let rates = [
+            game_anchors::i16_at(ram, n + 0xCC),
+            game_anchors::i16_at(ram, n + 0xCE),
+        ];
+        // Ticks inside the lag before the program last set its rates rolled
+        // at the rates it set before them.
+        let earlier = if period == 0 {
+            scroll_ticks_before_set(ram, n, u8::try_from(step).unwrap_or(1), DISPLAY_LAG_FRAMES)
+                .and_then(|t| scroll_previous_rates(ram, n, rect, rates).map(|r| (t, r)))
+        } else {
+            None
         };
-        let (bw, bh) = (
-            back(game_anchors::i16_at(ram, n + 0xCC), w),
-            back(game_anchors::i16_at(ram, n + 0xCE), h),
-        );
+        let back = |axis: usize, extent: u16| -> usize {
+            let e = i32::from(extent).max(1);
+            let rolled = match earlier {
+                Some((t, prev)) => i32::from(rates[axis]) * (fires - t) + i32::from(prev[axis]) * t,
+                None => i32::from(rates[axis]) * fires,
+            };
+            (rolled * i32::from(step)).rem_euclid(e) as usize
+        };
+        let (bw, bh) = (back(0, w), back(1, h));
         out.push((
             rect,
             unrotate_rect(&texels, usize::from(w), usize::from(h), bw, bh),
@@ -284,6 +298,56 @@ pub(super) fn scroll_fires_within(period: i16, countdown: i16, step: i16, lag: i
     }
 }
 
+/// How many of a scroller's last `lag` ticks ran before its move program last
+/// set its rates: the program parks on a wait (op `0x09`) after its scroll op
+/// (`0x1E`), so the idle ticks since that run ([`cell_fx_idle_ticks`]) name
+/// the tick the current rates were set on, and the scroll rolls on that tick
+/// at them. `None` when the part is not parked on a wait or the rates were set
+/// before the lag.
+pub(super) fn scroll_ticks_before_set(ram: &[u8], n: u32, step: u8, lag: i32) -> Option<i32> {
+    let idle = cell_fx_idle_ticks(ram, n, step)?;
+    (idle + 1 < lag).then_some(lag - (idle + 1))
+}
+
+/// The rates a scroller's program set before its current ones: its scroll
+/// ops (`0x1E a dx dy x y w h`) on this rect, when they carry exactly two
+/// rate pairs and the current is one of them - the dance hall's drum
+/// alternates `dy 2` and `dy 0` two ticks each, so a state taken on the tick
+/// its program switched shows, two frames back, the other pair's roll.
+/// `None` for any other program.
+pub(super) fn scroll_previous_rates(
+    ram: &[u8],
+    n: u32,
+    rect: (u16, u16, u16, u16),
+    current: [i16; 2],
+) -> Option<[i16; 2]> {
+    const SCROLL_OP: i16 = 0x1E;
+    const SCROLL_OP_WORDS: u32 = 8;
+    let buf = game_anchors::u32_at(ram, n + 0x48);
+    if (buf & 0xFFE0_0000) != 0x8000_0000 {
+        return None;
+    }
+    let word = |i: u32| game_anchors::i16_at(ram, buf + i * 2);
+    let mut pairs: Vec<[i16; 2]> = Vec::new();
+    for i in 0..CYCLER_PROGRAM_WORDS - SCROLL_OP_WORDS {
+        let on_rect = [4u32, 5, 6, 7]
+            .iter()
+            .zip([rect.0, rect.1, rect.2, rect.3])
+            .all(|(&o, v)| word(i + o) as u16 == v);
+        if word(i) == SCROLL_OP && on_rect {
+            let pair = [word(i + 2), word(i + 3)];
+            if !pairs.contains(&pair) {
+                pairs.push(pair);
+            }
+        }
+    }
+    match pairs.as_slice() {
+        [a, b] if *a == current => Some(*b),
+        [a, b] if *b == current => Some(*a),
+        _ => None,
+    }
+}
+
 /// Rotate a `w x h` rect **right** by `dx` and **down** by `dy` - the inverse
 /// of the scroller's left / up rotation.
 pub(super) fn unrotate_rect(texels: &[u16], w: usize, h: usize, dx: usize, dy: usize) -> Vec<u16> {
@@ -294,6 +358,67 @@ pub(super) fn unrotate_rect(texels: &[u16], w: usize, h: usize, dx: usize, dy: u
         .flat_map(|row| (0..w).map(move |col| (row, col)))
         .map(|(row, col)| texels[((row + h - dy % h) % h) * w + (col + w - dx % w) % w])
         .collect()
+}
+
+/// The op-`0x34` screen-effect slot `_DAT_8007B62C`: the colour-tween actor
+/// the scene's live scripted grade runs on, `0` with none.
+const EFFECT_TWEEN_SLOT: u32 = 0x8007_B62C;
+
+/// The colour-tween actor's handler (`FUN_801DDC20`).
+const COLOUR_TWEEN_TICK: u32 = 0x801D_DC20;
+
+/// The scene's live scripted grade: the colour tween `_DAT_8007B62C` names
+/// (`from` `+0xB8..`, `to` `+0xBE..`, delay `+0xC4`, hold `+0xC6`, clock
+/// `+0xC8`, duration `+0xD4`, blend `+0xD2`, kind `+0xD6`), `None` with no
+/// live slot. A grade is the history of the record that ran it, which a
+/// state's reload does not replay: `urudre1_house_free` holds `P2[0]`'s
+/// `(0, 16, 24)` (the dream opening, spawned only while `0x3F5` is set and
+/// done long before the capture), where the entry script the child replays
+/// paints `(48, 48, 0)`.
+pub fn retail_scene_grade(
+    ram: &[u8],
+) -> Option<legaia_engine_field::actor_colour_tween::ColourTween> {
+    let n = game_anchors::u32_at(ram, EFFECT_TWEEN_SLOT);
+    if n == 0 || game_anchors::u32_at(ram, n + 0x0C) != COLOUR_TWEEN_TICK {
+        return None;
+    }
+    let c = |o: u32| {
+        (
+            game_anchors::u16_at(ram, n + o),
+            game_anchors::u16_at(ram, n + o + 2),
+            game_anchors::u16_at(ram, n + o + 4),
+        )
+    };
+    Some(legaia_engine_field::actor_colour_tween::ColourTween {
+        from: c(0xB8),
+        to: c(0xBE),
+        delay: game_anchors::i16_at(ram, n + 0xC4),
+        duration: game_anchors::i16_at(ram, n + 0xD4),
+        hold: game_anchors::i16_at(ram, n + 0xC6),
+        clock: game_anchors::u16_at(ram, n + 0xC8),
+        flags: 0,
+        push_kind: game_anchors::i16_at(ram, n + 0xD6),
+        push_blend: game_anchors::i16_at(ram, n + 0xD2),
+    })
+}
+
+/// The scripted sprite widget's handler (`FUN_801F7A9C`, PROT 0900).
+pub(super) const SPRITE_TICK: u32 = 0x801F_7A9C;
+
+/// Whether a retail state's actor lists hold a live sprite widget - the
+/// ending crawl's lines, each a `43 10` spawn from the credits record.
+///
+/// The image child meets the field gate on the displayed frame (the
+/// record's wait less the display lag), but a PCSX-Redux film of `edlast`
+/// (`captures/w49-F/edlast_from_edson_panel`, 2 vsyncs a shot) shows each
+/// crawl line at the RAM's `+0x16` (less its glyph's top row) on the same
+/// vsync: the `Casting` line's top row is `+0x16 + 5` at every shot from
+/// `t408` to `t448`, no lag. So the child runs the sprites on by the lag
+/// the gate took off.
+pub fn retail_has_sprite_widget(ram: &[u8]) -> bool {
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .any(|n| game_anchors::u32_at(ram, n + 0x0C) == SPRITE_TICK)
 }
 
 /// The image-panel widget's handler (`FUN_801F849C`, PROT 0900).
@@ -328,6 +453,28 @@ pub fn retail_panel(ram: &[u8]) -> Option<legaia_engine_effects::screen_fx::Pane
         texpage: game_anchors::u16_at(ram, n + 0xA0),
         texpage2: game_anchors::u16_at(ram, n + 0xA2),
     })
+}
+
+/// The panel tween as the displayed frame drew it: `back` vsyncs earlier.
+///
+/// The clock `+0x9C` gains the frame step `_DAT_1F800393` each frame
+/// (`0x801F84EC..0x801F8500`) and the five channels are a linear
+/// `FUN_801DE4C8` (mode `1`) from `cur` toward `target`, so taking the lag
+/// off the clock is the frame on screen. A clock the lag takes past `0` was
+/// not running yet then, and the start rect is what drew. A
+/// PCSX-Redux film of `edson` `P2[0]`'s shrink (`43 14 A4 00 70 00 00 07 40
+/// 00`, `64` frames on a step-`3` frame) shows the display's panel edge on
+/// the RAM clock less `6`: `credits_edson_fullscreen_pcsx` holds clock `6`
+/// (left edge `15`) under a display that still shows the whole frame. A
+/// finished tween (`dur == 0`) keeps no start, so it stays as it is.
+pub fn rewind_panel(
+    mut p: legaia_engine_effects::screen_fx::PanelWidget,
+    back: i16,
+) -> legaia_engine_effects::screen_fx::PanelWidget {
+    if p.dur != 0 {
+        p.t = (p.t - back).max(0);
+    }
+    p
 }
 
 /// The VRAM the panel samples, with the state's texels there: page 0 from

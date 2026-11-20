@@ -61,6 +61,7 @@ use legaia_minigame_formats::fishing_species::{CADENCE_TOLERANCE, CadenceTemplat
 use legaia_engine_system::rand::BiosRand;
 
 mod gauges;
+mod pacing;
 mod pond;
 mod pond_types;
 mod prize;
@@ -68,6 +69,7 @@ mod rod_menu;
 mod species;
 
 pub use gauges::*;
+pub use pacing::*;
 pub use pond::*;
 pub use pond_types::*;
 pub use prize::*;

@@ -1478,62 +1478,91 @@ fn the_catch_hud_goes_the_frame_after_the_landing() {
     assert!(!p.catch_hud().visible, "gone through the close-up");
 }
 
-/// The pond runs a game tick every [`VENUE_FRAME_STEP`] vsyncs, on that step:
-/// the fishing init's frame-step floor. A press on a vsync between two game
-/// ticks is held for the next.
+/// The pond runs a game frame on the step the frame driver's law gives its
+/// cost: the shore's frames run on `3`, as every retail film of the venue
+/// reads them. A press on a vsync between two game frames is held for the
+/// next.
 #[test]
-fn the_pond_ticks_every_second_vsync_and_holds_a_press_for_it() {
+fn the_shore_runs_at_step_three_and_holds_a_press_for_it() {
     let mut p = pond();
     let press = PondInput {
         cast_edge: true,
         ..Default::default()
     };
+    // The session opens on the floor; the shore's first frame costs past
+    // two vsyncs, spans three and lifts the step.
     assert_eq!(p.vsync(PondInput::default(), 0x20), VENUE_FRAME_STEP);
-    // The press lands between two game ticks: nothing runs on it ...
+    assert_eq!(p.vsync(PondInput::default(), 0x20), 0);
+    assert_eq!(p.vsync(PondInput::default(), 0x20), 0);
+    assert_eq!(p.vsync(PondInput::default(), 0x20), 3);
+    // The press lands between two game frames: nothing runs on it ...
     assert_eq!(p.vsync(press, 0x20), 0);
     assert_eq!(p.phase(), PondPhase::Idle);
     assert_eq!(p.vsync_step(), 0);
-    // ... and the next game tick takes it, the button already up.
-    assert_eq!(p.vsync(PondInput::default(), 0x20), VENUE_FRAME_STEP);
+    assert_eq!(p.vsync(PondInput::default(), 0x20), 0);
+    // ... and the next game frame takes it, the button already up.
+    assert_eq!(p.vsync(PondInput::default(), 0x20), 3);
     assert_eq!(p.phase(), PondPhase::WindUp);
-    // The wind-up counts frame steps: thirteen of them at step 2 is seven
-    // game ticks, fourteen vsyncs.
+    // The wind-up counts frame steps past `0xC`: five frames at step 3,
+    // fifteen vsyncs, as the films read it.
     let mut vsyncs = 0;
     while p.phase() == PondPhase::WindUp {
         p.vsync(PondInput::default(), 0x20);
         vsyncs += 1;
     }
-    assert_eq!(vsyncs, 14);
+    assert_eq!(vsyncs, 15);
+}
+
+/// With the frame cost off the pond keeps the floor: a game frame every
+/// second vsync.
+#[test]
+fn the_floor_pace_ticks_every_second_vsync() {
+    let mut p = pond();
+    p.set_frame_cost(false);
+    for _ in 0..10 {
+        assert_eq!(p.vsync(PondInput::default(), 0x20), VENUE_FRAME_STEP);
+        assert_eq!(p.vsync(PondInput::default(), 0x20), 0);
+    }
 }
 
 /// The cast spawns the lure `200 * step` units out of the lead
-/// (`FUN_801D7BB8`'s scale): at the venue's step, `400`, where
-/// `minigame_fishing_retail_lure_cast` holds it (`z` `4880` against the
-/// lead's `4480`, facing `0x800`).
+/// (`FUN_801D7BB8`'s scale). A lock in the meter's first sixteen frames runs
+/// on the wind-up's step `3` and throws `600` out, as a retail film locking
+/// eight meter frames in reads (`z` `5080` against the lead's `4480`); a
+/// lock once the meter has settled to the floor throws `400`, where
+/// `minigame_fishing_retail_lure_cast` holds it (`4880`).
 #[test]
 fn the_cast_spawns_the_lure_where_the_retail_cast_did() {
-    let mut p = pond();
-    p.attach_venue(PondVenue {
-        map: Vec::new(),
-        region_block: None,
-        anchor_x: 5888,
-        anchor_z: 4480,
-        anchor_y: -64,
-        facing: 0x800,
-        rod_mesh: None,
-    });
-    let press = PondInput {
-        cast_edge: true,
-        ..Default::default()
-    };
-    p.vsync(press, 0x20);
-    while p.phase() != PondPhase::Power {
-        p.vsync(PondInput::default(), 0x20);
+    for (meter_frames, out) in [(8, 600), (40, 400)] {
+        let mut p = pond();
+        p.attach_venue(PondVenue {
+            map: Vec::new(),
+            region_block: None,
+            anchor_x: 5888,
+            anchor_z: 4480,
+            anchor_y: -64,
+            facing: 0x800,
+            rod_mesh: None,
+        });
+        let press = PondInput {
+            cast_edge: true,
+            ..Default::default()
+        };
+        p.vsync(press, 0x20);
+        while p.phase() != PondPhase::Power {
+            p.vsync(PondInput::default(), 0x20);
+        }
+        let mut frames = 1;
+        while frames < meter_frames {
+            if p.vsync(PondInput::default(), 0x20) != 0 {
+                frames += 1;
+            }
+        }
+        // Lock on a game frame.
+        while p.vsync(press, 0x20) == 0 {}
+        let lure = p.lure_actor().expect("the lock spawns the lure");
+        assert_eq!(lure.spawn, (5888, 4480 + out), "{meter_frames}");
     }
-    // Lock on a game tick.
-    while p.vsync(press, 0x20) == 0 {}
-    let lure = p.lure_actor().expect("the lock spawns the lure");
-    assert_eq!(lure.spawn, (5888, 4880));
 }
 
 /// The band countdown `DAT_801D90EC` falls through a fight: its store sits in

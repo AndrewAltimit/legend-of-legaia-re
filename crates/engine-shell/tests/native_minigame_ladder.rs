@@ -446,8 +446,10 @@ fn baka_attacks() -> String {
     out
 }
 // The duel this schedule plays runs past tick 2600 since the cabinet takes
-// the player select's lineup draw (`rand()` in state `0x0A`) retail takes.
-const BAKA_TICKS: usize = 3600;
+// the player select's lineup draw (`rand()` in state `0x0A`) retail takes, and
+// past 3600 since the cabinet's frames run on retail's measured step (the
+// announcer's lines pace the round's intro and the KO at steps `2..4`).
+const BAKA_TICKS: usize = 4200;
 const BAKA_THROW_EVERY: usize = 20;
 
 /// The Baka Fighter duel played to a **player win** - which is the only thing

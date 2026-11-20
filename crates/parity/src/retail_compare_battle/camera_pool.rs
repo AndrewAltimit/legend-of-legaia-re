@@ -135,11 +135,18 @@ pub(super) fn older_table_step(ram: &[u8], ctx: u32) -> Option<u8> {
         return None;
     }
     let older = (0..tables.len()).find(|&t| t != newer)?;
+    // A module shot built once walks `increment * step` a pass, not the
+    // re-arm's widening share, so its candidates walk back on that law.
+    let once = module_shot_walks_once(ram, ctx);
     let poses: Vec<(u8, BattleCamPose)> = (1..=4u8)
         .map(|s| {
             (
                 s,
-                displayed_cam_live_steps(ram, ctx, &[s], false, [None; 9], [0; 9], false),
+                if once {
+                    displayed_module_cam_live(ram, ctx, &[s])
+                } else {
+                    displayed_cam_live_steps(ram, ctx, &[s], false, [None; 9], [0; 9], false)
+                },
             )
         })
         .collect();

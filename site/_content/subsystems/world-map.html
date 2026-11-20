@@ -180,7 +180,7 @@
     </tbody>
   </table>
   </div>
-  <p><code>uru</code> is the hub of that chain, with six sidecar doors - the two above plus one dream entrance per room at tiles (110..112, 35), (10..12, 98) and (80..82, 99). <code>jouine</code> has no named scene change anywhere: its record fires a movie, and the movie player picks the next scene. Why three decoders read these scenes as sealed: <a href="world-map-internals.html#sidecar-instruments">internals</a>.</p>
+  <p><code>uru</code> is the hub of that chain, with six sidecar doors - the two above plus one dream entrance per room at tiles (110..112, 35), (10..12, 98) and (80..82, 99). None of the three can be walked to from the hub: each sits in a wing behind a door object that stays a wall until the voice beat (which needs Dr. Usha's talk and Mrs. Usha's quiz) raises flag <code>0x3FC</code>, and touching the opened door moves the party into its wing. <code>jouine</code> has no named scene change anywhere: its record fires a movie, and the movie player picks the next scene. Why three decoders read these scenes as sealed: <a href="world-map-internals.html#sidecar-instruments">internals</a>.</p>
 </section>
 
 <section class="doc-section" id="terrain" data-doc="terrain-and-geometry">

@@ -371,7 +371,7 @@ fn the_walker_costs_its_branches() {
             let draws: Vec<u32> = (0..4096).map(|_| rng.next() & 0x7FFF).collect();
             *stream.borrow_mut() = draws.iter().copied().collect();
             assert_eq!(cpu.call(WALK, &[]), Stop::Returned);
-            let cycles = (2 * cpu.steps + cpu.mem_ops) as f64;
+            let cycles = cpu.cost_pcsx() as f64;
             *stream.borrow_mut() = draws.into_iter().collect();
             let before = pool.work;
             pool.tick_retail(&mut host, &catalog, dt);

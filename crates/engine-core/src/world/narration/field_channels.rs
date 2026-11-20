@@ -77,6 +77,26 @@ impl World {
             .collect()
     }
 
+    /// Whether the bound actor that placed-object key `key` names
+    /// ([`Self::object_draw_keys`]) stands at the off-map hide box or is
+    /// retired: the members of [`Self::hidden_object_records`] whose actor
+    /// the draw walk never reaches, less the zero-scale and pack-mode ones,
+    /// whose actors still stand in view. Read by the field frame-cost model.
+    pub fn placed_object_parked(&self, key: usize) -> bool {
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as u16;
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| c.object_bind)
+            .filter(|c| {
+                (c.ctx.world_x == hide && c.ctx.world_z == hide)
+                    || c.ctx.flags & legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT != 0
+            })
+            .map(|c| c.placement_index)
+            .chain(self.field_vm.retired_objects.iter().copied())
+            .any(|k| self.object_draw_keys(k).any(|d| d == key))
+    }
+
     /// The keys a host finds object `key`'s actor state under: the channel
     /// key itself and, when that is the flat record (the first object the
     /// record binds), the object's per-object key too

@@ -79,6 +79,12 @@ impl StaticObjectWindow {
         self.drawn.contains(key)
     }
 
+    /// Seat the drawn set directly, for a test of a reader.
+    #[cfg(test)]
+    pub(crate) fn set_drawn_for_test(&mut self, keys: impl IntoIterator<Item = PlacedWindowKey>) {
+        self.drawn = keys.into_iter().collect();
+    }
+
     /// Replace the list with a fresh plan (the free + respawn of one rebuild).
     fn replace(&mut self, window: [u8; 4], spawns: Vec<WindowSpawn>, lut: [i16; 16]) {
         self.spawn_lut = Some(lut);

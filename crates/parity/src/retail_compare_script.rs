@@ -137,6 +137,16 @@ const HALT: u32 = 0x400;
 /// how far the leg has run; its `+0x54` does. `town0c`'s queen-bee beat
 /// (`rim_elm_queen_bee_battle`) is parked on `C1 3B 02 41` with flat 59
 /// eight units into the `C1 3B 02 46` leg before it.
+///
+/// A target whose seat is a FaceTarget leg (`CC <id> 85|8E|8F`) and whose
+/// halt is already down has turned all the way: the leg's terminal frame
+/// clears `0x400` in the actor tick (`FUN_8003774C`, `0x80038004`), after
+/// the record's slice, so the record still stands on the op it held there
+/// for the frame. The gate then carries [`FACE_LANDED`], met once the
+/// engine's leg on that placement has landed too: `eddoman` `P2[7]` is
+/// parked on `AC 14 07` with flat 20 turned onto flat 21 (`0x92E`) by the
+/// `CC 14 85 0F 00 15` before it, and the PC alone met the gate on the
+/// turn's first frame (`0xD5C`).
 fn walking_target(ram: &[u8], nodes: &[u32], op: u8, target: Option<u8>) -> Option<(u8, i16)> {
     if op & 0x80 == 0 {
         return None;
@@ -145,13 +155,16 @@ fn walking_target(ram: &[u8], nodes: &[u32], op: u8, target: Option<u8>) -> Opti
     nodes.iter().find_map(|&n| {
         if game_anchors::u32_at(ram, n + 0x0C) != FIELD_ACTOR_TICK
             || game_anchors::u16_at(ram, n + 0x50) != u16::from(target)
-            || game_anchors::u32_at(ram, n + 0x10) & HALT == 0
         {
             return None;
         }
         let seat = game_anchors::u32_at(ram, n + 0x94);
-        let walk_op = in_ram(seat).then(|| game_anchors::u8_at(ram, seat))?;
-        (walk_op & 0x80 != 0 && matches!(walk_op & 0x7F, 0x37 | 0x41))
+        let leg = in_ram(seat).then(|| bytes_at(ram, seat, 3)).flatten()?;
+        if game_anchors::u32_at(ram, n + 0x10) & HALT == 0 {
+            return (leg[..2] == [0xCC, target] && matches!(leg[2], 0x85 | 0x8E | 0x8F))
+                .then_some((target, FACE_LANDED));
+        }
+        (leg[0] & 0x80 != 0 && matches!(leg[0] & 0x7F, 0x37 | 0x41))
             .then(|| (target, game_anchors::i16_at(ram, n + 0x54)))
     })
 }
@@ -211,6 +224,13 @@ const PAGER_ROWS: u32 = 0x801F_3540;
 /// Slots of the row table read: the three-row window and the row a scroll
 /// brings in under it.
 const PAGER_ROW_SLOTS: u32 = 4;
+/// The pager actor's tick word (`FUN_801D84D0`, spawned from the template at
+/// `0x801F2760`).
+const PAGER_TICK: u32 = 0x801D_84D0;
+/// The pager actor's picker slide count (`+0x54`): the sentinel `0x309`
+/// before the slide's first call, then `0x18` down to `0` by the frame step
+/// ([`legaia_engine_dialog::dialog_picker_slide`]).
+const PAGER_SLIDE_COUNT: u32 = 0x54;
 
 /// The pager's arm and rows when it stands between a page's press and its
 /// wait in an arm other than the typing one ([`PagerPhase::applies`]),
@@ -229,11 +249,20 @@ pub fn pager_phase(ram: &[u8], base: u32) -> Option<PagerPhase> {
         }
         rows.push(usize::try_from(p.checked_sub(base)?).ok()?);
     }
+    // A picker arm's counter is the menu's slide count, not the reveal.
+    let counter = if PagerPhase::is_picker(state) {
+        let node = actor_nodes(ram)
+            .into_iter()
+            .find(|&n| game_anchors::u32_at(ram, n + 0x0C) == PAGER_TICK)?;
+        i32::from(game_anchors::i16_at(ram, node + PAGER_SLIDE_COUNT))
+    } else {
+        game_anchors::u32_at(ram, PAGER_REVEAL) as i32
+    };
     Some(PagerPhase {
         state,
         rows,
         scroll: game_anchors::u32_at(ram, PAGER_SCROLL) as i32,
-        counter: game_anchors::u32_at(ram, PAGER_REVEAL) as i32,
+        counter,
     })
 }
 
@@ -440,7 +469,7 @@ pub fn displayed_script_gate_from_retail(scripts: &RetailScripts) -> Option<Scri
     }
     // A leg spends one unit a vsync, so the displayed frame's leg had
     // `display_lag` units fewer behind it.
-    if let Some((_, accum)) = g.walk.as_mut() {
+    if let Some((_, accum)) = g.walk.as_mut().filter(|(_, a)| *a != FACE_LANDED) {
         *accum = (i32::from(*accum) - i32::from(scripts.display_lag)).max(0) as i16;
     }
     Some(g)

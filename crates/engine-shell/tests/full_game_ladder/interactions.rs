@@ -242,11 +242,10 @@ pub(super) fn interact_at(
         };
         let before = flags_of_world(session);
         let seat_xz = player_xz(session);
-        session.host.world.set_pad(PadButton::Cross.mask());
-        match session.tick() {
-            Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
-            Ok(_) => {}
-            Err(e) => return Run::Error(format!("{e:#}")),
+        match press_edge(session, PadButton::Cross.mask()) {
+            Ok(Some(name)) => return Run::Entered(name),
+            Ok(None) => {}
+            Err(e) => return Run::Error(e),
         }
         // Page the conversation to its end, then step back off the NPC
         // before anything else runs: a player facing the NPC with the
@@ -509,6 +508,12 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
         match walk {
             Ok(Walk::Entered(s)) => return Run::Entered(s),
             Ok(Walk::Arrived) => {}
+            // A fight on the walk that wiped the party ends the talk: the
+            // next side's walk only met the same game over again, reported
+            // as a fresh wipe ("wiped after 0 ticks", `taiku` P1[35]).
+            Err(e) if e.contains("party wiped") => {
+                return Run::Battle(e);
+            }
             Err(e) => {
                 if !talked {
                     last = Run::Parked(format!("pad walk to talk P1[{slot}]: {e}"));
@@ -601,16 +606,21 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
             continue;
         }
         let before = flags_of_world(session);
-        // Release, then press: the interact is edge-triggered.
-        session.host.world.set_pad(0);
-        if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
-            return Run::Entered(name);
-        }
-        session.host.world.set_pad(PadButton::Cross.mask());
-        match session.tick() {
-            Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
-            Ok(_) => {}
-            Err(e) => return Run::Error(format!("{e:#}")),
+        // Release, then press: the interact is edge-triggered. Each half is
+        // held across a whole game frame ([`press_ticks`]): in the
+        // retail-faithful mode the field latches the pad once a frame, and
+        // a one-tick Cross fell between two latches on `suimon`'s ferryman
+        // (P1[4]), whose talk then never opened.
+        for pad in [0, PadButton::Cross.mask()] {
+            for _ in 0..press_ticks(session) {
+                session.host.world.set_pad(pad);
+                match session.tick() {
+                    Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
+                    Ok(_) => {}
+                    Err(e) if pad != 0 => return Run::Error(format!("{e:#}")),
+                    Err(_) => {}
+                }
+            }
         }
         talked = true;
         if let Some(r) = page_talk(session) {
@@ -690,4 +700,39 @@ fn a_talk_entry_box_is_read_through_the_jumps_back_to_it() {
     // A record that opens on its text tests no box first.
     let text = [0x1F, b'h', b'i', 0x00, 0x21];
     assert_eq!(entry_box(&text, 0), None);
+}
+
+/// Ticks a one-shot press (or the release before it) is held so the field
+/// reads it: one, or in the retail-faithful mode a whole game frame. There
+/// the field latches the pad at the end of a frame the frame-cost model
+/// prices at up to three vsyncs (`WorldToggles::immediate_pad` off), so a
+/// shorter press can fall between two latches ([`script_pad`] holds its
+/// Cross as wide for the same reason).
+pub(super) fn press_ticks(session: &NativeSession) -> usize {
+    if session.host.world.toggles.immediate_pad {
+        1
+    } else {
+        4
+    }
+}
+
+/// Press `mask` once, as an edge the field reads: one tick in the default
+/// mode (the caller's pad before it is the release), and in the
+/// retail-faithful mode [`press_ticks`] released and then as many held.
+/// `Ok(Some(scene))` when a scene change landed meanwhile.
+pub(super) fn press_edge(session: &mut NativeSession, mask: u16) -> Result<Option<String>, String> {
+    let n = press_ticks(session);
+    let release = if n > 1 { n } else { 0 };
+    for (pad, ticks) in [(0, release), (mask, n)] {
+        for _ in 0..ticks {
+            session.host.world.set_pad(pad);
+            match session.tick() {
+                Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Some(name)),
+                Ok(_) => {}
+                Err(e) if pad != 0 => return Err(format!("{e:#}")),
+                Err(_) => {}
+            }
+        }
+    }
+    Ok(None)
 }

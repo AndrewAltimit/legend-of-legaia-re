@@ -52,6 +52,18 @@ done
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 
+# The release the bundles are built for (crates/release-version reads it at
+# compile time), so the play page's netplay build id matches the desktop
+# archives of the same release and the two share rooms. A caller's value wins
+# (the deploy job resolves it with --remote, its checkout has no tags);
+# otherwise the `v*` tag on HEAD, by the rule release.yml uses. No tag: a
+# development build, which joins only other development builds.
+if [[ -z "${LEGAIA_RELEASE_VERSION:-}" ]]; then
+    LEGAIA_RELEASE_VERSION="$(cd "${REPO}" && scripts/ci/release-version.sh --head)"
+fi
+export LEGAIA_RELEASE_VERSION
+echo "[build-wasm] release: ${LEGAIA_RELEASE_VERSION:-none (a development build)}"
+
 if ! command -v wasm-pack >/dev/null 2>&1; then
     echo "ERROR: wasm-pack not on PATH. Install via 'cargo install wasm-pack'." >&2
     exit 1

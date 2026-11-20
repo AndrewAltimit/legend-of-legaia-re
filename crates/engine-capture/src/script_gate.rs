@@ -109,6 +109,11 @@ pub fn engine_contexts(world: &legaia_engine_core::world::World) -> Vec<EngineCo
 /// Engine ticks a script-gated seed runs before giving up on the phase.
 pub const SCRIPT_GATE_DEADLINE: u64 = 9000;
 
+/// A [`ScriptGate::walk`] whose target's FaceTarget leg (`4C 85` / `8E` /
+/// `8F`) had landed in retail's state: met once the engine's leg on that
+/// placement has landed too.
+pub const FACE_LANDED: i16 = i16::MAX;
+
 /// A retail capture's script phase: the running record (by its head bytes),
 /// the PC it is parked on and how far into an op-`0x4A` wait it is. The seed
 /// runs the engine until its own context for that record holds the same
@@ -190,15 +195,27 @@ pub struct PagerPhase {
     pub scroll: i32,
     /// The reveal counter `_DAT_801F2748`. A press while a row types leaves
     /// it where the press found it (`0x801D89B8..0x801D8A04`), so a `0x0D`
-    /// capture names how far the row had typed.
+    /// capture names how far the row had typed. In a picker arm
+    /// ([`Self::is_picker`]) it is the menu's slide count instead, the
+    /// pager actor's `+0x54`.
     pub counter: i32,
 }
 
 impl PagerPhase {
     /// The pager states this phase stands for: the mid-page arms other than
-    /// the typing one, which [`ScriptGate::typing`] carries.
+    /// the typing one, which [`ScriptGate::typing`] carries, and the picker
+    /// arms ([`Self::is_picker`]).
     pub fn applies(state: u8) -> bool {
-        matches!(state, 0x02 | 0x05 | 0x0C | 0x0D | 0x0E | 0x0F)
+        matches!(state, 0x02 | 0x05 | 0x0C | 0x0D | 0x0E | 0x0F) || Self::is_picker(state)
+    }
+
+    /// A picker arm: the slide in (`0x11` / `0x13` / `0x15` / `0x17`) or the
+    /// menu taking input (`0x12` / `0x14` / `0x16` / `0x18`). The page's
+    /// confirm press is the only way in (`0x801D9058..0x801D909C`, behind
+    /// state `0x19`'s press test), so a capture in one shows a menu the
+    /// player opened.
+    pub fn is_picker(state: u8) -> bool {
+        (0x11..=0x18).contains(&state)
     }
 }
 
@@ -346,14 +363,24 @@ impl ScriptGate {
     /// A gate whose displayed frame the image child takes `display_lag`
     /// ticks before the tick it meets the gate on
     /// (`LEGAIA_CAPTURE_DISPLAY_LAG`): one on the player's clip latch, met on
-    /// the RAM's cursor, and a text gate mid-page, met on the RAM's pager
+    /// the RAM's cursor, one behind a landed face leg ([`FACE_LANDED`]), met
+    /// on the RAM's landing, and a text gate mid-page, met on the RAM's pager
     /// phase. Each tick since the engine took up the gate's record is a
     /// frame retail drew too.
+    ///
+    /// A menu taking input is the exception: its slide ended frames before
+    /// the press that commits it, so retail's displayed frame shows the box
+    /// at rest with its hand, the frame of the tick the engine's menu first
+    /// takes input on.
     pub fn takes_displayed_frame(&self) -> bool {
         self.latch.is_some()
             || self.typing.is_some()
-            || self.pager.is_some()
+            || self
+                .pager
+                .as_ref()
+                .is_some_and(|p| !PagerPhase::is_picker(p.state) || p.state & 1 == 1)
             || self.tile_walk.is_some()
+            || self.walk.is_some_and(|(_, a)| a == FACE_LANDED)
     }
 
     /// The per-tick resume drive both seeds run: start the gate's record
@@ -432,6 +459,9 @@ impl ScriptGate {
     /// gate, and once the engine's leg has landed.
     fn walk_reached(&self, world: &legaia_engine_core::world::World) -> bool {
         self.walk.is_none_or(|(target, accum)| {
+            if accum == FACE_LANDED {
+                return !world.npc_face_leg_in_flight(target);
+            }
             world
                 .npc_compass_walk_accum(target)
                 .is_none_or(|a| a as i16 >= accum)
@@ -461,6 +491,23 @@ impl ScriptGate {
     /// in another arm of the page ([`Self::pager`]) - the engine's window in
     /// the arm that mirrors it over the same rows, scrolled at least as far.
     fn text_shown(&self, d: &legaia_engine_dialog::dialog::OwnedDialogPanel) -> bool {
+        if let Some(p) = self
+            .pager
+            .as_ref()
+            .filter(|p| PagerPhase::is_picker(p.state))
+        {
+            // The menu has slid as far as retail's (the slide counts down),
+            // or, for an input arm, takes input. The page under it waits
+            // for the press that opens it, which is not yet the capture.
+            return d.picker_slide().is_some_and(|s| {
+                if p.state & 1 == 1 {
+                    s.count != legaia_engine_dialog::dialog_picker_slide::SLIDE_SENTINEL
+                        && i32::from(s.count) <= p.counter
+                } else {
+                    s.takes_input()
+                }
+            });
+        }
         if Self::page_up(d) {
             return true;
         }
@@ -706,6 +753,18 @@ impl ScriptGate {
                         w.phase == legaia_engine_dialog::dialog_window::WindowPhase::Typing
                             && w.pacer.counter >= p.counter
                     })
+            })
+        {
+            return legaia_engine_system::input::PadButton::Cross.mask();
+        }
+        // A capture inside a picker's slide or menu: the player confirmed the
+        // prompt's page, so the seed presses once that page waits on the gate.
+        if self
+            .pager
+            .as_ref()
+            .is_some_and(|p| PagerPhase::is_picker(p.state))
+            && self.panel(world).is_some_and(|d| {
+                page_lead(d) == Some(self.pc) && !d.menu_active() && d.is_waiting_for_input()
             })
         {
             return legaia_engine_system::input::PadButton::Cross.mask();
@@ -1222,6 +1281,34 @@ mod tests {
             }),
             ..g
         };
+        assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
+        // A picker arm carries the slide count as its counter: the slide arm
+        // takes the displayed frame, the input arm its own.
+        let slide = ScriptGate {
+            latch: None,
+            walk: None,
+            tile_walk: None,
+            pager: Some(PagerPhase {
+                state: 0x17,
+                rows: vec![0x4C8],
+                scroll: 0,
+                counter: 12,
+            }),
+            ..g.clone()
+        };
+        assert_eq!(ScriptGate::from_env(&slide.to_env()), Some(slide.clone()));
+        assert!(slide.takes_displayed_frame());
+        let input = ScriptGate {
+            pager: Some(PagerPhase {
+                state: 0x18,
+                counter: 0,
+                ..slide.pager.clone().unwrap()
+            }),
+            ..slide
+        };
+        assert!(!input.takes_displayed_frame());
+        assert!(PagerPhase::applies(0x11) && PagerPhase::applies(0x18));
+        assert!(!PagerPhase::applies(0x19) && !PagerPhase::applies(0x10));
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g));
         assert_eq!(ScriptGate::from_env("13:0c8:1:2:74"), None);
         assert_eq!(ScriptGate::from_env("13:0c83:1:2"), None);

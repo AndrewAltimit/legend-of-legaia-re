@@ -147,6 +147,12 @@ impl CameraWorld for World {
     fn set_npc_cull_view(&mut self, view: Option<FieldCullView>) {
         self.npcs.cull_view = view;
     }
+    fn set_cull_camera(
+        &mut self,
+        globals: Option<legaia_engine_camera::retail_cam::RetailCamGlobals>,
+    ) {
+        self.npcs.cull_camera = globals;
+    }
 
     fn drop_staged_camera_shot(&mut self) {
         self.camera.state.params.clear();

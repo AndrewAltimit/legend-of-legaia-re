@@ -39,6 +39,20 @@ pub fn rebuild_battle_party_table(count: u8, list: &[u8; 4], companion: bool, ta
 }
 
 impl World {
+    /// The roster slot retail seats only as the battle companion: Terra,
+    /// char id `4`, never a member of the field list.
+    pub const AI_COMPANION_ROSTER_SLOT: u8 = AI_COMPANION_ROSTER_SLOT;
+
+    /// Seat Terra the way retail does: raise system flag `0x13`, which the
+    /// party-table rebuild `FUN_801DE190` tests to append her, last, to the
+    /// battle table (`0x801DE204..0x801DE220`). The field list is left
+    /// alone; the battle entry reads the flag beside one or two present
+    /// members and seeds her record from the new-game template when it
+    /// carries no stats.
+    pub fn seat_ai_companion(&mut self) {
+        self.system_flag_set(AI_COMPANION_SYSTEM_FLAG);
+    }
+
     // --- live gameplay loop: Field <-> Battle round trip ------------------
 
     /// Per-frame field-side driver for the live gameplay loop. Gated by

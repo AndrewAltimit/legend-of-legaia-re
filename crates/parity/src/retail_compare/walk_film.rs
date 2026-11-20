@@ -360,7 +360,7 @@ impl WalkFilm {
                 let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
                 writeln!(
                     w,
-                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads"
+                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads,placed_near_draws,placed_near_prims,placed_unlisted_draws,placed_unlisted_prims,placed_parked_draws,fitted,derived,box_cells,dec_groups,ground_window,npc_objects,npc_groups,placed_objects,placed_groups,list_actors,player_prims,d_dec,d_ground,d_actor,d_fog,d_tick,morph_vertices,placed_offtest_prims,ground_far,ground_sorted,npc_models"
                 )?;
                 Some(w)
             }
@@ -469,9 +469,9 @@ impl WalkFilm {
             if let Some(w) = cost.as_mut() {
                 let world = &session.host.world;
                 let f = world.field_frame_features().unwrap_or_default();
-                writeln!(
+                write!(
                     w,
-                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                     u8::from(world.clock.game_tick_fired),
                     world.clock.frame_step,
                     f.decoration_draws,
@@ -494,6 +494,41 @@ impl WalkFilm {
                     f.npc_prims,
                     f.decoration_loop_cells,
                     f.fog_quads,
+                    f.placed_near_draws,
+                    f.placed_near_prims,
+                    f.placed_unlisted_draws,
+                    f.placed_unlisted_prims,
+                    f.placed_parked_draws,
+                )?;
+                let parts =
+                    legaia_engine_core::world::field_frame_units::derived_field_frame_parts(&f);
+                // B3: both models' price of the same counts, and the derived
+                // model's finer counts (`field_frame_units`).
+                writeln!(
+                    w,
+                    ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    legaia_engine_core::world::field_frame_cost::field_frame_cost(&f),
+                    legaia_engine_core::world::field_frame_units::derived_field_frame_cost(&f),
+                    f.decoration_box_cells,
+                    f.decoration_groups,
+                    f.ground_window_cells,
+                    f.npc_objects,
+                    f.npc_groups,
+                    f.placed_objects,
+                    f.placed_groups,
+                    f.list_actors,
+                    f.player
+                        .map_or(0, |m| m.kinds.iter().map(|&k| u32::from(k)).sum::<u32>()),
+                    parts[0],
+                    parts[1],
+                    parts[2],
+                    parts[3],
+                    parts[4],
+                    f.morph_vertices,
+                    f.placed_offtest_kinds.iter().sum::<u32>(),
+                    f.ground_far_cells,
+                    f.ground_sorted_cells,
+                    f.npc_models,
                 )?;
             }
             if session.host.world.active_scene_label != n0_scene {

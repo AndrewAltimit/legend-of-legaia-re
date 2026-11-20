@@ -26,7 +26,7 @@ pub use entry_beats::{
 };
 pub(crate) use entry_seat::PickerOverrideSeat;
 pub use entry_seat::{PICKER_SEAT_OVERRIDES, PickerSeat, PickerSeatRule, picker_seat_override};
-pub use field_scene::field_scene_build;
+pub use field_scene::{field_scene_build, streamed_pack_read_vsyncs};
 pub use fmv_handoff::*;
 
 /// Extraction index of `bse.dat`, the battle runtime SFX descriptor bank (raw

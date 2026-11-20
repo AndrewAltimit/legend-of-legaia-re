@@ -228,7 +228,10 @@ fn the_minigames_page_gets_the_engine_line_off_the_real_rod() {
         }),
         "no rod face meets the line's rod end {line}"
     );
-    // A lure that did not project draws no line.
-    mg.fishing_pond_tick(REEL_A, false, 0);
+    // A lure that did not project draws no line: run vsyncs until a game
+    // frame has cleared it (a fight frame spans three).
+    for _ in 0..3 {
+        mg.fishing_pond_tick(REEL_A, false, 0);
+    }
     assert_eq!(mg.fishing_line_json(0, 0, false), "null");
 }

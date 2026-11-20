@@ -96,3 +96,60 @@ fn the_clut_cell_writer_writes_what_retail_writes() {
         "{blended} {negative}"
     );
 }
+
+/// What each `FUN_80019D50` call of a frame costs on PCSX-Redux's scale,
+/// resumed off a library state (`FrameRunner`), against the emulator's own
+/// profile of the same calls (`autorun_field_frame_profile.lua`, its
+/// `calls.csv`, interrupt time taken out). `jou_field_card_walk` recolours
+/// seventeen sixteen-texel rows a frame (about `5.2` hblanks each); the New
+/// Game opening's `opstati` (a PCSX-Redux state played forward from
+/// `s1_newgame_field`, fingerprint below, checked only where the library
+/// holds it) recolours its narrow `(0, 473, 320, 2)` and wide `(0, 476, 320,
+/// 34)` strips on its second whole frame (`73.9` and `1171.0` hblanks).
+#[test]
+fn the_clut_cell_writer_costs_what_pcsx_redux_measures() {
+    not_a_differential!(
+        "prices the cycler's retail calls off library states against PCSX-Redux's profile; compares no port"
+    );
+    use crate::common::library_state;
+    use psx_retail_exec::frame_runner::FrameRunner;
+    let cases: [(&str, &str, usize, &[u64]); 2] = [
+        (
+            "jou_field_card_walk",
+            "60879599cbddc6900a17d654bd7dc3a7bf907c7cdefc827b5c78663aed119d0c",
+            0,
+            &[
+                11127, 11145, 11145, 11125, 11130, 11120, 11122, 11105, 11112, 11100, 11109, 11114,
+                11097, 11106, 11055, 11032, 10502,
+            ],
+        ),
+        (
+            "opstati opening",
+            "15bc19c303da8377b32aa40e3c55f8d75340b782dee17fd8c3011d0840482088",
+            1,
+            &[158_525, 2_513_259],
+        ),
+    ];
+    for (label, fp, frame, want) in cases {
+        let Some(state) = library_state(fp) else {
+            continue;
+        };
+        let mut run = FrameRunner::new(&state);
+        run.settle().unwrap_or_else(|e| panic!("{label}: {e}"));
+        let mut f = run.frame().unwrap_or_else(|e| panic!("{label}: {e}"));
+        for _ in 0..frame {
+            f = run.frame().unwrap_or_else(|e| panic!("{label}: {e}"));
+        }
+        let got: Vec<u64> = f
+            .calls
+            .iter()
+            .filter(|c| c.entry == WRITER)
+            .map(|c| c.spent.cycles_pcsx())
+            .collect();
+        assert_eq!(got.len(), want.len(), "{label}: calls {got:?}");
+        for (g, w) in got.iter().zip(want) {
+            let err = (*g as f64 - *w as f64) / *w as f64;
+            assert!(err.abs() <= 0.02, "{label}: {got:?} against {want:?}");
+        }
+    }
+}

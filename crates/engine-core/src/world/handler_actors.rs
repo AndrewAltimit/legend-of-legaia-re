@@ -892,6 +892,50 @@ impl World {
         a.tint_push = step.push;
     }
 
+    /// Stand the scene's held scripted grade on `tween` (a seat: the
+    /// retail-compare image child's `LEGAIA_SEAT_GRADE`). The live op-`0x34`
+    /// tween, if any, leaves the pool at once, and `tween` takes the effect
+    /// slot `_DAT_8007B62C` names, its push drawn this frame. A grade is the
+    /// history of the record that ran it: `urudre1`'s dream opening
+    /// (`P2[0]`, spawned only while `0x3F5` is set) leaves `(0, 16, 24)`
+    /// over the entry script's own `(48, 48, 0)`, and a state taken after
+    /// the record ended reloads into the entry script's.
+    ///
+    /// A grade whose target the engine already holds is left as it stands:
+    /// the replay ran the record that set it, on its own clock.
+    pub fn seat_held_scene_grade(
+        &mut self,
+        tween: legaia_engine_field::actor_colour_tween::ColourTween,
+    ) {
+        let to = [tween.to.0 as i16, tween.to.1 as i16, tween.to.2 as i16];
+        if self.presentation.effect_tween_slot.is_some()
+            && self.presentation.effect_target_rgb == to
+        {
+            return;
+        }
+        if let Some(a) = self
+            .presentation
+            .effect_tween_slot
+            .take()
+            .and_then(|s| self.actors.get_mut(s))
+        {
+            a.active = false;
+            a.colour_tween = None;
+            a.tint_push = None;
+        }
+        let Some(slot) = self.spawn_colour_tween(tween) else {
+            return;
+        };
+        self.presentation.effect_tween_slot = Some(slot);
+        self.presentation.effect_blend = tween.push_blend;
+        self.presentation.effect_kind = tween.push_kind;
+        self.presentation.effect_target_rgb = to;
+        let step = legaia_engine_field::actor_colour_tween::step_colour_tween(tween, 0);
+        if let Some(a) = self.actors.get_mut(slot) {
+            a.tint_push = step.push;
+        }
+    }
+
     /// Spawn a colour tween on a free slot. `None` on a full pool.
     pub fn spawn_colour_tween(&mut self, tween: ColourTween) -> Option<usize> {
         let slot = self.spawn_handler_actor(ActorHandler::ColourTween)?;

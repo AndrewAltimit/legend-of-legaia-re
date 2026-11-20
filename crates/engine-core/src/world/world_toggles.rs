@@ -158,6 +158,23 @@ pub struct WorldToggles {
     /// `max(cpu, dma + draw)` entry. The native session raises it from
     /// `LEGAIA_BATTLE_GPU_COST=1`; only the native window prices its frames.
     pub battle_gpu_cost_step: bool,
+    /// Whose GPU timing rules price the drawn table the GPU-cost steps read
+    /// ([`Self::battle_gpu_cost_step`], [`Self::field_gpu_cost_step`]): the
+    /// DuckStation costs by default, or mednafen's own rules
+    /// (`legaia_engine_system::gpu_draw_cost::mednafen`), a Mednafen- /
+    /// hardware-scale experiment. Neither touches a frame while both steps
+    /// are down. The native session takes `LEGAIA_GPU_COST_TIMING=mednafen`.
+    pub gpu_cost_timing: legaia_engine_system::gpu_draw_cost::GpuTiming,
+    /// Opt-in, off by default: a field or cutscene frame's cost is the larger
+    /// of the field model's price ([`Self::field_frame_cost`]) and the
+    /// modelled GPU wait over the table the host drew last
+    /// (`World::note_drawn_table_cost`), retail's `max(cpu, dma + draw of
+    /// the previous pass's table)` entry (`FUN_800173BC`'s `DrawSync(0)` at
+    /// `0x800174D8`). The field model is on PCSX-Redux's scale, whose GPU is
+    /// free; this is for a Mednafen- / hardware-scale run. The native session
+    /// raises it from `LEGAIA_FIELD_GPU_COST=1`; only the native window
+    /// prices its frames.
+    pub field_gpu_cost_step: bool,
     /// Opt-in, off by default: a party art commit's `"ME"` keyframe decode
     /// priced into its battle frame (`frame_clock::me_decode_work`;
     /// `FUN_8002B28C` from `FUN_8004AD80`). Retail-correct, but over the
@@ -183,6 +200,33 @@ pub struct WorldToggles {
     /// way, so the default keeps the flat price. The native session raises
     /// it from `LEGAIA_BATTLE_WALK_COST=1`.
     pub battle_effect_walk_cost: bool,
+    /// On by default: a field frame's cost priced from the derived per-unit
+    /// table, retail's own instruction counts on PCSX-Redux's clock
+    /// ([`field_frame_units::derived_field_frame_cost`](super::field_frame_units::derived_field_frame_cost)),
+    /// with the interrupt term, in place of the fitted weights
+    /// ([`field_frame_cost::field_frame_cost`](super::field_frame_cost::field_frame_cost)),
+    /// which it matches or beats on every field frame-cost gate. Off runs the
+    /// fitted model. A timing model, not a fidelity knob, so
+    /// [`Self::pin_retail`] leaves it alone; the native session takes
+    /// `LEGAIA_DERIVED_FRAME_COST=0` / `=1` either way.
+    pub derived_frame_cost: bool,
+    /// Opt-in, off by default: a battle frame's cost priced from the derived
+    /// table in place of the fitted census lines. The census's units
+    /// (`legaia_engine_battle_loop::derived_cost::DerivedUnits`) are priced
+    /// with the table, the move-VM part ticks, the walker's branches and the
+    /// `"ME"` decodes beside them, with the vblank interrupts the work spans
+    /// (`docs/subsystems/battle-stage-camera.md`, "The derived table"). A
+    /// timing model, so [`Self::pin_retail`] leaves it alone; the native
+    /// session raises it from `LEGAIA_BATTLE_DERIVED_FRAME_COST=1`.
+    pub battle_derived_frame_cost: bool,
+    /// Opt-in, off by default: the battle census decides each primitive by
+    /// the dispatcher leaves' own rules on the GTE's integer corners (the
+    /// winding test with its zero kept, the near floor on `OTZ`, the
+    /// off-screen test where the leaf runs it, bodies included) in place of
+    /// the float rules the fitted census line was fitted on. Always on under
+    /// [`Self::battle_derived_frame_cost`]; this raises it on the census line
+    /// alone (`LEGAIA_CENSUS_RETAIL_CULLS=1` in the native session).
+    pub battle_census_retail_culls: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
     /// CD-XA voice clip plays: PCSX-Redux's by default, where the clip player's
     /// stop watch polls the drive on two thirds of the CPU and a voiced arm's
@@ -217,6 +261,20 @@ pub struct WorldToggles {
     /// not a fidelity knob; the native session takes
     /// `LEGAIA_BATTLE_POLY_COST=0` / `=1` over the default.
     pub battle_poly_frame_cost: bool,
+    /// On by default: price every battle frame a command surface stands
+    /// on (the round prompt, the ring, the Auto / Command prompt, the target
+    /// cursors, the item and magic windows, the arts entry, the confirms)
+    /// as retail's pacer does (`World::price_command_surface_frame`): the
+    /// frame driver runs the menu SM, the action SM and the whole draw on
+    /// each of them, and `FUN_80016B6C` stores each one's cost, so a full
+    /// party's prompt runs on step `3` (`530..650` hblanks on the
+    /// PCSX-Redux films). The frame's work is the census line plus the
+    /// surface's own packets (`frame_clock::surface_frame_work`). Off, a
+    /// prompt keeps the step the last action-SM pass left. A timing model,
+    /// not a fidelity knob, so [`Self::pin_retail`] leaves it alone; the
+    /// native session takes `LEGAIA_BATTLE_SURFACE_COST=0` / `=1` over the
+    /// default.
+    pub battle_surface_frame_cost: bool,
     /// Step each field frame by the frame time the field frame-cost model
     /// prices it at (`World::field_frame_features`, `field_frame_cost`)
     /// under retail's own law, `FUN_80016B6C`'s longest-of-sixteen against
@@ -227,6 +285,29 @@ pub struct WorldToggles {
     /// [`Self::pin_retail`] leaves it alone; the native session takes
     /// `LEGAIA_FIELD_FRAME_COST=0` / `=1` over the default.
     pub field_frame_cost: bool,
+    /// Count a placed object into the field frame cost only when the draw
+    /// walk `FUN_8001ADA4` reaches its primitives: an actor holds it (the
+    /// scene-init sweep's bound objects, and the window sweep's while its
+    /// list holds them, whatever the host draws), the tile cull
+    /// `FUN_801D79E8` passes it, and its origin's view depth under the
+    /// frame's camera clears the walk's near reject
+    /// ([`field_frame_cost::placed_near_rejected`](super::field_frame_cost::placed_near_rejected)).
+    /// On by default; off, the count is the tile cull's over every
+    /// placement, the count the model was fitted on. A timing model, not a
+    /// fidelity knob, so [`Self::pin_retail`] leaves it alone; the native
+    /// session takes `LEGAIA_FIELD_COST_PLACED_WALK=0` / `=1` over the
+    /// default.
+    pub field_cost_placed_walk: bool,
+    /// Step each fishing-venue frame by the frame time its phase prices it at
+    /// (`legaia_engine_fishing::fishing::PondPacer`) under retail's own law,
+    /// `FUN_80016B6C`'s longest-of-sixteen over the venue's floor of `2`: the
+    /// shore, a reeled wait and the fight run at `3`, an idle line and the
+    /// plate at `2`, the catch close-up at `4`, as the PCSX-Redux films read
+    /// them. On by default; off, every frame holds the floor, a game frame
+    /// every second vsync. A timing model, not a fidelity knob, so
+    /// [`Self::pin_retail`] leaves it alone; the native session takes
+    /// `LEGAIA_FISHING_FRAME_COST=0` / `=1` over the default.
+    pub fishing_frame_cost: bool,
     /// Diagnostic, off by default: [`Self::battle_poly_frame_cost`] reads the
     /// native window's own count of its drawn table
     /// (`World::note_drawn_polys`) in place of the census, the window-only
@@ -571,13 +652,21 @@ impl WorldToggles {
             battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
             battle_party_cost_step: true,
             battle_gpu_cost_step: false,
+            gpu_cost_timing: legaia_engine_system::gpu_draw_cost::GpuTiming::DuckStation,
+            field_gpu_cost_step: false,
             battle_me_decode_cost: false,
             battle_arts_shout_cd: false,
             battle_effect_walk_cost: false,
+            derived_frame_cost: true,
+            battle_derived_frame_cost: false,
+            battle_census_retail_culls: false,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: true,
             battle_poly_frame_cost: true,
+            battle_surface_frame_cost: true,
             field_frame_cost: true,
+            field_cost_placed_walk: true,
+            fishing_frame_cost: true,
             battle_poly_window_count: false,
             arts_saved_list: false,
             hop_landing_guard: true,

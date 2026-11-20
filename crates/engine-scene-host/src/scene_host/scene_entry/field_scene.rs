@@ -1310,7 +1310,8 @@ impl SceneHost {
                 // What the frame-cost model counts the scene's frames by
                 // (`World::field_frame_features`).
                 if let Some(scene) = self.scene.as_ref() {
-                    let table = field_cost_table(&self.index, scene, &res);
+                    let table =
+                        field_cost_table(&self.index, scene, &res, &self.world.field_head_pool);
                     self.world.install_field_cost_table(table);
                 }
                 self.resources = Some(res);
@@ -1527,10 +1528,36 @@ impl SceneHost {
 /// placed object with its pack mesh's primitive and vertex counts, and the
 /// `.MAP` grid's walk-visible ground cells. `None` for a world map (its
 /// ground and sweep are another emitter's) or a scene with no `.MAP`.
+/// Vsyncs a door's field init spends reading `scene`'s streamed pack: the
+/// block's `+4` entry (`<scene>.pac` / `tim.dat`), read when the scene's
+/// asset table carries a `Flag(0x14)` or `Flag(0x0A)` descriptor
+/// (`FUN_8002541C`), at the chunk rate the departure's read measures
+/// ([`legaia_engine_field::scene_transition_actor::chunk_stream_vsyncs`]).
+/// `0` for a scene that streams none. What it costs the door's hold is
+/// `legaia_engine_system::mode_entry_init::door_pack_overrun_vsyncs`.
+///
+/// REF: FUN_801D6704 (`0x801D6BF8..0x801D6C20`), FUN_8002541C, FUN_800255B8
+pub fn streamed_pack_read_vsyncs(index: &ProtIndex, scene: &Scene) -> u32 {
+    let streams = scene
+        .entries
+        .iter()
+        .any(|e| legaia_scene_formats::scene_asset_table::streams_scene_pack(&e.bytes));
+    if !streams {
+        return 0;
+    }
+    index
+        .block_range_extraction(&scene.name)
+        .and_then(|(start, _)| index.entries().get(start as usize + 4))
+        .map_or(0, |e| {
+            legaia_engine_field::scene_transition_actor::chunk_stream_vsyncs(e.size_sectors)
+        })
+}
+
 pub fn field_cost_table(
     index: &ProtIndex,
     scene: &Scene,
     res: &legaia_engine_scene::scene_resources::SceneResources,
+    head_pool: &[Option<std::sync::Arc<legaia_engine_scene::model_bank::GlobalTmd>>],
 ) -> Option<legaia_engine_core::world::field_frame_cost::FieldCostTable> {
     use legaia_engine_core::world::field_frame_cost::{CostCell, CostPlaced, FieldCostTable};
     use legaia_engine_scene::field_env;
@@ -1564,6 +1591,55 @@ pub fn field_cost_table(
         })
     };
     let clamp16 = |v: u32| v.min(u32::from(u16::MAX)) as u16;
+    // What one mesh hands the prim dispatcher: objects, groups and
+    // primitives by leaf kind (`flags >> 1`, kinds `8..=19`).
+    let mesh_of = |tmd: &legaia_tmd::Tmd, raw: &[u8]| {
+        let mut m = legaia_engine_core::world::field_frame_cost::MeshCost {
+            objects: clamp16(tmd.objects.len() as u32),
+            verts: clamp16(tmd.objects.iter().map(|o| o.vertices.len() as u32).sum()),
+            ..Default::default()
+        };
+        for o in &tmd.objects {
+            for g in legaia_tmd::legaia_prims::iter_groups_lenient(
+                raw,
+                o.primitives_byte_offset,
+                o.primitives_byte_size,
+            ) {
+                m.groups = m.groups.saturating_add(1);
+                let kind = usize::from(g.header.flags >> 1);
+                if (8..=19).contains(&kind) {
+                    m.kinds[kind - 8] = m.kinds[kind - 8].saturating_add(g.header.count);
+                }
+            }
+        }
+        m
+    };
+    let mesh = |ti: usize| {
+        res.tmds
+            .get(ti)
+            .map_or_else(Default::default, |t| mesh_of(&t.tmd, &t.raw))
+    };
+    // A party / savepoint head from PROT 0874 \u{a7}0 (model `0xF0 + i`), the
+    // player's model at `0xF0`.
+    let head = |i: usize| {
+        head_pool
+            .get(i)
+            .and_then(|g| g.as_ref())
+            .map(|g| mesh_of(&g.tmd, &g.raw))
+    };
+    // The primitives of a mesh's first `i + 1` objects, at `[i]`.
+    let prims_through = |tmd: &legaia_tmd::Tmd| {
+        tmd.objects
+            .iter()
+            .scan(0u32, |acc, o| {
+                *acc += o.header.n_primitive;
+                Some(clamp16(*acc))
+            })
+            .collect::<Vec<u16>>()
+    };
+    let prims_of = |m: &legaia_engine_core::world::field_frame_cost::MeshCost| {
+        clamp16(m.kinds.iter().map(|&k| u32::from(k)).sum())
+    };
     let terrain: Vec<_> = scene
         .field_terrain_tiles(index)
         .ok()
@@ -1578,7 +1654,43 @@ pub fn field_cost_table(
         .ok()
         .flatten()
         .unwrap_or_default();
-    let (placed, _) = field_env::resolve_env_draws(&env, &placed, lut);
+    // Bound, so each draw carries its bind's anim id (draw kind `1`) and the
+    // window sweep's key for the placements it owns.
+    let binds = scene.field_object_binds(index).ok().flatten();
+    let (placed, _) = field_env::resolve_placed_env_draws(&env, &placed, lut, binds.as_ref());
+    let npc_prims = {
+        let placements = legaia_engine_scene::npc_catalog::live_scene_placements(index, scene);
+        let n = placements.iter().map(|p| p.index + 1).max().unwrap_or(0);
+        let mut v = vec![0u16; n];
+        let mut m = vec![legaia_engine_core::world::field_frame_cost::MeshCost::default(); n];
+        let mut at = vec![(0i16, 0i16); n];
+        let mut through = vec![Vec::new(); n];
+        for p in &placements {
+            at[p.index] = (p.world_x, p.world_z);
+            if !p.special_model {
+                v[p.index] = clamp16(size(usize::from(p.model_index))[0]);
+                m[p.index] = mesh(usize::from(p.model_index));
+                if let Some(t) = res.tmds.get(usize::from(p.model_index)) {
+                    through[p.index] = prims_through(&t.tmd);
+                }
+            } else if let Some(h) = usize::from(p.model_index).checked_sub(0xF0).and_then(head) {
+                if let Some(g) = usize::from(p.model_index)
+                    .checked_sub(0xF0)
+                    .and_then(|i| head_pool.get(i))
+                    .and_then(|g| g.as_ref())
+                {
+                    through[p.index] = prims_through(&g.tmd);
+                }
+                // The cost table counts a party / savepoint head's mesh as
+                // the actor pass draws it; the NPC catalog's prims count
+                // keeps the scene's own meshes only.
+                v[p.index] = prims_of(&h);
+                m[p.index] = h;
+            }
+        }
+        (v, m, at, through)
+    };
+    let (ground_tiers, ground_sorted) = FieldCostTable::ground_tiers_from_map(&map);
     Some(FieldCostTable {
         decorations: terrain
             .iter()
@@ -1592,6 +1704,7 @@ pub fn field_cost_table(
                     verts: clamp16(v),
                     quads: clamp16(q),
                     lit: clamp16(l),
+                    mesh: mesh(d.res_tmd),
                 }
             })
             .collect(),
@@ -1601,26 +1714,33 @@ pub fn field_cost_table(
                 let [p, v, q, l] = size(d.res_tmd);
                 CostPlaced {
                     x: d.world_x.clamp(-0x8000, 0x7FFF) as i16,
+                    y: d.world_y.clamp(-0x8000, 0x7FFF) as i16,
                     z: d.world_z.clamp(-0x8000, 0x7FFF) as i16,
                     radius: d.cull_radius,
+                    posed: d.anim_id != 0,
+                    near_exempt: d.near_reject_exempt,
+                    window: field_env::placed_window_key(d, binds.as_ref()),
+                    object: field_env::placed_object_key(d, binds.as_ref()),
+                    bind: binds
+                        .as_ref()
+                        .and_then(|b| b.get(&d.anchor))
+                        .map(|b| u16::from(b.record)),
                     prims: clamp16(p),
                     verts: clamp16(v),
                     quads: clamp16(q),
                     lit: clamp16(l),
+                    mesh: mesh(d.res_tmd),
                 }
             })
             .collect(),
         ground: FieldCostTable::ground_from_map(&map),
-        npc_prims: {
-            let placements = legaia_engine_scene::npc_catalog::live_scene_placements(index, scene);
-            let mut v = vec![0u16; placements.iter().map(|p| p.index + 1).max().unwrap_or(0)];
-            for p in &placements {
-                if !p.special_model {
-                    v[p.index] = clamp16(size(usize::from(p.model_index))[0]);
-                }
-            }
-            v
-        },
+        ground_tiers,
+        ground_sorted,
+        npc_prims: npc_prims.0,
+        npc_meshes: npc_prims.1,
+        npc_spawns: npc_prims.2,
+        npc_prims_through: npc_prims.3,
+        player: head(0),
     })
 }
 

@@ -2294,6 +2294,21 @@ to `urudre1`, `P2[33]` `(10..12, 98)` to `urudre2`, `P2[31]` `(80..82, 99)` to
 `urudre3`. All six bands are `.PCH`-only; `uru`'s exit band is `.PCH` records
 23..26, `jouine`'s is records 3..5.
 
+**The dream wings are behind three doors.** No dream band is walkable from
+the hub: each lies in a wing the hub reaches only through a door object,
+`P0[16]` (west), `P0[18]` (east) or `P0[20]` (south), bound by gate-0 kind-1
+records at `(30, 49..50)`, `(45..46, 49..50)` and `(37..39, 63)`. Touching one
+fades white and moves the player into its wing (`A3 F8`: `(30, 90)`,
+`(82, 4)`, `(119, 91)`). The doorways are walls until `0x3FC`: the entry
+script's `0x3FC` arm (`P1[0]` `+0x63..+0x81`) rewrites `(29..30, 48..50)`,
+`(46, 48..49)`, `(47, 50)` and `(37..39, 64)` with op `0x4C` nibble 7, and
+the voice beat `P2[38]` (walk-on `(37..39, 52..53)`, `C1=[0x3FC]`,
+`C2=[0x379, 0x4FF]`) runs the same five writes live (`+0x54E..+0x567`) and
+sets `0x3FC` at `+0x8B7`. `0x379`
+is Dr. Usha's talk (`doman` `P1[15]` `+0x1A43`), `0x4FF` Mrs. Usha's quiz
+(`P1[3]` `+0x8F2`, rows 2, 1, 3, 1). The `urudre*` retail states walk this
+chain on the pad.
+
 **The four `0x3F` records share one tail idiom**: `B1 F8 13` (set the player's
 control flag), `34 05 FF FF FF 41 00` (white fade), the `0x3F` op, then the
 `26 FF FF` / `21` / `26 FE FF` park pair. `uru` `P2[42]` is 41 bytes: that

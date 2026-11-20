@@ -814,6 +814,25 @@ pub fn streams_scene_pac(entry_bytes: &[u8]) -> bool {
     hit
 }
 
+/// Whether the table in `entry_bytes` carries either streamed-pack request,
+/// `Flag(0x14)` (`<scene>.pac`) or `Flag(0x0A)` (`tim.dat`): the descriptors
+/// whose `type << 8` the field init hands `FUN_8002541C` as its load mode,
+/// both of which read the block's `+4` entry
+/// ([`docs/formats/field-pack.md`](../../../docs/formats/field-pack.md#runtime-consumers)).
+///
+/// REF: FUN_8001F05C, FUN_8002541C
+pub fn streams_scene_pack(entry_bytes: &[u8]) -> bool {
+    let Some(table) = walk_table(entry_bytes) else {
+        return false;
+    };
+    let mut hit = false;
+    let _ = legaia_container_formats::walk_descriptor_pairs(table, |d| {
+        hit |= matches!(d.type_byte, 0x14 | 0x0A);
+        0
+    });
+    hit
+}
+
 /// The meshes a streamed `<scene>.pac` registers: `FUN_8002541C`'s mode-`0x14`
 /// arm walks the buffer as DATA_FIELD chunks - `size = *base & 0xFFFFFF`,
 /// `FUN_8001F05C(base + 4, *base, 0, 1)`, `base += (size & !3) + 4`, stop on a

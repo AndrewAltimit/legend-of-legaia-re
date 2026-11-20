@@ -271,20 +271,59 @@ pub const DOOR_FIELD_INIT_HOLD_KEPT_VSYNCS: u16 = 184;
 /// before mode `3` - the same id included. Measured on PCSX-Redux door hops:
 /// `ropeway` -> `map02` `241`, `map02` -> `stone`, `stone` -> `tunnela`,
 /// `korb2` -> `doman` `242`, `tunnela` -> `rayman2`, `retockin` ->
-/// `jagaroom` `241` (`map01` -> `town01` reads `256`).
+/// `jagaroom` `241`. A destination whose streamed pack outlasts the floor
+/// holds longer ([`door_pack_overrun_vsyncs`]): `map01` -> `town01` reads
+/// `256`.
 pub const DOOR_FIELD_INIT_HOLD_RELOAD_VSYNCS: u16 = 241;
+
+/// Vsyncs from a door's mode-`2` start to the init's floor test
+/// (`0x801D7110`) when the destination streams no pack: the block's reads,
+/// the MAN install and the CD wait at `0x801D70E0`. Cycle-stamped on
+/// PCSX-Redux door hops `ropeway` -> `map02` and `map02` -> `stone`
+/// (`52.0` both); the floor itself ends at `127`, a vsync past
+/// [`FIELD_INIT_FLOOR_VSYNCS`] (the counter is zeroed a vsync in).
+pub const DOOR_FIELD_INIT_LOADS_VSYNCS: u32 = 52;
+
+/// The vsync of a door's mode `2` at which the floor
+/// ([`FIELD_INIT_FLOOR_VSYNCS`]) lets the init on.
+pub const DOOR_FIELD_INIT_FLOOR_END_VSYNCS: u32 = FIELD_INIT_FLOOR_VSYNCS as u32 + 1;
+
+/// Vsyncs a door's field init runs past its floor reading the destination's
+/// streamed pack: `pack_read_vsyncs` is the read of the block's `+4` entry
+/// (`<scene>.pac`), which the init issues when the scene's asset table
+/// carries a `Flag(0x14)` / `Flag(0x0A)` descriptor (the status word's
+/// `>> 8`, `FUN_8002541C` at `0x801D6C18`, its `FUN_8003DE7C(0)` wait at
+/// `0x80025468`), before the floor test. A pack the floor hides costs
+/// nothing.
+///
+/// `map01` -> `town01` (`s2_rimelm_town01`, cycle-stamped on PCSX-Redux):
+/// the init enters `FUN_8002541C(0x14)` `38.3` vsyncs in and leaves it at
+/// `124.2` (town01's `180`-sector pack), reaches the floor test at `141`,
+/// past the floor, and stores mode `3` at `256`; the BGM poll after the
+/// floor runs the same `109` vsyncs as on `map02` -> `stone`. The scenes
+/// whose packs are smaller (`doman` `56` sectors, `balden2` `63`) read
+/// them under the floor, as their `242` / `184` holds say.
+///
+/// REF: FUN_801D6704 (`0x801D6BF8..0x801D6C20`), FUN_8002541C, FUN_800255B8
+pub fn door_pack_overrun_vsyncs(pack_read_vsyncs: u32) -> u16 {
+    let end = DOOR_FIELD_INIT_LOADS_VSYNCS.saturating_add(pack_read_vsyncs);
+    u16::try_from(end.saturating_sub(DOOR_FIELD_INIT_FLOOR_END_VSYNCS)).unwrap_or(u16::MAX)
+}
 
 /// The field MAIN INIT hold of an ordinary door ([`DOOR_FIELD_INIT_HOLD_KEPT_VSYNCS`],
 /// [`DOOR_FIELD_INIT_HOLD_RELOAD_VSYNCS`]): `keeps_music` is sound-flag
-/// bit 2 as the door left it.
+/// bit 2 as the door left it, `pack_read_vsyncs` the destination's streamed
+/// pack read ([`door_pack_overrun_vsyncs`], `0` for a scene that streams
+/// none).
 ///
 /// REF: FUN_801D6704 (`0x801D7110..0x801D713C` the floor, `0x801D72D4..0x801D731C` the BGM poll)
-pub fn door_field_init_hold_vsyncs(keeps_music: bool) -> u16 {
-    if keeps_music {
+pub fn door_field_init_hold_vsyncs(keeps_music: bool, pack_read_vsyncs: u32) -> u16 {
+    let base = if keeps_music {
         DOOR_FIELD_INIT_HOLD_KEPT_VSYNCS
     } else {
         DOOR_FIELD_INIT_HOLD_RELOAD_VSYNCS
-    }
+    };
+    base.saturating_add(door_pack_overrun_vsyncs(pack_read_vsyncs))
 }
 
 /// Vsyncs a battle's way back to the field holds in game mode `0x02`, a
@@ -328,13 +367,14 @@ pub fn field_init_hold_vsyncs(
     credits_latch: bool,
     skip_load_holds: bool,
     keeps_music: bool,
+    pack_read_vsyncs: u32,
 ) -> u16 {
     if credits_latch {
         CREDITS_FIELD_INIT_HOLD_VSYNCS
     } else if skip_load_holds {
         0
     } else {
-        door_field_init_hold_vsyncs(keeps_music)
+        door_field_init_hold_vsyncs(keeps_music, pack_read_vsyncs)
     }
 }
 
@@ -797,11 +837,19 @@ mod tests {
     /// port's load-hold skip off, longer when its init reloads the track.
     #[test]
     fn a_door_holds_for_its_field_init_only_in_the_retail_mode() {
-        assert_eq!(field_init_hold_vsyncs(true, true, false), 130);
-        assert_eq!(field_init_hold_vsyncs(true, false, true), 130);
-        assert_eq!(field_init_hold_vsyncs(false, true, false), 0);
-        assert_eq!(field_init_hold_vsyncs(false, false, true), 184);
-        assert_eq!(field_init_hold_vsyncs(false, false, false), 241);
+        assert_eq!(field_init_hold_vsyncs(true, true, false, 0), 130);
+        assert_eq!(field_init_hold_vsyncs(true, false, true, 0), 130);
+        assert_eq!(field_init_hold_vsyncs(false, true, false, 88), 0);
+        assert_eq!(field_init_hold_vsyncs(false, false, true, 0), 184);
+        assert_eq!(field_init_hold_vsyncs(false, false, false, 0), 241);
+        // A pack the floor hides (`doman`'s 56 sectors, about 28 vsyncs)
+        // costs nothing; town01's 180 sectors (88 vsyncs) run past it,
+        // within two vsyncs of the measured 256.
+        assert_eq!(field_init_hold_vsyncs(false, false, false, 28), 241);
+        assert_eq!(
+            field_init_hold_vsyncs(false, false, false, 88).abs_diff(256),
+            2
+        );
         // A battle's return follows the block: the four measured returns
         // within six vsyncs, none in the default mode.
         for (sectors, measured) in [(209, 325), (291, 346), (319, 363), (491, 424)] {

@@ -81,6 +81,11 @@ pub struct World {
     /// The field frame cost in force is the model's (`World::price_field_frame`),
     /// so a mode it does not price drops it.
     pub field_cost_priced: bool,
+    /// The GPU's wait over the field table the host drew last, in hblanks
+    /// (`World::note_drawn_table_cost`), which a field frame's price takes
+    /// the larger of while `WorldToggles::field_gpu_cost_step` is up. `None`
+    /// before the first such frame of a scene.
+    pub field_drawn_table_cost: Option<u16>,
     /// The volumetric ground-fog **enhancement** (not retail): a drifting
     /// mist bank the moving actors part, stepped once per tick while
     /// [`WorldToggles::volumetric_fog`] is raised - see
@@ -449,6 +454,7 @@ impl World {
             fog: legaia_engine_field::fog_particles::FogPool::new(),
             field_cost_table: None,
             field_cost_offset: 0,
+            field_drawn_table_cost: None,
             field_cost_priced: false,
             fog_volume: legaia_render_kernels::fog_volume::FogVolume::new(),
             script_actors: FieldScriptActorState::default(),

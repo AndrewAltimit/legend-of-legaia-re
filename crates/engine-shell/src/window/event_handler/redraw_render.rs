@@ -269,6 +269,7 @@ impl PlayWindowApp {
                 &nclip_marks,
                 &color_nclip_marks,
                 frame_word,
+                self.gpu_cost_ot_len(),
             )
         });
         redraw_present::stage_draw_marks(

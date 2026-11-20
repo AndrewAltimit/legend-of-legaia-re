@@ -237,6 +237,50 @@ pub fn gpu_span_rejected(clips: [[f32; 4]; 3], sz_per_w: f32, h: f32) -> bool {
     })
 }
 
+/// Whether the GTE garbles a corner's screen point: its divide is capped
+/// (`SZ` under `H / 2`, a corner at, behind or just in front of the eye) or
+/// its `SX` / `SY` saturates. Such a corner lands where the scene does not
+/// put it, which is what makes a polygon spanning past [`GPU_MAX_SPAN`] from
+/// it a projection artefact.
+///
+/// A clean frame (no PSX snap) is not bound by the console's limit and
+/// skips an oversize polygon only when one of its corners is garbled
+/// ([`clean_span_rejected`]); a long polygon drawn wholly in front of the
+/// eye stays, as the Genesis Tree burst's rays do in `vozz_tree_burst`.
+pub fn gte_corner_garbled(clip: [f32; 4], sz_per_w: f32, h: f32) -> bool {
+    let sz = clip[3] * sz_per_w;
+    if sz < h * 0.5 {
+        return true;
+    }
+    let sx = 160.0 + clip[0] * 160.0 * sz_per_w / sz;
+    let sy = 120.0 - clip[1] * 120.0 * sz_per_w / sz;
+    !(-1024.0..=1023.0).contains(&sx) || !(-1024.0..=1023.0).contains(&sy)
+}
+
+/// The clean frame's span test on one triangle: [`gpu_span_rejected`] only
+/// when the triangle is an artefact the limit keeps off a retail screen -
+/// one of its corners is [`gte_corner_garbled`], or a corner pair runs past
+/// `1024 x 512` from a corner with a negative screen coordinate (the pairs
+/// PCSX-Redux's limit measures, `SoftRenderer::checkCoord3`), which is what
+/// keeps a pillar beside the camera out of `conc3_ceremony_mist_pillar`.
+pub fn clean_span_rejected(clips: [[f32; 4]; 3], sz_per_w: f32, h: f32) -> bool {
+    if !gpu_span_rejected(clips, sz_per_w, h) {
+        return false;
+    }
+    if clips.iter().any(|&c| gte_corner_garbled(c, sz_per_w, h)) {
+        return true;
+    }
+    // The packet's own screen corners, Y down.
+    let p = clips.map(|c| {
+        let o = gte_screen_offset(c, sz_per_w, h, [160.0, 120.0]);
+        [160.0 + o[0], 120.0 - o[1]]
+    });
+    (0..2).any(|k| {
+        let lim = [1024.0, 512.0][k];
+        (0..3).any(|i| p[i][k] < 0.0 && (0..3).any(|j| p[j][k] - p[i][k] > lim))
+    })
+}
+
 /// One corner's GTE `SXY` as `RTPS` writes it, from its clip coordinates:
 /// `IR1` / `IR2` saturated to `-0x8000..=0x7FFF`, `SZ` to `0..=0xFFFF`, the
 /// divide's quotient at `0x1FFFF` (`H / SZ` capped at `2`), `SX` / `SY` the
@@ -616,6 +660,29 @@ mod tests {
             1.0,
             256.0
         ));
+        // The clean frame skips the leg too: its near corner is garbled.
+        assert!(clean_span_rejected(
+            [
+                clip(0.0, 0.0, 1500.0),
+                clip(40.0, 0.0, 1500.0),
+                clip(0.0, -400.0, -50.0)
+            ],
+            1.0,
+            256.0
+        ));
+        // A ray `855` rows tall wholly in front of the eye: the console skips
+        // it, the clean frame draws it.
+        let ray = [
+            clip(0.0, 0.0, 1000.0),
+            clip(20.0, 0.0, 1000.0),
+            clip(10.0, -3340.0, 1000.0),
+        ];
+        assert!(gpu_span_rejected(ray, 1.0, 256.0));
+        assert!(!clean_span_rejected(ray, 1.0, 256.0));
+        // The same ray thrown up off the screen's top: a corner pair runs
+        // past the limit from a negative `y`, and the clean frame skips it.
+        let up = ray.map(|c| [c[0], -c[1], c[2], c[3]]);
+        assert!(clean_span_rejected(up, 1.0, 256.0));
         // Off unless the enable lane carries `H`.
         assert_eq!(shader_params(Some((1.0, 2)), None)[0], 1.0);
         assert_eq!(shader_params(Some((1.0, 2)), Some(256.0))[0], 256.0);

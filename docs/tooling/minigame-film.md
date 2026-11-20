@@ -82,6 +82,14 @@ tick](../subsystems/minigame-fishing.md#the-venues-game-tick). Over a catch the
 and the plate; the state column keeps `0x1E` past the close-up, since the port
 holds the showcase states `0x20..0x22` in the venue camera, not the session.
 
+Without `--replay` the engine runs the pond on its own clock, and the pace is
+the comparison: the engine side writes `edt` (the step the next game frame runs
+on), `ran` (the step this vsync's frame ran on, `0` between frames) and `cost`
+(what the last frame stored in the pond pacer's ring), beside retail's `dt` and
+frame counter `gframe`. The names are the engine's own, so the rules table
+leaves them out. Add the ring (`0x80084098`, sixteen `s16`) and its cursor
+(`0x8007B758`) to the retail words to read retail's cost per frame.
+
 ## The Baka Fighter film
 
 `--set baka` from `minigame_baka_fighter_retail_attract`, START at vsync `30` and
@@ -93,6 +101,15 @@ agree exchange for exchange through both rounds. The cabinet's opponent install
 (state `0x1E`) blocks on its CD load for `26` vsyncs in the film; the port's
 retail-faithful mode, which the film runs, holds it as long, and the default
 loads at once.
+
+The engine side also writes `dt`, the step the next game frame runs on, which
+the driver pairs with retail's step byte, and `cost`, what the last frame stored
+in the cabinet's frame ring ([frame pacing](../subsystems/minigame-baka-fighter.md#frame-pacing)).
+Two PCSX-Redux recordings of the same state and press train can differ by one
+Cross of the train (`20` vsyncs) at an exchange whose press lands in a frame
+paced at step `3`: the press-to-commit edge there is marginal on retail's side,
+so a residual of one press cycle at such an exchange is not by itself a port
+defect.
 
 ## Adding a minigame
 

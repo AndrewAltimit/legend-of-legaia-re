@@ -19,6 +19,17 @@
 //! Only a literal a partition-2 beat holds counts, so a placement the engine's
 //! own entry misplaces still scores as a miss.
 //!
+//! A cross-context run-to-tile (`CC <flat> 51 xb zb depth mv`) is the same
+//! history: its seat arm is a teleport onto the `MOVE_TO` tile decode
+//! (`0x801E1904..0x801E1940`) with the compass heading `depth & 0xF`. `town0d`
+//! `P2[32]`, the Rim Elm revisit arrival the entry spawns, closes with
+//! `CC 36 51 60 0F 07 42`: Mei (flat `54`) on tile `(96, 15)`, `(12352, 1984)`,
+//! facing index `7`, `0xE00`. Her record `P1[21]` seats her on
+//! `4C 51 DF 0F 00 ..`, `(12288, 1984)` facing `0`, so a card load past the
+//! beat stands her there; `town0d_house_interior` / `town0d_house_free` were
+//! played through the beat. The position seat moves her, and the heading seat
+//! below then turns her, since `0xE00` is the beat's own literal for her.
+//!
 //! The off-map park literal is the same history. A beat that ends by parking
 //! its cast (`A3 <flat> 7F 7F`, or the run-to-tile `CC <flat> 51 7F 7F`)
 //! leaves them parked for the rest of the visit, and a card load spawns them
@@ -68,8 +79,9 @@ pub fn move_to_world(b: u8) -> i16 {
 }
 
 /// What a scene's partition-2 records do to their cast: every cross-context
-/// `MOVE_TO` tile target by the flat index it aims at, and every flat a beat
-/// parks off-map (`MOVE_TO` or run-to-tile onto [`PARK`]).
+/// `MOVE_TO` and run-to-tile (`CC <flat> 51`) tile target by the flat index it
+/// aims at, and every flat a beat parks off-map (`MOVE_TO` or run-to-tile onto
+/// [`PARK`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BeatMoves {
     pub targets: BTreeMap<u16, Vec<(i16, i16)>>,
@@ -124,9 +136,22 @@ pub fn beat_move_targets(man: &[u8]) -> BeatMoves {
                     out.parks.insert(flat);
                 }
                 InsnInfo::MenuCtrl {
-                    kind: MenuCtrlKind::Nibble5NpcRun { depth, .. },
+                    kind:
+                        MenuCtrlKind::Nibble5NpcRun {
+                            x_enc,
+                            z_enc,
+                            depth,
+                            ..
+                        },
                     ..
                 } => {
+                    // The run-to-tile is a teleport seat on the same tile
+                    // decode as `MOVE_TO` (`0x801E1904..0x801E1940`), so its
+                    // tile is a beat literal too.
+                    out.targets
+                        .entry(flat)
+                        .or_default()
+                        .push((move_to_world(*x_enc), move_to_world(*z_enc)));
                     if let Some(h) = compass_heading(depth & 0xF) {
                         out.turns.entry(flat).or_default().insert(h);
                     }
@@ -292,6 +317,17 @@ mod tests {
         // The record head's `0xDC`: tile 92, far edge.
         assert_eq!(move_to_world(0xDC), 11904);
         assert_eq!(move_to_world(0xAC), 0x2C * 0x80 + 0x80);
+    }
+
+    #[test]
+    fn a_run_to_tile_seat_is_a_beat_target_and_turn() {
+        // town0d P2[32]'s closing seat on Mei: `CC 36 51 60 0F 07 42`. A
+        // minimal MAN cannot be built here, so the decode the walk applies is
+        // pinned on the operand bytes.
+        assert_eq!((move_to_world(0x60), move_to_world(0x0F)), (12352, 1984));
+        assert_eq!(compass_heading(0x07 & 0xF), Some(0xE00));
+        // Her record's own seat, far edge on X.
+        assert_eq!((move_to_world(0xDF), move_to_world(0x0F)), (12288, 1984));
     }
 
     #[test]

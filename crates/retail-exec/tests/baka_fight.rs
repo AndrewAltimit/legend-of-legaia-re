@@ -223,7 +223,11 @@ fn whole_rounds_play_out_as_retail_plays_them() {
             }
             let retail = retail_row(&mut cpu, state.get());
 
-            let outcome = f.frame(edge, 0, 0);
+            // HARNESS: the retail side runs the combat tick and the round SM
+            // once a call on the step pinned at `1` (`0x1F800393` above), not
+            // the frame driver's pacer, so the port runs its rules on the same
+            // frames: one game frame a call on that step, its pacing left out.
+            let outcome = f.frame_on_step(edge, 0, 0, 1);
             assert!(!outcome.exit);
             let port = port_row(&f, f.rng_state());
             assert_eq!(

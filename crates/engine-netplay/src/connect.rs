@@ -62,6 +62,11 @@ pub struct ConnectMenu {
     pub editing: Option<(Field, String)>,
     /// Why the last attempt failed.
     pub notice: Option<String>,
+    /// The release this program ships in, shown under the hints, for a
+    /// host that has one to name (the native window's
+    /// `legaia_release_version::VERSION`). Players compare it before a
+    /// join; a browser page leaves it `None`.
+    pub release: Option<String>,
 }
 
 impl ConnectMenu {
@@ -75,6 +80,7 @@ impl ConnectMenu {
             cursor: 0,
             editing: None,
             notice: None,
+            release: None,
         }
     }
 
@@ -251,6 +257,9 @@ impl ConnectMenu {
         }
         out.push("Join: the host's address and room code.".to_string());
         out.push("Cross on a field types into it; Enter keeps it.".to_string());
+        if let Some(v) = &self.release {
+            out.push(format!("Version {v}"));
+        }
         out
     }
 }
@@ -261,6 +270,14 @@ mod tests {
 
     fn press(m: &mut ConnectMenu, b: PadButton) -> Option<ConnectAction> {
         m.step(b.mask())
+    }
+
+    #[test]
+    fn a_host_with_a_release_names_it_under_the_hints() {
+        let mut m = ConnectMenu::new(false, "Noa");
+        assert!(!m.hints().iter().any(|h| h.starts_with("Version")));
+        m.release = Some("1.29.0".to_string());
+        assert_eq!(m.hints().last().map(String::as_str), Some("Version 1.29.0"));
     }
 
     #[test]

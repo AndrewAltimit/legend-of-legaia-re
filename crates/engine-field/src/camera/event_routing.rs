@@ -201,6 +201,7 @@ impl Camera {
             attr_box,
             window: self.zone.view_window,
         }));
+        world.set_cull_camera(owned.then_some(self.globals));
         // Publish the live visible-tile window to the fog pool: the ambient
         // emitter samples its burst span from the same scratchpad bytes
         // `0x1F8003E8..EB` every frame (`lb` at `0x801D6158..`), and those

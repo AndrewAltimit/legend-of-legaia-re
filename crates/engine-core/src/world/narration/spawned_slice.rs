@@ -1190,8 +1190,12 @@ impl World {
                             ..Default::default()
                         };
                         let r = vm::field::step(&mut host, &mut player_ctx, &tl.bytecode, pc);
+                        // The `4C E3` copy lands the source's height as it
+                        // is (`0x801E3134`): no floor sample after it.
+                        let copy = op == 0x4C && tl.bytecode.get(pc + 2) == Some(&0xE3);
                         if let FieldStepResult::Advance { next_pc } = r {
-                            if let Some(slot) = host.world.player_actor_slot
+                            if !copy
+                                && let Some(slot) = host.world.player_actor_slot
                                 && let Some(actor) = host.world.actors.get(slot as usize)
                             {
                                 let (x, z) = (actor.move_state.world_x, actor.move_state.world_z);

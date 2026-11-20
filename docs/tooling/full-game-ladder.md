@@ -781,6 +781,8 @@ party still holds when it reaches the door, and what a reload hands back:
   walk reaches stays struck off: `bylon` P1[29] listed as a rest stops the
   bag standing in for one, and a run left `bylon` with Gala at level 8 of 20
   and 30000 gold poorer.
+- **A party with no group heal fights for one where it is caught.** The Seru absorb is a per-kill roll on the monster record's catch rate (`FUN_801EC3E4`, `World::roll_seru_absorb`), so a run can kill `kor`'s and `koin2`'s monster 120 ten times and never learn Spoon. Dealt stream 7 then met Zora healing from a two-Berry bag and lost all twelve attempts. A party of two or more that knows no party-wide heal, standing in a scene whose encounter table holds a monster whose Seru teaches one, takes up to eight outings there (once a scene, `pad_hunt_group_heal`) before it plays the scene on.
+- **A wipe ends the talk it happened on.** A fight that wiped the party on the walk to a talk used to send the next side's walk into the same game-over screen, which the fight loop reported as a fresh wipe ("wiped after 0 ticks", `taiku` P1[35]); the talk now returns the wipe, and a standing game over is not fought again.
 - **Only a race walks for AP.** The walk for AP after a boss wipe
   (`pad_charge_for_race`) spent every heal in the dungeon, and the attempts it
   prepared left Zora higher than the attempt before it. Spirit turns earn the same
@@ -1007,6 +1009,14 @@ before the fighter learned to guard against Stone
 ([the boss section](#a-boss-the-anchors-party-cannot-outlast)). Cort takes a
 attempt of its own only when Cort wipes the party, as the Cort notes above
 describe; the switch to Run at `jouind`'s switch pair is not one.
+
+### What re-deals a seed
+
+The deal is a function of the stream's seed, the pad and what the code means, and of nothing else. Each `[run N]` line ends on the deal so far, the session's frame and the world rand state on arrival (`frame 14337 rng 798B2BDE`): two runs that print the same pair at a milestone played the same hand to it.
+
+- **Code that only moves does not re-deal.** Builds that differ by a dead function, a codegen change inside `World::next_rand`, an unrelated crate's new call, or the hand's line numbers play seeds 5 and 16 to the credits with every line of the stripped trace identical. So do runs of one binary under the trace switches, with no trace at all, and with part C sharing the process with part B on other test threads.
+- **A change that re-deals moved a frame or a draw.** Retail has one `rand()` stream for every caller, the battle presentation's and the camera's among them, and the engine keeps it one stream, so a retail-faithful change to an effect's draws or a battle frame's length re-deals every encounter after it, as it would on the console. A hand change that moves one press by one frame does the same. Diff the two runs' `[run N]` lines: the first milestone whose pair differs bounds the stretch, and `LEGAIA_FGL_TRACE=1` on that stretch finds the frame.
+- **The guard.** `full_game_ladder::continuous::the_opening_deals_alike_in_two_processes` plays the opening stretches (New Game to Drake Castle) in two processes of one binary side by side and asserts the same pair at every milestone. Each process draws its own `HashMap` keys and addresses and the two contend for the cores, so a path that followed hash order, an address, the clock or a thread's timing fails it. It needs the disc, like the rest of the ladder.
 
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
 
@@ -2019,6 +2029,7 @@ A fight runs at least 60 000 ticks and goes on past that while a foe's HP is sti
 - **An all-party restorative** (Healing Bloom, Magic Fruit) is confirmed on its party-wide confirm, which picks no row.
 - **A talk between boxes gets no Cross.** Nothing reads a confirm while a talk runs its ops, and in the retail-faithful mode (`WorldToggles::immediate_pad` off) a press reaches the field a frame late: one pressed while Tetsu's spar (`town01` P1[10]) ran the `21` past its `3E FF 04` landed after the talk had ended, on Tetsu, and re-entered the record at its loop head and menu.
 - **The retail-faithful mode is played in game frames.** There the field reads the pad once a frame, latched at its end, and a frame is the two or three vsyncs the field frame-cost model prices. So the scripted-sequence Cross is held four ticks, not two, and a post-step wait ends on twelve idle ticks, not four: a two-frame gap in a system script's chain (`taiku`'s post-Koru `P2[27]`, `P2[12]`, `P2[29]`) is not the end. A pause menu's Start waits up to six ticks for the menu to open, a pad walk waits out a closing menu's exit hold before it takes its mode, and a walk interrupted by a fight waits out the battle-return hold (`World::field_init_hold`) before its stall test counts again. The default mode keeps the immediate pad and none of these waits.
+- **One-shot presses span a game frame there too.** The talk press, the seated talk's Cross, a box talk's lean steps and a stalled walk's action tap are held four ticks, with four released before each Cross (one tick each, and no extra release, in the default mode): `suimon`'s ferryman (P1[4]) and `dolk`'s door prop at (100, 53) took no one-tick press. The heal that follows a fight mid-walk closes its menu under the walk, and the walk waits out that exit hold as well (`map01` on the way to `izumi`). The beats pass also waits out a closing menu's hold before it reads the mode: the arrival pass's Best Equipment left `garmel` read as no field, and unplayed.
 
 The party's battle forms - the action clips the hit events are paced by and
 the art records the arts input tokenizes - are the engine's to install at

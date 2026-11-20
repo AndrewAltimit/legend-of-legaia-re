@@ -845,10 +845,18 @@ pub(super) fn displayed_menu_glide_pose(
 ///
 /// Whether retail's camera is still walking a table on its angles or focus
 /// (`0x8007B790` / `0x8007B792`, `0x80089118..0x80089120` off their tween
-/// endpoints). A module's drifts move TR alone (PROT 0946's arms add to TR
-/// z after their shot has landed), so the translation is left out: a table
-/// whose angles and focus are home has finished, whatever a drift did to
-/// the eye since.
+/// endpoints), or on its translation.
+///
+/// A drift can move the eye off a landed table, so an eye component off its
+/// endpoint alone does not say the table walks. The walker `FUN_8002149C`
+/// adds `increment * step` to each translation word and stores the endpoint
+/// back once the word passes it in the increment's direction
+/// (`0x80021598..0x800215C8`), so while its task lives a component short of
+/// its endpoint stands on the increment's side of it. A component counts as
+/// walking when it stands there more than one increment out: PROT 0946's
+/// Big Wave dolly (arm 4, TR z `z / 2` to `2z` over `0x100` frames) moves the
+/// eye alone, and `battle_noaru_slippery_v2_big_wave_mid_cast` holds TR z
+/// `4928` on increment `28` with `4595` to go, its angles and focus home.
 pub(super) fn module_shot_walking(ram: &[u8], ctx: u32) -> bool {
     let live = [
         (0u32, game_anchors::u16_at(ram, 0x8007_B790), 0xFFFu16),
@@ -857,10 +865,50 @@ pub(super) fn module_shot_walking(ram: &[u8], ctx: u32) -> bool {
         (7, game_anchors::u16_at(ram, 0x8008_911C), 0xFFFF),
         (8, game_anchors::u16_at(ram, 0x8008_9120), 0xFFFF),
     ];
-    live.iter().any(|&(k, v, mask)| {
+    let angles_or_focus = live.iter().any(|&(k, v, mask)| {
         let end = game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k * 4 + 2);
         v & mask != end & mask
-    })
+    });
+    let eye = [(3u32, 0x8008_40B8u32), (4, 0x8008_40BC), (5, 0x8008_40C0)]
+        .iter()
+        .any(|&(k, va)| {
+            let at = ctx + TWEEN_TABLE + k * 4;
+            let inc = i32::from(game_anchors::u16_at(ram, at) as i16);
+            let end = i32::from(game_anchors::u16_at(ram, at + 2) as i16);
+            let gap = end - game_anchors::u32_at(ram, va) as i32;
+            inc != 0 && gap.signum() == inc.signum() && gap.abs() > inc.abs()
+        });
+    angles_or_focus || eye
+}
+
+/// Whether a `0x70` capture's camera walks a shot its module built once:
+/// arm 0 has run (`ctx[+0x279]` past `0`), the table still walks
+/// ([`module_shot_walking`]), and the body's arm does not re-arm its shot
+/// every pass (`cast_module_camera::capture_shot_rearms_every_pass`). Such a
+/// table moves `increment * step` a pass, which
+/// [`displayed_module_cam_live`] walks back; the re-arm law of
+/// [`displayed_cam_live_steps`] does not describe it.
+pub(super) fn module_shot_walks_once(ram: &[u8], ctx: u32) -> bool {
+    if game_anchors::u8_at(ram, ctx + 7) != 0x70
+        || game_anchors::u8_at(ram, ctx + 0x279) == 0
+        || !module_shot_walking(ram, ctx)
+    {
+        return false;
+    }
+    let seat = game_anchors::u8_at(ram, ctx + 0x13);
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + u32::from(seat.min(7)) * 4);
+    !(in_ram(actor)
+        && legaia_engine_cast::cast_module_ticks::capture_body_for_action(game_anchors::u8_at(
+            ram,
+            actor + 0x1DF,
+        ))
+        .is_some_and(|(entry, body)| {
+            legaia_engine_cast::cast_module_camera::capture_shot_rearms_every_pass(
+                entry,
+                body,
+                game_anchors::u8_at(ram, ctx + 0x279),
+            )
+        }))
 }
 
 /// Whether a magic-band capture holds the animation chain's **terminator

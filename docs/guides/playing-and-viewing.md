@@ -194,7 +194,7 @@ The launcher and the game's own chrome draw in the same two palettes as Legaia
 Explorer. *Menu colours* in the Display group follows the desktop's light or dark
 preference (GNOME's colour scheme or `GTK_THEME` on Linux, the system setting
 elsewhere), or stays light or dark; the `F12` page changes it live. It is one
-choice with Explorer's *View* theme: either program's change is the other's
+choice with Explorer's *View* > *Menu colours*: either program's change is the other's
 next time it opens (Explorer also picks it up when a game it started closes). The Multiplayer screen and the game-mode
 picker follow it too. A mode in play keeps its own colours: its text sits on
 the field and on its table, not on a plate.
@@ -958,8 +958,10 @@ Without the flags, `Tab` (or the launcher's **Play online** button)
 opens the Multiplayer screen, which hosts a room or joins one by address
 and code from inside the game. It opens with the address you last joined
 and the name you last played under (`--name` wins over the remembered
-name); a room code is new for every room and is typed each time. The
-browser play page's Online panel remembers the same two.
+name); a room code is new for every room and is typed each time. Its last
+line names the release the window is, so two players can check they run
+the same one before a join. The browser play page's Online panel remembers
+the same two.
 
 In a room, `Tab` opens the room screen: the room code and the address to join at,
 the players, Ready (guests), the game pick and Start (the host), emotes,
@@ -995,8 +997,9 @@ quick reaction (wave, cheer, bow, dance, laugh) even mid-round. Played
 alone, the sample pack's 5F games-room table runs Tower Game Night against the
 keeper and two regulars.
 
-Everyone in a room runs the same engine build and the same expansion pack
-(or none); the relay turns a mismatch away. Each player's world is their
+Everyone in a room runs the same release and the same expansion pack (or
+none); the relay turns a mismatch away and names both releases. A desktop
+release and the site's play page of that release share a room. Each player's world is their
 own: only avatars are shared, so battles, doors and story progress are
 not. Details and limits: [netplay.md](../subsystems/netplay.md#in-the-hosts).
 

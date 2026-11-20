@@ -491,6 +491,7 @@ impl World {
             if let Some(session) = self.battle.arts_input.as_mut() {
                 session.step_glides();
             }
+            self.price_command_surface_frame();
             return None;
         }
         // `0xFE`'s arm, on the first dispatched pass after its step landed.
@@ -501,6 +502,17 @@ impl World {
         if self.battle.command.is_none() {
             // Any other state's dispatch empties the park unread.
             self.battle.command_pad_buffer = None;
+        }
+
+        // A surface below parks the action SM for the tick, and retail's
+        // frame on it still runs and stores its cost.
+        if self.battle.arts_input.is_some()
+            || self.battle.arts_menu.is_some()
+            || self.battle.spell_menu.is_some()
+            || self.battle.item_menu.is_some()
+            || self.battle.command.is_some()
+        {
+            self.price_command_surface_frame();
         }
 
         // Player-driven: while the retail-model Arts command input is open

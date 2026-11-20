@@ -521,20 +521,7 @@ pub(super) fn pad_walk(
             eprintln!("      [warp] ({tx},{tz}) entry from z+/x+/z-/x-: {s:?}");
         }
     }
-    // A pause menu the hand just closed (a heal, a Goods swap) still owns
-    // the frame for its close: the retail-faithful mode holds the menu's
-    // exit for its overlay load (`WorldToggles::skip_load_holds` off), and a
-    // walk that took its mode then read the field coming back as a mode
-    // change (`town0b` P2[17] after a heal). Wait it out first.
-    for _ in 0..MENU_CLOSE_TICKS {
-        if session.host.world.mode != SceneMode::Menu || session.field_menu.is_some() {
-            break;
-        }
-        session.host.world.set_pad(0);
-        if session.tick().is_err() {
-            break;
-        }
-    }
+    wait_out_menu_close(session);
     let walking_mode = session.host.world.mode;
     let mut doors = hazards(session, "");
     doors.remove(&(i32::from(goal.0), i32::from(goal.1)));
@@ -592,6 +579,8 @@ pub(super) fn pad_walk(
     let mut idle_talks: HashSet<String> = HashSet::new();
     let mut taps_off = false;
     let mut tapped_at: Option<usize> = None;
+    // Ticks the last tap's Cross is still held ([`press_ticks`]).
+    let mut tap_hold = 0usize;
     // The idle tap is never pressed at a minigame cabinet
     // ([`minigame_talks`]): a walk that passes one does not sit down to play.
     let cabinets = if session.host.world.mode == SceneMode::Field {
@@ -702,6 +691,12 @@ pub(super) fn pad_walk(
         if answer_notice(session) {
             pressed_at = None;
             continue;
+        }
+        // The heal after a fight closes its menu mid-walk, and the
+        // retail-faithful close holds `Menu` for the field's reload as the
+        // walk's own start does (`map01` on the way to `izumi`).
+        if session.host.world.mode == SceneMode::Menu && session.field_menu.is_none() {
+            wait_out_menu_close(session);
         }
         if session.host.world.mode != walking_mode {
             return Err(format!("mode changed to {:?}", session.host.world.mode));
@@ -1025,7 +1020,16 @@ pub(super) fn pad_walk(
                 pad = PadButton::Cross.mask();
                 tap_owed = false;
                 tapped_at = Some(step);
+                tap_hold = press_ticks(session) - 1;
             }
+        }
+        // The tap is held across a whole game frame: in the retail-faithful
+        // mode the field latches the pad once a frame, and a one-tick tap at
+        // `dolk`'s door prop (anchor (100, 53)) fell between two latches
+        // every 60 frames for as long as the walk had.
+        if tap_hold > 0 && pad != PadButton::Cross.mask() && !on_a_person {
+            pad = PadButton::Cross.mask();
+            tap_hold -= 1;
         }
         // Running into a corner the wall slide deflects, the press and the
         // one after it can trade places forever: `ropeway`'s (24, 27), where
@@ -1667,3 +1671,20 @@ const MENU_CLOSE_TICKS: usize = 240;
 
 /// Ticks a walk waits for a battle's return hold to run out.
 const FIELD_INIT_HOLD_TICKS: usize = 1_200;
+
+/// Stand out a pause menu the hand just closed (a heal, a Goods swap): it
+/// still owns the frame for its close, because the retail-faithful mode
+/// holds the menu's exit for its overlay load (`WorldToggles::skip_load_holds`
+/// off, `World::mode` still `Menu`). A walk that took its mode then read the
+/// field coming back as a mode change (`town0b` P2[17] after a heal).
+pub(super) fn wait_out_menu_close(session: &mut NativeSession) {
+    for _ in 0..MENU_CLOSE_TICKS {
+        if session.host.world.mode != SceneMode::Menu || session.field_menu.is_some() {
+            break;
+        }
+        session.host.world.set_pad(0);
+        if session.tick().is_err() {
+            break;
+        }
+    }
+}

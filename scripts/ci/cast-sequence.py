@@ -251,6 +251,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_PRIM_CALLS"] = "1"
     if a.sfx_callers:
         env["LEGAIA_SFX_CALLERS"] = "1"
+    if a.fx_spawns:
+        env["LEGAIA_FX_SPAWNS"] = "1"
     if a.pose_objects:
         env["LEGAIA_POSE_OBJECTS"] = "1"
     if a.body_decode:
@@ -282,7 +284,7 @@ def run_retail(a, out: Path) -> bool:
         cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
-    if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects or a.body_decode
+    if not (a.formation or a.monster_pick or a.sfx_callers or a.fx_spawns or a.watch or a.prim_calls or a.pose_objects or a.body_decode
             or a.range_trace or a.hit_trace or a.wrapper_trace or a.ghost_trace or a.ribbon_trace or a.popup_trace or a.calc_clock or a.cd_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
@@ -908,10 +910,17 @@ def retail_step_track(out: Path) -> str:
     Keyed by the frame's last row instead, a frame's step went to the pass
     after it."""
     with open(out / "retail" / "meta.csv") as f:
-        return frame_step_rows(list(csv.DictReader(f)))
+        rows = list(csv.DictReader(f))
+    ram = state_ram(read_kv(out / "retail" / "manifest.txt").get("sstate", ""))
+    state_word = ram_u32(ram, RAND_SEED_VA) if ram else None
+    return frame_step_rows(rows, state_word)
 
 
-def frame_step_rows(rows: list[dict]) -> str:
+# The BIOS `rand()` seed word.
+RAND_SEED_VA = 0x80009010
+
+
+def frame_step_rows(rows: list[dict], state_word: int | None = None) -> str:
     """The step track's lines off `meta.csv` rows ([`retail_step_track`]).
 
     A recording that opens on a state's own instant can open on a frame whose
@@ -919,7 +928,18 @@ def frame_step_rows(rows: list[dict]) -> str:
     pass makes the frame driver's discarded draw, `FUN_80046A20`), and its
     step belongs to no pass the engine runs from the gate. That frame is
     left out; Lip King's Kiss of Death otherwise ran its first arm-1 pass on
-    the leftover frame's step `3` and arm 1 a pass long."""
+    the leftover frame's step `3` and arm 1 a pass long.
+
+    The rows alone cannot see a draw that lands on the first row itself: a
+    frame whose only row is its logic's shows one word throughout. The
+    state's own seed word (`state_word`) can. Where a one-row first frame's
+    word differs from it, that frame's pass drew between the state and the
+    recording, the engine runs it from the gate (its first pass draws onto
+    the first row's word), and the frame stays. `battle_garmel_zenoir_fire_claw_mid_cast`
+    opens on such a one-row frame: dropped, every later pass of the film ran
+    the step of the frame after retail's, the projectile flew a step-`3`
+    pass where retail's flew a step-`2` one, and its trail stood `29` units
+    along (`0x2B` `.883`, `.973` with the frame kept)."""
     frames, first, last = [], None, None
     for r in rows + [None]:
         if last is not None and (r is None or r["frame"] != last["frame"]):
@@ -931,7 +951,9 @@ def frame_step_rows(rows: list[dict]) -> str:
     if frames and frames[0][2] is not None and "rand" in frames[0][0]:
         f0, _, nxt = frames[0]
         run0 = [r for r in rows if r["frame"] == f0["frame"]]
-        if all(r["rand"] == nxt["rand"] for r in run0):
+        drew_before = (len(run0) == 1 and state_word is not None
+                       and int(f0["rand"]) & 0xFFFFFFFF != state_word)
+        if all(r["rand"] == nxt["rand"] for r in run0) and not drew_before:
             frames = frames[1:]
     return "".join(_step_row(f, l) for f, l, _ in frames)
 
@@ -1251,6 +1273,17 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         # (`AmbientFxState::vram_rect_seed_until_state`).
         if (st := recording_first_state(out)) is not None:
             env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_STATE"] = str(st)
+    # A `--physical` film opens on the state's own instant, so the frame
+    # driver's burning-puff accumulator `ctx[+0x328]` is the state's: its low
+    # nibble is the phase of the one or two puffs a step-3 pass sheds, which
+    # the replay's own fight does not keep. Held until the film begins (lane J
+    # harness seat, `LEGAIA_BATTLE_BURN_ACCUM`).
+    if a.physical and "LEGAIA_BATTLE_BURN_ACCUM" not in env:
+        ram = state_ram(read_kv(out / "retail" / "manifest.txt").get("sstate", ""))
+        if ram:
+            ctx = ram_u32(ram, 0x8007BD24)
+            if RAM_BASE <= ctx < RAM_TOP - 0x400:
+                env["LEGAIA_BATTLE_BURN_ACCUM"] = str(ram_u32(ram, ctx + 0x328) & 0xFFFF)
     # The recording's drive is PCSX-Redux's, whose first `summon.dat` slot
     # reads with no seek ahead of it; the engine's modelled drive (mednafen's)
     # holds the side-band stage nine vsyncs longer. A harness seat.
@@ -1684,6 +1717,10 @@ def main() -> int:
     ap.add_argument("--sfx-callers", action="store_true",
                     help="retail: log every call into the cue producers and routers with its ra "
                          "(retail/sfxcall.csv; breakpoint core)")
+    ap.add_argument("--fx-spawns", action="store_true",
+                    help="retail: log every effect-pool spawn (FUN_801DFDF0 / FUN_801DFDF8) and "
+                         "prototype-table spawn (FUN_80050ED4) with its arguments, ra and the rand() "
+                         "seed word (retail/fxspawn.csv; breakpoint core)")
     ap.add_argument("--pose-objects", action="store_true",
                     help="retail: pose.csv, the summon creature's decoded object table at each burn emit "
                          "(breakpoint core; the engine half is LEGAIA_DIAG_CAST_PARTS's pose.csv)")

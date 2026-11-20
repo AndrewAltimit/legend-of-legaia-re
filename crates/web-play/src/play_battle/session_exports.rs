@@ -78,8 +78,10 @@ impl LegaiaRuntime {
     /// order, e.g. `noa,terra`. Roster slots the spec names that carry no
     /// stats yet are seeded from the SCUS new-game template (the rows retail
     /// seeds those characters from when they join); records already carrying
-    /// stats are left alone. Returns an empty string on success, else the
-    /// reason. Caps at the three on-screen positions.
+    /// stats are left alone. `terra` is seated as retail seats her: the AI
+    /// battle companion, last, beside one or two others, never a field
+    /// member (`party_spec::split_ai_companion`). Returns an empty string on
+    /// success, else the reason. Caps at the three on-screen positions.
     pub fn set_active_party_spec(&mut self, spec: &str) -> String {
         let Some(host) = self.scene_host.host_mut() else {
             return "no disc loaded".to_string();
