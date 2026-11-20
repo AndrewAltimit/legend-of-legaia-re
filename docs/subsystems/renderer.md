@@ -2779,8 +2779,11 @@ The near reject ahead of it is unchanged. `vozz_tree_burst` is the case the
 rule keeps: the Genesis Tree burst throws two rays off the screen's foot, `620`
 and `855` rows tall, every corner well in front of the eye and none negative.
 The console skips both, a PCSX-Redux capture draws them, and so does the clean
-frame, with the white centre they add to. PSX mode keeps the console's limit,
-or the capture's emulator's.
+frame, with the white centre they add to. The rule draws what PCSX-Redux
+draws beyond that, garbled corners aside: `orb_summon_mid_cast`'s clean frame
+shows a sliver of a near body in its bottom-left corner that the console, and
+the Mednafen capture, leave out. PSX mode keeps the console's limit, or the
+capture's emulator's.
 
 **A near body that survives the limit.** `theeder_summon_mid_cast` puts
 monster `0xA1` (Gilium) between the eye and the caster. Its render node's
