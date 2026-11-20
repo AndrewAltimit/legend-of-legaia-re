@@ -444,87 +444,86 @@ impl EquipSession {
     /// 0x8003156C`). Confirming Remove on an empty slot is retail's buzz,
     /// which [`Self::unequip`] keeps.
     ///
-    /// REF: FUN_80030628 (armament cases `7`..`10` / `0x15`..`0x18`)
+    /// REF: FUN_80030628 (armament cases `7`..`10` / `0x15`..`0x18`; the walk
+    /// and sort are [`crate::menu_list_rows::build_armament_candidate_rows`])
     fn armament_rows(&self, slot: u8) -> Vec<EquipItem> {
         let (start, end) = self.inventory.window_bounds();
         let slots = self.inventory.slots();
         let window = &slots[start.min(slots.len())..end.min(slots.len())];
+        // An empty stack is an empty slot to the walk.
+        let ids: Vec<u8> = window
+            .iter()
+            .map(|&(id, qty)| if qty > 0 { id } else { 0 })
+            .collect();
         let equipped_id = self.record.equip.get(slot as usize).copied().unwrap_or(0);
-        let mut out = vec![EquipItem {
-            id: REMOVE_ROW_ID,
-            slot,
-            owned: true,
-            equipped: false,
-        }];
-        if equipped_id != 0 {
-            out.push(EquipItem {
-                id: equipped_id,
-                slot,
-                owned: true,
-                equipped: true,
-            });
-        }
-        out.extend(
-            window
-                .iter()
-                .filter(|&&(id, qty)| {
-                    id != 0 && qty > 0 && id != equipped_id && self.item_fits_slot(id, slot)
-                })
-                .map(|&(id, qty)| EquipItem {
-                    id,
-                    slot,
-                    owned: qty > 0,
-                    equipped: false,
-                }),
+        let id_of = |word: u16| -> u8 {
+            let payload = word & !crate::menu_list_rows::ROW_CLASS_MASK;
+            match word & crate::menu_list_rows::ROW_CLASS_MASK {
+                crate::menu_list_rows::CLASS_ITEM_ICON => payload as u8,
+                crate::menu_list_rows::CLASS_BAG_EQUIP => usize::from(payload)
+                    .checked_sub(start)
+                    .and_then(|k| ids.get(k).copied())
+                    .unwrap_or(0),
+                _ => 0,
+            }
+        };
+        let key = self.armament_key(slot);
+        let words = crate::menu_list_rows::build_armament_candidate_rows(
+            &ids,
+            start as u16,
+            equipped_id,
+            |id| self.item_fits_slot(id, slot),
+            |word| match &key {
+                Some(key) => key(id_of(word)),
+                None => 0,
+            },
         );
-        self.sort_armament_rows(slot, &mut out);
-        out
+        words
+            .iter()
+            .map(|&w| match w & crate::menu_list_rows::ROW_CLASS_MASK {
+                crate::menu_list_rows::CLASS_VERB => EquipItem {
+                    id: REMOVE_ROW_ID,
+                    slot,
+                    owned: true,
+                    equipped: false,
+                },
+                class => EquipItem {
+                    id: id_of(w),
+                    slot,
+                    owned: true,
+                    equipped: class == crate::menu_list_rows::CLASS_ITEM_ICON,
+                },
+            })
+            .collect()
     }
 
-    /// The builder's row sort: a selection sort over rows `1..n`, whose swap
-    /// is what a tie's order comes from, so it is kept rather than replaced
-    /// by a library sort. The outer walk stops one short of the last row and
-    /// the scan runs through it (`slt` at `0x80031618` / `0x80031654`); a row
-    /// displaces the running best only when strictly greater.
-    fn sort_armament_rows(&self, slot: u8, rows: &mut [EquipItem]) {
+    /// The armament sort key `FUN_800302E4` gives a row of `slot`'s list -
+    /// its category's stat, plus the weapon's favour term - or `None` when
+    /// the session has no disc tables to rank by (the rows then keep their
+    /// walk order, as a selection sort over equal keys does).
+    fn armament_key(&self, slot: u8) -> Option<Box<dyn Fn(u8) -> u32 + '_>> {
         use legaia_game_tables::equip_stats::EquipSlot as Disc;
-        let (Some(info), Some(engine_slot)) = (&self.restrictions, EquipSlot::from_index(slot))
-        else {
-            return;
-        };
-        let category = match engine_slot {
+        let info = self.restrictions.as_ref()?;
+        let category = match EquipSlot::from_index(slot)? {
             EquipSlot::Weapon => Disc::Weapon,
             EquipSlot::Helmet => Disc::Head,
             EquipSlot::BodyArmor => Disc::Body,
             EquipSlot::Boot => Disc::Footwear,
-            _ => return,
+            _ => return None,
         };
-        let key = |item: &EquipItem| {
+        Some(Box::new(move |id: u8| {
             let favour = if category == Disc::Weapon {
                 crate::menu_item_category::category_check(
                     &self.weapon_category,
                     u32::from(self.active_party_slot),
-                    item.id,
+                    id,
                     0,
                 )
             } else {
                 0
             };
-            info.armament_rank(item.id, category) + favour
-        };
-        let n = rows.len();
-        for i in 1..n.saturating_sub(1) {
-            let mut best = i;
-            let mut best_key = key(&rows[i]);
-            for (j, row) in rows.iter().enumerate().skip(i + 1) {
-                let k = key(row);
-                if best_key < k {
-                    best_key = k;
-                    best = j;
-                }
-            }
-            rows.swap(i, best);
-        }
+            info.armament_rank(id, category) + favour
+        }))
     }
 
     /// The three **Goods** slots' candidate list, in retail's row order.

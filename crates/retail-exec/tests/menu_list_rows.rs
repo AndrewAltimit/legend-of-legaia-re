@@ -1276,3 +1276,140 @@ fn the_list_kernel_navigates_as_the_port_does() {
     }
     assert!(moved > 1500, "{moved}");
 }
+
+/// `FUN_80030628`'s armament arms (content ids `7`..`0xA` and `0x15`..`0x18`)
+/// against `build_armament_candidate_rows` with `armament_candidate_accepts`
+/// as its filter and `equip_stat_field` as its sort key: random item, equip
+/// and bag tables, characters and window ranges, the equipped byte placed
+/// where each content id reads it, the stat accessor `FUN_800302E4` live
+/// with its overlay favour term `FUN_801DD0C0` answering a function of its
+/// arguments. The copied rows - filter, order and sort - are compared whole.
+#[test]
+fn the_armament_candidate_lists_build_the_rows_retail_builds() {
+    differential!(scus(WINDOW_BUILD));
+    use legaia_engine_menus::menu_list_rows::{
+        armament_candidate_accepts, build_armament_candidate_rows,
+    };
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const CATEGORY: u32 = 0x8007_B484;
+    const CHAR_BITS: u32 = 0x8007_B48C;
+    const WEAPON_SLOT: u32 = 0x8007_B42C;
+    cpu.stub(BAG_WINDOW, 0);
+    grant_lists(&mut cpu);
+    let favour = |id: u32| (id * 5 + 1) & 0x7;
+    cpu.hook(FAVOUR, move |r, _| r.r[V0] = favour(r.r[A1]));
+    let categories: Vec<u8> = (0..4)
+        .map(|k| cpu.mem.rd16(CATEGORY + 2 * k) as u8)
+        .collect();
+    let mut rng = Rng(0x4152_4D53);
+    let mut sorted = 0;
+    for case in 0..3000 {
+        let items: Vec<[u8; 2]> = (0..256)
+            .map(|_| {
+                [
+                    [1u8, 1, 1, 2, 0][rng.below(5) as usize],
+                    rng.below(64) as u8,
+                ]
+            })
+            .collect();
+        let records: Vec<[u8; 8]> = (0..64)
+            .map(|_| {
+                let mut r: [u8; 8] = std::array::from_fn(|_| rng.below(12) as u8);
+                r[6] = rng.next() as u8;
+                r[7] = rng.next() as u8;
+                r
+            })
+            .collect();
+        for (id, r) in items.iter().enumerate() {
+            cpu.mem.wr8(ITEMS + 12 * id as u32, r[0]);
+            cpu.mem.wr8(ITEMS + 12 * id as u32 + 1, r[1]);
+        }
+        for (k, r) in records.iter().enumerate() {
+            cpu.mem.load(EQUIP + 8 * k as u32, r);
+        }
+        let bag: Vec<u8> = (0..256)
+            .map(|_| {
+                if rng.below(5) == 0 {
+                    0
+                } else {
+                    rng.next() as u8
+                }
+            })
+            .collect();
+        for (k, id) in bag.iter().enumerate() {
+            cpu.mem.wr16(BAG + 2 * k as u32, u16::from(*id));
+        }
+        let start = rng.below(128) as u16;
+        let end = start + rng.below(64) as u16;
+        cpu.mem.wr16(GP + 0x2D2, start);
+        cpu.mem.wr16(GP + 0x2D4, end);
+        let who = rng.below(3);
+        cpu.mem.wr32(GP + 0x874, who);
+        let char_bit = 1u8 << rng.below(3);
+        cpu.mem.wr8(CHAR_BITS + who, char_bit);
+        let weapon_slot = rng.below(4) as u16;
+        cpu.mem.wr16(WEAPON_SLOT + 2 * who, weapon_slot);
+        let content = [7u8, 8, 9, 0xA, 0x15, 0x16, 0x17, 0x18][rng.below(8) as usize];
+        let row = usize::from(if content >= 0x15 {
+            content - 0x15
+        } else {
+            content - 7
+        });
+        let category = categories[row];
+        let at = match row {
+            0 => 0x75F,
+            1 => 0x75E,
+            2 => 0x75E + u32::from(weapon_slot),
+            _ => 0x762,
+        };
+        let equipped = match rng.below(3) {
+            0 => 0,
+            1 => bag[usize::from(start) + rng.below(u32::from(end - start).max(1)) as usize],
+            _ => rng.next() as u8,
+        };
+        let record = 0x8008_4140 + 0x414 * who;
+        for k in 0..8 {
+            cpu.mem.wr8(record + 0x75E + k, rng.next() as u8);
+        }
+        cpu.mem.wr8(record + at, equipped);
+        cpu.mem.wr8(NODE + 0x1C, content);
+        let grant = u32::from(rng.below(8) != 0);
+        cpu.mem.wr32(GRANT, grant);
+        for k in 0..0x60 {
+            cpu.mem.wr16(LIST_BUF + 0x28 + 2 * k, 0xDEAD);
+        }
+        assert_eq!(
+            cpu.call(WINDOW_BUILD, &[NODE]),
+            Stop::Returned,
+            "case {case}"
+        );
+        let window = &bag[usize::from(start)..usize::from(end)];
+        let accepts = |id: u8| {
+            let [kind, sub] = items[usize::from(id)];
+            let r = records[usize::from(sub)];
+            armament_candidate_accepts(kind, r[7], r[6], category, char_bit)
+        };
+        let stat = |word: u16| {
+            equip_stat_field(
+                word,
+                category,
+                |slot| bag[usize::from(slot)],
+                |item| {
+                    let sub = items.get(usize::from(item)).map_or(0, |r| r[1]);
+                    Some(EquipBonus {
+                        raw: records[usize::from(sub) % 64],
+                    })
+                },
+                |item| favour(u32::from(item)),
+            )
+        };
+        let want = build_armament_candidate_rows(window, start, equipped, accepts, stat);
+        let ctx =
+            format!("case {case}: content {content:#x} category {category} equipped {equipped:#x}");
+        assert_eq!(list_rows(&mut cpu, grant, &want), want, "{ctx}");
+        sorted += usize::from(want.len() > 3);
+    }
+    assert!(sorted > 1000, "{sorted}");
+}

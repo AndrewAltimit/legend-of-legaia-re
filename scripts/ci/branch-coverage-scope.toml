@@ -357,9 +357,15 @@ reason = "Content ids 5 and 0x20, the spell list (record +0x704 spell ids, the +
 
 [[arm]]
 entry = "0x80030628"
-range = "0x8003147C..0x80031718"
-verdict = "unported"
-reason = "The armament candidate walk content ids 7..0xA and 0x15..0x18 join (0x800312F8..0x800313CC read the equipped byte): class-1 items whose equipment +7 slot bits match the content's slot and whose +6 mask takes the character, then a selection sort on FUN_800302E4's stat; not ported (the engine sorts by id, port gap)"
+range = "0x80031658..0x80031658"
+verdict = "unreachable"
+reason = "The armament sort's inner-loop entry test: the scan starts at s5 + 1 and the outer loop only runs while s5 < count - 1, so s5 + 1 < count always holds and the beq never skips the scan"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x800316E8..0x800316E8"
+verdict = "unreachable"
+reason = "The armament arm's copy guard: s4 starts at 1 for the Remove verb row (0x800314C0), so blez s4 never skips"
 
 [[arm]]
 entry = "0x80030628"
