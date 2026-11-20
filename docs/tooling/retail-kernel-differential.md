@@ -339,6 +339,27 @@ its own off the disc against the Done band, holds the port to the arm that pays 
 price: the accumulator comes off the gauge ahead of the action's own `+8` or `+0x20`, the two
 AP Boost passives and the cap, with the gauge left alone until then.
 
+The state machine itself, run from its entry one pass per state against
+`battle_action::step` over a host that logs the element calls, the cast-effect driver
+and the cues (`action_sm`), found the end-of-action sweep clearing only the ghost
+bits, where retail also clears every slot's impact selector and, on a living actor or
+a party seat, the render flag and the capture byte; the Done band recomputing the
+turn order with nobody standing; the strike loop's terminator skipped on a pass that
+held a swing in flight; the Attack x2 refill demoting starters past the sixteenth
+entry; the cast band reading the sentinel for the byte two behind a cursor under 2,
+where retail reads the category or the target; and the summon route leaving before
+the stream cursor steps, and opening for a monster caster. The opening states, the
+Spirit band, the Seru band, the strike return and the wipe scans with the victory
+re-pick match.
+
+The anim commit `FUN_8004AD80`, from its entry down the monster death arm, found the
+defeat cue silent in a scripted fight whose formation holds a second monster, where
+retail's gate opens on the formation's second cell. Its art install, the
+SpecialStarter's voices and the shout call match, and so do the actor pass
+`FUN_8004CE2C`'s clip-tag arms, Jette and Dohati hooks and status CLUT uploads, the
+frame driver `FUN_80046A20`'s exit pass and rumble decay, and the presentation tick
+`FUN_80050120`'s scene ramps.
+
 The shared cast kernel `FUN_801DD0AC`, its scale and finisher, and the two wrappers
 `FUN_801DD4B0` / `FUN_801DD6B4`, on both branches, found no cast waking a sleeper or
 freeing a Numbed seat, where the finisher strips `0x0F80` as the melee resolver does;

@@ -208,12 +208,14 @@ character record at `0x80084708 + (party_id-1)*0x414`. Reads `actor[+0x1DF + +0x
 until the `0x00` terminator is hit (the magic band is the one that terminates on `-1`).
 The terminator test sits after the drift block (`0x801E3998..0x801E39AC`), which the stage
 path falls into, so it reads the cursor the stage just bumped: the last byte stages and the
-band leaves for `0x1F` on the same pass. A one-swing stream therefore leaves the loop from a
+band leaves for `0x1F` on the same pass. The in-flight hold lands on the same drift block,
+so a pass that stages nothing still runs the test. A one-swing stream therefore leaves the loop from a
 cursor of `0` (`battle_map02_lip_kid_strike`: queue `05 00`, `0x1E` to `0x1F` in one pass with
 `+0x1DA = 5`), and only the cursor after the pass tells it from a stream that was never seeded. The stream alphabet for a party attack is direction
 swings `0x0C..0x0F`, art starters `0x19`/`0x1A`, and art action constants `0x1B+` (see
-[art-data.md](../formats/art-data.md)); the Miracle-Art continuation refills consumed
-slots with `0x19` before re-walking. Staged ids `>= 0x10` are remapped to the dynamic
+[art-data.md](../formats/art-data.md)); the War God Icon's Attack x2 refill (`0x801E39B4..0x801E3A64`) rewinds the
+cursor, steps `ctx[+0x16]` and demotes each build-loop starter in the first sixteen entries
+to `0x19` before re-walking. Staged ids `>= 0x10` are remapped to the dynamic
 art slots `0x10`/`0x11` by the anim commit `FUN_8004AD80` at install (see
 [battle-data-pack.md § Battle
 animations](../formats/battle-data-pack.md#battle-animations-record0)).
@@ -500,7 +502,9 @@ Entered from `0x51` only when the killing blow absorbed a Seru (`ctx[+0x269]` no
 
 Arms the finished actor's framing first (`0x801E6428..0x801E6470`): [case 8 for an Attack, nothing for a Run, case 6 otherwise](battle-stage-camera.md#how-a-frames-camera-is-chosen). It stands through the next actor's setup.
 
-Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side ([plus a special-battle rule](battle-formulas.md#the-flow-readers)): if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]++`; if it is `< (party_count + monster_count - ctx[+0x25])`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below).
+Iterates the first seven actor-table slots clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). On a slot that is alive (`+0x14C != 0`) or a party seat (`s < ctx[+0x00]`) it also clears `+0x36`, `+0x21C` and `+0x225` (`0x801E64E4..0x801E64FC`), so a dead monster keeps its defeat fade while a living actor's render flag and capture byte reset at every action's end.
+
+Counts living actors per side ([plus a special-battle rule](battle-formulas.md#the-flow-readers)): if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]++`; if it is `< (party_count + monster_count - ctx[+0x25])`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below).
 
 **Next:** `0x0A` (next actor) / `0xFF` (round ends).
 
