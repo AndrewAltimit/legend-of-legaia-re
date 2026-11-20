@@ -135,6 +135,18 @@ pub struct ScriptGate {
     /// a capture parked on the PC while the shot moves (a `4C CD` wait, a
     /// beat's `0x4A`) is met once the engine's glide has as little left.
     pub glide_left: Option<i32>,
+    /// Display frames the engine's glide count (`CameraState::glide_frames`)
+    /// stands above [`Self::glide_left`] on the game frame retail's RAM
+    /// holds, when retail's mover ran its first tick on the frame that armed
+    /// it. The actor sweep `FUN_8002519C` reads a node's `next` before it
+    /// calls the handler (`lw s1,0x0(s1)` at `0x800251D8`, the `jalr` at
+    /// `0x800252B4`) and the spawn links the mover at its list's tail
+    /// (`FUN_80020454`), so a mover the arming record spawned as the list's
+    /// last node first ticks a game frame later, as the engine's glide count
+    /// does, while one spawned behind another node (`map01`'s credits record
+    /// with the ambient emitter after it) credits the step on the arming
+    /// frame. `None` for the first case.
+    pub glide_lead: Option<i32>,
     /// Kept by [`Self::met`]: `.0` while the engine's context for the record
     /// still runs and reaches the gate PC in straight-line code, `.1` once
     /// that context retired. The engine retires a record the tick its tail
@@ -286,8 +298,12 @@ impl ScriptGate {
             .tile_walk
             .map(|(t, x, z, left)| format!(":m{t}.{x}.{z}.{left}"))
             .unwrap_or_default();
+        let lead = self
+            .glide_lead
+            .map(|g| format!(":g{g}"))
+            .unwrap_or_default();
         format!(
-            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}{walk}{pager}{tile_walk}",
+            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}{walk}{pager}{tile_walk}{lead}",
             self.flat_index, self.pc, self.wait, self.op
         )
     }
@@ -307,8 +323,11 @@ impl ScriptGate {
         let mut walk = None;
         let mut pager = None;
         let mut tile_walk = None;
+        let mut glide_lead = None;
         for tail in it {
-            if let Some(m) = tail.strip_prefix('m') {
+            if let Some(g) = tail.strip_prefix('g') {
+                glide_lead = Some(g.parse().ok()?);
+            } else if let Some(m) = tail.strip_prefix('m') {
                 let mut f = m.split('.');
                 tile_walk = Some((
                     f.next()?.parse().ok()?,
@@ -361,6 +380,7 @@ impl ScriptGate {
             wait,
             op,
             glide_left,
+            glide_lead,
             retire_watch: std::cell::Cell::new((false, false)),
             system_pc,
             resumed_early: std::cell::Cell::new(false),
@@ -655,8 +675,14 @@ impl ScriptGate {
         // gate with no wait the glide is the clock, and met a vsync early the
         // walkers had not finished the frame (`son_field_door_hop` position
         // `1` to `.921`).
+        //
+        // A glide retail's mover credited on its arming frame
+        // ([`Self::glide_lead`]) stands that much below the engine's count on
+        // every game frame after it, so a gate with no wait meets it there.
         let glide_slack = if self.wait > 0 {
             i32::from(world.clock.frame_step.max(1)) - 1
+        } else if world.clock.game_tick_live && world.clock.game_tick_fired {
+            self.glide_lead.unwrap_or(0)
         } else {
             0
         };
@@ -1458,6 +1484,7 @@ mod tests {
     #[test]
     fn a_script_gate_round_trips_through_its_env_form() {
         let g = ScriptGate {
+            glide_lead: None,
             flat_index: 13,
             head: vec![0x0C, 0x83, 0x47, 0x00, 0xFF],
             pc: 1063,
@@ -1474,6 +1501,12 @@ mod tests {
             tile_walk: None,
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
+        let led = ScriptGate {
+            glide_left: Some(572),
+            glide_lead: Some(4),
+            ..g.clone()
+        };
+        assert_eq!(ScriptGate::from_env(&led.to_env()), Some(led));
         let g = ScriptGate {
             glide_left: Some(277),
             typing: Some((1, 15)),

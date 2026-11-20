@@ -1192,6 +1192,25 @@ to `1`, image `.942` to `.988`). A gate with no wait keeps the exact test:
 there the glide is the clock, and met a vsync early `son_field_door_hop`'s
 walkers had not finished the frame.
 
+**A glide that ticked on its arming frame.** The engine's glide count starts
+falling on the game frame after the arm, which is retail's rule only when the
+arming record was its list's last node. The actor sweep `FUN_8002519C` reads
+a node's `next` before it calls the handler (`lw s1,0x0(s1)` at
+`0x800251D8`, the `jalr` at `0x800252B4`), and the spawn links the mover at
+the tail (`FUN_80020454`), so a mover spawned by the tail record is passed
+over until the next frame, while one spawned with another node behind the
+record is reached on the same frame and credits the step there. The state
+says which: a live mover right behind an engaged record ticked late
+(`son_field_door_hop`, `vozz_genesis_tree_songi`), one behind any other node
+ticked on time (`map01`'s credits record with the ambient emitter
+`FUN_801D6058` spawned after it, `conc3_mist_night_free` with its grade
+actor). For the second, a gate with no wait meets the glide on a game frame
+the step above retail's frames left (`ScriptGate::glide_lead`):
+`credits_rimelm_walkaway_pcsx` position `.971` to `1`,
+`ending_vignette_rimelm_walkaway` `.982` to `1`, `conc3_mist_night_free`
+facing `.941` and npcs `.929` to `1`, `juui1_vortex_party_flying` image
+`.979` to `.999`.
+
 **A fresh box behind a collapse.** After the `0x48` collapse the pager
 counts `_DAT_801F273C` down from `0x18` with no box drawn, then loads the
 next page (state `2`); the row table still holds the page before. A state in

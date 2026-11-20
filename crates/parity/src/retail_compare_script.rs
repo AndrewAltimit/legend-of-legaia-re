@@ -212,6 +212,29 @@ pub struct RetailScripts {
     /// completing press), its rows as offsets into the first running
     /// record ([`pager_phase`]).
     pub pager: Option<PagerPhase>,
+    /// The live mover sits behind a node other than an engaged record: the
+    /// record that armed it was not its list's last node, so the sweep
+    /// reached the mover on the arming frame and it credited the step there
+    /// (`ScriptGate::glide_lead`, [`mover_ticked_on_arming_frame`]).
+    pub glide_arm_credited: bool,
+}
+
+/// Whether the mover at `nodes[i]` ran its first tick on the game frame that
+/// armed it. The sweep `FUN_8002519C` loads a node's `next` before it calls
+/// the handler (`lw s1,0x0(s1)` at `0x800251D8`, the `jalr` at
+/// `0x800252B4`), and the spawn links the new mover at its list's tail
+/// (`FUN_80020454`). A mover right behind an engaged record was spawned by
+/// that record as the tail, which the sweep had already passed; one behind
+/// any other node (`map01`'s credits record with the ambient emitter
+/// `FUN_801D6058` between them) was reached on the same frame. A re-armed
+/// mover keeps its old place, behind the record or not, and the rule holds.
+fn mover_ticked_on_arming_frame(ram: &[u8], nodes: &[u32], i: usize) -> bool {
+    let Some(&prev) = i.checked_sub(1).and_then(|p| nodes.get(p)) else {
+        return false;
+    };
+    let engaged_record = game_anchors::u32_at(ram, prev + 0x0C) == FIELD_ACTOR_TICK
+        && game_anchors::u32_at(ram, prev + 0x10) & ENGAGED != 0;
+    game_anchors::u32_at(ram, prev) == nodes[i] && !engaged_record
 }
 
 /// The pager state word `_DAT_801F2734` (field overlay).
@@ -323,11 +346,12 @@ impl RetailScripts {
             ..Self::default()
         };
         let nodes = actor_nodes(ram);
-        for &node in &nodes {
+        for (i, &node) in nodes.iter().enumerate() {
             let tick = game_anchors::u32_at(ram, node + 0x0C);
             let flags = game_anchors::u32_at(ram, node + 0x10);
             let id = game_anchors::u16_at(ram, node + 0x50);
             if tick == CAMERA_MOVER_TICK && flags & DEAD == 0 && out.glide_left.is_none() {
+                out.glide_arm_credited = mover_ticked_on_arming_frame(ram, &nodes, i);
                 let left = i32::from(game_anchors::i16_at(ram, node + 0x9E))
                     - i32::from(game_anchors::i16_at(ram, node + 0x9C));
                 out.glide_left = Some(left.max(0));
@@ -477,6 +501,10 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
         wait: s.wait.max(0),
         op: s.op,
         glide_left: scripts.glide_left,
+        glide_lead: scripts
+            .glide_left
+            .filter(|_| scripts.glide_arm_credited)
+            .map(|_| i32::from(scripts.display_lag / 2).max(1)),
         retire_watch: std::cell::Cell::new((false, false)),
         system_pc: scripts.system_pc,
         resumed_early: std::cell::Cell::new(false),
@@ -797,5 +825,35 @@ mod tests {
         };
         let g = displayed_script_gate_from_retail(&on_text).unwrap();
         assert!(g.pager.is_none());
+    }
+
+    /// A mover right behind the engaged record that spawned it as its list's
+    /// tail first ticked a game frame later; one behind any other node (the
+    /// ambient emitter on `map01`'s credits) ticked on the arming frame.
+    #[test]
+    fn a_mover_behind_another_node_credited_its_arming_frame() {
+        fn w32(ram: &mut [u8], va: u32, v: u32) {
+            let o = (va & 0x1F_FFFF) as usize;
+            ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut ram = vec![0u8; 0x20_0000];
+        let (record, emitter, mover) = (0x8010_0000u32, 0x8010_0200u32, 0x8010_0400u32);
+        w32(&mut ram, record + 0x0C, FIELD_ACTOR_TICK);
+        w32(&mut ram, record + 0x10, ENGAGED);
+        w32(&mut ram, emitter + 0x0C, 0x801D_6058);
+        w32(&mut ram, mover + 0x0C, CAMERA_MOVER_TICK);
+        // record -> mover
+        w32(&mut ram, record, mover);
+        assert!(!mover_ticked_on_arming_frame(&ram, &[record, mover], 1));
+        // record -> emitter -> mover
+        w32(&mut ram, record, emitter);
+        w32(&mut ram, emitter, mover);
+        assert!(mover_ticked_on_arming_frame(
+            &ram,
+            &[record, emitter, mover],
+            2
+        ));
+        // a list head has no node before it
+        assert!(!mover_ticked_on_arming_frame(&ram, &[mover], 0));
     }
 }
