@@ -619,3 +619,253 @@ fn the_attack_target_cursor_steps_and_commits_as_retail() {
         assert!(seen.get(o).copied().unwrap_or(0) > 30, "{o}: {seen:?}");
     }
 }
+
+/// The magic window's target sub-cursors (`0x801D2590..0x801D3020`): the
+/// one-enemy cursor `0x5C`, the all-enemies confirm `0x5E`, the one-ally
+/// cursor `0x65` and the all-allies confirm `0x67`, against
+/// `BattleSpellSession`'s `Targeting` and `SweepConfirm` phases. The enemy
+/// ring steps through `FUN_801D8D00` run for real, as on `0x5A`.
+#[test]
+fn the_spell_target_cursors_go_where_retail_goes() {
+    differential!(prot(898, STATE_MACHINE), prot(898, RING_STEP));
+    use legaia_engine_battle::battle_magic::{BattleSpellInput, BattleSpellSession, SpellPhase};
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_engine_battle::target_picker::{
+        CursorRow, PickerState, TargetKind, TargetPickerSession,
+    };
+    use legaia_engine_battle_vm::battle_action::{
+        PoolActor, bearing_12bit_approx, build_attack_target_queue,
+    };
+    let Some((mut cpu, windows, cues, _)) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.watched.insert(RING_STEP);
+    let catalog = SpellCatalog::vanilla();
+    let mut rng = Rng(0x5350_454C);
+    let mut seen = std::collections::HashMap::<(u8, &str), u32>::new();
+    for round in 0..8000 {
+        let state = [0x5C, 0x5E, 0x65, 0x67][rng.below(4) as usize];
+        let party = 1 + rng.below(3) as u8;
+        let seat = rng.below(u32::from(party)) as u8;
+        let count = 1 + rng.below(4) as usize;
+        let cross_entry = rng.below(2) == 1;
+        let member_alive: [bool; 3] =
+            std::array::from_fn(|i| i == usize::from(seat) || rng.below(3) != 0);
+        let mut alive = [false; 4];
+        for a in alive.iter_mut().take(count) {
+            *a = rng.below(4) != 0;
+        }
+        let live: Vec<u8> = (0..count as u8)
+            .filter(|&i| alive[usize::from(i)])
+            .collect();
+        if live.is_empty() {
+            continue;
+        }
+        let cur = live[rng.below(live.len() as u32) as usize];
+        let span = 0x800;
+        let mut pos = || {
+            (
+                (rng.below(span * 2) as i32 - span as i32) as i16,
+                (rng.below(span * 2) as i32 - span as i32) as i16,
+            )
+        };
+        let me = pos();
+        let monster_pos: [(i16, i16); 4] = std::array::from_fn(|_| pos());
+        let dirs = [
+            0,
+            LEFT,
+            RIGHT,
+            UP,
+            DOWN,
+            LEFT | UP,
+            RIGHT | DOWN,
+            LEFT | DOWN,
+        ];
+        let mut pad = dirs[rng.below(dirs.len() as u32) as usize];
+        if rng.below(3) == 0 {
+            pad |= CONFIRM;
+        }
+        if rng.below(4) == 0 {
+            pad |= CANCEL;
+        }
+        let mut pool = [PoolActor::default(); 8];
+        pool[0] = PoolActor {
+            alive: true,
+            x: me.0,
+            z: me.1,
+            target_slot: 3 + cur,
+            status: 0,
+        };
+        for i in 0..4 {
+            pool[3 + i] = PoolActor {
+                alive: alive[i],
+                x: monster_pos[i].0,
+                z: monster_pos[i].1,
+                target_slot: 0,
+                status: 0,
+            };
+        }
+        let q = build_attack_target_queue(&pool, 0, bearing_12bit_approx);
+
+        // Retail.
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        let actor = ACTOR + STRIDE * u32::from(seat);
+        cpu.mem.wr8(CTX, party);
+        cpu.mem.wr8(CTX + 0x06, state);
+        cpu.mem.wr8(CTX + 0x13, seat);
+        for (i, b) in [
+            q.count,
+            q.wrap_slot,
+            q.ordered[0],
+            q.ordered[1],
+            q.ordered[2],
+        ]
+        .iter()
+        .enumerate()
+        {
+            cpu.mem.wr8(CTX + 0x244 + i as u32, *b);
+        }
+        let start = match state {
+            0x5C => 3 + cur,
+            0x65 => seat,
+            0x5E => 9,
+            _ => 8,
+        };
+        cpu.mem.wr8(actor + 0x1DD, start);
+        cpu.mem.wr32(PAD, pad);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, u32::from(cross_entry));
+        cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
+        cpu.mem.wr32(CANCEL_MASK, CANCEL);
+        cpu.mem.wr8(BATTLE_ID, 0);
+        cpu.stub(NEXT_ABLE, u32::from(party));
+        windows.borrow_mut().clear();
+        cues.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let after = cpu.mem.rd8(CTX + 0x06);
+        let target = cpu.mem.rd8(actor + 0x1DD);
+
+        // The port.
+        let party_rows: [SlotState; 3] = std::array::from_fn(|i| {
+            if i < usize::from(party) {
+                SlotState::alive(true, member_alive[i]).with_seat(me.0, me.1)
+            } else {
+                SlotState::dead(false)
+            }
+        });
+        let mut monsters = [SlotState::dead(false); 5];
+        for i in 0..count {
+            monsters[i] =
+                SlotState::alive(true, alive[i]).with_seat(monster_pos[i].0, monster_pos[i].1);
+        }
+        let mut session = BattleSpellSession::new(seat, seat, &[], &catalog, 0, 0);
+        session.phase = match state {
+            0x5C => {
+                let mut p =
+                    TargetPickerSession::new(TargetKind::SingleEnemy, 0, party_rows, monsters);
+                assert!(p.seat_cursor(CursorRow::Enemy, cur), "round {round}");
+                SpellPhase::Targeting {
+                    spell_id: 0x20,
+                    picker: p,
+                }
+            }
+            0x65 => SpellPhase::Targeting {
+                spell_id: 0x10,
+                picker: TargetPickerSession::new(
+                    TargetKind::SingleAllyOrSelf,
+                    seat,
+                    party_rows,
+                    monsters,
+                ),
+            },
+            0x5E => SpellPhase::SweepConfirm {
+                spell_id: 0x20,
+                row: CursorRow::Enemy,
+            },
+            _ => SpellPhase::SweepConfirm {
+                spell_id: 0x10,
+                row: CursorRow::Ally,
+            },
+        };
+        let ev = BattleSpellInput {
+            up: pad & UP != 0,
+            down: pad & DOWN != 0,
+            left: pad & LEFT != 0,
+            right: pad & RIGHT != 0,
+            cross: pad & CONFIRM != 0,
+            circle: pad & CANCEL != 0,
+            cross_entry,
+        };
+        session.input(ev, &catalog, party_rows, monsters);
+        let label = format!(
+            "round {round}: state {state:#x} pad {pad:#x} cross-entry {cross_entry} party {party} \
+             seat {seat} members {member_alive:?} cur {cur} alive {alive:?} windows {:x?} cues {:x?} \
+             -> {after:#x} target {target}",
+            windows.borrow(),
+            cues.borrow()
+        );
+        let outcome = match (&session.phase, after) {
+            (SpellPhase::Targeting { picker, .. }, s) if s == state => {
+                let PickerState::Cursor { row, slot } = picker.state() else {
+                    panic!("{label}");
+                };
+                let want = if row == CursorRow::Enemy {
+                    3 + slot
+                } else {
+                    slot
+                };
+                assert_eq!(target, want, "cursor: {label}");
+                if target == start { "stay" } else { "step" }
+            }
+            (SpellPhase::SweepConfirm { .. }, s) if s == state => "stay",
+            (
+                SpellPhase::Confirmed {
+                    target_row,
+                    target_slot,
+                    ..
+                },
+                0x28 | 0x6E,
+            ) => {
+                let want = match (state, target_row) {
+                    (0x5E | 0x67, _) => start,
+                    (_, CursorRow::Enemy) => 3 + target_slot,
+                    (_, CursorRow::Ally) => *target_slot,
+                };
+                assert_eq!(target, want, "commit target: {label}");
+                "commit"
+            }
+            (SpellPhase::Select { .. }, 0x46) => "cancel",
+            (phase, after) => panic!("port {phase:?} retail {after:#x}: {label}"),
+        };
+        *seen.entry((state, outcome)).or_default() += 1;
+    }
+    for key in [
+        (0x5C, "stay"),
+        (0x5C, "step"),
+        (0x5C, "commit"),
+        (0x5C, "cancel"),
+        (0x65, "step"),
+        (0x65, "commit"),
+        (0x65, "cancel"),
+        (0x5E, "stay"),
+        (0x5E, "commit"),
+        (0x5E, "cancel"),
+        (0x67, "commit"),
+        (0x67, "cancel"),
+    ] {
+        assert!(
+            seen.get(&key).copied().unwrap_or(0) > 20,
+            "{key:?}: {seen:?}"
+        );
+    }
+}

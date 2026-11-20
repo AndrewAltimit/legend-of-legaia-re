@@ -293,6 +293,58 @@ impl TargetPickerSession {
         self.kind
     }
 
+    /// The one-ally sub-cursors' side step (`0x64` / `0x65`): the cursor's
+    /// party seat `+0x1DD` takes `dir` and wraps over the `seated` members,
+    /// Left `+1` to `0` past the last (`0x801D2C34..0x801D2C6C`), Right `-1`
+    /// to the last below `0` (`0x801D2CC4..0x801D2CF8`). No seat is skipped:
+    /// a downed member and the caster take the cursor as any other.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D2BE8..0x801D2D24`)
+    pub fn step_party_seat(&mut self, dir: i8, seated: u8) {
+        let PickerState::Cursor {
+            row: CursorRow::Ally,
+            slot,
+        } = self.state
+        else {
+            return;
+        };
+        let seated = seated.max(1);
+        let slot = if dir > 0 {
+            if slot + 1 >= seated { 0 } else { slot + 1 }
+        } else if slot == 0 {
+            seated - 1
+        } else {
+            slot - 1
+        };
+        self.state = PickerState::Cursor {
+            row: CursorRow::Ally,
+            slot,
+        };
+        self.events.push(PickerEvent::CursorMoved {
+            row: CursorRow::Ally,
+            slot,
+        });
+    }
+
+    /// The one-ally sub-cursors' commit: the seat under the cursor, whatever
+    /// its state - the confirm arm reads no liveness (`0x801D2D6C..0x801D2DB0`).
+    pub fn commit_party_seat(&mut self) {
+        if let PickerState::Cursor {
+            row: CursorRow::Ally,
+            slot,
+        } = self.state
+        {
+            self.state = PickerState::Done(PickerOutcome::Single {
+                slot,
+                row: CursorRow::Ally,
+            });
+            self.events.push(PickerEvent::Confirmed {
+                row: CursorRow::Ally,
+                slot,
+            });
+        }
+    }
+
     pub fn is_done(&self) -> bool {
         matches!(self.state, PickerState::Done(_))
     }

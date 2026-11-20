@@ -763,7 +763,7 @@ Drives the post-action target cursor. Parameterised on a `TargetKind` enum const
 
 Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead.
 
-The **party** row follows the one-ally states [above](#the-window-target-sub-cursors): it opens on the caster's seat, and Left steps the seat up, Right down. The picker's liveness filter is the port's: retail's `0x65` walk stops on a downed member too. The item window's party band (`World::tick_battle_item_menu`) walks every seated member, as retail's `0x64` does. Implementation: [`engine-battle::target_picker`](../../crates/engine-battle/src/target_picker.rs).
+The **party** row follows the one-ally states [above](#the-window-target-sub-cursors): it opens on the caster's seat, and Left steps the seat up, Right down. Like retail's `0x65`, the magic window's party cursor stops on a downed member and the caster as on any other seat, and commits the seat it stands on (`TargetPickerSession::step_party_seat` / `commit_party_seat`); its enemy cursor and both sweep confirms take an Up or Down as the confirm under the directional entry, as `0x5A` does. The item window's party band (`World::tick_battle_item_menu`) walks every seated member, as retail's `0x64` does. Implementation: [`engine-battle::target_picker`](../../crates/engine-battle/src/target_picker.rs).
 
 The **enemy** row is not a slot-order walk. Each picker row carries the slot's battle-world seat (`actor[+0x34]` / `+0x38`, filled by `World::battle_target_rows` from the actor's `move_state`), and a `SingleEnemy` cursor steps through retail's attack-target ring - `FUN_801D8A88` builds the ring and `FUN_801D8D00` steps it, so Left/Right move to the *angularly* nearest live monster.
 

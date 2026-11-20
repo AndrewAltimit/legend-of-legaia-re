@@ -99,6 +99,10 @@ pub struct BattleSpellInput {
     pub cross: bool,
     /// Cancel / back (Circle).
     pub circle: bool,
+    /// The Battle Command option's cross-button entry (`_DAT_800846C8 != 0`).
+    /// Under the default directional entry an Up or Down with no side
+    /// direction commits a target sub-cursor as the confirm mask does.
+    pub cross_entry: bool,
 }
 
 /// One caster's spell-selection session, driven a frame at a time.
@@ -261,14 +265,7 @@ impl BattleSpellSession {
                 spell_id,
                 mut picker,
             } => {
-                picker.input(PickerInput {
-                    up: ev.up,
-                    down: ev.down,
-                    left: ev.left,
-                    right: ev.right,
-                    cross: ev.cross,
-                    circle: ev.circle,
-                });
+                step_sub_cursor(&mut picker, ev, party);
                 self.phase = match picker.outcome() {
                     Some(PickerOutcome::Single { slot, row }) => SpellPhase::Confirmed {
                         spell_id,
@@ -290,12 +287,14 @@ impl BattleSpellSession {
             }
             // The all-target surfaces: the cancel mask is tested first
             // (`beq s4,zero` / `and v0,s2,v0` on `0x800846D4` at
-            // `0x801D28C0..0x801D28D4`), then the confirm.
+            // `0x801D28C0..0x801D28D4`), then the confirm, which an Up or
+            // Down stands in for under the directional entry
+            // (`0x801D2978..0x801D29B0`, `0x801D2F9C..0x801D2FD4`).
             SpellPhase::SweepConfirm { spell_id, row } => {
                 self.phase = if ev.circle {
                     // Step `0x1A` / `0x1C`: back on row 0.
                     SpellPhase::Select { cursor: 0 }
-                } else if ev.cross {
+                } else if ev.cross || vertical_commit(ev) {
                     SpellPhase::Confirmed {
                         spell_id,
                         target_row: row,
@@ -307,6 +306,78 @@ impl BattleSpellSession {
             }
             other => self.phase = other,
         }
+    }
+}
+
+/// Whether an Up or Down stands in for the confirm mask on a target
+/// sub-cursor: under the directional entry, with no side direction held
+/// (`andi v0,s2,0x5000` / `andi v0,s2,0xa000` / `_DAT_800846C8 == 0`).
+pub fn vertical_commit(ev: BattleSpellInput) -> bool {
+    !ev.cross_entry && (ev.up || ev.down) && !(ev.left || ev.right)
+}
+
+/// One frame of a one-target sub-cursor, in retail's test order. The enemy
+/// cursor (`0x5C`, `0x801D2590..0x801D26EC`) tests Right, then Left, each
+/// stepping the ring and ending the frame only when the target moved, then
+/// the confirm (or an Up / Down, [`vertical_commit`]), then the cancel. The
+/// party cursor (`0x65`, `0x801D2B3C..0x801D2DB0`) tests the cancel first,
+/// then Left and Right, which step the seat over the whole seated party
+/// ([`TargetPickerSession::step_party_seat`]; not with a party of one), then
+/// the confirm, which takes the seat as it stands.
+///
+/// PORT: FUN_801D0748 (states `0x5C` / `0x65`)
+fn step_sub_cursor(picker: &mut TargetPickerSession, ev: BattleSpellInput, party: [SlotState; 3]) {
+    let side = |left: bool, right: bool| PickerInput {
+        left,
+        right,
+        ..PickerInput::default()
+    };
+    let commit = ev.cross || vertical_commit(ev);
+    match picker.state() {
+        crate::target_picker::PickerState::Cursor {
+            row: CursorRow::Enemy,
+            ..
+        } => {
+            let at = picker.state();
+            if ev.right {
+                picker.input(side(false, true));
+            }
+            if picker.state() == at && ev.left {
+                picker.input(side(true, false));
+            }
+            if picker.state() == at {
+                if commit {
+                    picker.input(PickerInput {
+                        cross: true,
+                        ..PickerInput::default()
+                    });
+                } else if ev.circle {
+                    picker.input(PickerInput {
+                        circle: true,
+                        ..PickerInput::default()
+                    });
+                }
+            }
+        }
+        crate::target_picker::PickerState::Cursor {
+            row: CursorRow::Ally,
+            ..
+        } => {
+            let seated = party.iter().filter(|s| s.present).count() as u8;
+            if ev.circle {
+                picker.input(PickerInput {
+                    circle: true,
+                    ..PickerInput::default()
+                });
+            } else if seated != 1 && ev.left {
+                picker.step_party_seat(1, seated);
+            } else if seated != 1 && ev.right {
+                picker.step_party_seat(-1, seated);
+            } else if commit {
+                picker.commit_party_seat();
+            }
+        }
+        crate::target_picker::PickerState::Done(_) => {}
     }
 }
 

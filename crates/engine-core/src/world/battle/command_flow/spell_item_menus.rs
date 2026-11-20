@@ -89,6 +89,8 @@ impl World {
             right: held(PadButton::Right),
             cross: self.input.just_pressed(PadButton::Cross),
             circle: self.input.just_pressed(PadButton::Circle),
+            cross_entry: self.toggles.battle_command
+                == legaia_engine_system::option_values::BattleCommandOpt::CrossButton,
         };
         // The spell list is a kind-4 list window, so the list kernel moves
         // its hand: one direction a frame, Up ahead of Down ahead of the page
