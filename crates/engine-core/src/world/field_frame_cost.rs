@@ -80,6 +80,18 @@ pub struct CostCell {
     pub quads: u16,
     pub lit: u16,
     pub mesh: MeshCost,
+    /// The draw's world position and record angles (`+0x08 / +0x0A /
+    /// +0x0C`), its camera-facing bits (`+0x12 & 0x380`) and its leaf bank:
+    /// the colour word's top byte is non-zero (`cued`: a cull radius or
+    /// `+0x12 & 0x800`) and carries the off-screen-test bit `0x40000000`
+    /// (`offtest`: a cull radius), `FUN_801F7088` at `0x801F7898..0x801F78C8`.
+    pub pos: [i32; 3],
+    pub angles: [u16; 3],
+    pub view_skip: u16,
+    pub cued: bool,
+    pub offtest: bool,
+    /// Index into [`FieldCostTable::decoration_geoms`], `u32::MAX` for none.
+    pub geom: u32,
 }
 
 /// One placed object: its world position, cull radius, how the draw walk
@@ -145,6 +157,9 @@ pub struct FieldCostTable {
     /// The player's model (PROT 0874 §0 head `0`), which the actor passes
     /// draw every field frame and no placement holds.
     pub player: Option<MeshCost>,
+    /// The decoration draws' pack meshes as their leaves walk them, one per
+    /// distinct mesh ([`CostCell::geom`]).
+    pub decoration_geoms: Vec<super::field_deco_outcomes::DecoGeom>,
 }
 
 impl FieldCostTable {
@@ -463,6 +478,11 @@ pub struct FieldFrameFeatures {
     pub decoration_box_cells: u32,
     pub decoration_groups: u32,
     pub decoration_kinds: [u32; 12],
+    /// Of [`Self::decoration_kinds`]: the primitives priced by their leaf
+    /// outcome ([`super::field_deco_outcomes`]), and what they cost, in
+    /// cycles x 10.
+    pub decoration_outcome_kinds: [u32; 12],
+    pub decoration_outcome_cycles_x10: u64,
     pub ground_rows: u32,
     pub ground_window_cells: u32,
     /// Of [`Self::ground_cells`]: those the emitter's near test drops before
@@ -648,8 +668,30 @@ impl World {
         let view = self.npcs.cull_view.as_ref()?;
         let cells: ViewCells = view_cells(view);
         let mut f = FieldFrameFeatures::default();
+        let outcome_gte = (self.toggles.derived_frame_cost
+            && self.toggles.field_cost_prim_outcomes)
+            .then(|| self.npcs.cull_camera.as_ref().map(placed_cull_gte))
+            .flatten();
+        let mut scratch = std::mem::take(&mut *self.field_cost_scratch.borrow_mut());
         for d in &table.decorations {
             if cells.decoration_visible(i32::from(d.col), i32::from(d.row), d.radius) {
+                if let (Some(g), Some(geom)) = (
+                    outcome_gte.as_ref().filter(|_| d.view_skip == 0),
+                    table.decoration_geoms.get(d.geom as usize),
+                ) {
+                    let t = super::field_deco_outcomes::DecoTransform::new(g, d.pos, d.angles);
+                    let (c, k) = super::field_deco_outcomes::price_decoration(
+                        geom,
+                        &t,
+                        d.cued,
+                        d.offtest,
+                        &mut scratch,
+                    );
+                    f.decoration_outcome_cycles_x10 += c as u64;
+                    for (a, b) in f.decoration_outcome_kinds.iter_mut().zip(k) {
+                        *a += b;
+                    }
+                }
                 f.decoration_draws += 1;
                 f.decoration_prims += u32::from(d.prims);
                 f.decoration_verts += u32::from(d.verts);
@@ -867,6 +909,7 @@ impl World {
                 }
             }
         }
+        *self.field_cost_scratch.borrow_mut() = scratch;
         Some(f)
     }
 }
@@ -892,6 +935,7 @@ mod tests {
                     quads: 0,
                     lit: 0,
                     mesh: MeshCost::default(),
+                    ..CostCell::default()
                 },
                 CostCell {
                     col: 100,
@@ -902,6 +946,7 @@ mod tests {
                     quads: 0,
                     lit: 0,
                     mesh: MeshCost::default(),
+                    ..CostCell::default()
                 },
             ],
             placed: vec![CostPlaced {
@@ -928,6 +973,7 @@ mod tests {
             npc_spawns: Vec::new(),
             npc_prims_through: Vec::new(),
             player: None,
+            decoration_geoms: Vec::new(),
         }));
         assert_eq!(w.field_frame_features(), None, "no view published");
         w.npcs.cull_view = Some(FieldCullView {
@@ -1088,6 +1134,7 @@ mod tests {
                         kinds: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 500],
                         ..MeshCost::default()
                     },
+                    ..CostCell::default()
                 })
                 .collect(),
             ..FieldCostTable::default()

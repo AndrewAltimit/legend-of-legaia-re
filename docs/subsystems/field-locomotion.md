@@ -51,6 +51,7 @@ flowchart TD
 - [Per-frame flow](#per-frame-flow) - [base step](#base-step-selection-walk--run) · [clip base](#the-clip-base-and-the-settle-tail) · [wall slide](#wall-slide-resolution-fun_80046494) · [pad octant](#gp0x2d8-is-authored-not-computed)
 - [Collision](#collision---fun_801cfe4c) - [wall probes](#wall-probes) · [actor probes](#actor-probes-fun_801cfc40) · [touch and interact](#touch-and-interact-dispatch) · [port](#engine-model)
 - [Vertical settle + ledge hop](#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878) - [hop-arc controller](#the-scripted-hop-arc-controller)
+- [Smooth field actors (enhancement)](#smooth-field-actors-enhancement)
 - [Action movement (enhancement)](#action-movement-enhancement)
 - [Where the collision grid comes from](#where-the-collision-grid-comes-from) - [collision byte](#collision-byte-walls--floor-height) · [object-grid cell word](#object-grid-cell-word) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [timed warp](#the-timed-kind-0-warp) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [door swing](#the-door-swing-how-a-bind-script-drives-the-clip) · [load chain](#field-buffer-load-chain)
 - [Spawn position on scene entry](#spawn-position-on-scene-entry)
@@ -750,6 +751,35 @@ Coverage: `engine-core/tests/field_ledge_hop_wired.rs` (the whole flight on a sy
 
 Authored ledges are common - retail's predicate finds candidates in most field scenes, Rim Elm included. The full-scene wall-press legs in `parity/tests/field_collision_discriminator.rs` also catch a misclassifying hop, as a 42-unit overshoot into the wall.
 
+## Smooth field actors (enhancement)
+
+Not retail. Retail runs every field script context, every NPC walk leg and the actor pool's anim tick once a game frame, from the actor-list walk (`FUN_8002519C` -> `FUN_8003BC08`), and the frame then waits out its step of `2` to `4` vsyncs (`FUN_80016B6C`). A scripted walker therefore moves a whole step on the vsync a frame opens and stands on the vsyncs between, and its walk clip steps on the same clock.
+
+A PCSX-Redux film of `izumi_hunters_field` (`scripts/pcsx-redux/autorun_field_leg_timing.lua`, frame step `2`) has each hunter advance `4` units on every second vsync, hold on the one between, and turn a quarter turn in one frame. The engine's `izumi` first-visit choreography runs at steps `3` and `4` under the derived frame cost, so its walkers step `12` or `16` units at 15 to 20 updates a second.
+
+`WorldToggles::smooth_actors` (default on, off under `pin_retail` and `--retail`) draws them one game frame behind instead, the trade the smooth battle camera makes for battle bodies ([battle camera](battle-stage-camera.md#the-smooth-battle-camera-enhancement)). `World::observe_field_present` runs at the end of every `World::tick` and keeps the bodies the last game frame closed on beside the live ones: each active actor's root and heading (`render_26`) and its `pose_frame`, and each placed NPC's position, render height and heading. The draw accessors step from the one to the other by the share of the current frame's vsyncs already shown:
+
+- `World::field_draw_root` - an actor's drawn position and heading (both hosts' player matrix, the page's dynamic actors);
+- `World::field_npc_drawn_pose` - `field_npc_draw_pose` with the drawn position and yaw (both hosts' NPC pass);
+- `World::field_draw_pose_frame` - the player's drawn pose, part by part (both hosts' posed player mesh);
+- `World::field_drop_shadows` lays each blob under the drawn body.
+
+The field camera's stepped moves draw on the same phase ([cutscene](cutscene.md#the-smooth-camera-enhancement)), and a follow focus pinned onto the player (`Camera::focus_pinned_live`) takes the drawn player's carry (`DrawLead::actors`), so a player a record walks under the follow camera holds its screen point.
+
+A body draws live, not behind, when it is placed rather than moved (a step of `512` units or more in a frame, a turn of `1536` or more, a body that appears, leaves the off-map hide box or changes scene) and when it moved on a vsync between two game frames - the player under the smooth walk, which already moves every vsync - for that frame and the next. A pose part that jumps `512` units or turns `1024` lands at once. A height step of `256` or more lands at once while the ground position still steps: the opening's (`opdeene`) walkers change floor tier by `443` units in one frame of a `12`-unit walk, and drawn over the frame they rose through the floor.
+
+A scripted camera glide draws a vsync ahead (the pose the next frame stores) while the bodies draw a frame behind. Over the opening's glide vsyncs `smooth_actor_motion_disc.rs` projects every body through the frame's camera: the change of a body's one-vsync screen step averages `1.69` px stored and under `0.1` px drawn, and the drawn point sits about a pixel off the stored one on average. The two phases do not fight on screen; the largest offsets are a body's own height steps close to the lens.
+
+Presentation-only: the simulation, the frame-cost census, collision, the interact probes and every `rand` draw read the actor records and `World::npcs`. `smooth_actor_motion_disc.rs` runs the `izumi` intro with the toggle on and off on one pad schedule and holds the actors, the NPC positions and headings, the camera globals, the field PC and the random stream equal on every vsync; over its walking body-vsyncs the stored walkers hold on about seven in ten and the drawn ones on almost none, the largest one-vsync drawn step a quarter of the stored one.
+
+Every NPC's clip is drawn behind on the same phase, a walker's and a standing NPC's idle loop alike. Retail's anim tick (`FUN_800204F8`) moves a world-owned clip cursor (`World::npcs.clip_cursors`, the actor's `+0x68`) by the rate times the frame step once a game frame, so at step `4` a template-rate clip jumps two keyframes a frame.
+
+`World::field_npc_drawn_clip_cursor` steps the cursor back toward the frame before the way the clip runs (forward, or back under the reverse bit `0x80`, across the loop's wrap) on the quarter-frame grid (a template-rate clip moves `8` a vsync, a half-rate one `4`), and both hosts pose it through the frame blender at that sub-frame whatever the record's gate (`FieldClipPlayer::drawn_pose`, keyed by `drawn_pose_key`, which keys a whole frame as the playhead does). A held clip, a re-bound one and a step past half the clip draw the playhead.
+
+Each in-between pose is one more posed mesh in the native window's memo. Its key (`field_anim::NpcPoseKey`) holds the slot, the clip (`FieldClipPlayer::clip_id`, a hash of the decoded frames), the pose key and the look bits (`ActorLook::pose_key_bits`) as separate fields. Without the clip in the key a re-target had to drop the slot's memo, since the incoming clip reuses the same low keys, so a town's wanderers, which switch between idle and walk all the time, re-skinned every pose on every visit; with it the memo fills once per clip. `town01` levels off near 2,400 meshes; past 4,096 (`NPC_POSE_CACHE_CAP`) the window drops the clips no slot is showing, then every pose but the ones on screen, so a head a script turns through many look angles cannot grow it without end.
+
+With the clip keyed, the `town01` walk bench (`cost-ratchet.py`) stays within its count with every clip drawn in between. OR-ing the look bits into the pose key also let a held last frame's bit `1 << 20` land on the look's Z-angle field, so two poses could share a mesh; the page already exports the two halves apart. Over the `izumi` intro's walking NPC clip-vsyncs the stored cursor holds on about seven in ten and the drawn one on almost none; over `town01`'s free-roam wanderers on half, and the drawn one on none.
+
 ## Action movement (enhancement)
 
 Not retail. `WorldToggles::action_movement` (default off, off under `pin_retail` and `--retail`) swaps the walk controller and its settle for a platformer-style body: momentum, a sprint, a jump with a double jump, a dash, air control, coyote time and jump buffering, with gravity onto the scene's floor levels. It exists for the expansion modes that want a faster, more responsive player (prop hunt, racing, co-op roaming) and as a play enhancement. Off, `World::step_field_locomotion` and `World::step_field_vertical` run exactly the code above; `field_action_movement.rs` pins a digest of the walk over a scripted pad stream, the action buttons included, with and without the vertical settle.
@@ -1123,10 +1153,12 @@ A placed record becomes an actor through **one of two sweeps**, never both.
 |---|---|---|
 | Runs | once at scene init, over the whole grid | on every camera re-centre, over the region box |
 | Gate | the anchor tile must resolve a kind-1 bind (`func_0x801d5630(1, anchor_col, anchor_row)`); a miss skips the tile | the anchor tile must **not** carry cell bit `0x400` (`801d7ccc: andi v0,v0,0x400` -> `bne` skips) |
-| Script | the bind's flat record (partition 0 comes first, so a **partition-0 record**): base into `actor+0x90`, post-header offset into `+0x9E`, trailing header byte into `+0x5C` | none; `+0x5C == 0` |
+| Script | the bind's **flat** record (see below): base into `actor+0x90`, post-header offset into `+0x9E`, trailing header byte into `+0x5C` | none; `+0x5C == 0` |
 | List | the actor list `FUN_801cf754` builds collision candidates from | the scene control block's `+0x24` list, which no collision routine reads |
 
-A partition-0 record's header is `[u8 n][n*2 name bytes][u8 anim_id]`.
+A bound record's header is `[u8 n][n*2 name bytes][u8 anim_id]`.
+
+**The record byte is a flat index.** The sweep sums the three partition counts (`0x8003A800..0x8003A848`) and indexes one table of 24-bit record offsets with the trigger's byte (`0x8003A854..0x8003A878`), so a trigger past partition 0 binds a partition-1 or -2 record. Most scenes bind only partition 0, but `urudre3`'s partition 0 holds `28` records and the trigger on tile `(86, 106)` names record `28`, the first of partition 1: the wardrobe in Songi's room, which the `urudre3_songi_room` capture holds as an actor with `+0x50 = 28`, `+0x9E = 8` and draw kind `5`. `edbalden`'s triggers name partition-1 records too. Port: `legaia_engine_scene::field_env::object_binds`; pinned by `engine-scene/tests/field_object_flat_record_binds_disc.rs`.
 
 The window sweep differs in four more ways, all mirrored by the port `legaia_engine_field::field_regions::window_rebuild_spawns_resident`:
 

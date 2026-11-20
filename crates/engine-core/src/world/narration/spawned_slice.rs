@@ -242,6 +242,8 @@ impl World {
         // actor held for the script until the next one, like `glide_hold`.
         // REF: FUN_8003774C (the 0x37 / 0x41 arm), FUN_8003BC08
         let mut npc_glide_hold: Vec<u8> = tl.npc_landed_hold.clone();
+        // NPC face legs this slice armed, stepped once it is done.
+        let mut armed_faces: Vec<u8> = Vec::new();
         for mut glide in std::mem::take(&mut tl.npc_glides) {
             npc_glide_hold.push(glide.slot);
             if grid == 0 {
@@ -1107,19 +1109,26 @@ impl World {
                         channels[ci].ctx.world_x as i16,
                         channels[ci].ctx.world_z as i16,
                     ));
-                    // The kernel runs in the same actor tick that armed it, so
-                    // the leg takes its first frame now.
-                    let mut face = legaia_engine_field::cutscene_timeline::TimelineNpcFace {
+                    // The kernel runs in the target's own actor tick, which
+                    // follows the spawned record's on the list (a spawned
+                    // context goes in ahead of the placements), so the leg
+                    // takes its first frame once this slice is done
+                    // (`armed_faces` below) and aims at where the rest of the
+                    // slice put the bind: `urudre2`'s Jette beat turns Jette
+                    // and the baby to the King (`CC 23 85 00 00 22`) before
+                    // the King's own seat `A3 22 6F 54`, and aimed at once
+                    // they faced his park seat (heading `218` against
+                    // retail's `5120`).
+                    let face = legaia_engine_field::cutscene_timeline::TimelineNpcFace {
                         slot,
                         ramp,
                         frames: 1,
                     };
                     tl.npc_faces.retain(|f| f.slot != slot);
                     tl.npc_facings.retain(|f| f.slot != Some(slot));
-                    if grid == 0 || !host.world.step_npc_face_leg_by(slot, &mut face.ramp, grid) {
-                        tl.npc_faces.push(face);
-                    } else {
-                        tl.npc_landed_hold.push(slot);
+                    tl.npc_faces.push(face);
+                    if grid != 0 {
+                        armed_faces.push(slot);
                     }
                     npc_glide_hold.push(slot);
                     tl.pc = pc + 6;
@@ -1871,6 +1880,20 @@ impl World {
             }
         }
         self.field_vm.channels = channels;
+        // The armed face legs' first frame, in the targets' own ticks after
+        // the record's (see the arm).
+        // REF: FUN_8003BC08, FUN_8003774C
+        if !armed_faces.is_empty() {
+            for mut face in std::mem::take(&mut tl.npc_faces) {
+                if armed_faces.contains(&face.slot)
+                    && self.step_npc_face_leg_by(face.slot, &mut face.ramp, grid)
+                {
+                    tl.npc_landed_hold.push(face.slot);
+                } else {
+                    tl.npc_faces.push(face);
+                }
+            }
+        }
         self.field_vm.stepping_view.clear();
         self.cutscene.in_timeline = false;
         self.field_vm.in_spawned_record_slice = false;

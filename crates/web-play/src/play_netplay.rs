@@ -207,6 +207,16 @@ impl LegaiaRuntime {
         .to_string()
     }
 
+    /// Which build this page is, as a player is told it: "release 1.30.0",
+    /// or "a development build (0.1.0)" for a bundle made for no release
+    /// (`legaia_engine_netplay::room::build_label` over the room's build id,
+    /// `engine_build`). A room takes only peers of one build; the native
+    /// window's Multiplayer screen names its release the same way
+    /// (`ConnectMenu::release`), so two players can compare before a join.
+    pub fn play_net_build_label(&self) -> String {
+        legaia_engine_netplay::room::build_label(&legaia_engine_netplay::room::engine_build())
+    }
+
     /// The env-pack slot this player hides as in a field prop hunt (the
     /// page draws that mesh in place of the lead), `-1` when not hiding.
     pub fn play_net_self_disguise(&self) -> i32 {
@@ -311,5 +321,29 @@ impl LegaiaRuntime {
             Some(RoomKey::BeginChat) => "chat",
             None => "",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::runtime::LegaiaRuntime;
+
+    /// The page names its build as the room's build id does, and the Online
+    /// panel and the report read it through a feature-detected call.
+    #[test]
+    fn the_page_names_its_build_as_the_room_does() {
+        let rt = LegaiaRuntime::new();
+        let label = rt.play_net_build_label();
+        let id = legaia_engine_netplay::room::engine_build();
+        assert_eq!(label, legaia_engine_netplay::room::build_label(&id));
+        assert!(
+            label.starts_with("release ") || label.starts_with("a development build"),
+            "{label}"
+        );
+        let page = include_str!("../../../site/_content/play.html");
+        assert!(page.contains("id=\"play-net-build\""));
+        assert!(page.contains("typeof rt.play_net_build_label !== 'function'"));
+        let report = include_str!("../../../site/js/play-report.js");
+        assert!(report.contains("rt.play_net_build_label()"));
     }
 }

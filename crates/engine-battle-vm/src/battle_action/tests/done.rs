@@ -104,6 +104,27 @@ fn the_attack_band_restores_the_anim_rates_once_the_art_clip_ends() {
     );
 }
 
+/// The strike band's arm reads the close-up latch before the tail clears it:
+/// the pass whose restore drops `+0x243` keeps the value its arm framed on
+/// (`strike_arm_latch`), and the next pass, and any other state, reads the
+/// cleared byte.
+#[test]
+fn a_strike_pass_keeps_the_latch_its_arm_read() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    ctx.gauge_rearm_latch = 1;
+    host.actors[1].current_anim = 0;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.gauge_rearm_latch, 0, "the tail cleared it");
+    assert_eq!(ctx.strike_arm_latch, Some(1), "the arm read it set");
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.strike_arm_latch, Some(0));
+    ctx.action_state = ActionState::DoneCleanup.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.strike_arm_latch, None);
+}
+
 /// The gate is real: a materialised art (`+0x1D9 >= 0x10`) on a party slot
 /// closes it and nothing is touched.
 #[test]

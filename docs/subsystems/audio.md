@@ -328,6 +328,24 @@ the start arm stores it, the sentinel included, and is what the retail
 comparison corpus compares against a state's `0x8007BAC8`
 (`engine-scene-host/tests/bgm_track_word_disc.rs`).
 
+#### A park behind a start in the install slice sounds nothing
+
+The field init calls the swap poller in a loop only after the MAN loader has run
+the entry's install slice (`FUN_801D6704`, `0x801D72D4..0x801D7320`), so the poller
+reads the track word once, as the slice left it. A slice that starts a track and
+then parks therefore loads nothing: the park copies the pending index onto the loaded
+one (`0x8002454C..0x80024560`) and the start is never heard; behind a plain door the
+init has closed the slot, and the scene is silent. `juui1`'s entry starts `2011`
+(`+0x0C`) and, arriving through `conc2`'s vortex with `0x445` up, parks (`+0x21`)
+before its first `0x21`; every `juui1_vortex_*` state holds the word `4096`, the
+barrier pair on the park's index (`3086`) and the slot silent. The engine's install
+slice routes both words in one drain, and a park there now takes back the start
+attached in that drain (`SceneHost::route_bgm_events`), so the vortex is silent as
+on retail. A picker entry is the exception: a picked scene whose own start dropped
+the inherited track keeps that start sounding, as below
+(`FieldVmState::picker_start_kept`). Pinned by
+`engine-scene-host/tests/door_keep_bgm_disc.rs`.
+
 #### A picked scene that parks inherits its door's track
 
 Several field entry scripts open with a park start and select their own
@@ -2462,6 +2480,33 @@ hosts refill that region per mode from `World::sync_sfx_residency`, so a
 category-`6` cue keys PROT 0876 in the field and is silent in battle, where
 retail's slot 6 is closed; the latch, the writers and the closed-slot rule are
 in [`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6).
+
+<a id="a-slot-6-side-band-bank-takes-every-cue"></a>
+
+**A slot-6 side-band bank takes every cue.** A side-band request of `3000` or
+more (or `1000..=1999`) streams its bank into slot 6, over the field bank, and
+when that load lands the swap poller raises `_DAT_8007BA88` (`gp+0x770`; `li v0,0x1`
+/ `sw v0,0x770(gp)` at `0x80024B00..0x80024B04`, behind `s1 == 6`). While it is up
+the drainer replaces every cue's category with `6` before it reads the mixer record
+(`lw v0,-0x4578(v0)` / `li s3,0x6` at `0x80016CB8..0x80016CC8`), the actor tick does
+the same for its emitters (`0x8002251C..0x8002252C`), and the poller acknowledges
+any new side-band request without loading it (`0x800244C0..0x800244F0`). The only
+writer that lowers it is the teardown, op `0x36` sub `3` (`FUN_801D8450`). So a
+cutscene that requests such a bank keys its runtime rows from it whatever their
+`+4` says: `vozz`'s Genesis Tree touch `P1[7]` requests `3103` (`36 01 80 1F 0C`
+at `+0x5B`), pushes `0x211`, a category-`3` row of `vozz`'s record 0, and the
+retail states from `vozz_tree_vahn_touch_box` on sound its two voices out of VAB
+slot 6 (voice records 22 and 23, `+0x18 = 6`, with the latch at `1`); `map01`'s
+story-cutscene arms request `3001` ahead of each spawn, and each of those records
+tears it down before its scene change. The port keeps the latch
+(`AudioState::sfx_forced_bank`, raised by the sub-`1` arm when the request resolves
+to slot 6, lowered by `World::release_field_audio`); both hosts' director keys
+ring cues and emitters through slot 6 while `World::sfx_forced_slot` names it.
+Without it the tree's cues read slot 3, which no longer held the request's bank,
+and the whole revival was silent of its chimes. Retail's latch outlives a fight, in
+which slot 6 is closed and a forced cue keys nothing; every shipped request is torn
+down inside its own cutscene, and the port applies the latch in the field and on
+the overworld only.
 
 ### The battle command surfaces' blips
 

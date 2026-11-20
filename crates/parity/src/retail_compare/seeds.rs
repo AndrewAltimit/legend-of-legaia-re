@@ -402,6 +402,89 @@ pub fn retail_scene_grade(
     })
 }
 
+/// The attached light's handler (`FUN_801E4470`, field overlay PROT 0897;
+/// word `2` of template `0x801F28B8`).
+const ATTACHED_LIGHT_TICK: u32 = 0x801E_4470;
+/// The field actor tick a placement context runs on (`FUN_8003BC08`).
+const FIELD_CONTEXT_TICK: u32 = 0x8003_BC08;
+/// How far past `+0x94` a light's keyframe script is read: the walker reads
+/// fifteen-byte records, block headers and a terminator, and no field
+/// script runs longer than this.
+const LIGHT_SCRIPT_READ: usize = 0x200;
+
+/// A retail state's live attached lights (`FUN_801E4470` actors on the
+/// actor lists, op `34 1x`), each keyed by its parent's flat MAN index (or
+/// [`legaia_engine_core::world::AttachedLightSeed::PLAYER`]): the offset,
+/// extents, colours, blend, keyframe script and its cursor / clock, and the
+/// from-values the keyframe interpolates out of (`FUN_801E3E00` writes
+/// `+0x40` / `+0x58` / `+0x6A` and `+0x80..+0x85` on a keyframe's first
+/// frame, `0x801E3F6C..0x801E3FB4`). A light whose tear-down bit is up, or
+/// whose parent is neither the player nor a field context, is left out.
+///
+/// A keyframe phase is the wall time since the op that started it, so it is
+/// history the seed's replay re-times: `dream_noa_lights` holds the light on
+/// flat `8` at keyframe clock `42`, where the replay reaches the gate at
+/// `20`.
+pub fn retail_attached_lights(ram: &[u8]) -> Vec<legaia_engine_core::world::AttachedLightSeed> {
+    let player = game_anchors::player_ptr(ram);
+    let in_ram = |p: u32| (p & 0xFFE0_0000) == 0x8000_0000;
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == ATTACHED_LIGHT_TICK)
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0)
+        .filter_map(|n| {
+            let parent = game_anchors::u32_at(ram, n + 0x90);
+            let flat = if Some(parent) == player {
+                legaia_engine_core::world::AttachedLightSeed::PLAYER
+            } else if in_ram(parent)
+                && game_anchors::u32_at(ram, parent + 0x0C) == FIELD_CONTEXT_TICK
+            {
+                game_anchors::u16_at(ram, parent + 0x50)
+            } else {
+                return None;
+            };
+            let script_at = game_anchors::u32_at(ram, n + 0x94);
+            let script = if in_ram(script_at) {
+                let lo = (script_at & 0x1F_FFFF) as usize;
+                let bytes = &ram[lo.min(ram.len())..(lo + LIGHT_SCRIPT_READ).min(ram.len())];
+                bytes[..legaia_engine_vm::field_actor_billboard::attached_script_extent(bytes)]
+                    .to_vec()
+            } else {
+                Vec::new()
+            };
+            let rgb = |o: u32| {
+                [
+                    ram[((n + o) & 0x1F_FFFF) as usize],
+                    ram[((n + o + 1) & 0x1F_FFFF) as usize],
+                    ram[((n + o + 2) & 0x1F_FFFF) as usize],
+                ]
+            };
+            Some(legaia_engine_core::world::AttachedLightSeed {
+                flat,
+                offset_y: game_anchors::i16_at(ram, n + 0x16),
+                half_extent: (
+                    game_anchors::i16_at(ram, n + 0x3C),
+                    game_anchors::i16_at(ram, n + 0x3E),
+                ),
+                color_a: game_anchors::u32_at(ram, n + 0x74) & 0xFF_FFFF,
+                color_b: game_anchors::u32_at(ram, n + 0x88) & 0xFF_FFFF,
+                abr: ram[((n + 0x5A) & 0x1F_FFFF) as usize],
+                script,
+                cursor: game_anchors::i16_at(ram, n + 0x9E),
+                frame: game_anchors::i16_at(ram, n + 0x9C),
+                from_extent: (
+                    game_anchors::i16_at(ram, n + 0x40),
+                    game_anchors::i16_at(ram, n + 0x58),
+                ),
+                from_y: game_anchors::i16_at(ram, n + 0x6A),
+                from_a: rgb(0x80),
+                from_b: rgb(0x83),
+                rewind: 0,
+            })
+        })
+        .collect()
+}
+
 /// The scripted sprite widget's handler (`FUN_801F7A9C`, PROT 0900).
 pub(super) const SPRITE_TICK: u32 = 0x801F_7A9C;
 
@@ -1156,6 +1239,52 @@ pub fn retail_sprite_arms(
                         ) as i16
                     })
                 }),
+            })
+        })
+        .collect()
+}
+
+/// Every live mesh-bearing ambient part on a retail state's actor lists, in
+/// list order: a part ticked by `FUN_80021DF4`, not halted (`+0x10 & 0x8`),
+/// whose stager record's `model_sel` (`record[+0]`) names a scene mesh
+/// (`5..0x4000`, the seater's model-list arm `0x80021BF4..0x80021C54`). Each
+/// carries its position and banks taken back `lag` vsyncs
+/// ([`crate::retail_compare_battle::ram_read::displayed_part_halfword`]),
+/// scale `+0x72`, colour word `+0x74` and level `+0x78` taken back likewise
+/// (`World::install_mesh_part_snapshot`).
+pub fn retail_mesh_parts(
+    ram: &[u8],
+    lag: u16,
+) -> Vec<legaia_engine_core::world::ambient::SpriteArmSeed> {
+    let base = game_anchors::u32_at(ram, STAGER_BUNDLE_PTR);
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+        })
+        .filter_map(|n| {
+            let rec = game_anchors::u32_at(ram, n + 0x48).checked_sub(base)?;
+            (rec < 0x10_0000).then_some(())?;
+            let model_sel = game_anchors::i16_at(ram, base + rec);
+            (5..0x4000).contains(&model_sel).then_some(())?;
+            let shown = |o: u16| {
+                crate::retail_compare_battle::ram_read::displayed_part_halfword(
+                    ram,
+                    n,
+                    o,
+                    i32::from(lag),
+                ) as i16
+            };
+            Some(legaia_engine_core::world::ambient::SpriteArmSeed {
+                record_off: rec,
+                pos: [0x14u16, 0x16, 0x18].map(shown),
+                rot: [0x24u16, 0x26, 0x28].map(shown),
+                scale: game_anchors::u16_at(ram, n + 0x72),
+                colour: game_anchors::u32_at(ram, n + 0x74),
+                level: displayed_part_level(ram, n, lag),
+                pose: Vec::new(),
+                shape: None,
             })
         })
         .collect()

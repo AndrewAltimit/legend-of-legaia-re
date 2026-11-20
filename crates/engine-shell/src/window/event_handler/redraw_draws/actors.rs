@@ -82,7 +82,9 @@ impl<'m> DrawCtx<'_, 'm> {
             // scale. Raw retail-convention transform (no model flip): the
             // field camera's FIELD_WORLD_FLIP provides the single net Y
             // negation.
-            let Some(pose) = w.field_npc_draw_pose(d.slot, d.spawn) else {
+            // The drawn pose (`World::field_npc_drawn_pose`): one game frame
+            // behind under the smooth field actors.
+            let Some(pose) = w.field_npc_drawn_pose(d.slot, d.spawn) else {
                 continue;
             };
             // Retail's actor cull (`FUN_801D79E8`) under the visible-tile

@@ -1927,6 +1927,8 @@ fn a_clamped_history_entry_is_a_step_four_pass() {
         put16(&mut ram, FRAME_HISTORY + i as u32 * 2, d);
     }
     put32(&mut ram, 0x8007_B758, 5);
+    // A battle state keeps the history's largest entry ([`frame_step`]).
+    put8(&mut ram, game_anchors::GAME_MODE_VA, 0x15);
     assert_eq!(frame_step(&ram), 3);
     assert_eq!(pass_steps(&ram), [4, 3]);
     put32(&mut ram, 0x8007_B758, 6);
@@ -1935,6 +1937,33 @@ fn a_clamped_history_entry_is_a_step_four_pass() {
     assert_eq!(pass_steps(&ram), [3, 3]);
     put32(&mut ram, FORCED_STEP, 2);
     assert_eq!(pass_steps(&ram), [2, 2]);
+}
+
+/// Off the battle half a clamped newest entry is a step-`4` pass on its own:
+/// a history of clamps alone reads `0x2BC` at most, under the `0x2D1` rung,
+/// for a scene whose every frame ran past `0x2D0` hsyncs
+/// (`credits_edstati3_fullscreen_pcsx`: sixteen clamps, step bytes `4` / `4`).
+/// An older clamp under a newer short frame leaves the history's rung.
+#[test]
+fn a_field_history_of_clamps_steps_four() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put16(&mut ram, STEP_MODE, 0x10);
+    put8(&mut ram, game_anchors::GAME_MODE_VA, 0x03);
+    for i in 0..16 {
+        put16(&mut ram, FRAME_HISTORY + i * 2, 0x2BC);
+    }
+    put32(&mut ram, 0x8007_B758, 10);
+    assert_eq!(frame_step(&ram), 4);
+    assert_eq!(display_lag_vsyncs(&ram), 8);
+    put16(&mut ram, FRAME_HISTORY + 9 * 2, 0x26B);
+    assert_eq!(frame_step(&ram), 3);
+    put8(&mut ram, game_anchors::GAME_MODE_VA, 0x15);
+    put16(&mut ram, FRAME_HISTORY + 9 * 2, 0x2BC);
+    assert_eq!(
+        frame_step(&ram),
+        3,
+        "a battle state keeps the history's rung"
+    );
 }
 
 /// Without two ordering tables drawing the battle floor the step stays
@@ -1961,9 +1990,88 @@ fn unconfirmed_pass_steps_keep_the_history_max() {
     }
     put32(&mut ram, 0x8007_B758, 5);
     put32(&mut ram, BATTLE_CTX, 0x800E_B654);
+    put8(&mut ram, game_anchors::GAME_MODE_VA, 0x15);
     assert_eq!(pass_steps(&ram), [4, 3]);
     assert_eq!(display_pass_steps(&ram), [3, 3]);
     assert_eq!(display_lag_vsyncs(&ram), 6);
+}
+
+/// The pacer's step bytes settle a clamped history the floor does not: both
+/// bytes reading the step the clamp names say the newest entry was a long
+/// frame, so the passes take their own steps. Bytes that disagree (a capture
+/// saved inside the frame's `VSync` wait) or name another step confirm
+/// nothing, and outside [`with_step_bytes`] the history's rules stand.
+#[test]
+fn agreeing_step_bytes_confirm_a_clamped_pass() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put16(&mut ram, STEP_MODE, 0x10);
+    let hist = [
+        0x2BCu16, 0x2BC, 0x2B9, 0x2BB, 0x2B3, 0x2B4, 0x2B1, 0x2AA, 0x244, 0x227, 0x1F9, 0x1F6,
+        0x1F4, 0x1F2, 0x1F0, 0x21D,
+    ];
+    // Newest first, so entry `k` back sits at `cursor - 1 - k`.
+    let cursor = 3u32;
+    for (k, d) in hist.into_iter().enumerate() {
+        put16(
+            &mut ram,
+            FRAME_HISTORY + ((cursor + 15 - k as u32) & 0xF) * 2,
+            d,
+        );
+    }
+    put32(&mut ram, 0x8007_B758, cursor);
+    put32(&mut ram, BATTLE_CTX, 0x800E_B654);
+    put8(&mut ram, game_anchors::GAME_MODE_VA, 0x15);
+    assert_eq!(frame_step(&ram), 3);
+    assert_eq!(pass_steps(&ram), [4, 4]);
+    assert_eq!(display_pass_steps(&ram), [3, 3]);
+    assert_eq!(
+        with_step_bytes(Some((4, 4)), || display_pass_steps(&ram)),
+        [4, 4]
+    );
+    assert_eq!(
+        with_step_bytes(Some((3, 4)), || display_pass_steps(&ram)),
+        [3, 3]
+    );
+    assert_eq!(
+        with_step_bytes(Some((3, 3)), || display_pass_steps(&ram)),
+        [3, 3]
+    );
+    assert_eq!(
+        display_pass_steps(&ram),
+        [3, 3],
+        "the scope ends with the read"
+    );
+}
+
+/// A monster's retake lag takes the step the bytes confirm on a clamped
+/// history; a party action, a disagreeing pair and a capture read without
+/// the bytes keep two of the history's rung.
+#[test]
+fn a_monster_retake_lag_takes_the_confirmed_step() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put16(&mut ram, STEP_MODE, 0x10);
+    for i in 0..16 {
+        put16(&mut ram, FRAME_HISTORY + i * 2, 0x2BC);
+    }
+    put32(&mut ram, 0x8007_B758, 4);
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, game_anchors::GAME_MODE_VA, 0x15);
+    put8(&mut ram, ctx + 0x13, 3);
+    assert_eq!(retake_lag_vsyncs(&ram, ctx), 6);
+    assert_eq!(
+        with_step_bytes(Some((4, 4)), || retake_lag_vsyncs(&ram, ctx)),
+        8
+    );
+    assert_eq!(
+        with_step_bytes(Some((3, 4)), || retake_lag_vsyncs(&ram, ctx)),
+        6
+    );
+    put8(&mut ram, ctx + 0x13, 1);
+    assert_eq!(
+        with_step_bytes(Some((4, 4)), || retake_lag_vsyncs(&ram, ctx)),
+        6
+    );
 }
 
 /// A synthetic pool with one live child and one dead slot, two ordering

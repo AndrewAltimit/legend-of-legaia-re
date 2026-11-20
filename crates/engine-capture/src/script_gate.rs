@@ -135,6 +135,18 @@ pub struct ScriptGate {
     /// a capture parked on the PC while the shot moves (a `4C CD` wait, a
     /// beat's `0x4A`) is met once the engine's glide has as little left.
     pub glide_left: Option<i32>,
+    /// Display frames the engine's glide count (`CameraState::glide_frames`)
+    /// stands above [`Self::glide_left`] on the game frame retail's RAM
+    /// holds, when retail's mover ran its first tick on the frame that armed
+    /// it. The actor sweep `FUN_8002519C` reads a node's `next` before it
+    /// calls the handler (`lw s1,0x0(s1)` at `0x800251D8`, the `jalr` at
+    /// `0x800252B4`) and the spawn links the mover at its list's tail
+    /// (`FUN_80020454`), so a mover the arming record spawned as the list's
+    /// last node first ticks a game frame later, as the engine's glide count
+    /// does, while one spawned behind another node (`map01`'s credits record
+    /// with the ambient emitter after it) credits the step on the arming
+    /// frame. `None` for the first case.
+    pub glide_lead: Option<i32>,
     /// Kept by [`Self::met`]: `.0` while the engine's context for the record
     /// still runs and reaches the gate PC in straight-line code, `.1` once
     /// that context retired. The engine retires a record the tick its tail
@@ -197,7 +209,8 @@ pub struct PagerPhase {
     /// it where the press found it (`0x801D89B8..0x801D8A04`), so a `0x0D`
     /// capture names how far the row had typed. In a picker arm
     /// ([`Self::is_picker`]) it is the menu's slide count instead, the
-    /// pager actor's `+0x54`.
+    /// pager actor's `+0x54`, and in a fresh box's load call (`2`) the gone
+    /// countdown `_DAT_801F273C` a `0x48` collapse left.
     pub counter: i32,
 }
 
@@ -206,7 +219,18 @@ impl PagerPhase {
     /// the typing one, which [`ScriptGate::typing`] carries, and the picker
     /// arms ([`Self::is_picker`]).
     pub fn applies(state: u8) -> bool {
-        matches!(state, 0x02 | 0x05 | 0x0C | 0x0D | 0x0E | 0x0F) || Self::is_picker(state)
+        matches!(state, 0x02 | 0x05 | 0x0C | 0x0D | 0x0E | 0x0F)
+            || Self::is_picker(state)
+            || Self::is_collapse(state)
+    }
+
+    /// The `0x48` collapse (`0x801D92A4`): the press that dispatched a
+    /// page ending in `0x48` has run the record on past the box, and the
+    /// box shrinks to its centre line over the next calls. A gate on a
+    /// non-text op carries it ([`ScriptGate::met`]): the press is the
+    /// instant, which the replay's own paging re-times against the glide.
+    pub fn is_collapse(state: u8) -> bool {
+        state == 0x0A
     }
 
     /// A picker arm: the slide in (`0x11` / `0x13` / `0x15` / `0x17`) or the
@@ -274,8 +298,12 @@ impl ScriptGate {
             .tile_walk
             .map(|(t, x, z, left)| format!(":m{t}.{x}.{z}.{left}"))
             .unwrap_or_default();
+        let lead = self
+            .glide_lead
+            .map(|g| format!(":g{g}"))
+            .unwrap_or_default();
         format!(
-            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}{walk}{pager}{tile_walk}",
+            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}{walk}{pager}{tile_walk}{lead}",
             self.flat_index, self.pc, self.wait, self.op
         )
     }
@@ -295,8 +323,11 @@ impl ScriptGate {
         let mut walk = None;
         let mut pager = None;
         let mut tile_walk = None;
+        let mut glide_lead = None;
         for tail in it {
-            if let Some(m) = tail.strip_prefix('m') {
+            if let Some(g) = tail.strip_prefix('g') {
+                glide_lead = Some(g.parse().ok()?);
+            } else if let Some(m) = tail.strip_prefix('m') {
                 let mut f = m.split('.');
                 tile_walk = Some((
                     f.next()?.parse().ok()?,
@@ -349,6 +380,7 @@ impl ScriptGate {
             wait,
             op,
             glide_left,
+            glide_lead,
             retire_watch: std::cell::Cell::new((false, false)),
             system_pc,
             resumed_early: std::cell::Cell::new(false),
@@ -491,6 +523,22 @@ impl ScriptGate {
     /// in another arm of the page ([`Self::pager`]) - the engine's window in
     /// the arm that mirrors it over the same rows, scrolled at least as far.
     fn text_shown(&self, d: &legaia_engine_dialog::dialog::OwnedDialogPanel) -> bool {
+        // A fresh box's load behind a `0x48` collapse, still counting out the
+        // gone countdown ([`PagerPhase::counter`]): the gate's own page once
+        // the engine's box has collapsed and counted as far. The row table
+        // still holds the page before (`urudre3_zopu_hall`, parked on Songi's
+        // line at `+0x3AD` with Zopu's row `+0x39E` in the table and `20` of
+        // the `0x18` count left), and met on the page that waited the
+        // engine's frame showed Zopu's box still typing.
+        if let Some(p) = self
+            .pager
+            .as_ref()
+            .filter(|p| p.state == 0x02 && p.counter > 0)
+        {
+            return page_lead(d) == Some(self.pc)
+                && d.window()
+                    .is_some_and(|w| w.box_gone > 0 && w.box_gone <= p.counter);
+        }
         if let Some(p) = self
             .pager
             .as_ref()
@@ -581,10 +629,67 @@ impl ScriptGate {
         // landed too - `name_input_ui` is parked on the opening's `49 03`
         // one op after a 16-frame glide that lands under the prompt, and the
         // first tick on that PC is that glide's first frame.
-        let glide_landed = match self.glide_left {
-            Some(g) => world.camera.state.glide_frames <= g,
+        //
+        // A text gate caught mid-page whose retail mover is still in flight
+        // is met on the pager's phase alone: the box names the instant to
+        // the reveal unit, the capture frame stands the glide on retail's
+        // frames left (`Camera::align_glide_frames_left`), and the replay
+        // pages quicker than the recorded player, so its glide runs further
+        // behind the text. `juui1`'s cutscene record (flat `12`) types a
+        // line at `+0x438` under a long glide: retail's reveal counter `4`
+        // sat `196` frames from the glide's end, the engine's `264`, and
+        // gated on both the box stood fully typed over a frame that shows
+        // none. A gate just past a page's `0x48` press, the box collapsing
+        // ([`PagerPhase::is_collapse`]), is the same instant:
+        // `juui1_vortex_gala_box` is parked on `+0x23F` with the collapse
+        // one call in, and gated on the glide the engine's box had gone
+        // 22 ticks before the frame.
+        let collapse = self
+            .pager
+            .as_ref()
+            .is_some_and(|p| PagerPhase::is_collapse(p.state));
+        let mid_page = (text && (self.typing.is_some() || self.pager.is_some())) || collapse;
+        // The collapse also outranks a walking placement's leg: the leg is
+        // one more clock the paging re-times (`juui1_vortex_gala_box` waits
+        // on flat `8`'s face leg, which the engine's quicker press left
+        // landing well after its box had gone).
+        let clip_reached = if collapse {
+            self.latch.is_none_or(|cursor| {
+                world
+                    .player_script_clip_cursor()
+                    .is_some_and(|c| c >= cursor)
+            })
+        } else {
+            self.latch_reached(world)
+        };
+        // Retail's mover credits the frame step at once (`t += DAT_1F800393`,
+        // `FUN_801DC0BC`), so its frames left move in steps of the step on the
+        // same game frame as the record's wait; the engine's count falls one
+        // vsync at a time between them. A glide within the step of retail's
+        // stands on retail's game frame, and the capture aligns it exactly
+        // (`Camera::align_glide_frames_left`): `juui1_vortex_exit_flash` holds
+        // `87` left on wait `36` at step `3`, the engine `90`, and gated on the
+        // glide alone the wait ran to `39` and the three flying placements
+        // stood `48` units past retail's.
+        // Only a gate whose wait names the game frame takes the slack: on a
+        // gate with no wait the glide is the clock, and met a vsync early the
+        // walkers had not finished the frame (`son_field_door_hop` position
+        // `1` to `.921`).
+        //
+        // A glide retail's mover credited on its arming frame
+        // ([`Self::glide_lead`]) stands that much below the engine's count on
+        // every game frame after it, so a gate with no wait meets it there.
+        let glide_slack = if self.wait > 0 {
+            i32::from(world.clock.frame_step.max(1)) - 1
+        } else if world.clock.game_tick_live && world.clock.game_tick_fired {
+            self.glide_lead.unwrap_or(0)
+        } else {
+            0
+        };
+        let glide_landed = (match self.glide_left {
+            Some(g) => world.camera.state.glide_frames <= g + glide_slack || mid_page,
             None => world.camera.state.glide_frames <= 0,
-        } && self.latch_reached(world);
+        }) && clip_reached;
         // A box chains its `0x24` pages in one panel and holds the context's
         // PC on the first page's lead; retail's record PC steps onto each
         // page's lead on the press that turns to it, so a text gate on a
@@ -595,10 +700,14 @@ impl ScriptGate {
                     .dialog
                     .as_ref()
                     .is_some_and(|d| page_lead(d) == Some(self.pc));
+            // A PC the record stands on for one frame only names that frame
+            // ([`arrival_frame_pc`]): the glide is not waited out there.
+            let arrival =
+                tl.pc == self.pc && clip_reached && arrival_frame_pc(&tl.bytecode, self.pc);
             head_of(&tl.bytecode) == self.head
                 && (((tl.pc == self.pc || on_page)
                     && tl.ctx.wait_accum >= self.wait
-                    && glide_landed
+                    && (glide_landed || arrival)
                     && (!text || tl.dialog.as_ref().is_some_and(|d| self.text_shown(d))))
                     || (tl.pc != self.pc
                         && !on_page
@@ -873,6 +982,34 @@ pub fn loops_back_to(bytecode: &[u8], pc: usize) -> bool {
     false
 }
 
+/// Whether a record parked on `pc` stands there for exactly one frame: the
+/// instruction ending on `pc` is a `4A` wait and the one on it a
+/// cross-context op that runs when reached (`A2` clip, `A3` seat, `AB` /
+/// `AC` local flags, `B1` / `B2` channel flags).
+///
+/// A completed `4A` yields the slice with the PC past it, and the next slice
+/// runs the op and goes on, so a capture on that PC is the frame the wait
+/// ran out. A gate there that also waited for retail's glide frames left
+/// let the record run on and met on the visit, sampling a slice retail had
+/// not run: `conc3_mist_night_free` is parked on `P2[10]` `+0x18C5`
+/// (`A3 24 7F 7F`, after `4A 0A 00`) with `23` glide frames left, and the
+/// engine stood there at `26..24`, one frame of step `3` ahead of its
+/// glide; met on the visit, flats `36` / `38` were parked, flat `68`
+/// re-seated and flat `41` turned (`+0x18C5..+0x18DE`). The seat then
+/// stands the glide on retail's frames left
+/// (`Camera::align_glide_frames_left`). The dispatcher's halted-target
+/// early-out (`0x801DE90C..0x801DE944`) can still hold such an op on a
+/// target mid-leg, and the engine's own leg holds it the same way.
+pub fn arrival_frame_pc(bc: &[u8], pc: usize) -> bool {
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode};
+    let Some(lead) = pc.checked_sub(3) else {
+        return false;
+    };
+    let waited = decode(bc, lead)
+        .is_ok_and(|i| i.size == 3 && matches!(i.info, InsnInfo::WaitFrames { .. }));
+    waited && matches!(bc.get(pc), Some(0xA2 | 0xA3 | 0xAB | 0xAC | 0xB1 | 0xB2))
+}
+
 /// Ticks after the seed at which a record the engine is not running is
 /// resumed from its start ([`resume_record`]): the settle window, so a
 /// record the scene's own entry starts (the credits' vignette driver) is
@@ -894,6 +1031,7 @@ pub fn resume_record(
     host: &mut legaia_engine_scene_host::scene_host::SceneHost,
     gate: &ScriptGate,
 ) -> bool {
+    replay_marker_score(host, gate);
     if let Some(c) = gate.context(&host.world) {
         return match c.kind {
             EngineContextKind::Channel(i)
@@ -957,6 +1095,99 @@ pub fn resume_record(
     } else {
         world.install_cutscene_timeline_record(&mf, &man, 2, idx, false)
     }
+}
+
+/// Replay the track a finished spawned record left sounding, when the gate's
+/// record runs after it ([`legaia_engine_field::man_field_scripts::MarkerScore`]).
+///
+/// The gate's record must start no track of its own on its linear way to the
+/// gate PC and must test one of the flags the spawned record raises; the save
+/// must hold that flag up and the spawn's marker down - the spawned record
+/// ran to its end in this visit. `vozz` `P1[7]`, the Genesis Tree touch, tests
+/// `0x2B6`, which only `P2[14]` raises, and `P2[14]` swaps to `2025`: the
+/// card-load entry over the same flags starts `2004`, so without this the
+/// touch states hold the wrong word. A word already equal is left alone.
+fn replay_marker_score(
+    host: &mut legaia_engine_scene_host::scene_host::SceneHost,
+    gate: &ScriptGate,
+) {
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker};
+    let Some(Ok(Some(man))) = host
+        .scene
+        .as_ref()
+        .map(|s| s.field_man_payload(&host.index))
+    else {
+        return;
+    };
+    let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
+        return;
+    };
+    let n0 = mf.header.partition_counts[0].max(0) as usize;
+    let n1 = mf.header.partition_counts[1].max(0) as usize;
+    let flat = usize::from(gate.flat_index);
+    let (partition, index) = if flat < n0 {
+        (0, flat)
+    } else if flat < n0 + n1 {
+        (1, flat - n0)
+    } else {
+        (2, flat - n0 - n1)
+    };
+    let Some((start, pc0, len)) =
+        legaia_engine_field::man_field_scripts::partition_record_span(&mf, &man, partition, index)
+    else {
+        return;
+    };
+    let Some(body) = man.get(start..start + len) else {
+        return;
+    };
+    if !body.starts_with(&gate.head) {
+        return;
+    }
+    let mut tested = Vec::new();
+    for i in LinearWalker::new(body, pc0).flatten() {
+        if i.pc >= gate.pc {
+            break;
+        }
+        match i.info {
+            InsnInfo::Bgm { sub_op: 1 | 9, .. } => return,
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                ..
+            } => tested.push(idx),
+            _ => {}
+        }
+    }
+    let world = &mut host.world;
+    let Some(score) = legaia_engine_field::man_field_scripts::walk_marker_scores(&mf, &man)
+        .into_iter()
+        .find(|s| {
+            usize::from(s.global_index) != flat
+                && !world.system_flag_test(s.marker)
+                && s.raises
+                    .iter()
+                    .any(|&f| tested.contains(&f) && world.system_flag_test(f))
+        })
+    else {
+        return;
+    };
+    let id = score.words.first().map(|&(id, _)| id);
+    if id.is_none() || host.bgm_track_word == id {
+        return;
+    }
+    // The spawned record's swap committed and installed long before the
+    // capture: replay its select and commit as the plain start they amount
+    // to, inside a field-init window so the poller's settle and read are
+    // spent, and the track sounds at the seed rather than a swap later.
+    let mut words = score.words;
+    if let Some(at) = words.iter().position(|&(_, sub)| sub == 0xA)
+        && words[0].1 == 9
+    {
+        words.remove(at);
+        words[0].1 = 1;
+    }
+    host.world.open_battle_return_field_init();
+    host.world.replay_field_bgm_words(&words);
 }
 
 /// Engage the placement whose interaction record is the gate's: the talk
@@ -1189,6 +1420,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_cross_context_op_behind_a_wait_is_an_arrival_frame() {
+        // B8 24 84 0A (turn), 4A 0A 00 (wait), A3 24 7F 7F (seat): the seat
+        // is reached on the frame the wait runs out.
+        let body = [
+            0xB8, 0x24, 0x84, 0x0A, 0x4A, 0x0A, 0x00, 0xA3, 0x24, 0x7F, 0x7F,
+        ];
+        assert!(arrival_frame_pc(&body, 7));
+        // The wait itself, and a seat behind a turn rather than a wait, park.
+        assert!(!arrival_frame_pc(&body, 4));
+        let body = [0xB8, 0x24, 0x84, 0x0A, 0xA3, 0x24, 0x7F, 0x7F];
+        assert!(!arrival_frame_pc(&body, 4));
+        // A walk wait behind a wait parks for the walk.
+        let body = [0x4A, 0x0A, 0x00, 0xB3, 0x24, 0x0A];
+        assert!(!arrival_frame_pc(&body, 3));
+    }
+
+    #[test]
     fn run_latches_are_the_sets_after_the_last_branch() {
         // 75 C1 05 00 (test 0x5C1 -> +5), 55 C2 (set 0x5C2, behind the
         // test), 26 02 00 (jump), 55 C1 (set 0x5C1), 4A 10 00 (wait), gate.
@@ -1236,6 +1484,7 @@ mod tests {
     #[test]
     fn a_script_gate_round_trips_through_its_env_form() {
         let g = ScriptGate {
+            glide_lead: None,
             flat_index: 13,
             head: vec![0x0C, 0x83, 0x47, 0x00, 0xFF],
             pc: 1063,
@@ -1252,6 +1501,12 @@ mod tests {
             tile_walk: None,
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
+        let led = ScriptGate {
+            glide_left: Some(572),
+            glide_lead: Some(4),
+            ..g.clone()
+        };
+        assert_eq!(ScriptGate::from_env(&led.to_env()), Some(led));
         let g = ScriptGate {
             glide_left: Some(277),
             typing: Some((1, 15)),

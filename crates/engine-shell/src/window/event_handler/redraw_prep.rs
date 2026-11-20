@@ -70,6 +70,11 @@ impl PlayWindowApp {
             if due && let Some(arms) = sc.seat_sprite_arms.take() {
                 self.session.host.world.install_sprite_arm_snapshot(&arms);
             }
+            // ... and its mesh parts (`juui1`'s vortex shards) where retail's
+            // rolls had put them (`LEGAIA_SEAT_MESH_PARTS`).
+            if due && let Some(parts) = sc.seat_mesh_parts.take() {
+                self.session.host.world.install_mesh_part_snapshot(&parts);
+            }
             // ... and the turning ambient parts' banks as the displayed frame
             // drew them: their angle is time since the entry
             // (`LEGAIA_SEAT_TURNING_PARTS`).
@@ -307,6 +312,13 @@ impl PlayWindowApp {
             }
             if due && let Some(t) = sc.seat_grade {
                 self.session.host.world.seat_held_scene_grade(t);
+            }
+            if due && !sc.seat_lights.is_empty() {
+                let world = &mut self.session.host.world;
+                let step = world.clock.frame_step.max(1);
+                for l in &sc.seat_lights {
+                    world.seat_attached_light(l, step);
+                }
             }
             if due
                 && let Some(want) = sc.seat_sprite_wait

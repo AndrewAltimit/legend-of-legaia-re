@@ -293,8 +293,9 @@ impl PlayWindowApp {
     /// tick's step (`step_npc_clip_players`).
     ///
     /// The incoming clip restarts at frame 0 and reuses the same low frame
-    /// indices, so the outgoing clip's pose-cache entries for the slot would
-    /// alias it; they are dropped.
+    /// indices; the pose-cache key carries the clip
+    /// (`field_anim::NpcPoseKey`), so the outgoing clip's meshes stay for
+    /// the slot's next switch back.
     pub(super) fn drain_anim_cues(&mut self) {
         // The clip targets are the scene binding's catalogued placements
         // (`scene_actors::bind_scene_actors`), the set the browser page
@@ -308,8 +309,6 @@ impl PlayWindowApp {
         );
         for r in retargets {
             self.npc_clip_players.insert(r.slot, r.player);
-            self.npc_pose_cache.retain(|(s, _), _| *s != r.slot);
-            self.npc_pose_verify.retain(|(s, _), _| *s != r.slot);
         }
         // ...then this tick's step of every player, the session's kernel
         // and the page's: gated per tick on the field owning the frame.

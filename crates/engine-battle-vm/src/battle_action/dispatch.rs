@@ -224,6 +224,7 @@ pub fn step<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCt
     // these two whatever the state body does to the context.
     let tail_attacker = ctx.active_actor;
     let tail_target = host.actor(tail_attacker).map_or(0xFF, |a| a.active_target);
+    ctx.strike_arm_latch = None;
     let out = step_state(host, ctx, state);
     make_way_step(host, ctx, tail_attacker, tail_target);
     out
@@ -259,16 +260,19 @@ fn step_state<H: BattleActionHost + ?Sized>(
         // by an art's last hit plays its knockdown at full speed.
         ActionState::AttackChain => {
             let out = attack_chain(host, ctx);
+            ctx.strike_arm_latch = Some(ctx.gauge_rearm_latch);
             restore_action_anim_rates(host, ctx);
             out
         }
         ActionState::AttackRecovery => {
             let out = attack_recovery(host, ctx);
+            ctx.strike_arm_latch = Some(ctx.gauge_rearm_latch);
             restore_action_anim_rates(host, ctx);
             out
         }
         ActionState::AttackReturn => {
             let out = attack_return(host, ctx);
+            ctx.strike_arm_latch = Some(ctx.gauge_rearm_latch);
             restore_action_anim_rates(host, ctx);
             out
         }

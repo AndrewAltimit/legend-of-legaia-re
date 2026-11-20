@@ -233,6 +233,12 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             "LEGAIA_FIELD_COST_PLACED_WALK",
             &mut toggles.field_cost_placed_walk,
         ),
+        // Decoration primitives priced by their leaf outcome
+        // (`WorldToggles::field_cost_prim_outcomes`).
+        (
+            "LEGAIA_H_DECO_OUTCOMES",
+            &mut toggles.field_cost_prim_outcomes,
+        ),
         // The fishing venue's frame step off its frame cost
         // (`WorldToggles::fishing_frame_cost`).
         ("LEGAIA_FISHING_FRAME_COST", &mut toggles.fishing_frame_cost),

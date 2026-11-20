@@ -28,7 +28,7 @@ state:
 | Scene | Drives |
 |---|---|
 | `town01` | A dense town, walked down, up and left by the pad script |
-| `world_map` | `map01`, the same script |
+| `world_map` | `map01`, walked up off Rim Elm's door, then left and right across the field |
 | `battle` | `map01`, a forced fight, then the confirm button on a rhythm |
 | `cast` | `map01`, a forced fight with a big summon seeded in flight |
 | `bio_castle` | `jouina`, the same walk: every env morph live. By name only (`--scene`), for a change to them |
@@ -37,6 +37,8 @@ state:
 | `shop` | `bylon`, the scene's first shop armed, a pick, a close. By name only |
 | `results` | `map01`, a fight played to its result windows and the fade out of them. By name only |
 | `levelup` | `map01`, eleven fights back to back with the first level-ups on the way, hashed from the ninth fight's end. By name only |
+
+The overworld pick puts the party on Rim Elm's door (`map01` `P2[0]`), so `world_map` never walks down: that step is a scene change into `town0c`, which would measure the village instead of the world map. In the retail mode it would also measure the door's CD-wait hold, a black screen for about 300 frames (`skip_load_holds` off, see [engine.md](../subsystems/engine.md#fidelity-and-enhancements)).
 
 The last five are the overlay's own screens, where the GL column says little. Each fails its run
 if its screen never came up (`menu` up, `shop` up, a dialog's draws open, a battle over) or if it

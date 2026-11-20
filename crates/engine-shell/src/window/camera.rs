@@ -587,8 +587,18 @@ impl PlayWindowApp {
             };
             model * Mat4::from_scale(Vec3::splat(a.battle.render_scale_q12()))
         } else {
-            let yaw = std::f32::consts::PI
-                + (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU;
+            // The drawn root (`World::field_draw_root`): under the smooth
+            // field actors a body a script walks once a game frame draws a
+            // vsync further along each vsync.
+            let (pos, heading) = self
+                .session
+                .host
+                .world
+                .field_draw_root(slot)
+                .map_or((pos, f32::from(a.move_state.render_26)), |(p, h)| {
+                    (Vec3::from(p), h)
+                });
+            let yaw = std::f32::consts::PI + heading / 4096.0 * std::f32::consts::TAU;
             // The player draws at its `+0x72` render scale (`0xC00` on a
             // kingdom map) - `World::player_render_scale`, which the browser
             // play page folds into its posed player mesh.
@@ -609,7 +619,7 @@ impl PlayWindowApp {
                 (0, 0)
             };
             let rot = if pitch != 0 || roll != 0 {
-                let heading = (i32::from(a.move_state.render_26) + 2048).rem_euclid(4096) as u16;
+                let heading = (heading.round() as i32 + 2048).rem_euclid(4096) as u16;
                 legaia_render_kernels::battle_intro::placement_rotation(pitch, heading, roll)
             } else {
                 Mat4::from_rotation_y(yaw)

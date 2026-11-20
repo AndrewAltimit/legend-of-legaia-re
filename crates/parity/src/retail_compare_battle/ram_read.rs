@@ -1346,7 +1346,7 @@ impl RetailBattle {
             queued_category: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DE)),
             queued_shot: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1E1)),
             summon_fade: summon_fade(ram),
-            display_lag: display_lag_vsyncs(ram),
+            display_lag: retake_lag_vsyncs(ram, ctx),
             display_phase_lag: displayed_lag_vsyncs(ram),
             arrival_cue: arrival_columns(ram),
             dohati_gauge: dohati_gauge(ram),

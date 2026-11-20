@@ -298,6 +298,14 @@ pub struct WorldToggles {
     /// session takes `LEGAIA_FIELD_COST_PLACED_WALK=0` / `=1` over the
     /// default.
     pub field_cost_placed_walk: bool,
+    /// Under [`Self::derived_frame_cost`], price each decoration primitive by
+    /// what its leaf does with it under the frame's camera (back face, near,
+    /// off screen, linked) rather than at its kind's pooled outcome mix
+    /// ([`field_deco_outcomes`](super::field_deco_outcomes)). On by default; a
+    /// timing model like [`Self::field_cost_placed_walk`], so
+    /// [`Self::pin_retail`] leaves it alone; the native session takes
+    /// `LEGAIA_H_DECO_OUTCOMES=0` / `=1` over the default.
+    pub field_cost_prim_outcomes: bool,
     /// Step each fishing-venue frame by the frame time its phase prices it at
     /// (`legaia_engine_fishing::fishing::PondPacer`) under retail's own law,
     /// `FUN_80016B6C`'s longest-of-sixteen over the venue's floor of `2`: the
@@ -382,6 +390,20 @@ pub struct WorldToggles {
     /// phase ([`crate::world::BattlePresent`]). Off, under `pin_retail`,
     /// the frame draws the stored pose, as retail does.
     pub smooth_camera: bool,
+    /// The field's bodies draw every vsync (port, on by default). Retail
+    /// steps a scripted walker, an NPC's walk leg and every actor's clip once
+    /// a game frame (the actor-list walk `FUN_8002519C`), so a cutscene's
+    /// walkers move a whole step on the vsync a frame opens and stand on the
+    /// two or three between - 15 to 30 updates a second. On, the hosts draw
+    /// every field body (the player, the placed NPCs and props), the
+    /// player's pose and every NPC's clip one game frame behind, stepped by the share of the
+    /// frame already shown, and a follow focus pinned onto the player follows
+    /// the drawn player ([`crate::world::FieldPresent`]); a body placed
+    /// rather than moved, or one that already moves every vsync (the smooth
+    /// walk), draws live. The simulation and everything it reads keep the
+    /// stepped records. Off, under `pin_retail`, the frame draws the stored
+    /// bodies, as retail does.
+    pub smooth_actors: bool,
     /// Shiny Seru (port gameplay feature, the engine twin of the patcher's
     /// `--shiny-seru`): each battle entry rolls
     /// [`legaia_engine_battle::seru_state::SeruState::shiny_chance_pct`] for one
@@ -666,6 +688,7 @@ impl WorldToggles {
             battle_surface_frame_cost: true,
             field_frame_cost: true,
             field_cost_placed_walk: true,
+            field_cost_prim_outcomes: true,
             fishing_frame_cost: true,
             battle_poly_window_count: false,
             arts_saved_list: false,
@@ -675,6 +698,7 @@ impl WorldToggles {
             smooth_walk: true,
             smooth_map_display: true,
             smooth_camera: true,
+            smooth_actors: true,
             shiny_seru: true,
             battle_memo_verify: false,
             flee_exp: false,
@@ -729,6 +753,7 @@ impl WorldToggles {
         self.smooth_walk = false;
         self.smooth_map_display = false;
         self.smooth_camera = false;
+        self.smooth_actors = false;
         self.arts_saved_list = false;
         self.shiny_seru = false;
         self.flee_exp = false;
@@ -794,6 +819,9 @@ impl WorldToggles {
         }
         if self.smooth_camera {
             out.push("smooth_camera");
+        }
+        if self.smooth_actors {
+            out.push("smooth_actors");
         }
         if self.arts_saved_list {
             out.push("arts_saved_list");
@@ -880,6 +908,7 @@ mod fidelity_tests {
                 "smooth_walk",
                 "smooth_map_display",
                 "smooth_camera",
+                "smooth_actors",
                 "shiny_seru",
                 "fortress_encounter_fix",
                 "tetsu_spar_fix",
@@ -913,7 +942,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 32);
+        assert_eq!(t.retail_deviations().len(), 33);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

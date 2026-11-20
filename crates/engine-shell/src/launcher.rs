@@ -903,6 +903,15 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.switches.no_entry_pulse {
         args.push("--no-entry-pulse".into());
     }
+    if settings.switches.no_smooth_motion {
+        args.push("--no-smooth-motion".into());
+    }
+    if settings.switches.load_pauses {
+        args.push("--load-pauses".into());
+    }
+    if settings.switches.no_instant_controls {
+        args.push("--no-instant-controls".into());
+    }
     if settings.switches.arts_saved_list {
         args.push("--arts-saved-list".into());
     }
@@ -1431,6 +1440,9 @@ pub enum OptionRow {
     /// How far the controller's stick goes before it holds a direction.
     StickDeadZone,
     EntryPulse,
+    SmoothMotion,
+    SkipLoadPauses,
+    InstantControls,
     SmartMonsters,
     ArtsSavedList,
     ShinySeru,
@@ -1455,7 +1467,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 43] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 46] = [
     (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
@@ -1470,10 +1482,13 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 43] = [
     (None, OptionRow::AmbientOcclusion),
     (None, OptionRow::GroundFog),
     (None, OptionRow::SeeThroughWalls),
+    (None, OptionRow::SmoothMotion),
     (None, OptionRow::EntryPulse),
     (None, OptionRow::HealNumerals),
     (Some("Play"), OptionRow::PreciseMovement),
     (None, OptionRow::ActionMovement),
+    (None, OptionRow::InstantControls),
+    (None, OptionRow::SkipLoadPauses),
     (None, OptionRow::SmartMonsters),
     (None, OptionRow::ArtsSavedList),
     (None, OptionRow::ReduceFlashing),
@@ -1513,6 +1528,7 @@ fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSett
     // The original's picture is the PlayStation's own.
     w.psx_render = true;
     w.no_entry_pulse = true;
+    w.set_pacing(&legaia_engine_session::session_switches::Pacing::retail());
     w.smart_monsters = false;
     w.arts_saved_list = false;
     w.no_shiny_seru = true;
@@ -1605,6 +1621,9 @@ impl OptionRow {
             Self::MonoDownmix => "Mono output",
             Self::StickDeadZone => "Stick dead zone",
             Self::EntryPulse => "Living ground pulse",
+            Self::SmoothMotion => "Smooth motion",
+            Self::SkipLoadPauses => "Skip loading pauses",
+            Self::InstantControls => "Instant controls",
             Self::SmartMonsters => "Smarter monsters",
             Self::ArtsSavedList => "Saved-chain Arts list",
             Self::ShinySeru => "Shiny Seru",
@@ -1694,6 +1713,18 @@ impl OptionRow {
             Self::MonoDownmix => {
                 "Mix everything, voices and movies included, down to one channel for \
                  a single speaker. In-game Monaural is the original's own mono mode."
+            }
+            Self::SmoothMotion => {
+                "Cameras, walking and the map screen move every frame. Off steps them \
+                 15 to 30 times a second, as the original does."
+            }
+            Self::SkipLoadPauses => {
+                "Skips the black loading holds around menus, shops, doors and the end \
+                 of a battle, which the original waits through."
+            }
+            Self::InstantControls => {
+                "Your character answers a button on the frame you press it. Off acts \
+                 on it a frame late, as the original does."
             }
             Self::EntryPulse => {
                 "Keeps the living-flesh ground of a few scenes rolling, which the original \
@@ -1792,6 +1823,9 @@ impl OptionRow {
                 | Self::PsxRender
                 | Self::Retail
                 | Self::EntryPulse
+                | Self::SmoothMotion
+                | Self::SkipLoadPauses
+                | Self::InstantControls
                 | Self::SmartMonsters
                 | Self::ArtsSavedList
                 | Self::ActionMovement
@@ -1865,6 +1899,9 @@ impl OptionRow {
             Self::MonoDownmix => on_off(opts.downmix_mono),
             Self::StickDeadZone => format!("{}%", opts.stick_dead_zone),
             Self::EntryPulse => on_off(!s.switches.no_entry_pulse),
+            Self::SmoothMotion => on_off(!s.switches.no_smooth_motion),
+            Self::SkipLoadPauses => on_off(!s.switches.load_pauses),
+            Self::InstantControls => on_off(!s.switches.no_instant_controls),
             Self::SmartMonsters => on_off(s.switches.smart_monsters),
             Self::ArtsSavedList => on_off(s.switches.arts_saved_list),
             Self::ShinySeru => on_off(!s.switches.no_shiny_seru),
@@ -2030,6 +2067,9 @@ impl OptionRow {
             Self::MonoDownmix => opts.downmix_mono = o.downmix_mono,
             Self::StickDeadZone => opts.stick_dead_zone = o.stick_dead_zone,
             Self::EntryPulse => w.no_entry_pulse = d.no_entry_pulse,
+            Self::SmoothMotion => w.no_smooth_motion = d.no_smooth_motion,
+            Self::SkipLoadPauses => w.load_pauses = d.load_pauses,
+            Self::InstantControls => w.no_instant_controls = d.no_instant_controls,
             Self::SmartMonsters => w.smart_monsters = d.smart_monsters,
             Self::ArtsSavedList => w.arts_saved_list = d.arts_saved_list,
             Self::ShinySeru => w.no_shiny_seru = d.no_shiny_seru,
@@ -2132,6 +2172,9 @@ impl OptionRow {
             Self::MonoDownmix => opts.downmix_mono ^= true,
             Self::StickDeadZone => opts.step_stick_dead_zone(dir),
             Self::EntryPulse => s.switches.no_entry_pulse ^= true,
+            Self::SmoothMotion => s.switches.no_smooth_motion ^= true,
+            Self::SkipLoadPauses => s.switches.load_pauses ^= true,
+            Self::InstantControls => s.switches.no_instant_controls ^= true,
             Self::SmartMonsters => s.switches.smart_monsters ^= true,
             Self::ArtsSavedList => s.switches.arts_saved_list ^= true,
             Self::ShinySeru => s.switches.no_shiny_seru ^= true,
@@ -3022,14 +3065,25 @@ mod tests {
                 no_entry_pulse: true,
                 smart_monsters: true,
                 arts_saved_list: true,
+                no_smooth_motion: true,
+                load_pauses: true,
+                no_instant_controls: true,
                 ..Default::default()
             },
             ..Default::default()
         };
         let a = play_args_with(&info, &port);
+        let pacing = [
+            "--no-smooth-motion",
+            "--load-pauses",
+            "--no-instant-controls",
+        ];
         assert!(a.iter().any(|s| s == "--no-entry-pulse"));
         assert!(a.iter().any(|s| s == "--smart-monsters"));
         assert!(a.iter().any(|s| s == "--arts-saved-list"));
+        for flag in pacing {
+            assert!(a.iter().any(|s| s == flag), "{flag}");
+        }
         let a = play_args_with(
             &info,
             &LauncherSettings {
@@ -3043,7 +3097,8 @@ mod tests {
         assert!(a.iter().any(|s| s == "--retail"));
         assert!(!a.iter().any(|s| s == "--no-entry-pulse"
             || s == "--smart-monsters"
-            || s == "--arts-saved-list"));
+            || s == "--arts-saved-list"
+            || pacing.contains(&s.to_str().unwrap_or(""))));
     }
 
     /// The settings file holds the switches at the top level in the one
@@ -3169,6 +3224,9 @@ mod tests {
             // The page's canvas takes the size its layout gives it, and its
             // menus the site's theme.
             WindowSize | Theme => return None,
+            SmoothMotion => "play-smooth-motion",
+            SkipLoadPauses => "play-skip-load-pauses",
+            InstantControls => "play-instant-controls",
             WholeStepScale => "play-integer-scale",
             // The page's Look and feel selector, over the same shared preset.
             Preset => "play-look-and-feel",

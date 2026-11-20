@@ -227,6 +227,12 @@ draw's primitive count by leaf, and the share that faces the camera and lands
 on screen; at the shares these states hold, a decoration primitive costs
 `150..205` cycles (`0.070..0.096` hblanks) and an actor primitive `115..168`
 (`0.054..0.078`).
+The derived model takes the decoration share per primitive
+(`engine-core` `world::field_deco_outcomes`): each drawn cell's mesh through the
+frame's camera, each primitive down its leaf's path, priced at that path's row.
+On `conc3_ceremony_mist_pillar`, which rejects `224` of `240` kind-15 quads, the
+pass prices `187` hblanks against the runner's `190`, where the pooled mix
+priced `205` ([engine](../subsystems/engine.md#the-derived-field-frame-cost-model)).
 
 Priced from the table off each state's own counts, every pass lands within
 `4%` of what it ran (`crates/retail-exec/tests/field_units.rs` holds `5%`, and

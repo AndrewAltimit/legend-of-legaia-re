@@ -198,11 +198,15 @@ pub(super) type NpcRestSrc = (legaia_tmd::Tmd, Vec<u8>, Option<Vec<([i16; 3], [i
 
 /// `(placement slot, clip frame) -> skinned mesh`. See
 /// [`PlayWindowApp::npc_pose_cache`].
-pub(super) type NpcPoseCache = std::collections::HashMap<(u8, usize), NpcPosedHalves>;
+pub(super) type NpcPoseCache =
+    std::collections::HashMap<legaia_engine_field::field_anim::NpcPoseKey, NpcPosedHalves>;
 
 /// The bone transforms one cached pose was skinned from - the correctness
 /// oracle for [`NpcPoseCache`]. See [`PlayWindowApp::npc_pose_verify`].
-pub(super) type NpcPoseVerify = std::collections::HashMap<(u8, usize), Vec<([i16; 3], [i16; 3])>>;
+pub(super) type NpcPoseVerify = std::collections::HashMap<
+    legaia_engine_field::field_anim::NpcPoseKey,
+    Vec<([i16; 3], [i16; 3])>,
+>;
 
 /// Windowed engine runner state. Owned by the winit event loop.
 /// One Baka round-chrome draw plus its stamped glyph cell rect

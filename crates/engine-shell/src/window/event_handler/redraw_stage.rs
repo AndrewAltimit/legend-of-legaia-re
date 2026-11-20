@@ -43,9 +43,9 @@ pub(super) struct PosedFrame {
     pub posed_prop_baked_c: Vec<(usize, Mat4, Option<usize>)>,
     pub posed_prop_live_v: Vec<(UploadedVramMesh, Mat4, Option<usize>)>,
     pub posed_prop_live_c: Vec<(UploadedColorMesh, Mat4, Option<usize>)>,
-    /// `(slot, pose key)` of each placed NPC's clip frame this redraw shows,
-    /// the key into `npc_pose_cache`.
-    pub npc_frames: Vec<(u8, usize)>,
+    /// The key of each placed NPC's clip pose this redraw shows, the key
+    /// into `npc_pose_cache`.
+    pub npc_frames: Vec<legaia_engine_field::field_anim::NpcPoseKey>,
     /// This frame's broken-up mesh halves of every placed NPC whose op-`43
     /// 07` deformation is running (`World::field_npc_shatter`), keyed by
     /// placement slot; drawn in place of the posed or rest halves.
@@ -842,7 +842,7 @@ impl PlayWindowApp {
     /// `npc_pose_cache`). The playheads are stepped per sim tick, in
     /// `drain_anim_cues`; this pass only reads them. Returns the
     /// `(slot, pose key)` each slot shows.
-    fn pose_npc_clips(&mut self) -> Vec<(u8, usize)> {
+    fn pose_npc_clips(&mut self) -> Vec<legaia_engine_field::field_anim::NpcPoseKey> {
         let r = self
             .win
             .renderer
@@ -874,7 +874,7 @@ impl PlayWindowApp {
         //
         // `npc_frames` records which frame each slot is showing *this*
         // render, so the draw pass below can look its mesh up in the cache.
-        let mut npc_frames: Vec<(u8, usize)> = Vec::new();
+        let mut npc_frames: Vec<legaia_engine_field::field_anim::NpcPoseKey> = Vec::new();
         if self.session.host.world.field_npc_clips_advance() {
             // (The `A2` / `4C 51` cue drain that re-targets these
             // players runs per sim tick in the loop above -
@@ -904,18 +904,28 @@ impl PlayWindowApp {
                 // the pose the cache keys: its angles ride the key's
                 // high bits.
                 let look = world.actor_look(legaia_engine_field::actor_look::LookKey::Npc(*slot));
-                // The one packing both hosts key on (`ActorLook::pose_key_bits`).
-                let look_bits =
-                    legaia_engine_field::actor_look::ActorLook::pose_key_bits(look.as_ref())
-                        as usize;
-                let key = (*slot, player.pose_key() | look_bits);
+                // The smooth field actors draw a world-driven clip one game
+                // frame behind, between its keyframes
+                // (`World::field_npc_drawn_clip_cursor`); `None` draws the
+                // playhead, as retail does.
+                let drawn = world.field_npc_drawn_clip_cursor(*slot);
+                // Slot, clip, pose and look, each its own field
+                // (`field_anim::npc_pose_key`, the page's key too): a
+                // re-target keeps the other clip's meshes.
+                let key = legaia_engine_field::field_anim::npc_pose_key(
+                    *slot,
+                    player,
+                    drawn,
+                    look.as_ref(),
+                );
                 npc_frames.push(key);
                 // A hit reads no pose (the memo is why this loop is cheap),
                 // unless it is there to be checked.
                 if !verify && cache.contains_key(&key) {
                     continue;
                 }
-                let mut pose = player.current_pose();
+                let mut pose =
+                    drawn.map_or_else(|| player.current_pose(), |c| player.drawn_pose(c));
                 if let Some(l) = look {
                     legaia_engine_field::actor_look::apply_look(&mut pose.bone_outputs, l);
                 }
@@ -930,8 +940,8 @@ impl PlayWindowApp {
                     {
                         log::error!(
                             "pose-cache MISMATCH at slot {} frame {}: cached pose != live pose",
-                            key.0,
-                            key.1
+                            key.slot,
+                            key.pose
                         );
                     }
                     continue;
@@ -997,7 +1007,29 @@ impl PlayWindowApp {
                     cache.insert(key, (vm, cm));
                 }
             }
+            // The memo keeps every clip a slot has shown, so a slot switching
+            // back to a clip finds its meshes; past `NPC_POSE_CACHE_CAP`
+            // entries the clips no slot shows now go, then the rest (a head a
+            // script turns through many look angles keys a mesh per angle).
+            // A rebuild costs a re-skin of the poses this redraw shows, once.
+            if cache.len() > NPC_POSE_CACHE_CAP {
+                let players = &self.npc_clip_players;
+                let live = |k: &legaia_engine_field::field_anim::NpcPoseKey| {
+                    players.get(&k.slot).is_some_and(|p| p.clip_id() == k.clip)
+                };
+                cache.retain(|k, _| live(k));
+                verify_poses.retain(|k, _| live(k));
+                if cache.len() > NPC_POSE_CACHE_CAP {
+                    cache.retain(|k, _| npc_frames.contains(k));
+                    verify_poses.retain(|k, _| npc_frames.contains(k));
+                }
+            }
         }
         npc_frames
     }
 }
+
+/// Posed NPC meshes the window keeps before it evicts (see
+/// `pose_npc_clips`). `town01`'s wanderers, each with an idle and a walk clip
+/// drawn on the quarter-keyframe grid, level off near 2,400.
+const NPC_POSE_CACHE_CAP: usize = 4096;

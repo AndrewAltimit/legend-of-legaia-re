@@ -99,16 +99,24 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
 /// ([`Camera::present_lag`]): the draw shows such a move over the vsyncs
 /// after it rather than on the one it landed.
 pub fn camera_present_lead(world: &World, cam: &Camera) -> DrawLead {
+    // The smooth field actors draw the bodies one game frame behind
+    // (`World::field_draw_root`); the follow focus pinned onto the player
+    // rides the drawn player with them.
+    let actors = world.field_present_active();
     if !world.toggles.smooth_camera
         || !world.clock.game_tick_live
         || world.mode == SceneMode::Battle
     {
-        return DrawLead::NONE;
+        return DrawLead {
+            actors,
+            ..DrawLead::NONE
+        };
     }
     let lag = cam.present_lag(world.clock.display_frames);
     if cam.mover.is_none() {
         return DrawLead {
             lag,
+            actors,
             ..DrawLead::NONE
         };
     }
@@ -126,6 +134,7 @@ pub fn camera_present_lead(world: &World, cam: &Camera) -> DrawLead {
         phase: f32::from(vsync) / f32::from(wait),
         dt: i32::from(dt),
         lag,
+        actors,
     }
 }
 
@@ -174,6 +183,19 @@ fn follow_view_with_knobs(
 ) -> Option<FieldCameraView> {
     let (wx, wz) = lead_actor_xz(world)?;
     let floor_y = world.sample_field_floor_height(wx as i32, wz as i32) as f32;
+    // The smooth field actors' carry of the player off its stored root, for
+    // a focus pinned onto the player (`Camera::focus_pinned_live`): the
+    // frame frames the drawn player, so it holds its screen point while a
+    // record walks it. Zero on the stored pose.
+    let player_shift = if lead.actors && cam.focus_pinned_live(world) {
+        world
+            .player_actor_slot
+            .and_then(|s| world.field_draw_shift(usize::from(s)))
+            .map_or([0.0; 2], |d| [d[0], d[2]])
+    } else {
+        [0.0; 2]
+    };
+    let (wx, wz) = (wx + player_shift[0], wz + player_shift[1]);
     let s = CUTSCENE_WORLD_SCALE;
     let g = &cam.globals.0;
     // The smooth camera's carry of an in-flight glide; zeros on the stored
@@ -260,7 +282,11 @@ fn follow_view_with_knobs(
         // `(12194, 3550)`), whose frame the actor-anchored scale slid about
         // 25 px sideways at that depth.
         focus: if globals_live {
-            [-(g[6] as f32 + d[6]), g[7] as f32, -(g[8] as f32 + d[8])]
+            [
+                -(g[6] as f32 + d[6]) + player_shift[0],
+                g[7] as f32,
+                -(g[8] as f32 + d[8]) + player_shift[1],
+            ]
         } else {
             [wx, floor_y, wz]
         },
@@ -268,11 +294,20 @@ fn follow_view_with_knobs(
         // PSX camera yaw is the compass negation, so a positive manual orbit
         // subtracts from the render yaw.
         yaw: to_rad(yaw_units) - manual_orbit,
-        // The field follow camera never rolls: `FUN_80025C24` seeds the roll
-        // global to `0` on scene entry and only an op-`0x45` beat writes it,
-        // and the follow ease's descriptor list has no roll entry. Measured
-        // `0` in 51 of 51 field states.
-        roll: 0.0,
+        // The roll is the third camera angle `FUN_800172C0` hands the Euler
+        // kernel (`0x8007B794`, after pitch `0x8007B790` and yaw
+        // `0x8007B792`: `addiu a0,a0,-0x4870` before the `jal 0x80026988`
+        // at `0x8001730C`). `FUN_80025C24` seeds it to `0` on scene entry,
+        // the follow ease's descriptor list has no roll entry, and only an
+        // op-`0x45` beat writes it, so a plain follow frame reads `0` (51 of
+        // 51 field states) - but a beat's roll is drawn wherever the globals
+        // frame the view. `credits_edstati3_fullscreen_pcsx`'s Karisto shot
+        // stages roll `10` (about `0.9` degrees, `3` px across the frame).
+        roll: if globals_live {
+            to_rad(f32::from(g[2] as i16) + d[2])
+        } else {
+            0.0
+        },
         // The live GTE `H` when the camera carries one - retail's scene-entry
         // reset leaves it `0`, so a scene that never staged an `H` falls back
         // to the field default. Reading the pin unconditionally dropped an
@@ -620,6 +655,24 @@ mod tests {
         cam.globals.0[5] = 0;
         let z = field_follow_view(&cam, &w).unwrap();
         assert!((z.tr_eye[2] - FIELD_CAM_DEPTH / 8.0).abs() < 1e-3);
+    }
+
+    /// The roll global reaches the view wherever the globals frame it: an
+    /// op-`0x45` beat's roll is the third angle `FUN_800172C0` hands the
+    /// Euler kernel, as `edstati3`'s Karisto shot stages it (`10`). Without
+    /// the globals the follow arm stands at roll `0`.
+    #[test]
+    fn follow_view_carries_a_staged_roll() {
+        let w = world_with_player(0, 0);
+        let mut cam = Camera::default();
+        cam.globals.0[2] = 10;
+        assert_eq!(field_follow_view(&cam, &w).unwrap().roll, 0.0);
+        cam.zone.script_view = true;
+        let v = field_follow_view(&cam, &w).unwrap();
+        assert!((v.roll - to_rad(10.0)).abs() < 1e-6);
+        cam.globals.0[2] = -10;
+        let v = field_follow_view(&cam, &w).unwrap();
+        assert!((v.roll - to_rad(-10.0)).abs() < 1e-6);
     }
 
     /// The manual orbit is the PSX yaw's negation, and the distance preset
@@ -1025,7 +1078,8 @@ mod tests {
             DrawLead {
                 phase: 0.5,
                 dt: 4,
-                lag: 0.0
+                lag: 0.0,
+                ..DrawLead::NONE
             }
         );
         w.clock.frame_vsync = 0;
@@ -1068,6 +1122,7 @@ mod tests {
                 phase: 0.5,
                 dt: 4,
                 lag: 0.0,
+                ..DrawLead::NONE
             },
         )
         .unwrap();
@@ -1114,13 +1169,18 @@ mod tests {
         let d = cam.led_delta(camera_present_lead(&w, &cam));
         assert_eq!(cam.globals.0[1] as f32 + d[1], drawn);
         w.clock.display_frames = 103;
-        assert_eq!(camera_present_lead(&w, &cam), DrawLead::NONE);
+        // (The smooth field actors' flag rides every field lead.)
+        let none = DrawLead {
+            actors: true,
+            ..DrawLead::NONE
+        };
+        assert_eq!(camera_present_lead(&w, &cam), none);
         // A cut draws at once.
         w.clock.display_frames = 104;
         let mark = cam.present_mark();
         cam.globals.0[1] = 180 + 1024;
         cam.observe_present(&w, mark);
-        assert_eq!(camera_present_lead(&w, &cam), DrawLead::NONE);
+        assert_eq!(camera_present_lead(&w, &cam), none);
         // Retail draws the stored pose.
         let mark = cam.present_mark();
         cam.globals.0[1] += 40;

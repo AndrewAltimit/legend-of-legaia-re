@@ -607,6 +607,22 @@ impl RetailBattle {
                 };
                 *o = s != caster && !targeted;
             }
+            // A cast whose target resolves to its own caster writes no
+            // heading either: the cast begin rewrites a side's group code to
+            // the side's lone survivor (`8` to `ctx[+0x24A] - 1` at
+            // `0x801E431C`, `9` to `ctx[+0x24B]` at `0x801E42D0`) and then
+            // skips the facing store for a self target (`beq v0,t2` at
+            // `0x801E4350`). The caster keeps the heading its last turn left
+            // (`evolved_0x91_midcast`: Holy Eyes from a lone Vahn, heading
+            // `34`, which the module's framing subtracts).
+            let alive =
+                |side: &[Option<Combatant>]| side.iter().flatten().filter(|c| c.hp > 0).count();
+            let self_target = self.target_code == self.active_actor
+                || (self.target_code == 8 && self.active_actor < 3 && alive(&self.party) == 1)
+                || (self.target_code == 9 && self.active_actor >= 3 && alive(&self.monsters) == 1);
+            if self_target && let Some(o) = spent.get_mut(caster) {
+                *o = true;
+            }
         }
         let ground = self.seeded_ground();
         let pc = usize::from(self.party_count);

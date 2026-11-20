@@ -278,6 +278,11 @@ impl SceneHost {
         let mut acted = 0usize;
         let mut leftover = Vec::new();
         let mut started_this_drain = false;
+        // A start attached on arrival this drain (no swap walk: the field
+        // init's install slice), which a later word of the same drain can
+        // still take back - retail's poller reads the word once, after the
+        // slice.
+        let mut attached_this_drain = false;
         for ev in self.world.drain_field_events() {
             match ev {
                 // An expansion pack's start: a pack track (resolved against
@@ -353,6 +358,27 @@ impl SceneHost {
                             if self.bgm_latched.take().is_some() && sub_op == 1 {
                                 director.stop();
                             }
+                            // A park behind a start in the same install
+                            // slice: the field init's poller loop runs after
+                            // the slice (`FUN_801D6704`, `0x801D72D4..0x801D7320`)
+                            // and reads only the park, which loads nothing
+                            // (`0x8002454C..0x80024560`), so the start never
+                            // sounded and the slot keeps what the init's close
+                            // left it. `juui1`'s entry starts `2011` and,
+                            // arriving through `conc2`'s vortex (`0x445` up),
+                            // parks; retail's `juui1_vortex_*` states sound
+                            // nothing under the word `4096`.
+                            // REF: FUN_800243F0, FUN_801D6704
+                            // A picked scene's own start stays: the picker
+                            // plays the scene's track where a door would
+                            // bring one (`FieldVmState::picker_start_kept`).
+                            if text_id == legaia_engine_core::world::BGM_PARK_SENTINEL
+                                && std::mem::take(&mut attached_this_drain)
+                                && !self.world.field_vm.picker_start_kept
+                            {
+                                director.stop();
+                                acted += 1;
+                            }
                             // Every track brings its own VAB. A scene-local id
                             // loads retail's fallback track, not a scene bank
                             // (`SCENE_LOCAL_BGM_FALLBACK_ID`); the id itself is
@@ -376,6 +402,7 @@ impl SceneHost {
                                     director.start_owned_vab(text_id, &entry);
                                     self.bgm_ending_source = u32::from(text_id)
                                         == legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID;
+                                    attached_this_drain = sub_op == 1;
                                 }
                                 acted += 1;
                             }

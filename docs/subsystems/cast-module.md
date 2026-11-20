@@ -1039,6 +1039,16 @@ the red the Gola Gola recording's two bodies shed nothing and its `rand()` strea
 four draws a body a battle frame short; with it the draws match retail frame for frame
 and the film reads `.893` against `.878`. Grade `disassembly` + `capture`.
 
+**Both stores read the drained word.** Arm 3 stores the word less `scalar * delta`
+(`sw v1,-0x7950(s0)` at `0x801F7ED8`) and loads it back for each test (`lw` at
+`0x801F7F10` and `0x801F7F30`), so the red and the selector land on the pass whose drain
+takes the word to `scalar * 0x60` and `scalar << 6`. The pass also adds `scalar << 6` to the
+drained word for arm 4 (`0x801F7F64..0x801F7F74`). Tested on the word the pass opened on,
+both stores came a pass late, the fire started a frame behind retail's, and its `rand()`
+draws parted from the recording there: `rugi_gola_gola_v2_rolling_flare` reads `.906` to
+`.956` plain, `.915` to `.971` on `--retail-steps` and `.972` to `.974` on arm 3 with
+`--rand-track`. Grade `disassembly` + `capture`.
+
 **PROT 0964's Element Strike body** writes through the standing-in creature (seat 7)
 and its hit loops. Its arm 1 forks into Flame (phases `2..=7`), Wind (`0x32..=0x37`)
 and Thunder (`0x64..=0x69`), and the stores sit on each run's `k = 3` and `k = 4`:
@@ -2454,6 +2464,17 @@ and the streaks whose chain length sits on a segment's edge drew a segment fewer
 more; with it the anchors match the recording's unit for unit, the cast's `rand()`
 stream holds retail's words through arm 13, and arm 12 reads `.756` against `.672`.
 
+**Arm 12's ground ring is retail's part for part.** The ring `0x801F7FE0` and the column
+`0x801F8094` turn from red `0xCB0000FF` to green `0xCB00FF00` on their own programs, and a
+`--retail-parts` recording holds the same radius, height and level channels on both sides
+(inner `1024`, outer `2976`, heights `-512` / `0`, level `3808` at the green's peak). A
+`--prim-calls` recording shows each drawn once a frame through the dispatcher with a
+`128`-packet object, the battle VRAM's texture page `0x8A` and CLUT row `490` match the
+engine's byte for byte, and both parts' model lists hold one slot. Retail's green floor
+still reads about twice the engine's ring over the frame's lower half (`G` `255` against
+`214..222`), and the engine's ring level runs a few ticks behind the pairing: what raises
+retail's green is open. Grade `capture`.
+
 ### PROT 0910 (Swordie)
 
 <a id="prot-0910-swordie"></a>
@@ -3598,6 +3619,20 @@ and arm 5's frames filled the screen with it. Two module words are modelled on t
 `ramp`: Barra's TR z pull and its victim's fall, and Mule's world-anchor Z
 `0x80089120`, which the port otherwise keeps no twin of (from `0`).
 
+**A pass's own sums.** A director arm's per-pass arithmetic is one store over the
+whole pass, and the port runs a pass as one-vsync ticks (`World::module_pass`), so
+two shapes need the pass, not the tick. A test on a word the arm has just added to
+reads the pass's sum: Barra's arm 6 adds `(p + 7) >> 3` and tests the sum against
+`0xA1` (`0x801F70D4..0x801F7104`), so every vsync of the pass that carries the word
+across the line climbs. Tested tick by tick, the `0x8F` film's turn-round pass sank a
+vsync first, and every later pass of the arc stood `352` TR z units short (camera
+`15.2` px to `2.7` on `--retail-steps`). And a one-shot store beside a rate is not repeated over
+the rest of a handing-over pass: Gilium's arm `0xF` exit drops TR y by `0x100` once
+(`addiu v0,v0,-0x100` at `0x801F81A8`) beside its `yaw += 4 delta`
+(`ArmDirection::rest_drift`); repeated, arm `0x10` opened at TR y `-512` where the
+`0x95` film's retail camera reads `-256` (image `.966` to `.986` on `--retail-steps`).
+Grade `disassembly` + `capture`.
+
 <a id="barra-seat-writes"></a>
 
 **Barra's seats.** PROT 0917 carries its victim through the cast, and the
@@ -4295,6 +4330,24 @@ waits on the victim's clip. `dohaty_nova_v2_pre_scythe_wind`'s recording shows t
 arm-5 yaw `cd / 8 + 0x900 - facing` falls `6` a step-`3` pass, the engine's single drain `3`.
 Grade `disassembly` + `capture`.
 
+**A compare behind the drain reads the whole pass's word.** Retail drains a pass's
+`scalar * step` (or `step`, or `step << 1`) in one `subu` and every compare behind it reads
+the stored word; the port drains a tick at a time, so a compare made once a pass, or one
+whose effect is the pass's, reads `ModuleCountdown::pass_end`: the word the pass opened on
+less the whole pass. The arms that compare against something other than zero:
+
+| Arm | Retail | Port before | Film on `--retail-steps` |
+|---|---|---|---|
+| Blazing Slash (0958) arm 22, the paced flame and hit | `0x801F8878..0x801F888C` | the opening tick's word | `.958` to `.988` |
+| Megaton Press (0959) arm `0x0F`, the paced hit | `0x801F7EA4..0x801F7EAC` | every tick | `.962`, unchanged |
+| Rolling Flare (0950) arm 3, the soft red and the burn | `0x801F7F10`, `0x801F7F30` | the word the tick opened on | `.915` to `.971` |
+| Guilty Cross (0944) arm 3, the cross's fall | `0x801F7018..0x801F701C` | per tick: the crossing pass fell only past the crossing | `.9976` to `.9977` |
+| Slime Divide (0940) arm 2, the shake's reach | `0x801F7B7C..0x801F7BB0` | one tick's `2` | `.9898` to `.9909` |
+| Jedo (0931) arm 7, the spark | `0x801F7298..0x801F72A4` | one tick's drain | `.9808` to `.9809` |
+
+The zero gates need no such reading: a word that crosses zero within a pass crosses on the
+same pass either way. Grade `disassembly` + `capture`.
+
 ### PROT 0935 (Earthquake)
 
 The caster turns on its target and holds the shot pitch `0`, yaw `0x800 - facing`,
@@ -4758,6 +4811,12 @@ directors, all three drew the pager's records - other bodies' rings and lips - a
 caster's feet, or nothing. Frame by frame against `--physical` films of the `*_mid_cast`
 states: White Shield `.577` to `.797`, Power Charge `.587` to `.898`, Melt Spray `.795` to
 `.827`. Grade `disassembly` + `capture`.
+
+White Shield's arm 1 reads `14` game vsyncs on a `--retail-steps` film against the engine's
+`11`, and the cast is not slow: arm 0 seeds the word on its first pass and steps the phase
+there (`0x801F9068..0x801F9078`), so retail's recording opens on phase `1` with that pass
+already counted, where the engine's opens on phase `0` for the pass's `3` ticks. Phases 0
+and 1 together run `14` on both sides. Grade `disassembly` + `capture`.
 
 ### PROT 0957 (Death Game)
 
@@ -5716,6 +5775,19 @@ waives its fold, as for PROT 0959. A frozen seat
 (`+0x21D = 0`) takes no root-motion step, so the victim the module freezes
 mid-knockdown stands still. `nivora_duel_mid_blazing_slash` reads `.504` to
 `.766` with cues `.00` to `.74`. Grade `disassembly` + `capture`.
+
+**Arm 22 paces on the whole pass's drain.** The arm's one `subu` takes `scalar * step`
+off the word and the pacing compare reads the stored word (`0x801F8878..0x801F888C`), so a
+paced call lands on the pass whose whole drain reaches the pacing word. The port drains a
+tick at a time and compared the opening tick's word, so wherever the pass's rest carried
+the word under the pacing word the call came a battle frame late. A `--watch 0x80009010`
+recording names the cost: retail's call (`FUN_801DD6B4` at `0x801DD70C` / `74C` / `7EC`)
+sits on the frames whose burning caster sheds one puff (`0x8004A634`, the accumulator
+alternating one and two a frame on step `3`), the port's sat on the two-puff frames, so
+each hit rolled on other words and its numeral stacked over the last. Compared on the word
+less the pass's rest, the draws and HP match the recording frame for frame: arm 22 reads
+`.804` to `.983` and the film `.977` to `.988` on `--retail-steps --rand-track`, `.958` to
+`.988` on `--retail-steps`, `.917` to `.923` plain. Grade `disassembly` + `capture`.
 
 Arms `0x0D` / `0x0E` read `.967` / `.948` on `--retail-steps --rand-track`
 (the film `.972`). What held them at `.44` / `.42`, with the camera on retail's to

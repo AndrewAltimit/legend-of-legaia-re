@@ -820,6 +820,10 @@ pub struct SplitHits {
     pub hits: u8,
     /// Hits numbered below this clamp to `HP - 1`; `1` clamps none.
     pub spares_below: u8,
+    /// Hits numbered below this store `0` into the readout flag
+    /// `0x8007B64C`, so the combo cluster stays shut until the hit at this
+    /// number; `1` holds none.
+    pub holds_cluster_below: u8,
     /// Each hit's reaction, an index into the `+0x1EF..=+0x1F1` trio
     /// (`2` the knockdown), hit 1 first. A hit that downs the victim stages
     /// the knockdown whatever its row says.
@@ -851,17 +855,22 @@ pub const HYPER_LIGHTNING_HITS: SplitHits = SplitHits {
     divisor: 4,
     hits: 4,
     spares_below: 4,
+    holds_cluster_below: 4,
     reactions: [0, 0, 0, 2],
 };
 
 /// PROT 0939 `0x4F` arm 4: four hits a third of the roll each, none spared,
 /// staging `+0x1EF`, `+0x1EF`, `+0x1F0`, `+0x1F1` ([`spore_gas_reaction`]).
+/// The count is bumped ahead of the roll (`sw v1,0x7AF8(s4)` at
+/// `0x801F7084`) and every hit but the fourth stores `0` into the readout
+/// flag (`bne` on `4`, `sb zero,-0x49B4(v0)` at `0x801F70F4..0x801F70FC`).
 pub const SPORE_GAS_HITS: SplitHits = SplitHits {
     shape: &SPORE_GAS_SHAPE,
     body: 0x801F_69D8,
     divisor: 3,
     hits: 4,
     spares_below: 1,
+    holds_cluster_below: 4,
     reactions: [
         spore_gas_reaction(1),
         spore_gas_reaction(2),

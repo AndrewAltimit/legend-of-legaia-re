@@ -880,8 +880,14 @@ pub fn battle_action_framing(world: &World, acting_slot: u8) -> script::ActionFr
         ramp: 0,
         body_radius: script::PARTY_BODY_RADIUS,
         // Case 7 tests the latch itself (`lbu v0,0x243(v1)` at `0x801D6770`), so
-        // a later swing whose clip has no solo byte stays pulled in.
-        solo: world.battle_ctx.gauge_rearm_latch != 0,
+        // a later swing whose clip has no solo byte stays pulled in. A strike
+        // pass reads it before its tail clears it (`strike_arm_latch`): the
+        // return's first pass still frames pulled in.
+        solo: world
+            .battle_ctx
+            .strike_arm_latch
+            .unwrap_or(world.battle_ctx.gauge_rearm_latch)
+            != 0,
     }
 }
 

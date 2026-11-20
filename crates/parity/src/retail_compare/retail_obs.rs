@@ -239,6 +239,10 @@ pub struct RetailObs {
     /// handed to the image child as `LEGAIA_SEAT_SPRITE_ARMS` and installed on
     /// the frame it captures.
     pub sprite_arms: Vec<legaia_engine_core::world::ambient::SpriteArmSeed>,
+    /// The live mesh-bearing ambient parts ([`retail_mesh_parts`]), handed
+    /// to the image child as `LEGAIA_SEAT_MESH_PARTS` and installed on the
+    /// frame it captures.
+    pub mesh_parts: Vec<legaia_engine_core::world::ambient::SpriteArmSeed>,
     /// The live ambient parts that turn ([`retail_turning_parts`]), their
     /// render banks as the displayed frame drew them, handed to the image
     /// child as `LEGAIA_SEAT_TURNING_PARTS`.
@@ -318,6 +322,10 @@ pub struct RetailObs {
     /// the image child as `LEGAIA_SEAT_GRADE`, its clock taken back by the
     /// display lag.
     pub grade: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
+    /// The live attached lights ([`retail_attached_lights`]), handed to the
+    /// image child as `LEGAIA_SEAT_LIGHTS`, their keyframe clocks taken back
+    /// by the display lag.
+    pub lights: Vec<legaia_engine_core::world::AttachedLightSeed>,
     /// Whether the state holds a live screen-effect sprite widget
     /// ([`retail_has_sprite_widget`], the ending crawl's lines): the image
     /// child runs those on to the record's RAM wait (`LEGAIA_SEAT_SPRITE_WAIT`).
@@ -538,6 +546,11 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            mesh_parts: if class == StateClass::Field {
+                retail_mesh_parts(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
+            } else {
+                Vec::new()
+            },
             balloon: (class == StateClass::Field)
                 .then(|| retail_balloon(ram))
                 .flatten(),
@@ -563,6 +576,11 @@ impl RetailObs {
             grade: matches!(class, StateClass::Field)
                 .then(|| retail_scene_grade(ram))
                 .flatten(),
+            lights: if matches!(class, StateClass::Field) {
+                retail_attached_lights(ram)
+            } else {
+                Vec::new()
+            },
             scripted_seats: Vec::new(),
             scripted_headings: Vec::new(),
             movie: (class == StateClass::Cutscene)
@@ -820,11 +838,33 @@ impl RetailObs {
         if self.menu.is_some() || !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
             return Vec::new();
         }
-        self.scripts
-            .running
-            .first()
-            .map(|s| s.latches.clone())
-            .unwrap_or_default()
+        let Some(first) = self.scripts.running.first() else {
+            return Vec::new();
+        };
+        // A set the straight-line walk passes can sit on an arm the record
+        // jumped over: `town0e` `P2[5]` reaches `+0x8B` past `55 F5` at
+        // `+0x89`, the target of the Triangle test `42 01 0B` at `+0x81`,
+        // by the jump `26 04 00` at `+0x86`. Retail's flags say which arm
+        // ran; a latch the state does not hold was not set, and raised at
+        // the settle tick it would be a bit retail lacks.
+        let mut out: Vec<u16> = first
+            .latches
+            .iter()
+            .copied()
+            .filter(|&l| self.save.as_ref().is_none_or(|s| system_flag_held(s, l)))
+            .collect();
+        // The system pass that spawned the record ended on the spawn, so the
+        // entry retail ran saw its latch down ([`crate::retail_compare_script::system_spawn_arm`]). Held
+        // back, the seed's system script takes the same arm - it spawns the
+        // record and parks after the `21` where retail's stands - instead of
+        // jumping the latched arm into a loop body retail has not run.
+        if let Some((record, latch)) = self.scripts.system_spawn
+            && record == first.flat_index
+            && !out.contains(&latch)
+        {
+            out.push(latch);
+        }
+        out
     }
 
     /// The capture-alignment environment the image child takes on top of
@@ -851,6 +891,9 @@ impl RetailObs {
             ));
         } else if matches!(self.class, StateClass::Field | StateClass::WorldMap) {
             env.push(("LEGAIA_SEAT_SPRITE_ARMS", "none".to_string()));
+        }
+        if !self.mesh_parts.is_empty() {
+            env.push(("LEGAIA_SEAT_MESH_PARTS", sprite_arms_env(&self.mesh_parts)));
         }
         if let Some(b) = &self.balloon {
             env.push(("LEGAIA_SEAT_BALLOON", balloon_env(b.as_ref())));
@@ -948,7 +991,7 @@ impl RetailObs {
         if let Some(bias) = self.curve_bias.filter(|&b| b != 0) {
             env.push(("LEGAIA_SEAT_CURVE_BIAS", bias.to_string()));
         }
-        env.push(("LEGAIA_SEAT_FRAME_STEP", self.frame_step().to_string()));
+        env.push(("LEGAIA_SEAT_FRAME_STEP", self.seat_step().to_string()));
         // ... and holds it: the frame-cost model is play's estimate, the
         // state's step a measurement (`run_engine`'s seat).
         env.push(("LEGAIA_FIELD_FRAME_COST", "0".to_string()));
@@ -962,6 +1005,23 @@ impl RetailObs {
             env.push((
                 "LEGAIA_SEAT_GRADE",
                 legaia_engine_capture::field_seeds::grade_env(&t),
+            ));
+        }
+        if !self.lights.is_empty() {
+            let back = i16::from(self.frame_step())
+                * crate::retail_compare_battle::DISPLAY_LAG_PASSES as i16;
+            let lights: Vec<_> = self
+                .lights
+                .iter()
+                .cloned()
+                .map(|mut l| {
+                    l.rewind = back;
+                    l
+                })
+                .collect();
+            env.push((
+                "LEGAIA_SEAT_LIGHTS",
+                legaia_engine_capture::field_seeds::lights_env(&lights),
             ));
         }
         if let Some(p) = self.panel {
@@ -1023,11 +1083,37 @@ impl RetailObs {
         (self.scripts.display_lag / 2).clamp(1, 4) as u8
     }
 
+    /// The step the seed and its image child run at: the pacer's step byte
+    /// `0x1F800393` where the state holds the scratchpad, else the step the
+    /// display lag implies ([`Self::frame_step`]).
+    ///
+    /// The lag is rebuilt from the frame-time ring, which stores a frame of
+    /// `0x2D0` hsyncs or more as the clamp `0x2BC`; [`Self::frame_step`]
+    /// reads a clamped newest entry as step `4`, and the byte settles the
+    /// states the ring cannot (`field_walled_collision_pin` holds the clamp
+    /// newest under step byte `3`). `conc3_ceremony_plaza` (the Conkram
+    /// ceremony, forty-odd actors) holds sixteen clamps under step `4`;
+    /// seated at `3`, the ceremony record's walks and its `B8 23 84 0A` turn
+    /// drifted apart, and flat `35` stood nine budget units into the turn
+    /// where retail's `+0x54` reads four.
+    ///
+    /// Off the field and the overworld the history's step stands
+    /// ([`Self::frame_step`]): a battle's display lag is confirmed against its
+    /// ordering tables, and the rule that reads a clamped newest entry as
+    /// step `4` stays off the battle half for the same reason.
+    pub fn seat_step(&self) -> u8 {
+        if !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
+            return self.frame_step();
+        }
+        self.step_bytes
+            .map(|(_, step)| step)
+            .filter(|&s| (1..=4).contains(&s))
+            .unwrap_or_else(|| self.frame_step())
+    }
+
     /// Read the pacer's step bytes off a state's scratchpad image.
     pub fn seat_step_bytes(&mut self, scratchpad: Option<&[u8]>) {
-        self.step_bytes = scratchpad
-            .and_then(|s| s.get(0x392..0x394))
-            .map(|b| (b[0], b[1]));
+        self.step_bytes = step_bytes(scratchpad);
     }
 
     /// What a film hands `World::seed_frame_cost_history`: the history, its
@@ -1312,6 +1398,13 @@ impl RetailObs {
     }
 }
 
+/// The pacer's step bytes `(0x1F800392, 0x1F800393)` off a scratchpad image.
+fn step_bytes(scratchpad: Option<&[u8]>) -> Option<(u8, u8)> {
+    scratchpad
+        .and_then(|s| s.get(0x392..0x394))
+        .map(|b| (b[0], b[1]))
+}
+
 pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
     match entry.emulator {
         "mednafen" => {
@@ -1323,7 +1416,10 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
                 (Some(v), Some(rect)) => display_frame(ram, v, rect),
                 _ => None,
             };
-            let mut obs = RetailObs::from_ram(ram, frame);
+            let mut obs = crate::retail_compare_battle::with_step_bytes(
+                step_bytes(st.scratch_ram().ok()),
+                || RetailObs::from_ram(ram, frame),
+            );
             obs.seat_scroll_rects(ram, gpu.vram_bytes());
             obs.seat_step_bytes(st.scratch_ram().ok());
             obs.seat_view_window(st.scratch_ram().ok());
@@ -1340,7 +1436,10 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             let frame = gpu
                 .as_ref()
                 .and_then(|g| display_frame(st.main_ram(), &g.vram, g.display_crop_rect()));
-            let mut obs = RetailObs::from_ram(st.main_ram(), frame);
+            let mut obs =
+                crate::retail_compare_battle::with_step_bytes(step_bytes(st.scratchpad()), || {
+                    RetailObs::from_ram(st.main_ram(), frame)
+                });
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
             obs.seat_step_bytes(st.scratchpad());
             obs.seat_view_window(st.scratchpad());

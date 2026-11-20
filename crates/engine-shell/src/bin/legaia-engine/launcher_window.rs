@@ -2751,6 +2751,13 @@ impl LauncherApp {
             let muted = retail && row.overridden_by_retail();
             let ink = if muted { FAINT } else { INK };
             c.text(panel.x + 10, y, row.label(), ink);
+            // The row's in-game key after its label, in the key ink the
+            // `F12` page and the Controls list letter keys in, so a toggle's
+            // key is learned before the game starts.
+            if let Some(key) = row.hotkey_label() {
+                let kx = panel.x + 10 + c.width(row.label()) + c.width(" ");
+                c.text(kx, y, key, if muted { FAINT } else { KEY });
+            }
             let value = if muted {
                 "Original".to_string()
             } else {
@@ -4943,6 +4950,9 @@ mod tests {
                 no_entry_pulse: true,
                 smart_monsters: true,
                 arts_saved_list: true,
+                no_smooth_motion: true,
+                load_pauses: true,
+                no_instant_controls: true,
                 ..Default::default()
             },
             ..Default::default()
@@ -4954,9 +4964,15 @@ mod tests {
                 no_entry_pulse,
                 smart_monsters,
                 arts_saved_list,
+                no_smooth_motion,
+                load_pauses,
+                no_instant_controls,
                 retail,
                 ..
-            }) => assert!(no_entry_pulse && smart_monsters && arts_saved_list && !retail),
+            }) => {
+                assert!(no_entry_pulse && smart_monsters && arts_saved_list && !retail);
+                assert!(no_smooth_motion && load_pauses && no_instant_controls);
+            }
             other => panic!("expected play-window, got {other:?}"),
         }
         // So do the gameplay-tweak rows.

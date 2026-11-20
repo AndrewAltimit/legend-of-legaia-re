@@ -91,6 +91,12 @@ pub struct FieldVmState {
     /// scene host's picker seat, consumed by the first park start inside the
     /// free-roam entry window, and dropped by any real start before it.
     pub picker_bgm_inherit: Option<u16>,
+    /// A picker entry whose own start dropped [`Self::picker_bgm_inherit`]:
+    /// a park behind that start in the same install slice keeps the start
+    /// sounding (the picked scene plays its own track) rather than taking it
+    /// back as the field init does behind a door. Cleared with the inherit
+    /// at each entry.
+    pub picker_start_kept: bool,
     /// Per-actor field-VM channels: one spawned context per MAN partition-1
     /// placement record, mirroring the retail per-record spawn
     /// (`FUN_8003A1E4`). Spawned alongside a cutscene timeline
@@ -288,6 +294,7 @@ impl FieldVmState {
             free_roam_entry_frame: 0,
             picker_beat_flags: Vec::new(),
             picker_bgm_inherit: None,
+            picker_start_kept: false,
             channels: Vec::new(),
             stepping_view: Vec::new(),
             channels_man: None,

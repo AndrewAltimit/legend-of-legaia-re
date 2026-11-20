@@ -1234,6 +1234,14 @@ pub struct BattleActionCtx {
     /// [`crate::battle_gauge_rearm::restore_anim_rates`], and by the summon /
     /// capture band exits.
     pub gauge_rearm_latch: u8,
+    /// [`Self::gauge_rearm_latch`] as the newest pass's strike-band arm read
+    /// it (`0x1E` / `0x1F` / `0x20`; `None` after any other state). The arm
+    /// (`FUN_801D5854` inside the state body) tests `+0x243` for case 7's
+    /// pull-in (`0x801D6770`) before the shared tail's `FUN_801E93C8` clears
+    /// it (`0x801E5F64`), so the pass on which the latch drops still frames
+    /// pulled in; the port's camera runs after the whole pass and reads this
+    /// copy.
+    pub strike_arm_latch: Option<u8>,
     /// `[+0x890]` - the battle **ambient base**, a packed `10:10:10` colour
     /// that `FUN_80050120` ramps every frame on [`Self::gauge_rearm_latch`]
     /// (down while it is set, back up while it is clear) and derives the

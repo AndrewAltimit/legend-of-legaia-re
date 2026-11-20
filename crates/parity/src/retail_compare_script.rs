@@ -199,6 +199,11 @@ pub struct RetailScripts {
     /// list holds the node ([`pooled_system_pc`]): a battle capture's, whose
     /// field actors the fight has unlinked.
     pub pooled_system_pc: Option<usize>,
+    /// The spawn the system script's last pass ended on, when its PC sits
+    /// straight after a latched spawn arm `5x <lo> 44 <record> 21`
+    /// ([`system_spawn_arm`]): the spawned record's flat index and the
+    /// latch.
+    pub system_spawn: Option<(u16, u16)>,
     /// The field pager mid-page: its typing row's window index and reveal
     /// counter, while `_DAT_801F2734` is the typing state `0x0B`
     /// ([`pager_typing`]).
@@ -207,6 +212,29 @@ pub struct RetailScripts {
     /// completing press), its rows as offsets into the first running
     /// record ([`pager_phase`]).
     pub pager: Option<PagerPhase>,
+    /// The live mover sits behind a node other than an engaged record: the
+    /// record that armed it was not its list's last node, so the sweep
+    /// reached the mover on the arming frame and it credited the step there
+    /// (`ScriptGate::glide_lead`, [`mover_ticked_on_arming_frame`]).
+    pub glide_arm_credited: bool,
+}
+
+/// Whether the mover at `nodes[i]` ran its first tick on the game frame that
+/// armed it. The sweep `FUN_8002519C` loads a node's `next` before it calls
+/// the handler (`lw s1,0x0(s1)` at `0x800251D8`, the `jalr` at
+/// `0x800252B4`), and the spawn links the new mover at its list's tail
+/// (`FUN_80020454`). A mover right behind an engaged record was spawned by
+/// that record as the tail, which the sweep had already passed; one behind
+/// any other node (`map01`'s credits record with the ambient emitter
+/// `FUN_801D6058` between them) was reached on the same frame. A re-armed
+/// mover keeps its old place, behind the record or not, and the rule holds.
+fn mover_ticked_on_arming_frame(ram: &[u8], nodes: &[u32], i: usize) -> bool {
+    let Some(&prev) = i.checked_sub(1).and_then(|p| nodes.get(p)) else {
+        return false;
+    };
+    let engaged_record = game_anchors::u32_at(ram, prev + 0x0C) == FIELD_ACTOR_TICK
+        && game_anchors::u32_at(ram, prev + 0x10) & ENGAGED != 0;
+    game_anchors::u32_at(ram, prev) == nodes[i] && !engaged_record
 }
 
 /// The pager state word `_DAT_801F2734` (field overlay).
@@ -217,6 +245,8 @@ const PAGER_REVEAL: u32 = 0x801F_2748;
 const PAGER_LAST_ROW: u32 = 0x801F_3530;
 /// Pager state `0x0B`: typing the row at the last index.
 const PAGER_TYPING: i32 = 0x0B;
+/// `_DAT_801F273C`: the calls the box stays gone after a `0x48` collapse.
+const PAGER_GONE: u32 = 0x801F_273C;
 /// The scroll word `_DAT_801F2738`.
 const PAGER_SCROLL: u32 = 0x801F_2738;
 /// The row table `_DAT_801F3540[]`: a pointer to each row's `0x1F` lead.
@@ -255,6 +285,10 @@ pub fn pager_phase(ram: &[u8], base: u32) -> Option<PagerPhase> {
             .into_iter()
             .find(|&n| game_anchors::u32_at(ram, n + 0x0C) == PAGER_TICK)?;
         i32::from(game_anchors::i16_at(ram, node + PAGER_SLIDE_COUNT))
+    } else if state == 0x02 {
+        // A fresh box's load call waits out the gone countdown a `0x48`
+        // collapse left (`0x801D8630..0x801D864C`).
+        game_anchors::u32_at(ram, PAGER_GONE) as i32
     } else {
         game_anchors::u32_at(ram, PAGER_REVEAL) as i32
     };
@@ -312,11 +346,12 @@ impl RetailScripts {
             ..Self::default()
         };
         let nodes = actor_nodes(ram);
-        for &node in &nodes {
+        for (i, &node) in nodes.iter().enumerate() {
             let tick = game_anchors::u32_at(ram, node + 0x0C);
             let flags = game_anchors::u32_at(ram, node + 0x10);
             let id = game_anchors::u16_at(ram, node + 0x50);
             if tick == CAMERA_MOVER_TICK && flags & DEAD == 0 && out.glide_left.is_none() {
+                out.glide_arm_credited = mover_ticked_on_arming_frame(ram, &nodes, i);
                 let left = i32::from(game_anchors::i16_at(ram, node + 0x9E))
                     - i32::from(game_anchors::i16_at(ram, node + 0x9C));
                 out.glide_left = Some(left.max(0));
@@ -338,6 +373,10 @@ impl RetailScripts {
             }
             if tick == SYSTEM_SCRIPT_TICK && out.system_pc.is_none() {
                 out.system_pc = usize::try_from(game_anchors::i16_at(ram, node + 0x9E)).ok();
+                out.system_spawn = out.system_pc.and_then(|pc| {
+                    let lead = pc.checked_sub(SPAWN_ARM_LEN)?;
+                    system_spawn_arm(&bytes_at(ram, base + lead as u32, SPAWN_ARM_LEN)?)
+                });
                 continue;
             }
             let head = bytes_at(ram, base, RECORD_HEAD_LEN);
@@ -390,6 +429,31 @@ impl RetailScripts {
     }
 }
 
+/// Bytes of a latched spawn arm: `5x <lo>` (SysFlag.Set), `44 <record>`
+/// (SPAWN_RECORD), `21` (the frame boundary).
+const SPAWN_ARM_LEN: usize = 5;
+
+/// The spawned record's flat index and the latch of a latched spawn arm
+/// `5x <lo> 44 <record> 21` ([`SPAWN_ARM_LEN`] bytes ending at the system
+/// script's PC), `None` for any other lead.
+///
+/// A scene entry that starts its cutscene from the system loop sets the
+/// one-shot latch, spawns the record and ends the pass on the `21`
+/// (`town0e` `P1[0]` `+0xA1`: `75 F1 07 00`, `55 F1`, `44 2E`, `21`). The
+/// spawned record then holds the player (`+0x10 & 0x80000`), and the
+/// system tick `FUN_801DA51C` opens no new pass while it does
+/// (`0x801DA794..0x801DA7AC`): retail's system context stays on the PC
+/// after the `21` for the whole cutscene, its loop body never run.
+pub fn system_spawn_arm(lead: &[u8]) -> Option<(u16, u16)> {
+    match *lead {
+        [set, lo, 0x44, record, 0x21] if set & 0xF0 == 0x50 => Some((
+            u16::from(record),
+            (u16::from(set & 0x0F) << 8) | u16::from(lo),
+        )),
+        _ => None,
+    }
+}
+
 /// The actor pool's pointer table (`0x8007C370`, the allocator pair
 /// `FUN_80020454` / `FUN_80020DE0`) and how many slots it holds: node `i` is
 /// `0x8007C5AC + i * 0xD8`.
@@ -437,11 +501,20 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
         wait: s.wait.max(0),
         op: s.op,
         glide_left: scripts.glide_left,
+        glide_lead: scripts
+            .glide_left
+            .filter(|_| scripts.glide_arm_credited)
+            .map(|_| i32::from(scripts.display_lag / 2).max(1)),
         retire_watch: std::cell::Cell::new((false, false)),
         system_pc: scripts.system_pc,
         resumed_early: std::cell::Cell::new(false),
         typing: scripts.typing.filter(|_| s.op & 0x7F < 0x20),
-        pager: scripts.pager.clone().filter(|_| s.op & 0x7F < 0x20),
+        // A text op takes the mid-page arms ([`displayed_script_gate_from_retail`]
+        // adds the `0x48` collapse to a gate past the box).
+        pager: scripts
+            .pager
+            .clone()
+            .filter(|p| s.op & 0x7F < 0x20 && !PagerPhase::is_collapse(p.state)),
         latch: s.player_latch,
         walk: s.walk,
         tile_walk: s.tile_walk,
@@ -459,6 +532,18 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
 pub fn displayed_script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
     let mut g = script_gate_from_retail(scripts)?;
     g.wait = (i32::from(g.wait) - i32::from(scripts.display_lag)).max(0) as i16;
+    // A gate past a page's `0x48` press carries the collapse: the press is
+    // the displayed frame's instant, which the replay's quicker paging
+    // re-times against the glide and the walks the RAM gate waits on
+    // (`ScriptGate::met`). The state channels keep the RAM gate's legs.
+    if g.op & 0x7F >= 0x20
+        && let Some(p) = scripts
+            .pager
+            .as_ref()
+            .filter(|p| PagerPhase::is_collapse(p.state))
+    {
+        g.pager = Some(p.clone());
+    }
     // A text gate mid-page keeps the RAM's pager phase: the child meets it on
     // the engine's own pager and takes its frame `display_lag` ticks back
     // ([`ScriptGate::takes_displayed_frame`]). Two calls back from a box's
@@ -534,6 +619,24 @@ mod tests {
     /// A system node no list links (a battle capture's) is read off the
     /// actor pool; a second candidate makes the read ambiguous, and a live
     /// list's node wins over the pool.
+    /// A system pass that ends on a latched spawn names the record and the
+    /// latch (`town0e` `P1[0]` `+0xA5..+0xAA`); any other lead names none.
+    #[test]
+    fn a_latched_spawn_arm_names_its_record_and_latch() {
+        assert_eq!(
+            system_spawn_arm(&[0x55, 0xF1, 0x44, 0x2E, 0x21]),
+            Some((0x2E, 0x5F1))
+        );
+        assert_eq!(
+            system_spawn_arm(&[0x56, 0xA9, 0x44, 0x2E, 0x21]),
+            Some((0x2E, 0x6A9))
+        );
+        // A clear, a missing frame boundary, a non-spawn: no arm.
+        assert_eq!(system_spawn_arm(&[0x65, 0xF1, 0x44, 0x2E, 0x21]), None);
+        assert_eq!(system_spawn_arm(&[0x55, 0xF1, 0x44, 0x2E, 0x24]), None);
+        assert_eq!(system_spawn_arm(&[0x55, 0xF1, 0x4A, 0x2E, 0x21]), None);
+    }
+
     #[test]
     fn a_battle_capture_reads_the_system_pc_off_the_pool() {
         fn w32(ram: &mut [u8], va: u32, v: u32) {
@@ -699,5 +802,58 @@ mod tests {
         assert!(g.pager.is_none());
         assert!(on_player_latch(0xAD, Some(vec![0xF8, 0x08])));
         assert!(!on_player_latch(0xAD, Some(vec![0x31, 0x08])));
+        // The `0x48` collapse is carried by the displayed gate past the box
+        // and only there: the record ran on with the press (`juui1_vortex_gala_box`,
+        // a `33` test behind the page), and a text op it parks on is the
+        // next page, which the collapse does not describe.
+        w32(&mut ram, PAGER_STATE, 0x0A);
+        let collapse = pager_phase(&ram, base);
+        assert_eq!(collapse.as_ref().map(|p| p.state), Some(0x0A));
+        let past_box = RetailScripts {
+            running: vec![script(0xB3)],
+            pager: collapse.clone(),
+            ..RetailScripts::default()
+        };
+        assert!(script_gate_from_retail(&past_box).unwrap().pager.is_none());
+        let g = displayed_script_gate_from_retail(&past_box).unwrap();
+        assert_eq!(g.pager.as_ref().map(|p| p.state), Some(0x0A));
+        assert!(g.takes_displayed_frame());
+        let on_text = RetailScripts {
+            running: vec![script(0x1F)],
+            pager: collapse,
+            ..RetailScripts::default()
+        };
+        let g = displayed_script_gate_from_retail(&on_text).unwrap();
+        assert!(g.pager.is_none());
+    }
+
+    /// A mover right behind the engaged record that spawned it as its list's
+    /// tail first ticked a game frame later; one behind any other node (the
+    /// ambient emitter on `map01`'s credits) ticked on the arming frame.
+    #[test]
+    fn a_mover_behind_another_node_credited_its_arming_frame() {
+        fn w32(ram: &mut [u8], va: u32, v: u32) {
+            let o = (va & 0x1F_FFFF) as usize;
+            ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut ram = vec![0u8; 0x20_0000];
+        let (record, emitter, mover) = (0x8010_0000u32, 0x8010_0200u32, 0x8010_0400u32);
+        w32(&mut ram, record + 0x0C, FIELD_ACTOR_TICK);
+        w32(&mut ram, record + 0x10, ENGAGED);
+        w32(&mut ram, emitter + 0x0C, 0x801D_6058);
+        w32(&mut ram, mover + 0x0C, CAMERA_MOVER_TICK);
+        // record -> mover
+        w32(&mut ram, record, mover);
+        assert!(!mover_ticked_on_arming_frame(&ram, &[record, mover], 1));
+        // record -> emitter -> mover
+        w32(&mut ram, record, emitter);
+        w32(&mut ram, emitter, mover);
+        assert!(mover_ticked_on_arming_frame(
+            &ram,
+            &[record, emitter, mover],
+            2
+        ));
+        // a list head has no node before it
+        assert!(!mover_ticked_on_arming_frame(&ram, &[mover], 0));
     }
 }

@@ -129,6 +129,9 @@ impl World {
         // The smooth battle camera's draw-side record of what this tick left
         // (`World::observe_battle_present`); presentation-only.
         self.observe_battle_present();
+        // The smooth field actors' record of the same
+        // (`World::observe_field_present`); presentation-only.
+        self.observe_field_present();
         outcome
     }
 

@@ -30,7 +30,102 @@ pub struct FieldLightDraw {
     pub polys: Vec<billboard::LightPoly>,
 }
 
+/// One retail attached light's live record (`FUN_801E4470`'s actor), for
+/// the retail comparison's capture seat (`LEGAIA_SEAT_LIGHTS`,
+/// [`World::seat_attached_light`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachedLightSeed {
+    /// The parent's flat MAN index (`+0x90` -> `+0x50`), or
+    /// [`Self::PLAYER`] for the player.
+    pub flat: u16,
+    /// `+0x16` - the Y offset.
+    pub offset_y: i16,
+    /// `+0x3C` / `+0x3E`.
+    pub half_extent: (i16, i16),
+    /// `+0x74` / `+0x88`, `R << 16 | G << 8 | B`.
+    pub color_a: u32,
+    pub color_b: u32,
+    /// `+0x5A`.
+    pub abr: u8,
+    /// The bytes `+0x94` points at, as far as the walker can read
+    /// ([`billboard::attached_script_extent`]); empty for a null pointer.
+    pub script: Vec<u8>,
+    /// `+0x9E` / `+0x9C`.
+    pub cursor: i16,
+    pub frame: i16,
+    /// `+0x40` / `+0x58`, `+0x6A`, `+0x80..+0x82`, `+0x83..+0x85`.
+    pub from_extent: (i16, i16),
+    pub from_y: i16,
+    pub from_a: [u8; 3],
+    pub from_b: [u8; 3],
+    /// Vsyncs the displayed frame trails the RAM by (the display lag): the
+    /// seat takes the keyframe clock back this far.
+    pub rewind: i16,
+}
+
+impl AttachedLightSeed {
+    /// [`Self::flat`] for a light on the player (`_DAT_8007C364`).
+    pub const PLAYER: u16 = 0xFFFF;
+}
+
 impl World {
+    /// Capture alignment for the retail comparison (`LEGAIA_SEAT_LIGHTS`):
+    /// stand the engine's attached light on `seed.flat`'s parent on the
+    /// retail record. A light's keyframe phase is the wall time since the
+    /// op `34 1x` / `34 2x` that (re)started it, and a seed that replays a
+    /// record pages its dialogue quicker than the player retail recorded, so
+    /// the replayed light runs short of retail's by the paging time: `dream`'s
+    /// cutscene record (flat MAN index `16`) restarts the light on flat `8`
+    /// at `+0x1B3` ahead of a box of text, and on the gate the engine's
+    /// keyframe clock read `20` against `dream_noa_lights`' `42`.
+    ///
+    /// The record is taken back `seed.rewind` vsyncs (the display lag): the
+    /// RAM's extents and colours are the tick before, one frame of `step`
+    /// vsyncs, so the light is re-interpolated at `+0x9C - step - rewind`
+    /// when that stays inside the keyframe. Only a light the engine already carries is seated; a missing
+    /// one stays missing. Returns whether a light was seated.
+    pub fn seat_attached_light(&mut self, seed: &AttachedLightSeed, step: u8) -> bool {
+        let parent = if seed.flat == AttachedLightSeed::PLAYER {
+            legaia_engine_field::field_script_actor_state::ScriptActorRef::Player
+        } else {
+            match self.ambient_seat_slot(seed.flat) {
+                Some(slot) => {
+                    legaia_engine_field::field_script_actor_state::ScriptActorRef::Npc(slot)
+                }
+                None => return false,
+            }
+        };
+        let Some(light) = self
+            .script_actors
+            .lights
+            .iter_mut()
+            .find(|l| l.parent == parent && !l.sprite.torn_down)
+        else {
+            return false;
+        };
+        let s = &mut light.sprite;
+        s.offset.1 = seed.offset_y;
+        s.half_extent = seed.half_extent;
+        s.color_a = seed.color_a;
+        s.color_b = seed.color_b;
+        s.abr = seed.abr;
+        s.script = seed.script.clone();
+        s.cursor = seed.cursor;
+        s.frame = seed.frame;
+        s.from_extent = seed.from_extent;
+        s.from_y = seed.from_y;
+        s.from_a = seed.from_a;
+        s.from_b = seed.from_b;
+        let step = step.max(1);
+        let t = seed.frame - i16::from(step) - seed.rewind;
+        if seed.frame > 0 && t >= 1 {
+            s.frame = t;
+            billboard::attached_sprite_script_tick(s, step);
+        }
+        true
+    }
+
+    /// Scene-entry reset: no arcs, no NPC heights, no lights. Retail's pool
     /// Scene-entry reset: no arcs, no NPC heights, no lights. Retail's pool
     /// is re-allocated with the field overlay on every entry.
     pub fn reset_field_script_actors(&mut self) {
@@ -197,8 +292,20 @@ impl World {
     /// to `FUN_801D25EC` (`0x801DF5AC`). The landing point is built from the
     /// operand ([`hop_arc::ScriptArcRequest::landing`], the floor under a tile
     /// target standing in for `FUN_80019278`), the clip seeded by
-    /// [`hop_arc::spawn_arc_with_emitter`]. A second arc on an actor that is
-    /// still arcing replaces the first.
+    /// [`hop_arc::spawn_arc_with_emitter`].
+    ///
+    /// A second arc on an actor that is still arcing flies beside the first:
+    /// `FUN_801D25EC` allocates a fresh helper and watcher pair
+    /// (`0x801D2634`, `0x801D2760`) and looks for no helper already on the
+    /// parent, and each helper writes its parent's position every frame until
+    /// it retires. The arm refuses only a target that still carries `0x400`
+    /// ([`Self::script_arc_target_halted`]), so a record that drops the bit
+    /// with `32 <id> 0A` arcs the actor again mid-flight. `edson` `P2[0]`
+    /// sends flat `12` on a 470-frame arc at `+0xF7`, clears its halt at
+    /// `+0x127` and arcs it onto its seat with a 146-frame drop at `+0x1E7`:
+    /// the long arc outlives the drop and lands it on its own tile `(23, 58)`
+    /// (`credits_edson_panel_pcsx`; `credits_edson_fullscreen_pcsx` holds the
+    /// one live helper, `+0x9C` at 96% of the 470-frame flight).
     ///
     /// `release_channel` is the placement slot whose channel(s) the landing
     /// un-halts - see [`FieldScriptArc::release_channel`].
@@ -234,7 +341,6 @@ impl World {
         let Some(watcher) = spawn.emitter else {
             return false;
         };
-        self.script_actors.arcs.retain(|a| a.actor != actor);
         self.script_actors.arcs.push(FieldScriptArc {
             actor,
             arc: spawn.arc,

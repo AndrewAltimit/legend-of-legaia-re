@@ -120,7 +120,7 @@
     <li><strong>A one-shot keeps only a voice's last pass.</strong> The stop before each reprogram raises the voice's key-off bit and clears its pending key-on, and nothing reaches the chip until the flush. So a voice the wrapping cursor visits twice in one cue keeps only its last pass: that pass's tone, or nothing but the stop when the tone does not resolve. Under the field's limit of 1 a four-voice row lands on voices 23 and 22 twice each, and a <code>jouina</code> row whose tone runs past its program's tones from the third voice on keys nothing at all in retail. The port resolves every pass first and keys afterwards (<code>SfxBank::play_entry</code>).</li>
     <li><strong>A zero-voice sustained cue.</strong> The held-count write sits inside the key-on loop, so a sustained cue with no voices releases the old run but leaves the held count unchanged; <code>SfxBank::play_descriptor</code> does the same for a runtime row.</li>
   </ul>
-  <p>The mixer record's enable byte (<code>+0xB</code>) skips a cue before any voice work; while a global override is set every cue is forced onto channel 6.</p>
+  <p>The mixer record's enable byte (<code>+0xB</code>) skips a cue before any voice work; while a global override is set every cue is forced onto channel 6. The override rises when a side-band bank lands in slot 6 and falls only at the side-band teardown.</p>
 </section>
 
 <section class="doc-section" id="tone-index">

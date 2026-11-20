@@ -199,6 +199,49 @@ impl GameplayTweaks {
     }
 }
 
+/// The port's pacing enhancements: how often the picture moves, whether the
+/// original's loading pauses hold the screen, and when a press reaches the
+/// game. Each is on in the enhanced port and off under retail-faithful mode,
+/// which runs the original's cadence (`WorldToggles::pin_retail`). One value,
+/// carried whole by both hosts like [`GameplayTweaks`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pacing {
+    /// Smooth motion: field and battle cameras, the player's walk, field walkers and the L1
+    /// map display move every vsync (`WorldToggles::smooth_camera`,
+    /// `smooth_walk`, `smooth_actors`, `smooth_map_display`). Off steps them once a game
+    /// frame, as the original does.
+    pub smooth_motion: bool,
+    /// Skip the original's CD-wait black holds around the pause menu, shops,
+    /// doors and a battle's return (`WorldToggles::skip_load_holds`).
+    pub skip_load_pauses: bool,
+    /// The field and the overworld read the pad on the vsync it is pressed
+    /// (`WorldToggles::immediate_pad`); off is the original's one-frame-late
+    /// read.
+    pub instant_controls: bool,
+}
+
+impl Default for Pacing {
+    /// The enhanced port's set: everything on.
+    fn default() -> Self {
+        Self {
+            smooth_motion: true,
+            skip_load_pauses: true,
+            instant_controls: true,
+        }
+    }
+}
+
+impl Pacing {
+    /// The original game's pacing: everything off.
+    pub fn retail() -> Self {
+        Self {
+            smooth_motion: false,
+            skip_load_pauses: false,
+            instant_controls: false,
+        }
+    }
+}
+
 /// One host's switch set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionSwitches {
@@ -220,6 +263,9 @@ pub struct SessionSwitches {
     pub arts_saved_list: bool,
     /// The patcher features graduated into engine switches.
     pub tweaks: GameplayTweaks,
+    /// The pacing enhancements (smooth motion, the load-pause skip, instant
+    /// controls).
+    pub pacing: Pacing,
     /// Retail-faithful mode: every port-only switch above held off.
     pub retail: bool,
 }
@@ -314,6 +360,15 @@ pub struct PersistedSwitches {
     /// "Saved-chain Arts list" box).
     #[serde(default, skip_serializing_if = "is_false")]
     pub arts_saved_list: bool,
+    /// Without smooth motion (`--no-smooth-motion`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_smooth_motion: bool,
+    /// With the original's loading pauses (`--load-pauses`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub load_pauses: bool,
+    /// Without instant controls (`--no-instant-controls`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_instant_controls: bool,
 }
 
 impl PersistedSwitches {
@@ -370,6 +425,22 @@ impl PersistedSwitches {
     pub fn entry_pulse(&self) -> bool {
         !self.no_entry_pulse
     }
+
+    /// The pacing enhancements the stored set stands for.
+    pub fn pacing(&self) -> Pacing {
+        Pacing {
+            smooth_motion: !self.no_smooth_motion,
+            skip_load_pauses: !self.load_pauses,
+            instant_controls: !self.no_instant_controls,
+        }
+    }
+
+    /// Store `p`, each enhancement that is on written as nothing.
+    pub fn set_pacing(&mut self, p: &Pacing) {
+        self.no_smooth_motion = !p.smooth_motion;
+        self.load_pauses = !p.skip_load_pauses;
+        self.no_instant_controls = !p.instant_controls;
+    }
 }
 
 impl SessionSwitches {
@@ -399,12 +470,14 @@ impl SessionSwitches {
             toggles.pin_retail();
         } else {
             let engine = WorldToggles::new();
+            let p = &self.pacing;
             toggles.hop_landing_guard = engine.hop_landing_guard;
-            toggles.skip_load_holds = engine.skip_load_holds;
-            toggles.immediate_pad = engine.immediate_pad;
-            toggles.smooth_walk = engine.smooth_walk;
-            toggles.smooth_map_display = engine.smooth_map_display;
-            toggles.smooth_camera = engine.smooth_camera;
+            toggles.skip_load_holds = engine.skip_load_holds && p.skip_load_pauses;
+            toggles.immediate_pad = engine.immediate_pad && p.instant_controls;
+            toggles.smooth_walk = engine.smooth_walk && p.smooth_motion;
+            toggles.smooth_map_display = engine.smooth_map_display && p.smooth_motion;
+            toggles.smooth_camera = engine.smooth_camera && p.smooth_motion;
+            toggles.smooth_actors = engine.smooth_actors && p.smooth_motion;
             toggles.battle_entry_off_axis = engine.battle_entry_off_axis;
         }
     }
@@ -439,6 +512,7 @@ mod tests {
                 save_anywhere: true,
                 action_movement: true,
             },
+            pacing: Pacing::default(),
             retail,
         }
     }
@@ -632,6 +706,7 @@ mod tests {
             battle_frame_cadence: WorldToggles::new().battle_sm_frame_cadence,
             arts_saved_list: false,
             tweaks: GameplayTweaks::default(),
+            pacing: Pacing::default(),
             retail: false,
         };
         let mut before = WorldToggles::new();
@@ -653,5 +728,44 @@ mod tests {
         };
         assert!(!port(&before).is_empty());
         assert_eq!(port(&t), port(&before));
+    }
+
+    /// Each pacing enhancement reaches its world switches on its own, retail
+    /// holds all of them off whatever the set says, and the stored form
+    /// writes nothing for the shipped (all-on) set.
+    #[test]
+    fn pacing_rows_reach_the_world_and_retail_holds_them_off() {
+        let mut t = WorldToggles::new();
+        let mut set = all_on(false);
+        set.apply(&mut t);
+        assert!(t.smooth_camera && t.smooth_walk && t.smooth_map_display && t.smooth_actors);
+        assert!(t.skip_load_holds && t.immediate_pad);
+        set.pacing.smooth_motion = false;
+        set.apply(&mut t);
+        assert!(!t.smooth_camera && !t.smooth_walk && !t.smooth_map_display && !t.smooth_actors);
+        assert!(t.skip_load_holds && t.immediate_pad);
+        set.pacing = Pacing {
+            skip_load_pauses: false,
+            ..Pacing::default()
+        };
+        set.apply(&mut t);
+        assert!(t.smooth_camera && !t.skip_load_holds && t.immediate_pad);
+        set.pacing = Pacing {
+            instant_controls: false,
+            ..Pacing::default()
+        };
+        set.apply(&mut t);
+        assert!(t.skip_load_holds && !t.immediate_pad);
+        set.pacing = Pacing::default();
+        set.retail = true;
+        set.apply(&mut t);
+        assert!(!t.smooth_camera && !t.skip_load_holds && !t.immediate_pad);
+        let mut p = PersistedSwitches::default();
+        assert_eq!(p.pacing(), Pacing::default());
+        p.set_pacing(&Pacing::default());
+        assert_eq!(serde_json::to_string(&p).unwrap(), "{}");
+        p.set_pacing(&Pacing::retail());
+        assert!(p.no_smooth_motion && p.load_pauses && p.no_instant_controls);
+        assert_eq!(p.pacing(), Pacing::retail());
     }
 }

@@ -262,10 +262,13 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Enhancements | Ambient occlusion | `legaia-options.toml` | `Home` | on |
 | Enhancements | Ground fog | `legaia-options.toml` | `F9` | off |
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
+| Enhancements | Smooth motion: cameras, walking, townsfolk and their animations, and the map screen move every frame (off = `--no-smooth-motion`) | `launcher.toml` | - | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
 | Enhancements | Heal numbers (off = `--no-heal-numerals`) | `launcher.toml` | - | on |
 | Play | Free-angle movement | `legaia-options.toml` | `R` | on |
 | Play | Action movement: Square jumps (twice in the air), R2 dashes (`--action-movement`) | `launcher.toml` | - | off |
+| Play | Instant controls: a press acts on the frame it lands (off = `--no-instant-controls`) | `launcher.toml` | - | on |
+| Play | Skip loading pauses around menus, shops, doors and a battle's end (off = `--load-pauses`) | `launcher.toml` | - | on |
 | Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
 | Play | Saved-chain Arts list: in battle, Arts picks from your saved combos (`--arts-saved-list`) | `launcher.toml` | - | off |
 | Play | Reduce flashing | `legaia-options.toml` | - | on |
@@ -291,7 +294,9 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Original game | Original prop culling (`retail_static_window`) | `legaia-options.toml` | - | on |
 | Original game | Original game only (`--retail`) | `launcher.toml` | - | off |
 
-A row moved off its first-start value carries a small gold dot before its
+A row with a key of its own in the game names that key after its label, in
+the key colour the `F12` page uses (*Bloom F10*). A row moved off its
+first-start value carries a small gold dot before its
 value, and the help box under the buttons names the default (*Default: Off
 (Delete)*), so a changed setting is visible without opening a file.
 
@@ -309,7 +314,8 @@ colours; the original values are the ones *Original game only* plays with.
 The rows stored in `legaia-options.toml` are the game's own options: the
 launcher writes the same file the in-game keys change, so a toggle made in
 either place is the one the other shows. The `launcher.toml` rows are launch
-switches with no option behind them; the browser play page has a box for each.
+switches with no option behind them; the browser play page has a box for each
+(the three pacing rows sit under its *Gameplay tweaks*).
 *Original game only* starts the game retail-faithful (`play-window --retail`):
 every enhancement off for that session, the saved options untouched; the rows
 it overrides read *Original* while it is on. It also plays the original's
@@ -378,7 +384,7 @@ what each does and which patcher features stay with the patcher.
 ### Playing
 
 *Play* starts the game on the title screen (`play-window --disc <bin>
---boot-ui`, plus `--psx-render`, `--retail`, `--no-entry-pulse`,
+--boot-ui`, plus `--psx-render`, `--retail`, `--no-entry-pulse`, `--no-smooth-motion`,
 `--smart-monsters` or a gameplay-tweak flag when those rows ask for them) in a child
 process, and the launcher window closes. When the game exits normally the
 launcher ends with it. When it stops with an error, the launcher comes back
@@ -847,6 +853,11 @@ raises the story flags the door in would have raised, so it plays as on
 arrival. A game already past that point sees nothing fire, as in the original,
 and the next pick clears the flags this one raised. Noa's dream is the one beat
 that changes the leader: its own script hands Noa the lead.
+
+Any pick past the village (every scene but the opening, Rim Elm before the Mist
+and the village under attack, overworld picks included) also raises the flags
+the story sets when Vahn leaves Rim Elm, so walking back into the village finds
+the Genesis Tree revived and the south gate open, as it is in the story by then.
 
 A picked scene that the game itself only ever passes through plays that
 passage. Zora's Floating Castle's second form (`taiku2`) is one: arriving from

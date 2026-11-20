@@ -78,6 +78,9 @@ pub struct World {
     /// What a harness anchored the field frame-cost model by
     /// (`World::anchor_field_frame_cost`); `0` in play.
     pub field_cost_offset: i32,
+    /// The decoration outcome pricing's projected corners, reused frame to
+    /// frame so the pricing allocates nothing (`field_deco_outcomes`).
+    pub field_cost_scratch: std::cell::RefCell<Vec<(i32, i32, i64)>>,
     /// The field frame cost in force is the model's (`World::price_field_frame`),
     /// so a mode it does not price drops it.
     pub field_cost_priced: bool,
@@ -124,6 +127,12 @@ pub struct World {
     /// [`World::observe_battle_present`] alone, read by the draw accessors
     /// alone ([`World::battle_draw_pose`], [`World::battle_draw_root`]).
     pub battle_present: BattlePresent,
+
+    /// The smooth field actors' draw-side record ([`FieldPresent`]): the
+    /// bodies the last game frame closed on beside the live ones. Written by
+    /// [`World::observe_field_present`] alone, read by the draw accessors
+    /// alone ([`World::field_draw_root`], [`World::field_npc_drawn_pose`]).
+    pub field_present: FieldPresent,
 
     /// Field camera rig: the saved camera snapshot, scene offset + ease, shake amplitude and the zone-ramp register file.
     pub camera: CameraRig,
@@ -419,6 +428,30 @@ pub const FREE_ROAM_TWIN_SEEDS: &[(&str, &[u16])] = &[
     ("nilboa2", &[0x378, 0x51F]),
 ];
 
+/// Rim Elm's two departure flags: `0x147`, the Mist attack (raised by
+/// `town01`'s attack timeline `P2[25]`), and `0x141`, the village Genesis
+/// Tree revived (raised by the elder's talk `town0b` `P1[55]` as the party
+/// leaves for `map01`). No shipped script clears either outside the
+/// developer flag-controller records, so every visit past the departure -
+/// the whole overworld and every scene beyond Rim Elm - carries both.
+///
+/// A free-roam pick raises them for every scene but the pre-departure ones
+/// ([`PRE_DEPARTURE_PICKS`]). Retail's door back into the village is
+/// `map01` `P2[0]`, a `SceneChange` into `town0c` with no flag test, and
+/// `town0c`'s tree (`P1[41]`) spawns in the hide box and runs into the
+/// plaza (`4C 51 20 5D`) only while `0x141` is set: a pick anywhere else
+/// that left the flags clear walked the party into a village with no tree
+/// and the south gate sealed behind them.
+pub const RIM_ELM_DEPARTURE_FLAGS: [u16; 2] = [0x147, 0x141];
+
+/// The scenes a free-roam pick stages before Rim Elm's departure
+/// ([`RIM_ELM_DEPARTURE_FLAGS`] not raised): the opening (`opdeene`,
+/// `opstati`), the village before the Mist (`town01`, whose withered tree
+/// `P1[50]` runs into the plaza only while `0x141` is clear) and the village
+/// under attack (`town0b`, which seeds `0x147` alone through
+/// [`FREE_ROAM_TWIN_SEEDS`]).
+pub const PRE_DEPARTURE_PICKS: &[&str] = &["opdeene", "opstati", "town01", "town0b"];
+
 impl Default for World {
     fn default() -> Self {
         Self::new()
@@ -454,6 +487,7 @@ impl World {
             fog: legaia_engine_field::fog_particles::FogPool::new(),
             field_cost_table: None,
             field_cost_offset: 0,
+            field_cost_scratch: std::cell::RefCell::new(Vec::new()),
             field_drawn_table_cost: None,
             field_cost_priced: false,
             fog_volume: legaia_render_kernels::fog_volume::FogVolume::new(),
@@ -470,6 +504,7 @@ impl World {
             object_effect: legaia_engine_effects::object_effect::ObjectEffectTable::boot(),
             battle: BattleState::new(),
             battle_present: BattlePresent::default(),
+            field_present: FieldPresent::default(),
             camera: CameraRig::new(),
             audio: AudioState::new(),
             field_vm: FieldVmState::new(),
@@ -601,11 +636,25 @@ impl World {
         for f in std::mem::take(&mut self.field_vm.picker_beat_flags) {
             self.system_flag_clear(f);
         }
-        // Managed story-event flags (reset-then-seed): every flag any twin
-        // seeds is cleared first, then the picked scene's own set is raised.
+        self.seed_picker_story_flags(scene);
+    }
+
+    /// The managed story-event flags of a picker visit to `scene`
+    /// (reset-then-seed): every flag any twin seeds is cleared first, then
+    /// Rim Elm's departure flags are raised for a scene past it
+    /// ([`RIM_ELM_DEPARTURE_FLAGS`]) and the picked scene's own twin set
+    /// ([`FREE_ROAM_TWIN_SEEDS`]). The flag half of
+    /// [`Self::seed_free_roam_story_baseline`], and all an overworld pick
+    /// stages ([`Self::stage_picker_entry`]).
+    pub fn seed_picker_story_flags(&mut self, scene: &str) {
         for &(_, flags) in FREE_ROAM_TWIN_SEEDS {
             for &f in flags {
                 self.system_flag_clear(f);
+            }
+        }
+        if !PRE_DEPARTURE_PICKS.contains(&scene) {
+            for f in RIM_ELM_DEPARTURE_FLAGS {
+                self.system_flag_set(f);
             }
         }
         if let Some((_, flags)) = FREE_ROAM_TWIN_SEEDS.iter().find(|(s, _)| *s == scene) {
@@ -661,10 +710,22 @@ impl World {
     /// Stage `scene` as a free-roam picker visit when
     /// [`Self::picker_entry_stages_free_roam`] says it is one. Returns whether
     /// it staged.
+    ///
+    /// An overworld pick is not staged, but it still takes the managed story
+    /// flags ([`Self::seed_picker_story_flags`]) under the same stand-downs:
+    /// the overworld is past Rim Elm's departure, and its first door back
+    /// into the village reads them.
     pub fn stage_picker_entry(&mut self, scene: &str, resuming_save: bool) -> bool {
         let stage = self.picker_entry_stages_free_roam(scene, resuming_save);
         if stage {
             self.seed_free_roam_story_baseline(scene);
+        } else if !resuming_save
+            && legaia_engine_scene::scene::is_world_map_scene(scene)
+            && !self.cutscene.opening_chain_active
+            && !self.cutscene.entering_town01_opening
+            && !self.cutscene_timeline_active()
+        {
+            self.seed_picker_story_flags(scene);
         }
         stage
     }

@@ -6,7 +6,10 @@ use super::*;
 impl World {
     /// Apply every store `entry`'s `body` makes on `arm` this tick. `passed`
     /// is whether the arm's gate let it through, `countdown` the module
-    /// countdown the tick opened on.
+    /// countdown after the tick's drain: PROT 0950's arm 3 tests the word it
+    /// has just stored (`sw` at `0x801F7ED8`, `lw` at `0x801F7F10` /
+    /// `0x801F7F30`), so a store read off the word the tick opened on lands a
+    /// tick late.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::world::battle::cast_band) fn apply_module_impacts(
         &mut self,

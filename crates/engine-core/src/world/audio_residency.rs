@@ -39,8 +39,9 @@ impl World {
     /// replay [`legaia_engine_field::field_audio_release::field_audio_release_steps`] in
     /// retail's order. The two voice stops cross to the host
     /// ([`Self::take_sfx_voice_stops`]); the slot-6 close and the latch clear
-    /// land on [`legaia_engine_mode::sfx_residency::SfxBankResidency::side_band_teardown`]; `_DAT_8007BA88` has
-    /// no engine cell (nothing in the engine raises the forced-channel latch).
+    /// land on [`legaia_engine_mode::sfx_residency::SfxBankResidency::side_band_teardown`]; the
+    /// forced-channel latch `_DAT_8007BA88` is [`crate::world::AudioState`]'s
+    /// `sfx_forced_bank`.
     pub fn release_field_audio(&mut self) {
         use legaia_engine_field::field_audio_release::{FIELD_CUE_GLOBAL_B, ReleaseStep};
         for step in legaia_engine_field::field_audio_release::field_audio_release_steps() {
@@ -50,7 +51,7 @@ impl World {
                 ReleaseStep::ClearGlobal(FIELD_CUE_GLOBAL_B) => {
                     self.audio.residency.field_bank_latch = false;
                 }
-                ReleaseStep::ClearGlobal(_) => {}
+                ReleaseStep::ClearGlobal(_) => self.audio.sfx_forced_bank = None,
             }
         }
     }

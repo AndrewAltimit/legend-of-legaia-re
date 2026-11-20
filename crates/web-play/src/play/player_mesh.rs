@@ -70,12 +70,14 @@ impl LegaiaRuntime {
     fn player_mesh_positions_unscaled(&mut self) -> Vec<f32> {
         let pose: Option<Vec<([i16; 3], [i16; 3])>> = self.scene_host.host().and_then(|h| {
             let slot = h.world.player_actor_slot? as usize;
+            // The drawn pose (`World::field_draw_pose_frame`): one game
+            // frame behind under the smooth field actors, as the native
+            // window poses it.
+            let live = h.world.actors.get(slot)?.pose_frame.as_ref()?;
             let mut bones = h
                 .world
-                .actors
-                .get(slot)?
-                .pose_frame
-                .as_ref()?
+                .field_draw_pose_frame(slot)
+                .unwrap_or(live)
                 .bone_outputs
                 .clone();
             // The script's look rotation on one object (`4C 45`), the kernel
@@ -129,17 +131,19 @@ impl LegaiaRuntime {
     /// player matrix): non-zero, the page composes `Rx * Ry * Rz` as it does
     /// for a tilted NPC.
     pub fn player_transform(&self) -> Vec<f32> {
-        let Some((a, tilt)) = self.scene_host.host().and_then(|h| {
+        // The drawn root (`World::field_draw_root`): one game frame behind
+        // under the smooth field actors, the native window's player matrix.
+        let Some(((p, heading), tilt)) = self.scene_host.host().and_then(|h| {
             let slot = h.world.player_actor_slot? as usize;
-            Some((h.world.actors.get(slot)?, h.world.player_draw_tilt()))
+            Some((h.world.field_draw_root(slot)?, h.world.player_draw_tilt()))
         }) else {
             return vec![0.0; 6];
         };
         vec![
-            a.move_state.world_x as f32,
-            a.move_state.world_y as f32,
-            a.move_state.world_z as f32,
-            a.move_state.render_26 as f32,
+            p[0],
+            p[1],
+            p[2],
+            heading,
             f32::from(tilt.0),
             f32::from(tilt.1),
         ]

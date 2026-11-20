@@ -450,6 +450,33 @@ the camera block, and it decides which sums a script's `0x4A` wait can hold
 gate on a wait of `15` is never met on a step of `2`. The seeded step never
 goes under the engine's own floor.
 
+The ring stores a frame of `0x2D0` hsyncs or more as the clamp `0x2BC`
+(`0x800170A8`), but the step is taken off the raw time there
+(`0x800170F8..0x80017104`), so a newest entry reading the clamp is a step-`4`
+pass whatever the longest entry says. A scene whose every frame runs long
+fills the ring with clamps, which the longest-entry rule alone reads as `3`:
+`credits_edstati3_fullscreen_pcsx` and `map01_tree_revival_cutscene` hold
+sixteen clamps under scratchpad step bytes `4` / `4`, and a PCSX-Redux film
+from the first steps its camera mover `4` a pass. Of the library states whose
+newest entry is the clamp, all but one hold step byte `4`. Field and
+world-map states take the newest-entry rule (`frame_step`), and every rewind
+the step scales moves with it: the tree revival's rings and mist `.926` to
+`.961`, the Karisto vignette's walking cranes onto their displayed seat. A
+battle state keeps the longest entry, its lag confirmed against the older
+ordering table's floor or the pacer's step bytes
+([below](#a-drives-frame-is-the-one-the-display-showed)).
+
+On a field or overworld state that holds the scratchpad, the newest-entry
+rule is only the fallback: the seed takes the pacer's step byte `0x1F800393`
+itself (`RetailObs::seat_step`), for the headless run and for
+`LEGAIA_SEAT_FRAME_STEP`, which settles the one clamped state the ring
+cannot (`field_walled_collision_pin`, step byte `3`). A battle state keeps
+the history's step on both sides. `conc3_ceremony_plaza`, forty-odd actors
+at the Conkram ceremony, is one of the clamped rings: seated at `3`, the
+ceremony record's walks and flat `35`'s `B8 23 84 0A` turn drifted apart,
+and the gate stood the turn nine budget units in where retail's `+0x54`
+reads four (`facing` `.962` to `1`).
+
 **The image channel** comes from `play-window`, the real renderer, run as a
 child process from a scratch directory under the report, and seeded the same
 way: the lifted save is written as a scratch LGSF file whose resume point is
@@ -544,6 +571,26 @@ engine verdict:
   state's word holds it (`RetailObs::menu_lock`, the image child's
   `LEGAIA_SEAT_MENU_LOCK`; `image` `.965` to `1.000`). A state whose word
   lacks it, `keikoku_chest_open` among them, keeps the engine's own HUD.
+  A cutscene the scene's system loop spawned is history of the same kind.
+  `town0e` `P1[0]` starts the ending's epilogue from its per-frame body:
+  `75 F1 07 00` (test the one-shot latch `0x5F1`), `55 F1`, `44 2E`
+  (spawn `P2[5]`) and the `21` that ends the pass, at `+0xA1..+0xA9`. The
+  record holds the player (`+0x10 & 0x80000`), and the system tick
+  `FUN_801DA51C` opens no new pass while it does (`0x801DA794..0x801DA7AC`),
+  so retail's system context stands on `+0xAA` for the whole epilogue with
+  its loop body never run. A card load over the latched `0x5F1` jumped
+  straight into that body and ran it once: its face-at `CC 1E 85 00 00 F8`
+  turned flat `30` to `0x87E`, and its ambient-tree arms raised
+  `0x6A9..0x6AC`. When retail's system PC sits straight after such an arm
+  (`5x <lo> 44 <record> 21`, `retail_compare_script::system_spawn_arm`)
+  and the record it spawns is the gate's, the arm's latch is held back with
+  the record's own ([`seed_latches`](#the-seeding-model)), so the seed's
+  system script spawns the record and parks where retail's does (`facing`
+  `.958`..`.992` to `1` and `flags` `.997` to `1` on four epilogue
+  captures). A run latch the state does not hold is dropped from that list:
+  the straight-line walk passes sets on arms the record jumped over
+  (`P2[5]` reaches `+0x8B` past `55 F5` at `+0x89`, the target of the
+  Triangle test `42 01 0B` at `+0x81`, by `26 04 00` at `+0x86`).
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter
@@ -954,6 +1001,40 @@ engine verdict:
   clock: seated over it, four states whose tween had just landed fell
   (`minigame_dance_pcsx` `.830` to `.786`).
 
+  So are the attached lights' keyframe records. An op `34 1x` light
+  (`FUN_801E4470`, [script-vm](../subsystems/script-vm.md#0x34-sub-1-is-an-attached-light))
+  steps its keyframe script by the frame step once a drawn frame, so its
+  phase is the wall time since the op `34 1x` / `34 2x` that (re)started it,
+  and the replay pages its dialogue quicker than the player retail
+  recorded: `dream`'s cutscene record restarts the light on flat `8` ahead
+  of a box of text, and on the gate the engine's keyframe clock read `20`
+  against `dream_noa_lights`' `42`. Each live light (`retail_attached_lights`:
+  its parent's flat index, offset `+0x16`, extents `+0x3C` / `+0x3E`,
+  colours `+0x74` / `+0x88`, blend `+0x5A`, the script `+0x94` points at, the
+  cursor `+0x9E` and clock `+0x9C`, and the from-values `FUN_801E3E00` takes
+  on a keyframe's first frame) goes to the child as `LEGAIA_SEAT_LIGHTS` and
+  is stood on the engine's light of the same parent on the capture frame,
+  re-interpolated the display lag back (`World::seat_attached_light`; a
+  light the engine never spawned stays missing). `dream_noa_lights` `.830`
+  to `1.000`, `dream_noa_name_dialog` `.736` to `.999`,
+  `dream_noa_desperate_dialog` `.379` to `.999`. A harness seat.
+
+  So are the mesh-bearing ambient parts a `rand()` roll placed. `juui1`'s
+  vortex shards (stager record `0x3D0`, mesh `6`, two a spawn) each take a
+  random roll about the tunnel axis and a random colour word, so a child
+  that ran the scene from its entry drew as many shards in other places and
+  other hues. Every live part whose stager record names a scene mesh
+  (`retail_mesh_parts`: `record[+0]` in `5..0x4000`) goes to the child as
+  `LEGAIA_SEAT_MESH_PARTS`, position and banks taken back the display lag,
+  and the engine's parts of the same record are seated on them record by
+  record - position, banks, colour word and level, cloning a live part where
+  retail holds more and retiring the surplus (`World::install_mesh_part_snapshot`).
+  A record the engine already holds in retail's number and colour words is
+  its program's own work and stays the engine's: `eddoman`'s rising record
+  `0x3A0` stands two passes ahead in the RAM, and seated it cost
+  `credits_eddoman_fullscreen_pcsx` `.003`. The six `juui1_vortex_*` rows read
+  `.942` to `.979` (`.737` to `.821` before). A harness seat.
+
   So is the frame's clear colour, the draw environment's `r0 / g0 / b0`
   (`0x8007BF5D..5F`) that op `4C 13` writes and the MAN loader zeroes: the
   state's bytes go to the child as `LEGAIA_SEAT_CLEAR` and are written over
@@ -1026,7 +1107,15 @@ first 48 bytes, so the partition and the index need no mapping - holds the
 retail PC with at least the retail wait and at most the retail glide left,
 or has just executed the op retail is parked on (the engine clears some
 parks inside one slice that retail holds across frames: a channel flag
-already up, a walk already at its tile). A text segment is met once the
+already up, a walk already at its tile). A PC the record stands on for one
+frame only - a cross-context `A2` / `A3` / `AB` / `AC` / `B1` / `B2` straight
+after a `4A` wait, which a completed wait yields onto and the next slice runs
+(`script_gate::arrival_frame_pc`) - is met without the glide: waiting out
+retail's frames left let the record run on and meet on the visit, after a
+slice retail had not run. `conc3_mist_night_free` is parked on `P2[10]`
+`+0x18C5` (`A3 24 7F 7F`) with `23` glide frames left; the engine stood
+there at `26..24`, a step-`3` frame ahead of its glide, and met at `23` with
+`+0x18C5..+0x18DE` run (`facing` `.941` to `1`, `npcs` `.929` to `1`). A text segment is met once the
 engine's box has typed its page and waits for the press - the press that
 turns the page, or on the last page the press that closes the box - the
 frame every such capture shows. Counting only the page-turn wait missed
@@ -1074,6 +1163,64 @@ the seed stops paging once it is there. Met on the PC alone, none was:
 `concend` `P2[0]` parks on `+0x6E8` and `+0x73E`, `concnow` `P2[13]` on
 `+0x969` to `+0xC72`, and each scored the settle-window sample (image
 `.20`..`.36`, against `.94`..`.99` met on the page).
+
+**A text gate against a glide.** The replay's drive pages each box as soon
+as it can, which retail's recorded player did not, so every clock that ran
+through a box - a camera glide, a placement's leg - stands behind the text
+in the engine. A text gate caught mid-page (`typing` or another pager arm)
+whose retail mover is still in flight is met on the pager alone, and the
+capture frame stands the glide on retail's frames left
+(`Camera::align_glide_frames_left`): `juui1`'s cutscene record types a line
+at `+0x438` with retail's reveal counter at `4` and `196` glide frames left,
+where the engine had `264`, and gated on both the box stood fully typed over
+a frame that shows none (`juui1_vortex_noa_close` `.666` to `.996`). The
+displayed gate adds the `0x48` collapse (pager state `0xA`) to a gate on a
+non-text op just past the box, met the same way and past a walking
+placement's leg too: `juui1_vortex_gala_box` is parked on `+0x23F`, a `33`
+test on flat `8`'s face leg, one collapse call after the press, and gated on
+the leg the engine's box had gone `22` ticks before the frame (`.699` to
+`.986`). The state channels keep the RAM gate and its legs.
+
+**A glide within the frame step.** Retail's mover credits the whole frame
+step at once (`t += DAT_1F800393`, `FUN_801DC0BC`), so its frames left fall
+in steps of the step on the same game frame as the record's wait; the
+engine's count falls a vsync at a time between them. A gate that also waits
+on the record's wait is met with the glide within `step - 1` of retail's, and
+the capture aligns it exactly. `juui1_vortex_exit_flash` holds `87` left on
+wait `36` at step `3`; gated on the glide alone the engine ran to wait `39`
+and the three flying placements stood `48` units past retail's (npcs `.75`
+to `1`, image `.942` to `.988`). A gate with no wait keeps the exact test:
+there the glide is the clock, and met a vsync early `son_field_door_hop`'s
+walkers had not finished the frame.
+
+**A glide that ticked on its arming frame.** The engine's glide count starts
+falling on the game frame after the arm, which is retail's rule only when the
+arming record was its list's last node. The actor sweep `FUN_8002519C` reads
+a node's `next` before it calls the handler (`lw s1,0x0(s1)` at
+`0x800251D8`, the `jalr` at `0x800252B4`), and the spawn links the mover at
+the tail (`FUN_80020454`), so a mover spawned by the tail record is passed
+over until the next frame, while one spawned with another node behind the
+record is reached on the same frame and credits the step there. The state
+says which: a live mover right behind an engaged record ticked late
+(`son_field_door_hop`, `vozz_genesis_tree_songi`), one behind any other node
+ticked on time (`map01`'s credits record with the ambient emitter
+`FUN_801D6058` spawned after it, `conc3_mist_night_free` with its grade
+actor). For the second, a gate with no wait meets the glide on a game frame
+the step above retail's frames left (`ScriptGate::glide_lead`):
+`credits_rimelm_walkaway_pcsx` position `.971` to `1`,
+`ending_vignette_rimelm_walkaway` `.982` to `1`, `conc3_mist_night_free`
+facing `.941` and npcs `.929` to `1`, `juui1_vortex_party_flying` image
+`.979` to `.999`.
+
+**A fresh box behind a collapse.** After the `0x48` collapse the pager
+counts `_DAT_801F273C` down from `0x18` with no box drawn, then loads the
+next page (state `2`); the row table still holds the page before. A state in
+that window carries the count as the pager phase's counter, and the gate is
+met on the gate's own page once the engine's box has collapsed and counted
+as far (`RowWindow::box_gone`). Met on any page up, `urudre3_zopu_hall`
+(parked on Songi's line at `+0x3AD` with `20` of the count left and Zopu's
+row `+0x39E` in the table) took its frame on Zopu's box still typing
+(`.788`; `.993` on the count).
 
 **A walk-to-tile's wait.** `B3 <t> 0A` tests the halt bit a walk-to-tile
 on the same actor (`C7 <t> <x> <z> <mode>`) raised, so the record sits on
@@ -1207,6 +1354,19 @@ started from:
   replays that arm's op-`0x35` words first
   (`man_field_scripts::walk_spawn_scores`: the last start within eight
   instructions of the `44`, through `World::replay_field_bgm_words`).
+  A record that runs *after* a spawned record has ended inherits that
+  record's music the same way. `vozz`'s entry spawns the Songi aftermath
+  `P2[14]` (`44 2A`) behind the fight's marker `0x2B5`; `P2[14]` clears the
+  marker, raises `0x2B6` and swaps to `2025` (`35 E9 07 09` at `+0x456`,
+  committed at `+0x4C9`), and the Genesis Tree touch `P1[7]` tests `0x2B6`
+  (`+0x49`) and starts nothing before its own `2035` (`+0x3DF`). A card load
+  over the same flags starts `2004`, so the touch states
+  (`vozz_tree_vahn_touch_box`, `_closeup_noa_vahn`, `_rings`) held the wrong
+  word. When the gate's record starts no track on its way to the gate PC and
+  tests a flag such a spawned record raises, with that flag up and the
+  marker down in the save, the seed replays the spawned record's last start
+  and the control words after it first
+  (`man_field_scripts::walk_marker_scores`).
 - **Engagement.** A capture inside a conversation holds the talked-to
   placement's own context, engaged. The engine keeps a placement's idle body
   on a channel and runs a talk on its inline runner, so a record the engine
@@ -2468,8 +2628,8 @@ table under the other record, and the screen is the pass just before it. The
 newest table is the one that draws the live children on their current frames
 rather than on the frames they drew a pass before. The lag is the displayed
 passes' own steps (`pass_steps`), not `display_lag_vsyncs`, whose
-`frame_step` reads the clamped history entry `0x2BC` as step `3` where the
-frame driver stepped `4`.
+`frame_step` reads the clamped history entry `0x2BC` as step `3` on a battle
+state where the frame driver stepped `4`.
 
 `gimard_burning_attack` is an after-flip state with a clamped history. A
 PCSX-Redux film of the same cast from `gimard_summon_visible`
@@ -3781,7 +3941,12 @@ target byte `+0x1DD`), dispatched the moment the first command prompt opens:
   party-wide cast seeded on the slot opens the readout bar, which retail's seed
   on `8` never does. So an all-allies spell whose byte reads the lone member's
   slot is replayed on `8` (`seed_target_code`; `evolved_0x91_midcast`, Holy
-  Eyes from a lone Vahn). The `9` arm is replayed as read;
+  Eyes from a lone Vahn). The `9` arm is replayed as read. A target that resolves
+  to the caster itself (its own slot, or a side's code with the caster that side's
+  lone survivor) skips the cast begin's facing store (`0x801E4350`), so the replay
+  seats the caster's heading from the capture as it does a spent seat's: Holy Eyes'
+  Vahn keeps the `34` his last turn left, which the module's yaw subtracts
+  (`camera` `.991` to `1.000`);
 - the capture's MP charge is credited back, so the band's own debit lands on the
   captured figure;
 - the seed carries every combatant's live `+0x34` / `+0x38` pair
@@ -4270,7 +4435,11 @@ during the settle window, or bits the save round trip does not carry.
 Retail's heading is `+0x26` on every actor node; the engine keeps the
 player's as `render_26` and each placement's in `World::npcs.headings`, both
 a half-turn from retail's space (`engine = retail + 0x800`; a placement with
-no entry is the spawn default, retail `0`). The player is scored only while retail's
+no entry is the spawn default, retail `0`). This channel and the
+[npcs channel](#the-npcs-channel) read those stored records, never the draw
+accessors the smooth field actors interpolate (`World::field_npc_drawn_pose`),
+and the seed and the image child both run under `WorldToggles::pin_retail`,
+which turns `smooth_actors` off. The player is scored only while retail's
 heading still equals the arrival facing `_DAT_80073EFC` the entry script's
 `4C 3A` gave it (a card load zeroes it, so every card-boot state is scored);
 once the pad has turned the player the heading is walk history, which the
@@ -4783,6 +4952,56 @@ increment pins it loosely off its own gap). Otherwise the walk-back keeps the
 single step. The three Delilas Spirit captures rose with it (`0.893` to
 `0.949`, `0.779` to `0.891`, `0.909` to `0.958`), their backdrop four to five
 pixels closer.
+
+**The step bytes confirm a clamp too.** The frame driver stores the step it
+read off the newest entry in `0x1F800393` and copies it to `0x1F800392` only
+after the frame's `VSync` (`0x80017170..0x800171D8`), so where the state holds
+the scratchpad and both bytes read the `4` a clamp names, the newest entry was
+a long frame, not a raw `700`, and the passes take their own steps whatever the
+floor says (`frame_step::with_step_bytes`, read around the battle observables
+in `read_retail`). The floor is the weaker witness on such histories: on the
+library's clamped battle states under bytes `4` / `4` it fits `1`, `2` or `3`
+about as often as `4`. Bytes that disagree name a state saved inside that
+`VSync` wait, whose newest entry is the pass to come, and confirm nothing:
+`battle_map01_lippian_kiss_of_death_mid_cast` (bytes `2` / `4`, one clamp)
+and `battle_ropeway_party_gala_flying_knee_late` (`3` / `4`) read the same
+CPU state, PCSX-Redux's saved `pc` or interrupted `epc` inside libetc `VSync`
+(`0x8005FB84..0x8005FD64`), and shifting their passes one entry older moved
+them opposite ways (`.999` to `.988`, `.877` to `.887`).
+`battle_jou_party_vahn_chain_late` walks back two step-`4` passes this way,
+yaw `3203` where the history's rung put `3198` (`image` `.944` to `.957`);
+`battle_tunnelb_nova_scythe_wind_mid_cast` `.985` to `.992`,
+`battle_jou_nova_v3_scythe_wind_mid_cast` `.992` to `.996`.
+
+The retake behind a monster's action takes the bytes' step too
+(`retake_lag_vsyncs`, `RetailBattle::display_lag`: the replay's retake
+`LEGAIA_CAPTURE_DISPLAY_LAG`, the displayed phase gate, the dimmed ambient
+base). Split consumer by consumer on the clamped states, that lag is the only
+reader that moves a monster cast:
+`battle_noaru_songi_genocidal_cannon_mid_cast` `.973` to `1.000` and
+`battle_jou_aluru_v3_aluru_cannon_mid_cast` `.938` to `.950` (ambient base
+`112` to `128`) on a retake of eight vsyncs. A party action keeps six:
+`battle_jou_party_vahn_chain_late`, whose film ran its displayed passes `4, 3`,
+falls `.957` to `.939` on eight. The stored frame step, the popup, spirit and
+HUD-glide lags, the fade lags and the camera's own step readers move nothing
+above `.002` either way, and the party hit-spark walk-back
+(`retail_action_fx_parts`) stays on the history's lag
+(`battle_jou_cort_181_strike` `.963` to `.961` on the bytes).
+
+The battle half still keeps the history's rung in `frame_step` itself, and
+not for want of a step: everything else that reads it measured both ways.
+Taking the bytes' `4` there lifts monster casts
+(`battle_noaru_songi_genocidal_cannon_mid_cast` `.973` to `1.000`,
+`battle_jou_aluru_v3_aluru_cannon_mid_cast` `.938` to `.950`, the stage
+ambient base `112` to `128`) and drops party strikes, whose hit-spark parts
+walk back by the display lag (`battle_vahn_tri_somersault_super` `.977` to
+`.969`, `battle_jou_cort_181_strike` `.963` to `.961`). The rule
+that once parted `nivora_duel_pre_megaton_press` (`1.000` to `.958`) moved no
+pass step: its passes are step `4` both ways, but the walk-back takes the
+shots' divisor `0xC` only for steps that differ from `frame_step`'s rung, and
+with the rung at `4` it fell back on the largest increment's estimate, `7`
+for a yaw increment of `2` with `5` to go, walking the yaw back `28` where
+retail's frame stands `16` back.
 
 The confirmed steps (`display_pass_steps`) also take back the idle clip
 cursors pass by pass and seat the retired glides. The glides still in flight

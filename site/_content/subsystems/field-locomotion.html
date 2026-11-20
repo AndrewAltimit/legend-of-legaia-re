@@ -143,6 +143,26 @@
 <section class="doc-section" id="press-latency" data-doc="the-frame-denomination-law">
   <h2>When the game sees a press</h2>
   <p>Retail reads the pad once a game frame, at the end of the frame, and the next frame acts on what it read. A press therefore reaches the game about two vsyncs after it happens, and a tap shorter than a frame can fall between two reads and do nothing. Emulator films pin it to the vsync: in Koru a press at vsync 20 moves Vahn at 22, a one-vsync tap at 61 is never seen and one at 140 is; on the Sebucus overworld a press at 10 moves him at 14; a Triangle tap at 30 opens the menu at 32.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vsyncs 20 to 27 in Koru at two vsyncs a game frame. In the original the pad is read once a frame, on vsyncs 20, 22, 24 and 26: a press on vsync 20 is read there and Vahn moves on 22, and a one-vsync tap on 23 falls between the reads on 22 and 24 and is never seen. With Instant controls the press moves Vahn on vsync 20 and the tap on 23 is acted on at 23.">
+      <defs><marker id="fl-press-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub" x="220" y="24">20</text><text class="dg-sub" x="300" y="24">21</text><text class="dg-sub" x="380" y="24">22</text><text class="dg-sub" x="460" y="24">23</text><text class="dg-sub" x="540" y="24">24</text><text class="dg-sub" x="620" y="24">25</text><text class="dg-sub" x="700" y="24">26</text><text class="dg-sub" x="780" y="24">27</text>
+      <path class="dg-group" d="M180 34 L180 200 M340 34 L340 200 M500 34 L500 200 M660 34 L660 200"/>
+      <text class="dg-label dg-start" x="10" y="62">Original</text>
+      <text class="dg-sub dg-start" x="10" y="80">read once a frame</text>
+      <rect class="dg-node" x="185" y="48" width="70" height="34" rx="4"/><text class="dg-sub" x="220" y="69">press</text>
+      <circle class="dg-node-accent" cx="220" cy="98" r="5"/><circle class="dg-node-accent" cx="380" cy="98" r="5"/><circle class="dg-node-accent" cx="540" cy="98" r="5"/><circle class="dg-node-accent" cx="700" cy="98" r="5"/>
+      <text class="dg-edge-label" x="714" y="102">pad reads</text>
+      <path class="dg-edge" d="M228 98 C280 98 320 66 343 66" marker-end="url(#fl-press-arrow)"/>
+      <rect class="dg-node-ok" x="345" y="48" width="70" height="34" rx="4"/><text class="dg-sub" x="380" y="69">moves</text>
+      <rect class="dg-node-warn" x="425" y="48" width="70" height="34" rx="4"/><text class="dg-sub" x="460" y="69">tap: lost</text>
+      <text class="dg-label dg-start" x="10" y="152">Instant controls</text>
+      <text class="dg-sub dg-start" x="10" y="170">read every vsync</text>
+      <rect class="dg-node-ok" x="185" y="138" width="70" height="34" rx="4"/><text class="dg-sub" x="220" y="159">moves</text>
+      <rect class="dg-node-ok" x="425" y="138" width="70" height="34" rx="4"/><text class="dg-sub" x="460" y="159">tap: acts</text>
+    </svg>
+    <figcaption>The Koru film at two vsyncs a frame. The original reads the pad once a frame, so a press waits for the next frame to act and a one-vsync tap between two reads does nothing; Instant controls hands the game the pad on the vsync it is pressed.</figcaption>
+  </figure>
   <p>The walk commits once a frame as well: 16 units every two vsyncs in a town, 10 every three on the overworld. The port's default gives the game the pad on the vsync it is pressed and moves the figure every vsync, which is more responsive and smoother. Its retail mode runs the frame-paced pipeline instead, and the walk films then hold retail's position on every vsync.</p>
 </section>
 
@@ -192,7 +212,7 @@
     <tbody>
       <tr><td><code>0</code></td><td><code>[x][z][dest_half_x][dest_half_z]</code></td><td>Intra-scene teleport - most house exits</td></tr>
       <tr><td><code>1</code>, gate 1</td><td><code>[x][z][p2_record][1]</code></td><td>Spawn a MAN partition-2 record if its story-flag gates pass: town exits (the record runs the named scene change), walk-on story beats</td></tr>
-      <tr><td><code>1</code>, gate 0</td><td><code>[x][z][p0_record][0]</code></td><td>At scene init, bind a partition-0 record to the object on that tile as its touch script and idle clip - house doors, cupboards</td></tr>
+      <tr><td><code>1</code>, gate 0</td><td><code>[x][z][record][0]</code></td><td>At scene init, bind a MAN record (a flat index: partition 0, then 1 and 2) to the object on that tile as its touch script and idle clip - house doors, cupboards</td></tr>
       <tr><td><code>2</code></td><td><code>[x][z][coarse:i8][quads:u8]</code></td><td>Ramp / staircase height (<a href="#floor-two-models">above</a>)</td></tr>
       <tr><td><code>3</code></td><td><code>[x0][z0][x1][z1][type]</code>, 8 bytes</td><td>Region boxes: camera zones, encounter regions</td></tr>
     </tbody>
@@ -335,6 +355,40 @@
     <li><strong>The lock is the same bit a cutscene holds,</strong> which is why the pad opens no menu in mid-air. The take-off also raises the flag that hides the player's ground shadow (<a href="renderer.html#battle-draw">renderer</a>).</li>
     <li><strong>Retail never tests the landing.</strong> The probe checks the wall bits along the way, but nothing checks the cell the arc sets the player down in. A hop into an open sub-cell that is walled on every side leaves the player where all four directions are refused, and with no step committed the probe never runs again - one diagonal step-up in <code>jouind</code> lands exactly so. The port's landing guard refuses such a hop; it is an enhancement, on by default and off in the retail-faithful mode.</li>
   </ul>
+</section>
+
+<section class="doc-section" id="smooth-actors" data-doc="smooth-field-actors-enhancement">
+  <h2>Smooth field actors: walkers drawn every vsync</h2>
+  <p>The original moves a scripted walker, an NPC on its rounds and every character&rsquo;s walk animation once a game frame, and a frame lasts two to four vsyncs. So in a cutscene the walkers step and hold: in Hunter&rsquo;s Spring an emulator film of the original shows each hunter moving 4 units every second vsync and turning a quarter turn in one frame, and the port&rsquo;s first-visit choreography, running at three and four vsyncs a frame, moved them 12 to 16 units at a time.</p>
+  <p>The port&rsquo;s default draws them one game frame behind, a vsync further along each vsync, the way the smooth camera draws a stepped camera move. The player, the NPCs and props, their turns and the player&rsquo;s pose all ride the same phase, and a follow camera centred on the player follows the drawn player, so a walked player holds its place on screen. A warp, a half turn or a scene change draws at once, and the player walking freely, which already moves every vsync, draws as it stands.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A walker's position over nine vsyncs at three vsyncs a game frame. The stored position, what the game holds, jumps 12 units when each frame opens and holds for the two vsyncs between: 12, then 24, then 36. The drawn position starts where the last frame closed and moves 4 units every vsync, 0, 4, 8, 12 and so on, so it reaches each stored value one game frame later and never holds.">
+      <defs><marker id="fl-smooth-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <path class="dg-group" d="M80 40 L80 212 M320 40 L320 212 M560 40 L560 212 M800 40 L800 212"/>
+      <text class="dg-edge-label" x="86" y="36">frame 1 opens</text>
+      <text class="dg-edge-label" x="326" y="36">frame 2 opens</text>
+      <text class="dg-edge-label" x="566" y="36">frame 3 opens</text>
+      <text class="dg-edge-label" x="806" y="36">frame 4</text>
+      <path class="dg-edge-dim" d="M80 152 L320 152 L320 104 L560 104 L560 56 L800 56"/>
+      <circle class="dg-node" cx="80" cy="152" r="5"/><circle class="dg-node" cx="160" cy="152" r="5"/><circle class="dg-node" cx="240" cy="152" r="5"/>
+      <circle class="dg-node" cx="320" cy="104" r="5"/><circle class="dg-node" cx="400" cy="104" r="5"/><circle class="dg-node" cx="480" cy="104" r="5"/>
+      <circle class="dg-node" cx="560" cy="56" r="5"/><circle class="dg-node" cx="640" cy="56" r="5"/><circle class="dg-node" cx="720" cy="56" r="5"/>
+      <path class="dg-edge" d="M80 200 L792 58" marker-end="url(#fl-smooth-arrow)"/>
+      <circle class="dg-node-accent" cx="80" cy="200" r="5"/><circle class="dg-node-accent" cx="160" cy="184" r="5"/><circle class="dg-node-accent" cx="240" cy="168" r="5"/>
+      <circle class="dg-node-accent" cx="320" cy="152" r="5"/><circle class="dg-node-accent" cx="400" cy="136" r="5"/><circle class="dg-node-accent" cx="480" cy="120" r="5"/>
+      <circle class="dg-node-accent" cx="560" cy="104" r="5"/><circle class="dg-node-accent" cx="640" cy="88" r="5"/><circle class="dg-node-accent" cx="720" cy="72" r="5"/>
+      <text class="dg-edge-label" x="166" y="144">stored: +12, then holds</text>
+      <text class="dg-edge-label" x="410" y="160">drawn: +4 every vsync</text>
+      <text class="dg-sub" x="80" y="230">0</text><text class="dg-sub" x="160" y="230">1</text><text class="dg-sub" x="240" y="230">2</text>
+      <text class="dg-sub" x="320" y="230">3</text><text class="dg-sub" x="400" y="230">4</text><text class="dg-sub" x="480" y="230">5</text>
+      <text class="dg-sub" x="560" y="230">6</text><text class="dg-sub" x="640" y="230">7</text><text class="dg-sub" x="720" y="230">8</text>
+      <text class="dg-sub" x="440" y="254">vsync (three a game frame)</text>
+      <text class="dg-sub" x="40" y="156">12</text><text class="dg-sub" x="40" y="108">24</text><text class="dg-sub" x="40" y="60">36</text>
+    </svg>
+    <figcaption>One walker at three vsyncs a frame. The game stores a 12-unit step as each frame opens and holds it (grey); the drawn body (accent) starts where the last frame closed and covers the step a third at a time, so it arrives one frame late and never stands still. The animation cursor is drawn the same way, a quarter keyframe at a time. Nothing the game reads moves: only the picture does.</figcaption>
+  </figure>
+  <p>It is presentation-only: with it on and off, the intro stores the same bodies, camera and random stream on every vsync. <code>--retail</code> draws the stored bodies, bit for bit.</p>
+  <p>A walker&rsquo;s legs follow on the same phase. The original moves an NPC&rsquo;s animation cursor once a frame too, two keyframes at a time at four vsyncs a frame, and the port draws the cursor in between, blended a quarter keyframe at a time: a cutscene&rsquo;s walkers, the villagers wandering a town and an NPC&rsquo;s idle loop alike. Each pose in between is one more mesh the window builds once and keeps, and the cache now remembers which clip a mesh belongs to, so a villager switching between standing and walking keeps its meshes for both. Rim Elm&rsquo;s cache levels off near 2,400 meshes; past 4,096 the window lets go of clips nobody is playing. The browser page keeps each actor&rsquo;s bones per pose the same way, so a pose it has drawn once costs no second read.</p>
 </section>
 
 <section class="doc-section" id="action-movement" data-doc="action-movement-enhancement">

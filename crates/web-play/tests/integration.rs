@@ -67,6 +67,7 @@ mod screen_effect_page_prims;
 mod shop_overlay_parity;
 mod showcase_bgm_switches;
 mod showcase_skip_disc;
+mod smooth_actors_page;
 mod soft_reset_records_page;
 mod status_marks_page;
 mod summon_channel_object_page;

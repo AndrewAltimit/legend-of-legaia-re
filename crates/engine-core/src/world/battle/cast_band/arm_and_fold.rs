@@ -126,7 +126,10 @@ impl World {
         def: &legaia_engine_battle::spells::SpellDef,
         targets: Vec<u8>,
     ) {
-        let code = self.cast_target_code(def, &targets, slot);
+        let code = match self.battle.forced_monster_group.take() {
+            Some((caster, code)) if caster == slot => code,
+            _ => self.cast_target_code(def, &targets, slot),
+        };
         self.expansion_end_pack_cast();
         // The picker's own stores when it picked this cast; the walk again
         // for a cast it did not (a scripted override, a forced seed).

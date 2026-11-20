@@ -97,6 +97,11 @@ pub struct PageToggles {
     /// from the engine's defaults as the window does. Retail mode holds them
     /// at retail's values whatever this says.
     pub tweaks: legaia_engine_session::session_switches::GameplayTweaks,
+    /// The pacing enhancements (smooth motion, the load-pause skip, instant
+    /// controls), all on as on the window; the native launcher's rows write
+    /// them and the page carries them through its remembered switches.
+    /// Retail mode holds them off whatever this says.
+    pub pacing: legaia_engine_session::session_switches::Pacing,
 }
 
 impl Default for PageToggles {
@@ -112,6 +117,7 @@ impl Default for PageToggles {
             ui_psx_tint: true,
             psx_render: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
+            pacing: legaia_engine_session::session_switches::Pacing::default(),
         }
     }
 }
@@ -128,6 +134,7 @@ impl PageToggles {
             entry_pulse: p.entry_pulse(),
             psx_render: p.psx_render,
             tweaks: p.tweaks(),
+            pacing: p.pacing(),
             ..Self::default()
         }
     }
@@ -143,6 +150,7 @@ impl PageToggles {
             ..Default::default()
         };
         p.set_tweaks(&self.tweaks);
+        p.set_pacing(&self.pacing);
         p
     }
 }
@@ -162,6 +170,7 @@ impl LegaiaRuntime {
             battle_frame_cadence: t.battle_frame_cadence,
             arts_saved_list: t.arts_saved_list,
             tweaks: t.tweaks,
+            pacing: t.pacing,
             retail: t.retail,
         };
         if let Some(host) = self.scene_host.host_mut() {
@@ -403,6 +412,48 @@ impl LegaiaRuntime {
         self.page_toggles.tweaks.action_movement
     }
 
+    /// Smooth motion, the native `--no-smooth-motion` inverted (on by
+    /// default; the launcher's Smooth motion row): the field and battle
+    /// cameras, the player's walk, field walkers and the map display move
+    /// every vsync. Retail mode holds it off.
+    pub fn set_smooth_motion(&mut self, on: bool) {
+        self.page_toggles.pacing.smooth_motion = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_smooth_motion`] is on.
+    pub fn smooth_motion(&self) -> bool {
+        self.page_toggles.pacing.smooth_motion
+    }
+
+    /// Skip loading pauses, the native `--load-pauses` inverted (on by
+    /// default; the launcher's Skip loading pauses row): the original's
+    /// CD-wait black holds around menus, shops, doors and a battle's return
+    /// are skipped. Retail mode holds it off.
+    pub fn set_skip_load_pauses(&mut self, on: bool) {
+        self.page_toggles.pacing.skip_load_pauses = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_skip_load_pauses`] is on.
+    pub fn skip_load_pauses(&self) -> bool {
+        self.page_toggles.pacing.skip_load_pauses
+    }
+
+    /// Instant controls, the native `--no-instant-controls` inverted (on by
+    /// default; the launcher's Instant controls row): the field and the
+    /// overworld read the pad on the vsync it is pressed. Retail mode holds
+    /// it off.
+    pub fn set_instant_controls(&mut self, on: bool) {
+        self.page_toggles.pacing.instant_controls = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_instant_controls`] is on.
+    pub fn instant_controls(&self) -> bool {
+        self.page_toggles.pacing.instant_controls
+    }
+
     /// Spirit AP, the native `--spirit-ap` (retail `32`; clamped to
     /// `-100..=100` when applied). Retail mode holds `32`.
     pub fn set_spirit_ap(&mut self, ap: i16) {
@@ -527,6 +578,13 @@ impl LegaiaRuntime {
     /// Whether [`Self::set_downmix_mono`] is on.
     pub fn downmix_mono(&self) -> bool {
         self.options_state.downmix_mono
+    }
+
+    /// Whether the master mute (`OptionsState::muted`, `F2` on both hosts)
+    /// holds. The engine output applies it itself; the page's fallback movie
+    /// output (no engine audio up yet) reads it here.
+    pub fn audio_muted(&self) -> bool {
+        self.options_state.muted
     }
 
     /// The controller stick's dead zone in percent
@@ -840,6 +898,73 @@ mod tests {
             assert!(
                 page.contains(&format!("rtCall('{call}')")),
                 "play.html never reads {call} back"
+            );
+        }
+    }
+
+    /// The fallback movie output (no engine audio yet) reads the master mute
+    /// and the Mono output row, which the engine output applies itself.
+    #[test]
+    fn the_fallback_movie_output_reads_mute_and_mono() {
+        let mut rt = LegaiaRuntime::new();
+        assert!(!rt.audio_muted());
+        rt.options_state.muted = true;
+        assert!(rt.audio_muted());
+        let fmv = include_str!("../../../site/js/play-fmv.js");
+        assert!(
+            fmv.contains("rt.audio_muted()"),
+            "play-fmv.js ignores the mute"
+        );
+        assert!(
+            fmv.contains("rt.downmix_mono()"),
+            "play-fmv.js ignores Mono output"
+        );
+    }
+
+    /// The pacing rows (`session_switches::Pacing`): on by default as on the
+    /// window, each setter reaches its world switches and the remembered
+    /// set in the launcher's layout, retail holds them off, and the page
+    /// carries a feature-detected box for each.
+    #[test]
+    fn the_pacing_rows_are_the_launchers() {
+        use legaia_engine_session::session_switches::Pacing;
+        let mut rt = LegaiaRuntime::new();
+        assert!(rt.smooth_motion() && rt.skip_load_pauses() && rt.instant_controls());
+        assert_eq!(rt.page_toggles.pacing, Pacing::default());
+        rt.set_smooth_motion(false);
+        rt.set_skip_load_pauses(false);
+        rt.set_instant_controls(false);
+        let p = rt.persisted_switches;
+        assert!(p.no_smooth_motion && p.load_pauses && p.no_instant_controls);
+        assert_eq!(p.pacing(), Pacing::retail());
+        let mut back = LegaiaRuntime::new();
+        back.restore_persisted_switches(p);
+        assert!(!back.smooth_motion() && !back.skip_load_pauses() && !back.instant_controls());
+        rt.set_smooth_motion(true);
+        rt.set_skip_load_pauses(true);
+        rt.set_instant_controls(true);
+        assert_eq!(rt.persisted_switches, PersistedSwitches::default());
+        let page = include_str!("../../../site/_content/play.html");
+        for (id, setter, getter) in [
+            ("play-smooth-motion", "set_smooth_motion", "smooth_motion"),
+            (
+                "play-instant-controls",
+                "set_instant_controls",
+                "instant_controls",
+            ),
+            (
+                "play-skip-load-pauses",
+                "set_skip_load_pauses",
+                "skip_load_pauses",
+            ),
+        ] {
+            assert!(
+                page.contains(&format!("id=\"{id}\"")),
+                "play.html has no #{id}"
+            );
+            assert!(
+                page.contains(&format!("'{setter}', '{getter}'")),
+                "play.html never wires {setter} / {getter}"
             );
         }
     }

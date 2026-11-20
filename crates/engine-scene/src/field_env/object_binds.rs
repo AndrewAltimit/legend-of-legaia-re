@@ -28,7 +28,8 @@ use super::*;
 // REF: FUN_8003A55C, FUN_801D5630, FUN_800204f8, FUN_801D7B50
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectBind {
-    /// MAN partition-0 record index the anchor tile's trigger names.
+    /// MAN flat record index the anchor tile's trigger names (partition 0
+    /// first, then 1 and 2 - see `flat_record_offset`).
     pub record: u8,
     /// The record header's trailing byte: the actor's animation id
     /// (`0` = none). Indexes the per-scene ANM bundle as `anim_id - 1`.
@@ -104,18 +105,39 @@ pub fn object_record_pack_slots(
     out
 }
 
-/// The animation id in MAN partition-0 record `index`'s header
-/// (`[u8 n][n*2 name bytes][u8 anim_id]`). `None` when the record or its header
-/// runs past the buffer.
+/// The data-region offset of the MAN's **flat** record `index`: partition 0's
+/// records, then partition 1's, then partition 2's, as the flat
+/// record-offset table `FUN_8003A55C` indexes lays them back to back.
+///
+/// A trigger's record byte is a flat index, not a partition-0 one. Most
+/// scenes bind only partition-0 records, but `urudre3`'s partition 0 holds
+/// `28` records and the trigger on tile `(86, 106)` names record `28`, the
+/// first of partition 1: retail binds it (the `urudre3_songi_room` state
+/// holds that actor with `+0x50 = 28`, `+0x90` on the record, `+0x9E = 8`,
+/// drawing the wardrobe at `(11072, 13632)`), and a partition-0 lookup
+/// dropped the object as unbound.
+// REF: FUN_8003A55C
+fn flat_record_offset(man_file: &ManFile, index: usize) -> Option<usize> {
+    man_file
+        .partitions
+        .iter()
+        .flatten()
+        .nth(index)
+        .map(|&o| o as usize)
+}
+
+/// The animation id in MAN flat record `index`'s header
+/// (`[u8 n][n*2 name bytes][u8 anim_id]`, [`flat_record_offset`]). `None`
+/// when the record or its header runs past the buffer.
 pub(super) fn partition0_anim_id(man_file: &ManFile, man: &[u8], index: usize) -> Option<u8> {
     let off = man_file
         .data_region_offset
-        .checked_add(*man_file.partitions[0].get(index)? as usize)?;
+        .checked_add(flat_record_offset(man_file, index)?)?;
     let n = *man.get(off)? as usize;
     man.get(off.checked_add(1)?.checked_add(2 * n)?).copied()
 }
 
-/// The actor `+0x10` bits MAN partition-0 record `index`'s spawn prologue
+/// The actor `+0x10` bits MAN flat record `index`'s spawn prologue
 /// sets ([`PropProgram::spawn_cflags`]) - the collision / interaction class
 /// of the placed object the record binds, available without building a bank
 /// entry (an `anim_id == 0` bound placement still carries its class: e.g. a
@@ -127,7 +149,7 @@ pub fn record_spawn_cflags(man_file: &ManFile, man: &[u8], index: usize) -> u32 
     }
 }
 
-/// A partition-0 record's bytes and the PC just past its
+/// A bound record's bytes ([`flat_record_offset`]) and the PC just past its
 /// `[u8 n][n*2 name bytes][u8 anim_id]` header - where `FUN_8003A55C` parks the
 /// actor's script cursor (`actor+0x9E`).
 pub(super) fn partition0_record<'a>(
@@ -137,7 +159,7 @@ pub(super) fn partition0_record<'a>(
 ) -> Option<(&'a [u8], usize)> {
     let start = man_file
         .data_region_offset
-        .checked_add(*man_file.partitions[0].get(index)? as usize)?;
+        .checked_add(flat_record_offset(man_file, index)?)?;
     let n = *man.get(start)? as usize;
     let pc0 = 1 + 2 * n + 1;
     // The record runs to the next record start in the flat table (partitions

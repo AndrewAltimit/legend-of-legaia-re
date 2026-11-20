@@ -152,7 +152,7 @@ Flags worth knowing:
 | `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`; `-` = none). Defaults to the probe's `guard=` (the seats at `+0x1DE == 4` on cast begin), and for a recording without that field to the state's own stance unless the run is `--monster-pick` |
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
 | `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
-| `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
+| `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target (`t8` the party, `t9` the enemy row) is carried as the group code (`BattleState::forced_monster_group`) |
 | `LEGAIA_LEADIN_TABLE_COST=1` (engine child, beside `LEGAIA_BATTLE_POLY_COST=1`) | Engine: price the replay's lead-in on the action-state table, with the command surfaces' frames unpriced, and raise the polygon census and the surfaces' pricing where the film starts (the capture's gate, or the cast begin), so a census-priced film reaches its gate on the round a table-priced one does. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `LEGAIA_FILM_COST_RING=e0,..,e15;cursor` (engine child) | The recording state's frame-cost ring, which the driver reads off the state for a film no `LEGAIA_BATTLE_COST_RING` seeds; under `LEGAIA_LEADIN_TABLE_COST` the film's opening pass is priced again on the census from it. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `LEGAIA_FILM_COIN=coin@vsync,..` (engine child) | The attack camera's track coin `ctx[+0x26D]` through the recording, dealt from the gate on a film no `--strike-deal` carries; the driver sets it whenever the recording has the `coin` column ([the track coin](#the-track-coin-on-a-film)). A harness seat |
@@ -1718,11 +1718,14 @@ What the audit still lists on the plain seat, by cause:
 | Scythe Wind's victim at rate `4` for retail's `1` | the replay's idle stands `72` cursor units on, so it wraps and commits inside the arm |
 | Final Crisis, a party seat down where retail's gets up | the replay's own damage roll: on `--retail-steps` the three seats end on the recording's HP and arm 6 reads `1.000` |
 
-Two lines of the set are not the engine's to answer. `garmel_zeto_pre_call_wave_all`
-(`.448` on either seat) films two casts: the recording forced the party-wide target
-onto Call Wave, a self-buff, and retail then draws the roster panels and frames the
-cast from the group's depth, while the engine's seed keeps the cast's own class
-(`LEGAIA_BATTLE_MONSTER_CAST`, where a group target stays the cast's).
+`garmel_zeto_pre_call_wave_all` forces the party-wide target onto Call Wave, a
+self-buff, and retail then draws the roster panels and frames the cast from the group
+code's depth: `FUN_801F0348`'s outer gate skips both size lookups for a target byte of
+`8` or more, so the seed stores the bare `0x0C00` (TR z endpoint `4915`, arm 0's cut
+`9523`) where the self-target film's Zeto frames on his own size (`6553`, `12800`). The
+engine's seed carries the group code onto `+0x1DD` (`t8` on `LEGAIA_BATTLE_MONSTER_CAST`),
+and the film reads `.967` (camera `2.1` px). Seeded on the cast's own class, its replay
+filmed the self-target cast at `.444` (`36.5` px).
 `jou_gizam_v3_water_hazard` opens on the edge of arm 1, and its replay runs arm 0's turn
 again; that turn was the engine's. Retail's arm 0 turns Gizam onto the party's centroid
 (`FUN_801DCEAC` at `0x801F73A0`, the bearing at `0x801F73D4`), the recording's facing

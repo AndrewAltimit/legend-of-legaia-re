@@ -58,6 +58,73 @@ pub struct FieldClipPlayer {
     /// wrapping to frame 0. Only a cursor driven by [`Self::set_cursor`] (an
     /// actor whose script parks or one-shots the clip) ever sets it.
     hold_at_end: bool,
+    /// The clip's identity ([`Self::clip_id`]): a hash of its decoded
+    /// frames, fixed at decode.
+    clip_id: u64,
+}
+
+/// FNV-1a over a clip's decoded frames: the same frames hash the same,
+/// whichever bank or record they came from, so two players that pose
+/// alike share a key and two that do not never do (short of a 64-bit
+/// collision).
+fn clip_hash(frames: &[Vec<([i16; 3], [i16; 3])>]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |v: u16| {
+        for b in v.to_le_bytes() {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    eat(frames.len() as u16);
+    for row in frames {
+        eat(row.len() as u16);
+        for (t, r) in row {
+            for v in t.iter().chain(r) {
+                eat(*v as u16);
+            }
+        }
+    }
+    h
+}
+
+/// What a host memoises one posed NPC mesh on: the slot, the clip, the
+/// pose within it ([`FieldClipPlayer::pose_key`] or
+/// [`FieldClipPlayer::drawn_pose_key`]) and a script's look rotation
+/// ([`crate::actor_look::ActorLook::pose_key_bits`]), each its own field.
+///
+/// OR-ing the look bits into the pose key, as the native window did, let a
+/// held last frame's bit (`1 << 20`) and the look's Z angle (bits `16..28`)
+/// share a key, so two poses could draw each other's mesh; and without the
+/// clip a re-target had to drop the slot's whole memo, because the incoming
+/// clip reuses the same low keys. With the clip in the key an idle / walk
+/// switch keeps both clips' meshes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct NpcPoseKey {
+    pub slot: u8,
+    pub clip: u64,
+    pub pose: usize,
+    pub look: u64,
+}
+
+/// The key both hosts memoise / re-pose NPC `slot`'s clip pose on: the
+/// playhead's [`FieldClipPlayer::pose_key`], or with `drawn` (the smooth
+/// field actors' drawn cursor,
+/// `legaia_engine_core::world::World::field_npc_drawn_clip_cursor`) its
+/// [`FieldClipPlayer::drawn_pose_key`], beside the clip and the look. The
+/// native window keys its posed-mesh memo on it; the page exports its
+/// fields to `field-actors.js`, which re-poses when any of them moves.
+pub fn npc_pose_key(
+    slot: u8,
+    player: &FieldClipPlayer,
+    drawn: Option<u32>,
+    look: Option<&crate::actor_look::ActorLook>,
+) -> NpcPoseKey {
+    NpcPoseKey {
+        slot,
+        clip: player.clip_id(),
+        pose: drawn.map_or_else(|| player.pose_key(), |c| player.drawn_pose_key(c)),
+        look: crate::actor_look::ActorLook::pose_key_bits(look),
+    }
 }
 
 /// Frame `frame` of record `record_index` as the posed-mesh builders take it
@@ -110,7 +177,9 @@ impl FieldClipPlayer {
             frames.push(row);
         }
         let blend = rec.blends();
+        let clip_id = clip_hash(&frames);
         Some(Self {
+            clip_id,
             frames,
             cursor: 0,
             step: u32::from(clip_step(CLIP_RATE, blend, (rec.flag & 0xFF) as u8)),
@@ -118,6 +187,11 @@ impl FieldClipPlayer {
             blend,
             hold_at_end: false,
         })
+    }
+
+    /// The clip's identity: a hash of its decoded frames ([`NpcPoseKey`]).
+    pub fn clip_id(&self) -> u64 {
+        self.clip_id
     }
 
     /// Bones per frame.
@@ -255,13 +329,17 @@ impl FieldClipPlayer {
     ///
     /// REF: FUN_8001BE80
     pub fn current_pose(&self) -> PoseFrame {
-        let frac = self.sub_frame();
-        let frame = self.frame().min(self.frames.len() - 1);
+        self.pose_at(self.frame(), self.sub_frame())
+    }
+
+    /// The pose at frame `frame`, `frac` sixteenths of the way to the next
+    /// (the blender's next-entry rule: wrap to frame 0 after the last,
+    /// unless the clamp bit holds the clip there).
+    fn pose_at(&self, frame: usize, frac: u32) -> PoseFrame {
+        let frame = frame.min(self.frames.len() - 1);
         let bone_outputs = if frac == 0 {
             self.frames[frame].clone()
         } else {
-            // The blender's next-entry rule: wrap to frame 0 after the last,
-            // unless the clamp bit holds the clip there.
             let next = if self.hold_at_end && frame + 1 == self.frames.len() {
                 &self.frames[frame]
             } else {
@@ -284,6 +362,30 @@ impl FieldClipPlayer {
             factor: 0,
             finished: false,
         }
+    }
+
+    /// [`Self::pose_key`] for a draw at `cursor` (1/16-frame units) rather
+    /// than the playhead: the smooth field actors' drawn cursor
+    /// (`legaia_engine_core::world::World::field_npc_drawn_clip_cursor`).
+    /// The sub-frame counts whatever the record's gate, since the draw
+    /// blends between keyframes either way ([`Self::drawn_pose`]); a whole
+    /// frame keys as the playhead's own key does.
+    pub fn drawn_pose_key(&self, cursor: u32) -> usize {
+        let span = (self.frames.len() as u32 * 16).max(1);
+        let c = cursor.min(span - 1);
+        let (frame, sub) = ((c >> 4) as usize, c & 0xF);
+        let held = self.hold_at_end && sub != 0;
+        frame * 16 + sub as usize + (usize::from(held) << 20)
+    }
+
+    /// The pose a draw at `cursor` shows ([`Self::drawn_pose_key`]): the
+    /// frame blender between the cursor's keyframe and the next at its
+    /// sub-frame. Retail draws the playhead's whole frame for a record
+    /// without the blend gate; this is the enhancement's in-between.
+    pub fn drawn_pose(&self, cursor: u32) -> PoseFrame {
+        let span = (self.frames.len() as u32 * 16).max(1);
+        let c = cursor.min(span - 1);
+        self.pose_at((c >> 4) as usize, c & 0xF)
     }
 
     /// Advance the playhead by `n` engine ticks (`0` = hold the frame). O(1)
@@ -870,6 +972,67 @@ mod tests {
 
     /// `current_pose` is a pure read: it never moves the playhead, and
     /// `advance(0)` holds the frame.
+    /// A held last frame (`pose_key` bit `20`) and a look whose Z angle
+    /// sets bit `4` of its 12-bit field (bit `20` of the look bits) shared
+    /// one key when OR'd; as separate fields they cannot. Two clips with
+    /// the same pose key do not share one either.
+    #[test]
+    fn the_pose_cache_key_keeps_pose_look_and_clip_apart() {
+        use crate::actor_look::ActorLook;
+        let bundle = synth_bundle();
+        let p = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        let held_pose = 1usize << 20;
+        let look = ActorLook {
+            object: 0,
+            angles: [0, 0, 0x10],
+        };
+        let look_bits = ActorLook::pose_key_bits(Some(&look));
+        // The old packing: frame 0 with the look against the held frame 0
+        // with the same look's present / object bits only.
+        let old_a = look_bits as usize;
+        let old_b = held_pose | (look_bits as usize & !(1 << 20));
+        assert_eq!(old_a, old_b, "the OR'd packing collides");
+        let a = npc_pose_key(3, &p, None, Some(&look));
+        let b = NpcPoseKey {
+            pose: held_pose,
+            look: look_bits & !(1 << 20),
+            ..a
+        };
+        assert_ne!(a, b);
+        // The clip is in the key: a different clip at the same pose.
+        let mut other = p.clone();
+        other.clip_id ^= 1;
+        assert_ne!(
+            npc_pose_key(3, &other, None, None),
+            npc_pose_key(3, &p, None, None)
+        );
+        // The same frames hash the same.
+        let again = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        assert_eq!(again.clip_id(), p.clip_id());
+    }
+
+    #[test]
+    fn a_drawn_cursor_poses_its_keyframe_and_blends_between() {
+        let bundle = synth_bundle();
+        let mut p = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        p.set_step(16);
+        let f0 = p.current_pose().bone_outputs;
+        p.advance(1);
+        let f1 = p.current_pose().bone_outputs;
+        // A whole frame keys and poses as the playhead does.
+        assert_eq!(p.drawn_pose_key(16), p.pose_key());
+        assert_eq!(p.drawn_pose(16).bone_outputs, f1);
+        assert_eq!(p.drawn_pose(0).bone_outputs, f0);
+        // Between keyframes the draw blends, whatever the record's gate.
+        let mid = p.drawn_pose(8).bone_outputs;
+        assert_eq!(p.drawn_pose_key(8), 8);
+        if f0 != f1 {
+            assert!(mid != f0 && mid != f1, "an in-between pose");
+        }
+        // The playhead never moved.
+        assert_eq!(p.frame(), 1);
+    }
+
     #[test]
     fn current_pose_does_not_advance() {
         let bundle = synth_bundle();

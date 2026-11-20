@@ -8379,6 +8379,7 @@ topics = ["field", "story beat", "conc3", "Conkram", "cutscene", "Mist", "route 
 
 [[scenarios]]
 label = "juui1_vortex_entry"
+arrival = { from = "conc2", door = 20 }
 backup_fingerprint = "dca8a74e43e0e955871463a743077e70631fbdb5946f7e8ecfc726a3af8e2446"
 description = "The first Ra-Seru scene: the party tumbling into the vortex among the drifting light shards. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 400 vsyncs after juui1 loaded."
 phase = "field"
@@ -8388,6 +8389,7 @@ topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "particle
 
 [[scenarios]]
 label = "juui1_vortex_party_flying"
+arrival = { from = "conc2", door = 20 }
 backup_fingerprint = "0099627c6043335bfb3ccfc8908a2acc23d4abf1f0f78cbc06d10e5643629d4a"
 description = "The first Ra-Seru scene: Vahn, Noa and Gala flying side by side, all three in the flying pose. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 700 vsyncs after juui1 loaded."
 phase = "field"
@@ -8397,6 +8399,7 @@ topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "party po
 
 [[scenarios]]
 label = "juui1_vortex_gala_box"
+arrival = { from = "conc2", door = 20 }
 backup_fingerprint = "3f70e27d1b9ef698d4882b8f5649075e1abba83c0c586ba24dc369fa6dd0f421"
 description = "The first Ra-Seru scene: 'Gala: Vahn, look at that!' over the flying party, a light ahead. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 1000 vsyncs after juui1 loaded."
 phase = "field"
@@ -8406,6 +8409,7 @@ topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "dialog",
 
 [[scenarios]]
 label = "juui1_vortex_noa_close"
+arrival = { from = "conc2", door = 20 }
 backup_fingerprint = "c040c601dcc3e06c645fe6f8e01107802d929ee2d45a0434711253e3c694f4a1"
 description = "The first Ra-Seru scene: Noa close to the camera with Vahn and Gala behind, Noa's green glow. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 1400 vsyncs after juui1 loaded."
 phase = "field"
@@ -8415,6 +8419,7 @@ topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "party po
 
 [[scenarios]]
 label = "juui1_vortex_tunnel"
+arrival = { from = "conc2", door = 20 }
 backup_fingerprint = "efc00e6ff324697bff283b6abfb57945535f4d6c5da15c4f0139f0343e51ce70"
 description = "The first Ra-Seru scene: the party before the shard tunnel, Noa's green glow. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 1800 vsyncs after juui1 loaded."
 phase = "field"
@@ -8424,6 +8429,7 @@ topics = ["field", "story beat", "juui1", "Ra-Seru scene", "cutscene", "party po
 
 [[scenarios]]
 label = "juui1_vortex_exit_flash"
+arrival = { from = "conc2", door = 20 }
 backup_fingerprint = "594fa80040b883cf9b3cad9806fa251dccb0e6c240c28aef4d375db23556a8a1"
 description = "The first Ra-Seru scene: the white flash at the vortex's end, before the scene change into rugi. RETAIL disc, pad only, no pokes: conc3_mist_night_free's run on (autorun_story_forward.lua), walked by autorun_walk_route.lua out of conc3 by its conc2 door (P2[11], a Mist fight fought on the way), across conc2 onto the vortex (tile (86, 59), ACT facing Z-), Yes at the 'jump into the vortex' picker (P2[23..30] spawn P2[20], the 0x3F into juui1); saved 2300 vsyncs after juui1 loaded."
 phase = "field"

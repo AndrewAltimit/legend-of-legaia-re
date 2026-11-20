@@ -963,6 +963,16 @@ by `BattleState::combo_cluster_held`. PROT 0960's Plasma Strike burst does the s
 (`0x801F81BC`, raised by arm `0xF` at `0x801F84BC`): its one number goes up over the
 victim and the `DAMAGE` cluster follows on arm `0xF`'s pass. The summon pre-hits do the same (PROT 0908, 0915, 0928, 0929, 0932, 0933, 0934): their popups go up with no cluster, which opens on the band's fold. PROT 0910's party slashes clear the flag on all but the fourth (`sb zero,-0x49B4(v1)` at `0x801F88DC`, behind a count of the module's own at `0x801F8DAC`), and they run past the band's fold, so Swordie's cluster first slides in on the lethal slash as `4 HIT` / `TOTAL`; the port held it from the cast's start only for the other modules, and the `0x88` film showed `DAMAGE` from the first slash on.
 
+**Two enemy casts split their hits the same way.** Hyper Lightning's arm 7 (PROT 0937) and
+Spore Gas's arm 4 (PROT 0939) land four wrapper hits each, and every one but the fourth
+stores `0` into the flag (`0x801F76F8` beside the `HP - 1` cap, `0x801F70FC` behind a
+`bne` on the count the arm bumps ahead of its roll), so the cluster slides in two battle
+frames after the fourth hit already reading `4 HIT` / `TOTAL`. The hold is read a frame
+late, so both casts hold it from their arming; with the hold raised on the first hit alone,
+that hit's popup had opened the cluster and the `retona_songi_hyper_lightning` and Spore
+Gas films showed `DAMAGE`, then `HIT` / `TOTAL`, under every hit retail frames bare.
+Port: `SplitHits::holds_cluster_below`. Grade `disassembly` + `capture`.
+
 **The cluster's word is the hit count's, not the action's.** The readout pass
 tests the action's damage-number push count `ctx[+0x273]` against `1`
 (`0x801E8AB0..0x801E8AB8`, and again at `0x801E8B64` ahead of the `HIT` word):

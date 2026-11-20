@@ -28,6 +28,10 @@
   const DRAW_POSE_STRIDE = 8;
   /* Ints per actor in a `clip_states` export (FieldActors::CLIP_STATE_STRIDE). */
   const CLIP_STATE_STRIDE = 4;
+  /* Bone sets an actor's memo keeps (`frame`'s `boneMemo`) before it starts
+   * over: an idle and a walk clip on the quarter-keyframe grid fit with room
+   * for a script's head turns. */
+  const BONE_MEMO_CAP = 512;
 
   /* Pose an object-local mesh into `out` from one frame of a clip: per bone,
    * `Rz . Ry . Rx . v + T`. A character TMD's vertices are relative to their
@@ -292,13 +296,25 @@
       const cs = n.i * CLIP_STATE_STRIDE;
       if (clipStates && cs + CLIP_STATE_STRIDE <= clipStates.length) {
         const f = clipStates[cs];
-        /* Re-target generation plus the look key's two halves
-         * (`ActorLook::pose_key_bits`): a head turning on a held frame. */
+        /* The clip's identity plus the look key's two halves
+         * (`ActorLook::pose_key_bits`): a re-target, or a head turning on a
+         * held frame. */
         const gen = clipStates[cs + 1] + ':' + clipStates[cs + 2] + ':' + clipStates[cs + 3];
         if (f >= 0 && (morphMoved || f !== n.lastFrame || gen !== n.lastGen)) {
-          /* An actor held back last frame has already asked for this pose. */
-          const bones = n.heldBones && n.heldFrame === f && n.heldGen === gen
-            ? n.heldBones : a.live_bones(n.i);
+          /* An actor held back last frame has already asked for this pose,
+           * and a key it has shown before reads its bones from the memo:
+           * the key is the native window's pose-cache key (`NpcPoseKey`), so
+           * its bones are a constant. */
+          const memoKey = f + ':' + gen;
+          let bones = n.heldBones && n.heldFrame === f && n.heldGen === gen
+            ? n.heldBones : (n.boneMemo && n.boneMemo.get(memoKey));
+          if (!bones) {
+            bones = a.live_bones(n.i);
+            if (bones.length) {
+              if (!n.boneMemo || n.boneMemo.size >= BONE_MEMO_CAP) n.boneMemo = new Map();
+              n.boneMemo.set(memoKey, bones);
+            }
+          }
           if (bones.length) {
             const pose = () => {
               poseInto(n.out, n.base, n.objectIds, bones, bones.length / 6, 0);

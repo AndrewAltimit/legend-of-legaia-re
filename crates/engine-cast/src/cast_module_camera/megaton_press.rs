@@ -212,9 +212,14 @@ pub fn megaton_press_camera(
     let hold = if phase == 0x0F {
         // `0x801F7E9C..0x801F7F44`: the drain, then a hit for every pass the
         // threshold word stands at or above the countdown (the phase chain
-        // lands the cast's outcome as one), then the hold.
+        // lands the cast's outcome as one), then the hold. The compare is
+        // once a pass, on the word the pass's one `subu` stored
+        // (`0x801F7EA4..0x801F7EAC`): the port makes it on the tick that
+        // opens the pass, against the word less the pass's rest, as Blazing
+        // Slash's arm 22 does, not on whichever tick the drain crosses.
+        let pass_word = st.countdown.pass_end(MODULE_DRAIN_PER_TICK);
         st.countdown.drain();
-        if w >= st.countdown.0 {
+        if st.opens_pass && w >= pass_word {
             w -= SPEED_SCALAR << 5;
             arm.hit_site = Some(2);
         }
@@ -487,6 +492,47 @@ mod tests {
                 12, 64, 128, 64, 64, 64, 60, 4, 224, 128, 96, 64, 16, 32, 256, 128, 64
             ]
         );
+    }
+
+    /// Arm `0x0F` compares its threshold word once a pass, on the word the
+    /// pass's `subu` stored (`0x801F7EA4..0x801F7EAC`): on step-`3` passes
+    /// every hit lands on a pass's opening tick, and on the pass whose whole
+    /// drain first reaches the threshold.
+    #[test]
+    fn arm_0f_hits_on_the_opening_tick_of_the_pass_that_reaches_the_threshold() {
+        let mut st = ModuleCamState::default();
+        megaton_press_camera(&mut st, 0, seats());
+        for phase in 1..0x0Fu8 {
+            loop {
+                st.opens_pass = true;
+                if !megaton_press_camera(&mut st, phase, seats()).hold {
+                    break;
+                }
+            }
+        }
+        let step: u8 = 3;
+        let mut hits = 0;
+        'arm: loop {
+            let opened_on = st.countdown.0;
+            let threshold = st.module_words[0];
+            let mut hit_this_pass = false;
+            for tick in 0..step {
+                st.opens_pass = tick == 0;
+                st.countdown.1 = step - 1 - tick;
+                let a = megaton_press_camera(&mut st, 0x0F, seats());
+                if a.hit_site == Some(2) {
+                    assert_eq!(tick, 0, "the hit sits on the opening tick");
+                    hit_this_pass = true;
+                    hits += 1;
+                }
+                if !a.hold {
+                    break 'arm;
+                }
+            }
+            let pass_word = opened_on - MODULE_DRAIN_PER_TICK * i32::from(step);
+            assert_eq!(hit_this_pass, threshold >= pass_word);
+        }
+        assert!(hits > 0);
     }
 
     #[test]

@@ -1795,3 +1795,32 @@ changes = [
   ["counts/native/town01/enhanced/allocs_per_frame", 1363.0, 1455.3],
   ["counts/native/town01/retail/allocs_per_frame", 1113.7, 1195.8],
 ]
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The world_map row measures the world map now. Its pad script stepped down through Rim Elm's door (map01 P2[0]), where the overworld pick puts the party, into town0c within 75 frames: the old count was mostly the village, and in the retail mode mostly the door's CD-wait black hold (skip_load_holds off, about 300 frames; 229 of 300 frames blank, 9 player positions). Since 2afa4041a raises Rim Elm's departure flags on an overworld pick, the open village also let the walk back out, which moved enhanced 205.02 -> 269.25. frame-hash-web's world_map now walks up off the door and left and right across the field, never leaving the overworld (retail 15 blank frames and 52 positions, enhanced 14 and 208). The overworld itself costs about 415 draws a frame enhanced on main and on the tip alike; no engine code changed. Release bundle, identical over two runs."
+changes = [
+  ["counts/browser/world_map/enhanced/gl_draws_per_frame", 205.02, 414.55],
+  ["counts/browser/world_map/enhanced/wasm_bytes_per_frame", 162266, 288595],
+  ["counts/browser/world_map/retail/gl_draws_per_frame", 155.27, 317.93],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 157695, 290891],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Bundle gzip is the wave's new code compiled into both pages: the smooth field actors (drawn bodies, clip cursors on a quarter-keyframe grid, the shared NPC pose key), per-outcome decoration pricing in the derived field cost, the slot-6 cue latch, the picker's departure flags, the play page's pacing boxes and build label (play +9.5 KB, tool +25.9 KB). The native rises are under a tenth of a percent: the overworld bench is staged through the picker, which now raises the departure flags 0x141/0x147 (the post-departure world with its Mist bands), and allocates four more a frame; summon_cast +0.1. No asset or dependency added; town01 fell in both modes (pose cache keyed on the clip) and was taken in."
+changes = [
+  ["counts/bundle/gzip_bytes", 7337395, 7363299],
+  ["counts/bundle/play_gzip_bytes", 5202680, 5212220],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1307.7, 1307.8],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1491.3, 1491.5],
+  ["counts/native/world_map/enhanced/allocs_per_frame", 1901.0, 1905.0],
+  ["counts/native/world_map/retail/allocs_per_frame", 1760.1, 1764.0],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The battle half of the seed now trusts the pacer's step bytes: when 0x1F800392 and 0x1F800393 both read 4 (the driver copies the step after the frame's VSync, 0x80017170..0x800171D8), a newest frame-time entry of 0x2BC is a long frame, not a plain 700-hsync one, and a monster's retake lag takes that step. Over the 387 battle_ states it nets +.056 image (jou_party_vahn_chain_late .944 -> .957, songi_genocidal_cannon .973 -> 1.0, jou_aluru_v3_aluru_cannon .938 -> .950, both scythe_wind rows, menu_rugi_barra); vahn_tri_somersault_super prefers step 3 on every consumer though its bytes read 4/4 (saved inside VSync, a film is open) and taiku_thermo_void moves one thousandth. Measured alone and in the full blessing run."
+changes = [
+  ["states/battle_taiku_thermo_void_accessories_mid_cast/image", 0.997, 0.996],
+  ["states/battle_vahn_tri_somersault_super/image", 0.977, 0.969],
+]

@@ -29,6 +29,14 @@ fn look_of(
         .actor_look(legaia_engine_field::actor_look::LookKey::Npc(slot))
 }
 
+/// A clip's identity (`FieldClipPlayer::clip_id`, a hash of its decoded
+/// frames) folded to the 32 bits a `clip_states` word carries. Two clips one
+/// actor plays colliding here would share the page's bone memo; the hash
+/// makes that as unlikely as it is for the native `NpcPoseKey`.
+fn clip_tag(id: u64) -> u32 {
+    (id ^ (id >> 32)) as u32
+}
+
 /// The pose banks an actor's clip ids index: the scene's own ANM bundle and
 /// the PROT 0874 locomotion bundle (the party / global-pool specials).
 #[derive(Clone, Copy)]
@@ -98,13 +106,7 @@ impl FieldActors {
             Err(e) => crate::console_log(&format!("field actors: {e}")),
         }
         for (slot, player) in b.clip_players {
-            self.clips.insert(
-                slot,
-                NpcClip {
-                    player,
-                    generation: 0,
-                },
-            );
+            self.clips.insert(slot, NpcClip { player });
         }
     }
 
@@ -155,13 +157,7 @@ impl FieldActors {
             {
                 host.world
                     .bind_npc_clip_cursor(slot, e.placement.anim_id, &player);
-                self.clips.insert(
-                    slot,
-                    NpcClip {
-                        player,
-                        generation: 0,
-                    },
-                );
+                self.clips.insert(slot, NpcClip { player });
             }
         }
     }
@@ -195,18 +191,9 @@ impl FieldActors {
                 });
         for r in retargets {
             match self.clips.get_mut(&r.slot) {
-                Some(clip) => {
-                    clip.player = r.player;
-                    clip.generation = clip.generation.wrapping_add(1);
-                }
+                Some(clip) => clip.player = r.player,
                 None => {
-                    self.clips.insert(
-                        r.slot,
-                        NpcClip {
-                            player: r.player,
-                            generation: 1,
-                        },
-                    );
+                    self.clips.insert(r.slot, NpcClip { player: r.player });
                 }
             }
         }
@@ -653,13 +640,16 @@ impl FieldActors {
         }
     }
 
-    /// `[pose, generation, look_lo, look_hi, ...]` per catalog entry
+    /// `[pose, clip, look_lo, look_hi, ...]` per catalog entry
     /// ([`Self::CLIP_STATE_STRIDE`]; `[-1, -1, 0, 0]` with no live clip): the
-    /// pose key this render should show, the re-target count, and a script's
-    /// look rotation (`4C 45`, [`look_of`]) as the two halves of
-    /// `ActorLook::pose_key_bits` - the packing the native window keys its
-    /// pose cache on. The page re-poses when any of the four moves, so a head
-    /// that turns on a held frame re-poses.
+    /// pose key this render should show, the clip's identity folded to 32
+    /// bits ([`clip_tag`]), and a script's look rotation (`4C 45`,
+    /// [`look_of`]) as the two halves of `ActorLook::pose_key_bits` - the
+    /// fields the native window keys its pose cache on
+    /// (`field_anim::NpcPoseKey`). The page re-poses when any of the four
+    /// moves, so a head that turns on a held frame re-poses, and keeps the
+    /// bones of each key it has read, so a clip a re-target returns to costs
+    /// no read.
     pub fn clip_states(&self, host: Option<&SceneHost>) -> Vec<i32> {
         let Some(n) = self.npcs.as_ref() else {
             return Vec::new();
@@ -669,13 +659,22 @@ impl FieldActors {
             let slot = e.placement.index as u8;
             match self.clips.get(&slot) {
                 Some(c) => {
-                    let look = legaia_engine_field::actor_look::ActorLook::pose_key_bits(
+                    // The native window's pose-cache key
+                    // (`field_anim::npc_pose_key`): the pose at the drawn
+                    // clip cursor under the smooth field actors
+                    // (`World::field_npc_drawn_clip_cursor`), the clip and
+                    // the look, each its own field.
+                    let drawn = host.and_then(|h| h.world.field_npc_drawn_clip_cursor(slot));
+                    let key = legaia_engine_field::field_anim::npc_pose_key(
+                        slot,
+                        &c.player,
+                        drawn,
                         look_of(host, slot).as_ref(),
                     );
-                    out.push(c.player.pose_key() as i32);
-                    out.push(c.generation as i32);
-                    out.push(look as u32 as i32);
-                    out.push((look >> 32) as u32 as i32);
+                    out.push(key.pose as i32);
+                    out.push(clip_tag(key.clip) as i32);
+                    out.push(key.look as u32 as i32);
+                    out.push((key.look >> 32) as u32 as i32);
                 }
                 None => out.extend([-1, -1, 0, 0]),
             }
@@ -696,7 +695,9 @@ impl FieldActors {
         let Some(c) = self.clips.get(&slot) else {
             return Vec::new();
         };
-        let mut pose = c.player.current_pose();
+        let mut pose = host
+            .and_then(|h| h.world.field_npc_drawn_clip_cursor(slot))
+            .map_or_else(|| c.player.current_pose(), |d| c.player.drawn_pose(d));
         // The script's look rotation on one object (`4C 45`), the kernel the
         // native window folds into the same pose.
         if let Some(l) = look_of(host, slot) {
@@ -765,7 +766,9 @@ impl FieldActors {
         for e in &n.pack.entries {
             let slot = e.placement.index as u8;
             let spawn = (e.placement.world_x, e.placement.world_z);
-            match host.world.field_npc_draw_pose(slot, spawn) {
+            // The drawn pose (`World::field_npc_drawn_pose`): one game
+            // frame behind under the smooth field actors.
+            match host.world.field_npc_drawn_pose(slot, spawn) {
                 Some(p) => out.extend_from_slice(&[
                     1.0,
                     p.pos[0],

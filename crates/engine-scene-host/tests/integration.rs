@@ -206,6 +206,7 @@ mod region_encounter_disc;
 mod rikuroa_summit_ladder_disc;
 mod rim_elm_ambush_disc;
 mod rim_elm_door_roundtrip_disc;
+mod rim_elm_tree_picker_routes_disc;
 mod save_gate_scene_man;
 mod scene_bgm_transition_ladder;
 mod scene_chain_e2e;

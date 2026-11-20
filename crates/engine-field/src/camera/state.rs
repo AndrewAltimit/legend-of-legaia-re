@@ -29,6 +29,10 @@ pub struct DrawLead {
     pub phase: f32,
     pub dt: i32,
     pub lag: f32,
+    /// The draw shows the field's bodies at their drawn roots (the smooth
+    /// field actors, `WorldToggles::smooth_actors`): a follow focus pinned
+    /// onto the player follows the drawn player.
+    pub actors: bool,
 }
 
 impl DrawLead {
@@ -37,6 +41,7 @@ impl DrawLead {
         phase: 0.0,
         dt: 0,
         lag: 0.0,
+        actors: false,
     };
 
     /// Whether this lead draws the stored pose: no glide lead and no

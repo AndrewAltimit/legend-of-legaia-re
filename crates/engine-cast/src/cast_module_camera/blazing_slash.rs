@@ -252,11 +252,21 @@ pub fn blazing_slash_camera(
             // `0x801F8888`, the `bgtz` at `0x801F8950`), so the pass that
             // leaves makes an eighth call on a spent word: its hit lands,
             // and its record goes with the flush behind the gate.
+            //
+            // Retail makes the compare once a pass, on the word its one
+            // `subu` has drained by the whole pass (`slt` on the stored word
+            // at `0x801F8884..0x801F888C`). The port drains a tick at a time,
+            // so the pass's opening tick compares the word less the rest of
+            // the pass: read off that tick's word alone, a call fell a battle
+            // frame late wherever the pass's rest carried the word under the
+            // pacing word, and the hit's `rand()` draws and its numeral moved
+            // a frame against the burning caster's puffs.
+            let pass_word = st.countdown.pass_end(MODULE_DRAIN_PER_TICK);
             st.countdown.drain();
             let held = st.countdown.0 > 0;
-            if (st.opens_pass || !held) && pace >= st.countdown.0 {
+            if st.opens_pass && pace >= pass_word {
                 pace -= SPEED_SCALAR * FLAME_STEP;
-                if held {
+                if pass_word > 0 {
                     arm.pass_spawns[0] = Some(FLAME);
                 }
                 // `FUN_801DD6B4(0x30)` at `0x801F88D8`, behind the record.
@@ -649,6 +659,46 @@ mod tests {
         assert_eq!(pass.caster_write.z, Some(0x1C0));
         assert_eq!(pass.victim_write.z, Some(-0x1C0));
         assert_eq!(pass.shot.unwrap().focus, [0, 0, -0x1C0]);
+    }
+
+    /// Arm 22 compares the pacing word against the word its one `subu`
+    /// drained by the whole pass (`0x801F8878..0x801F888C`): on step-`3`
+    /// passes driven a tick at a time, each call lands on the opening tick of
+    /// the pass whose full drain reaches the pacing word, never a pass later.
+    #[test]
+    fn arm_22_calls_on_the_pass_whose_whole_drain_reaches_the_pacing_word() {
+        let mut st = ModuleCamState::default();
+        for phase in 0..22u8 {
+            run(&mut st, phase);
+        }
+        let step: u8 = 3;
+        let mut calls = Vec::new();
+        'arm: for pass in 0.. {
+            let opened_on = st.countdown.0;
+            let pace = st.module_words[0];
+            for tick in 0..step {
+                st.opens_pass = tick == 0;
+                st.countdown.1 = step - 1 - tick;
+                let a = blazing_slash_camera(&mut st, 22, seats());
+                if a.hit_site == Some(5) {
+                    assert_eq!(tick, 0, "pass {pass}: the call sits on the opening tick");
+                    calls.push(pass);
+                    // The pass's whole drain reaches the pacing word ...
+                    assert!(opened_on - SPEED_SCALAR * i32::from(step) <= pace);
+                }
+                if !a.hold {
+                    break 'arm;
+                }
+            }
+            // ... and a pass with no call leaves the word above it.
+            if calls.last() != Some(&pass) {
+                assert!(
+                    opened_on - SPEED_SCALAR * i32::from(step) > pace,
+                    "pass {pass}"
+                );
+            }
+        }
+        assert_eq!(calls.len(), 8);
     }
 
     #[test]

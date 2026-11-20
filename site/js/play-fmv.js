@@ -135,8 +135,13 @@
    * controls the engine path's movie sits behind, so the fallback output
    * honours a mute and a lowered level too instead of playing at the
    * slider's default. */
-  function pageLevel() {
+  function pageLevel(rt) {
     if (window.LegaiaSound && !window.LegaiaSound.isSoundOn()) return 0;
+    /* The engine's master mute (`F2`, `OptionsState::muted`), which the
+     * engine output applies itself; a bundle without the getter skips it. */
+    if (rt && typeof rt.audio_muted === 'function') {
+      try { if (rt.audio_muted()) return 0; } catch (e) {}
+    }
     const el = document.getElementById('play-volume');
     const v = el ? parseFloat(el.value) : 1;
     return (v >= 0 && isFinite(v)) ? v : 1;
@@ -175,9 +180,24 @@
       else if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
       const frames = Math.floor(pcm.length / channels);
       const buf = ctx.createBuffer(channels, frames, rate);
+      /* The engine-only Mono output row (`OptionsState::downmix_mono`)
+       * averages the movie's channels into both, as the engine output's
+       * downmix does; the retail Monaural row leaves the CD input stereo. */
+      let mono = false;
+      if (channels > 1 && typeof rt.downmix_mono === 'function') {
+        try { mono = !!rt.downmix_mono(); } catch (e) { mono = false; }
+      }
       for (let c = 0; c < channels; c++) {
         const out = buf.getChannelData(c);
-        for (let i = 0; i < frames; i++) out[i] = pcm[i * channels + c] / 32768;
+        if (mono) {
+          for (let i = 0; i < frames; i++) {
+            let sum = 0;
+            for (let k = 0; k < channels; k++) sum += pcm[i * channels + k];
+            out[i] = sum / channels / 32768;
+          }
+        } else {
+          for (let i = 0; i < frames; i++) out[i] = pcm[i * channels + c] / 32768;
+        }
       }
       const src = ctx.createBufferSource();
       src.buffer = buf;
@@ -186,7 +206,7 @@
        * path gives a movie at the slider's default 1x (web-play's
        * `PLAY_PAGE_GAIN_SCALE`). */
       const siteTrim = (typeof window.LEGAIA_MASTER_TRIM === 'number') ? window.LEGAIA_MASTER_TRIM : 0.25;
-      trim.gain.value = siteTrim * 0.5 * pageLevel();
+      trim.gain.value = siteTrim * 0.5 * pageLevel(rt);
       src.connect(trim);
       trim.connect(ctx.destination);
       src.start();

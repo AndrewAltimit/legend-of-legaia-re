@@ -165,7 +165,14 @@ impl<S: AudioSink> AudioDirector<S> {
             // ending theme's, and its programs are not the cue's.
             return (!self.sfx_evicted).then_some(self.bank.as_ref()).flatten();
         }
-        self.sfx_vabs.get(&self.sfx_slot_for_cue(id)?)
+        self.sfx_vabs
+            .get(&self.sfx_forced_slot.or(self.sfx_slot_for_cue(id))?)
+    }
+
+    /// The bank a runtime row keys: the slot its `+4` category names, or the
+    /// forced slot while the latch is up.
+    pub(super) fn sfx_vab_for_category(&self, category: u8) -> Option<&VabBank> {
+        self.sfx_vabs.get(&self.sfx_forced_slot.unwrap_or(category))
     }
 
     /// Set where the shared slot-2 / slot-6 region starts - one past the

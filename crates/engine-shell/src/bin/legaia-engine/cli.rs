@@ -1213,6 +1213,22 @@ pub(crate) enum Cmd {
         /// and the launcher stores it as its Saved-chain Arts list row.
         #[arg(long, default_value_t = false)]
         arts_saved_list: bool,
+        /// No smooth motion: field and battle cameras, the player's walk and
+        /// the L1 map display step once a game frame, as the original does,
+        /// instead of every vsync. `--retail` implies it. The launcher's
+        /// Smooth motion row.
+        #[arg(long, default_value_t = false)]
+        no_smooth_motion: bool,
+        /// Keep the original's loading pauses: the black CD-wait holds
+        /// around the pause menu, shops, doors and a battle's return.
+        /// `--retail` implies it. The launcher's Skip loading pauses row.
+        #[arg(long, default_value_t = false)]
+        load_pauses: bool,
+        /// No instant controls: the field and the overworld act on a press
+        /// a frame late, as the original does. `--retail` implies it. The
+        /// launcher's Instant controls row.
+        #[arg(long, default_value_t = false)]
+        no_instant_controls: bool,
         /// No Shiny Seru: battle entry never rolls the rare shiny capturable
         /// enemy (+35% stats, its Seru +35% damage) - the engine twin of the
         /// patcher's `--shiny-seru`, on by default. Retail has no such roll;
@@ -1529,7 +1545,7 @@ pub(crate) enum Cmd {
             default_value_t = false,
             conflicts_with_all = ["no_dynamic_lighting", "no_dyn_shadows",
                 "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "no_ssao", "smart_monsters",
-                "arts_saved_list",
+                "arts_saved_list", "no_smooth_motion", "load_pauses", "no_instant_controls",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "no_tetsu_spar_fix", "jewel_fix",
                 "no_hp_readout_guard", "no_heal_numerals", "spirit_ap", "damage_ap", "seru_catch_rate",
                 "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere",

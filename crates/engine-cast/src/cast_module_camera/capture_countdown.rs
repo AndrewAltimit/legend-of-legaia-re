@@ -188,10 +188,12 @@ pub const CURSE_MP_DRAIN: &[ArmCountdown] = &[
 
 /// PROT 0950 `0x5A` (`0x801F79F8`, word `0x801F86B0`): arm 1 is the walk;
 /// arm 2 seeds `scalar << 7` (`0x801F7DD8`); arm 3's product gate
-/// (`0x801F7F54`) is the strike. Arm 4 drains only a positive word
-/// (`blez` at `0x801F80C0`), which arm 3 never re-arms, so it waits on the
-/// victim's clip alone.
-pub const ROLLING_FLARE: &[ArmCountdown] = &[seed(2, S << 7), gate(3, P, None)];
+/// (`0x801F7F54`) is the strike, and its pass adds `scalar << 6` to the
+/// drained word (`0x801F7F64..0x801F7F74`). Arm 4 drains that twice a pass,
+/// ahead of its shot and again behind it while the word is positive (`blez`
+/// at `0x801F80C0`), then waits on the victim's clip; the director
+/// (`rolling_flare_camera`) carries both arms, so this table only names them.
+pub const ROLLING_FLARE: &[ArmCountdown] = &[seed(2, S << 7), gate(3, P, add(S << 6))];
 
 /// PROT 0938 `0x4E` (`0x801F726C`, word `0x801F8040`): arm 0 seeds `0x800`, arm 1's
 /// product-of-step-and-8 gate adds `0x400` (`0x801F74A4..`), arm 2's is the sweep, which

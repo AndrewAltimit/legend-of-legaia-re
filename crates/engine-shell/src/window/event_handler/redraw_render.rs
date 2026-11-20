@@ -93,7 +93,7 @@ impl PlayWindowApp {
         let npc_posed: std::collections::HashMap<u8, &NpcPosedHalves> = posed
             .npc_frames
             .iter()
-            .filter_map(|k| self.npc_pose_cache.get(k).map(|m| (k.0, m)))
+            .filter_map(|k| self.npc_pose_cache.get(k).map(|m| (k.slot, m)))
             .collect();
         // Everything above this mark is per-frame skinning: CPU mesh
         // re-pose + GPU re-upload for the player, the animated props and

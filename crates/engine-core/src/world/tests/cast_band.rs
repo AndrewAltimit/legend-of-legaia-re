@@ -13,6 +13,7 @@ mod hit_folds;
 mod kill_records;
 mod module_completion;
 mod module_geometry;
+mod module_impacts;
 mod module_rumble;
 mod monster_casts;
 mod nighto;

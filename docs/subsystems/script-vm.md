@@ -1578,6 +1578,23 @@ halt it can see - an arc still in flight on that actor
 hook) - and the VM returns `Halt` at the op on any refusal. The acquire's
 other clause (an NPC target with no `+0x94` owner) is not modelled.
 
+**A second arc flies beside the first.** `FUN_801D25EC` allocates a fresh
+helper and watcher pair (`0x801D2634`, `0x801D2760`) and looks for no helper
+already on the parent, and each helper writes its parent's position every
+frame until it retires. The acquire refuses only a target that still carries
+`0x400`, so a record that drops the bit with `32 <id> 0A` can arc the actor
+again mid-flight. `edson` `P2[0]` sends flat `12` on a 470-frame arc at
+`+0xF7`, clears its halt at `+0x127`, seats it with `4C 51` at `+0x13F` and
+arcs it onto that seat with a 146-frame drop at `+0x1E7`; the long arc
+outlives the drop and lands it on its own tile `(23, 58)`. A PCSX-Redux state
+mid-sequence (`credits_edson_fullscreen_pcsx`) holds one live helper on flat
+`12`, its cursor `+0x9C` at 96% of the long flight and the flat's `+0x94` on
+the drop's `C3 0C 0A`; a later one (`credits_edson_panel_pcsx`) has it on
+`(3008, 7488)`. The engine keeps every arc it starts
+(`World::start_field_script_arc`) and steps them in start order, so during
+an overlap the later arc writes last; which helper retail ticks last there is
+not measured.
+
 **Retail capture of a player arc.** `town01`'s walk-on tiles `(30..32, 19)`
 spawn `P2[12..14]`, each a player arc `C3 F8 01 <x> 10 60 00 18 00` (sub-`1`,
 apex `0x60`, frames `0x18`) behind a pad-direction test. From

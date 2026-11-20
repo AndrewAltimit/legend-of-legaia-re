@@ -29,6 +29,10 @@ pub struct LaunchFidelity {
     /// `--no-shiny-seru`, `--flee-exp`, `--exp-rate`,
     /// `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`.
     pub tweaks: legaia_engine_session::session_switches::GameplayTweaks,
+    /// The pacing enhancements: smooth motion (`--no-smooth-motion`), the
+    /// load-pause skip (`--load-pauses`) and instant controls
+    /// (`--no-instant-controls`).
+    pub pacing: legaia_engine_session::session_switches::Pacing,
     /// The camera-occlusion fade around the player.
     pub occlusion_fade: bool,
     /// The volumetric ground fog.
@@ -88,6 +92,7 @@ impl LaunchFidelity {
             smart_monsters: false,
             arts_saved_list: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
+            pacing: legaia_engine_session::session_switches::Pacing::default(),
             occlusion_fade: true,
             volumetric_fog: true,
             ssao: true,
@@ -107,6 +112,7 @@ impl LaunchFidelity {
             smart_monsters: false,
             arts_saved_list: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::retail(),
+            pacing: legaia_engine_session::session_switches::Pacing::retail(),
             occlusion_fade: false,
             volumetric_fog: false,
             ssao: false,
@@ -513,6 +519,13 @@ pub struct ScreenshotConfig {
     /// stood on the capture frame (`World::seat_held_scene_grade`) - a grade
     /// a finished record left, which the entry script does not repaint.
     pub seat_grade: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
+    /// `LEGAIA_SEAT_LIGHTS=<fields>`: a retail state's live attached lights
+    /// (`legaia_parity::retail_compare::retail_attached_lights`), their
+    /// keyframe records taken back by the display lag and stood on the
+    /// engine's lights on the capture frame (`World::seat_attached_light`) -
+    /// a keyframe phase is the wall time since the op that started it,
+    /// which the seed's quicker paging shortens.
+    pub seat_lights: Vec<legaia_engine_core::world::AttachedLightSeed>,
     /// `LEGAIA_SEAT_SPRITE_WAIT=<units>`: the gate record's wait in the
     /// retail state's RAM. The field gate stands the scene on the displayed
     /// frame, the wait less the display lag, but a PCSX-Redux film of the
@@ -556,6 +569,12 @@ pub struct ScreenshotConfig {
     /// (`World::install_sprite_arm_snapshot`); taken once. `none` is a state
     /// that holds no sheet, which retires the pool's own.
     pub seat_sprite_arms:
+        std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
+    /// `LEGAIA_SEAT_MESH_PARTS`: a retail state's live mesh-bearing ambient
+    /// parts (`legaia_parity::retail_compare::retail_mesh_parts`), installed
+    /// over the ambient pool's on the frame the capture is taken
+    /// (`World::install_mesh_part_snapshot`); taken once.
+    pub seat_mesh_parts:
         std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
     /// `LEGAIA_SEAT_TURNING_PARTS`: the render banks of a retail state's
     /// turning ambient parts as its displayed frame drew them, written over
@@ -1388,6 +1407,11 @@ impl ScreenshotConfig {
                     .ok()
                     .and_then(|v| v.trim().parse().ok()),
             ),
+            seat_mesh_parts: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_MESH_PARTS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::field_seeds::sprite_arms_from_env(&v)),
+            ),
             seat_sprite_arms: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
                     .ok()
@@ -1433,6 +1457,9 @@ impl ScreenshotConfig {
             seat_grade: std::env::var("LEGAIA_SEAT_GRADE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::field_seeds::grade_from_env(&v)),
+            seat_lights: std::env::var("LEGAIA_SEAT_LIGHTS")
+                .map(|v| legaia_engine_capture::field_seeds::lights_from_env(&v))
+                .unwrap_or_default(),
             seat_sprite_wait: std::env::var("LEGAIA_SEAT_SPRITE_WAIT")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
