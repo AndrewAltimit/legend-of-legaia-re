@@ -1454,6 +1454,15 @@ Details that matter to a port:
   camera is active (`engine-world-views::camera_view`) and falls back to the
   player's sampled floor only in a world with no terrain to compose an eye
   trio from.
+- **The roll is the third camera angle, whoever framed the shot.** Step 2
+  reads `0x8007B794` beside pitch and yaw. The field-entry reset
+  `FUN_80025C24` zeroes it and the follow ease has no roll entry, so a plain
+  follow frame stands level; an op-`0x45` beat's slot `2` writes it, and the
+  view carries it on every arm that frames through the globals, the follow
+  arm included (`engine-world-views::camera_view`). `edstati3`'s Karisto
+  vignette stages roll `10`: about `0.9` degrees, `3` px across the frame,
+  which a follow arm standing at roll `0` drew level
+  (`credits_edstati3_fullscreen_pcsx`).
 - **The staging descriptor at `0x801F3580` is not in this chain.** The
   composer's staging focus at `+0x1A/+0x1E/+0x22` does carry the footing, but
   the view build reads the live globals only.

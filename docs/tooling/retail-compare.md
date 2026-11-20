@@ -450,6 +450,21 @@ the camera block, and it decides which sums a script's `0x4A` wait can hold
 gate on a wait of `15` is never met on a step of `2`. The seeded step never
 goes under the engine's own floor.
 
+The ring stores a frame of `0x2D0` hsyncs or more as the clamp `0x2BC`
+(`0x800170A8`), but the step is taken off the raw time there
+(`0x800170F8..0x80017104`), so a newest entry reading the clamp is a step-`4`
+pass whatever the longest entry says. A scene whose every frame runs long
+fills the ring with clamps, which the longest-entry rule alone reads as `3`:
+`credits_edstati3_fullscreen_pcsx` and `map01_tree_revival_cutscene` hold
+sixteen clamps under scratchpad step bytes `4` / `4`, and a PCSX-Redux film
+from the first steps its camera mover `4` a pass. Of the library states whose
+newest entry is the clamp, all but one hold step byte `4`. Field and
+world-map states take the newest-entry rule (`frame_step`), and every rewind
+the step scales moves with it: the tree revival's rings and mist `.926` to
+`.961`, the Karisto vignette's walking cranes onto their displayed seat. A
+battle state keeps the longest entry, its lag confirmed against the older
+ordering table's floor ([below](#replayed-casts)).
+
 **The image channel** comes from `play-window`, the real renderer, run as a
 child process from a scratch directory under the report, and seeded the same
 way: the lifted save is written as a scratch LGSF file whose resume point is
@@ -2554,8 +2569,8 @@ table under the other record, and the screen is the pass just before it. The
 newest table is the one that draws the live children on their current frames
 rather than on the frames they drew a pass before. The lag is the displayed
 passes' own steps (`pass_steps`), not `display_lag_vsyncs`, whose
-`frame_step` reads the clamped history entry `0x2BC` as step `3` where the
-frame driver stepped `4`.
+`frame_step` reads the clamped history entry `0x2BC` as step `3` on a battle
+state where the frame driver stepped `4`.
 
 `gimard_burning_attack` is an after-flip state with a clamped history. A
 PCSX-Redux film of the same cast from `gimard_summon_visible`
