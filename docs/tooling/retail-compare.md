@@ -463,7 +463,8 @@ world-map states take the newest-entry rule (`frame_step`), and every rewind
 the step scales moves with it: the tree revival's rings and mist `.926` to
 `.961`, the Karisto vignette's walking cranes onto their displayed seat. A
 battle state keeps the longest entry, its lag confirmed against the older
-ordering table's floor ([below](#replayed-casts)).
+ordering table's floor or the pacer's step bytes
+([below](#a-drives-frame-is-the-one-the-display-showed)).
 
 On a field or overworld state that holds the scratchpad, the newest-entry
 rule is only the fallback: the seed takes the pacer's step byte `0x1F800393`
@@ -4946,6 +4947,41 @@ increment pins it loosely off its own gap). Otherwise the walk-back keeps the
 single step. The three Delilas Spirit captures rose with it (`0.893` to
 `0.949`, `0.779` to `0.891`, `0.909` to `0.958`), their backdrop four to five
 pixels closer.
+
+**The step bytes confirm a clamp too.** The frame driver stores the step it
+read off the newest entry in `0x1F800393` and copies it to `0x1F800392` only
+after the frame's `VSync` (`0x80017170..0x800171D8`), so where the state holds
+the scratchpad and both bytes read the `4` a clamp names, the newest entry was
+a long frame, not a raw `700`, and the passes take their own steps whatever the
+floor says (`frame_step::with_step_bytes`, read around the battle observables
+in `read_retail`). The floor is the weaker witness on such histories: on the
+library's clamped battle states under bytes `4` / `4` it fits `1`, `2` or `3`
+about as often as `4`. Bytes that disagree name a state saved inside that
+`VSync` wait, whose newest entry is the pass to come, and confirm nothing:
+`battle_map01_lippian_kiss_of_death_mid_cast` (bytes `2` / `4`, one clamp)
+and `battle_ropeway_party_gala_flying_knee_late` (`3` / `4`) read the same
+CPU state, PCSX-Redux's saved `pc` or interrupted `epc` inside libetc `VSync`
+(`0x8005FB84..0x8005FD64`), and shifting their passes one entry older moved
+them opposite ways (`.999` to `.988`, `.877` to `.887`).
+`battle_jou_party_vahn_chain_late` walks back two step-`4` passes this way,
+yaw `3203` where the history's rung put `3198` (`image` `.944` to `.957`);
+`battle_tunnelb_nova_scythe_wind_mid_cast` `.985` to `.992`,
+`battle_jou_nova_v3_scythe_wind_mid_cast` `.992` to `.996`.
+
+The battle half still keeps the history's rung in `frame_step` itself, and
+not for want of a step: everything else that reads it measured both ways.
+Taking the bytes' `4` there lifts monster casts
+(`battle_noaru_songi_genocidal_cannon_mid_cast` `.973` to `1.000`,
+`battle_jou_aluru_v3_aluru_cannon_mid_cast` `.938` to `.950`, the stage
+ambient base `112` to `128`) and drops party strikes, whose hit-spark parts
+walk back by the display lag (`battle_vahn_tri_somersault_super` `.977` to
+`.969`, `battle_jou_cort_181_strike` `.963` to `.961`). The rule
+that once parted `nivora_duel_pre_megaton_press` (`1.000` to `.958`) moved no
+pass step: its passes are step `4` both ways, but the walk-back takes the
+shots' divisor `0xC` only for steps that differ from `frame_step`'s rung, and
+with the rung at `4` it fell back on the largest increment's estimate, `7`
+for a yaw increment of `2` with `5` to go, walking the yaw back `28` where
+retail's frame stands `16` back.
 
 The confirmed steps (`display_pass_steps`) also take back the idle clip
 cursors pass by pass and seat the retired glides. The glides still in flight
