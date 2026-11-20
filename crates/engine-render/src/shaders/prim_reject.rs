@@ -177,22 +177,48 @@ fn prim_near_rejected(
     // A PCSX-Redux capture runs its own limit in place of the console's: it
     // drops more (a whole quad on one corner pair) and less (no pair counts
     // unless one of its corners is negative). PSX mode takes it with that
-    // emulator's texel rule (`psx_params.z = 3`); a clean or enhanced frame
-    // scored beside such a capture takes it from the scene block
-    // (`gte_sat.z`, `Renderer::set_pcsx_polygon_limit`).
-    if (u.psx_params.z > 2.5 || gte_sat_params().z > 0.5) {
+    // emulator's texel rule (`psx_params.z = 3`).
+    if (u.psx_params.z > 2.5) {
         if (c0.w > 3.5) {
             return pcsx_quad_rejected(s0, s1, s2, prim_sxy(m, c3, p.y, p.x));
         }
         return pcsx_tri_rejected(s0, s1, s2);
     }
-    if (!span_too_big(s0, s1, s2)) {
+    // A clean or enhanced frame (no PSX snap) is not bound by the console's
+    // limit: it skips an oversize half only when one of its corners is a
+    // projection artefact (`prim_corner_garbled`), which is what the limit
+    // keeps off a retail screen. A long ray drawn wholly in front of the eye
+    // (the Genesis Tree burst's in `vozz_tree_burst`) stays.
+    let clean = u.psx_params.z < 0.5;
+    let g0 = !clean || prim_corner_garbled(m, c0.xyz, p.y, p.x);
+    let g1 = !clean || prim_corner_garbled(m, c1, p.y, p.x);
+    let g2 = !clean || prim_corner_garbled(m, c2, p.y, p.x);
+    if (!(span_too_big(s0, s1, s2) && (g0 || g1 || g2))) {
         return false;
     }
     if (c0.w > 3.5) {
-        return span_too_big(s1, prim_sxy(m, c3, p.y, p.x), s2);
+        let g3 = !clean || prim_corner_garbled(m, c3, p.y, p.x);
+        return span_too_big(s1, prim_sxy(m, c3, p.y, p.x), s2) && (g1 || g3 || g2);
     }
     return true;
+}
+
+// Whether the GTE garbles this corner's screen point
+// (`prim_near_reject::gte_corner_garbled`): its divide is capped (`SZ`
+// under `H / 2`, a corner at, behind or just in front of the eye) or its
+// `SX` / `SY` saturates. Such a corner lands where the scene does not put
+// it, so a polygon spanning past the limit from it is a projection artefact.
+fn prim_corner_garbled(m: mat4x4<f32>, c: vec3<f32>, sz_per_w: f32, h: f32) -> bool {
+    let cl = m * vec4<f32>(c, 1.0);
+    let sz = cl.w * sz_per_w;
+    if (sz < h * 0.5) {
+        return true;
+    }
+    let half = vec2<f32>(160.0, 120.0);
+    let off = cl.xy * half * sz_per_w / sz;
+    let sx = half.x + off.x;
+    let sy = half.y - off.y;
+    return sx < -1024.0 || sx > 1023.0 || sy < -1024.0 || sy > 1023.0;
 }
 
 // A PCSX-Redux capture's polygon limit (`PsxTexelRule::PcsxRedux`, an

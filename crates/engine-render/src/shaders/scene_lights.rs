@@ -57,10 +57,8 @@ struct SceneLightsU {
     // vertex stage; all-zero (the default) never rejects.
     prim_near: vec4<f32>,
     // The GTE's register limits (`prim_near_reject::gte_saturated_clip`):
-    // (sz_per_w, H, pcsx_limit, 0). Read by the vertex stage under PSX mode;
-    // all-zero (the default) leaves every corner where it projects. `.z` set
-    // runs the span test on a PCSX-Redux capture's polygon-size limit in any
-    // render mode (`Renderer::set_pcsx_polygon_limit`).
+    // (sz_per_w, H, 0, 0). Read by the vertex stage under PSX mode; all-zero
+    // (the default) leaves every corner where it projects.
     gte_sat: vec4<f32>,
     // The field ground's depth rule (`Renderer::set_field_ground_drop`):
     // (drop, 0, 0, 0). All-zero (the default) keeps retail's buckets.

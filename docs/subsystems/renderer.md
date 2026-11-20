@@ -2750,15 +2750,29 @@ with no negative `y`, as the light wedge in the frame's bottom-left; the
 console would skip both halves. The child of a PCSX-Redux state takes that
 rule in place of the console's, beside its texel rule
 (`PsxTexelRule::PcsxRedux`, `pcsx_quad_rejected` / `pcsx_tri_rejected` in
-the WGSL), and its clean and enhanced smoke children take the rule alone
-(`Renderer::set_pcsx_polygon_limit`, the scene block's `gte_sat.z`;
-[smoke tier](../tooling/retail-compare.md#the-smoke-tier)). The sign tests read the packet's own screen frame, Y down; the
+the WGSL). The sign tests read the packet's own screen frame, Y down; the
 vertex stage's offsets are Y up and are flipped first. Read in the Y-up
 frame, the floor quad's `y = 887` corner tested as negative and the wedge
 dropped. On the field the console rule keeps `rim_elm_queen_bee_battle`'s frame
 clear: its camera stands beside a decoration rock whose near face projects
 past the span. The dance hall applies the same rule to its baked hall on the
 CPU ([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).
+
+**Clean and enhanced frames keep the long primitives.** The limit is the
+console's hardware, and clean rasterisation is not bound by it. What it keeps
+off a retail screen is the projection artefact: a primitive with a corner the
+GTE garbles, one whose divide is capped (`SZ` under `H / 2`, a corner at,
+behind or just in front of the eye) or whose `SX` / `SY` saturates, so that it
+lands where the scene does not put it. A frame without the PSX snap therefore
+skips an oversize half only when one of its corners is garbled
+(`prim_near_reject::gte_corner_garbled` / `clean_span_rejected`, the WGSL
+`prim_corner_garbled` and the GLSL `primCornerGarbled`); the near reject ahead
+of it is unchanged. A primitive drawn wholly in front of the eye stays at any
+size. `vozz_tree_burst` is the case: the Genesis Tree burst throws two rays off
+the screen's foot, `620` and `855` rows tall, every corner well in front of the
+eye. The console skips both, a PCSX-Redux capture draws them (none of their
+corners is negative), and so does the clean frame, with the white centre they
+add to. PSX mode keeps the console's limit, or the capture's emulator's.
 
 **A near body that survives the limit.** `theeder_summon_mid_cast` puts
 monster `0xA1` (Gilium) between the eye and the caster. Its render node's

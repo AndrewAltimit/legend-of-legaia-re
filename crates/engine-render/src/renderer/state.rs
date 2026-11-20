@@ -178,9 +178,6 @@ pub struct Renderer {
     /// The texel rule of PSX mode on the native target
     /// ([`Self::set_psx_texel_rule`]).
     pub(super) psx_texel_rule: std::cell::Cell<PsxTexelRule>,
-    /// The span test runs a PCSX-Redux capture's polygon-size limit in
-    /// every render mode ([`Renderer::set_pcsx_polygon_limit`]).
-    pub(super) pcsx_polygon_limit: std::cell::Cell<bool>,
     /// Keep each mesh upload's CPU streams ([`Self::set_keep_cpu_meshes`]).
     pub(super) keep_cpu_meshes: std::cell::Cell<bool>,
     /// PSX-faithful rendering mode. When `true`, the VRAM-mesh shader uses
@@ -995,20 +992,6 @@ impl Renderer {
             .set(legaia_render_kernels::prim_near_reject::shader_params(
                 cut, span_h,
             ));
-    }
-
-    /// Run a PCSX-Redux capture's polygon-size limit in the span test
-    /// whatever the render mode (`pcsx_quad_rejected` / `pcsx_tri_rejected`
-    /// in the WGSL), an instrument like [`PsxTexelRule::PcsxRedux`]. That
-    /// emulator's software GPU draws a primitive with no negative corner at
-    /// any size, where the console skips one past `1023 x 511`. PSX mode
-    /// under [`PsxTexelRule::PcsxRedux`] already runs it; this carries the
-    /// same rule into the clean and enhanced frames the retail-compare smoke
-    /// tier measures against that accuracy frame, so the two differ by the
-    /// render mode and not by the capture's emulator. Default off: the
-    /// console's limit.
-    pub fn set_pcsx_polygon_limit(&self, on: bool) {
-        self.pcsx_polygon_limit.set(on);
     }
 
     /// The GTE's register limits under PSX mode
