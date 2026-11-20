@@ -580,6 +580,13 @@ impl LegaiaRuntime {
         self.options_state.downmix_mono
     }
 
+    /// Whether the master mute (`OptionsState::muted`, `F2` on both hosts)
+    /// holds. The engine output applies it itself; the page's fallback movie
+    /// output (no engine audio up yet) reads it here.
+    pub fn audio_muted(&self) -> bool {
+        self.options_state.muted
+    }
+
     /// The controller stick's dead zone in percent
     /// (`OptionsState::stick_dead_zone`), the native launcher's *Stick dead
     /// zone* row: snapped to its steps, persisted with the other options.
@@ -893,6 +900,25 @@ mod tests {
                 "play.html never reads {call} back"
             );
         }
+    }
+
+    /// The fallback movie output (no engine audio yet) reads the master mute
+    /// and the Mono output row, which the engine output applies itself.
+    #[test]
+    fn the_fallback_movie_output_reads_mute_and_mono() {
+        let mut rt = LegaiaRuntime::new();
+        assert!(!rt.audio_muted());
+        rt.options_state.muted = true;
+        assert!(rt.audio_muted());
+        let fmv = include_str!("../../../site/js/play-fmv.js");
+        assert!(
+            fmv.contains("rt.audio_muted()"),
+            "play-fmv.js ignores the mute"
+        );
+        assert!(
+            fmv.contains("rt.downmix_mono()"),
+            "play-fmv.js ignores Mono output"
+        );
     }
 
     /// The pacing rows (`session_switches::Pacing`): on by default as on the
