@@ -29,6 +29,9 @@ pub fn every_message() -> Vec<Message> {
         },
         Message::Reject(RejectReason::ProtocolMismatch { server: 7 }),
         Message::Reject(RejectReason::Unexpected),
+        Message::Reject(RejectReason::BuildMismatch {
+            host: "legaia-engine/1.30.0".into(),
+        }),
         Message::Ping { nonce: u32::MAX },
         Message::Pong { nonce: 0 },
         Message::Lobby(LobbyState {

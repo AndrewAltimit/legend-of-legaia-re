@@ -55,10 +55,40 @@ const CHAT_LINES: usize = 32;
 /// Lockstep frames a host frame may run to catch up after a stall.
 const CATCH_UP: usize = 2;
 
-/// The engine build id every peer in a room must share: the crate version,
-/// which the native and browser builds of one release have in common.
+/// The prefix of every engine build id.
+const BUILD_PREFIX: &str = "legaia-engine/";
+/// The suffix a build made for no release carries on its version.
+const DEV_SUFFIX: &str = "-dev";
+
+/// The engine build id every peer in a room must share: this build's
+/// release (`legaia_release_version::RELEASE`), which the native release
+/// archives and the site's play bundle of one release bake in alike.
 pub fn engine_build() -> String {
-    format!("legaia-engine/{}", env!("CARGO_PKG_VERSION"))
+    engine_build_for(legaia_release_version::RELEASE)
+}
+
+/// The build id of a build made for `release`. A build made for no release
+/// (a local `cargo build`, a site bundle from an untagged commit) names the
+/// crate version marked `-dev`: development builds join each other, and no
+/// release build joins one.
+pub fn engine_build_for(release: Option<&str>) -> String {
+    match release {
+        Some(v) => format!("{BUILD_PREFIX}{v}"),
+        None => format!("{BUILD_PREFIX}{}{DEV_SUFFIX}", env!("CARGO_PKG_VERSION")),
+    }
+}
+
+/// How a player is told which build `build` is: "release 1.30.0", or
+/// "a development build (0.1.0)"; an id of another shape is shown whole.
+pub fn build_label(build: &str) -> String {
+    match build.strip_prefix(BUILD_PREFIX) {
+        Some(v) => match v.strip_suffix(DEV_SUFFIX) {
+            Some(crate_version) => format!("a development build ({crate_version})"),
+            None => format!("release {v}"),
+        },
+        None if build.is_empty() => "an unnamed build".into(),
+        None => build.to_string(),
+    }
 }
 
 /// `pack`'s identity for the hello: its id and the SHA-256 of its
@@ -205,6 +235,9 @@ enum Row {
 pub struct NetPlay {
     link: Box<dyn Transport>,
     hello: Option<Hello>,
+    /// The engine build id this peer's hello names (a build refusal shows
+    /// it beside the host's).
+    engine_build: String,
     pub me: Option<PlayerId>,
     pub room: Option<RoomCode>,
     pub lobby: Option<LobbyState>,
@@ -260,6 +293,7 @@ impl NetPlay {
     fn new(link: Box<dyn Transport>, hello: Hello, creating: bool) -> Self {
         Self {
             link,
+            engine_build: hello.engine_build.clone(),
             hello: Some(hello),
             me: None,
             room: None,
@@ -322,6 +356,17 @@ impl NetPlay {
             room: RoomRequest::Join(code),
         };
         Self::new(link, hello, false)
+    }
+
+    /// Speak for engine build `build` instead of [`engine_build`] (a test
+    /// of the room's build check). Only before the hello goes out, on the
+    /// first [`Self::frame`]; later it changes nothing.
+    pub fn with_engine_build(mut self, build: String) -> Self {
+        if let Some(h) = self.hello.as_mut() {
+            h.engine_build.clone_from(&build);
+            self.engine_build = build;
+        }
+        self
     }
 
     /// Room frames stepped since the controller started
@@ -751,7 +796,8 @@ impl NetPlay {
             // is refused as unexpected; nothing the player did.
             Message::Reject(RejectReason::Unexpected) => {}
             Message::Reject(r) => {
-                let text = reject_text(r).to_string();
+                let own = self.engine_build.clone();
+                let text = reject_text(&r, &own);
                 self.notice = Some(text.clone());
                 self.note(text);
                 if r.is_fatal() || matches!(self.phase, Phase::Joining) {
@@ -1616,10 +1662,17 @@ impl NetPlay {
     }
 }
 
-fn reject_text(r: RejectReason) -> &'static str {
-    match r {
+/// The notice a refusal shows; `own` is this peer's engine build id.
+fn reject_text(r: &RejectReason, own: &str) -> String {
+    let text = match r {
         RejectReason::ProtocolMismatch { .. } => "The relay speaks another protocol version",
-        RejectReason::BuildMismatch => "The host runs another engine build",
+        RejectReason::BuildMismatch { host } => {
+            return format!(
+                "The host runs {}; this is {}. Players must run the same release",
+                build_label(host),
+                build_label(own)
+            );
+        }
         RejectReason::PackMismatch => "The host runs another expansion pack",
         RejectReason::NoSuchRoom => "No room with that code",
         RejectReason::RoomFull => "The room is full",
@@ -1631,7 +1684,8 @@ fn reject_text(r: RejectReason) -> &'static str {
         RejectReason::NotHost => "Only the host can do that",
         RejectReason::NotReady => "Everyone seated must be ready first",
         RejectReason::Unexpected => "That is not possible right now",
-    }
+    };
+    text.to_string()
 }
 
 /// The field prop hunt's HUD model ([`NetPlay::hunt_hud`]).

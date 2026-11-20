@@ -2338,6 +2338,7 @@ dependencies = [
  "legaia-expansion-format",
  "legaia-font",
  "legaia-netplay",
+ "legaia-release-version",
  "legaia-render-kernels",
  "legaia-tmd",
  "serde",

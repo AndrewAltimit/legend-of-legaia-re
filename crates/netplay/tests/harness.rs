@@ -99,7 +99,7 @@ impl Client {
             }
             Message::Lobby(l) => self.lobby = Some(l.clone()),
             Message::Start(s) => self.start = Some(s.clone()),
-            Message::Reject(r) => self.rejects.push(*r),
+            Message::Reject(r) => self.rejects.push(r.clone()),
             _ => {}
         }
         self.inbox.push(m.clone());

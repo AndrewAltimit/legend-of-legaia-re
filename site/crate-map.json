@@ -2268,6 +2268,7 @@
     "expansion-format",
     "font",
     "netplay",
+    "release-version",
     "render-kernels",
     "tmd"
    ],
@@ -4130,13 +4131,14 @@
    "modules": [],
    "band": "leaves",
    "track": "tooling",
-   "scope": "The release number every shipped program reports (<code>VERSION</code>): each <code>--version</code>, the launcher's header, Explorer's About box and bug reports. A release build bakes in <code>LEGAIA_RELEASE_VERSION</code>; any other build names the crate version. No dependencies.",
+   "scope": "The release number every shipped program reports (<code>VERSION</code>): each <code>--version</code>, the launcher's header, Explorer's About box, bug reports and the netplay room's build check. A release build (and the site bundle of a tagged commit) bakes in <code>LEGAIA_RELEASE_VERSION</code>; any other build names the crate version. No dependencies.",
    "dependents": [
     "anm",
     "art",
     "asset",
     "asset-viewer",
     "cheats",
+    "engine-netplay",
     "engine-shell",
     "explorer",
     "extract",
