@@ -29,6 +29,10 @@ pub struct LaunchFidelity {
     /// `--no-shiny-seru`, `--flee-exp`, `--exp-rate`,
     /// `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`.
     pub tweaks: legaia_engine_session::session_switches::GameplayTweaks,
+    /// The pacing enhancements: smooth motion (`--no-smooth-motion`), the
+    /// load-pause skip (`--load-pauses`) and instant controls
+    /// (`--no-instant-controls`).
+    pub pacing: legaia_engine_session::session_switches::Pacing,
     /// The camera-occlusion fade around the player.
     pub occlusion_fade: bool,
     /// The volumetric ground fog.
@@ -88,6 +92,7 @@ impl LaunchFidelity {
             smart_monsters: false,
             arts_saved_list: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
+            pacing: legaia_engine_session::session_switches::Pacing::default(),
             occlusion_fade: true,
             volumetric_fog: true,
             ssao: true,
@@ -107,6 +112,7 @@ impl LaunchFidelity {
             smart_monsters: false,
             arts_saved_list: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::retail(),
+            pacing: legaia_engine_session::session_switches::Pacing::retail(),
             occlusion_fade: false,
             volumetric_fog: false,
             ssao: false,

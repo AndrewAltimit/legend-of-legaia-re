@@ -97,6 +97,11 @@ pub struct PageToggles {
     /// from the engine's defaults as the window does. Retail mode holds them
     /// at retail's values whatever this says.
     pub tweaks: legaia_engine_session::session_switches::GameplayTweaks,
+    /// The pacing enhancements (smooth motion, the load-pause skip, instant
+    /// controls), all on as on the window; the native launcher's rows write
+    /// them and the page carries them through its remembered switches.
+    /// Retail mode holds them off whatever this says.
+    pub pacing: legaia_engine_session::session_switches::Pacing,
 }
 
 impl Default for PageToggles {
@@ -112,6 +117,7 @@ impl Default for PageToggles {
             ui_psx_tint: true,
             psx_render: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
+            pacing: legaia_engine_session::session_switches::Pacing::default(),
         }
     }
 }
@@ -128,6 +134,7 @@ impl PageToggles {
             entry_pulse: p.entry_pulse(),
             psx_render: p.psx_render,
             tweaks: p.tweaks(),
+            pacing: p.pacing(),
             ..Self::default()
         }
     }
@@ -143,6 +150,7 @@ impl PageToggles {
             ..Default::default()
         };
         p.set_tweaks(&self.tweaks);
+        p.set_pacing(&self.pacing);
         p
     }
 }
@@ -162,6 +170,7 @@ impl LegaiaRuntime {
             battle_frame_cadence: t.battle_frame_cadence,
             arts_saved_list: t.arts_saved_list,
             tweaks: t.tweaks,
+            pacing: t.pacing,
             retail: t.retail,
         };
         if let Some(host) = self.scene_host.host_mut() {

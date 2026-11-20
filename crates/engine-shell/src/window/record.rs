@@ -48,8 +48,11 @@ pub fn cmd_record(
         // A recording stays on the faithful render and the retail-static
         // entry. The persisted options are left as the player set them: the
         // recording is of their session, and none of them reaches the trace.
+        // The pacing switches stay at the engine's own (on) set, as a
+        // non-retail launch has always applied them.
         super::LaunchFidelity {
             retail: false,
+            pacing: legaia_engine_session::session_switches::Pacing::default(),
             ..super::LaunchFidelity::retail()
         },
         // debug_seeds: a recording captures real play; seeded spells / flags

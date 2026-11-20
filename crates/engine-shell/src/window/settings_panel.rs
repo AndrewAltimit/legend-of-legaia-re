@@ -30,7 +30,7 @@ use legaia_engine_system::input::PadButton;
 /// monsters, the saved-chain Arts list, the gameplay tweaks and the battle
 /// tuning) and *Original game only*, as the play page's boxes take them
 /// live ([`LIVE_SWITCH_ROWS`]).
-pub(super) const SETTINGS_ROWS: [OptionRow; 42] = [
+pub(super) const SETTINGS_ROWS: [OptionRow; 45] = [
     OptionRow::Preset,
     OptionRow::Fullscreen,
     OptionRow::WholeStepScale,
@@ -44,10 +44,13 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 42] = [
     OptionRow::AmbientOcclusion,
     OptionRow::GroundFog,
     OptionRow::SeeThroughWalls,
+    OptionRow::SmoothMotion,
     OptionRow::EntryPulse,
     OptionRow::HealNumerals,
     OptionRow::PreciseMovement,
     OptionRow::ActionMovement,
+    OptionRow::InstantControls,
+    OptionRow::SkipLoadPauses,
     OptionRow::SmartMonsters,
     OptionRow::ArtsSavedList,
     OptionRow::ReduceFlashing,
@@ -78,9 +81,12 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 42] = [
 /// The launch switches the page changes live. Each is remembered in the
 /// launcher's settings file, where its row there reads it back.
 #[cfg(test)]
-pub(super) const LIVE_SWITCH_ROWS: [OptionRow; 21] = [
+pub(super) const LIVE_SWITCH_ROWS: [OptionRow; 24] = [
     OptionRow::PsxRender,
     OptionRow::EntryPulse,
+    OptionRow::SmoothMotion,
+    OptionRow::SkipLoadPauses,
+    OptionRow::InstantControls,
     OptionRow::HealNumerals,
     OptionRow::ActionMovement,
     OptionRow::SmartMonsters,
@@ -1014,6 +1020,7 @@ pub(super) fn stored_from_session(
     p.smart_monsters = sw.smart_monsters;
     p.arts_saved_list = sw.arts_saved_list;
     p.set_tweaks(&sw.tweaks);
+    p.set_pacing(&sw.pacing);
 }
 
 /// The world switches of a stored set back into the session's set; the
@@ -1026,6 +1033,7 @@ pub(super) fn session_from_stored(
     sw.smart_monsters = p.smart_monsters;
     sw.arts_saved_list = p.arts_saved_list;
     sw.tweaks = p.tweaks();
+    sw.pacing = p.pacing();
 }
 
 /// Write into `stored` exactly the fields an edit moved from `before` to
@@ -1121,6 +1129,7 @@ mod tests {
             battle_frame_cadence: true,
             arts_saved_list: false,
             tweaks: Default::default(),
+            pacing: Default::default(),
             retail: false,
         };
         let opts = &mut legaia_engine_menus::options::OptionsState::default();

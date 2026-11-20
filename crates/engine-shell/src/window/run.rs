@@ -135,6 +135,7 @@ struct LaunchToggles {
     smart_monsters: bool,
     arts_saved_list: bool,
     tweaks: legaia_engine_session::session_switches::GameplayTweaks,
+    pacing: legaia_engine_session::session_switches::Pacing,
     retail: bool,
     vm_dialogue: bool,
     terrain_y: bool,
@@ -154,6 +155,7 @@ fn apply_launch_toggles(
         smart_monsters,
         arts_saved_list,
         tweaks,
+        pacing,
         retail,
         vm_dialogue,
         terrain_y,
@@ -214,6 +216,7 @@ fn apply_launch_toggles(
         battle_frame_cadence: session.host.world.toggles.battle_sm_frame_cadence,
         arts_saved_list: arts_saved_list || session.host.world.toggles.arts_saved_list,
         tweaks,
+        pacing,
         retail,
     };
     switches.apply(&mut session.host.world.toggles);
@@ -598,6 +601,7 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
             smart_monsters: fidelity.smart_monsters,
             arts_saved_list: fidelity.arts_saved_list,
             tweaks: fidelity.tweaks,
+            pacing: fidelity.pacing,
             retail: fidelity.retail,
             vm_dialogue,
             terrain_y,

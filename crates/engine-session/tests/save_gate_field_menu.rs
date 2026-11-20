@@ -215,6 +215,7 @@ fn save_anywhere_lifts_the_scene_gate_and_retail_holds_it_off() {
             save_anywhere: true,
             ..Default::default()
         },
+        pacing: legaia_engine_session::session_switches::Pacing::default(),
         retail: false,
     };
     switches.apply(&mut session.host.world.toggles);
