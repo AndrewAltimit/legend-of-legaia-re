@@ -57,14 +57,17 @@ struct Sample {
 }
 
 fn open(extracted: &std::path::Path, smooth: bool) -> Option<NativeSession> {
+    open_scene(extracted, "izumi", smooth)
+}
+
+fn open_scene(extracted: &std::path::Path, scene: &str, smooth: bool) -> Option<NativeSession> {
     let cfg = BootConfig {
-        scene: "izumi".into(),
+        scene: scene.into(),
         enable_audio: false,
     };
     let mut s = NativeSession::open(extracted, &cfg).ok()?;
     s.host.world.toggles.use_vm_dialogue = true;
-    s.enter_field_live("izumi", &FieldLiveOpts::default())
-        .ok()?;
+    s.enter_field_live(scene, &FieldLiveOpts::default()).ok()?;
     s.set_host_drains_queues(true);
     s.host.world.toggles.smooth_actors = smooth;
     Some(s)
@@ -343,4 +346,105 @@ fn izumi_intro_walkers_draw_every_vsync_and_the_simulation_is_untouched() {
         max_drawn < max_stored,
         "the drawn step is a share of the frame's"
     );
+}
+
+/// A camera glide draws a vsync **ahead** (`Camera::led_delta`, the pose
+/// the next frame stores) while the bodies draw a frame **behind**: over the
+/// opening's (`opdeene`) vsyncs where a glide is in flight under a scripted shot,
+/// project each walking body through the frame's camera and measure how
+/// unevenly its screen point moves (the mean change of its one-vsync step),
+/// stored (both stepped) against drawn (camera led, body behind).
+#[test]
+fn a_glide_over_walkers_moves_them_evenly_on_screen() {
+    let Some(extracted) = gated() else { return };
+    let scenes = std::env::var("W50B_SCENES").unwrap_or_else(|_| "opdeene".into());
+    for scene in scenes.split(',') {
+        glide_over_walkers(&extracted, scene);
+    }
+}
+
+/// A body's last two screen points, stored and drawn, and how many it has.
+type ScreenTrail = ([[f32; 2]; 2], [[f32; 2]; 2], u32);
+
+fn glide_over_walkers(extracted: &std::path::Path, scene: &str) {
+    use legaia_engine_field::frame_step::{scripted_view, scripted_view_led};
+    use legaia_engine_world_views::camera_view::camera_present_lead;
+    let Some(mut s) = open_scene(extracted, scene, true) else {
+        eprintln!("[skip] {scene} did not open");
+        return;
+    };
+    // Per body: the last two screen points, stored and drawn.
+    let mut last: std::collections::BTreeMap<u16, ScreenTrail> = Default::default();
+    let (mut n, mut jit_s, mut jit_d, mut glide_vsyncs) = (0u32, 0.0f32, 0.0f32, 0u32);
+    // How far the drawn screen point sits off the stored one on a walking
+    // body: the glide's lead and the body's lag together.
+    let (mut off_sum, mut off_max) = (0.0f32, 0.0f32);
+    for t in 0..1500u32 {
+        let pad = if t % 40 == 0 {
+            PadButton::Cross.mask()
+        } else {
+            0
+        };
+        s.host.world.set_pad(pad);
+        s.tick().expect("tick");
+        let w = &s.host.world;
+        if s.camera.mover.is_none() || !cutscene_owns_camera(w) {
+            last.clear();
+            continue;
+        }
+        glide_vsyncs += 1;
+        let hv = HostView::new(w, &s.camera, ([0.0; 3], [0.0; 3]));
+        let target = hv.scripted_target();
+        let stored_cam = scripted_view(&s.camera, target);
+        let drawn_cam = scripted_view_led(&s.camera, target, camera_present_lead(w, &s.camera));
+        let project = |v: &legaia_engine_camera::psx_camera::FieldCameraView, p: [f32; 3]| {
+            let e = v.eye_space(p);
+            (e[2] > 1.0).then(|| [v.h * e[0] / e[2], v.h * e[1] / e[2]])
+        };
+        for (&slot, &(x, z)) in &w.npcs.positions {
+            let (Some(sp), Some(dp)) = (
+                w.field_npc_draw_pose(slot, (x, z)),
+                w.field_npc_drawn_pose(slot, (x, z)),
+            ) else {
+                continue;
+            };
+            let (Some(a), Some(b)) = (project(&stored_cam, sp.pos), project(&drawn_cam, dp.pos))
+            else {
+                continue;
+            };
+            let key = u16::from(slot);
+            let e = last.entry(key).or_insert(([a; 2], [b; 2], 0));
+            let step = |h: &[[f32; 2]; 2], c: [f32; 2]| {
+                let s1 = [h[1][0] - h[0][0], h[1][1] - h[0][1]];
+                let s2 = [c[0] - h[1][0], c[1] - h[1][1]];
+                ((s2[0] - s1[0]).powi(2) + (s2[1] - s1[1]).powi(2)).sqrt()
+            };
+            // A walking body only (its stored root moved this vsync or the
+            // last two).
+            if e.2 >= 2 && sp.pos != dp.pos || e.2 >= 2 && e.0[1] != a {
+                n += 1;
+                jit_s += step(&e.0, a);
+                jit_d += step(&e.1, b);
+                let off = ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt();
+                off_sum += off;
+                off_max = off_max.max(off);
+            }
+            e.0 = [e.0[1], a];
+            e.1 = [e.1[1], b];
+            e.2 += 1;
+        }
+    }
+    let (ms, md) = (jit_s / n.max(1) as f32, jit_d / n.max(1) as f32);
+    eprintln!(
+        "[smooth actors] {scene}: {glide_vsyncs} glide vsyncs, {n} body-vsyncs; mean \
+         screen-step change stored {ms:.2} px, drawn {md:.2} px; drawn off stored by mean \
+         {:.2} px, max {off_max:.1} px",
+        off_sum / n.max(1) as f32
+    );
+    if n > 0 {
+        assert!(
+            md <= ms,
+            "the led glide and the lagged bodies move unevenly"
+        );
+    }
 }

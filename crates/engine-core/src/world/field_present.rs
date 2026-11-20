@@ -30,7 +30,8 @@
 //!   moved in and the one after;
 //! - a body placed rather than moved: a step of [`SNAP_MOVE`] or more, a
 //!   turn of [`SNAP_TURN`] or more, a body that appeared or left the hide
-//!   box, and every body on a scene change.
+//!   box, and every body on a scene change;
+//! - a body's height when it changes floor tier ([`SNAP_RISE`]).
 //!
 //! Presentation-only: the simulation, the frame-cost census, collision and
 //! every `rand` draw read the actor records and `World::npcs`, never these.
@@ -143,6 +144,23 @@ pub struct FieldPresent {
 /// `d` folded onto the short way round a 12-bit turn.
 fn wrap_angle(d: f32) -> f32 {
     (d + 2048.0).rem_euclid(4096.0) - 2048.0
+}
+
+/// A height step at least this large (world units) over one game frame is a
+/// change of floor tier (an NPC whose render height re-samples onto the next
+/// level, a scripted drop): the body draws at its new height at once while
+/// its ground position still steps. The opening's walkers step `443` units
+/// between two floor levels in one frame of a `12`-unit walk; drawn over the
+/// frame they rose through the floor.
+pub const SNAP_RISE: f32 = 256.0;
+
+/// Land a height step past [`SNAP_RISE`] in `prev` at once.
+fn land_rise(prev: &mut Option<Root>, c: Option<Root>) {
+    if let (Some(p), Some(c)) = (prev.as_mut(), c)
+        && (c[1] - p[1]).abs() >= SNAP_RISE
+    {
+        p[1] = c[1];
+    }
 }
 
 /// Whether `p -> c` is a placement, not a move.
@@ -312,6 +330,7 @@ impl World {
                 if fp.actor_live[i] >= frame || place {
                     fp.prev.actors[i] = c;
                 }
+                land_rise(&mut fp.prev.actors[i], c);
                 if !fired && fp.last.poses[i] != fp.cur.poses[i] {
                     fp.pose_live[i] = live_through;
                 }
@@ -330,6 +349,7 @@ impl World {
                 if fp.npc_live[i] >= frame || place {
                     fp.prev.npcs[i] = c;
                 }
+                land_rise(&mut fp.prev.npcs[i], c);
                 // The NPC's clip: a cursor that moved between two game
                 // frames draws live, and so does a re-bound clip.
                 let (pc, cc) = (fp.prev.clips[i], fp.cur.clips[i]);
@@ -737,5 +757,26 @@ mod tests {
         w.toggles.pin_retail();
         vsync(&mut w, true, (0, 0));
         assert_eq!(w.field_npc_drawn_clip_cursor(NPC), None);
+    }
+
+    /// A floor-tier step lands at once; the ground position still steps.
+    #[test]
+    fn a_floor_tier_change_lands_while_the_walk_steps() {
+        let mut w = field_world();
+        w.actors[0].active = true;
+        vsync(&mut w, true, (0, 0));
+        walk(&mut w, 1, 0);
+        let m = &mut w.actors[0].move_state;
+        m.world_x += 12;
+        m.world_y -= 400;
+        vsync(&mut w, true, (0, 0));
+        vsync(&mut w, false, (0, 0));
+        let (p, _) = w.field_draw_root(0).unwrap();
+        let m = &w.actors[0].move_state;
+        assert_eq!(p[1], f32::from(m.world_y), "the height lands");
+        assert!(
+            (p[0] - (f32::from(m.world_x) - 8.0)).abs() < 1e-3,
+            "the walk steps"
+        );
     }
 }
