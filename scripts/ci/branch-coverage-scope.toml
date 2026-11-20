@@ -844,3 +844,21 @@ entry = "8004CE2C"
 range = "0x8004D858..0x8004D878"
 verdict = "unreachable"
 reason = "The Rot blue's division fix-up and grey clamp: the lane sum is 0..93, never negative, and its quarter never reaches 0x20; only the 3/2 blue clamp at 0x8004D884 can go both ways."
+
+[[arm]]
+entry = "80046A20"
+range = "0x80046D74..0x80046DB8"
+verdict = "unreachable"
+reason = "The debug exit: with the debug-mode word 0x8007B98C non-zero, pad bit 0x100 forces the battle exit (gp+0xA48 = 0x80); no retail code stores a non-zero debug word, so the forced flag a0 stays 0."
+
+[[arm]]
+entry = "80046A20"
+range = "0x80046E80..0x80046E80"
+verdict = "unreachable"
+reason = "The exit pass's empty-party guard (ctx[+0x00] == 0): battle setup always seats at least one party member."
+
+[[arm]]
+entry = "80046A20"
+range = "0x8004726C..0x80047410"
+verdict = "unreachable"
+reason = "The debug arts unlock: behind the debug-mode word 0x8007B98C (never non-zero in retail) it fills every record's spell list +0x704.. and art flags; nothing in the shipped game raises the word."
