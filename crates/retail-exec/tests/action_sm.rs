@@ -29,6 +29,9 @@ const ELEMENT: u32 = 0x801D_8DE8;
 const SERU_GRANT: u32 = 0x801E_92DC;
 const HP_SETTLE: u32 = 0x801E_7250;
 const RAND: u32 = 0x8005_6798;
+const TRIGGER: u32 = 0x801D_BF9C;
+const DRIVER: u32 = 0x801D_C0A0;
+const SFX: u32 = 0x8004_FCC8;
 const WIN_POSE: u32 = 0x8005_5B4C;
 const SEATS: u32 = 0x8007_BD10;
 const FORMATION: u32 = 0x8007_BD0C;
@@ -52,6 +55,9 @@ struct Host {
     ended: Vec<ba::BattleEndCause>,
     staged: Vec<u8>,
     rand: u32,
+    busy: bool,
+    bits_high: u32,
+    calls: Vec<(u32, u32, u32)>,
 }
 
 impl BattleActionHost for Host {
@@ -87,6 +93,23 @@ impl BattleActionHost for Host {
     }
     fn victory_stage(&mut self, party_slot: u8) {
         self.staged.push(party_slot);
+    }
+    fn spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {
+        self.calls
+            .push((TRIGGER, u32::from(party_slot), u32::from(spell_id)));
+    }
+    fn spell_anim_sustain(&mut self, actor_id: u8, anim_id: u8) {
+        self.calls
+            .push((DRIVER, u32::from(actor_id), u32::from(anim_id)));
+    }
+    fn one_shot_sfx(&mut self, cue_id: u16) {
+        self.calls.push((SFX, u32::from(cue_id), 0));
+    }
+    fn character_ability_bits_high(&self, _party_slot: u8) -> u32 {
+        self.bits_high
+    }
+    fn previous_action_cleared(&self, _arg: u8) -> bool {
+        !self.busy
     }
     fn rng(&mut self) -> u32 {
         self.rand = lcg(self.rand);
@@ -522,4 +545,353 @@ fn the_end_of_an_action_ends_what_retail_ends() {
         party_wipes > 500 && wins > 500 && repicks > 100 && next > 500 && round_ends > 500,
         "{sweeps} {party_wipes} {wins} {repicks} {next} {round_ends}"
     );
+}
+
+/// States `0x00`, `0x0A` and `0x0B`, the action's opening
+/// (`0x801E2AB8..0x801E2B74`, `0x801E2B78..0x801E2B98`, `0x801E3038..0x801E3058`)
+/// against `begin`, `pre_action_wait` and `queued_from_menu`: the formation
+/// arm's turn cursor and latch, the menu hold and the wait on
+/// `FUN_8003F2B8(1)`.
+#[test]
+fn the_action_opening_states_are_retails() {
+    differential!(prot(898, SM));
+    let Some(mut r) = Retail::new() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x4F50_454E);
+    let mut seen = std::collections::HashSet::new();
+    for round in 0..6000 {
+        let state = [0x00u8, 0x0A, 0x0B][rng.below(3) as usize];
+        let party = 1 + rng.below(3) as u8;
+        let monsters = 1 + rng.below(5) as u8;
+        let advantage = rng.below(4) as u8;
+        let latched = rng.below(3) as u8;
+        let cursor = rng.below(8) as u8;
+        let menu = rng.below(2) as u8;
+        let busy = rng.below(2) != 0;
+        r.reset();
+        r.cpu.stub(0x8003_F2B8, u32::from(busy));
+        let m = &mut r.cpu.mem;
+        m.wr8(CTX, party);
+        m.wr8(CTX + 1, monsters);
+        m.wr8(CTX + 7, state);
+        m.wr8(CTX + 0x1A, cursor);
+        m.wr8(CTX + 0x276, menu);
+        m.wr8(CTX + 0x290, advantage);
+        m.wr8(CTX + 0x291, latched);
+        m.wr16(S7 + 4, 0x55);
+        r.pass();
+        let m = &mut r.cpu.mem;
+        let retail = (
+            m.rd8(CTX + 7),
+            m.rd8(CTX + 0x1A),
+            m.rd8(CTX + 0x290),
+            m.rd8(CTX + 0x291),
+        );
+        let mut h = host();
+        h.busy = busy;
+        // The seated counts: the party's slots, then the living monsters.
+        for s in 0..usize::from(party + monsters) {
+            h.actors[s].liveness = 1;
+        }
+        let mut ctx = BattleActionCtx {
+            action_state: state,
+            turn_cursor: cursor,
+            menu_open: menu,
+            formation_advantage: advantage,
+            formation_latched: latched,
+            combo_timer: 0x55,
+            ..Default::default()
+        };
+        struct Seated<'a>(&'a mut Host, u8);
+        impl BattleActionHost for Seated<'_> {
+            fn actor(&self, slot: u8) -> Option<&BattleActor> {
+                self.0.actor(slot)
+            }
+            fn actor_mut(&mut self, slot: u8) -> Option<&mut BattleActor> {
+                self.0.actor_mut(slot)
+            }
+            fn party_count(&self) -> u8 {
+                self.1
+            }
+            fn previous_action_cleared(&self, arg: u8) -> bool {
+                self.0.previous_action_cleared(arg)
+            }
+        }
+        ba::step(&mut Seated(&mut h, party), &mut ctx);
+        let port = (
+            ctx.action_state,
+            ctx.turn_cursor,
+            ctx.formation_advantage,
+            ctx.formation_latched,
+        );
+        let at = format!(
+            "round {round}: state {state:#x} party {party} monsters {monsters} advantage \
+             {advantage} cursor {cursor} menu {menu} busy {busy}"
+        );
+        assert_eq!(retail, port, "{at}");
+        if state == 0 {
+            assert_eq!(r.cpu.mem.rd16(S7 + 4) as i16, ctx.combo_timer, "{at}");
+        }
+        seen.insert((state, retail.0));
+    }
+    assert_eq!(seen.len(), 6, "{seen:?}");
+}
+
+const PLATE: u32 = 0x801F_6968;
+const PLATE_RECORD: u32 = 0x8016_0000;
+const BAR_RECORD: u32 = 0x8016_0100;
+const RECORDS: u32 = 0x8008_4140;
+
+/// States `0x46`, `0x47` and `0x48`, the Spirit band
+/// (`0x801E52A4..0x801E57C4`) against `spirit_arts_entry`,
+/// `spirit_arts_sustain` and `spirit_arts_flush`: the extended gauge and the
+/// AP target with the two AP Boost passives and the cap, the clip staging,
+/// the level-triggered hold, the AP plate's climb, the bar's growth unless
+/// the charge byte sized it, and the hand-off to the Done band.
+#[test]
+fn the_spirit_band_steps_as_retail_steps_it() {
+    differential!(prot(898, SM));
+    let Some(mut r) = Retail::new() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5350_4231);
+    let mut seen = std::collections::HashSet::new();
+    for round in 0..30000 {
+        let state = [0x46u8, 0x47, 0x48][rng.below(3) as usize];
+        let slot = rng.below(3) as u8;
+        let dt = 1 + rng.below(2) as u8;
+        let base = [0u16, 7, 100, 250, 400][rng.below(5) as usize];
+        let spirit = [0u16, 30, 60, 75, 100][rng.below(5) as usize];
+        let bits = [0u32, 0x100, 0x200, 0x300][rng.below(4) as usize];
+        let timer = [-3i16, 0, 1, 2, 8, 15, 16, 17, 0x20, 0x300][rng.below(10) as usize];
+        let target = [0i16, 40, 75, 100][rng.below(4) as usize];
+        let plate = [0i16, 39, 40, 41, 74, 99, 100][rng.below(7) as usize];
+        let gauge_goal = [0i16, 20, 0x60, 0x120][rng.below(4) as usize];
+        let width = [0i16, 13, 14, 15, 0x5A, 0x11A][rng.below(6) as usize];
+        let current = [0u8, 0, 0x11][rng.below(3) as usize];
+        let queued = [0u8, 0, 0x11, 0x12][rng.below(4) as usize];
+        let queued_b = rng.below(0x20) as u8;
+        let flags = [0u8, 0, 2, 4][rng.below(4) as usize];
+        let charged = [0u8, 0, 1][rng.below(3) as usize];
+
+        r.reset();
+        let m = &mut r.cpu.mem;
+        m.wr8(FRAME_STEP, dt);
+        m.wr8(CTX + 7, state);
+        m.wr8(CTX + 0x13, slot);
+        m.wr16(S7 + 2, timer as u16);
+        m.wr16(S7 + 6, gauge_goal as u16);
+        m.wr16(S7 + 8, target as u16);
+        m.wr32(PLATE, PLATE_RECORD);
+        m.wr16(PLATE_RECORD + 0x10, plate as u16);
+        m.wr32(CTX + 0x1074, BAR_RECORD);
+        m.wr16(BAR_RECORD + 0xE, width as u16);
+        for s in 0..3u32 {
+            m.wr8(SEATS + s, s as u8 + 1);
+            m.wr32(RECORDS + s * 0x414 + 0x6C0, bits);
+        }
+        let a = actor(slot);
+        m.wr16(a + 0x156, base);
+        m.wr16(a + 0x170, spirit);
+        m.wr8(a + 0x1D9, current);
+        m.wr8(a + 0x1DA, queued);
+        m.wr8(a + 0x1DC, flags);
+        m.wr8(a + 0x1E7, queued_b);
+        m.wr8(a + 0x1F9, charged);
+        r.pass();
+        let m = &mut r.cpu.mem;
+        let retail = (
+            m.rd8(CTX + 7),
+            m.rd16(S7 + 2) as i16,
+            m.rd16(S7 + 6) as i16,
+            m.rd16(S7 + 8) as i16,
+            m.rd16(PLATE_RECORD + 0x10) as i16,
+            m.rd16(BAR_RECORD + 0xE) as i16,
+            m.rd8(a + 0x1DA),
+            m.rd8(a + 0x1DC),
+        );
+        let retail_depth = m.rd16(CTX + 0x6D0);
+
+        let mut h = host();
+        h.dt = i16::from(dt);
+        h.bits_high = bits;
+        let b = &mut h.actors[usize::from(slot)];
+        b.agl_base = base;
+        b.spirit_gauge = spirit;
+        b.current_anim = current;
+        b.queued_anim = queued;
+        b.flag_bits = ba::ActorFlags(flags);
+        b.queued_anim_b = queued_b;
+        b.spirit_shield = charged;
+        let mut ctx = BattleActionCtx {
+            action_state: state,
+            active_actor: slot,
+            frame_timer: timer,
+            damage_target: gauge_goal,
+            hp_bar_target: target,
+            spirit_plate_value: plate,
+            spirit_bar_width: width,
+            ..Default::default()
+        };
+        ba::step(&mut h, &mut ctx);
+        let b = &h.actors[usize::from(slot)];
+        let port = (
+            ctx.action_state,
+            ctx.frame_timer,
+            ctx.damage_target,
+            ctx.hp_bar_target,
+            ctx.spirit_plate_value,
+            ctx.spirit_bar_width,
+            b.queued_anim,
+            b.flag_bits.0,
+        );
+        let at = format!(
+            "round {round}: state {state:#x} dt {dt} base {base} spirit {spirit} bits {bits:#x} \
+             timer {timer} target {target} plate {plate} goal {gauge_goal} width {width} \
+             anim {current:#x}/{queued:#x} flags {flags} charged {charged}"
+        );
+        assert_eq!(retail, port, "{at}");
+        if state == 0x46 {
+            assert_eq!(retail_depth as i16, ctx.camera_frame_height, "{at}");
+        }
+        seen.insert((state, retail.0));
+    }
+    assert_eq!(seen.len(), 5, "{seen:?}");
+}
+
+/// Hook `entries` to log their first two arguments, in call order.
+fn log_calls(cpu: &mut Cpu, entries: &[u32]) -> Rc<RefCell<Vec<(u32, u32, u32)>>> {
+    let log = Rc::new(RefCell::new(Vec::new()));
+    for &e in entries {
+        let sink = log.clone();
+        // The one-shot cue takes one argument; `a1` is whatever was left.
+        cpu.hook(e, move |r, _| {
+            let a1 = if e == SFX { 0 } else { r.r[5] };
+            sink.borrow_mut().push((e, r.r[4], a1))
+        });
+    }
+    log
+}
+
+/// States `0x29` to `0x2E`, the cast band (`0x801E4598..0x801E497C`) against
+/// `magic_pre_cast_wait`, `magic_anim_chain`, `magic_sustain`,
+/// `magic_hit_loop`, `magic_recovery` and `magic_exit`: the trigger, the
+/// summon route, the stream cursor's bumps and stages, the three one-shot
+/// cues, the `(clip, shot)` chain, the clip latch, the hit loop's exit and
+/// both gates, with every cast-effect driver call and the byte it films.
+#[test]
+fn the_cast_band_walks_the_stream_as_retail_does() {
+    differential!(prot(898, SM));
+    let Some(mut r) = Retail::new() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let log = log_calls(&mut r.cpu, &[TRIGGER, DRIVER, SFX]);
+    let mut rng = Rng(0x4D41_4749);
+    let mut seen = std::collections::HashSet::new();
+    for round in 0..40000 {
+        let state = 0x29 + rng.below(6) as u8;
+        let slot = rng.below(5) as u8;
+        let dt = 1 + rng.below(2) as u8;
+        let timer = [0i16, 0, 1, 2, 5][rng.below(5) as usize];
+        let spell = [0x05u8, 0x2C, 0x3F, 0x6A, 0x80, 0x81, 0x90][rng.below(7) as usize];
+        let route = spell >= 0x81 && rng.below(2) == 0;
+        let mut params = [0u8; 16];
+        params[0] = spell;
+        for b in params.iter_mut().skip(1) {
+            *b = if rng.below(5) == 0 {
+                0xFF
+            } else {
+                0x10 + rng.below(0x20) as u8
+            };
+        }
+        if route {
+            params[1] = 9;
+        }
+        let cursor = rng.below(7) as u8;
+        let latch = [0u8, 0, 1, 2][rng.below(4) as usize];
+        let flags = rng.below(8) as u8;
+        let current = [0u8, 0x11][rng.below(2) as usize];
+        let bound = [0u8, 0, 2, 5][rng.below(4) as usize];
+        let hits = [0u8, 1, 2, 5, 6][rng.below(5) as usize];
+        let recovery = [0u8, 0, 1][rng.below(3) as usize];
+        let exit = [0u8, 0, 1][rng.below(3) as usize];
+        let target = [3u8, 4, 8, 9][rng.below(4) as usize];
+
+        r.reset();
+        log.borrow_mut().clear();
+        let m = &mut r.cpu.mem;
+        m.wr8(FRAME_STEP, dt);
+        m.wr8(CTX + 7, state);
+        m.wr8(CTX + 0x13, slot);
+        m.wr8(CTX + 0x15, cursor);
+        m.wr8(CTX + 0x249, exit);
+        m.wr8(CTX + 0x24C, hits);
+        m.wr8(CTX + 0x24D, recovery);
+        m.wr16(S7 + 2, timer as u16);
+        let a = actor(slot);
+        for (k, b) in params.iter().enumerate() {
+            m.wr8(a + 0x1DF + k as u32, *b);
+        }
+        m.wr8(a + 0x1D9, current);
+        m.wr8(a + 0x1DC, flags);
+        m.wr8(a + 0x1DD, target);
+        m.wr8(a + 0x1FA, latch);
+        m.wr8(a + 0x21B, bound);
+        r.pass();
+        let m = &mut r.cpu.mem;
+        let retail = (
+            m.rd8(CTX + 7),
+            m.rd16(S7 + 2) as i16,
+            m.rd8(CTX + 0x15),
+            m.rd8(a + 0x1DA),
+            m.rd8(a + 0x1FA),
+            m.rd8(a + 0x1DC),
+            m.rd8(a + 0x21B),
+        );
+
+        let mut h = host();
+        h.dt = i16::from(dt);
+        let b = &mut h.actors[usize::from(slot)];
+        b.params[..16].copy_from_slice(&params);
+        b.sub_route = params[1];
+        b.strike_index = cursor;
+        b.current_anim = current;
+        b.flag_bits = ba::ActorFlags(flags);
+        b.active_target = target;
+        b.spell_iter = latch;
+        b.hit_count_bound = bound;
+        let mut ctx = BattleActionCtx {
+            action_state: state,
+            active_actor: slot,
+            frame_timer: timer,
+            hit_counter: hits,
+            magic_recovery_gate: recovery,
+            magic_exit_gate: exit,
+            ..Default::default()
+        };
+        ba::step(&mut h, &mut ctx);
+        let b = &h.actors[usize::from(slot)];
+        let port = (
+            ctx.action_state,
+            ctx.frame_timer,
+            b.strike_index,
+            b.queued_anim,
+            b.spell_iter,
+            b.flag_bits.0,
+            b.hit_count_bound,
+        );
+        let at = format!(
+            "round {round}: state {state:#x} slot {slot} dt {dt} timer {timer} params {params:x?} \
+             cursor {cursor} latch {latch} flags {flags} anim {current:#x} bound {bound} hits \
+             {hits} gates {recovery}/{exit} target {target}"
+        );
+        assert_eq!(retail, port, "{at}");
+        assert_eq!(*log.borrow(), h.calls, "calls, {at}");
+        seen.insert((state, retail.0));
+    }
+    assert!(seen.len() >= 12, "{seen:x?}");
 }
