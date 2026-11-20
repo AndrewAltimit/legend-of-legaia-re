@@ -1165,6 +1165,174 @@ range = "0x801E7A64..0x801E9AB0"
 verdict = "unported"
 reason = "PROT 0897: the top-view debug readout behind `anim_flags & 2 == 0` (0x801E7A50) - player tile and position, the marker vector and actor flag bits drawn as decimal text through FUN_8001AA68 (width in 0x801F2B80, colour in 0x8007B7B8), with the compiler's div-by-zero traps; no engine host draws the debug text"
 # lane C: 801DC0BC
+[[arm]]
+entry = "801DD310"
+range = "0x801DD36C..0x801DD380"
+verdict = "unported"
+reason = "PROT 0897: the arming's out-of-memory exits, `beqz` on a null actor from the spawn FUN_80020DE0 (return, no glide) and `bnez` on a null pair block from FUN_80017888 (mark the new actor dead, return); the engine keeps the mover as an Option on the field camera with no actor pool or heap to exhaust, so CameraMover::arm has no failure arm"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC1B0..0x801DC1C8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC218..0x801DC230"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC268..0x801DC308"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC390..0x801DC3A8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC3F8..0x801DC410"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC448..0x801DC4E8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC570..0x801DC588"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC5D8..0x801DC5F0"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC628..0x801DC6C8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC750..0x801DC768"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC7B8..0x801DC7D0"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC808..0x801DC8A8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC930..0x801DC948"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC998..0x801DC9B0"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC9E8..0x801DCA88"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCB10..0x801DCB28"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCB78..0x801DCB90"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCBC8..0x801DCC68"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCCF0..0x801DCD08"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCD58..0x801DCD70"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCDA8..0x801DCE48"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCED0..0x801DCEE8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCF38..0x801DCF50"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCF88..0x801DD028"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DD0B0..0x801DD0C8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DD118..0x801DD130"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DD168..0x801DD208"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
 # lane C: 801D84D0 80039B7C
 # lane C: 80038158 8003774C 801D01B0
 # lane C: 80021DF4 800520F0 8001ADA4 800243F0 8001822C
