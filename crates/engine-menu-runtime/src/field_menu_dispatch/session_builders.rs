@@ -345,16 +345,18 @@ pub fn warp_destinations(
     let Some(menu) = world.menu.worldmap_menu.as_ref() else {
         return Vec::new();
     };
+    let rows = legaia_engine_menus::menu_list_rows::landmark_list_rows(
+        menu.placements
+            .iter()
+            .map(|p| (p.index, p.name_idx, p.discovery_flag)),
+        |flag| world.system_flag_test(flag),
+    );
     let mut out = Vec::new();
-    let mut last_accepted: Option<u8> = None;
-    for p in &menu.placements {
-        if last_accepted == Some(p.name_idx) {
+    for row in rows {
+        let index = u32::from(row & !legaia_engine_menus::menu_list_rows::CLASS_LANDMARK);
+        let Some(p) = menu.placements.iter().find(|p| p.index == index) else {
             continue;
-        }
-        if !world.system_flag_test(u16::from(p.discovery_flag) + 0x20) {
-            continue;
-        }
-        last_accepted = Some(p.name_idx);
+        };
         out.push(legaia_engine_menus::pause_screens::WarpDestination {
             record_index: p.index,
             name: menu

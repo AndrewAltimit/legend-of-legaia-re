@@ -330,3 +330,45 @@ entry = "0x8002C69C"
 range = "0x8002FF08..0x8002FF08"
 verdict = "unreachable"
 reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x80030670..0x80030670"
+verdict = "unported"
+reason = "Content ids outside 2..0x22 (sltiu 0x21 on id - 2) build no list and return; the port has one builder per content id and no dispatcher to fall out of"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x80030794..0x800307CC"
+verdict = "unreachable"
+reason = "Content id 2's third-buffer copy: s6 is cleared at 0x800306A4 and nothing in the id-2 arm (0x80030694..0x80030824) raises it, so the blez always skips the loop"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x800309C0..0x800309C0"
+verdict = "unported"
+reason = "Content id 3 with a menu context word gp+0x85C other than 0 (field) or 1 (battle) emits no row; UseListCtx carries only the two contexts"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x80030F9C..0x800312F4"
+verdict = "unported"
+reason = "Content ids 5 and 0x20, the spell list (record +0x704 spell ids, the +0xF4 discounted MP cost, FUN_8003053C relevance); the engine's spell menu (engine-menus spell_menu) builds SpellRowView rows with the same gates rather than these row words, so no kernel returns them"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x8003147C..0x80031718"
+verdict = "unported"
+reason = "The armament candidate walk content ids 7..0xA and 0x15..0x18 join (0x800312F8..0x800313CC read the equipped byte): class-1 items whose equipment +7 slot bits match the content's slot and whose +6 mask takes the character, then a selection sort on FUN_800302E4's stat; not ported (the engine sorts by id, port gap)"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x8003183C..0x8003183C"
+verdict = "unreachable"
+reason = "The Goods arm's copy guard: s4 starts at 1 for the Remove verb row (0x80031720), so blez s4 never skips"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x80031940..0x80031940"
+verdict = "unported"
+reason = "Content ids 4, 6 and 0x21 free the node's list (FUN_80017B94) and size the window from FUN_8003CC88; the port's windows hold no list memory to free"

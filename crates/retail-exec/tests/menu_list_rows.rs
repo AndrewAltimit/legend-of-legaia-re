@@ -601,6 +601,32 @@ fn the_item_detail_printer_draws_what_retail_draws() {
 }
 
 const WINDOW_BUILD: u32 = 0x8003_0628;
+/// The list memory the hooked allocator grants, and the word saying whether
+/// it grants it.
+const LIST_BUF: u32 = 0x8013_4000;
+const GRANT: u32 = 0x8013_3FF0;
+
+/// The rows the builder copied into a granted list (`+0x28`), as many as
+/// `want` holds and with the word past them untouched; none when refused.
+fn list_rows(cpu: &mut Cpu, grant: u32, want: &[u16]) -> Vec<u16> {
+    if grant == 0 {
+        assert_eq!(
+            cpu.mem.rd16(LIST_BUF + 0x28),
+            0xDEAD,
+            "a refused list is not written"
+        );
+        return want.to_vec();
+    }
+    let n = want.len() as u32;
+    assert_eq!(
+        cpu.mem.rd16(LIST_BUF + 0x28 + 2 * n),
+        0xDEAD,
+        "no row past the list"
+    );
+    (0..n)
+        .map(|k| cpu.mem.rd16(LIST_BUF + 0x28 + 2 * k))
+        .collect()
+}
 const APPLICABLE: u32 = 0x8003_043C;
 const BAG_WINDOW: u32 = 0x8004_313C;
 const STAGED_ROWS: u32 = 0x801C_6020;
@@ -667,7 +693,11 @@ fn the_bag_list_arms_build_the_rows_retail_builds() {
     cpu.hook(LIST_ALLOC, move |r, m| {
         let n = r.r[A2];
         *b.borrow_mut() = Some((0..n).map(|k| m.rd16(STAGED_ROWS + 2 * k)).collect());
-        r.r[V0] = 0;
+        // Grant the list (now and then refuse it), so the copy into the
+        // node's row buffer runs too.
+        let grant = m.rd32(GRANT);
+        m.wr32(r.r[A0], LIST_BUF);
+        r.r[V0] = grant;
     });
     let mut rng = Rng(0x4241_4752);
     let mut seen = [0usize; 4];
@@ -728,6 +758,11 @@ fn the_bag_list_arms_build_the_rows_retail_builds() {
         cpu.mem.wr32(ROW_FLAGS, flags);
         cpu.mem.wr8(NODE + 0x1C, content);
         *built.borrow_mut() = None;
+        let grant = u32::from(rng.below(8) != 0);
+        cpu.mem.wr32(GRANT, grant);
+        for k in 0..0x120 {
+            cpu.mem.wr16(LIST_BUF + 0x28 + 2 * k, 0xDEAD);
+        }
         assert_eq!(
             cpu.call(WINDOW_BUILD, &[NODE]),
             Stop::Returned,
@@ -754,6 +789,11 @@ fn the_bag_list_arms_build_the_rows_retail_builds() {
         let ctx = format!("case {case}: content {content:#x} context {context} flags {flags:#x}");
         seen[3] += usize::from(content == 3 && context == 1);
         assert_eq!(got, want, "{ctx}");
+        assert_eq!(
+            list_rows(&mut cpu, grant, &want),
+            want,
+            "{ctx}: the copied rows"
+        );
         seen[usize::from(content == 3) + usize::from(content == 0x22) * 2] += 1;
     }
     assert!(seen.iter().all(|&n| n > 200), "{seen:?}");
@@ -850,4 +890,309 @@ fn the_list_rows_draw_in_the_ink_the_port_stages() {
         );
     }
     assert!(checked.iter().all(|&n| n > 2000), "{checked:?}");
+}
+
+const HELD_COUNT: u32 = 0x8004_2F4C;
+const BAG_SLOT_OF: u32 = 0x8004_2EE0;
+const PARTY_COUNT: u32 = 0x8008_4594;
+const PARTY_IDS: u32 = 0x8008_4598;
+const PURSE: u32 = 0x8008_459C;
+/// A character record's eight equipment bytes, `0x80084140 + 0x414 * id +
+/// 0x75E`.
+const fn equipment(id: u32) -> u32 {
+    0x8008_4140 + 0x414 * id + 0x75E
+}
+
+/// A list allocator hook that grants `LIST_BUF` when `GRANT` says so.
+fn grant_lists(cpu: &mut Cpu) {
+    cpu.hook(LIST_ALLOC, |r, m| {
+        m.wr32(r.r[A0], LIST_BUF);
+        r.r[V0] = m.rd32(GRANT);
+    });
+}
+
+/// `FUN_80030628`'s content-id `0x0B` arm, the shop buy list, against
+/// `shop_tail_rows_allowed` and `build_shop_buy_rows`: random stock records
+/// (`gp+0x138`, template ids under `0x1A` among them), prices, purse, held
+/// counts (`FUN_80042EE0` answers a bag slot or `0x100`), the Platinum Card
+/// probe `FUN_80042F4C(0xFF)` and the party's equipment bytes. The rows the
+/// arm copies into the granted list are compared whole.
+#[test]
+fn the_shop_buy_list_builds_the_rows_retail_builds() {
+    differential!(scus(WINDOW_BUILD));
+    use legaia_engine_menus::menu_list_rows::{build_shop_buy_rows, shop_tail_rows_allowed};
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const RECORD: u32 = 0x8013_6000;
+    const CARDS: u32 = 0x8013_3FE0;
+    grant_lists(&mut cpu);
+    cpu.hook(HELD_COUNT, |r, m| {
+        assert_eq!(r.r[A0], 0xFF);
+        r.r[V0] = m.rd32(CARDS);
+    });
+    // Held ids sit in the bag slot of their own number; the rest answer
+    // `0x100`, retail's "not held".
+    cpu.hook(BAG_SLOT_OF, |r, m| {
+        let id = r.r[A0] & 0xFF;
+        r.r[V0] = if m.rd8(BAG + 2 * id) == id as u8 {
+            id
+        } else {
+            0x100
+        };
+    });
+    let mut rng = Rng(0x5348_4F50);
+    let mut seen = [0usize; 3];
+    for case in 0..3000 {
+        let count = rng.below(24) as usize;
+        let pad = rng.below(4) as usize;
+        let mut ids: Vec<u8> = (0..count)
+            .map(|_| match rng.below(10) {
+                0 => rng.below(0x1A) as u8,
+                1 => 0xFF,
+                _ => 0x1A + rng.below(0xE6) as u8,
+            })
+            .collect();
+        for k in 0..pad.min(count) {
+            ids[count - 1 - k] = rng.below(0x1A) as u8;
+        }
+        cpu.mem.wr8(RECORD + 2, count as u8);
+        for (k, id) in ids.iter().enumerate() {
+            cpu.mem.wr8(RECORD + 3 + k as u32, *id);
+        }
+        cpu.mem.wr32(GP + 0x138, RECORD);
+        let cards = [0u32, 0, 1, 0x10000][rng.below(4) as usize];
+        cpu.mem.wr32(CARDS, cards);
+        let members = rng.below(4);
+        cpu.mem.wr8(PARTY_COUNT, members as u8);
+        let mut gear = Vec::new();
+        for i in 0..members {
+            let who = rng.below(4);
+            cpu.mem.wr8(PARTY_IDS + i, who as u8);
+            let mut slots = [0u8; 8];
+            for (j, b) in slots.iter_mut().enumerate() {
+                *b = if rng.below(40) == 0 {
+                    0xFF
+                } else {
+                    rng.next() as u8 % 0xFF
+                };
+                cpu.mem.wr8(equipment(who) + j as u32, *b);
+            }
+            gear.push((who, slots));
+        }
+        // A later member sharing an earlier one's record overwrote it.
+        let gear: Vec<[u8; 8]> = gear
+            .iter()
+            .map(|(who, _)| {
+                let mut s = [0u8; 8];
+                for (j, b) in s.iter_mut().enumerate() {
+                    *b = cpu.mem.rd8(equipment(*who) + j as u32);
+                }
+                s
+            })
+            .collect();
+        let purse = rng.next() >> (1 + rng.below(24));
+        cpu.mem.wr32(PURSE, purse);
+        for id in 0..256u32 {
+            cpu.mem
+                .wr16(ITEMS + 12 * id + 2, (rng.next() >> rng.below(16)) as u16);
+            let held = rng.below(3) == 0;
+            cpu.mem.wr8(
+                BAG + 2 * id,
+                if held {
+                    id as u8
+                } else {
+                    (id as u8).wrapping_add(1)
+                },
+            );
+            cpu.mem.wr8(
+                BAG + 2 * id + 1,
+                [1u8, 50, 98, 99, 200][rng.below(5) as usize],
+            );
+        }
+        cpu.mem.wr8(NODE + 0x1C, 0x0B);
+        let grant = u32::from(rng.below(8) != 0);
+        cpu.mem.wr32(GRANT, grant);
+        for k in 0..0x40 {
+            cpu.mem.wr16(LIST_BUF + 0x28 + 2 * k, 0xDEAD);
+        }
+        assert_eq!(
+            cpu.call(WINDOW_BUILD, &[NODE]),
+            Stop::Returned,
+            "case {case}"
+        );
+
+        let tail = shop_tail_rows_allowed(cards & 0xFFFF != 0, gear.iter().copied());
+        let prices: Vec<u16> = (0..256)
+            .map(|id| cpu.mem.rd16(ITEMS + 12 * id + 2))
+            .collect();
+        let held: Vec<u8> = (0..256u32)
+            .map(|id| {
+                if cpu.mem.rd8(BAG + 2 * id) == id as u8 {
+                    cpu.mem.rd8(BAG + 2 * id + 1)
+                } else {
+                    0
+                }
+            })
+            .collect();
+        let want = build_shop_buy_rows(
+            &ids,
+            tail,
+            purse,
+            |id| prices[usize::from(id)],
+            |id| held[usize::from(id)],
+        );
+        let ctx = format!("case {case}: ids {ids:02x?} tail {tail} purse {purse}");
+        assert_eq!(list_rows(&mut cpu, grant, &want), want, "{ctx}");
+        seen[usize::from(tail)] += 1;
+        seen[2] += usize::from(want.iter().any(|w| w & 0x0800 != 0));
+    }
+    assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
+}
+
+/// `FUN_80030628`'s Goods arms (content ids `0xE`..`0x10` and `0x1C`..`0x1E`)
+/// against `build_goods_candidate_rows`: the equipped accessory read off the
+/// character record (`+0x763..+0x765` for the character `gp+0x874`), random
+/// bags, item kinds and passive markers, the bag window seeded and
+/// `FUN_8004313C` stubbed. The copied rows are compared whole.
+#[test]
+fn the_goods_candidate_lists_build_the_rows_retail_builds() {
+    differential!(scus(WINDOW_BUILD));
+    use legaia_engine_menus::menu_list_rows::build_goods_candidate_rows;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    cpu.stub(BAG_WINDOW, 0);
+    grant_lists(&mut cpu);
+    let mut rng = Rng(0x474F_4F44);
+    for case in 0..3000 {
+        let tables = RowTables {
+            items: (0..256)
+                .map(|_| {
+                    let kind = [1u8, 2, 2, 3][rng.below(4) as usize];
+                    [kind, rng.below(130) as u8, 0, 0]
+                })
+                .collect(),
+            effects: (0..130)
+                .map(|_| {
+                    let marker = if rng.below(2) == 0 {
+                        0x41
+                    } else {
+                        rng.below(0x42) as u8
+                    };
+                    [0, 0, 0, marker]
+                })
+                .collect(),
+            equip_flags: Vec::new(),
+        };
+        for id in 0..256u32 {
+            let r = tables.items[id as usize];
+            cpu.mem.wr8(ITEMS + 12 * id, r[0]);
+            cpu.mem.wr8(ITEMS + 12 * id + 1, r[1]);
+        }
+        for (id, e) in tables.effects.iter().enumerate() {
+            cpu.mem.wr8(EFFECTS + 4 * id as u32 + 3, e[3]);
+        }
+        let bag: Vec<u8> = (0..256)
+            .map(|_| {
+                if rng.below(4) == 0 {
+                    0
+                } else {
+                    rng.next() as u8
+                }
+            })
+            .collect();
+        for (k, id) in bag.iter().enumerate() {
+            cpu.mem.wr16(BAG + 2 * k as u32, u16::from(*id));
+        }
+        let start = rng.below(128) as u16;
+        let end = start + rng.below(129) as u16;
+        cpu.mem.wr16(GP + 0x2D2, start);
+        cpu.mem.wr16(GP + 0x2D4, end);
+        let who = rng.below(4);
+        cpu.mem.wr32(GP + 0x874, who);
+        let content = [0x0Eu8, 0x0F, 0x10, 0x1C, 0x1D, 0x1E][rng.below(6) as usize];
+        let slot = u32::from((content - 0x0E) % 0x0E);
+        let equipped = match rng.below(3) {
+            0 => 0,
+            1 => bag[usize::from(start) + rng.below(u32::from(end - start).max(1)) as usize],
+            _ => rng.next() as u8,
+        };
+        cpu.mem.wr8(equipment(who) + 5 + slot, equipped);
+        cpu.mem.wr8(NODE + 0x1C, content);
+        let grant = u32::from(rng.below(8) != 0);
+        cpu.mem.wr32(GRANT, grant);
+        for k in 0..0x120 {
+            cpu.mem.wr16(LIST_BUF + 0x28 + 2 * k, 0xDEAD);
+        }
+        assert_eq!(
+            cpu.call(WINDOW_BUILD, &[NODE]),
+            Stop::Returned,
+            "case {case}"
+        );
+        let window = &bag[usize::from(start)..usize::from(end)];
+        let want = build_goods_candidate_rows(window, start, &tables, equipped);
+        let ctx = format!("case {case}: content {content:#x} equipped {equipped:#x}");
+        assert_eq!(list_rows(&mut cpu, grant, &want), want, "{ctx}");
+    }
+}
+
+/// `FUN_80030628`'s content-id `0x19` arm, the landmark list, against
+/// `landmark_list_rows`: random placement tables written over `0x80073A98`
+/// (repeated names, the `0xFF` terminator anywhere), the system-flag test
+/// `FUN_8003CE64` answering from a random flag set.
+#[test]
+fn the_landmark_list_builds_the_rows_retail_builds() {
+    differential!(scus(WINDOW_BUILD));
+    use legaia_engine_menus::menu_list_rows::landmark_list_rows;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const FLAG_TEST: u32 = 0x8003_CE64;
+    const FLAGS: u32 = 0x8013_7000;
+    grant_lists(&mut cpu);
+    cpu.hook(FLAG_TEST, |r, m| {
+        let f = r.r[A0] & 0x1FF;
+        r.r[V0] = u32::from(m.rd8(FLAGS + f) != 0);
+    });
+    let mut rng = Rng(0x4C41_4E44);
+    for case in 0..3000 {
+        let n = rng.below(24);
+        let records: Vec<(u32, u8, u8)> = (0..n)
+            .map(|k| {
+                let name = if rng.below(12) == 0 {
+                    0xFF
+                } else {
+                    rng.below(6) as u8
+                };
+                (k, name, rng.next() as u8)
+            })
+            .collect();
+        for &(k, name, flag) in &records {
+            cpu.mem.wr8(PLACES + 6 * k, name);
+            cpu.mem.wr8(PLACES + 6 * k + 1, flag);
+        }
+        cpu.mem.wr8(PLACES + 6 * n, 0xFF);
+        let flags: Vec<bool> = (0..0x120).map(|_| rng.below(3) != 0).collect();
+        for (f, on) in flags.iter().enumerate() {
+            cpu.mem.wr8(FLAGS + f as u32, u8::from(*on));
+        }
+        cpu.mem.wr8(NODE + 0x1C, 0x19);
+        let grant = u32::from(rng.below(8) != 0);
+        cpu.mem.wr32(GRANT, grant);
+        for k in 0..0x40 {
+            cpu.mem.wr16(LIST_BUF + 0x28 + 2 * k, 0xDEAD);
+        }
+        assert_eq!(
+            cpu.call(WINDOW_BUILD, &[NODE]),
+            Stop::Returned,
+            "case {case}"
+        );
+        let want = landmark_list_rows(records.iter().copied(), |f| flags[usize::from(f)]);
+        assert_eq!(
+            list_rows(&mut cpu, grant, &want),
+            want,
+            "case {case}: {records:?}"
+        );
+    }
 }

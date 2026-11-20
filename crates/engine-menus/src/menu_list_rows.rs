@@ -707,6 +707,36 @@ pub fn build_goods_candidate_rows(
     out
 }
 
+/// The quick-travel landmark list's row words, `CLASS_LANDMARK | ordinal`,
+/// over the placement table `0x80073A98` in table order as
+/// `(ordinal, name_idx, discovery_flag)`.
+///
+/// The walk stops at a `name_idx` of `0xFF`; a record repeating the name of
+/// the **last accepted** row is skipped (`0x800318A8` compares against `s0`,
+/// which only moves on an accept, so a locked landmark does not shadow the
+/// next record sharing its name); a survivor needs system flag
+/// `discovery_flag + 0x20` (`FUN_8003CE64` at `0x800318B4`).
+///
+/// PORT: FUN_80030628 (case `0x19`, `0x80031870..0x800318DC`)
+pub fn landmark_list_rows<I>(records: I, flag_set: impl Fn(u16) -> bool) -> Vec<u16>
+where
+    I: IntoIterator<Item = (u32, u8, u8)>,
+{
+    let mut out = Vec::new();
+    let mut last = 0xFFu8;
+    for (ordinal, name_idx, flag) in records {
+        if name_idx == 0xFF {
+            break;
+        }
+        if name_idx == last || !flag_set(u16::from(flag) + 0x20) {
+            continue;
+        }
+        out.push(CLASS_LANDMARK | ordinal as u16);
+        last = name_idx;
+    }
+    out
+}
+
 /// Lowest item id the shop **buy** list will build a row for.
 ///
 /// The same `0x1A` bound gates both of the builder's passes - `sltiu
