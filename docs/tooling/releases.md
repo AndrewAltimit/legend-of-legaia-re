@@ -348,9 +348,18 @@ exports it as `LEGAIA_RELEASE_VERSION` before it builds, and
 `legaia_release_version::VERSION` ([`crates/release-version`](../../crates/release-version/README.md))
 reads that at compile time: every shipped program's `--version` (the game,
 Explorer, the asset viewer and each command-line tool), the launcher's header,
-Explorer's About box, and the version line of every copied bug report. A build without it (any local
-`cargo build`) names the workspace's crate version instead, which is not a
-release number.
+Explorer's About box, the version line of every copied bug report, and the
+netplay room's build check. A build without it (any local `cargo build`)
+names the workspace's crate version instead, which is not a release number.
+
+Both derivations go through `scripts/ci/release-version.sh`: `release.yml`
+hands it the tag, and `build-wasm.sh` asks it for the `v*` tag on the commit
+it builds, so the site's play bundle of a release names the same release as
+its archives and their netplay rooms admit each other
+([the engine build id](../subsystems/netplay.md#the-engine-build-id)). Once
+`publish` has attached the archives, it dispatches a pages-only `main-ci.yml`
+run when main is still the release's commit, which rebuilds the site with the
+tag in place.
 
 Every archive contains a single top-level
 `legaia-tools-<version>-<target>/` directory - extracting one never scatters

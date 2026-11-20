@@ -997,8 +997,9 @@ quick reaction (wave, cheer, bow, dance, laugh) even mid-round. Played
 alone, the sample pack's 5F games-room table runs Tower Game Night against the
 keeper and two regulars.
 
-Everyone in a room runs the same engine build and the same expansion pack
-(or none); the relay turns a mismatch away. Each player's world is their
+Everyone in a room runs the same release and the same expansion pack (or
+none); the relay turns a mismatch away and names both releases. A desktop
+release and the site's play page of that release share a room. Each player's world is their
 own: only avatars are shared, so battles, doors and story progress are
 not. Details and limits: [netplay.md](../subsystems/netplay.md#in-the-hosts).
 

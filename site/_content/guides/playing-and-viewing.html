@@ -325,7 +325,7 @@ legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --join 192.168.1.4:7462 --ro
     <figcaption>The Multiplayer screen (<kbd>Tab</kbd>, or the launcher's <strong>Play online</strong>). It opens with the address you last joined and your name filled in, and follows <em>Menu colours</em> with the rest of the window's chrome.</figcaption>
   </figure>
   <p>On the browser play page, open <strong>Online</strong> in the tools, enter the relay address as a WebSocket URL (<code>ws://192.168.1.4:7462/</code>), the room code and a name, and press Join. A browser cannot host. A page served over <code>https://</code> can only reach <code>wss://</code>, so playing from the published site needs the relay behind a TLS proxy. A standalone <code>legaia-relay --bind 0.0.0.0:7462</code> hosts rooms without a game window.</p>
-  <p class="hint">Everyone in a room runs the same engine build and the same expansion pack (or none). Each player's world is their own: only avatars are shared, so battles, doors and story progress are not. The full walkthrough, with the browser's TLS caveat drawn out: <a href="playing-online.html">playing online</a>.</p>
+  <p class="hint">Everyone in a room runs the same release and the same expansion pack (or none); a desktop release and the site's play page of that release share a room. Each player's world is their own: only avatars are shared, so battles, doors and story progress are not. The full walkthrough, with the browser's TLS caveat drawn out: <a href="playing-online.html">playing online</a>.</p>
 </section>
 
 <section class="doc-section" id="audio">
