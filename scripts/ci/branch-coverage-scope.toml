@@ -156,6 +156,160 @@ range = "0x801CF510..0x801CF53C"
 verdict = "unreachable"
 reason = "PROT 0972 state 0's debug venue menu (cursor on pad 0x4000, confirm on 0x20, the six rod and lure grants), entered only when the field-entry word `_DAT_8007B8B8` is zero (0x801CF4A0); the door warp into the pond sets it (FUN_80016230's mode-0x18 snapshot)."
 
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6C7C..0x801F6C7C"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6D08..0x801F6D08"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6DD0..0x801F6DD0"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6E40..0x801F6E40"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6EA8..0x801F6EA8"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6F48..0x801F6F48"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F70B4..0x801F70B4"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F71AC..0x801F71AC"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7298..0x801F7298"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7310..0x801F7310"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F74F8..0x801F74F8"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F76D4..0x801F76D4"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F79B4..0x801F79B4"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7B84..0x801F7B84"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7CEC..0x801F7CEC"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7DFC..0x801F7DFC"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7F9C..0x801F7F9C"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F81A0..0x801F81A0"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F86A0..0x801F86A0"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F87F0..0x801F87F0"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F8AA4..0x801F8AA4"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F8F24..0x801F8F24"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
 # lane D
 [[arm]]
 entry = "0x801DD35C"
