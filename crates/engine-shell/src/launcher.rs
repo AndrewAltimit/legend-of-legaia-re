@@ -3065,14 +3065,25 @@ mod tests {
                 no_entry_pulse: true,
                 smart_monsters: true,
                 arts_saved_list: true,
+                no_smooth_motion: true,
+                load_pauses: true,
+                no_instant_controls: true,
                 ..Default::default()
             },
             ..Default::default()
         };
         let a = play_args_with(&info, &port);
+        let pacing = [
+            "--no-smooth-motion",
+            "--load-pauses",
+            "--no-instant-controls",
+        ];
         assert!(a.iter().any(|s| s == "--no-entry-pulse"));
         assert!(a.iter().any(|s| s == "--smart-monsters"));
         assert!(a.iter().any(|s| s == "--arts-saved-list"));
+        for flag in pacing {
+            assert!(a.iter().any(|s| s == flag), "{flag}");
+        }
         let a = play_args_with(
             &info,
             &LauncherSettings {
@@ -3086,7 +3097,8 @@ mod tests {
         assert!(a.iter().any(|s| s == "--retail"));
         assert!(!a.iter().any(|s| s == "--no-entry-pulse"
             || s == "--smart-monsters"
-            || s == "--arts-saved-list"));
+            || s == "--arts-saved-list"
+            || pacing.contains(&s.to_str().unwrap_or(""))));
     }
 
     /// The settings file holds the switches at the top level in the one

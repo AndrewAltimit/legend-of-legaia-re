@@ -4950,6 +4950,9 @@ mod tests {
                 no_entry_pulse: true,
                 smart_monsters: true,
                 arts_saved_list: true,
+                no_smooth_motion: true,
+                load_pauses: true,
+                no_instant_controls: true,
                 ..Default::default()
             },
             ..Default::default()
@@ -4961,9 +4964,15 @@ mod tests {
                 no_entry_pulse,
                 smart_monsters,
                 arts_saved_list,
+                no_smooth_motion,
+                load_pauses,
+                no_instant_controls,
                 retail,
                 ..
-            }) => assert!(no_entry_pulse && smart_monsters && arts_saved_list && !retail),
+            }) => {
+                assert!(no_entry_pulse && smart_monsters && arts_saved_list && !retail);
+                assert!(no_smooth_motion && load_pauses && no_instant_controls);
+            }
             other => panic!("expected play-window, got {other:?}"),
         }
         // So do the gameplay-tweak rows.
