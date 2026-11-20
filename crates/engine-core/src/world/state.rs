@@ -78,6 +78,9 @@ pub struct World {
     /// What a harness anchored the field frame-cost model by
     /// (`World::anchor_field_frame_cost`); `0` in play.
     pub field_cost_offset: i32,
+    /// The decoration outcome pricing's projected corners, reused frame to
+    /// frame so the pricing allocates nothing (`field_deco_outcomes`).
+    pub field_cost_scratch: std::cell::RefCell<Vec<(i32, i32, i64)>>,
     /// The field frame cost in force is the model's (`World::price_field_frame`),
     /// so a mode it does not price drops it.
     pub field_cost_priced: bool,
@@ -484,6 +487,7 @@ impl World {
             fog: legaia_engine_field::fog_particles::FogPool::new(),
             field_cost_table: None,
             field_cost_offset: 0,
+            field_cost_scratch: std::cell::RefCell::new(Vec::new()),
             field_drawn_table_cost: None,
             field_cost_priced: false,
             fog_volume: legaia_render_kernels::fog_volume::FogVolume::new(),

@@ -80,6 +80,7 @@ mod camera_hooks;
 mod config;
 mod cutscene_state;
 mod disc_tables;
+pub mod field_deco_outcomes;
 pub mod field_frame_cost;
 pub mod field_frame_units;
 mod field_locomotion;

@@ -298,6 +298,14 @@ pub struct WorldToggles {
     /// session takes `LEGAIA_FIELD_COST_PLACED_WALK=0` / `=1` over the
     /// default.
     pub field_cost_placed_walk: bool,
+    /// Under [`Self::derived_frame_cost`], price each decoration primitive by
+    /// what its leaf does with it under the frame's camera (back face, near,
+    /// off screen, linked) rather than at its kind's pooled outcome mix
+    /// ([`field_deco_outcomes`](super::field_deco_outcomes)). On by default; a
+    /// timing model like [`Self::field_cost_placed_walk`], so
+    /// [`Self::pin_retail`] leaves it alone; the native session takes
+    /// `LEGAIA_H_DECO_OUTCOMES=0` / `=1` over the default.
+    pub field_cost_prim_outcomes: bool,
     /// Step each fishing-venue frame by the frame time its phase prices it at
     /// (`legaia_engine_fishing::fishing::PondPacer`) under retail's own law,
     /// `FUN_80016B6C`'s longest-of-sixteen over the venue's floor of `2`: the
@@ -680,6 +688,7 @@ impl WorldToggles {
             battle_surface_frame_cost: true,
             field_frame_cost: true,
             field_cost_placed_walk: true,
+            field_cost_prim_outcomes: true,
             fishing_frame_cost: true,
             battle_poly_window_count: false,
             arts_saved_list: false,

@@ -1692,12 +1692,34 @@ pub fn field_cost_table(
         (v, m, at, through)
     };
     let (ground_tiers, ground_sorted) = FieldCostTable::ground_tiers_from_map(&map);
+    // One leaf-walk geometry per distinct decoration mesh.
+    let mut geom_of = std::collections::HashMap::new();
+    let mut decoration_geoms = Vec::new();
+    for d in &terrain {
+        if let Some(t) = res.tmds.get(d.res_tmd) {
+            geom_of.entry(d.res_tmd).or_insert_with(|| {
+                decoration_geoms.push(
+                    legaia_engine_core::world::field_deco_outcomes::DecoGeom::from_tmd(
+                        &t.tmd, &t.raw,
+                    ),
+                );
+                (decoration_geoms.len() - 1) as u32
+            });
+        }
+    }
     Some(FieldCostTable {
+        decoration_geoms,
         decorations: terrain
             .iter()
             .map(|d| {
                 let [p, v, q, l] = size(d.res_tmd);
                 CostCell {
+                    pos: [d.world_x, d.world_y, d.world_z],
+                    angles: [d.rot_x, d.rot_y, d.rot_z],
+                    view_skip: d.view_skip,
+                    cued: d.cull_radius != 0 || d.far_corner_order,
+                    offtest: d.cull_radius != 0,
+                    geom: geom_of.get(&d.res_tmd).copied().unwrap_or(u32::MAX),
                     col: d.cell.0,
                     row: d.cell.1,
                     radius: d.cull_radius,

@@ -272,7 +272,16 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + outside * 54
         + n(f.decoration_draws) * DECORATION_DRAW_CYCLES
         + n(f.decoration_groups) * GROUP_CYCLES
-        + kinds(&f.decoration_kinds, &DECORATION_PRIM_CYCLES);
+        // The primitives priced by their leaf outcome
+        // (`super::field_deco_outcomes`) at what their path costs, the rest
+        // at the kind's pooled mix.
+        + kinds(
+            &std::array::from_fn(|i| {
+                f.decoration_kinds[i].saturating_sub(f.decoration_outcome_kinds[i])
+            }),
+            &DECORATION_PRIM_CYCLES,
+        )
+        + (f.decoration_outcome_cycles_x10 / 10) as i64;
     let ground = 129
         + n(f.ground_rows) * 24
         + (n(f.ground_window_cells) - n(f.ground_cells)).max(0) * 35
