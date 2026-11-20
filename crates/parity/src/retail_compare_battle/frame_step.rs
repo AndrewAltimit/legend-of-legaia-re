@@ -20,6 +20,24 @@ pub(super) const STEP_FLOOR: u32 = 0x8007_B9D8;
 /// image. The thresholds are the frame driver's (`0x80017108..0x80017198`):
 /// under `0xF1` hsyncs step `1`, under `0x1FF` step `2`, under `0x2D1` step
 /// `3`, else `4`, then raised to the floor.
+///
+/// The newest history entry reading the clamp `0x2BC` is a step-`4` pass
+/// whatever the rest of the history says: the history stores a duration of
+/// `0x2D0` hsyncs or more as `0x2BC` (`li s0,0x2bc` at `0x800170A8`), while
+/// the step is taken off the **raw** duration where it reaches `0x2D0`
+/// (`slti v0,a2,0x2d0` / `move s0,a2` at `0x800170F8..0x80017104`). A
+/// history of clamps alone reads `0x2BC` at most, under the `0x2D1` rung,
+/// and so read `3` for a scene that runs at `4` throughout
+/// (`credits_edstati3_fullscreen_pcsx`, `map01_tree_revival_cutscene`: every
+/// entry the clamp, scratchpad step bytes `4` / `4`). Of the library states
+/// whose newest entry is the clamp, all but one hold step byte `4`; the
+/// other (`field_walled_collision_pin`) is a raw `700` or `0x2D0`, which the
+/// RAM cannot tell apart from a long frame.
+///
+/// A battle state (game mode `0x14` / `0x15`) keeps the history's longest
+/// entry: its display lag is confirmed against the older ordering table's
+/// floor ([`display_pass_steps`]), and taken off the newest entry it parts
+/// `nivora_duel_pre_megaton_press` (`1.000` to `0.958`).
 pub fn frame_step(ram: &[u8]) -> u8 {
     let forced = game_anchors::u32_at(ram, FORCED_STEP);
     if forced != 0 {
@@ -32,14 +50,17 @@ pub fn frame_step(ram: &[u8]) -> u8 {
         .map(|i| game_anchors::i16_at(ram, FRAME_HISTORY + i * 2))
         .max()
         .unwrap_or(0);
-    let step = if longest < 0xF1 {
+    let cursor = game_anchors::u32_at(ram, FRAME_HISTORY_CURSOR);
+    let newest = game_anchors::i16_at(ram, FRAME_HISTORY + (cursor.wrapping_sub(1) & 0xF) * 2);
+    let battle = matches!(game_anchors::game_mode(ram), 0x14 | 0x15);
+    let step = if (newest == FRAME_HISTORY_CLAMP && !battle) || longest >= 0x2D1 {
+        4
+    } else if longest < 0xF1 {
         1
     } else if longest < 0x1FF {
         2
-    } else if longest < 0x2D1 {
-        3
     } else {
-        4
+        3
     };
     let floor = game_anchors::u32_at(ram, STEP_FLOOR).min(4) as u8;
     step.max(floor)
