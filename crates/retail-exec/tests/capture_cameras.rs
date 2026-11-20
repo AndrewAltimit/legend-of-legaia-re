@@ -78,6 +78,14 @@ fn bodies() -> Vec<Body> {
             });
         }
     }
+    // Cort's Evil Seru Magic (`0xAD`) casts through the boss band rather
+    // than the capture table, on the same single body and director shape.
+    out.push(Body {
+        entry: 966,
+        va: EVIL_SERU_MAGIC,
+        action: 0xAD,
+        director: cam::capture_camera_director(966, cam::SINGLE_BODY).expect("directed"),
+    });
     out
 }
 
@@ -194,7 +202,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         prot(962, GIGATON_PRESS),
         prot(964, ELEMENT_CHANGE),
         prot(964, ELEMENT_STRIKE),
-        prot(965, DOOMSDAY)
+        prot(965, DOOMSDAY),
+        prot(966, EVIL_SERU_MAGIC)
     );
     let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -316,7 +325,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 body.entry, body.va, body.action
             );
             let mut finished = false;
-            for pass in 0..3000 {
+            // Evil Seru Magic's gates re-arm in vsyncs and add up to past
+            // three thousand.
+            let cap = if body.entry == 966 { 8000 } else { 3000 };
+            for pass in 0..cap {
                 let phase = cpu.mem.rd8(CTX + 0x279);
                 // PROT 0961's arm 0 stands the seats before its cut; the host
                 // runs the line-up ahead of the director
@@ -387,6 +399,12 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     finished = true;
                     break;
                 }
+                // Evil Seru Magic's arm 0 saves the caster's pose before its
+                // re-seat, and arm 27's shot frames it restored; the host
+                // keeps the saved pose (`evil_seru_magic_row`).
+                if body.entry == 966 && phase == 0 {
+                    st.caster_saved = Some((caster_seat.x, caster_seat.z, caster_seat.facing));
+                }
                 let arm = (body.director)(&mut st, phase, seats);
                 shots.borrow_mut().clear();
                 let stop = cpu.call(body.va, &[]);
@@ -439,7 +457,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             }
             if !finished {
                 failures.push(format!(
-                    "{c0}: no finish in 3000 passes at arm {}",
+                    "{c0}: no finish in {cap} passes at arm {}",
                     cpu.mem.rd8(CTX + 0x279)
                 ));
             }
@@ -502,3 +520,4 @@ const GIGATON_PRESS: u32 = 0x801F_6D54;
 const ELEMENT_CHANGE: u32 = 0x801F_88EC;
 const ELEMENT_STRIKE: u32 = 0x801F_69D8;
 const DOOMSDAY: u32 = 0x801F_69D8;
+const EVIL_SERU_MAGIC: u32 = 0x801F_6A74;
