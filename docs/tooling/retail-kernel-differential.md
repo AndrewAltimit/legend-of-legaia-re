@@ -1475,3 +1475,10 @@ where retail leaves from `0x0C`. The epilogue returned early on any second argum
 and Save (`(1, 2)` / `(1, 1)` from `0x801DAEB4` / `0x801DAF84`) call the routine, so their result re-routes, cancels and
 cursors never ran; and the card words were read-only, so a staged operation never reached the epilogue's poll. A Continue
 whose save has story flag `0x1A` set raises the debug-mode word `0x8007B98C` (`0x801DFB14`); the engine never does.
+
+The list kernel `FUN_80032A44` tests its four directions as an else-if chain, so a frame holding two moves the cursor
+once; the port applied every pressed bit in turn. The dev menu's camera row (`FUN_801E9F64`, `0x801EA1A4`) snaps the
+camera on every frame it holds follow on, where the port snapped only on the flip. The window emitter `FUN_8002C69C`
+draws nothing for a zero-by-zero centre rect. The window content builder `FUN_80030628`'s shop buy, Goods and landmark
+lists, the typewriter count's substitution arms in `FUN_80036044` and the dev row drawer's readouts in `FUN_801EAD98`
+match.
