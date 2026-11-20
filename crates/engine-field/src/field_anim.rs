@@ -255,13 +255,17 @@ impl FieldClipPlayer {
     ///
     /// REF: FUN_8001BE80
     pub fn current_pose(&self) -> PoseFrame {
-        let frac = self.sub_frame();
-        let frame = self.frame().min(self.frames.len() - 1);
+        self.pose_at(self.frame(), self.sub_frame())
+    }
+
+    /// The pose at frame `frame`, `frac` sixteenths of the way to the next
+    /// (the blender's next-entry rule: wrap to frame 0 after the last,
+    /// unless the clamp bit holds the clip there).
+    fn pose_at(&self, frame: usize, frac: u32) -> PoseFrame {
+        let frame = frame.min(self.frames.len() - 1);
         let bone_outputs = if frac == 0 {
             self.frames[frame].clone()
         } else {
-            // The blender's next-entry rule: wrap to frame 0 after the last,
-            // unless the clamp bit holds the clip there.
             let next = if self.hold_at_end && frame + 1 == self.frames.len() {
                 &self.frames[frame]
             } else {
@@ -284,6 +288,30 @@ impl FieldClipPlayer {
             factor: 0,
             finished: false,
         }
+    }
+
+    /// [`Self::pose_key`] for a draw at `cursor` (1/16-frame units) rather
+    /// than the playhead: the smooth field actors' drawn cursor
+    /// (`legaia_engine_core::world::World::field_npc_drawn_clip_cursor`).
+    /// The sub-frame counts whatever the record's gate, since the draw
+    /// blends between keyframes either way ([`Self::drawn_pose`]); a whole
+    /// frame keys as the playhead's own key does.
+    pub fn drawn_pose_key(&self, cursor: u32) -> usize {
+        let span = (self.frames.len() as u32 * 16).max(1);
+        let c = cursor.min(span - 1);
+        let (frame, sub) = ((c >> 4) as usize, c & 0xF);
+        let held = self.hold_at_end && sub != 0;
+        frame * 16 + sub as usize + (usize::from(held) << 20)
+    }
+
+    /// The pose a draw at `cursor` shows ([`Self::drawn_pose_key`]): the
+    /// frame blender between the cursor's keyframe and the next at its
+    /// sub-frame. Retail draws the playhead's whole frame for a record
+    /// without the blend gate; this is the enhancement's in-between.
+    pub fn drawn_pose(&self, cursor: u32) -> PoseFrame {
+        let span = (self.frames.len() as u32 * 16).max(1);
+        let c = cursor.min(span - 1);
+        self.pose_at((c >> 4) as usize, c & 0xF)
     }
 
     /// Advance the playhead by `n` engine ticks (`0` = hold the frame). O(1)
@@ -870,6 +898,28 @@ mod tests {
 
     /// `current_pose` is a pure read: it never moves the playhead, and
     /// `advance(0)` holds the frame.
+    #[test]
+    fn a_drawn_cursor_poses_its_keyframe_and_blends_between() {
+        let bundle = synth_bundle();
+        let mut p = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        p.set_step(16);
+        let f0 = p.current_pose().bone_outputs;
+        p.advance(1);
+        let f1 = p.current_pose().bone_outputs;
+        // A whole frame keys and poses as the playhead does.
+        assert_eq!(p.drawn_pose_key(16), p.pose_key());
+        assert_eq!(p.drawn_pose(16).bone_outputs, f1);
+        assert_eq!(p.drawn_pose(0).bone_outputs, f0);
+        // Between keyframes the draw blends, whatever the record's gate.
+        let mid = p.drawn_pose(8).bone_outputs;
+        assert_eq!(p.drawn_pose_key(8), 8);
+        if f0 != f1 {
+            assert!(mid != f0 && mid != f1, "an in-between pose");
+        }
+        // The playhead never moved.
+        assert_eq!(p.frame(), 1);
+    }
+
     #[test]
     fn current_pose_does_not_advance() {
         let bundle = synth_bundle();

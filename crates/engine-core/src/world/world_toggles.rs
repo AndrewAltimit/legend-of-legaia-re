@@ -387,8 +387,8 @@ pub struct WorldToggles {
     /// a game frame (the actor-list walk `FUN_8002519C`), so a cutscene's
     /// walkers move a whole step on the vsync a frame opens and stand on the
     /// two or three between - 15 to 30 updates a second. On, the hosts draw
-    /// every field body (the player, the placed NPCs and props) and the
-    /// player's pose one game frame behind, stepped by the share of the
+    /// every field body (the player, the placed NPCs and props), the
+    /// player's pose and a scripted walker's clip one game frame behind, stepped by the share of the
     /// frame already shown, and a follow focus pinned onto the player follows
     /// the drawn player ([`crate::world::FieldPresent`]); a body placed
     /// rather than moved, or one that already moves every vsync (the smooth

@@ -672,7 +672,13 @@ impl FieldActors {
                     let look = legaia_engine_field::actor_look::ActorLook::pose_key_bits(
                         look_of(host, slot).as_ref(),
                     );
-                    out.push(c.player.pose_key() as i32);
+                    // The drawn clip cursor under the smooth field actors
+                    // (`World::field_npc_drawn_clip_cursor`), the native
+                    // window's pose-cache key.
+                    let key = host
+                        .and_then(|h| h.world.field_npc_drawn_clip_cursor(slot))
+                        .map_or_else(|| c.player.pose_key(), |d| c.player.drawn_pose_key(d));
+                    out.push(key as i32);
                     out.push(c.generation as i32);
                     out.push(look as u32 as i32);
                     out.push((look >> 32) as u32 as i32);
@@ -696,7 +702,9 @@ impl FieldActors {
         let Some(c) = self.clips.get(&slot) else {
             return Vec::new();
         };
-        let mut pose = c.player.current_pose();
+        let mut pose = host
+            .and_then(|h| h.world.field_npc_drawn_clip_cursor(slot))
+            .map_or_else(|| c.player.current_pose(), |d| c.player.drawn_pose(d));
         // The script's look rotation on one object (`4C 45`), the kernel the
         // native window folds into the same pose.
         if let Some(l) = look_of(host, slot) {

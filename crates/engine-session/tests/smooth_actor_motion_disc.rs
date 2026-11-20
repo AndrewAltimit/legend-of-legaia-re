@@ -51,6 +51,9 @@ struct Sample {
     /// The drawn player's screen point through the drawn follow camera,
     /// `None` while a scripted shot owns the frame.
     screen: Option<[f32; 2]>,
+    /// `(slot, stored clip cursor, drawn clip cursor)` per world-driven NPC
+    /// clip, in 1/16-frame units.
+    clips: Vec<(u8, i32, i32)>,
 }
 
 fn open(extracted: &std::path::Path, smooth: bool) -> Option<NativeSession> {
@@ -134,10 +137,23 @@ fn run(s: &mut NativeSession, ticks: u32) -> Vec<Sample> {
                 }
             }
         }
+        let clips = w
+            .npcs
+            .clip_cursors
+            .iter()
+            .map(|(&slot, c)| {
+                let stored = i32::from(c.cursor);
+                let drawn = w
+                    .field_npc_drawn_clip_cursor(slot)
+                    .map_or(stored, |d| d as i32);
+                (slot, stored, drawn)
+            })
+            .collect();
         out.push(Sample {
             sim,
             bodies,
             screen,
+            clips,
         });
     }
     out
@@ -210,6 +226,52 @@ fn player_screen_shake(samples: &[Sample]) -> (usize, usize, f32) {
     (n, over, max)
 }
 
+/// Over the vsyncs a world-driven NPC clip runs on a walking NPC (its
+/// stored cursor and its body both moved within the last and the next four
+/// vsyncs): how many the stored and the drawn cursor stood still on.
+fn clip_holds(samples: &[Sample]) -> (usize, usize, usize) {
+    let at = |t: usize, slot: u8| {
+        samples[t]
+            .clips
+            .iter()
+            .find(|c| c.0 == slot)
+            .map(|c| (c.1, c.2))
+    };
+    let (mut run, mut held_s, mut held_d) = (0, 0, 0);
+    for (t, sample) in samples
+        .iter()
+        .enumerate()
+        .take(samples.len().saturating_sub(4))
+        .skip(4)
+    {
+        for &(slot, s, d) in &sample.clips {
+            let (Some((s0, _)), Some((s1, _)), Some((sp, dp))) =
+                (at(t - 4, slot), at(t + 4, slot), at(t - 1, slot))
+            else {
+                continue;
+            };
+            if s0 == s || s == s1 {
+                continue;
+            }
+            // A walker: its body moves across the window too.
+            let body = |t: usize| {
+                samples[t]
+                    .bodies
+                    .iter()
+                    .find(|b| b.0 == u16::from(slot))
+                    .map(|b| b.1)
+            };
+            if body(t - 4) == body(t) || body(t) == body(t + 4) {
+                continue;
+            }
+            run += 1;
+            held_s += usize::from(s == sp);
+            held_d += usize::from(d == dp);
+        }
+    }
+    (run, held_s, held_d)
+}
+
 #[test]
 fn izumi_intro_walkers_draw_every_vsync_and_the_simulation_is_untouched() {
     let Some(extracted) = gated() else { return };
@@ -225,6 +287,13 @@ fn izumi_intro_walkers_draw_every_vsync_and_the_simulation_is_untouched() {
             x.sim, y.sim,
             "vsync {t}: the smooth actors moved the simulation"
         );
+        for c in &y.clips {
+            assert_eq!(
+                c.1, c.2,
+                "vsync {t}: off draws clip {} at its playhead",
+                c.0
+            );
+        }
         for body in &y.bodies {
             assert_eq!(
                 body.1, body.2,
@@ -249,6 +318,17 @@ fn izumi_intro_walkers_draw_every_vsync_and_the_simulation_is_untouched() {
     assert!(
         max_on <= max_off + 1.0,
         "the follow focus left the drawn player behind"
+    );
+    let (run, clip_held_stored, _) = clip_holds(&b);
+    let (_, _, clip_held_drawn) = clip_holds(&a);
+    eprintln!(
+        "[smooth actors] izumi intro: {run} walking NPC clip-vsyncs; stored cursor held on \
+         {clip_held_stored}, drawn on {clip_held_drawn}"
+    );
+    assert!(run > 100, "the intro walked no NPC clip ({run})");
+    assert!(
+        clip_held_drawn * 4 < clip_held_stored,
+        "the drawn clips still hold between frames ({clip_held_drawn} of {run})"
     );
     assert!(walk > 200, "the intro never walked anyone ({walk})");
     assert!(

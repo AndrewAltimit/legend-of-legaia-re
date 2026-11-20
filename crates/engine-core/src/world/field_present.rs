@@ -55,6 +55,12 @@ pub const SNAP_PART_MOVE: i32 = 512;
 /// See [`SNAP_PART_MOVE`].
 pub const SNAP_PART_ANGLE: i32 = 1024;
 
+/// The grid (1/16-frame cursor units) a drawn NPC clip cursor lands on
+/// ([`World::field_npc_drawn_clip_cursor`]): half a frame, which bounds the
+/// hosts' posed-mesh memo at two entries a keyframe. A template-rate clip
+/// (`8` a vsync) moves exactly that far a vsync at every frame step.
+pub const DRAWN_CLIP_QUANTUM: i32 = 8;
+
 /// The placement slots `World::npcs` keys by (`u8`).
 const NPC_SLOTS: usize = 256;
 
@@ -73,7 +79,13 @@ struct Snap {
     poses: Vec<Vec<Bone>>,
     /// Every placement slot's root, `None` when it is not drawn.
     npcs: Vec<Option<Root>>,
+    /// Every placement slot's world-owned clip cursor
+    /// (`World::npcs.clip_cursors`): `[anim id, frames, cursor, flags]`.
+    clips: Vec<Option<Clip>>,
 }
+
+/// One NPC clip cursor: `[anim id, frames, cursor (1/16 frame), +0x62 flags]`.
+type Clip = [i32; 4];
 
 impl Clone for Snap {
     fn clone(&self) -> Self {
@@ -89,6 +101,7 @@ impl Clone for Snap {
         self.actors.clone_from(&src.actors);
         self.poses.clone_from(&src.poses);
         self.npcs.clone_from(&src.npcs);
+        self.clips.clone_from(&src.clips);
     }
 }
 
@@ -120,6 +133,7 @@ pub struct FieldPresent {
     actor_live: Vec<u64>,
     pose_live: Vec<u64>,
     npc_live: Vec<u64>,
+    clip_live: Vec<u64>,
     /// Each actor slot's drawn pose for this tick, and whether it holds
     /// one: the buffer outlives the ticks it is not drawn on, so a walk
     /// that draws it every other vsync allocates nothing.
@@ -154,6 +168,7 @@ impl FieldPresent {
             s.actors.clear();
             s.poses.clear();
             s.npcs.clear();
+            s.clips.clear();
         }
         self.drawn.clear();
     }
@@ -216,6 +231,16 @@ impl World {
         }
         snap.npcs.clear();
         snap.npcs.resize(NPC_SLOTS, None);
+        snap.clips.clear();
+        snap.clips.resize(NPC_SLOTS, None);
+        for (&slot, c) in &self.npcs.clip_cursors {
+            snap.clips[usize::from(slot)] = Some([
+                i32::from(c.anim_id),
+                i32::from(c.frames),
+                i32::from(c.cursor),
+                i32::from(c.flags),
+            ]);
+        }
         let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         for (&slot, &(x, z)) in &self.npcs.positions {
             if (x, z) == (hide, hide) {
@@ -256,20 +281,24 @@ impl World {
         fp.actor_live.resize(n_actors, 0);
         fp.pose_live.resize(n_actors, 0);
         fp.npc_live.resize(NPC_SLOTS, 0);
+        fp.clip_live.resize(NPC_SLOTS, 0);
         if fresh {
             fp.prev.clone_from(&fp.cur);
             fp.actor_live.fill(0);
             fp.pose_live.fill(0);
             fp.npc_live.fill(0);
+            fp.clip_live.fill(0);
         } else {
             fp.prev.actors.resize(n_actors, None);
             fp.prev.poses.resize_with(n_actors, Vec::new);
             fp.prev.poses.truncate(n_actors);
             fp.prev.npcs.resize(NPC_SLOTS, None);
+            fp.prev.clips.resize(NPC_SLOTS, None);
             fp.last.actors.resize(n_actors, None);
             fp.last.poses.resize_with(n_actors, Vec::new);
             fp.last.poses.truncate(n_actors);
             fp.last.npcs.resize(NPC_SLOTS, None);
+            fp.last.clips.resize(NPC_SLOTS, None);
             // A body that changed on a vsync no game frame opened on moves
             // on the vsync, not the frame: it draws live through the next
             // frame.
@@ -297,8 +326,23 @@ impl World {
                 if !fired && fp.last.npcs[i] != c {
                     fp.npc_live[i] = live_through;
                 }
-                if fp.npc_live[i] >= frame || placed(p, c) {
+                let place = placed(p, c);
+                if fp.npc_live[i] >= frame || place {
                     fp.prev.npcs[i] = c;
+                }
+                // The NPC's clip: a cursor that moved between two game
+                // frames draws live, and so does a re-bound clip.
+                let (pc, cc) = (fp.prev.clips[i], fp.cur.clips[i]);
+                if !fired && fp.last.clips[i] != cc {
+                    fp.clip_live[i] = live_through;
+                }
+                let rebound = match (pc, cc) {
+                    (Some(p), Some(c)) => p[..2] != c[..2],
+                    (None, None) => false,
+                    _ => true,
+                };
+                if fp.clip_live[i] >= frame || place || rebound {
+                    fp.prev.clips[i] = cc;
                 }
             }
         }
@@ -344,6 +388,67 @@ impl World {
     pub fn field_npc_draw_shift(&self, slot: u8) -> Option<[f32; 4]> {
         let fp = &self.field_present;
         fp.shift(&fp.prev.npcs, &fp.cur.npcs, usize::from(slot))
+    }
+
+    /// Placement slot `slot`'s clip cursor as this vsync **draws** it, in
+    /// the cursor's 1/16-frame units: the world-owned cursor
+    /// (`World::npcs.clip_cursors`) one game frame behind, stepped the way
+    /// the clip runs (forward, or back under the reverse bit, across the
+    /// loop's wrap), on the phase [`Self::field_npc_drawn_pose`] draws the
+    /// body at, while the body walks under a script that holds the player.
+    /// `None` when the clip draws its live cursor: off, free roam, a body
+    /// standing still or drawn live, a held or re-bound
+    /// clip, a cursor that did not move, or a step past half the clip (a
+    /// restart).
+    ///
+    /// Retail's anim tick (`FUN_800204F8`) moves the cursor once a game
+    /// frame by the rate times the frame step, so at step `4` a template
+    /// clip jumps two keyframes a frame; a host poses the drawn cursor
+    /// through the frame blender at its sub-frame, gate or no gate
+    /// (`FieldClipPlayer::drawn_pose`).
+    pub fn field_npc_drawn_clip_cursor(&self, slot: u8) -> Option<u32> {
+        let fp = &self.field_present;
+        let lag = fp.lag()?;
+        let i = usize::from(slot);
+        let (p, c) = ((*fp.prev.clips.get(i)?)?, (*fp.cur.clips.get(i)?)?);
+        if p[..2] != c[..2] {
+            return None;
+        }
+        // Only a body a script walks this frame, while a script context
+        // holds the player (a cutscene, a first-visit choreography): a
+        // standing NPC's idle loop and a villager's free-roam wander keep
+        // the retail pose. Each in-between pose is one more posed mesh in
+        // the hosts' memo, which a wanderer's every idle / walk re-target
+        // drops, so posing the wanderers too re-skins on every visit.
+        FieldPresent::delta(*fp.prev.npcs.get(i)?, *fp.cur.npcs.get(i)?)?;
+        if !self.script_context_engages_player() {
+            return None;
+        }
+        let span = c[1] * 16;
+        if span <= 0 {
+            return None;
+        }
+        let flags = c[3] as u16;
+        if flags & legaia_engine_vm::actor_tick::CLIP_HOLD != 0 {
+            return None;
+        }
+        let mut d = c[2] - p[2];
+        let clamp = flags & legaia_engine_vm::actor_tick::CLIP_CLAMP != 0;
+        if flags & legaia_engine_vm::actor_tick::CLIP_REVERSE == 0 {
+            if d < 0 && !clamp {
+                d += span;
+            }
+        } else if d > 0 && !clamp {
+            d -= span;
+        }
+        if d == 0 || d.abs() * 2 > span {
+            return None;
+        }
+        // On the half-frame grid: the hosts memoise a posed mesh per drawn
+        // cursor.
+        let q = DRAWN_CLIP_QUANTUM as f32;
+        let drawn = ((c[2] as f32 - lag * d as f32) / q).round() as i32 * DRAWN_CLIP_QUANTUM;
+        Some(drawn.rem_euclid(span) as u32)
     }
 
     /// [`Self::field_npc_draw_pose`] as this vsync **draws** it: the
@@ -569,5 +674,68 @@ mod tests {
         w.active_scene_label = "next".into();
         vsync(&mut w, true, (12, 0));
         assert_eq!(drawn_x(&w), f32::from(w.npcs.positions[&NPC].0));
+    }
+
+    /// A world-driven clip stepping `32` cursor units (two keyframes) a
+    /// three-vsync frame draws a third of that a vsync, on the quarter-frame
+    /// grid, across the loop's wrap; under the reverse bit it runs back.
+    #[test]
+    fn a_frame_stepped_clip_draws_between_its_keyframes() {
+        let mut w = field_world();
+        let anim = legaia_engine_scene::field_env::PropAnim::spawned(1, 4, false, 0);
+        w.npcs.clip_cursors.insert(NPC, anim);
+        // Free roam draws the playhead.
+        vsync(&mut w, true, (12, 0));
+        vsync(&mut w, false, (0, 0));
+        assert_eq!(w.field_npc_drawn_clip_cursor(NPC), None);
+        // A script holding the player (a parked scene change stands in for
+        // the choreography's helper record).
+        w.pending_scene_transition = Some(0);
+        vsync(&mut w, true, (0, 0));
+        let mut drawn = Vec::new();
+        for _ in 0..3 {
+            for v in 0..3 {
+                if v == 0 {
+                    let c = w.npcs.clip_cursors.get_mut(&NPC).unwrap();
+                    c.cursor = (c.cursor + 32) % 64;
+                }
+                vsync(&mut w, v == 0, (12, 0));
+                drawn.push(w.field_npc_drawn_clip_cursor(NPC));
+            }
+        }
+        // 0 -> 32 -> 0 (the wrap, forward) -> 32.
+        assert_eq!(
+            drawn,
+            [
+                Some(0),
+                Some(8),
+                Some(24),
+                Some(32),
+                Some(40),
+                Some(56),
+                Some(0),
+                Some(8),
+                Some(24)
+            ]
+        );
+        // Under the reverse bit the clip runs back (32 -> 16).
+        w.npcs.clip_cursors.get_mut(&NPC).unwrap().flags |=
+            legaia_engine_vm::actor_tick::CLIP_REVERSE;
+        w.npcs.clip_cursors.get_mut(&NPC).unwrap().cursor = 16;
+        vsync(&mut w, true, (12, 0));
+        vsync(&mut w, false, (0, 0));
+        assert_eq!(w.field_npc_drawn_clip_cursor(NPC), Some(24));
+        // A body that stands draws its idle loop at the playhead.
+        w.npcs.clip_cursors.get_mut(&NPC).unwrap().cursor = 0;
+        vsync(&mut w, true, (0, 0));
+        vsync(&mut w, false, (0, 0));
+        assert_eq!(w.field_npc_drawn_clip_cursor(NPC), None);
+        // A held clip, and the retail pin, draw the playhead.
+        w.npcs.clip_cursors.get_mut(&NPC).unwrap().flags |= legaia_engine_vm::actor_tick::CLIP_HOLD;
+        vsync(&mut w, true, (12, 0));
+        assert_eq!(w.field_npc_drawn_clip_cursor(NPC), None);
+        w.toggles.pin_retail();
+        vsync(&mut w, true, (0, 0));
+        assert_eq!(w.field_npc_drawn_clip_cursor(NPC), None);
     }
 }

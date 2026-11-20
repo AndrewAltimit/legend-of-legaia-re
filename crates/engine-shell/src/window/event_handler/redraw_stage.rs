@@ -908,14 +908,22 @@ impl PlayWindowApp {
                 let look_bits =
                     legaia_engine_field::actor_look::ActorLook::pose_key_bits(look.as_ref())
                         as usize;
-                let key = (*slot, player.pose_key() | look_bits);
+                // The smooth field actors draw a world-driven clip one game
+                // frame behind, between its keyframes
+                // (`World::field_npc_drawn_clip_cursor`); `None` draws the
+                // playhead, as retail does.
+                let drawn = world.field_npc_drawn_clip_cursor(*slot);
+                let pose_key =
+                    drawn.map_or_else(|| player.pose_key(), |c| player.drawn_pose_key(c));
+                let key = (*slot, pose_key | look_bits);
                 npc_frames.push(key);
                 // A hit reads no pose (the memo is why this loop is cheap),
                 // unless it is there to be checked.
                 if !verify && cache.contains_key(&key) {
                     continue;
                 }
-                let mut pose = player.current_pose();
+                let mut pose =
+                    drawn.map_or_else(|| player.current_pose(), |c| player.drawn_pose(c));
                 if let Some(l) = look {
                     legaia_engine_field::actor_look::apply_look(&mut pose.bone_outputs, l);
                 }
