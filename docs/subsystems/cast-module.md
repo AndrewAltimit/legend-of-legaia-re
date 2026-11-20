@@ -5744,6 +5744,19 @@ waives its fold, as for PROT 0959. A frozen seat
 mid-knockdown stands still. `nivora_duel_mid_blazing_slash` reads `.504` to
 `.766` with cues `.00` to `.74`. Grade `disassembly` + `capture`.
 
+**Arm 22 paces on the whole pass's drain.** The arm's one `subu` takes `scalar * step`
+off the word and the pacing compare reads the stored word (`0x801F8878..0x801F888C`), so a
+paced call lands on the pass whose whole drain reaches the pacing word. The port drains a
+tick at a time and compared the opening tick's word, so wherever the pass's rest carried
+the word under the pacing word the call came a battle frame late. A `--watch 0x80009010`
+recording names the cost: retail's call (`FUN_801DD6B4` at `0x801DD70C` / `74C` / `7EC`)
+sits on the frames whose burning caster sheds one puff (`0x8004A634`, the accumulator
+alternating one and two a frame on step `3`), the port's sat on the two-puff frames, so
+each hit rolled on other words and its numeral stacked over the last. Compared on the word
+less the pass's rest, the draws and HP match the recording frame for frame: arm 22 reads
+`.804` to `.983` and the film `.977` to `.988` on `--retail-steps --rand-track`, `.958` to
+`.988` on `--retail-steps`, `.917` to `.923` plain. Grade `disassembly` + `capture`.
+
 Arms `0x0D` / `0x0E` read `.967` / `.948` on `--retail-steps --rand-track`
 (the film `.972`). What held them at `.44` / `.42`, with the camera on retail's to
 a tick, was two things. The flame puffs
