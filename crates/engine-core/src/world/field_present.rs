@@ -65,7 +65,7 @@ type Root = [f32; 4];
 type Bone = ([i16; 3], [i16; 3]);
 
 /// The draw-side state of one tick.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 struct Snap {
     /// Every actor slot's root, `None` for an inactive slot.
     actors: Vec<Option<Root>>,
@@ -73,6 +73,23 @@ struct Snap {
     poses: Vec<Vec<Bone>>,
     /// Every placement slot's root, `None` when it is not drawn.
     npcs: Vec<Option<Root>>,
+}
+
+impl Clone for Snap {
+    fn clone(&self) -> Self {
+        let mut out = Self::default();
+        out.clone_from(self);
+        out
+    }
+
+    /// Field by field, into the buffers already held: the tick copies one
+    /// snapshot into another every vsync, and the derived `clone_from`
+    /// would allocate all three tables anew each time.
+    fn clone_from(&mut self, src: &Self) {
+        self.actors.clone_from(&src.actors);
+        self.poses.clone_from(&src.poses);
+        self.npcs.clone_from(&src.npcs);
+    }
 }
 
 /// The smooth field actors' two states and the phase between them
@@ -103,8 +120,10 @@ pub struct FieldPresent {
     actor_live: Vec<u64>,
     pose_live: Vec<u64>,
     npc_live: Vec<u64>,
-    /// Each actor slot's drawn pose for this tick.
-    drawn: Vec<Option<legaia_anm::PoseFrame>>,
+    /// Each actor slot's drawn pose for this tick, and whether it holds
+    /// one: the buffer outlives the ticks it is not drawn on, so a walk
+    /// that draws it every other vsync allocates nothing.
+    drawn: Vec<(bool, legaia_anm::PoseFrame)>,
 }
 
 /// `d` folded onto the short way round a 12-bit turn.
@@ -347,7 +366,7 @@ impl World {
     pub fn field_draw_pose_frame(&self, slot: usize) -> Option<&legaia_anm::PoseFrame> {
         let fp = &self.field_present;
         fp.lag()?;
-        let drawn = fp.drawn.get(slot)?.as_ref()?;
+        let drawn = fp.drawn.get(slot).filter(|d| d.0).map(|d| &d.1)?;
         let live = self.actors.get(slot)?.pose_frame.as_ref()?;
         (drawn.bone_outputs.len() == live.bone_outputs.len()).then_some(drawn)
     }
@@ -357,31 +376,35 @@ impl FieldPresent {
     /// Fill [`Self::drawn`] for this tick: each slot's pose stepped `lag` of
     /// the way back toward the frame before, part by part (a part that moved
     /// past [`SNAP_PART_MOVE`] or turned past [`SNAP_PART_ANGLE`] draws where
-    /// it landed), `None` where the slot draws its live pose. The buffers
+    /// it landed), unheld where the slot draws its live pose. The buffers
     /// are kept from tick to tick, so a steady scene allocates nothing here.
     fn fill_drawn_poses(&mut self, actors: &[Actor]) {
         let lag = self.lag();
-        self.drawn.resize_with(actors.len(), || None);
+        self.drawn.resize_with(actors.len(), || {
+            (
+                false,
+                legaia_anm::PoseFrame {
+                    bone_outputs: Vec::new(),
+                    factor: 0,
+                    finished: false,
+                },
+            )
+        });
         self.drawn.truncate(actors.len());
-        for (i, out) in self.drawn.iter_mut().enumerate() {
+        for (i, (held, frame)) in self.drawn.iter_mut().enumerate() {
+            *held = false;
             let (Some(lag), Some(p), Some(c), Some(live)) = (
                 lag,
                 self.prev.poses.get(i),
                 self.cur.poses.get(i),
                 actors[i].pose_frame.as_ref(),
             ) else {
-                *out = None;
                 continue;
             };
             if c.is_empty() || p.len() != c.len() || p == c || live.bone_outputs.len() != c.len() {
-                *out = None;
                 continue;
             }
-            let frame = out.get_or_insert_with(|| legaia_anm::PoseFrame {
-                bone_outputs: Vec::new(),
-                factor: 0,
-                finished: false,
-            });
+            *held = true;
             frame.factor = live.factor;
             frame.finished = live.finished;
             frame.bone_outputs.clear();
