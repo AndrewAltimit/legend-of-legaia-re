@@ -138,7 +138,22 @@ impl World {
             // XP / level state belongs to the CHARACTER (roster slot), while
             // the live HP/MP resync targets the battle ordinal's actor mirror.
             let char_id = self.party_roster_slot(member as usize) as u8;
-            let Some(result) = self.credit_character_xp(char_id, per_member_xp) else {
+            // EXP Boost (the Crimson Book, accessory passive `0x2F`): bit
+            // `0x8000` of the record's second ability word `+0xF8` adds the
+            // share a second time before the cap (`lw v0,0x6c0(v1)` /
+            // `andi v0,v0,0x8000` / `addu v0,v0,s6` at `0x8004F2E0..0x8004F300`).
+            let boosted = self
+                .party
+                .roster
+                .members
+                .get(usize::from(char_id))
+                .is_some_and(|rec| rec.ability_bits()[5] & 0x80 != 0);
+            let share = if boosted {
+                per_member_xp.saturating_mul(2)
+            } else {
+                per_member_xp
+            };
+            let Some(result) = self.credit_character_xp(char_id, share) else {
                 continue;
             };
             let new_hms = self

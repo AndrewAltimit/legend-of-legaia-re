@@ -87,7 +87,8 @@ fn gen_win(rng: &mut Rng, threshold: impl Fn(usize, u8) -> u32) -> Win {
         if m < w.party && w.member_hp[m] != 0 && w.member_status[m] == 0 {
             standing += 1;
         }
-        w.word1[m] = [0, 0, 0x1_0000, 0x2_0000][rng.below(4) as usize];
+        // `0x1_0000` Gold Boost, `0x2_0000` Items Up, `0x8000` EXP Boost.
+        w.word1[m] = [0, 0, 0x1_0000, 0x2_0000, 0x8000, 0x1_8000][rng.below(6) as usize];
         w.word0[m] = if rng.below(4) == 0 { 0x8000 } else { 0 };
         w.level[m] = 1 + rng.below(90) as u8;
         // Close to the next level, or at the EXP cap's edge.

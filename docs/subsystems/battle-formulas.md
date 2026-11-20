@@ -1826,7 +1826,8 @@ commit through `FUN_80026018`: that is the mode-24 minigame exit, and its
 
 **Provenance.** `8004e568.txt`. **Port.** `victory_gold_per_monster` /
 `victory_gold_finalize` / `victory_exp_per_member`, called by
-`World::apply_battle_loot` / `apply_battle_xp`.
+`World::apply_battle_loot` / `apply_battle_xp`, which credits an EXP Boost
+member (the Crimson Book, passive `0x2F`) the share twice.
 
 #### Regional difference - the PAL executables pay more
 
