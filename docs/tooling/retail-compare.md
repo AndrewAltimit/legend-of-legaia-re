@@ -954,6 +954,40 @@ engine verdict:
   clock: seated over it, four states whose tween had just landed fell
   (`minigame_dance_pcsx` `.830` to `.786`).
 
+  So are the attached lights' keyframe records. An op `34 1x` light
+  (`FUN_801E4470`, [script-vm](../subsystems/script-vm.md#0x34-sub-1-is-an-attached-light))
+  steps its keyframe script by the frame step once a drawn frame, so its
+  phase is the wall time since the op `34 1x` / `34 2x` that (re)started it,
+  and the replay pages its dialogue quicker than the player retail
+  recorded: `dream`'s cutscene record restarts the light on flat `8` ahead
+  of a box of text, and on the gate the engine's keyframe clock read `20`
+  against `dream_noa_lights`' `42`. Each live light (`retail_attached_lights`:
+  its parent's flat index, offset `+0x16`, extents `+0x3C` / `+0x3E`,
+  colours `+0x74` / `+0x88`, blend `+0x5A`, the script `+0x94` points at, the
+  cursor `+0x9E` and clock `+0x9C`, and the from-values `FUN_801E3E00` takes
+  on a keyframe's first frame) goes to the child as `LEGAIA_SEAT_LIGHTS` and
+  is stood on the engine's light of the same parent on the capture frame,
+  re-interpolated the display lag back (`World::seat_attached_light`; a
+  light the engine never spawned stays missing). `dream_noa_lights` `.830`
+  to `1.000`, `dream_noa_name_dialog` `.736` to `.999`,
+  `dream_noa_desperate_dialog` `.379` to `.999`. A harness seat.
+
+  So are the mesh-bearing ambient parts a `rand()` roll placed. `juui1`'s
+  vortex shards (stager record `0x3D0`, mesh `6`, two a spawn) each take a
+  random roll about the tunnel axis and a random colour word, so a child
+  that ran the scene from its entry drew as many shards in other places and
+  other hues. Every live part whose stager record names a scene mesh
+  (`retail_mesh_parts`: `record[+0]` in `5..0x4000`) goes to the child as
+  `LEGAIA_SEAT_MESH_PARTS`, position and banks taken back the display lag,
+  and the engine's parts of the same record are seated on them record by
+  record - position, banks, colour word and level, cloning a live part where
+  retail holds more and retiring the surplus (`World::install_mesh_part_snapshot`).
+  A record the engine already holds in retail's number and colour words is
+  its program's own work and stays the engine's: `eddoman`'s rising record
+  `0x3A0` stands two passes ahead in the RAM, and seated it cost
+  `credits_eddoman_fullscreen_pcsx` `.003`. The six `juui1_vortex_*` rows read
+  `.942` to `.979` (`.737` to `.821` before). A harness seat.
+
   So is the frame's clear colour, the draw environment's `r0 / g0 / b0`
   (`0x8007BF5D..5F`) that op `4C 13` writes and the MAN loader zeroes: the
   state's bytes go to the child as `LEGAIA_SEAT_CLEAR` and are written over
@@ -1074,6 +1108,33 @@ the seed stops paging once it is there. Met on the PC alone, none was:
 `concend` `P2[0]` parks on `+0x6E8` and `+0x73E`, `concnow` `P2[13]` on
 `+0x969` to `+0xC72`, and each scored the settle-window sample (image
 `.20`..`.36`, against `.94`..`.99` met on the page).
+
+**A text gate against a glide.** The replay's drive pages each box as soon
+as it can, which retail's recorded player did not, so every clock that ran
+through a box - a camera glide, a placement's leg - stands behind the text
+in the engine. A text gate caught mid-page (`typing` or another pager arm)
+whose retail mover is still in flight is met on the pager alone, and the
+capture frame stands the glide on retail's frames left
+(`Camera::align_glide_frames_left`): `juui1`'s cutscene record types a line
+at `+0x438` with retail's reveal counter at `4` and `196` glide frames left,
+where the engine had `264`, and gated on both the box stood fully typed over
+a frame that shows none (`juui1_vortex_noa_close` `.666` to `.996`). The
+displayed gate adds the `0x48` collapse (pager state `0xA`) to a gate on a
+non-text op just past the box, met the same way and past a walking
+placement's leg too: `juui1_vortex_gala_box` is parked on `+0x23F`, a `33`
+test on flat `8`'s face leg, one collapse call after the press, and gated on
+the leg the engine's box had gone `22` ticks before the frame (`.699` to
+`.986`). The state channels keep the RAM gate and its legs.
+
+**A fresh box behind a collapse.** After the `0x48` collapse the pager
+counts `_DAT_801F273C` down from `0x18` with no box drawn, then loads the
+next page (state `2`); the row table still holds the page before. A state in
+that window carries the count as the pager phase's counter, and the gate is
+met on the gate's own page once the engine's box has collapsed and counted
+as far (`RowWindow::box_gone`). Met on any page up, `urudre3_zopu_hall`
+(parked on Songi's line at `+0x3AD` with `20` of the count left and Zopu's
+row `+0x39E` in the table) took its frame on Zopu's box still typing
+(`.788`; `.993` on the count).
 
 **A walk-to-tile's wait.** `B3 <t> 0A` tests the halt bit a walk-to-tile
 on the same actor (`C7 <t> <x> <z> <mode>`) raised, so the record sits on
