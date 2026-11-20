@@ -2751,6 +2751,13 @@ impl LauncherApp {
             let muted = retail && row.overridden_by_retail();
             let ink = if muted { FAINT } else { INK };
             c.text(panel.x + 10, y, row.label(), ink);
+            // The row's in-game key after its label, in the key ink the
+            // `F12` page and the Controls list letter keys in, so a toggle's
+            // key is learned before the game starts.
+            if let Some(key) = row.hotkey_label() {
+                let kx = panel.x + 10 + c.width(row.label()) + c.width(" ");
+                c.text(kx, y, key, if muted { FAINT } else { KEY });
+            }
             let value = if muted {
                 "Original".to_string()
             } else {
