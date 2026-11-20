@@ -58,6 +58,11 @@ struct Host {
     busy: bool,
     bits_high: u32,
     calls: Vec<(u32, u32, u32)>,
+    bits: u32,
+    live: [(i16, i16); 8],
+    anchor: [(i16, i16); 8],
+    placed: bool,
+    counters: Vec<u8>,
 }
 
 impl BattleActionHost for Host {
@@ -104,6 +109,22 @@ impl BattleActionHost for Host {
     }
     fn one_shot_sfx(&mut self, cue_id: u16) {
         self.calls.push((SFX, u32::from(cue_id), 0));
+    }
+    fn begin_counterattack(&mut self, counterer: u8, _attacker: u8) -> bool {
+        self.counters.push(counterer);
+        true
+    }
+    fn character_ability_bits(&self, _party_slot: u8) -> u32 {
+        self.bits
+    }
+    fn actor_position(&self, slot: u8) -> Option<(i16, i16)> {
+        self.placed.then(|| self.live[usize::from(slot)])
+    }
+    fn set_actor_position(&mut self, slot: u8, x: i16, z: i16) {
+        self.live[usize::from(slot)] = (x, z);
+    }
+    fn actor_anchor(&self, slot: u8) -> Option<(i16, i16)> {
+        self.placed.then(|| self.anchor[usize::from(slot)])
     }
     fn character_ability_bits_high(&self, _party_slot: u8) -> u32 {
         self.bits_high
@@ -894,4 +915,252 @@ fn the_cast_band_walks_the_stream_as_retail_does() {
         seen.insert((state, retail.0));
     }
     assert!(seen.len() >= 12, "{seen:x?}");
+}
+
+const BEARING: u32 = 0x8001_9B28;
+const SIN_PTR: u32 = 0x8007_B81C;
+const COS_PTR: u32 = 0x8007_B7F8;
+const SINE_TABLE: u32 = 0x8007_0A2C;
+const SUPER_TRIGGER: u32 = 0x801F_696C;
+const COUNTER: u32 = 0x801F_6970;
+const MARKS: u32 = 0x801F_6990;
+
+/// States `0x1E` and `0x1F`, the strike loop and its recovery wait
+/// (`0x801E36E0..0x801E3B1C`) against `attack_chain` and `attack_recovery`:
+/// the facing store onto the target's body pair, the in-flight hold, the
+/// stage (cursor, `+0x1DC` bit 1, `+0x1DA`), the War God Icon's pass bump
+/// and end-of-stream refill with its starter demotion, the swing drift on
+/// both live pairs, the terminator, and `0x1F`'s wait and exit to `0x20`.
+/// The bearing `FUN_80019B28` answers through `bearing_12bit_approx` (its
+/// own differential is `bearing`), the trig tables are the executable's.
+#[test]
+fn the_strike_loop_stages_and_drifts_as_retail_does() {
+    use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
+    differential!(prot(898, SM));
+    let Some(mut r) = Retail::new() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    r.cpu.hook(BEARING, |regs, _| {
+        let [a0, a1, a2, a3] = [4, 5, 6, 7].map(|i| regs.r[i] as i16);
+        regs.r[2] = u32::from(bearing_12bit_approx(a0, a1, a2, a3));
+    });
+    let built = Rc::new(RefCell::new(Vec::new()));
+    let sink = built.clone();
+    r.cpu.hook(0x801E_ED1C, move |regs, _| {
+        sink.borrow_mut().push(regs.r[4] as u8)
+    });
+    let mut rng = Rng(0x5354_524B);
+    let mut swapped = 0;
+    let mut seen = std::collections::HashSet::new();
+    let (mut drifted, mut refilled, mut bumped) = (0, 0, 0);
+    for round in 0..40000 {
+        let state = if rng.below(4) == 0 { 0x1F } else { 0x1E };
+        let slot = rng.below(5) as u8;
+        let target = loop {
+            let t = rng.below(8) as u8;
+            if t != slot {
+                break t;
+            }
+        };
+        let dt = 1 + rng.below(2) as u8;
+        let mut params = [0u8; ba::ACTION_QUEUE_CAP];
+        let len = if rng.below(8) == 0 {
+            18
+        } else {
+            rng.below(8) as usize
+        };
+        for b in params.iter_mut().take(len) {
+            *b = [0x0C, 0x0D, 0x19, 0x1A, 0x1B][rng.below(5) as usize];
+        }
+        let cursor = rng.below(len as u32 + 1) as u8;
+        let flags = [0u8, 0, 2, 3][rng.below(4) as usize];
+        let x2 = [0u8, 0, 1, 2][rng.below(4) as usize];
+        let bits = [0u32, 0x2000][rng.below(2) as usize];
+        let header = [0u8, 0, 1][rng.below(3) as usize];
+        let trigger = rng.below(2);
+        let latched = [0x0Cu8, 0x10, 0x1A, 0x1B, 0x20][rng.below(5) as usize];
+        let rate = [8u8, 4, 2, 0x10][rng.below(4) as usize];
+        let marks: [u32; ba::ACTION_QUEUE_CAP] =
+            std::array::from_fn(|_| [0u32, 0, 1, 4][rng.below(4) as usize]);
+        // An exhausted stream staged with the latch down: retail stages the
+        // `0`, raises `+0x1DC` bit 1 and leaves for `0x1F`, where it waits on
+        // a commit of entry `0`; the port releases the latch instead
+        // (`attack_chain`'s empty-stream arm), which the engine's anim
+        // channel needs, having nothing to commit for a `0`.
+        if state == 0x1E && flags & 2 == 0 && params[usize::from(cursor)] == 0 {
+            continue;
+        }
+        // The counterattack latch: the counterer's seat plus one.
+        let counter = [0u8, 0, 0, 1, 2, 3][rng.below(6) as usize];
+        let target_category = [3u8, 3, 1][rng.below(3) as usize];
+        let turn = rng.below(6) as u8;
+        // The counterer is the party member the monster struck, never the
+        // striker itself.
+        if counter != 0 && (counter - 1 == slot || counter - 1 == target) {
+            continue;
+        }
+        let mut live = [(0i16, 0i16); 8];
+        let mut anchor = [(0i16, 0i16); 8];
+        let mut facing = [0u16; 8];
+        for s in 0..8 {
+            live[s] = (
+                rng.below(0x800) as i16 - 0x400,
+                rng.below(0x800) as i16 - 0x400,
+            );
+            anchor[s] = (
+                rng.below(0x800) as i16 - 0x400,
+                rng.below(0x800) as i16 - 0x400,
+            );
+            facing[s] = rng.below(0x1000) as u16;
+        }
+
+        r.reset();
+        let m = &mut r.cpu.mem;
+        m.wr32(SIN_PTR, SINE_TABLE);
+        m.wr32(COS_PTR, SINE_TABLE + 0x800);
+        m.wr8(FRAME_STEP, dt);
+        m.wr8(CTX + 7, state);
+        m.wr8(CTX + 0x13, slot);
+        m.wr8(CTX + 0x15, cursor);
+        m.wr8(CTX + 0x16, x2);
+        m.wr8(CTX + 0x243, header);
+        m.wr32(SUPER_TRIGGER, trigger);
+        m.wr32(COUNTER, u32::from(counter));
+        m.wr8(CTX + 0x1A, turn);
+        built.borrow_mut().clear();
+        for (k, mk) in marks.iter().enumerate() {
+            m.wr32(MARKS + 4 * k as u32, *mk);
+        }
+        for s in 0..3u32 {
+            m.wr8(SEATS + s, s as u8 + 1);
+            m.wr32(RECORDS + s * 0x414 + 0x6BC, bits);
+        }
+        for s in 0..8u8 {
+            let a = actor(s);
+            let i = usize::from(s);
+            m.wr16(a + 0x34, live[i].0 as u16);
+            m.wr16(a + 0x38, live[i].1 as u16);
+            m.wr16(a + 0x3C, anchor[i].0 as u16);
+            m.wr16(a + 0x40, anchor[i].1 as u16);
+            m.wr16(a + 0x46, facing[i]);
+            m.wr8(a + 0x21D, rate);
+            m.wr16(a + 0x16C, 0x40);
+            for (k, b) in params.iter().enumerate() {
+                m.wr8(a + 0x1DF + k as u32, *b);
+            }
+        }
+        m.wr8(actor(target) + 0x1DE, target_category);
+        let a = actor(slot);
+        m.wr8(a + 0x1DB, latched);
+        m.wr8(a + 0x1DC, flags);
+        m.wr8(a + 0x1DD, target);
+        r.pass();
+        let m = &mut r.cpu.mem;
+        let acting = m.rd8(CTX + 0x13);
+        let swap = (
+            acting,
+            m.rd8(CTX + 0x1A),
+            m.rd32(COUNTER) as u8,
+            m.rd8(actor(acting) + 0x1DD),
+            m.rd16(actor(acting) + 0x16C),
+            m.rd8(actor(slot) + 0x1DC),
+        );
+        let a = actor(acting);
+        let retail = (
+            m.rd8(CTX + 7),
+            m.rd8(CTX + 0x15),
+            m.rd8(CTX + 0x16),
+            m.rd8(a + 0x1DA),
+            m.rd8(a + 0x1DC),
+            m.rd16(a + 0x46),
+        );
+        let retail_queue: Vec<u8> = (0..ba::ACTION_QUEUE_CAP as u32)
+            .map(|k| m.rd8(a + 0x1DF + k))
+            .collect();
+        let retail_live: Vec<(i16, i16)> = (0..8u8)
+            .map(|s| {
+                (
+                    m.rd16(actor(s) + 0x34) as i16,
+                    m.rd16(actor(s) + 0x38) as i16,
+                )
+            })
+            .collect();
+
+        let mut h = host();
+        h.dt = i16::from(dt);
+        h.bits = bits;
+        h.placed = true;
+        h.live = live;
+        h.anchor = anchor;
+        for (b, f) in h.actors.iter_mut().zip(facing) {
+            b.facing_angle = f;
+            b.anim_rate = ba::AnimRate(rate);
+            b.init_key = 0x40;
+            b.params[..ba::ACTION_QUEUE_CAP].copy_from_slice(&params);
+            b.strike_index = cursor;
+            // Retail's marks are one global array the builder rewrites.
+            b.starter_marks = Some(marks);
+        }
+        h.actors[usize::from(target)].action_category = target_category;
+        let b = &mut h.actors[usize::from(slot)];
+        b.latched_anim = latched;
+        b.flag_bits = ba::ActorFlags(flags);
+        b.active_target = target;
+        b.starter_marks = Some(marks);
+        let mut ctx = BattleActionCtx {
+            action_state: state,
+            active_actor: slot,
+            attack_x2_pass: x2,
+            gauge_rearm_latch: header,
+            super_trigger: trigger != 0,
+            counter_pending: counter,
+            turn_cursor: turn,
+            ..Default::default()
+        };
+        ba::step(&mut h, &mut ctx);
+        let b = &h.actors[usize::from(ctx.active_actor)];
+        let port_swap = (
+            ctx.active_actor,
+            ctx.turn_cursor,
+            ctx.counter_pending,
+            b.active_target,
+            b.init_key,
+            h.actors[usize::from(slot)].flag_bits.0,
+        );
+        let port = (
+            ctx.action_state,
+            b.strike_index,
+            ctx.attack_x2_pass,
+            b.queued_anim,
+            b.flag_bits.0,
+            b.facing_angle,
+        );
+        let at = format!(
+            "round {round}: state {state:#x} slot {slot} target {target} params {params:x?} \
+             cursor {cursor} flags {flags} x2 {x2} bits {bits:#x} header {header} trigger \
+             {trigger} latched {latched:#x} rate {rate} dt {dt} counter {counter} \
+             target category {target_category}"
+        );
+        if state == 0x1E {
+            assert_eq!(swap, port_swap, "swap, {at}");
+            assert_eq!(*built.borrow(), h.counters, "builder, {at}");
+            swapped += i32::from(acting != slot);
+        }
+        assert_eq!(retail, port, "{at}");
+        assert_eq!(
+            retail_queue,
+            b.params[..ba::ACTION_QUEUE_CAP].to_vec(),
+            "queue, {at}"
+        );
+        assert_eq!(retail_live, h.live.to_vec(), "live pairs, {at}");
+        drifted += i32::from(retail_live != live.to_vec());
+        refilled += i32::from(retail.2 > x2 && retail.1 == 0);
+        bumped += i32::from(retail.2 > x2 && retail.1 != 0);
+        seen.insert((state, retail.0));
+    }
+    assert!(
+        seen.len() == 4 && drifted > 2000 && refilled > 100 && bumped > 100 && swapped > 500,
+        "{seen:x?} {drifted} {refilled} {bumped} {swapped}"
+    );
 }

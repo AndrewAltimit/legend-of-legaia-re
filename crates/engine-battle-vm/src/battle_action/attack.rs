@@ -300,9 +300,12 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
     if in_flight {
         // Retail's in-flight branch (`0x801E3718`) lands on the drift block
         // at `0x801E37C0`, which the stage path also falls into - so the
-        // drift runs on every frame of the loop, staged or holding.
+        // drift runs on every frame of the loop, staged or holding, and so
+        // does the terminator test after it (`0x801E3998`): a stream already
+        // exhausted under a swing still in flight leaves for `0x1F` (or
+        // refills) on this pass.
         swing_drift(host, ctx);
-        return stay(ctx);
+        return strike_loop_terminator(host, ctx);
     }
     let next_byte = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0xFF);
     if next_byte == 0x00 || next_byte == 0xFF {
@@ -334,10 +337,19 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
     }
     attack_x2_stage_bump(host, ctx);
     swing_drift(host, ctx);
-    // The terminator is tested at the **new** cursor on the same step
-    // (`0x801E3998..0x801E39AC`, `0x00` routing to `0x1F` at `0x801E3A7C`):
-    // the last byte is staged and the band leaves the loop together, so the
-    // recovery wait below is what holds until that last clip commits.
+    strike_loop_terminator(host, ctx)
+}
+
+/// The strike loop's terminator test (`0x801E3998..0x801E39AC`, `0x00`
+/// routing to `0x1F` at `0x801E3A7C`), at the cursor as the pass left it:
+/// after a stage that is the **new** cursor, so the last byte is staged and
+/// the band leaves the loop together, and the recovery wait is what holds
+/// until that last clip commits.
+fn strike_loop_terminator<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+) -> StepOutcome {
+    let slot = ctx.active_actor;
     let exhausted = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0) == 0;
     if exhausted {
         if attack_x2_refill(host, ctx) {
@@ -536,6 +548,9 @@ fn swing_drift<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActionCtx
     }
 }
 
+/// The entries the Attack x2 refill demotes: its loop bound `0x10`.
+const X2_REFILL_SPAN: usize = 0x10;
+
 /// PORT: FUN_801E295C (`0x801E39B4..0x801E3A64`) - the strike loop's
 /// end-of-stream **Attack x2 refill**.
 ///
@@ -605,7 +620,9 @@ fn attack_x2_refill<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut Battle
             build_starter_marks(&queue)
         }
     };
-    let n = actor.params.len().min(marks.len());
+    // The walk is sixteen entries (`sltiu v0,s0,0x10` at `0x801E3A5C`), not
+    // the queue's width: a mark past the sixteenth is left standing.
+    let n = actor.params.len().min(marks.len()).min(X2_REFILL_SPAN);
     for (i, m) in marks.iter().enumerate().take(n) {
         // `bne v0,a1,0x801E3A58` with `a1 = 1`: an exact compare, so the
         // Super applier's `4` is skipped and its `0x1A` starter stands.
