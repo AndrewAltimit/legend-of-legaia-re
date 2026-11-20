@@ -152,6 +152,19 @@ impl BakaFight {
         out
     }
 
+    /// One game frame on a step the caller names, with no pacing: the
+    /// frame's pad words as given, the frame step `DAT_1F800393` pinned at
+    /// `step`, and no frame held for the one before's span. A harness that
+    /// runs retail's cabinet routines one frame a call on a pinned step
+    /// (the retail-kernel differential) drives the port's rules on the
+    /// same frames; the pacing itself is [`Self::frame`]'s.
+    #[doc(hidden)]
+    pub fn frame_on_step(&mut self, edge: u16, held: u16, pot: u32, step: i32) -> BakaFrameOutcome {
+        self.cabinet_hold.pump_packed(u32::from(held), 1);
+        let edge = edge | std::mem::take(&mut self.held_edge);
+        self.frame_tick(edge, held, pot, step.max(1))
+    }
+
     /// The frame driver's pacing tail on the frame just run: a line the
     /// frame cued opens the polls' window, the frame's work is priced
     /// ([`super::pacing::frame_work`]) under it, and the law reads the step
