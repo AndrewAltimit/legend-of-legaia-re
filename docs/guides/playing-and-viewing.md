@@ -262,7 +262,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Enhancements | Ambient occlusion | `legaia-options.toml` | `Home` | on |
 | Enhancements | Ground fog | `legaia-options.toml` | `F9` | off |
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
-| Enhancements | Smooth motion: cameras, walking and the map screen move every frame (off = `--no-smooth-motion`) | `launcher.toml` | - | on |
+| Enhancements | Smooth motion: cameras, walking, townsfolk and their animations, and the map screen move every frame (off = `--no-smooth-motion`) | `launcher.toml` | - | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
 | Enhancements | Heal numbers (off = `--no-heal-numerals`) | `launcher.toml` | - | on |
 | Play | Free-angle movement | `legaia-options.toml` | `R` | on |
@@ -853,6 +853,11 @@ raises the story flags the door in would have raised, so it plays as on
 arrival. A game already past that point sees nothing fire, as in the original,
 and the next pick clears the flags this one raised. Noa's dream is the one beat
 that changes the leader: its own script hands Noa the lead.
+
+Any pick past the village (every scene but the opening, Rim Elm before the Mist
+and the village under attack, overworld picks included) also raises the flags
+the story sets when Vahn leaves Rim Elm, so walking back into the village finds
+the Genesis Tree revived and the south gate open, as it is in the story by then.
 
 A picked scene that the game itself only ever passes through plays that
 passage. Zora's Floating Castle's second form (`taiku2`) is one: arriving from

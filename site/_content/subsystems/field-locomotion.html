@@ -341,6 +341,32 @@
   <h2>Smooth field actors: walkers drawn every vsync</h2>
   <p>The original moves a scripted walker, an NPC on its rounds and every character&rsquo;s walk animation once a game frame, and a frame lasts two to four vsyncs. So in a cutscene the walkers step and hold: in Hunter&rsquo;s Spring an emulator film of the original shows each hunter moving 4 units every second vsync and turning a quarter turn in one frame, and the port&rsquo;s first-visit choreography, running at three and four vsyncs a frame, moved them 12 to 16 units at a time.</p>
   <p>The port&rsquo;s default draws them one game frame behind, a vsync further along each vsync, the way the smooth camera draws a stepped camera move. The player, the NPCs and props, their turns and the player&rsquo;s pose all ride the same phase, and a follow camera centred on the player follows the drawn player, so a walked player holds its place on screen. A warp, a half turn or a scene change draws at once, and the player walking freely, which already moves every vsync, draws as it stands.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A walker's position over nine vsyncs at three vsyncs a game frame. The stored position, what the game holds, jumps 12 units when each frame opens and holds for the two vsyncs between: 12, then 24, then 36. The drawn position starts where the last frame closed and moves 4 units every vsync, 0, 4, 8, 12 and so on, so it reaches each stored value one game frame later and never holds.">
+      <defs><marker id="fl-smooth-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <path class="dg-group" d="M80 40 L80 212 M320 40 L320 212 M560 40 L560 212 M800 40 L800 212"/>
+      <text class="dg-edge-label" x="86" y="36">frame 1 opens</text>
+      <text class="dg-edge-label" x="326" y="36">frame 2 opens</text>
+      <text class="dg-edge-label" x="566" y="36">frame 3 opens</text>
+      <text class="dg-edge-label" x="806" y="36">frame 4</text>
+      <path class="dg-edge-dim" d="M80 152 L320 152 L320 104 L560 104 L560 56 L800 56"/>
+      <circle class="dg-node" cx="80" cy="152" r="5"/><circle class="dg-node" cx="160" cy="152" r="5"/><circle class="dg-node" cx="240" cy="152" r="5"/>
+      <circle class="dg-node" cx="320" cy="104" r="5"/><circle class="dg-node" cx="400" cy="104" r="5"/><circle class="dg-node" cx="480" cy="104" r="5"/>
+      <circle class="dg-node" cx="560" cy="56" r="5"/><circle class="dg-node" cx="640" cy="56" r="5"/><circle class="dg-node" cx="720" cy="56" r="5"/>
+      <path class="dg-edge" d="M80 200 L792 58" marker-end="url(#fl-smooth-arrow)"/>
+      <circle class="dg-node-accent" cx="80" cy="200" r="5"/><circle class="dg-node-accent" cx="160" cy="184" r="5"/><circle class="dg-node-accent" cx="240" cy="168" r="5"/>
+      <circle class="dg-node-accent" cx="320" cy="152" r="5"/><circle class="dg-node-accent" cx="400" cy="136" r="5"/><circle class="dg-node-accent" cx="480" cy="120" r="5"/>
+      <circle class="dg-node-accent" cx="560" cy="104" r="5"/><circle class="dg-node-accent" cx="640" cy="88" r="5"/><circle class="dg-node-accent" cx="720" cy="72" r="5"/>
+      <text class="dg-edge-label" x="166" y="144">stored: +12, then holds</text>
+      <text class="dg-edge-label" x="410" y="160">drawn: +4 every vsync</text>
+      <text class="dg-sub" x="80" y="230">0</text><text class="dg-sub" x="160" y="230">1</text><text class="dg-sub" x="240" y="230">2</text>
+      <text class="dg-sub" x="320" y="230">3</text><text class="dg-sub" x="400" y="230">4</text><text class="dg-sub" x="480" y="230">5</text>
+      <text class="dg-sub" x="560" y="230">6</text><text class="dg-sub" x="640" y="230">7</text><text class="dg-sub" x="720" y="230">8</text>
+      <text class="dg-sub" x="440" y="254">vsync (three a game frame)</text>
+      <text class="dg-sub" x="40" y="156">12</text><text class="dg-sub" x="40" y="108">24</text><text class="dg-sub" x="40" y="60">36</text>
+    </svg>
+    <figcaption>One walker at three vsyncs a frame. The game stores a 12-unit step as each frame opens and holds it (grey); the drawn body (accent) starts where the last frame closed and covers the step a third at a time, so it arrives one frame late and never stands still. The animation cursor is drawn the same way, a quarter keyframe at a time. Nothing the game reads moves: only the picture does.</figcaption>
+  </figure>
   <p>It is presentation-only: with it on and off, the intro stores the same bodies, camera and random stream on every vsync. <code>--retail</code> draws the stored bodies, bit for bit.</p>
   <p>A walker&rsquo;s legs follow on the same phase. The original moves an NPC&rsquo;s animation cursor once a frame too, two keyframes at a time at four vsyncs a frame, and the port draws the cursor in between, blended a quarter keyframe at a time: a cutscene&rsquo;s walkers, the villagers wandering a town and an NPC&rsquo;s idle loop alike. Each pose in between is one more mesh the window builds once and keeps, and the cache now remembers which clip a mesh belongs to, so a villager switching between standing and walking keeps its meshes for both.</p>
 </section>
