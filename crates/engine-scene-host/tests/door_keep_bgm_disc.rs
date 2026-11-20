@@ -312,3 +312,24 @@ fn a_kept_door_into_the_overworld_plays_on_under_its_word() {
     );
     assert_eq!(host.bgm_track_word, Some(2000), "map01's word");
 }
+
+/// A park behind a start in the same install slice sounds nothing: the field
+/// init's poller loop reads the word once, after the slice, and the park
+/// loads nothing. `juui1`'s entry starts `2011` and, with `conc2`'s vortex
+/// marker `0x445` up, parks (`+0x0C`, `+0x21`); retail's `juui1_vortex_*`
+/// states hold the slot silent under the word `4096`. Without the marker the
+/// entry's start is the scene's track.
+#[test]
+fn a_park_in_the_install_slice_takes_back_its_start() {
+    let Some(mut host) = host() else { return };
+    host.world.system_flag_set(0x445);
+    let calls = enter(&mut host, "juui1", 30);
+    eprintln!("juui1 behind the vortex: {:?}", calls.0);
+    assert_eq!(calls.0.last(), Some(&Call::Stop), "the park leaves silence");
+    assert_eq!(host.bgm_track_word, Some(0x1000));
+
+    let Some(mut host) = self::host() else { return };
+    let calls = enter(&mut host, "juui1", 30);
+    eprintln!("juui1 without the marker: {:?}", calls.0);
+    assert_eq!(calls.0.last(), Some(&Call::Start(2011)));
+}

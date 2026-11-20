@@ -13,8 +13,8 @@ impl FieldHostImpl<'_> {
                 if let Some(id) = self.world.field_vm.picker_bgm_inherit.take() {
                     text_id = id;
                 }
-            } else {
-                self.world.field_vm.picker_bgm_inherit = None;
+            } else if self.world.field_vm.picker_bgm_inherit.take().is_some() {
+                self.world.field_vm.picker_start_kept = true;
             }
         }
         // Sub-ops 1 (start) and 9 (start behind a load barrier) are the only
@@ -245,6 +245,17 @@ impl FieldHostImpl<'_> {
                     // call, so a following sub-`2` barrier is satisfied on
                     // arrival.
                     self.world.audio.sound_stream.settle();
+                    // A load into slot 6 raises the forced-channel latch
+                    // `_DAT_8007BA88` as it lands (`0x80024AF4..0x80024B04`);
+                    // a request made under the latch loads nothing.
+                    // PORT: FUN_800243F0 (0x80024AF4..0x80024B04)
+                    if self.world.audio.sfx_forced_bank.is_none()
+                        && let Some(bank) =
+                            crate::world::side_band_bank_for_request(i32::from(op1_word as i16))
+                        && bank.slot == 6
+                    {
+                        self.world.audio.sfx_forced_bank = Some(bank);
+                    }
                 }
                 2 => {
                     if !self.world.audio.sound_stream.is_settled() {

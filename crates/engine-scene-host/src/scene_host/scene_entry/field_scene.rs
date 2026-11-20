@@ -609,6 +609,7 @@ impl SceneHost {
         // entry (a door, a resume, a cold fallback) leaves a park start as
         // retail runs it.
         self.world.field_vm.picker_bgm_inherit = None;
+        self.world.field_vm.picker_start_kept = false;
         if let Some(ov) = &override_seat {
             if let Some(arrival) = &ov.arrival {
                 self.world.field_vm.picker_bgm_inherit =

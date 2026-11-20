@@ -328,6 +328,16 @@ pub struct AudioState {
     ///
     /// REF: FUN_800243F0
     pub(crate) sound_stream: legaia_engine_system::scus_leaf_kernels::SoundStreamRequest,
+    /// `_DAT_8007BA88` (`gp+0x770`), the cue drainer's forced-channel
+    /// latch, as the bank whose load raised it. The swap poller raises it
+    /// when a side-band load into slot `6` lands (`sw v0,0x770(gp)` at
+    /// `0x80024B04`, behind `s1 == 6`); while it is up the drainer keys every
+    /// cue through mixer record `6` (`li s3,0x6` at `0x80016CC8`), the actor
+    /// tick keys its emitters there too (`0x8002251C..0x8002252C`), and the
+    /// poller acknowledges a new request without loading it
+    /// (`0x800244C0..0x800244F0`). Only the side-band teardown (op `0x36`
+    /// sub `3`, `FUN_801D8450`) clears it.
+    pub(crate) sfx_forced_bank: Option<SideBandBank>,
     /// `_DAT_8007B868` - the dev/dual-mode gate. Retail boots it `0` and no
     /// static writer ever sets it non-zero, so the engine keeps it `0`; the
     /// field applies it as retail does (it *skips* op `0x36`'s whole
@@ -458,6 +468,7 @@ impl AudioState {
             // window - so the pair is born settled instead, the same way the
             // BGM barrier is satisfied on arrival.
             sound_stream: legaia_engine_system::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR,
+            sfx_forced_bank: None,
             dual_mode_gate: 0,
             sound_detach: legaia_engine_system::sound_state::SoundDetachLatch::default(),
             residency: legaia_engine_mode::sfx_residency::SfxBankResidency::default(),
@@ -714,6 +725,11 @@ impl World {
     /// replay that seed, so it is supplied here. A park leaves `None` (the
     /// host keeps whatever bank it staged).
     pub fn side_band_bank(&self) -> Option<SideBandBank> {
+        // A slot-6 load holds the slot until the teardown: later requests
+        // are acknowledged and load nothing (`0x800244C0..0x800244F0`).
+        if let Some(bank) = self.audio.sfx_forced_bank {
+            return Some(bank);
+        }
         let pair = self.audio.sound_stream;
         let id = if pair.acked == legaia_engine_system::scus_leaf_kernels::SoundStreamRequest::IDLE
             && pair.requested == legaia_engine_system::scus_leaf_kernels::SoundStreamRequest::IDLE
@@ -727,6 +743,21 @@ impl World {
             pair.acked
         };
         side_band_bank_for_request(id)
+    }
+
+    /// The VAB slot every drained cue is forced onto (`Some(6)` while
+    /// [`AudioState::sfx_forced_bank`]'s latch `_DAT_8007BA88` is up), in the
+    /// field family. Retail's latch outlives a fight, where slot 6 is closed
+    /// and a forced cue would key nothing; every shipped slot-6 request is
+    /// torn down inside the cutscene that raised it, so the port applies the
+    /// latch in the field and on the overworld only.
+    ///
+    /// PORT: FUN_80016B6C (0x80016CB0..0x80016CC8)
+    pub fn sfx_forced_slot(&self) -> Option<u8> {
+        match self.mode {
+            SceneMode::Field | SceneMode::WorldMap => self.audio.sfx_forced_bank.map(|b| b.slot),
+            _ => None,
+        }
     }
 
     /// The bank the BGM region's free tail holds this tick, for the hosts'
@@ -847,5 +878,36 @@ mod sfx_ring_op_tests {
             legaia_engine_system::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR;
         w.mode = SceneMode::Battle;
         assert!(w.side_band_bank().is_none());
+    }
+
+    /// A slot-6 side-band load raises `_DAT_8007BA88`: every cue keys slot 6
+    /// in the field, a later request loads nothing, and only op `0x36` sub
+    /// `3` lowers it. `vozz`'s Genesis Tree record requests `3103` and pushes
+    /// cue `0x211`, a category-3 row retail keys from slot 6.
+    #[test]
+    fn a_slot_six_side_band_load_forces_the_cue_channel_until_the_teardown() {
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        // 36 01 80 E0 07 (request 2016, slot 3): no latch.
+        w.load_field_script_at(vec![0x36, 0x01, 0x80, 0xE0, 0x07, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.sfx_forced_slot(), None);
+        // 36 01 80 1F 0C (request 3103, slot 6): the latch rises.
+        w.load_field_script_at(vec![0x36, 0x01, 0x80, 0x1F, 0x0C, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.sfx_forced_slot(), Some(6));
+        assert_eq!(w.side_band_bank().map(|b| b.request), Some(3103));
+        // A request under the latch is acknowledged and loads nothing.
+        w.load_field_script_at(vec![0x36, 0x01, 0x80, 0xE0, 0x07, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.side_band_bank().map(|b| b.request), Some(3103));
+        // Out of the field the forcing does not apply.
+        w.mode = SceneMode::Battle;
+        assert_eq!(w.sfx_forced_slot(), None);
+        w.mode = SceneMode::Field;
+        // 36 03 80 00 00: the teardown lowers it.
+        w.load_field_script_at(vec![0x36, 0x03, 0x80, 0x00, 0x00, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.sfx_forced_slot(), None);
     }
 }

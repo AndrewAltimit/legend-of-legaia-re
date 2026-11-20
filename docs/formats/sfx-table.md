@@ -216,7 +216,10 @@ names, with no fallback bank. The ring ages by the vsyncs one host tick spans.
 - The key-on rewrites the voice's libsnd note record (`+0x10 = 0x21`), so a
   sequencer note that held the voice no longer matches it and its note-off does
   not reach the cue.
-- While `_DAT_8007BA88` is non-zero every cue is forced onto channel `6`.
+- While `_DAT_8007BA88` is non-zero every cue is forced onto channel `6`. The
+  swap poller raises it when a side-band load into slot 6 lands (`0x80024B04`),
+  and only the side-band teardown lowers it
+  ([`audio.md`](../subsystems/audio.md#a-slot-6-side-band-bank-takes-every-cue)).
 - A sustained run loops until something keys it off: the next sustained cue,
   or the teardown `FUN_80017910`, which the mode init and the battle anim
   commit call

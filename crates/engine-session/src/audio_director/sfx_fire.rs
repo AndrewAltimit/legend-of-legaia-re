@@ -171,7 +171,7 @@ impl<S: AudioSink> AudioDirector<S> {
                         )?;
                         // No fallback: a runtime row's program indexes the
                         // bank its category names, and no other bank.
-                        RingFire::Runtime(row, self.sfx_vabs.get(&row[4])?)
+                        RingFire::Runtime(row, self.sfx_vab_for_category(row[4])?)
                     }
                 };
                 Some((id as u16, fire))
@@ -529,6 +529,7 @@ impl<S: AudioSink> AudioDirector<S> {
             self.release_sustained_sfx();
         }
         self.sfx_in_battle = Some(in_battle);
+        self.sfx_forced_slot = world.sfx_forced_slot();
         let mut ops = world.take_sfx_ring_ops();
         if in_battle && ring_at_frame_end() {
             // A harness seat for the cast channels (`scripts/ci/audio-pcm.py`'s
@@ -648,7 +649,7 @@ impl<S: AudioSink> AudioDirector<S> {
                 .and_then(|row| {
                     Some((
                         (row[0], row[1], row[2], row[3]),
-                        self.sfx_vabs.get(&row[4])?,
+                        self.sfx_vab_for_category(row[4])?,
                     ))
                 })
             };
