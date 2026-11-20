@@ -117,3 +117,129 @@ fn the_poller_loads_the_entry_the_port_resolves() {
         "id, retail extraction entry, port extraction entry: {mismatched:?}"
     );
 }
+
+/// The poller's second streaming slot, the side-band bank: with the track
+/// settled and the request `_DAT_8007BABC` off its acknowledge
+/// `_DAT_8007BAA0`, its stage walk (`0x800248B4..0x80024B30`) streams one
+/// bank through `FUN_8001FC00` into slot `3` or `6` and acknowledges the
+/// request, raising the forced-channel latch `_DAT_8007BA88` on a slot-`6`
+/// load. Held against `side_band_bank_for_request` (the raw index is the
+/// extraction entry `+ 2`) and the field host's latch rule (a slot-`6` bank
+/// raises it); a park request (`0x1000`) and any request made under the
+/// latch acknowledge at once and load nothing, as the port resolves neither.
+#[test]
+fn the_side_band_slot_streams_the_bank_the_port_resolves() {
+    differential!(scus(POLLER));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_core::world::{SIDE_BAND_PARK, VAB_01_RAW_BASE, side_band_bank_for_request};
+    const REQUEST: u32 = 0x8007_BABC;
+    const ACK: u32 = 0x8007_BAA0;
+    const FORCED: u32 = 0x8007_BA88;
+    /// `gp + 0x748`, the side-band stage word.
+    const SIDE_STAGE: u32 = 0x8007_BA60;
+    /// `gp + 0x72C`, the scene-local request a sub-2000 id leaves.
+    const LOCAL_REQUEST: u32 = 0x8007_BA44;
+    const VAB_01_BASE: u32 = 0x8007_BBE4;
+    for (va, ret) in [
+        (0x8001_9890, 0),
+        (CD_SYNC, 0),
+        (0x8002_66E0, 0),
+        (0x8002_6520, 0),
+        (0x8002_6478, 0),
+        (0x8001_E54C, 0),
+        (0x8002_630C, 0),
+        (0x8002_614C, 0),
+        (0x8005_67A8, 0),
+        (0x8005_FB84, 0),
+        (0x8001_A068, 0),
+        (0x8003_E360, 0),
+        (0x8005_2770, 1),
+    ] {
+        cpu.stub(va, ret);
+    }
+    let reads = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+    let r2 = reads.clone();
+    cpu.hook(PAYLOAD_READ, move |r, _| {
+        r2.borrow_mut().push((r.r[A0], r.r[A1]))
+    });
+    let mut rng = Rng(0x5349_4442);
+    let (mut slot3, mut slot6, mut parked, mut latched) = (0, 0, 0, 0);
+    for round in 0..600 {
+        let id = match rng.below(8) {
+            0 => SIDE_BAND_PARK,
+            1 => rng.below(1_000) as i32,
+            2 => 1_000 + rng.below(1_000) as i32,
+            3 | 4 => 2_000 + rng.below(40) as i32,
+            _ => 3_000 + rng.below(40) as i32,
+        };
+        let under_latch = rng.below(6) == 0;
+        // The track settled: the requested index is the loaded one.
+        for va in [0x8007_B868, 0x8007_B750, 0x8007_B8B8, TWO_PART_LATCH] {
+            cpu.mem.wr32(va, 0);
+        }
+        cpu.mem.wr32(0x1F80_0394, 0);
+        cpu.mem.wr32(BANK_BASE, MUSIC_01_RAW);
+        cpu.mem.wr32(TRACK, 2000);
+        cpu.mem.wr32(LOADED, MUSIC_01_RAW);
+        cpu.mem.wr32(STAGE, 0);
+        cpu.mem.wr32(SCENE_BASE, 0x200 + rng.below(0x200));
+        cpu.mem.wr32(VAB_01_BASE, VAB_01_RAW_BASE);
+        cpu.mem.wr32(FORCED, u32::from(under_latch));
+        cpu.mem.wr32(SIDE_STAGE, 0);
+        cpu.mem.wr32(LOCAL_REQUEST, 0xDEAD);
+        cpu.mem.wr32(REQUEST, id as u32);
+        cpu.mem.wr32(ACK, 0xFFFF_FFFF);
+        // The debug print's gate (`0x80024B38`): it writes nothing the port
+        // models.
+        cpu.mem.wr32(0x8007_B6D0, rng.below(2));
+        reads.borrow_mut().clear();
+        let mut calls = 0;
+        while cpu.mem.rd32(ACK) != id as u32 {
+            assert_eq!(cpu.call(POLLER, &[]), Stop::Returned, "round {round}");
+            calls += 1;
+            assert!(calls < 16, "round {round}: id {id} never acknowledged");
+        }
+        assert_eq!(
+            cpu.mem.rd32(SIDE_STAGE),
+            0,
+            "round {round}: the walk is back at 0"
+        );
+        let port = if under_latch {
+            None
+        } else {
+            side_band_bank_for_request(id)
+        };
+        let want: Vec<(u32, u32)> = port
+            .iter()
+            .map(|b| (b.prot_entry + 2, u32::from(b.slot)))
+            .collect();
+        // A slot-6 bank streams in two reads of the one entry (header, then
+        // body with `a3 = 1` at `0x80024A50..0x80024A64`); the port names the
+        // entry once.
+        let mut got = reads.borrow().clone();
+        got.dedup();
+        assert_eq!(got, want, "round {round}: id {id}");
+        let forced = under_latch || port.is_some_and(|b| b.slot == 6);
+        assert_eq!(
+            cpu.mem.rd32(FORCED) != 0,
+            forced,
+            "round {round}: id {id}: the forced-channel latch"
+        );
+        match port {
+            Some(b) if b.slot == 6 => slot6 += 1,
+            Some(_) => slot3 += 1,
+            None if under_latch => latched += 1,
+            None => parked += 1,
+        }
+        if port.is_some() && id < 2000 {
+            assert_eq!(cpu.mem.rd32(LOCAL_REQUEST), id as u32, "round {round}");
+        }
+    }
+    assert!(
+        slot3 > 100 && slot6 > 100 && parked > 20 && latched > 40,
+        "{slot3} {slot6} {parked} {latched}"
+    );
+}

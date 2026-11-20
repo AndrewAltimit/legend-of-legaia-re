@@ -1498,3 +1498,174 @@ verdict = "unreachable"
 reason = "op 0x18's phase dispatch at 0x80038D7C exits on a phase below 1 or above 3, but it is reached only from 0x80038C58 with the phase non-zero or from 0x80038D44/0x80038D78 having just stored 1 or 2, and every writer of the record's byte 2 (this routine, the scene reset at 0x8003B74C) stores 0..3"
 
 # lane C: 80021DF4 800520F0 8001ADA4 800243F0 8001822C
+[[arm]]
+entry = "8001ADA4"
+range = "0x8001AF2C..0x8001B044"
+verdict = "unported"
+reason = "case 3: builds the node matrix (FUN_80026988 on +0x24), negates the scale axes +0x5A bits 2 / 4 / 8 pick, composes it with the camera (FUN_8005B4E8 / FUN_8005B3A8) and draws each model-list part through FUN_8004629C and FUN_80043390 with a 0x40000000 / 0x48000000 packet flag by +0x5A & 0xE; the engine draws its meshes in wgpu, with no GTE matrix stack or packet stage to compare"
+
+[[arm]]
+entry = "8001ADA4"
+range = "0x8001B210..0x8001B5D0"
+verdict = "unported"
+reason = "the case-4 / default model draw past the cull test: the node matrix under the +0x42 extra rotation and the +0x72 scale, the light matrix when the model's +0xC is set, the camera-relative compose (FUN_8001CF50) on +0x52 & 0x780, and per part FUN_80043390, the +0x7A shatter draw FUN_80029888, the +0x42 draw FUN_8002735C and the +0x10 & 0x1000 hook FUN_8001C604; the engine builds the node's draw for wgpu (effect_ribbon::RibbonDraw, node_rotation, part_shatter) with no GTE or packet stage to compare"
+
+[[arm]]
+entry = "8001ADA4"
+range = "0x8001B604..0x8001B64C"
+verdict = "unported"
+reason = "cases 6, 7 and 8: a view-depth near reject (+0x34 < 0xA1) ahead of FUN_8002B944 / FUN_8002B94C / FUN_8002B954, each an empty leaf (`jr ra; nop`), so the arms draw nothing in retail and the port has nothing to implement"
+[[arm]]
+entry = "8001822C"
+range = "0x80018610..0x800188A0"
+verdict = "unported"
+reason = "the dev hotkey tail behind the debug word _DAT_8007B98C (`beq` at 0x800185FC; zero as retail ships): the paused Circle / Triangle mode-0x14 entry, the R2-edge frame-counter print through FUN_80017AAC, the R1+Start pause toggle in the live modes and the Select+Start (held 0x900) field soft reset; retail_pad ports only the pump, the engine's debug surface is its host's"
+
+[[arm]]
+entry = "800243F0"
+range = "0x8002440C..0x8002440C"
+verdict = "unported"
+reason = "returns at once while the two-stream latch _DAT_8007B9B8 is up, the ending theme (id 0x814) staged as two reads by the field init; the engine stages those two streams itself (engine-system mode_entry_init, FIELD_BGM_TWO_PART_ID) and never runs a poller over them"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024470..0x80024470"
+verdict = "unported"
+reason = "while the dev word _DAT_8007B868 is non-zero the poller copies both requests onto their acknowledges (0x80024478..0x80024494) so nothing loads; retail ships it zero and the port has no dev build (OverlayLoaderHost::dev_branch_flag)"
+
+[[arm]]
+entry = "800243F0"
+range = "0x800245CC..0x800245CC"
+verdict = "unreachable"
+reason = "the BGM stage word gp+0x744 is only cleared (0x800247BC) or stepped one stage at a time from 0 by the walk it indexes, whose last stage 6 clears it, so it never reaches 7 and the jump-table bound never falls through"
+
+[[arm]]
+entry = "800243F0"
+range = "0x8002495C..0x8002495C"
+verdict = "unreachable"
+reason = "the side-band stage word gp+0x748 is only cleared (0x80024AE8) or stepped from 0 by the walk it indexes, which sets 10 at most (0x80024A38 / 0x80024AA8) and clears it there, so it never reaches 11 and the jump-table bound never falls through"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024988..0x80024988"
+verdict = "unported"
+reason = "the side-band walk's stage-0 wait on the drive (FUN_8003DE7C(1) busy returns); the engine's side-band load is synchronous - the field host settles sound_stream in the same call that requests it (sound_cues.rs) - so no stage waits"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024AB0..0x80024AB0"
+verdict = "unreachable"
+reason = "`beq a1,zero` on the BGM-settled flag, but the side-band walk is entered only through `bne a1,zero` at 0x8002458C, so a1 is never zero here"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024B18..0x80024B18"
+verdict = "unported"
+reason = "the side-band walk's wait on the drive between its reads (FUN_8003DE7C(1) busy returns); the engine's side-band load is synchronous (sound_stream settles in the requesting call), so no stage waits"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024B74..0x80024C58"
+verdict = "unported"
+reason = "the field-idle battle-file preloader the poller runs once both slots are settled: _DAT_8007B858 counts to 2, then on the field (mode 3) with _DAT_8007B648 not 0x80 it steps _DAT_8007BA98 through FUN_8003E360, a CD-idle wait and the player-file loader FUN_80052770; the engine reads the party's battle files when a battle starts (engine-scene stream_file), not ahead of it"
+[[arm]]
+entry = "800520F0"
+range = "0x80052108..0x80052108"
+verdict = "unported"
+reason = "picks loader state 9, the shared CD-wait arm (FUN_8003DE7C poll at 0x800526C8) that on state 9 also LoadImages each TIM of the effect pack at gp+0xA8C (0x800526E8..0x80052734); the engine loads a battle synchronously and uploads the effect TIMs through engine-scene's upload_effect_textures_into_vram, so no state waits"
+
+[[arm]]
+entry = "800520F0"
+range = "0x8005212C..0x8005212C"
+verdict = "unported"
+reason = "picks loader state 1, the CD-wait arm at 0x800526C8 (FUN_8003DE7C poll, state++ once idle) after state 0's slot-7 read; the engine's battle load is synchronous and has no wait states"
+
+[[arm]]
+entry = "800520F0"
+range = "0x8005213C..0x8005213C"
+verdict = "unreachable"
+reason = "falls through only for a state byte (lbu) below 2 that is neither 1 (0x8005212C) nor 0, which no byte value is"
+
+[[arm]]
+entry = "800520F0"
+range = "0x80052150..0x80052158"
+verdict = "unported"
+reason = "0x80052150 falls through to state 3 and 0x80052158 picks it: the CD-wait arm at 0x800526C8 after state 2's slot-8 read (the engine's load is synchronous); 0x80052158's own fall-through needs a state in 2..4 other than 2, 3 and 4, which none is"
+
+[[arm]]
+entry = "800520F0"
+range = "0x8005216C..0x80052184"
+verdict = "unported"
+reason = "past state 6 (0x8005216C, its fall-through) picks loader states 5 and 7 (CD waits at 0x800526C8) and 8 (FUN_8002630C on the slot-2 bank, then the effect TMD pack raw 0x368 or its h: path at 0x80015358, by halfword 0x8007B8C2); the engine stages the banks through AudioDirector and reads the befect entries through ProtIndex when the battle starts; 0x80052184's fall-through needs a state in 5..9 other than 5..9"
+
+[[arm]]
+entry = "800520F0"
+range = "0x800521A0..0x800521C0"
+verdict = "unported"
+reason = "the compares that pick loader states 0xA (vdf / efect reads, raw 0x369 / 0x36A or their h: paths), 0xB and 0xD (CD waits) and 0xC (FUN_8001FBCC over the effect pack, FUN_80026B4C TMD registration, raw 0x36B); the engine reads those befect entries through ProtIndex (engine-scene effect_textures, PROT_BEFECT_DATA_ENTRY) with no loader states"
+
+[[arm]]
+entry = "800520F0"
+range = "0x800521D4..0x800521E4"
+verdict = "unported"
+reason = "the compares that pick loader states 0x11 and 0xF (CD waits at 0x800526C8), 0x12 (state 0xFF and DAT_8007BDB0 = -1) and the 0xFF arm; the engine's synchronous load has no wait states and enters a fight running (battle_sideband::BATTLE_RUNNING)"
+
+[[arm]]
+entry = "800520F0"
+range = "0x800521EC..0x800521EC"
+verdict = "unreachable"
+reason = "falls through only for a state in 0xF..0x11 that is none of 0xF (0x800521E4), 0x11 (0x800521D4) and 0x10, which no byte value is"
+
+[[arm]]
+entry = "800520F0"
+range = "0x80052200..0x80052208"
+verdict = "unported"
+reason = "state 0x12 parks the loader at 0xFF and clears the voice latch DAT_8007BDB0, state 0xFF calls the battle overlay's side-band handler 0x801F17F8 every frame, and anything else (0xFE, the ending fight) returns; the engine runs the fight's per-frame side-band from its battle loop (engine-battle battle_sideband), not from a loader state"
+
+[[arm]]
+entry = "800520F0"
+range = "0x8005248C..0x80052620"
+verdict = "unported"
+reason = "states 8, 0xA and 0xC: the effect-pack reads (raw 0x368..0x36B through FUN_8003E8A8, or h: paths through FUN_8003E6BC on halfword 0x8007B8C2), the pack walk FUN_8001FBCC and the TMD registration FUN_80026B4C that stops the loader on a failure; the engine reads the befect entries through ProtIndex when the battle scene is entered (engine-scene effect_textures)"
+
+[[arm]]
+entry = "800520F0"
+range = "0x800526D0..0x80052730"
+verdict = "unported"
+reason = "the shared CD-wait arm: return while FUN_8003DE7C(1) reports the read busy, then on state 9 LoadImage each TIM of the pack at gp+0xA8C through FUN_800198E0 before state++; the engine loads synchronously and uploads the effect TIMs through upload_effect_textures_into_vram"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x80022334..0x8002237C"
+verdict = "unreachable"
+reason = "the `bgez` on |edge| - |d| per axis in the emitter falloff runs only with the focus inside the box (0x80022204..0x80022278; a zero +0x9C skips to 0x800223E8), and inside it the edge 0x800222CC / 0x800222EC picks on the focus's side always exceeds |d|, so the difference is never negative"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x800223D4..0x800223D4"
+verdict = "unreachable"
+reason = "the product of the two falloffs is tested for a negative before its `sra 7`, but each falloff is (|edge| - |d|) << 7 / |edge| with 0 <= |d| < |edge| inside the box, so both lie in 0..0x80 and the product is never negative"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x800224A4..0x800224B0"
+verdict = "unreachable"
+reason = "the `bgez s3` / `bgez s2` floors test the results of `srl s3,v1,7` / `srl s2,t1,7`, a logical shift whose result is never negative"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x80022524..0x80022524"
+verdict = "unported"
+reason = "while the forced-channel latch _DAT_8007BA88 (gp+0x770) is up the emitter keys mixer record 6 instead of the cue's category; the port applies that latch once for every cue in the session's AudioDirector::sfx_vab_for_category (World::sfx_forced_slot, FUN_80016B6C's port), not in sfx_emitter::emitter_tick"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x80022608..0x80022620"
+verdict = "unreachable"
+reason = "the round-toward-zero bias on the key-on volume pair tests s3 / s2 for a negative, but both were floored at 0 and capped at 0x3F80 (0x800224A4..0x800224D0) and only averaged since, so neither is negative"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x800228A8..0x800228A8"
+verdict = "unreachable"
+reason = "0x800228A0 is reached only by falling out of the mode-3 arm (every other mode branches from 0x800226E0 straight to 0x800228B0), so `+0x5A == 3` always holds there and the fall-through is never taken"

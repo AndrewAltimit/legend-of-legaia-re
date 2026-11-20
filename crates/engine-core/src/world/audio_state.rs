@@ -775,7 +775,10 @@ impl World {
     }
 }
 
-/// The formation's `monster.snd` banks ([`World::battle_monster_sound_banks`]).
+/// The formation's `monster.snd` banks ([`World::battle_monster_sound_banks`]):
+/// slot `7` holds the smallest id's bank, and slot `8` the largest's when the
+/// formation mixes ids.
+// PORT: FUN_800520F0 (`0x80052218..0x80052298` state 0's slot-7 bank, `0x800522B8..0x80052374` state 2's slot-8 bank)
 pub fn monster_sound_banks(ids: impl Iterator<Item = u16>) -> Vec<(u8, u16)> {
     let ids: Vec<u16> = ids.collect();
     let (Some(&min), Some(&max)) = (ids.iter().min(), ids.iter().max()) else {
@@ -793,7 +796,7 @@ pub fn monster_sound_banks(ids: impl Iterator<Item = u16>) -> Vec<(u8, u16)> {
 /// (`0x8005225C`, `FUN_800520F0`), then `8` on the seats holding the largest id
 /// when the formation mixes ids (`0x8005234C`). Written once at load, so `ids` is
 /// the formation as it was seated, the dead included.
-// REF: FUN_800520F0
+// PORT: FUN_800520F0 (`0x80052238..0x80052284`, `0x80052328..0x8005235C`, the node `+0x80` stores)
 pub fn monster_sound_category(ids: &[u16], id: u16) -> u8 {
     let max = ids.iter().copied().max().unwrap_or(id);
     let mixed = ids.iter().any(|&x| x != ids[0]);
