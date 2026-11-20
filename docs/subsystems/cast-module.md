@@ -2464,6 +2464,17 @@ and the streaks whose chain length sits on a segment's edge drew a segment fewer
 more; with it the anchors match the recording's unit for unit, the cast's `rand()`
 stream holds retail's words through arm 13, and arm 12 reads `.756` against `.672`.
 
+**Arm 12's ground ring is retail's part for part.** The ring `0x801F7FE0` and the column
+`0x801F8094` turn from red `0xCB0000FF` to green `0xCB00FF00` on their own programs, and a
+`--retail-parts` recording holds the same radius, height and level channels on both sides
+(inner `1024`, outer `2976`, heights `-512` / `0`, level `3808` at the green's peak). A
+`--prim-calls` recording shows each drawn once a frame through the dispatcher with a
+`128`-packet object, the battle VRAM's texture page `0x8A` and CLUT row `490` match the
+engine's byte for byte, and both parts' model lists hold one slot. Retail's green floor
+still reads about twice the engine's ring over the frame's lower half (`G` `255` against
+`214..222`), and the engine's ring level runs a few ticks behind the pairing: what raises
+retail's green is open. Grade `capture`.
+
 ### PROT 0910 (Swordie)
 
 <a id="prot-0910-swordie"></a>
@@ -4768,6 +4779,12 @@ directors, all three drew the pager's records - other bodies' rings and lips - a
 caster's feet, or nothing. Frame by frame against `--physical` films of the `*_mid_cast`
 states: White Shield `.577` to `.797`, Power Charge `.587` to `.898`, Melt Spray `.795` to
 `.827`. Grade `disassembly` + `capture`.
+
+White Shield's arm 1 reads `14` game vsyncs on a `--retail-steps` film against the engine's
+`11`, and the cast is not slow: arm 0 seeds the word on its first pass and steps the phase
+there (`0x801F9068..0x801F9078`), so retail's recording opens on phase `1` with that pass
+already counted, where the engine's opens on phase `0` for the pass's `3` ticks. Phases 0
+and 1 together run `14` on both sides. Grade `disassembly` + `capture`.
 
 ### PROT 0957 (Death Game)
 
