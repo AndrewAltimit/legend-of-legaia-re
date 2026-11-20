@@ -1148,6 +1148,18 @@ reason = "PROT 0899 sub-screen 0x15 step 1: the party picker FUN_801D688C answer
 # lane C: 801DE840
 [[arm]]
 entry = "801DE840"
+range = "0x801DE8B4..0x801DE8C4"
+verdict = "unported"
+reason = "PROT 0897 prelude: a prefixed op whose target FUN_8003C83C cannot resolve keeps its PC (and logs under the debug word 0x8007B98C); the port's VM is handed an already-resolved context, the target lookup and its miss living in World's routing (field_channels::resolve_target via step_on_resolved_channel and the step_field_cross_context_* arms)"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E264C..0x801E2654"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C C0: the compiler's signed-overflow trap around `div` (`bne v1,-1` then `bne v0,0x80000000` ahead of `break 6`); the divisor is loaded with `lhu` (0x801E2630), so it is never -1"
+
+[[arm]]
+entry = "801DE840"
 range = "0x801E0C4C..0x801E0C4C"
 verdict = "unreachable"
 reason = "PROT 0897 op 4C: `srl v1,s3,4; sltiu v0,v1,0x10` bounds the outer-nibble table index, and a byte shifted right by four is always below 16, so the default arm is never taken"
@@ -1423,6 +1435,24 @@ verdict = "unreachable"
 reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
 
 # lane C: 801D84D0 80039B7C
+[[arm]]
+entry = "801D84D0"
+range = "0x801D86EC..0x801D86EC"
+verdict = "unreachable"
+reason = "PROT 0897: a press in the hold state 0x10 skips the skip latch when the speed _DAT_801F2750 is already 0x25; the only nonzero hold store is a row finish in typing (0x801D8AA8), which runs only on a call that found the speed 0x24 (0x25 jumps to 0x0D at 0x801D89F0), and every later call is 0x10 until the hold drains or a press there stores 0x25 and clears it (0x801D86F8..0x801D8704), so the speed in 0x10 is always 0x24"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8D60..0x801D8D60"
+verdict = "unreachable"
+reason = "PROT 0897: state 0x0E's scroll completion skips the row shift when the last-row index _DAT_801F3530 is <= 0; 0x0E is entered only from 0x0D with the window full (index >= capacity >= 1, 0x801D8C84..0x801D8C98), and a completion that stays in 0x0E refills the last slot (0x801D8DCC), so the index is the capacity there"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8EA8..0x801D8EA8"
+verdict = "unreachable"
+reason = "PROT 0897: state 0x0F's scroll completion skips the row shift when the last-row index is <= 0; each completion clears the last slot and adds one to the page's row count until it reaches the capacity (0x801D8F00..0x801D8F18), and every entry (0x801D8B0C, 0x801D8CCC, 0x801D8E2C) starts with the count at least 1 and no more than the index, so the index on the final completion equals that count, never below 1"
+
 [[arm]]
 entry = "80039B7C"
 range = "0x80039BCC..0x80039BCC"

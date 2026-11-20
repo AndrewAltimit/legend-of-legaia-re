@@ -194,7 +194,15 @@ impl RowWindow {
     /// and the window sat in the idle state `4`, so the next call is state
     /// `5`'s load (`0x80039FDC..0x80039FF0` steps `4` to `5` as the record
     /// reaches its next line).
+    ///
+    /// Every idle call zeroes the scroll and the typewriter's counter and
+    /// accumulator (`0x801D8708..0x801D8724`) before state `4` returns, so a
+    /// load that scrolls a full window first (state `0xC`, which sets no
+    /// counter) starts its row from `0`.
     pub fn resume_from_idle(&mut self) {
+        self.scroll = 0;
+        self.pacer.counter = 0;
+        self.pacer.acc = 0;
         self.rows_on_page = 0;
         self.pacer.hold = 0;
         self.phase = WindowPhase::Load;

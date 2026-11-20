@@ -166,6 +166,7 @@ fn the_pager_pages_as_retail_pages() {
     let (mut waits, mut taps, mut autos) = (0, 0, 0);
     let mut ends = std::collections::BTreeMap::<u32, u32>::new();
     let mut idles = [0u32; 2];
+    let mut resumes = 0usize;
     for scenario in 0..1500 {
         let (text, _) = gen_text(&mut rng);
         let dt = [1u8, 2, 2, 3, 5][rng.below(5) as usize];
@@ -219,7 +220,7 @@ fn the_pager_pages_as_retail_pages() {
             cpu.mem.wr32(PRESSED, 0);
             // The script feed sees a free state as the call returns - or a
             // call later, when the record runs ops first.
-            idle_call(&mut cpu, &text, &retail_prev, &mut rng, &mut idles);
+            let mut resumed = idle_call(&mut cpu, &text, &retail_prev, &mut rng, &mut idles);
             feed(&mut cpu, &text, &retail_prev);
             let mut guard = 0;
             let mut retail_calls = 1;
@@ -234,7 +235,7 @@ fn the_pager_pages_as_retail_pages() {
                 cpu.mem.wr32(0x1F80_03A0, 0x8018_0000);
                 marks.set(0);
                 assert_eq!(cpu.call(PAGER, &[ACTOR]), Stop::Returned);
-                idle_call(&mut cpu, &text, &retail_prev, &mut rng, &mut idles);
+                resumed |= idle_call(&mut cpu, &text, &retail_prev, &mut rng, &mut idles);
                 feed(&mut cpu, &text, &retail_prev);
                 retail_calls += 1;
             }
@@ -257,7 +258,19 @@ fn the_pager_pages_as_retail_pages() {
                 }
                 let fired = port.take_auto_press();
                 if port_calls == 1 && (turn || fired) {
-                    port.advance_page();
+                    if resumed {
+                        // The record ran ops while the `0x24` box stood in
+                        // the idle state `4`: the press left the held box,
+                        // and the next line goes on in it as the runner
+                        // feeds it (`HeldBox::next_line_panel`).
+                        let lead = find_dispatch(&text, retail_prev.as_ref().unwrap()) + 1;
+                        port = port
+                            .held_after_press()
+                            .resumed_at_segment(lead)
+                            .expect("the held box goes on");
+                    } else {
+                        port.advance_page();
+                    }
                 }
                 ours = port_record(&port);
                 if port_calls > 256 || ours.as_ref().is_some_and(|r| SEEN.contains(&r.0)) {
@@ -269,10 +282,14 @@ fn the_pager_pages_as_retail_pages() {
                 retail, ours,
                 "scenario {scenario} call {call} dt {dt} cap {capacity} press {press} (state before {state:#x})"
             );
+            // The resumed box spends no call on the press's state `3`: that
+            // call falls in the frames the record runs ops.
             assert_eq!(
-                retail_calls, port_calls,
+                retail_calls,
+                port_calls + usize::from(resumed),
                 "scenario {scenario} dt {dt}: calls"
             );
+            resumes += usize::from(resumed);
             assert_eq!(
                 cpu.mem.rd16(AUTO_PRESS) as i16,
                 auto,
@@ -342,30 +359,30 @@ fn the_pager_pages_as_retail_pages() {
         "{ends:?}"
     );
     assert!(idles.iter().all(|&n| n > 50), "{idles:?}");
+    assert!(resumes > 100, "{resumes}");
 }
 
 /// A pager call in a free state before the feed, as when the record runs
 /// ops between two lines: the idle arm (`0x801D8708..0x801D8768`) clears the
 /// row table in states `1` and `7` and keeps it in `4`, the state a `0x24`
 /// continuation leaves. Against `HeldBox::after_press`, whose box goes on
-/// drawing until the next line exactly for a `0x24`.
-fn idle_call(cpu: &mut Cpu, text: &[u8], prev: &Option<Rec>, rng: &mut Rng, seen: &mut [u32; 2]) {
+/// drawing until the next line exactly for a `0x24`. Returns whether a
+/// held `0x24` box (state `4`) idled, so the panel resumes it.
+fn idle_call(
+    cpu: &mut Cpu,
+    text: &[u8],
+    prev: &Option<Rec>,
+    rng: &mut Rng,
+    seen: &mut [u32; 2],
+) -> bool {
     use legaia_engine_field::inline_dialogue::HeldBox;
     let st = cpu.mem.rd32(STATE);
     // A collapsing box's countdown (`_DAT_801F273C`) returns ahead of the
     // states, so no idle arm runs under it.
     if !matches!(st, 1 | 4 | 7) || cpu.mem.rd32(GONE) != 0 || rng.below(3) != 0 {
-        return;
+        return false;
     }
     let table: Vec<u32> = (0..16).map(|i| cpu.mem.rd32(TABLE + i * 4)).collect();
-    // The idle arm also zeroes the typewriter words, which the next load
-    // sets again unless it scrolls a full window first (state `0xC`): the
-    // panel's page turn has no idle call, so a turn onto a full window
-    // runs without one.
-    let last = (0..16).rev().find(|&i| table[i] != 0).unwrap_or(0) as u32;
-    if st == 4 && last + 1 >= cpu.mem.rd32(ROWS_MAX) {
-        return;
-    }
     cpu.mem.wr32(0x1F80_03A0, 0x8018_0000);
     assert_eq!(cpu.call(PAGER, &[ACTOR]), Stop::Returned);
     assert_eq!(cpu.mem.rd32(STATE), st, "an idle state holds");
@@ -380,6 +397,7 @@ fn idle_call(cpu: &mut Cpu, text: &[u8], prev: &Option<Rec>, rng: &mut Rng, seen
         "state {st}: the row table"
     );
     seen[usize::from(st == 4)] += 1;
+    st == 4
 }
 
 /// The field VM's half: a free pager state takes the next text pointer, the
