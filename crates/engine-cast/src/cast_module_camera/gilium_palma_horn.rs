@@ -164,7 +164,16 @@ pub fn gilium_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats)
             0xE => pass(gated(st, drift(0, 4, 0, 0, 0), 0x40)?, ArmDirection::PASS),
             0xF => {
                 gated(st, drift(0, 4, 0, 0, 0), 0x3C0)?;
-                pass(Some(drift(0, 4, 0, -0x100, 0)), ArmDirection::PASS)
+                // The exit's `TR y -= 0x100` is one store (`addiu v0,v0,-0x100`
+                // at `0x801F81A8`); only the yaw's `4 delta` is the pass's rate
+                // (`0x801F816C..0x801F817C`). Repeated over the rest of a
+                // step-`2` pass, the drop doubled: arm `0x10` opened at TR y
+                // `-512` where the `0x95` film's retail camera reads `-256`.
+                with_stored_drift(
+                    ArmDirection::PASS,
+                    Some(drift(0, 4, 0, -0x100, 0)),
+                    Some(drift(0, 4, 0, 0, 0)),
+                )
             }
             0x10 => pass(gated(st, drift(0, 4, 0, -8, 0), 0x200)?, ArmDirection::PASS),
             0x11 => pass(

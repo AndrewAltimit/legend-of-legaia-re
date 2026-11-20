@@ -496,13 +496,21 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             }
             st.countdown.0 += P / 8;
             let cd = st.countdown.0;
-            if cd < 0x100 {
-                let (pitch, tr_z) = if cd <= 0xA0 {
+            // Retail adds the whole pass's `p / 8` in one store and tests the
+            // sum (`0x801F70D4..0x801F7104`), so every tick of a pass drifts
+            // the way the pass's end word picks: a pass that carries the word
+            // across `0xA0` climbs on all its vsyncs, not only the ones past
+            // the line. Tested tick by tick, the Gobu Gobu film's (`0x8F`)
+            // turn-round pass sank a vsync first and every later pass of the
+            // arc stood `352` TR z units short.
+            let end = cd + P / 8 * i32::from(st.countdown.1);
+            if end < 0x100 {
+                let (pitch, tr_z) = if end <= 0xA0 {
                     (-(P / 8), -12 * P)
                 } else {
                     (P / 2, 32 * P)
                 };
-                let base = if cd >= 0x51 { 0xF00 } else { 0x700 };
+                let base = if end >= 0x51 { 0xF00 } else { 0x700 };
                 let yaw = yaw_to(st, cd + base);
                 return held(Some(drift(pitch, yaw, 0, 0, tr_z)));
             }

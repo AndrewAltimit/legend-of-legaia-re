@@ -3619,6 +3619,19 @@ and arm 5's frames filled the screen with it. Two module words are modelled on t
 `ramp`: Barra's TR z pull and its victim's fall, and Mule's world-anchor Z
 `0x80089120`, which the port otherwise keeps no twin of (from `0`).
 
+**A pass's own sums.** A director arm's per-pass arithmetic is one store over the
+whole pass, and the port runs a pass as one-vsync ticks (`World::module_pass`), so
+two shapes need the pass, not the tick. A test on a word the arm has just added to
+reads the pass's sum: Barra's arm 6 adds `(p + 7) >> 3` and tests the sum against
+`0xA1` (`0x801F70D4..0x801F7104`), so every vsync of the pass that carries the word
+across the line climbs. Tested tick by tick, the `0x8F` film's turn-round pass sank a
+vsync first, and every later pass of the arc stood `352` TR z units short (camera
+`15.2` px on `--retail-steps`). And a one-shot store beside a rate is not repeated over
+the rest of a handing-over pass: Gilium's arm `0xF` exit drops TR y by `0x100` once
+(`addiu v0,v0,-0x100` at `0x801F81A8`) beside its `yaw += 4 delta`
+(`ArmDirection::rest_drift`); repeated, arm `0x10` opened at TR y `-512` where the
+`0x95` film's retail camera reads `-256`. Grade `disassembly` + `capture`.
+
 <a id="barra-seat-writes"></a>
 
 **Barra's seats.** PROT 0917 carries its victim through the cast, and the
