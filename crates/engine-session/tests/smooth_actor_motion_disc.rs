@@ -17,6 +17,8 @@ use std::path::PathBuf;
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
+use legaia_engine_world_views::camera_view::cutscene_owns_camera;
+use legaia_engine_world_views::screen_passes::HostView;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -46,6 +48,9 @@ struct Sample {
     /// `(key, stored [x, y, z], drawn [x, y, z])`: placement slots, and the
     /// player under key `256`.
     bodies: Vec<(u16, [f32; 3], [f32; 3])>,
+    /// The drawn player's screen point through the drawn follow camera,
+    /// `None` while a scripted shot owns the frame.
+    screen: Option<[f32; 2]>,
 }
 
 fn open(extracted: &std::path::Path, smooth: bool) -> Option<NativeSession> {
@@ -111,13 +116,29 @@ fn run(s: &mut NativeSession, ticks: u32) -> Vec<Sample> {
             let drawn = w.field_npc_drawn_pose(slot, (x, z)).expect("drawn");
             bodies.push((u16::from(slot), stored.pos, drawn.pos));
         }
+        let mut screen = None;
         if let Some(slot) = w.player_actor_slot.map(usize::from) {
             let m = &w.actors[slot].move_state;
             let stored = [m.world_x, m.world_y, m.world_z].map(f32::from);
             let (drawn, _) = w.field_draw_root(slot).expect("player");
             bodies.push((256, stored, drawn));
+            if !cutscene_owns_camera(w)
+                && let Some(v) = HostView::new(w, &s.camera, ([0.0; 3], [0.0; 3]))
+                    .presented()
+                    .frame(None)
+                    .field_view()
+            {
+                let e = v.eye_space(drawn);
+                if e[2] > 1.0 {
+                    screen = Some([v.h * e[0] / e[2], v.h * e[1] / e[2]]);
+                }
+            }
         }
-        out.push(Sample { sim, bodies });
+        out.push(Sample {
+            sim,
+            bodies,
+            screen,
+        });
     }
     out
 }
@@ -167,6 +188,28 @@ fn holds(samples: &[Sample]) -> (usize, usize, usize, f32, f32) {
     (walk, held_s, held_d, max_s, max_d)
 }
 
+/// Over the vsyncs the stored player walks under the follow camera: the
+/// largest one-vsync step of its drawn screen point, and the count of
+/// vsyncs that step was over a pixel.
+fn player_screen_shake(samples: &[Sample]) -> (usize, usize, f32) {
+    let stored = |t: usize| samples[t].bodies.iter().find(|b| b.0 == 256).map(|b| b.1);
+    let (mut n, mut over, mut max) = (0, 0, 0.0f32);
+    for t in 1..samples.len() {
+        let (Some(a), Some(b)) = (samples[t - 1].screen, samples[t].screen) else {
+            continue;
+        };
+        if stored(t - 1) == stored(t) && stored(t).is_some() && t >= 4 && stored(t - 4) == stored(t)
+        {
+            continue;
+        }
+        n += 1;
+        let d = ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt();
+        over += usize::from(d > 1.0);
+        max = max.max(d);
+    }
+    (n, over, max)
+}
+
 #[test]
 fn izumi_intro_walkers_draw_every_vsync_and_the_simulation_is_untouched() {
     let Some(extracted) = gated() else { return };
@@ -195,6 +238,17 @@ fn izumi_intro_walkers_draw_every_vsync_and_the_simulation_is_untouched() {
     eprintln!(
         "[smooth actors] izumi intro: {walk} walking body-vsyncs; stored held on {held_stored} \
          (max step {max_stored:.1}), drawn held on {held_drawn} (max step {max_drawn:.1})"
+    );
+    let (n, over_off, max_off) = player_screen_shake(&b);
+    let (_, over_on, max_on) = player_screen_shake(&a);
+    eprintln!(
+        "[smooth actors] izumi intro: the player's screen point over {n} walking follow vsyncs \
+         moved over a pixel on {over_off} (max {max_off:.1} px) stored, {over_on} \
+         (max {max_on:.1} px) drawn"
+    );
+    assert!(
+        max_on <= max_off + 1.0,
+        "the follow focus left the drawn player behind"
     );
     assert!(walk > 200, "the intro never walked anyone ({walk})");
     assert!(
