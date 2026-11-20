@@ -1482,3 +1482,14 @@ camera on every frame it holds follow on, where the port snapped only on the fli
 draws nothing for a zero-by-zero centre rect. The window content builder `FUN_80030628`'s shop buy, Goods and landmark
 lists, the typewriter count's substitution arms in `FUN_80036044` and the dev row drawer's readouts in `FUN_801EAD98`
 match.
+
+The command flow `FUN_801D0748`, run a pass at a time over generated pad words for each prompt, the attack and magic
+target cursors, the armed round and the glide gate, showed the port testing the arms of a surface in an order of its
+own. A refused ring arm fell through to a diagonal's second arm, so a cursed member's Right-and-Down committed Spirit.
+A direction on the lit arm stopped the cross-button entry's highlight walk where retail passes on to the next, and a
+Cross on the flee confirm did nothing under that entry. Cancelling the attack target cursor went back to the ring
+where retail returns to the `Auto | Command` prompt. Every target cursor ignored the Up or Down that commits under the
+directional entry, and the magic window's party cursor skipped downed members where retail stops on every seat. The
+monster picker skipped the recent-target ring for monsters `0x97` / `0x98` under a `0x380` status and aimed Koru's
+mode-3 cast at an engine seat where retail names the first monster seat. The spoils arm showed the Crimson Book's EXP
+Boost unported: retail credits the member's share twice.
