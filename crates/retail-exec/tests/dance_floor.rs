@@ -10,7 +10,10 @@
 //! and `press` on a clone; the words they write are put back before the tick.
 
 use crate::common::{Rng, disc, scus_cpu};
-use legaia_engine_minigames::dance::{DanceDir, DanceEvent, DanceGame, DanceMode};
+use legaia_engine_minigames::dance::{
+    DanceCameraPose, DanceCameraTrack, DanceDir, DanceEvent, DanceGame, DanceMode,
+    dance_camera_ease_table,
+};
 use legaia_minigame_formats::dance_cast as dc;
 use psx_retail_exec::{Cpu, GP, Stop, V0};
 use std::cell::Cell;
@@ -38,6 +41,14 @@ const LANDED: u32 = 0x801D_570C;
 const TRI_CURSOR: u32 = 0x801D_574C;
 const TRI_METER: u32 = 0x801D_578C;
 const PAD_EDGE: u32 = 0x8007_B874;
+/// The head's camera counters and ease table (`DAT_801D533C`, `DAT_801D5338`,
+/// `0x801D583C`) and the save's best dance score (`0x80084140 + 0x324`).
+const CAMERA_TIMER: u32 = 0x801D_533C;
+const CAMERA_KEY: u32 = 0x801D_5338;
+const CAMERA_EASE: u32 = 0x801D_583C;
+const BEST: u32 = 0x8008_4464;
+/// The run's pass flag (`legaia_engine_minigames::dance::WIN_FLAG`).
+const WIN_FLAG_ID: u32 = 0x50A;
 const FEED: u32 = 0x801D_1820;
 const JUDGE: u32 = 0x801D_1960;
 const AWARD: u32 = 0x801D_1AF4;
@@ -148,6 +159,9 @@ fn every_dancer_on_the_floor_dances_as_retail_dances() {
 
         let mut g = DanceGame::from_overlay_for_mode(&overlay, mode).expect("run");
         g.attach_clip_bank(&bank_records);
+        let mut track = DanceCameraTrack::from_overlay(&overlay).expect("the camera track");
+        let best = rng.below(700);
+        g.set_best_score(best);
 
         cpu.mem = clean.clone();
         cpu.regs.r[GP] = gp;
@@ -511,14 +525,29 @@ fn whole_songs_run_as_retail_runs_them() {
     }
     cpu.mem.wr32(0x8007_B888, BANK);
     cpu.mem.wr32(0x8007_B85C, 0x8010_0000);
+    // The story-flag clear `FUN_8003CE34`: the results state clears the
+    // pass flag `0x50A` on a lost run.
+    let cleared = Rc::new(Cell::new(None::<u32>));
+    {
+        let cleared = cleared.clone();
+        cpu.hook(0x8003_CE34, move |r, _| {
+            cleared.set(Some(r.r[psx_retail_exec::A0]))
+        });
+    }
     let clean = cpu.mem.clone();
     let gp = cpu.regs.r[GP];
 
     let mut rng = Rng(0x534F_4E47);
     let mut finals = Vec::new();
     let mut anchored = false;
+    let mut graded = [0usize; 2];
     for scenario in 0..24 {
-        let mode = [DanceMode::Qualifier, DanceMode::Finals, DanceMode::FreePlay][scenario % 3];
+        let mode = [
+            DanceMode::Qualifier,
+            DanceMode::Finals,
+            DanceMode::FreePlay,
+            DanceMode::HowTo,
+        ][scenario % 4];
         // Scenario 0 keeps its hands off, as the retail capture's run did.
         let density = [0, 8, 20, 40, 120][scenario.min(1) * (1 + rng.below(4) as usize)];
         // The hall's frame step: `DAT_1F800393` reads `3` in every retail
@@ -529,12 +558,23 @@ fn whole_songs_run_as_retail_runs_them() {
 
         let mut g = DanceGame::from_overlay_for_mode(&overlay, mode).expect("run");
         g.attach_clip_bank(&bank_records);
+        let mut track = DanceCameraTrack::from_overlay(&overlay).expect("the camera track");
+        let best = rng.below(700);
+        g.set_best_score(best);
 
         cpu.mem = clean.clone();
         cpu.regs.r[GP] = gp;
         state.set(seed);
         cpu.mem.wr32(STATE, 6);
         cpu.mem.wr32(MODE, mode as u32);
+        // What the entry `FUN_801CEF54` leaves for the head's camera block:
+        // the track's counters and its ease table; and the save's best.
+        cpu.mem.wr32(CAMERA_TIMER, 0);
+        cpu.mem.wr32(CAMERA_KEY, u32::MAX);
+        for (i, e) in dance_camera_ease_table().iter().enumerate() {
+            cpu.mem.wr16(CAMERA_EASE + 2 * i as u32, *e as u16);
+        }
+        cpu.mem.wr32(BEST, best);
         cpu.mem.wr8(0x1F80_0393, dt as u8);
         let n = g.dancer_count() as u32;
         for s in 0..n {
@@ -560,6 +600,18 @@ fn whole_songs_run_as_retail_runs_them() {
             };
             cpu.mem.wr32(PAD_EDGE, edge);
             assert_eq!(cpu.call(SM, &[SM_ACTOR]), Stop::Returned, "frame {frame}");
+            // The head's best-score raise and camera keyframe track.
+            g.raise_best_score();
+            let pose = track.tick(mode, dt as u8);
+            let camera = |cpu: &mut Cpu| DanceCameraPose {
+                angles: std::array::from_fn(|i| cpu.mem.rd16(0x8007_B790 + 2 * i as u32) as i16),
+                eye: std::array::from_fn(|i| cpu.mem.rd32(0x8008_40B8 + 4 * i as u32) as i32),
+            };
+            assert_eq!(
+                (cpu.mem.rd32(BEST), pose.map(|_| camera(&mut cpu))),
+                (g.best_score(), pose),
+                "scenario {scenario} frame {frame}: the head's best and camera"
+            );
             let now = cpu.mem.rd32(STATE);
             for s in 0..n {
                 let stop = cpu.call(TICK, &[ACTORS + s * 0x100]);
@@ -618,6 +670,22 @@ fn whole_songs_run_as_retail_runs_them() {
                 break;
             }
         }
+        // The results state's first pass: the three floor scores into the
+        // field VM's counter slots, and the grade that clears the pass flag.
+        cleared.set(None);
+        assert_eq!(
+            cpu.call(SM, &[SM_ACTOR]),
+            Stop::Returned,
+            "the results pass"
+        );
+        let slots: [i16; 3] =
+            std::array::from_fn(|i| cpu.mem.rd16(0x801C_6460 + 2 * i as u32) as i16);
+        assert_eq!(
+            (slots, cleared.get() == Some(WIN_FLAG_ID)),
+            (g.results_counter_slots(), g.results_clear_win_flag()),
+            "scenario {scenario} mode {mode:?}: the results pass"
+        );
+        graded[usize::from(g.results_clear_win_flag())] += 1;
         finals.push(
             (0..n as usize)
                 .map(|s| g.dancer_score(s))
@@ -626,4 +694,109 @@ fn whole_songs_run_as_retail_runs_them() {
     }
     eprintln!("closing tallies {finals:?}");
     assert!(anchored, "the hands-off run passed the capture's point");
+    assert!(graded.iter().all(|&n| n > 0), "won / lost {graded:?}");
+}
+
+/// The state machine `FUN_801CF470`'s opening states, each body entered from
+/// the head with every call out of the routine stubbed: state 1 maps the
+/// calling script's story flags onto the floor mode (against
+/// `dance_mode_from_flags`), and state 3 streams the mode's song (against
+/// `song_loader_index`) and steps free play's song counter (against
+/// `next_free_play_song`), held until the hall's wait counter reaches `0x6F`.
+#[test]
+fn the_opening_states_pick_the_floor_and_the_song_as_retail_does() {
+    use legaia_engine_minigames::dance::{
+        dance_mode_from_flags, next_free_play_song, song_loader_index,
+    };
+    differential!(prot(980, SM));
+    const SM: u32 = 0x801C_F470;
+    const SM_END: u32 = 0x801D_0190;
+    const WAIT: u32 = 0x801D_5158;
+    const SONG_COUNTER: u32 = 0x8008_4468;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(980).expect("PROT 0980"));
+    cpu.stub_outside = Some((SM, SM_END));
+    let flags = Rc::new(Cell::new(0u32));
+    {
+        let flags = flags.clone();
+        cpu.hook(0x8003_CE64, move |r, _| {
+            let bit = match r.r[psx_retail_exec::A0] {
+                0x133 => 1,
+                0x134 => 2,
+                0x135 => 4,
+                0x428 => 8,
+                f => panic!("flag {f:#x}"),
+            };
+            r.r[V0] = u32::from(flags.get() & bit != 0);
+        });
+    }
+    let loaded = Rc::new(Cell::new(None::<u32>));
+    {
+        let loaded = loaded.clone();
+        cpu.hook(0x8001_FC00, move |r, _| {
+            loaded.set(Some(r.r[psx_retail_exec::A0]))
+        });
+    }
+    let actor = 0x8014_0000;
+    // State 1, over every set of the four flags.
+    for set in 0..16u32 {
+        flags.set(set);
+        cpu.mem.wr32(STATE, 1);
+        cpu.mem.wr32(MODE, 0);
+        assert_eq!(cpu.call(SM, &[actor]), Stop::Returned);
+        let bit = |f: u16| {
+            set & match f {
+                0x133 => 1,
+                0x134 => 2,
+                0x135 => 4,
+                _ => 8,
+            } != 0
+        };
+        assert_eq!(
+            cpu.mem.rd32(MODE),
+            dance_mode_from_flags(bit).value(),
+            "flags {set:#06b}"
+        );
+    }
+    // State 3, over every mode, free-play counter and a wait either side of
+    // its bound.
+    let modes = [
+        DanceMode::Qualifier,
+        DanceMode::Finals,
+        DanceMode::HowTo,
+        DanceMode::FreePlay,
+    ];
+    for mode in modes {
+        for counter in 0..4u32 {
+            for wait in [0x6Eu32, 0x6F, 0x90] {
+                cpu.mem.wr32(STATE, 3);
+                cpu.mem.wr32(MODE, mode.value());
+                cpu.mem.wr32(SONG_COUNTER, counter);
+                cpu.mem.wr32(WAIT, wait);
+                loaded.set(None);
+                assert_eq!(cpu.call(SM, &[actor]), Stop::Returned);
+                let at = format!("mode {mode:?} counter {counter} wait {wait:#x}");
+                if wait < 0x6F {
+                    assert_eq!((loaded.get(), cpu.mem.rd32(STATE)), (None, 3), "{at}");
+                    continue;
+                }
+                assert_eq!(
+                    loaded.get(),
+                    Some(u32::from(song_loader_index(mode, counter))),
+                    "{at}: the song"
+                );
+                let after = if mode == DanceMode::FreePlay {
+                    next_free_play_song(counter)
+                } else {
+                    counter
+                };
+                assert_eq!(cpu.mem.rd32(SONG_COUNTER), after, "{at}: the counter");
+                assert_eq!(cpu.mem.rd32(STATE), 4, "{at}: the state");
+            }
+        }
+    }
 }

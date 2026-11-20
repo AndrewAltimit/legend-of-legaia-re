@@ -104,3 +104,27 @@ entry = "0x801F6A3C"
 range = "0x801F6AB8..0x801F6AB8"
 verdict = "unreachable"
 reason = "PROT 0922: the dispatch's out-of-range test (`sltiu 0x19`); the phase only moves by the shared tail's `+1` (0x801F8A84), arm 20's `+2` (0x801F87D0) and arm 23's `+1` (0x801F8DAC), and arm 24 returns zero (`move fp,zero` at 0x801F90AC), so the band stops calling before the phase reaches 25."
+
+[[arm]]
+entry = "0x801CF470"
+range = "0x801CF4B0..0x801CF4C8"
+verdict = "unported"
+reason = "PROT 0980: the dev skip to the results (state 0x14, score 999) on Select, behind the dev print flag `_DAT_8007B9B0`; the port carries no dev flag."
+
+[[arm]]
+entry = "0x801CF470"
+range = "0x801CF4F0..0x801CF4F0"
+verdict = "unreachable"
+reason = "PROT 0980: the head's state-0 test; the entry parks on state 0 (the debug mode menu) only when the field-entry word `_DAT_8007B8B8` is zero (0x801CF190..0x801CF1A8), and the door warp into the hall sets it (FUN_80016230's mode-0x18 snapshot)."
+
+[[arm]]
+entry = "0x801CF470"
+range = "0x801CF7EC..0x801CF7EC"
+verdict = "unreachable"
+reason = "PROT 0980: the switch's out-of-range test (`sltiu 0x15`); every state store is a constant 7, 0xA, 0xB or 0x14 or a +1 / +2 step from a state below 0xD, and state 0x14 stores none."
+
+[[arm]]
+entry = "0x801CF470"
+range = "0x801CF890..0x801CF8D0"
+verdict = "unreachable"
+reason = "PROT 0980: state 0, the debug mode menu's cursor and confirm; reached only with the field-entry word `_DAT_8007B8B8` zero, which no retail entry into the hall leaves (see the 0x801CF4F0 row)."
