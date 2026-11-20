@@ -50,7 +50,7 @@
       <tr><td><code>22</code></td><td>EXEC_MOVE</td><td>2</td><td>Play move-table record <code>id</code> on the actor (<code>99</code> = cancel); hands off to the <a href="move-vm.html">move VM</a></td></tr>
       <tr><td><code>23</code></td><td>MOVE_TO</td><td>3</td><td>Teleport to tile <code>(x, z)</code>; the player path also snaps the camera, the NPC path re-runs the visibility cull</td></tr>
       <tr><td><code>26</code></td><td>JMP_REL</td><td>3</td><td>Unconditional relative jump, <code>pc + 1 + u16</code>, 16-bit wrap</td></tr>
-      <tr><td><code>2B 2C 2D</code></td><td>LFLAG set / clr / test</td><td>2</td><td>Local bank <code>ctx+0x62</code>. The test <em>spins</em> (holds the PC) while the bit is clear</td></tr>
+      <tr><td><code>2B 2C 2D</code></td><td>LFLAG set / clr / test</td><td>2</td><td>Local bank <code>ctx+0x62</code>. The test <em>spins</em> (holds the PC) while the bit is clear; a bit of 16 or more sets, clears and reads nothing</td></tr>
       <tr><td><code>2E 2F 30</code></td><td>GFLAG set / clr / test</td><td>2</td><td>The 32-bit scratchpad word <code>0x1F800394</code>: transient, not saved, partly engine state (bit 22 enables per-frame camera-zone re-query). The test spins while the bit is <em>set</em>, like <code>33</code></td></tr>
       <tr><td><code>31 32 33</code></td><td>CFLAG set / clr / test</td><td>2</td><td>The context flag word. <code>31 08</code> copies <code>+0x26</code> to <code>+0x5A</code> instead of setting; <code>32 0x400</code> (un-halt) is the one op allowed through a halted target; <code>33</code> spins while the bit is set</td></tr>
       <tr><td><code>34</code></td><td>EFFECT</td><td>var</td><td>Sub-ops on <code>op0 &gt;&gt; 4</code> (<a href="#op-34">below</a>)</td></tr>

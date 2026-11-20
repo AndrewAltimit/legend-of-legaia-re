@@ -932,6 +932,11 @@ else:
     cursor16 += _DAT_1F800393 ; yield
 ```
 
+All three comparisons are `sltu` over sign-extended halfwords (`0x800386E8`,
+`0x80038704`, `0x800387EC`): a heading an earlier unwind left negative reads
+as huge, so it unwraps once more, and a negative duration never retires the
+op on the first tick.
+
 `0x0D`'s wait cursor **is** frame-scalar-driven - the opposite of `0x04`'s -
 and that is what keeps it in lockstep with the scheduler, which decrements
 its own countdown by the same scalar. Op and ramp retire together; the op
@@ -1046,7 +1051,12 @@ tail-section-1 streams through the installer's binding law
 (`actor_id = N0 + placement_index`). The whole variant table is carried, not
 just the fresh-game one, because the interpreter preamble re-selects the live
 variant **every tick** against `DAT_80085758`; a swap reseeds the cursor
-rather than resuming the old variant's offset into new bytecode.
+rather than resuming the old variant's offset into new bytecode. The swap
+(`0x80038298..0x800382D8`) clears only the cursor's low byte, stores the bare
+selector in `+0x86` (dropping the wander direction bits) and resets the
+actor's `0x801C6470` record to `[0x8C, 0x8C, 0, 0]`, so the new variant
+starts with no default move and the wander phase at `0`
+(`AmbientMotion::rebind_variant`).
 
 The overworld runs it as well: the kingdom maps are mode-3 field-run
 scenes whose scripted actors the same driver `FUN_8003BC08` steps (`jal

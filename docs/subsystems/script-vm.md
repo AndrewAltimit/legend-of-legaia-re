@@ -808,9 +808,9 @@ The cleanest group - three separate 1-bit-flag banks each with set / clear / tes
 
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
-| 0x2B | `LFLAG_SET` | `[2B, bit]` | `ctx[+0x62] \|= 1 << (bit & 0x1F)`. Per-script local flag bank (16 bits). |
-| 0x2C | `LFLAG_CLR` | `[2C, bit]` | `ctx[+0x62] &= ~(1 << (bit & 0x1F))`. |
-| 0x2D | `LFLAG_TST` | `[2D, bit]` | If `ctx[+0x62] & (1 << bit)` is 0, return `pc_offset` (halt); else continue. |
+| 0x2B | `LFLAG_SET` | `[2B, bit]` | `ctx[+0x62] \|= 1 << (bit & 0x1F)`. Per-script local flag bank (16 bits): the shift is a 32-bit `sllv` stored with `sh`, so a bit of 16 or more sets nothing. |
+| 0x2C | `LFLAG_CLR` | `[2C, bit]` | `ctx[+0x62] &= ~(1 << (bit & 0x1F))`. A bit of 16 or more clears nothing. |
+| 0x2D | `LFLAG_TST` | `[2D, bit]` | If `ctx[+0x62] & (1 << bit)` is 0, return `pc_offset` (halt); else continue. A bit of 16 or more always reads clear. |
 | 0x2E | `GFLAG_SET` | `[2E, bit]` | `_DAT_1F800394 \|= 1 << (bit & 0x1F)`. Global story flag bank (32 bits, in PSX scratchpad). |
 | 0x2F | `GFLAG_CLR` | `[2F, bit]` | `_DAT_1F800394 &= ~(1 << (bit & 0x1F))`. |
 | 0x30 | `GFLAG_TST` | `[30, bit]` | Busy-wait with `0x33`'s polarity: hold the PC while `_DAT_1F800394 & (1 << bit)` is set, advance once it is clear (`0x801DEE14` loads the word and joins `0x33`'s test at `0x801DEE3C`). |

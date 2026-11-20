@@ -1530,3 +1530,17 @@ field; the port's right-aligned layout agrees on every figure that fits. The Sta
 then Right on one frame, so pressing both lands where it started; the port took Left alone. Retail reopens Status on the
 page it last showed, and the port opens it on the first. The list kernel's confirm cue overwrites the cue ring's last slot
 where its cancel queues a new one.
+
+Branch coverage of the field side found its own share. The field VM `FUN_801DE840`, run over the disc's scripts and a
+synthetic operand corpus under seeded story flags, pad, region mask and halted or player contexts, showed `4C 4E` /
+`4C 4F` halting where the nibble-4 head has already stepped six bytes, every `4C Fx` advancing where only `4C FF` does,
+local-flag bits of 16 or more wrapping onto the low bits where retail's 32-bit shift stored with `sh` drops them, op
+`3D` clearing the leader byte when it empties the list, and `4C DC` matching item id `0` on an empty bag slot. The
+camera mover `FUN_801DC0BC` keeps its progress in the halfword `+0x9C`, so a sum past `0x7FFF` goes negative and runs
+the curve from there; the port clamped a wider integer and arrived. The ambient motion VM `FUN_80038158` resets the
+actor's default-move record and wander state on a variant swap, which the port kept, and op `0x0D` compares unsigned.
+The pager `FUN_801D84D0` zeroes the pad word while the automatic press counts, caps the picker slide's frame step at
+4, and reads a resting picker's first Up or Down; the script runner `FUN_80039B7C` ends its pass on a stalled
+`A1 <id>`, whose masked byte reads `0x21`. The part tick `FUN_80021DF4` leaves straight from the sound emitter's arm
+on the tick it takes its stop request, with no move-VM run and no clamps. The BGM poller's stage walk `FUN_800243F0`,
+run call by call against `BgmSwapPoller` at one call a game frame, matches.
