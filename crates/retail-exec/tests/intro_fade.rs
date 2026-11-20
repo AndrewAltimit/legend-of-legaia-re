@@ -103,7 +103,7 @@ fn the_handoff_phases_tick_as_retail_does() {
         ($va:expr, |$r:ident, $m:ident| $e:expr) => {{
             let c = calls.clone();
             cpu.hook($va, move |$r, $m| {
-                let _ = &$m;
+                let _ = (&$r, &$m);
                 c.borrow_mut().push($e)
             });
         }};

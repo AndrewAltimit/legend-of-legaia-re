@@ -159,9 +159,6 @@ fn every_dancer_on_the_floor_dances_as_retail_dances() {
 
         let mut g = DanceGame::from_overlay_for_mode(&overlay, mode).expect("run");
         g.attach_clip_bank(&bank_records);
-        let mut track = DanceCameraTrack::from_overlay(&overlay).expect("the camera track");
-        let best = rng.below(700);
-        g.set_best_score(best);
 
         cpu.mem = clean.clone();
         cpu.regs.r[GP] = gp;

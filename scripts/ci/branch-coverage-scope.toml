@@ -146,3 +146,9 @@ entry = "0x801F69D8"
 range = "0x801F76E8..0x801F76E8"
 verdict = "unreachable"
 reason = "PROT 0905 (Vera) only: inside arms 6 and 7 (0x801F7440..0x801F785C), which no phase reaches; the image steps the phase by the shared tail's +1 (0x801F7F4C), arm 3's +1 (0x801F6E94) and arm 5's +3 (0x801F7434, 5 -> 8) and sets 0xFF, so 6 and 7 are skipped. No other recorded slot-B image holds a branch here."
+
+[[arm]]
+entry = "0x801CF3BC"
+range = "0x801CF510..0x801CF53C"
+verdict = "unreachable"
+reason = "PROT 0972 state 0's debug venue menu (cursor on pad 0x4000, confirm on 0x20, the six rod and lure grants), entered only when the field-entry word `_DAT_8007B8B8` is zero (0x801CF4A0); the door warp into the pond sets it (FUN_80016230's mode-0x18 snapshot)."
