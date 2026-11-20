@@ -1204,7 +1204,16 @@ the acting actor and its target (`actor[+0x1DD]` through the actor table
   after its pass's arm, so the pull-in opens one pass later. The latch stands
   until `FUN_801E93C8` clears it, which the strike band's tail runs on nearly
   every pass and which a monster's `+0x87` holds shut for as long as its seat
-  sits on that clip (`0x801E9458..0x801E94A4`).
+  sits on that clip (`0x801E9458..0x801E94A4`). The arm reads the latch before
+  that tail runs (`jal 0x801D5854` inside the state body, the tail at
+  `0x801E5F64`), so the pass whose tail drops it still frames pulled in and the
+  release opens a pass later. The port's camera runs after the whole pass, so
+  the SM keeps the byte its strike arm read (`BattleActionCtx::strike_arm_latch`)
+  and case 7 tests that copy. Read live, a monster's two-shot let go of the
+  pull-in a pass early on every strike film that pulls in: TR z `3440` on
+  `chitei2_kemaro_lv2_strike`'s first `0x20` pass where retail holds `2948`, and
+  Gi Delilas' `0x1E` release `3561` against `3066`. Grade `disassembly` for the
+  order, `capture` for the films.
 
 **Case 8** is the same shape aimed at the target alone: an extra `-0x100` on
 the yaw base, `focus.y` forced to the stage floor, a `-0x600` unwrap, and a
