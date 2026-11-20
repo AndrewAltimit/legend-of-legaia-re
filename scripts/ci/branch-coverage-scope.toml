@@ -714,3 +714,89 @@ entry = "0x801E9FD4"
 range = "0x801EB77C..0x801EB784"
 verdict = "unreachable"
 reason = "Divide overflow trap: the divisor (the `s1` id span, `andi v1,s1,0xffff` at `0x801EB764`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+# FUN_801D388C (PROT 0898) and FUN_8004E568: record spawns and heap work the engine does from state.
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D3F34..0x801D3FDC"
+verdict = "unported"
+reason = "Case 0x10, the ring's step back, parks the commit log's placement records 0x2B.. (x 0x148, the name to (0x44, 0xE)) by row depth ctx[+0x1F]; the engine draws the log from the committed members (engine-battle-hud command_chips::battle_commit_log's row rule) and ports only the step (member_step)."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D4294..0x801D42C4"
+verdict = "unported"
+reason = "Case 0x15, a non-last Magic / Item commit, lands records 0x2B+3n <- 0x1A, 0x2C+3n <- 0x3B (the spell or item name) and 0x2D+3n <- 0x29 at x = name + command + 0x30; the engine infers the row (command_chips::battle_commit_log) and shows the chip label with no item target - a port gap."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D45B0..0x801D471C"
+verdict = "unported"
+reason = "Case 0x21, Reselect on the commit confirm, parks the last row's records at (0x44, 0xE) and the rest at x 0x148 / 0x184 by row depth; the engine's row rule takes the row down (command_chips::battle_commit_log) and member_step ports the step."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D480C..0x801D48FC"
+verdict = "unported"
+reason = "Case 0x22, the last Magic / Item commit, lands the rows as case 0x15 does (record 0x3B as the command column); the engine infers the row instead - the port gap case 0x15 names."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D51A0..0x801D51DC"
+verdict = "unported"
+reason = "Tail of case 0xD, the review cursor's move: with ctx[+0x266 + seat] clear it snaps the AP bar record 0x0F and the pennants in mode 3; the engine draws them from the arts session's state."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D520C..0x801D5278"
+verdict = "unported"
+reason = "Tail of case 0xE: retires the AP bar and pennants by ctx[+0x265 + seat] and spawns row 1 through FUN_801D8DE8 in mode 0; the engine draws the log and the gauge from session state, no record spawns."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D538C..0x801D538C"
+verdict = "unported"
+reason = "Tail of cases 0x10 / 0x11: spawns the log's row 1 (records 0x2E..0x30) in mode 0; the engine's commit log has no record spawns (command_chips::battle_commit_log)."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D53D0..0x801D5480"
+verdict = "unported"
+reason = "Tail of case 0x15: spawns row 1, re-spawns ctx[+0x1E]'s record in mode 1 and raises the party panels 0x4E.. for a party-wide target; drawn from state by the engine, no record spawns."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D54C4..0x801D5560"
+verdict = "unported"
+reason = "Tail of case 0x20: retires the AP bar and pennants when ctx[+0x266 + seat] is clear and spawns rows 1..n in mode 0; drawn from state by the engine."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D5580..0x801D55A8"
+verdict = "unported"
+reason = "Tail of case 0x21: spawns records 0x2E+k (k < 3n) in mode 0; the engine's row rule draws the log."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D55C8..0x801D5620"
+verdict = "unported"
+reason = "Tail of case 0x22: spawns the rows and re-spawns ctx[+0x21]'s record, raising panels 0x4E / 0x4F for a party-wide one; drawn from state by the engine."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D5654..0x801D567C"
+verdict = "unported"
+reason = "Tail of case 0x23: spawns the log's rows in mode 0 ahead of FUN_801D5854(0, 9); the engine draws the log from the committed members."
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004E5D0..0x8004E5E8"
+verdict = "unported"
+reason = "The stream-request hold (ctx[+0x26B]) seats the partner's +0x1DD in 3..6 and turns it +0x800 before FUN_801D5854(seat, 8); the engine holds a constant VICTORY_STREAM_FRAMES and does not turn the partner."
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004E654..0x8004E6C4"
+verdict = "unported"
+reason = "The escape arm (ctx[+7] == 0x67) frees the monster records and *0x8007BD74 through FUN_80017B94 and preloads the field through FUN_80025358 by ctx[+0xC]; the engine loads synchronously and keeps no heap, porting only the ctx[+0x6CE] count."
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004EBC4..0x8004EBD4"
+verdict = "unported"
+reason = "Noa (seat byte 2) on win pose 0x17 queues two DR_MOVE blits into the packet stream (0x1F8003A0) to swap her texture page; the engine's pose draw needs no VRAM copy."
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004ED04..0x8004ED3C"
+verdict = "unported"
+reason = "With the Battle Camera option 0x800846C0 at 0 the win arm halves the camera distance ctx[+0x6D0], adding 0x100 for seat byte 4; the port has no win-arm camera seed - a port gap."
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004F810..0x8004F890"
+verdict = "unported"
+reason = "The win's exit preloads the field through FUN_80025358 and frees the monster records through FUN_80017B94 by ctx[+0xC]; the engine loads synchronously and keeps no heap."
