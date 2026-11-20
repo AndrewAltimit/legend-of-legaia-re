@@ -1142,13 +1142,18 @@ mod tests {
         let d = cam.led_delta(camera_present_lead(&w, &cam));
         assert_eq!(cam.globals.0[1] as f32 + d[1], drawn);
         w.clock.display_frames = 103;
-        assert_eq!(camera_present_lead(&w, &cam), DrawLead::NONE);
+        // (The smooth field actors' flag rides every field lead.)
+        let none = DrawLead {
+            actors: true,
+            ..DrawLead::NONE
+        };
+        assert_eq!(camera_present_lead(&w, &cam), none);
         // A cut draws at once.
         w.clock.display_frames = 104;
         let mark = cam.present_mark();
         cam.globals.0[1] = 180 + 1024;
         cam.observe_present(&w, mark);
-        assert_eq!(camera_present_lead(&w, &cam), DrawLead::NONE);
+        assert_eq!(camera_present_lead(&w, &cam), none);
         // Retail draws the stored pose.
         let mark = cam.present_mark();
         cam.globals.0[1] += 40;

@@ -933,7 +933,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 32);
+        assert_eq!(t.retail_deviations().len(), 33);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }
