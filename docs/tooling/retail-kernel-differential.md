@@ -169,7 +169,47 @@ routine that is only there to seed the one compared.
 **What the credit means.** It is per address. A passing differential proves
 which routine ran and that the Rust kernel the test calls computes what it
 wrote; it does not prove that every `PORT:` site carrying the address sits on
-that kernel, nor that every arm was reached (step 3 above is what does that).
+that kernel, nor that every arm was reached (step 3 above is what does that,
+and [branch coverage](#branch-coverage) measures it).
+
+## Branch coverage
+
+A credit says a routine ran, not how much of it. Branch coverage measures the
+rest. Built with the `branch-cov` feature and run with
+`PSX_RETAIL_EXEC_BRANCHES` set, the interpreter
+(`crates/retail-exec/src/branch_cov.rs`) walks each routine the ledger records
+statically from its entry, over memory as the call found it, to enumerate its
+conditional branches, then notes the direction each one takes while the suite
+runs:
+
+```bash
+python3 scripts/ci/branch-coverage.py --record        # the suite, recording on (disc)
+python3 scripts/ci/branch-coverage.py                 # summary over the PORT-tagged routines
+python3 scripts/ci/branch-coverage.py --worst 30      # lowest-covered routines
+python3 scripts/ci/branch-coverage.py --addr 801D0748 # one routine, branch by branch
+```
+
+Each branch is **both** (taken and fell through), **one** (only one way) or
+**unreached**, and direction coverage is `(2*both + one) / (2*branches)`. The
+walk follows fall-through and both arms of a branch, and does not follow calls,
+so a routine's branches are its own. A `j` stays in the routine when it lands
+inside the extent already reached, or further on with no other routine's frame
+setup (`addiu sp,sp,-N`) between - the compiler rotates loops to test at the
+bottom and jumps forward to the test; a `j` behind the entry or past a frame
+setup is a tail call. A `jr` through a register other than `ra` is a jump
+table the walk cannot resolve. The compiler keeps tables in `.rdata` and the
+case arms inside the routine ahead of its epilogue, so a routine holding one
+takes every conditional branch from its entry to its epilogue (the first
+`jr ra` whose delay slot reaches the furthest address reached), stopping early
+at another routine's frame setup when the `jr` was a tail call through a
+function pointer. Against the SCUS routines with a Ghidra dump, the counts
+agree except where the dump itself is short of the routine.
+
+The figure is the whole routine's. Several ports tag one dispatcher for the arm
+each implements, so a dispatcher scores low on arms nobody ported; read it with
+`--addr` before calling it a gap. The table holds addresses and hashes, no
+instruction bytes, and stays under `target/branch-coverage/`. It is a
+measurement, not a gate.
 
 ## What it has found
 

@@ -17,6 +17,13 @@ how a test proves it ran the routine it claims: each test opens with
 `differential!(..)` (in `tests/common.rs`), and `scripts/ci/differential-coverage.py`
 counts those declarations against the `// PORT:` tags.
 
+Built with the `branch-cov` feature and run with `PSX_RETAIL_EXEC_BRANCHES`
+set to a file, `branch_cov` also walks each
+ledger routine's control flow statically to enumerate its conditional
+branches and notes which way each one went, so
+`scripts/ci/branch-coverage.py` can report how much of each routine the suite
+exercises, not just whether it entered it.
+
 ## Pricing retail code
 
 Each call also counts its data accesses by region (`Cpu::accesses`: RAM,

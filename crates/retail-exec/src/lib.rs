@@ -19,6 +19,7 @@ pub mod gte;
 use std::collections::HashMap;
 
 pub mod battle_cost;
+pub mod branch_cov;
 pub mod field_units;
 pub mod frame_runner;
 pub mod ledger;
@@ -430,6 +431,9 @@ pub struct Cpu {
     /// table-driven leaves - that the ledger notes each time the run lands
     /// on them, as [`Cpu::call`] notes its own entry.
     pub watched: std::collections::HashSet<u32>,
+    /// This call's conditional-branch outcomes when [`branch_cov`] is on:
+    /// `(pc, word)` to a mask, 1 taken and 2 fell through.
+    branch_hits: HashMap<(u32, u32), u8>,
     probes: HashMap<u32, Probe>,
     /// Routines whose inclusive cost [`Cpu::profile`] collects.
     profiled: HashMap<u32, Spent>,
@@ -638,6 +642,9 @@ impl Cpu {
         self.halt = Some((halt, count));
         let stop = self.run(pc, budget);
         self.halt = None;
+        if branch_cov::enabled() {
+            branch_cov::merge_hits(&mut self.branch_hits);
+        }
         stop
     }
 
@@ -666,7 +673,14 @@ impl Cpu {
         let body = self.mem.read(entry, ledger::BODY_LEN);
         // A hook entry may sit outside memory; the read must not stop the run.
         self.mem.bad = None;
+        let cov = branch_cov::enabled();
+        if cov {
+            branch_cov::note_routine(&mut self.mem, entry, &body);
+        }
         let stop = self.run(entry, budget);
+        if cov {
+            branch_cov::merge_hits(&mut self.branch_hits);
+        }
         ledger::record(entry, body, &stop);
         stop
     }
@@ -679,6 +693,7 @@ impl Cpu {
         // Whether the instruction just run sat in a delay slot: PCSX-Redux
         // tests for an interrupt only there (`branchTest` in `execBlock`).
         let mut after_delay = false;
+        let cov = branch_cov::enabled();
         loop {
             if pc == RETURN_SENTINEL {
                 return Stop::Returned;
@@ -734,6 +749,9 @@ impl Cpu {
             }
             if self.watched.contains(&pc) {
                 let body = self.mem.read(pc, ledger::BODY_LEN);
+                if cov {
+                    branch_cov::note_routine(&mut self.mem, pc, &body);
+                }
                 ledger::record(pc, body, &Stop::Returned);
             }
             if let Some(mut h) = self.cpu_hooks.remove(&pc) {
@@ -793,6 +811,10 @@ impl Cpu {
                 let e = self.hist.entry(pc).or_default();
                 e.0 += 1;
                 e.1 += made;
+            }
+            if cov && branch_cov::is_conditional(w) {
+                let bit = if matches!(stepped, Ok(Some(_))) { 1 } else { 2 };
+                *self.branch_hits.entry((pc, w)).or_default() |= bit;
             }
             match stepped {
                 Ok(Some(target)) => {
