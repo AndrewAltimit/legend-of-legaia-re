@@ -56,3 +56,45 @@ entry = "0x801F2410"
 range = "0x801F2A94..0x801F2A94"
 verdict = "unreachable"
 reason = "PROT 0898: the same fix-up for the wobble's second half; `(m - h/2) << 12) / h` stays in [0, 0x800) for `h/2 <= m < h`, so the product is never negative."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CF798..0x801CF798"
+verdict = "unported"
+reason = "PROT 0979 phase 5: the round-up of the looked-up length to a 0x800 grid into `_DAT_8007B9DC`; `tick_transition` surfaces the lookup call only, as the engine reads no bundle by that length."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CF824..0x801CF83C"
+verdict = "unreachable"
+reason = "PROT 0979: the floors at zero on `_DAT_8007B92C` / `_DAT_8007B930`, which the routine zeroes on entry (0x801CF5D8..0x801CF5E4) before any phase body runs; none of the phase callees (sound, bundle read, load wait, lookup) stores into them."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CF914..0x801CF914"
+verdict = "unreachable"
+reason = "PROT 0979: a reload of the battle id after `FUN_800266E0`, which 0x801CF8F4 has just found non-negative; the sequencer-slot teardown does not store `_DAT_8007B880`."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CFA4C..0x801CFA4C"
+verdict = "unreachable"
+reason = "PROT 0979: the fade switch's floor at zero on `(elapsed + K - total) * n`, behind its own `total - K < elapsed` test, so the product is at least `n` and the `bgez` always takes."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CFACC..0x801CFACC"
+verdict = "unreachable"
+reason = "PROT 0979: the fade switch's floor at zero on `(elapsed + K - total) * n`, behind its own `total - K < elapsed` test, so the product is at least `n` and the `bgez` always takes."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CFB14..0x801CFB14"
+verdict = "unreachable"
+reason = "PROT 0979: the fade switch's floor at zero on `(elapsed + K - total) * n`, behind its own `total - K < elapsed` test, so the product is at least `n` and the `bgez` always takes."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CFB64..0x801CFB64"
+verdict = "unreachable"
+reason = "PROT 0979: the fade switch's floor at zero on `(elapsed + K - total) * n`, behind its own `total - K < elapsed` test, so the product is at least `n` and the `bgez` always takes."
