@@ -726,6 +726,7 @@ pub fn guilty_cross_camera(
     if !(1..=5).contains(&phase) {
         return CaptureCamArm::default();
     }
+    let pass_word = st.countdown.pass_end(super::MODULE_DRAIN_PER_TICK);
     let hold = st.countdown.drain_above(0);
     let mut shot = None;
     let mut arm = CaptureCamArm::default();
@@ -734,8 +735,12 @@ pub fn guilty_cross_camera(
     // pass adds `step << 8` to its `+0x16` (`0x801F702C..0x801F7040`), and
     // the pass that leaves stores `-0x200` there (`0x801F7064..0x801F7074`),
     // so the cross falls from `-0x1200` onto the victim in the arm's last
-    // sixteen frames and stands at `-0x200` through arm 4.
-    if phase == 3 && st.countdown.0 <= SPEED_SCALAR << 4 {
+    // sixteen frames and stands at `-0x200` through arm 4. The compare reads
+    // the word the pass's one `subu` stored (`0x801F7018`), so the pass that
+    // crosses adds its whole step: read a tick at a time, that pass added
+    // only its ticks past the crossing and the cross hung up to three ticks'
+    // fall behind retail's.
+    if phase == 3 && pass_word <= SPEED_SCALAR << 4 {
         arm.part_write = Some(CapturePartWrite {
             records: &GUILTY_CROSS_CROSS,
             dy: if hold { GUILTY_CROSS_FALL_PER_TICK } else { 0 },
@@ -1535,9 +1540,10 @@ pub fn slime_divide_shake(
     gate: super::capture_countdown::ArmCountdown,
     caster: super::ModuleSeat,
 ) -> CaptureCamArm {
-    // The word as the pass's single drain leaves it - what the shake reads -
-    // before the gate's rest-of-pass drain on a passing tick.
-    let word = st.countdown.0 - gate.drain.unwrap_or(0);
+    // The word as the pass's single drain leaves it - what the shake reads
+    // (`subu` / `sw` at `0x801F7B7C..0x801F7B88`, `0x200 - word` at
+    // `0x801F7BB0`): the whole pass's `step << 1`, not one tick's.
+    let word = st.countdown.pass_end(gate.drain.unwrap_or(0));
     let held = gate.holds(&mut st.countdown);
     let mut arm = CaptureCamArm {
         hold: held,
@@ -2050,6 +2056,17 @@ mod slime_divide_tests {
         assert_eq!(arm.caster_write.x, None);
         assert_eq!(st.split_passes, 66);
         assert_eq!(st.split_point, Some([537, -178]));
+        // On a step-`3` pass the shake reads the word as the whole pass's
+        // `step << 1` leaves it (`0x801F7B7C..0x801F7BB0`): word `496 + 6`
+        // opening a pass with two ticks to go stands the caster where word
+        // `496` does.
+        st.opens_pass = true;
+        st.split_point = Some([26, -178]);
+        st.countdown = super::super::ModuleCountdown(496 + 6, 2);
+        st.split_passes = 1;
+        let arm = slime_divide_camera(&mut st, SLIME_DIVIDE_SHAKE_ARM, seats);
+        assert_eq!(arm.caster_write.x, Some(11));
+        st.countdown.1 = 0;
         // A frame that opens on the passing tick steps the shake once.
         st.split_point = Some([26, -178]);
         st.opens_pass = true;

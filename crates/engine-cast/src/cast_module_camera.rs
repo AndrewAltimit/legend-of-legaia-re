@@ -451,6 +451,15 @@ impl ModuleCountdown {
         self.0 += SPEED_SCALAR * n;
     }
 
+    /// The word as the current pass's whole drain leaves it, read before
+    /// this tick's drain: `word - drain * (1 + rest)`. Retail drains a pass's
+    /// `scalar * step` (or `step`) in one `subu` and every compare behind it
+    /// reads that stored word; the port drains a tick at a time, so a compare
+    /// made once a pass, or one whose effect is a pass's, reads this.
+    pub fn pass_end(&self, drain: i32) -> i32 {
+        self.0 - drain * (1 + i32::from(self.1))
+    }
+
     /// One drain.
     pub fn drain(&mut self) {
         self.0 -= MODULE_DRAIN_PER_TICK;

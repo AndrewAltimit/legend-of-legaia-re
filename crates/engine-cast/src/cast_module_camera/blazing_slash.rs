@@ -261,9 +261,9 @@ pub fn blazing_slash_camera(
             // frame late wherever the pass's rest carried the word under the
             // pacing word, and the hit's `rand()` draws and its numeral moved
             // a frame against the burning caster's puffs.
+            let pass_word = st.countdown.pass_end(MODULE_DRAIN_PER_TICK);
             st.countdown.drain();
             let held = st.countdown.0 > 0;
-            let pass_word = st.countdown.0 - MODULE_DRAIN_PER_TICK * i32::from(st.countdown.1);
             if st.opens_pass && pace >= pass_word {
                 pace -= SPEED_SCALAR * FLAME_STEP;
                 if pass_word > 0 {

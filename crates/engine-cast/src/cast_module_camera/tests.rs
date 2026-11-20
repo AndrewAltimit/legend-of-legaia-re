@@ -1742,6 +1742,31 @@ fn guilty_cross_drops_its_cross_through_arm_3s_last_frames() {
     assert_eq!(pass.part_write.unwrap().records, &[0x801F_81E8]);
 }
 
+/// The compare reads the word the pass's one `subu` stored
+/// (`0x801F7018..0x801F701C`): on a step-`3` pass whose whole drain crosses
+/// `scalar << 4`, every tick of the pass falls, the opening one included.
+#[test]
+fn guilty_cross_falls_on_every_tick_of_the_pass_that_crosses() {
+    // Opening tick: one tick's drain leaves the word above the threshold,
+    // the pass's whole drain does not.
+    let mut st = ModuleCamState {
+        countdown: ModuleCountdown((SPEED_SCALAR << 4) + 2 * MODULE_DRAIN_PER_TICK, 2),
+        ..Default::default()
+    };
+    let opening = guilty_cross_camera(&mut st, 3, seats()).part_write;
+    assert_eq!(opening.map(|w| w.dy), Some(0x100));
+    // The pass before it: its whole drain stays above, so no tick falls.
+    st.countdown = ModuleCountdown((SPEED_SCALAR << 4) + 4 * MODULE_DRAIN_PER_TICK, 2);
+    assert_eq!(guilty_cross_camera(&mut st, 3, seats()).part_write, None);
+}
+
+#[test]
+fn a_pass_end_is_the_word_less_the_whole_pass() {
+    let cd = ModuleCountdown(100, 3);
+    assert_eq!(cd.pass_end(8), 100 - 32);
+    assert_eq!(ModuleCountdown(100, 0).pass_end(2), 98);
+}
+
 /// The spell-name constants and typed-in pens of the band's captions, as
 /// the disassembly carries them (`docs/reference/glitches/name-centering.md`).
 #[test]
