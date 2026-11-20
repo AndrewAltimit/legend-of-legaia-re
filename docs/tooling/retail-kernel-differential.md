@@ -215,8 +215,9 @@ report gives coverage over all branches and over the **ported arms**, the
 branches no row covers; what stays below 100% there is the worklist, arms a
 port claims and no test exercises. `--worksheet` lists a routine's branches
 beside the address ranges its `PORT:` tags cite and the rows that cover them.
-A slot-B VA holds different routines in different images and a row applies to
-every image at its entry, so a row's range names code only its image holds.
+A slot-B VA holds different routines in different images, so a row at a
+VA-aliased entry also gives `image`, the image hash `--worksheet` prints;
+without it a row applies to every image at its entry.
 
 Driving the retail side down an arm is half of it. A branch counts once the
 retail routine takes it; the test still has to compare that arm's output with

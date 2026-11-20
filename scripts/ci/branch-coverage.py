@@ -117,13 +117,14 @@ def load_scope(path: Path = SCOPE) -> list[dict]:
         lo, _, hi = row["range"].partition("..")
         row["lo"], row["hi"] = hexaddr(lo), hexaddr(hi.removeprefix("=") or lo)
         row["entry"] = row["entry"].lower().removeprefix("fun_").removeprefix("0x")
+        row["image"] = row.get("image", "").lower()
     return rows
 
 
 def apply_scope(table: dict[tuple[str, str], Routine], rows: list[dict]) -> None:
-    for r in table.values():
+    for (_, h), r in table.items():
         for row in rows:
-            if row["entry"] != r.entry:
+            if row["entry"] != r.entry or (row["image"] and row["image"] != h):
                 continue
             for pc in r.masks:
                 if row["lo"] <= int(pc, 16) <= row["hi"]:
@@ -144,11 +145,16 @@ def check_scope(table: dict[tuple[str, str], Routine], rows: list[dict]) -> int:
         if row["hi"] < row["lo"]:
             print(f"scope: {where}: range runs backwards")
             bad += 1
+        if row["image"] and not any(e == row["entry"] and h == row["image"] for e, h in table):
+            print(f"scope: {where}: no recorded image {row['image']} at that entry")
+            bad += 1
+            continue
         if row["entry"] not in entries:
             print(f"scope: {where}: no recorded routine at that entry")
             bad += 1
             continue
-        hits = sum(1 for r in table.values() if r.entry == row["entry"]
+        hits = sum(1 for (_, h), r in table.items() if r.entry == row["entry"]
+                   and (not row["image"] or row["image"] == h)
                    for pc in r.masks if row["lo"] <= int(pc, 16) <= row["hi"])
         if not hits:
             print(f"scope: {where}: holds no conditional branch of the routine")
@@ -210,7 +216,8 @@ def routine_report(table, entry: str, worksheet: bool, rows: list[dict]) -> None
             note = ""
             if worksheet:
                 x = int(pc, 16)
-                scope = [row for row in rows if row["entry"] == e and row["lo"] <= x <= row["hi"]]
+                scope = [row for row in rows if row["entry"] == e and row["lo"] <= x <= row["hi"]
+                         and (not row["image"] or row["image"] == h)]
                 cited = [loc for loc, lo, hi, _ in tags if lo and lo <= x <= hi]
                 if scope:
                     note = f"  [scope: {scope[0]['verdict']}]"

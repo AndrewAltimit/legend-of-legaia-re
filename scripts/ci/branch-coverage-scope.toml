@@ -13,6 +13,8 @@
 #   reason  = one sentence, disassembly-grounded: what the arm does and why it
 #             is out of scope
 #
-# A slot-B VA holds different routines in different images; a row applies to
-# every image at its entry, so give a range only the intended image's code
-# occupies, and name the image in the reason.
+#   image   = optional: the image hash `--worksheet` prints beside the entry.
+#             A slot-B VA holds different routines in different images, and
+#             a row without `image` applies to every image at its entry; give
+#             it on any row at a VA-aliased entry, and name the PROT entry in
+#             the reason.
