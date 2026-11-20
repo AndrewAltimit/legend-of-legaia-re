@@ -166,10 +166,9 @@ fn pad_word_and_tick_frame_drive_the_cast() {
     let casts = state(&rt)["casts"].as_i64().expect("casts");
 
     // Cross edge -> wind-up; the meter opens after the wind-up frames. The
-    // pond runs a game tick every second vsync, so a press is held across
-    // one.
+    // shore's game frames span three vsyncs, so a press is held across two.
     tick(&mut rt, 0, 1);
-    tick(&mut rt, CROSS, 2);
+    tick(&mut rt, CROSS, 3);
     assert_eq!(phase(&rt), "windup", "Cross starts the cast");
     tick(&mut rt, 0, 110);
     assert_eq!(phase(&rt), "power");
@@ -179,7 +178,7 @@ fn pad_word_and_tick_frame_drive_the_cast() {
     );
     // A second Cross edge locks the power; the lure flies and lands.
     tick(&mut rt, 0, 1);
-    tick(&mut rt, CROSS, 2);
+    tick(&mut rt, CROSS, 3);
     assert_eq!(phase(&rt), "flight", "Cross locks the power meter");
     for _ in 0..600 {
         if phase(&rt) != "flight" {

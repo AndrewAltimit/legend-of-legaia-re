@@ -431,8 +431,9 @@ fn the_play_page_services_the_same_banner_timers() {
     assert!(resolved, "the play page's fight never resolved");
 
     // A snap returns by itself once its banner ends; Circle puts a catch away
-    // once the plate's accept word is up and the catch banner has run.
-    for _ in 0..200 {
+    // once the plate's accept word is up and the catch banner has run (the
+    // close-up's frames span five or six vsyncs).
+    for _ in 0..600 {
         if phase(&rt) == "idle" {
             break;
         }

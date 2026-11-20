@@ -233,6 +233,9 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             "LEGAIA_FIELD_COST_PLACED_WALK",
             &mut toggles.field_cost_placed_walk,
         ),
+        // The fishing venue's frame step off its frame cost
+        // (`WorldToggles::fishing_frame_cost`).
+        ("LEGAIA_FISHING_FRAME_COST", &mut toggles.fishing_frame_cost),
     ] {
         match std::env::var(var).as_deref().map(str::trim) {
             Ok("1") => *slot = true,

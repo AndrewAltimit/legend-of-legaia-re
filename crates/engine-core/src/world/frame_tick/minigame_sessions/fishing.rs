@@ -260,6 +260,7 @@ impl World {
             // retail's shop branch owns the mode switch. The venue's game
             // tick keeps its cadence under either.
             if let Some(s) = self.minigames.fishing.as_mut() {
+                s.set_frame_cost(self.toggles.fishing_frame_cost);
                 s.hold_vsync();
             }
             self.minigames.fishing_events.clear();
@@ -269,7 +270,8 @@ impl World {
         let (events, lure_down, spent_lures) = match self.minigames.fishing.as_mut() {
             Some(s) => {
                 let casts = s.persist().casts;
-                // The venue's game tick, every `VENUE_FRAME_STEP` vsyncs.
+                // The venue's game frame, on the step its frame cost gives.
+                s.set_frame_cost(self.toggles.fishing_frame_cost);
                 s.vsync(pond_input, FISHING_CAST_STEP);
                 for _ in 0..s.take_rod_creaks() {
                     // The hooked rod's creak, `0x201` into ring slot 1.

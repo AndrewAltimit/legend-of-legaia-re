@@ -298,6 +298,16 @@ pub struct WorldToggles {
     /// session takes `LEGAIA_FIELD_COST_PLACED_WALK=0` / `=1` over the
     /// default.
     pub field_cost_placed_walk: bool,
+    /// Step each fishing-venue frame by the frame time its phase prices it at
+    /// (`legaia_engine_fishing::fishing::PondPacer`) under retail's own law,
+    /// `FUN_80016B6C`'s longest-of-sixteen over the venue's floor of `2`: the
+    /// shore, a reeled wait and the fight run at `3`, an idle line and the
+    /// plate at `2`, the catch close-up at `4`, as the PCSX-Redux films read
+    /// them. On by default; off, every frame holds the floor, a game frame
+    /// every second vsync. A timing model, not a fidelity knob, so
+    /// [`Self::pin_retail`] leaves it alone; the native session takes
+    /// `LEGAIA_FISHING_FRAME_COST=0` / `=1` over the default.
+    pub fishing_frame_cost: bool,
     /// Diagnostic, off by default: [`Self::battle_poly_frame_cost`] reads the
     /// native window's own count of its drawn table
     /// (`World::note_drawn_polys`) in place of the census, the window-only
@@ -656,6 +666,7 @@ impl WorldToggles {
             battle_surface_frame_cost: true,
             field_frame_cost: true,
             field_cost_placed_walk: true,
+            fishing_frame_cost: true,
             battle_poly_window_count: false,
             arts_saved_list: false,
             hop_landing_guard: true,

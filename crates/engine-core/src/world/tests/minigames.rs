@@ -392,21 +392,41 @@ fn fishing_frame(world: &mut World, mask: u16) {
     let _ = world.tick();
 }
 
+/// Hold `mask` until the pond's phase leaves `from`: a press is taken on the
+/// next game frame, which may be a few vsyncs off.
+fn fishing_press(world: &mut World, mask: u16, from: legaia_engine_fishing::fishing::PondPhase) {
+    for _ in 0..8 {
+        fishing_frame(world, mask);
+        if fishing_phase(world) != from {
+            return;
+        }
+    }
+    panic!("the press never left {from:?}");
+}
+
+/// Run vsyncs until the pond runs a game frame on one.
+fn fishing_game_frame(world: &mut World, mask: u16) {
+    for _ in 0..8 {
+        fishing_frame(world, mask);
+        if world.minigames.fishing.as_ref().unwrap().vsync_step() != 0 {
+            return;
+        }
+    }
+    panic!("no game frame over eight vsyncs");
+}
+
 /// Cross edge -> wind-up -> power sweep -> Cross lock -> flight -> the lure
 /// lands in the pre-hook loop (retail casts on the reel pair's press).
 fn fishing_cast(world: &mut World) {
-    use legaia_engine_fishing::fishing::{PondPhase, WINDUP_FRAMES};
+    use legaia_engine_fishing::fishing::PondPhase;
     let cast = input::PadButton::Cross.mask();
     fishing_frame(world, 0);
-    fishing_frame(world, cast);
-    for _ in 0..WINDUP_FRAMES + 96 {
+    fishing_press(world, cast, PondPhase::Idle);
+    for _ in 0..120 {
         fishing_frame(world, 0);
     }
     assert_eq!(fishing_phase(world), PondPhase::Power);
-    // The pond runs a game tick every second vsync: a press held across one
-    // is taken on it.
-    fishing_frame(world, cast);
-    fishing_frame(world, cast);
+    fishing_press(world, cast, PondPhase::Power);
     assert_eq!(fishing_phase(world), PondPhase::Flight);
     while fishing_phase(world) == PondPhase::Flight {
         fishing_frame(world, 0);
@@ -511,7 +531,7 @@ fn fishing_casts_hooks_and_reels_to_a_resolution() {
     // A broken line returns by itself once its banner ends; a catch is put
     // away by Circle once the plate's accept word is up and the catch banner
     // has run. Either way the shore comes back with the recast event.
-    for f in 0..400 {
+    for f in 0..1200 {
         if fishing_phase(&world) == PondPhase::Idle {
             break;
         }
@@ -571,7 +591,7 @@ fn the_strike_and_catch_edges_queue_their_cues_on_the_world() {
     );
     let mut at = None;
     for f in 1..8 {
-        fishing_frame(&mut world, 0);
+        fishing_game_frame(&mut world, 0);
         if world
             .drain_minigame_sfx_cues()
             .contains(&u16::from(CELEBRATE_CUE))
@@ -580,11 +600,11 @@ fn the_strike_and_catch_edges_queue_their_cues_on_the_world() {
             break;
         }
     }
+    // The landing frame is the arm's first, so the cue comes on the arm's
+    // second: the first game frame after it.
     assert_eq!(
         at,
-        Some(i32::from(
-            legaia_engine_fishing::fishing_actors::CELEBRATION_CUE_FRAME
-        )),
+        Some(i32::from(legaia_engine_fishing::fishing_actors::CELEBRATION_CUE_FRAME) - 1),
         "a landed fish queues the celebration cue on the stage frame"
     );
 }
@@ -601,15 +621,16 @@ fn fishing_reel_buttons_are_cross_and_square_and_both_arms_add() {
     use legaia_engine_fishing::fishing::PondPhase;
     let run = |mask: u16| -> i32 {
         let mut world = World::new();
-        world.enter_fishing_session(&fishing_test_tables(4000), 0, None);
+        // A pull that leaves the gauge under its ceiling over a step-3
+        // fight frame, so the arms' sums stay apart.
+        world.enter_fishing_session(&fishing_test_tables(2000), 0, None);
         fishing_cast(&mut world);
         fishing_hold_until_hooked(&mut world);
         assert_eq!(fishing_phase(&world), PondPhase::Hooked);
         let before = world.minigames.fishing.as_ref().unwrap().tension();
         // Same BiosRand stream from here in every run, so the pull matches.
-        // One game tick of the fight: two vsyncs at the venue's step.
-        fishing_frame(&mut world, mask);
-        fishing_frame(&mut world, mask);
+        // One game frame of the fight.
+        fishing_game_frame(&mut world, mask);
         world.minigames.fishing.as_ref().unwrap().tension() - before
     };
     let reel_a = run(input::PadButton::Cross.mask());
@@ -1022,13 +1043,21 @@ fn the_lure_landing_stores_its_cue_into_ring_slot_two() {
     let mut ops = Vec::new();
     let cast = input::PadButton::Cross.mask();
     fishing_frame(&mut world, 0);
-    fishing_frame(&mut world, cast);
+    fishing_press(
+        &mut world,
+        cast,
+        legaia_engine_fishing::fishing::PondPhase::Idle,
+    );
     ops.extend(world.take_sfx_ring_ops());
-    for _ in 0..legaia_engine_fishing::fishing::WINDUP_FRAMES + 96 {
+    for _ in 0..120 {
         fishing_frame(&mut world, 0);
         ops.extend(world.take_sfx_ring_ops());
     }
-    fishing_frame(&mut world, cast);
+    fishing_press(
+        &mut world,
+        cast,
+        legaia_engine_fishing::fishing::PondPhase::Power,
+    );
     ops.extend(world.take_sfx_ring_ops());
     let landing = legaia_engine_system::sound_state::SfxRingOp::WriteSlot(2, 0x204);
     assert!(!ops.contains(&landing), "nothing before the lure flies");

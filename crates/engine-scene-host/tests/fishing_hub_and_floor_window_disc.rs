@@ -199,11 +199,26 @@ fn a_shore_return_with_no_lure_left_parks_the_no_lure_screen_and_leaves() {
     assert_eq!(phase(world), Some(PondPhase::Waiting), "the lure lands");
     // The lure goes from the bag; Circle reels the cast back to the shore.
     world.party.inventory.clear();
+    // The press is taken on the next game frame, which a landing's splash
+    // can hold three vsyncs off.
     press(world, PadButton::Circle);
+    for _ in 0..4 {
+        if phase(world) == Some(PondPhase::NoLure) {
+            break;
+        }
+        let _ = world.tick();
+    }
     assert_eq!(phase(world), Some(PondPhase::NoLure));
     assert_eq!(world.fishing_hub_lines().len(), 1, "the no-lure line");
-    // A face-button edge leaves the venue.
+    // A face-button edge leaves the venue, on the next game frame (the
+    // screen's frames span three vsyncs).
     press(world, PadButton::Cross);
+    for _ in 0..4 {
+        if world.minigames.fishing.is_none() {
+            break;
+        }
+        let _ = world.tick();
+    }
     assert!(world.minigames.fishing.is_none());
     assert_ne!(world.mode, SceneMode::Fishing);
 }

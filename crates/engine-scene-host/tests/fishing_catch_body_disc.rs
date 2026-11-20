@@ -136,12 +136,14 @@ fn a_landed_fish_is_lifted_then_hangs_on_the_plate() {
     let mut plate = None;
     let mut flash_from = None;
     let (mut sprites, mut locked, mut lit) = (0, false, 0);
+    let mut ran = false;
     for f in 0..2000 {
         frame(&mut host, &mut surface, 0);
         let s = host.world.minigames.fishing.as_ref().unwrap();
-        // The landing ran on a game tick; the next one clears the HUD.
+        // The landing ran on a game frame; the next one clears the HUD.
+        ran |= s.vsync_step() != 0;
         assert!(
-            f == 0 || !s.catch_hud().visible,
+            !ran || !s.catch_hud().visible,
             "state 0x1E clears the catch HUD"
         );
         // The white-out (`FUN_801D7964` twice at the lift's second stage)
@@ -215,8 +217,11 @@ fn a_landed_fish_is_lifted_then_hangs_on_the_plate() {
         "the parts draw out of the pond VRAM: {lit} pixels"
     );
     let flash_from = flash_from.expect("the close-up whites out");
+    // The lift counts frame steps; its frames run on step 4 and span five
+    // vsyncs (the close-up's cost runs past four), so the stage's
+    // `0x86..0x8A` step units land five vsyncs to every four.
     assert!(
-        (0x86..=0x8A).contains(&flash_from),
+        (0xA7..=0xAD).contains(&flash_from),
         "the white-out starts at the lift's second stage: frame {flash_from}"
     );
     let (fish, y) = plate.expect("the plate shows the body");

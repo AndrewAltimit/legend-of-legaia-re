@@ -13,7 +13,7 @@
 //! | move-VM ext `0x2F` | `0x801D45E4` (PROT 0897) | operand | `ext_set_8007b9d8` |
 //! | name entry `FUN_801F03F0` | save `0x801F0468`, hold `0x801F0488`, restore `0x801F09A0` | `1` while open | [`World::open_name_entry`] / [`World::step_name_entry`] |
 //! | save screen `FUN_801DC6B4` (PROT 0899) | `0x801DC7B4` / `0x801DC9BC`; save `0x801DD8AC`, restore `0x801DFC30` | `1`, then `2` | no consumer (below) |
-//! | fishing init (PROT 0972) | `0x801CF344` | `2` | `PondSession::vsync` (`VENUE_FRAME_STEP`) |
+//! | fishing init (PROT 0972) | `0x801CF344` | `2` | `PondPacer::end_frame` (`POND_STEP_FLOOR`) |
 //! | Baka Fighter (PROT 0976) | `0x801CFCC4` / `0x801D0FAC` | `1` / `4` | `BakaFight::frame` (`SECRET_TALLY_FRAME_STEP`) |
 //! | hub screens `FUN_801CF870` (PROT 0977) | `0x801CF8E0` | `2` | `HubTimers::tick` (`HUB_FRAME_STEP`) |
 //! | battle intro (PROT 0979) | `0x801CFE00` | `3` | not modelled (below) |

@@ -538,8 +538,8 @@ impl LegaiaMinigames {
             _ => {}
         }
         let casts = p.persist().casts;
-        // The venue's game tick, every `VENUE_FRAME_STEP` vsyncs, as the play
-        // hosts' world tick runs it.
+        // The venue's game frame, on the step its frame cost gives, as the
+        // play hosts' world tick runs it.
         p.vsync(
             PondInput {
                 reel_mask,
