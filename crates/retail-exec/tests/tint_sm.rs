@@ -105,8 +105,14 @@ fn the_tint_arms_are_retails() {
                 2 => rng.below(0x10),
                 _ => rng.below(0x400),
             };
-            let color =
-                lane(&mut rng) | lane(&mut rng) << 10 | lane(&mut rng) << 20 | rng.below(4) << 30;
+            // A quarter of the words sit a step from neutral, so the decay
+            // arm reaches its blend drain and selector clear.
+            let color = if rng.below(4) == 0 {
+                legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL
+                    + [0, 0, 4, 0x1000][rng.below(4) as usize]
+            } else {
+                lane(&mut rng) | lane(&mut rng) << 10 | lane(&mut rng) << 20 | rng.below(4) << 30
+            };
             let state = rng.below(0x0D) as u8;
             let blend = [0u32, 0x10, 0x800, 0x1000, 0x2000][rng.below(5) as usize];
             let selector = rng.below(4) as u8;
@@ -177,4 +183,121 @@ fn the_tint_arms_are_retails() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(faded > 20_000, "{faded}");
+}
+
+const AMBIENT: u32 = 0x8007_B7B0;
+const FAR: u32 = 0x8007_BB48;
+const OUTDOOR: u32 = 0x8007_BDA8;
+const SCRATCH_FLAGS: u32 = 0x1F80_0394;
+const BACKDROP_A: u32 = 0x8016_0000;
+const BACKDROP_B: u32 = 0x8016_0100;
+
+/// The pass's trailing scene block (`0x800505B0..0x800508B4`), with no actor
+/// seated: the ambient base ramp (`ambient_base_step`), the backdrop pair's
+/// cue weight (`backdrop_cue_step`) and its draw switch at the full weight,
+/// the floor's skip (`ambient_store_skipped`) with the scratch draw bit, and
+/// the ambient and far words (`battle_ambient_colour`, `grid_far_colour`).
+#[test]
+fn the_scene_ramps_are_retails() {
+    use legaia_engine_battle_vm::battle_ground_grid as grid;
+
+    differential!(scus(SM));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub(GRID_HOOK, 0);
+    cpu.mem.wr32(CTX_PTR, CTX);
+    for s in 0..8 {
+        cpu.mem.wr32(ACTORS + s * 4, actor(s));
+        cpu.mem.wr32(actor(s) + 0x22C, 0);
+    }
+    cpu.mem.wr32(CTX + 0x106C, BACKDROP_A);
+    cpu.mem.wr32(CTX + 0x1070, BACKDROP_B);
+    let mut rng = Rng(0x5343_454E);
+    let (mut skipped, mut dimmed, mut full) = (0, 0, 0);
+    for round in 0..40000 {
+        let dt = 1 + rng.below(4) as u8;
+        let channel =
+            |rng: &mut Rng| -> u32 { [0x20, 0x21, 0x22, 0x40, 0x7E, 0x80][rng.below(6) as usize] };
+        let base = match rng.below(4) {
+            0 => grid::AMBIENT_BASE_FLOOR,
+            1 => grid::AMBIENT_BASE_CEIL,
+            // Every writer of the base stores one value in all three lanes
+            // (the floor, the ceiling, the cast exits) and the ramp steps them
+            // together, so the lanes stay equal.
+            _ => {
+                let c = channel(&mut rng);
+                c << 2 | c << 12 | c << 22
+            }
+        };
+        let latch = [0u8, 0, 1, 2, 3][rng.below(5) as usize];
+        let c278 = [0u8, 0, 1, 2, 3][rng.below(5) as usize];
+        let outdoor = rng.below(2) != 0;
+        let cue = [
+            0u16, 0x40, 0x7C0, 0x800, 0xBC0, 0xC00, 0xFC0, 0x1000, 0x1040,
+        ][rng.below(9) as usize];
+        let flags = rng.next();
+        cpu.mem.wr8(FRAME_STEP, dt);
+        cpu.mem.wr32(CTX + 0x890, base);
+        cpu.mem.wr8(CTX + 0x243, latch);
+        cpu.mem.wr8(CTX + 0x278, c278);
+        cpu.mem.wr8(OUTDOOR, u8::from(outdoor));
+        cpu.mem.wr16(BACKDROP_A + 0x78, cue);
+        cpu.mem.wr16(BACKDROP_B + 0x78, cue);
+        cpu.mem.wr16(BACKDROP_A + 0x56, 0x77);
+        cpu.mem.wr16(BACKDROP_B + 0x56, 0x77);
+        cpu.mem.wr32(SCRATCH_FLAGS, flags);
+        cpu.mem.wr32(AMBIENT, 0x1234_5678);
+        cpu.mem.wr32(FAR, 0x0ABC_DEF0);
+        assert_eq!(cpu.call(SM, &[]), Stop::Returned, "{round}");
+
+        let next_base = grid::ambient_base_step(base, latch != 0, dt);
+        let next_cue = grid::backdrop_cue_step(cue, latch, c278, outdoor, dt);
+        let rgb = grid::ambient_base_rgb(next_base);
+        let skip = grid::ambient_store_skipped(rgb, latch, c278);
+        let pack = |c: [u8; 3]| u32::from(c[0]) | u32::from(c[1]) << 8 | u32::from(c[2]) << 16;
+        let (ambient, far, scratch) = if skip {
+            (0x1234_5678, 0x0ABC_DEF0, flags & !8)
+        } else {
+            (
+                pack(grid::battle_ambient_colour(rgb)),
+                pack(grid::grid_far_colour(rgb, outdoor)),
+                flags | 8,
+            )
+        };
+        let draw = if next_cue == grid::BACKDROP_CUE_FULL {
+            0
+        } else {
+            3
+        };
+        let at = format!(
+            "round {round}: dt {dt} base {base:#x} latch {latch} 278 {c278} outdoor {outdoor} \
+             cue {cue:#x}"
+        );
+        let retail = (
+            cpu.mem.rd32(CTX + 0x890),
+            cpu.mem.rd16(BACKDROP_A + 0x78),
+            cpu.mem.rd16(BACKDROP_B + 0x78),
+            cpu.mem.rd16(BACKDROP_A + 0x56),
+            cpu.mem.rd16(BACKDROP_B + 0x56),
+            cpu.mem.rd32(AMBIENT),
+            cpu.mem.rd32(FAR),
+            cpu.mem.rd32(SCRATCH_FLAGS),
+        );
+        assert_eq!(
+            retail,
+            (
+                next_base, next_cue, next_cue, draw, draw, ambient, far, scratch
+            ),
+            "{at}"
+        );
+        skipped += i32::from(skip);
+        dimmed += i32::from(latch != 0);
+        full += i32::from(draw == 0);
+    }
+    assert!(
+        skipped > 300 && dimmed > 10000 && full > 1000,
+        "{skipped} {dimmed} {full}"
+    );
 }
