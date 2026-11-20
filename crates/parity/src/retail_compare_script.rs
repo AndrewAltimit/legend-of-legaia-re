@@ -217,6 +217,8 @@ const PAGER_REVEAL: u32 = 0x801F_2748;
 const PAGER_LAST_ROW: u32 = 0x801F_3530;
 /// Pager state `0x0B`: typing the row at the last index.
 const PAGER_TYPING: i32 = 0x0B;
+/// `_DAT_801F273C`: the calls the box stays gone after a `0x48` collapse.
+const PAGER_GONE: u32 = 0x801F_273C;
 /// The scroll word `_DAT_801F2738`.
 const PAGER_SCROLL: u32 = 0x801F_2738;
 /// The row table `_DAT_801F3540[]`: a pointer to each row's `0x1F` lead.
@@ -255,6 +257,10 @@ pub fn pager_phase(ram: &[u8], base: u32) -> Option<PagerPhase> {
             .into_iter()
             .find(|&n| game_anchors::u32_at(ram, n + 0x0C) == PAGER_TICK)?;
         i32::from(game_anchors::i16_at(ram, node + PAGER_SLIDE_COUNT))
+    } else if state == 0x02 {
+        // A fresh box's load call waits out the gone countdown a `0x48`
+        // collapse left (`0x801D8630..0x801D864C`).
+        game_anchors::u32_at(ram, PAGER_GONE) as i32
     } else {
         game_anchors::u32_at(ram, PAGER_REVEAL) as i32
     };

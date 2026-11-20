@@ -197,7 +197,8 @@ pub struct PagerPhase {
     /// it where the press found it (`0x801D89B8..0x801D8A04`), so a `0x0D`
     /// capture names how far the row had typed. In a picker arm
     /// ([`Self::is_picker`]) it is the menu's slide count instead, the
-    /// pager actor's `+0x54`.
+    /// pager actor's `+0x54`, and in a fresh box's load call (`2`) the gone
+    /// countdown `_DAT_801F273C` a `0x48` collapse left.
     pub counter: i32,
 }
 
@@ -502,6 +503,22 @@ impl ScriptGate {
     /// in another arm of the page ([`Self::pager`]) - the engine's window in
     /// the arm that mirrors it over the same rows, scrolled at least as far.
     fn text_shown(&self, d: &legaia_engine_dialog::dialog::OwnedDialogPanel) -> bool {
+        // A fresh box's load behind a `0x48` collapse, still counting out the
+        // gone countdown ([`PagerPhase::counter`]): the gate's own page once
+        // the engine's box has collapsed and counted as far. The row table
+        // still holds the page before (`urudre3_zopu_hall`, parked on Songi's
+        // line at `+0x3AD` with Zopu's row `+0x39E` in the table and `20` of
+        // the `0x18` count left), and met on the page that waited the
+        // engine's frame showed Zopu's box still typing.
+        if let Some(p) = self
+            .pager
+            .as_ref()
+            .filter(|p| p.state == 0x02 && p.counter > 0)
+        {
+            return page_lead(d) == Some(self.pc)
+                && d.window()
+                    .is_some_and(|w| w.box_gone > 0 && w.box_gone <= p.counter);
+        }
         if let Some(p) = self
             .pager
             .as_ref()
