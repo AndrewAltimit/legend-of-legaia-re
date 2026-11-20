@@ -63,6 +63,9 @@ struct Host {
     anchor: [(i16, i16); 8],
     placed: bool,
     counters: Vec<u8>,
+    drawn: [bool; 8],
+    taunt: u8,
+    reordered: u32,
 }
 
 impl BattleActionHost for Host {
@@ -109,6 +112,20 @@ impl BattleActionHost for Host {
     }
     fn one_shot_sfx(&mut self, cue_id: u16) {
         self.calls.push((SFX, u32::from(cue_id), 0));
+    }
+    fn recompute_battle_order(&mut self) {
+        self.reordered += 1;
+    }
+    fn reaction_hold_view(&self, slot: u8) -> Option<(u8, bool)> {
+        let a = self.actors.get(usize::from(slot))?;
+        Some((a.current_anim, self.drawn[usize::from(slot)]))
+    }
+    fn monster_action_tags(&self, _slot: u8) -> Option<Vec<u8>> {
+        let mut tags = vec![0u8; 8];
+        if let Some(t) = tags.get_mut(usize::from(self.taunt)) {
+            *t = ba::KO_TAUNT_TAG;
+        }
+        Some(tags)
     }
     fn begin_counterattack(&mut self, counterer: u8, _attacker: u8) -> bool {
         self.counters.push(counterer);
@@ -662,6 +679,7 @@ fn the_action_opening_states_are_retails() {
 
 const PLATE: u32 = 0x801F_6968;
 const PLATE_RECORD: u32 = 0x8016_0000;
+const TABLE: u32 = 0x8016_0200;
 const BAR_RECORD: u32 = 0x8016_0100;
 const RECORDS: u32 = 0x8008_4140;
 
@@ -1163,4 +1181,225 @@ fn the_strike_loop_stages_and_drifts_as_retail_does() {
         seen.len() == 4 && drifted > 2000 && refilled > 100 && bumped > 100 && swapped > 500,
         "{seen:x?} {drifted} {refilled} {bumped} {swapped}"
     );
+}
+
+const TAG_LOOKUP: u32 = 0x8005_0E2C;
+const MONSTER_TABLES: u32 = 0x801C_9348;
+const NODE: u32 = 0x8015_0000;
+
+/// State `0x20`, the strike band's return (`0x801E54EC..0x801E5658`) against
+/// `attack_return`: the wait on the attacker's committed clip, the target
+/// reaction hold (a party target on its downed loop, a body still drawn, the
+/// lone scripted monster's bypass) and a monster's KO taunt, staged while a
+/// party member still stands. The tag lookup `FUN_80050E2C` answers through
+/// the host's tag list; the node's colour word stands for the drawn test.
+#[test]
+fn the_strike_return_waits_and_taunts_as_retail_does() {
+    differential!(prot(898, SM));
+    let Some(mut r) = Retail::new() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5245_5455);
+    let (mut held, mut left, mut taunted) = (0, 0, 0);
+    for round in 0..30000 {
+        let slot = rng.below(6) as u8;
+        let target = loop {
+            let t = rng.below(8) as u8;
+            if t != slot {
+                break t;
+            }
+        };
+        let committed = [0u8, 0, 0, 0x0C][rng.below(4) as usize];
+        let target_anim = [0u8, 0, 4, 8, 0x11][rng.below(5) as usize];
+        let drawn = rng.below(3) != 0;
+        let scripted = rng.below(3) == 0;
+        let lone = rng.below(2) as u8;
+        // The latch's one writer raises it for a lone-monster formation
+        // only (`BattleActionCtx::lone_defeat_latch`).
+        let second = if scripted && lone != 0 {
+            0
+        } else {
+            [0u8, 0x12][rng.below(2) as usize]
+        };
+        let target_hp = [0u16, 0, 20][rng.below(3) as usize];
+        let taunt = [0xFFu8, 2, 5][rng.below(3) as usize];
+        let party_hp: [u16; 3] = std::array::from_fn(|_| [0u16, 30][rng.below(2) as usize]);
+        let flags = rng.below(4) as u8;
+
+        r.reset();
+        r.cpu.stub(TAG_LOOKUP, u32::from(taunt));
+        let m = &mut r.cpu.mem;
+        m.wr8(CTX, 3);
+        m.wr8(CTX + 7, 0x20);
+        m.wr8(CTX + 0x13, slot);
+        m.wr8(CTX + 0x287, u8::from(scripted));
+        m.wr8(CTX + 0x288, lone);
+        m.wr8(FORMATION + 1, second);
+        for k in 0..5u32 {
+            m.wr32(MONSTER_TABLES + 4 * k, TABLE);
+        }
+        for s in 0..3u8 {
+            m.wr16(actor(s) + 0x14C, party_hp[usize::from(s)]);
+        }
+        let a = actor(slot);
+        m.wr8(a + 0x1D9, committed);
+        m.wr8(a + 0x1DC, flags);
+        m.wr8(a + 0x1DD, target);
+        let t = actor(target);
+        m.wr16(t + 0x14C, target_hp);
+        m.wr8(t + 0x1D9, target_anim);
+        m.wr32(t + 0x22C, NODE);
+        m.wr32(NODE + 0x74, if drawn { 0x0080_8080 } else { 0x0100_0000 });
+        r.pass();
+        let m = &mut r.cpu.mem;
+        let retail = (m.rd8(CTX + 7), m.rd8(a + 0x1DA), m.rd8(a + 0x1DC));
+
+        let mut h = host();
+        h.taunt = taunt;
+        h.drawn[usize::from(target)] = drawn;
+        for s in 0..3 {
+            h.actors[s].liveness = party_hp[s];
+            h.actors[s].hp = party_hp[s];
+        }
+        let b = &mut h.actors[usize::from(slot)];
+        b.current_anim = committed;
+        b.flag_bits = ba::ActorFlags(flags);
+        b.active_target = target;
+        let tb = &mut h.actors[usize::from(target)];
+        tb.liveness = target_hp;
+        tb.hp = target_hp;
+        tb.current_anim = target_anim;
+        let mut ctx = BattleActionCtx {
+            action_state: 0x20,
+            active_actor: slot,
+            scripted_fight: u8::from(scripted),
+            lone_defeat_latch: lone,
+            ..Default::default()
+        };
+        ba::step(&mut h, &mut ctx);
+        let b = &h.actors[usize::from(slot)];
+        let port = (ctx.action_state, b.queued_anim, b.flag_bits.0);
+        let at = format!(
+            "round {round}: slot {slot} target {target} committed {committed:#x} target anim \
+             {target_anim} drawn {drawn} scripted {scripted} lone {lone} second {second:#x} \
+             target hp {target_hp} taunt {taunt:#x} party {party_hp:?}"
+        );
+        assert_eq!(retail, port, "{at}");
+        held += i32::from(retail.0 == 0x20 && committed == 0);
+        left += i32::from(retail.0 == 0x50);
+        taunted += i32::from(retail.2 & 2 != 0 && flags & 2 == 0);
+    }
+    assert!(
+        held > 1000 && left > 5000 && taunted > 300,
+        "{held} {left} {taunted}"
+    );
+}
+
+const REORDER: u32 = 0x801D_ABA4;
+
+/// State `0x50`'s frame around the Spirit block (`0x801E5C6C..0x801E5F60`)
+/// against `done_cleanup`: the standing census that gates the order
+/// recompute `FUN_801DABA4`, the clip-exit bit, the Done band's countdown
+/// seed and its level-up banner stretch, the state store and the teardown
+/// latch.
+#[test]
+fn the_done_cleanup_frame_is_retails() {
+    differential!(prot(898, SM));
+    let Some(mut r) = Retail::new() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let reorders = Rc::new(std::cell::Cell::new(0u32));
+    let count = reorders.clone();
+    r.cpu.hook(REORDER, move |_, _| count.set(count.get() + 1));
+    let mut rng = Rng(0x434C_4E55);
+    let (mut reordered, mut skipped) = (0, 0);
+    for round in 0..20000 {
+        let slot = rng.below(8) as u8;
+        let monsters = rng.below(6) as u8;
+        let category = rng.below(7) as u8;
+        let banner = [0u8, 0, 0x2E][rng.below(3) as usize];
+        let latch = rng.below(3) as u8;
+        let flags = rng.below(0x10) as u8;
+        let mut hp = [0u16; 8];
+        let mut status = [0u16; 8];
+        let all_down = rng.below(3) == 0;
+        for s in 0..8 {
+            let seated = s < 3 + usize::from(monsters);
+            hp[s] = if all_down || !seated || rng.below(2) == 0 {
+                0
+            } else {
+                40
+            };
+            status[s] = [0u16, 0, 4, 0x400][rng.below(4) as usize];
+        }
+        r.reset();
+        reorders.set(0);
+        let m = &mut r.cpu.mem;
+        m.wr8(CTX, 3);
+        m.wr8(CTX + 1, monsters);
+        m.wr8(CTX + 7, 0x50);
+        m.wr8(CTX + 0x13, slot);
+        m.wr8(CTX + 0x17, latch);
+        m.wr8(CTX + 0x26, banner);
+        for s in 0..8u8 {
+            m.wr16(actor(s) + 0x14C, hp[usize::from(s)]);
+            m.wr16(actor(s) + 0x16E, status[usize::from(s)]);
+        }
+        m.wr8(actor(slot) + 0x1DC, flags);
+        m.wr8(actor(slot) + 0x1DE, category);
+        // The rate restore's gate stays shut: a party seat's staged id `>= 0x10`.
+        m.wr8(actor(slot) + 0x1D9, 0x11);
+        r.pass();
+        let m = &mut r.cpu.mem;
+        let retail = (
+            m.rd8(CTX + 7),
+            m.rd16(S7 + 2) as i16,
+            m.rd8(CTX + 0x17),
+            m.rd8(actor(slot) + 0x1DC),
+            reorders.get(),
+        );
+
+        let mut h = host();
+        for s in 0..8 {
+            let a = &mut h.actors[s];
+            a.liveness = hp[s];
+            a.hp = hp[s];
+            a.field_flags = status[s];
+            // A monster seat the formation leaves empty is no combatant.
+            a.max_hp = if s < 3 || s < 3 + usize::from(monsters) {
+                40
+            } else {
+                0
+            };
+        }
+        let b = &mut h.actors[usize::from(slot)];
+        b.flag_bits = ba::ActorFlags(flags);
+        b.action_category = category;
+        b.current_anim = 0x11;
+        let mut ctx = BattleActionCtx {
+            action_state: 0x50,
+            active_actor: slot,
+            done_ui_torn_down: latch,
+            levelup_banner_element: banner,
+            ..Default::default()
+        };
+        ba::step(&mut h, &mut ctx);
+        let port = (
+            ctx.action_state,
+            ctx.frame_timer,
+            ctx.done_ui_torn_down,
+            h.actors[usize::from(slot)].flag_bits.0,
+            h.reordered,
+        );
+        let at = format!(
+            "round {round}: slot {slot} monsters {monsters} category {category} banner \
+             {banner:#x} hp {hp:?} status {status:x?}"
+        );
+        assert_eq!(retail, port, "{at}");
+        reordered += i32::from(retail.4 != 0);
+        skipped += i32::from(retail.4 == 0);
+    }
+    assert!(reordered > 3000 && skipped > 3000, "{reordered} {skipped}");
 }

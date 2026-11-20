@@ -10,7 +10,14 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
-    host.recompute_battle_order();
+    // The standing census (`0x801E5C74..0x801E5D50`): the order recompute
+    // `FUN_801DABA4` runs only while some combatant is alive (`+0x14C != 0`)
+    // and not Stoned (`+0x16E & 4`), party seats and monster seats alike.
+    let standing = (0..host.slot_count())
+        .any(|s| host.actor(s).is_some_and(|a| a.liveness != 0) && host.status_word(s) & 0x4 == 0);
+    if standing {
+        host.recompute_battle_order();
+    }
 
     // Reset action_recoil based on category.
     let category = host
