@@ -1776,9 +1776,9 @@ changes = [
 
 [[loosening]]
 file = "scripts/ci/cost-baseline.json"
-reason = "Play bundle gzip +15.4 KB (+0.3%) is the wave's new engine code compiled into the page: the derived field frame-cost model and its per-unit tables (field_frame_units, the per-leaf mesh cost table), the derived battle pricing and the census's leaf cull rules (opt-in, but compiled in), command-surface battle pricing, the retail battle pad pipeline, the per-vsync follow camera and fog re-projection, the Baka Fighter pacer, the screen-effect widget clocks. No asset or dependency added; the per-frame counts all hold their baselines."
+reason = "Play bundle gzip +17.3 KB (+0.3%) is the wave's new engine code compiled into the page: the derived field frame-cost model and its per-unit tables (field_frame_units, the per-leaf mesh cost table), the derived battle pricing and the census's leaf cull rules (opt-in, but compiled in), command-surface battle pricing, the retail battle pad pipeline, the per-vsync follow camera and fog re-projection, the Baka Fighter pacer, the screen-effect widget clocks; then +1.8 KB for the fishing pond pacer and the release-keyed netplay build id. No asset or dependency added; the per-frame counts all hold their baselines."
 changes = [
-  ["counts/bundle/play_gzip_bytes", 5185415, 5200839],
+  ["counts/bundle/play_gzip_bytes", 5185415, 5202680],
 ]
 
 [[loosening]]
@@ -1786,4 +1786,12 @@ file = "scripts/ci/retail-compare-baseline.json"
 reason = "The ending's screen-effect widgets (text sprites, iris mask, image panel, letterbox) now advance their clocks once a game frame by the frame step, as FUN_801F7A9C adds _DAT_1F800393 (0x801F7BB4..0x801F7BD0), where they advanced one per vsync. It lifts credits_edlast_casting_pcsx .925 -> .996 and credits_eddoman_fullscreen_pcsx .985 -> .992; on credits_edstati3_panel_pcsx the state was saved on a frame whose text sprites the engine now shows one game frame ahead of retail's, -.002. Measured alone and in the full blessing run, same value."
 changes = [
   ["states/credits_edstati3_panel_pcsx/image", 0.99, 0.988],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "town01's allocations per frame rise +82 in both modes, all of it in the frame's surface acquire stage (wgpu's own bookkeeping, 20 -> 106 a frame); every engine stage allocates the same count before and after. The rise follows the clean span test's larger vertex shader (the Genesis Tree burst's long rays in clean and enhanced), which runs in every mode and leaves the GPU more frames in flight; measured with LEGAIA_PROFILE_ALLOC_SITES on the burst and fishing branches, the delta constant over 420 and 1020 frame windows."
+changes = [
+  ["counts/native/town01/enhanced/allocs_per_frame", 1363.0, 1455.3],
+  ["counts/native/town01/retail/allocs_per_frame", 1113.7, 1195.8],
 ]
