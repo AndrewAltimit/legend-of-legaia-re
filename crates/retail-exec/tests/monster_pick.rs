@@ -27,6 +27,16 @@ const ACTOR: u32 = 0x8013_0000;
 const ACTOR_STRIDE: u32 = 0x400;
 const RECORD: u32 = 0x8015_0000;
 const ENTRY: u32 = 0x8016_0000;
+const RING: u32 = 0x8007_BDBC;
+
+/// A pool slot as the port's engine slot: the party seats are the same, a
+/// monster seat `3 + i` is `party + i`, and an empty ring entry stays empty.
+fn engine_slot(party: u8, pool: u8) -> u8 {
+    match pool {
+        3..=7 => pool - 3 + party,
+        s => s,
+    }
+}
 
 #[derive(Debug, Clone)]
 struct Monster {
@@ -56,6 +66,13 @@ struct Pick {
     caster: u8,
     round: u8,
     no_flee: bool,
+    /// The recent-target ring `DAT_8007BDBC[0..4]`, pool slots, as earlier
+    /// turns left it.
+    ring: [u8; 4],
+    /// The party's ATK `+0x158`, which the flee checkpoint weighs.
+    party_atk: [u16; 3],
+    /// The special-battle word, which drops a granted flee.
+    special: u32,
     seed: u32,
 }
 
@@ -136,6 +153,9 @@ fn gen_pick(rng: &mut Rng) -> Pick {
         monsters,
         round: rng.below(6) as u8,
         no_flee: rng.below(2) == 0,
+        ring: std::array::from_fn(|_| [0, 1, 2, 0, 1, 3, 4, 0xFF][rng.below(8) as usize]),
+        party_atk: std::array::from_fn(|_| [0, 0, 50, 400, 999][rng.below(5) as usize]),
+        special: [0, 0, 0, 0x100][rng.below(4) as usize],
         seed: rng.next(),
     }
 }
@@ -149,13 +169,13 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
     cpu.mem.wr8(CTX + 1, p.monsters.len() as u8);
     cpu.mem.wr8(CTX + 0x28A, p.round);
     cpu.mem.wr8(CTX + 0x287, u8::from(p.no_flee));
-    cpu.mem.wr32(SPECIAL_WORD, 0);
+    cpu.mem.wr32(SPECIAL_WORD, p.special);
     // The AI's memory across turns: per-seat latches and the recent-target ring.
     for b in 0..0x60 {
         cpu.mem.wr8(0x801C_8FE0 + b, 0);
     }
-    for b in 0..4 {
-        cpu.mem.wr8(0x8007_BDBC + b, 0xFF);
+    for (b, slot) in p.ring.iter().enumerate() {
+        cpu.mem.wr8(RING + b as u32, *slot);
     }
     cpu.mem.wr32(MONSTER_IDS, 0);
     cpu.mem.wr32(SEATS, 0);
@@ -174,6 +194,7 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
         cpu.mem.wr16(a + 0x150, p.party_mp[m as usize]);
         cpu.mem.wr16(a + 0x16C, p.party_keys[m as usize]);
         cpu.mem.wr16(a + 0x16E, p.party_status[m as usize]);
+        cpu.mem.wr16(a + 0x158, p.party_atk[m as usize]);
     }
     let mut entry = ENTRY;
     for (i, m) in p.monsters.iter().enumerate() {
@@ -211,9 +232,10 @@ fn seed_port(w: &mut World, p: &Pick) {
     w.party.party_count = p.party;
     w.battle.status_effects = Default::default();
     w.battle.no_escape = p.no_flee;
-    w.battle.special_word = 0;
+    w.battle.special_word = p.special;
     w.battle.monster_ai_state = Default::default();
     w.battle.monster_ai_state.mode_flags = p.round;
+    w.battle.monster_ai_state.recent_targets = p.ring.map(|s| engine_slot(p.party, s));
     for a in w.actors.iter_mut() {
         a.battle.hp = 0;
         a.battle.max_hp = 0;
@@ -235,7 +257,7 @@ fn seed_port(w: &mut World, p: &Pick) {
         a.battle.liveness = u16::from(p.party_hp[m] != 0);
         a.battle.init_key = p.party_keys[m];
         seat_status(w, m as u8, p.party_status[m], p.seed >> m & 1 != 0);
-        w.battle.attack[m] = 0;
+        w.battle.attack[m] = p.party_atk[m];
         w.battle.accuracy[m] = 0;
     }
     for (i, m) in p.monsters.iter().enumerate() {
@@ -315,7 +337,9 @@ fn a_monster_picks_what_retail_picks() {
         // The stored byte itself: a walk that matched nothing stores no
         // category, and the seat's stale `0` is what the turn picker's
         // redirect and Counterattack roll read next.
-        let retail = (retail_cat, retail_spell, state.get());
+        let ring: [u8; 4] =
+            std::array::from_fn(|b| engine_slot(p.party, cpu.mem.rd8(RING + b as u32)));
+        let retail = (retail_cat, retail_spell, state.get(), ring);
         // `0xB4`'s arms store a spell and leave the category to the forced magic
         // arm, which a generated record with no cast entry never sets.
         if p.monsters[usize::from(p.caster)].id == 0xB4 && retail_cat != 2 {
@@ -332,10 +356,17 @@ fn a_monster_picks_what_retail_picks() {
         };
         casts += u32::from(cat == 2);
         swings += u32::from(cat == 3);
-        let port = (cat, spell, w.rng_state);
+        let port = (
+            cat,
+            spell,
+            w.rng_state,
+            w.battle.monster_ai_state.recent_targets,
+        );
         if retail != port {
             failures.push(format!(
-                "round {round}:\n retail {retail:?}\n port   {port:?}\n {p:?}"
+                "round {round}:\n retail {retail:?}\n port   {port:?}\n raw {:?} party {}\n {p:?}",
+                cpu.mem.read(RING, 4),
+                p.party
             ));
             if failures.len() >= 5 {
                 break;

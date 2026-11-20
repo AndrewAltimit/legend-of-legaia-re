@@ -624,3 +624,93 @@ entry = "0x801EA51C"
 range = "0x801EA7AC..0x801EA968"
 verdict = "unreachable"
 reason = "PROT 0897 dev adjuster tail reached from this arm (the arm lies inside FUN_801E9F64): its generic nibble, word, halfword and byte editors key on s7, fp and t0, which FUN_801E9F64's prologue (0x801E9F8C, 0x801E9FC0) and the tail itself (0x801EA88C) zero and no row arm sets, so every branch here goes one way"
+
+# lane A
+# FUN_801E9FD4 (PROT 0898): the compiler's divide traps. Each `div` is followed by
+# `bne divisor,zero` over `break 0x1c00` and `bne divisor,-1` / `bne quotient,0x80000000`
+# over `break 0x1800`; a trap halts the console, so no game state takes one.
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA118..0x801EA130"
+verdict = "unreachable"
+reason = "Divide trap: the divisor `s1` is a loop count that starts at 1 (`li s1,0x1` at `0x801EA05C`) and only grows, or the 1 / 2 of `0x801EA0CC` / `0x801EA104`, zero-extended (`andi v1,s1,0xffff`), so neither trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA1C8..0x801EA1E0"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA8EC..0x801EA904"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EAE34..0x801EAE4C"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EAF28..0x801EAF40"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB314..0x801EB32C"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB704..0x801EB71C"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EBFA4..0x801EBFBC"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EBF20..0x801EBF38"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is `4 - s0` with `s0 < 4` held by `sltiu v0,s0,0x4` / `beq` at `0x801EBF00..0x801EBF04`, so it is 1..4 and neither trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EC040..0x801EC040"
+verdict = "unreachable"
+reason = "Divide trap: the `divu` divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` at `0x801EC034`), seated at 1..3, so the zero trap is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA320..0x801EA328"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `sp+0x10` candidate count, `lbu v1,0x10(sp)` at `0x801EA304`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA430..0x801EA438"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s1` count, `andi v1,s1,0xffff` at `0x801EA418`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB0B0..0x801EB0B8"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s1` id span, `andi v1,s1,0xffff` at `0x801EB098`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB390..0x801EB398"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s2` count, `andi v1,s2,0xffff` at `0x801EB378`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB614..0x801EB61C"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s1` id span, `andi v1,s1,0xffff` at `0x801EB5FC`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB6A0..0x801EB6A8"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s1` id span, `andi v1,s1,0xffff` at `0x801EB688`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB77C..0x801EB784"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s1` id span, `andi v1,s1,0xffff` at `0x801EB764`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
