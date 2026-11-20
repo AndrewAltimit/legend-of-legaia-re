@@ -957,7 +957,7 @@ reason = "The win's exit preloads the field through FUN_80025358 and frees the m
 entry = "0x801D0748"
 range = "0x801D0B54..0x801D0B54"
 verdict = "unported"
-reason = "The pre-dispatch exit under ctx[+0x26A] != 0, the byte the per-frame actor pass FUN_8004CE2C stores from FUN_80031D00() (0x8004D9BC..0x8004D9CC), has no port: World::battle_command_glide_gate gates on the stepper's return alone (battle-hud.md lists the term as not modelled)."
+reason = "The pre-dispatch exit under ctx[+0x26A] != 0 has no port: the byte is the per-frame actor pass FUN_8004CE2C's store of FUN_80031D00() (0x8004D9BC..0x8004D9CC), 1 while a kind-0x11 widget record waits for the confirm or cancel mask (0x80032318..0x80032358); World::battle_command_glide_gate gates on the stepper's return alone, and the engine keeps no widget-record list for the term to read."
 
 # lane B
 
