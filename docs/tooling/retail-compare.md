@@ -3941,7 +3941,12 @@ target byte `+0x1DD`), dispatched the moment the first command prompt opens:
   party-wide cast seeded on the slot opens the readout bar, which retail's seed
   on `8` never does. So an all-allies spell whose byte reads the lone member's
   slot is replayed on `8` (`seed_target_code`; `evolved_0x91_midcast`, Holy
-  Eyes from a lone Vahn). The `9` arm is replayed as read;
+  Eyes from a lone Vahn). The `9` arm is replayed as read. A target that resolves
+  to the caster itself (its own slot, or a side's code with the caster that side's
+  lone survivor) skips the cast begin's facing store (`0x801E4350`), so the replay
+  seats the caster's heading from the capture as it does a spent seat's: Holy Eyes'
+  Vahn keeps the `34` his last turn left, which the module's yaw subtracts
+  (`camera` `.991` to `1.000`);
 - the capture's MP charge is credited back, so the band's own debit lands on the
   captured figure;
 - the seed carries every combatant's live `+0x34` / `+0x38` pair
