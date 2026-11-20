@@ -465,6 +465,17 @@ the step scales moves with it: the tree revival's rings and mist `.926` to
 battle state keeps the longest entry, its lag confirmed against the older
 ordering table's floor ([below](#replayed-casts)).
 
+Where the state holds the scratchpad, the newest-entry rule above is only the fallback: the seed takes the pacer's step byte
+`0x1F800393` itself (`RetailObs::seat_step`), for the headless run and for
+`LEGAIA_SEAT_FRAME_STEP`. The ring alone cannot tell a heavy scene's step:
+past the `0x2D0` rung the resolver stores the clamp `0x2BC` (`0x800170F8`),
+which reads as step `3` where the driver steps `4`.
+`conc3_ceremony_plaza`, forty-odd actors at the Conkram ceremony, holds sixteen
+clamped samples under step byte `4`; seated at `3`, the ceremony record's
+walks and flat `35`'s `B8 23 84 0A` turn drifted apart, and the gate stood
+the turn nine budget units in where retail's `+0x54` reads four (`facing`
+`.962` to `1`). Nine field captures part between the two readings.
+
 **The image channel** comes from `play-window`, the real renderer, run as a
 child process from a scratch directory under the report, and seeded the same
 way: the lifted save is written as a scratch LGSF file whose resume point is
@@ -559,6 +570,26 @@ engine verdict:
   state's word holds it (`RetailObs::menu_lock`, the image child's
   `LEGAIA_SEAT_MENU_LOCK`; `image` `.965` to `1.000`). A state whose word
   lacks it, `keikoku_chest_open` among them, keeps the engine's own HUD.
+  A cutscene the scene's system loop spawned is history of the same kind.
+  `town0e` `P1[0]` starts the ending's epilogue from its per-frame body:
+  `75 F1 07 00` (test the one-shot latch `0x5F1`), `55 F1`, `44 2E`
+  (spawn `P2[5]`) and the `21` that ends the pass, at `+0xA1..+0xA9`. The
+  record holds the player (`+0x10 & 0x80000`), and the system tick
+  `FUN_801DA51C` opens no new pass while it does (`0x801DA794..0x801DA7AC`),
+  so retail's system context stands on `+0xAA` for the whole epilogue with
+  its loop body never run. A card load over the latched `0x5F1` jumped
+  straight into that body and ran it once: its face-at `CC 1E 85 00 00 F8`
+  turned flat `30` to `0x87E`, and its ambient-tree arms raised
+  `0x6A9..0x6AC`. When retail's system PC sits straight after such an arm
+  (`5x <lo> 44 <record> 21`, `retail_compare_script::system_spawn_arm`)
+  and the record it spawns is the gate's, the arm's latch is held back with
+  the record's own ([`seed_latches`](#the-seeding-model)), so the seed's
+  system script spawns the record and parks where retail's does (`facing`
+  `.958`..`.992` to `1` and `flags` `.997` to `1` on four epilogue
+  captures). A run latch the state does not hold is dropped from that list:
+  the straight-line walk passes sets on arms the record jumped over
+  (`P2[5]` reaches `+0x8B` past `55 F5` at `+0x89`, the target of the
+  Triangle test `42 01 0B` at `+0x81`, by `26 04 00` at `+0x86`).
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter
@@ -1075,7 +1106,15 @@ first 48 bytes, so the partition and the index need no mapping - holds the
 retail PC with at least the retail wait and at most the retail glide left,
 or has just executed the op retail is parked on (the engine clears some
 parks inside one slice that retail holds across frames: a channel flag
-already up, a walk already at its tile). A text segment is met once the
+already up, a walk already at its tile). A PC the record stands on for one
+frame only - a cross-context `A2` / `A3` / `AB` / `AC` / `B1` / `B2` straight
+after a `4A` wait, which a completed wait yields onto and the next slice runs
+(`script_gate::arrival_frame_pc`) - is met without the glide: waiting out
+retail's frames left let the record run on and meet on the visit, after a
+slice retail had not run. `conc3_mist_night_free` is parked on `P2[10]`
+`+0x18C5` (`A3 24 7F 7F`) with `23` glide frames left; the engine stood
+there at `26..24`, a step-`3` frame ahead of its glide, and met at `23` with
+`+0x18C5..+0x18DE` run (`facing` `.941` to `1`, `npcs` `.929` to `1`). A text segment is met once the
 engine's box has typed its page and waits for the press - the press that
 turns the page, or on the last page the press that closes the box - the
 frame every such capture shows. Counting only the page-turn wait missed
@@ -4371,7 +4410,11 @@ during the settle window, or bits the save round trip does not carry.
 Retail's heading is `+0x26` on every actor node; the engine keeps the
 player's as `render_26` and each placement's in `World::npcs.headings`, both
 a half-turn from retail's space (`engine = retail + 0x800`; a placement with
-no entry is the spawn default, retail `0`). The player is scored only while retail's
+no entry is the spawn default, retail `0`). This channel and the
+[npcs channel](#the-npcs-channel) read those stored records, never the draw
+accessors the smooth field actors interpolate (`World::field_npc_drawn_pose`),
+and the seed and the image child both run under `WorldToggles::pin_retail`,
+which turns `smooth_actors` off. The player is scored only while retail's
 heading still equals the arrival facing `_DAT_80073EFC` the entry script's
 `4C 3A` gave it (a card load zeroes it, so every card-boot state is scored);
 once the pad has turned the player the heading is walk history, which the
