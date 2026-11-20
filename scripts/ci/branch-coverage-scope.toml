@@ -889,19 +889,9 @@ verdict = "unported"
 reason = "Case 0x10, the ring's step back, parks the commit log's placement records 0x2B.. (x 0x148, the name to (0x44, 0xE)) by row depth ctx[+0x1F]; the engine draws the log from the committed members (engine-battle-hud command_chips::battle_commit_log's row rule) and ports only the step (member_step)."
 [[arm]]
 entry = "0x801D388C"
-range = "0x801D4294..0x801D42C4"
-verdict = "unported"
-reason = "Case 0x15, a non-last Magic / Item commit, lands records 0x2B+3n <- 0x1A, 0x2C+3n <- 0x3B (the spell or item name) and 0x2D+3n <- 0x29 at x = name + command + 0x30; the engine infers the row (command_chips::battle_commit_log) and shows the chip label with no item target - a port gap."
-[[arm]]
-entry = "0x801D388C"
 range = "0x801D45B0..0x801D471C"
 verdict = "unported"
 reason = "Case 0x21, Reselect on the commit confirm, parks the last row's records at (0x44, 0xE) and the rest at x 0x148 / 0x184 by row depth; the engine's row rule takes the row down (command_chips::battle_commit_log) and member_step ports the step."
-[[arm]]
-entry = "0x801D388C"
-range = "0x801D480C..0x801D48FC"
-verdict = "unported"
-reason = "Case 0x22, the last Magic / Item commit, lands the rows as case 0x15 does (record 0x3B as the command column); the engine infers the row instead - the port gap case 0x15 names."
 [[arm]]
 entry = "0x801D388C"
 range = "0x801D51A0..0x801D51DC"

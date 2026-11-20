@@ -117,6 +117,7 @@ mod colour_tween;
 mod colour_wash;
 mod combo_records;
 mod command_prompts;
+mod commit_log;
 mod confuse;
 mod contact_candidates;
 mod container_walkers;

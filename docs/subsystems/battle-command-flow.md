@@ -617,18 +617,26 @@ words read off the disc.
 
 Each committed member gets a row of three placement records at `0x2B + 3n`
 (name, command, target), `n = ctx[+0x1F]` - the command cursor's step
-depth. The commit arms of `FUN_801D388C` stage them: case `0x20` (Attack)
-at `0x801D4444`, case `0x11` (Spirit, a member other than the last, with the
-forward step) at `0x801D4020`, case `0x23` (Spirit, the last member) at
-`0x801D4918`. Each arm:
+depth. The commit arms of `FUN_801D388C` stage them: cases `0xE` / `0x20`
+(Attack, a member other than the last / the last) at `0x801D3E38` /
+`0x801D4444`, cases `0x11` / `0x23` (Spirit) at `0x801D4020` / `0x801D4918`,
+and cases `0x15` / `0x22` (Magic and Item) at `0x801D41F4` / `0x801D476C`.
+Each arm:
 
 1. lands the three elements with `FUN_801D5718(dst, src)` - name from the
    acting plaque (record `0x1A`), command from the chosen ring chip (record
    `0x0D` `Attack` on case `0x20`, record `0x0B` `Spirit` on the other two),
-   target from the target plaque (record `0x29`); the Spirit arms point the
-   target element at an empty string of width `0` instead;
+   target from the target plaque (record `0x29`); the Spirit arms name the
+   row off the actor's own `+0x1BC` and point the target element at an empty
+   string of width `0`; the Magic / Item arms take the command from record
+   `0x3B`, the spell or item name the target sub-cursor's raise staged
+   (`0x801D4138..0x801D41A8` from the item table `0x80074368`,
+   `0x801D42F0..0x801D4388` from the spell table `0x800754C8`, where an id
+   of `0x65` or more reads the first spell's name), measured;
 2. seats the columns off the name's measured width: name at `x = 16`,
-   command at `name_w + 0x20`, target at `name_w + 0x60`;
+   command at `name_w + 0x20`, target at `name_w + 0x60`, or past the
+   measured spell or item name on the Magic / Item arms,
+   `name_w + command_w + 0x30`;
 3. scrolls the log so the newest row sits lowest - one row rests at
    `y = 170`, a second moves the first to `146` and takes `170`, a third
    takes `194`.
@@ -688,9 +696,11 @@ steps `FUN_801D9BBC`'s glide, `engine-core::world::battle::commit_log_launch`
 raises it on the engine's ring transitions (the prompt, the `Automatic` target
 cursor, the arts entry, the item and magic windows out; a cancel or a
 sub-screen backed out of in), and every row carries the offset as
-`CommitLogRow::slide_x`. Which chip an Item or magic commit logs
-(records `0x0C` / `0x0E`) and whether an Item row carries a target are
-inferred from the ring's arm order, not read off a commit arm.
+`CommitLogRow::slide_x`. A Magic or Item row logs the spell or item name
+(`battle_commit_log::RECORD_COMMIT_NAME`) and the target the sub-cursor stood
+on, `All` for a party-wide or every-enemy item. The differential
+`crates/retail-exec/tests/commit_log.rs` lands every commit arm against the
+layout.
 
 ### Where the words come from
 
