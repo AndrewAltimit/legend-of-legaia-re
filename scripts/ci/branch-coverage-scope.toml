@@ -582,3 +582,9 @@ entry = "0x80032A44"
 range = "0x80032AA4..0x80032AA4"
 verdict = "unreachable"
 reason = "The navigable-content table at 0x80073E1C is static data whose first byte is not its 0x23 terminator, so the empty-table exit never runs"
+
+[[arm]]
+entry = "0x80036044"
+range = "0x800360AC..0x800360AC"
+verdict = "unreachable"
+reason = "The pre-walk's unit count starts at 1 (li t2,0x1 at 0x80036064) and only grows, so blez t2 never skips the main loop"
