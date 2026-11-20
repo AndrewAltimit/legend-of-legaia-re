@@ -343,6 +343,18 @@ impl StatusScreenSession {
         next as u8
     }
 
+    /// The session opened on `page` (a folded page, `0..=3`).
+    pub fn with_page(mut self, page: u8) -> Self {
+        self.page = page % STATUS_PAGES;
+        self
+    }
+
+    /// One frame of the pager: the party picker's confirm and cancel, then
+    /// the page turn. Retail's two columns of pages (`0..=3` and `5..=8`,
+    /// crossed by a confirm on the Condition page) fold onto one here, since
+    /// both columns show the same panels.
+    ///
+    /// PORT: FUN_801DA2A0 (`0x801DA370..0x801DA530` - step 1, the pager)
     pub fn tick(&mut self, input: StatusInput) -> Vec<StatusEvent> {
         let mut events = Vec::new();
         if let Some(list) = self.list.as_mut() {
@@ -367,12 +379,16 @@ impl StatusScreenSession {
                 self.confirm_page(&mut events);
                 return events;
             }
+            // Left then Right, each on its own test (`0x801DA494` /
+            // `0x801DA4CC`): a frame holding both turns back and forth and
+            // lands where it started, with the cue.
             if input.left || input.right {
-                self.page = if input.left {
-                    (self.page + STATUS_PAGES - 1) % STATUS_PAGES
-                } else {
-                    (self.page + 1) % STATUS_PAGES
-                };
+                if input.left {
+                    self.page = (self.page + STATUS_PAGES - 1) % STATUS_PAGES;
+                }
+                if input.right {
+                    self.page = (self.page + 1) % STATUS_PAGES;
+                }
                 events.push(StatusEvent::PageTurned { page: self.page });
                 return events;
             }

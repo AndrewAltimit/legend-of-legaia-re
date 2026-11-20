@@ -958,3 +958,27 @@ entry = "0x80031D00"
 range = "0x800323CC..0x800323CC"
 verdict = "unported"
 reason = "A node with a width (+0xE) draws its frame through FUN_8002C69C in style +0x1D; the engine's window models draw their own frames rather than through this walk"
+
+[[arm]]
+entry = "0x801DA2A0"
+range = "0x801DA2F4..0x801DA2FC"
+verdict = "unported"
+reason = "PROT 0899 sub-screen 0x15 step 0, the Status entry: runs window program 0x801E4DEC (FUN_801D6628), resets the list words and keeps the page word's low bits, so a reopened Status shows the page it last showed; the port opens StatusScreenSession fresh on the Condition page (port gap)"
+
+[[arm]]
+entry = "0x801DA2A0"
+range = "0x801DA30C..0x801DA30C"
+verdict = "unreachable"
+reason = "PROT 0899 sub-screen 0x15: a step of 8 or more returns at once, and the routine and its menu caller only ever store steps 0..7 into 0x801E46AC"
+
+[[arm]]
+entry = "0x801DA2A0"
+range = "0x801DA37C..0x801DA37C"
+verdict = "unported"
+reason = "PROT 0899 sub-screen 0x15 step 1: the menu's slide lock _DAT_8007BB80 holds the pager for a frame; the engine's window slide lock is the host's (menu_slide_lock), not StatusScreenSession's"
+
+[[arm]]
+entry = "0x801DA2A0"
+range = "0x801DA3B8..0x801DA3B8"
+verdict = "unreachable"
+reason = "PROT 0899 sub-screen 0x15 step 1: the party picker FUN_801D688C answers 0..3, so a verdict past 3 (the arm that pages on it) never comes"

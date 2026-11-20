@@ -137,3 +137,129 @@ fn the_list_order_screen_steps_as_retail_does() {
         "{seen:?}"
     );
 }
+
+/// Step 1 of `FUN_801DA2A0`, the Status pager (`0x801DA370..0x801DA530`),
+/// against `StatusScreenSession::tick`: the party picker `FUN_801D688C`
+/// scripted to each verdict (confirm, cancel, its no-turn answer `3`,
+/// nothing), the page word `0x801E46C0` in either column, and Left / Right
+/// on the repeat-pressed word, alone or together. The page is compared
+/// folded onto one column, a confirm by where it goes (the Magic and Moves
+/// lists, the Skills buzz, the Condition hop), a cancel by the close.
+#[test]
+fn the_status_pager_turns_and_confirms_as_retail_does() {
+    differential!(prot(899, SCREEN));
+    use legaia_engine_menus::status_screen::{
+        StatusEvent, StatusInput, StatusMoveRow, StatusScreenSession, StatusSnapshot,
+        StatusSpellRow,
+    };
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const PAGE: u32 = 0x801E_46C0;
+    const EXIT: u32 = 0x801E_46A4;
+    const LOCK: u32 = 0x8007_BB80;
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &disc().expect("disc").read_entry(899).expect("PROT 0899"),
+    );
+    cpu.stub_outside = Some((SCREEN, SCREEN_END));
+    let verdict = Rc::new(RefCell::new(0u32));
+    let v = verdict.clone();
+    cpu.hook(PICKER, move |r, _| r.r[V0] = *v.borrow());
+    let cues = Rc::new(RefCell::new(Vec::<u32>::new()));
+    for va in [SFX_A, SFX_B] {
+        let c = cues.clone();
+        cpu.hook(va, move |r, _| c.borrow_mut().push(r.r[A0]));
+    }
+    let mut snap = StatusSnapshot::placeholder(0, "A");
+    // Lists long enough to open (a short one is the later step's reject).
+    snap.spells = (0x81..0x85)
+        .map(|spell_id| StatusSpellRow {
+            spell_id,
+            ..Default::default()
+        })
+        .collect();
+    snap.moves = (1..5)
+        .map(|id| StatusMoveRow {
+            id,
+            ..Default::default()
+        })
+        .collect();
+    // Character 0's record: four spells, four moves, a Ra-Seru on, so the
+    // list step the confirm falls into settles in the same frame.
+    let raseru = cpu.mem.rd16(RASERU_SLOTS) as u32;
+    cpu.mem.wr8(RECORDS + 0x13C, 4);
+    cpu.mem.wr8(RECORDS + 0x185, 4);
+    cpu.mem.wr8(RECORDS + 0x196 + raseru, 1);
+    let mut rng = Rng(0x5041_4745);
+    let mut seen = [0usize; 4];
+    for case in 0..6000 {
+        let page = [0u32, 1, 2, 3, 5, 6, 7, 8][rng.below(8) as usize];
+        let high = if rng.below(2) == 0 { 0x1000 } else { 0 };
+        let v = [0u32, 0, 1, 2, 3][rng.below(5) as usize];
+        let pad = [0u32, 0x8000, 0x2000, 0xA000, 0x1000][rng.below(5) as usize];
+        *verdict.borrow_mut() = v;
+        cpu.mem.wr32(STEP, 1);
+        cpu.mem.wr32(PAGE, high | page);
+        cpu.mem.wr32(EXIT, 0);
+        cpu.mem.wr32(LOCK, 0);
+        cpu.mem.wr32(PAD, pad);
+        cpu.mem.wr32(CHAR_CURSOR, 0);
+        cpu.mem.wr8(PARTY_ORDER, 0);
+        cues.borrow_mut().clear();
+        assert_eq!(cpu.call(SCREEN, &[]), Stop::Returned, "case {case}");
+
+        let mut s = StatusScreenSession::new(vec![snap.clone()]).with_page((page % 5) as u8);
+        let input = match v {
+            1 => StatusInput::from_pad_edge(0x4000),
+            2 => StatusInput::from_pad_edge(0x2000),
+            3 => StatusInput::default(),
+            _ => StatusInput {
+                left: pad & 0x8000 != 0,
+                right: pad & 0x2000 != 0,
+                ..Default::default()
+            },
+        };
+        let events = s.tick(input);
+        let ctx = format!("case {case}: page {page} verdict {v} pad {pad:#x}");
+        let got_page = cpu.mem.rd32(PAGE) & 0xFFF;
+        let got_step = cpu.mem.rd32(STEP);
+        match v {
+            2 => {
+                assert_eq!(cpu.mem.rd32(EXIT), 1, "{ctx}: closed");
+                assert_eq!(events, vec![StatusEvent::Closed], "{ctx}");
+            }
+            1 => {
+                match got_step {
+                    // Steps 3 / 4 settle on to the lists' 6 / 7 at once.
+                    6 | 7 => assert_eq!(events, vec![StatusEvent::ListOpened], "{ctx}"),
+                    _ if cues.borrow().contains(&0x23) => {
+                        assert_eq!(events, vec![StatusEvent::Rejected], "{ctx}")
+                    }
+                    // The Condition page's hop to the other column.
+                    _ => {
+                        assert_eq!(got_page % 5, 0, "{ctx}: the hop");
+                        assert!(events.is_empty(), "{ctx}");
+                    }
+                }
+                assert_eq!(got_step == 6, s.page() == 2, "{ctx}: Magic");
+                seen[1] += 1;
+            }
+            _ => {
+                assert_eq!(got_step, 1, "{ctx}");
+                assert_eq!(got_page % 5, u32::from(s.page()), "{ctx}: the page");
+                let turned = cues.borrow().contains(&0x21);
+                assert_eq!(
+                    turned,
+                    events
+                        .iter()
+                        .any(|e| matches!(e, StatusEvent::PageTurned { .. })),
+                    "{ctx}: the cue"
+                );
+                seen[if turned { 2 } else { 3 }] += 1;
+            }
+        }
+        seen[0] += usize::from(v == 2);
+    }
+    assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
+}
