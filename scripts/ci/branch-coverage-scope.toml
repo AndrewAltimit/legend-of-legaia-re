@@ -1,0 +1,18 @@
+# Arms of PORT-tagged retail routines that are out of scope for the kernel
+# differential's branch coverage, read by `scripts/ci/branch-coverage.py`.
+# Branches inside a row leave the denominator of the "ported arms" figure, so
+# what stays below 100% there is the worklist: arms a port claims that no test
+# exercises. See docs/tooling/retail-kernel-differential.md#branch-coverage.
+#
+# One [[arm]] per contiguous range of the routine:
+#   entry   = the routine's entry VA (as its PORT tags name it)
+#   range   = "0x801D2BE8..0x801D2D24", inclusive; a single branch is "A..A"
+#   verdict = "unported"     no port implements the arm, by decision
+#             "unreachable"  no game state reaches it (say what guards it)
+#             "cannot-drive" the interpreter cannot run it (say what it needs)
+#   reason  = one sentence, disassembly-grounded: what the arm does and why it
+#             is out of scope
+#
+# A slot-B VA holds different routines in different images; a row applies to
+# every image at its entry, so give a range only the intended image's code
+# occupies, and name the image in the reason.

@@ -187,6 +187,8 @@ python3 scripts/ci/branch-coverage.py --record        # the suite, recording on 
 python3 scripts/ci/branch-coverage.py                 # summary over the PORT-tagged routines
 python3 scripts/ci/branch-coverage.py --worst 30      # lowest-covered routines
 python3 scripts/ci/branch-coverage.py --addr 801D0748 # one routine, branch by branch
+python3 scripts/ci/branch-coverage.py --worksheet 801D0748  # with tag ranges and scope rows
+python3 scripts/ci/branch-coverage.py --check-scope   # the scope file's rows
 ```
 
 Each branch is **both** (taken and fell through), **one** (only one way) or
@@ -205,9 +207,20 @@ at another routine's frame setup when the `jr` was a tail call through a
 function pointer. Against the SCUS routines with a Ghidra dump, the counts
 agree except where the dump itself is short of the routine.
 
-The figure is the whole routine's. Several ports tag one dispatcher for the arm
-each implements, so a dispatcher scores low on arms nobody ported; read it with
-`--addr` before calling it a gap. The table holds addresses and hashes, no
+Not every branch is a test gap. `scripts/ci/branch-coverage-scope.toml` takes
+arms out of scope, one row per range with a verdict and a disassembly-grounded
+reason: `unported` (no port implements the arm, by decision), `unreachable` (no
+game state reaches it) or `cannot-drive` (the interpreter cannot run it). The
+report gives coverage over all branches and over the **ported arms**, the
+branches no row covers; what stays below 100% there is the worklist, arms a
+port claims and no test exercises. `--worksheet` lists a routine's branches
+beside the address ranges its `PORT:` tags cite and the rows that cover them.
+A slot-B VA holds different routines in different images and a row applies to
+every image at its entry, so a row's range names code only its image holds.
+
+Driving the retail side down an arm is half of it. A branch counts once the
+retail routine takes it; the test still has to compare that arm's output with
+the Rust that ports it, or the arm is exercised and not checked. The table holds addresses and hashes, no
 instruction bytes, and stays under `target/branch-coverage/`. It is a
 measurement, not a gate.
 
