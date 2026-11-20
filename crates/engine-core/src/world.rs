@@ -170,6 +170,8 @@ mod fishing_hub_exits;
 pub mod mode_world;
 pub use field_script_actors::{FieldLightDraw, NpcDrawPose};
 mod drop_shadow_render;
+mod field_present;
+pub use field_present::FieldPresent;
 mod fog_render;
 mod fog_volume_host;
 mod rumble_state;

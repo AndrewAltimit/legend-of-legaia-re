@@ -366,6 +366,7 @@ mod tests {
                 phase: 0.5,
                 dt: 4,
                 lag: 0.0,
+                ..DrawLead::NONE
             },
         );
         assert!(led.yaw > stored.yaw);

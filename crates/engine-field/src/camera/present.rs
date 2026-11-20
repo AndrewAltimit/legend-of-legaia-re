@@ -148,7 +148,7 @@ impl Camera {
     /// the player (`0x801DB820`, the non-zone writeback): drawn live. A
     /// mode-5 fixed shot eases its focus toward the anchor once a pass, and
     /// a script's focus is the script's, so both draw as stepped moves.
-    fn focus_pinned_live<W: CameraWorld + ?Sized>(&self, world: &W) -> bool {
+    pub fn focus_pinned_live<W: CameraWorld + ?Sized>(&self, world: &W) -> bool {
         let scripted = self.script_owns_focus
             || self.zone.script_view
             || world.cutscene_timeline_holds_camera();

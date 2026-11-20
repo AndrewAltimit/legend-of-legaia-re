@@ -765,7 +765,9 @@ impl FieldActors {
         for e in &n.pack.entries {
             let slot = e.placement.index as u8;
             let spawn = (e.placement.world_x, e.placement.world_z);
-            match host.world.field_npc_draw_pose(slot, spawn) {
+            // The drawn pose (`World::field_npc_drawn_pose`): one game
+            // frame behind under the smooth field actors.
+            match host.world.field_npc_drawn_pose(slot, spawn) {
                 Some(p) => out.extend_from_slice(&[
                     1.0,
                     p.pos[0],

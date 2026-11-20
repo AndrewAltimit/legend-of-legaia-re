@@ -125,6 +125,12 @@ pub struct World {
     /// alone ([`World::battle_draw_pose`], [`World::battle_draw_root`]).
     pub battle_present: BattlePresent,
 
+    /// The smooth field actors' draw-side record ([`FieldPresent`]): the
+    /// bodies the last game frame closed on beside the live ones. Written by
+    /// [`World::observe_field_present`] alone, read by the draw accessors
+    /// alone ([`World::field_draw_root`], [`World::field_npc_drawn_pose`]).
+    pub field_present: FieldPresent,
+
     /// Field camera rig: the saved camera snapshot, scene offset + ease, shake amplitude and the zone-ramp register file.
     pub camera: CameraRig,
 
@@ -494,6 +500,7 @@ impl World {
             object_effect: legaia_engine_effects::object_effect::ObjectEffectTable::boot(),
             battle: BattleState::new(),
             battle_present: BattlePresent::default(),
+            field_present: FieldPresent::default(),
             camera: CameraRig::new(),
             audio: AudioState::new(),
             field_vm: FieldVmState::new(),

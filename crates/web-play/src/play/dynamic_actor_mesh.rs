@@ -182,11 +182,14 @@ impl LegaiaRuntime {
             );
             let active = a.active && a.tmd_ref.is_some() && !(x == hide && z == hide);
             let facing = h.world.npcs.heading(slot) as f32;
+            // The drawn position (`World::field_draw_shift`): one game frame
+            // behind under the smooth field actors.
+            let d = h.world.field_draw_shift(slot as usize).unwrap_or([0.0; 4]);
             out.extend_from_slice(&[
                 f32::from(slot),
-                x as f32,
-                y as f32,
-                z as f32,
+                f32::from(x) + d[0],
+                f32::from(y) + d[1],
+                f32::from(z) + d[2],
                 facing,
                 if active { 1.0 } else { 0.0 },
             ]);

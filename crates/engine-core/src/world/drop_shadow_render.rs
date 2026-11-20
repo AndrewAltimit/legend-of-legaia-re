@@ -142,18 +142,26 @@ impl World {
             }
             return out;
         }
-        if let Some(a) = self
-            .player_actor_slot
-            .and_then(|s| self.actors.get(usize::from(s)))
+        // The blob rides the drawn body (the smooth field actors,
+        // `World::field_draw_shift`); the gates read the stored record.
+        let ride = |p: [i32; 3], d: Option<[f32; 4]>| match d {
+            Some(d) => std::array::from_fn(|k| p[k] + d[k].round() as i32),
+            None => p,
+        };
+        if let Some(slot) = self.player_actor_slot
+            && let Some(a) = self.actors.get(usize::from(slot))
         {
             let m = &a.move_state;
             cast(
                 m.flags | PARTY_CLASS_BIT,
-                [
-                    i32::from(m.world_x),
-                    i32::from(m.world_y),
-                    i32::from(m.world_z),
-                ],
+                ride(
+                    [
+                        i32::from(m.world_x),
+                        i32::from(m.world_y),
+                        i32::from(m.world_z),
+                    ],
+                    self.field_draw_shift(usize::from(slot)),
+                ),
                 m.flags & SHADOW_NEAR_BIT != 0
                     || self.player_near_buckets(i32::from(m.world_x), i32::from(m.world_z)),
             );
@@ -179,7 +187,10 @@ impl World {
                 let y = self.field_npc_render_y(slot, x, z);
                 cast(
                     c.ctx.flags | PLACEMENT_CLASS_BIT,
-                    [i32::from(x), y, i32::from(z)],
+                    ride(
+                        [i32::from(x), y, i32::from(z)],
+                        self.field_npc_draw_shift(slot),
+                    ),
                     c.ctx.flags & SHADOW_NEAR_BIT != 0,
                 );
             }

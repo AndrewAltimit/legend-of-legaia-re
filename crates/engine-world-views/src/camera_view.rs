@@ -99,16 +99,24 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
 /// ([`Camera::present_lag`]): the draw shows such a move over the vsyncs
 /// after it rather than on the one it landed.
 pub fn camera_present_lead(world: &World, cam: &Camera) -> DrawLead {
+    // The smooth field actors draw the bodies one game frame behind
+    // (`World::field_draw_root`); the follow focus pinned onto the player
+    // rides the drawn player with them.
+    let actors = world.field_present_active();
     if !world.toggles.smooth_camera
         || !world.clock.game_tick_live
         || world.mode == SceneMode::Battle
     {
-        return DrawLead::NONE;
+        return DrawLead {
+            actors,
+            ..DrawLead::NONE
+        };
     }
     let lag = cam.present_lag(world.clock.display_frames);
     if cam.mover.is_none() {
         return DrawLead {
             lag,
+            actors,
             ..DrawLead::NONE
         };
     }
@@ -126,6 +134,7 @@ pub fn camera_present_lead(world: &World, cam: &Camera) -> DrawLead {
         phase: f32::from(vsync) / f32::from(wait),
         dt: i32::from(dt),
         lag,
+        actors,
     }
 }
 
@@ -174,6 +183,19 @@ fn follow_view_with_knobs(
 ) -> Option<FieldCameraView> {
     let (wx, wz) = lead_actor_xz(world)?;
     let floor_y = world.sample_field_floor_height(wx as i32, wz as i32) as f32;
+    // The smooth field actors' carry of the player off its stored root, for
+    // a focus pinned onto the player (`Camera::focus_pinned_live`): the
+    // frame frames the drawn player, so it holds its screen point while a
+    // record walks it. Zero on the stored pose.
+    let player_shift = if lead.actors && cam.focus_pinned_live(world) {
+        world
+            .player_actor_slot
+            .and_then(|s| world.field_draw_shift(usize::from(s)))
+            .map_or([0.0; 2], |d| [d[0], d[2]])
+    } else {
+        [0.0; 2]
+    };
+    let (wx, wz) = (wx + player_shift[0], wz + player_shift[1]);
     let s = CUTSCENE_WORLD_SCALE;
     let g = &cam.globals.0;
     // The smooth camera's carry of an in-flight glide; zeros on the stored
@@ -260,7 +282,11 @@ fn follow_view_with_knobs(
         // `(12194, 3550)`), whose frame the actor-anchored scale slid about
         // 25 px sideways at that depth.
         focus: if globals_live {
-            [-(g[6] as f32 + d[6]), g[7] as f32, -(g[8] as f32 + d[8])]
+            [
+                -(g[6] as f32 + d[6]) + player_shift[0],
+                g[7] as f32,
+                -(g[8] as f32 + d[8]) + player_shift[1],
+            ]
         } else {
             [wx, floor_y, wz]
         },
@@ -1025,7 +1051,8 @@ mod tests {
             DrawLead {
                 phase: 0.5,
                 dt: 4,
-                lag: 0.0
+                lag: 0.0,
+                ..DrawLead::NONE
             }
         );
         w.clock.frame_vsync = 0;
@@ -1068,6 +1095,7 @@ mod tests {
                 phase: 0.5,
                 dt: 4,
                 lag: 0.0,
+                ..DrawLead::NONE
             },
         )
         .unwrap();

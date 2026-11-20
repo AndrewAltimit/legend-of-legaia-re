@@ -249,7 +249,8 @@ fn led_delta_is_zero_on_the_stored_pose() {
         c.led_delta(DrawLead {
             phase: 0.0,
             dt: 4,
-            lag: 0.0
+            lag: 0.0,
+            ..DrawLead::NONE
         }),
         [0.0; AXIS_COUNT]
     );
@@ -259,7 +260,8 @@ fn led_delta_is_zero_on_the_stored_pose() {
         settled.led_delta(DrawLead {
             phase: 0.5,
             dt: 4,
-            lag: 0.0
+            lag: 0.0,
+            ..DrawLead::NONE
         }),
         [0.0; AXIS_COUNT]
     );
@@ -281,11 +283,13 @@ fn led_delta_carries_the_glide_toward_the_next_stored_pose() {
         phase: 0.25,
         dt: 4,
         lag: 0.0,
+        ..DrawLead::NONE
     });
     let three = c.led_delta(DrawLead {
         phase: 0.75,
         dt: 4,
         lag: 0.0,
+        ..DrawLead::NONE
     });
     for k in 0..AXIS_COUNT {
         let span = (next[k] - now[k]) as f32;
@@ -316,6 +320,7 @@ fn led_delta_stops_at_the_glide_end() {
         phase: 0.99,
         dt: 4,
         lag: 0.0,
+        ..DrawLead::NONE
     });
     for k in [0usize, 1, 3, 5] {
         let drawn = c.globals.0[k] as f32 + d[k];

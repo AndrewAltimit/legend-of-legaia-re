@@ -327,8 +327,12 @@ impl PlayWindowApp {
                 &mut local.colors,
             );
         }
-        // The drawn pose (`World::battle_draw_pose_frame`).
-        let lerped = self.session.host.world.battle_draw_pose_frame(ai);
+        // The drawn pose (`World::battle_draw_pose_frame`, the field's
+        // `World::field_draw_pose_frame`).
+        let w = &self.session.host.world;
+        let lerped = w
+            .battle_draw_pose_frame(ai)
+            .or_else(|| w.field_draw_pose_frame(ai));
         let bones = lerped
             .or(actor.pose_frame.as_ref())
             .map_or(&[][..], |p| p.bone_outputs.as_slice());
@@ -437,7 +441,12 @@ impl PlayWindowApp {
             };
             // The drawn pose: under the smooth camera a battle body's parts
             // step on the camera's phase (`World::battle_draw_pose_frame`).
-            let lerped = self.session.host.world.battle_draw_pose_frame(ai);
+            // The field's twin is the smooth field actors'
+            // (`World::field_draw_pose_frame`).
+            let w = &self.session.host.world;
+            let lerped = w
+                .battle_draw_pose_frame(ai)
+                .or_else(|| w.field_draw_pose_frame(ai));
             let pose = lerped.unwrap_or(pose);
             // Battle actors and the field player carry per-object
             // rigid-transform clips (rotation matters), so use the

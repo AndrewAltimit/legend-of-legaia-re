@@ -51,6 +51,7 @@ flowchart TD
 - [Per-frame flow](#per-frame-flow) - [base step](#base-step-selection-walk--run) · [clip base](#the-clip-base-and-the-settle-tail) · [wall slide](#wall-slide-resolution-fun_80046494) · [pad octant](#gp0x2d8-is-authored-not-computed)
 - [Collision](#collision---fun_801cfe4c) - [wall probes](#wall-probes) · [actor probes](#actor-probes-fun_801cfc40) · [touch and interact](#touch-and-interact-dispatch) · [port](#engine-model)
 - [Vertical settle + ledge hop](#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878) - [hop-arc controller](#the-scripted-hop-arc-controller)
+- [Smooth field actors (enhancement)](#smooth-field-actors-enhancement)
 - [Action movement (enhancement)](#action-movement-enhancement)
 - [Where the collision grid comes from](#where-the-collision-grid-comes-from) - [collision byte](#collision-byte-walls--floor-height) · [object-grid cell word](#object-grid-cell-word) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [timed warp](#the-timed-kind-0-warp) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [door swing](#the-door-swing-how-a-bind-script-drives-the-clip) · [load chain](#field-buffer-load-chain)
 - [Spawn position on scene entry](#spawn-position-on-scene-entry)
@@ -749,6 +750,25 @@ Deliberate differences:
 Coverage: `engine-core/tests/field_ledge_hop_wired.rs` (the whole flight on a synthetic grid: take-off, peak above both endpoints, exact landing, lock release, reap); `field_ledge_hop_footing.rs` (what the rise is measured from - flat non-zero ground classifies nothing, an authored step does, and a wall press on a non-zero-tier floor starts no hop); disc-gated `field_ledge_hop_disc.rs` (an authored ledge in a real scene's `.MAP`).
 
 Authored ledges are common - retail's predicate finds candidates in most field scenes, Rim Elm included. The full-scene wall-press legs in `parity/tests/field_collision_discriminator.rs` also catch a misclassifying hop, as a 42-unit overshoot into the wall.
+
+## Smooth field actors (enhancement)
+
+Not retail. Retail runs every field script context, every NPC walk leg and the actor pool's anim tick once a game frame, from the actor-list walk (`FUN_8002519C` -> `FUN_8003BC08`), and the frame then waits out its step of `2` to `4` vsyncs (`FUN_80016B6C`). A scripted walker therefore moves a whole step on the vsync a frame opens and stands on the vsyncs between, and its walk clip steps on the same clock.
+
+A PCSX-Redux film of `izumi_hunters_field` (`scripts/pcsx-redux/autorun_field_leg_timing.lua`, frame step `2`) has each hunter advance `4` units on every second vsync, hold on the one between, and turn a quarter turn in one frame. The engine's `izumi` first-visit choreography runs at steps `3` and `4` under the derived frame cost, so its walkers step `12` or `16` units at 15 to 20 updates a second.
+
+`WorldToggles::smooth_actors` (default on, off under `pin_retail` and `--retail`) draws them one game frame behind instead, the trade the smooth battle camera makes for battle bodies ([battle camera](battle-stage-camera.md#the-smooth-battle-camera-enhancement)). `World::observe_field_present` runs at the end of every `World::tick` and keeps the bodies the last game frame closed on beside the live ones: each active actor's root and heading (`render_26`) and its `pose_frame`, and each placed NPC's position, render height and heading. The draw accessors step from the one to the other by the share of the current frame's vsyncs already shown:
+
+- `World::field_draw_root` - an actor's drawn position and heading (both hosts' player matrix, the page's dynamic actors);
+- `World::field_npc_drawn_pose` - `field_npc_draw_pose` with the drawn position and yaw (both hosts' NPC pass);
+- `World::field_draw_pose_frame` - the player's drawn pose, part by part (both hosts' posed player mesh);
+- `World::field_drop_shadows` lays each blob under the drawn body.
+
+The field camera's stepped moves draw on the same phase ([cutscene](cutscene.md#the-smooth-camera-enhancement)), and a follow focus pinned onto the player (`Camera::focus_pinned_live`) takes the drawn player's carry (`DrawLead::actors`), so a player a record walks under the follow camera holds its screen point.
+
+A body draws live, not behind, when it is placed rather than moved (a step of `512` units or more in a frame, a turn of `1536` or more, a body that appears, leaves the off-map hide box or changes scene) and when it moved on a vsync between two game frames - the player under the smooth walk, which already moves every vsync - for that frame and the next. A pose part that jumps `512` units or turns `1024` lands at once.
+
+Presentation-only: the simulation, the frame-cost census, collision, the interact probes and every `rand` draw read the actor records and `World::npcs`. `smooth_actor_motion_disc.rs` runs the `izumi` intro with the toggle on and off on one pad schedule and holds the actors, the NPC positions and headings, the camera globals, the field PC and the random stream equal on every vsync; over its walking body-vsyncs the stored walkers hold on about seven in ten and the drawn ones on almost none, the largest one-vsync drawn step a quarter of the stored one. The placed NPCs' clip poses still step once a frame: the hosts memoise each NPC pose by its clip frame, and an interpolated pose would have to key the sub-frame.
 
 ## Action movement (enhancement)
 

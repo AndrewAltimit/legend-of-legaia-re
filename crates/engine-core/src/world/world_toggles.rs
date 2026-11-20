@@ -382,6 +382,20 @@ pub struct WorldToggles {
     /// phase ([`crate::world::BattlePresent`]). Off, under `pin_retail`,
     /// the frame draws the stored pose, as retail does.
     pub smooth_camera: bool,
+    /// The field's bodies draw every vsync (port, on by default). Retail
+    /// steps a scripted walker, an NPC's walk leg and every actor's clip once
+    /// a game frame (the actor-list walk `FUN_8002519C`), so a cutscene's
+    /// walkers move a whole step on the vsync a frame opens and stand on the
+    /// two or three between - 15 to 30 updates a second. On, the hosts draw
+    /// every field body (the player, the placed NPCs and props) and the
+    /// player's pose one game frame behind, stepped by the share of the
+    /// frame already shown, and a follow focus pinned onto the player follows
+    /// the drawn player ([`crate::world::FieldPresent`]); a body placed
+    /// rather than moved, or one that already moves every vsync (the smooth
+    /// walk), draws live. The simulation and everything it reads keep the
+    /// stepped records. Off, under `pin_retail`, the frame draws the stored
+    /// bodies, as retail does.
+    pub smooth_actors: bool,
     /// Shiny Seru (port gameplay feature, the engine twin of the patcher's
     /// `--shiny-seru`): each battle entry rolls
     /// [`legaia_engine_battle::seru_state::SeruState::shiny_chance_pct`] for one
@@ -675,6 +689,7 @@ impl WorldToggles {
             smooth_walk: true,
             smooth_map_display: true,
             smooth_camera: true,
+            smooth_actors: true,
             shiny_seru: true,
             battle_memo_verify: false,
             flee_exp: false,
@@ -729,6 +744,7 @@ impl WorldToggles {
         self.smooth_walk = false;
         self.smooth_map_display = false;
         self.smooth_camera = false;
+        self.smooth_actors = false;
         self.arts_saved_list = false;
         self.shiny_seru = false;
         self.flee_exp = false;
@@ -794,6 +810,9 @@ impl WorldToggles {
         }
         if self.smooth_camera {
             out.push("smooth_camera");
+        }
+        if self.smooth_actors {
+            out.push("smooth_actors");
         }
         if self.arts_saved_list {
             out.push("arts_saved_list");
@@ -880,6 +899,7 @@ mod fidelity_tests {
                 "smooth_walk",
                 "smooth_map_display",
                 "smooth_camera",
+                "smooth_actors",
                 "shiny_seru",
                 "fortress_encounter_fix",
                 "tetsu_spar_fix",
