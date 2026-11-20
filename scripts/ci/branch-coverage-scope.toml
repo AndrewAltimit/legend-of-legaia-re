@@ -408,3 +408,171 @@ entry = "0x801E9F64"
 range = "0x801EA7AC..0x801EA968"
 verdict = "unreachable"
 reason = "PROT 0897 dev adjuster tail: its generic nibble, word, halfword and byte editors key on s7, fp and t0, which the prologue (0x801E9F8C, 0x801E9FC0) and the tail itself (0x801EA88C) zero and no row arm sets, so every branch here goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EAFA0..0x801EAFA0"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EAFFC..0x801EB050"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB0F0..0x801EB210"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, row 0xA past its id: the held count of item _DAT_801F2E8C (FUN_80042EE0, bag count byte) and, under the cursor, the item's name from the item table; the engine's dev menu has no GET ITEM row"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB4A0..0x801EB4A0"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB4C8..0x801EB550"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB638..0x801EB638"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB660..0x801EB6E8"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB7D8..0x801EB7D8"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB834..0x801EB888"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB958..0x801EB958"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB9B4..0x801EBA08"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBAD8..0x801EBAD8"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBB34..0x801EBB88"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBC58..0x801EBC58"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBCB4..0x801EBD08"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBDD8..0x801EBDD8"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBE34..0x801EBE88"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBF84..0x801EBF84"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBFE0..0x801EC034"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC17C..0x801EC17C"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, row 0x11 under the cursor: the flag grid box (FUN_8002C69C) and the 0x40-flag page around _DAT_801F2AA0; the engine's EVENT_FLAG row opens the field overlay's editor page instead"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC1A4..0x801EC22C"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, row 0x11 under the cursor: the flag grid box (FUN_8002C69C) and the 0x40-flag page around _DAT_801F2AA0; the engine's EVENT_FLAG row opens the field overlay's editor page instead"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC2F8..0x801EC2F8"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, row 0x11 under the cursor: the flag grid box (FUN_8002C69C) and the 0x40-flag page around _DAT_801F2AA0; the engine's EVENT_FLAG row opens the field overlay's editor page instead"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC340..0x801EC340"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, row 0x11 under the cursor: the flag grid box (FUN_8002C69C) and the 0x40-flag page around _DAT_801F2AA0; the engine's EVENT_FLAG row opens the field overlay's editor page instead"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC434..0x801EC434"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC490..0x801EC4E4"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC5A4..0x801EC5A4"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC600..0x801EC654"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC724..0x801EC94C"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, rows 0xC..0xE: a character's equipment byte (+0x75E) and its table bound; the engine's EQUIP row shows a staged item id instead"
