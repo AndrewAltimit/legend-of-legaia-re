@@ -868,3 +868,39 @@ entry = "80050120"
 range = "0x8005038C..0x800503F4"
 verdict = "unported"
 reason = "The defeat fade's Jette count, the same as the anim commit's (0x8004B0F4): with formation cell 0x8007BD0C == 0xAA it counts monster seats with +0x14C != 0 over ctx[+1] and, finding none, stores ctx[+1] = 1 and clears gp+0x9F5; no port carries the count or the cell's clear."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6B40..0x801F6B74"
+verdict = "unported"
+reason = "PROT 0978's back-read loader head: two developer traces, FUN_8001A068 behind the dev counter 0x8007B6D0 (written only by the dev menus) and the printf FUN_800567A8 behind 0x8007BC40; the port prints no traces."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6EE0..0x801F7324"
+verdict = "unported"
+reason = "PROT 0978's second streamer, the 19-arm table at 0x801F6AD8 taken when _DAT_8007BAC0 == 0: sector-paced reads of a caller-supplied PROT entry, which the engine replaces with a synchronous whole-entry read (ProtIndex::entry_bytes_extended)."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6C38..0x801F6C6C"
+verdict = "unreachable"
+reason = "PROT 0978's back-read strip read: the gate on the build-mode halfword 0x8007B8C2 and the dev build's host-file arm it guards (FUN_8003E9C0 on the int.tim / int2.tim path strings); retail boot stores the halfword non-zero (gp+0x5AA at 0x80015F08), so only the PROT read runs."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6CC8..0x801F6D08"
+verdict = "unreachable"
+reason = "PROT 0978's back-read strip read: the gate on the build-mode halfword 0x8007B8C2 and the dev build's host-file arm it guards (FUN_8003E9C0 on the int.tim / int2.tim path strings); retail boot stores the halfword non-zero (gp+0x5AA at 0x80015F08), so only the PROT read runs."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6D6C..0x801F6DAC"
+verdict = "unreachable"
+reason = "PROT 0978's back-read strip read: the gate on the build-mode halfword 0x8007B8C2 and the dev build's host-file arm it guards (FUN_8003E9C0 on the int.tim / int2.tim path strings); retail boot stores the halfword non-zero (gp+0x5AA at 0x80015F08), so only the PROT read runs."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6E14..0x801F6E54"
+verdict = "unreachable"
+reason = "PROT 0978's back-read strip read: the gate on the build-mode halfword 0x8007B8C2 and the dev build's host-file arm it guards (FUN_8003E9C0 on the int.tim / int2.tim path strings); retail boot stores the halfword non-zero (gp+0x5AA at 0x80015F08), so only the PROT read runs."
