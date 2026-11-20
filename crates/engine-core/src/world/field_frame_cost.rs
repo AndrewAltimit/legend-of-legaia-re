@@ -336,7 +336,17 @@ pub fn placed_near_rejected(
         return false;
     }
     let depth = gte.rtps([p.x, p.y, p.z]).mac[2];
-    depth < if p.posed { 0xA1 } else { 0xA0 }
+    walker_near_rejected(depth, p.posed, false)
+}
+
+/// The draw walk's near reject on an actor's view depth `+0x34`: under
+/// `0xA1` on the posed arms (kind 1, `slti v0,v0,0xa1` at `0x8001AE9C`; a
+/// kind-4 node in mode 6), under `0xA0` on the scaled model arm, unless
+/// `+0x52 & 0x20` exempts the actor (`near_exempt`).
+///
+/// PORT: FUN_8001ADA4 (`0x8001AE94..0x8001AEB8`, the kind-1 near reject)
+pub fn walker_near_rejected(depth: i32, posed: bool, near_exempt: bool) -> bool {
+    !near_exempt && depth < if posed { 0xA1 } else { 0xA0 }
 }
 
 /// The render dispatcher's on-screen probe `FUN_8001B73C` for an actor at

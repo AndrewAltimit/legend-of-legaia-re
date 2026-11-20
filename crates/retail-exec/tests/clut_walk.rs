@@ -359,3 +359,125 @@ fn the_actor_walker_routes_draw_kind_4_as_the_port_routes() {
         assert!(seen.get(what).copied().unwrap_or(0) > 500, "{seen:?}");
     }
 }
+
+/// The walker's head skip and its kind-1 and kind-2 arms over a list of
+/// nodes. A node whose `+0x10` carries `0x2` or `0x8` is passed over, and a
+/// kind-2 battle body goes to the draw tick `FUN_800480D8` only at view
+/// depth `0xA1` or deeper: `battle_actor_tick::dispatch_draws` on the flags
+/// and the depth the walker measured. A kind-1 posed actor nearer than `0xA1`
+/// without the `+0x52 & 0x20` exemption draws nothing
+/// (`field_frame_cost::walker_near_rejected`); past that, with `+0x10 & 4`
+/// it goes to the on-screen probe `FUN_8001B73C` and on to the animated
+/// renderer `FUN_8001B964` when the probe says so, without it straight to
+/// the renderer - the order `field_frame_cost`'s frame model keeps for a
+/// `+0x10 & 4` model.
+#[test]
+fn the_actor_walker_rejects_kinds_1_and_2_as_the_port_rejects() {
+    differential!(scus(WALKER));
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    use legaia_engine_battle_vm::battle_actor_tick::dispatch_draws;
+    use legaia_engine_core::world::field_frame_cost::walker_near_rejected;
+    use psx_retail_exec::V0;
+    const WALKER_END: u32 = 0x8001_B73C;
+    const ANIMATED: u32 = 0x8001_B964;
+    const CULL: u32 = 0x8001_B73C;
+    const DRAW_TICK: u32 = 0x8004_80D8;
+    const CAMERA: u32 = 0x1F80_03C8;
+    const NODES: u32 = 0x8010_0100;
+    const STRIDE: u32 = 0x200;
+    cpu.stub_outside = Some((WALKER, WALKER_END));
+    let log: Rc<RefCell<Vec<(u32, u32)>>> = Rc::default();
+    let cull_says: Rc<RefCell<Vec<u32>>> = Rc::default();
+    for va in [ANIMATED, CULL, DRAW_TICK] {
+        let (log, cull_says) = (log.clone(), cull_says.clone());
+        cpu.hook(va, move |r, _| {
+            log.borrow_mut().push((va, r.r[A0]));
+            r.r[V0] = if va == CULL {
+                cull_says.borrow_mut().remove(0)
+            } else {
+                0
+            };
+        });
+    }
+    let mut rng = Rng(0x4B31_4B32);
+    let mut seen = std::collections::BTreeMap::<&str, u32>::new();
+    for round in 0..3_000 {
+        let n = 1 + rng.below(4);
+        let mut nodes = Vec::new();
+        for i in 0..n {
+            let at = NODES + STRIDE * i;
+            let mut rec: Vec<u8> = (0..STRIDE).map(|_| rng.next() as u8).collect();
+            let next = if i + 1 < n { at + STRIDE } else { 0 };
+            rec[0..4].copy_from_slice(&next.to_le_bytes());
+            let kind = 1 + rng.below(2) as u16;
+            rec[0x56..0x58].copy_from_slice(&kind.to_le_bytes());
+            let f52 = (rng.next() as u16 & !0x20) | if rng.below(3) == 0 { 0x20 } else { 0 };
+            rec[0x52..0x54].copy_from_slice(&f52.to_le_bytes());
+            let mut flags = u32::from_le_bytes(rec[0x10..0x14].try_into().unwrap()) & !0x8E;
+            if rng.below(4) != 0 {
+                flags |= 0x80;
+            }
+            if rng.below(5) == 0 {
+                flags |= [0x2, 0x8, 0xA][rng.below(3) as usize];
+            }
+            if rng.below(2) == 0 {
+                flags |= 0x4;
+            }
+            rec[0x10..0x14].copy_from_slice(&flags.to_le_bytes());
+            cpu.mem.load(at, &rec);
+            nodes.push(at);
+        }
+        let depth = 0x9C + rng.below(8) as i32 - if rng.below(5) == 0 { 0x200 } else { 0 };
+        for r in 0..8 {
+            cpu.gte.write_ctrl(r, if r == 7 { depth as u32 } else { 0 });
+        }
+        for k in 0..8 {
+            cpu.mem
+                .wr32(CAMERA + 4 * k, if k == 7 { depth as u32 } else { 0 });
+        }
+        let says: Vec<u32> = (0..n).map(|_| rng.below(2)).collect();
+        *cull_says.borrow_mut() = says.clone();
+        log.borrow_mut().clear();
+        cpu.mem.wr32(LIST, nodes[0]);
+        assert_eq!(cpu.call(WALKER, &[LIST]), Stop::Returned, "round {round}");
+
+        let mut want = Vec::new();
+        let mut probes = says.iter();
+        for &at in &nodes {
+            let flags = cpu.mem.rd32(at + 0x10);
+            let kind = cpu.mem.rd16(at + 0x56);
+            let exempt = cpu.mem.rd16(at + 0x52) & 0x20 != 0;
+            let measured = cpu.mem.rd32(at + 0x34) as i32;
+            if kind == 2 {
+                if dispatch_draws(flags, depth) {
+                    want.push((DRAW_TICK, at));
+                }
+                *seen.entry("kind 2").or_default() += 1;
+                continue;
+            }
+            // Kind 1: the head skip is the same `+0x10 & 0xA`.
+            if flags & 0xA != 0 {
+                *seen.entry("skipped").or_default() += 1;
+                continue;
+            }
+            if walker_near_rejected(measured, true, exempt) {
+                *seen.entry("near").or_default() += 1;
+                continue;
+            }
+            if flags & 4 != 0 {
+                want.push((CULL, at));
+                if *probes.next().unwrap() == 0 {
+                    continue;
+                }
+            }
+            want.push((ANIMATED, at));
+            *seen.entry("kind 1 drawn").or_default() += 1;
+        }
+        assert_eq!(*log.borrow(), want, "round {round}");
+    }
+    for what in ["kind 2", "skipped", "near", "kind 1 drawn"] {
+        assert!(seen.get(what).copied().unwrap_or(0) > 300, "{seen:?}");
+    }
+}

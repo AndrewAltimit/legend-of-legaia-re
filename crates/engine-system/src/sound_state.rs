@@ -109,6 +109,40 @@ impl SoundReleaseTimer {
 /// (`0x80024880..0x80024894`). The stage-4 pass waits for it to reach zero.
 pub const BGM_SWAP_SETTLE_VSYNCS: u16 = 0x1E;
 
+/// The track word that parks the BGM slot: a request for it loads nothing.
+pub const BGM_PARK_WORD: u16 = 0x1000;
+
+/// Why the swap poller `FUN_800243F0` takes a new track request as loaded
+/// without reading it: it copies the requested index onto the loaded one
+/// (`0x80024560`) before the change test, so no stage walk starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BgmRequestHold {
+    /// Sound-flag bit 2 (`_DAT_8007B750 & 4`, op-`0x35` sub-op 6's keep the
+    /// audio across the next field init) is up (`0x8002450C..0x8002451C`).
+    KeepAudio,
+    /// The track word is the park word [`BGM_PARK_WORD`]
+    /// (`0x8002454C..0x80024558`).
+    Park,
+}
+
+/// The hold a track request meets ahead of the poller's change test, tested
+/// in retail's order: the keep-audio bit, then the park word. `keep_audio`
+/// is sound-flag bit 2 (the engine also holds while the field init's install
+/// slice is open over it). The third test between them - a warm field entry
+/// (`_DAT_8007B8B8 != 0`) under a battle sound set of `-1` (`0x80024524..
+/// 0x80024544`) - is not ported.
+///
+/// PORT: FUN_800243F0 (`0x8002450C..0x8002451C`, `0x8002454C..0x80024560`, the request holds)
+pub fn bgm_request_hold(keep_audio: bool, track: u16) -> Option<BgmRequestHold> {
+    if keep_audio {
+        Some(BgmRequestHold::KeepAudio)
+    } else if track == BGM_PARK_WORD {
+        Some(BgmRequestHold::Park)
+    } else {
+        None
+    }
+}
+
 /// The swap poller `FUN_800243F0`'s stage walk between a track start and the
 /// slot re-attach, on the vsync clock.
 ///

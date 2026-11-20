@@ -49,9 +49,12 @@ impl FieldHostImpl<'_> {
         {
             self.world.audio.credits_latch = true;
         }
-        if matches!(sub_op, 1 | 9)
-            && (self.world.audio.keep_audio_across_field_init || self.world.audio.bgm_entry_latch)
-        {
+        use legaia_engine_system::sound_state::{BgmRequestHold, bgm_request_hold};
+        let hold = bgm_request_hold(
+            self.world.audio.keep_audio_across_field_init || self.world.audio.bgm_entry_latch,
+            text_id,
+        );
+        if matches!(sub_op, 1 | 9) && hold == Some(BgmRequestHold::KeepAudio) {
             self.world.audio.bgm_script_paused = false;
             self.world.audio.current_bgm = Some(text_id);
             self.world.audio.bgm_swap.cancel();
@@ -69,7 +72,7 @@ impl FieldHostImpl<'_> {
             // (`0x80024558`). Inside the init the init's own loop runs the
             // poller to completion with the load.
             if self.world.audio.current_bgm != Some(text_id)
-                && text_id != crate::world::BGM_PARK_SENTINEL
+                && hold != Some(BgmRequestHold::Park)
                 && !self.world.audio.bgm_field_init_open
             {
                 self.world
@@ -85,7 +88,7 @@ impl FieldHostImpl<'_> {
             // The park word ends a walk in flight: the poller copies requested
             // onto loaded and leaves before the stage table (`0x80024558` ->
             // `0x8002458C`), so a later select's barrier has nothing to wait on.
-            if text_id == crate::world::BGM_PARK_SENTINEL {
+            if hold == Some(BgmRequestHold::Park) {
                 self.world.audio.bgm_swap.cancel();
             }
             self.world.audio.current_bgm = Some(text_id);

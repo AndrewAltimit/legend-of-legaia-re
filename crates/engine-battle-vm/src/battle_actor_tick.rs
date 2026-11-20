@@ -190,6 +190,8 @@ impl BattleActorTick {
 /// a body whose view depth is below [`NEAR_REJECT_DEPTH`]. `view_depth` is
 /// the node's transformed `+0x34`; an untransformed node (`+0x10 & 0x80`
 /// clear) is judged at [`PARKED_VIEW_DEPTH`].
+///
+/// PORT: FUN_8001ADA4 (`0x8001AE4C..0x8001AE58` the `+0x10 & 0xA` skip, `0x8001AEE0..0x8001AEF4` the mode-2 near reject)
 pub fn dispatch_draws(flags: u32, view_depth: i32) -> bool {
     if flags & DISPATCH_SKIP_MASK != 0 {
         return false;
