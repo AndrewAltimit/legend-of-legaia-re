@@ -361,3 +361,227 @@ fn the_commit_installs_a_party_art_as_retail_does() {
         "{starters} {fanfares} {shouted} {banners}"
     );
 }
+
+const RANGE: u32 = 0x8004_E2F0;
+const BEARING: u32 = 0x8001_9B28;
+const SIN_PTR: u32 = 0x8007_B81C;
+const COS_PTR: u32 = 0x8007_B7F8;
+const SINE_TABLE: u32 = 0x8007_0A2C;
+/// The monsters' record for the snap: entry pointers from `+0x4C`, size
+/// class `+0x1F` zero (the World's monsters carry no catalog row).
+const MONSTER_RECORD: u32 = 0x8014_2000;
+
+/// The range law `FUN_8004E2F0` over retail RAM, through the port's kernel
+/// (`range_metric` has its own differential, `range_metric`).
+fn retail_range(m: &mut psx_retail_exec::Memory, attacker: u32, target: u32) -> u16 {
+    use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
+    use legaia_engine_battle_vm::battle_action::motion::{
+        PARTY_REACH_OFFSETS, RangeInputs, range_metric,
+    };
+    if attacker >= 8 || target >= 8 {
+        return 1;
+    }
+    let a = m.rd32(ACTORS + 4 * attacker);
+    let t = m.rd32(ACTORS + 4 * target);
+    let size = |m: &mut psx_retail_exec::Memory, s: u32| {
+        if s < 3 {
+            0
+        } else {
+            let rec = m.rd32(MONSTER_TABLES + 4 * (s - 3));
+            m.rd8(rec + 0x1F)
+        }
+    };
+    let inputs = RangeInputs {
+        attacker_party: attacker < 3,
+        target_party: target < 3,
+        attacker_reach: if attacker < 3 {
+            PARTY_REACH_OFFSETS[usize::from(m.rd8(SEATS + attacker)) - 1]
+        } else {
+            0
+        },
+        attacker_size: size(m, attacker),
+        target_size: size(m, target),
+        attacker_pos: (m.rd16(a + 0x34) as i16, m.rd16(a + 0x38) as i16),
+        target_ref: (m.rd16(t + 0x3C) as i16, m.rd16(t + 0x40) as i16),
+    };
+    let bearing = bearing_12bit_approx(
+        inputs.target_ref.1,
+        inputs.target_ref.0,
+        inputs.attacker_pos.1,
+        inputs.attacker_pos.0,
+    );
+    let angle = legaia_engine_battle_vm::battle_approach::approach_angle(bearing) as u16;
+    let (sin, cos) = legaia_engine_system::trig::trig12(angle);
+    range_metric(&inputs, sin, cos)
+}
+
+/// The commit's strike-loop reach snap (`0x8004BF7C..0x8004C118`) from its
+/// entry, against `World::commit_reach_snap` through `BattleArmDrivers`: the
+/// gate (state `0x1E`, the acting seat, as the World caller applies it), the
+/// forward walk onto the reach's edge from out of range, the backward walk
+/// out of it from in range, the facing each step stores and the live pair
+/// it leaves. The range law and the bearing answer through the port's
+/// kernels, each held to retail by its own differential.
+#[test]
+fn the_commit_snaps_the_striker_onto_its_reach_as_retail_does() {
+    use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+    use legaia_save::Party;
+
+    differential!(scus(COMMIT));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub_outside = Some((COMMIT, COMMIT_END));
+    cpu.hook(RANGE, |r, m| {
+        r.r[2] = u32::from(retail_range(m, r.r[4], r.r[5]));
+    });
+    cpu.hook(BEARING, |r, _| {
+        let [a0, a1, a2, a3] = [4, 5, 6, 7].map(|i| r.r[i] as i16);
+        r.r[2] = u32::from(bearing_12bit_approx(a0, a1, a2, a3));
+    });
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x534E_4150);
+    let (mut forward, mut back, mut gated) = (0, 0, 0);
+    for round in 0..6000 {
+        let slot = rng.below(5);
+        let target = loop {
+            let t = rng.below(5);
+            if t != slot {
+                break t;
+            }
+        };
+        let state = if rng.below(5) == 0 { 0x1F } else { 0x1E };
+        let acting = if rng.below(6) == 0 {
+            (slot + 1) % 5
+        } else {
+            slot
+        };
+        let reach = [0x80i16, 0x200, 0x600][rng.below(3) as usize];
+        let mut c = || (rng.below(2 * reach as u32) as i32 - i32::from(reach)) as i16;
+        let live: Vec<(i16, i16)> = (0..5).map(|_| (c(), c())).collect();
+        let seat: Vec<(i16, i16)> = (0..5).map(|_| (c(), c())).collect();
+        let facing = rng.below(0x1000) as u16;
+
+        cpu.mem = clean.clone();
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.wr8(CTX + 7, state);
+        cpu.mem.wr8(CTX + 0x13, acting as u8);
+        cpu.mem.wr32(SIN_PTR, SINE_TABLE);
+        cpu.mem.wr32(COS_PTR, SINE_TABLE + 0x800);
+        for s in 0..3u32 {
+            cpu.mem.wr8(SEATS + s, s as u8 + 1);
+        }
+        for o in (0..0x100).step_by(4) {
+            cpu.mem.wr32(TABLE + o, 0);
+            cpu.mem.wr32(NODE + o, 0);
+        }
+        for o in (0..0x100).step_by(4) {
+            cpu.mem.wr32(MONSTER_RECORD + o, 0);
+        }
+        for k in 0..0x20 {
+            cpu.mem.wr32(TABLE + 4 * k, ENTRIES);
+            cpu.mem.wr32(MONSTER_RECORD + 0x4C + 4 * k, ENTRIES);
+        }
+        cpu.mem.wr8(ENTRIES, 1);
+        for k in 0..5 {
+            cpu.mem.wr32(MONSTER_TABLES + 4 * k, MONSTER_RECORD);
+        }
+        for s in 0..3 {
+            cpu.mem.wr32(PARTY_RECORDS + 4 * s, TABLE);
+        }
+        for s in 0..8u32 {
+            let a = ACTOR + s * 0x400;
+            cpu.mem.wr32(ACTORS + 4 * s, a);
+            for o in (0..0x400).step_by(4) {
+                cpu.mem.wr32(a + o, 0);
+            }
+            if s < 5 {
+                let (l, t) = (live[s as usize], seat[s as usize]);
+                cpu.mem.wr16(a + 0x34, l.0 as u16);
+                cpu.mem.wr16(a + 0x38, l.1 as u16);
+                cpu.mem.wr16(a + 0x3C, t.0 as u16);
+                cpu.mem.wr16(a + 0x40, t.1 as u16);
+            }
+        }
+        let a = ACTOR + slot * 0x400;
+        cpu.mem.wr16(a + 0x14C, 1);
+        cpu.mem.wr16(a + 0x46, facing);
+        cpu.mem.wr8(a + 0x1DD, target as u8);
+        cpu.mem.wr8(a + 0x1DA, 1);
+        cpu.mem.wr8(a + 0x1DB, 1);
+        cpu.mem.wr16(NODE + 0x5A, slot as u16);
+        cpu.mem.wr32(NODE + 0x4C, ENTRIES);
+        assert_eq!(cpu.call(COMMIT, &[NODE]), Stop::Returned, "round {round}");
+        let retail = (
+            cpu.mem.rd16(a + 0x34) as i16,
+            cpu.mem.rd16(a + 0x38) as i16,
+            cpu.mem.rd16(a + 0x46),
+        );
+
+        let mut w = World::new();
+        w.load_party(Party::zeroed(3));
+        w.enter_battle(3, 2);
+        w.party.party_count = 3;
+        for s in 0..5 {
+            let b = &mut w.actors[s];
+            b.battle_monster_id = None;
+            b.move_state.world_x = live[s].0;
+            b.move_state.world_z = live[s].1;
+            b.battle.seat = Some(seat[s]);
+        }
+        w.actors[slot as usize].battle.active_target = target as u8;
+        w.actors[slot as usize].battle.facing_angle = facing;
+        // The World caller's gate (`World::commit_staged_battle_anims`):
+        // the acting seat, in the strike loop.
+        let snaps = state == 0x1E && acting == slot;
+        if snaps {
+            w.reach_snap(slot as usize);
+        }
+        let b = &w.actors[slot as usize];
+        let port = (
+            b.move_state.world_x,
+            b.move_state.world_z,
+            b.battle.facing_angle,
+        );
+        let at = format!(
+            "round {round}: slot {slot} target {target} state {state:#x} acting {acting} \
+             live {live:?} seat {seat:?}"
+        );
+        assert_eq!(retail, port, "{at}");
+        if !snaps {
+            gated += 1;
+        } else if retail_range_was_out(&live, &seat, slot, target) {
+            forward += 1;
+        } else {
+            back += 1;
+        }
+    }
+    assert!(
+        forward > 500 && back > 500 && gated > 500,
+        "{forward} {back} {gated}"
+    );
+}
+
+/// Whether the snap started out of range - which way it walked - read off
+/// the world the round seated.
+fn retail_range_was_out(live: &[(i16, i16)], seat: &[(i16, i16)], slot: u32, target: u32) -> bool {
+    let mut m = psx_retail_exec::Memory::default();
+    for s in 0..5u32 {
+        let a = ACTOR + s * 0x400;
+        m.wr32(ACTORS + 4 * s, a);
+        m.wr16(a + 0x34, live[s as usize].0 as u16);
+        m.wr16(a + 0x38, live[s as usize].1 as u16);
+        m.wr16(a + 0x3C, seat[s as usize].0 as u16);
+        m.wr16(a + 0x40, seat[s as usize].1 as u16);
+    }
+    for k in 0..5 {
+        m.wr32(MONSTER_TABLES + 4 * k, MONSTER_RECORD);
+    }
+    for s in 0..3u32 {
+        m.wr8(SEATS + s, s as u8 + 1);
+    }
+    retail_range(&mut m, slot, target) != 0
+}
