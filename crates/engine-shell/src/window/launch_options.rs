@@ -570,6 +570,12 @@ pub struct ScreenshotConfig {
     /// that holds no sheet, which retires the pool's own.
     pub seat_sprite_arms:
         std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
+    /// `LEGAIA_SEAT_MESH_PARTS`: a retail state's live mesh-bearing ambient
+    /// parts (`legaia_parity::retail_compare::retail_mesh_parts`), installed
+    /// over the ambient pool's on the frame the capture is taken
+    /// (`World::install_mesh_part_snapshot`); taken once.
+    pub seat_mesh_parts:
+        std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
     /// `LEGAIA_SEAT_TURNING_PARTS`: the render banks of a retail state's
     /// turning ambient parts as its displayed frame drew them, written over
     /// the engine's on the frame the capture is taken
@@ -1400,6 +1406,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_FADE_LEAD")
                     .ok()
                     .and_then(|v| v.trim().parse().ok()),
+            ),
+            seat_mesh_parts: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_MESH_PARTS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::field_seeds::sprite_arms_from_env(&v)),
             ),
             seat_sprite_arms: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")

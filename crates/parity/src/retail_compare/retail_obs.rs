@@ -239,6 +239,10 @@ pub struct RetailObs {
     /// handed to the image child as `LEGAIA_SEAT_SPRITE_ARMS` and installed on
     /// the frame it captures.
     pub sprite_arms: Vec<legaia_engine_core::world::ambient::SpriteArmSeed>,
+    /// The live mesh-bearing ambient parts ([`retail_mesh_parts`]), handed
+    /// to the image child as `LEGAIA_SEAT_MESH_PARTS` and installed on the
+    /// frame it captures.
+    pub mesh_parts: Vec<legaia_engine_core::world::ambient::SpriteArmSeed>,
     /// The live ambient parts that turn ([`retail_turning_parts`]), their
     /// render banks as the displayed frame drew them, handed to the image
     /// child as `LEGAIA_SEAT_TURNING_PARTS`.
@@ -539,6 +543,11 @@ impl RetailObs {
             field_move_run: game_anchors::u32_at(ram, 0x8008_46CC) & 1 != 0,
             sprite_arms: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_sprite_arms(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
+            } else {
+                Vec::new()
+            },
+            mesh_parts: if class == StateClass::Field {
+                retail_mesh_parts(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
             } else {
                 Vec::new()
             },
@@ -860,6 +869,9 @@ impl RetailObs {
             ));
         } else if matches!(self.class, StateClass::Field | StateClass::WorldMap) {
             env.push(("LEGAIA_SEAT_SPRITE_ARMS", "none".to_string()));
+        }
+        if !self.mesh_parts.is_empty() {
+            env.push(("LEGAIA_SEAT_MESH_PARTS", sprite_arms_env(&self.mesh_parts)));
         }
         if let Some(b) = &self.balloon {
             env.push(("LEGAIA_SEAT_BALLOON", balloon_env(b.as_ref())));

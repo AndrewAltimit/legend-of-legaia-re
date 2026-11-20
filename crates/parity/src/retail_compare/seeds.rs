@@ -1244,6 +1244,52 @@ pub fn retail_sprite_arms(
         .collect()
 }
 
+/// Every live mesh-bearing ambient part on a retail state's actor lists, in
+/// list order: a part ticked by `FUN_80021DF4`, not halted (`+0x10 & 0x8`),
+/// whose stager record's `model_sel` (`record[+0]`) names a scene mesh
+/// (`5..0x4000`, the seater's model-list arm `0x80021BF4..0x80021C54`). Each
+/// carries its position and banks taken back `lag` vsyncs
+/// ([`crate::retail_compare_battle::ram_read::displayed_part_halfword`]),
+/// scale `+0x72`, colour word `+0x74` and level `+0x78` taken back likewise
+/// (`World::install_mesh_part_snapshot`).
+pub fn retail_mesh_parts(
+    ram: &[u8],
+    lag: u16,
+) -> Vec<legaia_engine_core::world::ambient::SpriteArmSeed> {
+    let base = game_anchors::u32_at(ram, STAGER_BUNDLE_PTR);
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+        })
+        .filter_map(|n| {
+            let rec = game_anchors::u32_at(ram, n + 0x48).checked_sub(base)?;
+            (rec < 0x10_0000).then_some(())?;
+            let model_sel = game_anchors::i16_at(ram, base + rec);
+            (5..0x4000).contains(&model_sel).then_some(())?;
+            let shown = |o: u16| {
+                crate::retail_compare_battle::ram_read::displayed_part_halfword(
+                    ram,
+                    n,
+                    o,
+                    i32::from(lag),
+                ) as i16
+            };
+            Some(legaia_engine_core::world::ambient::SpriteArmSeed {
+                record_off: rec,
+                pos: [0x14u16, 0x16, 0x18].map(shown),
+                rot: [0x24u16, 0x26, 0x28].map(shown),
+                scale: game_anchors::u16_at(ram, n + 0x72),
+                colour: game_anchors::u32_at(ram, n + 0x74),
+                level: displayed_part_level(ram, n, lag),
+                pose: Vec::new(),
+                shape: None,
+            })
+        })
+        .collect()
+}
+
 /// A part's depth-cue level `+0x78` as the displayed frame drew it: the
 /// motion block adds `(+0x90 * delta) >> 6` a pass (`FUN_80021DF4`
 /// `0x80022B18..0x80022B7C`, `delta` the frame step times `8`), so `lag`

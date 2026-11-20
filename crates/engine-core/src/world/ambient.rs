@@ -379,6 +379,100 @@ impl World {
         }
     }
 
+    /// Seat the live mesh-bearing ambient parts (`model_sel >= 5`, the ones
+    /// [`Self::ambient_mesh_part_draws`] draws) on a retail state's own,
+    /// record by record, in list order: position, render banks, colour word
+    /// and depth-cue level ([`SpriteArmSeed`] without pose or shape). The
+    /// scale stays the engine's. A record whose live parts the engine already
+    /// holds in retail's number and colour words is left alone: its program
+    /// moves it, and the RAM stands two passes past the displayed frame
+    /// (`eddoman`'s record `0x3A0` rises out of the ground; seated, image
+    /// `.992` to `.989`).
+    /// Where an emitter has put each mesh is the `rand()` stream's history
+    /// since its spawn, which no seed replays: `juui1`'s vortex shards
+    /// (stager record `0x3D0`, mesh `6`) each take a random roll about the
+    /// tunnel axis and a random colour word when they spawn, so a child that
+    /// ran the scene from its entry draws the same number of shards in other
+    /// places and other hues. A record with more retail parts than live ones
+    /// clones one of its own; the surplus of a seeded record is retired, and
+    /// a record the snapshot does not name keeps the engine's parts. The image
+    /// child of the retail comparison calls this on the frame it captures.
+    pub fn install_mesh_part_snapshot(&mut self, seeds: &[SpriteArmSeed]) {
+        let is_mesh =
+            |p: &AmbientPart| !p.finished && pack_slot_of_model_sel(p.model_sel).is_some();
+        // A record the engine already holds in retail's number and colour
+        // words is its program's own work, not the stream's: left alone.
+        let colours = |words: Vec<u32>| {
+            let mut w = words;
+            w.sort_unstable();
+            w
+        };
+        let mut rolled: std::collections::HashSet<usize> = Default::default();
+        for off in seeds.iter().map(|s| s.record_off as usize) {
+            let retail = colours(
+                seeds
+                    .iter()
+                    .filter(|s| s.record_off as usize == off)
+                    .map(|s| s.colour)
+                    .collect(),
+            );
+            let live = colours(
+                self.ambient
+                    .fx
+                    .iter()
+                    .filter(|p| p.record_off == off && is_mesh(p))
+                    .map(|p| p.state.field_74)
+                    .collect(),
+            );
+            if retail != live {
+                rolled.insert(off);
+            }
+        }
+        let mut used: std::collections::HashMap<usize, usize> = Default::default();
+        for seed in seeds {
+            let off = seed.record_off as usize;
+            if !rolled.contains(&off) {
+                continue;
+            }
+            let n = used.entry(off).or_insert(0);
+            let live: Vec<usize> = (0..self.ambient.fx.len())
+                .filter(|&i| self.ambient.fx[i].record_off == off && is_mesh(&self.ambient.fx[i]))
+                .collect();
+            let idx = match live.get(*n) {
+                Some(&i) => i,
+                None => match live.first() {
+                    Some(&first) => {
+                        let clone = self.ambient.fx[first].clone();
+                        self.ambient.fx.push(clone);
+                        self.ambient.fx.len() - 1
+                    }
+                    None => continue,
+                },
+            };
+            *n += 1;
+            let st = &mut self.ambient.fx[idx].state;
+            [st.world_x, st.world_y, st.world_z] = seed.pos;
+            st.world_y_mirror = seed.pos[1];
+            [st.render_24, st.render_26, st.render_28] = seed.rot;
+            st.field_74 = seed.colour;
+            st.field_78 = seed.level;
+        }
+        let mut kept: std::collections::HashMap<usize, usize> = Default::default();
+        for p in self.ambient.fx.iter_mut() {
+            if !is_mesh(p) {
+                continue;
+            }
+            let Some(&want) = used.get(&p.record_off) else {
+                continue;
+            };
+            let k = kept.entry(p.record_off).or_insert(0);
+            *k += 1;
+            if *k > want {
+                p.finished = true;
+            }
+        }
+    }
+
     /// Spawn the stager record at bundle offset `record_off` as a fresh
     /// ambient part (its first move-VM slice run, as `FUN_80021B04` runs
     /// it) and return its index when that slice made it a sprite-arm sheet;
