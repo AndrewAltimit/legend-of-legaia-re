@@ -400,6 +400,8 @@ impl World {
             circle: on(PadButton::Circle),
             // The ring's Attack arm reads the option word with the pad.
             select_attack: self.toggles.select_attack,
+            // The ring's refusals are filled where the ring reads the word.
+            gates: Default::default(),
         }
     }
 

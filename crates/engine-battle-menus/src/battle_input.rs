@@ -223,6 +223,75 @@ pub struct BattleCommandInput {
     /// straight to the directional arts entry (`0x50`). The host fills it
     /// from the world's mirror of the pause-menu row each frame.
     pub select_attack: legaia_engine_system::option_values::SelectAttackOpt,
+    /// What the command ring refuses this member ([`RingGates`]); the host
+    /// fills it while the ring is up. The default refuses nothing.
+    pub gates: RingGates,
+}
+
+/// The command ring's refusals for the member on the ring, the tests
+/// `FUN_801D0748` state `0x28` makes on the press itself. A refused press
+/// keys cue `0x23` through the shared tail `0x801D2968` and ends the frame:
+/// the arms are tested Up, Right, Left (or the confirm mask), Down, and the
+/// first one pressed decides, so a diagonal whose first arm is refused does
+/// not fall through to its second.
+///
+/// PORT: FUN_801D0748 (`0x801D1370..0x801D137C`, `0x801D1408..0x801D1454`, `0x801D1548..0x801D156C`)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RingGates {
+    /// The member's `+0x16E` status word: Curse (`0x1000`) refuses Magic
+    /// (`0x801D1434..0x801D1440`) and all three Rot limbs (`0x38`) refuse
+    /// Attack (`0x801D1560..0x801D156C`).
+    pub status: u16,
+    /// No Ra-Seru marker: `ctx[+0x25F + member] == 0` refuses Magic
+    /// (`0x801D1418..0x801D1420`).
+    pub no_raseru: bool,
+    /// The special word's `0x100`: Item refused (`0x801D1370..0x801D137C`).
+    pub items_forbidden: bool,
+    /// The special word's `0x200`: Magic refused (`0x801D1448..0x801D1454`).
+    pub magic_forbidden: bool,
+}
+
+/// The four ring arms in the order state `0x28` tests them, each with the
+/// pad direction that takes it: Up `0x1000` (Item, `0x801D1364`), Right
+/// `0x2000` (magic, `0x801D1400`), Left `0x8000` (Attack, which the confirm
+/// mask also takes, `0x801D152C..0x801D1540`), Down `0x4000` (Spirit,
+/// `0x801D1670`). The value is the arm's [`BattleCommand::MENU`] seat. The
+/// ring is a four-arm cluster, not a list, and the mapping is spatial: each
+/// direction takes the arm drawn on that side of the screen.
+const RING_TEST_ORDER: [u8; 4] = [0, 2, 1, 3];
+
+/// The ring arm a frame's press takes, in retail's test order, or `None`.
+/// A Cross takes the arm under the cursor (the Left arm under the default
+/// directional entry, where nothing moves the cursor without committing).
+fn ring_pick(cursor: u8, ev: &BattleCommandInput) -> Option<u8> {
+    RING_TEST_ORDER.into_iter().find(|&seat| {
+        let direction = match seat {
+            0 => ev.up,
+            1 => ev.left,
+            2 => ev.right,
+            _ => ev.down,
+        };
+        direction || (ev.cross && seat == cursor)
+    })
+}
+
+/// Whether the ring refuses this frame's press: the first arm pressed, in
+/// retail's order, is one the member's [`RingGates`] refuse. The cancel mask
+/// is tested ahead of every arm (`0x801D11B4`), so a frame carrying it
+/// refuses nothing.
+///
+/// PORT: FUN_801D0748 (`0x801D1364..0x801D156C`, the ring's arm tests)
+pub fn ring_press_refused(cursor: u8, ev: &BattleCommandInput) -> bool {
+    if ev.circle {
+        return false;
+    }
+    let g = ev.gates;
+    match ring_pick(cursor, ev) {
+        Some(0) => g.items_forbidden,
+        Some(2) => g.no_raseru || g.status & 0x1000 != 0 || g.magic_forbidden,
+        Some(1) => g.status & 0x38 == 0x38,
+        _ => false,
+    }
 }
 
 /// The round-open prompt's two chips - retail flow state `0x1E`, the pair
@@ -418,14 +487,20 @@ impl BattleCommandSession {
     /// session has left the ring.
     /// The cross-button entry's highlight walk (option `0x800846C8 != 0`):
     /// the pre-dispatch block `0x801D07FC..0x801D0B08` that runs ahead of the
-    /// flow's handlers while a chip cluster is up. A direction press moves
-    /// the highlight onto that arm - tested Left, Right, Down, Up in that
-    /// order, Down only with four arms and Up with three or more - and keys
-    /// cue `0x22` when the arm differs from the one already lit (`beq` on
-    /// `ctx[+0x880]` at `0x801D0824` / `0x801D08C8` / `0x801D0980` /
-    /// `0x801D0A38`). The block then rewrites the pad word: a direction never
-    /// reaches a handler, the confirm takes the lit arm (which the session's
-    /// own confirm does off the cursor) and the cancel passes through.
+    /// flow's handlers while a chip cluster is up. The directions are tested
+    /// Left, Right, Down, Up in that order - Down only with four arms and Up
+    /// with three or more - and the first one pressed whose arm differs from
+    /// the one already lit (`beq` on `ctx[+0x880]` at `0x801D0824` /
+    /// `0x801D08C8` / `0x801D0980` / `0x801D0A38`, each landing on the next
+    /// direction's test) moves the highlight there and keys cue `0x22`. A
+    /// press on the lit arm passes on to the next direction, so a diagonal
+    /// whose first arm is already lit lands on its second.
+    ///
+    /// The block then rewrites the pad word (`0x801D0AC4..0x801D0B08`): no
+    /// direction reaches a handler, the confirm mask becomes the lit arm's
+    /// direction bit, and the cancel mask replaces it when both are pressed.
+    /// So a Cross on the flee confirm, which tests no confirm mask, takes the
+    /// lit arm like any direction would.
     ///
     /// The cursor of each prompt phase is the lit arm. Returns whether the
     /// highlight moved; other phases leave `ev` untouched.
@@ -440,47 +515,44 @@ impl BattleCommandSession {
             | CommandPhase::CommitConfirm { cursor } => (cursor, 2),
             _ => return false,
         };
-        let pressed = if ev.left {
-            Some(BattleCommandInput {
-                left: true,
-                ..Default::default()
-            })
-        } else if ev.right {
-            Some(BattleCommandInput {
-                right: true,
-                ..Default::default()
-            })
-        } else if ev.down && arms >= 4 {
-            Some(BattleCommandInput {
-                down: true,
-                ..Default::default()
-            })
-        } else if ev.up && arms >= 3 {
-            Some(BattleCommandInput {
-                up: true,
-                ..Default::default()
-            })
-        } else {
-            None
+        // Each direction's seat: the ring's arms sit on their own sides, a
+        // pair prompt's chips on Left and Right.
+        let seat = |dir: u8| -> u8 {
+            match (arms, dir) {
+                (4, 0) => 1,
+                (4, 1) => 2,
+                (4, 2) => 3,
+                (4, _) => 0,
+                (_, 0) => 0,
+                _ => 1,
+            }
         };
+        let order = [ev.left, ev.right, ev.down && arms >= 4, ev.up && arms >= 3];
+        let mut moved = false;
+        for (dir, pressed) in order.into_iter().enumerate() {
+            let s = seat(dir as u8);
+            if pressed && s != *cursor {
+                *cursor = s;
+                moved = true;
+                break;
+            }
+        }
+        let lit = *cursor;
+        let confirm = ev.cross && !ev.circle;
         ev.left = false;
         ev.right = false;
         ev.up = false;
         ev.down = false;
-        let seat = pressed.and_then(|p| {
-            if arms == 4 {
-                ring_seat(p)
-            } else {
-                pair_seat(p)
+        ev.cross = false;
+        if confirm {
+            match (arms, lit) {
+                (4, 0) => ev.up = true,
+                (4, 1) | (2, 0) => ev.left = true,
+                (4, 2) | (2, 1) => ev.right = true,
+                _ => ev.down = true,
             }
-        });
-        match seat {
-            Some(seat) if seat != *cursor => {
-                *cursor = seat;
-                true
-            }
-            _ => false,
         }
+        moved
     }
 
     pub fn menu_command(&self) -> Option<BattleCommand> {
@@ -696,54 +768,11 @@ fn menu_index(command: BattleCommand) -> u8 {
         .unwrap_or(0) as u8
 }
 
-/// The ring seat a direction press lands on, or `None` for a press the
-/// ring ignores.
-///
-/// The ring is a four-arm cluster, not a list
-/// (`legaia_engine_ui::battle_command_ui`), and the mapping is **spatial**:
-/// each direction seats the cursor on the arm drawn on that side of the
-/// screen - Up = `Item` (top), Left = `Attack` (left), Right = magic
-/// (right), Down = `Spirit` (bottom). That is retail's own dispatch: the
-/// state-`0x28` handler routes the packed D-pad mask per arm (Up `0x1000` →
-/// `0x3C`, Right `0x2000` → `0x46`, Left `0x8000` → `0x78`, Down `0x4000` →
-/// Spirit) and commits on the press, which is what [`step_menu`] does too.
-///
-/// REF: FUN_801D0748 (state `0x28`, direction arms at `0x801D1364` /
-/// `0x801D136C` / `0x801D1404` / `0x801D1544`)
-const fn ring_seat(ev: BattleCommandInput) -> Option<u8> {
-    if ev.up {
-        Some(0) // Item - the diamond's top arm
-    } else if ev.left {
-        Some(1) // Attack - left arm
-    } else if ev.right {
-        Some(2) // magic - right arm
-    } else if ev.down {
-        Some(3) // Spirit - bottom arm
-    } else {
-        None
-    }
-}
-
-/// The pair seat a direction press lands on for a two-chip left/right
-/// prompt (`Begin | Run`, `Auto | Command`): Left always highlights the
-/// chip drawn on the left, Right the chip on the right. Matches retail's
-/// own direction dispatch for the round prompt (Left `0x8000` takes
-/// `Begin`, Right `0x2000` takes `Run` - see [`step_round_prompt`]).
-const fn pair_seat(ev: BattleCommandInput) -> Option<u8> {
-    if ev.left {
-        Some(0)
-    } else if ev.right {
-        Some(1)
-    } else {
-        None
-    }
-}
-
 /// One frame of the **round prompt** (retail `0x1E`). Left takes `Begin`
 /// (the left chip) and Right takes `Run` (the right chip) **on the press
 /// itself** - direction = screen side, one press commits, exactly retail's
-/// own dispatch. Cross commits whatever the cursor rests on (the scripted
-/// harness route), and Circle takes `Run` outright.
+/// own dispatch. Cross commits the chip the cursor rests on, the left one
+/// under the directional entry, as retail's confirm mask takes Left.
 ///
 /// **The Circle route is the port's, not retail's, and the citation it used to
 /// carry was a raw-pad misread.** `FUN_801D0748`'s handlers test **packed**
@@ -767,29 +796,32 @@ const fn pair_seat(ev: BattleCommandInput) -> Option<u8> {
 /// REF: FUN_801D0748 (state `0x1E`, `0x801D1038..0x801D10D4`)
 fn step_round_prompt(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
     let len = RoundChoice::PROMPT.len() as u8;
-    let mut cursor = cursor.min(len - 1);
-    // Retail's state 0x1E commits on the direction press itself: Left
-    // (packed 0x8000) takes Begin, Right (0x2000) takes Run.
-    let pressed = match pair_seat(ev) {
-        Some(seat) => {
-            cursor = seat;
-            true
-        }
-        None => false,
-    };
-    // No cancel arm: the state reads Left, the confirm mask and Right, and a
-    // Circle on `gaza2_card_first_menu` leaves `0x1E` as it found it.
-    if pressed || ev.cross {
-        match RoundChoice::PROMPT[cursor as usize] {
-            RoundChoice::Begin => {
-                return CommandPhase::Menu {
-                    cursor: RING_OPEN_CURSOR,
-                };
-            }
-            RoundChoice::Run => return CommandPhase::RunConfirm { cursor: 1 },
-        }
+    let cursor = cursor.min(len - 1);
+    let (left, right) = pair_press(cursor, ev);
+    // Retail's state 0x1E commits on the press itself, Left (packed 0x8000)
+    // or the confirm mask first (`0x801D1038..0x801D1054`), so a confirm on
+    // the frame of a Right still takes Begin; Right (0x2000) takes Run. No
+    // cancel arm: a Circle on `gaza2_card_first_menu` leaves `0x1E` as it
+    // found it.
+    if left {
+        return CommandPhase::Menu {
+            cursor: RING_OPEN_CURSOR,
+        };
+    }
+    if right {
+        return CommandPhase::RunConfirm { cursor: 1 };
     }
     CommandPhase::RoundPrompt { cursor }
+}
+
+/// A pair prompt's two arms this frame: `(left, right)`, each the direction
+/// or a Cross on the chip under the cursor (the left chip under the default
+/// directional entry, where the cursor moves only by committing).
+fn pair_press(cursor: u8, ev: BattleCommandInput) -> (bool, bool) {
+    (
+        ev.left || (ev.cross && cursor == 0),
+        ev.right || (ev.cross && cursor == 1),
+    )
 }
 
 /// One frame of the **flee confirm** (retail `0x32`). Left takes `Escape`
@@ -800,14 +832,14 @@ fn step_round_prompt(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
 ///
 /// REF: FUN_801D0748 (state `0x32`, `0x801D10F8..0x801D1184`)
 fn step_run_confirm(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
-    if ev.circle {
+    // The cancel mask or Right first (`0x801D1100..0x801D111C`), then Left.
+    if ev.circle || ev.right {
         return CommandPhase::RoundPrompt { cursor: 0 };
     }
-    match pair_seat(ev) {
-        Some(0) => CommandPhase::RunAway,
-        Some(_) => CommandPhase::RoundPrompt { cursor: 0 },
-        None => CommandPhase::RunConfirm { cursor },
+    if ev.left {
+        return CommandPhase::RunAway;
     }
+    CommandPhase::RunConfirm { cursor }
 }
 
 /// One frame of the **commit-confirm screen** (retail `0x6E`). Left or the
@@ -820,24 +852,17 @@ fn step_run_confirm(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
 /// REF: FUN_801D0748 (state `0x6E`, `0x801D3024..0x801D31E4`)
 fn step_commit_confirm(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
     let len = CommitChoice::PROMPT.len() as u8;
-    let mut cursor = cursor.min(len - 1);
+    let cursor = cursor.min(len - 1);
     // The cancel mask is its own route to Reselect (`0x801D3038..0x801D3044`
     // tests `_DAT_800846D4` first), independent of the highlight.
-    if ev.circle {
+    // Right with it (`0x801D3038..0x801D304C`), then Left or the confirm
+    // mask (`0x801D3188..0x801D319C`).
+    let (left, right) = pair_press(cursor, ev);
+    if ev.circle || right {
         return CommandPhase::Reselect;
     }
-    let pressed = match pair_seat(ev) {
-        Some(seat) => {
-            cursor = seat;
-            true
-        }
-        None => false,
-    };
-    if pressed || ev.cross {
-        return match CommitChoice::PROMPT[cursor as usize] {
-            CommitChoice::Begin => CommandPhase::BeginRound,
-            CommitChoice::Reselect => CommandPhase::Reselect,
-        };
+    if left {
+        return CommandPhase::BeginRound;
     }
     CommandPhase::CommitConfirm { cursor }
 }
@@ -855,26 +880,20 @@ fn step_attack_mode(
     monsters: [SlotState; 5],
 ) -> CommandPhase {
     let len = AttackMode::PROMPT.len() as u8;
-    let mut cursor = cursor.min(len - 1);
-    let pressed = match pair_seat(ev) {
-        Some(seat) => {
-            cursor = seat;
-            true
-        }
-        None => false,
-    };
+    let cursor = cursor.min(len - 1);
+    // The cancel mask first (`0x801D16F4..0x801D1708`), then Right
+    // (`0x801D1728`), then Left or the confirm mask (`0x801D1774..0x801D178C`).
+    let (left, right) = pair_press(cursor, ev);
     if ev.circle {
         return CommandPhase::Menu {
             cursor: menu_index(BattleCommand::Attack),
         };
     }
-    if pressed || ev.cross {
-        return match AttackMode::PROMPT[cursor as usize] {
-            AttackMode::Command => CommandPhase::OpenArtsMenu,
-            AttackMode::Auto => {
-                open_target_picker(BattleCommand::Attack, party_slot, party, monsters)
-            }
-        };
+    if right {
+        return CommandPhase::OpenArtsMenu;
+    }
+    if left {
+        return open_target_picker(BattleCommand::Attack, party_slot, party, monsters);
     }
     CommandPhase::AttackMode { cursor }
 }
@@ -927,17 +946,14 @@ fn step_menu(
     }
 
     // Retail's state-0x28 dispatch: each direction is the diamond arm drawn
-    // on that side of the screen, and the press itself commits the arm (see
-    // `ring_seat`).
-    let pressed = match ring_seat(ev) {
-        Some(seat) => {
-            cursor = seat;
-            true
-        }
-        None => false,
-    };
-
-    if pressed || ev.cross {
+    // on that side of the screen, the press itself commits the arm, and the
+    // arms are tested Up, Right, Left, Down (`ring_pick`); a refused arm ends
+    // the frame with the ring up (`ring_press_refused`).
+    if ring_press_refused(cursor, &ev) {
+        return CommandPhase::Menu { cursor };
+    }
+    if let Some(seat) = ring_pick(cursor, &ev) {
+        cursor = seat;
         let command = BattleCommand::MENU[cursor as usize];
         // Magic / Item hand off to the host's own submenus instead of opening
         // a target cursor here - the picker can't show spell / item rows.

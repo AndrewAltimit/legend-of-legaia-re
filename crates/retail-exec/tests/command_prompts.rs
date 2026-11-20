@@ -1,0 +1,404 @@
+//! The command prompts of `FUN_801D0748` (PROT 0898): the round prompt
+//! `0x1E`, the ring `0x28`, the flee confirm `0x32`, the commit confirm
+//! `0x6E` and the attack-mode prompt `0x78`, each run one pass over a
+//! generated pad word, with the cross-button entry's highlight walk ahead of
+//! them (`0x801D07FC..0x801D0B08`) on or off. The port is
+//! `BattleCommandSession::walk_highlight` and `BattleCommandSession::input`
+//! with the ring's `RingGates`, as `World::tick_battle_command` drives them:
+//! where each surface goes, the highlight word `ctx[+0x880]`, the cursor cue
+//! the walk keys, the refusal cue a refused ring arm keys, and the four marks
+//! the ring draws ahead of the pad (`battle_ring_marks`).
+//!
+//! The window opener `FUN_801D388C` is hooked and its case read off `a0`:
+//! retail leaves a surface by storing the next state and opening the next
+//! window, and a step back or a Spirit commit opens a window with the state
+//! byte left where it was.
+
+use crate::common::{Rng, disc, scus_cpu, seat_status};
+use legaia_engine_battle::target_picker::SlotState;
+use legaia_engine_battle_menus::battle_input::{
+    BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase, RingGates,
+    ring_press_refused,
+};
+use legaia_engine_system::option_values::SelectAttackOpt;
+use psx_retail_exec::{A0, Cpu, Stop};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+const STATE_MACHINE: u32 = 0x801D_0748;
+const OVERLAY_BASE: u32 = 0x801C_E818;
+const OVERLAY_END: u32 = 0x8020_0000;
+const CTX: u32 = 0x8012_0000;
+const CTX_PTR: u32 = 0x8007_BD24;
+const ACTORS: u32 = 0x801C_9370;
+const ACTOR: u32 = 0x8013_0000;
+const STRIDE: u32 = 0x400;
+const PAD: u32 = 0x8007_B874;
+const PAD_HELD: u32 = 0x8007_B938;
+const SELECT_ATTACK: u32 = 0x8008_46C4;
+const CROSS_ENTRY: u32 = 0x8008_46C8;
+const CONFIRM_MASK: u32 = 0x8008_46D0;
+const CANCEL_MASK: u32 = 0x8008_46D4;
+const SPECIAL_WORD: u32 = 0x8007_BAC0;
+const BATTLE_ID: u32 = 0x8007_BD0C;
+const WINDOW: u32 = 0x801D_388C;
+const CUE: u32 = 0x8004_FCC8;
+const FIRST_ABLE: u32 = 0x801D_BA04;
+const NEXT_ABLE: u32 = 0x801D_B81C;
+const CROSS_OUT: u32 = 0x801D_BC30;
+const ROT_MARK: u32 = 0x801D_BD04;
+const CURSE_MARK: u32 = 0x801D_BEC4;
+const GLIDE: u32 = 0x801D_9BBC;
+const CONFIRM: u32 = 0x0040;
+const CANCEL: u32 = 0x0020;
+const LEFT: u32 = 0x8000;
+const UP: u32 = 0x1000;
+const RIGHT: u32 = 0x2000;
+const DOWN: u32 = 0x4000;
+
+/// Where one pass left the surface, read the same way off both sides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Outcome {
+    Stay,
+    Ring,
+    RoundPrompt,
+    RunConfirm,
+    RunAway,
+    BeginRound,
+    Reselect,
+    Item,
+    Spell,
+    Arts,
+    AttackMode,
+    Target,
+    StepBack,
+    Spirit,
+}
+
+/// Retail's outcome from the state byte before and after and the window
+/// cases the pass opened.
+fn retail_outcome(before: u8, after: u8, windows: &[u32]) -> Outcome {
+    let opened = |case: u32| windows.contains(&case);
+    match (before, after) {
+        (0x1E, 0x28) | (0x1E, 0x6E) => Outcome::Ring,
+        (0x1E, 0x32) => Outcome::RunConfirm,
+        (0x32, 0x1E) => Outcome::RoundPrompt,
+        (0x32, 0xFE) => Outcome::RunAway,
+        (0x6E, 0xFE) => Outcome::BeginRound,
+        (0x6E, 0x1E) | (0x6E, 0x28) => Outcome::Reselect,
+        (0x78, 0x28) => Outcome::Ring,
+        (0x78, 0x50) | (0x28, 0x50) => Outcome::Arts,
+        (0x78, 0x5A) | (0x28, 0x5A) => Outcome::Target,
+        (0x28, 0x3C) => Outcome::Item,
+        (0x28, 0x46) => Outcome::Spell,
+        (0x28, 0x78) => Outcome::AttackMode,
+        (0x28, 0x1E) => Outcome::StepBack,
+        (0x28, 0x6E) => Outcome::Spirit,
+        (0x28, 0x28) if opened(0x10) => Outcome::StepBack,
+        (0x28, 0x28) if opened(0x11) => Outcome::Spirit,
+        (b, a) if b == a && windows.is_empty() => Outcome::Stay,
+        (b, a) => panic!("unmapped retail move {b:#x} -> {a:#x}, windows {windows:x?}"),
+    }
+}
+
+/// The port's outcome from the phase it left and the phase it reached.
+fn port_outcome(before: &CommandPhase, after: &CommandPhase) -> Outcome {
+    if std::mem::discriminant(before) == std::mem::discriminant(after) {
+        return Outcome::Stay;
+    }
+    match after {
+        CommandPhase::Menu { .. } => Outcome::Ring,
+        CommandPhase::RoundPrompt { .. } => Outcome::RoundPrompt,
+        CommandPhase::RunConfirm { .. } => Outcome::RunConfirm,
+        CommandPhase::RunAway => Outcome::RunAway,
+        CommandPhase::BeginRound => Outcome::BeginRound,
+        CommandPhase::Reselect => Outcome::Reselect,
+        CommandPhase::OpenItemMenu => Outcome::Item,
+        CommandPhase::OpenSpellMenu => Outcome::Spell,
+        CommandPhase::OpenArtsMenu => Outcome::Arts,
+        CommandPhase::AttackMode { .. } => Outcome::AttackMode,
+        CommandPhase::Targeting {
+            command: BattleCommand::Attack,
+            ..
+        } => Outcome::Target,
+        CommandPhase::StepBack => Outcome::StepBack,
+        CommandPhase::SpiritGuard => Outcome::Spirit,
+        other => panic!("unmapped port phase {other:?}"),
+    }
+}
+
+/// The highlight word of a lit arm, and back: the ring's arms are Item (Up),
+/// Attack (Left), magic (Right), Spirit (Down); a pair prompt's chips are
+/// Left and Right.
+fn highlight_word(ring: bool, cursor: u8) -> u32 {
+    match (ring, cursor) {
+        (true, 0) => UP,
+        (true, 1) | (false, 0) => LEFT,
+        (true, 2) | (false, 1) => RIGHT,
+        _ => DOWN,
+    }
+}
+
+fn session_at(state: u8, cursor: u8) -> BattleCommandSession {
+    let mut s = BattleCommandSession::new(0, 0);
+    s.phase = match state {
+        0x1E => CommandPhase::RoundPrompt { cursor },
+        0x28 => CommandPhase::Menu { cursor },
+        0x32 => CommandPhase::RunConfirm { cursor },
+        0x6E => CommandPhase::CommitConfirm { cursor },
+        _ => CommandPhase::AttackMode { cursor },
+    };
+    s
+}
+
+/// A recorder of one hooked leaf's `a0`s.
+type Log = Rc<RefCell<Vec<u32>>>;
+
+fn retail_cpu() -> Option<(Cpu, Log, Log, Log)> {
+    let (mut cpu, d) = (scus_cpu()?, disc()?);
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(898).expect("PROT 0898"));
+    cpu.stub_outside = Some((OVERLAY_BASE, OVERLAY_END));
+    for leaf in [
+        0x801D_3444u32, // the frame's HUD pass
+        0x801D_B8F4,    // the chip draw
+        0x801D_B8B4,    // the target re-pick
+        0x801D_A34C,
+        0x801D_8A88,
+        0x801D_A6B4,
+        0x801D_BB8C,
+    ] {
+        cpu.stub(leaf, 3);
+    }
+    // The window glide has settled.
+    cpu.stub(GLIDE, 0);
+    let windows = Rc::new(RefCell::new(Vec::new()));
+    let w2 = windows.clone();
+    cpu.hook(WINDOW, move |r, _| w2.borrow_mut().push(r.r[A0]));
+    let cues = Rc::new(RefCell::new(Vec::new()));
+    let c2 = cues.clone();
+    cpu.hook(CUE, move |r, _| c2.borrow_mut().push(r.r[A0]));
+    let marks = Rc::new(RefCell::new(Vec::new()));
+    for (leaf, tag) in [(CROSS_OUT, 0u32), (ROT_MARK, 1), (CURSE_MARK, 2)] {
+        let m2 = marks.clone();
+        cpu.hook(leaf, move |r, _| m2.borrow_mut().push(tag << 16 | r.r[A0]));
+    }
+    Some((cpu, windows, cues, marks))
+}
+
+#[test]
+fn the_command_prompts_go_where_retail_goes() {
+    differential!(prot(898, STATE_MACHINE));
+    let Some((mut cpu, windows, cues, marks)) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5052_4F4D);
+    let mut seen = std::collections::HashMap::<(u8, Outcome), u32>::new();
+    let (mut moved_n, mut refused_n) = (0, 0);
+    for round in 0..6000 {
+        let state = [0x1E, 0x28, 0x28, 0x28, 0x32, 0x6E, 0x78][rng.below(7) as usize];
+        let ring = state == 0x28;
+        let cross_entry = rng.below(2) == 1;
+        let party = 1 + rng.below(3) as u8;
+        let seat = rng.below(u32::from(party)) as u8;
+        let order = rng.below(2) as u8;
+        let status: u16 = [0, 0, 0x38, 0x18, 0x1000, 0x1038, 0x0100][rng.below(7) as usize];
+        let special: u32 = [0, 0, 0x100, 0x200, 0x300][rng.below(5) as usize];
+        let raseru = rng.below(4) != 0;
+        let opt = rng.below(3);
+        let cursor = rng.below(if ring { 4 } else { 2 }) as u8;
+        // Who is left to command: the first able member, and the next one
+        // after this member - either the party count (nobody) or a seat.
+        let first_able = if rng.below(3) == 0 { party } else { 0 };
+        let next_able = if rng.below(2) == 0 {
+            party
+        } else {
+            seat.min(party - 1)
+        };
+        let dirs = [
+            0,
+            LEFT,
+            RIGHT,
+            UP,
+            DOWN,
+            LEFT | UP,
+            LEFT | DOWN,
+            RIGHT | UP,
+            RIGHT | DOWN,
+        ];
+        let mut pad = dirs[rng.below(dirs.len() as u32) as usize];
+        if rng.below(3) == 0 {
+            pad |= CONFIRM;
+        }
+        if rng.below(5) == 0 {
+            pad |= CANCEL;
+        }
+        if rng.below(30) == 0 {
+            pad = LEFT | RIGHT | (rng.below(2) * CONFIRM);
+        }
+
+        // Retail.
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..3 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        cpu.mem.wr8(CTX, party);
+        cpu.mem.wr8(CTX + 0x06, state);
+        cpu.mem.wr8(CTX + 0x13, seat);
+        cpu.mem.wr8(CTX + 0x1F, order);
+        cpu.mem.wr8(CTX + 0x25F + u32::from(seat), u8::from(raseru));
+        cpu.mem.wr8(CTX + 0x275, if ring { 4 } else { 2 });
+        let hl = highlight_word(ring, cursor);
+        cpu.mem.wr32(CTX + 0x880, hl);
+        cpu.mem
+            .wr16(ACTOR + STRIDE * u32::from(seat) + 0x16E, status);
+        cpu.mem.wr32(PAD, pad);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(SELECT_ATTACK, opt);
+        cpu.mem.wr32(CROSS_ENTRY, u32::from(cross_entry));
+        cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
+        cpu.mem.wr32(CANCEL_MASK, CANCEL);
+        cpu.mem.wr32(SPECIAL_WORD, special);
+        cpu.mem.wr8(BATTLE_ID, 0);
+        cpu.stub(FIRST_ABLE, u32::from(first_able));
+        cpu.stub(NEXT_ABLE, u32::from(next_able));
+        windows.borrow_mut().clear();
+        cues.borrow_mut().clear();
+        marks.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let after = cpu.mem.rd8(CTX + 0x06);
+        let win = windows.borrow().clone();
+        let cue = cues.borrow().clone();
+        let retail = retail_outcome(state, after, &win);
+
+        // The port.
+        let rest = if cross_entry {
+            cursor
+        } else if ring {
+            1
+        } else {
+            0
+        };
+        let mut session = session_at(state, rest);
+        let mut ev = BattleCommandInput {
+            up: pad & UP != 0,
+            down: pad & DOWN != 0,
+            left: pad & LEFT != 0,
+            right: pad & RIGHT != 0,
+            cross: pad & CONFIRM != 0,
+            circle: pad & CANCEL != 0,
+            select_attack: match opt {
+                0 => SelectAttackOpt::Select,
+                1 => SelectAttackOpt::Automatic,
+                _ => SelectAttackOpt::Command,
+            },
+            gates: RingGates::default(),
+        };
+        let moved = cross_entry && session.walk_highlight(&mut ev);
+        let mut refused = false;
+        if let CommandPhase::Menu { cursor } = session.phase {
+            ev.gates = RingGates {
+                status,
+                no_raseru: !raseru,
+                items_forbidden: special & 0x100 != 0,
+                magic_forbidden: special & 0x200 != 0,
+            };
+            refused = ring_press_refused(cursor, &ev);
+        }
+        let before_phase = session.phase.clone();
+        let alive = SlotState::alive(true, true).with_seat(0x100, 0x100);
+        let monsters = [
+            alive.with_seat(-0x200, 0x300),
+            alive.with_seat(0, 0x400),
+            alive.with_seat(0x200, 0x300),
+            SlotState::dead(false),
+            SlotState::dead(false),
+        ];
+        session.input(ev, [alive; 3], monsters);
+        let port = port_outcome(&before_phase, &session.phase);
+
+        let label = format!(
+            "round {round}: state {state:#x} pad {pad:#x} cross-entry {cross_entry} hl {hl:#x} \
+             party {party} seat {seat} order {order} status {status:#x} special {special:#x} \
+             raseru {raseru} opt {opt} windows {win:x?} cues {cue:x?} -> {after:#x}"
+        );
+        assert_eq!(retail, port, "outcome: {label}");
+        assert_eq!(cue.contains(&0x22), moved, "cursor cue: {label}");
+        if moved {
+            moved_n += 1;
+        }
+        if ring && after == 0x28 && win.is_empty() && cue.contains(&0x23) {
+            refused_n += 1;
+            assert!(refused, "refusal: {label}");
+        } else {
+            assert!(!refused, "refusal: {label}");
+        }
+        if cross_entry && retail == Outcome::Stay {
+            let lit = match &session.phase {
+                CommandPhase::Menu { cursor }
+                | CommandPhase::RoundPrompt { cursor }
+                | CommandPhase::RunConfirm { cursor }
+                | CommandPhase::CommitConfirm { cursor }
+                | CommandPhase::AttackMode { cursor } => *cursor,
+                other => panic!("{other:?}"),
+            };
+            assert_eq!(
+                cpu.mem.rd32(CTX + 0x880),
+                highlight_word(ring, lit),
+                "highlight: {label}"
+            );
+        }
+        if ring && pad & CANCEL == 0 {
+            let mut w = legaia_engine_core::world::World::new();
+            w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+            w.battle.special_word = special;
+            w.battle.command = Some(session_at(0x28, 1));
+            seat_status(&mut w, 0, status, false);
+            let m = legaia_engine_battle_hud::battle_ring_marks(&w);
+            let drawn = marks.borrow().clone();
+            let port_marks: Vec<u32> = [
+                (m.item_forbidden, 0xCC),
+                (m.raseru_forbidden, 0xF8),
+                (m.attack_rotted, 1 << 16 | 0xA0),
+                (m.magic_cursed, 2 << 16 | 0xF8),
+            ]
+            .into_iter()
+            .filter_map(|(on, tag)| on.then_some(tag))
+            .collect();
+            assert_eq!(drawn, port_marks, "marks: {label}");
+        }
+        *seen.entry((state, retail)).or_default() += 1;
+    }
+    for (state, out) in [
+        (0x1E, Outcome::Ring),
+        (0x1E, Outcome::RunConfirm),
+        (0x1E, Outcome::Stay),
+        (0x32, Outcome::RoundPrompt),
+        (0x32, Outcome::RunAway),
+        (0x6E, Outcome::BeginRound),
+        (0x6E, Outcome::Reselect),
+        (0x78, Outcome::Ring),
+        (0x78, Outcome::Arts),
+        (0x78, Outcome::Target),
+        (0x28, Outcome::Item),
+        (0x28, Outcome::Spell),
+        (0x28, Outcome::AttackMode),
+        (0x28, Outcome::Target),
+        (0x28, Outcome::Arts),
+        (0x28, Outcome::StepBack),
+        (0x28, Outcome::Spirit),
+    ] {
+        assert!(
+            seen.get(&(state, out)).copied().unwrap_or(0) > 10,
+            "{state:#x} {out:?}: {seen:?}"
+        );
+    }
+    assert!(moved_n > 200 && refused_n > 100, "{moved_n} {refused_n}");
+}

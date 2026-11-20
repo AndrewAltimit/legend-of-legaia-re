@@ -19,32 +19,6 @@ pub mod ui_cues;
 /// `0x1F` is id `4` and the Hyper Arts sit below it.
 const ART_RECORD_ID_BIAS: u8 = 0x1B;
 
-/// Whether the command ring refuses `arm` for an actor whose `+0x16E` word is
-/// `status`. `FUN_801D0748`'s ring state tests the word on the press itself
-/// and answers a refusal with cue `0x23` (`0x801D2968`):
-///
-/// - **Attack** (Left) with all three Rot limbs set, `status & 0x38 == 0x38`
-///   (`0x801D1560..0x801D156C`) - the arts entry would have no direction left;
-/// - **Magic** (Right) under Curse, `status & 0x1000` (`0x801D1434..0x801D1440`).
-///
-/// The same two tests pick the ring's crosses (`FUN_801DBD04(0xA0, 0x42)` at
-/// `0x801D1328`, `FUN_801DBEC4(0xF8, 0x42)` at `0x801D135C`). The Magic arm's
-/// other refusals - no Ra-Seru bound (`ctx[+0x25F + member] == 0`) and the
-/// special word's `0x200` - are not status bits.
-///
-/// PORT: FUN_801D0748 (the ring's status refusals, `0x801D1434..0x801D1440` / `0x801D1560..0x801D156C`)
-pub(crate) fn ring_arm_refused(
-    status: u16,
-    arm: legaia_engine_battle_menus::battle_input::BattleCommand,
-) -> bool {
-    use legaia_engine_battle_menus::battle_input::BattleCommand;
-    match arm {
-        BattleCommand::Attack => status & 0x38 == 0x38,
-        BattleCommand::Magic => status & 0x1000 != 0,
-        _ => false,
-    }
-}
-
 /// The special-battle word's bit that forbids the ring's Item arm
 /// (`andi v0,v0,0x100` at `0x801D1378`): an arena course rule.
 pub(crate) const SPECIAL_ITEM_FORBIDDEN: u32 = 0x100;

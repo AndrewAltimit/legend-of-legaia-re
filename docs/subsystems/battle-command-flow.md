@@ -320,6 +320,23 @@ direction presses and rewrites `s2` to the highlighted arm's mask on the
 confirm press, so each handler's direction test doubles as "take the
 highlighted chip".
 
+Each handler tests its arms in a fixed order and the first one pressed
+decides, so a diagonal (two directions on one pass) or a direction with the
+confirm mask resolves by that order, not by which arm the player meant: the ring
+tests the cancel mask, Up, Right, Left or the confirm mask, then Down; the
+round prompt Left or the confirm mask, then Right; the flee confirm the cancel
+mask or Right, then Left; the commit confirm the cancel mask or Right, then
+Left or the confirm mask; the attack-mode prompt the cancel mask, Right, then
+Left or the confirm mask. A ring arm the member is refused ends the pass on
+its refusal: a cursed member's Right-and-Down buzzes rather than committing
+Spirit. The highlight walk orders its own tests Left, Right, Down, Up, and a
+direction on the arm already lit passes on to the next one
+(`0x801D0824` / `0x801D08C8` / `0x801D0980` / `0x801D0A38`), so a diagonal
+whose first arm is lit lights its second. The port follows both orders
+(`battle_input::walk_highlight`, `battle_input::ring_press_refused`); the
+differential `crates/retail-exec/tests/command_prompts.rs` runs every prompt
+over generated pad words against them.
+
 `Attack` is therefore **not** the plain strike: it is the door to the
 attack-mode prompt, and option `0x800846C4` decides whether that prompt is shown
 (`0`), skipped straight to auto-target (`1`), or skipped straight to the

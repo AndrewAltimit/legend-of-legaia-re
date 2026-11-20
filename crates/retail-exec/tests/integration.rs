@@ -115,6 +115,7 @@ mod colour_grade;
 mod colour_tween;
 mod colour_wash;
 mod combo_records;
+mod command_prompts;
 mod confuse;
 mod contact_candidates;
 mod container_walkers;

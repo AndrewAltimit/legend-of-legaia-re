@@ -41,6 +41,7 @@ legaia-art.workspace = true
 legaia-disc-audit.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-hud.workspace = true
+legaia-engine-battle-menus.workspace = true
 legaia-font.workspace = true
 legaia-mes.workspace = true
 legaia-engine-battle-loop.workspace = true
