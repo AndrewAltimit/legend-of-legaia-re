@@ -2043,6 +2043,37 @@ fn agreeing_step_bytes_confirm_a_clamped_pass() {
     );
 }
 
+/// A monster's retake lag takes the step the bytes confirm on a clamped
+/// history; a party action, a disagreeing pair and a capture read without
+/// the bytes keep two of the history's rung.
+#[test]
+fn a_monster_retake_lag_takes_the_confirmed_step() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put16(&mut ram, STEP_MODE, 0x10);
+    for i in 0..16 {
+        put16(&mut ram, FRAME_HISTORY + i * 2, 0x2BC);
+    }
+    put32(&mut ram, 0x8007_B758, 4);
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, game_anchors::GAME_MODE_VA, 0x15);
+    put8(&mut ram, ctx + 0x13, 3);
+    assert_eq!(retake_lag_vsyncs(&ram, ctx), 6);
+    assert_eq!(
+        with_step_bytes(Some((4, 4)), || retake_lag_vsyncs(&ram, ctx)),
+        8
+    );
+    assert_eq!(
+        with_step_bytes(Some((3, 4)), || retake_lag_vsyncs(&ram, ctx)),
+        6
+    );
+    put8(&mut ram, ctx + 0x13, 1);
+    assert_eq!(
+        with_step_bytes(Some((4, 4)), || retake_lag_vsyncs(&ram, ctx)),
+        6
+    );
+}
+
 /// A synthetic pool with one live child and one dead slot, two ordering
 /// tables and the double buffer's records: the newest table draws the live
 /// child's current quad, the older one the dead slot's last frame. Mid-pass

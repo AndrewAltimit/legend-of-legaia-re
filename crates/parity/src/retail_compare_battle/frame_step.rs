@@ -227,6 +227,45 @@ pub fn with_step_bytes<R>(bytes: Option<(u8, u8)>, read: impl FnOnce() -> R) -> 
     out
 }
 
+/// The step a clamped battle history's passes ran at where the pacer's step
+/// bytes vouch for it: both bytes equal and the newest entry the clamp
+/// `0x2BC` ([`display_pass_steps`]'s reading of the bytes). `None` off the
+/// battle half, without the bytes, or where they do not settle the clamp.
+pub fn byte_confirmed_step(ram: &[u8]) -> Option<u8> {
+    if !matches!(game_anchors::game_mode(ram), 0x14 | 0x15) {
+        return None;
+    }
+    let cursor = game_anchors::u32_at(ram, FRAME_HISTORY_CURSOR);
+    let newest = game_anchors::i16_at(ram, FRAME_HISTORY + (cursor.wrapping_sub(1) & 0xF) * 2);
+    let (wait, next) = CAPTURE_STEP_BYTES.with(|c| c.get())?;
+    (newest == FRAME_HISTORY_CLAMP && wait == next && (1..=4).contains(&next)).then_some(next)
+}
+
+/// The vsyncs a battle capture's displayed frame is retaken behind its gate
+/// (`RetailBattle::display_lag`: the retake, the displayed phase gate, the
+/// dimmed ambient base). A monster's action (acting seat `ctx[+0x13] >= 3`)
+/// takes two passes of the step the bytes confirm ([`byte_confirmed_step`]);
+/// everything else keeps two of the history's rung ([`display_lag_vsyncs`]).
+///
+/// The split is measured, not derived. On the clamped battle states under
+/// bytes `4` / `4`, eight vsyncs land the monster casts
+/// (`battle_noaru_songi_genocidal_cannon_mid_cast` `.973` to `1.000`,
+/// `battle_jou_aluru_v3_aluru_cannon_mid_cast` `.938` to `.950`, its ambient
+/// base `112` to `128`), and the same eight drop the party chain
+/// `battle_jou_party_vahn_chain_late` (`.957` to `.939`), whose film ran its
+/// two displayed passes `4, 3`, seven vsyncs: neither two-pass product fits
+/// it. The party's hit-spark and clut walk-backs (`retail_action_fx_parts`)
+/// keep the history's lag too (`battle_jou_cort_181_strike` `.963` to `.961`
+/// on the bytes).
+pub fn retake_lag_vsyncs(ram: &[u8], ctx: u32) -> u16 {
+    match byte_confirmed_step(ram) {
+        Some(step) if game_anchors::u8_at(ram, ctx + 0x13) >= 3 => {
+            DISPLAY_LAG_PASSES * u16::from(step)
+        }
+        _ => display_lag_vsyncs(ram),
+    }
+}
+
 /// Whether the capture's step bytes agree with each other and read `step`.
 fn step_bytes_confirm(step: u8) -> bool {
     CAPTURE_STEP_BYTES
