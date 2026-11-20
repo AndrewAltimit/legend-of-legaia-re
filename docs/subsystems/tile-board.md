@@ -236,7 +236,12 @@ its operand block.
 Because state `0` seats the player cell at column 4 without moving the actor,
 the walk-in (state `2`) walks the actor there from wherever it stood, and the
 arrival pass then runs on the start cell. A board narrower than five columns
-seats the player off its east edge.
+seats the player off its east edge. Every read of the cell under the player -
+the arrival (`0x801EF700..0x801EF734`), the walker's octant (`0x801EF87C..0x801EF89C`)
+and the exit fade's and park's event-tile test (`0x801EFD18..0x801EFD58`,
+`0x801EFDA8..0x801EFDE8`) - indexes the buffer flat as `row * width + col`
+with no column bound, so on such a board it lands on a cell of a later row
+(`TileBoard::cell_under_player`).
 
 ### Event-cell flags (state 8)
 

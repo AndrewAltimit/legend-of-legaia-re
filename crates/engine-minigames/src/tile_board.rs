@@ -533,6 +533,19 @@ impl TileBoard {
         self.cells.get(idx).copied()
     }
 
+    /// The cell under the player as the walk SM reads it: the flat index
+    /// `row * width + col` into the buffer, with no column bound
+    /// (`mult` / `addu` at `0x801EF87C..0x801EF89C`, the walker's octant read,
+    /// and `0x801EFD18..0x801EFD58` / `0x801EFDA8..0x801EFDE8`, the exit fade's
+    /// and the park's event-tile test). A board narrower than five columns
+    /// seats the player at column [`START_COL`], off its east edge, so the
+    /// read lands on a cell of a later row. `None` past the buffer's end.
+    pub fn cell_under_player(&self) -> Option<u8> {
+        let idx =
+            usize::from(self.player_row) * usize::from(self.width) + usize::from(self.player_col);
+        self.cells.get(idx).copied()
+    }
+
     /// Retail collision rule: a move into `(col, row)` is blocked when
     /// the cell is out of bounds or its value is [`CELL_WALL`].
     pub fn is_blocked(&self, col: i32, row: i32) -> bool {
@@ -711,6 +724,21 @@ mod tests {
         assert_eq!(step_for_mask(0xA000), Some(TileStep::Right));
         assert_eq!(step_for_mask(0x8000), Some(TileStep::Left));
         assert_eq!(step_for_mask(0x0010), None);
+    }
+
+    #[test]
+    fn the_cell_under_a_player_off_the_east_edge_is_read_flat() {
+        // A 1-wide board seats the player at column 4: retail's flat
+        // `row * width + col` lands four rows down, where `cell` is out of
+        // bounds.
+        let mut b = TileBoard::new(1, 8, 0, 0, vec![7, 11, 14, 2, 9, 10, 7, 8]);
+        b.player_col = START_COL;
+        b.player_row = START_ROW;
+        assert_eq!(b.cell(4, 0), None);
+        assert_eq!(b.cell_under_player(), Some(9));
+        assert_eq!(fade_exempt_value(b.cell_under_player()), Some(9));
+        b.player_row = 4;
+        assert_eq!(b.cell_under_player(), None, "past the buffer");
     }
 
     #[test]

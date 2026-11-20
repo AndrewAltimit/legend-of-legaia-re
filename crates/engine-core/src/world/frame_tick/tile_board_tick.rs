@@ -120,9 +120,7 @@ impl World {
         // (`0x801EF8A4..0x801EF8CC`), then the held pad remapped through it
         // (`jal 0x800467E8` at `0x801EF8D0`) and decoded in retail order.
         if let Some(board) = self.board.grid.as_ref() {
-            let under = board
-                .cell(board.player_col as i32, board.player_row as i32)
-                .unwrap_or(0);
+            let under = board.cell_under_player().unwrap_or(0);
             self.locomotion.pad_octant = legaia_engine_minigames::tile_board::walker_octant(under);
         }
         let held = tile_board_held_mask(&self.input);
@@ -210,7 +208,7 @@ impl World {
             return 1.0;
         };
         if matches!(self.board.sm, sm::FADE_OUT | sm::EVENT_FADE_OUT | sm::PARK) {
-            let under = board.cell(board.player_col as i32, board.player_row as i32);
+            let under = board.cell_under_player();
             if legaia_engine_minigames::tile_board::fade_exempt_value(under) == Some(value) {
                 return 1.0;
             }
@@ -271,8 +269,8 @@ impl World {
         let Some(board) = self.board.grid.as_mut() else {
             return;
         };
-        let (col, row) = (board.player_col as i32, board.player_row as i32);
-        let Some(cell) = board.cell(col, row) else {
+        // `row * width + col` flat, as state 3 reads it (`0x801EF700..0x801EF734`).
+        let Some(cell) = board.cell_under_player() else {
             return;
         };
         match legaia_engine_minigames::tile_board::arrival_action(cell) {
@@ -503,11 +501,9 @@ impl World {
         // player stands on, and 0xE draws nothing (`0x801EFDA8`, the render
         // tail's state gate).
         let parked = match self.board.sm {
-            legaia_engine_minigames::tile_board::sm::PARK => {
-                Some(legaia_engine_minigames::tile_board::fade_exempt_value(
-                    board.cell(board.player_col as i32, board.player_row as i32),
-                ))
-            }
+            legaia_engine_minigames::tile_board::sm::PARK => Some(
+                legaia_engine_minigames::tile_board::fade_exempt_value(board.cell_under_player()),
+            ),
             legaia_engine_minigames::tile_board::sm::TEARDOWN => Some(None),
             _ => None,
         };

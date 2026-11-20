@@ -7,7 +7,9 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::world::World;
-use legaia_engine_minigames::tile_board::{TileBoardHeader, sm};
+use legaia_engine_minigames::tile_board::{
+    FADE_FULL, TileBoardHeader, fade_exempt_value, fade_in_step, fade_out_step, sm,
+};
 use legaia_engine_system::rand::{bios_rand_shape, world_lcg_step};
 use psx_retail_exec::{A0, A1, Stop, V0};
 use std::cell::{Cell, RefCell};
@@ -24,6 +26,7 @@ const OCTANT: u32 = 0x8007_B5F0;
 const TABLE_PTR: u32 = 0x801F_35BC;
 const CELLS_PTR: u32 = 0x801F_35C0;
 const SAVED_OCTANT: u32 = 0x801F_35C4;
+const FRAME_STEP: u32 = 0x1F80_0393;
 const PLAYER_CELL: u32 = 0x801F_35C8;
 const WALK_IN: u32 = 0x801F_35D0;
 /// The system flag bank (`0x80084140 + 0x1618`).
@@ -71,6 +74,7 @@ fn the_board_install_matches_retail() {
     }
     let mut g = Rng(0x5449_4C45);
     let mut events = 0usize;
+    let (mut fades, mut exempted) = (0usize, 0usize);
     for round in 0..600 {
         let width = 1 + g.below(14) as u8;
         let height = 1 + g.below(14) as u8;
@@ -149,6 +153,65 @@ fn the_board_install_matches_retail() {
         assert_eq!(*spawned.borrow(), want, "tile-actor templates, {ctx}");
         assert_ne!(cpu.mem.rd32(TABLE_PTR), 0);
         events += cells.iter().filter(|&&c| (8..=0xA).contains(&c)).count();
+
+        // Then the board's fades on every third round: state 1's fade-in
+        // against `fade_in_step` until the walk-in (`2`), and the exit -
+        // states 9, `0xA`'s fade-out against `fade_out_step` with the event
+        // tile under the player left alone (`fade_exempt_value`) - to the
+        // park `0xD`. Every tile actor `2..=14` takes the scale `+0x72`.
+        if round % 3 != 0 {
+            continue;
+        }
+        let table = cpu.mem.rd32(TABLE_PTR);
+        let tiles: Vec<u32> = (2..15u32).map(|v| cpu.mem.rd32(table + 4 * v)).collect();
+        let exempt = fade_exempt_value(board.cell_under_player());
+        let mut fade = w.board.fade;
+        let mut frame = 0;
+        loop {
+            let step = 1 + g.below(3) as u8;
+            cpu.mem.wr8(FRAME_STEP, step);
+            assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+            let (next, done) = fade_in_step(fade, step);
+            fade = next;
+            let c = format!("{ctx} fade-in frame {frame} step {step}");
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x9C) as i16, fade, "{c}");
+            for (k, &t) in tiles.iter().enumerate() {
+                assert_eq!(cpu.mem.rd16(t + 0x72) as i16, fade, "{c} tile {}", k + 2);
+            }
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54), if done { 2 } else { 1 }, "{c}");
+            frame += 1;
+            if done {
+                break;
+            }
+        }
+        fades += 1;
+        cpu.mem.wr16(ACTOR + 0x54, u16::from(sm::EXIT_STEP));
+        assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+        assert_eq!(cpu.mem.rd16(ACTOR + 0x54), u16::from(sm::FADE_OUT), "{ctx}");
+        loop {
+            let step = 1 + g.below(3) as u8;
+            cpu.mem.wr8(FRAME_STEP, step);
+            assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+            let (next, done) = fade_out_step(fade, step);
+            fade = next;
+            let c = format!("{ctx} fade-out step {step}");
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x9C) as i16, fade, "{c}");
+            for (k, &t) in tiles.iter().enumerate() {
+                let v = k as u8 + 2;
+                let want = if exempt == Some(v) { FADE_FULL } else { fade };
+                assert_eq!(cpu.mem.rd16(t + 0x72) as i16, want, "{c} tile {v}");
+            }
+            let state = if done { sm::PARK } else { sm::FADE_OUT };
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54), u16::from(state), "{c}");
+            if done {
+                break;
+            }
+        }
+        exempted += usize::from(exempt.is_some());
     }
     assert!(events > 1000, "event cells {events}");
+    assert!(
+        fades > 100 && exempted > 5,
+        "{fades} fades, {exempted} on an event tile"
+    );
 }
