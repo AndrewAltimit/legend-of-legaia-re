@@ -838,11 +838,33 @@ impl RetailObs {
         if self.menu.is_some() || !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
             return Vec::new();
         }
-        self.scripts
-            .running
-            .first()
-            .map(|s| s.latches.clone())
-            .unwrap_or_default()
+        let Some(first) = self.scripts.running.first() else {
+            return Vec::new();
+        };
+        // A set the straight-line walk passes can sit on an arm the record
+        // jumped over: `town0e` `P2[5]` reaches `+0x8B` past `55 F5` at
+        // `+0x89`, the target of the Triangle test `42 01 0B` at `+0x81`,
+        // by the jump `26 04 00` at `+0x86`. Retail's flags say which arm
+        // ran; a latch the state does not hold was not set, and raised at
+        // the settle tick it would be a bit retail lacks.
+        let mut out: Vec<u16> = first
+            .latches
+            .iter()
+            .copied()
+            .filter(|&l| self.save.as_ref().is_none_or(|s| system_flag_held(s, l)))
+            .collect();
+        // The system pass that spawned the record ended on the spawn, so the
+        // entry retail ran saw its latch down ([`crate::retail_compare_script::system_spawn_arm`]). Held
+        // back, the seed's system script takes the same arm - it spawns the
+        // record and parks after the `21` where retail's stands - instead of
+        // jumping the latched arm into a loop body retail has not run.
+        if let Some((record, latch)) = self.scripts.system_spawn
+            && record == first.flat_index
+            && !out.contains(&latch)
+        {
+            out.push(latch);
+        }
+        out
     }
 
     /// The capture-alignment environment the image child takes on top of

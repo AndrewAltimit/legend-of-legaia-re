@@ -18,6 +18,14 @@ pub fn clear_system_flags(save: &mut legaia_save::SaveFile, ids: &[u16]) {
     }
 }
 
+/// Whether a lifted save holds system flag `idx` raised.
+pub fn system_flag_held(save: &legaia_save::SaveFile, idx: u16) -> bool {
+    save.ext
+        .story_flag_bits
+        .get(SYSTEM_FLAG_WINDOW + usize::from(idx >> 3))
+        .is_some_and(|b| b & (0x80u8 >> (idx & 7)) != 0)
+}
+
 /// Raise or lower one system flag in a lifted save.
 pub fn set_system_flag(save: &mut legaia_save::SaveFile, idx: u16, on: bool) {
     if let Some(b) = save

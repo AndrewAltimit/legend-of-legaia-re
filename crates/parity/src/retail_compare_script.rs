@@ -199,6 +199,11 @@ pub struct RetailScripts {
     /// list holds the node ([`pooled_system_pc`]): a battle capture's, whose
     /// field actors the fight has unlinked.
     pub pooled_system_pc: Option<usize>,
+    /// The spawn the system script's last pass ended on, when its PC sits
+    /// straight after a latched spawn arm `5x <lo> 44 <record> 21`
+    /// ([`system_spawn_arm`]): the spawned record's flat index and the
+    /// latch.
+    pub system_spawn: Option<(u16, u16)>,
     /// The field pager mid-page: its typing row's window index and reveal
     /// counter, while `_DAT_801F2734` is the typing state `0x0B`
     /// ([`pager_typing`]).
@@ -344,6 +349,10 @@ impl RetailScripts {
             }
             if tick == SYSTEM_SCRIPT_TICK && out.system_pc.is_none() {
                 out.system_pc = usize::try_from(game_anchors::i16_at(ram, node + 0x9E)).ok();
+                out.system_spawn = out.system_pc.and_then(|pc| {
+                    let lead = pc.checked_sub(SPAWN_ARM_LEN)?;
+                    system_spawn_arm(&bytes_at(ram, base + lead as u32, SPAWN_ARM_LEN)?)
+                });
                 continue;
             }
             let head = bytes_at(ram, base, RECORD_HEAD_LEN);
@@ -393,6 +402,31 @@ impl RetailScripts {
             out.pooled_system_pc = pooled_system_pc(ram);
         }
         out
+    }
+}
+
+/// Bytes of a latched spawn arm: `5x <lo>` (SysFlag.Set), `44 <record>`
+/// (SPAWN_RECORD), `21` (the frame boundary).
+const SPAWN_ARM_LEN: usize = 5;
+
+/// The spawned record's flat index and the latch of a latched spawn arm
+/// `5x <lo> 44 <record> 21` ([`SPAWN_ARM_LEN`] bytes ending at the system
+/// script's PC), `None` for any other lead.
+///
+/// A scene entry that starts its cutscene from the system loop sets the
+/// one-shot latch, spawns the record and ends the pass on the `21`
+/// (`town0e` `P1[0]` `+0xA1`: `75 F1 07 00`, `55 F1`, `44 2E`, `21`). The
+/// spawned record then holds the player (`+0x10 & 0x80000`), and the
+/// system tick `FUN_801DA51C` opens no new pass while it does
+/// (`0x801DA794..0x801DA7AC`): retail's system context stays on the PC
+/// after the `21` for the whole cutscene, its loop body never run.
+pub fn system_spawn_arm(lead: &[u8]) -> Option<(u16, u16)> {
+    match *lead {
+        [set, lo, 0x44, record, 0x21] if set & 0xF0 == 0x50 => Some((
+            u16::from(record),
+            (u16::from(set & 0x0F) << 8) | u16::from(lo),
+        )),
+        _ => None,
     }
 }
 
@@ -557,6 +591,24 @@ mod tests {
     /// A system node no list links (a battle capture's) is read off the
     /// actor pool; a second candidate makes the read ambiguous, and a live
     /// list's node wins over the pool.
+    /// A system pass that ends on a latched spawn names the record and the
+    /// latch (`town0e` `P1[0]` `+0xA5..+0xAA`); any other lead names none.
+    #[test]
+    fn a_latched_spawn_arm_names_its_record_and_latch() {
+        assert_eq!(
+            system_spawn_arm(&[0x55, 0xF1, 0x44, 0x2E, 0x21]),
+            Some((0x2E, 0x5F1))
+        );
+        assert_eq!(
+            system_spawn_arm(&[0x56, 0xA9, 0x44, 0x2E, 0x21]),
+            Some((0x2E, 0x6A9))
+        );
+        // A clear, a missing frame boundary, a non-spawn: no arm.
+        assert_eq!(system_spawn_arm(&[0x65, 0xF1, 0x44, 0x2E, 0x21]), None);
+        assert_eq!(system_spawn_arm(&[0x55, 0xF1, 0x44, 0x2E, 0x24]), None);
+        assert_eq!(system_spawn_arm(&[0x55, 0xF1, 0x4A, 0x2E, 0x21]), None);
+    }
+
     #[test]
     fn a_battle_capture_reads_the_system_pc_off_the_pool() {
         fn w32(ram: &mut [u8], va: u32, v: u32) {
