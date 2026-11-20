@@ -595,6 +595,11 @@ struct Seeded {
     compass: [u32; 8],
     op49: Op49State,
     bracket: bool,
+    /// The context carries an attached light (the actor list holds an
+    /// `FUN_801E4470` actor whose `+0x90` is the context).
+    light: bool,
+    /// The length of the keyframe block `34 2x` handed over, if it did.
+    captured: Option<usize>,
 }
 impl FieldFlagsHost for Seeded {
     fn global_flags(&self) -> u32 {
@@ -655,6 +660,20 @@ impl FieldActorSpawnHost for Seeded {
     fn actor_guard(&mut self, _actor_id: u8) -> Option<()> {
         Some(())
     }
+    fn op34_sub2_capture_pc(
+        &mut self,
+        _ctx: &FieldCtx,
+        _ext: Option<u8>,
+        block: Option<&[u8]>,
+    ) -> bool {
+        match block {
+            Some(b) if self.light => {
+                self.captured = Some(b.len());
+                true
+            }
+            _ => false,
+        }
+    }
 }
 impl FieldActorFxHost for Seeded {
     fn spawn_attached_light(
@@ -664,7 +683,8 @@ impl FieldActorFxHost for Seeded {
         _spawn: &legaia_engine_vm::field_actor_billboard::AttachedSpriteSpawn,
         _script: Option<&[u8]>,
     ) -> bool {
-        true
+        // A context that already carries a light spawns none.
+        !self.light
     }
 }
 impl FieldPlayerHost for Seeded {}
@@ -723,6 +743,8 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                 compass,
                 op49: Op49State::Idle,
                 bracket: false,
+                light: false,
+                captured: None,
             };
             if rng.below(4) == 0 {
                 // A pad that matches a compass entry.
@@ -769,6 +791,9 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                 match name {
                     "flags" if halted => v |= 0x400,
                     "flags" if variant >= 5 && variant != 6 => v = (v & !0x400) | 0x0100_0000,
+                    // Half the time a seat near the origin, inside the boxes
+                    // small operands name.
+                    "world_x" | "world_z" if rng.below(2) == 0 => v = rng.below(0x1000),
                     "flags" => v &= !0x0100_0400,
                     "script_id" => v = id,
                     _ => {}
@@ -850,4 +875,112 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
         .collect();
     assert!(report.is_empty(), "{ran} runs\n{}", report.join("\n"));
     assert!(ran > 10_000, "{ran}");
+}
+
+/// `34 1x` and `34 2x` with the context's attached light present or absent:
+/// retail walks the actor list `*0x8007C354` for an `FUN_801E4470` actor
+/// whose `+0x90` is the context (`0x801DFF04..0x801DFF48`,
+/// `0x801E0020..0x801E0068`). The walk `FUN_8003CF04` is answered here from
+/// a generated list of lights, owned by the context or by others; the port's
+/// host answers from the same list. Compared: the next PC, and for `34 2x`
+/// the keyframe block retail parks on the light's `+0x94` against the block
+/// the port hands its host.
+#[test]
+fn an_attached_light_is_found_where_retail_finds_it() {
+    differential!(prot(897, VM));
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const HEAD: u32 = 0x8013_0000;
+    const LIGHTS: u32 = 0x8013_1000;
+    cpu.mem.wr32(0x8007_C354, HEAD);
+    // The walk: the head yields the first light, each light the next.
+    let count = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    let n = count.clone();
+    cpu.hook(0x8003_CF04, move |r, _| {
+        let i = if r.r[4] == HEAD {
+            0
+        } else {
+            (r.r[4] - LIGHTS) / 0x100 + 1
+        };
+        r.r[2] = if i < n.get() { LIGHTS + i * 0x100 } else { 0 };
+    });
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x4C49_4748);
+    let (mut ran, mut found, mut captured) = (0u32, 0u32, 0u32);
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    let mut scripts = corpus();
+    scripts.extend(crate::field_vm::synthetic());
+    for (script, pc, label) in scripts {
+        if !(label.starts_with("34") && matches!(script[pc + 1 + usize::from(script[pc] >> 7)] >> 4, 1 | 2))
+        {
+            continue;
+        }
+        for _ in 0..4 {
+            cpu.mem = clean.clone();
+            cpu.regs.r[GP] = gp;
+            cpu.mem.load(SCRIPT, &script);
+            cpu.mem.wr32(CTX + 0x94, SCRIPT);
+            let lights = rng.below(4);
+            let mine = (lights > 0 && rng.below(3) != 0).then(|| rng.below(lights));
+            count.set(lights);
+            for i in 0..lights {
+                let owner = if Some(i) == mine { CTX } else { CTX + 0x200 };
+                cpu.mem.wr32(LIGHTS + i * 0x100 + 0x90, owner);
+                cpu.mem.wr32(LIGHTS + i * 0x100 + 0x94, 0);
+            }
+            if cpu.call(VM, &[SCRIPT, pc as u32, CTX]) != Stop::Returned {
+                continue;
+            }
+            let retail = cpu.regs.r[2] as usize & 0xFFFF;
+            let parked = mine.map(|i| cpu.mem.rd32(LIGHTS + i * 0x100 + 0x94)).filter(|&p| p != 0);
+            let mut host = Seeded {
+                flags: 0,
+                pad: 0,
+                regions: 0,
+                compass: [0; 8],
+                op49: Op49State::Idle,
+                bracket: false,
+                light: mine.is_some(),
+                captured: None,
+            };
+            let mut ctx = FieldCtx::default();
+            let port = match step(&mut host, &mut ctx, &script, pc) {
+                StepResult::Advance { next_pc } => next_pc,
+                StepResult::Yield { resume_pc } => resume_pc,
+                StepResult::Halt { final_pc } => final_pc,
+                StepResult::Pending { .. } | StepResult::Unknown { .. } => continue,
+            };
+            ran += 1;
+            found += u32::from(mine.is_some());
+            let port_block = host.captured.map(|len| SCRIPT + (script.len() - len) as u32);
+            captured += u32::from(parked.is_some());
+            let mut wrong = Vec::new();
+            if port & 0xFFFF != retail {
+                wrong.push(format!("pc retail {retail:#x} port {port:#x}"));
+            }
+            if parked != port_block {
+                wrong.push(format!("block retail {parked:x?} port {port_block:x?}"));
+            }
+            if !wrong.is_empty() {
+                let e = differ.entry(label.clone()).or_default();
+                e.0 += 1;
+                if e.0 == 1 {
+                    e.1 = format!(
+                        "pc {pc:#x} bytes {:02x?}: {}",
+                        &script[pc..(pc + 10).min(script.len())],
+                        wrong.join(", ")
+                    );
+                }
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(report.is_empty(), "{}", report.join("\n"));
+    assert!(ran > 200 && found > 50 && captured > 5, "{ran} {found} {captured}");
 }

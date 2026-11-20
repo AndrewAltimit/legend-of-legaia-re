@@ -217,7 +217,7 @@ mod field_carriers;
 mod field_frame_tail;
 pub use field_frame_tail::{EFFECT_SCENE_GRAPH_STEP, NpcClipRetarget, WorldFrameTail};
 pub(crate) mod field_xa;
-pub use field_xa::{scene_minigame_door_xa_prestage, scene_xa_prestage};
+pub use field_xa::{ScriptAudioGates, scene_minigame_door_xa_prestage, scene_xa_prestage};
 mod field_loop;
 pub use field_loop::rebuild_battle_party_table;
 mod field_movement;

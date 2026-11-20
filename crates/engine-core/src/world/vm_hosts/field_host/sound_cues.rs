@@ -207,6 +207,19 @@ impl FieldHostImpl<'_> {
         // `legaia_engine_system::scus_leaf_kernels::SfxCueDelays`)
         // REF: FUN_80035B50
         // REF: FUN_800243F0 (the driver that settles the pair)
+        // `0xFFFF` is tested ahead of everything (`0x801E02E4..0x801E0308`):
+        // the op waits while the drive word `_DAT_8007BC20` is up - a field
+        // XA one-shot still inside its read span - and then advances with
+        // no other effect.
+        if op0_word == 0xFFFF {
+            if self.world.field_xa_busy() {
+                return SceneFadeResult::Busy;
+            }
+            self.world
+                .pending_field_events
+                .push(FieldEvent::SceneFade { op0_word, op1_word });
+            return SceneFadeResult::Done;
+        }
         let dev_gate = self.world.audio.dual_mode_gate != 0;
         if op0_word & 0x8000 != 0 {
             if dev_gate {

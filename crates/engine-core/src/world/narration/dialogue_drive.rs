@@ -1491,6 +1491,17 @@ impl World {
                     id.pc = final_pc;
                     break;
                 }
+                // Op `0x36` holds the same way: `36 FF FF` while the drive
+                // word `_DAT_8007BC20` is up (a field XA one-shot still
+                // reading, `0x801E02F0..0x801E0308`), and sub-ops `0` / `1` /
+                // `2` and the XA arm while the side-band request pair is
+                // unsettled (`0x801E0340`, `0x801E037C`, `0x801E03A8`,
+                // `0x801E040C`) - each re-runs its own PC next frame.
+                // REF: FUN_801DE840 (op `0x36`)
+                FieldStepResult::Halt { final_pc } if (b & 0x7F) == 0x36 => {
+                    id.pc = final_pc;
+                    break;
+                }
                 // `4C 53` / `4C 54` poll the staged mode switch
                 // `FUN_801D65D8` and re-run their own PC while it is in
                 // flight (the wait join at `0x801E28C4`, `0x801DEE4C`): a

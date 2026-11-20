@@ -130,6 +130,20 @@ pub fn scene_minigame_door_xa_prestage(
     Vec::new()
 }
 
+/// Borrowed view of the op-`0x35` / `0x36` gate words
+/// ([`World::script_audio_gates_mut`]).
+pub struct ScriptAudioGates<'a> {
+    /// `_DAT_8007BABC` / `_DAT_8007BAA0`.
+    pub sound_stream: &'a mut legaia_engine_system::scus_leaf_kernels::SoundStreamRequest,
+    /// `_DAT_8007B868`.
+    pub dual_mode_gate: &'a mut i32,
+    /// Vsyncs `_DAT_8007BC20` stays nonzero.
+    pub xa_busy_frames: &'a mut u16,
+    /// The swap walk `_DAT_8007BAB8` / `_DAT_8007BA9C` / sound-flag bit 3
+    /// describe.
+    pub bgm_swap: &'a mut legaia_engine_system::sound_state::BgmSwapPoller,
+}
+
 impl World {
     /// Append a minigame's CD-XA lines to the prestage list both hosts drain
     /// ([`Self::drain_field_xa_prestage`]): the Baka Fighter chrome's
@@ -191,6 +205,20 @@ impl World {
     /// inside its read span.
     pub fn field_xa_busy(&self) -> bool {
         self.audio.field_xa_busy_frames != 0
+    }
+
+    /// The audio words the field VM's op `0x35` / `0x36` gates read, for a
+    /// caller that seeds them (the retail-kernel differential): the side-band
+    /// request pair `_DAT_8007BABC` / `_DAT_8007BAA0`, the dual-mode word
+    /// `_DAT_8007B868`, the drive word `_DAT_8007BC20`'s span in vsyncs and
+    /// the BGM swap walk.
+    pub fn script_audio_gates_mut(&mut self) -> ScriptAudioGates<'_> {
+        ScriptAudioGates {
+            sound_stream: &mut self.audio.sound_stream,
+            dual_mode_gate: &mut self.audio.dual_mode_gate,
+            xa_busy_frames: &mut self.audio.field_xa_busy_frames,
+            bgm_swap: &mut self.audio.bgm_swap,
+        }
     }
 
     /// One vsync of the modelled drive (run by `World::tick`).
