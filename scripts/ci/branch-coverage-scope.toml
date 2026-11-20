@@ -132,18 +132,21 @@ reason = "PROT 0980: state 0, the debug mode menu's cursor and confirm; reached 
 [[arm]]
 entry = "0x801F69D8"
 range = "0x801F74A4..0x801F74A4"
+image = "ffcdaddceadee7f2"
 verdict = "unreachable"
 reason = "PROT 0905 (Vera) only: inside arms 6 and 7 (0x801F7440..0x801F785C), which no phase reaches; the image steps the phase by the shared tail's +1 (0x801F7F4C), arm 3's +1 (0x801F6E94) and arm 5's +3 (0x801F7434, 5 -> 8) and sets 0xFF, so 6 and 7 are skipped. No other recorded slot-B image holds a branch here."
 
 [[arm]]
 entry = "0x801F69D8"
 range = "0x801F74D4..0x801F74D4"
+image = "ffcdaddceadee7f2"
 verdict = "unreachable"
 reason = "PROT 0905 (Vera) only: inside arms 6 and 7 (0x801F7440..0x801F785C), which no phase reaches; the image steps the phase by the shared tail's +1 (0x801F7F4C), arm 3's +1 (0x801F6E94) and arm 5's +3 (0x801F7434, 5 -> 8) and sets 0xFF, so 6 and 7 are skipped. No other recorded slot-B image holds a branch here."
 
 [[arm]]
 entry = "0x801F69D8"
 range = "0x801F76E8..0x801F76E8"
+image = "ffcdaddceadee7f2"
 verdict = "unreachable"
 reason = "PROT 0905 (Vera) only: inside arms 6 and 7 (0x801F7440..0x801F785C), which no phase reaches; the image steps the phase by the shared tail's +1 (0x801F7F4C), arm 3's +1 (0x801F6E94) and arm 5's +3 (0x801F7434, 5 -> 8) and sets 0xFF, so 6 and 7 are skipped. No other recorded slot-B image holds a branch here."
 
