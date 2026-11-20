@@ -34,7 +34,7 @@
 use crate::debug_char_editor::{DebugEditor, clamp_record_stats};
 use legaia_engine_dev_menu::dev_equip_commit::{EquipCommit, EquipCommitHost, commit_equip};
 use legaia_engine_dev_menu::dev_menu_action::dev_menu_action;
-use legaia_engine_dev_menu::dev_menu_adjust::{clamp1_255_step, wrap12_step};
+use legaia_engine_dev_menu::dev_menu_adjust::{camera_follow_step, clamp1_255_step, wrap12_step};
 use legaia_engine_dev_menu::dev_menu_flags::EventFlagEditor;
 use legaia_engine_dev_menu::dev_menu_leaves::{
     DevMenuRow as RetailRow, ListPickerPhase, PanelGeometry, SFX_CURSOR_MOVE,
@@ -191,8 +191,8 @@ pub struct DevMenuSession {
     /// word the `CAMERA` row's readout loads (`lw v1,0x70(a3)` with
     /// `a3 = 0x1F800314`, `0x801EB440`).
     pub camera_box_word: u32,
-    /// Set when the `CAMERA` row switched the follow camera on this tick: the
-    /// edit arm then snaps the camera onto its composed target
+    /// Set on every tick the hovered `CAMERA` row leaves the follow camera
+    /// on: the edit arm snaps the camera onto its composed target each frame
     /// (`FUN_801DB8EC` + the edge clamp `FUN_801DAA50`, `0x801EA1E4..`).
     pub camera_snap: bool,
 }
@@ -362,10 +362,10 @@ impl DevMenuSession {
                 // horizontal edge (`_DAT_8007B874 & 0xA000`, packed
                 // Right | Left) flips the switch, and while it is on the arm
                 // snaps the camera onto its target.
-                if pad_edge & (PACK_RIGHT | PACK_LEFT) != 0 {
-                    self.camera_follow = !self.camera_follow;
-                    self.camera_snap = self.camera_follow;
-                }
+                let (follow, snap) =
+                    camera_follow_step(u8::from(self.camera_follow), u32::from(pad_edge));
+                self.camera_follow = follow != 0;
+                self.camera_snap = snap;
             }
             DevMenuRow::EncounterRate => {
                 self.encounter_rate = clamp1_255_step(self.encounter_rate, pressed)

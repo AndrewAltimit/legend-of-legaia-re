@@ -100,6 +100,24 @@ pub fn clamp1_255_step(value: i32, pad_pressed: u32) -> i32 {
     v
 }
 
+/// The camera row's step: either horizontal edge of the pressed word
+/// `_DAT_8007B874` (`& 0xA000`) flips the follow switch `_DAT_8007B606`
+/// (`xori 1` on the byte), and while the byte is non-zero the arm snaps the
+/// camera onto its target (`FUN_801DB8EC` / `FUN_801DAA50`) - every frame
+/// the row is on, not only the frame it flips. Returns the new byte and
+/// whether the snap runs.
+///
+// PORT: FUN_801e9f64 (`0x801EA1A4..0x801EA1F8`, the camera-follow arm)
+#[inline]
+pub fn camera_follow_step(follow: u8, pad_pressed: u32) -> (u8, bool) {
+    let follow = if pad_pressed & (PAD_STEP_UP | PAD_STEP_DOWN) != 0 {
+        follow ^ 1
+    } else {
+        follow
+    };
+    (follow, follow != 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

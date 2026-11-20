@@ -372,3 +372,39 @@ entry = "0x80030628"
 range = "0x80031940..0x80031940"
 verdict = "unported"
 reason = "Content ids 4, 6 and 0x21 free the node's list (FUN_80017B94) and size the window from FUN_8003CC88; the port's windows hold no list memory to free"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA0C0..0x801EA184"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster row 6: cycles the BGM track index _DAT_801F2E90 through the 0x58-terminated table at 0x801F2E94; documented-not-ported (dev_menu_adjust module doc), the engine's dev menu has no sound-test row"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA268..0x801EA2FC"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster rows 0xC..0xE: step a character's equipment byte (+0x75E + slot) between 0 and the slot's table bound and re-run the stat aggregator FUN_80042558; the engine's EQUIP row stages an item id and commits it through dev_equip_commit instead"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA36C..0x801EA49C"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster rows 0x12..0x15: step the record bytes +0xD4..+0xD7 one per row on Right / Left of _DAT_8007BB84; the engine's dev menu has no row backed by them"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA4D4..0x801EA630"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster row 0x11: steps the flag cursor _DAT_801F2AA0 (wrapping at 0xFFF) and sets / clears the flag through FUN_8003CE34 / FUN_8003CE08 while a held bit is down; the engine's EVENT_FLAG row opens the field overlay's flag editor page (dev_menu_flags) instead"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA658..0x801EA728"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster row 0x16: turns the camera actor's +0x18 / +0x14 angles on held d-pad bits and rebuilds the view (FUN_80019278, FUN_800180EC, FUN_80017EC8); the engine's dev menu has no free-camera row"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA7AC..0x801EA968"
+verdict = "unreachable"
+reason = "PROT 0897 dev adjuster tail: its generic nibble, word, halfword and byte editors key on s7, fp and t0, which the prologue (0x801E9F8C, 0x801E9FC0) and the tail itself (0x801EA88C) zero and no row arm sets, so every branch here goes one way"
