@@ -12,6 +12,7 @@ use legaia_engine_battle::target_picker::SlotState;
 use psx_retail_exec::{Cpu, Stop};
 
 const STATE_MACHINE: u32 = 0x801D_0748;
+const WINDOW: u32 = 0x801D_388C;
 const OVERLAY_BASE: u32 = 0x801C_E818;
 const CTX: u32 = 0x8012_0000;
 const CTX_PTR: u32 = 0x8007_BD24;
@@ -36,13 +37,16 @@ fn frame(cpu: &mut Cpu, pad: u32) {
 
 #[test]
 fn an_arts_entry_debits_and_ends_as_retail_does() {
-    differential!(prot(898, STATE_MACHINE));
+    differential!(prot(898, STATE_MACHINE), prot(898, WINDOW));
     let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
     cpu.mem
         .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    // The window opener's cases `0xB` / `0xC` / `0x26` / `0x2F` run nested;
+    // the ledger notes them as they are entered.
+    cpu.watched.insert(WINDOW);
     for stub in [
         0x8004_FCC8u32, // the blip
         0x801D_3444,    // the frame's HUD pass
