@@ -1258,9 +1258,9 @@ fn the_strike_return_waits_and_taunts_as_retail_does() {
         let mut h = host();
         h.taunt = taunt;
         h.drawn[usize::from(target)] = drawn;
-        for s in 0..3 {
-            h.actors[s].liveness = party_hp[s];
-            h.actors[s].hp = party_hp[s];
+        for (a, hp) in h.actors.iter_mut().zip(party_hp) {
+            a.liveness = hp;
+            a.hp = hp;
         }
         let b = &mut h.actors[usize::from(slot)];
         b.current_anim = committed;
