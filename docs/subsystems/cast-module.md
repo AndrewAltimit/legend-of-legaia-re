@@ -3626,11 +3626,12 @@ reads the pass's sum: Barra's arm 6 adds `(p + 7) >> 3` and tests the sum agains
 `0xA1` (`0x801F70D4..0x801F7104`), so every vsync of the pass that carries the word
 across the line climbs. Tested tick by tick, the `0x8F` film's turn-round pass sank a
 vsync first, and every later pass of the arc stood `352` TR z units short (camera
-`15.2` px on `--retail-steps`). And a one-shot store beside a rate is not repeated over
+`15.2` px to `2.7` on `--retail-steps`). And a one-shot store beside a rate is not repeated over
 the rest of a handing-over pass: Gilium's arm `0xF` exit drops TR y by `0x100` once
 (`addiu v0,v0,-0x100` at `0x801F81A8`) beside its `yaw += 4 delta`
 (`ArmDirection::rest_drift`); repeated, arm `0x10` opened at TR y `-512` where the
-`0x95` film's retail camera reads `-256`. Grade `disassembly` + `capture`.
+`0x95` film's retail camera reads `-256` (image `.966` to `.986` on `--retail-steps`).
+Grade `disassembly` + `capture`.
 
 <a id="barra-seat-writes"></a>
 
