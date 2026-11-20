@@ -509,7 +509,7 @@ fn both_master_mode_two_writers_are_pinned() {
 // -- the executable dispatcher -------------------------------------
 
 fn tick(state: &mut TitleTickState, pad: TitleTickPad) -> Vec<TitleTickEffect> {
-    state.step(pad, TitleCardStatus::default())
+    state.step(pad, &mut TitleCardStatus::default())
 }
 
 #[test]
@@ -692,9 +692,9 @@ fn the_grid_cursor_wraps_over_the_five_by_three_slot_grid() {
 
 #[test]
 fn the_second_argument_pre_selects_a_menu_row() {
-    // The two Init arms nothing in retail's production caller uses:
-    // `FUN_801E36A0` passes 0, but 1 / 2 land straight on 0x14 with
-    // the row already stashed.
+    // The two Init arms the title's caller never takes: `FUN_801E36A0`
+    // passes 0, the pause menu's Save / Load pass 1 / 2 and land straight
+    // on 0x14 with the row already stashed.
     for (arg, row) in [(1u32, 0u32), (2, 1)] {
         let mut s = TitleTickState::with_entry_word(0);
         s.arg1 = arg;

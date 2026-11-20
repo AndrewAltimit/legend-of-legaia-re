@@ -1464,3 +1464,14 @@ a cursor stepped below zero lands on `0`; and it reset the frame cursor past `co
 `FUN_80016444`'s pass plan, the `READ INIT` body `FUN_801CE9C0` (whose CLUT-row load at `(0, 500)` sets two of its
 sixteen entries and takes the rest from the routine's uninitialised stack) and the animated-mesh renderer `FUN_8001B964`
 posing a sprite-arm node's parts match.
+
+The front end's tick `FUN_801DD35C`, run over every sub-mode with the card driver's words dealt at random, showed the
+port's model of its card screens wrong in most handlers. The card check `0x15` had its two arms swapped (the any-button
+return is the timeout prompt's, not the probe's); the main menu `0x14` stepped the title's row counter where retail steps
+its own (`state[-0xe9c]`), stored the pick in the wrong word and ignored the two panel fades that hold its input; the
+grid `0x0B` kept a Load's confirm on the grid and buzzed only on a valid cell; `AttractIdle` wrapped the epilogue's
+cursor against a row count of `-1`; the format operation behind `0x12` had no phases, and its exit fired on phase `0x0D`
+where retail leaves from `0x0C`. The epilogue returned early on any second argument, which is how the pause menu's Load
+and Save (`(1, 2)` / `(1, 1)` from `0x801DAEB4` / `0x801DAF84`) call the routine, so their result re-routes, cancels and
+cursors never ran; and the card words were read-only, so a staged operation never reached the epilogue's poll. A Continue
+whose save has story flag `0x1A` set raises the debug-mode word `0x8007B98C` (`0x801DFB14`); the engine never does.

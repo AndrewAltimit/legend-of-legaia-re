@@ -74,9 +74,12 @@
 //!   arms overwrite that: `0x11` when the entry word at `_DAT_8007BB00`
 //!   is non-zero (`0x801DD97C`), and `0x14` when the tick's **second
 //!   argument** is `1` or `2` (`0x801DDA58` / `0x801DDA80`), which also
-//!   pre-selects the menu row in `state[+0x200]`. The production caller
-//!   `FUN_801E36A0` passes `0`, so only the entry-word arm runs in the
-//!   normal flow.
+//!   pre-selects the menu row in `state[+0x200]`. The title's caller
+//!   `FUN_801E36A0` passes `(0, 0)`, so only the entry-word arm runs on the
+//!   title; the pause menu's Load and Save call the same routine as
+//!   `(1, 2)` (`0x801DAEB4`) and `(1, 1)` (`0x801DAF84`), and a raised
+//!   entry word clears the second argument for the frame (`move fp,s5` in
+//!   the delay slot at `0x801DD984`).
 //!
 //!   **The `0x02` arm is dead on retail, twice over.** The boot
 //!   `init.pak` (`FUN_801CE9C0`) raises `_DAT_8007BB00` to `1`

@@ -57,17 +57,25 @@ pub const OP_KIND_LOAD: u32 = 1;
 /// [`PHASE06_LAUNCH_GAME_PC`](super::PHASE06_LAUNCH_GAME_PC).
 pub const PHASE16_LOAD_LAUNCH_PC: u32 = 0x801D_FAFC;
 
-/// Reads the tick makes of state the memory-card / disc half of the
-/// front-end owns. Every field names the retail address the guard reads;
-/// a cold boot that never opens a card screen leaves all of them at their
-/// [`Default`] zero, which is exactly what the retail globals hold there.
+/// The memory-card words the tick shares with the card driver
+/// (`FUN_801E373C` and the routines it starts). Every field names the
+/// retail address; a cold boot that never opens a card screen leaves all of
+/// them at their [`Default`] zero, which is what the retail globals hold
+/// there.
+///
+/// The tick reads these **and writes them**: mode `0x0E` stages
+/// `op_status`, `0x13` / `0x17` count retries and clear the fault, the
+/// shared epilogue raises `ready`, and so on. [`TitleTickState::step`]
+/// therefore takes them by `&mut`, and a host that keeps them across frames
+/// sees what retail's globals would hold.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TitleCardStatus {
-    /// `state[-0xec0]` (`0x801EF140`): a card operation is in flight.
+    /// `state[-0xec0]` (`0x801EF140`): the last transfer's status (`1`
+    /// failed and retryable, `2` a verify mismatch `0x05` raises).
     pub busy: i32,
     /// `state[-0xef4]` (`0x801EF10C`): the last operation errored.
     pub error: i32,
-    /// `state[-0xec4]` (`0x801EF13C`): the last operation's result code.
+    /// `state[-0xec4]` (`0x801EF13C`): the last write's result code.
     pub result: i32,
     /// `state[-0xebc]` (`0x801EF144`): the retry latch.
     pub retry_latch: i32,
@@ -91,20 +99,36 @@ pub struct TitleCardStatus {
     pub has_blocks: i32,
     /// `state[+0x1DC]`: the staged operation is ready to commit.
     pub ready: i32,
-    /// `state[+0x329C]`: the operation-status word the epilogue reads.
+    /// `state[+0x329C]`: the operation the epilogue polls (`0` idle, `1` a
+    /// save, `2` a load, `7` a format).
     pub op_status: i32,
     /// `state[+0x1D0]`: the block-transfer progress bar's target.
     pub draw_done: i32,
     /// `state[+0x228]`: the grace countdown `0x07` seeds with `0x78`.
     pub grace: i32,
-    /// `state[+0x1C0]`: the sub-dispatch phase of mode `0x12` (21-entry
-    /// inner JT at `0x801CF2AC`).
+    /// `state[+0x1C0]`: the phase of mode `0x12`'s format operation
+    /// (21-entry inner JT at `0x801CF2AC`).
     pub op_phase: i32,
-    /// `state[+0x3288]`: mode `0x12`'s inner phase-`0x0D` hold timer.
+    /// `state[+0x3288]`: that operation's hold timer.
     pub op_timer: i32,
-    /// The picked grid cell passed its `FUN_801E3F74` status check.
-    pub slot_ok: bool,
-    /// The loaded block passed mode `0x05`'s `slot[0x1FFC] == 1` check.
+    /// `state[+0x1C4]`: format attempts (phase `0x0D` gives up at 3).
+    pub op_attempts: i32,
+    /// `state[+0x328C]`: the format's outcome (`2` = gave up).
+    pub op_result: i32,
+    /// `state[+0x220]`: the format request `0x15` clears and phase 1 tests
+    /// for `3`.
+    pub op_request: i32,
+    /// `state[+0x3804]`: the card driver's last reply (`-2` = unformatted).
+    pub op_reply: i32,
+    /// `state[-0xe80]` (`0x801EF180`): the card probe has answered; `0x15`
+    /// waits on it.
+    pub probe: i32,
+    /// What `FUN_801E3F74` says of the picked grid cell: `1` a readable
+    /// save, `3` a block a save may take, `2` neither, `4` the cell past
+    /// the grid. A Load takes `1`, a Save `1` or `3`.
+    pub slot_status: i32,
+    /// The loaded block's checksum matches its `slot[0x1FFC]` word (mode
+    /// `0x05`, `FUN_801E38D8`).
     pub verify_ok: bool,
     /// `state[-0xf00]` (`0x801EF100`): a card read is still outstanding;
     /// one of the six flags mode `0x0A` aborts on.
@@ -163,6 +187,9 @@ pub enum TitleTickEffect {
     /// `0x16`'s load route ([`PHASE16_LOAD_LAUNCH_PC`]) from mode `0x06`'s
     /// new-game route ([`PHASE06_LAUNCH_GAME_PC`](super::PHASE06_LAUNCH_GAME_PC)).
     LaunchGame { from_load: bool },
+    /// The tick called the card driver's reset `FUN_801E373C(arg)` (`1`
+    /// re-probes the slot, `0` only clears the operation).
+    CardReset { arg: u32 },
 }
 
 /// The tick's own state - the fields the 25 handlers and the shared
@@ -179,8 +206,9 @@ pub struct TitleTickState {
     /// `state[+0x208]` - the sub-mode the previous frame ran, which the
     /// preamble compares against to log a mode change.
     pub prev_submode: u8,
-    /// `param_2` (`a1`/`s8`). The production caller `FUN_801E36A0` passes
-    /// `0`; `1` / `2` are the re-entry arms that pre-select a menu row.
+    /// `param_2` (`a1`/`s8`). The title's caller `FUN_801E36A0` passes
+    /// `0`; the pause menu's Save / Load pass `1` / `2`, the arms that
+    /// pre-select a menu row.
     pub arg1: u32,
     /// [`ENTRY_WORD_ADDR`].
     pub entry_word: u32,
@@ -223,6 +251,49 @@ pub struct TitleTickState {
     /// `FUN_801E1114` model pass. Negative on every handler that does not
     /// want it.
     pub remap_gate: i32,
+    /// `0x8007B834` - the row the main menu (`0x14`) last confirmed, which
+    /// `0x07` hands to the remap gate.
+    pub menu_row: i32,
+    /// `state[-0xe9c]` (`0x801EF164`) - the main menu's own row counter.
+    pub main_row: i32,
+    /// `state[-0xe98]` (`0x801EF168`) - the row the card was last probed
+    /// for; `0x07` re-probes when [`Self::menu_row`] differs.
+    pub probed_row: i32,
+    /// `0x8007B7CC` - the slot index (`x + 5y`) the grid cursor is derived
+    /// from.
+    pub slot_index: i32,
+    /// `state[-0xe70]` (`0x801EF190`) - the epilogue's free-running fade.
+    pub alpha_a: i32,
+    /// `state[-0xe6c]` (`0x801EF194`) - the card panel's fade.
+    pub alpha_b: i32,
+    /// `state[-0xe60]` (`0x801EF1A0`) - the card text's fade.
+    pub alpha_c: i32,
+    /// `state[-0xe68]` (`0x801EF198`) - raises the epilogue's ramp of
+    /// [`Self::alpha_b`] / [`Self::alpha_c`].
+    pub alpha_gate: i32,
+    /// `state[-0xe58]` (`0x801EF1A8`) - the fault message's flash timer.
+    pub fault_flash: i32,
+    /// `state[-0xea4]` (`0x801EF15C`) - one frame's sweep direction (`0`
+    /// down, `1` up), consumed by the next preamble.
+    pub sweep_dir: i32,
+    /// `state[-0xea0]` (`0x801EF160`) - the sweep the preamble steps.
+    pub sweep: i32,
+    /// `state[-0xe90]` (`0x801EF170`) - the preamble's frame counter.
+    pub frame_counter: i32,
+    /// `state[-0xed0]` (`0x801EF130`) - arms the main menu's cancel reset;
+    /// raised by the fault message `0x08`.
+    pub cancel_arm: i32,
+    /// `state[-0xef8]` (`0x801EF108`) - the card has been probed once;
+    /// `0x07` adds `0x96` to the grace while it is down.
+    pub probed: i32,
+    /// `state[-0xed4]` (`0x801EF12C`) - `0x08` raises it and `0x07` adds
+    /// `0xB4` to the grace for it.
+    pub fault_seen: i32,
+    /// `state[-0xecc]` (`0x801EF134`) - the fault message's own timer;
+    /// past `0xB4` it resets the card each frame.
+    pub fault_timer: i32,
+    /// `0x8007B910` - the music level the attract and launch fades write.
+    pub music_level: i32,
     /// The per-frame cancel target register `s3`. `None` is retail's
     /// `-1` (no cancel arm this frame).
     pub cancel_target: Option<u8>,

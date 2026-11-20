@@ -155,3 +155,58 @@ entry = "0x801CF3BC"
 range = "0x801CF510..0x801CF53C"
 verdict = "unreachable"
 reason = "PROT 0972 state 0's debug venue menu (cursor on pad 0x4000, confirm on 0x20, the six rod and lure grants), entered only when the field-entry word `_DAT_8007B8B8` is zero (0x801CF4A0); the door warp into the pond sets it (FUN_80016230's mode-0x18 snapshot)."
+
+# lane D
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DD420..0x801DD508"
+verdict = "unported"
+reason = "PROT 0899 title tick: the once-per-overlay setup pass behind state[+0x230] (VRAM clears via FUN_80058298, string table loads via FUN_800198E0, then exit); the port's TitleTickState starts set up and the hosts load the title assets themselves"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DD50C..0x801DD50C"
+verdict = "unported"
+reason = "PROT 0899 title tick: a0 (s1) gates only the full-screen backdrop packet built at 0x801DD524 for FUN_8003D2C4; the port draws no packets from the tick"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DD60C..0x801DD60C"
+verdict = "unported"
+reason = "PROT 0899 title tick: clamps the play-time digits (0x8007C570 / 60) to 99:59 for the card screen's string at 0x801E4FC8; draw text only, the save-select builders format their own play time"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DD9F0..0x801DDA24"
+verdict = "unported"
+reason = "PROT 0899 title tick Init: walks the streamed title pack's size-prefixed records into FUN_800198E0 after the cold-boot load; the port reports the load as TitleTickEffect::LoadTitleAssets and the host unpacks"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DE958..0x801DEA58"
+verdict = "unported"
+reason = "PROT 0899 title tick 0x0A: the block-by-block directory walk (state[+0x1D8] sub-step, name copy FUN_80056758, directory bytes at 0x801F2A48/0x801F2A68); the port takes the walk's progress as TitleCardStatus::scan_done and the engine reads card directories through its own backend"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DFA44..0x801DFA44"
+verdict = "unreachable"
+reason = "PROT 0899 title tick 0x16: the bgez is the rounding fix-up of (level << 8) - level, and level is clamped to [0, 0xFFF] two branches earlier, so the product is never negative"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DFB14..0x801DFB14"
+verdict = "unported"
+reason = "PROT 0899 title tick 0x16 load route: FUN_8003CE64(0x1A) tests story flag 0x1A in the loaded save and, when set, stores op_kind (1) into the debug-mode word 0x8007B98C; the engine's Continue path never arms that word (port gap)"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DFCD4..0x801DFD98"
+verdict = "unported"
+reason = "PROT 0899 title tick epilogue: picks which card panels FUN_801E1C1C / FUN_801E06C0 draw (sub-mode, state[+0x1CC], state[-0xeb0]); the port's title draws come from title_draw_list and the save-select builders"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DFEFC..0x801DFEFC"
+verdict = "unreachable"
+reason = "PROT 0899 title tick epilogue: rewrites a cancel target of 2 only while the entry word 0x8007BB00 is up, and the one handler that sets s3 = 2 (0x14 at 0x801DE06C) does so only when that word is zero; nothing between changes it"
