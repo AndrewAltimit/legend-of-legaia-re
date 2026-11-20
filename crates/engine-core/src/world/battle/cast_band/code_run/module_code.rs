@@ -2425,9 +2425,9 @@ impl World {
             {
                 self.land_split_hit(hits, hit, caster_slot, victim_slot);
                 // Hits short of the last clear the readout flag
-                // `0x8007B64C` beside their `HP - 1` cap: the cluster opens
-                // on the last.
-                self.battle.combo_cluster_held = hit < hits.spares_below;
+                // `0x8007B64C` (PROT 0937 beside its `HP - 1` cap, PROT 0939
+                // on its own test): the cluster opens on the last.
+                self.battle.combo_cluster_held = hit < hits.holds_cluster_below;
             }
             if let Some(site) = arm.hit_site
                 && let Some(shape) = legaia_engine_cast::cast_module_ticks::damage_shape_for(entry)
@@ -2894,6 +2894,11 @@ impl World {
         else {
             return;
         };
+        // Hits 1..3 store `0` into the readout flag (`0x801F70F4..0x801F70FC`),
+        // so the cluster the cast's arming held opens off the fourth. A hit
+        // that downs the victim ends the count, and lets the cluster go with
+        // it.
+        self.battle.combo_cluster_held = hit < ticks::SPORE_GAS_HITS.holds_cluster_below && !dead;
         let party = victim_slot < self.party.party_count;
         let immune = party
             && self

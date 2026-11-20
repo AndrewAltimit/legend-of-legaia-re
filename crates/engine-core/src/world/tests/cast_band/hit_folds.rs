@@ -377,3 +377,73 @@ fn arming_a_summon_drops_the_last_casts_hit_bookkeeping() {
         assert_eq!(world.casting.module_hit_arm, None);
     }
 }
+
+/// Drive capture cast `id` (PROT `entry`) on seat 3 against seat 0 and check
+/// the combo cluster through its split hits on `arm`: held from the arming
+/// (the HUD reads the hold a frame late), held through hits 1..3, let go on
+/// the fourth.
+fn split_hits_hold_the_cluster(entry: u32, id: u8, arm: u8) {
+    use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    const CASTER: u8 = 3;
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    world.battle_ctx.active_actor = CASTER;
+    world.actors[CASTER as usize].battle_monster_id = Some(180);
+    world.actors[CASTER as usize].battle.active_target = 0;
+    world.battle.set_battle_attack(CASTER, 300);
+    for i in 0..8 {
+        world.actors[i].battle.hp = 9000;
+        world.actors[i].battle.max_hp = 9000;
+    }
+    let mut entries = vec![SpellEntry::default(); 0x100];
+    entries[id as usize].class = CAPTURE_CLASS;
+    entries[id as usize].sub_class = (entry - 935) as u8;
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+        spell_names: Some(SpellNameTable::from_entries(entries)),
+        ..Default::default()
+    });
+    assert_eq!(world.cast_module_for(id), Some(entry));
+    world.battle.combo_cluster_held = false;
+    world.arm_capture_cast_module(id);
+    assert!(
+        world.battle.combo_cluster_held,
+        "armed: the cluster is held before the first hit's popup"
+    );
+    let mut hits = 0;
+    for _ in 0..20_000 {
+        world.clock.display_frames += 1;
+        world.battle.hit_fx.clear();
+        let phase = world.casting.module_phase;
+        let busy = world
+            .run_cast_module_code(id, phase)
+            .is_some_and(|r| r.busy);
+        if phase == arm && world.battle.hit_fx.iter().any(|f| f.target_slot == 0) {
+            hits += 1;
+            assert_eq!(
+                world.battle.combo_cluster_held,
+                hits < 4,
+                "hit {hits}: held through hits 1..3, let go on the fourth"
+            );
+        }
+        if !busy || hits == 4 {
+            break;
+        }
+    }
+    assert_eq!(hits, 4, "arm {arm} lands four hits");
+}
+
+/// PROT 0937's Hyper Lightning: arm 7's hits 1..3 store `0` into the readout
+/// flag `0x8007B64C` beside their `HP - 1` cap (`sb zero,-0x49B4(v1)` at
+/// `0x801F76F8`).
+#[test]
+fn hyper_lightning_holds_the_cluster_until_its_fourth_hit() {
+    split_hits_hold_the_cluster(937, 0x4C, 7);
+}
+
+/// PROT 0939's Spore Gas: arm 4 bumps its count ahead of the roll and every
+/// hit but the fourth stores `0` into the readout flag (`bne` on `4`,
+/// `sb zero,-0x49B4(v0)` at `0x801F70F4..0x801F70FC`).
+#[test]
+fn spore_gas_holds_the_cluster_until_its_fourth_hit() {
+    split_hits_hold_the_cluster(939, 0x4F, 4);
+}
