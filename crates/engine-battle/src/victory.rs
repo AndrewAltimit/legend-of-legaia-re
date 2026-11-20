@@ -249,6 +249,36 @@ pub fn victory_pose_formation_override(pose: u8, first_monster: u8) -> u8 {
     }
 }
 
+/// The framing depth `ctx[+0x6D0]` the win arm leaves at the end of its
+/// pose pick (phase 0, `0x8004ED04..0x8004ED48`): under the Battle Camera
+/// option's `Close` (config word `0x800846C0 == 0`) the depth halves
+/// (`sra` after the sign bias, rounding toward zero), and a pose seat whose
+/// character id is `4` (`DAT_8007BD10[seat]`) adds `0x100`; any other option
+/// leaves it.
+///
+/// PORT: FUN_8004E568 (`0x8004ED04..0x8004ED48`)
+pub fn victory_pose_camera_depth(depth: i16, camera_close: bool, seat_char: u8) -> i16 {
+    if !camera_close {
+        return depth;
+    }
+    let half = depth / 2;
+    if seat_char == 4 {
+        half.wrapping_add(0x100)
+    } else {
+        half
+    }
+}
+
+/// The camera the win arm's results frame seats (`0x8004EF1C..0x8004EF4C`):
+/// the yaw counter `ctx[+0x6DA]` at `0x800` when the pose seat's character id
+/// is `2` (Noa), else `0x780`, and the framing depth `ctx[+0x6D0] = 0x4E0`.
+/// Returns `(yaw, depth)`.
+///
+/// PORT: FUN_8004E568 (`0x8004EF1C..0x8004EF4C`)
+pub fn victory_results_camera(seat_char: u8) -> (i32, i16) {
+    (if seat_char == 2 { 0x800 } else { 0x780 }, 0x4E0)
+}
+
 /// The boss bark the annihilated arm fires once on its results frame
 /// (`0x8004FA24..0x8004FAE8`, through the cue dispatcher `FUN_8004FCC8`, an
 /// id `>= 0x100` being a CD-XA voice): keyed on the battle's first monster id

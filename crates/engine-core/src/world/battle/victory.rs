@@ -145,6 +145,15 @@ impl World {
                 seq.pose_id = self.pick_victory_pose(seq.pose_actor);
                 // ... and streams the pose's voice into VAB slot 7.
                 seq.voice_bank = self.victory_voice_bank(seq.pose_actor, seq.pose_id);
+                // ... and, under the Close camera, pulls the framing depth in
+                // (`0x8004ED04..0x8004ED48`).
+                let depth = victory_pose_camera_depth(
+                    self.battle.camera_frame_height,
+                    self.toggles.battle_camera
+                        == legaia_engine_system::option_values::BattleCameraOpt::Close,
+                    self.victory_seat_char(seq.pose_actor),
+                );
+                self.set_victory_camera_depth(depth);
             }
             BattleEndCause::PartyWipe => {
                 self.open_battle_results_frame(&mut seq);
@@ -167,6 +176,22 @@ impl World {
             }
         }
         self.battle.victory = Some(seq);
+    }
+
+    /// The pose seat's character id, `DAT_8007BD10[seat]` (`1` Vahn, `2`
+    /// Noa, `3` Gala, `4` Terra), or `0` for a seat outside the party.
+    fn victory_seat_char(&self, seat: usize) -> u8 {
+        if seat >= usize::from(self.party.party_count) {
+            return 0;
+        }
+        self.party_roster_slot(seat) as u8 + 1
+    }
+
+    /// Store the framing depth `ctx[+0x6D0]` the win arm writes, on both of
+    /// the port's copies.
+    fn set_victory_camera_depth(&mut self, depth: i16) {
+        self.battle.camera_frame_height = depth;
+        self.battle_ctx.camera_frame_height = depth;
     }
 
     /// The seat the results sequencer frames and poses: `ctx[+0x13]`, the
@@ -367,6 +392,13 @@ impl World {
                         .flag_bits
                         .set(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE);
                 }
+                // The results camera: the yaw counter and the framing
+                // depth (`0x8004EF1C..0x8004EF4C`).
+                let (yaw, depth) = victory_results_camera(self.victory_seat_char(seq.pose_actor));
+                if let Some(cam) = self.battle.camera.as_mut() {
+                    cam.set_action_yaw_base(yaw);
+                }
+                self.set_victory_camera_depth(depth);
                 // A standing member whose queued item never ran gets the
                 // copy back (`0x8004F354..0x8004F38C`); the floor below
                 // reads the pre-floor HP the per-member loop tests first.

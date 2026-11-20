@@ -50,6 +50,9 @@ struct Win {
     chance: [u8; 5],
     purse: u32,
     special: u32,
+    /// The pose seat `ctx[+0x13]`, whose character id seats the results
+    /// camera.
+    pose_seat: u8,
     seed: u32,
 }
 
@@ -74,8 +77,10 @@ fn gen_win(rng: &mut Rng, threshold: impl Fn(usize, u8) -> u32) -> Win {
             _ => rng.below(100_000),
         },
         special: if rng.below(10) == 0 { 0x200 } else { 0 },
+        pose_seat: 0,
         seed: rng.next(),
     };
+    w.pose_seat = rng.below(w.party as u32) as u8;
     let mut standing = 0;
     for m in 0..3 {
         w.member_hp[m] = if rng.below(4) == 0 {
@@ -129,6 +134,8 @@ fn seed_retail(cpu: &mut Cpu, w: &Win) {
     }
     cpu.mem.wr8(CTX, w.party as u8);
     cpu.mem.wr8(CTX + 1, w.monsters as u8);
+    cpu.mem.wr8(CTX + 0x13, w.pose_seat);
+    cpu.mem.wr16(CTX + 0x6D0, 0x0C00);
     cpu.mem.wr8(gp + 0x332, 0);
     // The arm that pays: state 5, the seat's line finished, first pass.
     cpu.mem.wr32(gp + 0xA14, 5);
@@ -295,6 +302,18 @@ fn a_win_pays_what_retail_pays() {
                 (cpu.mem.rd32(rec), cpu.mem.rd8(rec + 0x130))
             })
             .collect();
+        // The results camera (`0x8004EF1C..0x8004EF4C`): the pose seat's
+        // character id is its seat byte, `seat + 1` here.
+        let (yaw, depth) = legaia_engine_battle::victory::victory_results_camera(w.pose_seat + 1);
+        assert_eq!(
+            (
+                cpu.mem.rd16(CTX + 0x6DA) as i32,
+                cpu.mem.rd16(CTX + 0x6D0) as i16
+            ),
+            (yaw, depth),
+            "round {round}: results camera, pose seat {}",
+            w.pose_seat
+        );
         let retail = (
             cpu.mem.rd32(PURSE),
             retail_xp,

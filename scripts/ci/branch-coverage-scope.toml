@@ -949,11 +949,6 @@ verdict = "unported"
 reason = "Noa (seat byte 2) on win pose 0x17 queues two DR_MOVE blits into the packet stream (0x1F8003A0) to swap her texture page; the engine's pose draw needs no VRAM copy."
 [[arm]]
 entry = "0x8004E568"
-range = "0x8004ED04..0x8004ED3C"
-verdict = "unported"
-reason = "With the Battle Camera option 0x800846C0 at 0 the win arm halves the camera distance ctx[+0x6D0], adding 0x100 for seat byte 4; the port has no win-arm camera seed - a port gap."
-[[arm]]
-entry = "0x8004E568"
 range = "0x8004F810..0x8004F890"
 verdict = "unported"
 reason = "The win's exit preloads the field through FUN_80025358 and frees the monster records through FUN_80017B94 by ctx[+0xC]; the engine loads synchronously and keeps no heap."
