@@ -2501,7 +2501,12 @@ pub(super) fn pad_rest_to(
             Run::Entered(s) => return Ok(Some(s)),
             Run::Battle(b) => return Err(format!("rest P2[{rec}]: {b}")),
             Run::Error(e) => return Err(e),
-            Run::Released | Run::Parked(_) => {}
+            // Never reached the bed: as for a keeper (below).
+            Run::Parked(_) => {
+                RESTED.with(|r| r.borrow_mut().remove(&name));
+                continue;
+            }
+            Run::Released => {}
         }
         if rest_gauge(session) >= line {
             // A rest that worked may be taken again after the next fights.
@@ -2527,7 +2532,17 @@ pub(super) fn pad_rest_to(
             Run::Entered(s) => return Ok(Some(s)),
             Run::Battle(b) => return Err(format!("rest talk P1[{slot}]: {b}")),
             Run::Error(e) => return Err(e),
-            Run::Released | Run::Parked(_) => {}
+            // The walk to the keeper never reached the talk (an encounter
+            // broke it off): nothing was learned about the rest, so it is
+            // neither dry nor spent for the scene. `deroa`'s innkeeper P1[7]
+            // was written off after one such walk, and the party trained
+            // there from half HP to one point and met Jette in `chitei2`,
+            // which has no rest, with nothing left.
+            Run::Parked(_) => {
+                RESTED.with(|r| r.borrow_mut().remove(&name));
+                continue;
+            }
+            Run::Released => {}
         }
         if rest_gauge(session) >= line {
             // A rest that worked may be taken again after the next fights.
