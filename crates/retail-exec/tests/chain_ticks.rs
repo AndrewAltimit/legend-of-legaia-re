@@ -628,8 +628,9 @@ type SummonTick =
 
 /// Walk one summon tick body off its image: the arms it left, each as
 /// `(phase, phase after, busy)`, and whether it reached its Done.
-/// Each arm a walk left: `(phase, phase after, busy)`.
-type Walk = Vec<(u8, u8, bool)>;
+/// Each arm a walk left: `(phase, phase after, busy, the stage byte
+/// ctx[+0x278] after it)`.
+type Walk = Vec<(u8, u8, bool, u8)>;
 
 fn summon_walk(entry: u32, va: u32, action: u8) -> Option<(Walk, bool)> {
     let disc = disc()?;
@@ -649,10 +650,24 @@ fn summon_walk(entry: u32, va: u32, action: u8) -> Option<(Walk, bool)> {
             });
         } else if WRAPPERS.contains(&target) {
             cpu.stub(target, ROLL);
+        } else if target == SPAWN_PART && entry == 922 {
+            // PROT 0922 arm 18 keeps the handles of the 23 crystals it
+            // spawns and arm 19 moves them: each spawn gets an object.
+            let next = Rc::new(std::cell::Cell::new(PARTS));
+            cpu.hook(target, move |r, m| {
+                let at = next.get();
+                next.set(at + 0x80);
+                for o in (0..0x80).step_by(4) {
+                    m.wr32(at + o, 0);
+                }
+                r.r[V0] = at;
+            });
         } else {
             cpu.stub(target, 0);
         }
     }
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
     for b in 0..CTX_LEN as u32 {
         cpu.mem.wr8(CTX + b, 0);
     }
@@ -678,10 +693,15 @@ fn summon_walk(entry: u32, va: u32, action: u8) -> Option<(Walk, bool)> {
     cpu.mem.wr8(SCALAR, cam::SPEED_SCALAR as u8);
     cpu.mem.wr8(STEP, 1);
     let mut path = Vec::new();
+    let mut held = 0;
     for _ in 0..40_000 {
+        // An arm that plays its clip backward (PROT 0922 arm 8 rewinds the
+        // cursor to the start) waits on a cursor near zero: a long hold
+        // gets one pass with every cursor at the start.
+        let cursor = if held > 64 { 0 } else { 0x7FFF };
         for s in 0..8u32 {
             cpu.mem.wr8(ACTOR + s * STRIDE as u32 + 0x1D9, 0);
-            cpu.mem.wr16(NODES + s * 0x100 + 0x68, 0x7FFF);
+            cpu.mem.wr16(NODES + s * 0x100 + 0x68, cursor);
         }
         let phase = cpu.mem.rd8(CTX + 0x279);
         if cpu.call(va, &[]) != Stop::Returned {
@@ -690,9 +710,11 @@ fn summon_walk(entry: u32, va: u32, action: u8) -> Option<(Walk, bool)> {
         let busy = cpu.regs.r[V0] != 0;
         let after = cpu.mem.rd8(CTX + 0x279);
         if busy && after == phase {
+            held += 1;
             continue;
         }
-        path.push((phase, after, busy));
+        held = 0;
+        path.push((phase, after, busy, cpu.mem.rd8(CTX + 0x278)));
         if !busy {
             return Some((path, true));
         }
@@ -773,7 +795,11 @@ fn the_summon_tick_bodies_walk_their_phases_as_retail_does() {
                 path.len()
             ));
         }
-        for &(p, a, busy) in &path {
+        // PROT 0922's port carries the stage byte its arms 0, 11, 12 and 23
+        // store; its walk holds it arm by arm. (The wash block beside it,
+        // `ctx[+0x27A..]`, is the presentation decoder's, not the tick's.)
+        let mut stage = t::CastModuleCtx::default();
+        for &(p, a, busy, bytes) in &path {
             let mut ctx = t::CastModuleCtx {
                 phase: p,
                 ..Default::default()
@@ -786,11 +812,25 @@ fn the_summon_tick_bodies_walk_their_phases_as_retail_does() {
                     ctx.phase
                 ));
             }
+            if entry == 922 {
+                stage.phase = p;
+                port(&mut stage, &mut k, &mut v);
+                if stage.ctx_278 != bytes {
+                    failures.push(format!(
+                        "PROT 0922 arm {p:#x}: stage byte retail {bytes}, port {}",
+                        stage.ctx_278
+                    ));
+                }
+            }
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// The part spawn `FUN_80021B04` and the pool the walk hands its objects
+/// from.
+const SPAWN_PART: u32 = 0x8002_1B04;
+const PARTS: u32 = 0x8016_0000;
 const WATER_CRYSTALS: u32 = 0x801F_6A10;
 const SPIKEFISH: u32 = 0x801F_6A00;
 const ULTIMATE_RAVE: u32 = 0x801F_6A18;

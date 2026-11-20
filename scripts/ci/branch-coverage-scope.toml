@@ -98,3 +98,9 @@ entry = "0x801CF5BC"
 range = "0x801CFB64..0x801CFB64"
 verdict = "unreachable"
 reason = "PROT 0979: the fade switch's floor at zero on `(elapsed + K - total) * n`, behind its own `total - K < elapsed` test, so the product is at least `n` and the `bgez` always takes."
+
+[[arm]]
+entry = "0x801F6A3C"
+range = "0x801F6AB8..0x801F6AB8"
+verdict = "unreachable"
+reason = "PROT 0922: the dispatch's out-of-range test (`sltiu 0x19`); the phase only moves by the shared tail's `+1` (0x801F8A84), arm 20's `+2` (0x801F87D0) and arm 23's `+1` (0x801F8DAC), and arm 24 returns zero (`move fp,zero` at 0x801F90AC), so the band stops calling before the phase reaches 25."
