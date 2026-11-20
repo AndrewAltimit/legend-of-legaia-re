@@ -420,8 +420,8 @@ fn the_status_clut_arms_upload_what_retail_uploads() {
             cpu.mem.wr16(a + 0x14C, 1);
             cpu.mem.wr16(a + 0x16E, status[s]);
             cpu.mem.wr8(a + 0x220, latch[s]);
-            for n in 0..3 {
-                cpu.mem.wr8(a + 0x221 + n as u32, limb_latch[s][n]);
+            for (n, l) in limb_latch[s].iter().enumerate() {
+                cpu.mem.wr8(a + 0x221 + n as u32, *l);
             }
             for (k, c) in palette[s].iter().enumerate() {
                 cpu.mem.wr16(PALETTES + s as u32 * 0x1E0 + 2 * k as u32, *c);
@@ -447,8 +447,8 @@ fn the_status_clut_arms_upload_what_retail_uploads() {
                 clut.arm(s as u8, status[s] & 4 != 0);
             }
             let mut rot = 0;
-            for n in 0..3 {
-                if limb_latch[s][n] != 0 {
+            for (n, l) in limb_latch[s].iter().enumerate() {
+                if *l != 0 {
                     rot |= status[s] & (8 << n);
                 }
             }
