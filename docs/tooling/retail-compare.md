@@ -4968,6 +4968,21 @@ yaw `3203` where the history's rung put `3198` (`image` `.944` to `.957`);
 `battle_tunnelb_nova_scythe_wind_mid_cast` `.985` to `.992`,
 `battle_jou_nova_v3_scythe_wind_mid_cast` `.992` to `.996`.
 
+The retake behind a monster's action takes the bytes' step too
+(`retake_lag_vsyncs`, `RetailBattle::display_lag`: the replay's retake
+`LEGAIA_CAPTURE_DISPLAY_LAG`, the displayed phase gate, the dimmed ambient
+base). Split consumer by consumer on the clamped states, that lag is the only
+reader that moves a monster cast:
+`battle_noaru_songi_genocidal_cannon_mid_cast` `.973` to `1.000` and
+`battle_jou_aluru_v3_aluru_cannon_mid_cast` `.938` to `.950` (ambient base
+`112` to `128`) on a retake of eight vsyncs. A party action keeps six:
+`battle_jou_party_vahn_chain_late`, whose film ran its displayed passes `4, 3`,
+falls `.957` to `.939` on eight. The stored frame step, the popup, spirit and
+HUD-glide lags, the fade lags and the camera's own step readers move nothing
+above `.002` either way, and the party hit-spark walk-back
+(`retail_action_fx_parts`) stays on the history's lag
+(`battle_jou_cort_181_strike` `.963` to `.961` on the bytes).
+
 The battle half still keeps the history's rung in `frame_step` itself, and
 not for want of a step: everything else that reads it measured both ways.
 Taking the bytes' `4` there lifts monster casts
