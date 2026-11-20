@@ -206,7 +206,18 @@ impl PagerPhase {
     /// the typing one, which [`ScriptGate::typing`] carries, and the picker
     /// arms ([`Self::is_picker`]).
     pub fn applies(state: u8) -> bool {
-        matches!(state, 0x02 | 0x05 | 0x0C | 0x0D | 0x0E | 0x0F) || Self::is_picker(state)
+        matches!(state, 0x02 | 0x05 | 0x0C | 0x0D | 0x0E | 0x0F)
+            || Self::is_picker(state)
+            || Self::is_collapse(state)
+    }
+
+    /// The `0x48` collapse (`0x801D92A4`): the press that dispatched a
+    /// page ending in `0x48` has run the record on past the box, and the
+    /// box shrinks to its centre line over the next calls. A gate on a
+    /// non-text op carries it ([`ScriptGate::met`]): the press is the
+    /// instant, which the replay's own paging re-times against the glide.
+    pub fn is_collapse(state: u8) -> bool {
+        state == 0x0A
     }
 
     /// A picker arm: the slide in (`0x11` / `0x13` / `0x15` / `0x17`) or the
@@ -581,10 +592,43 @@ impl ScriptGate {
         // landed too - `name_input_ui` is parked on the opening's `49 03`
         // one op after a 16-frame glide that lands under the prompt, and the
         // first tick on that PC is that glide's first frame.
-        let glide_landed = match self.glide_left {
-            Some(g) => world.camera.state.glide_frames <= g,
+        //
+        // A text gate caught mid-page whose retail mover is still in flight
+        // is met on the pager's phase alone: the box names the instant to
+        // the reveal unit, the capture frame stands the glide on retail's
+        // frames left (`Camera::align_glide_frames_left`), and the replay
+        // pages quicker than the recorded player, so its glide runs further
+        // behind the text. `juui1`'s cutscene record (flat `12`) types a
+        // line at `+0x438` under a long glide: retail's reveal counter `4`
+        // sat `196` frames from the glide's end, the engine's `264`, and
+        // gated on both the box stood fully typed over a frame that shows
+        // none. A gate just past a page's `0x48` press, the box collapsing
+        // ([`PagerPhase::is_collapse`]), is the same instant:
+        // `juui1_vortex_gala_box` is parked on `+0x23F` with the collapse
+        // one call in, and gated on the glide the engine's box had gone
+        // 22 ticks before the frame.
+        let collapse = self
+            .pager
+            .as_ref()
+            .is_some_and(|p| PagerPhase::is_collapse(p.state));
+        let mid_page = (text && (self.typing.is_some() || self.pager.is_some())) || collapse;
+        // The collapse also outranks a walking placement's leg: the leg is
+        // one more clock the paging re-times (`juui1_vortex_gala_box` waits
+        // on flat `8`'s face leg, which the engine's quicker press left
+        // landing well after its box had gone).
+        let clip_reached = if collapse {
+            self.latch.is_none_or(|cursor| {
+                world
+                    .player_script_clip_cursor()
+                    .is_some_and(|c| c >= cursor)
+            })
+        } else {
+            self.latch_reached(world)
+        };
+        let glide_landed = (match self.glide_left {
+            Some(g) => world.camera.state.glide_frames <= g || mid_page,
             None => world.camera.state.glide_frames <= 0,
-        } && self.latch_reached(world);
+        }) && clip_reached;
         // A box chains its `0x24` pages in one panel and holds the context's
         // PC on the first page's lead; retail's record PC steps onto each
         // page's lead on the press that turns to it, so a text gate on a

@@ -441,7 +441,12 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
         system_pc: scripts.system_pc,
         resumed_early: std::cell::Cell::new(false),
         typing: scripts.typing.filter(|_| s.op & 0x7F < 0x20),
-        pager: scripts.pager.clone().filter(|_| s.op & 0x7F < 0x20),
+        // A text op takes the mid-page arms ([`displayed_script_gate_from_retail`]
+        // adds the `0x48` collapse to a gate past the box).
+        pager: scripts
+            .pager
+            .clone()
+            .filter(|p| s.op & 0x7F < 0x20 && !PagerPhase::is_collapse(p.state)),
         latch: s.player_latch,
         walk: s.walk,
         tile_walk: s.tile_walk,
@@ -459,6 +464,18 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
 pub fn displayed_script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
     let mut g = script_gate_from_retail(scripts)?;
     g.wait = (i32::from(g.wait) - i32::from(scripts.display_lag)).max(0) as i16;
+    // A gate past a page's `0x48` press carries the collapse: the press is
+    // the displayed frame's instant, which the replay's quicker paging
+    // re-times against the glide and the walks the RAM gate waits on
+    // (`ScriptGate::met`). The state channels keep the RAM gate's legs.
+    if g.op & 0x7F >= 0x20
+        && let Some(p) = scripts
+            .pager
+            .as_ref()
+            .filter(|p| PagerPhase::is_collapse(p.state))
+    {
+        g.pager = Some(p.clone());
+    }
     // A text gate mid-page keeps the RAM's pager phase: the child meets it on
     // the engine's own pager and takes its frame `display_lag` ticks back
     // ([`ScriptGate::takes_displayed_frame`]). Two calls back from a box's
@@ -699,5 +716,28 @@ mod tests {
         assert!(g.pager.is_none());
         assert!(on_player_latch(0xAD, Some(vec![0xF8, 0x08])));
         assert!(!on_player_latch(0xAD, Some(vec![0x31, 0x08])));
+        // The `0x48` collapse is carried by the displayed gate past the box
+        // and only there: the record ran on with the press (`juui1_vortex_gala_box`,
+        // a `33` test behind the page), and a text op it parks on is the
+        // next page, which the collapse does not describe.
+        w32(&mut ram, PAGER_STATE, 0x0A);
+        let collapse = pager_phase(&ram, base);
+        assert_eq!(collapse.as_ref().map(|p| p.state), Some(0x0A));
+        let past_box = RetailScripts {
+            running: vec![script(0xB3)],
+            pager: collapse.clone(),
+            ..RetailScripts::default()
+        };
+        assert!(script_gate_from_retail(&past_box).unwrap().pager.is_none());
+        let g = displayed_script_gate_from_retail(&past_box).unwrap();
+        assert_eq!(g.pager.as_ref().map(|p| p.state), Some(0x0A));
+        assert!(g.takes_displayed_frame());
+        let on_text = RetailScripts {
+            running: vec![script(0x1F)],
+            pager: collapse,
+            ..RetailScripts::default()
+        };
+        let g = displayed_script_gate_from_retail(&on_text).unwrap();
+        assert!(g.pager.is_none());
     }
 }
