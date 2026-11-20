@@ -1143,3 +1143,28 @@ entry = "0x801DA2A0"
 range = "0x801DA3B8..0x801DA3B8"
 verdict = "unreachable"
 reason = "PROT 0899 sub-screen 0x15 step 1: the party picker FUN_801D688C answers 0..3, so a verdict past 3 (the arm that pages on it) never comes"
+
+# lane C
+# lane C: 801DE840
+# lane C: 801E76D4
+[[arm]]
+entry = "801E76D4"
+range = "0x801E77C8..0x801E77C8"
+verdict = "unported"
+reason = "PROT 0897: `lh v0,0x54(s1); bne` skips the anim toggles, camera block and debug readout to the OT tail while the controller actor's own phase word is live; the engine hosts the panel phase machines on world_map_panel_host, not on the controller, so WorldMapController::tick has no such gate"
+
+[[arm]]
+entry = "801E76D4"
+range = "0x801E7958..0x801E7A24"
+verdict = "unported"
+reason = "PROT 0897: the R1+R2 nudge of the debug marker vector 0x801F35A8/AA/AC (step 4, or 0x20 with Circle), which only the debug readout below prints and FUN_801E7448 marks; the port keeps no marker vector"
+
+[[arm]]
+entry = "801E76D4"
+range = "0x801E7A64..0x801E9AB0"
+verdict = "unported"
+reason = "PROT 0897: the top-view debug readout behind `anim_flags & 2 == 0` (0x801E7A50) - player tile and position, the marker vector and actor flag bits drawn as decimal text through FUN_8001AA68 (width in 0x801F2B80, colour in 0x8007B7B8), with the compiler's div-by-zero traps; no engine host draws the debug text"
+# lane C: 801DC0BC
+# lane C: 801D84D0 80039B7C
+# lane C: 80038158 8003774C 801D01B0
+# lane C: 80021DF4 800520F0 8001ADA4 800243F0 8001822C
