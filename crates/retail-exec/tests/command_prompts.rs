@@ -869,3 +869,208 @@ fn the_spell_target_cursors_go_where_retail_goes() {
         );
     }
 }
+
+/// State `0xFE`, the armed round (`0x801D31E8..0x801D328C`): the flow parks
+/// on `0xFF` with the action SM restarted at `0x00`, and a Run committed in a
+/// special battle forfeits the leg (`ctx[+0x274] = 0`, `_DAT_80084448 = 4`)
+/// unless the first monster is one of the four exempt ids, against
+/// `special_battle_run_forfeit`.
+#[test]
+fn the_armed_round_forfeits_a_special_battle_run_as_retail() {
+    differential!(prot(898, STATE_MACHINE));
+    use legaia_engine_battle_vm::battle_formulas::special_battle_run_forfeit;
+    let Some((mut cpu, _, _, _)) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const LEG_OUTCOME: u32 = 0x8008_4448;
+    cpu.stub(0x801D_99BC, 0);
+    cpu.stub(0x801D_8DE8, 0);
+    let mut rng = Rng(0x4152_4D44);
+    let mut forfeits = 0;
+    for round in 0..3000 {
+        let word: u32 = [0, 0, 0x100, 0x200, 0x300][rng.below(5) as usize];
+        let category = [0u8, 3, 5, 5][rng.below(4) as usize];
+        let first = [0xAF, 0x3D, 0x3E, 0x3F, 0x40, 0x3C, 0x01, 0xB6][rng.below(8) as usize];
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..3 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        cpu.mem.wr8(CTX, 1);
+        cpu.mem.wr8(CTX + 0x06, 0xFE);
+        cpu.mem.wr8(CTX + 0x07, 0x3C);
+        cpu.mem.wr8(CTX + 0x274, 7);
+        cpu.mem.wr8(CTX + 0x290, rng.below(2) as u8);
+        cpu.mem.wr8(ACTOR + 0x1DE, category);
+        cpu.mem.wr32(SPECIAL_WORD, word);
+        cpu.mem.wr8(BATTLE_ID, first);
+        cpu.mem.wr32(LEG_OUTCOME, 0);
+        cpu.mem.wr32(PAD, 0);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, 0);
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let label = format!("round {round}: word {word:#x} category {category} first {first:#x}");
+        assert_eq!(cpu.mem.rd8(CTX + 0x06), 0xFF, "{label}");
+        assert_eq!(cpu.mem.rd8(CTX + 0x07), 0, "{label}");
+        let retail = cpu.mem.rd8(CTX + 0x274) == 0 && cpu.mem.rd32(LEG_OUTCOME) == 4;
+        assert_eq!(
+            retail,
+            special_battle_run_forfeit(word, category, first),
+            "{label}"
+        );
+        forfeits += u32::from(retail);
+    }
+    assert!(forfeits > 100, "{forfeits}");
+}
+
+/// The pre-dispatch glide gate (`0x801D0B2C..0x801D0C58`) against
+/// `World::battle_command_glide_gate` and `World::take_command_pad_buffer`:
+/// a pass leaves while the glide stepper `FUN_801D9BBC` returns non-zero,
+/// parks a press made in its last five passes under the directional entry,
+/// spends one more pass clearing the latch in a staged battle, and the first
+/// dispatched pass reads the parked press when it has none of its own.
+#[test]
+fn the_glide_gate_holds_and_parks_as_retail() {
+    differential!(prot(898, STATE_MACHINE));
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::test_drivers::BattleTestDrivers;
+    use legaia_engine_system::option_values::BattleCommandOpt;
+    use legaia_engine_system::pad::PadButton;
+    let Some((mut cpu, _, _, _)) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const STAGE_ID: u32 = 0x8007_B64A;
+    // The stepper's return, and the pad word the dispatched pass reads
+    // (`s2` as the round prompt's chip draw is called).
+    let ret = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    let r2 = ret.clone();
+    cpu.hook(GLIDE, move |r, _| r.r[psx_retail_exec::V0] = r2.get());
+    let dispatched = std::rc::Rc::new(std::cell::Cell::new(None::<u32>));
+    let d2 = dispatched.clone();
+    cpu.hook(0x801D_B8F4, move |r, _| d2.set(Some(r.r[18])));
+    let packed = [
+        (LEFT, PadButton::Left),
+        (RIGHT, PadButton::Right),
+        (UP, PadButton::Up),
+        (DOWN, PadButton::Down),
+        (CONFIRM, PadButton::Cross),
+        (CANCEL, PadButton::Circle),
+    ];
+    let to_input = |word: u32| BattleCommandInput {
+        left: word & LEFT != 0,
+        right: word & RIGHT != 0,
+        up: word & UP != 0,
+        down: word & DOWN != 0,
+        cross: word & CONFIRM != 0,
+        circle: word & CANCEL != 0,
+        ..Default::default()
+    };
+    let mut rng = Rng(0x474C_4944);
+    let (mut gated, mut parked, mut latched, mut consumed) = (0, 0, 0, 0);
+    for round in 0..4000 {
+        let r = [0u32, 0, 0, 1, 3, 5, 6, 9][rng.below(8) as usize];
+        let latch = [0u8, 0, 2, 5][rng.below(4) as usize];
+        let stage = [0u8, 0, 3][rng.below(3) as usize];
+        let cross_entry = rng.below(4) == 0;
+        let pad = [0, 0, LEFT, RIGHT, CONFIRM, UP | CONFIRM][rng.below(6) as usize];
+        let park = [0, 0, LEFT, CONFIRM][rng.below(4) as usize];
+
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..3 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        cpu.mem.wr8(CTX, 1);
+        cpu.mem.wr8(CTX + 0x06, 0x1E);
+        cpu.mem.wr16(CTX + 0x6B2, u16::from(latch));
+        cpu.mem.wr32(CTX + 0x884, park);
+        cpu.mem.wr8(CTX + 0x275, 2);
+        cpu.mem.wr32(CTX + 0x880, LEFT);
+        cpu.mem.wr8(STAGE_ID, stage);
+        cpu.mem.wr32(PAD, pad);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, u32::from(cross_entry));
+        cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
+        cpu.mem.wr32(CANCEL_MASK, CANCEL);
+        cpu.mem.wr8(BATTLE_ID, 0);
+        ret.set(r);
+        dispatched.set(None);
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let retail_gated = dispatched.get().is_none();
+        let retail_park = cpu.mem.rd32(CTX + 0x884);
+        let retail_latch = cpu.mem.rd16(CTX + 0x6B2);
+
+        let mut w = World::new();
+        w.toggles.battle_command = if cross_entry {
+            BattleCommandOpt::CrossButton
+        } else {
+            BattleCommandOpt::DirectionalButtons
+        };
+        w.battle.widget_glide_return = r as u8;
+        w.battle.widget_glide_latch = latch;
+        w.battle.stage_id = stage;
+        w.battle.command_pad_buffer = (park != 0).then(|| to_input(park));
+        let raw = packed
+            .iter()
+            .filter(|(p, _)| pad & p != 0)
+            .fold(0u16, |m, (_, b)| m | b.mask());
+        w.input.set_pad(raw);
+        let port_gated = w.battle_command_glide_gate();
+        let label = format!(
+            "round {round}: ret {r} latch {latch} stage {stage} cross-entry {cross_entry} \
+             pad {pad:#x} park {park:#x} -> gated {retail_gated} park {retail_park:#x} latch {retail_latch}"
+        );
+        assert_eq!(retail_gated, port_gated, "gate: {label}");
+        if retail_gated {
+            gated += 1;
+            let port_park = w.battle.command_pad_buffer;
+            let want = (retail_park != 0).then(|| to_input(retail_park));
+            assert_eq!(
+                port_park.map(|p| (p.left, p.right, p.up, p.down, p.cross, p.circle)),
+                want.map(|p| (p.left, p.right, p.up, p.down, p.cross, p.circle)),
+                "park: {label}"
+            );
+            parked += u32::from(retail_park != park);
+            if stage != 0 {
+                assert_eq!(
+                    u16::from(w.battle.widget_glide_latch),
+                    retail_latch,
+                    "latch: {label}"
+                );
+            }
+            latched += u32::from(r == 0);
+        } else if !cross_entry {
+            // Under the cross-button entry the walk ahead of the gate has
+            // already rewritten `s2` (`command_prompts` above holds that);
+            // the park is the directional entry's alone.
+            let s2 = dispatched.get().unwrap();
+            let p = w.take_command_pad_buffer();
+            assert_eq!(
+                (p.left, p.right, p.up, p.down, p.cross, p.circle),
+                {
+                    let q = to_input(s2);
+                    (q.left, q.right, q.up, q.down, q.cross, q.circle)
+                },
+                "dispatched word: {label} s2 {s2:#x}"
+            );
+            assert_eq!(cpu.mem.rd32(CTX + 0x884), 0, "park emptied: {label}");
+            consumed += u32::from(pad == 0 && park != 0);
+        }
+    }
+    assert!(
+        gated > 500 && parked > 50 && latched > 50 && consumed > 50,
+        "{gated} {parked} {latched} {consumed}"
+    );
+}

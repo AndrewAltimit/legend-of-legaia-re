@@ -800,3 +800,9 @@ entry = "0x8004E568"
 range = "0x8004F810..0x8004F890"
 verdict = "unported"
 reason = "The win's exit preloads the field through FUN_80025358 and frees the monster records through FUN_80017B94 by ctx[+0xC]; the engine loads synchronously and keeps no heap."
+# FUN_801D0748 (PROT 0898).
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D0B54..0x801D0B54"
+verdict = "unported"
+reason = "The pre-dispatch exit under ctx[+0x26A] != 0, the byte the per-frame actor pass FUN_8004CE2C stores from FUN_80031D00() (0x8004D9BC..0x8004D9CC), has no port: World::battle_command_glide_gate gates on the stepper's return alone (battle-hud.md lists the term as not modelled)."

@@ -49,7 +49,7 @@ legaia-engine-battle-vm.workspace = true
 legaia-engine-camera.workspace = true
 legaia-engine-cast.workspace = true
 legaia-engine-audio.workspace = true
-legaia-engine-core.workspace = true
+legaia-engine-core = { workspace = true, features = ["test-drivers"] }
 legaia-engine-dialog.workspace = true
 legaia-engine-ui.workspace = true
 legaia-engine-effects.workspace = true

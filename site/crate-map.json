@@ -4267,6 +4267,7 @@
     "engine-battle",
     "engine-battle-hud",
     "engine-battle-loop",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-cast",
