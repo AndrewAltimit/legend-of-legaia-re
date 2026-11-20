@@ -283,10 +283,11 @@ pub struct LegaiaRuntime {
     /// behind it at a dim
     /// ([`crate::boot_title::LegaiaRuntime::boot_title_backdrop_draws_json`]).
     pub(crate) boot_continue: Option<legaia_engine_session::ContinueScreen>,
-    /// How many attract hand-offs the title has skipped this session. The
-    /// countdown fires the same way it does natively, but this page has no
-    /// STR/MDEC playback on the play path, so the movie is skipped and the
-    /// count is what the page discloses instead of showing it.
+    /// How many attract hand-offs the title has finished unplayed this
+    /// session. The countdown fires as it does natively and the movie plays
+    /// through the page's FMV lane ([`crate::play_fmv`]); a page without that
+    /// lane never declares support, so the movie finishes the frame it arms
+    /// and this count is what the page discloses instead.
     pub(crate) boot_title_attract_skips: u32,
     /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
     pub(crate) title_atlas: Option<legaia_engine_title::title_screen_atlas::TitleScreenAtlas>,

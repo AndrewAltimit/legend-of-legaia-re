@@ -919,6 +919,7 @@ div.play-vis-head { cursor: default; }
                 </select>
               </label>
               <form id="play-net-chat-form"><label>Chat <input type="text" id="play-net-chat" size="24" maxlength="256"></label></form>
+              <span id="play-net-build" title="A room takes players on one build only: compare this with the host's (the desktop Multiplayer screen shows its version under the hints)."></span>
             </details>
             <button id="play-force-battle" type="button"
                     title="Arm a fight from this scene's own encounter table right now (the native --battle first).">Start a battle here</button>
@@ -4135,6 +4136,13 @@ div.play-vis-head { cursor: default; }
       if (saved.url) $('play-net-url').value = saved.url;
       if (saved.name) $('play-net-name').value = saved.name;
     } catch (e) { /* storage blocked */ }
+    /* The build this page is, as the native Multiplayer screen names its
+     * release; a bundle without the export shows nothing. */
+    $('play-netplay').addEventListener('toggle', () => {
+      const rt = window.__playRuntime;
+      if (!rt || typeof rt.play_net_build_label !== 'function') return;
+      try { $('play-net-build').textContent = 'This page: ' + rt.play_net_build_label(); } catch (e) {}
+    });
     $('play-net-join').addEventListener('click', () => {
       const rt = rtNet();
       if (!rt) { saveMsg('This page build has no multiplayer yet.', true); return; }

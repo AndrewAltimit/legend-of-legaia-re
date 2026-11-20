@@ -87,6 +87,9 @@
       `Status: ${ask(() => document.getElementById('play-status').textContent.trim().replace(/\s+/g, ' '))}`,
     ];
     if (rt) {
+      if (typeof rt.play_net_build_label === 'function') {
+        lines.push(`Build: ${ask(() => rt.play_net_build_label())}`);
+      }
       lines.push(`Engine: ${ask(() => rt.state_json())}`);
       lines.push(`Mode: ${ask(() => rt.mode_state_json())}`);
     }
