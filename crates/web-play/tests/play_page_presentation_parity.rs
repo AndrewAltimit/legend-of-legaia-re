@@ -102,6 +102,15 @@ fn npc_clip_frames_advance_on_sim_ticks_only() {
         return;
     };
     rt.enter_field("town01").expect("enter town01");
+    // The playhead, as retail draws it: the smooth field actors draw a clip
+    // one game frame behind, between its keyframes
+    // (`World::field_npc_drawn_clip_cursor`), which is not what this pins.
+    rt.scene_host
+        .host_mut()
+        .expect("host")
+        .world
+        .toggles
+        .smooth_actors = false;
 
     let s0 = rt.play_npc_clip_states();
     assert!(!s0.is_empty(), "town01 catalog must expose clip states");
