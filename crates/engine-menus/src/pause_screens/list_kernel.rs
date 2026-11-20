@@ -26,7 +26,9 @@ pub const LIST_PAGE_ROWS: usize = 12;
 ///   `top + visible < count`; selection clamps to the last row.
 ///
 /// Up/Down never scroll - the only scrolling is the Left/Right page
-/// flip, which is why the retail lists read as fixed 12-row pages.
+/// flip, which is why the retail lists read as fixed 12-row pages. The four
+/// tests are an else-if chain, so a frame with two directions takes only the
+/// first of Up, Down, Left, Right.
 ///
 /// PORT: FUN_80032A44 (kind-4 list kernel - navigation phase)
 pub fn list_kernel_navigate(cursor: usize, n: usize, pressed: u16) -> usize {
@@ -45,32 +47,27 @@ pub fn list_kernel_navigate_rows(cursor: usize, n: usize, pressed: u16, rows: us
     let rows = rows.max(1);
     let mut c = cursor.min(n - 1);
     let top = c - c % rows;
+    // One direction a frame, in the kernel's test order (`0x80032AF4`,
+    // `0x80032B3C`, `0x80032B88`, `0x80032C14`): Up, then Down, then Left,
+    // then Right - a frame holding two only takes the first.
     if pressed & PadButton::Up.mask() != 0 {
         c = if c > top {
             c - 1
         } else {
             (top + rows).min(n) - 1
         };
-    }
-    if pressed & PadButton::Down.mask() != 0 {
-        let top = c - c % rows;
+    } else if pressed & PadButton::Down.mask() != 0 {
         c = if (c + 1).is_multiple_of(rows) || c + 1 == n {
             top
         } else {
             c + 1
         };
-    }
-    if pressed & PadButton::Left.mask() != 0 {
-        let top = c - c % rows;
+    } else if pressed & PadButton::Left.mask() != 0 {
         if top > 0 {
             c -= rows;
         }
-    }
-    if pressed & PadButton::Right.mask() != 0 {
-        let top = c - c % rows;
-        if top + rows < n {
-            c = (c + rows).min(n - 1);
-        }
+    } else if pressed & PadButton::Right.mask() != 0 && top + rows < n {
+        c = (c + rows).min(n - 1);
     }
     c
 }

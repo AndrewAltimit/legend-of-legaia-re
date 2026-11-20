@@ -576,3 +576,9 @@ entry = "0x801EAD98"
 range = "0x801EC724..0x801EC94C"
 verdict = "unported"
 reason = "PROT 0897 dev row drawer, rows 0xC..0xE: a character's equipment byte (+0x75E) and its table bound; the engine's EQUIP row shows a staged item id instead"
+
+[[arm]]
+entry = "0x80032A44"
+range = "0x80032AA4..0x80032AA4"
+verdict = "unreachable"
+reason = "The navigable-content table at 0x80073E1C is static data whose first byte is not its 0x23 terminator, so the empty-table exit never runs"

@@ -1196,3 +1196,83 @@ fn the_landmark_list_builds_the_rows_retail_builds() {
         );
     }
 }
+
+/// The list kernel `FUN_80032A44`'s navigation phase (list mode `gp+0x87C`
+/// = 1, `0x80032A88..0x80032C74`) against `list_kernel_navigate_rows`:
+/// random counts, page sizes (`list+2`), page-aligned tops and selections,
+/// and every combination of the four direction bits in the repeat-pressed
+/// word `gp+0x86C`, with the content id drawn from the kernel's own
+/// navigable-id table `0x80073E1C` or from outside it (no navigation).
+#[test]
+fn the_list_kernel_navigates_as_the_port_does() {
+    differential!(scus(LIST_DRAW));
+    use legaia_engine_menus::pause_screens::list_kernel_navigate_rows;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const LIST: u32 = 0x8013_1000;
+    const NAV_IDS: u32 = 0x8007_3E1C;
+    cpu.stub_outside = Some((LIST_DRAW, 0x8003_37B0));
+    let ids: Vec<u8> = (0..64)
+        .map(|k| cpu.mem.rd8(NAV_IDS + k))
+        .take_while(|&b| b != 0x23)
+        .collect();
+    assert!(!ids.is_empty());
+    let mut rng = Rng(0x4E41_5649);
+    let mut moved = 0;
+    for case in 0..6000 {
+        let count = rng.below(40) as usize;
+        let visible = 1 + rng.below(12) as usize;
+        let sel = if count == 0 {
+            0
+        } else {
+            rng.below(count as u32) as usize
+        };
+        let top = sel - sel % visible;
+        let pad = (rng.below(16) as u16) << 12;
+        let navigable = rng.below(6) != 0;
+        let content = if navigable {
+            ids[rng.below(ids.len() as u32) as usize]
+        } else {
+            0x24
+        };
+        cpu.mem.wr32(GP + 0x87C, 1);
+        cpu.mem.wr32(GP + 0x86C, u32::from(pad));
+        cpu.mem.wr32(0x8007_B874, 0);
+        cpu.mem.wr32(NODE + 0x18, LIST);
+        cpu.mem.wr8(NODE + 0x1C, content);
+        for (o, v) in [(0xA, 40u16), (0xC, 30), (0xE, 200), (0x10, 160)] {
+            cpu.mem.wr16(NODE + o, v);
+        }
+        cpu.mem.wr16(LIST, top as u16);
+        cpu.mem.wr16(LIST + 2, visible as u16);
+        cpu.mem.wr16(LIST + 4, count as u16);
+        cpu.mem.wr16(LIST + 6, sel as u16);
+        for k in 0..count as u32 {
+            cpu.mem.wr16(LIST + 0x28 + 2 * k, 0x1000 | k as u16);
+        }
+        assert_eq!(cpu.call(LIST_DRAW, &[NODE]), Stop::Returned, "case {case}");
+        let want = if navigable && count > 0 {
+            // The port takes the raw pad layout (Up `0x10` .. Left `0x80`);
+            // the kernel's word is the packed one, the same bits `<< 8`.
+            list_kernel_navigate_rows(sel, count, pad >> 8, visible)
+        } else {
+            sel
+        };
+        let what = format!(
+            "case {case}: count {count} visible {visible} sel {sel} pad {pad:#06x} content {content:#x}"
+        );
+        assert_eq!(
+            cpu.mem.rd16(LIST + 6) as usize,
+            want,
+            "{what}: the selection"
+        );
+        assert_eq!(
+            cpu.mem.rd16(LIST) as usize,
+            want - want % visible,
+            "{what}: the page"
+        );
+        moved += usize::from(want != sel);
+    }
+    assert!(moved > 1500, "{moved}");
+}
