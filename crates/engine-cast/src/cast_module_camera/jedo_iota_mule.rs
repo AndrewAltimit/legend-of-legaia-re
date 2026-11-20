@@ -750,3 +750,27 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         _ => ArmDirection::HOLD,
     }
 }
+
+/// Whether PROT 0931's arm 7 sheds its spark on the pass a module tick opens:
+/// the arm drains its word by the frame step in one `subu` and sheds while the
+/// stored word stands at `0xA1` or more (`slti v0,v0,0xa1` / `bne` at
+/// `0x801F72A0..0x801F72A4`). The port drains a tick at a time, so it reads
+/// the word the tick opened on less the whole pass: `rest` is the pass's
+/// ticks still owed after this one.
+pub fn jedo_arm7_sheds(countdown_before: i32, rest: u8) -> bool {
+    countdown_before - D * (1 + i32::from(rest)) >= 0xA1
+}
+
+#[cfg(test)]
+mod jedo_arm7_tests {
+    use super::*;
+
+    /// A step-`3` pass opening on `0xA3` drains to `0xA0`: no spark, though
+    /// the opening tick's own drain leaves `0xA2`.
+    #[test]
+    fn the_spark_reads_the_whole_pass_drain() {
+        assert!(!jedo_arm7_sheds(0xA3, 2));
+        assert!(jedo_arm7_sheds(0xA4, 2));
+        assert!(jedo_arm7_sheds(0xC0, 3));
+    }
+}

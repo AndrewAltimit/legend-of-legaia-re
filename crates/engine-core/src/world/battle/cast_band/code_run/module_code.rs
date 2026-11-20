@@ -981,7 +981,15 @@ impl World {
             // first few passes shed a spark and the rest only shrink the rings.
             // A `--watch` of the `rand()` seed reads seven sparks (`ra`
             // `0x801F72C4` / `0x801F72FC`) over the arm's 48 passes.
-            if entry == 931 && phase_in == 7 && self.casting.module_cam.countdown.0 < 0xA1 {
+            // The compare reads the word the pass's `subu` stored, the pass's
+            // whole `step` off it (`jedo_arm7_sheds`).
+            if entry == 931
+                && phase_in == 7
+                && !legaia_engine_cast::cast_module_camera::jedo_arm7_sheds(
+                    countdown_before,
+                    self.casting.module_cam.countdown.1,
+                )
+            {
                 run.every_spawns = &[];
             }
         }
