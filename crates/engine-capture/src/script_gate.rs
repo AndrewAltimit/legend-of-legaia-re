@@ -642,8 +642,26 @@ impl ScriptGate {
         } else {
             self.latch_reached(world)
         };
+        // Retail's mover credits the frame step at once (`t += DAT_1F800393`,
+        // `FUN_801DC0BC`), so its frames left move in steps of the step on the
+        // same game frame as the record's wait; the engine's count falls one
+        // vsync at a time between them. A glide within the step of retail's
+        // stands on retail's game frame, and the capture aligns it exactly
+        // (`Camera::align_glide_frames_left`): `juui1_vortex_exit_flash` holds
+        // `87` left on wait `36` at step `3`, the engine `90`, and gated on the
+        // glide alone the wait ran to `39` and the three flying placements
+        // stood `48` units past retail's.
+        // Only a gate whose wait names the game frame takes the slack: on a
+        // gate with no wait the glide is the clock, and met a vsync early the
+        // walkers had not finished the frame (`son_field_door_hop` position
+        // `1` to `.921`).
+        let glide_slack = if self.wait > 0 {
+            i32::from(world.clock.frame_step.max(1)) - 1
+        } else {
+            0
+        };
         let glide_landed = (match self.glide_left {
-            Some(g) => world.camera.state.glide_frames <= g || mid_page,
+            Some(g) => world.camera.state.glide_frames <= g + glide_slack || mid_page,
             None => world.camera.state.glide_frames <= 0,
         }) && clip_reached;
         // A box chains its `0x24` pages in one panel and holds the context's
