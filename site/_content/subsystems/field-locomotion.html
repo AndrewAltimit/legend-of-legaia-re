@@ -192,7 +192,7 @@
     <tbody>
       <tr><td><code>0</code></td><td><code>[x][z][dest_half_x][dest_half_z]</code></td><td>Intra-scene teleport - most house exits</td></tr>
       <tr><td><code>1</code>, gate 1</td><td><code>[x][z][p2_record][1]</code></td><td>Spawn a MAN partition-2 record if its story-flag gates pass: town exits (the record runs the named scene change), walk-on story beats</td></tr>
-      <tr><td><code>1</code>, gate 0</td><td><code>[x][z][p0_record][0]</code></td><td>At scene init, bind a partition-0 record to the object on that tile as its touch script and idle clip - house doors, cupboards</td></tr>
+      <tr><td><code>1</code>, gate 0</td><td><code>[x][z][record][0]</code></td><td>At scene init, bind a MAN record (a flat index: partition 0, then 1 and 2) to the object on that tile as its touch script and idle clip - house doors, cupboards</td></tr>
       <tr><td><code>2</code></td><td><code>[x][z][coarse:i8][quads:u8]</code></td><td>Ramp / staircase height (<a href="#floor-two-models">above</a>)</td></tr>
       <tr><td><code>3</code></td><td><code>[x0][z0][x1][z1][type]</code>, 8 bytes</td><td>Region boxes: camera zones, encounter regions</td></tr>
     </tbody>

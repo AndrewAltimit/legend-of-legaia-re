@@ -1126,6 +1126,18 @@ test on flat `8`'s face leg, one collapse call after the press, and gated on
 the leg the engine's box had gone `22` ticks before the frame (`.699` to
 `.986`). The state channels keep the RAM gate and its legs.
 
+**A glide within the frame step.** Retail's mover credits the whole frame
+step at once (`t += DAT_1F800393`, `FUN_801DC0BC`), so its frames left fall
+in steps of the step on the same game frame as the record's wait; the
+engine's count falls a vsync at a time between them. A gate that also waits
+on the record's wait is met with the glide within `step - 1` of retail's, and
+the capture aligns it exactly. `juui1_vortex_exit_flash` holds `87` left on
+wait `36` at step `3`; gated on the glide alone the engine ran to wait `39`
+and the three flying placements stood `48` units past retail's (npcs `.75`
+to `1`, image `.942` to `.988`). A gate with no wait keeps the exact test:
+there the glide is the clock, and met a vsync early `son_field_door_hop`'s
+walkers had not finished the frame.
+
 **A fresh box behind a collapse.** After the `0x48` collapse the pager
 counts `_DAT_801F273C` down from `0x18` with no box drawn, then loads the
 next page (state `2`); the row table still holds the page before. A state in

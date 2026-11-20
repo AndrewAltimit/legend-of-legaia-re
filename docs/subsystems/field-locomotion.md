@@ -1149,10 +1149,12 @@ A placed record becomes an actor through **one of two sweeps**, never both.
 |---|---|---|
 | Runs | once at scene init, over the whole grid | on every camera re-centre, over the region box |
 | Gate | the anchor tile must resolve a kind-1 bind (`func_0x801d5630(1, anchor_col, anchor_row)`); a miss skips the tile | the anchor tile must **not** carry cell bit `0x400` (`801d7ccc: andi v0,v0,0x400` -> `bne` skips) |
-| Script | the bind's flat record (partition 0 comes first, so a **partition-0 record**): base into `actor+0x90`, post-header offset into `+0x9E`, trailing header byte into `+0x5C` | none; `+0x5C == 0` |
+| Script | the bind's **flat** record (see below): base into `actor+0x90`, post-header offset into `+0x9E`, trailing header byte into `+0x5C` | none; `+0x5C == 0` |
 | List | the actor list `FUN_801cf754` builds collision candidates from | the scene control block's `+0x24` list, which no collision routine reads |
 
-A partition-0 record's header is `[u8 n][n*2 name bytes][u8 anim_id]`.
+A bound record's header is `[u8 n][n*2 name bytes][u8 anim_id]`.
+
+**The record byte is a flat index.** The sweep sums the three partition counts (`0x8003A800..0x8003A848`) and indexes one table of 24-bit record offsets with the trigger's byte (`0x8003A854..0x8003A878`), so a trigger past partition 0 binds a partition-1 or -2 record. Most scenes bind only partition 0, but `urudre3`'s partition 0 holds `28` records and the trigger on tile `(86, 106)` names record `28`, the first of partition 1: the wardrobe in Songi's room, which the `urudre3_songi_room` capture holds as an actor with `+0x50 = 28`, `+0x9E = 8` and draw kind `5`. `edbalden`'s triggers name partition-1 records too. Port: `legaia_engine_scene::field_env::object_binds`; pinned by `engine-scene/tests/field_object_flat_record_binds_disc.rs`.
 
 The window sweep differs in four more ways, all mirrored by the port `legaia_engine_field::field_regions::window_rebuild_spawns_resident`:
 
