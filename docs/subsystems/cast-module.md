@@ -4316,6 +4316,24 @@ waits on the victim's clip. `dohaty_nova_v2_pre_scythe_wind`'s recording shows t
 arm-5 yaw `cd / 8 + 0x900 - facing` falls `6` a step-`3` pass, the engine's single drain `3`.
 Grade `disassembly` + `capture`.
 
+**A compare behind the drain reads the whole pass's word.** Retail drains a pass's
+`scalar * step` (or `step`, or `step << 1`) in one `subu` and every compare behind it reads
+the stored word; the port drains a tick at a time, so a compare made once a pass, or one
+whose effect is the pass's, reads `ModuleCountdown::pass_end`: the word the pass opened on
+less the whole pass. The arms that compare against something other than zero:
+
+| Arm | Retail | Port before | Film on `--retail-steps` |
+|---|---|---|---|
+| Blazing Slash (0958) arm 22, the paced flame and hit | `0x801F8878..0x801F888C` | the opening tick's word | `.958` to `.988` |
+| Megaton Press (0959) arm `0x0F`, the paced hit | `0x801F7EA4..0x801F7EAC` | every tick | `.962`, unchanged |
+| Rolling Flare (0950) arm 3, the soft red and the burn | `0x801F7F10`, `0x801F7F30` | the word the tick opened on | `.915` to `.971` |
+| Guilty Cross (0944) arm 3, the cross's fall | `0x801F7018..0x801F701C` | per tick: the crossing pass fell only past the crossing | `.9976` to `.9977` |
+| Slime Divide (0940) arm 2, the shake's reach | `0x801F7B7C..0x801F7BB0` | one tick's `2` | `.9898` to `.9909` |
+| Jedo (0931) arm 7, the spark | `0x801F7298..0x801F72A4` | one tick's drain | `.9808` to `.9809` |
+
+The zero gates need no such reading: a word that crosses zero within a pass crosses on the
+same pass either way. Grade `disassembly` + `capture`.
+
 ### PROT 0935 (Earthquake)
 
 The caster turns on its target and holds the shot pitch `0`, yaw `0x800 - facing`,
