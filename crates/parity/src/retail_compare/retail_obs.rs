@@ -1113,9 +1113,7 @@ impl RetailObs {
 
     /// Read the pacer's step bytes off a state's scratchpad image.
     pub fn seat_step_bytes(&mut self, scratchpad: Option<&[u8]>) {
-        self.step_bytes = scratchpad
-            .and_then(|s| s.get(0x392..0x394))
-            .map(|b| (b[0], b[1]));
+        self.step_bytes = step_bytes(scratchpad);
     }
 
     /// What a film hands `World::seed_frame_cost_history`: the history, its
@@ -1400,6 +1398,13 @@ impl RetailObs {
     }
 }
 
+/// The pacer's step bytes `(0x1F800392, 0x1F800393)` off a scratchpad image.
+fn step_bytes(scratchpad: Option<&[u8]>) -> Option<(u8, u8)> {
+    scratchpad
+        .and_then(|s| s.get(0x392..0x394))
+        .map(|b| (b[0], b[1]))
+}
+
 pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
     match entry.emulator {
         "mednafen" => {
@@ -1411,7 +1416,10 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
                 (Some(v), Some(rect)) => display_frame(ram, v, rect),
                 _ => None,
             };
-            let mut obs = RetailObs::from_ram(ram, frame);
+            let mut obs = crate::retail_compare_battle::with_step_bytes(
+                step_bytes(st.scratch_ram().ok()),
+                || RetailObs::from_ram(ram, frame),
+            );
             obs.seat_scroll_rects(ram, gpu.vram_bytes());
             obs.seat_step_bytes(st.scratch_ram().ok());
             obs.seat_view_window(st.scratch_ram().ok());
@@ -1428,7 +1436,10 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             let frame = gpu
                 .as_ref()
                 .and_then(|g| display_frame(st.main_ram(), &g.vram, g.display_crop_rect()));
-            let mut obs = RetailObs::from_ram(st.main_ram(), frame);
+            let mut obs =
+                crate::retail_compare_battle::with_step_bytes(step_bytes(st.scratchpad()), || {
+                    RetailObs::from_ram(st.main_ram(), frame)
+                });
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
             obs.seat_step_bytes(st.scratchpad());
             obs.seat_view_window(st.scratchpad());

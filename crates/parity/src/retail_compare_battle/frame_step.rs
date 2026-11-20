@@ -36,8 +36,16 @@ pub(super) const STEP_FLOOR: u32 = 0x8007_B9D8;
 ///
 /// A battle state (game mode `0x14` / `0x15`) keeps the history's longest
 /// entry: its display lag is confirmed against the older ordering table's
-/// floor ([`display_pass_steps`]), and taken off the newest entry it parts
-/// `nivora_duel_pre_megaton_press` (`1.000` to `0.958`).
+/// floor or the pacer's step bytes ([`display_pass_steps`]). Taken off the
+/// newest entry here instead, it parts `nivora_duel_pre_megaton_press`
+/// (`1.000` to `0.958`) without moving a single pass step: that capture's
+/// passes are step `4` either way, but the camera walk-back takes the case-6
+/// shot divisor `0xC` only for steps that differ from this rung
+/// (`ram_read`'s `confirmed`), and with the rung at `4` the walk fell back on
+/// the largest increment's own estimate. Its yaw increment `2` with `5` to
+/// go admits divisors `7..=12` at step `4`; the estimate reads `7` and walks
+/// the yaw back `28` where retail's frame stands `16` back (`2258` against
+/// `2270`).
 pub fn frame_step(ram: &[u8]) -> u8 {
     let forced = game_anchors::u32_at(ram, FORCED_STEP);
     if forced != 0 {
@@ -169,7 +177,20 @@ pub const DISPLAY_LAG_PASSES: u16 = 2;
 ///
 /// The history alone cannot settle a clamped entry: `0x2BC` is also a raw
 /// duration of exactly `700` hsyncs, stored unclamped and stepped `3`. The
-/// floor can, wherever the camera moved on the newest pass.
+/// floor can, wherever the camera moved on the newest pass, and so can the
+/// pacer's step bytes where the state holds the scratchpad
+/// ([`with_step_bytes`]): the frame driver stores the step it read off the
+/// newest entry in `0x1F800393` and copies it to `0x1F800392` after the
+/// frame's `VSync` (`0x80017170..0x800171D8`), so both bytes reading the step
+/// the clamp names say the newest entry was a long frame, not a raw `700`.
+/// Bytes that disagree name a capture saved inside that `VSync` wait, whose
+/// newest entry is the pass to come; they confirm nothing.
+///
+/// The floor is the weaker witness on such a history: on the library's
+/// clamped battle states whose bytes read `4` / `4` it reads `1`, `2` or `3`
+/// as often as `4`. `battle_jou_party_vahn_chain_late` (two clamps, bytes
+/// `4` / `4`) walks its camera back two step-`4` passes this way, yaw `3203`
+/// where the history's rung put `3198` (`image` `.944` to `.957`).
 pub fn display_pass_steps(ram: &[u8]) -> [u8; 2] {
     let fs = frame_step(ram);
     let steps = pass_steps(ram);
@@ -178,10 +199,39 @@ pub fn display_pass_steps(ram: &[u8]) -> [u8; 2] {
     }
     let ctx = game_anchors::u32_at(ram, BATTLE_CTX);
     if in_ram(ctx) && older_table_step(ram, ctx) == Some(steps[0]) {
+        return steps;
+    }
+    if step_bytes_confirm(steps[0]) {
         steps
     } else {
         [fs; 2]
     }
+}
+
+thread_local! {
+    /// The capture's step bytes `(0x1F800392, 0x1F800393)` while its battle
+    /// observables are read ([`with_step_bytes`]).
+    static CAPTURE_STEP_BYTES: std::cell::Cell<Option<(u8, u8)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Read a capture's observables with its pacer step bytes
+/// `(0x1F800392, 0x1F800393)` in scope, for [`display_pass_steps`]. The
+/// scratchpad is not part of a main-RAM image, so the readers that take only
+/// the RAM see the bytes this way; outside the scope (a bare RAM image, a
+/// unit test) they read as absent and the history's own rules stand.
+pub fn with_step_bytes<R>(bytes: Option<(u8, u8)>, read: impl FnOnce() -> R) -> R {
+    let before = CAPTURE_STEP_BYTES.with(|c| c.replace(bytes));
+    let out = read();
+    CAPTURE_STEP_BYTES.with(|c| c.set(before));
+    out
+}
+
+/// Whether the capture's step bytes agree with each other and read `step`.
+fn step_bytes_confirm(step: u8) -> bool {
+    CAPTURE_STEP_BYTES
+        .with(|c| c.get())
+        .is_some_and(|(wait, next)| wait == next && next == step)
 }
 
 /// The steps of the two passes a magic-band `0x2B` capture's display lags,
