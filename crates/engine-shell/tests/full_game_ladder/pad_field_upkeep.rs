@@ -17,6 +17,22 @@ thread_local! {
 /// The weakest member's HP, per mille, under which a boss-bound party with
 /// an empty bag spends its casters' whole pools on a field heal.
 const NEAR_DEATH_PERMILLE: u32 = 250;
+/// The largest single hit a race boss's cast lands on one member (Koru's
+/// `500..700`): a member below it at the race's door counts as near death.
+const RACE_HIT_HP: u32 = 750;
+
+/// The weakest present member's HP.
+fn weakest_hp(session: &NativeSession) -> u32 {
+    let w = &session.host.world;
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    (0..n)
+        .filter_map(|i| {
+            let b = &w.actors.get(i)?.battle;
+            (b.max_hp > 0 && b.hp > 0).then_some(u32::from(b.hp))
+        })
+        .min()
+        .unwrap_or(u32::MAX)
+}
 
 fn boss_bound() -> bool {
     continuous::SAVING_FOR_BOSS.with(std::cell::Cell::get)
@@ -275,7 +291,12 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
             // worse spend: the Delilas duels hand `nivora_late` a party with
             // Noa at 1 HP and no bed in `nilboa`, and Koru's race was lost
             // five times running with her down from its first round.
-            let near_death = gauge(session) < NEAR_DEATH_PERMILLE;
+            // At a race's door (Koru) a member who cannot take one of its
+            // casts is down from the first round too, whatever its share
+            // of its pool: met with Vahn at 481 of 1828 (`263` per mille)
+            // it was lost twelve times running.
+            let near_death = gauge(session) < NEAR_DEATH_PERMILLE
+                || (!mp && race_ahead(session) && weakest_hp(session) < RACE_HIT_HP);
             return spells
                 + if mp || (boss_bound() && !near_death) {
                     0
