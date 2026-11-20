@@ -93,10 +93,20 @@ impl World {
             // says: the scripted arms store the caster's own seat under an
             // all-allies shape (Slime Divide `0x50`, shape `0x24`,
             // `addiu v0,s7,0x3; sb v0,0x1dd(s4)` at `0x801EB9AC`).
-            if let Some(t) = self.battle.forced_monster_target.take()
-                && self.actors.get(t as usize).is_some_and(|a| a.battle.hp > 0)
-            {
-                targets = vec![t];
+            match self.battle.forced_monster_target.take() {
+                // A side's group code keeps the whole side and the code itself
+                // (`BattleState::forced_monster_group`).
+                Some(code @ (8 | 9)) => {
+                    let side = self.resolve_class_to_slots(slot, code);
+                    if !side.is_empty() {
+                        targets = side;
+                        self.battle.forced_monster_group = Some((slot, code));
+                    }
+                }
+                Some(t) if self.actors.get(t as usize).is_some_and(|a| a.battle.hp > 0) => {
+                    targets = vec![t];
+                }
+                _ => {}
             }
             if !targets.is_empty() {
                 let unpaid = self.battle.seed_mp_unpaid;

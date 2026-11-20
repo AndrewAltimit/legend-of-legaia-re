@@ -548,6 +548,14 @@ pub struct BattleState {
     /// standing,
     /// instead of on a fresh roll. `None` on every ordinary fight.
     pub forced_monster_target: Option<u8>,
+    /// The same seed's target when it names a whole side (`8` the party, `9`
+    /// the enemy row), as `(caster, code)`: the replayed cast keeps the group
+    /// code on its `+0x1DD` whatever the record's shape says, as the capture's
+    /// did, so the seed's depth (`FUN_801F0348` frames a code `>= 8` at the
+    /// bare `0x0C00`) and the cast begin's facing store (the group's centroid)
+    /// read the capture's byte. Consumed by the cast it arms. `None` on every
+    /// ordinary fight.
+    pub forced_monster_group: Option<(u8, u8)>,
     /// Capture alignment: the parked palette column a retail state's effect
     /// row `(224, 476)` holds, copied there once the battle's VRAM has loaded
     /// (`World::apply_battle_vram_moves`). `None` on every ordinary fight.
@@ -1762,6 +1770,7 @@ impl BattleState {
             seed_mp_unpaid: false,
             creature_seat_restage: false,
             forced_monster_target: None,
+            forced_monster_group: None,
             cue_clut_seed: None,
             stage_cycler_seeds: Vec::new(),
             element_roll_seed: None,

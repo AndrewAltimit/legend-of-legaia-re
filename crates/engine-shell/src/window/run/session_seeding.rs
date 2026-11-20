@@ -511,7 +511,8 @@ pub(in crate::window) fn apply_monster_cast_env(world: &mut legaia_engine_core::
     // `LEGAIA_BATTLE_MONSTER_CAST=seat,spell[,p][,t<slot>][;x:z[:facing],...]` (decimal
     // or `0x..`): the monster in engine battle `seat` casts `spell` on its next
     // turn instead of the AI's pick, a single-target cast landing on party
-    // `slot` with `,t` (with `,p`, that turn is taken from the
+    // `slot` with `,t` (`t8` / `t9`: the whole party / enemy row, carried as
+    // the group code) (with `,p`, that turn is taken from the
     // first command prompt, ahead of the party's commands, each battle slot
     // first stood at its listed ground, `-` keeping the seat) (`BattleState::forced_monster_cast`, the seam the
     // retail comparison corpus replays a mid-cast capture through). Pairs
