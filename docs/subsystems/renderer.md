@@ -2759,20 +2759,28 @@ past the span. The dance hall applies the same rule to its baked hall on the
 CPU ([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).
 
 **Clean and enhanced frames keep the long primitives.** The limit is the
-console's hardware, and clean rasterisation is not bound by it. What it keeps
-off a retail screen is the projection artefact: a primitive with a corner the
-GTE garbles, one whose divide is capped (`SZ` under `H / 2`, a corner at,
-behind or just in front of the eye) or whose `SX` / `SY` saturates, so that it
-lands where the scene does not put it. A frame without the PSX snap therefore
-skips an oversize half only when one of its corners is garbled
-(`prim_near_reject::gte_corner_garbled` / `clean_span_rejected`, the WGSL
-`prim_corner_garbled` and the GLSL `primCornerGarbled`); the near reject ahead
-of it is unchanged. A primitive drawn wholly in front of the eye stays at any
-size. `vozz_tree_burst` is the case: the Genesis Tree burst throws two rays off
-the screen's foot, `620` and `855` rows tall, every corner well in front of the
-eye. The console skips both, a PCSX-Redux capture draws them (none of their
-corners is negative), and so does the clean frame, with the white centre they
-add to. PSX mode keeps the console's limit, or the capture's emulator's.
+console's hardware, and clean rasterisation is not bound by it. A frame without
+the PSX snap skips an oversize half only when it is an artefact the limit keeps
+off a retail screen (`prim_near_reject::clean_span_rejected`, the WGSL
+`clean_half_rejected` and the GLSL `cleanHalfRejected`):
+
+- one of its corners is garbled by the GTE: its divide is capped (`SZ` under
+  `H / 2`, a corner at, behind or just in front of the eye) or its `SX` / `SY`
+  saturates, so it lands where the scene does not put it
+  (`gte_corner_garbled`);
+- or it fails PCSX-Redux's limit: a corner pair past `1024 x 512` from a
+  corner with a negative screen coordinate. Scene geometry beside the camera
+  that the limit hides runs off the screen's top or left edge this way:
+  `conc3_ceremony_mist_pillar` frames the ceremony past a pillar just right
+  of the eye, every corner in front of it, which the clean frame would
+  otherwise paint across the right third of the screen.
+
+The near reject ahead of it is unchanged. `vozz_tree_burst` is the case the
+rule keeps: the Genesis Tree burst throws two rays off the screen's foot, `620`
+and `855` rows tall, every corner well in front of the eye and none negative.
+The console skips both, a PCSX-Redux capture draws them, and so does the clean
+frame, with the white centre they add to. PSX mode keeps the console's limit,
+or the capture's emulator's.
 
 **A near body that survives the limit.** `theeder_summon_mid_cast` puts
 monster `0xA1` (Gilium) between the eye and the caster. Its render node's

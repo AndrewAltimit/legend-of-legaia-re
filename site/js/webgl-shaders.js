@@ -423,6 +423,30 @@ bool spanTooBig(vec2 a, vec2 b, vec2 c) {
   return hi.x - lo.x > 1023.0 || hi.y - lo.y > 511.0;
 }
 
+/* PCSX-Redux's triangle limit (engine-render's pcsx_tri_rejected): a corner
+ * pair past 1024 x 512 counts only from a corner with a negative screen
+ * coordinate, read on the packet's own Y-down axes. */
+bool pcsxTriRejected(vec2 a0, vec2 a1, vec2 a2) {
+  vec2 p0 = vec2(160.0 + a0.x, 120.0 - a0.y);
+  vec2 p1 = vec2(160.0 + a1.x, 120.0 - a1.y);
+  vec2 p2 = vec2(160.0 + a2.x, 120.0 - a2.y);
+  vec2 lim = vec2(1024.0, 512.0);
+  for (int k = 0; k < 2; k++) {
+    float l = lim[k];
+    if (p0[k] < 0.0 && (p1[k] - p0[k] > l || p2[k] - p0[k] > l)) return true;
+    if (p1[k] < 0.0 && (p0[k] - p1[k] > l || p2[k] - p1[k] > l)) return true;
+    if (p2[k] < 0.0 && (p0[k] - p2[k] > l || p1[k] - p2[k] > l)) return true;
+  }
+  return false;
+}
+
+/* The clean frame's span test on one triangle (clean_half_rejected): past
+ * the console's limit and either holding a garbled corner or rejected by
+ * PCSX-Redux's limit. */
+bool cleanHalfRejected(vec2 a, vec2 b, vec2 c, bool garbled) {
+  return spanTooBig(a, b, c) && (garbled || pcsxTriRejected(a, b, c));
+}
+
 /* Whether a corner behind the eye may be seated on screen (engine-render's
  * gte_saturate_prim): its primitive has a single owner (c0.w >= 3) and a
  * corner in front of the eye. A welded mesh or a primitive wholly behind
@@ -449,20 +473,25 @@ bool primNearRejected(mat4 m, bool clean) {
   /* The GPU polygon-size limit (prim_near_reject::gpu_span_rejected), armed
    * when the enable lane carries the projection's H. A quad is split
    * [0,1,2] / [1,3,2]; it drops only when both halves would. A clean frame
-   * (no PSX snap) skips an oversize half only when one of its corners is
-   * garbled by the projection (primCornerGarbled). */
+   * (no PSX snap) skips an oversize half only when it is an artefact the
+   * limit keeps off a retail screen (cleanHalfRejected). */
   if (u_prim_near.x < 1.5) return false;
   vec2 s0 = primSxy(m, a_prim_c0.xyz);
   vec2 s1 = primSxy(m, a_prim_c1);
   vec2 s2 = primSxy(m, a_prim_c2);
-  bool g0 = !clean || primCornerGarbled(m, a_prim_c0.xyz);
-  bool g1 = !clean || primCornerGarbled(m, a_prim_c1);
-  bool g2 = !clean || primCornerGarbled(m, a_prim_c2);
-  if (!(spanTooBig(s0, s1, s2) && (g0 || g1 || g2))) return false;
-  if (a_prim_c0.w > 3.5) {
-    bool g3 = !clean || primCornerGarbled(m, a_prim_c3);
-    return spanTooBig(s1, primSxy(m, a_prim_c3), s2) && (g1 || g3 || g2);
+  if (clean) {
+    bool g0 = primCornerGarbled(m, a_prim_c0.xyz);
+    bool g1 = primCornerGarbled(m, a_prim_c1);
+    bool g2 = primCornerGarbled(m, a_prim_c2);
+    if (!cleanHalfRejected(s0, s1, s2, g0 || g1 || g2)) return false;
+    if (a_prim_c0.w > 3.5) {
+      bool g3 = primCornerGarbled(m, a_prim_c3);
+      return cleanHalfRejected(s1, primSxy(m, a_prim_c3), s2, g1 || g3 || g2);
+    }
+    return true;
   }
+  if (!spanTooBig(s0, s1, s2)) return false;
+  if (a_prim_c0.w > 3.5) return spanTooBig(s1, primSxy(m, a_prim_c3), s2);
   return true;
 }
 

@@ -4521,7 +4521,8 @@ catches a flood and not a mild over-brightness.
 
 The clean and enhanced frames do not run the console's polygon-size limit:
 they skip an oversize primitive only when the projection garbles one of its
-corners ([renderer](../subsystems/renderer.md#the-gpu-polygon-size-limit)).
+corners or PCSX-Redux's limit rejects it
+([renderer](../subsystems/renderer.md#the-gpu-polygon-size-limit)).
 A primitive the console skips and a PCSX-Redux capture draws, such as the
 Genesis Tree burst's long rays in `vozz_tree_burst`, is drawn by both the
 smoke frame and that state's accuracy frame.

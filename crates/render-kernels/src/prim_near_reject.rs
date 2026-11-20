@@ -257,11 +257,28 @@ pub fn gte_corner_garbled(clip: [f32; 4], sz_per_w: f32, h: f32) -> bool {
     !(-1024.0..=1023.0).contains(&sx) || !(-1024.0..=1023.0).contains(&sy)
 }
 
-/// The clean frame's span test: [`gpu_span_rejected`] only when one of the
-/// triangle's corners is [`gte_corner_garbled`].
+/// The clean frame's span test on one triangle: [`gpu_span_rejected`] only
+/// when the triangle is an artefact the limit keeps off a retail screen -
+/// one of its corners is [`gte_corner_garbled`], or a corner pair runs past
+/// `1024 x 512` from a corner with a negative screen coordinate (the pairs
+/// PCSX-Redux's limit measures, `SoftRenderer::checkCoord3`), which is what
+/// keeps a pillar beside the camera out of `conc3_ceremony_mist_pillar`.
 pub fn clean_span_rejected(clips: [[f32; 4]; 3], sz_per_w: f32, h: f32) -> bool {
-    gpu_span_rejected(clips, sz_per_w, h)
-        && clips.iter().any(|&c| gte_corner_garbled(c, sz_per_w, h))
+    if !gpu_span_rejected(clips, sz_per_w, h) {
+        return false;
+    }
+    if clips.iter().any(|&c| gte_corner_garbled(c, sz_per_w, h)) {
+        return true;
+    }
+    // The packet's own screen corners, Y down.
+    let p = clips.map(|c| {
+        let o = gte_screen_offset(c, sz_per_w, h, [160.0, 120.0]);
+        [160.0 + o[0], 120.0 - o[1]]
+    });
+    (0..2).any(|k| {
+        let lim = [1024.0, 512.0][k];
+        (0..3).any(|i| p[i][k] < 0.0 && (0..3).any(|j| p[j][k] - p[i][k] > lim))
+    })
 }
 
 /// One corner's GTE `SXY` as `RTPS` writes it, from its clip coordinates:
@@ -662,6 +679,10 @@ mod tests {
         ];
         assert!(gpu_span_rejected(ray, 1.0, 256.0));
         assert!(!clean_span_rejected(ray, 1.0, 256.0));
+        // The same ray thrown up off the screen's top: a corner pair runs
+        // past the limit from a negative `y`, and the clean frame skips it.
+        let up = ray.map(|c| [c[0], -c[1], c[2], c[3]]);
+        assert!(clean_span_rejected(up, 1.0, 256.0));
         // Off unless the enable lane carries `H`.
         assert_eq!(shader_params(Some((1.0, 2)), None)[0], 1.0);
         assert_eq!(shader_params(Some((1.0, 2)), Some(256.0))[0], 256.0);

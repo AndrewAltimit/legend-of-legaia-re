@@ -185,22 +185,40 @@ fn prim_near_rejected(
         return pcsx_tri_rejected(s0, s1, s2);
     }
     // A clean or enhanced frame (no PSX snap) is not bound by the console's
-    // limit: it skips an oversize half only when one of its corners is a
-    // projection artefact (`prim_corner_garbled`), which is what the limit
-    // keeps off a retail screen. A long ray drawn wholly in front of the eye
-    // (the Genesis Tree burst's in `vozz_tree_burst`) stays.
-    let clean = u.psx_params.z < 0.5;
-    let g0 = !clean || prim_corner_garbled(m, c0.xyz, p.y, p.x);
-    let g1 = !clean || prim_corner_garbled(m, c1, p.y, p.x);
-    let g2 = !clean || prim_corner_garbled(m, c2, p.y, p.x);
-    if (!(span_too_big(s0, s1, s2) && (g0 || g1 || g2))) {
+    // limit: it skips an oversize half only when the half is an artefact the
+    // limit keeps off a retail screen - one of its corners is garbled by the
+    // projection (`prim_corner_garbled`), or it runs past the limit from a
+    // corner off the screen's top or left edge, the pairs PCSX-Redux's limit
+    // measures (a pillar beside the camera in `conc3_ceremony_mist_pillar`).
+    // A long ray drawn wholly in front of the eye and below that edge (the
+    // Genesis Tree burst's in `vozz_tree_burst`) stays.
+    if (u.psx_params.z < 0.5) {
+        let g0 = prim_corner_garbled(m, c0.xyz, p.y, p.x);
+        let g1 = prim_corner_garbled(m, c1, p.y, p.x);
+        let g2 = prim_corner_garbled(m, c2, p.y, p.x);
+        if (!clean_half_rejected(s0, s1, s2, g0 || g1 || g2)) {
+            return false;
+        }
+        if (c0.w > 3.5) {
+            let g3 = prim_corner_garbled(m, c3, p.y, p.x);
+            return clean_half_rejected(s1, prim_sxy(m, c3, p.y, p.x), s2, g1 || g3 || g2);
+        }
+        return true;
+    }
+    if (!span_too_big(s0, s1, s2)) {
         return false;
     }
     if (c0.w > 3.5) {
-        let g3 = !clean || prim_corner_garbled(m, c3, p.y, p.x);
-        return span_too_big(s1, prim_sxy(m, c3, p.y, p.x), s2) && (g1 || g3 || g2);
+        return span_too_big(s1, prim_sxy(m, c3, p.y, p.x), s2);
     }
     return true;
+}
+
+// The clean frame's span test on one triangle
+// (`prim_near_reject::clean_span_rejected`): past the console's limit and
+// either holding a garbled corner or rejected by PCSX-Redux's limit.
+fn clean_half_rejected(a: vec2<f32>, b: vec2<f32>, c: vec2<f32>, garbled: bool) -> bool {
+    return span_too_big(a, b, c) && (garbled || pcsx_tri_rejected(a, b, c));
 }
 
 // Whether the GTE garbles this corner's screen point
