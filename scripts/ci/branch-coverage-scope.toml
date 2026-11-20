@@ -18,3 +18,41 @@
 #             a row without `image` applies to every image at its entry; give
 #             it on any row at a VA-aliased entry, and name the PROT entry in
 #             the reason.
+
+# lane E
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F2518..0x801F2518"
+verdict = "unreachable"
+reason = "PROT 0898: `bnez v1` repeats the test at 0x801F2510, which already sent every non-zero mode to 0x801F2958, so its taken arm never runs."
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F299C..0x801F29B4"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guards (`break 7` / `break 6`) on `(scroll + y) % h`; `h` is `lbu ctx[+0x27C]`, never -1, and every module that stores a scanline mode (PROT 0917/0923/0929/0963/0965) stores a non-zero constant height beside it."
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F29D8..0x801F29F0"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guards on `(m << 12) / h`; `h` is an unsigned byte the modules set non-zero, never -1."
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F2A48..0x801F2A60"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guards on `((m - h/2) << 12) / h`; `h` is an unsigned byte the modules set non-zero, never -1."
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F2A24..0x801F2A24"
+verdict = "unreachable"
+reason = "PROT 0898: the round-toward-zero fix-up for a negative `sin * amp`; the index `(m << 12) / h` with `0 <= m < h/2` (the scroll wrap at 0x801F2484..0x801F24C4 leaves the scroll non-negative at the modules' rates) stays in [0, 0x800), where the sine table is non-negative, and the amplitude is `lbu`."
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F2A94..0x801F2A94"
+verdict = "unreachable"
+reason = "PROT 0898: the same fix-up for the wobble's second half; `(m - h/2) << 12) / h` stays in [0, 0x800) for `h/2 <= m < h`, so the product is never negative."
