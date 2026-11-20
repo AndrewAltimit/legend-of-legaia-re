@@ -10,6 +10,7 @@
 #[macro_use]
 mod common;
 
+mod action_sm;
 mod action_tag;
 mod actor_bind;
 mod actor_cull;

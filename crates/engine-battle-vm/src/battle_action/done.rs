@@ -745,12 +745,22 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     let party_count = host.party_count();
     let total = host.slot_count();
 
-    // The per-slot sweep's `+0x8 &= 0x7CFFFFFF` over pool slots `0..=6`
-    // (`0x801E6474..0x801E6508`): the near-camera ghost bits drop at every
-    // action's end.
+    // The per-slot sweep over pool slots `0..=6` (`0x801E6474..0x801E6508`):
+    // `+0x8 &= 0x7CFFFFFF` (the near-camera ghost bits drop at every action's
+    // end) and the impact selector `+0x21F` cleared on every slot; then, on a
+    // slot that is alive (`+0x14C != 0`) or a party seat (`s < ctx[+0x00]`),
+    // the render flag `+0x21C` and the capture byte `+0x225` cleared too
+    // (`sb zero` at `0x801E64F0` / `0x801E64FC`; the `+0x36` halfword the
+    // same arm zeroes has no field here). A dead monster keeps its defeat
+    // fade.
     for s in 0..total.min(7) {
         if let Some(a) = host.actor_mut(s) {
             a.flag_word &= super::POOL_FLAG_WORD_KEEP;
+            a.impact_state = 0;
+            if a.liveness != 0 || s < party_count {
+                a.render_flag = 0;
+                a.capture_state = 0;
+            }
         }
     }
 
