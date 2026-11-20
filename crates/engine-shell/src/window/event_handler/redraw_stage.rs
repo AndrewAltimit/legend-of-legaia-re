@@ -909,14 +909,13 @@ impl PlayWindowApp {
                 // (`World::field_npc_drawn_clip_cursor`); `None` draws the
                 // playhead, as retail does.
                 let drawn = world.field_npc_drawn_clip_cursor(*slot);
-                let pose_key =
-                    drawn.map_or_else(|| player.pose_key(), |c| player.drawn_pose_key(c));
                 // Slot, clip, pose and look, each its own field
-                // (`NpcPoseKey`): a re-target keeps the other clip's meshes.
-                let key = legaia_engine_field::field_anim::NpcPoseKey::new(
+                // (`field_anim::npc_pose_key`, the page's key too): a
+                // re-target keeps the other clip's meshes.
+                let key = legaia_engine_field::field_anim::npc_pose_key(
                     *slot,
                     player,
-                    pose_key,
+                    drawn,
                     look.as_ref(),
                 );
                 npc_frames.push(key);

@@ -106,19 +106,24 @@ pub struct NpcPoseKey {
     pub look: u64,
 }
 
-impl NpcPoseKey {
-    pub fn new(
-        slot: u8,
-        player: &FieldClipPlayer,
-        pose: usize,
-        look: Option<&crate::actor_look::ActorLook>,
-    ) -> Self {
-        Self {
-            slot,
-            clip: player.clip_id(),
-            pose,
-            look: crate::actor_look::ActorLook::pose_key_bits(look),
-        }
+/// The key both hosts memoise / re-pose NPC `slot`'s clip pose on: the
+/// playhead's [`FieldClipPlayer::pose_key`], or with `drawn` (the smooth
+/// field actors' drawn cursor,
+/// `legaia_engine_core::world::World::field_npc_drawn_clip_cursor`) its
+/// [`FieldClipPlayer::drawn_pose_key`], beside the clip and the look. The
+/// native window keys its posed-mesh memo on it; the page exports its
+/// fields to `field-actors.js`, which re-poses when any of them moves.
+pub fn npc_pose_key(
+    slot: u8,
+    player: &FieldClipPlayer,
+    drawn: Option<u32>,
+    look: Option<&crate::actor_look::ActorLook>,
+) -> NpcPoseKey {
+    NpcPoseKey {
+        slot,
+        clip: player.clip_id(),
+        pose: drawn.map_or_else(|| player.pose_key(), |c| player.drawn_pose_key(c)),
+        look: crate::actor_look::ActorLook::pose_key_bits(look),
     }
 }
 
@@ -987,7 +992,7 @@ mod tests {
         let old_a = look_bits as usize;
         let old_b = held_pose | (look_bits as usize & !(1 << 20));
         assert_eq!(old_a, old_b, "the OR'd packing collides");
-        let a = NpcPoseKey::new(3, &p, 0, Some(&look));
+        let a = npc_pose_key(3, &p, None, Some(&look));
         let b = NpcPoseKey {
             pose: held_pose,
             look: look_bits & !(1 << 20),
@@ -998,8 +1003,8 @@ mod tests {
         let mut other = p.clone();
         other.clip_id ^= 1;
         assert_ne!(
-            NpcPoseKey::new(3, &other, 0, None),
-            NpcPoseKey::new(3, &p, 0, None)
+            npc_pose_key(3, &other, None, None),
+            npc_pose_key(3, &p, None, None)
         );
         // The same frames hash the same.
         let again = FieldClipPlayer::from_record(&bundle, 0).unwrap();

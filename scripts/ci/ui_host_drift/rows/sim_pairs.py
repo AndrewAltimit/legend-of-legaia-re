@@ -357,13 +357,18 @@ SIM_PAIRS: list[dict[str, object]] = [
         "into the key's high bits; the page folded the same inputs with "
         "overlapping XORs into its re-pose generation, under which two "
         "different looks could share a value and the head would not re-pose. "
-        "Both key on `ActorLook::pose_key_bits`",
+        "The OR'd packing also let a held last frame's bit `1 << 20` land on "
+        "the look's Z-angle field, and without the clip in the key a re-target "
+        "had to drop the slot's memo. Both key on `field_anim::npc_pose_key` "
+        "(slot, clip, pose and `ActorLook::pose_key_bits`, each its own "
+        "field), at the drawn clip cursor the smooth field actors hand out "
+        "(`World::field_npc_drawn_clip_cursor`)",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": ("crates/web-play/src/field_actors.rs", "clip_states"),
         },
         "mode": "symbols_all",
-        "symbols": ["pose_key_bits"],
+        "symbols": ["npc_pose_key", "field_npc_drawn_clip_cursor"],
     },
     {
         "what": "field NPC draw transform, native vs play page - the hide "
@@ -371,13 +376,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "tilt were spelled out natively and again in field-actors.js over two "
         "encodings of the yaw, and neither host folded retail's non-unit "
         "`actor+0x72` render scale in (`FUN_8001ADA4` `0x8001B240`). Both "
-        "build the model from `World::field_npc_draw_pose`",
+        "build the model from `World::field_npc_drawn_pose`: "
+        "`World::field_npc_draw_pose` stepped one game frame behind under "
+        "the smooth field actors, the stored pose itself off them",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": ("crates/web-play/src/field_actors.rs", "draw_poses"),
         },
         "mode": "symbols_all",
-        "symbols": ["field_npc_draw_pose"],
+        "symbols": ["field_npc_drawn_pose"],
     },
     {
         "what": "frame clear colour, native vs play page - both ran the "

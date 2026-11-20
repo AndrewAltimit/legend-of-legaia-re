@@ -33,8 +33,7 @@ fn look_of(
 /// frames) folded to the 32 bits a `clip_states` word carries. Two clips one
 /// actor plays colliding here would share the page's bone memo; the hash
 /// makes that as unlikely as it is for the native `NpcPoseKey`.
-fn clip_tag(player: &legaia_engine_field::field_anim::FieldClipPlayer) -> u32 {
-    let id = player.clip_id();
+fn clip_tag(id: u64) -> u32 {
     (id ^ (id >> 32)) as u32
 }
 
@@ -660,19 +659,22 @@ impl FieldActors {
             let slot = e.placement.index as u8;
             match self.clips.get(&slot) {
                 Some(c) => {
-                    let look = legaia_engine_field::actor_look::ActorLook::pose_key_bits(
+                    // The native window's pose-cache key
+                    // (`field_anim::npc_pose_key`): the pose at the drawn
+                    // clip cursor under the smooth field actors
+                    // (`World::field_npc_drawn_clip_cursor`), the clip and
+                    // the look, each its own field.
+                    let drawn = host.and_then(|h| h.world.field_npc_drawn_clip_cursor(slot));
+                    let key = legaia_engine_field::field_anim::npc_pose_key(
+                        slot,
+                        &c.player,
+                        drawn,
                         look_of(host, slot).as_ref(),
                     );
-                    // The drawn clip cursor under the smooth field actors
-                    // (`World::field_npc_drawn_clip_cursor`), the native
-                    // window's pose-cache key.
-                    let key = host
-                        .and_then(|h| h.world.field_npc_drawn_clip_cursor(slot))
-                        .map_or_else(|| c.player.pose_key(), |d| c.player.drawn_pose_key(d));
-                    out.push(key as i32);
-                    out.push(clip_tag(&c.player) as i32);
-                    out.push(look as u32 as i32);
-                    out.push((look >> 32) as u32 as i32);
+                    out.push(key.pose as i32);
+                    out.push(clip_tag(key.clip) as i32);
+                    out.push(key.look as u32 as i32);
+                    out.push((key.look >> 32) as u32 as i32);
                 }
                 None => out.extend([-1, -1, 0, 0]),
             }
