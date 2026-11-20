@@ -3224,9 +3224,9 @@ mod tests {
             // The page's canvas takes the size its layout gives it, and its
             // menus the site's theme.
             WindowSize | Theme => return None,
-            // The page carries the pacing switches in its remembered set (the
-            // launcher's rows write them) but has no box for them yet.
-            SmoothMotion | SkipLoadPauses | InstantControls => return None,
+            SmoothMotion => "play-smooth-motion",
+            SkipLoadPauses => "play-skip-load-pauses",
+            InstantControls => "play-instant-controls",
             WholeStepScale => "play-integer-scale",
             // The page's Look and feel selector, over the same shared preset.
             Preset => "play-look-and-feel",

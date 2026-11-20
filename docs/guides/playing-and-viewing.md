@@ -315,8 +315,7 @@ The rows stored in `legaia-options.toml` are the game's own options: the
 launcher writes the same file the in-game keys change, so a toggle made in
 either place is the one the other shows. The `launcher.toml` rows are launch
 switches with no option behind them; the browser play page has a box for each
-but Smooth motion, Instant controls and Skip loading pauses, which it keeps on
-(its Retail-faithful box turns them off with the rest).
+(the three pacing rows sit under its *Gameplay tweaks*).
 *Original game only* starts the game retail-faithful (`play-window --retail`):
 every enhancement off for that session, the saved options untouched; the rows
 it overrides read *Original* while it is on. It also plays the original's

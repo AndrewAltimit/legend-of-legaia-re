@@ -720,6 +720,18 @@ div.play-vis-head { cursor: default; }
           <summary>Gameplay tweaks</summary>
           <div class="play-btn-row">
             <label class="play-dev-menu"
+                   title="Smooth motion: the field and battle cameras, your character's walk, the townsfolk and cutscene walkers, and the L1 map screen move every frame; the original steps them 15 to 30 times a second (the desktop launcher's Smooth motion row; play-window --no-smooth-motion turns it off). Presentation only - the game plays the same. Retail-faithful holds it off. Remembered for your next visit.">
+              <input type="checkbox" id="play-smooth-motion" checked> Smooth motion
+            </label>
+            <label class="play-dev-menu"
+                   title="Instant controls: on the field and the world map your character answers a button on the frame you press it; the original acts on it a frame late, so a very short tap can go unread (the launcher's Instant controls row; play-window --no-instant-controls turns it off). Retail-faithful holds it off. Remembered for your next visit.">
+              <input type="checkbox" id="play-instant-controls" checked> Instant controls
+            </label>
+            <label class="play-dev-menu"
+                   title="Skip loading pauses: no black holds around the pause menu, shops, doors and the end of a battle, which the original waits through while the disc loads (the launcher's Skip loading pauses row; play-window --load-pauses plays them). Retail-faithful plays them. Remembered for your next visit.">
+              <input type="checkbox" id="play-skip-load-pauses" checked> Skip loading pauses
+            </label>
+            <label class="play-dev-menu"
                    title="Now and then a capturable Seru spawns shiny: +35% stats, and once caught its magic deals +35% damage (the patcher's --shiny-seru; the desktop launcher's Shiny Seru row, play-window --no-shiny-seru turns it off). Not retail; Retail-faithful holds it off. Starts on the engine's default.">
               <input type="checkbox" id="play-shiny-seru"> Shiny Seru
             </label>
@@ -3637,6 +3649,13 @@ div.play-vis-head { cursor: default; }
   const bonusDropEl = document.getElementById('play-bonus-drop');
   const saveAnywhereEl = document.getElementById('play-save-anywhere');
   const actionMoveEl = document.getElementById('play-action-movement');
+  /* The pacing rows (session_switches::Pacing), remembered with the launch
+   * switches. A wasm build without their exports leaves the boxes hidden. */
+  const pacingBoxes = [
+    [document.getElementById('play-smooth-motion'), 'set_smooth_motion', 'smooth_motion'],
+    [document.getElementById('play-instant-controls'), 'set_instant_controls', 'instant_controls'],
+    [document.getElementById('play-skip-load-pauses'), 'set_skip_load_pauses', 'skip_load_pauses'],
+  ];
   /* The battle-tuning selectors: element, setter, getter. Values are the
    * engine's step lists (GameplayTweaks; a web-play test pins them). */
   const tuningSelects = [
@@ -3699,6 +3718,13 @@ div.play-vis-head { cursor: default; }
     if (pulse !== undefined) entryPulseEl.checked = !!pulse;
     const psx = rtCall('psx_render');
     if (psx !== undefined) psxRenderEl.checked = !!psx;
+    for (const [el, , getter] of pacingBoxes) {
+      const v = rtCall(getter);
+      /* An older wasm build has no pacing exports: hide the row rather
+       * than show a box that does nothing. */
+      el.closest('label').style.display = v === undefined ? 'none' : '';
+      if (v !== undefined) el.checked = !!v;
+    }
     retailModeEl.dataset.synced = '1';
   }
   function applyPageToggles() {
@@ -3728,6 +3754,7 @@ div.play-vis-head { cursor: default; }
     rtCall('set_bonus_drop', !!bonusDropEl.checked);
     rtCall('set_save_anywhere', !!saveAnywhereEl.checked);
     rtCall('set_action_movement', !!actionMoveEl.checked);
+    for (const [el, setter] of pacingBoxes) rtCall(setter, !!el.checked);
     for (const [el, setter] of tuningSelects) rtCall(setter, parseInt(el.value, 10));
     rtCall('set_retail_mode', !!retailModeEl.checked);
   }
@@ -3775,6 +3802,9 @@ div.play-vis-head { cursor: default; }
   actionMoveEl.addEventListener('change', () => { rtCall('set_action_movement', !!actionMoveEl.checked); canvas.focus(); });
   for (const [el, setter] of tuningSelects) {
     el.addEventListener('change', () => { rtCall(setter, parseInt(el.value, 10)); canvas.focus(); });
+  }
+  for (const [el, setter] of pacingBoxes) {
+    el.addEventListener('change', () => { rtCall(setter, !!el.checked); canvas.focus(); });
   }
   window.__playSyncPageToggles = syncPageToggles;
   window.__playApplyPageToggles = applyPageToggles;
