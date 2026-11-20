@@ -955,6 +955,7 @@ pub fn resume_record(
     host: &mut legaia_engine_scene_host::scene_host::SceneHost,
     gate: &ScriptGate,
 ) -> bool {
+    replay_marker_score(host, gate);
     if let Some(c) = gate.context(&host.world) {
         return match c.kind {
             EngineContextKind::Channel(i)
@@ -1017,6 +1018,86 @@ pub fn resume_record(
         true
     } else {
         world.install_cutscene_timeline_record(&mf, &man, 2, idx, false)
+    }
+}
+
+/// Replay the track a finished spawned record left sounding, when the gate's
+/// record runs after it ([`legaia_engine_field::man_field_scripts::MarkerScore`]).
+///
+/// The gate's record must start no track of its own on its linear way to the
+/// gate PC and must test one of the flags the spawned record raises; the save
+/// must hold that flag up and the spawn's marker down - the spawned record
+/// ran to its end in this visit. `vozz` `P1[7]`, the Genesis Tree touch, tests
+/// `0x2B6`, which only `P2[14]` raises, and `P2[14]` swaps to `2025`: the
+/// card-load entry over the same flags starts `2004`, so without this the
+/// touch states hold the wrong word. A word already equal is left alone.
+fn replay_marker_score(
+    host: &mut legaia_engine_scene_host::scene_host::SceneHost,
+    gate: &ScriptGate,
+) {
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker};
+    let Some(Ok(Some(man))) = host
+        .scene
+        .as_ref()
+        .map(|s| s.field_man_payload(&host.index))
+    else {
+        return;
+    };
+    let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
+        return;
+    };
+    let n0 = mf.header.partition_counts[0].max(0) as usize;
+    let n1 = mf.header.partition_counts[1].max(0) as usize;
+    let flat = usize::from(gate.flat_index);
+    let (partition, index) = if flat < n0 {
+        (0, flat)
+    } else if flat < n0 + n1 {
+        (1, flat - n0)
+    } else {
+        (2, flat - n0 - n1)
+    };
+    let Some((start, pc0, len)) =
+        legaia_engine_field::man_field_scripts::partition_record_span(&mf, &man, partition, index)
+    else {
+        return;
+    };
+    let Some(body) = man.get(start..start + len) else {
+        return;
+    };
+    if !body.starts_with(&gate.head) {
+        return;
+    }
+    let mut tested = Vec::new();
+    for i in LinearWalker::new(body, pc0).flatten() {
+        if i.pc >= gate.pc {
+            break;
+        }
+        match i.info {
+            InsnInfo::Bgm { sub_op: 1 | 9, .. } => return,
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                ..
+            } => tested.push(idx),
+            _ => {}
+        }
+    }
+    let world = &mut host.world;
+    let Some(score) = legaia_engine_field::man_field_scripts::walk_marker_scores(&mf, &man)
+        .into_iter()
+        .find(|s| {
+            usize::from(s.global_index) != flat
+                && !world.system_flag_test(s.marker)
+                && s.raises
+                    .iter()
+                    .any(|&f| tested.contains(&f) && world.system_flag_test(f))
+        })
+    else {
+        return;
+    };
+    let id = score.words.first().map(|&(id, _)| id);
+    if id.is_some() && host.bgm_track_word != id {
+        host.world.replay_field_bgm_words(&score.words);
     }
 }
 

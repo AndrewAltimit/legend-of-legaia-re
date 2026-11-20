@@ -1268,6 +1268,19 @@ started from:
   replays that arm's op-`0x35` words first
   (`man_field_scripts::walk_spawn_scores`: the last start within eight
   instructions of the `44`, through `World::replay_field_bgm_words`).
+  A record that runs *after* a spawned record has ended inherits that
+  record's music the same way. `vozz`'s entry spawns the Songi aftermath
+  `P2[14]` (`44 2A`) behind the fight's marker `0x2B5`; `P2[14]` clears the
+  marker, raises `0x2B6` and swaps to `2025` (`35 E9 07 09` at `+0x456`,
+  committed at `+0x4C9`), and the Genesis Tree touch `P1[7]` tests `0x2B6`
+  (`+0x49`) and starts nothing before its own `2035` (`+0x3DF`). A card load
+  over the same flags starts `2004`, so the touch states
+  (`vozz_tree_vahn_touch_box`, `_closeup_noa_vahn`, `_rings`) held the wrong
+  word. When the gate's record starts no track on its way to the gate PC and
+  tests a flag such a spawned record raises, with that flag up and the
+  marker down in the save, the seed replays the spawned record's last start
+  and the control words after it first
+  (`man_field_scripts::walk_marker_scores`).
 - **Engagement.** A capture inside a conversation holds the talked-to
   placement's own context, engaged. The engine keeps a placement's idle body
   on a channel and runs a talk on its inline runner, so a record the engine

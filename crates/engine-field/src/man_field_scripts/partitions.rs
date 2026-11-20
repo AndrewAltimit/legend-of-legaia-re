@@ -1262,6 +1262,135 @@ pub fn walk_spawn_scores(man_file: &ManFile, man: &[u8]) -> Vec<SpawnScore> {
     out
 }
 
+/// The track a spawned record leaves sounding when it ends, keyed by the
+/// marker flag that guards its spawn and the flags it raises.
+///
+/// A scene entry that returns from a scripted fight tests the fight's marker
+/// and, on the taken arm, spawns the record that continues the story
+/// (`74 <M> -> T`, `T: ... 44 <flat>`); that record clears the marker, raises
+/// its own done flags, and may change the music for the free roam that
+/// follows. `vozz` is the case: its entry `P1[0]` tests `0x2B5` (`+0x7E`) and
+/// spawns `44 2A` = `P2[14]`, the Songi aftermath, which raises `0x2B6`,
+/// clears `0x2B5` (`+0x10` / `+0x12`) and swaps to `2025` (`35 E9 07 09` at
+/// `+0x456`, committed at `+0x4C9`). The Genesis Tree touch `P1[7]` tests
+/// `0x2B6` at `+0x49` and starts no track before its own `2035` at `+0x3DF`,
+/// so the touch runs under `2025`. A record started from its first opcode
+/// after a card-load entry (the retail comparison's resume) runs under the
+/// entry's track instead, which the entry picks with the marker already
+/// down; these are the words that resume replays first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MarkerScore {
+    /// The flat (global) record index of the spawned record.
+    pub global_index: u8,
+    /// The flag guarding the spawn, which the spawned record clears.
+    pub marker: u16,
+    /// The system flags the spawned record raises.
+    pub raises: Vec<u16>,
+    /// The spawned record's last track start (sub-op `1` / `9`) and the
+    /// control words (`2` / `3` / `4` / `0xA`) after it, in record order.
+    pub words: Vec<(u16, u8)>,
+}
+
+/// Every [`MarkerScore`] in `man`: one per op-`0x44` spawn guarded by a
+/// system-flag test whose taken target lies within [`SPAWN_ARM_WINDOW`]
+/// instructions before the spawn, when the spawned record clears that flag
+/// and starts a track of its own.
+pub fn walk_marker_scores(man_file: &ManFile, man: &[u8]) -> Vec<MarkerScore> {
+    let n0 = man_file.header.partition_counts[0].max(0) as usize;
+    let n1 = man_file.header.partition_counts[1].max(0) as usize;
+    // `(body, pc0)` of a record by its flat index.
+    let record_of = |flat: usize| -> Option<(&[u8], usize)> {
+        let (partition, index) = if flat < n0 {
+            (0, flat)
+        } else if flat < n0 + n1 {
+            (1, flat - n0)
+        } else {
+            (2, flat - n0 - n1)
+        };
+        let (start, pc0, len) = partition_record_span(man_file, man, partition, index)?;
+        Some((man.get(start..start + len)?, pc0))
+    };
+    let mut out: Vec<MarkerScore> = Vec::new();
+    for partition in 0..3 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for index in 0..count {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            let insns: Vec<_> = LinearWalker::new(body, pc0).flatten().collect();
+            for (at, insn) in insns.iter().enumerate() {
+                let InsnInfo::SpawnRecord { global_index } = insn.info else {
+                    continue;
+                };
+                let window_start = insns[at.saturating_sub(SPAWN_ARM_WINDOW)].pc;
+                let Some(marker) = insns[..at]
+                    .iter()
+                    .filter_map(|i| match i.info {
+                        InsnInfo::SystemFlag {
+                            kind: FlagKind::Test,
+                            idx,
+                            target: Some(t),
+                            ..
+                        } if t >= window_start && t <= insn.pc => Some((idx, t)),
+                        _ => None,
+                    })
+                    .max_by_key(|&(_, t)| t)
+                    .map(|(idx, _)| idx)
+                else {
+                    continue;
+                };
+                let Some((spawned, spawned_pc0)) = record_of(usize::from(global_index)) else {
+                    continue;
+                };
+                let mut clears_marker = false;
+                let mut raises = Vec::new();
+                let mut words: Vec<(u16, u8)> = Vec::new();
+                for i in LinearWalker::new(spawned, spawned_pc0).flatten() {
+                    match i.info {
+                        InsnInfo::SystemFlag {
+                            kind: FlagKind::Clear,
+                            idx,
+                            ..
+                        } if idx == marker => clears_marker = true,
+                        InsnInfo::SystemFlag {
+                            kind: FlagKind::Set,
+                            idx,
+                            ..
+                        } if idx != marker && !raises.contains(&idx) => raises.push(idx),
+                        InsnInfo::Bgm { text_id, sub_op } => match sub_op {
+                            1 | 9 => words = vec![(text_id, sub_op)],
+                            2 | 3 | 4 | 0xA if !words.is_empty() => words.push((text_id, sub_op)),
+                            _ => {}
+                        },
+                        _ => {}
+                    }
+                }
+                if clears_marker
+                    && !words.is_empty()
+                    && !out.iter().any(|s| s.global_index == global_index)
+                {
+                    out.push(MarkerScore {
+                        global_index,
+                        marker,
+                        raises,
+                        words,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
 /// One walkable MAN payload resolved for a scene - either the scene's
 /// asset-table **bundle** MAN (what [`Scene::field_man_payload`] returns) or
 /// a **variant** MAN carried as a type-3 chunk of a standalone DATA_FIELD

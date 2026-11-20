@@ -206,6 +206,30 @@ fn rikuroa_p2_50_is_scored_by_its_spawning_arm() {
     );
 }
 
+/// `vozz`'s entry spawns the Songi aftermath `P2[14]` (`44 2A`) behind the
+/// fight's marker `0x2B5`; `P2[14]` clears the marker, raises `0x2B6` (the
+/// flag the Genesis Tree touch `P1[7]` tests) and leaves `2025` sounding.
+#[test]
+fn vozz_p2_14_leaves_2025_behind_marker_0x2b5() {
+    use legaia_engine_field::man_field_scripts::walk_marker_scores;
+    let Some(index) = open_index() else { return };
+    let scene = Scene::load(&index, "vozz").expect("load vozz");
+    let man = scene
+        .field_man_payload(&index)
+        .expect("payload")
+        .expect("vozz MAN resolves");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
+    let scores = walk_marker_scores(&mf, &man);
+    let s = scores
+        .iter()
+        .find(|s| s.global_index == 0x2A)
+        .expect("a marker score for global record 0x2A = P2[14]");
+    assert_eq!(s.marker, 0x2B5);
+    assert!(s.raises.contains(&0x2B6), "raises 0x2B6: {:?}", s.raises);
+    assert_eq!(s.words.first(), Some(&(2025, 9)), "{:?}", s.words);
+    assert_eq!(s.words.last(), Some(&(0, 0xA)), "committed: {:?}", s.words);
+}
+
 /// `geremi`'s Jeremi-arrival cutscene record P2[0] both SETS `0x1BE` (at its
 /// script head) and lists `0x1BE` as its own C1 one-shot gate - the same
 /// self-latching shape as rikuroa's `0x142`. This is the record whose C1
