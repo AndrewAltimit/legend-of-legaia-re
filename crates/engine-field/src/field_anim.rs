@@ -58,6 +58,68 @@ pub struct FieldClipPlayer {
     /// wrapping to frame 0. Only a cursor driven by [`Self::set_cursor`] (an
     /// actor whose script parks or one-shots the clip) ever sets it.
     hold_at_end: bool,
+    /// The clip's identity ([`Self::clip_id`]): a hash of its decoded
+    /// frames, fixed at decode.
+    clip_id: u64,
+}
+
+/// FNV-1a over a clip's decoded frames: the same frames hash the same,
+/// whichever bank or record they came from, so two players that pose
+/// alike share a key and two that do not never do (short of a 64-bit
+/// collision).
+fn clip_hash(frames: &[Vec<([i16; 3], [i16; 3])>]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |v: u16| {
+        for b in v.to_le_bytes() {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    eat(frames.len() as u16);
+    for row in frames {
+        eat(row.len() as u16);
+        for (t, r) in row {
+            for v in t.iter().chain(r) {
+                eat(*v as u16);
+            }
+        }
+    }
+    h
+}
+
+/// What a host memoises one posed NPC mesh on: the slot, the clip, the
+/// pose within it ([`FieldClipPlayer::pose_key`] or
+/// [`FieldClipPlayer::drawn_pose_key`]) and a script's look rotation
+/// ([`crate::actor_look::ActorLook::pose_key_bits`]), each its own field.
+///
+/// OR-ing the look bits into the pose key, as the native window did, let a
+/// held last frame's bit (`1 << 20`) and the look's Z angle (bits `16..28`)
+/// share a key, so two poses could draw each other's mesh; and without the
+/// clip a re-target had to drop the slot's whole memo, because the incoming
+/// clip reuses the same low keys. With the clip in the key an idle / walk
+/// switch keeps both clips' meshes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct NpcPoseKey {
+    pub slot: u8,
+    pub clip: u64,
+    pub pose: usize,
+    pub look: u64,
+}
+
+impl NpcPoseKey {
+    pub fn new(
+        slot: u8,
+        player: &FieldClipPlayer,
+        pose: usize,
+        look: Option<&crate::actor_look::ActorLook>,
+    ) -> Self {
+        Self {
+            slot,
+            clip: player.clip_id(),
+            pose,
+            look: crate::actor_look::ActorLook::pose_key_bits(look),
+        }
+    }
 }
 
 /// Frame `frame` of record `record_index` as the posed-mesh builders take it
@@ -110,7 +172,9 @@ impl FieldClipPlayer {
             frames.push(row);
         }
         let blend = rec.blends();
+        let clip_id = clip_hash(&frames);
         Some(Self {
+            clip_id,
             frames,
             cursor: 0,
             step: u32::from(clip_step(CLIP_RATE, blend, (rec.flag & 0xFF) as u8)),
@@ -118,6 +182,11 @@ impl FieldClipPlayer {
             blend,
             hold_at_end: false,
         })
+    }
+
+    /// The clip's identity: a hash of its decoded frames ([`NpcPoseKey`]).
+    pub fn clip_id(&self) -> u64 {
+        self.clip_id
     }
 
     /// Bones per frame.
@@ -898,6 +967,45 @@ mod tests {
 
     /// `current_pose` is a pure read: it never moves the playhead, and
     /// `advance(0)` holds the frame.
+    /// A held last frame (`pose_key` bit `20`) and a look whose Z angle
+    /// sets bit `4` of its 12-bit field (bit `20` of the look bits) shared
+    /// one key when OR'd; as separate fields they cannot. Two clips with
+    /// the same pose key do not share one either.
+    #[test]
+    fn the_pose_cache_key_keeps_pose_look_and_clip_apart() {
+        use crate::actor_look::ActorLook;
+        let bundle = synth_bundle();
+        let p = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        let held_pose = 1usize << 20;
+        let look = ActorLook {
+            object: 0,
+            angles: [0, 0, 0x10],
+        };
+        let look_bits = ActorLook::pose_key_bits(Some(&look));
+        // The old packing: frame 0 with the look against the held frame 0
+        // with the same look's present / object bits only.
+        let old_a = look_bits as usize;
+        let old_b = held_pose | (look_bits as usize & !(1 << 20));
+        assert_eq!(old_a, old_b, "the OR'd packing collides");
+        let a = NpcPoseKey::new(3, &p, 0, Some(&look));
+        let b = NpcPoseKey {
+            pose: held_pose,
+            look: look_bits & !(1 << 20),
+            ..a
+        };
+        assert_ne!(a, b);
+        // The clip is in the key: a different clip at the same pose.
+        let mut other = p.clone();
+        other.clip_id ^= 1;
+        assert_ne!(
+            NpcPoseKey::new(3, &other, 0, None),
+            NpcPoseKey::new(3, &p, 0, None)
+        );
+        // The same frames hash the same.
+        let again = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        assert_eq!(again.clip_id(), p.clip_id());
+    }
+
     #[test]
     fn a_drawn_cursor_poses_its_keyframe_and_blends_between() {
         let bundle = synth_bundle();

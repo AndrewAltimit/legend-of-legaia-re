@@ -34,7 +34,8 @@ impl PlayWindowApp {
     /// hosts run (`scene_actors::bind_scene_actors`) and keep what the draw
     /// half reads: the two ANM banks, the clip players and the clip targets
     /// the per-tick cue drain re-targets. The posed-mesh memo is keyed by
-    /// `(slot, clip frame)`; the new scene reuses both, so it goes too.
+    /// slot and clip pose (`field_anim::NpcPoseKey`); the new scene reuses
+    /// the slots, so it goes too.
     pub(super) fn adopt_scene_actor_binding(&mut self) {
         let b = legaia_engine_session::scene_actors::bind_scene_actors(&mut self.session.host);
         self.npc_anim_bundles = (b.scene_anm, b.locomotion_anm);
@@ -242,7 +243,7 @@ impl PlayWindowApp {
         self.npc_anim_srcs.clear();
         self.npc_rest_srcs.clear();
         self.npc_morph_static.clear();
-        // The posed-mesh memo is keyed by `(slot, clip frame)` over the
+        // The posed-mesh memo (`field_anim::NpcPoseKey`) is over the
         // uploaded meshes, which this upload replaces.
         self.npc_pose_cache.clear();
         self.npc_pose_verify.clear();

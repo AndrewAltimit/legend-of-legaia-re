@@ -448,3 +448,49 @@ fn glide_over_walkers(extracted: &std::path::Path, scene: &str) {
         );
     }
 }
+
+/// `town01` in free roam, the player standing: the villagers wander their
+/// rounds on the game-frame grid, and their walk clips draw between
+/// keyframes too. The simulation matches with the toggle on and off.
+#[test]
+fn town01_wanderers_walk_clips_draw_every_vsync() {
+    let Some(extracted) = gated() else { return };
+    let Some(mut on) = open_scene(&extracted, "town01", true) else {
+        eprintln!("[skip] town01 did not open");
+        return;
+    };
+    let mut off = open_scene(&extracted, "town01", false).expect("second session");
+    // What both play hosts raise: the villagers' ambient wander, and the
+    // scene's clip players bound as a host binds them.
+    for s in [&mut on, &mut off] {
+        s.host.world.npcs.animate = true;
+        legaia_engine_session::scene_actors::bind_scene_actors(&mut s.host);
+    }
+    let a = run(&mut on, 900);
+    let b = run(&mut off, 900);
+    for (t, (x, y)) in a.iter().zip(&b).enumerate() {
+        assert_eq!(
+            x.sim, y.sim,
+            "vsync {t}: the smooth actors moved the simulation"
+        );
+        for c in &y.clips {
+            assert_eq!(
+                c.1, c.2,
+                "vsync {t}: off draws clip {} at its playhead",
+                c.0
+            );
+        }
+    }
+    let (run_n, held_stored, _) = clip_holds(&b);
+    let (_, _, held_drawn) = clip_holds(&a);
+    eprintln!(
+        "[smooth actors] town01 free roam: {run_n} walking NPC clip-vsyncs; stored cursor held \
+         on {held_stored}, drawn on {held_drawn}"
+    );
+    if run_n > 50 {
+        assert!(
+            held_drawn * 4 < held_stored,
+            "the wanderers' drawn clips still hold ({held_drawn} of {run_n})"
+        );
+    }
+}

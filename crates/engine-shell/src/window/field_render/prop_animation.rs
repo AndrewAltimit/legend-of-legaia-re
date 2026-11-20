@@ -104,8 +104,8 @@ impl PlayWindowApp {
         let mut slots: std::collections::BTreeSet<u8> =
             world.take_npc_morph_dirty().into_iter().collect();
         for &s in &slots {
-            self.npc_pose_cache.retain(|(k, _), _| *k != s);
-            self.npc_pose_verify.retain(|(k, _), _| *k != s);
+            self.npc_pose_cache.retain(|k, _| k.slot != s);
+            self.npc_pose_verify.retain(|k, _| k.slot != s);
         }
         let world = &self.session.host.world;
         for &s in self.npc_rest_srcs.keys() {

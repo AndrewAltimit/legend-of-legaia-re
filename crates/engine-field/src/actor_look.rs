@@ -53,9 +53,11 @@ impl ActorLook {
     /// The look's contribution to a posed-mesh cache key, `0` for no look.
     ///
     /// A look rotation turns one object on top of the clip's keyframe, so it
-    /// is part of the pose a host memoises: the key is the clip's
-    /// `pose_key()` (frame * 16 plus sub-frame, well under bit 16) OR'd with
-    /// these bits. The packing is collision-free - a present bit, the object
+    /// is part of the pose a host memoises: a field of its own beside the
+    /// clip's `pose_key()` (`field_anim::NpcPoseKey`; the page exports the
+    /// two halves beside the pose key). Never OR it into the pose key: a
+    /// held last frame's bit `1 << 20` lands on the Z angle's field. The
+    /// packing itself is collision-free - a present bit, the object
     /// byte and the three 12-bit angles each in their own field - so a head
     /// that turns on a held frame always changes the key. Both play hosts key
     /// on it; the page once folded the same inputs with overlapping XORs,
