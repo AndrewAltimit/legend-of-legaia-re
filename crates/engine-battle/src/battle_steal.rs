@@ -124,6 +124,27 @@ pub fn defeat_credit(acting_seat: u8, victim_flags: u8) -> Option<u8> {
     (victim_flags & DEATH_ARM_DONE == 0 && acting_seat < PARTY_SEATS).then_some(acting_seat)
 }
 
+/// Whether a death sounds the defeat cue `0x0D`: the victim's `+0x1DC` bit 3
+/// is still clear, no Seru absorb is staged (`ctx[+0x269]`), and either the
+/// fight is not scripted (`ctx[+0x287]`), the formation's second cell
+/// `0x8007BD0D` (`gp+0x9F5`) holds a monster, or the dying seat is a party
+/// seat. The death arm runs for monster seats only, so the last term never
+/// opens the gate in retail; it is kept as the disassembly has it.
+///
+// PORT: FUN_8004AD80 (`0x8004B1F8..0x8004B298`: `andi 8` on `+0x1DC`,
+// `lbu 0x269`, `lbu 0x287`, `lbu 0x9F5(gp)`, `sltiu s3,3`, then the ring store)
+pub fn defeat_cue_due(
+    victim_flags: u8,
+    seru_staged: bool,
+    scripted_fight: bool,
+    second_cell: u8,
+    seat: u8,
+) -> bool {
+    victim_flags & DEATH_ARM_DONE == 0
+        && !seru_staged
+        && (!scripted_fight || second_cell != 0 || seat < PARTY_SEATS)
+}
+
 /// Everything the steal-attack leg reads besides the band and the rand.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StealAttackInputs {

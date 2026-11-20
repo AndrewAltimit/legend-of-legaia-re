@@ -57,9 +57,15 @@ impl World {
     /// The battle's first monster id as the one byte retail's
     /// `0x8007BD0C` holds (`0` when there is none).
     pub(in crate::world) fn battle_first_monster_byte(&self) -> u8 {
+        self.battle_formation_cell(0)
+    }
+
+    /// The formation's monster-id cell `n` (`0x8007BD0C + n`): the id of the
+    /// monster seated `n` places past the party, `0` for an empty seat.
+    pub(in crate::world) fn battle_formation_cell(&self, n: u8) -> u8 {
         self.battle_monster_slots()
             .into_iter()
-            .find(|&(_, _, slot)| slot == 0)
+            .find(|&(_, _, slot)| slot == n)
             .map_or(0, |(_, id, _)| id as u8)
     }
 
@@ -499,14 +505,20 @@ impl World {
             // sits behind `+0x1DC & 8 == 0` (`0x8004B200`). It is skipped
             // with a Seru staged (`ctx[+0x269]`, `0x8004B214`) and, for a
             // monster, in a scripted fight (`ctx[+0x287]`, `0x8004B224`)
-            // unless `gp+0x9F5` is up, a byte the engine does not carry.
+            // unless the formation's second cell `gp+0x9F5` holds a monster
+            // (`legaia_engine_battle::battle_steal::defeat_cue_due`).
             // The gate is the victim's own `+0x1DC` bit 3, not the fade: a
             // cast module can raise the fade first (PROT 0908's finisher
             // stores `+0x21C = 2` on the seat it kills, `0x801F7D90`), and
             // retail's cue still sounds when the death arm then runs.
-            let death_arm_done =
-                victim_flags & legaia_engine_battle::battle_steal::DEATH_ARM_DONE != 0;
-            if !death_arm_done && !seru_staged && !self.battle.no_escape {
+            let second_cell = self.battle_formation_cell(1);
+            if legaia_engine_battle::battle_steal::defeat_cue_due(
+                victim_flags,
+                seru_staged,
+                self.battle.no_escape,
+                second_cell,
+                legaia_engine_battle::battle_steal::PARTY_SEATS,
+            ) {
                 let c = self.battle.defeat_cue_cursor;
                 self.battle.defeat_cue_cursor = if c + 1 >= 4 { 0 } else { c + 1 };
                 self.audio.sfx_ring_ops.push(

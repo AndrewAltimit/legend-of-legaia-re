@@ -806,3 +806,17 @@ entry = "0x801D0748"
 range = "0x801D0B54..0x801D0B54"
 verdict = "unported"
 reason = "The pre-dispatch exit under ctx[+0x26A] != 0, the byte the per-frame actor pass FUN_8004CE2C stores from FUN_80031D00() (0x8004D9BC..0x8004D9CC), has no port: World::battle_command_glide_gate gates on the stepper's return alone (battle-hud.md lists the term as not modelled)."
+
+# lane B
+
+[[arm]]
+entry = "8004AD80"
+range = "0x8004B0F4..0x8004B180"
+verdict = "unported"
+reason = "The death arm's Jette count: with formation cell 0x8007BD0C == 0xAA it counts monster seats 3.. with +0x14C != 0 over ctx[+1] and, finding none, stores ctx[+1] = 1 and clears gp+0x9F5; no port carries the monster count or the second formation cell's clear."
+
+[[arm]]
+entry = "8004AD80"
+range = "0x8004B58C..0x8004B5B0"
+verdict = "unported"
+reason = "The steal attack's debug override: with the debug word 0x8007B98C and 0x8007BA58 both set the roll is skipped and the steal lands; the port has no debug build switch."
