@@ -57,9 +57,13 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 /* Pads are `[from, to, key]`, frames inclusive; a tap is one frame long. Each script
  * walks, so the frames differ, and the fights press confirm so a round runs. */
 const walk = [[30, 110, 'ArrowDown'], [120, 200, 'ArrowUp'], [210, 290, 'ArrowLeft']];
+/* The overworld's pick puts the party on Rim Elm's door (map01 P2[0]): walking down
+ * there is a scene change into town0c, not the world map. This one walks north off the
+ * door and back and forth across the field above it, and never leaves the overworld. */
+const overworldWalk = [[30, 110, 'ArrowUp'], [120, 200, 'ArrowLeft'], [210, 290, 'ArrowRight']];
 const SCENES = {
   town01: { scene: 'town01', frames: 300, pad: walk },
-  world_map: { scene: 'map01', frames: 300, pad: walk },
+  world_map: { scene: 'map01', frames: 300, pad: overworldWalk },
   battle: { scene: 'map01', frames: 600, force: true, settle: 10, tapFrom: 300, tapEvery: 40 },
   cast: { scene: 'map01', frames: 900, force: true, settle: 10, cast: [0, 138, 3] },
   /* By name only: a scene whose morphs run every tick, for a change to them. */
