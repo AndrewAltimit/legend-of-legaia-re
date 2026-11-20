@@ -820,3 +820,27 @@ entry = "8004AD80"
 range = "0x8004B58C..0x8004B5B0"
 verdict = "unported"
 reason = "The steal attack's debug override: with the debug word 0x8007B98C and 0x8007BA58 both set the roll is skipped and the steal lands; the port has no debug build switch."
+
+[[arm]]
+entry = "8004CE2C"
+range = "0x8004CE64..0x8004CE64"
+verdict = "unreachable"
+reason = "The party walk's empty-party guard (ctx[+0x00] == 0): battle setup always seats at least one party member, so the walk is never skipped."
+
+[[arm]]
+entry = "8004CE2C"
+range = "0x8004D684..0x8004D684"
+verdict = "unreachable"
+reason = "The status CLUT pass's empty-party guard (ctx[+0x00] == 0): battle setup always seats at least one party member."
+
+[[arm]]
+entry = "8004CE2C"
+range = "0x8004D71C..0x8004D730"
+verdict = "unreachable"
+reason = "The Stone grey's division fix-up and clamp: the sum of three masked 5-bit lanes is 0..93, never negative (bgez always taken) and /4 never reaches 0x20 (sltiu always taken)."
+
+[[arm]]
+entry = "8004CE2C"
+range = "0x8004D858..0x8004D878"
+verdict = "unreachable"
+reason = "The Rot blue's division fix-up and grey clamp: the lane sum is 0..93, never negative, and its quarter never reaches 0x20; only the 3/2 blue clamp at 0x8004D884 can go both ways."
