@@ -316,8 +316,11 @@ fn enter_launch_scene(
         // onto the overworld, install the player, and enter world-map mode
         // (camera controller included). World::tick drives locomotion + the
         // per-tile encounter roll from the pad routed via world.set_pad.
-        // A picked overworld seats the party where a town exit lands them
-        // (`SceneHost::arm_picker_entry_seat`, the page picker's rule too).
+        // A picked overworld takes the picker's story flags (it is past Rim
+        // Elm's departure; `World::stage_picker_entry`) and seats the party
+        // where a town exit lands them (`SceneHost::arm_picker_entry_seat`),
+        // the page picker's rules too.
+        session.host.world.stage_picker_entry(scene, false);
         session.host.arm_picker_entry_seat(scene);
         match session.enter_world_map_live(scene, field_live_opts) {
             Ok(mode) => {

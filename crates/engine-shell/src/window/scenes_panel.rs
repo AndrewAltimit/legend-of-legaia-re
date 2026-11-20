@@ -174,18 +174,17 @@ impl PlayWindowApp {
             return;
         }
         // The picker rules every host's picker asks: a field scene is staged
-        // at its free-roam visit (`World::stage_picker_entry`), and the party
-        // is seated where the disc's doors land it, on the story arrival
-        // whose entry beat plays there when the scene has one
+        // at its free-roam visit and an overworld takes the picked story
+        // flags (`World::stage_picker_entry`), and the party is seated where
+        // the disc's doors land it, on the story arrival whose entry beat
+        // plays there when the scene has one
         // (`SceneHost::arm_picker_story_entry`) - the page's `enter_field` and
         // the `--scene` entry make the same two calls.
         let world_map = legaia_engine_scene::scene::is_world_map_scene(&row.label);
-        if !world_map {
-            self.session
-                .host
-                .world
-                .stage_picker_entry(&row.label, false);
-        }
+        self.session
+            .host
+            .world
+            .stage_picker_entry(&row.label, false);
         self.session.host.arm_picker_story_entry(&row.label);
         let opts = self.field_live_opts.clone();
         match self.session.enter_scene_live(&row.label, &opts) {
