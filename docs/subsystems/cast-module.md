@@ -1039,6 +1039,16 @@ the red the Gola Gola recording's two bodies shed nothing and its `rand()` strea
 four draws a body a battle frame short; with it the draws match retail frame for frame
 and the film reads `.893` against `.878`. Grade `disassembly` + `capture`.
 
+**Both stores read the drained word.** Arm 3 stores the word less `scalar * delta`
+(`sw v1,-0x7950(s0)` at `0x801F7ED8`) and loads it back for each test (`lw` at
+`0x801F7F10` and `0x801F7F30`), so the red and the selector land on the pass whose drain
+takes the word to `scalar * 0x60` and `scalar << 6`. The pass also adds `scalar << 6` to the
+drained word for arm 4 (`0x801F7F64..0x801F7F74`). Tested on the word the pass opened on,
+both stores came a pass late, the fire started a frame behind retail's, and its `rand()`
+draws parted from the recording there: `rugi_gola_gola_v2_rolling_flare` reads `.906` to
+`.956` plain, `.915` to `.971` on `--retail-steps` and `.972` to `.974` on arm 3 with
+`--rand-track`. Grade `disassembly` + `capture`.
+
 **PROT 0964's Element Strike body** writes through the standing-in creature (seat 7)
 and its hit loops. Its arm 1 forks into Flame (phases `2..=7`), Wind (`0x32..=0x37`)
 and Thunder (`0x64..=0x69`), and the stores sit on each run's `k = 3` and `k = 4`:
