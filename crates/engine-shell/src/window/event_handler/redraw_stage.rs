@@ -1008,7 +1008,29 @@ impl PlayWindowApp {
                     cache.insert(key, (vm, cm));
                 }
             }
+            // The memo keeps every clip a slot has shown, so a slot switching
+            // back to a clip finds its meshes; past `NPC_POSE_CACHE_CAP`
+            // entries the clips no slot shows now go, then the rest (a head a
+            // script turns through many look angles keys a mesh per angle).
+            // A rebuild costs a re-skin of the poses this redraw shows, once.
+            if cache.len() > NPC_POSE_CACHE_CAP {
+                let players = &self.npc_clip_players;
+                let live = |k: &legaia_engine_field::field_anim::NpcPoseKey| {
+                    players.get(&k.slot).is_some_and(|p| p.clip_id() == k.clip)
+                };
+                cache.retain(|k, _| live(k));
+                verify_poses.retain(|k, _| live(k));
+                if cache.len() > NPC_POSE_CACHE_CAP {
+                    cache.retain(|k, _| npc_frames.contains(k));
+                    verify_poses.retain(|k, _| npc_frames.contains(k));
+                }
+            }
         }
         npc_frames
     }
 }
+
+/// Posed NPC meshes the window keeps before it evicts (see
+/// `pose_npc_clips`). `town01`'s wanderers, each with an idle and a walk clip
+/// drawn on the quarter-keyframe grid, level off near 2,400.
+const NPC_POSE_CACHE_CAP: usize = 4096;
