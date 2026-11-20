@@ -294,11 +294,20 @@ fn follow_view_with_knobs(
         // PSX camera yaw is the compass negation, so a positive manual orbit
         // subtracts from the render yaw.
         yaw: to_rad(yaw_units) - manual_orbit,
-        // The field follow camera never rolls: `FUN_80025C24` seeds the roll
-        // global to `0` on scene entry and only an op-`0x45` beat writes it,
-        // and the follow ease's descriptor list has no roll entry. Measured
-        // `0` in 51 of 51 field states.
-        roll: 0.0,
+        // The roll is the third camera angle `FUN_800172C0` hands the Euler
+        // kernel (`0x8007B794`, after pitch `0x8007B790` and yaw
+        // `0x8007B792`: `addiu a0,a0,-0x4870` before the `jal 0x80026988`
+        // at `0x8001730C`). `FUN_80025C24` seeds it to `0` on scene entry,
+        // the follow ease's descriptor list has no roll entry, and only an
+        // op-`0x45` beat writes it, so a plain follow frame reads `0` (51 of
+        // 51 field states) - but a beat's roll is drawn wherever the globals
+        // frame the view. `credits_edstati3_fullscreen_pcsx`'s Karisto shot
+        // stages roll `10` (about `0.9` degrees, `3` px across the frame).
+        roll: if globals_live {
+            to_rad(f32::from(g[2] as i16) + d[2])
+        } else {
+            0.0
+        },
         // The live GTE `H` when the camera carries one - retail's scene-entry
         // reset leaves it `0`, so a scene that never staged an `H` falls back
         // to the field default. Reading the pin unconditionally dropped an
@@ -646,6 +655,24 @@ mod tests {
         cam.globals.0[5] = 0;
         let z = field_follow_view(&cam, &w).unwrap();
         assert!((z.tr_eye[2] - FIELD_CAM_DEPTH / 8.0).abs() < 1e-3);
+    }
+
+    /// The roll global reaches the view wherever the globals frame it: an
+    /// op-`0x45` beat's roll is the third angle `FUN_800172C0` hands the
+    /// Euler kernel, as `edstati3`'s Karisto shot stages it (`10`). Without
+    /// the globals the follow arm stands at roll `0`.
+    #[test]
+    fn follow_view_carries_a_staged_roll() {
+        let w = world_with_player(0, 0);
+        let mut cam = Camera::default();
+        cam.globals.0[2] = 10;
+        assert_eq!(field_follow_view(&cam, &w).unwrap().roll, 0.0);
+        cam.zone.script_view = true;
+        let v = field_follow_view(&cam, &w).unwrap();
+        assert!((v.roll - to_rad(10.0)).abs() < 1e-6);
+        cam.globals.0[2] = -10;
+        let v = field_follow_view(&cam, &w).unwrap();
+        assert!((v.roll - to_rad(-10.0)).abs() < 1e-6);
     }
 
     /// The manual orbit is the PSX yaw's negation, and the distance preset
