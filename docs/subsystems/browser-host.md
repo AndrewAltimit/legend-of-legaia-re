@@ -107,7 +107,12 @@ pinned by the disc-gated parity test `crates/web-play/tests/play_parity.rs`:
   retail cadence), re-targets it on channel op-`0x4B` ANIMATE cues, and
   serves the current frame (`play_npc_clip_states` / `play_npc_live_bones`)
   without moving the playhead - so clip cadence is refresh-rate-independent
-  and scripted actors perform their cued beats.
+  and scripted actors perform their cued beats. Each actor's clip state carries
+  the native pose-cache key's fields (`field_anim::NpcPoseKey`: pose, clip,
+  look), so `site/js/field-actors.js` re-poses only when one moves and keeps
+  the bones of every key it has read: under the smooth field actors a town's
+  wanderers re-pose about twice as often, and a clip a re-target returns to
+  costs no `play_npc_live_bones` read.
 
 The disc-gated `crates/web-play/tests/play_page_presentation_parity.rs` pins the hide-box contract, the
 sim-tick clip cadence, and the opening-chain staging below.

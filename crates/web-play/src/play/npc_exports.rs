@@ -154,7 +154,7 @@ impl LegaiaRuntime {
         legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as i32
     }
 
-    /// Live clip-playback state of every catalogued NPC, `[pose, generation,
+    /// Live clip-playback state of every catalogued NPC, `[pose, clip,
     /// look_lo, look_hi, ...]` (`FieldActors::clip_states`; `[-1, -1, 0, 0]`
     /// with no live clip player).
     pub fn play_npc_clip_states(&self) -> Vec<i32> {

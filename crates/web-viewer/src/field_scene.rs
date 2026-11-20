@@ -282,7 +282,7 @@ impl FieldScenePack {
     }
 
     /// The actor layer's `[x, y, z, facing, ...]` per catalog entry and its
-    /// `[pose, generation, ...]` clip states - what the page's actor draw
+    /// `[pose, clip, ...]` clip states - what the page's actor draw
     /// reads each frame (`field_scene_npc_transforms` /
     /// `field_scene_npc_clip_states`). Empty while the scene is not live.
     pub fn actor_frame_state(&self) -> (Vec<f32>, Vec<i32>) {

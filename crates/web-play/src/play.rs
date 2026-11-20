@@ -154,9 +154,6 @@ pub(crate) struct NpcRender {
 /// [`FieldClipPlayer`]: legaia_engine_field::field_anim::FieldClipPlayer
 pub(crate) struct NpcClip {
     pub player: legaia_engine_field::field_anim::FieldClipPlayer,
-    /// Bumped on every ANIMATE-cue re-target, so the page knows the pose
-    /// stream behind the frame index changed and must be re-read.
-    pub generation: u32,
 }
 
 /// Compose `Rz . Ry . Rx . v + T` for every vertex, keyed by its bone
