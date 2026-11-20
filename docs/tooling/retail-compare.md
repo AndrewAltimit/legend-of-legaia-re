@@ -465,16 +465,16 @@ the step scales moves with it: the tree revival's rings and mist `.926` to
 battle state keeps the longest entry, its lag confirmed against the older
 ordering table's floor ([below](#replayed-casts)).
 
-Where the state holds the scratchpad, the newest-entry rule above is only the fallback: the seed takes the pacer's step byte
-`0x1F800393` itself (`RetailObs::seat_step`), for the headless run and for
-`LEGAIA_SEAT_FRAME_STEP`. The ring alone cannot tell a heavy scene's step:
-past the `0x2D0` rung the resolver stores the clamp `0x2BC` (`0x800170F8`),
-which reads as step `3` where the driver steps `4`.
-`conc3_ceremony_plaza`, forty-odd actors at the Conkram ceremony, holds sixteen
-clamped samples under step byte `4`; seated at `3`, the ceremony record's
-walks and flat `35`'s `B8 23 84 0A` turn drifted apart, and the gate stood
-the turn nine budget units in where retail's `+0x54` reads four (`facing`
-`.962` to `1`). Nine field captures part between the two readings.
+On a field or overworld state that holds the scratchpad, the newest-entry
+rule is only the fallback: the seed takes the pacer's step byte `0x1F800393`
+itself (`RetailObs::seat_step`), for the headless run and for
+`LEGAIA_SEAT_FRAME_STEP`, which settles the one clamped state the ring
+cannot (`field_walled_collision_pin`, step byte `3`). A battle state keeps
+the history's step on both sides. `conc3_ceremony_plaza`, forty-odd actors
+at the Conkram ceremony, is one of the clamped rings: seated at `3`, the
+ceremony record's walks and flat `35`'s `B8 23 84 0A` turn drifted apart,
+and the gate stood the turn nine budget units in where retail's `+0x54`
+reads four (`facing` `.962` to `1`).
 
 **The image channel** comes from `play-window`, the real renderer, run as a
 child process from a scratch directory under the report, and seeded the same

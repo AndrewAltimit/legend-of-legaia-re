@@ -1087,16 +1087,24 @@ impl RetailObs {
     /// `0x1F800393` where the state holds the scratchpad, else the step the
     /// display lag implies ([`Self::frame_step`]).
     ///
-    /// The lag is rebuilt from the frame-time ring, and a ring the clamp
-    /// `0x2BC` fills reads as step `3` where the driver steps `4`: past the
-    /// `0x2D0` rung the resolver takes the raw time over the ring
-    /// (`0x800170F8`), so a heavy scene stores the clamp and steps `4`.
-    /// `conc3_ceremony_plaza` (the Conkram ceremony, forty-odd actors) holds
-    /// sixteen `0x2BC` samples under step `4`; seated at `3`, the ceremony
-    /// record's walks and its `B8 23 84 0A` turn drifted apart, and flat
-    /// `35` stood nine budget units into the turn where retail's `+0x54`
-    /// reads four.
+    /// The lag is rebuilt from the frame-time ring, which stores a frame of
+    /// `0x2D0` hsyncs or more as the clamp `0x2BC`; [`Self::frame_step`]
+    /// reads a clamped newest entry as step `4`, and the byte settles the
+    /// states the ring cannot (`field_walled_collision_pin` holds the clamp
+    /// newest under step byte `3`). `conc3_ceremony_plaza` (the Conkram
+    /// ceremony, forty-odd actors) holds sixteen clamps under step `4`;
+    /// seated at `3`, the ceremony record's walks and its `B8 23 84 0A` turn
+    /// drifted apart, and flat `35` stood nine budget units into the turn
+    /// where retail's `+0x54` reads four.
+    ///
+    /// Off the field and the overworld the history's step stands
+    /// ([`Self::frame_step`]): a battle's display lag is confirmed against its
+    /// ordering tables, and the rule that reads a clamped newest entry as
+    /// step `4` stays off the battle half for the same reason.
     pub fn seat_step(&self) -> u8 {
+        if !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
+            return self.frame_step();
+        }
         self.step_bytes
             .map(|(_, step)| step)
             .filter(|&s| (1..=4).contains(&s))
