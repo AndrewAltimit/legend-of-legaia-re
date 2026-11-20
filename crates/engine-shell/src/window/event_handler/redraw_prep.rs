@@ -308,6 +308,13 @@ impl PlayWindowApp {
             if due && let Some(t) = sc.seat_grade {
                 self.session.host.world.seat_held_scene_grade(t);
             }
+            if due && !sc.seat_lights.is_empty() {
+                let world = &mut self.session.host.world;
+                let step = world.clock.frame_step.max(1);
+                for l in &sc.seat_lights {
+                    world.seat_attached_light(l, step);
+                }
+            }
             if due
                 && let Some(want) = sc.seat_sprite_wait
                 && !sc.sprite_lead_seated.get()

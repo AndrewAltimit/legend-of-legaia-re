@@ -168,7 +168,7 @@ mod cutscene_elements;
 mod field_script_actors;
 mod fishing_hub_exits;
 pub mod mode_world;
-pub use field_script_actors::{FieldLightDraw, NpcDrawPose};
+pub use field_script_actors::{AttachedLightSeed, FieldLightDraw, NpcDrawPose};
 mod drop_shadow_render;
 mod field_present;
 pub use field_present::FieldPresent;

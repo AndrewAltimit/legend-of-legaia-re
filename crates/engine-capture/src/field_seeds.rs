@@ -52,6 +52,83 @@ pub fn grade_from_env(s: &str) -> Option<legaia_engine_field::actor_colour_tween
     })
 }
 
+/// `retail_attached_lights` as `LEGAIA_SEAT_LIGHTS`: per light, its
+/// integer fields `,`-joined in [`lights_from_env`]'s order with the
+/// keyframe script last as hex, lights `;`-joined.
+pub fn lights_env(lights: &[legaia_engine_core::world::AttachedLightSeed]) -> String {
+    lights
+        .iter()
+        .map(|l| {
+            let v: [i64; 20] = [
+                i64::from(l.flat),
+                i64::from(l.offset_y),
+                i64::from(l.half_extent.0),
+                i64::from(l.half_extent.1),
+                i64::from(l.color_a),
+                i64::from(l.color_b),
+                i64::from(l.abr),
+                i64::from(l.cursor),
+                i64::from(l.frame),
+                i64::from(l.from_extent.0),
+                i64::from(l.from_extent.1),
+                i64::from(l.from_y),
+                i64::from(l.from_a[0]),
+                i64::from(l.from_a[1]),
+                i64::from(l.from_a[2]),
+                i64::from(l.from_b[0]),
+                i64::from(l.from_b[1]),
+                i64::from(l.from_b[2]),
+                i64::from(l.rewind),
+                l.script.len() as i64,
+            ];
+            let hex: String = l.script.iter().map(|b| format!("{b:02x}")).collect();
+            let mut f: Vec<String> = v.iter().map(|x| x.to_string()).collect();
+            f.push(hex);
+            f.join(",")
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Inverse of [`lights_env`]; a malformed light is dropped.
+pub fn lights_from_env(s: &str) -> Vec<legaia_engine_core::world::AttachedLightSeed> {
+    s.split(';')
+        .filter_map(|e| {
+            let f: Vec<&str> = e.trim().split(',').collect();
+            if f.len() != 21 {
+                return None;
+            }
+            let v: Vec<i64> = f[..20]
+                .iter()
+                .map(|t| t.trim().parse().ok())
+                .collect::<Option<_>>()?;
+            let hex = f[20].trim();
+            let script: Vec<u8> = (0..hex.len() / 2)
+                .map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
+                .collect::<Option<_>>()?;
+            if script.len() as i64 != v[19] {
+                return None;
+            }
+            Some(legaia_engine_core::world::AttachedLightSeed {
+                flat: v[0] as u16,
+                offset_y: v[1] as i16,
+                half_extent: (v[2] as i16, v[3] as i16),
+                color_a: v[4] as u32,
+                color_b: v[5] as u32,
+                abr: v[6] as u8,
+                script,
+                cursor: v[7] as i16,
+                frame: v[8] as i16,
+                from_extent: (v[9] as i16, v[10] as i16),
+                from_y: v[11] as i16,
+                from_a: [v[12] as u8, v[13] as u8, v[14] as u8],
+                from_b: [v[15] as u8, v[16] as u8, v[17] as u8],
+                rewind: v[18] as i16,
+            })
+        })
+        .collect()
+}
+
 /// `retail_panel` as `LEGAIA_SEAT_PANEL`: the widget's fields as
 /// comma-separated integers in [`panel_from_env`]'s order.
 pub fn panel_env(p: &legaia_engine_effects::screen_fx::PanelWidget) -> String {
@@ -693,6 +770,34 @@ mod morph_weight_seed_tests {
         }];
         assert_eq!(floor_bobs_from_env(&floor_bobs_env(&bobs)), bobs);
         assert!(floor_bobs_from_env("").is_empty());
+    }
+
+    #[test]
+    fn attached_light_seeds_round_trip_the_environment_form() {
+        let light = legaia_engine_core::world::AttachedLightSeed {
+            flat: 9,
+            offset_y: -353,
+            half_extent: (644, 858),
+            color_a: 0xD6C2AB,
+            color_b: 0,
+            abr: 1,
+            script: vec![
+                2, 0x78, 0, 0, 3, 0, 4, 0xF0, 0xDC, 0xB4, 0, 0, 0, 0xC2, 1, 1,
+            ],
+            cursor: 17,
+            frame: 80,
+            from_extent: (768, 1024),
+            from_y: -450,
+            from_a: [0xF0, 0xDC, 0xB4],
+            from_b: [0, 0, 0],
+            rewind: 4,
+        };
+        let mut player = light.clone();
+        player.flat = legaia_engine_core::world::AttachedLightSeed::PLAYER;
+        player.script.clear();
+        let lights = vec![light, player];
+        assert_eq!(lights_from_env(&lights_env(&lights)), lights);
+        assert!(lights_from_env("").is_empty());
     }
 
     #[test]

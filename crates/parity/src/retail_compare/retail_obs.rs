@@ -318,6 +318,10 @@ pub struct RetailObs {
     /// the image child as `LEGAIA_SEAT_GRADE`, its clock taken back by the
     /// display lag.
     pub grade: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
+    /// The live attached lights ([`retail_attached_lights`]), handed to the
+    /// image child as `LEGAIA_SEAT_LIGHTS`, their keyframe clocks taken back
+    /// by the display lag.
+    pub lights: Vec<legaia_engine_core::world::AttachedLightSeed>,
     /// Whether the state holds a live screen-effect sprite widget
     /// ([`retail_has_sprite_widget`], the ending crawl's lines): the image
     /// child runs those on to the record's RAM wait (`LEGAIA_SEAT_SPRITE_WAIT`).
@@ -563,6 +567,11 @@ impl RetailObs {
             grade: matches!(class, StateClass::Field)
                 .then(|| retail_scene_grade(ram))
                 .flatten(),
+            lights: if matches!(class, StateClass::Field) {
+                retail_attached_lights(ram)
+            } else {
+                Vec::new()
+            },
             scripted_seats: Vec::new(),
             scripted_headings: Vec::new(),
             movie: (class == StateClass::Cutscene)
@@ -962,6 +971,23 @@ impl RetailObs {
             env.push((
                 "LEGAIA_SEAT_GRADE",
                 legaia_engine_capture::field_seeds::grade_env(&t),
+            ));
+        }
+        if !self.lights.is_empty() {
+            let back = i16::from(self.frame_step())
+                * crate::retail_compare_battle::DISPLAY_LAG_PASSES as i16;
+            let lights: Vec<_> = self
+                .lights
+                .iter()
+                .cloned()
+                .map(|mut l| {
+                    l.rewind = back;
+                    l
+                })
+                .collect();
+            env.push((
+                "LEGAIA_SEAT_LIGHTS",
+                legaia_engine_capture::field_seeds::lights_env(&lights),
             ));
         }
         if let Some(p) = self.panel {

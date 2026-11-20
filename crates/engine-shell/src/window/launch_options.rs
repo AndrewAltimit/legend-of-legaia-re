@@ -519,6 +519,13 @@ pub struct ScreenshotConfig {
     /// stood on the capture frame (`World::seat_held_scene_grade`) - a grade
     /// a finished record left, which the entry script does not repaint.
     pub seat_grade: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
+    /// `LEGAIA_SEAT_LIGHTS=<fields>`: a retail state's live attached lights
+    /// (`legaia_parity::retail_compare::retail_attached_lights`), their
+    /// keyframe records taken back by the display lag and stood on the
+    /// engine's lights on the capture frame (`World::seat_attached_light`) -
+    /// a keyframe phase is the wall time since the op that started it,
+    /// which the seed's quicker paging shortens.
+    pub seat_lights: Vec<legaia_engine_core::world::AttachedLightSeed>,
     /// `LEGAIA_SEAT_SPRITE_WAIT=<units>`: the gate record's wait in the
     /// retail state's RAM. The field gate stands the scene on the displayed
     /// frame, the wait less the display lag, but a PCSX-Redux film of the
@@ -1439,6 +1446,9 @@ impl ScreenshotConfig {
             seat_grade: std::env::var("LEGAIA_SEAT_GRADE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::field_seeds::grade_from_env(&v)),
+            seat_lights: std::env::var("LEGAIA_SEAT_LIGHTS")
+                .map(|v| legaia_engine_capture::field_seeds::lights_from_env(&v))
+                .unwrap_or_default(),
             seat_sprite_wait: std::env::var("LEGAIA_SEAT_SPRITE_WAIT")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

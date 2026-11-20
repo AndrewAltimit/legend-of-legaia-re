@@ -183,7 +183,7 @@ impl World {
     }
 
     /// The placement slot an ambient seat's flat MAN index names.
-    fn ambient_seat_slot(&self, flat: u16) -> Option<u8> {
+    pub(crate) fn ambient_seat_slot(&self, flat: u16) -> Option<u8> {
         self.channel_view()
             .iter()
             .find(|c| !c.object_bind && c.ctx.script_id == flat)
