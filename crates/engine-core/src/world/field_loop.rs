@@ -1644,12 +1644,29 @@ impl World {
                 Some(w.field_pc)
             },
         );
-        if slice.end == legaia_engine_field::inline_dialogue::SliceEnd::FrameMark {
+        if Self::slice_ends_runner_pass(&slice) {
             // The pass ends: the runner clears the context's engaged bit on
             // the executed `0x21` (`0x80039E68..0x80039E7C`).
             self.field_vm.system_pass_open = false;
         }
         last
+    }
+
+    /// Whether the script runner's op loop ends its context's pass on this
+    /// slice: an executed raw `0x21` (`beq s0,s4` at `0x80039E20`), or a
+    /// slice whose last byte reads `0x21` once its extended bit is masked off
+    /// (`andi a2,s0,0x7f` / `bne a2,0x21` at `0x80039E58..0x80039E60`) - a
+    /// stalled `A1 <id>`, whose target the dispatcher did not resolve, so it
+    /// returned the PC it was given (`0x801DE8BC..0x801DE8DC`).
+    ///
+    /// PORT: FUN_80039B7C (`0x80039E20`, `0x80039E58..0x80039E60`, the pass's end test)
+    pub fn slice_ends_runner_pass(slice: &legaia_engine_field::inline_dialogue::Slice) -> bool {
+        use legaia_engine_field::inline_dialogue::SliceEnd;
+        match slice.end {
+            SliceEnd::FrameMark => true,
+            SliceEnd::Parked => slice.byte & 0x7F == 0x21,
+            SliceEnd::Text | SliceEnd::Stopped => false,
+        }
     }
 
     /// Run the just-loaded scene-entry system script's **install slice**: the

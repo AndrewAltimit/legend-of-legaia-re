@@ -56,6 +56,7 @@ pub use picker::{
 };
 pub use scene_mes::*;
 pub use substitutions::*;
+pub use tick::pager_reads_pad;
 
 #[cfg(test)]
 mod tests;

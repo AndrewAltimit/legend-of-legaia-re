@@ -1423,6 +1423,125 @@ verdict = "unreachable"
 reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
 
 # lane C: 801D84D0 80039B7C
+[[arm]]
+entry = "80039B7C"
+range = "0x80039BCC..0x80039BCC"
+verdict = "unported"
+reason = "SCUS: state 2 waits for the pager to stand in 0/3/6/9 before it walks the shown text; the engine keeps no pager state to poll - the press that dismisses a box hands the record on in its own frame (dialogue_drive), so no port waits here"
+
+[[arm]]
+entry = "80039B7C"
+range = "0x80039CB0..0x80039CB0"
+verdict = "unported"
+reason = "SCUS: a context whose +0x5C clip id is -1 raises its retire bit (+0x10 |= 8) at the talk end; no port sets the retire bit there - the engine's helper records end on their own done flag"
+
+[[arm]]
+entry = "80039B7C"
+range = "0x80039D88..0x80039D88"
+verdict = "unported"
+reason = "SCUS: state 0 stores the idle clip base 2 to _DAT_8007BDD8 only while the control block's +0xA count is below 2; the engine's store (World::tick_field_system_channel_clip_reset, REF) gates on its movement lock instead of the count"
+
+[[arm]]
+entry = "80039B7C"
+range = "0x80039E84..0x80039E84"
+verdict = "unported"
+reason = "SCUS: the 0x21 teardown's retire-bit raise for a context whose +0x5C clip id is -1 (+0x10 |= 8); no port sets the retire bit at the talk end"
+
+[[arm]]
+entry = "80039B7C"
+range = "0x80039FC4..0x80039FC4"
+verdict = "unported"
+reason = "SCUS: state 1 waits until the pager reads 1, 4 or 7 before it feeds the line; the engine keeps no pager state to poll - the next line's panel opens over the held box (HeldBox::next_line_panel) on the frame the record reaches it"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8524..0x801D8524"
+verdict = "unreachable"
+reason = "PROT 0897: `blez` on the row capacity _DAT_801F2740 skips the last-row search; the capacity is only ever 3 (the pager's resets at 0x801D90EC and its kin) or op `4C E0 b1` with 1 <= b1 < 100 (b1 == 0 raises the instant latch instead), so it is never <= 0"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D85C8..0x801D85F4"
+verdict = "unreachable"
+reason = "PROT 0897: the debug-mode word _DAT_8007B98C (retail leaves it clear; only a cheat byte-write raises it) gates a test that zeroes the pad word on a held-button mask; no build path sets the word"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8628..0x801D8628"
+verdict = "unported"
+reason = "PROT 0897: the system freeze bit `0x1F800394 & 0x400` jumps past the state machine and the draw to the epilogue; the panel and its window model no freeze input, a host that freezes simply does not tick them"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8698..0x801D8698"
+verdict = "unreachable"
+reason = "PROT 0897: `sltiu v0,s0,0x1a` sends a state past the jump table to the draw; every store to _DAT_801F2734 in PROT 0897 and SCUS is a constant <= 0x19, the picker entry's +1 (<= 0x18), the 2/5/8 -> 1/4/7 step back, or FUN_80039B7C's +1 from 0/3/6/9 and from 1/4/7, so the state never reaches 0x1A"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8778..0x801D8778"
+verdict = "unreachable"
+reason = "PROT 0897: a load state 2/5/8 with no text pointer _DAT_801F3538 steps back to its idle state; the only stores that step 1/4/7 to 2/5/8 are FUN_80039B7C's at 0x80039FF0, which writes the record's text pointer (+0x90 plus +0x9E, never null) to the feed in the same arm (0x8003A000)"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D87EC..0x801D87EC"
+verdict = "unreachable"
+reason = "PROT 0897: the instant load skips its row loop when the fed byte is not a line byte (`& 0x7F < 0x20`); FUN_80039B7C feeds only from its state 1, which it enters only when the byte at +0x9E passed that same test (0x80039F3C), so the first byte always enters the loop"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8F98..0x801D8FAC"
+verdict = "unreachable"
+reason = "PROT 0897: the debug-mode word _DAT_8007B98C gates a test of the held pad word `& 0xA` that holds a waiting page; retail leaves the word clear"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D959C..0x801D959C"
+verdict = "unported"
+reason = "PROT 0897: a picker whose post-table byte is 0x4C with a second byte other than 0xFF commits to state 0, and its label walk (0x801D9B30) starts on the 0x4C; legaia_mes::parse_picker_at rejects that layout (the labels must start on a 0x1F lead), so the panel opens no picker for it"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D9B30..0x801D9B30"
+verdict = "unported"
+reason = "PROT 0897: the label walk past a 0x4C post-table byte not followed by 0xFF starts the labels on the 0x4C; legaia_mes::parse_picker_at rejects that layout, so the panel opens no picker for it"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D96D4..0x801D96D4"
+verdict = "unported"
+reason = "PROT 0897: the typing state's row draw skips a null row-table slot; the row draw is engine-ui's reading box (REF only, laid out from the panel's rows), which has no null slots to skip and no differential"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D97A0..0x801D97A0"
+verdict = "unreachable"
+reason = "PROT 0897: `blez` on capacity + 1 skips the row draw loop; the capacity _DAT_801F2740 is never below 1 (3 from the resets, 1..99 from op `4C E0`)"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D9948..0x801D9948"
+verdict = "unreachable"
+reason = "PROT 0897: `beqz` on the capacity _DAT_801F2740 skips the box frame; the capacity is never 0 (3 from the resets, 1..99 from op `4C E0`)"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D9960..0x801D99F8"
+verdict = "unported"
+reason = "PROT 0897: the box frame's style word *(_DAT_801C6EA4)+0x10 - 1 hides the frame, 2 draws it once with kind 0 and clears the word, 0 draws kind 0x61 (FUN_80034B6C); the panel and engine-ui's reading box draw one frame and keep no style word"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D9A68..0x801D9AC8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the picker slide's two divides by the span +0x50, which the entry arms store only as 0x18 (0x801D9318, 0x801D93A0), so the divisor is never 0 or -1"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D9B4C..0x801D9B4C"
+verdict = "unreachable"
+reason = "PROT 0897: `blez` on the option count skips the label loop; the count at sp+0x1C is only ever 2, 3 or 4 (0x801D92F4, 0x801D9360..0x801D937C, 0x801D942C..0x801D9448)"
 # lane C: 80038158 8003774C 801D01B0
 [[arm]]
 entry = "801D01B0"
@@ -1587,6 +1706,47 @@ verdict = "unreachable"
 reason = "op 0x18's phase dispatch at 0x80038D7C exits on a phase below 1 or above 3, but it is reached only from 0x80038C58 with the phase non-zero or from 0x80038D44/0x80038D78 having just stored 1 or 2, and every writer of the record's byte 2 (this routine, the scene reset at 0x8003B74C) stores 0..3"
 
 # lane C: 80021DF4 800520F0 8001ADA4 800243F0 8001822C
+[[arm]]
+entry = "800243F0"
+range = "0x800244A8..0x800244A8"
+verdict = "unported"
+reason = "returns before either slot while the scene-change packet's transition bit is up (FUN_8001FD44 sets 0x1F800394 |= 0x40); the engine changes scenes synchronously in its scene host and resolves the next scene's track there (FieldBgmPlan), so no poller pass falls inside a change"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024530..0x80024544"
+verdict = "unported"
+reason = "the third request hold: on a warm field entry (_DAT_8007B8B8 != 0) under a battle sound set of -1 (_DAT_8007B880, op-0x35 sub-op 7) the request is copied onto the loaded index and nothing loads; sound_state::bgm_request_hold ports the keep-audio and park holds around it, and the engine keeps a -1 set's field score by not stashing it (World::swap_to_battle_bgm), not by this hold"
+
+[[arm]]
+entry = "800243F0"
+range = "0x800245F8..0x800245F8"
+verdict = "unported"
+reason = "stage 0's wait on a drive still busy when the track changes (FUN_8003DE7C(1) at 0x800245F0) before it arms the settle; the engine's reads are synchronous, so BgmSwapPoller starts its settle at the change with the drive idle"
+
+[[arm]]
+entry = "800243F0"
+range = "0x800246A0..0x800246A0"
+verdict = "unported"
+reason = "with the build halfword _DAT_8007B8C2 clear, the field init (mode 2) re-arms the settle at 0x3C on the read; the engine runs the init's track load synchronously (bgm_field_init_open, sound_cues.rs), not through BgmSwapPoller's clock"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024858..0x80024858"
+verdict = "unported"
+reason = "with the build halfword _DAT_8007B8C2 clear, the field init (mode 2) drains the settle by one a call and waits a vsync through FUN_8005FB84 (the init's poller-to-completion loop); the engine runs that load synchronously (bgm_field_init_open), not through BgmSwapPoller's clock"
+
+[[arm]]
+entry = "800243F0"
+range = "0x800247C8..0x800247D8"
+verdict = "unported"
+reason = "the BGM install's load-in-progress byte: with the side-band slot settled it leaves DAT_8007B648 at 0x80 while gp+0x724 holds it, else clears it (the byte stage 0 raised at 0x80024600); the engine's loads are synchronous and keep no load-in-progress byte"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024AC0..0x80024AC0"
+verdict = "unported"
+reason = "the side-band acknowledge's load-in-progress byte: DAT_8007B648 left at 0x80 while gp+0x724 holds it, else cleared (the byte stage 0 raised at 0x80024998); the engine's loads are synchronous and keep no load-in-progress byte"
 [[arm]]
 entry = "8001ADA4"
 range = "0x8001AF2C..0x8001B044"

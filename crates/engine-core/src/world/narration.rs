@@ -1219,10 +1219,11 @@ impl World {
         // (`opurud`'s card: thirteen, `autorun_audio_timeline.lua` pager state
         // `0x801F2734` off `s1_newgame_field`).
         // REF: FUN_801D84D0
+        let live = legaia_engine_dialog::dialog::pager_reads_pad(auto);
         if self.clock.frame_credited {
             panel.tick_at_auto(self.clock.frame_step, &mut auto);
         }
-        let pressed = panel.take_auto_press() || confirm;
+        let pressed = panel.take_auto_press() || (confirm && live);
         if pressed {
             if panel.is_waiting_for_input() && !panel.is_done() {
                 panel.advance_page();
@@ -1259,15 +1260,12 @@ impl World {
         if confirm {
             self.dialog.input_consumed = true;
         }
-        if panel.menu_active() {
-            let mut moved = false;
-            if pressed(self, legaia_engine_system::input::PadButton::Up) {
-                moved |= panel.move_picker_cursor(-1);
-            }
-            if pressed(self, legaia_engine_system::input::PadButton::Down) {
-                moved |= panel.move_picker_cursor(1);
-            }
-            if moved {
+        // The player's pad, unless the automatic press is counting.
+        let live = legaia_engine_dialog::dialog::pager_reads_pad(self.dialog.auto_press);
+        if panel.menu_active() && live {
+            let up = pressed(self, legaia_engine_system::input::PadButton::Up);
+            let down = pressed(self, legaia_engine_system::input::PadButton::Down);
+            if panel.step_picker_cursor(up, down) {
                 self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_MOVE_CUE);
             }
         }
@@ -1285,7 +1283,7 @@ impl World {
         }
         // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
         // confirm the player did not make.
-        let confirm = confirm || panel.take_auto_press();
+        let confirm = (confirm && live) || panel.take_auto_press();
         if confirm {
             if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
                 // Opened this frame, or still sliding in (the pager reads the

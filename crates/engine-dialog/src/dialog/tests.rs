@@ -327,13 +327,15 @@ fn a_menu_slides_in_before_it_takes_input() {
     let mut ys = Vec::new();
     let mut vsyncs = 0;
     while !panel.picker_takes_input() {
+        // Input stays shut while it slides: a move ahead of the pager call
+        // and a confirm after it do nothing.
+        if !panel.picker_hand_drawn() {
+            assert!(!panel.move_picker_cursor(1));
+            assert_eq!(panel.picker_cursor(), 0);
+        }
         panel.tick_at(2);
         vsyncs += 1;
-        // Input stays shut while it slides: the cursor and a confirm do
-        // nothing.
         if !panel.picker_takes_input() {
-            panel.move_picker_cursor(1);
-            assert_eq!(panel.picker_cursor(), 0);
             assert_eq!(panel.confirm_menu(), None);
         }
         if let Some((x, y, w, h)) = panel.picker_rect()

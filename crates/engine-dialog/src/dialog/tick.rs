@@ -2,6 +2,21 @@
 
 use super::*;
 
+/// Whether the pager reads the player's pad on this call: not while the
+/// automatic press `_DAT_80073F00` (op `4C 89`) is still positive, whatever
+/// the state - the pager loads the pressed word and then zeroes it when the
+/// count is above zero (`lh v0,0x3F00` / `blez` / `move s1,zero` at
+/// `0x801D8604..0x801D8614`). So a page a script turns by itself can be
+/// neither skipped while it types nor turned early while it waits, and an
+/// open picker's cursor does not move. Hosts test it on the count as it
+/// stands ahead of the frame's pager call; the automatic press itself
+/// ([`OwnedDialogPanel::take_auto_press`]) is not masked.
+///
+/// PORT: FUN_801D84D0 (`0x801D8600..0x801D8614`, the pad mask under the automatic press)
+pub fn pager_reads_pad(auto_press: i16) -> bool {
+    auto_press <= 0
+}
+
 impl OwnedDialogPanel {
     pub fn set_glyphs_per_frame(&mut self, n: u8) {
         self.glyphs_per_frame = n.max(1);

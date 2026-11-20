@@ -369,7 +369,7 @@ impl World {
     ///
     /// PORT: FUN_80039B7C (`0x80039D44..0x80039D60`, `0x80039F1C..0x80039F34`
     /// the release hold, and `0x80039FE4` the yielded latch)
-    pub(crate) fn tick_script_release_hold(&mut self) {
+    pub fn tick_script_release_hold(&mut self) {
         if self.script_box_shown() {
             self.dialog.script_yield_latch = true;
         }

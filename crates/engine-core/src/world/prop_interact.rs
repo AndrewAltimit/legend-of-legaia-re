@@ -495,15 +495,10 @@ impl World {
         // A box dismissed on this tick: the record goes on in the same frame.
         let mut dismissed = false;
         if let Some(panel) = id.panel.as_mut() {
-            if panel.menu_active() {
-                let mut moved = false;
-                if up {
-                    moved |= panel.move_picker_cursor(-1);
-                }
-                if down {
-                    moved |= panel.move_picker_cursor(1);
-                }
-                if moved {
+            // The player's pad, unless the automatic press is counting.
+            let live = legaia_engine_dialog::dialog::pager_reads_pad(self.dialog.auto_press);
+            if panel.menu_active() && live {
+                if panel.step_picker_cursor(up, down) {
                     self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_MOVE_CUE);
                 }
             }
@@ -522,7 +517,7 @@ impl World {
             }
             // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
             // confirm the player did not make.
-            let confirm = confirm || panel.take_auto_press();
+            let confirm = (confirm && live) || panel.take_auto_press();
             if confirm {
                 self.dialog.input_consumed = true;
                 if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
