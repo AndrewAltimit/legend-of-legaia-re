@@ -1413,3 +1413,132 @@ fn the_armament_candidate_lists_build_the_rows_retail_builds() {
     }
     assert!(sorted > 1000, "{sorted}");
 }
+
+/// `FUN_80030628`'s spell list (content ids `5` / `0x20`): in the field
+/// (`gp+0x85C` = 0, `0x80031118..0x80031260`) against the Magic screen's
+/// `SpellMenuSession::current_spell_rows`, in battle (`gp+0x85C` = 1,
+/// `0x80031008..0x80031110`) against `BattleSpellSession`'s rows, over the
+/// disc's own
+/// Seru-magic records (`seru_magic_catalog_from_scus`): random learned
+/// lists, MP, MP-saver ability words (`+0x6BC`) and Ra-Seru bytes, the
+/// relevance broadcast `FUN_8003053C` answering from a random set the
+/// session gets as its unaffected list. A row is lit exactly when the port
+/// admits it, in the same order; an empty Ra-Seru byte builds no list, which
+/// the port carries as the caster's `ra_seru_missing`.
+#[test]
+fn the_spell_list_lights_the_rows_the_magic_screens_admit() {
+    differential!(scus(WINDOW_BUILD));
+    use legaia_engine_menus::spell_menu::{CasterSlot, SpellMenuSession};
+    let (Some(mut cpu), Some(exe)) = (scus_cpu(), crate::common::scus()) else {
+        return;
+    };
+    let catalog = legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&exe)
+        .expect("Seru magic table");
+    const RELEVANT: u32 = 0x8013_7000;
+    /// The per-character Ra-Seru slot table `0x8007B424`.
+    const RASERU_SLOT: u32 = 0x8007_B424;
+    grant_lists(&mut cpu);
+    cpu.hook(0x8003_053C, |r, m| {
+        r.r[V0] = u32::from(m.rd8(RELEVANT + (r.r[A0] & 0xFF)))
+    });
+    let ids: Vec<u8> = (0x81..=0x8B).collect();
+    let mut rng = Rng(0x5350_4C4C);
+    let (mut lit, mut dim) = (0, 0);
+    for case in 0..4000 {
+        let who = rng.below(3);
+        cpu.mem.wr32(GP + 0x874, who);
+        let battle = rng.below(2) == 1;
+        cpu.mem.wr32(GP + 0x85C, u32::from(battle));
+        let record = 0x8008_4140 + 0x414 * who;
+        let n = rng.below(12) as usize;
+        let mut learned = ids.clone();
+        for k in (1..learned.len()).rev() {
+            learned.swap(k, rng.below(k as u32 + 1) as usize);
+        }
+        learned.truncate(n);
+        cpu.mem.wr8(record + 0x704, n as u8);
+        for (k, id) in learned.iter().enumerate() {
+            cpu.mem.wr8(record + 0x705 + k as u32, *id);
+        }
+        let ability = [0u32, 0x10, 0x20, 0x30][rng.below(4) as usize] | (rng.next() & !0x30);
+        cpu.mem.wr32(record + 0x6BC, ability);
+        let mp = rng.below(120) as u16;
+        cpu.mem.wr16(record + 0x6D2, mp);
+        let raseru_slot = rng.below(4) as u16;
+        cpu.mem.wr16(RASERU_SLOT + 2 * who, raseru_slot);
+        let raseru = if rng.below(8) == 0 {
+            0
+        } else {
+            1 + rng.below(0xFF) as u8
+        };
+        cpu.mem.wr8(record + 0x75E + u32::from(raseru_slot), raseru);
+        let relevant: Vec<bool> = (0..256).map(|_| rng.below(4) != 0).collect();
+        for (k, r) in relevant.iter().enumerate() {
+            cpu.mem.wr8(RELEVANT + k as u32, u8::from(*r));
+        }
+        cpu.mem.wr8(NODE + 0x1C, [5u8, 0x20][rng.below(2) as usize]);
+        let grant = u32::from(rng.below(8) != 0);
+        cpu.mem.wr32(GRANT, grant);
+        for k in 0..0x20 {
+            cpu.mem.wr16(LIST_BUF + 0x28 + 2 * k, 0xDEAD);
+        }
+        assert_eq!(
+            cpu.call(WINDOW_BUILD, &[NODE]),
+            Stop::Returned,
+            "case {case}"
+        );
+
+        let caster = CasterSlot {
+            slot: 0,
+            mp,
+            hp: 1,
+            spells: learned.clone(),
+            ability_bits: ability,
+            ra_seru_missing: raseru == 0,
+            ..Default::default()
+        };
+        let unaffected: Vec<u8> = ids
+            .iter()
+            .copied()
+            .filter(|&id| !relevant[usize::from(id)])
+            .collect();
+        let mut s = SpellMenuSession::new(vec![caster], Vec::new(), catalog.clone())
+            .with_unaffected_spells(unaffected);
+        s.resume_cast(0, 0xFF, 0);
+        let ctx = format!("case {case}: learned {learned:02x?} mp {mp} ability {ability:#x}");
+        if raseru == 0 {
+            assert_eq!(
+                cpu.mem.rd16(LIST_BUF + 0x28),
+                0xDEAD,
+                "{ctx}: no Ra-Seru, no list"
+            );
+            continue;
+        }
+        let rows: Vec<(u8, bool)> = if battle {
+            legaia_engine_battle::battle_magic::BattleSpellSession::new(
+                0, 0, &learned, &catalog, mp, ability,
+            )
+            .spells
+            .iter()
+            .map(|r| (r.id, r.affordable))
+            .collect()
+        } else {
+            s.current_spell_rows()
+                .iter()
+                .map(|v| (v.spell_id, v.admissible))
+                .collect()
+        };
+        let want: Vec<u16> = rows
+            .iter()
+            .map(|&(id, ok)| u16::from(id) | if ok { 0x5000 } else { 0x5800 })
+            .collect();
+        assert_eq!(
+            list_rows(&mut cpu, grant, &want),
+            want,
+            "{ctx} battle {battle}"
+        );
+        lit += rows.iter().filter(|r| r.1).count();
+        dim += rows.iter().filter(|r| !r.1).count();
+    }
+    assert!(lit > 2000 && dim > 2000, "{lit} {dim}");
+}

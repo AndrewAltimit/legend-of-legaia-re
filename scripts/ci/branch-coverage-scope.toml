@@ -351,9 +351,9 @@ reason = "Content id 3 with a menu context word gp+0x85C other than 0 (field) or
 
 [[arm]]
 entry = "0x80030628"
-range = "0x80030F9C..0x800312F4"
-verdict = "unported"
-reason = "Content ids 5 and 0x20, the spell list (record +0x704 spell ids, the +0xF4 discounted MP cost, FUN_8003053C relevance); the engine's spell menu (engine-menus spell_menu) builds SpellRowView rows with the same gates rather than these row words, so no kernel returns them"
+range = "0x800310AC..0x800310AC"
+verdict = "unreachable"
+reason = "The battle spell list's usable bit (spell record +2 & 4): a learned list holds only the Seru-magic ids 0x81..0x8B, whose +2 target bytes on the disc (0x44, 0x64, 0x06, 0x26) all carry bit 4, so the dim-for-unusable arm is never taken"
 
 [[arm]]
 entry = "0x80030628"
