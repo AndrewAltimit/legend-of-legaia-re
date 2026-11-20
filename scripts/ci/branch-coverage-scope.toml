@@ -588,3 +588,39 @@ entry = "0x80036044"
 range = "0x800360AC..0x800360AC"
 verdict = "unreachable"
 reason = "The pre-walk's unit count starts at 1 (li t2,0x1 at 0x80036064) and only grows, so blez t2 never skips the main loop"
+
+[[arm]]
+entry = "0x801EA0CC"
+range = "0x801EA110..0x801EA110"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster: the Left-edge gate (_DAT_8007BB84 & 0x8000) of the previous-entry step; the port's flag_list_prev is the step itself and the engine's flag page gates it on its own pad bits (DevMenuSession::tick_event_flag)"
+
+[[arm]]
+entry = "0x801EA10C"
+range = "0x801EA110..0x801EA110"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster: the Left-edge gate (_DAT_8007BB84 & 0x8000) of the previous-entry step; the port's flag_list_prev is the step itself and the engine's flag page gates it on its own pad bits (DevMenuSession::tick_event_flag)"
+
+[[arm]]
+entry = "0x801EA51C"
+range = "0x801EA520..0x801EA520"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster: the held-bit gate in front of the flag raise FUN_8003CE08 (_DAT_801F2AA0); edit_flag_value ports the number step only, and the engine's flag page raises a flag through its own editor"
+
+[[arm]]
+entry = "0x801EA0CC"
+range = "0x801EA7AC..0x801EA968"
+verdict = "unreachable"
+reason = "PROT 0897 dev adjuster tail reached from this arm (the arm lies inside FUN_801E9F64): its generic nibble, word, halfword and byte editors key on s7, fp and t0, which FUN_801E9F64's prologue (0x801E9F8C, 0x801E9FC0) and the tail itself (0x801EA88C) zero and no row arm sets, so every branch here goes one way"
+
+[[arm]]
+entry = "0x801EA10C"
+range = "0x801EA7AC..0x801EA968"
+verdict = "unreachable"
+reason = "PROT 0897 dev adjuster tail reached from this arm (the arm lies inside FUN_801E9F64): its generic nibble, word, halfword and byte editors key on s7, fp and t0, which FUN_801E9F64's prologue (0x801E9F8C, 0x801E9FC0) and the tail itself (0x801EA88C) zero and no row arm sets, so every branch here goes one way"
+
+[[arm]]
+entry = "0x801EA51C"
+range = "0x801EA7AC..0x801EA968"
+verdict = "unreachable"
+reason = "PROT 0897 dev adjuster tail reached from this arm (the arm lies inside FUN_801E9F64): its generic nibble, word, halfword and byte editors key on s7, fp and t0, which FUN_801E9F64's prologue (0x801E9F8C, 0x801E9FC0) and the tail itself (0x801EA88C) zero and no row arm sets, so every branch here goes one way"
