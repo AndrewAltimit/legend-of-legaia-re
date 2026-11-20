@@ -910,3 +910,51 @@ entry = "801F6B24"
 range = "0x801F6E14..0x801F6E54"
 verdict = "unreachable"
 reason = "PROT 0978's back-read strip read: the gate on the build-mode halfword 0x8007B8C2 and the dev build's host-file arm it guards (FUN_8003E9C0 on the int.tim / int2.tim path strings); retail boot stores the halfword non-zero (gp+0x5AA at 0x80015F08), so only the PROT read runs."
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80031DF0..0x80031E38"
+verdict = "unported"
+reason = "The window walk's node-list machinery: the list read back after each node, a node marked -2 at +0x20 closed through FUN_800319A8, a node's own callback at +0x28; the engine keeps no gp+0x148 node list (text_actor_arm's REPLACED-BY), its screens own their windows"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80031EB4..0x80031EB4"
+verdict = "unreachable"
+reason = "The number record's power table at 0x80073DCC holds eighteen non-zero words before its zero, and the place loop (s2 = 9) reads exactly eighteen, so the zero-terminator exit never fires"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80031FB4..0x80032000"
+verdict = "unported"
+reason = "A number record of type 5 draws +0xC separator glyphs (FUN_8003C1F8, 8 px apart) instead of a value; the engine draws its separators at fixed seats (battle_chrome BAR_*_SEPARATOR, panel::*_SEPARATOR)"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80032064..0x80032064"
+verdict = "unreachable"
+reason = "The pointer-read copy of the place walk reads the same eighteen non-zero powers at 0x80073DCC for its nine places, so its zero-terminator exit never fires"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80032190..0x80032190"
+verdict = "unreachable"
+reason = "The kind bound after the clamp: a kind of 0x24 or more is replaced by 0x23 two instructions earlier (0x8003217C..0x80032188), so sltiu 0x24 always passes"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80032208..0x800322C8"
+verdict = "unported"
+reason = "Kind 1's typewriter internals: the +0x20 hold, the +0x1E reveal counter walked over the record's length-prefixed segments, and the hand-off to kind 0x11 when it completes; text_actor_arm ports the dispatch only, the engine's dialogue typewriter is its own (engine-dialog)"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80032340..0x80032340"
+verdict = "unported"
+reason = "Kind 0x11's advance: a press under the record's masks (0x80084140 + 0x590 / 0x594) turns the node to kind 0xD; text_actor_arm ports the draw only"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x800323CC..0x800323CC"
+verdict = "unported"
+reason = "A node with a width (+0xE) draws its frame through FUN_8002C69C in style +0x1D; the engine's window models draw their own frames rather than through this walk"

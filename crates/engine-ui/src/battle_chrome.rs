@@ -402,6 +402,61 @@ pub const fn figure_left(right: i16, cells: u16, digits: u16) -> i16 {
     digits_left_of(right, n)
 }
 
+/// The cells a number record's field draws for `value` in a field of
+/// `cells` cells: `(x offset from the field's left edge, digit)` per glyph.
+///
+/// The place walk of `FUN_80031D00`'s number records (`0x80031E84..
+/// 0x80031FA4`, and its copy at `0x8003203C..0x80032150` for a value read
+/// through a pointer): nine places from `10^8` down, each digit found by
+/// subtracting `4 * 10^k` then `10^k` (the table at `0x80073DCC`), so the
+/// top place is not capped at 9. A non-zero digit draws and advances the
+/// pen. A leading zero draws on the last place, takes a blank cell inside
+/// the field (`cells >= place`) and is skipped outside it. A zero after the
+/// first drawn digit draws, except at a place above a non-empty field
+/// (`0 < cells < place`), where it is dropped **without** a cell - so a
+/// figure wider than its field loses its interior zeros above the field.
+/// A negative value draws a single `0` on the last place.
+///
+/// [`figure_left`] is the first cell of this walk for a figure whose zeros
+/// all fall inside the field.
+///
+/// PORT: FUN_80031D00 (the number record's place walk)
+pub fn number_record_cells(value: i32, cells: i16) -> Vec<(i16, u8)> {
+    let mut out = Vec::new();
+    let (mut v, mut x, mut drawn) = (value, 0i16, false);
+    let mut p: i32 = 100_000_000;
+    for place in (1..=9i16).rev() {
+        let mut d: i32 = 0;
+        while v >= 4 * p {
+            v -= 4 * p;
+            d += 4;
+        }
+        while v >= p {
+            v -= p;
+            d += 1;
+        }
+        p /= 10;
+        let draw = if d != 0 {
+            true
+        } else if drawn {
+            !(cells < place && cells != 0)
+        } else if place < 2 {
+            true
+        } else {
+            if cells >= place {
+                x += 8;
+            }
+            false
+        };
+        if draw {
+            out.push((x, d as u8));
+            x += 8;
+            drawn = true;
+        }
+    }
+    out
+}
+
 /// Cell count a value occupies, which is its decimal digit count (retail
 /// pads nothing - a level of `1` is one cell, `99` is two).
 pub const fn digit_count(value: u32) -> u16 {
