@@ -312,3 +312,290 @@ fn an_inn_stay_restores_what_retail_restores() {
         assert!(diff.is_empty(), "round {round}: {diff:?}");
     }
 }
+
+/// `3C` / `3D`, the party join and leave, stepped by the real `World` on a
+/// generated present-party list: retail's arms (`0x801E04C4..0x801E05DC`,
+/// `0x801E05E0..0x801E06D0`) edit the list `0x80084598` for `0x80084594`
+/// entries and the leader byte `0x80084597`; the port's are
+/// `FieldHostImpl::party_add` / `party_remove` over `present_party_list`.
+/// Compared: the list (count and order) and the leader. Lists run from empty
+/// to full, sorted as the join keeps them, with the operand in or out of it.
+#[test]
+fn a_party_join_or_leave_edits_the_list_as_retail_does() {
+    differential!(prot(897, VM));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const COUNT: u32 = 0x8008_4594;
+    const LEADER: u32 = 0x8008_4597;
+    const LIST: u32 = 0x8008_4598;
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
+    cpu.mem.wr8(0x1F80_0393, 1);
+    cpu.mem.wr32(CTX + 0x94, SCRIPT);
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = crate::common::Rng(0x5041_5254);
+    let mut differ: BTreeMap<String, u32> = BTreeMap::new();
+    for round in 0..2000u32 {
+        let op = if round % 2 == 0 { 0x3C } else { 0x3D };
+        let n = rng.below(5) as usize;
+        let mut list: Vec<u8> = Vec::new();
+        while list.len() < n {
+            let id = rng.below(5) as u8;
+            if !list.contains(&id) {
+                list.push(id);
+            }
+        }
+        list.sort_unstable();
+        let id = if !list.is_empty() && rng.below(2) == 0 {
+            list[rng.below(list.len() as u32) as usize]
+        } else {
+            rng.below(5) as u8
+        };
+        let leader = if !list.is_empty() && rng.below(3) != 0 {
+            list[rng.below(list.len() as u32) as usize]
+        } else {
+            rng.below(5) as u8
+        };
+
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        cpu.mem.wr8(COUNT, list.len() as u8);
+        cpu.mem.wr8(LEADER, leader);
+        for i in 0..4 {
+            cpu.mem.wr8(LIST + i, list.get(i as usize).copied().unwrap_or(0));
+        }
+        cpu.mem.load(SCRIPT, &[op, id]);
+        assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
+        assert_eq!(cpu.regs.r[2], 2);
+        let count = cpu.mem.rd8(COUNT) as usize;
+        let retail_list = cpu.mem.read(LIST, count.min(4));
+        let retail_leader = cpu.mem.rd8(LEADER);
+
+        let mut w = legaia_engine_core::world::World::new();
+        w.party.party_actor_slots = list.iter().map(|&i| Some(i)).collect();
+        w.party.field_list_emptied = list.is_empty();
+        w.party.party_leader_slot = Some(leader);
+        w.field_bytecode = vec![op, id, 0x21];
+        w.field_pc = 0;
+        let _ = w.step_field();
+        let port_list = w.present_party_list();
+        let port_leader = w.party.party_leader_slot;
+        if port_list != retail_list || port_leader != Some(retail_leader) {
+            *differ
+                .entry(format!(
+                    "{op:02X} {id} on {list:?} leader {leader}: retail {retail_list:?} \
+                     leader {retail_leader}, port {port_list:?} leader {port_leader:?}"
+                ))
+                .or_default() += 1;
+        }
+    }
+    let report: Vec<String> = differ.keys().cloned().collect();
+    assert!(report.is_empty(), "{}", report.join("\n"));
+}
+
+/// The party-record tests of op `4C`, stepped by the real `World` on
+/// generated records and a generated present-party list: `4C 8B` (a spell in
+/// the learned list `+0x13C` of a present member below character 3,
+/// `0x801E2320..0x801E23E4`), `4C 8D` (a skill in character `n`'s displayed
+/// list `+0x185`, `0x801E2404..0x801E2474`), `4C DE` (an item in a present
+/// member's equipment `+0x196`, `0x801E2F7C..0x801E3024`) and `4C DC`, the
+/// same scan behind a bag miss (`FUN_80042EE0` answers `0x100`; the port's
+/// bag is empty). Compared: the next PC, the skip taken or not.
+#[test]
+fn a_spell_skill_or_item_test_skips_as_retail_skips() {
+    differential!(prot(897, VM));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const RECORDS: u32 = 0x8008_4708;
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
+    cpu.stub(0x8004_2EE0, 0x100);
+    cpu.hook(READ_U16, |r, m| r.r[2] = u32::from(m.rd16(r.r[4])));
+    cpu.mem.wr8(0x1F80_0393, 1);
+    cpu.mem.wr32(CTX + 0x94, SCRIPT);
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = crate::common::Rng(0x534B_494C);
+    let (mut taken, mut ran) = (0u32, 0u32);
+    let mut differ: BTreeMap<String, u32> = BTreeMap::new();
+    for round in 0..4000u32 {
+        let sub = [0x8B, 0x8D, 0xDE, 0xDC][round as usize % 4];
+        let n = rng.below(5) as usize;
+        let mut list: Vec<u8> = Vec::new();
+        while list.len() < n {
+            let id = rng.below(4) as u8;
+            if !list.contains(&id) {
+                list.push(id);
+            }
+        }
+        list.sort_unstable();
+        // Small id ranges, so a hit is common.
+        let mut records = vec![0u8; 4 * 0x414];
+        for r in records.chunks_mut(0x414) {
+            for b in r.iter_mut() {
+                *b = rng.next() as u8;
+            }
+            r[0x13C] = rng.below(12) as u8;
+            r[0x185] = rng.below(12) as u8;
+            for i in 0..12 {
+                r[0x13D + i] = rng.below(24) as u8;
+                r[0x186 + i] = rng.below(24) as u8;
+            }
+            for i in 0..8 {
+                r[0x196 + i] = rng.below(24) as u8;
+            }
+        }
+        let needle = rng.below(24) as u8;
+        let ch = rng.below(4) as u8;
+        let script: Vec<u8> = match sub {
+            0x8D => vec![0x4C, sub, ch, needle, 0x10, 0x00, 0x21],
+            _ => vec![0x4C, sub, needle, 0x10, 0x00, 0x21],
+        };
+
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        cpu.mem.load(RECORDS, &records);
+        cpu.mem.wr8(0x8008_4594, list.len() as u8);
+        for i in 0..4 {
+            cpu.mem
+                .wr8(0x8008_4598 + i, list.get(i as usize).copied().unwrap_or(0));
+        }
+        cpu.mem.load(SCRIPT, &script);
+        assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
+        let retail = cpu.regs.r[2] as usize & 0xFFFF;
+
+        let mut w = legaia_engine_core::world::World::new();
+        let mut party = legaia_save::Party::zeroed(4);
+        for (m, r) in party.members.iter_mut().zip(records.chunks(0x414)) {
+            m.raw.copy_from_slice(r);
+        }
+        w.party.roster = party;
+        w.party.party_actor_slots = list.iter().map(|&i| Some(i)).collect();
+        w.party.field_list_emptied = list.is_empty();
+        w.field_bytecode = script.clone();
+        w.field_pc = 0;
+        let port = match w.step_field() {
+            Some(StepResult::Advance { next_pc }) => next_pc,
+            other => panic!("{script:02x?}: {other:?}"),
+        };
+        ran += 1;
+        if retail != script.len() - 1 {
+            taken += 1;
+        }
+        if port != retail {
+            *differ
+                .entry(format!("{script:02x?} on {list:?}: retail {retail} port {port}"))
+                .or_default() += 1;
+        }
+    }
+    let report: Vec<String> = differ.keys().take(20).cloned().collect();
+    assert!(report.is_empty(), "{}", report.join("\n"));
+    assert!(ran == 4000 && taken > 500 && ran - taken > 500, "{ran} {taken}");
+}
+
+/// Every opcode `0x21..=0x4F` with every first operand byte and three tails
+/// (zeros, `0xFF`s, small generated bytes), in [`corpus`]'s shape.
+pub(crate) fn synthetic() -> Vec<(Vec<u8>, usize, String)> {
+    let mut rng = crate::common::Rng(0x4F50_4E44);
+    let mut out = Vec::new();
+    for op in 0x21..=0x4Fu8 {
+        for (b1, tail) in (0..=0xFFu8).flat_map(|b| (0..3).map(move |t| (b, t))) {
+            let mut script = vec![op, b1];
+            // Zeros and `0xFF`s reach the arms that test an operand for
+            // zero or `-1`; small bytes reach the rest.
+            script.extend((0..62).map(|_| match tail {
+                0 => 0,
+                1 => 0xFF,
+                _ => rng.below(0x20) as u8,
+            }));
+            // The zeroed RAM past the bytes, which an inline text walk
+            // reads on retail's side.
+            script.resize(0x200, 0);
+            let label = if op == 0x4C || op == 0x43 {
+                format!("{op:02X} {b1:02X}")
+            } else {
+                format!("{op:02X}")
+            };
+            out.push((script, 0, label));
+        }
+    }
+    out
+}
+
+/// Every opcode with every first operand byte, the rest generated: the
+/// sub-op values no script on the disc carries, which land on each switch's
+/// default arm (`43` past sub `0x15`, `35` outside `1..=0xB`, `4E` past
+/// `0xB`, `49` past `0xD`, `4C 1x` past `0x14`, `4C 4x` past `0xD`, `4C 5x`
+/// past `4`, `4C EF`, `42` past mode `1`). Compared: the next PC, with
+/// every call stubbed and every flag clear as in the disc corpus.
+#[test]
+fn every_operand_byte_steps_where_retail_steps() {
+    differential!(prot(897, VM));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
+    cpu.hook(RESOLVE_ACTOR, |r, _| r.r[2] = CTX);
+    cpu.hook(READ_U16, |r, m| r.r[2] = u32::from(m.rd16(r.r[4])));
+    cpu.hook(PACKET_LENGTH, |r, m| {
+        let bytes = m.read(r.r[4], 0x400);
+        r.r[2] = legaia_scene_formats::field_disasm::packet_length(&bytes) as u32;
+    });
+    cpu.step_budget = 20_000;
+    cpu.mem.wr8(0x1F80_0393, 1);
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let (mut ran, mut agree) = (0u32, 0u32);
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    for (script, _, _) in synthetic() {
+        let (op, b1) = (script[0], script[1]);
+        {
+            cpu.mem = clean.clone();
+            cpu.regs.r[GP] = gp;
+            cpu.mem.load(SCRIPT, &script);
+            cpu.mem.wr32(CTX + 0x94, SCRIPT);
+            if cpu.call(VM, &[SCRIPT, 0, CTX]) != Stop::Returned {
+                continue;
+            }
+            let retail = cpu.regs.r[2] as usize & 0xFFFF;
+            let mut ctx = FieldCtx::default();
+            let port = match step(&mut Inert { hit: true }, &mut ctx, &script, 0) {
+                StepResult::Advance { next_pc } => next_pc,
+                StepResult::Yield { resume_pc } => resume_pc,
+                StepResult::Halt { final_pc } => final_pc,
+                StepResult::Pending { .. } | StepResult::Unknown { .. } => continue,
+            };
+            ran += 1;
+            if port & 0xFFFF == retail {
+                agree += 1;
+                continue;
+            }
+            let key = if op == 0x4C {
+                format!("4C {b1:02X}")
+            } else {
+                format!("{op:02X}")
+            };
+            let e = differ.entry(key).or_default();
+            e.0 += 1;
+            if e.0 == 1 {
+                e.1 = format!("retail {retail:#x} port {port:#x} bytes {:02x?}", &script[..8]);
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(report.is_empty(), "{ran} ran {agree} agree\n{}", report.join("\n"));
+    assert!(ran > 30_000, "{ran}");
+}

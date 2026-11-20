@@ -582,3 +582,272 @@ fn a_tile_warp_lands_on_the_context_it_names() {
     assert!(report.is_empty(), "{}", report.join("\n"));
     assert!(own > 100 && other > 500, "{own} {other}");
 }
+
+/// The answers a stubbed retail world gives the VM, read off the same RAM
+/// the test seeds: the story-flag word `0x1F800394`, the held pad
+/// `0x8007B850`, the region mask `0x8007B8F4`, the menu-resume slot
+/// `0x8007B450`, the d-pad compass table `0x801F28D0` and the spawn bracket
+/// `*(0x801C6EA4) + 8`. Everything else answers as [`Inert`] does.
+struct Seeded {
+    flags: u32,
+    pad: u32,
+    regions: u32,
+    compass: [u32; 8],
+    op49: Op49State,
+    bracket: bool,
+}
+impl FieldFlagsHost for Seeded {
+    fn global_flags(&self) -> u32 {
+        self.flags
+    }
+    fn set_global_flags(&mut self, value: u32) {
+        self.flags = value;
+    }
+    fn frame_delta(&self) -> u16 {
+        1
+    }
+    fn extra_flags(&self) -> u32 {
+        self.regions
+    }
+    fn held_pad(&self) -> u32 {
+        self.pad
+    }
+    fn pad_compass_entry(&self, index: u8) -> Option<u32> {
+        self.compass.get(usize::from(index)).copied()
+    }
+}
+impl FieldSceneHost for Seeded {}
+impl FieldTerrainHost for Seeded {
+    fn world_to_tile_use_alt(&self) -> bool {
+        self.flags & 0x0002_0000 != 0
+    }
+}
+impl FieldCameraHost for Seeded {}
+impl FieldCameraMotionHost for Seeded {
+    fn camera_glide_live(&mut self) -> bool {
+        false
+    }
+}
+impl FieldScreenHost for Seeded {}
+impl FieldAudioHost for Seeded {
+    fn bgm_ready(&mut self, sub_op: u8) -> bool {
+        sub_op != 0xA
+    }
+}
+impl FieldPartyInventoryHost for Seeded {
+    fn op4c_nd_subc_item_held(&self, _needle: u8) -> bool {
+        true
+    }
+}
+impl FieldDialogMenuHost for Seeded {
+    fn press_prompt(&mut self, _x: u16, _y: u16) -> bool {
+        false
+    }
+    fn op4c_n5_sub3_dialog_wait(&mut self, _ctx: &mut FieldCtx) -> bool {
+        true
+    }
+    fn op49_state(&self) -> Op49State {
+        self.op49
+    }
+}
+impl FieldActorHost for Seeded {}
+impl FieldActorSpawnHost for Seeded {
+    fn actor_guard(&mut self, _actor_id: u8) -> Option<()> {
+        Some(())
+    }
+}
+impl FieldActorFxHost for Seeded {
+    fn spawn_attached_light(
+        &mut self,
+        _ctx: &FieldCtx,
+        _ext: Option<u8>,
+        _spawn: &legaia_engine_vm::field_actor_billboard::AttachedSpriteSpawn,
+        _script: Option<&[u8]>,
+    ) -> bool {
+        true
+    }
+}
+impl FieldPlayerHost for Seeded {}
+impl FieldHaltHost for Seeded {
+    fn spawn_bracket(&self) -> bool {
+        self.bracket
+    }
+}
+
+/// The corpus again, with the generated sub-ops of
+/// [`crate::field_vm::synthetic`], each instruction under seeded world state
+/// the plain corpus runs leave clear: random story flags, held pad and region mask;
+/// the menu-resume slot `0x8007B450` armed and done; a context that carries
+/// the halt bit, with the spawn bracket up or down and the system script
+/// `0xFB` calling it or not; the player's context `0x8007C364`; and a context that runs no
+/// script (`+0x94 == 0`), the player's or not. Retail reads that state from RAM; the port
+/// asks its host, which answers from the same seeds. Compared: the next PC,
+/// every modelled context field and the story-flag word.
+#[test]
+fn every_instruction_under_seeded_state_steps_as_retail_steps() {
+    differential!(prot(897, VM));
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const FLAGS: u32 = 0x1F80_0394;
+    const PAD: u32 = 0x8007_B850;
+    const REGIONS: u32 = 0x8007_B8F4;
+    const OP49: u32 = 0x8007_B450;
+    const SCENE: u32 = 0x8013_0000;
+    const PLAYER: u32 = 0x8007_C364;
+    // The spawn bracket's scene record.
+    cpu.mem.wr32(0x801C_6EA4, SCENE);
+    let mut compass = [0u32; 8];
+    for (i, c) in compass.iter_mut().enumerate() {
+        *c = cpu.mem.rd32(0x801F_28D0 + 4 * i as u32);
+    }
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut corpus = corpus();
+    corpus.extend(crate::field_vm::synthetic());
+    let mut rng = Rng(0x5345_4544);
+
+    let mut ran = 0u32;
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    for (script, pc, label) in &corpus {
+        for variant in 0..8u32 {
+            cpu.mem = clean.clone();
+            cpu.regs.r[GP] = gp;
+            cpu.mem.load(SCRIPT, script);
+            cpu.mem.wr32(CTX + 0x94, SCRIPT);
+            let mut host = Seeded {
+                flags: rng.next(),
+                pad: rng.next(),
+                regions: rng.next(),
+                compass,
+                op49: Op49State::Idle,
+                bracket: false,
+            };
+            if rng.below(4) == 0 {
+                // A pad that matches a compass entry.
+                host.pad = (host.pad & !0xF000) | (compass[rng.below(8) as usize] & 0xF000);
+            }
+            let mut halted = false;
+            let mut id = rng.below(0x40);
+            match variant {
+                1 => {
+                    host.op49 = Op49State::Done;
+                    cpu.mem.wr32(OP49, 1);
+                }
+                2 => {
+                    host.op49 = Op49State::Armed;
+                    cpu.mem.wr32(OP49, SCRIPT + 0x10);
+                }
+                3 => {
+                    halted = true;
+                    host.bracket = true;
+                    cpu.mem.wr16(SCENE + 8, 1);
+                }
+                4 => {
+                    halted = true;
+                    if rng.below(2) == 0 {
+                        id = 0xFB;
+                    }
+                }
+                // The context is the player's.
+                5 => cpu.mem.wr32(PLAYER, CTX),
+                // The context runs no script, and is or is not the player's.
+                6 => cpu.mem.wr32(CTX + 0x94, 0),
+                7 => {
+                    cpu.mem.wr32(CTX + 0x94, 0);
+                    cpu.mem.wr32(PLAYER, CTX);
+                }
+                _ => {}
+            }
+            cpu.mem.wr32(FLAGS, host.flags);
+            cpu.mem.wr32(PAD, host.pad);
+            cpu.mem.wr32(REGIONS, host.regions);
+            let mut ctx = FieldCtx::default();
+            for (name, off, width) in FIELDS {
+                let mut v = rng.next();
+                match name {
+                    "flags" if halted => v |= 0x400,
+                    "flags" if variant >= 5 && variant != 6 => v = (v & !0x400) | 0x0100_0000,
+                    "flags" => v &= !0x0100_0400,
+                    "script_id" => v = id,
+                    _ => {}
+                }
+                if width == 1 {
+                    v &= 0xFF;
+                } else if width == 2 {
+                    v &= 0xFFFF;
+                }
+                wr(&mut cpu, off, width, v);
+                seat(&mut ctx, name, v);
+            }
+            if cpu.call(VM, &[SCRIPT, *pc as u32, CTX]) != Stop::Returned {
+                continue;
+            }
+            let retail_pc = cpu.regs.r[2] as usize & 0xFFFF;
+            let seeded = ctx.clone();
+            let port_pc = match step(&mut host, &mut ctx, script, *pc) {
+                StepResult::Advance { next_pc } => next_pc,
+                StepResult::Yield { resume_pc } => resume_pc,
+                StepResult::Halt { final_pc } => final_pc,
+                StepResult::Pending { .. } | StepResult::Unknown { .. } => continue,
+            };
+            ran += 1;
+            let mut wrong = Vec::new();
+            if port_pc & 0xFFFF != retail_pc {
+                wrong.push(format!("pc retail {retail_pc:#x} port {port_pc:#x}"));
+            }
+            for (name, off, width) in FIELDS {
+                let (r, p) = (rd(&mut cpu, off, width), port_field(&ctx, name));
+                // A field the port leaves to its host is `field_ctx`'s count.
+                if r != p && port_field(&seeded, name) != p {
+                    wrong.push(format!("{name} retail {r:#x} port {p:#x}"));
+                }
+            }
+            let flags = cpu.mem.rd32(FLAGS);
+            if flags != host.flags {
+                wrong.push(format!("story flags retail {flags:#x} port {:#x}", host.flags));
+            }
+            // A halt-acquire is refused on retail when its context already
+            // holds the halt bit outside the spawn bracket, or runs no script
+            // (`+0x94 == 0`) and is not the player: the guard every acquiring
+            // arm opens with (`0x801DEE90..0x801DEED8` for `38`). The port's
+            // VM acquires anyway: the engine lifts the halt bit off a context
+            // around its step (`step_on_resolved_channel`), the system
+            // context's own halt is no suspension there, and `saved_pc` is an
+            // offset, not a script pointer. A port gap, not compared.
+            let acquire = matches!(label.as_str(), "37" | "38" | "41" | "47")
+                || label.starts_with("43 0")
+                || label.starts_with("4C 6")
+                || matches!(label.as_str(), "4C 80" | "4C 85" | "4C 8E" | "4C 8F");
+            if matches!(variant, 4 | 6) && acquire {
+                continue;
+            }
+            // The port has no player context: `A2 F8` raises an ExecMove
+            // event the player model binds (`leader * 7 + slot + 1`), and
+            // `A3 F8` moves the player, so retail's player arms
+            // (`0x801DE9A8..0x801DEA84`, `0x801DEC80..0x801DECA8`) are held
+            // to the next PC only.
+            if matches!(variant, 5 | 7) && matches!(label.as_str(), "22" | "23") {
+                wrong.retain(|w| w.starts_with("pc "));
+            }
+            if !wrong.is_empty() && label != "4C 50" {
+                let e = differ.entry(format!("v{variant} {label}")).or_default();
+                e.0 += 1;
+                if e.0 == 1 {
+                    e.1 = format!(
+                        "pc {pc:#x} bytes {:02x?}: {}",
+                        &script[*pc..(*pc + 10).min(script.len())],
+                        wrong.join(", ")
+                    );
+                }
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(report.is_empty(), "{ran} runs\n{}", report.join("\n"));
+    assert!(ran > 10_000, "{ran}");
+}

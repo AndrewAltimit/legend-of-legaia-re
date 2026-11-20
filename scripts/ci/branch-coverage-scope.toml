@@ -1146,6 +1146,95 @@ reason = "PROT 0899 sub-screen 0x15 step 1: the party picker FUN_801D688C answer
 
 # lane C
 # lane C: 801DE840
+[[arm]]
+entry = "801DE840"
+range = "0x801E0C4C..0x801E0C4C"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C: `srl v1,s3,4; sltiu v0,v1,0x10` bounds the outer-nibble table index, and a byte shifted right by four is always below 16, so the default arm is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E0F08..0x801E0F08"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C nibble 3: `andi v1,s3,0xf; sltiu v0,v1,0x10` bounds a 16-entry table with a four-bit index, so the default arm is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E1EA8..0x801E1EA8"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C nibble 8: `andi v1,s3,0xf; sltiu v0,v1,0x10` bounds a 16-entry table with a four-bit index, so the default arm is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E25E8..0x801E25E8"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C nibble C: `andi v1,s3,0xf; sltiu v0,v1,0x10` bounds a 16-entry table with a four-bit index, so the default arm is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E2AC0..0x801E2AC0"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C nibble D: `andi v1,s3,0xf; sltiu v0,v1,0x10` bounds a 16-entry table with a four-bit index, so the default arm is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DE9BC..0x801DEA0C"
+verdict = "unported"
+reason = "PROT 0897 op 22, the player's arm (`s5 == *0x8007C364`): move id 0x63 maps to the leader's record, the party-bank bit 0x1000000 picks `op + leader * 7` or `op + *0x8007B6AC - 1`, and +0x56 is not written; the port has no player context, `A2 F8` raises FieldEvent::ExecMove and the player model binds `leader * 7 + slot + 1` (World::drain_field_anim_cues)"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DEE98..0x801DEED4"
+verdict = "unported"
+reason = "PROT 0897 op 38 halt acquire: refused (PC kept) when the context runs no script (+0x94 == 0) and is not the player, or already holds the halt bit outside the spawn bracket `*(0x801C6EA4) + 8`; the VM acquires anyway, since the engine lifts the halt bit around a routed step (step_on_resolved_channel), the system context's halt is no suspension there and saved_pc is an offset; field_ctx's seeded test skips the two refusing states"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DEF30..0x801DEF6C"
+verdict = "unported"
+reason = "PROT 0897 op 37 / 41 halt acquire: the same refusal guard as op 38 (no script and not the player, or already halted outside the spawn bracket); the VM acquires anyway (see the op-38 row)"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DEFC8..0x801DF004"
+verdict = "unported"
+reason = "PROT 0897 op 47 halt acquire: the same refusal guard as op 38 (no script and not the player, or already halted outside the spawn bracket); the VM acquires anyway (see the op-38 row)"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DF38C..0x801DF3C8"
+verdict = "unported"
+reason = "PROT 0897 op 43 sub 0/1/A/B arc acquire: the same refusal guard as op 38; the VM refuses only through FieldHaltHost::arc_target_halted, which the engine answers from its own arc state, not from the context's halt bit (see the op-38 row)"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E1BC8..0x801E1C04"
+verdict = "unported"
+reason = "PROT 0897 op 4C 6x halt acquire (behind a nonzero +0xD operand on an extended op): the same refusal guard as op 38; the VM acquires anyway (see the op-38 row)"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E1ED4..0x801E1F10"
+verdict = "unported"
+reason = "PROT 0897 op 4C 80 halt acquire: the same refusal guard as op 38; the VM acquires anyway (see the op-38 row)"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E2150..0x801E218C"
+verdict = "unported"
+reason = "PROT 0897 op 4C 85 / 8E / 8F halt acquire: the same refusal guard as op 38; the VM acquires anyway (see the op-38 row)"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DFD40..0x801DFD40"
+verdict = "unported"
+reason = "PROT 0897 op 34 sub 0: `_DAT_1F800394` bit 23 routes the walk-out tween through FUN_80024E80 instead of FUN_801DE2B0; set_effect_colour models only the FUN_801DE2B0 spawn because no field or motion script on the disc raises bit 23"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DFEC0..0x801DFEC0"
+verdict = "unported"
+reason = "PROT 0897 op 34 sub 0: the walk-in tween's bit-23 fork to FUN_80024E80, unmodelled for the reason the walk-out row gives"
 # lane C: 801E76D4
 [[arm]]
 entry = "801E76D4"

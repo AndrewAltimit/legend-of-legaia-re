@@ -158,7 +158,7 @@ pub trait FieldFlagsHost {
     fn flag_bit_is_set(&self, ctx: &FieldCtx, bank: u8, bit: u8) -> bool {
         match bank {
             0 => ctx.flags & (1u32 << (bit & 0x1F)) != 0,
-            1 => ctx.local_flags & (1u16 << (bit & 0x1F)) != 0,
+            1 => u32::from(ctx.local_flags) & (1u32 << (bit & 0x1F)) != 0,
             2 => self.global_flags() & (1u32 << (bit & 0x1F)) != 0,
             _ => false,
         }

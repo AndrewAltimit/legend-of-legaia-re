@@ -147,7 +147,8 @@ pub fn step_from_caller<H: FieldHost>(
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            ctx.local_flags |= 1u16 << (b & 0x1F);
+            // `sllv` on a 32-bit one, stored with `sh`: bits 16+ fall off.
+            ctx.local_flags |= (1u32 << (b & 0x1F)) as u16;
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -158,7 +159,7 @@ pub fn step_from_caller<H: FieldHost>(
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            ctx.local_flags &= !(1u16 << (b & 0x1F));
+            ctx.local_flags &= !((1u32 << (b & 0x1F)) as u16);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -169,7 +170,7 @@ pub fn step_from_caller<H: FieldHost>(
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let set = ctx.local_flags & (1u16 << (b & 0x1F)) != 0;
+            let set = u32::from(ctx.local_flags) & (1u32 << (b & 0x1F)) != 0;
             if set {
                 StepResult::Advance {
                     next_pc: pc + header_size + 1,
