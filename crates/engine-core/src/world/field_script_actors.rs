@@ -292,8 +292,20 @@ impl World {
     /// to `FUN_801D25EC` (`0x801DF5AC`). The landing point is built from the
     /// operand ([`hop_arc::ScriptArcRequest::landing`], the floor under a tile
     /// target standing in for `FUN_80019278`), the clip seeded by
-    /// [`hop_arc::spawn_arc_with_emitter`]. A second arc on an actor that is
-    /// still arcing replaces the first.
+    /// [`hop_arc::spawn_arc_with_emitter`].
+    ///
+    /// A second arc on an actor that is still arcing flies beside the first:
+    /// `FUN_801D25EC` allocates a fresh helper and watcher pair
+    /// (`0x801D2634`, `0x801D2760`) and looks for no helper already on the
+    /// parent, and each helper writes its parent's position every frame until
+    /// it retires. The arm refuses only a target that still carries `0x400`
+    /// ([`Self::script_arc_target_halted`]), so a record that drops the bit
+    /// with `32 <id> 0A` arcs the actor again mid-flight. `edson` `P2[0]`
+    /// sends flat `12` on a 470-frame arc at `+0xF7`, clears its halt at
+    /// `+0x127` and arcs it onto its seat with a 146-frame drop at `+0x1E7`:
+    /// the long arc outlives the drop and lands it on its own tile `(23, 58)`
+    /// (`credits_edson_panel_pcsx`; `credits_edson_fullscreen_pcsx` holds the
+    /// one live helper, `+0x9C` at 96% of the 470-frame flight).
     ///
     /// `release_channel` is the placement slot whose channel(s) the landing
     /// un-halts - see [`FieldScriptArc::release_channel`].
@@ -329,7 +341,6 @@ impl World {
         let Some(watcher) = spawn.emitter else {
             return false;
         };
-        self.script_actors.arcs.retain(|a| a.actor != actor);
         self.script_actors.arcs.push(FieldScriptArc {
             actor,
             arc: spawn.arc,
