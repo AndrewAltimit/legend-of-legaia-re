@@ -82,6 +82,14 @@ tick](../subsystems/minigame-fishing.md#the-venues-game-tick). Over a catch the
 and the plate; the state column keeps `0x1E` past the close-up, since the port
 holds the showcase states `0x20..0x22` in the venue camera, not the session.
 
+Without `--replay` the engine runs the pond on its own clock, and the pace is
+the comparison: the engine side writes `edt` (the step the next game frame runs
+on), `ran` (the step this vsync's frame ran on, `0` between frames) and `cost`
+(what the last frame stored in the pond pacer's ring), beside retail's `dt` and
+frame counter `gframe`. The names are the engine's own, so the rules table
+leaves them out. Add the ring (`0x80084098`, sixteen `s16`) and its cursor
+(`0x8007B758`) to the retail words to read retail's cost per frame.
+
 ## The Baka Fighter film
 
 `--set baka` from `minigame_baka_fighter_retail_attract`, START at vsync `30` and

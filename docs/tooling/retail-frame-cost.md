@@ -493,8 +493,10 @@ interrupts in, against the floor each venue stores (`_DAT_8007B9D8`):
 
 The dance hall's step is its floor on any machine, so the port's pinned `3`
 is retail's. The pond's frames read `3` on their own work, with the drive
-idle: on PCSX-Redux's scale the venue runs above the floor of `2` the port
-pins ([fishing](../subsystems/minigame-fishing.md#the-venues-game-tick)).
+idle: on PCSX-Redux's scale the venue runs above its floor of `2` wherever a
+frame passes `0x1FF`, and the port runs the law over a per-phase price of
+each frame (`PondPacer`,
+[fishing](../subsystems/minigame-fishing.md#the-venues-game-tick)).
 
 ## Limits
 
