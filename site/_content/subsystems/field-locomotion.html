@@ -143,6 +143,26 @@
 <section class="doc-section" id="press-latency" data-doc="the-frame-denomination-law">
   <h2>When the game sees a press</h2>
   <p>Retail reads the pad once a game frame, at the end of the frame, and the next frame acts on what it read. A press therefore reaches the game about two vsyncs after it happens, and a tap shorter than a frame can fall between two reads and do nothing. Emulator films pin it to the vsync: in Koru a press at vsync 20 moves Vahn at 22, a one-vsync tap at 61 is never seen and one at 140 is; on the Sebucus overworld a press at 10 moves him at 14; a Triangle tap at 30 opens the menu at 32.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vsyncs 20 to 27 in Koru at two vsyncs a game frame. In the original the pad is read once a frame, on vsyncs 20, 22, 24 and 26: a press on vsync 20 is read there and Vahn moves on 22, and a one-vsync tap on 23 falls between the reads on 22 and 24 and is never seen. With Instant controls the press moves Vahn on vsync 20 and the tap on 23 is acted on at 23.">
+      <defs><marker id="fl-press-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub" x="220" y="24">20</text><text class="dg-sub" x="300" y="24">21</text><text class="dg-sub" x="380" y="24">22</text><text class="dg-sub" x="460" y="24">23</text><text class="dg-sub" x="540" y="24">24</text><text class="dg-sub" x="620" y="24">25</text><text class="dg-sub" x="700" y="24">26</text><text class="dg-sub" x="780" y="24">27</text>
+      <path class="dg-group" d="M180 34 L180 200 M340 34 L340 200 M500 34 L500 200 M660 34 L660 200"/>
+      <text class="dg-label dg-start" x="10" y="62">Original</text>
+      <text class="dg-sub dg-start" x="10" y="80">read once a frame</text>
+      <rect class="dg-node" x="185" y="48" width="70" height="34" rx="4"/><text class="dg-sub" x="220" y="69">press</text>
+      <circle class="dg-node-accent" cx="220" cy="98" r="5"/><circle class="dg-node-accent" cx="380" cy="98" r="5"/><circle class="dg-node-accent" cx="540" cy="98" r="5"/><circle class="dg-node-accent" cx="700" cy="98" r="5"/>
+      <text class="dg-edge-label" x="714" y="102">pad reads</text>
+      <path class="dg-edge" d="M228 98 C280 98 320 66 343 66" marker-end="url(#fl-press-arrow)"/>
+      <rect class="dg-node-ok" x="345" y="48" width="70" height="34" rx="4"/><text class="dg-sub" x="380" y="69">moves</text>
+      <rect class="dg-node-warn" x="425" y="48" width="70" height="34" rx="4"/><text class="dg-sub" x="460" y="69">tap: lost</text>
+      <text class="dg-label dg-start" x="10" y="152">Instant controls</text>
+      <text class="dg-sub dg-start" x="10" y="170">read every vsync</text>
+      <rect class="dg-node-ok" x="185" y="138" width="70" height="34" rx="4"/><text class="dg-sub" x="220" y="159">moves</text>
+      <rect class="dg-node-ok" x="425" y="138" width="70" height="34" rx="4"/><text class="dg-sub" x="460" y="159">tap: acts</text>
+    </svg>
+    <figcaption>The Koru film at two vsyncs a frame. The original reads the pad once a frame, so a press waits for the next frame to act and a one-vsync tap between two reads does nothing; Instant controls hands the game the pad on the vsync it is pressed.</figcaption>
+  </figure>
   <p>The walk commits once a frame as well: 16 units every two vsyncs in a town, 10 every three on the overworld. The port's default gives the game the pad on the vsync it is pressed and moves the figure every vsync, which is more responsive and smoother. Its retail mode runs the frame-paced pipeline instead, and the walk films then hold retail's position on every vsync.</p>
 </section>
 
