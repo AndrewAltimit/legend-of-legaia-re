@@ -1096,9 +1096,22 @@ fn replay_marker_score(
         return;
     };
     let id = score.words.first().map(|&(id, _)| id);
-    if id.is_some() && host.bgm_track_word != id {
-        host.world.replay_field_bgm_words(&score.words);
+    if id.is_none() || host.bgm_track_word == id {
+        return;
     }
+    // The spawned record's swap committed and installed long before the
+    // capture: replay its select and commit as the plain start they amount
+    // to, inside a field-init window so the poller's settle and read are
+    // spent, and the track sounds at the seed rather than a swap later.
+    let mut words = score.words;
+    if let Some(at) = words.iter().position(|&(_, sub)| sub == 0xA)
+        && words[0].1 == 9
+    {
+        words.remove(at);
+        words[0].1 = 1;
+    }
+    host.world.open_battle_return_field_init();
+    host.world.replay_field_bgm_words(&words);
 }
 
 /// Engage the placement whose interaction record is the gate's: the talk
