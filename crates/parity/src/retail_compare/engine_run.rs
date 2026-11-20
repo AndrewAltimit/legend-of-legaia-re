@@ -377,8 +377,9 @@ fn seed_and_settle_cut(
             session.host.world.load_full(save);
         }
     }
-    // Retail's measured frame step is load history (`World::seed_frame_step`).
-    session.host.world.seed_frame_step(retail.frame_step());
+    // Retail's measured frame step is load history (`World::seed_frame_step`,
+    // `RetailObs::seat_step`).
+    session.host.world.seed_frame_step(retail.seat_step());
 
     // The entry itself may already have queued a start.
     route_bgm(&mut session, &mut director)?;
@@ -501,9 +502,11 @@ fn seed_and_settle_cut(
                     || std::env::var_os("LEGAIA_RC_SCRIPT_TRACE_ALL").is_some())
             {
                 eprintln!(
-                    "script gate t={t}: sys pc {} (retail {:?}) {}",
+                    "script gate t={t}: sys pc {} (retail {:?}) step {} cost {:?} {}",
                     session.host.world.field_pc,
                     retail.scripts.system_pc,
+                    session.host.world.clock.frame_step,
+                    session.host.world.clock.frame_cost,
                     g.trace(&session.host.world)
                 );
             }

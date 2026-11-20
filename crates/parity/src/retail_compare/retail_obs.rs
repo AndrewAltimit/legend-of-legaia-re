@@ -991,7 +991,7 @@ impl RetailObs {
         if let Some(bias) = self.curve_bias.filter(|&b| b != 0) {
             env.push(("LEGAIA_SEAT_CURVE_BIAS", bias.to_string()));
         }
-        env.push(("LEGAIA_SEAT_FRAME_STEP", self.frame_step().to_string()));
+        env.push(("LEGAIA_SEAT_FRAME_STEP", self.seat_step().to_string()));
         // ... and holds it: the frame-cost model is play's estimate, the
         // state's step a measurement (`run_engine`'s seat).
         env.push(("LEGAIA_FIELD_FRAME_COST", "0".to_string()));
@@ -1081,6 +1081,26 @@ impl RetailObs {
     /// measure, so the seed hands it over (`World::seed_frame_step`).
     pub fn frame_step(&self) -> u8 {
         (self.scripts.display_lag / 2).clamp(1, 4) as u8
+    }
+
+    /// The step the seed and its image child run at: the pacer's step byte
+    /// `0x1F800393` where the state holds the scratchpad, else the step the
+    /// display lag implies ([`Self::frame_step`]).
+    ///
+    /// The lag is rebuilt from the frame-time ring, and a ring the clamp
+    /// `0x2BC` fills reads as step `3` where the driver steps `4`: past the
+    /// `0x2D0` rung the resolver takes the raw time over the ring
+    /// (`0x800170F8`), so a heavy scene stores the clamp and steps `4`.
+    /// `conc3_ceremony_plaza` (the Conkram ceremony, forty-odd actors) holds
+    /// sixteen `0x2BC` samples under step `4`; seated at `3`, the ceremony
+    /// record's walks and its `B8 23 84 0A` turn drifted apart, and flat
+    /// `35` stood nine budget units into the turn where retail's `+0x54`
+    /// reads four.
+    pub fn seat_step(&self) -> u8 {
+        self.step_bytes
+            .map(|(_, step)| step)
+            .filter(|&s| (1..=4).contains(&s))
+            .unwrap_or_else(|| self.frame_step())
     }
 
     /// Read the pacer's step bytes off a state's scratchpad image.
