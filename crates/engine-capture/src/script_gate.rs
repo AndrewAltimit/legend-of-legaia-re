@@ -674,10 +674,14 @@ impl ScriptGate {
                     .dialog
                     .as_ref()
                     .is_some_and(|d| page_lead(d) == Some(self.pc));
+            // A PC the record stands on for one frame only names that frame
+            // ([`arrival_frame_pc`]): the glide is not waited out there.
+            let arrival =
+                tl.pc == self.pc && clip_reached && arrival_frame_pc(&tl.bytecode, self.pc);
             head_of(&tl.bytecode) == self.head
                 && (((tl.pc == self.pc || on_page)
                     && tl.ctx.wait_accum >= self.wait
-                    && glide_landed
+                    && (glide_landed || arrival)
                     && (!text || tl.dialog.as_ref().is_some_and(|d| self.text_shown(d))))
                     || (tl.pc != self.pc
                         && !on_page
@@ -950,6 +954,34 @@ pub fn loops_back_to(bytecode: &[u8], pc: usize) -> bool {
         at += i.size;
     }
     false
+}
+
+/// Whether a record parked on `pc` stands there for exactly one frame: the
+/// instruction ending on `pc` is a `4A` wait and the one on it a
+/// cross-context op that runs when reached (`A2` clip, `A3` seat, `AB` /
+/// `AC` local flags, `B1` / `B2` channel flags).
+///
+/// A completed `4A` yields the slice with the PC past it, and the next slice
+/// runs the op and goes on, so a capture on that PC is the frame the wait
+/// ran out. A gate there that also waited for retail's glide frames left
+/// let the record run on and met on the visit, sampling a slice retail had
+/// not run: `conc3_mist_night_free` is parked on `P2[10]` `+0x18C5`
+/// (`A3 24 7F 7F`, after `4A 0A 00`) with `23` glide frames left, and the
+/// engine stood there at `26..24`, one frame of step `3` ahead of its
+/// glide; met on the visit, flats `36` / `38` were parked, flat `68`
+/// re-seated and flat `41` turned (`+0x18C5..+0x18DE`). The seat then
+/// stands the glide on retail's frames left
+/// (`Camera::align_glide_frames_left`). The dispatcher's halted-target
+/// early-out (`0x801DE90C..0x801DE944`) can still hold such an op on a
+/// target mid-leg, and the engine's own leg holds it the same way.
+pub fn arrival_frame_pc(bc: &[u8], pc: usize) -> bool {
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode};
+    let Some(lead) = pc.checked_sub(3) else {
+        return false;
+    };
+    let waited = decode(bc, lead)
+        .is_ok_and(|i| i.size == 3 && matches!(i.info, InsnInfo::WaitFrames { .. }));
+    waited && matches!(bc.get(pc), Some(0xA2 | 0xA3 | 0xAB | 0xAC | 0xB1 | 0xB2))
 }
 
 /// Ticks after the seed at which a record the engine is not running is
@@ -1360,6 +1392,23 @@ fn roll_back_run_latches(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cross_context_op_behind_a_wait_is_an_arrival_frame() {
+        // B8 24 84 0A (turn), 4A 0A 00 (wait), A3 24 7F 7F (seat): the seat
+        // is reached on the frame the wait runs out.
+        let body = [
+            0xB8, 0x24, 0x84, 0x0A, 0x4A, 0x0A, 0x00, 0xA3, 0x24, 0x7F, 0x7F,
+        ];
+        assert!(arrival_frame_pc(&body, 7));
+        // The wait itself, and a seat behind a turn rather than a wait, park.
+        assert!(!arrival_frame_pc(&body, 4));
+        let body = [0xB8, 0x24, 0x84, 0x0A, 0xA3, 0x24, 0x7F, 0x7F];
+        assert!(!arrival_frame_pc(&body, 4));
+        // A walk wait behind a wait parks for the walk.
+        let body = [0x4A, 0x0A, 0x00, 0xB3, 0x24, 0x0A];
+        assert!(!arrival_frame_pc(&body, 3));
+    }
 
     #[test]
     fn run_latches_are_the_sets_after_the_last_branch() {
