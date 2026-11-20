@@ -308,6 +308,7 @@ mod new_game_seed;
 mod nighto_roll;
 mod object_spawn;
 mod object_table;
+mod onscreen_probe;
 mod options_popup;
 mod ozma_ladder;
 mod pad_pump;

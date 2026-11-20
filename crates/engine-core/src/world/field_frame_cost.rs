@@ -325,25 +325,37 @@ pub fn placed_near_rejected(
 }
 
 /// The render dispatcher's on-screen probe `FUN_8001B73C` for an actor at
-/// `[x, y, z]` with cull radius `r` (`+0x58`): the eight corners of the box
-/// `(r + 1) * 64` either side in X and Z and `(r + 1) * 128` up from its
-/// origin, projected; on screen when any lands at `0..320` across and
-/// `0..=240` down.
+/// `[x, y, z]` with cull radius `r` (`+0x58`): with `h = (r + 1) * 64`, the
+/// eight corners of the box `h` either side of its origin in X and Z, from
+/// `y` up to `y - 2h`, and the point `h` above the box's top centre (four
+/// `RTPT`s, the last re-projecting the third's three points), each in 16-bit
+/// stack words; on screen when any lands at `0..320` across (an unsigned
+/// test) and `0..=240` down.
 // PORT: FUN_8001B73C
 pub fn actor_box_on_screen(
     g: &legaia_render_kernels::gte::FieldGteView,
     [x, y, z]: [i16; 3],
     r: i16,
 ) -> bool {
-    let half = (r + 1) << 6;
-    let up = (r + 1) << 7;
-    [y, y.wrapping_sub(up)].into_iter().any(|cy| {
-        [(-half, -half), (half, -half), (-half, half), (half, half)]
-            .into_iter()
-            .any(|(dx, dz)| {
-                let (sx, sy) = g.rtps([x.wrapping_add(dx), cy, z.wrapping_add(dz)]).sxy;
-                (0..0x140).contains(&sx) && (0..0xF1).contains(&sy)
-            })
+    let h = r.wrapping_add(1).wrapping_shl(6);
+    let top = y.wrapping_sub(r.wrapping_add(1).wrapping_shl(7));
+    let (x0, x1) = (x.wrapping_sub(h), x.wrapping_add(h));
+    let (z0, z1) = (z.wrapping_sub(h), z.wrapping_add(h));
+    [
+        [x0, y, z0],
+        [x1, y, z0],
+        [x0, y, z1],
+        [x0, top, z0],
+        [x1, top, z0],
+        [x0, top, z1],
+        [x1, y, z1],
+        [x1, top, z1],
+        [x, top.wrapping_add(h), z],
+    ]
+    .into_iter()
+    .any(|v| {
+        let (sx, sy) = g.rtps(v).sxy;
+        (sx as u16) < 0x140 && (0..0xF1).contains(&sy)
     })
 }
 
