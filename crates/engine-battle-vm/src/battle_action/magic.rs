@@ -562,6 +562,8 @@ pub(super) fn magic_capture_fade<H: BattleActionHost + ?Sized>(
     if !host.previous_action_cleared(1) {
         return stay(ctx);
     }
+    // `sb zero,0x279(v0)` at `0x801E5048`, beside the `0x70` store.
+    ctx.summon_staging_b = 0;
     transition(ctx, ActionState::MagicCapturePhase2)
 }
 

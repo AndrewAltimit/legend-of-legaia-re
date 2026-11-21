@@ -11,6 +11,7 @@
 mod common;
 
 mod action_sm;
+mod action_sm_bands;
 mod action_tag;
 mod actor_bind;
 mod actor_cull;

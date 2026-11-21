@@ -154,6 +154,10 @@ pub(super) fn capture_start<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
+    // `sb zero,0xd(v0)` in the delay slot of the coin's `jal 0x80056798`
+    // (`0x801E5A9C..0x801E5AA4`): the flight is framed from the default
+    // side, whatever variant the seed rolled; the case-6 call below reads it.
+    ctx.camera_variant = 0;
     let r = host.rng();
     ctx.combo_timer = ctx.combo_timer.wrapping_add(0x780 + (r % 2) as i16 * 0x80);
     host.pose(slot, Pose::Idle);
@@ -182,18 +186,34 @@ pub(super) fn capture_wait<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::CaptureSustain)
 }
 
+/// State `0x6A` - the fleeing monster's hold (`0x801E5B5C..0x801E5C04`).
+///
+/// The step comes first (`lhu; subu; sh` at `0x801E5B64..0x801E5B74`), and
+/// only a count that has gone negative meets the streaming clamp: while the
+/// side-band applier stage `ctx[+0x276]` is up the word is pinned back at
+/// `1` (`0x801E5B84..0x801E5B9C`) and the band holds, so it never leaves
+/// while a stream is in flight, whatever the frame step.
+///
+/// PORT: FUN_801E295C (`0x801E5B5C..0x801E5C04`)
 pub(super) fn capture_sustain<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    if ctx.menu_open != 0 && ctx.frame_timer > 1 {
-        ctx.frame_timer = 1;
+    ctx.frame_timer = ctx.frame_timer.wrapping_sub(host.frame_dt());
+    if ctx.frame_timer >= 0 {
+        return stay(ctx);
     }
-    if !tick_frame_timer(host, ctx) {
+    if ctx.menu_open != 0 {
+        ctx.frame_timer = 1;
         return stay(ctx);
     }
     ctx.frame_timer = 0x3C;
     host.ui_element(0x43, 1);
+    // `sw zero,0x4(s3)` in the delay slot of the framing call at
+    // `0x801E5BDC..0x801E5BE0`: the fled monster's prim word is cleared.
+    if let Some(a) = host.actor_mut(ctx.active_actor) {
+        a.render_color = 0;
+    }
     // No `+0x1A` write here: the dispatcher's only four accesses to the turn
     // cursor are `Begin`, the counter-attack swap, the run arm's skip loop and
     // the end-of-action gate (see `BattleActionCtx::turn_cursor`). The zero

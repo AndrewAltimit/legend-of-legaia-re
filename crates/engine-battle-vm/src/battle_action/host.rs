@@ -763,6 +763,19 @@ pub trait BattleActionHost {
         ACTOR_SLOTS as u8
     }
 
+    /// `ctx[+0x01]`, the seated monster count: the seats after the party, up
+    /// to seat `7`, that the battle loaded a combatant into (`max_hp != 0`,
+    /// or alive). Seat `7` is the summon creature's, never a formation
+    /// monster's.
+    fn seated_monster_count(&self) -> u8 {
+        (self.party_count()..7u8)
+            .filter(|&s| {
+                self.actor(s)
+                    .is_some_and(|a| a.max_hp != 0 || a.liveness != 0)
+            })
+            .count() as u8
+    }
+
     /// The two four-entry effect-child arrays the cast tick censuses:
     /// `(ctx[+0x24E..=+0x251], ctx[+0x252..=+0x255])`.
     ///
