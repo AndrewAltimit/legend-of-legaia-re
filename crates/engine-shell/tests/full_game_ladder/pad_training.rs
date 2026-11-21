@@ -122,7 +122,16 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
             .with(std::cell::Cell::get)
             .saturating_sub(s.frames)
     };
-    while outings < GROW_OUTINGS && miracle_short(session) && frames_left(session) > reserve {
+    // The reserve also bounds each outing, not only the start of one: an
+    // outing is up to [`OUTING_LEGS`] legs, and `nilboa`'s legs between
+    // (95, 104) and the landmark at (10, 9) run 6700 frames each, so two
+    // outings begun with the reserve in hand spent the whole stretch
+    // (dealt stream 13, `nivora_late -> zora_castle`). The outing walks
+    // against a deadline `reserve` short of the stretch's, and running into
+    // it ends the growing, not the stretch.
+    let deadline = PAD_DEADLINE.with(std::cell::Cell::get);
+    PAD_DEADLINE.with(|d| d.set(deadline.saturating_sub(reserve)));
+    while outings < GROW_OUTINGS && miracle_short(session) && frames_left(session) > 0 {
         // Mended before each outing, as a player does between fights: the
         // bag first, then the casters' MP, all of it, and the bag's MP
         // restoratives when that runs out. At Koru's door the bag held no
@@ -149,7 +158,20 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
             break;
         }
     }
+    // Give the reserve back to whatever the deadline now reads: the fights
+    // on the way lent the deadline their own time (`fight_turn`).
+    PAD_DEADLINE.with(|d| d.set(d.get().saturating_add(deadline.min(reserve))));
     drop(growing);
+    let left = match left {
+        Err(e) if e.contains("pad frame budget") && wiped(session).is_none() => {
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!("    [grow] ended at the reserve: {e}");
+            }
+            let at = scene_name(session);
+            Ok((at != here).then_some(at))
+        }
+        other => other,
+    };
     if matches!(&left, Ok(None)) && walking(session) {
         pad_field_heal(session, 900);
     }
