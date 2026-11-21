@@ -64,6 +64,28 @@ Port: `battle_formulas::victory_exp_per_member` (`crates/engine-battle-vm/src/ba
 
 **Terra banks EXP and never levels.** The credit loop adds the share to every standing member's record `+0x0`, Terra's included (`0x8004F2AC..0x8004F2B8`), then calls the applier for the member's record index (`jal 0x801E9504` at `0x8004F34C`). The applier returns at once for index `3` (`andi a0,s6,0xff` / `li v0,0x3` / `beq a0,v0,0x801E9FA4` at `0x801E9510..0x801E9538`), before it reads a threshold or grows a stat, so her level stays `1` and her maxima stay the New Game template's `400` / `200` ([new-game table](../formats/new-game-table.md)); `terra_party_battle` holds exactly that record. Port: `LevelUpTracker::grant_xp` stops after the credit for `NO_LEVEL_SLOT`.
 
+**A win with only Terra standing divides by zero.** The divisor loop (`0x8004F130..0x8004F178`) counts the members standing, not Stoned, and whose seat byte `DAT_8007BD10[i]` is not `4` (`beq v0,a3` at `0x8004F164`); Terra is seat byte `4`, the AI companion [the party-table rebuild seats](battle.md) while system flag `0x13` is up.
+With every other member down the count is `0`, and the `divu` at `0x8004F198` has no guard: the R3000 leaves `lo = 0xFFFFFFFF`, so the share is all ones whatever the pool.
+The credit loop has no seat test, so Terra's EXP word takes the all-ones share (`addu` at `0x8004F2B4`), which wraps to her EXP minus one (minus two with the EXP Boost bit, `0x8004F2E0..0x8004F300`).
+The cap (`0x8004F308..0x8004F33C`) then turns an EXP of `0`, hers until her first paying win, into `9,999,999`; the applier returns for her record index as above, so her level stays `1`.
+The share also lands in `gp+0xA04` (`0x8004F684`) for the report window, whose number record is a `u32` read live by `FUN_80031D00` and compared signed against the power table (`slt` at `0x80032068..0x800320A0`), so all ones reads as `-1` and the field draws a single `0`.
+
+The footprint is in bounds: run in the `crates/retail-exec` interpreter with the R3000's division, the pass writes Terra's EXP word, `gp+0xA04`, the purse, the floored members' HP (record `+0x106` and actor `+0x14C`), its own context bytes and the stack, and nothing else. The interpreter also runs `FUN_80031D00` over a `u32` record holding `0xFFFFFFFF` and emits one `0` glyph in the last cell (`crates/retail-exec/tests/spoils.rs`: `a_terra_only_win_pays_her_all_ones`, `the_window_draws_all_ones_as_zero`).
+
+Reaching it takes a fight that ends while every other member is down, with no party action ending it, which is a monster's flee: state `0x68`'s takedown `FUN_801E7824` zeroes the fleer's HP (`0x801E78A0`), and the monster scan then counts every seat down.
+Terra cannot be the one to finish: with seat 0 at 0 HP her pick is always spell `0x16` (Revive, 0 MP) on seat 0 ([the companion pick](battle-action-helpers.md#the-ai-companion-pick-in-fun_801eed1c)).
+A member cannot fall to damage over time either, since the per-round tick clamps at 1 HP (`addiu a1,v0,-0x1` at `0x801E75C4`, Venom's twin at `0x801E765C`).
+So Noa has to fall to a monster that then opens the next round ahead of Terra and flees, with every other monster already dead (a dead monster counts as down; only the survivors must leave).
+
+In Snowdrift Cave, the one scene that raises flag `0x13` (`cave01` `P1[2]` and `P2[15]`; Terra's group is the `0x015E` region group, formation rows `0..5`:
+Theeder, Mushroom and Blue Piura alone and in pairs), the monster escape roll [`FUN_801EC0DC`](battle-formulas.md#monster-escape-roll---fun_801ec0dc) with Noa down passes in one case: a Mushroom left alone of a pair at a few HP.
+A downed member doubles the monster side, so the roll also needs Terra's HP above about 240, and every party queue build resets her HP to `200` (`0x801EEE20..0x801EEE38`):
+Noa must heal Terra after the last build of the round and then fall to the Mushroom, whose SPD 48 can open the next round ahead of Terra's 45.
+Each check then passes at best about 0.3% of the time (Mushroom at 1 HP, Terra at 400).
+Evidence: disassembly, the MAN tables and the `terra_party_battle` capture (seat stats, flags, Terra's EXP `0`) for reachability, the interpreter for the footprint and the readout; the win itself has not been captured.
+
+Port: `apply_battle_xp` floors the divisor at 1 and pays Terra the whole pool's share, and the window shows that share where retail shows `0`.
+
 ## XP table
 
 The XP-to-next-level curve is a static table plus a scaling formula, applied inside `FUN_801E9504`.
@@ -142,7 +164,9 @@ record[stat] += gain                                  ; then caps: HP ≤ 9999, 
 
 The divisor `0x24C0` is the curve normalizer. Because each curve sums to exactly `0x24C0`, the term `(max − start) × byte / Σcurve` accumulates to `(max − start)` across all 98 levels, so a stat lands on its `max` at level 99 (before jitter). HP, MP and five of the six battle stats divide by it: the `0x6F74AE27` magic is loaded once into `s3` (`0x801E97CC`) and each of them multiplies by `s3` and shifts the high word right 12.
 
-**AGL divides by `0x18C0`.** Its block (`0x801E98C8..0x801E9980`) loads its own magic, `0xA57EB503` at `0x801E993C`, adds the dividend back to the high word (`addu v0,t0,v1` at `0x801E994C`) and shifts right 12: integer division by `0x18C0` (= 6336) for every product the span and a curve byte make. So AGL accumulates about one and a half times its `(max − start)` span by level 99 and is held at the `0x118` cap long before. Three retail anchors of one playthrough read Vahn's AGL record (`+0x122`) at 115 / 130 / 145 at levels 6 / 11 / 16, which the `0x18C0` core reproduces exactly and the `0x24C0` one misses by 5 / 10 / 15. `GrowthTables::char_params` gives each stat its divisor (`StatGrowthParam::divisor`).
+**AGL divides by `0x18C0`.** Its block (`0x801E98C8..0x801E9980`) loads its own magic, `0xA57EB503` at `0x801E993C`, adds the dividend back to the high word (`addu v0,t0,v1` at `0x801E994C`) and shifts right 12: integer division by `0x18C0` (= 6336) for every product the span and a curve byte make.
+So AGL accumulates about one and a half times its `(max − start)` span by level 99 and is held at the `0x118` cap long before.
+Three retail anchors of one playthrough read Vahn's AGL record (`+0x122`) at 115 / 130 / 145 at levels 6 / 11 / 16, which the `0x18C0` core reproduces exactly and the `0x24C0` one misses by 5 / 10 / 15. `GrowthTables::char_params` gives each stat its divisor (`StatGrowthParam::divisor`).
 
 **Validation.** The `noa_levelup_field_pre` / `noa_levelup_field_post` library saves (Noa, growth slot 1, L2 → L3; the `noa_levelup_*` scenarios in `scripts/scenarios.toml`) give byte-exact single-level deltas: HP +39, MP +5, and the six record stats +2 / +4 / +4 / +3 / +4 / +3. Leveling from L2 reads `curve[row][1]`, and all 8 deltas land within `[core − jitter, core + jitter]` (for example HP core `(4500 − 150) × 82 / 9408 = 37`, observed +39, jitter half-range 4). Decoded and checked in `legaia_game_tables::level_up_tables` (`GrowthTables::char_params` / `level_gain_core`) by the disc-gated `crates/game-tables/tests/level_up_tables_real.rs`, which also pins the first correction divisors.
 
@@ -275,7 +299,11 @@ The results frame of the end-of-battle sequence raises two framed windows over t
 
 ### The report text
 
-The victory text is one buffer (`ctx + 0xA9`). The second row is the overlay's `Gained` sentence with blanks the two number draws fill; both figures are right-aligned inside the sentence. The EXP figure is the per-member share from `gp+0xA04`, handed to the number draw `FUN_8003563C` ([XP distribution](#xp-distribution)). That call appends a number record to the report window's text actor (`0x27`): the EXP share (`u32`) at x `0x2E` and the gold (`u16`) at `0xB6`, both at y `0x0E` in a five-cell field, CLUT `7`. The actor-list draw `FUN_80031D00` renders each record in the menu numeral cells (`8 x 12` at `v = 0xD0`, 8 px a digit, leading zeros blank), so the figures are in the numeral face, not the dialog font.
+The victory text is one buffer (`ctx + 0xA9`).
+The second row is the overlay's `Gained` sentence with blanks the two number draws fill; both figures are right-aligned inside the sentence.
+The EXP figure is the per-member share from `gp+0xA04`, handed to the number draw `FUN_8003563C` ([XP distribution](#xp-distribution)).
+That call appends a number record to the report window's text actor (`0x27`): the EXP share (`u32`) at x `0x2E` and the gold (`u16`) at `0xB6`, both at y `0x0E` in a five-cell field, CLUT `7`.
+The actor-list draw `FUN_80031D00` renders each record in the menu numeral cells (`8 x 12` at `v = 0xD0`, 8 px a digit, leading zeros blank), so the figures are in the numeral face, not the dialog font.
 
 A drop appends the SCUS template `gp + 0x384` points at: a `0x7C` row break and a `0xC2` item escape that the results frame patches with the item id (`0x8004F5C4..0x8004F600`). It becomes a third row inside the same fixed `288 x 42` box.
 
@@ -343,7 +371,10 @@ After a battle win with `BattleEndCause::MonsterWipe`:
 2. It enumerates the party members standing and not Stoned, scales the summed reward by 3/4 (`v - (v >> 2)`) and ceiling-divides it among them (`battle_formulas::victory_exp_per_member`). The others receive zero XP and leave the divisor.
 3. It calls `LevelUpTracker::grant_xp(char_id, share)` for each survivor.
 4. `grant_xp` accumulates XP and checks the XP table for threshold crossings. A multi-level jump collapses into a single `LevelUpResult` with summed gains.
-5. For each level-up, `LevelUpTracker::apply_to_record(result, record)` grows the **base** `hp_max` / `mp_max` (`+0x11C` / `+0x11E`, the window the applier's `+0x6E4` / `+0x6E6` name, capped `9999` / `999`), and `apply_battle_xp` then rebuilds the live maxima from it the way the stat aggregator `FUN_80042558` does, equipment boosts included. It leaves `hp_cur` and `mp_cur` where the fight left them ([a level-up is not a heal](#a-level-up-is-not-a-heal)), grows the six battle stats in the record-side window (`+0x11C..+0x12D`) and mirrors them into the live window (`+0x110..+0x11B`), matching the applier's write-then-mirror. It writes `result.new_level` to the `+0x130` level byte via `CharacterRecord::set_level`.
+5.
+For each level-up, `LevelUpTracker::apply_to_record(result, record)` grows the **base** `hp_max` / `mp_max` (`+0x11C` / `+0x11E`, the window the applier's `+0x6E4` / `+0x6E6` name, capped `9999` / `999`), and `apply_battle_xp` then rebuilds the live maxima from it the way the stat aggregator `FUN_80042558` does, equipment boosts included.
+It leaves `hp_cur` and `mp_cur` where the fight left them ([a level-up is not a heal](#a-level-up-is-not-a-heal)), grows the six battle stats in the record-side window (`+0x11C..+0x12D`) and mirrors them into the live window (`+0x110..+0x11B`), matching the applier's write-then-mirror.
+It writes `result.new_level` to the `+0x130` level byte via `CharacterRecord::set_level`.
 6. Whether or not a threshold was crossed, `apply_battle_xp` re-stamps the record's cumulative XP (`+0x0`), next-level threshold (`+0x4`, slot-corrected via `threshold_for`) and level byte (`+0x130`).
 7. `BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }` is pushed to `World::pending_battle_events`.
 8. The first character to level takes `World::party.current_level_up_banner`; any others queue behind it in `World::party.pending_level_up_banners`, and `World::tick` promotes the next one when the current banner expires.

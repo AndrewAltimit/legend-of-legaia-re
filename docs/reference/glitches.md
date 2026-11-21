@@ -74,6 +74,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 | War God Icon can be missed for good | explained | The item and its 'already awarded' flag come from two pieces of code that disagree about what clearing the course means. |
 | The Throw Out confirm loses its count | explained | The window seats the bag count off the item name's first byte, read as a glyph count; the names carry no count byte, so the count and "You are about to" are drawn off screen. |
 | Hovering an Equip candidate clips current HP or MP | explained | The preview equips the candidate on the real record and runs the stat aggregator, which lowers current HP or MP to the trial maximum; the restore brings the maximum back but not the current value. Interpreter-observed, not yet confirmed on a console. |
+| A win with only Terra standing pays her all ones | explained | Terra is left out of the EXP divisor; with every other member down the unguarded divide gives all ones, so her EXP drops by one, or caps at 9,999,999 from 0, and the window reads 0. |
 
 ## Incense, doors and the Door of Light
 

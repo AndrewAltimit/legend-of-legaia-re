@@ -1060,3 +1060,38 @@ character's record (Vahn: `0x8008480E`); it fires inside `FUN_80042558` at `0x80
 
 Whether a console or emulator run shows the same, which the evidence above stops short of.
 
+## A win with only Terra standing pays her all ones
+
+**Status:** explained
+**Reported as:** not a community report. Found while porting the EXP split, and asked whether it can happen at all.
+
+Terra fights beside Noa in Snowdrift Cave as an AI companion. The EXP split leaves her out of the count it divides by,
+so a win with only Terra standing divides by zero. The PlayStation's divide does not stop on that: it answers with all
+ones, and the game pays that to Terra. Her EXP drops by one, or, if she has never been paid, jumps to the 9,999,999 cap.
+The results window reads the same figure as a signed number and shows `0`. Terra never levels, so nothing else follows.
+
+### Mechanism
+
+The full trace is on the level-up page ([XP distribution](../../subsystems/level-up.md#xp-distribution)): the divisor
+loop skips seat byte `4` (`0x8004F164`), the `divu` at `0x8004F198` has no guard, the credit loop pays every standing
+member (`0x8004F2B4`), and the cap at `0x8004F308..0x8004F33C` clamps a wrapped `0xFFFFFFFF`.
+
+### Scope
+
+The fight must end while Noa is down and before Terra's next turn, since her turn always revives seat 0. Damage over time
+never downs a member, so the end is a monster fleeing after Noa falls, every other monster already dead. In Snowdrift
+Cave's formations that is a Mushroom left alone of a pair at a few HP, after Noa has healed Terra above about 240 HP
+(each party action's setup resets Terra to 200) and then fallen to it. Each flee roll passes at best about 0.3% of the
+time. Evidence: disassembly, the scene's formation tables and the `terra_party_battle` capture for reachability, and
+the `crates/retail-exec` interpreter for what the pass writes and what the window draws. The win itself has not been
+captured.
+
+### In the port
+
+The port floors the divisor at one, so Terra is paid the whole share and the window shows it.
+
+### Verifying it
+
+In a Terra fight, put a write watch on Terra's EXP word `0x80085344` and a breakpoint at `0x8004F198`; on a win with
+Noa down, `s2` reads `0` at the `divu` and the watch fires at `0x8004F2B8` with all ones added.
+

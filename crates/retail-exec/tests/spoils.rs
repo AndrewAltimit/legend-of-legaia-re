@@ -455,3 +455,124 @@ fn the_results_hold_spawns_the_fade_when_retail_does() {
         );
     }
 }
+
+/// A win with only Terra standing (`docs/subsystems/level-up.md`, XP
+/// distribution): seat byte `4` leaves the divisor loop
+/// (`0x8004F130..0x8004F178`), so with Noa down the `divu` at `0x8004F198`
+/// divides by zero. Run with the R3000's answer (`lo` all ones), the pass pays
+/// Terra the all-ones share, which wraps her EXP down by one or caps an EXP
+/// of `0` at 9,999,999, and parks the same word in `gp+0xA04` for the window.
+/// Retail only; the port floors the divisor at one by the owner's choice.
+#[test]
+fn a_terra_only_win_pays_her_all_ones() {
+    not_a_differential!("retail only: the port floors the Terra-only divisor at one by choice");
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.hardware_zero_div = true;
+    cpu.hook(RAND, |r, _| r.r[V0] = 0x1234);
+    for stub in [
+        0x8003_CE08u32,
+        0x8003_CBF8,
+        0x8003_CA38,
+        0x8005_6758,
+        0x8003_563C,
+        0x8004_FCC8,
+        0x801D_5854,
+        0x801D_8DE8,
+    ] {
+        cpu.stub(stub, 0);
+    }
+    let terra_exp = RECORDS + 3 * STRIDE;
+    for (before, after) in [(0u32, 9_999_999u32), (1234, 1233), (9_999_999, 9_999_998)] {
+        let mut w = gen_win(&mut Rng(1), |_, _| 0);
+        w.party = 2;
+        w.monsters = 2;
+        w.member_hp = [0, 200, 0];
+        w.member_status = [0; 3];
+        w.word0 = [0; 3];
+        w.word1 = [0; 3];
+        w.xp = [156, before, 0];
+        w.level = [3, 1, 1];
+        w.dead = [true; 5];
+        w.captured = [false; 5];
+        w.exp = [40, 0, 0, 0, 0];
+        w.special = 0;
+        seed_retail(&mut cpu, &w);
+        // Seat Noa (2) and Terra (4) on their own record indices.
+        let recs: Vec<Vec<u8>> = (0..2u32)
+            .map(|seat| {
+                (0..STRIDE)
+                    .map(|b| cpu.mem.rd8(RECORDS + seat * STRIDE + b))
+                    .collect()
+            })
+            .collect();
+        for (seat, id) in [(0u32, 2u32), (1, 4)] {
+            cpu.mem.wr8(SEATS + seat, id as u8);
+            for (b, v) in recs[seat as usize].iter().enumerate() {
+                cpu.mem.wr8(RECORDS + (id - 1) * STRIDE + b as u32, *v);
+            }
+        }
+        let gp = cpu.regs.r[GP];
+        assert_eq!(cpu.call(SPOILS, &[]), Stop::Returned);
+        assert_eq!(cpu.mem.rd32(terra_exp), after, "Terra's EXP from {before}");
+        assert_eq!(cpu.mem.rd32(gp + 0xA04), u32::MAX, "the share");
+    }
+}
+
+/// The spoils window's EXP figure is a `u32` number record that
+/// `FUN_80031D00` reads live and compares signed against its power table
+/// (`0x80032068..0x800320A0`), so the all-ones share of a Terra-only win draws
+/// a single `0` in the field's last cell.
+#[test]
+fn the_window_draws_all_ones_as_zero() {
+    not_a_differential!("retail only: what the spoils readout draws for an all-ones share");
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let gp = cpu.regs.r[GP];
+    let glyphs = Rc::new(RefCell::new(Vec::<(i16, u16)>::new()));
+    let log = glyphs.clone();
+    // The numeral blit: rect `(x, y)` in `a0`, texel `(u, v)` in `a1`.
+    cpu.hook(0x8003_C11C, move |r, m| {
+        let x = m.rd16(r.r[4]) as i16;
+        let u = m.rd16(r.r[5]);
+        log.borrow_mut().push((x, u / 8));
+    });
+    cpu.stub(0x8003_1AE4, 0);
+    cpu.stub(0x8003_6888, 0);
+    const LIST: u32 = 0x8017_0000;
+    const ACTOR_A: u32 = 0x8017_0100;
+    const RECORD: u32 = 0x8017_0400;
+    const VALUE: u32 = 0x8017_0600;
+    for (value, digits) in [
+        (u32::MAX, vec![(78, 0)]),
+        (1234, vec![(54, 1), (62, 2), (70, 3), (78, 4)]),
+    ] {
+        for b in 0..0x800 {
+            cpu.mem.wr8(LIST + b, 0);
+        }
+        // A one-actor ring holding one five-cell `u32` record at x `0x2E`.
+        cpu.mem.wr32(gp + 0x148, LIST);
+        cpu.mem.wr32(LIST, ACTOR_A);
+        cpu.mem.wr32(ACTOR_A, LIST);
+        cpu.mem.wr32(ACTOR_A + 0x2C, RECORD);
+        cpu.mem.wr16(ACTOR_A + 0x30, 1);
+        cpu.mem.wr32(VALUE, value);
+        cpu.mem.wr32(RECORD, VALUE);
+        cpu.mem.wr32(RECORD + 4, 4);
+        cpu.mem.wr16(RECORD + 8, 0x2E);
+        cpu.mem.wr16(RECORD + 0xA, 0x0E);
+        cpu.mem.wr16(RECORD + 0xC, 5);
+        cpu.mem.wr16(RECORD + 0xE, 7);
+        cpu.mem.wr32(gp + 0x15C, 0);
+        glyphs.borrow_mut().clear();
+        assert_eq!(cpu.call(0x8003_1D00, &[]), Stop::Returned);
+        assert_eq!(*glyphs.borrow(), digits, "value {value:#x}");
+    }
+}
