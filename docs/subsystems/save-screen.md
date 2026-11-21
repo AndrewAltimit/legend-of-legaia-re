@@ -1841,14 +1841,24 @@ only masks it (`FUN_801D98F0`), so each opens on the member the other last
 left the cursor on. Only the driver's state 0 zeroes it (`0x801DC8FC`), once
 per pause-menu open.
 
+The Items and Magic target pickers walk the same word. The Items
+single-target picker (`FUN_801D8308`, sub-screen `0x0A`) and the all-party
+confirm (`FUN_801D7FF8`) only mask it in step 0, so a heal opens on the member
+the last picker left; the Magic group and single-target screens overwrite it
+in step 0 (`0x2000` at `0x801D9300`, `0` at `0x801D9610`), and the single
+picker's walk then writes it. The Magic caster picker runs on its own cursor
+`DAT_801E46C8`, which the root's row-1 arm stages from the shared one.
+
 In the port that cursor is `World::menu.party_cursor`: the session's menu open
 zeroes it, `FieldMenuSubsession::build` opens Status
-(`StatusScreenSession::with_cursor`) and the Equip picker on it, and
-`tick_open_subsession` writes back where either picker stands. The item and
-spell target pickers (`0x09`..`0x0B`, `FUN_801D9594`) walk the same word in
-retail and do not feed it in the port. The retail-exec test
-`list_order::a_reopened_status_screen_keeps_the_member_and_not_the_page` runs
-the root picker's phase 0 and Status step 0 against the session.
+(`StatusScreenSession::with_cursor`), the Equip picker, the Items target
+picker (`PauseItemsSession::with_party_cursor`) and the Magic caster picker
+(`SpellMenuSession::with_caster_cursor`) on it, and `tick_open_subsession`
+writes back where each picker stands. `field_menu::party_cursor_on_entry` is
+the per-screen step-0 rule. The retail-exec tests
+`list_order::a_reopened_status_screen_keeps_the_member_and_not_the_page` and
+`list_order::each_party_screen_opens_on_the_shared_cursor_retail_leaves` run
+the root picker's phase 0 and every party screen's step 0 against the port.
 
 ## See also
 

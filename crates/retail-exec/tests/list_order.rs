@@ -322,3 +322,61 @@ fn a_reopened_status_screen_keeps_the_member_and_not_the_page() {
         );
     }
 }
+
+/// The shared party cursor `DAT_801E46C4` through each party screen's step
+/// 0 against `party_cursor_on_entry`: the Items single-target and
+/// all-party applies (`FUN_801D8308`, `FUN_801D7FF8`), the Magic group and
+/// single-target screens (`FUN_801D9280`, `FUN_801D9594`), the Equip
+/// character picker (`FUN_801D98F0`) and Status (`FUN_801DA2A0`), over
+/// random cursor and flag bits. Every call outside the routine is stubbed;
+/// the low 12 bits it leaves are the position the screen opens on.
+#[test]
+fn each_party_screen_opens_on_the_shared_cursor_retail_leaves() {
+    differential!(
+        prot(899, 0x801D_8308),
+        prot(899, 0x801D_7FF8),
+        prot(899, 0x801D_9280),
+        prot(899, 0x801D_9594),
+        prot(899, 0x801D_98F0),
+        prot(899, SCREEN)
+    );
+    use legaia_engine_menus::field_menu::{PartyCursorScreen, party_cursor_on_entry};
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &disc().expect("disc").read_entry(899).expect("PROT 0899"),
+    );
+    let screens = [
+        (
+            0x801D_8308u32,
+            0x801D_8734u32,
+            PartyCursorScreen::ItemTarget,
+        ),
+        (0x801D_7FF8, 0x801D_8308, PartyCursorScreen::ItemAllParty),
+        (0x801D_9280, 0x801D_9594, PartyCursorScreen::SpellGroup),
+        (0x801D_9594, 0x801D_98F0, PartyCursorScreen::SpellTarget),
+        (0x801D_98F0, 0x801D_99F0, PartyCursorScreen::EquipCharacter),
+        (SCREEN, SCREEN_END, PartyCursorScreen::Status),
+    ];
+    let mut rng = Rng(0x5041_5254);
+    for case in 0..3000 {
+        let (entry, end, screen) = screens[case % screens.len()];
+        cpu.stub_outside = Some((entry, end));
+        let cursor = rng.below(3);
+        let flags = rng.next() & 0xF000;
+        cpu.mem.wr32(CHAR_CURSOR, flags | cursor);
+        cpu.mem.wr32(STEP, 0);
+        assert_eq!(cpu.call(entry, &[0]), Stop::Returned, "case {case}");
+        let got = cpu.mem.rd32(CHAR_CURSOR) & 0xFFF;
+        let want = u32::from(party_cursor_on_entry(screen, cursor as u8));
+        assert_eq!(
+            got,
+            want,
+            "case {case}: {screen:?} from {:#x}",
+            flags | cursor
+        );
+        assert_eq!(cpu.mem.rd32(STEP), 1, "case {case}: {screen:?} step 0 ran");
+    }
+}

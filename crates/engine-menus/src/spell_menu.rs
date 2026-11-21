@@ -374,6 +374,20 @@ impl SpellMenuSession {
         self.phase = SpellMenuPhase::Done(SpellMenuOutcome::Cancelled);
     }
 
+    /// Open the caster picker on party position `cursor`, clamped: the
+    /// root's row-1 arm stages the picker's cursor `DAT_801E46C8` from the
+    /// shared party cursor `DAT_801E46C4`
+    /// ([`crate::field_menu::PartyCursorScreen::SpellCaster`]).
+    pub fn with_caster_cursor(mut self, cursor: u8) -> Self {
+        let last = self.party.len().saturating_sub(1) as u8;
+        if let SpellMenuPhase::CharSelect { .. } = self.phase {
+            self.phase = SpellMenuPhase::CharSelect {
+                cursor: cursor.min(last),
+            };
+        }
+        self
+    }
+
     /// Attach the relevance probe's refusals - spell ids for which
     /// `FUN_8003053C` found no party member the spell would affect
     /// (`legaia_engine_menu_runtime::menu_validator::spell_affects_anyone`). Those rows grey,

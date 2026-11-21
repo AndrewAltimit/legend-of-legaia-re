@@ -318,6 +318,41 @@ fn status_and_equip_reopen_on_the_shared_party_cursor() {
     assert_eq!(status(&s), (0, STATUS_PAGE_CONDITION), "a fresh menu");
 }
 
+/// The Items single-target picker opens on the shared party cursor
+/// (`FUN_801D8308` step 0 only masks it) and its walk carries to the next
+/// party screen; the Magic caster picker opens on it too (the root's row-1
+/// arm stages `DAT_801E46C8` from it).
+#[test]
+fn the_item_target_picker_walks_the_shared_party_cursor() {
+    use legaia_engine_menus::inventory_use::InventoryUseState;
+    let mut w = fresh_world();
+    w.install_present_party_list(vec![0, 1, 2]);
+    w.menu.party_cursor = 2;
+    let mut s = build(FieldMenuRow::Items, &w);
+    for edge in [PadButton::Cross, PadButton::Cross] {
+        tick_open_subsession(&mut s, edge.mask(), None, &mut w);
+    }
+    let target = |s: &FieldMenuSubsession| match s {
+        FieldMenuSubsession::Items(p) => match p.inner.state {
+            InventoryUseState::TargetSelect { cursor, .. } => cursor,
+            ref other => panic!("expected the target picker, got {other:?}"),
+        },
+        _ => panic!("expected Items"),
+    };
+    assert_eq!(target(&s), 2, "opens where the last picker left the cursor");
+    tick_open_subsession(&mut s, PadButton::Up.mask(), None, &mut w);
+    assert_eq!(target(&s), 1);
+    assert_eq!(w.menu.party_cursor, 1);
+    match build(FieldMenuRow::Status, &w) {
+        FieldMenuSubsession::Status(st) => assert_eq!(st.cursor(), 1),
+        _ => panic!("expected Status"),
+    }
+    match build(FieldMenuRow::Magic, &w) {
+        FieldMenuSubsession::Spells(sm) => assert_eq!(sm.cursor(), 1),
+        _ => panic!("expected Spells"),
+    }
+}
+
 #[test]
 fn build_equip_uses_active_leader() {
     let mut w = fresh_world();
