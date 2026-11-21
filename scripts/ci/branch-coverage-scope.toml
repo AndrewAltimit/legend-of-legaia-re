@@ -1121,6 +1121,48 @@ reason = "PROT 0899 sub-screen 0x15 step 1: the party picker FUN_801D688C answer
 # lane C: 801DE840
 [[arm]]
 entry = "801DE840"
+range = "0x801DF0C0..0x801DF0C0"
+verdict = "unreachable"
+reason = "PROT 0897 op 45: `andi v1,a0,0xc0` leaves 0, 0x40, 0x80 or 0xC0; past the 0x40 test and `slti v1,0x41` the value is 0, so `beqz v1` is always taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DF0D8..0x801DF0D8"
+verdict = "unreachable"
+reason = "PROT 0897 op 45: past the 0x40, below-0x41 and 0x80 tests the `andi 0xc0` value can only be 0xC0, so `beq v1,0xc0` is always taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DF154..0x801DF154"
+verdict = "unreachable"
+reason = "PROT 0897 op 45 configure loop: the slot index s4 = s3 & 0xFF runs 0..9 (`sltiu v0,v0,0xa` at 0x801DF1CC closes the loop), so the `sltiu s4,0xa` table bound never fails"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E24AC..0x801E24AC"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C 9x: v1 is `andi s3,0xf`, never negative, so `bltz v1` is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E2F5C..0x801E2F5C"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C DC: reached only when the equipment scan runs out, after the bag miss (`slti s7,0x100` false at 0x801E2EC0) and with no match (a match leaves the loop for 0x801E2F64), so s7 is still >= 0x100 and the miss branch is always taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E3018..0x801E3018"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C DE: the same loop exit as 4C DC's 0x801E2F5C, reached only with s7 >= 0x100, so the miss branch is always taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E0270..0x801E0270"
+verdict = "unreachable"
+reason = "PROT 0897 op 35 sub 0xA: the dual-mode bypass on _DAT_8007B868, a word no retail code writes (docs/subsystems/audio.md), so `bnez v0` is never taken"
+
+[[arm]]
+entry = "801DE840"
 range = "0x801DE8B4..0x801DE8C4"
 verdict = "unported"
 reason = "PROT 0897 prelude: a prefixed op whose target FUN_8003C83C cannot resolve keeps its PC (and logs under the debug word 0x8007B98C); the port's VM is handed an already-resolved context, the target lookup and its miss living in World's routing (field_channels::resolve_target via step_on_resolved_channel and the step_field_cross_context_* arms)"

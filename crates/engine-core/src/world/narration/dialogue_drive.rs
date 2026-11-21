@@ -1502,6 +1502,8 @@ impl World {
                     id.pc = final_pc;
                     break;
                 }
+                // `4C C9` holds the same way while a BGM swap is in flight
+                // (`0x801E2920`).
                 // `4C 53` / `4C 54` poll the staged mode switch
                 // `FUN_801D65D8` and re-run their own PC while it is in
                 // flight (the wait join at `0x801E28C4`, `0x801DEE4C`): a
@@ -1516,7 +1518,7 @@ impl World {
                         && matches!(
                             id.bytecode
                                 .get(final_pc + if b & 0x80 != 0 { 2 } else { 1 }),
-                            Some(&(0x53 | 0x54))
+                            Some(&(0x53 | 0x54 | 0xC9))
                         ) =>
                 {
                     id.pc = final_pc;

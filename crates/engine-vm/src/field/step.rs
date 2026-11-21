@@ -848,8 +848,11 @@ pub fn step_from_caller<H: FieldHost>(
             let Some(&hi) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let target = i32::from(u16::from_le_bytes([lo, hi]));
-            ctx.wait_accum = ctx.wait_accum.saturating_add(host.frame_delta() as i16);
+            // A signed halfword target (`FUN_8003CE9C`) against the
+            // accumulator stored with `sh` and re-read signed
+            // (`0x801E09D4..0x801E09F0`): both wrap at 16 bits.
+            let target = i32::from(i16::from_le_bytes([lo, hi]));
+            ctx.wait_accum = ctx.wait_accum.wrapping_add(host.frame_delta() as i16);
             if i32::from(ctx.wait_accum) < target {
                 StepResult::Halt { final_pc: pc }
             } else {

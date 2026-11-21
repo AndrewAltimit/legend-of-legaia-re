@@ -9,6 +9,14 @@ impl<'a> FieldSceneHost for FieldHostImpl<'a> {
         self.world.locomotion.scene_ctrl_61 = value;
     }
 
+    /// Op `4C C9`: hold while a BGM swap is in flight, retail's requested
+    /// and loaded indices `_DAT_8007BAB8` / `_DAT_8007BA9C` differing
+    /// (`beq a0,v0` at `0x801E2920`), which is the poller's walk.
+    // REF: FUN_801DE840 (0x801E290C..0x801E292C)
+    fn bgm_swap_pending(&self) -> bool {
+        self.world.audio.bgm_swap.in_flight()
+    }
+
     fn scene_transition(&mut self, map_id: u8) {
         // Record the request; SceneHost::tick drains it after the field
         // step returns so the bytecode swap doesn't invalidate the

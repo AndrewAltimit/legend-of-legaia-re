@@ -145,7 +145,7 @@ fn retail_vm() -> Option<psx_retail_exec::Cpu> {
         .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
     cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
     cpu.hook(RESOLVE_ACTOR, |r, _| r.r[2] = CTX);
-    cpu.hook(READ_U16, |r, m| r.r[2] = u32::from(m.rd16(r.r[4])));
+    cpu.hook(READ_U16, |r, m| r.r[2] = m.rd16(r.r[4]) as i16 as u32);
     cpu.hook(PACKET_LENGTH, |r, m| {
         let bytes = m.read(r.r[4], 0x400);
         r.r[2] = legaia_scene_formats::field_disasm::packet_length(&bytes) as u32;
@@ -600,6 +600,8 @@ struct Seeded {
     light: bool,
     /// The length of the keyframe block `34 2x` handed over, if it did.
     captured: Option<usize>,
+    /// The system flag bank `0x80085758` (`FUN_8003CE64`'s, MSB first).
+    system: std::rc::Rc<Vec<u8>>,
 }
 impl FieldFlagsHost for Seeded {
     fn global_flags(&self) -> u32 {
@@ -619,6 +621,11 @@ impl FieldFlagsHost for Seeded {
     }
     fn pad_compass_entry(&self, index: u8) -> Option<u32> {
         self.compass.get(usize::from(index)).copied()
+    }
+    fn system_flag_test(&self, idx: u16) -> bool {
+        self.system
+            .get(usize::from(idx >> 3))
+            .is_some_and(|b| b & (0x80 >> (idx & 7)) != 0)
     }
 }
 impl FieldSceneHost for Seeded {}
@@ -697,6 +704,7 @@ impl FieldHaltHost for Seeded {
 /// The corpus again, with the generated sub-ops of
 /// [`crate::field_vm::synthetic`], each instruction under seeded world state
 /// the plain corpus runs leave clear: random story flags, held pad and region mask;
+/// a generated system flag bank (`0x80085758`, read through `FUN_8003CE64`);
 /// the menu-resume slot `0x8007B450` armed and done; a context that carries
 /// the halt bit, with the spawn bracket up or down and the system script
 /// `0xFB` calling it or not; the player's context `0x8007C364`; and a context that runs no
@@ -718,6 +726,22 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
     const PLAYER: u32 = 0x8007_C364;
     // The spawn bracket's scene record.
     cpu.mem.wr32(0x801C_6EA4, SCENE);
+    // A generated system flag bank, read through `FUN_8003CE64` (a set bit
+    // answers `0xFF`) on retail's side and `system_flag_test` on the port's.
+    const SYSTEM: u32 = 0x8008_5758;
+    let mut bank_rng = Rng(0x5359_5346);
+    let mut bank: Vec<u8> = (0..0x200).map(|_| bank_rng.next() as u8).collect();
+    // Character record 4's `+0x6CC..+0x6F8` lies inside the bank, where
+    // `4E` reads it for a page past the party: kept clear, as the port's
+    // host answers an absent page.
+    bank[0x104..0x140].fill(0);
+    let system = std::rc::Rc::new(bank);
+    cpu.mem.load(SYSTEM, &system);
+    cpu.hook(0x8003_CE64, |r, m| {
+        let idx = r.r[4] & 0xFFFF;
+        let set = m.rd8(SYSTEM + (idx >> 3)) & (0x80 >> (idx & 7)) != 0;
+        r.r[2] = if set { 0xFF } else { 0 };
+    });
     let mut compass = [0u32; 8];
     for (i, c) in compass.iter_mut().enumerate() {
         *c = cpu.mem.rd32(0x801F_28D0 + 4 * i as u32);
@@ -745,6 +769,7 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                 bracket: false,
                 light: false,
                 captured: None,
+                system: system.clone(),
             };
             if rng.below(4) == 0 {
                 // A pad that matches a compass entry.
@@ -951,6 +976,7 @@ fn an_attached_light_is_found_where_retail_finds_it() {
                 bracket: false,
                 light: mine.is_some(),
                 captured: None,
+                system: std::rc::Rc::new(Vec::new()),
             };
             let mut ctx = FieldCtx::default();
             let port = match step(&mut host, &mut ctx, &script, pc) {

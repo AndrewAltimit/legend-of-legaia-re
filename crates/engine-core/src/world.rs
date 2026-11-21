@@ -268,3 +268,6 @@ pub mod test_drivers;
 // The single battle arms the retail kernel differential drives (`test-drivers`).
 #[cfg(feature = "test-drivers")]
 pub mod arm_drivers;
+// The field-side state exposed the same way (`test-drivers`).
+#[cfg(feature = "test-drivers")]
+pub mod field_test_drivers;
