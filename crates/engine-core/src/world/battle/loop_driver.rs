@@ -9,6 +9,7 @@ use legaia_engine_mode::mode::SceneMode;
 /// The `+0x16E` status word's Stone bit.
 const STONE_WORD_BIT: u16 = 0x0004;
 mod hits;
+pub use hits::MeleeApply;
 mod round;
 
 impl World {

@@ -11,7 +11,9 @@ use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
 use legaia_engine_battle::accessory_passives::AccessoryPassives;
 use legaia_engine_battle::battle_anim::MonsterAnimPlayer;
 use legaia_engine_battle::monster_catalog::MonsterDef;
+use legaia_engine_battle_vm::battle_action::HitEvent;
 use legaia_engine_core::world::World;
+use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
 use legaia_game_tables::accessory_passive::AccessoryPassiveTable;
 use legaia_game_tables::element_affinity;
 use legaia_save::{AutoCommandBand, Party};
@@ -36,6 +38,9 @@ const MONSTER: u32 = 0x8015_0000;
 const CLIP: u32 = 0x8016_0000;
 const ANIM_NODE: u32 = 0x8016_1000;
 const MYSTIC_WORD: u32 = 0x8007_BD84;
+const ENTRY_TABLES: u32 = 0x801C_9360;
+const ENTRY_TABLE: u32 = 0x8017_0000;
+const ENTRIES: u32 = 0x8017_1000;
 
 /// One generated hit: what both sides are seeded with.
 #[derive(Debug, Clone)]
@@ -44,7 +49,6 @@ struct Hit {
     target: u8,
     power: u8,
     committed: u8,
-    kill_check: bool,
     class: u8,
     atk: [u16; 8],
     udf: [u16; 8],
@@ -73,6 +77,106 @@ struct Hit {
     mystic: bool,
     drain_clip: bool,
     seed: u32,
+    look: Look,
+}
+
+/// The hit's place in its action: what the head guards, the limb-vs-height
+/// miss and the apply mode's look-ahead read.
+#[derive(Debug, Clone)]
+struct Look {
+    /// `ctx[+0x07]`, the action state.
+    state: u8,
+    /// The attacker's `+0x1F4`, the hit being resolved.
+    hit_index: u8,
+    /// The clip entry's power run `+0x00..+0x04`.
+    run: [u8; 4],
+    /// Its event-frame list `+0x10..+0x14`.
+    frames: [u8; 4],
+    /// `ctx[+0x15]`, the strike cursor (`0xFF` parked).
+    cursor: u8,
+    /// The attacker's stream `+0x1DF..`.
+    queue: [u8; 16],
+    /// The power run of the entry each stream byte below `0x10` names.
+    entries: [[u8; 4]; 16],
+    /// The target monster record's `+0x1E` swing class.
+    class: u8,
+    /// `ctx[+0x16]`, the Attack x2 pass.
+    x2_pass: u8,
+}
+
+/// A power byte the look-ahead classifies: a terminator, the low and high
+/// swing bands, or one at `0x16` and above that connects with everything.
+fn look_byte(rng: &mut Rng) -> u8 {
+    match rng.below(10) {
+        0..=1 => 0,
+        2 => 1 + rng.below(0x0B) as u8,
+        3..=5 => 0x0C + rng.below(5) as u8,
+        6..=7 => 0x11 + rng.below(5) as u8,
+        _ => 0x16 + rng.below(0x0A) as u8,
+    }
+}
+
+fn gen_look(rng: &mut Rng, power: u8, party_attacks: bool) -> Look {
+    let plain = rng.below(3) == 0;
+    let hit_index = if plain { 0 } else { rng.below(4) as u8 };
+    let mut run = [0u8; 4];
+    let mut frames = [0u8; 4];
+    for i in 0..4 {
+        run[i] = look_byte(rng);
+        frames[i] = if rng.below(3) == 0 {
+            0
+        } else {
+            1 + rng.below(3) as u8
+        };
+    }
+    // Every hit up to this one has its beat, this one on frame 1.
+    for f in frames.iter_mut().take(usize::from(hit_index)) {
+        *f = 1;
+    }
+    frames[usize::from(hit_index)] = 1;
+    run[0] = 0x0C + rng.below(0x14) as u8;
+    run[usize::from(hit_index)] = power;
+    if plain {
+        run[1..].fill(0);
+        frames[1..].fill(0);
+    }
+    let mut queue = [0u8; 16];
+    let mut entries = [[0u8; 4]; 16];
+    for q in queue.iter_mut() {
+        *q = match rng.below(8) {
+            0 => 0,
+            1 => 0x10 + rng.below(0x10) as u8,
+            _ => 1 + rng.below(0x0F) as u8,
+        };
+    }
+    for e in entries.iter_mut() {
+        for b in e.iter_mut() {
+            *b = look_byte(rng);
+        }
+    }
+    Look {
+        state: match rng.below(8) {
+            0 => 0x6E + rng.below(10) as u8,
+            1 => 0x64 + rng.below(0x0A) as u8,
+            _ => 3,
+        },
+        hit_index,
+        run,
+        frames,
+        cursor: match rng.below(5) {
+            0 | 1 => 0xFF,
+            2 => 0,
+            _ => 1 + rng.below(0x11) as u8,
+        },
+        queue,
+        entries,
+        class: if plain || !party_attacks {
+            0
+        } else {
+            [0, 1, 2, 2, 3, 3][rng.below(6) as usize]
+        },
+        x2_pass: rng.below(3) as u8,
+    }
 }
 
 /// A value with its boundaries over-represented.
@@ -104,7 +208,6 @@ fn gen_hit(rng: &mut Rng) -> Hit {
             // A monster's clip index is a plain entry, any of them.
             1 + rng.below(0x18) as u8
         },
-        kill_check: rng.below(2) == 0,
         class: if rng.below(2) == 0 {
             0
         } else {
@@ -141,7 +244,19 @@ fn gen_hit(rng: &mut Rng) -> Hit {
         mystic: rng.below(16) == 0,
         drain_clip: rng.below(6) == 0,
         seed: rng.next(),
+        look: Look {
+            state: 3,
+            hit_index: 0,
+            run: [0; 4],
+            frames: [0; 4],
+            cursor: 0,
+            queue: [0; 16],
+            entries: [[0; 4]; 16],
+            class: 0,
+            x2_pass: 0,
+        },
     };
+    h.look = gen_look(rng, h.power, party_attacks);
     for s in 0..8 {
         h.atk[s] = stat(rng, top);
         h.udf[s] = stat(rng, top);
@@ -158,17 +273,18 @@ fn gen_hit(rng: &mut Rng) -> Hit {
     }
     for m in 0..3 {
         if rng.below(2) == 0 {
-            // The passives the resolver reads; `0x2000` (War God) is the
-            // caller's apply mode, so the kill gate is what it passes.
+            // The passives the resolver reads; `0x2000` is the War God
+            // Icon's Attack x2 carry in the apply mode.
             let w0 = [
-                0x4000u32,
+                0x2000u32,
+                0x4000,
                 0x8_0000,
                 0x10_0000,
                 0x20_0000,
                 0x2000_0000,
                 0x4000_0000,
                 0x8000_0000,
-            ][rng.below(7) as usize];
+            ][rng.below(8) as usize];
             let w1 = [1u32, 2, 4, 8, 0x10, 0x100, 0x200, 0x1000, 0x20_0000][rng.below(9) as usize];
             h.ability[m] = [w0, w1];
         }
@@ -229,8 +345,10 @@ fn seed_retail(cpu: &mut Cpu, h: &Hit) {
     }
     cpu.mem.wr8(CTX, 3);
     cpu.mem.wr8(CTX + 0x0A, h.juggle);
-    // The apply gate: `ctx[+0x15]` with no next step in the record.
-    cpu.mem.wr8(CTX + 0x15, if h.kill_check { 0xFF } else { 0 });
+    cpu.mem.wr8(CTX + 0x07, h.look.state);
+    // The apply gate's strike cursor and the Attack x2 pass.
+    cpu.mem.wr8(CTX + 0x15, h.look.cursor);
+    cpu.mem.wr8(CTX + 0x16, h.look.x2_pass);
     cpu.mem.wr16(CTX + 0x6D2, h.attack_ramp as u16);
     cpu.mem.wr16(CTX + 0x6D4, h.guard_ramp as u16);
     for m in 0..3u32 {
@@ -309,13 +427,37 @@ fn seed_retail(cpu: &mut Cpu, h: &Hit) {
     } else if h.fleeing {
         cpu.mem.wr8(tgt + 0x1DE, 5);
     }
-    // The clip record: one power byte, one step, the impact class.
+    // The clip record: the power run, the event frames, the impact class.
     for b in 0..0x100 {
         cpu.mem.wr8(CLIP + b, 0);
     }
-    cpu.mem.wr8(CLIP, h.power);
-    cpu.mem.wr8(CLIP + 0x10, 1);
+    for i in 0..4u32 {
+        cpu.mem.wr8(CLIP + i, h.look.run[i as usize]);
+        cpu.mem.wr8(CLIP + 0x10 + i, h.look.frames[i as usize]);
+    }
     cpu.mem.wr8(CLIP + 0x7A, h.class);
+    // The look-ahead: the hit index, the stream and the entry table
+    // `0x801C9360[slot][byte]` its swing bytes resolve through.
+    cpu.mem.wr8(att + 0x1F4, h.look.hit_index);
+    for (i, &q) in h.look.queue.iter().enumerate() {
+        cpu.mem.wr8(att + 0x1DF + i as u32, q);
+    }
+    // Four words ahead of the actor table: party seats only, and only a
+    // party attacker's look-ahead reads it.
+    if h.attacker < 3 {
+        cpu.mem
+            .wr32(ENTRY_TABLES + u32::from(h.attacker) * 4, ENTRY_TABLE);
+    }
+    for (b, run) in h.look.entries.iter().enumerate() {
+        let entry = ENTRIES + b as u32 * 0x20;
+        cpu.mem.wr32(ENTRY_TABLE + b as u32 * 4, entry);
+        for (i, &p) in run.iter().enumerate() {
+            cpu.mem.wr8(entry + i as u32, p);
+        }
+    }
+    if h.target >= 3 {
+        cpu.mem.wr8(monster_record(h.target) + 0x1E, h.look.class);
+    }
 }
 
 fn seed_port(w: &mut World, h: &Hit) {
@@ -376,12 +518,23 @@ fn seed_port(w: &mut World, h: &Hit) {
         } else {
             monster_tags(h)
         };
-        let clips: Vec<_> = tags.iter().map(|&t| Some(clip(t, 0))).collect();
+        let mut clips: Vec<_> = tags.iter().map(|&t| Some(clip(t, 0))).collect();
+        if s == h.attacker && is_party {
+            // The entries the look-ahead resolves stream bytes through.
+            for (b, c) in clips.iter_mut().enumerate().take(16) {
+                let c = c.as_mut().unwrap();
+                c.effect_script = vec![0; 0x14];
+                c.effect_script[..4].copy_from_slice(&h.look.entries[b]);
+            }
+        }
         w.set_actor_battle_action_clips(i, std::sync::Arc::new(clips));
         if !is_party {
             let mut def = MonsterDef::new(0x40 + u16::from(s), "m", 1, 10);
             def.absorb_seru = h.absorb_seru;
             def.absorb_chance_pct = h.absorb_pct;
+            if s == h.target {
+                def.swing_class = h.look.class;
+            }
             w.tables.monster_catalog.insert(def);
         }
     }
@@ -403,6 +556,14 @@ fn seed_port(w: &mut World, h: &Hit) {
         w.actors[ti].battle.action_category = 5;
     }
     w.actors[ai].battle.current_anim = h.committed;
+    w.actors[ai].battle.strike_index = h.look.cursor;
+    w.actors[ai].battle.params = [0; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
+    w.actors[ai].battle.params[..16].copy_from_slice(&h.look.queue);
+    w.battle_ctx.action_state = h.look.state;
+    w.battle_ctx.attack_x2_pass = h.look.x2_pass;
+    for m in 0..3 {
+        w.party.character_ability_bits[m] = h.ability[m][0];
+    }
     w.actors[ai].battle.active_target = h.target;
     let mut playing = clip(0x0C, h.class);
     playing.attach_key = if h.drain_clip { 0x3B } else { 0 };
@@ -424,6 +585,7 @@ struct Outcome {
     attacker_pending: i32,
     auto_heads: Option<(u8, u8)>,
     absorbed: u8,
+    strobe: u8,
     rng: u32,
 }
 
@@ -464,6 +626,7 @@ fn a_melee_hit_lands_what_retail_lands() {
     let mut blocked = 0;
     let mut hits = 0;
     let mut rewrites = 0;
+    let mut misses = 0;
     let mut failures: Vec<String> = Vec::new();
     let rounds: u32 = std::env::var("MELEE_ROUNDS")
         .ok()
@@ -474,7 +637,7 @@ fn a_melee_hit_lands_what_retail_lands() {
         seed_retail(&mut cpu, &h);
         state.set(h.seed);
         let stop = cpu.call(RESOLVER, &[u32::from(h.attacker), CLIP, 0, 0]);
-        assert_eq!(stop, Stop::Returned, "round {round}: {h:?}");
+        assert_eq!(stop, Stop::Returned, "round {round}: {stop:?} {h:?}");
         let t = actor(h.target);
         let a = actor(h.attacker);
         let retail = Outcome {
@@ -496,6 +659,7 @@ fn a_melee_hit_lands_what_retail_lands() {
                 (cpu.mem.rd8(rec + 0x1A7), cpu.mem.rd8(rec + 0x1B7))
             }),
             absorbed: cpu.mem.rd8(CTX + 0x269),
+            strobe: cpu.mem.rd8(CTX + 0x263),
             rng: state.get(),
         };
 
@@ -504,17 +668,26 @@ fn a_melee_hit_lands_what_retail_lands() {
         for m in 0..3 {
             w.battle.equip_atk[m] = h.equip[m].map(|id| equip_byte(&mut cpu, id));
         }
-        let dmg = w.land_melee_hit(
-            h.attacker,
-            h.target,
-            h.power,
-            h.committed,
-            false,
-            h.kill_check,
-        );
-        if h.kill_check {
-            w.apply_combo_total(h.target);
-        }
+        let hit = HitEvent {
+            hit_index: h.look.hit_index,
+            power_byte: h.power,
+            event_frame: 1,
+        };
+        let plan = w.melee_hit_plan(h.attacker, h.target, &hit, &h.look.run, &h.look.frames);
+        let dmg = match plan {
+            Some(apply) => {
+                let (dmg, applied) =
+                    w.land_melee_hit_planned(h.attacker, h.target, h.power, h.committed, apply);
+                if applied {
+                    w.apply_combo_total(h.target);
+                }
+                dmg
+            }
+            None => {
+                misses += 1;
+                1
+            }
+        };
         let ta = &w.actors[usize::from(h.target)];
         let port = Outcome {
             accum: ta.battle.damage_accum,
@@ -543,6 +716,7 @@ fn a_melee_hit_lands_what_retail_lands() {
                 )
             }),
             absorbed: w.battle_ctx.absorbed_seru,
+            strobe: u8::from(plan.is_none()),
             rng: w.rng_state,
         };
         if dmg == 0 {
@@ -555,7 +729,7 @@ fn a_melee_hit_lands_what_retail_lands() {
         }
         if retail != port {
             failures.push(format!(
-                "round {round}:\n retail {retail:?}\n port   {port:?}\n {h:?}"
+                "round {round}: dmg {dmg} plan {plan:?}\n retail {retail:?}\n port   {port:?}\n {h:?}"
             ));
             if failures.len() >= 6 {
                 break;
@@ -564,7 +738,94 @@ fn a_melee_hit_lands_what_retail_lands() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(
-        blocked > 100 && hits > 1000,
-        "{blocked} blocked, {hits} hits, {rewrites}"
+        blocked > 100 && hits > 1000 && misses > 100,
+        "{blocked} blocked, {hits} hits, {misses} limb misses, {rewrites}"
+    );
+}
+
+/// The head guard chain (`0x801EC41C..0x801EC484`) against
+/// `hit_event_admits`: an admitted call always reaches the epilogue's
+/// `+0x1F4` bump at `0x801EECC0`, a refused one returns past it.
+#[test]
+fn the_head_guards_admit_what_retail_admits() {
+    differential!(prot(898, RESOLVER));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = disc.read_entry(898).expect("PROT 0898");
+    cpu.mem.load(OVERLAY_BASE, &overlay);
+    let state = Rc::new(Cell::new(0u32));
+    let stream = state.clone();
+    cpu.hook(RAND, move |r, _| {
+        let next = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+        stream.set(next);
+        r.r[V0] = (next >> 16) & 0x7FFF;
+    });
+    cpu.stub(0x8003_D53C, 0);
+    cpu.stub(0x8004_FE5C, 0);
+    cpu.stub(0x8001_9B28, 0);
+    let mut rng = Rng(0x4845_4144);
+    let (mut admitted, mut refused) = (0, 0);
+    for round in 0..4000 {
+        let mut h = gen_hit(&mut rng);
+        h.look.state = match rng.below(6) {
+            0 => 0x5A,
+            1 => rng.below(0x100) as u8,
+            _ => 3,
+        };
+        h.look.hit_index = [0, 1, 2, 3, 4, 5][rng.below(6) as usize];
+        for i in 0..4 {
+            h.look.run[i] = match rng.below(4) {
+                0 => rng.below(0x100) as u8,
+                1 => [0x0B, 0x0C, 0x1F, 0x20][rng.below(4) as usize],
+                _ => 0x0C + rng.below(0x14) as u8,
+            };
+            h.look.frames[i] = [0, 1, 2, 5, 0xFF][rng.below(5) as usize];
+        }
+        h.power = h.look.run[usize::from(h.look.hit_index.min(3))];
+        let frame = [0u8, 1, 3, 4, 0xFE, 0xFF][rng.below(6) as usize];
+        seed_retail(&mut cpu, &h);
+        state.set(h.seed);
+        let a = actor(h.attacker);
+        // The fifth slot's event byte is the record's `+0x14`.
+        cpu.mem.wr8(CLIP + 0x14, h.look.frames[0]);
+        cpu.mem.wr8(CLIP + 0x15, h.look.frames[1]);
+        let stop = cpu.call(
+            RESOLVER,
+            &[u32::from(h.attacker), CLIP, u32::from(frame), 0],
+        );
+        assert_eq!(stop, Stop::Returned, "round {round}: {stop:?} {h:?}");
+        let retail = cpu.mem.rd8(a + 0x1F4) != h.look.hit_index;
+        let ev4 = [
+            h.look.frames[0],
+            h.look.frames[1],
+            h.look.frames[2],
+            h.look.frames[3],
+        ];
+        // The port bounds the index first; past it retail reads
+        // `entry[0x10 + idx]`, which the seat above mirrors.
+        let port = legaia_engine_battle_vm::battle_action::hit_event_admits(
+            h.look.state,
+            &h.look.run,
+            &ev4,
+            h.look.hit_index,
+            frame,
+        )
+        .is_some();
+        assert_eq!(
+            retail, port,
+            "round {round}: state {:#04x} run {:02x?} frames {:02x?} idx {} frame {frame}",
+            h.look.state, h.look.run, ev4, h.look.hit_index
+        );
+        if retail {
+            admitted += 1;
+        } else {
+            refused += 1;
+        }
+    }
+    assert!(
+        admitted > 500 && refused > 500,
+        "{admitted} admitted, {refused} refused"
     );
 }

@@ -8,6 +8,7 @@
 //! what it wrote; the gate the arm's own caller applies stays with that caller.
 
 use super::World;
+pub use super::battle::MeleeApply;
 
 pub trait BattleArmDrivers {
     /// The anim commit's strike-loop reach snap
@@ -31,6 +32,29 @@ pub trait BattleArmDrivers {
     /// (`World::tick_battle_backdrop_spin`, `FUN_80046A20`
     /// `0x80046D34..0x80046D5C`).
     fn backdrop_spin(&mut self);
+    /// The melee resolver's plan for one admitted hit
+    /// (`World::melee_hit_plan`, `FUN_801EC3E4` `0x801EC488..0x801EC554`
+    /// and the apply gates): `None` on a limb miss, else whether the total
+    /// lands.
+    fn melee_hit_plan(
+        &self,
+        attacker: u8,
+        target: u8,
+        hit: &legaia_engine_battle_vm::battle_action::HitEvent,
+        power_run: &[u8; 4],
+        event_frames: &[u8; 4],
+    ) -> Option<MeleeApply>;
+    /// The melee resolver's body with that plan
+    /// (`World::land_melee_hit_folded` behind the plain round's fold): the
+    /// damage rolled and whether the total landed.
+    fn land_melee_hit_planned(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        power_byte: u8,
+        committed: u8,
+        apply: MeleeApply,
+    ) -> (u16, bool);
 }
 
 impl BattleArmDrivers for World {
@@ -60,5 +84,26 @@ impl BattleArmDrivers for World {
     }
     fn backdrop_spin(&mut self) {
         World::tick_battle_backdrop_spin(self)
+    }
+    fn melee_hit_plan(
+        &self,
+        attacker: u8,
+        target: u8,
+        hit: &legaia_engine_battle_vm::battle_action::HitEvent,
+        power_run: &[u8; 4],
+        event_frames: &[u8; 4],
+    ) -> Option<MeleeApply> {
+        World::melee_hit_plan(self, attacker, target, hit, power_run, event_frames)
+    }
+    fn land_melee_hit_planned(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        power_byte: u8,
+        committed: u8,
+        apply: MeleeApply,
+    ) -> (u16, bool) {
+        let fold = self.melee_equipment_fold(attacker, committed);
+        self.land_melee_hit_folded(attacker, target, power_byte, committed, apply, fold)
     }
 }

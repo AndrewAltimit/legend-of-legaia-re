@@ -34,6 +34,7 @@ pub(in crate::world) use intro_names::INTRO_LEAD_TICKS;
 mod locomotion;
 pub(in crate::world) use locomotion::stream_pose;
 mod loop_driver;
+pub use loop_driver::MeleeApply;
 mod member_step;
 mod message_banner;
 mod monster_ai;
