@@ -421,6 +421,10 @@ pub const fn figure_left(right: i16, cells: u16, digits: u16) -> i16 {
 /// all fall inside the field.
 ///
 /// PORT: FUN_80031D00 (the number record's place walk)
+///
+/// NOT WIRED: the hosts place figures with [`figure_left`], which agrees with
+/// this walk on every figure that fits its field; only the retail kernel
+/// differential calls it.
 pub fn number_record_cells(value: i32, cells: i16) -> Vec<(i16, u8)> {
     let mut out = Vec::new();
     let (mut v, mut x, mut drawn) = (value, 0i16, false);

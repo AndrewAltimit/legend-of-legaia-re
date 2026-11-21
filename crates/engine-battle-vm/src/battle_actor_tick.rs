@@ -192,6 +192,10 @@ impl BattleActorTick {
 /// clear) is judged at [`PARKED_VIEW_DEPTH`].
 ///
 /// PORT: FUN_8001ADA4 (`0x8001AE4C..0x8001AE58` the `+0x10 & 0xA` skip, `0x8001AEE0..0x8001AEF4` the mode-2 near reject)
+///
+/// NOT WIRED: the retail kernel differential holds this gate to retail; the
+/// engine's battle draw pass makes its own skip and near-reject decisions and
+/// does not call it yet.
 pub fn dispatch_draws(flags: u32, view_depth: i32) -> bool {
     if flags & DISPATCH_SKIP_MASK != 0 {
         return false;

@@ -1824,3 +1824,10 @@ changes = [
   ["states/battle_taiku_thermo_void_accessories_mid_cast/image", 0.997, 0.996],
   ["states/battle_vahn_tri_somersault_super/image", 0.977, 0.969],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Play-page gzip is the wave's engine fixes compiled in: battle command flow (retail arm order on prompts and target cursors, the item ring, the commit log's spell and item names, the win camera words), the action state machine's cast and item bands and the Jette count, the field VM and dialog fixes (auto-press pad mask, 36 FF FF and 4C C9 holds, signed operands), and the title tick model rewrite (+4.6 KB). No asset or dependency added; the tool bundle and every native and browser count stayed under their baselines."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 5212220, 5216848],
+]

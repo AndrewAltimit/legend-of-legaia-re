@@ -743,6 +743,10 @@ where
 /// mask sharing a bit with the character's (`0x8007B48C[char]`).
 ///
 /// PORT: FUN_80030628 (armament filter, `0x80031574..0x800315C8`)
+///
+/// NOT WIRED: `EquipSession` filters with its own `item_fits_slot`, which
+/// gates the head and hand slots on the character mask alone where retail
+/// also tests the category; this retail-held filter is what it should call.
 pub fn armament_candidate_accepts(
     kind: u8,
     equip_flags: u8,
