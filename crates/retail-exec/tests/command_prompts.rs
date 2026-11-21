@@ -1362,3 +1362,174 @@ fn the_item_target_cursors_go_where_retail_goes() {
         );
     }
 }
+
+/// The item window `0x3C` (`0x801D17DC..0x801D19F4`): the list kernel's
+/// verdict `_DAT_8007BB94` - `2` a confirm, `3` a cancel - read against
+/// `World::tick_battle_item_menu` on a Cross or a Circle. A confirm raises
+/// the sub-cursor the item's target flags name (`+2` of its effect record,
+/// `0x40` enemy side, `0x20` all) and seats the target byte: the caster on
+/// the party side, the member's own monster target or the first living
+/// monster on the enemy side. A cancel goes back to the ring.
+#[test]
+fn the_item_window_raises_the_sub_cursor_retail_raises() {
+    differential!(prot(898, STATE_MACHINE));
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::test_drivers::BattleTestDrivers;
+    use legaia_engine_menus::inventory_use::InventoryUseState;
+    use legaia_engine_menus::items::{ItemCatalog, ItemEffect, ItemEntry};
+    use legaia_engine_system::pad::PadButton;
+    let Some((mut cpu, _, _, _)) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const VERDICT: u32 = 0x8007_BB94;
+    const SELECTION: u32 = 0x8007_BB88;
+    const BAG: u32 = 0x8008_5958;
+    const ITEM_TABLE: u32 = 0x8007_4368;
+    const EFFECTS: u32 = 0x8007_52C0;
+    // DB8B4's first living monster: the test seats it as pool slot 3 + the
+    // first live row.
+    let first_live = std::rc::Rc::new(std::cell::Cell::new(3u32));
+    let fl = first_live.clone();
+    cpu.hook(0x801D_B8B4, move |r, _| r.r[psx_retail_exec::V0] = fl.get());
+    let mut rng = Rng(0x4954_574E);
+    let mut seen = std::collections::HashMap::<u8, u32>::new();
+    for round in 0..8000 {
+        let party = 1 + rng.below(3) as u8;
+        let seat = rng.below(u32::from(party)) as u8;
+        let count = 1 + rng.below(4) as usize;
+        let mut alive = [false; 4];
+        for a in alive.iter_mut().take(count) {
+            *a = rng.below(4) != 0;
+        }
+        let Some(first) = (0..count).find(|&i| alive[i]) else {
+            continue;
+        };
+        first_live.set(3 + first as u32);
+        let id = 1 + rng.below(0x60) as u8;
+        let flags = {
+            let effect = cpu.mem.rd8(ITEM_TABLE + 12 * u32::from(id) + 1);
+            cpu.mem.rd8(EFFECTS + 4 * u32::from(effect) + 2)
+        };
+        let (enemy, all) = (flags & 0x40 != 0, flags & 0x20 != 0);
+        // The member's target byte, pool space: a party seat, a live
+        // monster seat (the round sweep `FUN_801D88CC` re-picks a dead one)
+        // or a group code.
+        let live: Vec<u8> = (0..count as u8)
+            .filter(|&i| alive[usize::from(i)])
+            .collect();
+        let prev_pool: u8 = match rng.below(3) {
+            0 => rng.below(u32::from(party)) as u8,
+            1 => 3 + live[rng.below(live.len() as u32) as usize],
+            _ => [8, 9][rng.below(2) as usize],
+        };
+        let verdict = [2u32, 3][rng.below(2) as usize];
+
+        // Retail.
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        let actor = ACTOR + STRIDE * u32::from(seat);
+        cpu.mem.wr8(CTX, party);
+        cpu.mem.wr8(CTX + 0x06, 0x3C);
+        cpu.mem.wr8(CTX + 0x13, seat);
+        cpu.mem.wr8(CTX + 0x11 + 0xC, prev_pool);
+        cpu.mem.wr8(actor + 0x1DD, prev_pool);
+        cpu.mem.wr32(VERDICT, verdict);
+        cpu.mem.wr32(SELECTION, 0);
+        cpu.mem.wr8(BAG, id);
+        cpu.mem.wr8(BAG + 1, 1);
+        cpu.mem.wr32(PAD, 0);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, 0);
+        cpu.mem.wr8(BATTLE_ID, 0);
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let after = cpu.mem.rd8(CTX + 0x06);
+        let target = cpu.mem.rd8(actor + 0x1DD);
+
+        // The port: the window open on the item, the same verdict pressed.
+        let mut w = World {
+            mode: legaia_engine_mode::mode::SceneMode::Battle,
+            ..World::default()
+        };
+        w.battle.player_driven = true;
+        w.party.party_count = party;
+        let mut catalog = ItemCatalog::new();
+        catalog.insert(ItemEntry {
+            id,
+            name: "item",
+            effect: if enemy {
+                ItemEffect::Damage { amount: 50 }
+            } else {
+                ItemEffect::Heal { amount: 50 }
+            },
+            usable_in_battle: true,
+            usable_in_field: false,
+        });
+        catalog.set_enemy_side(id, enemy);
+        catalog.set_all_party(id, all);
+        w.set_item_catalog(catalog);
+        let pc = usize::from(party);
+        for i in 0..pc {
+            let a = &mut w.actors[i];
+            a.active = true;
+            a.battle.max_hp = 200;
+            a.battle.hp = 100;
+            a.battle.liveness = 1;
+        }
+        for (i, &up) in alive.iter().enumerate().take(count) {
+            let a = &mut w.actors[pc + i];
+            a.active = true;
+            a.battle.max_hp = 200;
+            a.battle.hp = if up { 200 } else { 0 };
+            a.battle.liveness = u16::from(up);
+            a.battle_monster_id = Some(0x40 + i as u16);
+        }
+        // The pool target byte in the engine's seats.
+        let prev_engine = match prev_pool {
+            3..=7 => prev_pool - 3 + party,
+            p => p,
+        };
+        w.actors[usize::from(seat)].battle.active_target = prev_engine;
+        w.battle_ctx.active_actor = seat;
+        w.party.inventory.insert(id, 1);
+        w.battle.item_menu = Some(w.build_battle_item_session());
+        w.set_pad(0);
+        w.set_pad(if verdict == 2 {
+            PadButton::Cross.mask()
+        } else {
+            PadButton::Circle.mask()
+        });
+        w.tick_battle_item_menu();
+        let label = format!(
+            "round {round}: item {id:#x} flags {flags:#x} verdict {verdict} party {party} seat {seat} \
+             alive {alive:?} prev {prev_pool} -> {after:#x} target {target}"
+        );
+        let state = w.battle.item_menu.as_ref().map(|m| m.state);
+        match (after, state) {
+            (0x28, None) => {}
+            (0x5B | 0x64, Some(InventoryUseState::TargetSelect { cursor, .. })) => {
+                let m = w.battle.item_menu.as_ref().unwrap();
+                let t = &m.targets[cursor];
+                assert_eq!(t.is_enemy, after == 0x5B, "side: {label}");
+                let slot = usize::from(t.slot);
+                let want = if t.is_enemy { slot - pc + 3 } else { slot };
+                assert_eq!(usize::from(target), want, "opening seat: {label}");
+            }
+            (0x5D, Some(InventoryUseState::AllEnemiesConfirm { .. }))
+            | (0x66, Some(InventoryUseState::AllPartyConfirm { .. })) => {}
+            (after, state) => panic!("retail {after:#x} port {state:?}: {label}"),
+        }
+        *seen.entry(after).or_default() += 1;
+    }
+    for s in [0x28u8, 0x5B, 0x5D, 0x64, 0x66] {
+        assert!(seen.get(&s).copied().unwrap_or(0) > 20, "{s:#x}: {seen:?}");
+    }
+}

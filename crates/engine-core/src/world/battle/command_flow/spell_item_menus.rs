@@ -496,6 +496,35 @@ impl World {
                 cursor: own,
             };
         }
+        // The one-enemy sub-cursor opens on the member's own target when it
+        // is a monster seat (`+0x1DD - 3 < 5`, `0x801D1918..0x801D1928`) and
+        // on the first living monster otherwise (`FUN_801DB8B4`,
+        // `0x801D1930..0x801D1950`), not on the row the item helps most.
+        //
+        // PORT: FUN_801D0748 (`0x801D18F4..0x801D1958`)
+        if !matches!(state_before, InventoryUseState::TargetSelect { .. })
+            && let InventoryUseState::TargetSelect {
+                item_cursor,
+                cursor,
+            } = menu.state
+            && menu.targets.get(cursor).is_some_and(|t| t.is_enemy)
+        {
+            let pc = self.party.party_count.clamp(1, 3);
+            let own = self
+                .actors
+                .get(usize::from(self.battle_ctx.active_actor))
+                .map(|a| a.battle.active_target)
+                .filter(|t| (pc..pc + 5).contains(t));
+            let seat = own
+                .and_then(|t| menu.targets.iter().position(|r| r.is_enemy && r.slot == t))
+                .or_else(|| menu.targets.iter().position(|r| r.is_enemy && r.alive));
+            if let Some(seat) = seat {
+                menu.state = InventoryUseState::TargetSelect {
+                    item_cursor,
+                    cursor: seat,
+                };
+            }
+        }
         // The event log drives the window's blip (`super::ui_cues`) and is
         // otherwise discarded; `used_slots` is the authoritative list of
         // targets the completed use applied to (one for a single-target item,
