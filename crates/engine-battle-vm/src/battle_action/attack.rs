@@ -309,7 +309,12 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
         .actor(slot)
         .map(|a| a.flag_bits.has(ActorFlags::ADVANCE_DONE))
         .unwrap_or(false);
-    if in_flight {
+    // A counterattack latch the head kept - the attacker's `+0x1DC` was not
+    // clear yet, its approach clip's commit still owed - holds the stage the
+    // same way (`lw v0,0x6970; bne v0,zero,0x801e37c0` at
+    // `0x801E3720..0x801E372C`): the monster stages no swing until the head
+    // has run the swap on a later pass.
+    if in_flight || ctx.counter_pending != 0 {
         // Retail's in-flight branch (`0x801E3718`) lands on the drift block
         // at `0x801E37C0`, which the stage path also falls into - so the
         // drift runs on every frame of the loop, staged or holding, and so

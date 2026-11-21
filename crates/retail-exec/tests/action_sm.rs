@@ -1083,7 +1083,7 @@ fn the_strike_loop_stages_and_drifts_as_retail_does() {
             *b = [0x0C, 0x0D, 0x19, 0x1A, 0x1B][rng.below(5) as usize];
         }
         let cursor = rng.below(len as u32 + 1) as u8;
-        let flags = [0u8, 0, 2, 3][rng.below(4) as usize];
+        let flags = [0u8, 0, 1, 2, 3][rng.below(5) as usize];
         let x2 = [0u8, 0, 1, 2][rng.below(4) as usize];
         let bits = [0u32, 0x2000][rng.below(2) as usize];
         let header = [0u8, 0, 1][rng.below(3) as usize];
@@ -1963,6 +1963,11 @@ fn the_cast_release_is_retails() {
         let spirit = [0u16, 50, 95][rng.below(3) as usize];
         let bits = [0u32, 0x200][rng.below(2) as usize];
         let depth = [0x800i16, 0x1400][rng.below(2) as usize];
+        // The target's bytes the AP bar is sized off.
+        let t_agl = rng.below(0x100) as u16;
+        let t_shield = rng.below(2) as u8;
+        let t_key = [0u16, 5][rng.below(2) as usize];
+        let t_category = [3u8, 4][rng.below(2) as usize];
         let seed = rng.next();
         if target == slot {
             continue;
@@ -1987,8 +1992,14 @@ fn the_cast_release_is_retails() {
         m.wr8(a + 0x1E8, class);
         m.wr16(a + 0x170, spirit);
         if target < 8 {
-            m.wr16(actor(target) + 0x156, base);
+            let t = actor(target);
+            m.wr16(t + 0x156, base);
+            m.wr16(t + 0x154, t_agl);
+            m.wr8(t + 0x1F9, t_shield);
+            m.wr16(t + 0x16C, t_key);
+            m.wr8(t + 0x1DE, t_category);
         }
+        m.wr16(0x8007_6C10 + 0x16E, 0x77);
         r.pass();
         let m = &mut r.cpu.mem;
         let retail = (
@@ -2003,6 +2014,7 @@ fn the_cast_release_is_retails() {
             m.rd16(CTX + 0x6D0) as i16,
         );
         let retail_member = m.rd8(CTX + 0x20);
+        let retail_bar = m.rd16(0x8007_6C10 + 0x16E) as i16;
 
         let mut h = host();
         h.bits_high = bits;
@@ -2015,11 +2027,17 @@ fn the_cast_release_is_retails() {
         b.cast_class = class;
         b.spirit_gauge = spirit;
         if target < 8 {
-            h.actors[usize::from(target)].agl_base = base;
+            let t = &mut h.actors[usize::from(target)];
+            t.agl_base = base;
+            t.agl = t_agl;
+            t.spirit_shield = t_shield;
+            t.init_key = t_key;
+            t.action_category = t_category;
         }
         let mut ctx = BattleActionCtx {
             action_state: 0x3E,
             active_actor: slot,
+            spirit_bar_width: 0x77,
             camera_frame_height: depth,
             ..Default::default()
         };
@@ -2046,6 +2064,9 @@ fn the_cast_release_is_retails() {
         assert_eq!(stream.get(), h.rand, "rand, {at}");
         if fired && target < 3 && class != 5 {
             assert_eq!(retail_member, ctx.readout_bar_member, "{at}");
+        }
+        if target < 8 {
+            assert_eq!(retail_bar, ctx.spirit_bar_width, "bar, {at}");
         }
         extended += i32::from(fired && class == 5);
         carded += i32::from(fired && class != 5 && head == 0xFE);

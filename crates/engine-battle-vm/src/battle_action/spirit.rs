@@ -309,8 +309,13 @@ pub const SPIRIT_BUMP_PLUS_BIT: u32 = 0x200;
 /// - stages the acting actor's spirit gauge `+ 8` - `+ 10` with the `0x200`
 ///   passive - capped at `100`, into `ctx[+0x6DE]`.
 ///
-/// The arm also writes a HUD scratch halfword (`0x80076D7E`) off the target's
-/// `+0x1F9` / `+0x16C` / `+0x1DE` bytes, which the port has no slot for.
+/// Ahead of the raises it sizes the AP bar, placement record `0x0F`'s
+/// width `0x80076D7E` ([`BattleActionCtx::spirit_bar_width`], the word the
+/// action seed's Spirit arm sizes too) off the **target**: its live AGL
+/// `+0x154` less six, or the extended gauge `base * 7 / 5 + 8` - with no
+/// `0x120` ceiling on this arm - when its `+0x1F9` charge byte is up, or
+/// when its turn is spent (`+0x16C == 0`) on a Spirit action of its own
+/// (`+0x1DE == 4`) (`0x801E3E90..0x801E3EFC`).
 ///
 /// PORT: FUN_801E295C (`0x801E3E80..0x801E4018`, the class-5 arm of state
 /// `0x3E`)
@@ -319,11 +324,20 @@ fn gauge_extend_fire<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
     slot: u8,
 ) {
+    let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
+    if let Some(t) = host.actor(target) {
+        let extended = t.spirit_shield != 0
+            || (t.init_key == 0 && t.action_category == ActionCategory::Spirit.as_byte());
+        ctx.spirit_bar_width = if extended {
+            (i32::from(t.agl_base) * 7 / 5 + 8) as i16
+        } else {
+            (t.agl as i16).wrapping_sub(SPIRIT_BAR_WIDTH_BIAS)
+        };
+    }
     host.ui_element(0x0F, 0);
     host.ui_element(0x52, 0);
     ctx.spirit_action_count = ctx.spirit_action_count.wrapping_add(1);
     ctx.camera_variant = ((host.rng() % 2) * 2) as u8;
-    let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
     let base = host.actor(target).map(|t| t.agl_base).unwrap_or(0);
     ctx.damage_target = extended_gauge(base);
     let spirit = host.actor(slot).map(|a| a.spirit_gauge).unwrap_or(0) as i16;
