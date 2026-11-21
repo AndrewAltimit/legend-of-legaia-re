@@ -47,6 +47,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 | Case | Status | Cause |
 |---|---|---|
 | Lapis Wave checks current MP | explained | Lapis only casts the wave at members with current MP above zero, and fleeing saves current MP only, so a returning party at 0 of full MP is never targeted. |
+| A spell queued before Lapis Wave is paid out of zero MP | explained | The menu is the only MP check; a cast pays at its own turn with a 16-bit subtract, so Lapis Wave or Fatal Decision landing first leaves the caster at 65,000-odd MP. |
 | Lapis can be escaped from | explained | "No escape" is one byte at the start of a fight's formation row, and the row for Lapis has it at zero. |
 | Mushura and Theeder against Mystic Shield | explained | Mystic Shield blanks Cort's flinch, the only thing that stops these sweeps re-hitting: Mushura hits on every contact tick, Theeder twice, which just cancels the halving. |
 

@@ -241,6 +241,95 @@ Still to check in a played game:
 - The route as a whole (wave, escape, return, MP item, Jedo) has not been played through in one
   capture; the escape write-back and the MP item are disassembly only.
 
+## A spell queued before Lapis Wave is paid out of zero MP
+
+**Status:** explained - from disassembly and disc data; the wrap itself captured on an injected cast, the two routes into it not played
+
+**Reported as:** "if the cost is too high you just can't cast it", which holds at the menu.
+
+The magic menu refuses a spell the caster cannot pay for, but it is the only MP check a party
+cast meets. All three commands are entered before anyone acts, and the cast pays its price when
+its own turn comes, with a halfword subtract and no second test. Anything that lowers the caster's
+MP between the two lets the cast go ahead on MP it no longer has, and the subtract wraps: a caster
+at 0 MP paying 10 for Gimard is left at 65526.
+
+Two monster moves lower a party member's current MP during the round:
+
+- **Lapis Wave** (Lapis, spell `0xB5`) sets current and maximum MP to 0 on every party seat
+  ([above](#lapis-wave-checks-current-mp)). A member who chose a spell and acts after Lapis that
+  round pays from 0. This is the case the earlier entry leaves open: a restored caster who acts
+  *before* Lapis casts normally, and one who acts after it casts anyway and wraps.
+- **Fatal Decision** (spell `0x5F`, cast by Evil Shadow, Shade and Nightmare) has two outcomes on
+  its target's MP pair: halved, and zeroed ([cast-module.md](../../subsystems/cast-module.md#prot-0954-fatal-decision)).
+  A victim whose next spell costs more than the MP left pays into the wrap.
+
+The wrapped value is ordinary MP to the rest of the battle. The menu's test is `current >= price`,
+so every later spell passes it until the pool is spent down from 65,000-odd, and the MP field draws
+the five-digit number over its own frame ([battle-hud.md](../../subsystems/battle-hud.md)). Lapis
+counts a member with MP as a reason to wave, so against Lapis the windfall lasts until its next wave.
+
+Monsters cannot reach the wrap. A monster picks its action at its own turn, immediately before it
+runs (`FUN_801DABA4` calls the picker for the seat it chose, `0x801DAF48`), and the generic spell
+pick takes a spell only when the monster's MP covers the record price (`0x801EA510..0x801EA520`).
+No other actor acts between the pick and the spend.
+
+### Mechanism
+
+1. **The menu check.** The battle command state machine `FUN_801D0748` (PROT entry 0898) compares
+   the caster's current MP with the price it staged before accepting the confirm:
+
+   ```text
+   801d1c10  lhu   v0,0x150(a1)      ; caster's current MP
+   801d1c18  sltu  v0,v0,v1          ; MP < price ?
+   801d1c1c  beq   v0,zero,0x801d1c2c  ; no: accept
+   801d1c24  j     0x801d3290        ; yes: refuse
+   ```
+
+2. **The spend.** A party spell (ids `0x81` and up) takes the action state machine's `0x28` band,
+   and the price is paid there, in `FUN_801E295C` (PROT entry 0898):
+
+   ```text
+   801e451c  lbu   s0,0x3(v1)        ; spell record +3: price
+   801e4580  subu  s0,s0,v0          ; less the half / quarter passive
+   801e4584  lhu   v0,0x150(s3)      ; current MP
+   801e4588  sh    s0,0x178(s3)      ; readout: the price
+   801e458c  subu  v0,v0,s0
+   801e4594  sh    v0,0x150(s3)      ; MP - price, 16 bits, no floor
+   ```
+
+   The routine reads `+0x150` in two places: here, and the same subtract in the `0x3C` band
+   (`0x801E3D28..0x801E3D40`), which only monster heals reach. Neither tests the result. The band
+   is entered once per action, from the seed state `0x0C`, so no cast pays twice.
+
+3. **The passives agree.** The menu's price and the spend's discount read the same character-record
+   word (`+0xF4`, which the spend addresses as `0x80084140 + n * 0x414 + 0x6BC`), so the passives
+   cannot open a gap between the two.
+
+### Addresses
+
+| Address | Image | What | Evidence |
+|---|---|---|---|
+| `0x801D1C0C..0x801D1C28` | PROT entry 0898, `FUN_801D0748` | Magic confirm refuses when current MP is below the price | disassembly |
+| `0x801E451C..0x801E4594` | PROT entry 0898, `FUN_801E295C` | State `0x28`: price, passives, 16-bit subtract | disassembly; the wrap captured on an injected cast ([cast-sequence-oracle.md](../../tooling/cast-sequence-oracle.md)) |
+| `0x801E3D28..0x801E3D40` | PROT entry 0898, `FUN_801E295C` | State `0x3C`'s copy, monster heals only (ids `0x0D`, `0x11`, `0x2E`, `0x2F`) | disassembly, disc data |
+| `0x801DAF48` | PROT entry 0898, `FUN_801DABA4` | Monster pick at the seat's own turn | disassembly |
+| `0x801EA510..0x801EA520` | PROT entry 0898, `FUN_801E9FD4` | Generic monster spell pick: MP must cover the price | disassembly |
+| `0x801F6D08`, `0x801F6D1C` | PROT entry 0943 | Lapis Wave zeroes `+0x150` / `+0x152` | disassembly, capture |
+| Spell record `0x5F`, monster records 119 to 121 | `SCUS_942.54`, PROT entry 0867 | Fatal Decision, carried by Evil Shadow, Shade and Nightmare | disc data |
+
+### Verifying it
+
+Not captured. In the Lapis fight with a member holding MP: queue a spell for a member slower than
+Lapis (speed 451), break at `0x801E458C` on that member's turn and read `+0x150` as 0 before the
+subtract and `0x10000 - price` after it. The same break on a Fatal Decision victim covers the
+second route.
+
+### Open questions
+
+- What the character record keeps after the battle. The escape write-back copies `+0x150` to the
+  record's current MP; the record aggregator `FUN_80042558` clamps current MP to the maximum
+  (`0x80042CE4..0x80042D34`), but which battle-end path runs it was not traced.
+
 ## Lapis can be escaped from
 
 **Status:** explained
