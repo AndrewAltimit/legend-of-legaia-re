@@ -2418,3 +2418,102 @@ entry = "0x80047430"
 range = "0x80047ABC..0x80047ABC"
 verdict = "unported"
 reason = "the natural end's `+0x228` test ahead of its full step, the same byte the port takes as clear (motion::natural_end_steps)"
+
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801EC4D8..0x801EC4D8"
+verdict = "unreachable"
+reason = "PROT 0898: the limb miss's `bne a1` on `power byte < 0x16`: a byte at or above 0x16 already left at 0x801EC4A0 (`beqz a1`), so a1 is always set here"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801EC668..0x801EC668"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide-by-zero guard on the block roll's attacker sum SPD + ATK*4/5 + ctx[+0x6D2]: every seated record has SPD at least 1 and the approach term counts up from 0"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801EC6A8..0x801EC6A8"
+verdict = "unreachable"
+reason = "PROT 0898: the divide guard on the defender's block sum SPD + UDF*4/5 + ctx[+0x6D4], non-zero for the same reason"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801ECA2C..0x801ECA2C"
+verdict = "unreachable"
+reason = "PROT 0898: the juggle arm re-tests `+0x1D9 == +0x1F3`, which held at 0x801EC948; only rumble words are stored between the two compares"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801ECBA0..0x801ECBA0"
+verdict = "unreachable"
+reason = "PROT 0898: the equipment-fold jump table's bound `+0x1D9 - 0xC < 6` on a party attacker: an admitted hit's committed clip is a swing slot 0x0C..0x0F or an art slot 0x10 / 0x11 (FUN_8004AD80 rewrites an art id to its slot), so the bound always holds"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801ECE8C..0x801ECE8C"
+verdict = "unreachable"
+reason = "PROT 0898: the divide guard on `(ATK >> 3) + 1`, never zero"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801ECFE0..0x801ECFE0"
+verdict = "unreachable"
+reason = "PROT 0898: the flee count loop's entry test `s3 < ctx[+0x00]`: a battle always seats a party, so the loop runs"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801ED1C4..0x801ED1C4"
+verdict = "unreachable"
+reason = "PROT 0898: the divide guard on `(DEF >> 3) + 1`, never zero"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801ED374..0x801ED374"
+verdict = "unreachable"
+reason = "PROT 0898: the divide guard on `(dmg >> 2) + 1`, never zero"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801ED53C..0x801ED53C"
+verdict = "unreachable"
+reason = "PROT 0898: the chip floor's signed `% 4` fixup `bgez` on a `rand()` draw, which is never negative"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801ED5DC..0x801ED5DC"
+verdict = "unreachable"
+reason = "PROT 0898: the guard ladder's attacker test behind a party target: no party member swings at another, so the attacker is a monster whenever the target is party"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801EDB9C..0x801EDB9C"
+verdict = "unreachable"
+reason = "PROT 0898: the Spirit percent's divide guard on the target's max HP `+0x14E`, never zero for a seated actor"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801EE140..0x801EE140"
+verdict = "unreachable"
+reason = "PROT 0898: the kill gate's party-target test behind a non-zero apply mode: the mode is non-zero only on a monster target (both copies leave s2 = 0 for a party target)"
+
+[[arm]]
+entry = "0x801EC3E4"
+image = "6aca2ff339cc9feb"
+range = "0x801EEAF4..0x801EEAF4"
+verdict = "unreachable"
+reason = "PROT 0898: the grunt's `beq char_id,1` after the id-2 and id-below-3 tests: a seated party member's id is 1..4, so the only id left there is 1"

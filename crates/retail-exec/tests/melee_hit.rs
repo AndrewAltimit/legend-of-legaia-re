@@ -38,6 +38,12 @@ const MONSTER: u32 = 0x8015_0000;
 const CLIP: u32 = 0x8016_0000;
 const ANIM_NODE: u32 = 0x8016_1000;
 const MYSTIC_WORD: u32 = 0x8007_BD84;
+const VIBRATION_OFF: u32 = 0x8008_45C8;
+const XA_DRIVE: u32 = 0x8007_BC20;
+const RUMBLE_PULSE: u32 = 0x8007_B92C;
+const RUMBLE_LEVEL: u32 = 0x8007_B930;
+const FORMATION: u32 = 0x8007_BD0C;
+const B3_LINK: u32 = 0x8015_2000;
 const ENTRY_TABLES: u32 = 0x801C_9360;
 const ENTRY_TABLE: u32 = 0x8017_0000;
 const ENTRIES: u32 = 0x8017_1000;
@@ -78,6 +84,20 @@ struct Hit {
     drain_clip: bool,
     seed: u32,
     look: Look,
+    /// The Battles vibration row is Off (`0x800845C8 != 0`).
+    vibration_off: bool,
+    /// The field XA one-shot's drive word `0x8007BC20`.
+    xa_drive: u32,
+    /// The first formation cell is `0xB3`.
+    b3: bool,
+    /// The acting attacker's Ra-Seru marker `ctx[+0x25F + slot]`.
+    marker: bool,
+    /// The monster's flinch tags: the high (`2`), the low (`3`), both, or
+    /// neither.
+    flinch: u8,
+    /// Seat 2 holds Terra (character id `4`, record 3); only drawn while
+    /// seat 2 swings at a monster.
+    terra: bool,
 }
 
 /// The hit's place in its action: what the head guards, the limb-vs-height
@@ -192,8 +212,13 @@ fn stat(rng: &mut Rng, top: u32) -> u16 {
 
 fn gen_hit(rng: &mut Rng) -> Hit {
     let party_attacks = rng.below(2) == 0;
+    // Now and then a monster strikes the other monster.
+    let monster_on_monster = !party_attacks && rng.below(6) == 0;
     let (attacker, target) = if party_attacks {
         (rng.below(3) as u8, 3 + rng.below(2) as u8)
+    } else if monster_on_monster {
+        let a = 3 + rng.below(2) as u8;
+        (a, 7 - a)
     } else {
         (3 + rng.below(2) as u8, rng.below(3) as u8)
     };
@@ -255,8 +280,22 @@ fn gen_hit(rng: &mut Rng) -> Hit {
             class: 0,
             x2_pass: 0,
         },
+        vibration_off: rng.below(3) == 0,
+        xa_drive: [0u32, 0, 1, 2, 3][rng.below(5) as usize],
+        b3: rng.below(8) == 0,
+        marker: rng.below(2) == 0,
+        flinch: rng.below(4) as u8,
+        terra: attacker == 2 && target >= 3 && rng.below(3) == 0,
     };
+    // The Mystic Shield's rumble skips the vibration test the port keeps
+    // (a deliberate deviation), so an Off row is not drawn with it.
+    if h.mystic {
+        h.vibration_off = false;
+    }
     h.look = gen_look(rng, h.power, party_attacks);
+    if monster_on_monster {
+        h.look.class = [0, 2, 3][rng.below(3) as usize];
+    }
     for s in 0..8 {
         h.atk[s] = stat(rng, top);
         h.udf[s] = stat(rng, top);
@@ -267,7 +306,9 @@ fn gen_hit(rng: &mut Rng) -> Hit {
         h.hp[s] = 1 + rng.below(u32::from(h.max_hp[s])) as u16;
         h.spirit[s] = rng.below(101) as u16;
         h.status[s] = match rng.below(6) {
-            0 => [1, 2, 3, 4, 0x80, 0x400, 0x1000, 0x1003][rng.below(8) as usize],
+            0 => [
+                1, 2, 3, 4, 0x80, 0x400, 0x1000, 0x1003, 0x08, 0x10, 0x20, 0x38,
+            ][rng.below(12) as usize],
             _ => 0,
         };
     }
@@ -284,8 +325,12 @@ fn gen_hit(rng: &mut Rng) -> Hit {
                 0x2000_0000,
                 0x4000_0000,
                 0x8000_0000,
-            ][rng.below(8) as usize];
-            let w1 = [1u32, 2, 4, 8, 0x10, 0x100, 0x200, 0x1000, 0x20_0000][rng.below(9) as usize];
+                // The Rot wards.
+                0x0100_0000,
+                0x1000_0000,
+            ][rng.below(10) as usize];
+            let w1 = [1u32, 2, 4, 8, 0x10, 0x100, 0x200, 0x1000, 0x4000, 0x20_0000]
+                [rng.below(10) as usize];
             h.ability[m] = [w0, w1];
         }
         for slot in 0..5 {
@@ -297,6 +342,16 @@ fn gen_hit(rng: &mut Rng) -> Hit {
         _ => rng.below(u32::from(h.hp[target as usize]) + 20),
     };
     h
+}
+
+/// The monster id seated on `slot`: `0xB3` on the first monster seat for the
+/// arm keyed on it.
+fn monster_id(h: &Hit, slot: u8) -> u16 {
+    if h.b3 && slot == 3 {
+        0xB3
+    } else {
+        0x40 + u16::from(slot)
+    }
 }
 
 fn actor(slot: u8) -> u32 {
@@ -313,7 +368,12 @@ fn reaction_map(h: &Hit, slot: u8) -> [u8; 5] {
 }
 
 fn monster_tags(h: &Hit) -> Vec<u8> {
-    let mut tags = vec![0u8, 2, 4];
+    let mut tags = match h.flinch {
+        0 => vec![0u8, 2, 4],
+        1 => vec![0u8, 3, 4],
+        2 => vec![0u8, 2, 3, 4],
+        _ => vec![0u8, 4],
+    };
     if h.has_getup {
         tags.push(5);
     }
@@ -346,14 +406,28 @@ fn seed_retail(cpu: &mut Cpu, h: &Hit) {
     cpu.mem.wr8(CTX, 3);
     cpu.mem.wr8(CTX + 0x0A, h.juggle);
     cpu.mem.wr8(CTX + 0x07, h.look.state);
+    cpu.mem.wr8(CTX + 0x13, h.attacker);
+    // The Ra-Seru markers are party seats' (`ctx[+0x25F..+0x262]`).
+    if h.attacker < 3 {
+        cpu.mem
+            .wr8(CTX + 0x25F + u32::from(h.attacker), u8::from(h.marker));
+    }
+    cpu.mem.wr32(VIBRATION_OFF, u32::from(h.vibration_off));
+    cpu.mem.wr32(XA_DRIVE, h.xa_drive);
+    cpu.mem.wr32(RUMBLE_PULSE, 0);
+    cpu.mem.wr32(RUMBLE_LEVEL, 0);
+    // The formation's first cell: the monster seated first, `0xB3` for the
+    // arm that forces its knockdown entry.
+    cpu.mem.wr8(FORMATION, if h.b3 { 0xB3 } else { 0x43 });
     // The apply gate's strike cursor and the Attack x2 pass.
     cpu.mem.wr8(CTX + 0x15, h.look.cursor);
     cpu.mem.wr8(CTX + 0x16, h.look.x2_pass);
     cpu.mem.wr16(CTX + 0x6D2, h.attack_ramp as u16);
     cpu.mem.wr16(CTX + 0x6D4, h.guard_ramp as u16);
     for m in 0..3u32 {
-        cpu.mem.wr8(SEATS + m, m as u8 + 1);
-        let rec = CHAR_RECORDS + m * CHAR_STRIDE;
+        let char_id = if h.terra && m == 2 { 4 } else { m as u8 + 1 };
+        cpu.mem.wr8(SEATS + m, char_id);
+        let rec = CHAR_RECORDS + (u32::from(char_id) - 1) * CHAR_STRIDE;
         cpu.mem.wr32(rec + 0xF4, h.ability[m as usize][0]);
         cpu.mem.wr32(rec + 0xF8, h.ability[m as usize][1]);
         cpu.mem.wr8(rec + 0x1A7, 0x0C);
@@ -394,6 +468,9 @@ fn seed_retail(cpu: &mut Cpu, h: &Hit) {
         let rec = MONSTER + m * 0x80;
         cpu.mem.wr32(MONSTER_RECORDS + m * 4, rec);
     }
+    // The `0xB3` arm's side store runs through record 0's `+0x54` -> `+0x88`.
+    cpu.mem.wr32(MONSTER + 0x54, B3_LINK);
+    cpu.mem.wr32(B3_LINK + 0x88, B3_LINK + 0x100);
     let att = actor(h.attacker);
     let tgt = actor(h.target);
     cpu.mem.wr32(MYSTIC_WORD, u32::from(h.mystic));
@@ -461,16 +538,23 @@ fn seed_retail(cpu: &mut Cpu, h: &Hit) {
 }
 
 fn seed_port(w: &mut World, h: &Hit) {
-    let mut party = Party::zeroed(3);
+    let mut party = Party::zeroed(4);
     for m in 0..3 {
+        // Seat `m`'s record: Terra's (roster 3) for seat 2 when she sits.
+        let r = if h.terra && m == 2 { 3 } else { m };
         let mut bytes = [0u8; legaia_save::ABILITY_BITS_LEN];
         bytes[0..4].copy_from_slice(&h.ability[m][0].to_le_bytes());
         bytes[4..8].copy_from_slice(&h.ability[m][1].to_le_bytes());
-        party.members[m].set_ability_bits(bytes);
-        party.members[m].set_auto_command_string(AutoCommandBand::Primary, [0x0C; 16]);
-        party.members[m].set_auto_command_string(AutoCommandBand::Secondary, [0x0D; 16]);
+        party.members[r].set_ability_bits(bytes);
+        party.members[r].set_auto_command_string(AutoCommandBand::Primary, [0x0C; 16]);
+        party.members[r].set_auto_command_string(AutoCommandBand::Secondary, [0x0D; 16]);
     }
     w.load_party(party);
+    w.party.active_party = if h.terra {
+        vec![0, 1, 3]
+    } else {
+        vec![0, 1, 2]
+    };
     w.enter_battle(3, 2);
     w.party.party_count = 3;
     w.battle.status_effects = Default::default();
@@ -506,7 +590,7 @@ fn seed_port(w: &mut World, h: &Hit) {
         a.battle_monster_id = if is_party {
             None
         } else {
-            Some(0x40 + u16::from(s))
+            Some(monster_id(h, s))
         };
         a.battle_element = (!is_party).then_some(if s == h.attacker {
             h.element
@@ -529,7 +613,7 @@ fn seed_port(w: &mut World, h: &Hit) {
         }
         w.set_actor_battle_action_clips(i, std::sync::Arc::new(clips));
         if !is_party {
-            let mut def = MonsterDef::new(0x40 + u16::from(s), "m", 1, 10);
+            let mut def = MonsterDef::new(monster_id(h, s), "m", 1, 10);
             def.absorb_seru = h.absorb_seru;
             def.absorb_chance_pct = h.absorb_pct;
             if s == h.target {
@@ -561,6 +645,13 @@ fn seed_port(w: &mut World, h: &Hit) {
     w.actors[ai].battle.params[..16].copy_from_slice(&h.look.queue);
     w.battle_ctx.action_state = h.look.state;
     w.battle_ctx.attack_x2_pass = h.look.x2_pass;
+    w.battle_ctx.active_actor = h.attacker;
+    w.battle.art_seed_ra_seru = h.marker && h.attacker < 3;
+    w.toggles.retail_options.vibration_battles = u8::from(h.vibration_off);
+    // The grunt waits out a field XA one-shot still driving (`BC20 >= 2`).
+    w.audio.battle_xa_busy_frames = u16::from(h.xa_drive >= 2);
+    w.rumble.motors = Default::default();
+    let _ = w.drain_battle_xa_cues();
     for m in 0..3 {
         w.party.character_ability_bits[m] = h.ability[m][0];
     }
@@ -586,6 +677,8 @@ struct Outcome {
     auto_heads: Option<(u8, u8)>,
     absorbed: u8,
     strobe: u8,
+    rumble: (i32, i32),
+    grunts: usize,
     rng: u32,
 }
 
@@ -605,7 +698,10 @@ fn a_melee_hit_lands_what_retail_lands() {
         stream.set(next);
         r.r[V0] = (next >> 16) & 0x7FFF;
     });
-    cpu.stub(0x8003_D53C, 0); // The voice cue.
+    // The grunt's XA start, counted.
+    let grunts = Rc::new(Cell::new(0usize));
+    let g = grunts.clone();
+    cpu.hook(0x8003_D53C, move |_, _| g.set(g.get() + 1));
     cpu.stub(0x8004_FE5C, 0); // The Mystic Shield's sound.
     cpu.stub(0x8001_9B28, 0); // The bearing; turning is compared elsewhere.
 
@@ -660,6 +756,11 @@ fn a_melee_hit_lands_what_retail_lands() {
             }),
             absorbed: cpu.mem.rd8(CTX + 0x269),
             strobe: cpu.mem.rd8(CTX + 0x263),
+            rumble: (
+                cpu.mem.rd32(RUMBLE_PULSE) as i32,
+                cpu.mem.rd32(RUMBLE_LEVEL) as i32,
+            ),
+            grunts: grunts.replace(0),
             rng: state.get(),
         };
 
@@ -717,6 +818,8 @@ fn a_melee_hit_lands_what_retail_lands() {
             }),
             absorbed: w.battle_ctx.absorbed_seru,
             strobe: u8::from(plan.is_none()),
+            rumble: (w.rumble.motors.pulse, w.rumble.motors.level),
+            grunts: w.drain_battle_xa_cues().len(),
             rng: w.rng_state,
         };
         if dmg == 0 {

@@ -493,6 +493,13 @@ impl World {
         let Some(a) = self.actors.get(attacker as usize) else {
             return legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL;
         };
+        // A monster attacker keeps the ordinary arm: both copies test the
+        // attacker's seat (`sltiu v1,s6,3` / `beq` to the `s2 = 0` exit at
+        // `0x801EDECC..0x801EDED0` and `0x801EE730..0x801EE734`) before any
+        // look-ahead.
+        if a.battle_monster_id.is_some() {
+            return legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL;
+        }
         // **Both** copies of the kernel gate on a monster target before they
         // compute anything: `sltiu v0,a0,0x3` on the target slot at
         // `0x801EDEB8` and `0x801EE724`, each branching past the look-ahead
@@ -1084,6 +1091,11 @@ impl World {
             None
         };
         let committed_reaction = committed_reaction.filter(|_| !block.mystic);
+        // The grunt reads the pick ahead of the broken block's pose, and only
+        // on the arm that lands the total (`0x801EEA7C..0x801EEB5C` sits
+        // behind the apply at `0x801EE9F8`; the pose override follows at
+        // `0x801EEBF0`).
+        let grunt_reaction = committed_reaction.filter(|_| kill_check);
         // A broken block still plays the block pose on a defender left
         // standing (`0x801EEBF0..0x801EEC30`, after every other pick).
         // PORT: FUN_801EC3E4 (`0x801EEBF0..0x801EEC30`, the broken block's pose)
@@ -1095,7 +1107,7 @@ impl World {
             _ => committed_reaction,
         };
         // ... and its sound.
-        self.fire_melee_impact_cue(attacker, target, committed_reaction);
+        self.fire_melee_impact_cue(attacker, target, grunt_reaction);
         // The flinch is staged for a target still standing on the accumulated
         // total (`target[+0x0] < hp`, `0x801EEC18..0x801EEC30`).
         if let Some(entry) = committed_reaction {
@@ -1504,9 +1516,11 @@ impl World {
                 .is_some_and(|a| a.battle.current_anim < 0x10);
         if mystic {
             blocked = true;
-            if attacker < self.party.party_count {
-                self.battle_rumble(attacks);
-            }
+            // Its rumble (`0x801ECAC8..0x801ECAF8`) is written for every
+            // attacker, a monster's swing included. Retail writes it without
+            // the Battles vibration test the other arms make; the port keeps
+            // that test, so an Off row stays off (a deliberate deviation).
+            self.battle_rumble(attacks);
         }
         let broken = blocked
             && roll
