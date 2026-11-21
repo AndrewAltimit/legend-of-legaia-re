@@ -1969,3 +1969,11 @@ entry = "801E295C"
 range = "0x801E6254..0x801E6304"
 verdict = "unported"
 reason = "PROT 0898's Done band teardown inlines FUN_801E805C's multi-cast readout close: with the value window 0x801F6980 holding a value it unloads (id - 4, 1) then (id, 1) for each of the 0x801F6974 rows at 0x801F6834; the action context carries neither the window nor the count, and the engine closes the readout only through FUN_801E805C's own pass (battle_value_readout)."
+
+# lane C (w52)
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004ED4C..0x8004EE08"
+verdict = "unported"
+reason = "The win's load phases 2..4 poll the CD (FUN_8003DE7C(1) at 0x8004ED4C / 0x8004EDA8 / 0x8004EDEC) before installing the voice bank in VAB slot 7, streaming PROT 0889 toward slot 11 (FUN_8001FC00(0x37B, 0xB)) and installing it with gp+0xA48 |= 0x80; the engine streams nothing and holds the measured VICTORY_LOAD_FRAMES instead, so the waits have no port."

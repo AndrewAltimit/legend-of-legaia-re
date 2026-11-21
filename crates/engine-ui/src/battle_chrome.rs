@@ -1154,6 +1154,27 @@ mod tests {
         assert_eq!(cells, [6, 5, 1, 8]);
     }
 
+    /// Every figure the battle HUD's fields can show lays out as the
+    /// right-aligned run it did before the hosts took the record walk: HP in
+    /// four cells, MP in three (a wrapped MP included), the level in nine.
+    #[test]
+    fn the_record_walk_right_aligns_every_reachable_figure() {
+        let fields: [(i16, std::ops::RangeInclusive<i32>); 4] =
+            [(4, 0..=9999), (3, 0..=999), (3, 64536..=65535), (9, 0..=99)];
+        for (cells, values) in fields {
+            for v in values {
+                let s = v.to_string();
+                let n = (s.len() as i16).min(cells);
+                let want: Vec<(i16, u8)> = s
+                    .bytes()
+                    .enumerate()
+                    .map(|(i, c)| (8 * (cells - n) + 8 * i as i16, c - b'0'))
+                    .collect();
+                assert_eq!(number_record_cells(v, cells), want, "{v} in {cells}");
+            }
+        }
+    }
+
     #[test]
     fn digit_counts_are_the_cell_counts_retail_draws() {
         assert_eq!(digit_count(0), 1);
