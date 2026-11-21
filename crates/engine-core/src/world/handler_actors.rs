@@ -217,7 +217,21 @@ impl World {
             .into_iter()
             .map(|p| (p.kind, p.blend, p.packed))
             .chain(self.map_display_fade_push_args())
+            .chain(self.fishing_exit_fade_push_args())
             .collect()
+    }
+
+    /// The fishing venue's exit fade (state `200`): `FUN_80024EE4(0, 2,
+    /// grey)` each frame, the grey eight times the fade counter, held at
+    /// `0xFF` (`0x801D0184..0x801D0198`).
+    ///
+    /// PORT: FUN_801cf3bc (case 0xc8: the fade push, 0x801D0184..0x801D0198)
+    pub fn fishing_exit_fade_push_args(&self) -> Option<(i16, i16, u32)> {
+        if self.mode != SceneMode::Fishing {
+            return None;
+        }
+        let grey = self.minigames.fishing.as_ref()?.exit_fade_level()?;
+        Some((0, 2, u32::from(grey) * 0x01_01_01))
     }
 
     /// Run the per-frame handler kernels over the actor pool, then retire the

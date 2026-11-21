@@ -1432,6 +1432,16 @@ fn the_shore_gate_repoints_the_lure_or_parks_the_no_lure_screen() {
         1,
         CAST_POWER_STEP,
     );
+    // The edge starts state `200`'s fade, which leaves once the grey
+    // reaches `0x100`: 32 frame steps.
+    assert_eq!(p.exit_fade_level(), Some(0));
+    for frame in 1..32 {
+        p.tick(PondInput::default(), 1, CAST_POWER_STEP);
+        assert!(!p.take_exit_request(), "frame {frame}");
+        assert_eq!(p.exit_fade_level(), Some(frame * 8));
+    }
+    p.tick(PondInput::default(), 1, CAST_POWER_STEP);
+    assert_eq!(p.exit_fade_level(), Some(0xFF));
     assert!(p.take_exit_request());
     assert!(!p.take_exit_request(), "drained");
     // The gate leaves a session away from the shore alone.

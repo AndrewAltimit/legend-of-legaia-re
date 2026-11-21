@@ -974,3 +974,135 @@ fn the_line_break_screen_returns_to_the_shore_as_retail_does() {
     }
     assert!(held > 5000 && back > 3000, "{held} {back}");
 }
+
+/// The venue exit, state `200` (`0x801D00F0..0x801D019C`): the lure gate
+/// `FUN_801D712C` (live, over a hooked bag), the no-lure line when it fails
+/// (`FUN_801D73B8`, recorded), the fade counter `DAT_801D90C0` gaining the
+/// frame step, the grey push `FUN_80024EE4(0, 2, grey)` (recorded) at eight
+/// times it, held at `0xFF` from `0x100`, and the leave (`FUN_80026018`,
+/// recorded) once full with the XA drive word `0x8007BC20` idle. Against
+/// `PondSession` seated on the fade (`seat_exit_fade`): the counter, the
+/// push, the leave, the re-pointed lure and the line.
+#[test]
+fn the_venue_exit_fades_and_leaves_as_retail_does() {
+    differential!(prot(972, SESSION));
+    use legaia_engine_fishing::fishing::{
+        CAST_POWER_STEP, FishingRecord, PondInput, PondSession, select_owned_rod,
+    };
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    const GATE: u32 = 0x801D_712C;
+    const BAG_COUNT: u32 = 0x8004_2F4C;
+    const COUNTER: u32 = 0x801D_90C0;
+    const XA: u32 = 0x8007_BC20;
+    const PUSH: u32 = 0x8002_4EE4;
+    const LEAVE: u32 = 0x8002_6018;
+    const CAPTION: u32 = 0x801D_73B8;
+    let mut targets: Vec<u32> = overlay
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_le_bytes(*w))
+        .filter(|w| w >> 26 == 3)
+        .map(|w| ((w & 0x03FF_FFFF) << 2) | 0x8000_0000)
+        .filter(|&t| !(SESSION..SESSION_END).contains(&t) && t != GATE)
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    for t in targets {
+        cpu.stub(t, 0);
+    }
+    let bag = Rc::new(Cell::new([0i32; 6]));
+    {
+        let bag = bag.clone();
+        cpu.hook(BAG_COUNT, move |r, _| {
+            let id = r.r[psx_retail_exec::A0];
+            r.r[V0] = if (0x9D..=0xA2).contains(&id) {
+                bag.get()[(id - 0x9D) as usize] as u32
+            } else {
+                0
+            };
+        });
+    }
+    let calls = Rc::new(RefCell::new(Vec::<(u32, u32, u32, u32)>::new()));
+    for va in [PUSH, LEAVE, CAPTION] {
+        let c = calls.clone();
+        cpu.hook(va, move |r, _| {
+            c.borrow_mut().push((
+                va,
+                r.r[psx_retail_exec::A0],
+                r.r[psx_retail_exec::A1],
+                r.r[psx_retail_exec::A2],
+            ))
+        });
+    }
+    let mut rng = Rng(0x4558_4954);
+    let (mut left, mut lined) = (0, 0);
+    for case in 0..20_000u32 {
+        cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+        let counts: [i32; 6] = std::array::from_fn(|_| [0, 0, 1, 3][rng.below(4) as usize]);
+        bag.set(counts);
+        let lure = rng.below(3);
+        let counter = rng.below(0x28) as i32;
+        let step = 1 + rng.below(3) as i32;
+        cpu.mem.wr32(SESSION_STATE, 0xC8);
+        cpu.mem.wr32(LURE_ROW, lure);
+        cpu.mem.wr32(COUNTER, counter as u32);
+        cpu.mem.wr32(XA, 0);
+        cpu.mem.wr8(FRAME_STEP, step as u8);
+        cpu.mem.wr32(PRESSED, 0);
+        calls.borrow_mut().clear();
+        assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "case {case}");
+        let got = calls.borrow().clone();
+        let pushes: Vec<u32> = got.iter().filter(|c| c.0 == PUSH).map(|c| c.3).collect();
+        let retail = (
+            cpu.mem.rd32(COUNTER) as i32,
+            pushes,
+            got.iter().any(|c| c.0 == LEAVE),
+            cpu.mem.rd32(LURE_ROW),
+            got.iter().any(|c| c.0 == CAPTION),
+        );
+
+        let mut port = PondSession::new(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            0,
+            lure,
+            0,
+            0,
+            FishingRecord::default(),
+            0,
+            1,
+        );
+        port.seat_exit_fade(counter);
+        let count_of = |id: u32| counts[(id - 0x9D) as usize];
+        let owned = port.exit_fade_lure_gate(count_of);
+        port.tick(PondInput::default(), step, CAST_POWER_STEP);
+        let grey = u32::from(port.exit_fade_level().expect("fading"));
+        let mut lure_port = lure;
+        select_owned_rod(&mut lure_port, count_of);
+        let p = (
+            port.exit_fade_counter().expect("fading"),
+            vec![grey * 0x01_01_01],
+            port.take_exit_request(),
+            port.persist().lure,
+            !owned,
+        );
+        assert_eq!(
+            retail, p,
+            "case {case} counter {counter} step {step} bag {counts:?} lure {lure}"
+        );
+        assert_eq!(lure_port, p.3);
+        left += u32::from(p.2);
+        lined += u32::from(p.4);
+    }
+    assert!(left > 3000 && lined > 2000, "{left} {lined}");
+}

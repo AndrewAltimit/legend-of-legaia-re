@@ -234,6 +234,9 @@ pub struct PondSession {
     /// The no-lure screen took its face-button edge: the session asks its
     /// host to leave the venue (state `200`, the exit fade).
     pub(super) exit_requested: bool,
+    /// State `200`'s fade counter `DAT_801D90C0`, live once the venue's exit
+    /// started (the hub's row 4 or the no-lure screen's edge); `None` before.
+    pub(super) exit_fade: Option<i32>,
     /// Whether the shore's lure gate may park the session
     /// ([`PondSession::shore_lure_gate`]): set unless the session was entered
     /// with no lure at all, which retail's signboard refuses and only a host's
