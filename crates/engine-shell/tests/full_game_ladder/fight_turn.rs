@@ -307,8 +307,16 @@ pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
                         });
                     }
                     PadButton::Cross.mask()
+                } else if menu.targets.get(*cursor).is_some_and(|t| !t.is_enemy) {
+                    // Up / Down commit the target under the directional entry
+                    // (retail's `0x64`), so the hand steps the party band the
+                    // way the window does: Left adds one to the seat
+                    // (`0x801D2C34`).
+                    PadButton::Left.mask()
                 } else {
-                    PadButton::Down.mask()
+                    // The enemy rows step on the ring, Right as the attack
+                    // cursor's.
+                    PadButton::Right.mask()
                 }
             }
             InventoryUseState::AllPartyConfirm { .. } => PadButton::Cross.mask(),
