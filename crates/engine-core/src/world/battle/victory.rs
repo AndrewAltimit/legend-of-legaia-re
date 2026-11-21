@@ -368,7 +368,23 @@ impl World {
     /// PORT: FUN_8004E568 (the two special-word window gates,
     /// `0x8004F614..0x8004F660` and `0x8004F8F0..0x8004F904`)
     fn open_battle_results_frame(&mut self, seq: &mut VictorySequence) {
-        seq.phase = VictoryPhase::Results { hold: 0 };
+        // The results frame zeroes the hold `gp+0xA54` and, on the same pass,
+        // adds the frame step (`sw zero,0xa54(gp)` at `0x8004F738`, then
+        // `0x8004F750..0x8004F76C`; the wipe arm's add at
+        // `0x8004F9DC..0x8004F9F8`), so the fade is due one pass sooner than
+        // a count started on the next pass. A win reaches its results frame
+        // on a sequencer pass (the load window's last), which counts. A wipe
+        // opens its results frame here on the action SM's signal tick
+        // (`World::begin_battle_end_sequence`), a pass ahead of retail's
+        // first sequencer pass, so its count starts on the next tick and the
+        // fade lands on retail's pass.
+        // PORT: FUN_8004E568 (`0x8004F738..0x8004F76C`, `0x8004F9DC..0x8004F9F8`)
+        let hold = if seq.cause == BattleEndCause::MonsterWipe {
+            u16::from(super::BATTLE_PASS_STEP_PER_TICK)
+        } else {
+            0
+        };
+        seq.phase = VictoryPhase::Results { hold };
         seq.window_opened = matches!(
             seq.cause,
             BattleEndCause::MonsterWipe | BattleEndCause::PartyWipe
