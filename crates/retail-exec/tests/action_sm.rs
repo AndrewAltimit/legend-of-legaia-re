@@ -1421,7 +1421,7 @@ fn the_done_cleanup_frame_is_retails() {
 /// The range law both sides answer through: `motion::range_metric` (held to
 /// `FUN_8004E2F0` by `range_metric`) over live and anchor pairs, every seat
 /// below 3 a party seat with roster id `seat + 1`, monster size classes `0`.
-fn test_range(attacker: u8, target: u8, live: &[(i16, i16); 8], anchor: &[(i16, i16); 8]) -> u16 {
+fn test_range(attacker: u8, target: u8, live: &Pairs, anchor: &Pairs) -> u16 {
     use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
     use legaia_engine_battle_vm::battle_action::motion::{
         PARTY_REACH_OFFSETS, RangeInputs, range_metric,
@@ -1453,8 +1453,11 @@ fn test_range(attacker: u8, target: u8, live: &[(i16, i16); 8], anchor: &[(i16, 
     range_metric(&inputs, sin, cos)
 }
 
+/// The eight seats' `(x, z)` pairs.
+type Pairs = [(i16, i16); 8];
+
 /// The live and anchor pairs of the eight seats as retail RAM holds them.
-fn pairs(m: &mut Memory) -> ([(i16, i16); 8], [(i16, i16); 8]) {
+fn pairs(m: &mut Memory) -> (Pairs, Pairs) {
     let mut live = [(0, 0); 8];
     let mut anchor = [(0, 0); 8];
     for s in 0..8u8 {
