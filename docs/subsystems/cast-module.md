@@ -4208,6 +4208,12 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
   onto the wrong point frames the whole cast off it: the port's director took the victim
   seat's pair for the party code and stood `169` yaw units off retail's on
   `battle_jou_gizam_v3_water_hazard_mid_cast`. Grade `disassembly` + `capture`.
+- PROT 0956's Water Hazard arm 3 waits twice: its countdown, then the seats its target code
+  `+0x1DD` names (`0x801F7C2C..0x801F7DA4`) - a party seat until idle (on clip `8` once
+  down), a monster seat until idle (its colour word `+0x04` zero once dead), the party for
+  code `8` and the monster row for any other group code - before it latches `0xFF`. The
+  host feeds the second wait as `ModuleCamState::target_unsettled`
+  (`World::capture_target_settled`). Grade `disassembly`, held by the capture camera walk.
 - The same opening turn is an idiom of the band. Every capture-class image that calls
   `FUN_801DCEAC` (PROT 0935, 0936, 0938, 0939, 0944, 0946, 0953, 0956, 0963; the disc test
   `capture_target_aim_sites` derives the list from the module bytes) turns its caster with

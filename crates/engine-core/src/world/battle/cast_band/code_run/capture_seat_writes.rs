@@ -118,6 +118,7 @@ impl World {
         st.caster_in_reach = self.battle_range_metric(caster_slot, victim_slot) == 0;
         st.party_settled =
             (0..usize::from(self.party.party_count)).all(|s| self.chain_seat_settled(s, false));
+        st.target_unsettled = !self.capture_target_settled(caster_slot);
         // The caster's clip state, for the bodies that wait on it.
         let caster = self
             .actors
@@ -138,6 +139,32 @@ impl World {
             && self.casting.capture_pass_mark != Some(frame);
         if st.opens_pass {
             self.casting.capture_pass_mark = Some(frame);
+        }
+    }
+
+    /// Whether the seats the caster's target code names have settled, as
+    /// PROT 0956's `0x71` arm 3 walks them (`0x801F7C2C..0x801F7DA4`,
+    /// [`legaia_engine_cast::cast_module_camera::ModuleCamState::target_unsettled`]):
+    /// a party seat idle, or on clip `8` once down; a monster seat idle, or
+    /// faded out (`+0x04` zero) once dead.
+    pub(in crate::world::battle::cast_band) fn capture_target_settled(
+        &self,
+        caster_slot: u8,
+    ) -> bool {
+        let map = self.cast_seat_map();
+        let pc = usize::from(self.party.party_count);
+        let monster = |slot: usize| match self.actors.get(slot) {
+            Some(a) if a.battle.hp == 0 => a.battle.render_color == 0 || !a.active,
+            _ => self.chain_seat_settled(slot, false),
+        };
+        let code = self.cast_view(caster_slot).target_code;
+        match code {
+            0..=2 => map
+                .engine(code)
+                .is_none_or(|e| self.chain_seat_settled(usize::from(e), false)),
+            3..=7 => map.engine(code).is_none_or(|e| monster(usize::from(e))),
+            8 => (0..pc).all(|s| self.chain_seat_settled(s, false)),
+            _ => (pc..self.actors.len()).all(monster),
         }
     }
 

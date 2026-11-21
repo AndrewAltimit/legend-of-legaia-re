@@ -305,6 +305,14 @@ pub struct ModuleCamState {
     /// fed by the host for a capture director's row settle (PROT 0965's arm
     /// `0x0C`).
     pub party_settled: bool,
+    /// A seat the caster's target code `+0x1DD` names still plays its
+    /// reaction, as PROT 0956's `0x71` arm 3 walks them
+    /// (`0x801F7C2C..0x801F7DA4`): a party seat (`< 3`) until its clip is idle,
+    /// or `8` once dead; a monster seat (`3..8`) until idle, or its colour
+    /// word `+0x04` is `0` once dead; the party (`8`) seat by seat as a party
+    /// seat; the monster row (any other code) seat by seat as a monster seat.
+    /// Fed by the host; `false` reads settled.
+    pub target_unsettled: bool,
     /// `FUN_8004E2F0(ctx[+0x13], caster[+0x1DD])` reads zero: the caster stands
     /// in reach of its victim, the poll PROT 0941's arm 1 walks on.
     pub caster_in_reach: bool,

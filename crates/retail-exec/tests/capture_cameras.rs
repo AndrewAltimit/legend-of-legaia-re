@@ -251,6 +251,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut failures = Vec::new();
     let (mut passes, mut casts) = (0u32, 0u32);
     let mut outcomes = std::collections::BTreeSet::new();
+    let mut unsettled_holds = 0usize;
     let all = bodies();
     for body in &all {
         let module = disc.read_entry(body.entry as usize).expect("module");
@@ -292,7 +293,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             });
         }
         let countdown_va = cam::capture_countdown_va(body.action);
-        let rounds = if body.action == 0x76 { 30 } else { 6 };
+        let rounds = match body.action {
+            0x76 => 30,
+            0x71 => 12,
+            _ => 6,
+        };
         for round in 0..rounds {
             let (caster, victim) = seed(&mut cpu, &mut rng, &module, body, 0);
             let (ca, va_) = (ACTOR + caster * STRIDE, ACTOR + victim * STRIDE);
@@ -308,9 +313,23 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 cpu.mem.wr8(FORMATION + i, monster);
             }
             // Curse All takes the party as a group.
-            let group = (body.action == 0x53).then_some(8u8);
+            // Water Hazard sweeps the party or the monster row as well as a
+            // seat, and its arm 3 waits on the row its code names.
+            let water_hazard = body.action == 0x71;
+            let group = match body.action {
+                0x53 => Some(8u8),
+                0x71 => [None, Some(8u8), Some(9)][round % 3],
+                _ => None,
+            };
             if let Some(g) = group {
                 cpu.mem.wr8(ca + 0x1DD, g);
+            }
+            // The tint word the group aim counts a monster seat up by
+            // (`FUN_800513F0`'s seating, `0x80051874`).
+            if water_hazard {
+                for s in 3..8 {
+                    cpu.mem.wr32(ACTOR + s * STRIDE + 4, 0x1004_0100);
+                }
             }
             // Plasma Strike's arm 5 waits for its strike clip `0x0D` past
             // a cursor, and arm 6 for the clip's loops to run out.
@@ -329,6 +348,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             }
             let mut arm_24_passes = 0usize;
             let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
+            let mut arm3_passes = 0usize;
             // Every strike-frame wait (PROT 0960's arm 5, PROT 0962's arm 3)
             // finds the caster's node cursor past its mark.
             cpu.mem.wr16(NODES + caster * 0x100 + 0x68, 0x7FFF);
@@ -394,10 +414,13 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     first_monster: monster,
                     ..ModuleCamSeats::default()
                 };
-                if let Some(g) = group {
+                // Water Hazard aims once, at arm 0 (`0x801F7394..0x801F73E4`),
+                // before it hides the row the aim counts.
+                if let Some(g) = group.filter(|_| !water_hazard || phase == 0) {
                     assert_eq!(
                         cpu.call(AIM, &[u32::from(g), OUT_CENTRE, OUT_EXTENT]),
-                        Stop::Returned
+                        Stop::Returned,
+                        "{c0} pass {pass} arm {phase}: the group aim {g}"
                     );
                     st.target_aim = Some(GroupAim {
                         centroid_x: cpu.mem.rd16(OUT_CENTRE) as i16,
@@ -476,6 +499,53 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         st.death_game.caster_faded = done;
                     }
                 }
+                // Water Hazard's arm 3: a seat of the target row plays its
+                // reaction (or, dead, has not reached its rest) for a few
+                // passes, then settles; the host's flag off the same bytes
+                // (`World::capture_target_settled`).
+                if water_hazard {
+                    // Passes of arm 3 since its word ran out (it drains
+                    // `scalar` a pass off the `1 << 7` arm 2 left).
+                    arm3_passes = if phase == 3 && st.countdown.0 <= SPEED_SCALAR {
+                        arm3_passes + 1
+                    } else {
+                        0
+                    };
+                    let code = cpu.mem.rd8(ca + 0x1DD);
+                    let party = (0..3u32).collect::<Vec<_>>();
+                    let row = (3..8u32).collect::<Vec<_>>();
+                    let rows = match code {
+                        0..=2 => vec![u32::from(code)],
+                        8 => party,
+                        _ => row,
+                    };
+                    if phase == 3 {
+                        let s = rows[round % rows.len()];
+                        let a = ACTOR + s * STRIDE;
+                        let dead = round % 2 == 1;
+                        let busy = arm3_passes <= round + 1;
+                        if dead {
+                            cpu.mem.wr16(a + 0x14C, 0);
+                        }
+                        let rest = if dead && s < 3 { 8 } else { 0 };
+                        cpu.mem
+                            .wr8(a + 0x1D9, if busy && !(dead && s >= 3) { 5 } else { rest });
+                        if dead && s >= 3 {
+                            cpu.mem.wr32(a + 4, if busy { 0x2008_0200 } else { 0 });
+                        }
+                    }
+                    let settled = |cpu: &mut Cpu, s: u32| {
+                        let a = ACTOR + s * STRIDE;
+                        let clip = cpu.mem.rd8(a + 0x1D9);
+                        match (cpu.mem.rd16(a + 0x14C) != 0, s < 3) {
+                            (true, _) => clip == 0,
+                            (false, true) => clip == 8,
+                            (false, false) => cpu.mem.rd32(a + 4) == 0,
+                        }
+                    };
+                    st.target_unsettled = !rows.iter().all(|&s| settled(&mut cpu, s));
+                    unsettled_holds += usize::from(phase == 3 && st.target_unsettled);
+                }
                 let arm = (body.director)(&mut st, phase, seats);
                 shots.borrow_mut().clear();
                 let stop = cpu.call(body.va, &[]);
@@ -537,6 +607,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         outcomes.insert(format!("{o:?}"));
                     }
                 }
+                if water_hazard && phase == 3 && !arm.hold && after == phase {
+                    failures.push(format!("{c}: port passes, retail holds"));
+                }
                 if arm.hold && after != phase {
                     failures.push(format!("{c}: port holds, retail moved to {after}"));
                 }
@@ -567,6 +640,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     eprintln!("{} bodies, {casts} casts, {passes} passes", all.len());
     eprintln!("Death Game outcomes {outcomes:?}");
     assert_eq!(outcomes.len(), 4, "Death Game outcomes {outcomes:?}");
+    assert!(
+        unsettled_holds > 10,
+        "Water Hazard's settle held {unsettled_holds} passes"
+    );
     let n = failures.len();
     failures.truncate(400);
     assert!(n == 0, "{n} mismatches:\n{}", failures.join("\n"));

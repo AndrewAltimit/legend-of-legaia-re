@@ -534,6 +534,14 @@ on the target, where retail ends it on the next frame's first iteration, so ever
 script parked on it resumed a frame early. The compass walks, the compass ramp, the hold and the
 face-target ramp match.
 
+The tile board's walk machine `FUN_801EF2B0` reads the cell under the player flat, `row * width + col`
+with no column bound, in its arrival, its pad-octant read and its exit fade's event-tile test. A board
+under five columns seats the player off its east edge, where the port's bounded lookup found nothing:
+it skipped the arrival and faded the event tile retail keeps. Water Hazard's arm 3
+(`FUN_801F7298` in PROT 0956) holds after its countdown until every seat its target code names has
+settled, a live seat idle and a dead one on its down clip or faded out; the port's director passed
+on the countdown alone, so the band could end while a hit seat still played its reaction.
+
 Holding the Stone and Curse arms to the module images found that no cast module calls the applier
 `FUN_800402F4`. Stone Circle (PROT 0941) writes no status at all and is a damage cast, where the port
 rolled Stone on every party seat and drew a `rand()` for each; Curse and Curse All write `ori 0x1000`
