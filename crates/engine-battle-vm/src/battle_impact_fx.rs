@@ -247,6 +247,23 @@ pub fn clip_impact_acting_selector(character_id: u8, attach_key: u8) -> Option<u
     (character_id == 3 && attach_key == IMPACT_CLIP_KEY).then_some(2)
 }
 
+/// The **Jette count**, run on a monster's death (the anim commit's death arm,
+/// `FUN_8004AD80` `0x8004B0F4..0x8004B180`) and on every pass of a fading
+/// body (`FUN_80050120` `0x80050384..0x80050408`): with the first formation
+/// cell `0x8007BD0C` reading Jette, the pass counts the monster seats
+/// `3 .. 3 + ctx[+1]` whose HP `+0x14C` is non-zero and, finding none, stores
+/// `ctx[+1] = 1` and clears the second formation cell `gp+0x9F5`. Jette's
+/// Clone grows `ctx[+1]` and fills that cell with the newcomer's id, so the
+/// clear is what makes a fight Jette and his clones lost read as a lone-monster
+/// fight again: the defeat cue's gate, the fade's sink and the reaction hold's
+/// bypass all key on that cell. Returns whether the clear happens.
+///
+/// PORT: FUN_8004AD80 (`0x8004B0F4..0x8004B180`, the death arm's Jette count)
+/// PORT: FUN_80050120 (`0x80050384..0x80050408`, the fade's Jette count)
+pub fn jette_count_clears(formation_first: u8, standing_monsters: usize) -> bool {
+    formation_first == JETTE_MONSTER_ID && standing_monsters == 0
+}
+
 /// The formation id the Jette hook keys on (`li v0,0xaa` against the first
 /// formation cell `gp[0x9F4] = 0x8007BD0C`, `0x8004D334`): Jette, id 170.
 pub const JETTE_MONSTER_ID: u8 = 0xAA;

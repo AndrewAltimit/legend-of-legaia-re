@@ -1156,6 +1156,10 @@ pub struct BattleState {
     /// (`World::tick_battle_defeat_sink`) - one
     /// `(size * step) >> 2` step a battle frame, as retail's pass takes it.
     pub defeat_sink_frame: Option<u64>,
+    /// The Jette count has cleared the formation's second cell `gp+0x9F5`
+    /// (`legaia_engine_battle_vm::battle_impact_fx::jette_count_clears`): the
+    /// cell reads `0` for the rest of the fight. Cleared at battle entry.
+    pub formation_second_cleared: bool,
     /// Battle VRAM uploads a cast's side-band stream made this frame - the
     /// `summon.dat` texture slots a player summon's case `0x32` streams to
     /// CLUT `(0, 488)` / page `(512, 0)` and `(0, 490)` / `(640, 0)`
@@ -1894,6 +1898,7 @@ impl BattleState {
             sm_ran_target_clip: None,
             sm_ran_actor: None,
             defeat_sink_frame: None,
+            formation_second_cleared: false,
             vram_loads: Default::default(),
             form_transition: Default::default(),
             stage_camera: None,

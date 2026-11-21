@@ -60,9 +60,30 @@ impl World {
         self.battle_formation_cell(0)
     }
 
+    /// The Jette count over the monster seats as they stand
+    /// ([`legaia_engine_battle_vm::battle_impact_fx::jette_count_clears`]).
+    pub(in crate::world) fn apply_jette_count(&mut self) {
+        let first = usize::from(self.party.party_count);
+        let standing = self
+            .actors
+            .iter()
+            .skip(first)
+            .filter(|a| a.battle_monster_id.is_some() && a.battle.liveness != 0)
+            .count();
+        if legaia_engine_battle_vm::battle_impact_fx::jette_count_clears(
+            self.battle_first_monster_byte(),
+            standing,
+        ) {
+            self.battle.formation_second_cleared = true;
+        }
+    }
+
     /// The formation's monster-id cell `n` (`0x8007BD0C + n`): the id of the
     /// monster seated `n` places past the party, `0` for an empty seat.
     pub(in crate::world) fn battle_formation_cell(&self, n: u8) -> u8 {
+        if n == 1 && self.battle.formation_second_cleared {
+            return 0;
+        }
         self.battle_monster_slots()
             .into_iter()
             .find(|&(_, _, slot)| slot == n)
@@ -511,6 +532,10 @@ impl World {
             // cast module can raise the fade first (PROT 0908's finisher
             // stores `+0x21C = 2` on the seat it kills, `0x801F7D90`), and
             // retail's cue still sounds when the death arm then runs.
+            // The Jette count (`0x8004B0F4..0x8004B180`) runs ahead of the
+            // credit and the cue: Jette and every clone down clears the
+            // formation's second cell.
+            self.apply_jette_count();
             let second_cell = self.battle_formation_cell(1);
             if legaia_engine_battle::battle_steal::defeat_cue_due(
                 victim_flags,

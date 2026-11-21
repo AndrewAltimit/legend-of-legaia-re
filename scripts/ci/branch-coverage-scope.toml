@@ -963,12 +963,6 @@ reason = "The pre-dispatch exit under ctx[+0x26A] != 0 has no port: the byte is 
 
 [[arm]]
 entry = "8004AD80"
-range = "0x8004B0F4..0x8004B180"
-verdict = "unported"
-reason = "The death arm's Jette count: with formation cell 0x8007BD0C == 0xAA it counts monster seats 3.. with +0x14C != 0 over ctx[+1] and, finding none, stores ctx[+1] = 1 and clears gp+0x9F5; no port carries the monster count or the second formation cell's clear."
-
-[[arm]]
-entry = "8004AD80"
 range = "0x8004B58C..0x8004B5B0"
 verdict = "unported"
 reason = "The steal attack's debug override: with the debug word 0x8007B98C and 0x8007BA58 both set the roll is skipped and the steal lands; the port has no debug build switch."
@@ -1014,12 +1008,6 @@ entry = "80046A20"
 range = "0x8004726C..0x80047410"
 verdict = "unreachable"
 reason = "The debug arts unlock: behind the debug-mode word 0x8007B98C (never non-zero in retail) it fills every record's spell list +0x704.. and art flags; nothing in the shipped game raises the word."
-
-[[arm]]
-entry = "80050120"
-range = "0x8005038C..0x800503F4"
-verdict = "unported"
-reason = "The defeat fade's Jette count, the same as the anim commit's (0x8004B0F4): with formation cell 0x8007BD0C == 0xAA it counts monster seats with +0x14C != 0 over ctx[+1] and, finding none, stores ctx[+1] = 1 and clears gp+0x9F5; no port carries the count or the cell's clear."
 
 [[arm]]
 entry = "801F6B24"

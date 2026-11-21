@@ -280,6 +280,7 @@ fn the_commit_runs_the_death_arm_from_its_entry() {
 
     let mut rng = Rng(0x4445_4154);
     let (mut credited, mut cued, mut silenced, mut paid, mut stood) = (0, 0, 0, 0, 0);
+    let mut jette_cleared = 0;
     for round in 0..40000 {
         for o in (0..0x300).step_by(4) {
             cpu.mem.wr32(CTX + o, 0);
@@ -308,14 +309,12 @@ fn the_commit_runs_the_death_arm_from_its_entry() {
         let attempted = rng.below(4) == 0;
         let special = if rng.below(8) == 0 { 2 } else { 0 };
         let category = [3, 3, 3, 2, 0][rng.below(5) as usize] as u8;
-        // Row `0xBF` is the neighbouring table's (see the arm's own test);
-        // `0xAA` would open the Jette fight's monster-count arm.
-        let id = loop {
-            let id = 1 + rng.below(0xBE) as u8;
-            if id != 0xAA {
-                break id;
-            }
-        };
+        // Row `0xBF` is the neighbouring table's (see the arm's own test).
+        let id = 1 + rng.below(0xBE) as u8;
+        // Jette leads a quarter of the formations, and the other monster
+        // seats stand or not, so the Jette count clears or holds.
+        let jette = rng.below(4) == 0;
+        let others_hp: [u16; 4] = std::array::from_fn(|_| [0u16, 0, 1][rng.below(3) as usize]);
         let seed = rng.next();
         let held_count = [0, 1, 98, 99, 0][rng.below(5) as usize];
         let getup = rng.below(0x10) as u8;
@@ -338,6 +337,11 @@ fn the_commit_runs_the_death_arm_from_its_entry() {
         if m != 1 {
             cpu.mem.wr8(MONSTER_IDS + 1, second);
         }
+        if jette {
+            cpu.mem.wr8(MONSTER_IDS, 0xAA);
+        }
+        let first = cpu.mem.rd8(MONSTER_IDS);
+        let id = cpu.mem.rd8(MONSTER_IDS + m);
         let second = cpu.mem.rd8(MONSTER_IDS + 1);
         for s in 0..8 {
             cpu.mem.wr32(BAND + s * 4, 0);
@@ -354,7 +358,14 @@ fn the_commit_runs_the_death_arm_from_its_entry() {
             }
             cpu.mem.wr32(ACTORS + s * 4, a);
             cpu.mem.wr8(a + 0x1DE, category);
-            cpu.mem.wr16(a + 0x14C, 1);
+            cpu.mem.wr16(
+                a + 0x14C,
+                if s >= 3 {
+                    others_hp[(s - 3) as usize % 4]
+                } else {
+                    1
+                },
+            );
         }
         for o in (0..0x100).step_by(4) {
             cpu.mem.wr32(TABLE + o, 0);
@@ -424,6 +435,18 @@ fn the_commit_runs_the_death_arm_from_its_entry() {
         for i in 0..party as usize {
             assert_eq!(got[i], want[i], "credit, {context}");
         }
+        // The Jette count, ahead of the credit and the cue.
+        let standing = (0..4u32)
+            .filter(|&k| k != m && others_hp[k as usize] != 0)
+            .count();
+        let clears = legaia_engine_battle_vm::battle_impact_fx::jette_count_clears(first, standing);
+        let second = if clears { 0 } else { second };
+        assert_eq!(
+            (cpu.mem.rd8(CTX + 1), cpu.mem.rd8(MONSTER_IDS + 1)),
+            (if clears { 1 } else { 4 }, second),
+            "jette count, {context}"
+        );
+        jette_cleared += i32::from(clears);
         // The cue.
         let due = bs::defeat_cue_due(flags, seru, scripted, second, seat as u8);
         let next = if cursor + 1 >= 4 { 0 } else { cursor + 1 };
@@ -451,7 +474,8 @@ fn the_commit_runs_the_death_arm_from_its_entry() {
             killer_attack: category == bs::ATTACK_CATEGORY,
             killer_steals: acting < party && words[acting as usize][0] & STEAL_ATTACK_BIT != 0,
             items_up: (0..party as usize).any(|i| hp[i] != 0 && words[i][1] & ITEMS_UP_BIT != 0),
-            entry: table.entry(u16::from(id)),
+            // The row is the formation cell's as the Jette count left it.
+            entry: table.entry(u16::from(if clears && m == 1 { 0 } else { id })),
             caption_up,
         };
         let port_state = Cell::new(seed);
@@ -495,7 +519,12 @@ fn the_commit_runs_the_death_arm_from_its_entry() {
         }
     }
     assert!(
-        credited > 5000 && cued > 5000 && silenced > 1000 && paid > 1000 && stood > 3000,
-        "{credited} {cued} {silenced} {paid} {stood}"
+        credited > 5000
+            && cued > 5000
+            && silenced > 1000
+            && paid > 1000
+            && stood > 3000
+            && jette_cleared > 300,
+        "{credited} {cued} {silenced} {paid} {stood} {jette_cleared}"
     );
 }
