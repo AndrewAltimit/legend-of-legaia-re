@@ -224,5 +224,66 @@ pub fn fishing_exchange_draws(
         first_visible: ex.first_visible(world.minigames.fishing_points),
         rows: &rows,
     };
-    fx::exchange_screen_draws_for(font, &view, legend, pen, ink, dim)
+    let mut out = fx::exchange_screen_draws_for(font, &view, legend, pen, ink, dim);
+    out.extend(fishing_exchange_dialog_draws(world, font, ink));
+    out
+}
+
+/// The exchange's quantity picker and confirm over the list, at retail's
+/// pens (`World::fishing_exchange_dialog_draw`), their lines off the
+/// overlay (`FishingHubText::prize`) and the item's name off the item
+/// table. Empty on the list alone.
+fn fishing_exchange_dialog_draws(
+    world: &World,
+    font: &legaia_font::Font,
+    ink: [f32; 4],
+) -> Vec<legaia_engine_ui::TextDraw> {
+    use legaia_engine_fishing::fishing::PrizeText;
+    let Some((ex, d)) = world.fishing_exchange_dialog_draw() else {
+        return Vec::new();
+    };
+    let row = world.minigames.fishing_exchange_dialog.row;
+    let name: Vec<u8> = ex
+        .rows
+        .get(row)
+        .map(|r| {
+            r.name
+                .clone()
+                .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
+                .into_bytes()
+        })
+        .unwrap_or_default();
+    let text = world.minigames.fishing_hub_text.as_ref();
+    let line = |t: PrizeText| -> &[u8] {
+        match t {
+            PrizeText::ItemName => &name,
+            PrizeText::QuantityLabel => text.map_or(&[][..], |h| &h.prize[0]),
+            PrizeText::Question => text.map_or(&[][..], |h| &h.prize[1]),
+            PrizeText::Yes => text.map_or(&[][..], |h| &h.prize[2]),
+            PrizeText::No => text.map_or(&[][..], |h| &h.prize[3]),
+        }
+    };
+    let texts: Vec<(&[u8], i32, i32)> = d
+        .texts
+        .iter()
+        .map(|&(t, x, y)| (line(t), i32::from(x), i32::from(y)))
+        .collect();
+    let numbers: Vec<(i64, i32, i32, i32)> = d
+        .numbers
+        .iter()
+        .map(|&(v, n, x, y)| (v, n, i32::from(x), i32::from(y)))
+        .collect();
+    let cursors: Vec<(i32, i32)> = d
+        .cursors
+        .iter()
+        .map(|&(x, y)| (i32::from(x), i32::from(y)))
+        .collect();
+    legaia_engine_ui::fishing::exchange::exchange_dialog_draws_for(
+        font,
+        &texts,
+        &numbers,
+        d.slash.map(|(x, y)| (i32::from(x), i32::from(y))),
+        &cursors,
+        ink,
+    )
 }

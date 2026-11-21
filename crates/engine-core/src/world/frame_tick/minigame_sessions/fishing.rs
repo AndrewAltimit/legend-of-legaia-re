@@ -158,6 +158,7 @@ impl World {
             .cursor
             .max(exchange.first_visible(self.minigames.fishing_points));
         self.minigames.fishing_exchange = Some(exchange);
+        self.minigames.fishing_exchange_dialog = Default::default();
     }
 
     /// Close the point-exchange list.
@@ -305,8 +306,18 @@ impl World {
                 self.minigames.fishing_lure = s.persist().lure;
             }
         }
-        // The no-lure screen's exit edge (state `200`): leave the venue as the
-        // hub's Leave row does.
+        // State `200` re-runs the lure gate under its fade each frame.
+        {
+            let bag = &self.party.inventory;
+            if let Some(s) = self.minigames.fishing.as_mut()
+                && s.exit_fade_level().is_some()
+            {
+                s.exit_fade_lure_gate(|id| i32::from(bag.get(&(id as u8)).copied().unwrap_or(0)));
+                self.minigames.fishing_lure = s.persist().lure;
+            }
+        }
+        // The exit fade (state `200`, from the hub's row 4 or the no-lure
+        // screen's edge) ran out: leave the venue.
         if self
             .minigames
             .fishing

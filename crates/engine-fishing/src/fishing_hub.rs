@@ -110,7 +110,16 @@ pub struct FishingHubText {
     /// The no-lure screen's line ([`NO_LURE_LINE_VA`]); empty when the image
     /// does not hold it.
     pub no_lure: Vec<u8>,
+    /// The exchange dialogs' lines ([`PRIZE_TEXT_VAS`]: the quantity
+    /// picker's label, the confirm's question, Yes, No); empty when the image
+    /// does not hold them.
+    pub prize: [Vec<u8>; 4],
 }
+
+/// The exchange dialogs' strings: the quantity picker's label (`addiu
+/// a0,a0,-0x1078` at `0x801D0B78`) and the confirm's question, Yes and No
+/// (`-0x1094` / `-0x1084` / `-0x1080` at `0x801D0730..0x801D0780`).
+pub const PRIZE_TEXT_VAS: [u32; 4] = [0x801C_EF88, 0x801C_EF6C, 0x801C_EF7C, 0x801C_EF80];
 
 /// The NUL-terminated string at `va` in an image loaded at
 /// [`FISHING_OVERLAY_BASE`], or `None` when `va` is outside the image or the
@@ -154,6 +163,7 @@ impl FishingHubText {
             help,
             footers,
             no_lure: c_string_at(image, NO_LURE_LINE_VA).unwrap_or_default(),
+            prize: PRIZE_TEXT_VAS.map(|va| c_string_at(image, va).unwrap_or_default()),
         })
     }
 }
@@ -465,6 +475,11 @@ impl crate::fishing::PondSession {
         }
         if matches!(step.exit, Some(HubExit::Resume | HubExit::Leave)) {
             self.hub = None;
+        }
+        // Row 4 is state `200`: the venue fades out before it leaves
+        // ([`crate::fishing::PondSession::take_exit_request`]).
+        if step.exit == Some(HubExit::Leave) {
+            self.start_exit_fade();
         }
         step
     }

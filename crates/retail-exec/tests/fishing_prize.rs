@@ -337,3 +337,263 @@ fn a_confirmed_prize_is_granted_as_retail_grants_it() {
     }
     assert!(bought > 10_000 && latched > 1000, "{bought} {latched}");
 }
+
+/// What one exchange screen call drew: text by string and pen, decimal
+/// fields `(value, places, x, y)`, separator glyphs `(glyph, x, y)`, icons
+/// `(x, y, icon)` and panels `(cx, y, w, h)`.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct Drawn {
+    texts: Vec<(u32, i32, i32)>,
+    numbers: Vec<(i64, i32, i32, i32)>,
+    glyphs: Vec<(u32, i32, i32)>,
+    icons: Vec<(i32, i32, u32)>,
+    panels: Vec<(i32, i32, i32, i32)>,
+}
+
+/// The three exchange screens as the session runs them (`0x801D0028..
+/// 0x801D0080`): the live one with its input on, the picker under the
+/// confirm with it off; frame by frame over random pads from random picker
+/// words, against `PrizeExchange::pad_step` and `dialog_draw`: the state
+/// (`0x78` list, `0x79` picker, `0x7A` confirm, `0x64` back to the hub), the
+/// list cursor, the picked row, the quantity, the confirm's row, the cue
+/// `0x8007B6D8`, the grant, the points and the one-time latch, and every
+/// text pen, number field, glyph, cursor icon and panel the picker and the
+/// confirm draw.
+#[test]
+fn the_exchange_picker_and_confirm_step_and_draw_as_retail_does() {
+    differential!(prot(972, LIST), prot(972, QUANTITY), prot(972, YES));
+    use legaia_engine_fishing::fishing::{PrizeDialog, PrizeScreen, PrizeText};
+    use psx_retail_exec::{A1, A2, A3, SP};
+    use std::cell::RefCell;
+    let Some(mut s) = screens() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const STATE: u32 = 0x801D_926C;
+    const CUE: u32 = 0x8007_B6D8;
+    const NAME_BUF: u32 = 0x801D_7E58;
+    let drawn = Rc::new(RefCell::new(Drawn::default()));
+    {
+        let d = drawn.clone();
+        s.cpu.hook(0x8003_6888, move |r, m| {
+            let y = m.rd32(r.r[SP] + 0x10) as i32;
+            d.borrow_mut().texts.push((r.r[A0], r.r[A3] as i32, y));
+        });
+        let d = drawn.clone();
+        s.cpu.hook(0x8003_4B78, move |r, _| {
+            d.borrow_mut().numbers.push((
+                i64::from(r.r[A0] as i32),
+                r.r[A1] as i32,
+                r.r[A2] as i32,
+                r.r[A3] as i32,
+            ))
+        });
+        let d = drawn.clone();
+        s.cpu.hook(0x8003_C1F8, move |r, _| {
+            d.borrow_mut()
+                .glyphs
+                .push((r.r[A0], r.r[A1] as i32, r.r[A2] as i32))
+        });
+        let d = drawn.clone();
+        s.cpu.hook(0x8002_C488, move |r, _| {
+            d.borrow_mut()
+                .icons
+                .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2]))
+        });
+        let d = drawn.clone();
+        s.cpu.hook(0x801D_74B0, move |r, _| {
+            d.borrow_mut().panels.push((
+                r.r[A0] as i32,
+                r.r[A1] as i32,
+                r.r[A2] as i32,
+                r.r[A3] as i32,
+            ))
+        });
+    }
+    let text_va = |t: PrizeText| match t {
+        PrizeText::ItemName => NAME_BUF,
+        PrizeText::QuantityLabel => 0x801C_EF88,
+        PrizeText::Question => 0x801C_EF6C,
+        PrizeText::Yes => 0x801C_EF7C,
+        PrizeText::No => 0x801C_EF80,
+    };
+    let mut rng = Rng(0x5049_434B);
+    let mut seen = std::collections::BTreeSet::new();
+    let mut bought = 0;
+    for run in 0..40_000u32 {
+        let mut ex = seat_page(&mut s.cpu, &mut rng);
+        // Disc-shaped limits: one-time rows and stacks of 99.
+        for r in ex.rows.iter_mut() {
+            r.limit = if rng.below(3) == 0 { 1 } else { 99 };
+            s.cpu.mem.wr32(TABLE + r.row as u32 * 12, r.limit);
+        }
+        let points = [0, 50, 999, 5000, rng.below(100_000) as i32][rng.below(5) as usize];
+        let mask = rng.next() & rng.next();
+        let own = [0, 1, 50, 98, rng.below(99)][rng.below(5) as usize];
+        let screen = [
+            PrizeScreen::List,
+            PrizeScreen::Quantity,
+            PrizeScreen::Confirm,
+        ][rng.below(3) as usize];
+        let row = rng.below(6) as usize;
+        // The picker and the confirm only open on an available row.
+        if screen != PrizeScreen::List && !ex.is_available(row, points, own, mask) {
+            continue;
+        }
+        let max = ex.max_qty(row, points, own, mask) as i32;
+        let mut dlg = PrizeDialog {
+            screen,
+            row,
+            // The picker holds its quantity to the cap before it opens the
+            // confirm; it steps it from anywhere.
+            qty: if screen == PrizeScreen::Confirm {
+                1 + rng.below(max.max(1) as u32) as i32
+            } else {
+                rng.below(max.max(1) as u32 + 3) as i32 - 1
+            },
+            confirm_row: rng.below(2),
+        };
+        let floor = ex.first_visible(points);
+        ex.cursor = floor + rng.below(6 - floor as u32) as usize;
+        let keys = [0u32, 0x1000, 0x4000, 0x2000, 0x8000, 0xA000][rng.below(6) as usize];
+        let pressed = [0u32, 0, 0x40, 0x04, 0x20, 0x01, 0x60][rng.below(7) as usize];
+        let state = match screen {
+            PrizeScreen::List => 0x78,
+            PrizeScreen::Quantity => 0x79,
+            PrizeScreen::Confirm => 0x7A,
+        };
+        let m = &mut s.cpu.mem;
+        m.wr32(STATE, state);
+        m.wr32(POINTS, points as u32);
+        m.wr32(MASK, mask);
+        m.wr32(CURSOR, ex.cursor as u32);
+        m.wr32(ROW, row as u32);
+        m.wr32(QTY, dlg.qty as u32);
+        m.wr32(CONFIRM, dlg.confirm_row);
+        m.wr32(SCREEN_PAD, keys);
+        m.wr32(PAD_EDGE, pressed);
+        m.wr16(CUE, 0);
+        s.owned.set(own);
+        s.grants.borrow_mut().clear();
+        *drawn.borrow_mut() = Drawn::default();
+        // The session's layering: the live screen, then the picker under
+        // the confirm; only the picker's and the confirm's draws are kept.
+        match screen {
+            PrizeScreen::List => {
+                assert_eq!(s.cpu.call(LIST, &[1]), Stop::Returned);
+                *drawn.borrow_mut() = Drawn::default();
+            }
+            PrizeScreen::Quantity => {
+                assert_eq!(s.cpu.call(QUANTITY, &[1]), Stop::Returned);
+            }
+            PrizeScreen::Confirm => {
+                assert_eq!(s.cpu.call(YES, &[1]), Stop::Returned);
+                assert_eq!(s.cpu.call(QUANTITY, &[0]), Stop::Returned);
+            }
+        }
+        let m = &mut s.cpu.mem;
+        let retail = (
+            m.rd32(STATE),
+            m.rd32(CURSOR) as usize,
+            m.rd32(ROW) as usize,
+            m.rd32(QTY) as i32,
+            m.rd32(CONFIRM),
+            m.rd16(CUE),
+            s.grants.borrow().clone(),
+            m.rd32(POINTS) as i32,
+            m.rd32(MASK),
+        );
+        let before = dlg;
+        let step = ex.pad_step(&mut dlg, keys, pressed, points, |_| own, mask);
+        let p = step.purchase;
+        let port_state = match (step.closed, dlg.screen) {
+            (true, _) => 0x64,
+            (_, PrizeScreen::List) => 0x78,
+            (_, PrizeScreen::Quantity) => 0x79,
+            (_, PrizeScreen::Confirm) => 0x7A,
+        };
+        let port = (
+            port_state,
+            ex.cursor,
+            dlg.row,
+            dlg.qty,
+            dlg.confirm_row,
+            step.sfx.unwrap_or(0),
+            p.map(|p| vec![(u32::from(p.item_id), p.qty)])
+                .unwrap_or_default(),
+            points - p.map_or(0, |p| p.cost as i32),
+            mask | p.and_then(|p| p.latched_bit).map_or(0, |b| 1 << b),
+        );
+        let at = format!(
+            "run {run} {before:?} keys {keys:#x} pressed {pressed:#x} points {points} owned {own} row {:?}",
+            ex.rows[row]
+        );
+        assert_eq!(retail, port, "{at}");
+        // The draws: the screen the call drew from (the words as it
+        // started, but the confirm's row and the quantity its own step
+        // leaves).
+        if screen != PrizeScreen::List {
+            let mut shown = before;
+            shown.qty = retail.3;
+            shown.confirm_row = if screen == PrizeScreen::Confirm {
+                // The confirm draws after its own row step, before its edges.
+                let mut c = before.confirm_row;
+                if keys & 0x1000 != 0 {
+                    c = c.wrapping_sub(1);
+                }
+                if keys & 0x4000 != 0 {
+                    c = c.wrapping_add(1);
+                }
+                c & 1
+            } else {
+                before.confirm_row
+            };
+            // The picker under the confirm draws after the confirm's grant.
+            let d = ex.dialog_draw(&shown, retail.7, own, retail.8);
+            let got = drawn.borrow().clone();
+            let mut want_texts: Vec<(u32, i32, i32)> = d
+                .texts
+                .iter()
+                .map(|&(t, x, y)| (text_va(t), i32::from(x), i32::from(y)))
+                .collect();
+            let mut got_texts = got.texts.clone();
+            want_texts.sort_unstable();
+            got_texts.sort_unstable();
+            assert_eq!(got_texts, want_texts, "{at}: the text");
+            let want_numbers: Vec<_> = d
+                .numbers
+                .iter()
+                .map(|&(v, n, x, y)| (v, n, i32::from(x), i32::from(y)))
+                .collect();
+            assert_eq!(got.numbers, want_numbers, "{at}: the numbers");
+            assert_eq!(
+                got.glyphs,
+                d.slash
+                    .map(|(x, y)| vec![(6, i32::from(x), i32::from(y))])
+                    .unwrap_or_default(),
+                "{at}: the glyph"
+            );
+            let mut want_icons: Vec<_> = d
+                .cursors
+                .iter()
+                .map(|&(x, y)| (i32::from(x), i32::from(y), 0x4E))
+                .collect();
+            let mut got_icons = got.icons.clone();
+            want_icons.sort_unstable();
+            got_icons.sort_unstable();
+            assert_eq!(got_icons, want_icons, "{at}: the cursors");
+            let mut want_panels: Vec<_> = d
+                .panels
+                .iter()
+                .map(|&(a, b, c, e)| (i32::from(a), i32::from(b), i32::from(c), i32::from(e)))
+                .collect();
+            let mut got_panels = got.panels.clone();
+            want_panels.sort_unstable();
+            got_panels.sort_unstable();
+            assert_eq!(got_panels, want_panels, "{at}: the panels");
+        }
+        seen.insert((state, port_state));
+        bought += u32::from(p.is_some());
+    }
+    assert!(seen.len() >= 8 && bought > 500, "{seen:x?} {bought}");
+}

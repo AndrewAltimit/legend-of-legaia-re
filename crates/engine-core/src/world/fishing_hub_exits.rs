@@ -13,10 +13,10 @@ impl crate::world::World {
     /// Returns `true` when the hub owns the frame, so the pond must not tick.
     /// Row 3 opens the world's exchange sub-screen through
     /// [`crate::world::World::fishing_exchange_input`] (the same kernel both
-    /// hosts' exchange keys drive), and the hub waits under it; row 4 leaves
-    /// the venue exactly as each host's own quit key does
-    /// ([`crate::world::World::exit_fishing`] then the minigame round-trip
-    /// close).
+    /// hosts' exchange keys drive), and the hub waits under it; row 4 starts
+    /// the venue's exit fade, after which the venue leaves as each host's own
+    /// quit key does ([`crate::world::World::exit_fishing`] then the minigame
+    /// round-trip close).
     pub fn tick_fishing_hub(&mut self) -> bool {
         use crate::fishing_exchange_input::ExchangeInput;
         let exchange_open = self.minigames.fishing_exchange.is_some();
@@ -41,11 +41,10 @@ impl crate::world::World {
             self.minigames.pending_sfx.push(sfx);
         }
         match step.exit {
-            Some(HubExit::Leave) => {
-                self.exit_fishing();
-                self.close_minigame_round_trip();
-                return true;
-            }
+            // Row 4 starts the venue's exit fade (state `200`); the session
+            // asks to leave once it has run out
+            // (`PondSession::take_exit_request`, read in `tick_fishing`).
+            Some(HubExit::Leave) => return true,
             Some(HubExit::OpenExchange) => {
                 match self.minigames.fishing_prize_venues.clone() {
                     Some(venues) => {
@@ -64,70 +63,94 @@ impl crate::world::World {
         open || step.exit.is_some()
     }
 
-    /// The prize list's own pad step (state `0x78`, `FUN_801D0C3C(1)`), fed
-    /// the packed pad edge. Without it the list opened from the hub's row 3
-    /// answered only host keys (the native window's `P` family, the browser
-    /// page's panel buttons), so a pad-only player - a gamepad, the play page
-    /// - was left on a screen nothing could close.
-    ///
-    /// Read off the disassembly (`0x801D0CB8..0x801D0DB0`): Up (`0x1000`) and
-    /// Down (`0x4000`) move the cursor with SFX `0x21`, clamped to the list
-    /// floor; `& 0x44` (Cross / L1) buys at the cursor through the
-    /// availability test `FUN_801D6F90` - SFX `0x20` when it passes, `0x22`
-    /// when refused; `& 0x21` (Circle / L2) cancels with SFX `0x37` back to
-    /// the hub menu (state `0x64`). Retail reads the cursor keys off the
-    /// auto-repeat word; this reads the edge. Left / Right switch the venue
-    /// page - a port affordance retail has no key for (each pond shows its
-    /// own page).
-    ///
-    /// The buy is one unit: retail's quantity picker (`0x7A`) and confirm
-    /// (`0x79`) screens are not modelled; the grant, the spend and the
-    /// one-time latch are [`crate::world::World::fishing_exchange_buy`]'s.
+    /// The exchange's own pad step, fed the packed pad edge: the list
+    /// (state `0x78`, `FUN_801D0C3C(1)`), the quantity picker (`0x79`,
+    /// `FUN_801D092C(1)`) and the confirm (`0x7A`, `FUN_801D06C8(1)`), as
+    /// [`legaia_engine_fishing::fishing::PrizeExchange::pad_step`] runs them.
+    /// The list's cancel closes it back to the hub menu; the confirm's Yes
+    /// grants through [`crate::world::World::fishing_exchange_buy`] and
+    /// stores runtime cue `0x206` into ring slot 0 (`0x801D089C`). Retail
+    /// reads the cursor keys off the screen's auto-repeat word; this reads
+    /// the edge. On the list, Left / Right switch the venue page - a port
+    /// affordance retail has no key for (each pond shows its own page).
     pub(crate) fn fishing_exchange_pad(&mut self, edge: u32) {
-        use crate::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
-        const UP: u32 = 0x1000;
-        const RIGHT: u32 = 0x2000;
-        const DOWN: u32 = 0x4000;
-        const LEFT: u32 = 0x8000;
-        const CONFIRM: u32 = 0x44;
-        const CANCEL: u32 = 0x21;
+        use crate::fishing_exchange_input::ExchangeInput;
+        use legaia_engine_fishing::fishing::{
+            PRIZE_BOUGHT_SFX, PRIZE_CANCEL, PRIZE_CONFIRM, PRIZE_LEFT, PRIZE_RIGHT, PrizeScreen,
+        };
         let Some(venues) = self.minigames.fishing_prize_venues.clone() else {
             // No pages decoded: nothing the list could show, so any cancel
             // or confirm closes it rather than holding the pad.
-            if edge & (CONFIRM | CANCEL) != 0 {
+            if edge & (PRIZE_CONFIRM | PRIZE_CANCEL) != 0 {
                 self.close_fishing_exchange();
             }
             return;
         };
-        let mut sfx = Vec::new();
-        for (mask, input) in [
-            (UP, ExchangeInput::Up),
-            (DOWN, ExchangeInput::Down),
-            (LEFT | RIGHT, ExchangeInput::SwitchVenue),
-        ] {
-            if edge & mask != 0
-                && self.fishing_exchange_input(&venues, input) != ExchangeOutcome::Refused
-            {
-                sfx.push(0x21);
+        let on_list = self.minigames.fishing_exchange_dialog.screen == PrizeScreen::List;
+        if on_list && edge & (PRIZE_LEFT | PRIZE_RIGHT) != 0 {
+            self.fishing_exchange_input(&venues, ExchangeInput::SwitchVenue);
+            self.minigames.pending_sfx.push(0x21);
+            return;
+        }
+        let points = self.minigames.fishing_points;
+        let mask = self.minigames.fishing_prizes_purchased;
+        let bag = &self.party.inventory;
+        let mut dlg = self.minigames.fishing_exchange_dialog;
+        let Some(ex) = self.minigames.fishing_exchange.as_mut() else {
+            return;
+        };
+        let step = ex.pad_step(
+            &mut dlg,
+            edge,
+            edge,
+            points,
+            |id| u32::from(bag.get(&id).copied().unwrap_or(0)),
+            mask,
+        );
+        self.minigames.fishing_exchange_dialog = dlg;
+        if let Some(p) = step.purchase {
+            let _ = self.fishing_exchange_buy(dlg.row, p.qty);
+            // The next frame's list opens on its entry clamp.
+            let points = self.minigames.fishing_points;
+            if let Some(ex) = self.minigames.fishing_exchange.as_mut() {
+                ex.cursor = ex.step_cursor(ex.cursor, points, false, false);
             }
         }
-        if edge & CONFIRM != 0 {
-            match self.fishing_exchange_input(&venues, ExchangeInput::Buy) {
-                // The purchase itself: retail's confirm screen `FUN_801d06c8`
-                // stores runtime cue `0x206` straight into ring slot 0 on its
-                // Yes arm (`0x801D089C`), after the list's and the quantity
-                // screen's `0x20` selects this one press stands in for.
-                ExchangeOutcome::Bought(_) => self.audio.sfx_ring_ops.push(
-                    legaia_engine_system::sound_state::SfxRingOp::WriteSlot(0, 0x206),
-                ),
-                _ => sfx.push(0x22),
-            }
+        match step.sfx {
+            Some(PRIZE_BOUGHT_SFX) => self.audio.sfx_ring_ops.push(
+                legaia_engine_system::sound_state::SfxRingOp::WriteSlot(0, PRIZE_BOUGHT_SFX as i16),
+            ),
+            Some(cue) => self.minigames.pending_sfx.push(cue),
+            None => {}
         }
-        if edge & CANCEL != 0 && self.minigames.fishing_exchange.is_some() {
+        if step.closed {
             self.fishing_exchange_input(&venues, ExchangeInput::Toggle);
-            sfx.push(0x37);
         }
-        self.minigames.pending_sfx.extend(sfx);
+    }
+
+    /// The exchange dialogs' layout over the list (empty on the list alone),
+    /// with the picked row's bag count; hosts draw it through
+    /// `legaia_engine_screens::fishing_exchange_draws`.
+    pub fn fishing_exchange_dialog_draw(
+        &self,
+    ) -> Option<(
+        &legaia_engine_fishing::fishing::PrizeExchange,
+        legaia_engine_fishing::fishing::PrizeDialogDraw,
+    )> {
+        let ex = self.minigames.fishing_exchange.as_ref()?;
+        let dlg = &self.minigames.fishing_exchange_dialog;
+        let owned = ex.rows.get(dlg.row).map_or(0, |r| {
+            u32::from(self.party.inventory.get(&r.item_id).copied().unwrap_or(0))
+        });
+        Some((
+            ex,
+            ex.dialog_draw(
+                dlg,
+                self.minigames.fishing_points,
+                owned,
+                self.minigames.fishing_prizes_purchased,
+            ),
+        ))
     }
 
     /// The hub's draw lines on the world: the session's layout with the
