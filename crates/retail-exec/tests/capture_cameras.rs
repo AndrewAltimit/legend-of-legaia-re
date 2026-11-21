@@ -78,6 +78,14 @@ fn bodies() -> Vec<Body> {
             });
         }
     }
+    // Cort's Evil Seru Magic (`0xAD`) casts through the boss band rather
+    // than the capture table, on the same single body and director shape.
+    out.push(Body {
+        entry: 966,
+        va: EVIL_SERU_MAGIC,
+        action: 0xAD,
+        director: cam::capture_camera_director(966, cam::SINGLE_BODY).expect("directed"),
+    });
     out
 }
 
@@ -194,7 +202,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         prot(962, GIGATON_PRESS),
         prot(964, ELEMENT_CHANGE),
         prot(964, ELEMENT_STRIKE),
-        prot(965, DOOMSDAY)
+        prot(965, DOOMSDAY),
+        prot(966, EVIL_SERU_MAGIC)
     );
     let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -241,6 +250,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut rng = Rng(0x4341_4D53);
     let mut failures = Vec::new();
     let (mut passes, mut casts) = (0u32, 0u32);
+    let mut outcomes = std::collections::BTreeSet::new();
+    let mut unsettled_holds = 0usize;
     let all = bodies();
     for body in &all {
         let module = disc.read_entry(body.entry as usize).expect("module");
@@ -251,6 +262,24 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             if ![AIM, RANGE, BUILDER, BEARING, RAND].contains(&target) {
                 cpu.stub(target, 0);
             }
+        }
+        // Death Game keeps its card handles (`0x801FA2B8`) and walks them
+        // through the shuffle and the pick: each spawn gets a part.
+        let death_game = body.action == 0x76;
+        if death_game {
+            let next = Rc::new(std::cell::Cell::new(PARTS));
+            for spawn in [SPAWN_PART, SPAWN_SEATED] {
+                let next = next.clone();
+                cpu.hook(spawn, move |r, m| {
+                    let at = next.get();
+                    next.set(at + 0x80);
+                    for o in (0..0x80).step_by(4) {
+                        m.wr32(at + o, 0);
+                    }
+                    r.r[V0] = at;
+                });
+            }
+            cpu.mem.wr32(CONFIRM_MASK, 0x20);
         }
         // The range poll answers "in reach", the approach being the host's,
         // but every fourth poll of a pass answers "out of reach": PROT
@@ -264,22 +293,43 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             });
         }
         let countdown_va = cam::capture_countdown_va(body.action);
-        for round in 0..6usize {
+        let rounds = match body.action {
+            0x76 => 30,
+            0x71 => 12,
+            _ => 6,
+        };
+        for round in 0..rounds {
             let (caster, victim) = seed(&mut cpu, &mut rng, &module, body, 0);
             let (ca, va_) = (ACTOR + caster * STRIDE, ACTOR + victim * STRIDE);
             // The caster's formation id, which a body can fork on: Terror
             // Scream's owners (Terror Face `0x7F`, the `0x28` row).
             let monster = match body.action {
                 0x70 => [0x28u8, 0x7F][round % 2],
+                // The two casters that deal a stacked table.
+                0x76 => [0u8, 0x9D, 0x9E][round % 3],
                 _ => 0,
             };
             for i in 0..5 {
                 cpu.mem.wr8(FORMATION + i, monster);
             }
             // Curse All takes the party as a group.
-            let group = (body.action == 0x53).then_some(8u8);
+            // Water Hazard sweeps the party or the monster row as well as a
+            // seat, and its arm 3 waits on the row its code names.
+            let water_hazard = body.action == 0x71;
+            let group = match body.action {
+                0x53 => Some(8u8),
+                0x71 => [None, Some(8u8), Some(9)][round % 3],
+                _ => None,
+            };
             if let Some(g) = group {
                 cpu.mem.wr8(ca + 0x1DD, g);
+            }
+            // The tint word the group aim counts a monster seat up by
+            // (`FUN_800513F0`'s seating, `0x80051874`).
+            if water_hazard {
+                for s in 3..8 {
+                    cpu.mem.wr32(ACTOR + s * STRIDE + 4, 0x1004_0100);
+                }
             }
             // Plasma Strike's arm 5 waits for its strike clip `0x0D` past
             // a cursor, and arm 6 for the clip's loops to run out.
@@ -297,6 +347,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 cpu.mem.wr8(va_ + 0x1F1, KNOCKDOWN);
             }
             let mut arm_24_passes = 0usize;
+            let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
+            let mut arm3_passes = 0usize;
             // Every strike-frame wait (PROT 0960's arm 5, PROT 0962's arm 3)
             // finds the caster's node cursor past its mark.
             cpu.mem.wr16(NODES + caster * 0x100 + 0x68, 0x7FFF);
@@ -310,13 +362,20 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 target_code: Some(victim as u8),
                 ..ModuleCamState::default()
             };
-            stream.set(1);
+            stream.set(if death_game {
+                1 + 0x9E37 * round as u32
+            } else {
+                1
+            });
             let c0 = format!(
                 "PROT {:04} body {:#010x} ({:#04x}) round {round}",
                 body.entry, body.va, body.action
             );
             let mut finished = false;
-            for pass in 0..3000 {
+            // Evil Seru Magic's gates re-arm in vsyncs and add up to past
+            // three thousand.
+            let cap = if body.entry == 966 { 8000 } else { 3000 };
+            for pass in 0..cap {
                 let phase = cpu.mem.rd8(CTX + 0x279);
                 // PROT 0961's arm 0 stands the seats before its cut; the host
                 // runs the line-up ahead of the director
@@ -355,10 +414,13 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     first_monster: monster,
                     ..ModuleCamSeats::default()
                 };
-                if let Some(g) = group {
+                // Water Hazard aims once, at arm 0 (`0x801F7394..0x801F73E4`),
+                // before it hides the row the aim counts.
+                if let Some(g) = group.filter(|_| !water_hazard || phase == 0) {
                     assert_eq!(
                         cpu.call(AIM, &[u32::from(g), OUT_CENTRE, OUT_EXTENT]),
-                        Stop::Returned
+                        Stop::Returned,
+                        "{c0} pass {pass} arm {phase}: the group aim {g}"
                     );
                     st.target_aim = Some(GroupAim {
                         centroid_x: cpu.mem.rd16(OUT_CENTRE) as i16,
@@ -381,11 +443,108 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     cpu.mem.wr8(va_ + 0x1D9, if on { KNOCKDOWN } else { 0 });
                     st.victim_on_knockdown_clip = on;
                 }
-                // Death Game's arms from 9 deal on the cards the host feeds
-                // (`ModuleCamState::death_game`), which this run deals none of.
-                if body.action == 0x76 && phase >= 9 {
-                    finished = true;
-                    break;
+                // Evil Seru Magic's arm 0 saves the caster's pose before its
+                // re-seat, and arm 27's shot frames it restored; the host
+                // keeps the saved pose (`evil_seru_magic_row`).
+                if body.entry == 966 && phase == 0 {
+                    st.caster_saved = Some((caster_seat.x, caster_seat.z, caster_seat.facing));
+                }
+                // Death Game's host feeds: the deal and each swap's draws off
+                // the stream ahead of the pass, the cards' live points, the
+                // pad, and the seats the closing arms wait on.
+                if death_game {
+                    let lcg = |seed: &mut u32| {
+                        *seed = seed.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+                        (*seed >> 16) & 0x7FFF
+                    };
+                    let mut seed = stream.get();
+                    let g = &mut st.death_game;
+                    if phase == 0 {
+                        g.deal(monster, || lcg(&mut seed));
+                    }
+                    if phase == 4 && g.counter == 0 {
+                        g.draw_swap(|| lcg(&mut seed));
+                    }
+                    for i in 0..4u32 {
+                        let h = cpu.mem.rd32(CARDS + 4 * i);
+                        if h != 0 {
+                            g.cards[i as usize] =
+                                [0u32, 2, 4].map(|o| cpu.mem.rd16(h + 0x14 + o) as i16);
+                        }
+                    }
+                    arm_passes = if phase == last_phase {
+                        arm_passes + 1
+                    } else {
+                        0
+                    };
+                    last_phase = phase;
+                    let press = match (phase, arm_passes) {
+                        (5, n) if n == round + 3 => 0x20,
+                        (5, n) if n % 5 == 1 => [0x2000, 0x8000][(n / 5) % 2],
+                        _ => 0,
+                    };
+                    cpu.mem.wr32(PRESSED, press);
+                    g.pad.right = press & 0x2000 != 0;
+                    g.pad.left = press & 0x8000 != 0;
+                    g.pad.confirm = press & 0x20 != 0;
+                    // The closing arms: the victim busy, then down on clip 8;
+                    // the caster on a clip, then idle and faded.
+                    if (10..=12).contains(&phase) {
+                        let done = arm_passes >= round + 2;
+                        cpu.mem.wr8(va_ + 0x1D9, if done { 8 } else { 5 });
+                        cpu.mem.wr8(ca + 0x1D9, if done { 0 } else { 1 });
+                        cpu.mem.wr32(ca + 4, if done { 0 } else { 0x2008_0200 });
+                        st.victim_settled = if phase == 10 { done } else { true && done };
+                        st.caster_settled = done;
+                        st.death_game.caster_faded = done;
+                    }
+                }
+                // Water Hazard's arm 3: a seat of the target row plays its
+                // reaction (or, dead, has not reached its rest) for a few
+                // passes, then settles; the host's flag off the same bytes
+                // (`World::capture_target_settled`).
+                if water_hazard {
+                    // Passes of arm 3 since its word ran out (it drains
+                    // `scalar` a pass off the `1 << 7` arm 2 left).
+                    arm3_passes = if phase == 3 && st.countdown.0 <= SPEED_SCALAR {
+                        arm3_passes + 1
+                    } else {
+                        0
+                    };
+                    let code = cpu.mem.rd8(ca + 0x1DD);
+                    let party = (0..3u32).collect::<Vec<_>>();
+                    let row = (3..8u32).collect::<Vec<_>>();
+                    let rows = match code {
+                        0..=2 => vec![u32::from(code)],
+                        8 => party,
+                        _ => row,
+                    };
+                    if phase == 3 {
+                        let s = rows[round % rows.len()];
+                        let a = ACTOR + s * STRIDE;
+                        let dead = round % 2 == 1;
+                        let busy = arm3_passes <= round + 1;
+                        if dead {
+                            cpu.mem.wr16(a + 0x14C, 0);
+                        }
+                        let rest = if dead && s < 3 { 8 } else { 0 };
+                        cpu.mem
+                            .wr8(a + 0x1D9, if busy && !(dead && s >= 3) { 5 } else { rest });
+                        if dead && s >= 3 {
+                            cpu.mem.wr32(a + 4, if busy { 0x2008_0200 } else { 0 });
+                        }
+                    }
+                    let settled = |cpu: &mut Cpu, s: u32| {
+                        let a = ACTOR + s * STRIDE;
+                        let clip = cpu.mem.rd8(a + 0x1D9);
+                        match (cpu.mem.rd16(a + 0x14C) != 0, s < 3) {
+                            (true, _) => clip == 0,
+                            (false, true) => clip == 8,
+                            (false, false) => cpu.mem.rd32(a + 4) == 0,
+                        }
+                    };
+                    st.target_unsettled = !rows.iter().all(|&s| settled(&mut cpu, s));
+                    unsettled_holds += usize::from(phase == 3 && st.target_unsettled);
                 }
                 let arm = (body.director)(&mut st, phase, seats);
                 shots.borrow_mut().clear();
@@ -419,6 +578,38 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     failures.push(format!("{c}: shot retail {got:?} port {want:?}"));
                 }
                 let after = cpu.mem.rd8(CTX + 0x279);
+                if death_game {
+                    // The word `0x801FA278`, which `capture_countdown_va`
+                    // does not list.
+                    let word = cpu.mem.rd32(DEATH_GAME_WORD) as i32;
+                    if word != st.countdown.0 {
+                        failures.push(format!("{c}: word retail {word} port {}", st.countdown.0));
+                        st.countdown.0 = word;
+                    }
+                    if phase == 0 {
+                        let table: Vec<u8> = (0..4u32)
+                            .map(|i| cpu.mem.rd32(TABLE + 4 * i) as u8)
+                            .collect();
+                        if table != st.death_game.table {
+                            failures.push(format!(
+                                "{c}: deal retail {table:?} port {:?}",
+                                st.death_game.table
+                            ));
+                        }
+                    }
+                    if !arm.hold && arm.next.is_some_and(|n| n != after) {
+                        failures.push(format!(
+                            "{c}: retail moved to {after:#x}, port {:?}",
+                            arm.next
+                        ));
+                    }
+                    if let Some(o) = st.death_game.outcome {
+                        outcomes.insert(format!("{o:?}"));
+                    }
+                }
+                if water_hazard && phase == 3 && !arm.hold && after == phase {
+                    failures.push(format!("{c}: port passes, retail holds"));
+                }
                 if arm.hold && after != phase {
                     failures.push(format!("{c}: port holds, retail moved to {after}"));
                 }
@@ -439,7 +630,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             }
             if !finished {
                 failures.push(format!(
-                    "{c0}: no finish in 3000 passes at arm {}",
+                    "{c0}: no finish in {cap} passes at arm {}",
                     cpu.mem.rd8(CTX + 0x279)
                 ));
             }
@@ -447,6 +638,12 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         }
     }
     eprintln!("{} bodies, {casts} casts, {passes} passes", all.len());
+    eprintln!("Death Game outcomes {outcomes:?}");
+    assert_eq!(outcomes.len(), 4, "Death Game outcomes {outcomes:?}");
+    assert!(
+        unsettled_holds > 10,
+        "Water Hazard's settle held {unsettled_holds} passes"
+    );
     let n = failures.len();
     failures.truncate(400);
     assert!(n == 0, "{n} mismatches:\n{}", failures.join("\n"));
@@ -502,3 +699,17 @@ const GIGATON_PRESS: u32 = 0x801F_6D54;
 const ELEMENT_CHANGE: u32 = 0x801F_88EC;
 const ELEMENT_STRIKE: u32 = 0x801F_69D8;
 const DOOMSDAY: u32 = 0x801F_69D8;
+const EVIL_SERU_MAGIC: u32 = 0x801F_6A74;
+/// The part spawn `FUN_80021B04` and the pool the walk hands parts from.
+const SPAWN_PART: u32 = 0x8002_1B04;
+const PARTS: u32 = 0x8016_0000;
+/// The seated part spawn `FUN_80050ED4` Death Game's faces come from
+/// (`0x801F7F08`).
+const SPAWN_SEATED: u32 = 0x8005_0ED4;
+/// Death Game's card handles and dealt table (`0x801FA2B8`, `0x801FA288`),
+/// the pad's press word and the confirm button's mask.
+const CARDS: u32 = 0x801F_A2B8;
+const DEATH_GAME_WORD: u32 = 0x801F_A278;
+const TABLE: u32 = 0x801F_A288;
+const PRESSED: u32 = 0x8007_B874;
+const CONFIRM_MASK: u32 = 0x8008_46D0;

@@ -59,8 +59,10 @@ fn world_with_npc_at(npc: (i16, i16)) -> World {
         1,
         FieldNpcAmbient {
             defers: false,
+            // Already bound to its variant: a first tick's variant switch
+            // would reset the default-move record.
             variants: vec![(0xFFFF, PROGRAM.to_vec())],
-            live: None,
+            live: Some(0),
             vm,
             walks: false,
         },

@@ -236,11 +236,12 @@ use legaia_engine_battle_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};
 /// taken down (case `0x21` parks it at `x = 328`), which the "ahead of the
 /// member entering" rule reproduces.
 ///
-/// The Attack and Spirit rows' sources are read off the commit arms
-/// (`FUN_801D388C` cases `0x20` / `0x11` / `0x23`); an Art commits through
-/// the ring's `Attack` chip. Which chip record an Item or magic commit logs,
-/// and whether an Item row carries a target, is inferred from the ring's
-/// arm order (records `0x0C` / `0x0E`), not read off a commit arm.
+/// Every row's sources are read off the commit arms (`FUN_801D388C` cases
+/// `0xE` / `0x20` Attack, `0x11` / `0x23` Spirit, `0x15` / `0x22` Magic and
+/// Item); an Art commits through the ring's `Attack` chip. A Magic or Item
+/// row logs the spell or item name the target sub-cursor staged into record
+/// `0x3B` ([`log::RECORD_COMMIT_NAME`]) and the target plaque, which an
+/// all-target cursor swaps for the `All` labels (`0x801D4404..0x801D4438`).
 pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<CommitLogRow> {
     use legaia_engine_battle::target_picker::CursorRow;
     use legaia_engine_battle_loop::round_flow::{PendingPartyAction, RoundPhase};
@@ -321,16 +322,34 @@ pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<Commit
                     _ => slot_target(*target_row, *target_slot),
                 };
                 (
-                    battle_magic_chip(world, slot).0,
-                    log::RECORD_CHIP_MAGIC,
+                    spell_log_name(world, *spell_id),
+                    log::RECORD_COMMIT_NAME,
                     target,
                 )
             }
-            PendingPartyAction::Item { .. } => (
-                label(BattleUiLabel::Item, "Item"),
-                log::RECORD_CHIP_ITEM,
-                CommitLogTarget::None,
-            ),
+            PendingPartyAction::Item {
+                item_id,
+                used_slots,
+            } => {
+                let catalog = &world.tables.item_catalog;
+                let target = if catalog.is_all_party(*item_id) {
+                    if catalog.is_enemy_side(*item_id) {
+                        CommitLogTarget::AllEnemies
+                    } else {
+                        CommitLogTarget::AllAllies
+                    }
+                } else {
+                    match used_slots.first() {
+                        Some(&abs) => CommitLogTarget::Single(actor_name(world, abs)),
+                        None => CommitLogTarget::None,
+                    }
+                };
+                let name = world
+                    .item_display_name(*item_id)
+                    .or_else(|| catalog.get(*item_id).map(|e| e.name.to_string()))
+                    .unwrap_or_default();
+                (name, log::RECORD_COMMIT_NAME, target)
+            }
             PendingPartyAction::Spirit => (
                 label(BattleUiLabel::Spirit, "Spirit"),
                 log::RECORD_CHIP_SPIRIT,
@@ -344,6 +363,11 @@ pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<Commit
         // string, the display name escape and all (`FUN_801D5718`).
         let target_abs = match action {
             PendingPartyAction::Attack { target } => Some(*target),
+            PendingPartyAction::Item { used_slots, .. }
+                if matches!(target, CommitLogTarget::Single(_)) =>
+            {
+                used_slots.first().copied()
+            }
             PendingPartyAction::Art {
                 target_row,
                 target_slot,
@@ -372,6 +396,22 @@ pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<Commit
         });
     }
     rows
+}
+
+/// A spell's name as the commit log stages it into record `0x3B`: the
+/// spell table's name (`0x800754C8 + 12 * id`, `+8`), and for an id of
+/// `0x65` or more the first entry's (`slti v0,a1,0x65` at `0x801D42FC`,
+/// `lw v1,0x54d0(v1)` at `0x801D4310`).
+///
+/// PORT: FUN_801D388C (`0x801D42F0..0x801D4348`)
+fn spell_log_name(world: &legaia_engine_core::world::World, spell_id: u8) -> String {
+    let id = if spell_id >= 0x65 { 0 } else { spell_id };
+    world
+        .tables
+        .spell_catalog
+        .get(id)
+        .map(|d| d.name.clone())
+        .unwrap_or_default()
 }
 
 /// The combo cluster style the action in flight draws its hits in, or

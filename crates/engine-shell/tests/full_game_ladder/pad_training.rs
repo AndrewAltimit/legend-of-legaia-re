@@ -32,6 +32,10 @@ thread_local! {
     /// ([`pad_charge_for_race`]): a fight's turns go to the Spirit stance, and
     /// no art spends what they earn.
     pub(super) static CHARGING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The hand is out growing a Miracle wearer into a typist
+    /// ([`pad_grow_for_race`]): the outing fights while the wearer is short,
+    /// whatever the level targets say.
+    pub(super) static GROWING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Whether the Spirit cell of every Miracle typist is up to the price.
@@ -56,6 +60,10 @@ const GROW_OUTINGS: usize = 16;
 /// (`base * 7 / 5 + 8 >= 270`), and how far below it a wearer still trains
 /// for it: a level or two.
 const TYPIST_AGL: u16 = 188;
+
+/// The HP, per mille of the weakest member, a growing outing walks out at
+/// and comes back under.
+const GROW_FLOOR: u32 = 400;
 const TYPIST_AGL_REACH: u16 = 8;
 
 /// Whether a present member wears a Miracle it cannot type under a Fury Boost
@@ -93,23 +101,76 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
         return Ok(None);
     }
     let here = scene_name(session);
+    // A wipe out here unwinds to the reload: the flag must not outlive the walk.
+    struct Growing;
+    impl Drop for Growing {
+        fn drop(&mut self) {
+            GROWING.with(|g| g.set(false));
+        }
+    }
+    let growing = Growing;
+    GROWING.with(|g| g.set(true));
     let mut outings = 0;
     let mut left = Ok(None);
-    while outings < GROW_OUTINGS && miracle_short(session) && charge_affordable(session) {
-        outings += 1;
+    // The walk is the stretch's to pay for: a third of its budget stays for
+    // the way to the door and the race. Three growing outings after a
+    // reload's walk back spent the rest, and the stretch stalled with its
+    // reloads unused.
+    let reserve = STRETCH_FRAMES.with(std::cell::Cell::get) / 3;
+    let frames_left = |s: &NativeSession| {
+        PAD_DEADLINE
+            .with(std::cell::Cell::get)
+            .saturating_sub(s.frames)
+    };
+    while outings < GROW_OUTINGS && miracle_short(session) && frames_left(session) > reserve {
+        // Mended before each outing, as a player does between fights: the
+        // bag first, then the casters' MP, all of it, and the bag's MP
+        // restoratives when that runs out. At Koru's door the bag held no
+        // restorative and the spell heal kept three fifths of each pool for
+        // the fights, so a party at 376 per mille stayed under the outing's
+        // floor, sixteen outings fought nothing and Vahn met the race at
+        // AGL 186, two short of typing. Healed only from the kept share, the
+        // party fled the door's fights and earned nothing. The MP is the
+        // bag's to restore before the boss ([`pad_ready`]).
         pad_field_heal(session, 900);
-        left = outing(session, 400);
+        if party_hp_permille(session) < GROW_FLOOR {
+            pad_field_spell_heal(session, 900, false);
+        }
+        if party_hp_permille(session) < GROW_FLOOR {
+            pad_field_restore(session, 600, true);
+            pad_field_spell_heal(session, 900, false);
+        }
+        if party_hp_permille(session) < GROW_FLOOR {
+            break;
+        }
+        outings += 1;
+        left = outing(session, GROW_FLOOR);
         if !matches!(&left, Ok(None)) || scene_name(session) != here || !walking(session) {
             break;
         }
     }
+    drop(growing);
     if matches!(&left, Ok(None)) && walking(session) {
         pad_field_heal(session, 900);
     }
     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        let w = &session.host.world;
+        let members: Vec<(u8, u8, u16, u32, Option<u32>)> = w
+            .present_party_list()
+            .into_iter()
+            .filter_map(|m| {
+                let r = w.party.roster.members.get(usize::from(m))?;
+                let next = w
+                    .party
+                    .level_up_tracker
+                    .threshold_for(usize::from(m), r.level());
+                Some((m, r.level(), r.live_stats().agl, r.cumulative_xp(), next))
+            })
+            .collect();
         eprintln!(
-            "    [grow] {outings} outing(s) for the race; short now {}",
-            miracle_short(session)
+            "    [grow] {outings} outing(s) for the race; short now {}; (member, level, AGL, EXP, next) {members:?}; MP half {}",
+            miracle_short(session),
+            charge_affordable(session)
         );
     }
     left.map(|s| s.filter(|s| *s != here))
@@ -527,8 +588,11 @@ fn outing(session: &mut NativeSession, floor: u32) -> Result<Option<String>, Str
     for leg in 0..OUTING_LEGS {
         pad_budget(session)?;
         let charging = CHARGING.with(std::cell::Cell::get);
+        let growing = GROWING.with(std::cell::Cell::get);
         if party_hp_permille(session) < floor
-            || !(wants_training(session) || charging && !typists_charged(session))
+            || !(wants_training(session)
+                || charging && !typists_charged(session)
+                || growing && miracle_short(session))
         {
             break;
         }

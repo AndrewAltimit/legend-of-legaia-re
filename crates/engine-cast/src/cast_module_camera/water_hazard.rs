@@ -142,6 +142,12 @@ pub fn water_hazard_camera(
             if phase == 2 {
                 st.countdown.add(1 << 7);
             }
+            // Arm 3 then waits for the seats its target code names to
+            // settle (`0x801F7C2C..0x801F7DA4`), its word draining on.
+            if phase == 3 && st.target_unsettled {
+                arm.hold = true;
+                return arm;
+            }
         }
         0xFF => {
             arm.others_write = SHOWN;

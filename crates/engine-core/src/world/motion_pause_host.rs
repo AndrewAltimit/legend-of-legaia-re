@@ -78,7 +78,9 @@ mod tests {
     use crate::world::FieldNpcAmbient;
 
     /// A channel seeded the way `seed_field_npc_ambient` seeds one, running
-    /// `code` with op `0x17`'s record already installed.
+    /// `code` with op `0x17`'s record already installed - so already bound to
+    /// its variant: the first tick's variant switch resets the record
+    /// (`AmbientMotion::rebind_variant`), as retail's does.
     fn channel(slot: u8, default_move: [u8; 2], code: Vec<u8>) -> FieldNpcAmbient {
         let mut m = legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(u32::from(slot), 0);
         m.actor_flags |= legaia_engine_field::motion_pause::MOVING_CLASS;
@@ -87,7 +89,7 @@ mod tests {
             defers: false,
             walks: true,
             variants: vec![(legaia_scene_formats::man_motion::SELECTOR_DEFAULT, code)],
-            live: None,
+            live: Some(0),
             vm: m,
         }
     }

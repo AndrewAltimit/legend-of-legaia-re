@@ -7,7 +7,12 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::world::World;
-use legaia_engine_minigames::tile_board::{TileBoardHeader, sm};
+use legaia_engine_minigames::tile_board::{
+    ArrivalAction, FADE_FULL, TileBoardHeader, advance_animated_cells, arrival_action,
+    event_cell_flag_writes, fade_exempt_value, fade_in_step, fade_out_step, prompt_next, sm,
+    step_for_mask, walker_octant,
+};
+use legaia_engine_system::menu_input::{NavButtons, menu_cursor_nav};
 use legaia_engine_system::rand::{bios_rand_shape, world_lcg_step};
 use psx_retail_exec::{A0, A1, Stop, V0};
 use std::cell::{Cell, RefCell};
@@ -24,6 +29,16 @@ const OCTANT: u32 = 0x8007_B5F0;
 const TABLE_PTR: u32 = 0x801F_35BC;
 const CELLS_PTR: u32 = 0x801F_35C0;
 const SAVED_OCTANT: u32 = 0x801F_35C4;
+const FRAME_STEP: u32 = 0x1F80_0393;
+const HELD: u32 = 0x8007_B850;
+const PRESSED: u32 = 0x8007_B874;
+/// The quit prompt's cursor word (`-0x4478` off `0x80080000`).
+const PROMPT_CURSOR: u32 = 0x8007_BB88;
+/// The pad's auto-repeat word the picker reads its rows on, and the confirm
+/// / cancel masks (`0x80084140 + 0x590` / `+ 0x594`).
+const REPEAT: u32 = 0x8007_BB84;
+const CONFIRM_MASK: u32 = 0x8008_46D0;
+const CANCEL_MASK: u32 = 0x8008_46D4;
 const PLAYER_CELL: u32 = 0x801F_35C8;
 const WALK_IN: u32 = 0x801F_35D0;
 /// The system flag bank (`0x80084140 + 0x1618`).
@@ -60,6 +75,19 @@ fn the_board_install_matches_retail() {
         });
     }
     cpu.stub(CLIP, 0);
+    // The quit prompt's panel the render tail draws in state 5 (text, the
+    // glyph and frame draws).
+    for draw in [
+        0x8003_6888,
+        0x8002_B994,
+        0x8003_4B6C,
+        0x8002_C69C,
+        0x8003_1D00,
+        // The heap free the teardown calls.
+        0x8001_7B94,
+    ] {
+        cpu.stub(draw, 0);
+    }
     let rng = Rc::new(Cell::new(0u32));
     {
         let rng = rng.clone();
@@ -71,6 +99,17 @@ fn the_board_install_matches_retail() {
     }
     let mut g = Rng(0x5449_4C45);
     let mut events = 0usize;
+    let (mut fades, mut exempted) = (0usize, 0usize);
+    let mut arrivals = [0usize; 3];
+    let mut walks = [0usize; 4];
+    let mut prompts = [0usize; 3];
+    // The two cue producers state 4 calls: the push (`FUN_80035B50`, the
+    // step) and the overwrite (`FUN_80035BD0`, the bonk).
+    let cues = Rc::new(RefCell::new(Vec::<u32>::new()));
+    for producer in [0x8003_5B50, 0x8003_5BD0] {
+        let cues = cues.clone();
+        cpu.hook(producer, move |r, _| cues.borrow_mut().push(r.r[A0]));
+    }
     for round in 0..600 {
         let width = 1 + g.below(14) as u8;
         let height = 1 + g.below(14) as u8;
@@ -149,6 +188,282 @@ fn the_board_install_matches_retail() {
         assert_eq!(*spawned.borrow(), want, "tile-actor templates, {ctx}");
         assert_ne!(cpu.mem.rd32(TABLE_PTR), 0);
         events += cells.iter().filter(|&&c| (8..=0xA).contains(&c)).count();
+
+        // Then the board's fades on every third round: state 1's fade-in
+        // against `fade_in_step` until the walk-in (`2`), and the exit -
+        // states 9, `0xA`'s fade-out against `fade_out_step` with the event
+        // tile under the player left alone (`fade_exempt_value`) - to the
+        // park `0xD`. Every tile actor `2..=14` takes the scale `+0x72`.
+        if round % 3 != 0 {
+            continue;
+        }
+        let table = cpu.mem.rd32(TABLE_PTR);
+        let tiles: Vec<u32> = (2..15u32).map(|v| cpu.mem.rd32(table + 4 * v)).collect();
+        let exempt = fade_exempt_value(board.cell_under_player());
+        // A start cell past the buffer's end (a board under five cells
+        // wide and one row high) reads the heap after it in retail, which
+        // the port does not hold: those tiles' scales are not compared.
+        let past =
+            usize::from(board.player_row) * usize::from(width) + usize::from(board.player_col) >= n;
+        let mut fade = w.board.fade;
+        let mut frame = 0;
+        loop {
+            let step = 1 + g.below(3) as u8;
+            cpu.mem.wr8(FRAME_STEP, step);
+            assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+            let (next, done) = fade_in_step(fade, step);
+            fade = next;
+            let c = format!("{ctx} fade-in frame {frame} step {step}");
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x9C) as i16, fade, "{c}");
+            for (k, &t) in tiles.iter().enumerate() {
+                assert_eq!(cpu.mem.rd16(t + 0x72) as i16, fade, "{c} tile {}", k + 2);
+            }
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54), if done { 2 } else { 1 }, "{c}");
+            frame += 1;
+            if done {
+                break;
+            }
+        }
+        fades += 1;
+        // The quit's exit (`9 -> 0xA`) on even rounds, the event cell's
+        // (`0xB -> 0xC`) on odd ones; both fade the same way.
+        let (exit_step, fade_state) = if round % 2 == 0 {
+            (sm::EXIT_STEP, sm::FADE_OUT)
+        } else {
+            (sm::EVENT_STEP, sm::EVENT_FADE_OUT)
+        };
+        cpu.mem.wr16(ACTOR + 0x54, u16::from(exit_step));
+        assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+        assert_eq!(cpu.mem.rd16(ACTOR + 0x54), u16::from(fade_state), "{ctx}");
+        loop {
+            let step = 1 + g.below(3) as u8;
+            cpu.mem.wr8(FRAME_STEP, step);
+            assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+            let (next, done) = fade_out_step(fade, step);
+            fade = next;
+            let c = format!("{ctx} fade-out step {step}");
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x9C) as i16, fade, "{c}");
+            for (k, &t) in tiles.iter().enumerate().filter(|_| !past) {
+                let v = k as u8 + 2;
+                let want = if exempt == Some(v) { FADE_FULL } else { fade };
+                assert_eq!(cpu.mem.rd16(t + 0x72) as i16, want, "{c} tile {v}");
+            }
+            let state = if done { sm::PARK } else { fade_state };
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54), u16::from(state), "{c}");
+            if done {
+                break;
+            }
+        }
+        exempted += usize::from(exempt.is_some());
+        // The park (`0xD`): every tile actor but the exempt one goes to
+        // `(0x3FC0, 0x3FC0)`; then the teardown (`0xE`) puts the saved pad
+        // octant back, as `World::tile_board_teardown` does.
+        let before: Vec<(u16, u16)> = tiles
+            .iter()
+            .map(|&t| (cpu.mem.rd16(t + 0x14), cpu.mem.rd16(t + 0x18)))
+            .collect();
+        assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+        assert_eq!(cpu.mem.rd16(ACTOR + 0x54), u16::from(sm::TEARDOWN), "{ctx}");
+        for (k, &t) in tiles.iter().enumerate().filter(|_| !past) {
+            let v = k as u8 + 2;
+            let want = if exempt == Some(v) {
+                before[k]
+            } else {
+                (0x3FC0, 0x3FC0)
+            };
+            assert_eq!(
+                (cpu.mem.rd16(t + 0x14), cpu.mem.rd16(t + 0x18)),
+                want,
+                "{ctx} park tile {v}"
+            );
+        }
+        cpu.mem.wr32(OCTANT, 0xFFFF);
+        assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+        assert_eq!(
+            cpu.mem.rd32(OCTANT),
+            w.board.saved_octant,
+            "{ctx}: the octant back"
+        );
+
+        // The arrival (state 3) on cells across the board, against
+        // `arrival_action` and `advance_animated_cells`, and the event arm
+        // (state 8) after it against `event_cell_flag_writes` over the
+        // flag bank, with the port's own flag test and set.
+        for _ in 0..6 {
+            let board = w.board.grid.as_mut().expect("installed");
+            board.player_col = g.below(u32::from(width)) as u8;
+            board.player_row = g.below(u32::from(height)) as u8;
+            let cell = board.cell_under_player().expect("on the board");
+            cpu.mem.wr32(PLAYER_CELL, u32::from(board.player_col));
+            cpu.mem.wr32(PLAYER_CELL + 4, u32::from(board.player_row));
+            cpu.mem.load(at, &board.cells);
+            cpu.mem.load(FLAGS, &w.flags.system_flags[..flags.len()]);
+            // State 3 falls into state 4's body: no pad, so it reads none.
+            cpu.mem.wr32(HELD, 0);
+            cpu.mem.wr32(PRESSED, 0);
+            cpu.mem.wr16(ACTOR + 0x54, 3);
+            assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+            let c = format!("{ctx} arrival on {cell:#x}");
+            let action = arrival_action(cell);
+            let state = match action {
+                ArrivalAction::Continue => {
+                    advance_animated_cells(&mut board.cells);
+                    sm::WALK
+                }
+                ArrivalAction::ExitTrigger => sm::TRIGGER_EXIT,
+                ArrivalAction::ExitEvent => 8,
+            };
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54), u16::from(state), "{c}");
+            assert_eq!(cpu.mem.read(at, n), board.cells, "{c}: the cells");
+            arrivals[match action {
+                ArrivalAction::Continue => 0,
+                ArrivalAction::ExitTrigger => 1,
+                ArrivalAction::ExitEvent => 2,
+            }] += 1;
+            if action != ArrivalAction::ExitEvent {
+                continue;
+            }
+            assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{c}");
+            let writes = event_cell_flag_writes(&header, cell, |i| w.system_flag_test(i));
+            for i in writes {
+                w.system_flag_set(i);
+            }
+            assert_eq!(
+                cpu.mem.read(FLAGS, flags.len()),
+                w.flags.system_flags[..flags.len()],
+                "{c}: the event flags"
+            );
+            assert_eq!(cpu.mem.rd16(ACTOR + 0x54), u16::from(sm::EVENT_STEP), "{c}");
+        }
+
+        // The walker's input state 4 from cells across the board: the menu
+        // edge into the quit prompt, the octant store off the cell under
+        // the player (`walker_octant`), the held pad remapped through it
+        // (`FUN_800467E8`, live; `World::remap_pad_direction`), decoded
+        // (`step_for_mask`) and gated against the board (`TileBoard::try_step`):
+        // the committed cell and walk target, the step and bonk cues.
+        for _ in 0..12 {
+            let board = w.board.grid.as_mut().expect("installed");
+            board.player_col = g.below(u32::from(width)) as u8;
+            board.player_row = g.below(u32::from(height)) as u8;
+            cpu.mem.wr32(PLAYER_CELL, u32::from(board.player_col));
+            cpu.mem.wr32(PLAYER_CELL + 4, u32::from(board.player_row));
+            cpu.mem.load(at, &board.cells);
+            let held = [0u32, 0x1000, 0x2000, 0x4000, 0x8000, 0x3000, 0x9000][g.below(7) as usize];
+            let pressed = if g.below(8) == 0 { 0x10 } else { 0 };
+            cpu.mem.wr32(HELD, held);
+            cpu.mem.wr32(PRESSED, pressed);
+            cpu.mem.wr32(OCTANT, 0xFFFF);
+            cpu.mem.wr16(ACTOR + 0x54, u16::from(sm::WALK));
+            cues.borrow_mut().clear();
+            let tp = cpu.mem.rd32(TABLE_PTR);
+            let lead = cpu.mem.rd32(tp);
+            assert_eq!(
+                cpu.call(WALK_SM, &[ACTOR]),
+                Stop::Returned,
+                "{ctx} walk from ({}, {}) held {held:#x} pressed {pressed:#x} cells {:?} actor {lead:x}",
+                board.player_col,
+                board.player_row,
+                board.cells,
+            );
+            let c = format!(
+                "{ctx} walk from ({}, {}) held {held:#x} pressed {pressed:#x}",
+                board.player_col, board.player_row
+            );
+            if pressed != 0 {
+                assert_eq!(cpu.mem.rd16(ACTOR + 0x54), u16::from(sm::PROMPT), "{c}");
+                assert_eq!(cpu.mem.rd16(ACTOR + 0x9C) as i16, FADE_FULL, "{c}");
+                assert_eq!(cpu.mem.rd32(PROMPT_CURSOR), 1, "{c}: the prompt row");
+                walks[3] += 1;
+                continue;
+            }
+            let octant = walker_octant(board.cell_under_player().unwrap_or(0));
+            assert_eq!(cpu.mem.rd32(OCTANT), octant, "{c}: the octant");
+            let remapped = World::remap_pad_direction(held as u16, octant);
+            let (state, cue) = match step_for_mask(remapped) {
+                None => (sm::WALK, None),
+                Some(dir) => match board.try_step(dir) {
+                    Some(target) => {
+                        let walk_in = (
+                            cpu.mem.rd32(WALK_IN) as i32,
+                            cpu.mem.rd32(WALK_IN + 4) as i32,
+                        );
+                        assert_eq!(walk_in, target, "{c}: the target");
+                        (2, Some(0x21))
+                    }
+                    None => (sm::WALK, Some(0x23)),
+                },
+            };
+            walks[match cue {
+                None => 0,
+                Some(0x21) => 1,
+                _ => 2,
+            }] += 1;
+            assert_eq!(
+                cpu.mem.rd16(ACTOR + 0x54),
+                u16::from(state),
+                "{c}: the state"
+            );
+            assert_eq!(cues.borrow().last().copied(), cue, "{c}: the cue");
+            assert_eq!(
+                (cpu.mem.rd32(PLAYER_CELL), cpu.mem.rd32(PLAYER_CELL + 4)),
+                (u32::from(board.player_col), u32::from(board.player_row)),
+                "{c}: the cell"
+            );
+        }
+
+        // The quit prompt, state 5: the two-row picker `FUN_801E9DC8`
+        // (live) against `menu_cursor_nav` and `prompt_next` - confirm and
+        // cancel on the pad's configured masks, the rows on the repeat
+        // word, wrapping.
+        cpu.mem.wr32(CONFIRM_MASK, 0x40);
+        cpu.mem.wr32(CANCEL_MASK, 0x20);
+        for _ in 0..12 {
+            let mut cursor = g.below(2);
+            let pressed = [0u32, 0, 0x40, 0x20, 0x60][g.below(5) as usize];
+            let repeat = [0u32, 0x1000, 0x4000, 0x5000][g.below(4) as usize];
+            cpu.mem.wr32(PROMPT_CURSOR, cursor);
+            cpu.mem.wr32(PRESSED, pressed);
+            cpu.mem.wr32(REPEAT, repeat);
+            cpu.mem.wr16(ACTOR + 0x54, u16::from(sm::PROMPT));
+            cues.borrow_mut().clear();
+            assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+            let nav = menu_cursor_nav(
+                &mut cursor,
+                2,
+                true,
+                NavButtons::new(
+                    pressed & 0x40 != 0,
+                    pressed & 0x20 != 0,
+                    repeat & 0x1000 != 0,
+                    repeat & 0x4000 != 0,
+                ),
+            );
+            let c = format!("{ctx} prompt pressed {pressed:#x} repeat {repeat:#x}");
+            assert_eq!(cpu.mem.rd32(PROMPT_CURSOR), cursor, "{c}: the row");
+            assert_eq!(
+                cpu.mem.rd16(ACTOR + 0x54),
+                u16::from(prompt_next(nav, cursor)),
+                "{c}: the state"
+            );
+            assert_eq!(
+                cues.borrow().last().copied(),
+                nav.sfx_cue().map(u32::from),
+                "{c}: the cue"
+            );
+            prompts[match prompt_next(nav, cursor) {
+                sm::PROMPT => 0,
+                sm::WALK => 1,
+                _ => 2,
+            }] += 1;
+        }
     }
+    assert!(arrivals.iter().all(|&n| n > 20), "arrivals {arrivals:?}");
+    assert!(walks.iter().all(|&n| n > 20), "walks {walks:?}");
+    assert!(prompts.iter().all(|&n| n > 20), "prompts {prompts:?}");
     assert!(events > 1000, "event cells {events}");
+    assert!(
+        fades > 100 && exempted > 1,
+        "{fades} fades, {exempted} on an event tile"
+    );
 }

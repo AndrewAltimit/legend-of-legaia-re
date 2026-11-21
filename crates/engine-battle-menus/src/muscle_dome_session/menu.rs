@@ -281,6 +281,8 @@ impl MuscleDomeSession {
                 cross: pad.confirm,
                 circle: pad.cancel,
                 select_attack: pad.select_attack,
+                gates: Default::default(),
+                cross_entry: false,
             },
             party,
             monsters,

@@ -774,6 +774,15 @@ pub struct BattleState {
     /// `World::GLIDE_PAD_BUFFER_BELOW`, handed to the first dispatched pass
     /// that reads no press of its own.
     pub command_pad_buffer: Option<legaia_engine_battle_menus::battle_input::BattleCommandInput>,
+    /// The ring arm the cross-button entry's highlight word `ctx[+0x880]`
+    /// last rested on, carried between command sessions. The window opener
+    /// resets the word to Left only when the panel count swaps between `2`
+    /// and `4` or the flow reads `0x6E` (`FUN_801D388C`,
+    /// `0x801D4C38..0x801D4C74`), so a ring reopened from a chipless surface
+    /// (a window, a target cursor, the next member after a commit) opens lit
+    /// where the last ring left it. `None` once a two-chip prompt has reset
+    /// it.
+    pub ring_highlight: Option<u8>,
     /// The result windows' raise glide: the results frame spawns the report
     /// (`0x41`) or loss (`0x42`) window and the level-up window
     /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
@@ -1147,6 +1156,10 @@ pub struct BattleState {
     /// (`World::tick_battle_defeat_sink`) - one
     /// `(size * step) >> 2` step a battle frame, as retail's pass takes it.
     pub defeat_sink_frame: Option<u64>,
+    /// The Jette count has cleared the formation's second cell `gp+0x9F5`
+    /// (`legaia_engine_battle_vm::battle_impact_fx::jette_count_clears`): the
+    /// cell reads `0` for the rest of the fight. Cleared at battle entry.
+    pub formation_second_cleared: bool,
     /// Battle VRAM uploads a cast's side-band stream made this frame - the
     /// `summon.dat` texture slots a player summon's case `0x32` streams to
     /// CLUT `(0, 488)` / page `(512, 0)` and `(0, 490)` / `(640, 0)`
@@ -1807,6 +1820,7 @@ impl BattleState {
             pass_glide_live: false,
             pass_glide_gated: false,
             command_pad_buffer: None,
+            ring_highlight: None,
             result_windows_glide: None,
             target_plate_cleared: false,
             action_hud_wiped: false,
@@ -1884,6 +1898,7 @@ impl BattleState {
             sm_ran_target_clip: None,
             sm_ran_actor: None,
             defeat_sink_frame: None,
+            formation_second_cleared: false,
             vram_loads: Default::default(),
             form_transition: Default::default(),
             stage_camera: None,

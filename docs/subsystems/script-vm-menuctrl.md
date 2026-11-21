@@ -347,8 +347,11 @@ aimed at the player, or at the caller by its own id, waits for the turn. A
 
 While `_DAT_80073F00` is positive, each `0x19` call of `FUN_801D84D0`
 subtracts the frame step, and the call that reaches zero clears it and presses
-confirm (`0x801D8F4C..0x801D8F88`). This op is its only writer, at 37 sites in
-12 scenes; it advances by 4.
+confirm (`0x801D8F4C..0x801D8F88`). While it counts, the pager zeroes the
+pad word on entry in every state (`0x801D8600..0x801D8614`), so the player can
+neither hurry the typing, turn the page nor move a picker until the automatic
+press lands (`legaia_engine_dialog::dialog::pager_reads_pad`). This op is its
+only writer, at 37 sites in 12 scenes; it advances by 4.
 
 #### `4C 86` / `4C 87` are the reflection controller's install and teardown
 
@@ -1244,7 +1247,7 @@ scheduled actor; **the script never waits on it**.
 | B | `_DAT_8007BCD4` | Sister of A. |
 | C | `_DAT_8007BCD8` | Sister of A. |
 | D | `_DAT_8007B910` | Value `(input * _DAT_8008457C) >> 12` - a fixed-point fraction of the configured **audio** level, so `0x1000` means 100% ([battle-action.md](battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck)). Port: the session's BGM duck (`World::take_field_audio_duck`, as a percentage), ramped one unit a frame rather than over `ticks`; the MAN load's reset restores it. |
-| E / F | - | No `case` arm: the inner `default:` prints `"SUB_40_ERROR"` and halts at PC. |
+| E / F | - | No `case` arm: the inner `default:` prints `"SUB_40_ERROR"` and returns the PC the head already advanced, so the op steps 6 bytes like the rest. |
 
 **Sub-3 and sub-4 do not jump.** Each arm either calls `FUN_8003CE9C` and
 leaves through `j 0x801E3624` with the slot store (`sh v0,0x24(s5)` /

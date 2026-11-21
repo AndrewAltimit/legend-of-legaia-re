@@ -4,7 +4,9 @@
 //! on both sides of their dead zone, opposed directions, and every frame
 //! step. Compared after each call: the held, changed and pressed words, the
 //! 32-vsync held word and the repeat pulse. The debug word `_DAT_8007B98C`
-//! stays zero, as it ships, so the dev hotkey tail is not entered.
+//! is zero, as it ships, except in stretches where it is raised: then port
+//! 1's half of the held word survives the truncation at `0x80018500`, and the
+//! dev hotkey tail runs with its calls stubbed (its arms are out of scope).
 
 use crate::common::{Rng, scus_cpu};
 use legaia_engine_system::retail_pad::{PadReport, RetailPadState};
@@ -20,6 +22,9 @@ const PRESSED: u32 = 0x8007_B874;
 const HELD_32: u32 = 0x8007_B938;
 const PULSE: u32 = 0x8007_B93C;
 const FRAME_STEP: u32 = 0x1F80_0393;
+const DEBUG_WORD: u32 = 0x8007_B98C;
+/// The dev tail's text print, sound reset and debug draw.
+const DEV_CALLS: [u32; 3] = [0x8001_7AAC, 0x8002_6740, 0x8002_B93C];
 
 fn report(rng: &mut Rng, buttons: u16) -> PadReport {
     let axis = |rng: &mut Rng| match rng.below(6) {
@@ -53,10 +58,14 @@ fn the_pad_pump_is_retails() {
     };
     cpu.hook(MEMSET, |_, _| {});
     cpu.hook(VIBRATION, |_, _| {});
+    for va in DEV_CALLS {
+        cpu.hook(va, |_, _| {});
+    }
     let mut rng = Rng(0x5041_4450);
     let mut pad = RetailPadState::default();
     let (mut pulses, mut analog, mut socd) = (0, 0, 0);
     let (mut held, mut steady) = (0u16, 0u32);
+    let (mut debug, mut debug_calls) = (false, 0u32);
     for call in 0..60_000 {
         // Stretches of one clean report, so buttons stay down past the
         // 32-vsync window; between them the buttons and the pad both churn.
@@ -89,9 +98,14 @@ fn the_pad_pump_is_retails() {
             cpu.mem.wr8(base + 3, p.buttons[1]);
             cpu.mem.load(base + 4, &p.sticks);
         }
+        if rng.below(500) == 0 {
+            debug = !debug;
+        }
+        cpu.mem.wr32(DEBUG_WORD, u32::from(debug));
         cpu.mem.wr8(FRAME_STEP, step);
         assert_eq!(cpu.call(PUMP, &[]), Stop::Returned);
-        pad.pump(&p0, &p1, false, u32::from(step));
+        pad.pump(&p0, &p1, debug, u32::from(step));
+        debug_calls += u32::from(debug);
         let retail = [HELD, CHANGED, PRESSED, HELD_32, PULSE].map(|a| cpu.mem.rd32(a));
         let port = [
             pad.held,
@@ -109,7 +123,7 @@ fn the_pad_pump_is_retails() {
         socd += u32::from(held & 0xA000 == 0xA000 || held & 0x5000 == 0x5000);
     }
     assert!(
-        pulses > 200 && analog > 5000 && socd > 5000,
-        "{pulses} {analog} {socd}"
+        pulses > 200 && analog > 5000 && socd > 5000 && debug_calls > 5000,
+        "{pulses} {analog} {socd} {debug_calls}"
     );
 }

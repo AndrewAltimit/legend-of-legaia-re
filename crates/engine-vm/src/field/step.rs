@@ -147,7 +147,8 @@ pub fn step_from_caller<H: FieldHost>(
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            ctx.local_flags |= 1u16 << (b & 0x1F);
+            // `sllv` on a 32-bit one, stored with `sh`: bits 16+ fall off.
+            ctx.local_flags |= (1u32 << (b & 0x1F)) as u16;
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -158,7 +159,7 @@ pub fn step_from_caller<H: FieldHost>(
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            ctx.local_flags &= !(1u16 << (b & 0x1F));
+            ctx.local_flags &= !((1u32 << (b & 0x1F)) as u16);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -169,7 +170,7 @@ pub fn step_from_caller<H: FieldHost>(
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let set = ctx.local_flags & (1u16 << (b & 0x1F)) != 0;
+            let set = u32::from(ctx.local_flags) & (1u32 << (b & 0x1F)) != 0;
             if set {
                 StepResult::Advance {
                     next_pc: pc + header_size + 1,
@@ -305,6 +306,11 @@ pub fn step_from_caller<H: FieldHost>(
                 let end = (pc + 8).min(bytecode.len());
                 host.install_scripted_encounter(bytecode.get(pc..end).unwrap_or(&[]));
             }
+            // The acquire guard every acquiring arm opens with
+            // (`0x801DEF28..0x801DEF70`): refused, the PC stays.
+            if !host.field_halt_acquire_predicate(ctx, opcode) {
+                return StepResult::Halt { final_pc: pc };
+            }
             ctx.saved_pc = pc as u32;
             ctx.wait_accum = 0;
             ctx.halt();
@@ -316,6 +322,10 @@ pub fn step_from_caller<H: FieldHost>(
         // 0x47 - YIELD_4: same as 0x37/0x41 but the post-yield PC delta is 4
         // (i.e. iVar24 = 4 in the original).
         0x47 => {
+            // The same guard (`0x801DEFC0..0x801DF008`).
+            if !host.field_halt_acquire_predicate(ctx, opcode) {
+                return StepResult::Halt { final_pc: pc };
+            }
             ctx.saved_pc = pc as u32;
             ctx.wait_accum = 0;
             ctx.halt();
@@ -847,8 +857,11 @@ pub fn step_from_caller<H: FieldHost>(
             let Some(&hi) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let target = i32::from(u16::from_le_bytes([lo, hi]));
-            ctx.wait_accum = ctx.wait_accum.saturating_add(host.frame_delta() as i16);
+            // A signed halfword target (`FUN_8003CE9C`) against the
+            // accumulator stored with `sh` and re-read signed
+            // (`0x801E09D4..0x801E09F0`): both wrap at 16 bits.
+            let target = i32::from(i16::from_le_bytes([lo, hi]));
+            ctx.wait_accum = ctx.wait_accum.wrapping_add(host.frame_delta() as i16);
             if i32::from(ctx.wait_accum) < target {
                 StepResult::Halt { final_pc: pc }
             } else {

@@ -145,7 +145,7 @@ fn retail_vm() -> Option<psx_retail_exec::Cpu> {
         .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
     cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
     cpu.hook(RESOLVE_ACTOR, |r, _| r.r[2] = CTX);
-    cpu.hook(READ_U16, |r, m| r.r[2] = u32::from(m.rd16(r.r[4])));
+    cpu.hook(READ_U16, |r, m| r.r[2] = m.rd16(r.r[4]) as i16 as u32);
     cpu.hook(PACKET_LENGTH, |r, m| {
         let bytes = m.read(r.r[4], 0x400);
         r.r[2] = legaia_scene_formats::field_disasm::packet_length(&bytes) as u32;
@@ -581,4 +581,443 @@ fn a_tile_warp_lands_on_the_context_it_names() {
         .collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
     assert!(own > 100 && other > 500, "{own} {other}");
+}
+
+/// The answers a stubbed retail world gives the VM, read off the same RAM
+/// the test seeds: the story-flag word `0x1F800394`, the held pad
+/// `0x8007B850`, the region mask `0x8007B8F4`, the menu-resume slot
+/// `0x8007B450`, the d-pad compass table `0x801F28D0` and the spawn bracket
+/// `*(0x801C6EA4) + 8`. Everything else answers as [`Inert`] does.
+struct Seeded {
+    flags: u32,
+    pad: u32,
+    regions: u32,
+    compass: [u32; 8],
+    op49: Op49State,
+    bracket: bool,
+    /// The context carries an attached light (the actor list holds an
+    /// `FUN_801E4470` actor whose `+0x90` is the context).
+    light: bool,
+    /// The length of the keyframe block `34 2x` handed over, if it did.
+    captured: Option<usize>,
+    /// The system flag bank `0x80085758` (`FUN_8003CE64`'s, MSB first).
+    system: std::rc::Rc<Vec<u8>>,
+}
+impl FieldFlagsHost for Seeded {
+    fn global_flags(&self) -> u32 {
+        self.flags
+    }
+    fn set_global_flags(&mut self, value: u32) {
+        self.flags = value;
+    }
+    fn frame_delta(&self) -> u16 {
+        1
+    }
+    fn extra_flags(&self) -> u32 {
+        self.regions
+    }
+    fn held_pad(&self) -> u32 {
+        self.pad
+    }
+    fn pad_compass_entry(&self, index: u8) -> Option<u32> {
+        self.compass.get(usize::from(index)).copied()
+    }
+    fn system_flag_test(&self, idx: u16) -> bool {
+        self.system
+            .get(usize::from(idx >> 3))
+            .is_some_and(|b| b & (0x80 >> (idx & 7)) != 0)
+    }
+}
+impl FieldSceneHost for Seeded {}
+impl FieldTerrainHost for Seeded {
+    fn world_to_tile_use_alt(&self) -> bool {
+        self.flags & 0x0002_0000 != 0
+    }
+}
+impl FieldCameraHost for Seeded {}
+impl FieldCameraMotionHost for Seeded {
+    fn camera_glide_live(&mut self) -> bool {
+        false
+    }
+}
+impl FieldScreenHost for Seeded {}
+impl FieldAudioHost for Seeded {
+    fn bgm_ready(&mut self, sub_op: u8) -> bool {
+        sub_op != 0xA
+    }
+}
+impl FieldPartyInventoryHost for Seeded {
+    fn op4c_nd_subc_item_held(&self, _needle: u8) -> bool {
+        true
+    }
+}
+impl FieldDialogMenuHost for Seeded {
+    fn press_prompt(&mut self, _x: u16, _y: u16) -> bool {
+        false
+    }
+    fn op4c_n5_sub3_dialog_wait(&mut self, _ctx: &mut FieldCtx) -> bool {
+        true
+    }
+    fn op49_state(&self) -> Op49State {
+        self.op49
+    }
+}
+impl FieldActorHost for Seeded {}
+impl FieldActorSpawnHost for Seeded {
+    fn actor_guard(&mut self, _actor_id: u8) -> Option<()> {
+        Some(())
+    }
+    fn op34_sub2_capture_pc(
+        &mut self,
+        _ctx: &FieldCtx,
+        _ext: Option<u8>,
+        block: Option<&[u8]>,
+    ) -> bool {
+        match block {
+            Some(b) if self.light => {
+                self.captured = Some(b.len());
+                true
+            }
+            _ => false,
+        }
+    }
+}
+impl FieldActorFxHost for Seeded {
+    fn spawn_attached_light(
+        &mut self,
+        _ctx: &FieldCtx,
+        _ext: Option<u8>,
+        _spawn: &legaia_engine_vm::field_actor_billboard::AttachedSpriteSpawn,
+        _script: Option<&[u8]>,
+    ) -> bool {
+        // A context that already carries a light spawns none.
+        !self.light
+    }
+}
+impl FieldPlayerHost for Seeded {}
+impl FieldHaltHost for Seeded {
+    fn spawn_bracket(&self) -> bool {
+        self.bracket
+    }
+}
+
+/// The corpus again, with the generated sub-ops of
+/// [`crate::field_vm::synthetic`], each instruction under seeded world state
+/// the plain corpus runs leave clear: random story flags, held pad and region mask;
+/// a generated system flag bank (`0x80085758`, read through `FUN_8003CE64`);
+/// the menu-resume slot `0x8007B450` armed and done; a context that carries
+/// the halt bit, with the spawn bracket up or down and the system script
+/// `0xFB` calling it or not; the player's context `0x8007C364`; and a context that runs no
+/// script (`+0x94 == 0`), the player's or not. Retail reads that state from RAM; the port
+/// asks its host, which answers from the same seeds. Compared: the next PC,
+/// every modelled context field and the story-flag word.
+#[test]
+fn every_instruction_under_seeded_state_steps_as_retail_steps() {
+    differential!(prot(897, VM));
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const FLAGS: u32 = 0x1F80_0394;
+    const PAD: u32 = 0x8007_B850;
+    const REGIONS: u32 = 0x8007_B8F4;
+    const OP49: u32 = 0x8007_B450;
+    const SCENE: u32 = 0x8013_0000;
+    const PLAYER: u32 = 0x8007_C364;
+    // The spawn bracket's scene record.
+    cpu.mem.wr32(0x801C_6EA4, SCENE);
+    // A generated system flag bank, read through `FUN_8003CE64` (a set bit
+    // answers `0xFF`) on retail's side and `system_flag_test` on the port's.
+    const SYSTEM: u32 = 0x8008_5758;
+    let mut bank_rng = Rng(0x5359_5346);
+    let mut bank: Vec<u8> = (0..0x200).map(|_| bank_rng.next() as u8).collect();
+    // Character record 4's `+0x6CC..+0x6F8` lies inside the bank, where
+    // `4E` reads it for a page past the party: kept clear, as the port's
+    // host answers an absent page.
+    bank[0x104..0x140].fill(0);
+    let system = std::rc::Rc::new(bank);
+    cpu.mem.load(SYSTEM, &system);
+    cpu.hook(0x8003_CE64, |r, m| {
+        let idx = r.r[4] & 0xFFFF;
+        let set = m.rd8(SYSTEM + (idx >> 3)) & (0x80 >> (idx & 7)) != 0;
+        r.r[2] = if set { 0xFF } else { 0 };
+    });
+    let mut compass = [0u32; 8];
+    for (i, c) in compass.iter_mut().enumerate() {
+        *c = cpu.mem.rd32(0x801F_28D0 + 4 * i as u32);
+    }
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut corpus = corpus();
+    corpus.extend(crate::field_vm::synthetic());
+    let mut rng = Rng(0x5345_4544);
+
+    let mut ran = 0u32;
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    for (script, pc, label) in &corpus {
+        for variant in 0..8u32 {
+            cpu.mem = clean.clone();
+            cpu.regs.r[GP] = gp;
+            cpu.mem.load(SCRIPT, script);
+            cpu.mem.wr32(CTX + 0x94, SCRIPT);
+            let mut host = Seeded {
+                flags: rng.next(),
+                pad: rng.next(),
+                regions: rng.next(),
+                compass,
+                op49: Op49State::Idle,
+                bracket: false,
+                light: false,
+                captured: None,
+                system: system.clone(),
+            };
+            if rng.below(4) == 0 {
+                // A pad that matches a compass entry.
+                host.pad = (host.pad & !0xF000) | (compass[rng.below(8) as usize] & 0xF000);
+            }
+            let mut halted = false;
+            let mut id = rng.below(0x40);
+            match variant {
+                1 => {
+                    host.op49 = Op49State::Done;
+                    cpu.mem.wr32(OP49, 1);
+                }
+                2 => {
+                    host.op49 = Op49State::Armed;
+                    cpu.mem.wr32(OP49, SCRIPT + 0x10);
+                }
+                3 => {
+                    halted = true;
+                    host.bracket = true;
+                    cpu.mem.wr16(SCENE + 8, 1);
+                }
+                4 => {
+                    halted = true;
+                    if rng.below(2) == 0 {
+                        id = 0xFB;
+                    }
+                }
+                // The context is the player's.
+                5 => cpu.mem.wr32(PLAYER, CTX),
+                // The context runs no script, and is or is not the player's.
+                6 => cpu.mem.wr32(CTX + 0x94, 0),
+                7 => {
+                    cpu.mem.wr32(CTX + 0x94, 0);
+                    cpu.mem.wr32(PLAYER, CTX);
+                }
+                _ => {}
+            }
+            cpu.mem.wr32(FLAGS, host.flags);
+            cpu.mem.wr32(PAD, host.pad);
+            cpu.mem.wr32(REGIONS, host.regions);
+            let mut ctx = FieldCtx::default();
+            for (name, off, width) in FIELDS {
+                let mut v = rng.next();
+                match name {
+                    "flags" if halted => v |= 0x400,
+                    "flags" if variant >= 5 && variant != 6 => v = (v & !0x400) | 0x0100_0000,
+                    // Half the time a seat near the origin, inside the boxes
+                    // small operands name.
+                    "world_x" | "world_z" if rng.below(2) == 0 => v = rng.below(0x1000),
+                    "flags" => v &= !0x0100_0400,
+                    "script_id" => v = id,
+                    _ => {}
+                }
+                if width == 1 {
+                    v &= 0xFF;
+                } else if width == 2 {
+                    v &= 0xFFFF;
+                }
+                wr(&mut cpu, off, width, v);
+                seat(&mut ctx, name, v);
+            }
+            if cpu.call(VM, &[SCRIPT, *pc as u32, CTX]) != Stop::Returned {
+                continue;
+            }
+            let retail_pc = cpu.regs.r[2] as usize & 0xFFFF;
+            let seeded = ctx.clone();
+            let port_pc = match step(&mut host, &mut ctx, script, *pc) {
+                StepResult::Advance { next_pc } => next_pc,
+                StepResult::Yield { resume_pc } => resume_pc,
+                StepResult::Halt { final_pc } => final_pc,
+                StepResult::Pending { .. } | StepResult::Unknown { .. } => continue,
+            };
+            ran += 1;
+            let mut wrong = Vec::new();
+            if port_pc & 0xFFFF != retail_pc {
+                wrong.push(format!("pc retail {retail_pc:#x} port {port_pc:#x}"));
+            }
+            for (name, off, width) in FIELDS {
+                let (r, p) = (rd(&mut cpu, off, width), port_field(&ctx, name));
+                // A field the port leaves to its host is `field_ctx`'s count.
+                if r != p && port_field(&seeded, name) != p {
+                    wrong.push(format!("{name} retail {r:#x} port {p:#x}"));
+                }
+            }
+            let flags = cpu.mem.rd32(FLAGS);
+            if flags != host.flags {
+                wrong.push(format!(
+                    "story flags retail {flags:#x} port {:#x}",
+                    host.flags
+                ));
+            }
+            // A halt-acquire is also refused on retail when its context runs
+            // no script (`+0x94 == 0`) and is not the player (the guard's
+            // first clause, `0x801DEE90..0x801DEEA8` for `38`). No context an
+            // op addresses is ever in that state - retail gives each one
+            // `+0x94 = -1` at creation (`0x8003A464`, `0x8003A8C0`,
+            // `0x8003ACCC`) - and the port, whose `saved_pc` is an offset,
+            // does not model it, so that one state is not compared. The
+            // halted clause is (variants 3 and 4).
+            let acquire = matches!(label.as_str(), "37" | "38" | "41" | "47")
+                || label.starts_with("43 0")
+                || label.starts_with("4C 6")
+                || matches!(label.as_str(), "4C 80" | "4C 85" | "4C 8E" | "4C 8F");
+            if variant == 6 && acquire {
+                continue;
+            }
+            // The port has no player context: `A2 F8` raises an ExecMove
+            // event the player model binds (`leader * 7 + slot + 1`), and
+            // `A3 F8` moves the player, so retail's player arms
+            // (`0x801DE9A8..0x801DEA84`, `0x801DEC80..0x801DECA8`) are held
+            // to the next PC only.
+            if matches!(variant, 5 | 7) && matches!(label.as_str(), "22" | "23") {
+                wrong.retain(|w| w.starts_with("pc "));
+            }
+            if !wrong.is_empty() && label != "4C 50" {
+                let e = differ.entry(format!("v{variant} {label}")).or_default();
+                e.0 += 1;
+                if e.0 == 1 {
+                    e.1 = format!(
+                        "pc {pc:#x} bytes {:02x?}: {}",
+                        &script[*pc..(*pc + 10).min(script.len())],
+                        wrong.join(", ")
+                    );
+                }
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(report.is_empty(), "{ran} runs\n{}", report.join("\n"));
+    assert!(ran > 10_000, "{ran}");
+}
+
+/// `34 1x` and `34 2x` with the context's attached light present or absent:
+/// retail walks the actor list `*0x8007C354` for an `FUN_801E4470` actor
+/// whose `+0x90` is the context (`0x801DFF04..0x801DFF48`,
+/// `0x801E0020..0x801E0068`). The walk `FUN_8003CF04` is answered here from
+/// a generated list of lights, owned by the context or by others; the port's
+/// host answers from the same list. Compared: the next PC, and for `34 2x`
+/// the keyframe block retail parks on the light's `+0x94` against the block
+/// the port hands its host.
+#[test]
+fn an_attached_light_is_found_where_retail_finds_it() {
+    differential!(prot(897, VM));
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const HEAD: u32 = 0x8013_0000;
+    const LIGHTS: u32 = 0x8013_1000;
+    cpu.mem.wr32(0x8007_C354, HEAD);
+    // The walk: the head yields the first light, each light the next.
+    let count = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    let n = count.clone();
+    cpu.hook(0x8003_CF04, move |r, _| {
+        let i = if r.r[4] == HEAD {
+            0
+        } else {
+            (r.r[4] - LIGHTS) / 0x100 + 1
+        };
+        r.r[2] = if i < n.get() { LIGHTS + i * 0x100 } else { 0 };
+    });
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x4C49_4748);
+    let (mut ran, mut found, mut captured) = (0u32, 0u32, 0u32);
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    let mut scripts = corpus();
+    scripts.extend(crate::field_vm::synthetic());
+    for (script, pc, label) in scripts {
+        if !(label.starts_with("34")
+            && matches!(script[pc + 1 + usize::from(script[pc] >> 7)] >> 4, 1 | 2))
+        {
+            continue;
+        }
+        for _ in 0..4 {
+            cpu.mem = clean.clone();
+            cpu.regs.r[GP] = gp;
+            cpu.mem.load(SCRIPT, &script);
+            cpu.mem.wr32(CTX + 0x94, SCRIPT);
+            let lights = rng.below(4);
+            let mine = (lights > 0 && rng.below(3) != 0).then(|| rng.below(lights));
+            count.set(lights);
+            for i in 0..lights {
+                let owner = if Some(i) == mine { CTX } else { CTX + 0x200 };
+                cpu.mem.wr32(LIGHTS + i * 0x100 + 0x90, owner);
+                cpu.mem.wr32(LIGHTS + i * 0x100 + 0x94, 0);
+            }
+            if cpu.call(VM, &[SCRIPT, pc as u32, CTX]) != Stop::Returned {
+                continue;
+            }
+            let retail = cpu.regs.r[2] as usize & 0xFFFF;
+            let parked = mine
+                .map(|i| cpu.mem.rd32(LIGHTS + i * 0x100 + 0x94))
+                .filter(|&p| p != 0);
+            let mut host = Seeded {
+                flags: 0,
+                pad: 0,
+                regions: 0,
+                compass: [0; 8],
+                op49: Op49State::Idle,
+                bracket: false,
+                light: mine.is_some(),
+                captured: None,
+                system: std::rc::Rc::new(Vec::new()),
+            };
+            let mut ctx = FieldCtx::default();
+            let port = match step(&mut host, &mut ctx, &script, pc) {
+                StepResult::Advance { next_pc } => next_pc,
+                StepResult::Yield { resume_pc } => resume_pc,
+                StepResult::Halt { final_pc } => final_pc,
+                StepResult::Pending { .. } | StepResult::Unknown { .. } => continue,
+            };
+            ran += 1;
+            found += u32::from(mine.is_some());
+            let port_block = host
+                .captured
+                .map(|len| SCRIPT + (script.len() - len) as u32);
+            captured += u32::from(parked.is_some());
+            let mut wrong = Vec::new();
+            if port & 0xFFFF != retail {
+                wrong.push(format!("pc retail {retail:#x} port {port:#x}"));
+            }
+            if parked != port_block {
+                wrong.push(format!("block retail {parked:x?} port {port_block:x?}"));
+            }
+            if !wrong.is_empty() {
+                let e = differ.entry(label.clone()).or_default();
+                e.0 += 1;
+                if e.0 == 1 {
+                    e.1 = format!(
+                        "pc {pc:#x} bytes {:02x?}: {}",
+                        &script[pc..(pc + 10).min(script.len())],
+                        wrong.join(", ")
+                    );
+                }
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(report.is_empty(), "{}", report.join("\n"));
+    assert!(
+        ran > 200 && found > 50 && captured > 5,
+        "{ran} {found} {captured}"
+    );
 }

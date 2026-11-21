@@ -194,7 +194,15 @@ impl RowWindow {
     /// and the window sat in the idle state `4`, so the next call is state
     /// `5`'s load (`0x80039FDC..0x80039FF0` steps `4` to `5` as the record
     /// reaches its next line).
+    ///
+    /// Every idle call zeroes the scroll and the typewriter's counter and
+    /// accumulator (`0x801D8708..0x801D8724`) before state `4` returns, so a
+    /// load that scrolls a full window first (state `0xC`, which sets no
+    /// counter) starts its row from `0`.
     pub fn resume_from_idle(&mut self) {
+        self.scroll = 0;
+        self.pacer.counter = 0;
+        self.pacer.acc = 0;
         self.rows_on_page = 0;
         self.pacer.hold = 0;
         self.phase = WindowPhase::Load;
@@ -249,8 +257,13 @@ impl RowWindow {
     /// The instant page (`0x801D8798..0x801D88C4`): clear the table, enter
     /// every line of the page - into the next free slot while one is left,
     /// else shifting the table up a slot and taking the last - count each
-    /// into `_DAT_801F3534`, drop the latch and wait (state `0x19`).
+    /// into `_DAT_801F3534`, drop the latch and wait (state `0x19`). The arm
+    /// jumps to the wait's store at `0x801D8F40`, past the scroll's, and
+    /// stores no speed or typewriter word: those stay as the page before
+    /// left them, and the load's counter set (`0x801D8964..0x801D8984`) is
+    /// the arm it replaces, so a box-opening set it was owed is spent.
     fn fill_instant(&mut self) {
+        self.pacer.setup = false;
         self.rows.clear();
         self.rows_on_page = 0;
         self.next = 0;
@@ -261,10 +274,6 @@ impl RowWindow {
             self.push_next_line();
             self.rows_on_page += 1;
         }
-        self.scroll = 0;
-        self.speed = SPEED_TYPE;
-        self.pacer.counter = 0;
-        self.pacer.acc = 0;
         self.instant = false;
         self.phase = WindowPhase::Wait;
     }

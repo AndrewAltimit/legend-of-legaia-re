@@ -239,3 +239,178 @@ fn the_item_caption_hands_the_item_the_port_hands() {
     }
     assert!(shown > 1000, "{shown}");
 }
+
+/// The walk's number records (`node+0x2C`, `node+0x30` of them, 16 bytes
+/// each) against `legaia_engine_ui::battle_chrome::number_record_cells`:
+/// inline values (`+0` pointer zero, value at `+4`) and values read through
+/// the pointer as a byte, halfword or word (`+4` = 1, 2, other), random
+/// field widths (`+0xC`, zero included) and values from `0` past `10^9`,
+/// negative ones too. Every digit sprite `FUN_8003C11C` draws - its pen and
+/// glyph - and the ink `+0xE` it draws under are compared.
+#[test]
+fn the_number_records_draw_the_cells_the_port_lays_out() {
+    differential!(scus(WALK));
+    use legaia_engine_ui::battle_chrome::number_record_cells;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const DIGIT: u32 = 0x8003_C11C;
+    const FIELDS: u32 = 0x8013_2000;
+    const VALUES: u32 = 0x8013_3000;
+    cpu.stub_outside = Some((WALK, WALK_END));
+    let drawn = Rc::new(RefCell::new(Vec::<(i16, i16, u8, u32)>::new()));
+    let d = drawn.clone();
+    cpu.hook(DIGIT, move |r, m| {
+        let (x, y) = (m.rd16(r.r[A0]) as i16, m.rd16(r.r[A0] + 2) as i16);
+        let u = m.rd16(r.r[A1]);
+        assert_eq!(
+            (
+                m.rd16(r.r[A1] + 2),
+                m.rd16(r.r[A1] + 4),
+                m.rd16(r.r[A1] + 6)
+            ),
+            (0xD0, 8, 0xC)
+        );
+        d.borrow_mut().push((x, y, (u / 8) as u8, r.r[A2]));
+    });
+    let mut rng = Rng(0x4E55_4D52);
+    let mut cells_drawn = 0;
+    for case in 0..4000 {
+        let n = rng.below(5);
+        seat_node(&mut cpu, 0x30, 0);
+        // A second, bare node behind it, so the walk steps on.
+        const NODE2: u32 = NODE + 0x100;
+        cpu.mem.load(NODE2, &[0u8; 0x40]);
+        cpu.mem.wr8(NODE2 + 0x1C, 0x30);
+        cpu.mem.wr32(NODE, NODE2);
+        cpu.mem.wr32(NODE2, HEAD);
+        let (nx, ny) = (rng.below(200) as i16, rng.below(200) as i16);
+        cpu.mem.wr16(NODE + 0xA, nx as u16);
+        cpu.mem.wr16(NODE + 0xC, ny as u16);
+        cpu.mem.wr32(NODE + 0x2C, FIELDS);
+        cpu.mem.wr16(NODE + 0x30, n as u16);
+        cpu.mem.wr32(GP + 0x15C, 0);
+        let mut want = Vec::new();
+        for k in 0..n {
+            let f = FIELDS + 0x10 * k;
+            let value: i32 = match rng.below(6) {
+                0 => rng.below(10) as i32,
+                1 => rng.next() as i32,
+                2 => -(rng.below(1000) as i32),
+                3 => [100, 1005, 10_001, 1_000_000_000, 2_000_000_007][rng.below(5) as usize],
+                _ => rng.below(100_000) as i32,
+            };
+            let kind = rng.below(4);
+            let (ptr, tag, v) = match kind {
+                0 => (0, value as u32, value),
+                1 => (VALUES + 0x10 * k, 1, i32::from(value as u8)),
+                2 => (VALUES + 0x10 * k, 2, i32::from(value as u16)),
+                _ => (VALUES + 0x10 * k, 7, value),
+            };
+            cpu.mem.wr32(VALUES + 0x10 * k, value as u32);
+            let (x, y) = (rng.below(100) as i16, rng.below(100) as i16);
+            let cells = rng.below(8) as i16;
+            let ink = rng.below(8) as u16;
+            cpu.mem.wr32(f, ptr);
+            cpu.mem.wr32(f + 4, tag);
+            cpu.mem.wr16(f + 8, x as u16);
+            cpu.mem.wr16(f + 0xA, y as u16);
+            cpu.mem.wr16(f + 0xC, cells as u16);
+            cpu.mem.wr16(f + 0xE, ink);
+            for (dx, digit) in number_record_cells(v, cells) {
+                want.push((nx + x + dx, ny + y, digit, u32::from(ink) + 0x7F86));
+            }
+        }
+        drawn.borrow_mut().clear();
+        assert_eq!(cpu.call(WALK, &[]), Stop::Returned, "case {case}");
+        assert_eq!(*drawn.borrow(), want, "case {case}");
+        cells_drawn += want.len();
+    }
+    assert!(cells_drawn > 20_000, "{cells_drawn}");
+}
+
+/// The walk's preamble (`0x80031D00..0x80031DBC`): the cursor auto-repeat it
+/// runs inline before the node walk, against `MenuRepeat::step` (the port of
+/// the same logic in `FUN_80035C24`) - the chord `gp+0x854`, the count
+/// `gp+0x864` and the repeat-pressed word `gp+0x86C` (`_DAT_8007B874` OR the
+/// re-fired chord), under the battle chord (game mode `0x15`) and the menu
+/// one, at frame steps `0..3`, over held words that stay or change. Empty and
+/// absent window lists (`gp+0x148`) walk nothing.
+#[test]
+fn the_walk_repeats_the_held_chord_as_the_pad_pump_does() {
+    differential!(scus(WALK));
+    use legaia_engine_system::retail_pad::{MENU_REPEAT_MASK, MENU_REPEAT_MASK_BATTLE, MenuRepeat};
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const HELD: u32 = 0x8007_B850;
+    const STEP: u32 = 0x1F80_0393;
+    cpu.stub_outside = Some((WALK, WALK_END));
+    let mut rng = Rng(0x5245_5054);
+    let mut port = MenuRepeat::default();
+    let mut held: u16 = 0;
+    let mut fired = 0;
+    cpu.mem.wr32(GP + 0x854, 0);
+    cpu.mem.wr32(GP + 0x864, 0);
+    for frame in 0..20_000 {
+        if rng.below(12) == 0 {
+            held = [
+                0u16,
+                0x1000,
+                0x4000,
+                0x2008,
+                0x8000,
+                0x0004,
+                rng.next() as u16,
+            ][rng.below(7) as usize];
+        }
+        let battle = rng.below(8) == 0;
+        let step = rng.below(4) as u8;
+        let pressed = if rng.below(4) == 0 {
+            rng.next() & 0xFFFF
+        } else {
+            0
+        };
+        cpu.mem.wr16(GAME_MODE, if battle { 0x15 } else { 3 });
+        cpu.mem.wr32(HELD, u32::from(held));
+        cpu.mem.wr32(PRESS, pressed);
+        cpu.mem.wr8(STEP, step);
+        // No windows, or an empty ring.
+        match rng.below(2) {
+            0 => cpu.mem.wr32(GP + 0x148, 0),
+            _ => {
+                cpu.mem.wr32(GP + 0x148, HEAD);
+                cpu.mem.wr32(HEAD, HEAD);
+            }
+        }
+        assert_eq!(cpu.call(WALK, &[]), Stop::Returned, "frame {frame}");
+        let mask = if battle {
+            MENU_REPEAT_MASK_BATTLE
+        } else {
+            MENU_REPEAT_MASK
+        };
+        let rep = port.step(held, mask, u32::from(step));
+        let what = format!("frame {frame}: held {held:#x} battle {battle} step {step}");
+        assert_eq!(
+            cpu.mem.rd32(GP + 0x86C),
+            pressed | u32::from(rep),
+            "{what}: the word"
+        );
+        assert_eq!(
+            cpu.mem.rd32(GP + 0x854),
+            u32::from(port.last),
+            "{what}: the chord"
+        );
+        assert_eq!(
+            cpu.mem.rd32(GP + 0x864) as i32,
+            port.count,
+            "{what}: the count"
+        );
+        assert!(
+            cpu.calls.iter().all(|&c| c == 0x8003_1AE4),
+            "{what}: walked"
+        );
+        fired += u32::from(rep != 0);
+    }
+    assert!(fired > 300, "{fired}");
+}

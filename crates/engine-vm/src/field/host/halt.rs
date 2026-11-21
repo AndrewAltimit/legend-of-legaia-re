@@ -59,12 +59,20 @@ pub trait FieldHaltHost {
     /// distinguish the call site can - it's `0x38` for op 0x38, and the raw
     /// op-0x43 sub-op (`0`, `1`, `0xA`, `0xB`) for op 0x43.
     ///
-    /// The default impl returns `true` (always acquire), which keeps the
-    /// original's control-flow shape; hosts that don't model the player
-    /// pointer can model their own predicate.
+    /// The default is retail's guard as far as the context carries it: the
+    /// acquire refuses a context that already holds the halt bit `0x400`
+    /// while the spawn bracket ([`Self::spawn_bracket`]) is down. The
+    /// guard's other clause, a context running no script (`+0x94 == 0`) that
+    /// is not the player, has no state here: `saved_pc` is an offset, and
+    /// every context the port steps runs a record (retail gives every
+    /// addressable context `+0x94 = -1` at creation, `0x8003A464`,
+    /// `0x8003A8C0`, `0x8003ACCC`). The arm never reads the caller.
+    // REF: FUN_801DE840 (0x801DEE90..0x801DEED8, 0x801DEF28..0x801DEF70,
+    // 0x801DEFC0..0x801DF008, 0x801DF384..0x801DF3CC, 0x801E1BC0..0x801E1C08,
+    // 0x801E1ECC..0x801E1F14, 0x801E2148..0x801E2190)
     fn field_halt_acquire_predicate(&self, ctx: &FieldCtx, which: u8) -> bool {
-        let _ = (ctx, which);
-        true
+        let _ = which;
+        !(ctx.is_halted() && !self.spawn_bracket())
     }
 
     /// Op `0x43` sub-`0`/`1`/`0xA`/`0xB`: `true` when the arm's acquire must

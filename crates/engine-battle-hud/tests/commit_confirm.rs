@@ -308,3 +308,95 @@ fn begin_slides_the_confirm_off_the_screen() {
     assert!(world.battle.commit_exit.is_none(), "the 0xFE arm drains it");
     assert!(battle_command_chips(&world).is_none());
 }
+
+/// A Magic or Item commit logs the spell or item name as its command
+/// (record `0x3B`, `FUN_801D388C` cases `0x15` / `0x22`), and the target the
+/// sub-cursor stood on: one member, or the `All` label for a party-wide item.
+#[test]
+fn a_magic_or_item_row_logs_the_name_and_its_target() {
+    use legaia_engine_battle_hud::battle_commit_log;
+    use legaia_engine_battle_vm::battle_commit_log as log;
+    use legaia_engine_battle_vm::battle_commit_log::CommitLogTarget;
+    let mut world = party_world(3);
+    world.battle.round_flow.phase = legaia_engine_battle_loop::round_flow::RoundPhase::Command;
+    world.tables.spell_catalog = legaia_engine_battle::spells::SpellCatalog::vanilla();
+    world.tables.item_catalog = legaia_engine_menus::items::ItemCatalog::vanilla();
+    let spell = world
+        .tables
+        .spell_catalog
+        .iter()
+        .find(|d| d.id < 0x65 && !d.name.is_empty())
+        .map(|d| (d.id, d.name.clone()))
+        .expect("a named spell");
+    world.commit_party_command(
+        0,
+        PendingPartyAction::Spell {
+            spell_id: spell.0,
+            target_row: legaia_engine_battle::target_picker::CursorRow::Enemy,
+            target_slot: 0,
+        },
+    );
+    let item = world
+        .tables
+        .item_catalog
+        .iter()
+        .find(|e| !world.tables.item_catalog.is_all_party(e.id))
+        .map(|e| (e.id, e.name.to_string()))
+        .expect("a single-target item");
+    world.commit_party_command(
+        1,
+        PendingPartyAction::Item {
+            item_id: item.0,
+            used_slots: vec![0],
+        },
+    );
+    world.battle_ctx.active_actor = 2;
+    let rows = battle_commit_log(&world);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].command_record, log::RECORD_COMMIT_NAME);
+    assert_eq!(rows[0].command, spell.1);
+    assert_eq!(rows[1].command_record, log::RECORD_COMMIT_NAME);
+    assert_eq!(rows[1].command, item.1);
+    assert!(matches!(rows[1].target, CommitLogTarget::Single(_)));
+}
+
+/// Under the cross-button entry the ring reopened from a chipless surface
+/// keeps the highlight word where the last ring left it: the window opener
+/// resets it to Left only on a 2 <-> 4 panel swap or at `0x6E`
+/// (`FUN_801D388C`, `0x801D4C38..0x801D4C74`), so backing out of the item
+/// window lights `Item` again rather than `Attack`.
+#[test]
+fn a_ring_reopened_from_the_item_window_keeps_its_highlight() {
+    let mut world = party_world(2);
+    world.toggles.battle_command =
+        legaia_engine_system::option_values::BattleCommandOpt::CrossButton;
+    world.tables.item_catalog = legaia_engine_menus::items::ItemCatalog::vanilla();
+    let heal = world
+        .tables
+        .item_catalog
+        .iter()
+        .find(|e| e.usable_in_battle)
+        .map(|e| e.id)
+        .expect("a battle item");
+    world.party.inventory.insert(heal, 1);
+    world.battle.command = Some(BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        no_escape: false,
+        phase: CommandPhase::Menu { cursor: 0 },
+    });
+    world.battle.flow = BattleFlowState::CategoryMenu;
+    press(&mut world, PadButton::Cross);
+    assert!(
+        world.battle.item_menu.is_some(),
+        "Cross on the lit Item arm opens the window"
+    );
+    world.set_pad(0);
+    world.set_pad(PadButton::Circle.mask());
+    world.tick_battle_item_menu();
+    let phase = world.battle.command.as_ref().map(|c| c.phase.clone());
+    assert!(
+        matches!(phase, Some(CommandPhase::Menu { cursor: 0 })),
+        "the ring reopens lit on Item: {phase:?}"
+    );
+}

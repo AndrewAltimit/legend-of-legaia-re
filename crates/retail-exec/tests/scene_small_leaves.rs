@@ -768,6 +768,150 @@ fn the_battle_loader_asks_for_the_stage_overlay_the_port_names() {
     assert_eq!((loaded, none), (510, 2));
 }
 
+/// The battle loader's sound states against the ports that name their banks:
+/// state `0` streams the formation's smallest monster id into slot `7` and
+/// keys `7` on every seated node, state `2` streams the largest into slot `8`
+/// and keys `8` on its seats when the formation mixes ids
+/// (`monster_sound_banks` / `monster_sound_category`), and the class-2 bank
+/// each of states `2` (unmixed), `4` and `6` streams into slot `2` is the one
+/// `SharedRegionBank::class2_for_seat1` picks off seat 1's roster id.
+#[test]
+fn the_battle_loader_streams_the_sound_banks_the_port_names() {
+    differential!(scus(BATTLE_LOADER));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_core::world::{monster_sound_banks, monster_sound_category};
+    use legaia_engine_mode::sfx_residency::SharedRegionBank;
+    const BATTLE_LOADER: u32 = 0x8005_20F0;
+    const BATTLE_LOADER_END: u32 = 0x8005_2770;
+    const STATE: u32 = 0x8007_BD71;
+    /// The formation's four monster ids, `0x8007BD0C..0x8007BD0F`.
+    const FORMATION: u32 = 0x8007_BD0C;
+    /// Party seat 1's roster id.
+    const SEAT1: u32 = 0x8007_BD11;
+    /// The battle actor table the loader walks, seats at `+0xC + 4 * s`.
+    const ACTORS: u32 = 0x801C_9370;
+    const MONSTER_BANK: u32 = 0x8003_E104;
+    const STREAM_BANK: u32 = 0x8001_FC00;
+    const NODES: u32 = 0x8012_0000;
+    const UNTOUCHED: u8 = 0xEE;
+    cpu.stub_outside = Some((BATTLE_LOADER, BATTLE_LOADER_END));
+    type Log = Rc<RefCell<Vec<(u32, u32)>>>;
+    let monster: Log = Rc::default();
+    let streamed: Log = Rc::default();
+    for (va, log) in [(MONSTER_BANK, &monster), (STREAM_BANK, &streamed)] {
+        let log = log.clone();
+        cpu.hook(va, move |r, _| log.borrow_mut().push((r.r[A0], r.r[A1])));
+    }
+    let node = |s: u32| NODES + 0x100 * s + 0x80;
+    for s in 0..4 {
+        cpu.mem
+            .wr32(ACTORS + 0xC + 4 * s, NODES + 0x1000 + 0x400 * s);
+        cpu.mem
+            .wr32(NODES + 0x1000 + 0x400 * s + 0x22C, NODES + 0x100 * s);
+    }
+    let mut rng = Rng(0x4241_4E4B);
+    let (mut mixed, mut single, mut alt) = (0, 0, 0);
+    for round in 0..3_000 {
+        // Seat 0 always holds a monster; the rest may be empty.
+        let mut ids = [0u8; 4];
+        ids[0] = 1 + rng.below(6) as u8;
+        for id in &mut ids[1..] {
+            *id = match rng.below(3) {
+                0 => 0,
+                _ => 1 + rng.below(6) as u8,
+            };
+        }
+        if rng.below(8) == 0 {
+            ids[0] = 0x40 + rng.below(0xBF) as u8;
+        }
+        let seat1 = [4u8, 4, 1, 2, 3, 0xFF][rng.below(6) as usize];
+        for (s, id) in ids.iter().enumerate() {
+            cpu.mem.wr8(FORMATION + s as u32, *id);
+            cpu.mem.wr8(node(s as u32), UNTOUCHED);
+        }
+        cpu.mem.wr8(SEAT1, seat1);
+        let seated: Vec<u16> = ids.iter().filter(|&&i| i != 0).map(|&i| i.into()).collect();
+        let banks = monster_sound_banks(seated.iter().copied());
+        // The loader names the bank by its raw TOC index, the extraction
+        // entry `+ 2`.
+        let class2 = SharedRegionBank::class2_for_seat1(seat1).prot_entry + 2;
+
+        // State 0: the slot-7 bank, `7` on every seated node.
+        monster.borrow_mut().clear();
+        cpu.mem.wr8(STATE, 0);
+        assert_eq!(cpu.call(BATTLE_LOADER, &[]), Stop::Returned);
+        assert_eq!(cpu.mem.rd8(STATE), 1, "round {round}");
+        assert_eq!(
+            monster.borrow().as_slice(),
+            &[(u32::from(banks[0].1), 7)],
+            "round {round}: {ids:?}"
+        );
+        // State 2: the slot-8 bank when mixed, else the class-2 bank.
+        monster.borrow_mut().clear();
+        streamed.borrow_mut().clear();
+        cpu.mem.wr8(STATE, 2);
+        assert_eq!(cpu.call(BATTLE_LOADER, &[]), Stop::Returned);
+        match banks.get(1) {
+            Some(&(slot, bank)) => {
+                assert_eq!(
+                    monster.borrow().as_slice(),
+                    &[(u32::from(bank), u32::from(slot))],
+                    "round {round}: {ids:?}"
+                );
+                assert!(streamed.borrow().is_empty(), "round {round}");
+                assert_eq!(cpu.mem.rd8(STATE), 3, "round {round}");
+                mixed += 1;
+            }
+            None => {
+                assert!(monster.borrow().is_empty(), "round {round}");
+                assert_eq!(
+                    streamed.borrow().as_slice(),
+                    &[(class2, 2)],
+                    "round {round}"
+                );
+                assert_eq!(
+                    cpu.mem.rd8(STATE),
+                    5,
+                    "round {round}: states 3 and 4 skipped"
+                );
+                single += 1;
+            }
+        }
+        for (s, &id) in ids.iter().enumerate() {
+            let want = if id == 0 {
+                UNTOUCHED
+            } else {
+                monster_sound_category(&seated, id.into())
+            };
+            assert_eq!(
+                cpu.mem.rd8(node(s as u32)),
+                want,
+                "round {round}: seat {s} {ids:?}"
+            );
+        }
+        // States 4 and 6 stream the same class-2 bank.
+        for state in [4u8, 6] {
+            streamed.borrow_mut().clear();
+            cpu.mem.wr8(STATE, state);
+            assert_eq!(cpu.call(BATTLE_LOADER, &[]), Stop::Returned);
+            assert_eq!(
+                streamed.borrow().as_slice(),
+                &[(class2, 2)],
+                "round {round}"
+            );
+            assert_eq!(cpu.mem.rd8(STATE), state + 1, "round {round}");
+        }
+        alt += u32::from(seat1 == 4);
+    }
+    assert!(
+        mixed > 1_000 && single > 200 && alt > 500,
+        "{mixed} {single} {alt}"
+    );
+}
+
 #[test]
 fn the_part_tick_scrolls_the_rect_the_port_scrolls() {
     differential!(scus(PART_TICK));

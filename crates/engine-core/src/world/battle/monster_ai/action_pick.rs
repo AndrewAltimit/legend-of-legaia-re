@@ -259,7 +259,6 @@ impl World {
             };
             let mut ai = std::mem::take(&mut self.battle.monster_ai_state);
             let mut spirit_writeback = None;
-            let mut skip_ring = false;
             if let Some(cast) =
                 legaia_engine_battle::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rand())
             {
@@ -270,7 +269,6 @@ impl World {
                     target_class = cast.target_class;
                 }
                 spirit_writeback = cast.spirit_gauge_writeback;
-                skip_ring = cast.skip_ring;
             }
             // The 0x8A charge gate clamps the caster's own gauge as it fires
             // (`actor+0x170 = 0x32`). Applied after the RNG borrow window; it
@@ -281,15 +279,13 @@ impl World {
                 a.battle.spirit_gauge = g;
             }
             // Anti-repeat ring (applies to whichever single party target stands).
-            if !skip_ring {
-                target_class = legaia_engine_battle::monster_ai::apply_recent_target_ring(
-                    target_class,
-                    spell_id,
-                    pc,
-                    &mut ai,
-                    &mut || self.next_rand(),
-                );
-            }
+            target_class = legaia_engine_battle::monster_ai::apply_recent_target_ring(
+                target_class,
+                spell_id,
+                pc,
+                &mut ai,
+                &mut || self.next_rand(),
+            );
             self.battle.monster_ai_state = ai;
         }
 

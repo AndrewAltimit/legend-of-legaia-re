@@ -808,9 +808,9 @@ The cleanest group - three separate 1-bit-flag banks each with set / clear / tes
 
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
-| 0x2B | `LFLAG_SET` | `[2B, bit]` | `ctx[+0x62] \|= 1 << (bit & 0x1F)`. Per-script local flag bank (16 bits). |
-| 0x2C | `LFLAG_CLR` | `[2C, bit]` | `ctx[+0x62] &= ~(1 << (bit & 0x1F))`. |
-| 0x2D | `LFLAG_TST` | `[2D, bit]` | If `ctx[+0x62] & (1 << bit)` is 0, return `pc_offset` (halt); else continue. |
+| 0x2B | `LFLAG_SET` | `[2B, bit]` | `ctx[+0x62] \|= 1 << (bit & 0x1F)`. Per-script local flag bank (16 bits): the shift is a 32-bit `sllv` stored with `sh`, so a bit of 16 or more sets nothing. |
+| 0x2C | `LFLAG_CLR` | `[2C, bit]` | `ctx[+0x62] &= ~(1 << (bit & 0x1F))`. A bit of 16 or more clears nothing. |
+| 0x2D | `LFLAG_TST` | `[2D, bit]` | If `ctx[+0x62] & (1 << bit)` is 0, return `pc_offset` (halt); else continue. A bit of 16 or more always reads clear. |
 | 0x2E | `GFLAG_SET` | `[2E, bit]` | `_DAT_1F800394 \|= 1 << (bit & 0x1F)`. Global story flag bank (32 bits, in PSX scratchpad). |
 | 0x2F | `GFLAG_CLR` | `[2F, bit]` | `_DAT_1F800394 &= ~(1 << (bit & 0x1F))`. |
 | 0x30 | `GFLAG_TST` | `[30, bit]` | Busy-wait with `0x33`'s polarity: hold the PC while `_DAT_1F800394 & (1 << bit)` is set, advance once it is clear (`0x801DEE14` loads the word and joins `0x33`'s test at `0x801DEE3C`). |
@@ -1225,6 +1225,19 @@ both P2[12] (`C7 F8 48 53 23`) and P2[15] (`C7 F8 46 4C 33`) walk the player;
 the second walk starts only when the first lands. The engine keeps the same
 rule for the modal timeline and the helper contexts
 (`FieldVmState::halted_elsewhere`).
+
+The acquiring arms test the target again themselves, and that test reads no caller:
+38 (with `op1 & 0x7F`), 37 / 41, 47, the 43 arcs, the extended 4C 61 with a count,
+4C 80 and 4C 85 / 8E / 8F keep the PC when the target holds `0x400` while the bracket
+word is zero, or runs no script and is not the player (`0x801DEE90`, `0x801DEF28`,
+`0x801DEFC0`, `0x801DF384`, `0x801E1BC0`, `0x801E1ECC`, `0x801E2148`). So the system
+script waits too, on a leg already running. The second clause reaches nothing: every
+addressable context is created with `+0x94 = -1`. The port runs the first clause in
+`FieldHaltHost::field_halt_acquire_predicate` and, for the system script's facing ops,
+in `World::facing_acquire_refused`. A zero-budget face lands within its own call and
+holds the target only for the rest of that game frame, as retail clears the bit on the
+target's own tick after the system node, so `town0e`'s and `geremi`'s per-frame snaps
+acquire on every pass.
 
 A placed object takes the same compass arm. `taiku2`'s arrival `P2[0]` walks its sky dome,
 partition-0 record `0x14`, with `C1 14 84 4A` as the shot starts; the leg spends the frame
@@ -1844,7 +1857,7 @@ read back leaves the handshake off and the copy runs at once.
 | 0x45 | `CAMERA` | Sub-dispatch on `op0 & 0xC0`: `0x00` = configure 10 sub-words (`5 + 2 * set_bits` bytes), `0x40` = LOAD (`FUN_801DBC20`, 20 bytes), `0x80` = SAVE (`FUN_801DE004`, 2 bytes), `0xC0` = APPLY (`FUN_801DAB90` + `FUN_801DAA50`, 4 bytes). Every arm falls through - see [Detail](#0x45-camera-arm-widths). |
 | 0x46 | `VIEW_WINDOW` | Camera visible-tile-window setter (`0x1F8003E8..EB`, signed `[nearX, nearZ, farX, farZ]` tile offsets from the camera tile - see [`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Long form `46 24 n0 n1 f0 f1` writes the four bytes directly; short form `46 a b` builds a window of half-width `a >> 1` in X about offset `-1` and `b >> 1` in Z about `+2`. Not fog. |
 | 0x49 | `STATE_RESUME` | Tristate state machine on `_DAT_8007B450`, sub-cases 0..0xD. [Detail](#0x49-state_resume). |
-| 0x4A | `WAIT_FRAMES` | `ctx[+0x54] += scratch_delta; if (sum < operand) return; else PC += default`. Frame timer. |
+| 0x4A | `WAIT_FRAMES` | `ctx[+0x54] += scratch_delta; if (sum < operand) return; else PC += default`. Frame timer. The operand is a signed halfword and the sum wraps at 16 bits (`sh`, re-read signed, `0x801E09D4..0x801E09F0`), so a negative operand passes at once. |
 | 0x4B | `ANIMATE` | **VDF morph-lane arm** - the field sibling of move-VM op `0x0A`, not a clip select. Writes sub-entry `base + N` to `ctx[+0xB0+N]`, the up / down ramp velocities to `+0xB8` / `+0xC8`, weight 0 to `+0xA0`; sets `+0x10` bit 0x1000, `+0x62 = (+0x62 \| 0x1000) & 0xD3FF`, `+0x6C = count`. PC += 3 + count*4. See [field-ambient-fx](field-ambient-fx.md#the-vdf-vertex-morph-chain). |
 | 0x4C | `MENU_CTRL` | Outer-nibble-dispatched (16 sub-dispatchers). See [`script-vm-menuctrl.md`](script-vm-menuctrl.md). |
 | 0x4D | `BBOX_TEST` | Inside-box advances PC by 7; outside-box jumps to `pc + header_size + 4 + LE_u16(operand[4..6])` via `FUN_801E3614`. |
@@ -1991,7 +2004,7 @@ Every conditional arm of `FUN_801DE840` that moves the PC anywhere but past its 
 | `0x26` `JMP_REL` | `26 d:u16` | always | `pc + 1 + d` |
 | `0x42` `COND_JMP` | `42 mode sel d:u16` | mode 0: bit `sel` of `_DAT_8007B8F4`; mode 1: the held pad's compass or face button (`sel >= 0xC` always) | `pc + 3 + d` |
 | `0x4D` `BBOX_TEST` | `4D x0 z0 x1 z1 s:u16` | the context's tile is outside the box | `pc + 7 + s - 2` |
-| `0x4E` `INVENTORY_CMP` | `4E page mode v:u16 s:u16 [v_hi:u16]` | the loader's value is below (`mode & 0xF == 0`) / above (`1`) `v` | `pc + 5 + s`, at both widths |
+| `0x4E` `INVENTORY_CMP` | `4E page mode v:s16 s:u16 [v_hi:u16]` (the 7-byte forms read `v` signed through `FUN_8003CE9C` and compare it signed) | the loader's value is below (`mode & 0xF == 0`) / above (`1`) `v` | `pc + 5 + s`, at both widths |
 | `0x70..0x7F` TEST | `7x idx d:u16` | system flag set | `pc + 2 + d` |
 | `4C A0..A2` | `4C Ax bit s:u16` | the bit is set | `pc + 5 + s - 2` |
 | `4C 8B` | `4C 8B spell s:i16` | a present member knows `spell` | `pc + 5 + s - 2` |

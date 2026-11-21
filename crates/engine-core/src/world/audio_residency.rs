@@ -19,11 +19,12 @@ impl World {
         let mode = self.mode;
         // `FUN_800520F0` picks the bank off `DAT_8007BD11`, party seat 1's
         // roster id (`0x80052378..0x80052398`).
-        let class2 = if self.party.party_count > 1 && self.battle_party_char_id(1) == 4 {
-            SharedRegionBank::CLASS2_ALT
+        let seat1 = if self.party.party_count > 1 {
+            self.battle_party_char_id(1)
         } else {
-            SharedRegionBank::CLASS2
+            0
         };
+        let class2 = SharedRegionBank::class2_for_seat1(seat1);
         self.audio
             .residency
             .sync(mode, &self.active_scene_label, side_band, class2)

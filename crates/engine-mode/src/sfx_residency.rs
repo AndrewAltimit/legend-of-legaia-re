@@ -86,6 +86,19 @@ impl SharedRegionBank {
         slot: 2,
         prot_entry: SLOT2_CLASS2_BANK_ALT_PROT_INDEX,
     };
+
+    /// The class-2 bank the battle scene loader streams into slot 2, picked
+    /// off party seat 1's roster id `DAT_8007BD11`: [`Self::CLASS2_ALT`] for
+    /// Terra (`4`), [`Self::CLASS2`] for anyone else or an empty seat. The
+    /// loader makes the same pick in each of its three bank-load states.
+    // PORT: FUN_800520F0 (`0x80052378..0x800523AC`, `0x800523E0..0x80052404`, `0x80052438..0x8005244C`, the class-2 bank pick)
+    pub fn class2_for_seat1(seat1: u8) -> Self {
+        if seat1 == 4 {
+            Self::CLASS2_ALT
+        } else {
+            Self::CLASS2
+        }
+    }
 }
 
 /// Retail's slot-2 / slot-6 residency: the field-bank latch `0x8007BAFC` and

@@ -171,11 +171,22 @@ fn stay_at_the_inn(world: &mut World, slot: u8, option: usize) -> u32 {
         };
         world.input.set_pad(mask);
         world.drive_inline_dialogue();
+        xa_vsync(world);
         pressed_last = mask != 0;
         frames += 1;
     }
     assert!(answered, "the innkeeper's picker never opened");
     frames
+}
+
+/// One vsync of the modelled CD drive under a field XA one-shot: the clock
+/// `World::tick` runs (`tick_field_xa_busy`) and these frame loops, which
+/// drive the talk alone, otherwise skip. The stay's `36 FF FF` waits on the
+/// drive word `_DAT_8007BC20` until the one-shot its XA cue started has read
+/// out (`0x801E02E4..0x801E0308`).
+fn xa_vsync(world: &mut World) {
+    let g = world.script_audio_gates_mut();
+    *g.xa_busy_frames = g.xa_busy_frames.saturating_sub(1);
 }
 
 fn pools(world: &World) -> Vec<(u16, u16)> {
@@ -290,6 +301,7 @@ fn first_box_of_next_talk(world: &mut World, slot: u8) -> (usize, Vec<bool>) {
     for _ in 0..600 {
         world.input.set_pad(0);
         world.drive_inline_dialogue();
+        xa_vsync(world);
         if let Some(lead) = world
             .dialog
             .inline
@@ -412,6 +424,7 @@ fn the_acquire_turns_the_player_to_the_innkeeper_and_then_releases() {
     for _ in 0..200 {
         world.input.set_pad(0);
         world.drive_inline_dialogue();
+        xa_vsync(&mut world);
         let live = world
             .dialog
             .inline

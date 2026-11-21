@@ -1060,3 +1060,46 @@ character's record (Vahn: `0x8008480E`); it fires inside `FUN_80042558` at `0x80
 
 Whether a console or emulator run shows the same, which the evidence above stops short of.
 
+## A win with only Terra standing pays her all ones
+
+**Status:** explained
+**Reported as:** not a community report. Found while porting the EXP split, and asked whether it can happen at all.
+
+Terra fights beside Noa in Snowdrift Cave as an AI companion. The EXP split leaves her out of the count it divides by,
+so a win with only Terra standing divides by zero. The PlayStation's divide does not stop on that: it answers with all
+ones, and the game pays that to Terra. Her EXP drops by one, or, if she has never been paid, jumps to the 9,999,999 cap.
+The results window reads the same figure as a signed number and shows `0`. Terra never levels, so nothing else follows.
+
+### Mechanism
+
+The full trace is on the level-up page ([XP distribution](../../subsystems/level-up.md#xp-distribution)): the divisor
+loop skips seat byte `4` (`0x8004F164`), the `divu` at `0x8004F198` has no guard, the credit loop pays every standing
+member (`0x8004F2B4`), and the cap at `0x8004F308..0x8004F33C` clamps a wrapped `0xFFFFFFFF`.
+
+### Scope
+
+The fight must end while Noa is down and before Terra's next turn, since that turn always revives seat 0, and with
+Noa below half HP it heals her instead. Damage over time never downs a member. So a monster has to take Noa from half
+HP or more to 0 after Terra's turn and then flee at the start of the next round, ahead of Terra, with every other
+monster already dead. Each party member's action setup sets Terra's live HP to 200 (`0x801EEE38`), the field the flee
+roll reads, and a downed Noa doubles the monster side of that roll.
+
+In Snowdrift Cave this cannot happen. The Mushroom, the only monster there whose roll can pass, needs Terra above
+about 240 HP, which only Noa healing Terra gives, and its swing does at most about 25 to Noa, short of half her HP; a
+second monster adding its hits must die in the same span, which uses the one action Noa would heal Terra with.
+
+The one open path is Drake's overworld, which Noa crosses with Terra on her way to Mt. Rikuroa: a Hornet left alone
+of a Hornet triple at 1 to 3 HP, passing about one roll in 1,200, while Terra stands by on her turn. Whether that walk
+reaches the Hornets' region has not been settled. Evidence: disassembly, the scenes' formation and region tables and
+the `terra_party_battle` capture for reachability, and the `crates/retail-exec` interpreter for what the pass writes
+and what the window draws. The win itself has not been captured.
+
+### In the port
+
+The port floors the divisor at one, so Terra is paid the whole share and the window shows it.
+
+### Verifying it
+
+In a Terra fight, put a write watch on Terra's EXP word `0x80085344` and a breakpoint at `0x8004F198`; on a win with
+Noa down, `s2` reads `0` at the `divu` and the watch fires at `0x8004F2B8` with all ones added.
+

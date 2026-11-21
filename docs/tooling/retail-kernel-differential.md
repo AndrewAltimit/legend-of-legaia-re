@@ -169,7 +169,61 @@ routine that is only there to seed the one compared.
 **What the credit means.** It is per address. A passing differential proves
 which routine ran and that the Rust kernel the test calls computes what it
 wrote; it does not prove that every `PORT:` site carrying the address sits on
-that kernel, nor that every arm was reached (step 3 above is what does that).
+that kernel, nor that every arm was reached (step 3 above is what does that,
+and [branch coverage](#branch-coverage) measures it).
+
+## Branch coverage
+
+A credit says a routine ran, not how much of it. Branch coverage measures the
+rest. Built with the `branch-cov` feature and run with
+`PSX_RETAIL_EXEC_BRANCHES` set, the interpreter
+(`crates/retail-exec/src/branch_cov.rs`) walks each routine the ledger records
+statically from its entry, over memory as the call found it, to enumerate its
+conditional branches, then notes the direction each one takes while the suite
+runs:
+
+```bash
+python3 scripts/ci/branch-coverage.py --record        # the suite, recording on (disc)
+python3 scripts/ci/branch-coverage.py                 # summary over the PORT-tagged routines
+python3 scripts/ci/branch-coverage.py --worst 30      # lowest-covered routines
+python3 scripts/ci/branch-coverage.py --addr 801D0748 # one routine, branch by branch
+python3 scripts/ci/branch-coverage.py --worksheet 801D0748  # with tag ranges and scope rows
+python3 scripts/ci/branch-coverage.py --check-scope   # the scope file's rows
+```
+
+Each branch is **both** (taken and fell through), **one** (only one way) or
+**unreached**, and direction coverage is `(2*both + one) / (2*branches)`. The
+walk follows fall-through and both arms of a branch, and does not follow calls,
+so a routine's branches are its own. A `j` stays in the routine when it lands
+inside the extent already reached, or further on with no other routine's frame
+setup (`addiu sp,sp,-N`) between - the compiler rotates loops to test at the
+bottom and jumps forward to the test; a `j` behind the entry or past a frame
+setup is a tail call. A `jr` through a register other than `ra` is a jump
+table the walk cannot resolve. The compiler keeps tables in `.rdata` and the
+case arms inside the routine ahead of its epilogue, so a routine holding one
+takes every conditional branch from its entry to its epilogue (the first
+`jr ra` whose delay slot reaches the furthest address reached), stopping early
+at another routine's frame setup when the `jr` was a tail call through a
+function pointer. Against the SCUS routines with a Ghidra dump, the counts
+agree except where the dump itself is short of the routine.
+
+Not every branch is a test gap. `scripts/ci/branch-coverage-scope.toml` takes
+arms out of scope, one row per range with a verdict and a disassembly-grounded
+reason: `unported` (no port implements the arm, by decision), `unreachable` (no
+game state reaches it) or `cannot-drive` (the interpreter cannot run it). The
+report gives coverage over all branches and over the **ported arms**, the
+branches no row covers; what stays below 100% there is the worklist, arms a
+port claims and no test exercises. `--worksheet` lists a routine's branches
+beside the address ranges its `PORT:` tags cite and the rows that cover them.
+A slot-B VA holds different routines in different images, so a row at a
+VA-aliased entry also gives `image`, the image hash `--worksheet` prints;
+without it a row applies to every image at its entry.
+
+Driving the retail side down an arm is half of it. A branch counts once the
+retail routine takes it; the test still has to compare that arm's output with
+the Rust that ports it, or the arm is exercised and not checked. The table holds addresses and hashes, no
+instruction bytes, and stays under `target/branch-coverage/`. It is a
+measurement, not a gate.
 
 ## What it has found
 
@@ -284,6 +338,37 @@ The Spirit block of the action state machine's cleanup arm, `0x801E5D60..0x801E5
 its own off the disc against the Done band, holds the port to the arm that pays an art's
 price: the accumulator comes off the gauge ahead of the action's own `+8` or `+0x20`, the two
 AP Boost passives and the cap, with the gauge left alone until then.
+
+The state machine itself, run from its entry one pass per state against
+`battle_action::step` over a host that logs the element calls, the cast-effect driver
+and the cues (`action_sm`), found the end-of-action sweep clearing only the ghost
+bits, where retail also clears every slot's impact selector and, on a living actor or
+a party seat, the render flag and the capture byte; the Done band recomputing the
+turn order with nobody standing; the strike loop's terminator skipped on a pass that
+held a swing in flight; the Attack x2 refill demoting starters past the sixteenth
+entry; the cast band reading the sentinel for the byte two behind a cursor under 2,
+where retail reads the category or the target; and the summon route leaving before
+the stream cursor steps, and opening for a monster caster. The opening states, the
+Spirit band, the Seru band, the strike return and the wipe scans with the victory
+re-pick match.
+
+The anim commit `FUN_8004AD80`, from its entry down the monster death arm, found the
+defeat cue silent in a scripted fight whose formation holds a second monster, where
+retail's gate opens on the formation's second cell. Its art install, the
+SpecialStarter's voices and the shout call match, and so do the actor pass
+`FUN_8004CE2C`'s clip-tag arms, Jette and Dohati hooks and status CLUT uploads, the
+frame driver `FUN_80046A20`'s exit pass and rumble decay, and the presentation tick
+`FUN_80050120`'s scene ramps.
+
+The World-only arms run through `world::arm_drivers`: the commit's reach snap, the
+Mystic Shield arm, the frame driver's backdrop spin and the fade's sink match. The
+Jette count, which clears the formation's second cell once Jette and his clones are
+down, had no port, and the fade's lone-fight latch was skipped behind a staged Seru
+absorb or a capture. Running the rest of the state machine found the War God Icon's
+pair counter never reset at the walk's arrival, so only a battle's first pair replayed;
+state `0x40` leaving a pass early, without its hold on a reacting target, its category
+clear or the Fury Boost bar; the spell plate never sent out at `0x3E`; and the Point
+Card's frame left whole.
 
 The shared cast kernel `FUN_801DD0AC`, its scale and finisher, and the two wrappers
 `FUN_801DD4B0` / `FUN_801DD6B4`, on both branches, found no cast waking a sleeper or
@@ -458,6 +543,14 @@ diagonal, and an approach mode's second axis waited a frame. It also ended a leg
 on the target, where retail ends it on the next frame's first iteration, so every scripted walk and the
 script parked on it resumed a frame early. The compass walks, the compass ramp, the hold and the
 face-target ramp match.
+
+The tile board's walk machine `FUN_801EF2B0` reads the cell under the player flat, `row * width + col`
+with no column bound, in its arrival, its pad-octant read and its exit fade's event-tile test. A board
+under five columns seats the player off its east edge, where the port's bounded lookup found nothing:
+it skipped the arrival and faded the event tile retail keeps. Water Hazard's arm 3
+(`FUN_801F7298` in PROT 0956) holds after its countdown until every seat its target code names has
+settled, a live seat idle and a dead one on its down clip or faded out; the port's director passed
+on the countdown alone, so the band could end while a hit seat still played its reaction.
 
 Holding the Stone and Curse arms to the module images found that no cast module calls the applier
 `FUN_800402F4`. Stone Circle (PROT 0941) writes no status at all and is a damage cast, where the port
@@ -1410,3 +1503,57 @@ a cursor stepped below zero lands on `0`; and it reset the frame cursor past `co
 `FUN_80016444`'s pass plan, the `READ INIT` body `FUN_801CE9C0` (whose CLUT-row load at `(0, 500)` sets two of its
 sixteen entries and takes the rest from the routine's uninitialised stack) and the animated-mesh renderer `FUN_8001B964`
 posing a sprite-arm node's parts match.
+
+The front end's tick `FUN_801DD35C`, run over every sub-mode with the card driver's words dealt at random, showed the
+port's model of its card screens wrong in most handlers. The card check `0x15` had its two arms swapped (the any-button
+return is the timeout prompt's, not the probe's); the main menu `0x14` stepped the title's row counter where retail steps
+its own (`state[-0xe9c]`), stored the pick in the wrong word and ignored the two panel fades that hold its input; the
+grid `0x0B` kept a Load's confirm on the grid and buzzed only on a valid cell; `AttractIdle` wrapped the epilogue's
+cursor against a row count of `-1`; the format operation behind `0x12` had no phases, and its exit fired on phase `0x0D`
+where retail leaves from `0x0C`. The epilogue returned early on any second argument, which is how the pause menu's Load
+and Save (`(1, 2)` / `(1, 1)` from `0x801DAEB4` / `0x801DAF84`) call the routine, so their result re-routes, cancels and
+cursors never ran; and the card words were read-only, so a staged operation never reached the epilogue's poll. A Continue
+whose save has story flag `0x1A` set raises the debug-mode word `0x8007B98C` (`0x801DFB14`); the engine never does.
+
+The list kernel `FUN_80032A44` tests its four directions as an else-if chain, so a frame holding two moves the cursor
+once; the port applied every pressed bit in turn. The dev menu's camera row (`FUN_801E9F64`, `0x801EA1A4`) snaps the
+camera on every frame it holds follow on, where the port snapped only on the flip. The window emitter `FUN_8002C69C`
+draws nothing for a zero-by-zero centre rect. The window content builder `FUN_80030628`'s shop buy, Goods and landmark
+lists, the typewriter count's substitution arms in `FUN_80036044` and the dev row drawer's readouts in `FUN_801EAD98`
+match.
+
+The command flow `FUN_801D0748`, run a pass at a time over generated pad words for each prompt, the attack and magic
+target cursors, the armed round and the glide gate, showed the port testing the arms of a surface in an order of its
+own. A refused ring arm fell through to a diagonal's second arm, so a cursed member's Right-and-Down committed Spirit.
+A direction on the lit arm stopped the cross-button entry's highlight walk where retail passes on to the next, and a
+Cross on the flee confirm did nothing under that entry. Cancelling the attack target cursor went back to the ring
+where retail returns to the `Auto | Command` prompt. Every target cursor ignored the Up or Down that commits under the
+directional entry, and the magic window's party cursor skipped downed members where retail stops on every seat. The
+monster picker skipped the recent-target ring for monsters `0x97` / `0x98` under a `0x380` status and aimed Koru's
+mode-3 cast at an engine seat where retail names the first monster seat. The spoils arm showed the Crimson Book's EXP
+Boost unported: retail credits the member's share twice.
+
+The window content builder's armament lists and spell lists, run against the equip session's candidate rows and both
+Magic screens, match: the armament walk and its stat sort are now one kernel the equip session builds through. The window
+walk `FUN_80031D00`'s number records drop a figure's interior zeros above its field when the figure is wider than the
+field; the port's right-aligned layout agrees on every figure that fits. The Status pager in `FUN_801DA2A0` turns Left and
+then Right on one frame, so pressing both lands where it started; the port took Left alone. Retail reopens Status on the
+page it last showed, and the port opens it on the first. The list kernel's confirm cue overwrites the cue ring's last slot
+where its cancel queues a new one.
+
+Branch coverage of the field side found its own share. The field VM `FUN_801DE840`, run over the disc's scripts and a
+synthetic operand corpus under seeded story flags, pad, region mask and halted or player contexts, showed `4C 4E` /
+`4C 4F` halting where the nibble-4 head has already stepped six bytes, every `4C Fx` advancing where only `4C FF` does,
+local-flag bits of 16 or more wrapping onto the low bits where retail's 32-bit shift stored with `sh` drops them, op
+`3D` clearing the leader byte when it empties the list, `4C DC` matching item id `0` on an empty bag slot, and
+`36 FF FF` running on where it waits out a field XA one-shot's drive word `_DAT_8007BC20`; and `4C C9` running on
+where it holds while a BGM swap is in flight. Its operand reader `FUN_8003CE9C` sign-extends, so `4A` and the
+7-byte `4E` forms read their operands signed, which the port read unsigned (no shipped operand reaches `0x8000`). The
+camera mover `FUN_801DC0BC` keeps its progress in the halfword `+0x9C`, so a sum past `0x7FFF` goes negative and runs
+the curve from there; the port clamped a wider integer and arrived. The ambient motion VM `FUN_80038158` resets the
+actor's default-move record and wander state on a variant swap, which the port kept, and op `0x0D` compares unsigned.
+The pager `FUN_801D84D0` zeroes the pad word while the automatic press counts, caps the picker slide's frame step at
+4, and reads a resting picker's first Up or Down; the script runner `FUN_80039B7C` ends its pass on a stalled
+`A1 <id>`, whose masked byte reads `0x21`. The part tick `FUN_80021DF4` leaves straight from the sound emitter's arm
+on the tick it takes its stop request, with no move-VM run and no clamps. The BGM poller's stage walk `FUN_800243F0`,
+run call by call against `BgmSwapPoller` at one call a game frame, matches.

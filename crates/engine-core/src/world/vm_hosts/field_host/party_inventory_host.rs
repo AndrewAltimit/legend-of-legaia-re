@@ -140,13 +140,14 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
     fn party_remove(&mut self, char_id: u8) {
         // Retail op `0x3D`: find the id, shift the tail down, `count -= 1`;
         // the leader re-points at the new head when the count drops to 1
-        // or the removed id was the leader.
+        // or the removed id was the leader. A list left empty keeps its
+        // leader byte (`beqz v1` at `0x801E0698` skips the re-point).
         let mut list = self.world.present_party_list();
         if let Some(pos) = list.iter().position(|&id| id == char_id) {
             list.remove(pos);
             let leader_gone =
                 matches!(self.world.party.party_leader_slot, Some(id) if id == char_id);
-            if list.len() == 1 || leader_gone {
+            if list.len() == 1 || (leader_gone && !list.is_empty()) {
                 self.world.party.party_leader_slot = list.first().copied();
             }
             self.world.install_present_party_list(list);
@@ -173,17 +174,12 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
     /// fee, the dome's entry fee, a prize price). The arm and its missing
     /// lower clamp are documented on [`crate::casino_coin_bank`].
     /// Op `4C DC`: the bag's active window first (`FUN_80042EE0` matches the
-    /// slot's id byte alone), then the eight equipment bytes of each
-    /// present member's record.
+    /// slot's id byte alone, and never id `0`, the empty slot's), then the
+    /// eight equipment bytes of each present member's record.
     // PORT: FUN_801DE840 (op 0x4C nibble-D sub-C arm, 0x801E2EA8..0x801E2F68)
     // PORT: FUN_80042EE0
     fn op4c_nd_subc_item_held(&self, needle: u8) -> bool {
-        let inv = &self.world.party.inventory;
-        let (start, end) = inv.window_bounds();
-        let slots = inv.slots();
-        slots[start.min(slots.len())..end.min(slots.len())]
-            .iter()
-            .any(|&(id, _)| id == needle)
+        self.world.party.inventory.find_slot(needle).is_some()
             || self.op4c_nd_sube_item_worn(needle)
     }
 

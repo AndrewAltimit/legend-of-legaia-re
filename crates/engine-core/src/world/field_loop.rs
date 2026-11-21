@@ -1127,6 +1127,19 @@ impl World {
         // turns that placement, not the system context.
         let pc = self.field_pc;
         let bc = std::mem::take(&mut self.field_bytecode);
+        // A facing op that acquires its target (a `B8` turn with a budget,
+        // `CC <id> 85|8E|8F`) opens with the acquire guard
+        // (`0x801DEE90..0x801DEED8`, `0x801E2148..0x801E2190`): the system
+        // caller passes the prologue's halted-target test, and the arm still
+        // refuses a target whose halt is up while the spawn bracket is down,
+        // keeping the PC for the next pass. The port keeps a placement's halt
+        // as its in-flight leg (one landed this game frame included: retail
+        // clears the bit on the target's own tick, after the system node, so
+        // a zero-budget snap leaves it clear by the next pass).
+        if self.facing_acquire_refused(&bc, pc) {
+            self.field_bytecode = bc;
+            return Some(FieldStepResult::Halt { final_pc: pc });
+        }
         let routed = self.run_placement_facing_op(&bc, pc);
         self.field_bytecode = bc;
         if let Some(next_pc) = routed {
@@ -1644,12 +1657,29 @@ impl World {
                 Some(w.field_pc)
             },
         );
-        if slice.end == legaia_engine_field::inline_dialogue::SliceEnd::FrameMark {
+        if Self::slice_ends_runner_pass(&slice) {
             // The pass ends: the runner clears the context's engaged bit on
             // the executed `0x21` (`0x80039E68..0x80039E7C`).
             self.field_vm.system_pass_open = false;
         }
         last
+    }
+
+    /// Whether the script runner's op loop ends its context's pass on this
+    /// slice: an executed raw `0x21` (`beq s0,s4` at `0x80039E20`), or a
+    /// slice whose last byte reads `0x21` once its extended bit is masked off
+    /// (`andi a2,s0,0x7f` / `bne a2,0x21` at `0x80039E58..0x80039E60`) - a
+    /// stalled `A1 <id>`, whose target the dispatcher did not resolve, so it
+    /// returned the PC it was given (`0x801DE8BC..0x801DE8DC`).
+    ///
+    /// PORT: FUN_80039B7C (`0x80039E20`, `0x80039E58..0x80039E60`, the pass's end test)
+    pub fn slice_ends_runner_pass(slice: &legaia_engine_field::inline_dialogue::Slice) -> bool {
+        use legaia_engine_field::inline_dialogue::SliceEnd;
+        match slice.end {
+            SliceEnd::FrameMark => true,
+            SliceEnd::Parked => slice.byte & 0x7F == 0x21,
+            SliceEnd::Text | SliceEnd::Stopped => false,
+        }
     }
 
     /// Run the just-loaded scene-entry system script's **install slice**: the

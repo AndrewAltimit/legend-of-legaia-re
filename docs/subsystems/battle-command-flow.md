@@ -140,7 +140,14 @@ cursor: `0x5B` / `0x5C` walk the monster seats through `FUN_801D8D00` on the
 the party count, frozen for a party of one: Left (`0x8000`) adds one
 (`0x801D2C34`, past the last seat to `0`) and Right (`0x2000`) subtracts one
 (`0x801D2CC4`, below `0` to the last seat). Both open on the caster's seat,
-and the walk applies no liveness test. The all-target states have no
+and the walk applies no liveness test. Nor does the confirm: `0x64` commits
+the seat it stands on whatever the item can do there (`0x801D2A64..0x801D2AA4`),
+the copy comes off at the commit through `FUN_80042310`, and the applier at the
+dispatch decides the outcome, so a revive on a standing member or a leaf on a
+full one spends the copy and the turn for nothing. The field Items screen is
+the other way: its confirm asks the validator `FUN_8003FB10` first and buzzes
+on a seat it cannot help (`0x801D8448..0x801D8484` in `FUN_801D8308`). Port:
+`InventoryUseSession` refuses only the wrong side in the battle context. The all-target states have no
 cursor to move, but they still wait for the confirm: the window's press
 raises the state, a second press commits.
 
@@ -320,6 +327,23 @@ direction presses and rewrites `s2` to the highlighted arm's mask on the
 confirm press, so each handler's direction test doubles as "take the
 highlighted chip".
 
+Each handler tests its arms in a fixed order and the first one pressed
+decides, so a diagonal (two directions on one pass) or a direction with the
+confirm mask resolves by that order, not by which arm the player meant: the ring
+tests the cancel mask, Up, Right, Left or the confirm mask, then Down; the
+round prompt Left or the confirm mask, then Right; the flee confirm the cancel
+mask or Right, then Left; the commit confirm the cancel mask or Right, then
+Left or the confirm mask; the attack-mode prompt the cancel mask, Right, then
+Left or the confirm mask. A ring arm the member is refused ends the pass on
+its refusal: a cursed member's Right-and-Down buzzes rather than committing
+Spirit. The highlight walk orders its own tests Left, Right, Down, Up, and a
+direction on the arm already lit passes on to the next one
+(`0x801D0824` / `0x801D08C8` / `0x801D0980` / `0x801D0A38`), so a diagonal
+whose first arm is lit lights its second. The port follows both orders
+(`battle_input::walk_highlight`, `battle_input::ring_press_refused`); the
+differential `crates/retail-exec/tests/command_prompts.rs` runs every prompt
+over generated pad words against them.
+
 `Attack` is therefore **not** the plain strike: it is the door to the
 attack-mode prompt, and option `0x800846C4` decides whether that prompt is shown
 (`0`), skipped straight to auto-target (`1`), or skipped straight to the
@@ -360,6 +384,13 @@ a vsync.
 
 `0x14` seeds `ctx[+0x880] = 0x8000` (`0x801D0ECC`), so a freshly armed prompt is
 highlighted on its Left arm.
+The window opener resets the word to Left only when the flow reads `0x6E` or
+its step's panel count swaps between `2` and `4` (`FUN_801D388C`,
+`0x801D4C38..0x801D4C74`; the step scripts at `0x801F4D34` carry the count in
+their third byte). A ring reopened from a chipless surface - the item or magic
+window, a target cursor, the next member after a commit - comes from a panel of
+`0`, so it opens lit where the last ring left it. The port carries the ring's
+lit arm between sessions as `BattleState::ring_highlight`.
 
 Which `s2` bit routes where, in the three prompt states:
 
@@ -381,6 +412,19 @@ nothing there, and `0x1E` has no cancel arm, so a Circle on the round prompt doe
 nothing either: `battle_run_confirm_gaza2_retail` and pad walks from
 `gaza2_card_first_menu` show each. Port: `battle_input::CommandPhase::RunConfirm`,
 `World::tick_battle_command` for the glide, `battle_hud::battle_run_tab_alone`.
+
+The attack target cursor `0x5A` (`0x801D21CC..0x801D23EC`) tests Right, then
+Left, each stepping the ring through `FUN_801D8D00` and ending the pass only
+when the target moved, so a side press at the ring's end falls on to the next
+test. Under the directional entry an Up or Down with no side direction then
+commits the target as the confirm mask does (`0x801D226C..0x801D228C`); under the
+cross-button entry only the confirm mask commits. The cancel mask goes back
+where the Attack arm came from (`0x801D2364..0x801D23D4`): the ring (`0x28`)
+under the `Automatic` option word, the `Auto | Command` prompt (`0x78`) once its
+`Auto` set `ctx[+0x266 + seat]`, and the arts entry (`0x50`) for a string the
+entry's review sent here. Port: the `Targeting` arm of
+`battle_input::BattleCommandSession::input`, the review's cancel in the arts
+entry's own session.
 
 The ring's four arms sit on the same four masks, and every one of them commits
 through the same idiom - **advance to the next member that still owes a
@@ -587,18 +631,26 @@ words read off the disc.
 
 Each committed member gets a row of three placement records at `0x2B + 3n`
 (name, command, target), `n = ctx[+0x1F]` - the command cursor's step
-depth. The commit arms of `FUN_801D388C` stage them: case `0x20` (Attack)
-at `0x801D4444`, case `0x11` (Spirit, a member other than the last, with the
-forward step) at `0x801D4020`, case `0x23` (Spirit, the last member) at
-`0x801D4918`. Each arm:
+depth. The commit arms of `FUN_801D388C` stage them: cases `0xE` / `0x20`
+(Attack, a member other than the last / the last) at `0x801D3E38` /
+`0x801D4444`, cases `0x11` / `0x23` (Spirit) at `0x801D4020` / `0x801D4918`,
+and cases `0x15` / `0x22` (Magic and Item) at `0x801D41F4` / `0x801D476C`.
+Each arm:
 
 1. lands the three elements with `FUN_801D5718(dst, src)` - name from the
    acting plaque (record `0x1A`), command from the chosen ring chip (record
    `0x0D` `Attack` on case `0x20`, record `0x0B` `Spirit` on the other two),
-   target from the target plaque (record `0x29`); the Spirit arms point the
-   target element at an empty string of width `0` instead;
+   target from the target plaque (record `0x29`); the Spirit arms name the
+   row off the actor's own `+0x1BC` and point the target element at an empty
+   string of width `0`; the Magic / Item arms take the command from record
+   `0x3B`, the spell or item name the target sub-cursor's raise staged
+   (`0x801D4138..0x801D41A8` from the item table `0x80074368`,
+   `0x801D42F0..0x801D4388` from the spell table `0x800754C8`, where an id
+   of `0x65` or more reads the first spell's name), measured;
 2. seats the columns off the name's measured width: name at `x = 16`,
-   command at `name_w + 0x20`, target at `name_w + 0x60`;
+   command at `name_w + 0x20`, target at `name_w + 0x60`, or past the
+   measured spell or item name on the Magic / Item arms,
+   `name_w + command_w + 0x30`;
 3. scrolls the log so the newest row sits lowest - one row rests at
    `y = 170`, a second moves the first to `146` and takes `170`, a third
    takes `194`.
@@ -658,9 +710,11 @@ steps `FUN_801D9BBC`'s glide, `engine-core::world::battle::commit_log_launch`
 raises it on the engine's ring transitions (the prompt, the `Automatic` target
 cursor, the arts entry, the item and magic windows out; a cancel or a
 sub-screen backed out of in), and every row carries the offset as
-`CommitLogRow::slide_x`. Which chip an Item or magic commit logs
-(records `0x0C` / `0x0E`) and whether an Item row carries a target are
-inferred from the ring's arm order, not read off a commit arm.
+`CommitLogRow::slide_x`. A Magic or Item row logs the spell or item name
+(`battle_commit_log::RECORD_COMMIT_NAME`) and the target the sub-cursor stood
+on, `All` for a party-wide or every-enemy item. The differential
+`crates/retail-exec/tests/commit_log.rs` lands every commit arm against the
+layout.
 
 ### Where the words come from
 
@@ -733,7 +787,9 @@ Drives the post-action target cursor. Parameterised on a `TargetKind` enum const
 
 Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead.
 
-The **party** row follows the one-ally states [above](#the-window-target-sub-cursors): it opens on the caster's seat, and Left steps the seat up, Right down. The picker's liveness filter is the port's: retail's `0x65` walk stops on a downed member too. The item window's party band (`World::tick_battle_item_menu`) walks every seated member, as retail's `0x64` does. Implementation: [`engine-battle::target_picker`](../../crates/engine-battle/src/target_picker.rs).
+The **party** row follows the one-ally states [above](#the-window-target-sub-cursors): it opens on the caster's seat, and Left steps the seat up, Right down. Like retail's `0x65`, the magic window's party cursor stops on a downed member and the caster as on any other seat, and commits the seat it stands on (`TargetPickerSession::step_party_seat` / `commit_party_seat`); its enemy cursor and both sweep confirms take an Up or Down as the confirm under the directional entry, as `0x5A` does. The item window's party band (`World::tick_battle_item_menu`) walks every seated member, as retail's `0x64` does.
+
+The item window's four surfaces read the pad in retail's order too (`World::item_target_input`): its one-enemy cursor `0x5B` steps the same angular ring as `0x5A` (`target_picker::enemy_ring_step`) rather than the rows in slot order, and every one of the four commits on an Up or Down under the directional entry; the differential `command_prompts.rs` holds all four. Implementation: [`engine-battle::target_picker`](../../crates/engine-battle/src/target_picker.rs).
 
 The **enemy** row is not a slot-order walk. Each picker row carries the slot's battle-world seat (`actor[+0x34]` / `+0x38`, filled by `World::battle_target_rows` from the actor's `move_state`), and a `SingleEnemy` cursor steps through retail's attack-target ring - `FUN_801D8A88` builds the ring and `FUN_801D8D00` steps it, so Left/Right move to the *angularly* nearest live monster.
 

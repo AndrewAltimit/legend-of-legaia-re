@@ -39,6 +39,12 @@ pub trait BattleTestDrivers {
     fn build_battle_item_session(&self) -> legaia_engine_menus::inventory_use::InventoryUseSession;
     /// One frame of the open battle Item window.
     fn tick_battle_item_menu(&mut self);
+    /// The command flow's pre-dispatch glide gate
+    /// (`World::battle_command_glide_gate`): `true` when the pass leaves
+    /// before its state dispatch.
+    fn battle_command_glide_gate(&mut self) -> bool;
+    /// The pad word a dispatched pass reads (`World::take_command_pad_buffer`).
+    fn take_command_pad_buffer(&mut self) -> BattleCommandInput;
 }
 
 impl BattleTestDrivers for World {
@@ -74,5 +80,11 @@ impl BattleTestDrivers for World {
     }
     fn tick_battle_item_menu(&mut self) {
         World::tick_battle_item_menu(self)
+    }
+    fn battle_command_glide_gate(&mut self) -> bool {
+        World::battle_command_glide_gate(self)
+    }
+    fn take_command_pad_buffer(&mut self) -> BattleCommandInput {
+        World::take_command_pad_buffer(self)
     }
 }

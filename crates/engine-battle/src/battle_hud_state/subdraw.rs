@@ -24,12 +24,16 @@ pub mod subdraw_steps {
     pub const MAGIC_WINDOW: usize = 0x07;
     /// `0x28` -> `0x50` arts command entry (`0x801D1658`).
     pub const ARTS_INPUT: usize = 0x09;
-    /// `0x3C` -> `0x64` item target step (`0x801D1958`).
+    /// `0x3C` -> `0x5B` item one-enemy target step (`li a0,0x12`, `jal` at
+    /// `0x801D1958`). The one-ally raise `0x64` passes `0x16`
+    /// (`0x801D19C4`, the shared `jal` at `0x801D2D1C` with `a1 = 2`).
     pub const ITEM_TARGET_OPEN: usize = 0x12;
     /// `0x64` cursor move: the bar re-pointed at the pointed member
     /// (`0x801D2D1C`).
     pub const ITEM_TARGET_CURSOR: usize = 0x18;
-    /// `0x46` -> magic target step (`0x801D2B74`).
+    /// `0x46` -> `0x65` magic one-ally target step (`li a0,0x1b` at
+    /// `0x801D1D38`, the shared `jal` at `0x801D2D1C` with `a1 = 1`).
+    /// `0x801D2B74` passes `0x1C`: the `0x65` cancel back to the window.
     pub const MAGIC_TARGET: usize = 0x1B;
     /// `0x28` -> `0x6E` all members committed (`0x801D16D8`).
     pub const ALL_COMMITTED: usize = 0x23;

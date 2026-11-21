@@ -966,10 +966,18 @@ impl World {
                 move_vm::integrate_draw_channels(st, drain);
                 // The render-mode-5 arm - a positional sound emitter
                 // (`0x800220D8..0x800226D4`) - sits between the channel block
-                // and the motion block, which mode 5 skips.
+                // and the motion block, which mode 5 skips. A stop request
+                // leaves the tick from the arm (`0x800221FC`, `j 0x80023040`
+                // to the epilogue): no move-VM run and no clamps that tick.
+                let stopping = st.move_submode
+                    == legaia_engine_vm::sfx_emitter::EMITTER_RENDER_MODE
+                    && st.flags & legaia_engine_vm::sfx_emitter::EMITTER_STOP_FLAG != 0;
                 if let Some(op) = legaia_engine_vm::sfx_emitter::emitter_tick(st, &emitter_listener)
                 {
                     self.audio.sfx_emitter_ops.push(op);
+                }
+                if stopping {
+                    continue;
                 }
                 // The mode-3 arm (`0x800226D8..`, keyed on `+0x5A == 3`): the
                 // CLUT-cell cycler integrates its adds and uploads the cell

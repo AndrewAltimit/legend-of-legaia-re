@@ -173,12 +173,14 @@ pub(super) fn op_4c<H: FieldHost>(
             operand,
             op0,
         ),
-        // Outer nibble 0xF - only `op0 == 0xFF` is valid; falls
-        // through to the default arm (PC += 2). Other sub-ops in
-        // this nibble print SUB_CMD_0F_ERROR and also fall through.
-        0xF => StepResult::Advance {
+        // Outer nibble 0xF - only `op0 == 0xFF` is valid: it advances
+        // past the two bytes (`beq v1,v0,0x801DF098` at `0x801E3540`).
+        // Every other sub-op prints SUB_CMD_0F_ERROR and restores the
+        // entry PC (`move s8,s4` at `0x801E355C`) - halt at PC.
+        0xF if op0 == 0xFF => StepResult::Advance {
             next_pc: pc + header_size + 1,
         },
+        0xF => StepResult::Halt { final_pc: pc },
         // Outer nibble 0xB has no `case 0xb` in the original 0x4C
         // switch (the dump goes case 0xa → default → case 0xc).
         // The default arm (line 6718) prints SUB_CMD_ERROR and

@@ -55,7 +55,15 @@ impl World {
             self.actors.get(i).is_some_and(|a| a.battle.hp != 0)
                 && record_bits(self, i).is_some_and(|b| word(b, 1) & bs::ITEMS_UP_BIT != 0)
         });
-        let entry = self.actors[slot].battle_monster_id.and_then(|id| {
+        // Retail keys the row on the formation cell `0x8007BD09 + seat`
+        // (`0x8004B530`), which the death arm's Jette count can have cleared
+        // for the second seat ahead of this read: that seat then steals off
+        // row `0`.
+        let cleared = m == 1 && self.battle.formation_second_cleared;
+        let monster_id = self.actors[slot]
+            .battle_monster_id
+            .map(|id| if cleared { 0 } else { id });
+        let entry = monster_id.and_then(|id| {
             self.expansion_steal_override(id)
                 .or_else(|| self.run_rules_steal_override(id))
                 .or_else(|| self.tables.steal_table.as_ref()?.entry(id))

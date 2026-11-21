@@ -201,7 +201,7 @@ impl TitleSession {
         // Init -> AttractDelay, then the hold the SCUS stager seeded
         // (`0x100` at `0x8002579C`, spent at 8 a frame) -> AttractIdle.
         for _ in 0..=(2 + ATTRACT_DELAY_SEED / 8) {
-            let _ = tick.step(TitleTickPad::from_edge(0), TitleCardStatus::default());
+            let _ = tick.step(TitleTickPad::from_edge(0), &mut TitleCardStatus::default());
         }
         tick
     }
@@ -398,7 +398,7 @@ impl TitleSession {
                                 crate::title_overlay::TitleTickPad::from_edge(
                                     crate::title_overlay::PADMASK_START_L1_CROSS,
                                 ),
-                                crate::title_overlay::TitleCardStatus::default(),
+                                &mut crate::title_overlay::TitleCardStatus::default(),
                             );
                             let outcome = match row {
                                 0 => TitleOutcome::NewGame,

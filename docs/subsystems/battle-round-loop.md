@@ -329,6 +329,18 @@ The sequencer frames its pose actor `ctx[+0x13]` on every frame it runs, in two 
 
 The results frame's own pass frames the arm's bare base. That pass stages the pose into `+0x1DA` (`0x8004EF14`) and frames at its tail (`0x8004FC90`), before the anim tick latches the byte the script indexes (`+0x1DB`, `0x801D61E8`). `battle_jou_gala_finisher_results_retail`, `3` vsyncs into the hold on a step of `3`, holds the table's endpoints on `(0, -5 * y, prescale(0x500))` with the accumulator at `96`; the film it was cut from commits the pose clip two vsyncs later. Port: `battle_end_cam_inputs` hands the script no pose while the hold is under one frame step.
 
+The win arm also writes the framing words case 6's other arms read. Phase 0
+ends by halving the framing depth `ctx[+0x6D0]` under the Battle Camera
+option's `Close` (`0x800846C0 == 0`, `0x8004ED04..0x8004ED48`), adding `0x100`
+when the pose seat's character id is `4`; the results frame stores the yaw
+counter `ctx[+0x6DA]` (`0x800` for Noa, else `0x780`) and the depth `0x4E0`
+(`0x8004EF1C..0x8004EF4C`). On a party win neither reaches the screen: the
+load window's case 8 stand-off reads the yaw before the results frame stores
+it, and from the results frame on case 6 takes the battle-over arm, whose
+shot is the pose script's. The port stores all three
+(`victory::victory_pose_camera_depth`, `victory::victory_results_camera`), held
+to retail by `crates/retail-exec/tests/victory_pose.rs` and `spoils.rs`.
+
 The escape arm returns before either call (`0x8004E720`).
 
 `noa_levelup_banner` reads the results framing directly: Vahn posing `0x14` with `ctx[+0x87C] = 616`, pitch `-0x20` and yaw `0x800 - actor[+0x46]` exactly, TR one tween step short of the script's `(0, 928, prescale(1126))` and walking down toward it from the stand-off pose.

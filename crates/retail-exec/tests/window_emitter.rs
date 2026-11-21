@@ -9,7 +9,7 @@
 //! not compared here.
 
 use crate::common::{Rng, scus_cpu};
-use legaia_engine_ui::{dialog_window_fill_rect, dialog_window_footprint};
+use legaia_engine_ui::{dialog_window_drawn, dialog_window_fill_rect, dialog_window_footprint};
 use legaia_ui_formats::title_pak::{
     OVERLAY_SYSTEM_UI_DIALOG_FILL_BOT_RGB, OVERLAY_SYSTEM_UI_DIALOG_FILL_TOP_RGB,
 };
@@ -44,12 +44,23 @@ fn the_reading_box_fills_and_frames_where_the_port_does() {
     };
     let mut rng = Rng(0x5749_4E45);
     for case in 0..2000 {
-        let rect = (
+        // Sizes down to the degenerate: a zero-by-zero call, and the
+        // inflated edges at zero or below.
+        let size = |rng: &mut Rng, span: u32| match rng.below(6) {
+            0 => -7 + rng.below(23) as i32,
+            1 => 0,
+            _ => 8 + rng.below(span) as i32,
+        };
+        let mut rect = (
             rng.below(200) as i32,
             rng.below(160) as i32,
-            16 + rng.below(240) as i32,
-            8 + rng.below(120) as i32,
+            size(&mut rng, 248),
+            size(&mut rng, 120),
         );
+        // A height of -8 inflates to none: the border-only arm.
+        if rng.below(10) == 0 {
+            rect.3 = -8;
+        }
         cpu.mem.wr32(POOL_PTR, POOL);
         cpu.mem.wr32(OT_PTR, OT);
         for i in 0..16 {
@@ -59,11 +70,17 @@ fn the_reading_box_fills_and_frames_where_the_port_does() {
         let args = [rect.0, rect.1, rect.2, rect.3].map(|v| v as u32);
         assert_eq!(cpu.call(EMIT, &args), Stop::Returned, "case {case}");
         let packets = words(&mut cpu);
+        if !dialog_window_drawn(rect) {
+            assert!(packets.is_empty(), "case {case}: {rect:?} draws nothing");
+            continue;
+        }
 
-        // The fill: two `POLY_G4`s, semi-transparent.
+        // The fill: two `POLY_G4`s, semi-transparent - none when the fill
+        // has no height, where retail takes the border-only arm.
         let fills: Vec<&Vec<u32>> = packets.iter().filter(|w| w[1] >> 24 == 0x3B).collect();
-        assert_eq!(fills.len(), 2, "case {case}: two fill passes");
         let (fx, fy, fw, fh) = dialog_window_fill_rect(rect);
+        let want_fills = if fh == 0 { 0 } else { 2 };
+        assert_eq!(fills.len(), want_fills, "case {case}: {rect:?} fill passes");
         let rgb = |c: (u8, u8, u8)| u32::from(c.0) | u32::from(c.1) << 8 | u32::from(c.2) << 16;
         let (top, bot) = (
             rgb(OVERLAY_SYSTEM_UI_DIALOG_FILL_TOP_RGB),

@@ -3,9 +3,14 @@
 //! chord, the two anim-flag toggles and the L1-modified camera block (focus
 //! X / Z `0x80089118` / `0x80089120`, azimuth `0x8007B794`, height
 //! `0x8007B6F4`). Every call out of the routine is stubbed (its debug text
-//! and the chord's save); the panel phase `+0x54` the routine's later arms
-//! raise is put back to `0` each frame, the port's panels being a host of
-//! their own (`World::tick_world_map_panels`).
+//! and the chord's `FUN_80035C10` clear). The actor's phase word `+0x54`,
+//! which the routine only clears (the chord's `sh zero` at `0x801E7784`) and
+//! whose non-zero value skips everything past the dim call (`0x801E77C8`), is
+//! put back to `0` each frame, the port's panels being a host of their own
+//! (`World::tick_world_map_panels`). One round in four clears the
+//! debug word (`0x801E7700`'s `beq` to `0x801E7790`), seeding the view mode
+//! either way, so the chord is refused while a top view already up keeps its
+//! camera block.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_field::world_map::WorldMapController;
@@ -37,22 +42,25 @@ fn the_top_view_debug_camera_matches_retail() {
     cpu.mem
         .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
     cpu.stub_outside = Some((CONTROLLER, CONTROLLER_END));
-    cpu.mem.wr32(DEBUG_WORD, 1);
     cpu.mem.wr32(PLAYER_PTR, PLAYER);
     let mut rng = Rng(0x544F_5056);
     let mut toggles = 0;
     let mut moved = 0;
+    let mut refused = 0;
     for round in 0..40 {
-        for a in [VIEW_MODE, ANIM_FLAGS] {
-            cpu.mem.wr8(a, 0);
-        }
+        let debug = round % 4 != 3;
+        let view_mode = u8::from(!debug && round % 8 == 7);
+        cpu.mem.wr32(DEBUG_WORD, u32::from(debug));
+        cpu.mem.wr8(VIEW_MODE, view_mode);
+        cpu.mem.wr8(ANIM_FLAGS, 0);
         for a in [FOCUS_X, FOCUS_Z] {
             cpu.mem.wr32(a, 0);
         }
         cpu.mem.wr16(AZIMUTH, 0);
         cpu.mem.wr16(HEIGHT, 0);
         let mut port = WorldMapController {
-            debug_enabled: true,
+            view_mode,
+            debug_enabled: debug,
             map_display_enabled: false,
             ..Default::default()
         };
@@ -91,10 +99,11 @@ fn the_top_view_debug_camera_matches_retail() {
             assert_eq!(cpu.mem.rd16(AZIMUTH), port.azimuth as u16, "azimuth, {at}");
             assert_eq!(cpu.mem.rd16(HEIGHT), port.zoom as u16, "height, {at}");
             moved += usize::from(port.view_mode != 0 && held & 4 != 0 && held & 0xF000 != 0);
+            refused += usize::from(!debug && held == 0x4A && edge == 0x40);
         }
     }
     assert!(
-        toggles > 100 && moved > 1000,
-        "toggles {toggles} moved {moved}"
+        toggles > 100 && moved > 1000 && refused > 10,
+        "toggles {toggles} moved {moved} refused {refused}"
     );
 }

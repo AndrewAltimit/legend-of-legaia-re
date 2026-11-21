@@ -79,7 +79,9 @@ impl PickerSlide {
         s
     }
 
-    /// One pager call at frame step `dt` (`DAT_1F800393`).
+    /// One pager call at frame step `dt` (`DAT_1F800393`), which the pager
+    /// caps at `4` on entry (`slti v0,s2,0x5` / `li s2,0x4` at
+    /// `0x801D8508..0x801D8514`) as it does for the row window.
     pub fn call(&mut self, dt: u8) {
         if self.count == SLIDE_SENTINEL {
             self.span = SLIDE_SPAN;
@@ -90,7 +92,7 @@ impl PickerSlide {
             self.settled = true;
             return;
         }
-        let next = self.count.wrapping_sub(i16::from(dt.max(1)));
+        let next = self.count.wrapping_sub(i16::from(dt.clamp(1, 4)));
         self.count = next.max(0);
     }
 

@@ -37,7 +37,7 @@
 //! # Per-frame law (`FUN_801DC0BC`, body `0x801DC104..0x801DD220`)
 //!
 //! ```text
-//! t = min(t + DAT_1F800393, d)          // progress, clamped to the duration
+//! t = min((i16)(t + DAT_1F800393), d)    // halfword progress, clamped to the duration
 //! for each axis but focus Y (start s, end e):
 //!     if e == s: value = s              // untouched axis holds
 //!     elif t >= d: value = e            // arrived: exact target, no overshoot
@@ -120,16 +120,16 @@ pub fn curve_offset(delta: i32, t: i32, d: i32, curve: i16) -> i32 {
                 let t2 = t - h;
                 let mid = half;
                 let k2 = delta - mid;
-                let n = k2 * t2;
-                half + quad_out_num(n, h, t2)
+                let n = k2.wrapping_mul(t2);
+                half.wrapping_add(quad_out_num(n, h, t2))
             } else {
                 // First half: quad-in toward the midpoint.
-                tdiv(tdiv(half * t, h) * t, h)
+                tdiv(tdiv(half.wrapping_mul(t), h).wrapping_mul(t), h)
             }
         }
-        3 => tdiv(tdiv(delta * t, d) * t, d),
-        2 => quad_out_num(delta * t, d, t),
-        _ => tdiv(delta * t, d),
+        3 => tdiv(tdiv(delta.wrapping_mul(t), d).wrapping_mul(t), d),
+        2 => quad_out_num(delta.wrapping_mul(t), d, t),
+        _ => tdiv(delta.wrapping_mul(t), d),
     }
 }
 
@@ -139,7 +139,7 @@ fn quad_out_num(n: i32, d: i32, t: i32) -> i32 {
     if d == 0 {
         return 0;
     }
-    tdiv(n + tdiv(n, d) * (d - t), d)
+    tdiv(n.wrapping_add(tdiv(n, d).wrapping_mul(d - t)), d)
 }
 
 /// Value of one axis at progress `t`.
@@ -153,7 +153,7 @@ pub fn axis_value(start: i32, end: i32, t: i32, d: i32, curve: i16) -> i32 {
     if t >= d {
         return end;
     }
-    start + curve_offset(end - start, t, d, curve)
+    start.wrapping_add(curve_offset(end - start, t, d, curve))
 }
 
 /// The single camera-mover actor: ten `(start, end)` pairs advanced by one
@@ -208,8 +208,17 @@ impl CameraMover {
 
     /// Advance the shared progress by `dt` display frames (retail's
     /// `DAT_1F800393`) and return `true` once the glide has arrived.
+    ///
+    /// The progress is the halfword `+0x9C`: the tick adds the step, stores
+    /// it with `sh` and reads it back with `lh` before the clamp
+    /// (`0x801DC104..0x801DC138`), so a sum past `0x7FFF` goes negative,
+    /// escapes the clamp and runs the curve from a negative progress (the
+    /// pose swings back past the start) until it climbs to the duration
+    /// again. Only a duration within a step of `0x7FFF` gets there. The step
+    /// is a byte (`lbu`), so `dt` is taken to at most `0xFF`.
     pub fn tick(&mut self, dt: i32) -> bool {
-        self.t = (self.t + dt).min(self.d);
+        let t = i32::from((self.t + dt.clamp(0, 0xFF)) as i16);
+        self.t = if self.d < t { self.d } else { t };
         self.t >= self.d
     }
 

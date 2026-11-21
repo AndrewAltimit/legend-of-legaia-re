@@ -32,7 +32,9 @@ pub(super) fn op_4e<H: FieldHost>(
             let Some(&skip_hi) = bytecode.get(operand + 5) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let arg = i32::from(u16::from_le_bytes([arg_lo, arg_hi]));
+            // `FUN_8003CE9C` sign-extends the operand (`sra v0,v0,0x10` at
+            // `0x8003CEB4`).
+            let arg = i32::from(i16::from_le_bytes([arg_lo, arg_hi]));
             let (state, factor) = host.char_hp_mp_pair(page, sub_op);
             let raw = factor.wrapping_mul(arg);
             let scaled = if raw < 0 { (raw + 0xFF) >> 8 } else { raw >> 8 };
@@ -72,12 +74,16 @@ pub(super) fn op_4e<H: FieldHost>(
             let Some(&skip_hi) = bytecode.get(operand + 5) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let scaled = i32::from(u16::from_le_bytes([arg_lo, arg_hi]));
+            // The operand is a signed halfword (`FUN_8003CE9C`, `sra` at
+            // `0x8003CEB4`), compared signed (`slt` at `0x801E0BA4` /
+            // `0x801E0BB0`): an operand past `0x7FFF` is negative.
+            let scaled = i32::from(i16::from_le_bytes([arg_lo, arg_hi]));
             let state: i32 = match sub_op {
                 // 0x801E0AC0: char record `page` level byte +0x130.
                 2 => host.char_level(page),
                 // 0x801E0AEC / 0x801E0B34: gold / coin bank (same globals
-                // as the 9-byte sub-10/11 forms, compared vs a u16 here).
+                // as the 9-byte sub-10/11 forms, against a signed halfword
+                // here).
                 3 => host.party_bank_value(10),
                 9 => host.party_bank_value(11),
                 // 0x801E0AFC: BIOS Rand() & 0xFF - a random-chance branch.

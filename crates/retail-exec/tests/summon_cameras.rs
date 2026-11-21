@@ -32,7 +32,7 @@ use legaia_engine_battle_vm::battle_cam_script::prescale_tr_z;
 use legaia_engine_battle_vm::battle_target_group::{GroupAim, MIN_GROUP_EXTENT};
 use legaia_engine_cast::cast_module_camera::{
     self as cam, ArmDirection, ModuleCamSeats, ModuleCamState, ModuleSeat, SINGLE_BODY,
-    SPEED_SCALAR,
+    SPEED_SCALAR, puera_crystal_fall,
 };
 use legaia_engine_cast::cast_module_rumble::{
     MODULE_RUMBLE, RumbleStore, module_rumble_due, ozma_spray,
@@ -239,13 +239,14 @@ const BODIES: [(u32, u32, u8); 14] = [
 /// their holds to the tick body's own port and arm a passed arm's shot on
 /// the body's next tick (`ModuleProfile::body_paced`), which a walk of the
 /// director alone cannot pace.
-const PACED: [(u32, u32, u8); 6] = [
+const PACED: [(u32, u32, u8); 7] = [
     (905, VERA, 2),
     (907, NIGHTO, 3),
     (908, ZENOIR, 3),
     (924, ULTIMATE_RAVE, 3),
     (925, SPIKEFISH, 3),
     (927, JUGGERNAUT, 9),
+    (922, PUERA, 9),
 ];
 
 const VERA: u32 = 0x801F_69D8;
@@ -268,6 +269,12 @@ const JEDO: u32 = 0x801F_6A58;
 const META: u32 = 0x801F_6A34;
 const TERRA: u32 = 0x801F_6A30;
 const OZMA: u32 = 0x801F_6A40;
+const PUERA: u32 = 0x801F_6A3C;
+/// The part spawn `FUN_80021B04`, the pool the walk hands PROT 0922's parts
+/// from, and arm 18's 23 crystal handles (`0x801F9F90 + 0x58`).
+const SPAWN_PART: u32 = 0x8002_1B04;
+const PARTS: u32 = 0x8016_0000;
+const PUERA_CRYSTALS: u32 = 0x801F_9FE8;
 
 /// A summon's spell id: PROT 0914 casts `0x8C`, one id an image up.
 fn action_of(entry: u32) -> u8 {
@@ -364,7 +371,8 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         prot(908, ZENOIR),
         prot(924, ULTIMATE_RAVE),
         prot(925, SPIKEFISH),
-        prot(927, JUGGERNAUT)
+        prot(927, JUGGERNAUT),
+        prot(922, PUERA)
     );
     let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -387,6 +395,19 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             if ![AIM, BUILDER, BEARING, RAND].contains(&target) {
                 cpu.stub(target, 0);
             }
+        }
+        // PROT 0922 keeps the handles of the parts it spawns and moves them
+        // (arm 19's crystal re-seat, arm 20's fall): each spawn gets a part.
+        if entry == 922 {
+            let next = Rc::new(std::cell::Cell::new(PARTS));
+            cpu.hook(SPAWN_PART, move |r, m| {
+                let at = next.get();
+                next.set(at + 0x80);
+                for o in (0..0x80).step_by(4) {
+                    m.wr32(at + o, 0);
+                }
+                r.r[V0] = at;
+            });
         }
         {
             let shots = shots.clone();
@@ -437,6 +458,8 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             let victim = if code < 8 { u32::from(code) } else { VICTIM };
             let mut max_roll = 0;
             let mut rumbles = 0u32;
+            let mut crystal_landings = 0usize;
+            let mut staged_writes = 0usize;
             let mut bad = 0usize;
             let mut finished = false;
             let mut path = Vec::new();
@@ -464,7 +487,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     let staged = cpu.mem.rd8(a + 0x1DA);
                     cpu.mem
                         .wr8(a + 0x1D9, if s == CREATURE { staged } else { 0 });
-                    cpu.mem.wr16(NODES + s * 0x100 + 0x68, 0x7FFF);
+                    // PROT 0922's arm 8 walks the creature's cursor back from
+                    // the `0x1D0` arm 7 parked it on (`0x801F7118..0x801F7178`):
+                    // the cursor stays the arm's own.
+                    let rewinding = entry == 922 && s == CREATURE && cpu.mem.rd8(CTX + 0x279) == 8;
+                    if !rewinding {
+                        cpu.mem.wr16(NODES + s * 0x100 + 0x68, 0x7FFF);
+                    }
                     for o in [0u32, 2, 4] {
                         let v = cpu.mem.rd16(a + 0x34 + o);
                         cpu.mem.wr16(a + 0x3C + o, v);
@@ -568,6 +597,20 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     cpu.mem.wr32(w, RUMBLE_SENTINEL);
                 }
                 let countdown_before = st.countdown.0;
+                // PROT 0922's arm 20 drops its 23 crystals every pass, held or
+                // not, and raises the rumble on each that lands
+                // (`0x801F85F8..0x801F8690`): the engine runs the fall off
+                // `puera_crystal_fall` (`World::apply_puera_writes`).
+                let crystals: Vec<(u32, i16)> = if (entry, phase) == (922, 20) {
+                    (0..23u32)
+                        .map(|i| {
+                            let h = cpu.mem.rd32(PUERA_CRYSTALS + 4 * i);
+                            (h, cpu.mem.rd16(h + 0x16) as i16)
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 let stop = cpu.call(va, &[]);
                 if stop != Stop::Returned {
                     failures.push(format!("PROT {entry:04} pass {pass} arm {phase}: {stop:?}"));
@@ -595,6 +638,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 let retail = Target::read(&mut cpu.mem);
                 let shot = shots.borrow().last().copied();
                 let held = busy && after == phase;
+                let mut diffs_early: Vec<String> = Vec::new();
                 if !held && path.last() != Some(&phase) {
                     path.push(phase);
                 }
@@ -603,7 +647,40 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 } else {
                     arm.jump.unwrap_or(phase.wrapping_add(1))
                 };
-                let mut diffs = Vec::new();
+                let mut diffs = std::mem::take(&mut diffs_early);
+                // PROT 0922's creature writes, which the host carries out off
+                // the director's state: the staged clip `+0x1DA`, the rate
+                // `+0x21D` and the node cursor `+0x68` (arms 5, 7..10, 18).
+                if entry == 922 {
+                    let a = ACTOR + CREATURE * STRIDE;
+                    let node = NODES + CREATURE * 0x100;
+                    if let Some(stage) = st.creature_stage.take() {
+                        staged_writes += 1;
+                        if cpu.mem.rd8(a + 0x1DA) != stage {
+                            diffs.push(format!(
+                                "stage retail {} port {stage}",
+                                cpu.mem.rd8(a + 0x1DA)
+                            ));
+                        }
+                    }
+                    if let Some(rate) = st.creature_rate.take()
+                        && cpu.mem.rd8(a + 0x21D) != rate
+                    {
+                        diffs.push(format!(
+                            "rate retail {} port {rate}",
+                            cpu.mem.rd8(a + 0x21D)
+                        ));
+                    }
+                    if let Some(seek) = st.creature_seek.take()
+                        && cpu.mem.rd16(node + 0x68) != seek
+                    {
+                        diffs.push(format!(
+                            "cursor retail {:#x} port {seek:#x}",
+                            cpu.mem.rd16(node + 0x68)
+                        ));
+                    }
+                    st.creature_restage = false;
+                }
                 // The rumble stores (`cast_module_rumble`), behind the
                 // Battles vibration word `0x800845C8` left on.
                 let words = RUMBLE.map(|w| cpu.mem.rd32(w));
@@ -617,6 +694,18 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     (words[2] != RUMBLE_SENTINEL).then(|| (words[2] as i32, words[3] as i32));
                 let due: Vec<_> =
                     module_rumble_due(entry, SINGLE_BODY, phase, !held, countdown_before).collect();
+                let mut landed = false;
+                for &(h, y) in &crystals {
+                    let (y, l) = puera_crystal_fall(y, SPEED_SCALAR << 7);
+                    landed |= l;
+                    if cpu.mem.rd16(h + 0x16) as i16 != y {
+                        diffs_early.push(format!(
+                            "crystal {h:#x} retail {} port {y}",
+                            cpu.mem.rd16(h + 0x16) as i16
+                        ));
+                    }
+                }
+                crystal_landings += usize::from(landed);
                 let pass_draws = draws.borrow().clone();
                 let rumble_ok = match due.as_slice() {
                     [] => rates.is_none(),
@@ -632,6 +721,21 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         RumbleStore::PueraAlternate { .. } => true,
                     },
                     _ => false,
+                };
+                // Arm 20's landing store: `FF / FF / 0x10 / 0x10`, hold `0`.
+                let rumble_ok = if crystals.is_empty() {
+                    rumble_ok
+                } else if landed {
+                    stored
+                        == Some(BattleRumbleWrite {
+                            pulse: 0xFF,
+                            level: 0xFF,
+                            pulse_rate: 0x10,
+                            level_rate: 0x10,
+                        })
+                        && words[4] == 0
+                } else {
+                    due.is_empty() && rates.is_none()
                 };
                 if rumble_ok && !due.is_empty() {
                     rumbles += 1;
@@ -694,6 +798,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     finished = true;
                     break;
                 }
+            }
+            if entry == 922 && (crystal_landings == 0 || staged_writes < 5) {
+                failures.push(format!(
+                    "PROT 0922: {crystal_landings} crystal landings, {staged_writes} creature stages"
+                ));
             }
             // Every carried rumble write of the module was compared.
             let carried = MODULE_RUMBLE.iter().filter(|m| m.entry == entry).count();

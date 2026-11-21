@@ -10,6 +10,7 @@
 #[macro_use]
 mod common;
 
+mod action_sm;
 mod action_tag;
 mod actor_bind;
 mod actor_cull;
@@ -115,6 +116,8 @@ mod colour_grade;
 mod colour_tween;
 mod colour_wash;
 mod combo_records;
+mod command_prompts;
+mod commit_log;
 mod confuse;
 mod contact_candidates;
 mod container_walkers;
@@ -316,6 +319,7 @@ mod pad_resolve;
 mod panel_actors;
 mod panel_backread;
 mod panel_script;
+mod part_tick;
 mod party_panel_build;
 mod party_table;
 mod passive_sweep;
@@ -432,6 +436,7 @@ mod unequip;
 mod validator;
 mod value_readout;
 mod vdf_morph;
+mod victory_pose;
 mod view_window;
 mod voice_choose;
 mod walk_on;

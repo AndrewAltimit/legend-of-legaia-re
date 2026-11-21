@@ -1,0 +1,1971 @@
+# Arms of PORT-tagged retail routines that are out of scope for the kernel
+# differential's branch coverage, read by `scripts/ci/branch-coverage.py`.
+# Branches inside a row leave the denominator of the "ported arms" figure, so
+# what stays below 100% there is the worklist: arms a port claims that no test
+# exercises. See docs/tooling/retail-kernel-differential.md#branch-coverage.
+#
+# One [[arm]] per contiguous range of the routine:
+#   entry   = the routine's entry VA (as its PORT tags name it)
+#   range   = "0x801D2BE8..0x801D2D24", inclusive; a single branch is "A..A"
+#   verdict = "unported"     no port implements the arm, by decision
+#             "unreachable"  no game state reaches it (say what guards it)
+#             "cannot-drive" the interpreter cannot run it (say what it needs)
+#   reason  = one sentence, disassembly-grounded: what the arm does and why it
+#             is out of scope
+#
+#   image   = optional: the image hash `--worksheet` prints beside the entry.
+#             A slot-B VA holds different routines in different images, and
+#             a row without `image` applies to every image at its entry; give
+#             it on any row at a VA-aliased entry, and name the PROT entry in
+#             the reason.
+
+# lane E
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F2518..0x801F2518"
+verdict = "unreachable"
+reason = "PROT 0898: `bnez v1` repeats the test at 0x801F2510, which already sent every non-zero mode to 0x801F2958, so its taken arm never runs."
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F299C..0x801F29B4"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guards (`break 7` / `break 6`) on `(scroll + y) % h`; `h` is `lbu ctx[+0x27C]`, never -1, and every module that stores a scanline mode (PROT 0917/0923/0929/0963/0965) stores a non-zero constant height beside it."
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F29D8..0x801F29F0"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guards on `(m << 12) / h`; `h` is an unsigned byte the modules set non-zero, never -1."
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F2A48..0x801F2A60"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guards on `((m - h/2) << 12) / h`; `h` is an unsigned byte the modules set non-zero, never -1."
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F2A24..0x801F2A24"
+verdict = "unreachable"
+reason = "PROT 0898: the round-toward-zero fix-up for a negative `sin * amp`; the index `(m << 12) / h` with `0 <= m < h/2` (the scroll wrap at 0x801F2484..0x801F24C4 leaves the scroll non-negative at the modules' rates) stays in [0, 0x800), where the sine table is non-negative, and the amplitude is `lbu`."
+
+[[arm]]
+entry = "0x801F2410"
+range = "0x801F2A94..0x801F2A94"
+verdict = "unreachable"
+reason = "PROT 0898: the same fix-up for the wobble's second half; `(m - h/2) << 12) / h` stays in [0, 0x800) for `h/2 <= m < h`, so the product is never negative."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CF798..0x801CF798"
+verdict = "unported"
+reason = "PROT 0979 phase 5: the round-up of the looked-up length to a 0x800 grid into `_DAT_8007B9DC`; `tick_transition` surfaces the lookup call only, as the engine reads no bundle by that length."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CF824..0x801CF83C"
+verdict = "unreachable"
+reason = "PROT 0979: the floors at zero on `_DAT_8007B92C` / `_DAT_8007B930`, which the routine zeroes on entry (0x801CF5D8..0x801CF5E4) before any phase body runs; none of the phase callees (sound, bundle read, load wait, lookup) stores into them."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CF914..0x801CF914"
+verdict = "unreachable"
+reason = "PROT 0979: a reload of the battle id after `FUN_800266E0`, which 0x801CF8F4 has just found non-negative; the sequencer-slot teardown does not store `_DAT_8007B880`."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CFA4C..0x801CFA4C"
+verdict = "unreachable"
+reason = "PROT 0979: the fade switch's floor at zero on `(elapsed + K - total) * n`, behind its own `total - K < elapsed` test, so the product is at least `n` and the `bgez` always takes."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CFACC..0x801CFACC"
+verdict = "unreachable"
+reason = "PROT 0979: the fade switch's floor at zero on `(elapsed + K - total) * n`, behind its own `total - K < elapsed` test, so the product is at least `n` and the `bgez` always takes."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CFB14..0x801CFB14"
+verdict = "unreachable"
+reason = "PROT 0979: the fade switch's floor at zero on `(elapsed + K - total) * n`, behind its own `total - K < elapsed` test, so the product is at least `n` and the `bgez` always takes."
+
+[[arm]]
+entry = "0x801CF5BC"
+range = "0x801CFB64..0x801CFB64"
+verdict = "unreachable"
+reason = "PROT 0979: the fade switch's floor at zero on `(elapsed + K - total) * n`, behind its own `total - K < elapsed` test, so the product is at least `n` and the `bgez` always takes."
+
+[[arm]]
+entry = "0x801F6A3C"
+range = "0x801F6AB8..0x801F6AB8"
+verdict = "unreachable"
+reason = "PROT 0922: the dispatch's out-of-range test (`sltiu 0x19`); the phase only moves by the shared tail's `+1` (0x801F8A84), arm 20's `+2` (0x801F87D0) and arm 23's `+1` (0x801F8DAC), and arm 24 returns zero (`move fp,zero` at 0x801F90AC), so the band stops calling before the phase reaches 25."
+
+[[arm]]
+entry = "0x801CF470"
+range = "0x801CF4B0..0x801CF4C8"
+verdict = "unported"
+reason = "PROT 0980: the dev skip to the results (state 0x14, score 999) on Select, behind the dev print flag `_DAT_8007B9B0`; the port carries no dev flag."
+
+[[arm]]
+entry = "0x801CF470"
+range = "0x801CF4F0..0x801CF4F0"
+verdict = "unreachable"
+reason = "PROT 0980: the head's state-0 test; the entry parks on state 0 (the debug mode menu) only when the field-entry word `_DAT_8007B8B8` is zero (0x801CF190..0x801CF1A8), and the door warp into the hall sets it (FUN_80016230's mode-0x18 snapshot)."
+
+[[arm]]
+entry = "0x801CF470"
+range = "0x801CF7EC..0x801CF7EC"
+verdict = "unreachable"
+reason = "PROT 0980: the switch's out-of-range test (`sltiu 0x15`); every state store is a constant 7, 0xA, 0xB or 0x14 or a +1 / +2 step from a state below 0xD, and state 0x14 stores none."
+
+[[arm]]
+entry = "0x801CF470"
+range = "0x801CF890..0x801CF8D0"
+verdict = "unreachable"
+reason = "PROT 0980: state 0, the debug mode menu's cursor and confirm; reached only with the field-entry word `_DAT_8007B8B8` zero, which no retail entry into the hall leaves (see the 0x801CF4F0 row)."
+
+[[arm]]
+entry = "0x801F69D8"
+range = "0x801F74A4..0x801F74A4"
+image = "ffcdaddceadee7f2"
+verdict = "unreachable"
+reason = "PROT 0905 (Vera) only: inside arms 6 and 7 (0x801F7440..0x801F785C), which no phase reaches; the image steps the phase by the shared tail's +1 (0x801F7F4C), arm 3's +1 (0x801F6E94) and arm 5's +3 (0x801F7434, 5 -> 8) and sets 0xFF, so 6 and 7 are skipped. No other recorded slot-B image holds a branch here."
+
+[[arm]]
+entry = "0x801F69D8"
+range = "0x801F74D4..0x801F74D4"
+image = "ffcdaddceadee7f2"
+verdict = "unreachable"
+reason = "PROT 0905 (Vera) only: inside arms 6 and 7 (0x801F7440..0x801F785C), which no phase reaches; the image steps the phase by the shared tail's +1 (0x801F7F4C), arm 3's +1 (0x801F6E94) and arm 5's +3 (0x801F7434, 5 -> 8) and sets 0xFF, so 6 and 7 are skipped. No other recorded slot-B image holds a branch here."
+
+[[arm]]
+entry = "0x801F69D8"
+range = "0x801F76E8..0x801F76E8"
+image = "ffcdaddceadee7f2"
+verdict = "unreachable"
+reason = "PROT 0905 (Vera) only: inside arms 6 and 7 (0x801F7440..0x801F785C), which no phase reaches; the image steps the phase by the shared tail's +1 (0x801F7F4C), arm 3's +1 (0x801F6E94) and arm 5's +3 (0x801F7434, 5 -> 8) and sets 0xFF, so 6 and 7 are skipped. No other recorded slot-B image holds a branch here."
+
+[[arm]]
+entry = "0x801CF3BC"
+range = "0x801CF510..0x801CF53C"
+verdict = "unreachable"
+reason = "PROT 0972 state 0's debug venue menu (cursor on pad 0x4000, confirm on 0x20, the six rod and lure grants), entered only when the field-entry word `_DAT_8007B8B8` is zero (0x801CF4A0); the door warp into the pond sets it (FUN_80016230's mode-0x18 snapshot)."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6C7C..0x801F6C7C"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6D08..0x801F6D08"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6DD0..0x801F6DD0"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6E40..0x801F6E40"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6EA8..0x801F6EA8"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6F48..0x801F6F48"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F70B4..0x801F70B4"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F71AC..0x801F71AC"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7298..0x801F7298"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7310..0x801F7310"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F74F8..0x801F74F8"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F76D4..0x801F76D4"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F79B4..0x801F79B4"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7B84..0x801F7B84"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7CEC..0x801F7CEC"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7DFC..0x801F7DFC"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7F9C..0x801F7F9C"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F81A0..0x801F81A0"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F86A0..0x801F86A0"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F87F0..0x801F87F0"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F8AA4..0x801F8AA4"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F8F24..0x801F8F24"
+verdict = "unreachable"
+reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ffcdaddceadee7f2"
+range = "0x801F6ADC..0x801F6AE4"
+verdict = "unreachable"
+reason = "PROT 0905 (Vera): the dispatch's `beq 6` / `beq 7`, reached only for a phase of 6 or 7; no phase store makes 6 or 7 (shared +1 tail 0x801F7F4C, arm 3's +1, arm 5's +3 from 5 to 8, and 0xFF)."
+
+# lane D
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DD420..0x801DD508"
+verdict = "unported"
+reason = "PROT 0899 title tick: the once-per-overlay setup pass behind state[+0x230] (VRAM clears via FUN_80058298, string table loads via FUN_800198E0, then exit); the port's TitleTickState starts set up and the hosts load the title assets themselves"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DD50C..0x801DD50C"
+verdict = "unported"
+reason = "PROT 0899 title tick: a0 (s1) gates only the full-screen backdrop packet built at 0x801DD524 for FUN_8003D2C4; the port draws no packets from the tick"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DD60C..0x801DD60C"
+verdict = "unported"
+reason = "PROT 0899 title tick: clamps the play-time digits (0x8007C570 / 60) to 99:59 for the card screen's string at 0x801E4FC8; draw text only, the save-select builders format their own play time"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DD9F0..0x801DDA24"
+verdict = "unported"
+reason = "PROT 0899 title tick Init: walks the streamed title pack's size-prefixed records into FUN_800198E0 after the cold-boot load; the port reports the load as TitleTickEffect::LoadTitleAssets and the host unpacks"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DE958..0x801DEA58"
+verdict = "unported"
+reason = "PROT 0899 title tick 0x0A: the block-by-block directory walk (state[+0x1D8] sub-step, name copy FUN_80056758, directory bytes at 0x801F2A48/0x801F2A68); the port takes the walk's progress as TitleCardStatus::scan_done and the engine reads card directories through its own backend"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DFA44..0x801DFA44"
+verdict = "unreachable"
+reason = "PROT 0899 title tick 0x16: the bgez is the rounding fix-up of (level << 8) - level, and level is clamped to [0, 0xFFF] two branches earlier, so the product is never negative"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DFB14..0x801DFB14"
+verdict = "unported"
+reason = "PROT 0899 title tick 0x16 load route: FUN_8003CE64(0x1A) tests story flag 0x1A in the loaded save and, when set, stores op_kind (1) into the debug-mode word 0x8007B98C; the engine's Continue path never arms that word (port gap)"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DFCD4..0x801DFD98"
+verdict = "unported"
+reason = "PROT 0899 title tick epilogue: picks which card panels FUN_801E1C1C / FUN_801E06C0 draw (sub-mode, state[+0x1CC], state[-0xeb0]); the port's title draws come from title_draw_list and the save-select builders"
+
+[[arm]]
+entry = "0x801DD35C"
+range = "0x801DFEFC..0x801DFEFC"
+verdict = "unreachable"
+reason = "PROT 0899 title tick epilogue: rewrites a cancel target of 2 only while the entry word 0x8007BB00 is up, and the one handler that sets s3 = 2 (0x14 at 0x801DE06C) does so only when that word is zero; nothing between changes it"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002C6EC..0x8002C750"
+verdict = "unported"
+reason = "Styles 0x31 and 0x33..0x35 (kind-5 sprites) first draw FUN_8002C0B0 / FUN_8002C2E4 extras; the port's emitter covers the kind-6 reading box only and the engine draws those sprites from its atlas"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002C7DC..0x8002C7DC"
+verdict = "unported"
+reason = "A style record whose kind byte is 7 or more skips the JT straight to the chain tail at 0x8002FF00; the port's emitter covers kind 6 only"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002C800..0x8002EE3C"
+verdict = "unported"
+reason = "JT kinds 0..5 (jump table 0x80010D18): the other window skins' tile walks (kinds 0..4, styles 0x00..0x17, 0x2A, 0x2F, 0x30, 0x43, 0x44) and the single SPRT icons (kind 5); the engine draws its menu windows from atlas nine-slices (engine-ui title_save::panel) and its icons from atlas rects, without porting these walks (port gap)"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002EEB8..0x8002F210"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F25C..0x8002F28C"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F32C..0x8002F39C"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F3E8..0x8002F418"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F4AC..0x8002F7E8"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F7EC..0x8002F7EC"
+verdict = "unported"
+reason = "A centre width of -8 inflates to zero and the edge walks substitute one tile width (0x8002F7F4 / 0x8002F978); the port's footprint is the centre rect inflated by 8 on every side and does not model the substitution, and the dialog pager never passes a negative width"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F7F0..0x8002F848"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F894..0x8002F8C4"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F95C..0x8002F95C"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F970..0x8002F970"
+verdict = "unported"
+reason = "A centre width of -8 inflates to zero and the edge walks substitute one tile width (0x8002F7F4 / 0x8002F978); the port's footprint is the centre rect inflated by 8 on every side and does not model the substitution, and the dialog pager never passes a negative width"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002F9A4..0x8002F9CC"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FA18..0x8002FA48"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FADC..0x8002FB24"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FB4C..0x8002FC44"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FC7C..0x8002FCA8"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FCD0..0x8002FDC8"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FF08..0x8002FF08"
+verdict = "unreachable"
+reason = "The emitter's kind-6 arm serves the one kind-6 style, 0x61 (record 06 00 00 82 at 0x800732A4 + 0x61 * 12): these branches test its flag byte 0x82 (bit 7 set, bit 6 clear), its chain byte 0, or loop bounds built from its tile records at 0x80073A00 (edges one tile deep), all static data, so each takes one direction; the size-dependent branches between them are driven"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x80030670..0x80030670"
+verdict = "unported"
+reason = "Content ids outside 2..0x22 (sltiu 0x21 on id - 2) build no list and return; the port has one builder per content id and no dispatcher to fall out of"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x80030794..0x800307CC"
+verdict = "unreachable"
+reason = "Content id 2's third-buffer copy: s6 is cleared at 0x800306A4 and nothing in the id-2 arm (0x80030694..0x80030824) raises it, so the blez always skips the loop"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x800309C0..0x800309C0"
+verdict = "unported"
+reason = "Content id 3 with a menu context word gp+0x85C other than 0 (field) or 1 (battle) emits no row; UseListCtx carries only the two contexts"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x800310AC..0x800310AC"
+verdict = "unreachable"
+reason = "The battle spell list's usable bit (spell record +2 & 4): a learned list holds only the Seru-magic ids 0x81..0x8B, whose +2 target bytes on the disc (0x44, 0x64, 0x06, 0x26) all carry bit 4, so the dim-for-unusable arm is never taken"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x80031658..0x80031658"
+verdict = "unreachable"
+reason = "The armament sort's inner-loop entry test: the scan starts at s5 + 1 and the outer loop only runs while s5 < count - 1, so s5 + 1 < count always holds and the beq never skips the scan"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x800316E8..0x800316E8"
+verdict = "unreachable"
+reason = "The armament arm's copy guard: s4 starts at 1 for the Remove verb row (0x800314C0), so blez s4 never skips"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x8003183C..0x8003183C"
+verdict = "unreachable"
+reason = "The Goods arm's copy guard: s4 starts at 1 for the Remove verb row (0x80031720), so blez s4 never skips"
+
+[[arm]]
+entry = "0x80030628"
+range = "0x80031940..0x80031940"
+verdict = "unported"
+reason = "Content ids 4, 6 and 0x21 free the node's list (FUN_80017B94) and size the window from FUN_8003CC88; the port's windows hold no list memory to free"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA0C0..0x801EA184"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster row 6: cycles the BGM track index _DAT_801F2E90 through the 0x58-terminated table at 0x801F2E94; documented-not-ported (dev_menu_adjust module doc), the engine's dev menu has no sound-test row"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA268..0x801EA2FC"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster rows 0xC..0xE: step a character's equipment byte (+0x75E + slot) between 0 and the slot's table bound and re-run the stat aggregator FUN_80042558; the engine's EQUIP row stages an item id and commits it through dev_equip_commit instead"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA36C..0x801EA49C"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster rows 0x12..0x15: step the record bytes +0xD4..+0xD7 one per row on Right / Left of _DAT_8007BB84; the engine's dev menu has no row backed by them"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA4D4..0x801EA630"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster row 0x11: steps the flag cursor _DAT_801F2AA0 (wrapping at 0xFFF) and sets / clears the flag through FUN_8003CE34 / FUN_8003CE08 while a held bit is down; the engine's EVENT_FLAG row opens the field overlay's flag editor page (dev_menu_flags) instead"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA658..0x801EA728"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster row 0x16: turns the camera actor's +0x18 / +0x14 angles on held d-pad bits and rebuilds the view (FUN_80019278, FUN_800180EC, FUN_80017EC8); the engine's dev menu has no free-camera row"
+
+[[arm]]
+entry = "0x801E9F64"
+range = "0x801EA7AC..0x801EA968"
+verdict = "unreachable"
+reason = "PROT 0897 dev adjuster tail: its generic nibble, word, halfword and byte editors key on s7, fp and t0, which the prologue (0x801E9F8C, 0x801E9FC0) and the tail itself (0x801EA88C) zero and no row arm sets, so every branch here goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EAFA0..0x801EAFA0"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EAFFC..0x801EB050"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB0F0..0x801EB210"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, row 0xA past its id: the held count of item _DAT_801F2E8C (FUN_80042EE0, bag count byte) and, under the cursor, the item's name from the item table; the engine's dev menu has no GET ITEM row"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB4A0..0x801EB4A0"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB4C8..0x801EB550"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB638..0x801EB638"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB660..0x801EB6E8"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB7D8..0x801EB7D8"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB834..0x801EB888"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB958..0x801EB958"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EB9B4..0x801EBA08"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBAD8..0x801EBAD8"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBB34..0x801EBB88"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBC58..0x801EBC58"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBCB4..0x801EBD08"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBDD8..0x801EBDD8"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBE34..0x801EBE88"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBF84..0x801EBF84"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EBFE0..0x801EC034"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC17C..0x801EC17C"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, row 0x11 under the cursor: the flag grid box (FUN_8002C69C) and the 0x40-flag page around _DAT_801F2AA0; the engine's EVENT_FLAG row opens the field overlay's editor page instead"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC1A4..0x801EC22C"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, row 0x11 under the cursor: the flag grid box (FUN_8002C69C) and the 0x40-flag page around _DAT_801F2AA0; the engine's EVENT_FLAG row opens the field overlay's editor page instead"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC2F8..0x801EC2F8"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, row 0x11 under the cursor: the flag grid box (FUN_8002C69C) and the 0x40-flag page around _DAT_801F2AA0; the engine's EVENT_FLAG row opens the field overlay's editor page instead"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC340..0x801EC340"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, row 0x11 under the cursor: the flag grid box (FUN_8002C69C) and the 0x40-flag page around _DAT_801F2AA0; the engine's EVENT_FLAG row opens the field overlay's editor page instead"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC434..0x801EC434"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC490..0x801EC4E4"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC5A4..0x801EC5A4"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC600..0x801EC654"
+verdict = "unreachable"
+reason = "PROT 0897 dev row drawer, an inline copy of the digit kernel (format_fixed_decimal, compared on this row): the power and digit loops run on the width the row stores in _DAT_801F2B80 just before, and the divide guards test a divisor that is a positive power of ten, and the camera row's sign tests read byte averages that cannot be negative, so each of these goes one way"
+
+[[arm]]
+entry = "0x801EAD98"
+range = "0x801EC724..0x801EC94C"
+verdict = "unported"
+reason = "PROT 0897 dev row drawer, rows 0xC..0xE: a character's equipment byte (+0x75E) and its table bound; the engine's EQUIP row shows a staged item id instead"
+
+[[arm]]
+entry = "0x80032A44"
+range = "0x80032AA4..0x80032AA4"
+verdict = "unreachable"
+reason = "The navigable-content table at 0x80073E1C is static data whose first byte is not its 0x23 terminator, so the empty-table exit never runs"
+
+[[arm]]
+entry = "0x80036044"
+range = "0x800360AC..0x800360AC"
+verdict = "unreachable"
+reason = "The pre-walk's unit count starts at 1 (li t2,0x1 at 0x80036064) and only grows, so blez t2 never skips the main loop"
+
+[[arm]]
+entry = "0x801EA0CC"
+range = "0x801EA110..0x801EA110"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster: the Left-edge gate (_DAT_8007BB84 & 0x8000) of the previous-entry step; the port's flag_list_prev is the step itself and the engine's flag page gates it on its own pad bits (DevMenuSession::tick_event_flag)"
+
+[[arm]]
+entry = "0x801EA10C"
+range = "0x801EA110..0x801EA110"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster: the Left-edge gate (_DAT_8007BB84 & 0x8000) of the previous-entry step; the port's flag_list_prev is the step itself and the engine's flag page gates it on its own pad bits (DevMenuSession::tick_event_flag)"
+
+[[arm]]
+entry = "0x801EA51C"
+range = "0x801EA520..0x801EA520"
+verdict = "unported"
+reason = "PROT 0897 dev adjuster: the held-bit gate in front of the flag raise FUN_8003CE08 (_DAT_801F2AA0); edit_flag_value ports the number step only, and the engine's flag page raises a flag through its own editor"
+
+[[arm]]
+entry = "0x801EA0CC"
+range = "0x801EA7AC..0x801EA968"
+verdict = "unreachable"
+reason = "PROT 0897 dev adjuster tail reached from this arm (the arm lies inside FUN_801E9F64): its generic nibble, word, halfword and byte editors key on s7, fp and t0, which FUN_801E9F64's prologue (0x801E9F8C, 0x801E9FC0) and the tail itself (0x801EA88C) zero and no row arm sets, so every branch here goes one way"
+
+[[arm]]
+entry = "0x801EA10C"
+range = "0x801EA7AC..0x801EA968"
+verdict = "unreachable"
+reason = "PROT 0897 dev adjuster tail reached from this arm (the arm lies inside FUN_801E9F64): its generic nibble, word, halfword and byte editors key on s7, fp and t0, which FUN_801E9F64's prologue (0x801E9F8C, 0x801E9FC0) and the tail itself (0x801EA88C) zero and no row arm sets, so every branch here goes one way"
+
+[[arm]]
+entry = "0x801EA51C"
+range = "0x801EA7AC..0x801EA968"
+verdict = "unreachable"
+reason = "PROT 0897 dev adjuster tail reached from this arm (the arm lies inside FUN_801E9F64): its generic nibble, word, halfword and byte editors key on s7, fp and t0, which FUN_801E9F64's prologue (0x801E9F8C, 0x801E9FC0) and the tail itself (0x801EA88C) zero and no row arm sets, so every branch here goes one way"
+
+# lane A
+# FUN_801E9FD4 (PROT 0898): the compiler's divide traps. Each `div` is followed by
+# `bne divisor,zero` over `break 0x1c00` and `bne divisor,-1` / `bne quotient,0x80000000`
+# over `break 0x1800`; a trap halts the console, so no game state takes one.
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA118..0x801EA130"
+verdict = "unreachable"
+reason = "Divide trap: the divisor `s1` is a loop count that starts at 1 (`li s1,0x1` at `0x801EA05C`) and only grows, or the 1 / 2 of `0x801EA0CC` / `0x801EA104`, zero-extended (`andi v1,s1,0xffff`), so neither trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA1C8..0x801EA1E0"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA8EC..0x801EA904"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EAE34..0x801EAE4C"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EAF28..0x801EAF40"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB314..0x801EB32C"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB704..0x801EB71C"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EBFA4..0x801EBFBC"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` off `_DAT_8007BD24`), which battle setup seats at 1..3, so neither the zero trap nor the overflow trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EBF20..0x801EBF38"
+verdict = "unreachable"
+reason = "Divide trap: the divisor is `4 - s0` with `s0 < 4` held by `sltiu v0,s0,0x4` / `beq` at `0x801EBF00..0x801EBF04`, so it is 1..4 and neither trap is reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EC040..0x801EC040"
+verdict = "unreachable"
+reason = "Divide trap: the `divu` divisor is the seated party count `ctx[+0x00]` (`lbu v1,0x0(v1)` at `0x801EC034`), seated at 1..3, so the zero trap is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA320..0x801EA328"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `sp+0x10` candidate count, `lbu v1,0x10(sp)` at `0x801EA304`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA430..0x801EA438"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s1` count, `andi v1,s1,0xffff` at `0x801EA418`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB0B0..0x801EB0B8"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s1` id span, `andi v1,s1,0xffff` at `0x801EB098`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB390..0x801EB398"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s2` count, `andi v1,s2,0xffff` at `0x801EB378`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB614..0x801EB61C"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s1` id span, `andi v1,s1,0xffff` at `0x801EB5FC`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB6A0..0x801EB6A8"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s1` id span, `andi v1,s1,0xffff` at `0x801EB688`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB77C..0x801EB784"
+verdict = "unreachable"
+reason = "Divide overflow trap: the divisor (the `s1` id span, `andi v1,s1,0xffff` at `0x801EB764`) is zero-extended, so it is never -1 and the overflow test at the range's end is not reached."
+# FUN_801D388C (PROT 0898) and FUN_8004E568: record spawns and heap work the engine does from state.
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D3F34..0x801D3FDC"
+verdict = "unported"
+reason = "Case 0x10, the ring's step back, parks the commit log's placement records 0x2B.. (x 0x148, the name to (0x44, 0xE)) by row depth ctx[+0x1F]; the engine draws the log from the committed members (engine-battle-hud command_chips::battle_commit_log's row rule) and ports only the step (member_step)."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D45B0..0x801D471C"
+verdict = "unported"
+reason = "Case 0x21, Reselect on the commit confirm, parks the last row's records at (0x44, 0xE) and the rest at x 0x148 / 0x184 by row depth; the engine's row rule takes the row down (command_chips::battle_commit_log) and member_step ports the step."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D51A0..0x801D51DC"
+verdict = "unported"
+reason = "Tail of case 0xD, the review cursor's move: with ctx[+0x266 + seat] clear it snaps the AP bar record 0x0F and the pennants in mode 3; the engine draws them from the arts session's state."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D520C..0x801D5278"
+verdict = "unported"
+reason = "Tail of case 0xE: retires the AP bar and pennants by ctx[+0x265 + seat] and spawns row 1 through FUN_801D8DE8 in mode 0; the engine draws the log and the gauge from session state, no record spawns."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D538C..0x801D538C"
+verdict = "unported"
+reason = "Tail of cases 0x10 / 0x11: spawns the log's row 1 (records 0x2E..0x30) in mode 0; the engine's commit log has no record spawns (command_chips::battle_commit_log)."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D53D0..0x801D5480"
+verdict = "unported"
+reason = "Tail of case 0x15: spawns row 1, re-spawns ctx[+0x1E]'s record in mode 1 and raises the party panels 0x4E.. for a party-wide target; drawn from state by the engine, no record spawns."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D54C4..0x801D5560"
+verdict = "unported"
+reason = "Tail of case 0x20: retires the AP bar and pennants when ctx[+0x266 + seat] is clear and spawns rows 1..n in mode 0; drawn from state by the engine."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D5580..0x801D55A8"
+verdict = "unported"
+reason = "Tail of case 0x21: spawns records 0x2E+k (k < 3n) in mode 0; the engine's row rule draws the log."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D55C8..0x801D5620"
+verdict = "unported"
+reason = "Tail of case 0x22: spawns the rows and re-spawns ctx[+0x21]'s record, raising panels 0x4E / 0x4F for a party-wide one; drawn from state by the engine."
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D5654..0x801D567C"
+verdict = "unported"
+reason = "Tail of case 0x23: spawns the log's rows in mode 0 ahead of FUN_801D5854(0, 9); the engine draws the log from the committed members."
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004E5D0..0x8004E5E8"
+verdict = "unported"
+reason = "The stream-request hold (ctx[+0x26B]) seats the partner's +0x1DD in 3..6 and turns it +0x800 before FUN_801D5854(seat, 8); the engine holds a constant VICTORY_STREAM_FRAMES and does not turn the partner."
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004E654..0x8004E6C4"
+verdict = "unported"
+reason = "The escape arm (ctx[+7] == 0x67) frees the monster records and *0x8007BD74 through FUN_80017B94 and preloads the field through FUN_80025358 by ctx[+0xC]; the engine loads synchronously and keeps no heap, porting only the ctx[+0x6CE] count."
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004EBC4..0x8004EBD4"
+verdict = "unported"
+reason = "Noa (seat byte 2) on win pose 0x17 queues two DR_MOVE blits into the packet stream (0x1F8003A0) to swap her texture page; the engine's pose draw needs no VRAM copy."
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004F810..0x8004F890"
+verdict = "unported"
+reason = "The win's exit preloads the field through FUN_80025358 and frees the monster records through FUN_80017B94 by ctx[+0xC]; the engine loads synchronously and keeps no heap."
+# FUN_801D0748 (PROT 0898).
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D0B54..0x801D0B54"
+verdict = "unported"
+reason = "The pre-dispatch exit under ctx[+0x26A] != 0 has no port: the byte is the per-frame actor pass FUN_8004CE2C's store of FUN_80031D00() (0x8004D9BC..0x8004D9CC), 1 while a kind-0x11 widget record waits for the confirm or cancel mask (0x80032318..0x80032358); World::battle_command_glide_gate gates on the stepper's return alone, and the engine keeps no widget-record list for the term to read."
+
+# lane B
+
+[[arm]]
+entry = "8004AD80"
+range = "0x8004B58C..0x8004B5B0"
+verdict = "unported"
+reason = "The steal attack's debug override: with the debug word 0x8007B98C and 0x8007BA58 both set the roll is skipped and the steal lands; the port has no debug build switch."
+
+[[arm]]
+entry = "8004CE2C"
+range = "0x8004CE64..0x8004CE64"
+verdict = "unreachable"
+reason = "The party walk's empty-party guard (ctx[+0x00] == 0): battle setup always seats at least one party member, so the walk is never skipped."
+
+[[arm]]
+entry = "8004CE2C"
+range = "0x8004D684..0x8004D684"
+verdict = "unreachable"
+reason = "The status CLUT pass's empty-party guard (ctx[+0x00] == 0): battle setup always seats at least one party member."
+
+[[arm]]
+entry = "8004CE2C"
+range = "0x8004D71C..0x8004D730"
+verdict = "unreachable"
+reason = "The Stone grey's division fix-up and clamp: the sum of three masked 5-bit lanes is 0..93, never negative (bgez always taken) and /4 never reaches 0x20 (sltiu always taken)."
+
+[[arm]]
+entry = "8004CE2C"
+range = "0x8004D858..0x8004D878"
+verdict = "unreachable"
+reason = "The Rot blue's division fix-up and grey clamp: the lane sum is 0..93, never negative, and its quarter never reaches 0x20; only the 3/2 blue clamp at 0x8004D884 can go both ways."
+
+[[arm]]
+entry = "80046A20"
+range = "0x80046D74..0x80046DB8"
+verdict = "unreachable"
+reason = "The debug exit: with the debug-mode word 0x8007B98C non-zero, pad bit 0x100 forces the battle exit (gp+0xA48 = 0x80); no retail code stores a non-zero debug word, so the forced flag a0 stays 0."
+
+[[arm]]
+entry = "80046A20"
+range = "0x80046E80..0x80046E80"
+verdict = "unreachable"
+reason = "The exit pass's empty-party guard (ctx[+0x00] == 0): battle setup always seats at least one party member."
+
+[[arm]]
+entry = "80046A20"
+range = "0x8004726C..0x80047410"
+verdict = "unreachable"
+reason = "The debug arts unlock: behind the debug-mode word 0x8007B98C (never non-zero in retail) it fills every record's spell list +0x704.. and art flags; nothing in the shipped game raises the word."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6B40..0x801F6B74"
+verdict = "unported"
+reason = "PROT 0978's back-read loader head: two developer traces, FUN_8001A068 behind the dev counter 0x8007B6D0 (written only by the dev menus) and the printf FUN_800567A8 behind 0x8007BC40; the port prints no traces."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6EE0..0x801F7324"
+verdict = "unported"
+reason = "PROT 0978's second streamer, the 19-arm table at 0x801F6AD8 taken when _DAT_8007BAC0 == 0: sector-paced reads of a caller-supplied PROT entry, which the engine replaces with a synchronous whole-entry read (ProtIndex::entry_bytes_extended)."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6C38..0x801F6C6C"
+verdict = "unreachable"
+reason = "PROT 0978's back-read strip read: the gate on the build-mode halfword 0x8007B8C2 and the dev build's host-file arm it guards (FUN_8003E9C0 on the int.tim / int2.tim path strings); retail boot stores the halfword non-zero (gp+0x5AA at 0x80015F08), so only the PROT read runs."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6CC8..0x801F6D08"
+verdict = "unreachable"
+reason = "PROT 0978's back-read strip read: the gate on the build-mode halfword 0x8007B8C2 and the dev build's host-file arm it guards (FUN_8003E9C0 on the int.tim / int2.tim path strings); retail boot stores the halfword non-zero (gp+0x5AA at 0x80015F08), so only the PROT read runs."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6D6C..0x801F6DAC"
+verdict = "unreachable"
+reason = "PROT 0978's back-read strip read: the gate on the build-mode halfword 0x8007B8C2 and the dev build's host-file arm it guards (FUN_8003E9C0 on the int.tim / int2.tim path strings); retail boot stores the halfword non-zero (gp+0x5AA at 0x80015F08), so only the PROT read runs."
+
+[[arm]]
+entry = "801F6B24"
+range = "0x801F6E14..0x801F6E54"
+verdict = "unreachable"
+reason = "PROT 0978's back-read strip read: the gate on the build-mode halfword 0x8007B8C2 and the dev build's host-file arm it guards (FUN_8003E9C0 on the int.tim / int2.tim path strings); retail boot stores the halfword non-zero (gp+0x5AA at 0x80015F08), so only the PROT read runs."
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80031DF0..0x80031E38"
+verdict = "unported"
+reason = "The window walk's node-list machinery: the list read back after each node, a node marked -2 at +0x20 closed through FUN_800319A8, a node's own callback at +0x28; the engine keeps no gp+0x148 node list (text_actor_arm's REPLACED-BY), its screens own their windows"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80031EB4..0x80031EB4"
+verdict = "unreachable"
+reason = "The number record's power table at 0x80073DCC holds eighteen non-zero words before its zero, and the place loop (s2 = 9) reads exactly eighteen, so the zero-terminator exit never fires"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80031FB4..0x80032000"
+verdict = "unported"
+reason = "A number record of type 5 draws +0xC separator glyphs (FUN_8003C1F8, 8 px apart) instead of a value; the engine draws its separators at fixed seats (battle_chrome BAR_*_SEPARATOR, panel::*_SEPARATOR)"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80032064..0x80032064"
+verdict = "unreachable"
+reason = "The pointer-read copy of the place walk reads the same eighteen non-zero powers at 0x80073DCC for its nine places, so its zero-terminator exit never fires"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80032190..0x80032190"
+verdict = "unreachable"
+reason = "The kind bound after the clamp: a kind of 0x24 or more is replaced by 0x23 two instructions earlier (0x8003217C..0x80032188), so sltiu 0x24 always passes"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80032208..0x800322C8"
+verdict = "unported"
+reason = "Kind 1's typewriter internals: the +0x20 hold, the +0x1E reveal counter walked over the record's length-prefixed segments, and the hand-off to kind 0x11 when it completes; text_actor_arm ports the dispatch only, the engine's dialogue typewriter is its own (engine-dialog)"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x80032340..0x80032340"
+verdict = "unported"
+reason = "Kind 0x11's advance: a press under the record's masks (0x80084140 + 0x590 / 0x594) turns the node to kind 0xD; text_actor_arm ports the draw only"
+
+[[arm]]
+entry = "0x80031D00"
+range = "0x800323CC..0x800323CC"
+verdict = "unported"
+reason = "A node with a width (+0xE) draws its frame through FUN_8002C69C in style +0x1D; the engine's window models draw their own frames rather than through this walk"
+
+[[arm]]
+entry = "0x801DA2A0"
+range = "0x801DA2F4..0x801DA2FC"
+verdict = "unported"
+reason = "PROT 0899 sub-screen 0x15 step 0, the Status entry: runs window program 0x801E4DEC (FUN_801D6628), resets the list words and keeps the page word's low bits, so a reopened Status shows the page it last showed; the port opens StatusScreenSession fresh on the Condition page (port gap)"
+
+[[arm]]
+entry = "0x801DA2A0"
+range = "0x801DA30C..0x801DA30C"
+verdict = "unreachable"
+reason = "PROT 0899 sub-screen 0x15: a step of 8 or more returns at once, and the routine and its menu caller only ever store steps 0..7 into 0x801E46AC"
+
+[[arm]]
+entry = "0x801DA2A0"
+range = "0x801DA37C..0x801DA37C"
+verdict = "unported"
+reason = "PROT 0899 sub-screen 0x15 step 1: the menu's slide lock _DAT_8007BB80 holds the pager for a frame; the engine's window slide lock is the host's (menu_slide_lock), not StatusScreenSession's"
+
+[[arm]]
+entry = "0x801DA2A0"
+range = "0x801DA3B8..0x801DA3B8"
+verdict = "unreachable"
+reason = "PROT 0899 sub-screen 0x15 step 1: the party picker FUN_801D688C answers 0..3, so a verdict past 3 (the arm that pages on it) never comes"
+
+# lane C
+# lane C: 801DE840
+[[arm]]
+entry = "801DE840"
+range = "0x801DF0C0..0x801DF0C0"
+verdict = "unreachable"
+reason = "PROT 0897 op 45: `andi v1,a0,0xc0` leaves 0, 0x40, 0x80 or 0xC0; past the 0x40 test and `slti v1,0x41` the value is 0, so `beqz v1` is always taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DF0D8..0x801DF0D8"
+verdict = "unreachable"
+reason = "PROT 0897 op 45: past the 0x40, below-0x41 and 0x80 tests the `andi 0xc0` value can only be 0xC0, so `beq v1,0xc0` is always taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DF154..0x801DF154"
+verdict = "unreachable"
+reason = "PROT 0897 op 45 configure loop: the slot index s4 = s3 & 0xFF runs 0..9 (`sltiu v0,v0,0xa` at 0x801DF1CC closes the loop), so the `sltiu s4,0xa` table bound never fails"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E24AC..0x801E24AC"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C 9x: v1 is `andi s3,0xf`, never negative, so `bltz v1` is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E2F5C..0x801E2F5C"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C DC: reached only when the equipment scan runs out, after the bag miss (`slti s7,0x100` false at 0x801E2EC0) and with no match (a match leaves the loop for 0x801E2F64), so s7 is still >= 0x100 and the miss branch is always taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E3018..0x801E3018"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C DE: the same loop exit as 4C DC's 0x801E2F5C, reached only with s7 >= 0x100, so the miss branch is always taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E0270..0x801E0270"
+verdict = "unreachable"
+reason = "PROT 0897 op 35 sub 0xA: the dual-mode bypass on _DAT_8007B868, a word no retail code writes (docs/subsystems/audio.md), so `bnez v0` is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DE8B4..0x801DE8C4"
+verdict = "unported"
+reason = "PROT 0897 prelude: a prefixed op whose target FUN_8003C83C cannot resolve keeps its PC (and logs under the debug word 0x8007B98C); the port's VM is handed an already-resolved context, the target lookup and its miss living in World's routing (field_channels::resolve_target via step_on_resolved_channel and the step_field_cross_context_* arms)"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E264C..0x801E2654"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C C0: the compiler's signed-overflow trap around `div` (`bne v1,-1` then `bne v0,0x80000000` ahead of `break 6`); the divisor is loaded with `lhu` (0x801E2630), so it is never -1"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E0C4C..0x801E0C4C"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C: `srl v1,s3,4; sltiu v0,v1,0x10` bounds the outer-nibble table index, and a byte shifted right by four is always below 16, so the default arm is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E0F08..0x801E0F08"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C nibble 3: `andi v1,s3,0xf; sltiu v0,v1,0x10` bounds a 16-entry table with a four-bit index, so the default arm is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E1EA8..0x801E1EA8"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C nibble 8: `andi v1,s3,0xf; sltiu v0,v1,0x10` bounds a 16-entry table with a four-bit index, so the default arm is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E25E8..0x801E25E8"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C nibble C: `andi v1,s3,0xf; sltiu v0,v1,0x10` bounds a 16-entry table with a four-bit index, so the default arm is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E2AC0..0x801E2AC0"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C nibble D: `andi v1,s3,0xf; sltiu v0,v1,0x10` bounds a 16-entry table with a four-bit index, so the default arm is never taken"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DE9BC..0x801DEA0C"
+verdict = "unported"
+reason = "PROT 0897 op 22, the player's arm (`s5 == *0x8007C364`): move id 0x63 maps to the leader's record, the party-bank bit 0x1000000 picks `op + leader * 7` or `op + *0x8007B6AC - 1`, and +0x56 is not written; the port has no player context, `A2 F8` raises FieldEvent::ExecMove and the player model binds `leader * 7 + slot + 1` (World::drain_field_anim_cues)"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DEE98..0x801DEEA8"
+verdict = "unreachable"
+reason = "PROT 0897 op 38 halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DEF30..0x801DEF40"
+verdict = "unreachable"
+reason = "PROT 0897 op 37 / 41 halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DEFC8..0x801DEFD8"
+verdict = "unreachable"
+reason = "PROT 0897 op 47 halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DF38C..0x801DF39C"
+verdict = "unreachable"
+reason = "PROT 0897 op 43 sub 0/1/A/B halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E1BC8..0x801E1BD8"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C 61 halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E1ED4..0x801E1EE4"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C 80 halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801E2150..0x801E2160"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C 85 / 8E / 8F halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DFD40..0x801DFD40"
+verdict = "unported"
+reason = "PROT 0897 op 34 sub 0: `_DAT_1F800394` bit 23 routes the walk-out tween through FUN_80024E80 instead of FUN_801DE2B0; set_effect_colour models only the FUN_801DE2B0 spawn because no field or motion script on the disc raises bit 23"
+
+[[arm]]
+entry = "801DE840"
+range = "0x801DFEC0..0x801DFEC0"
+verdict = "unported"
+reason = "PROT 0897 op 34 sub 0: the walk-in tween's bit-23 fork to FUN_80024E80, unmodelled for the reason the walk-out row gives"
+# lane C: 801E76D4
+[[arm]]
+entry = "801E76D4"
+range = "0x801E77C8..0x801E77C8"
+verdict = "unported"
+reason = "PROT 0897: `lh v0,0x54(s1); bne` skips the anim toggles, camera block and debug readout to the OT tail while the controller actor's own phase word is live; the engine hosts the panel phase machines on world_map_panel_host, not on the controller, so WorldMapController::tick has no such gate"
+
+[[arm]]
+entry = "801E76D4"
+range = "0x801E7958..0x801E7A24"
+verdict = "unported"
+reason = "PROT 0897: the R1+R2 nudge of the debug marker vector 0x801F35A8/AA/AC (step 4, or 0x20 with Circle), which only the debug readout below prints and FUN_801E7448 marks; the port keeps no marker vector"
+
+[[arm]]
+entry = "801E76D4"
+range = "0x801E7A64..0x801E9AB0"
+verdict = "unported"
+reason = "PROT 0897: the top-view debug readout behind `anim_flags & 2 == 0` (0x801E7A50) - player tile and position, the marker vector and actor flag bits drawn as decimal text through FUN_8001AA68 (width in 0x801F2B80, colour in 0x8007B7B8), with the compiler's div-by-zero traps; no engine host draws the debug text"
+# lane C: 801DC0BC
+[[arm]]
+entry = "801DD310"
+range = "0x801DD36C..0x801DD380"
+verdict = "unported"
+reason = "PROT 0897: the arming's out-of-memory exits, `beqz` on a null actor from the spawn FUN_80020DE0 (return, no glide) and `bnez` on a null pair block from FUN_80017888 (mark the new actor dead, return); the engine keeps the mover as an Option on the field camera with no actor pool or heap to exhaust, so CameraMover::arm has no failure arm"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC1B0..0x801DC1C8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC218..0x801DC230"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC268..0x801DC308"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC390..0x801DC3A8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC3F8..0x801DC410"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC448..0x801DC4E8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC570..0x801DC588"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC5D8..0x801DC5F0"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC628..0x801DC6C8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC750..0x801DC768"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC7B8..0x801DC7D0"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC808..0x801DC8A8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC930..0x801DC948"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC998..0x801DC9B0"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DC9E8..0x801DCA88"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCB10..0x801DCB28"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCB78..0x801DCB90"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCBC8..0x801DCC68"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCCF0..0x801DCD08"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCD58..0x801DCD70"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCDA8..0x801DCE48"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCED0..0x801DCEE8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCF38..0x801DCF50"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DCF88..0x801DD028"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DD0B0..0x801DD0C8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-4 first half, whose divisor is `d >> 1`; it runs only while `t < d` and `t <= d >> 1`, and the halfword progress starts at 0 (FUN_801DD310) and grows by the frame step (floor 2 on a field) under a clamp to `d`, so `d >> 1` is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DD118..0x801DD130"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-3 axis divide by the duration `d`, reached only while `t < d`; the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+[[arm]]
+entry = "801DC0BC"
+range = "0x801DD168..0x801DD208"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the curve-2 / curve-4 second half / linear divides by `d` or `d >> 1`, reached only while `t < d` (and `t > d >> 1` for the half); the progress starts at 0 (FUN_801DD310) and the clamp pins it to any `d <= 0` on the first tick, so the divisor is never 0 or -1 there"
+
+# lane C: 801D84D0 80039B7C
+[[arm]]
+entry = "801D84D0"
+range = "0x801D86EC..0x801D86EC"
+verdict = "unreachable"
+reason = "PROT 0897: a press in the hold state 0x10 skips the skip latch when the speed _DAT_801F2750 is already 0x25; the only nonzero hold store is a row finish in typing (0x801D8AA8), which runs only on a call that found the speed 0x24 (0x25 jumps to 0x0D at 0x801D89F0), and every later call is 0x10 until the hold drains or a press there stores 0x25 and clears it (0x801D86F8..0x801D8704), so the speed in 0x10 is always 0x24"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8D60..0x801D8D60"
+verdict = "unreachable"
+reason = "PROT 0897: state 0x0E's scroll completion skips the row shift when the last-row index _DAT_801F3530 is <= 0; 0x0E is entered only from 0x0D with the window full (index >= capacity >= 1, 0x801D8C84..0x801D8C98), and a completion that stays in 0x0E refills the last slot (0x801D8DCC), so the index is the capacity there"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8EA8..0x801D8EA8"
+verdict = "unreachable"
+reason = "PROT 0897: state 0x0F's scroll completion skips the row shift when the last-row index is <= 0; each completion clears the last slot and adds one to the page's row count until it reaches the capacity (0x801D8F00..0x801D8F18), and every entry (0x801D8B0C, 0x801D8CCC, 0x801D8E2C) starts with the count at least 1 and no more than the index, so the index on the final completion equals that count, never below 1"
+
+[[arm]]
+entry = "80039B7C"
+range = "0x80039BCC..0x80039BCC"
+verdict = "unported"
+reason = "SCUS: state 2 waits for the pager to stand in 0/3/6/9 before it walks the shown text; the engine keeps no pager state to poll - the press that dismisses a box hands the record on in its own frame (dialogue_drive), so no port waits here"
+
+[[arm]]
+entry = "80039B7C"
+range = "0x80039CB0..0x80039CB0"
+verdict = "unported"
+reason = "SCUS: a context whose +0x5C clip id is -1 raises its retire bit (+0x10 |= 8) at the talk end; no port sets the retire bit there - the engine's helper records end on their own done flag"
+
+[[arm]]
+entry = "80039B7C"
+range = "0x80039D88..0x80039D88"
+verdict = "unported"
+reason = "SCUS: state 0 stores the idle clip base 2 to _DAT_8007BDD8 only while the control block's +0xA count is below 2; the engine's store (World::tick_field_system_channel_clip_reset, REF) gates on its movement lock instead of the count"
+
+[[arm]]
+entry = "80039B7C"
+range = "0x80039E84..0x80039E84"
+verdict = "unported"
+reason = "SCUS: the 0x21 teardown's retire-bit raise for a context whose +0x5C clip id is -1 (+0x10 |= 8); no port sets the retire bit at the talk end"
+
+[[arm]]
+entry = "80039B7C"
+range = "0x80039FC4..0x80039FC4"
+verdict = "unported"
+reason = "SCUS: state 1 waits until the pager reads 1, 4 or 7 before it feeds the line; the engine keeps no pager state to poll - the next line's panel opens over the held box (HeldBox::next_line_panel) on the frame the record reaches it"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8524..0x801D8524"
+verdict = "unreachable"
+reason = "PROT 0897: `blez` on the row capacity _DAT_801F2740 skips the last-row search; the capacity is only ever 3 (the pager's resets at 0x801D90EC and its kin) or op `4C E0 b1` with 1 <= b1 < 100 (b1 == 0 raises the instant latch instead), so it is never <= 0"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D85C8..0x801D85F4"
+verdict = "unreachable"
+reason = "PROT 0897: the debug-mode word _DAT_8007B98C (retail leaves it clear; only a cheat byte-write raises it) gates a test that zeroes the pad word on a held-button mask; no build path sets the word"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8628..0x801D8628"
+verdict = "unported"
+reason = "PROT 0897: the system freeze bit `0x1F800394 & 0x400` jumps past the state machine and the draw to the epilogue; the panel and its window model no freeze input, a host that freezes simply does not tick them"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8698..0x801D8698"
+verdict = "unreachable"
+reason = "PROT 0897: `sltiu v0,s0,0x1a` sends a state past the jump table to the draw; every store to _DAT_801F2734 in PROT 0897 and SCUS is a constant <= 0x19, the picker entry's +1 (<= 0x18), the 2/5/8 -> 1/4/7 step back, or FUN_80039B7C's +1 from 0/3/6/9 and from 1/4/7, so the state never reaches 0x1A"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8778..0x801D8778"
+verdict = "unreachable"
+reason = "PROT 0897: a load state 2/5/8 with no text pointer _DAT_801F3538 steps back to its idle state; the only stores that step 1/4/7 to 2/5/8 are FUN_80039B7C's at 0x80039FF0, which writes the record's text pointer (+0x90 plus +0x9E, never null) to the feed in the same arm (0x8003A000)"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D87EC..0x801D87EC"
+verdict = "unreachable"
+reason = "PROT 0897: the instant load skips its row loop when the fed byte is not a line byte (`& 0x7F < 0x20`); FUN_80039B7C feeds only from its state 1, which it enters only when the byte at +0x9E passed that same test (0x80039F3C), so the first byte always enters the loop"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D8F98..0x801D8FAC"
+verdict = "unreachable"
+reason = "PROT 0897: the debug-mode word _DAT_8007B98C gates a test of the held pad word `& 0xA` that holds a waiting page; retail leaves the word clear"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D959C..0x801D959C"
+verdict = "unported"
+reason = "PROT 0897: a picker whose post-table byte is 0x4C with a second byte other than 0xFF commits to state 0, and its label walk (0x801D9B30) starts on the 0x4C; legaia_mes::parse_picker_at rejects that layout (the labels must start on a 0x1F lead), so the panel opens no picker for it"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D9B30..0x801D9B30"
+verdict = "unported"
+reason = "PROT 0897: the label walk past a 0x4C post-table byte not followed by 0xFF starts the labels on the 0x4C; legaia_mes::parse_picker_at rejects that layout, so the panel opens no picker for it"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D96D4..0x801D96D4"
+verdict = "unported"
+reason = "PROT 0897: the typing state's row draw skips a null row-table slot; the row draw is engine-ui's reading box (REF only, laid out from the panel's rows), which has no null slots to skip and no differential"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D97A0..0x801D97A0"
+verdict = "unreachable"
+reason = "PROT 0897: `blez` on capacity + 1 skips the row draw loop; the capacity _DAT_801F2740 is never below 1 (3 from the resets, 1..99 from op `4C E0`)"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D9948..0x801D9948"
+verdict = "unreachable"
+reason = "PROT 0897: `beqz` on the capacity _DAT_801F2740 skips the box frame; the capacity is never 0 (3 from the resets, 1..99 from op `4C E0`)"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D9960..0x801D99F8"
+verdict = "unported"
+reason = "PROT 0897: the box frame's style word *(_DAT_801C6EA4)+0x10 - 1 hides the frame, 2 draws it once with kind 0 and clears the word, 0 draws kind 0x61 (FUN_80034B6C); the panel and engine-ui's reading box draw one frame and keep no style word"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D9A68..0x801D9AC8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `div` guards (`bnez divisor` to `break 7`, `bne divisor,-1` / `bne dividend,0x80000000` to `break 6`) on the picker slide's two divides by the span +0x50, which the entry arms store only as 0x18 (0x801D9318, 0x801D93A0), so the divisor is never 0 or -1"
+
+[[arm]]
+entry = "801D84D0"
+range = "0x801D9B4C..0x801D9B4C"
+verdict = "unreachable"
+reason = "PROT 0897: `blez` on the option count skips the label loop; the count at sp+0x1C is only ever 2, 3 or 4 (0x801D92F4, 0x801D9360..0x801D937C, 0x801D942C..0x801D9448)"
+# lane C: 80038158 8003774C 801D01B0
+[[arm]]
+entry = "801D01B0"
+range = "0x801D01F0..0x801D01F0"
+verdict = "unreachable"
+reason = "PROT 0897: `bnez` on the player's engaged bit *0x8007C364+0x10 & 0x80000; the routine's only caller (0x801D16F4 in the player tick FUN_801D1344) has already returned on that bit of the same actor at 0x801D16A0"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D0204..0x801D0330"
+verdict = "unported"
+reason = "PROT 0897: the pre-movement header - the map-display arm (_DAT_8007B6A8 and edge bit 4: cue 0x20, _DAT_8007BAF4 = 1), the menu accept on edge & (_DAT_800846D8 | 0x100) with its debug-word hold, the 0x8000000 lock's deny buzz and the menu actor spawn; the engine runs these as host-called predicates on a Start edge (World::field_menu_open_allowed / field_menu_press_denied, REF-tagged) and the map display in worldmap.rs, not inside the step"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D03C0..0x801D03DC"
+verdict = "unreachable"
+reason = "PROT 0897: the debug-turbo base step needs, past the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it, the dev word _DAT_8007B868, which retail boots to zero and only ever clears"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D0414..0x801D0420"
+verdict = "unreachable"
+reason = "PROT 0897: the debug freeze (held & 1 drops the direction) behind the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D047C..0x801D047C"
+verdict = "unreachable"
+reason = "PROT 0897: the clip-base walk arm's re-test of _DAT_8007B6A8 with s4 == 8; that byte forces s4 = 5 at 0x801D0354, so the walk step and the flag never meet"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D04B0..0x801D04B0"
+verdict = "unported"
+reason = "PROT 0897: system flag 0xE (the battle mode request FUN_8003CE08(0xE) raised by op 0x3E and the encounter commit) ends the step after the clip-base write; the engine stands it in with World::field_scripts_held_for_battle, which returns before the clip-base write"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D0670..0x801D0670"
+verdict = "unreachable"
+reason = "PROT 0897: the +Z step's debug no-clip (held & 2 commits a blocked step) behind the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D06D0..0x801D06D0"
+verdict = "unreachable"
+reason = "PROT 0897: the -Z step's debug no-clip behind the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D0730..0x801D0730"
+verdict = "unreachable"
+reason = "PROT 0897: the +X step's debug no-clip behind the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D07A0..0x801D07A0"
+verdict = "unreachable"
+reason = "PROT 0897: the -X step's debug no-clip behind the debug-mode word _DAT_8007B98C, whose only writer (the menu/title init, overlay_menu_801de234) clears it, so no game state raises it"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D07CC..0x801D07FC"
+verdict = "unported"
+reason = "PROT 0897: the per-step re-tests of the engaged bit, the scratch lock 0x400 and scene byte +0x62 ahead of the touch and interact block, which only change mid-loop through a touch posted on an earlier 2-unit step; the engine queues its touch (FieldPropState::pending_touch) and never re-reads them inside the step"
+
+[[arm]]
+entry = "801D01B0"
+range = "0x801D0824..0x801D088C"
+verdict = "unported"
+reason = "PROT 0897: the in-step interact probe (edge & _DAT_800846D0, FUN_801CF9F4 ahead at the heading, the touch post and the turn-to-face of a moving-class actor, scene +0x60 = 1); the engine runs the talk probe outside the step (World::field_interact_probe_slot)"
+
+[[arm]]
+entry = "8003774C"
+range = "0x800377D8..0x80037850"
+verdict = "unported"
+reason = "the target-select prefix's list lookups: `0xFB` walks the list at *0x8007C34C for the node whose handler +0xC is 0x801DA51C, any other id walks *0x8007C354 for its +0x50; the port decodes the selector (motion_vm::target_selector) and leaves resolving it to the host, which steps own-actor programs only (scripted_motion.rs), so no list walk has a port"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037924..0x8003793C"
+verdict = "unreachable"
+reason = "the compass walk's compiler-emitted divide guards (`break 0x1C00` / `break 0x1800`): the divisor is 4 << sel, never 0 or -1"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037AD8..0x80037AF0"
+verdict = "unreachable"
+reason = "op 0x38's divide guards on the decreasing arm: the divisor is budget - accum, which 0x80037A14 (`bgtz` on divisor - step) has already made positive"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037B40..0x80037B58"
+verdict = "unreachable"
+reason = "op 0x38's divide guards on the increasing arm, under the same positive divisor as 0x80037AD8"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037BC0..0x80037BD8"
+verdict = "unreachable"
+reason = "op 0x47's divide guards: 0x80 divided by 4 << (b2 & 7), never 0 or -1"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037DF8..0x80037DF8"
+verdict = "unported"
+reason = "op 0x4C with a sub-mode other than 0x85 / 0x8E / 0x8F returns 0 with the PC unmoved, parking the script for ever; the port ends the leg instead, a disclosed departure (docs/subsystems/motion-vm.md)"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037E08..0x80037EAC"
+verdict = "unported"
+reason = "op 0x4C's target lookup by its fourth byte (0xF8 the player, 0xFB the world-map entity, else the actor list by +0x50; none ends the leg): the port takes the target from its caller as MotionTarget and has no lookup"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037F64..0x80037F7C"
+verdict = "unreachable"
+reason = "op 0x4C's divide guards on the decreasing arm: the divisor is budget - accum, positive after 0x80037EF8 (`bgtz` on divisor - step)"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80037FB4..0x80037FCC"
+verdict = "unreachable"
+reason = "op 0x4C's divide guards on the increasing arm, under the same positive divisor as 0x80037F64"
+
+[[arm]]
+entry = "8003774C"
+range = "0x80038014..0x80038014"
+verdict = "unported"
+reason = "a leg that ends on the player (target-select `0xF8`) also zeroes the script actor's own +0x54 and clears its +0x10 bit 0x400; the engine runs no cross-context motion-VM legs, so nothing ports the second clear"
+
+[[arm]]
+entry = "80038158"
+range = "0x800382DC..0x800382DC"
+verdict = "unreachable"
+reason = "`bne s8,zero` after the variant switch: s8 is cleared in the entry's delay slot (0x80038198) and the epilogue's loop-back at 0x80039B44 targets 0x800382F0, past this test, so s8 is always zero here"
+
+[[arm]]
+entry = "80038158"
+range = "0x80038310..0x80038310"
+verdict = "unreachable"
+reason = "the dispatch bound `sltiu (op-1),0x20`: an op byte outside 0x01..0x20 lands on the epilogue with s8 still zero and re-dispatches the same byte for ever (a hang); every shipped variant decodes to its end through the width table (the op census in engine-scene's ambient_motion_op_census_disc walks all 573 cleanly)"
+
+[[arm]]
+entry = "80038158"
+range = "0x80038644..0x80038644"
+verdict = "unreachable"
+reason = "op 0x04's compiler-emitted divide-by-zero guard (`bne s4,zero` ahead of `break 0x1C00`): s4 = frames - cursor is non-zero here because 0x800385F8 already sent s4 == 0 to the terminal snap"
+
+[[arm]]
+entry = "80038158"
+range = "0x80038680..0x80038680"
+verdict = "unreachable"
+reason = "the increasing-direction copy of op 0x04's divide-by-zero guard; s4 == 0 left at 0x800385F8"
+
+[[arm]]
+entry = "80038158"
+range = "0x80038D9C..0x80038DAC"
+verdict = "unreachable"
+reason = "op 0x18's phase dispatch at 0x80038D7C exits on a phase below 1 or above 3, but it is reached only from 0x80038C58 with the phase non-zero or from 0x80038D44/0x80038D78 having just stored 1 or 2, and every writer of the record's byte 2 (this routine, the scene reset at 0x8003B74C) stores 0..3"
+
+# lane C: 80021DF4 800520F0 8001ADA4 800243F0 8001822C
+[[arm]]
+entry = "800243F0"
+range = "0x800244A8..0x800244A8"
+verdict = "unported"
+reason = "returns before either slot while the scene-change packet's transition bit is up (FUN_8001FD44 sets 0x1F800394 |= 0x40); the engine changes scenes synchronously in its scene host and resolves the next scene's track there (FieldBgmPlan), so no poller pass falls inside a change"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024530..0x80024544"
+verdict = "unported"
+reason = "the third request hold: on a warm field entry (_DAT_8007B8B8 != 0) under a battle sound set of -1 (_DAT_8007B880, op-0x35 sub-op 7) the request is copied onto the loaded index and nothing loads; sound_state::bgm_request_hold ports the keep-audio and park holds around it, and the engine keeps a -1 set's field score by not stashing it (World::swap_to_battle_bgm), not by this hold"
+
+[[arm]]
+entry = "800243F0"
+range = "0x800245F8..0x800245F8"
+verdict = "unported"
+reason = "stage 0's wait on a drive still busy when the track changes (FUN_8003DE7C(1) at 0x800245F0) before it arms the settle; the engine's reads are synchronous, so BgmSwapPoller starts its settle at the change with the drive idle"
+
+[[arm]]
+entry = "800243F0"
+range = "0x800246A0..0x800246A0"
+verdict = "unported"
+reason = "with the build halfword _DAT_8007B8C2 clear, the field init (mode 2) re-arms the settle at 0x3C on the read; the engine runs the init's track load synchronously (bgm_field_init_open, sound_cues.rs), not through BgmSwapPoller's clock"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024858..0x80024858"
+verdict = "unported"
+reason = "with the build halfword _DAT_8007B8C2 clear, the field init (mode 2) drains the settle by one a call and waits a vsync through FUN_8005FB84 (the init's poller-to-completion loop); the engine runs that load synchronously (bgm_field_init_open), not through BgmSwapPoller's clock"
+
+[[arm]]
+entry = "800243F0"
+range = "0x800247C8..0x800247D8"
+verdict = "unported"
+reason = "the BGM install's load-in-progress byte: with the side-band slot settled it leaves DAT_8007B648 at 0x80 while gp+0x724 holds it, else clears it (the byte stage 0 raised at 0x80024600); the engine's loads are synchronous and keep no load-in-progress byte"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024AC0..0x80024AC0"
+verdict = "unported"
+reason = "the side-band acknowledge's load-in-progress byte: DAT_8007B648 left at 0x80 while gp+0x724 holds it, else cleared (the byte stage 0 raised at 0x80024998); the engine's loads are synchronous and keep no load-in-progress byte"
+[[arm]]
+entry = "8001ADA4"
+range = "0x8001AF2C..0x8001B044"
+verdict = "unported"
+reason = "case 3: builds the node matrix (FUN_80026988 on +0x24), negates the scale axes +0x5A bits 2 / 4 / 8 pick, composes it with the camera (FUN_8005B4E8 / FUN_8005B3A8) and draws each model-list part through FUN_8004629C and FUN_80043390 with a 0x40000000 / 0x48000000 packet flag by +0x5A & 0xE; the engine draws its meshes in wgpu, with no GTE matrix stack or packet stage to compare"
+
+[[arm]]
+entry = "8001ADA4"
+range = "0x8001B210..0x8001B5D0"
+verdict = "unported"
+reason = "the case-4 / default model draw past the cull test: the node matrix under the +0x42 extra rotation and the +0x72 scale, the light matrix when the model's +0xC is set, the camera-relative compose (FUN_8001CF50) on +0x52 & 0x780, and per part FUN_80043390, the +0x7A shatter draw FUN_80029888, the +0x42 draw FUN_8002735C and the +0x10 & 0x1000 hook FUN_8001C604; the engine builds the node's draw for wgpu (effect_ribbon::RibbonDraw, node_rotation, part_shatter) with no GTE or packet stage to compare"
+
+[[arm]]
+entry = "8001ADA4"
+range = "0x8001B604..0x8001B64C"
+verdict = "unported"
+reason = "cases 6, 7 and 8: a view-depth near reject (+0x34 < 0xA1) ahead of FUN_8002B944 / FUN_8002B94C / FUN_8002B954, each an empty leaf (`jr ra; nop`), so the arms draw nothing in retail and the port has nothing to implement"
+[[arm]]
+entry = "8001822C"
+range = "0x80018610..0x800188A0"
+verdict = "unported"
+reason = "the dev hotkey tail behind the debug word _DAT_8007B98C (`beq` at 0x800185FC; zero as retail ships): the paused Circle / Triangle mode-0x14 entry, the R2-edge frame-counter print through FUN_80017AAC, the R1+Start pause toggle in the live modes and the Select+Start (held 0x900) field soft reset; retail_pad ports only the pump, the engine's debug surface is its host's"
+
+[[arm]]
+entry = "800243F0"
+range = "0x8002440C..0x8002440C"
+verdict = "unported"
+reason = "returns at once while the two-stream latch _DAT_8007B9B8 is up, the ending theme (id 0x814) staged as two reads by the field init; the engine stages those two streams itself (engine-system mode_entry_init, FIELD_BGM_TWO_PART_ID) and never runs a poller over them"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024470..0x80024470"
+verdict = "unported"
+reason = "while the dev word _DAT_8007B868 is non-zero the poller copies both requests onto their acknowledges (0x80024478..0x80024494) so nothing loads; retail ships it zero and the port has no dev build (OverlayLoaderHost::dev_branch_flag)"
+
+[[arm]]
+entry = "800243F0"
+range = "0x800245CC..0x800245CC"
+verdict = "unreachable"
+reason = "the BGM stage word gp+0x744 is only cleared (0x800247BC) or stepped one stage at a time from 0 by the walk it indexes, whose last stage 6 clears it, so it never reaches 7 and the jump-table bound never falls through"
+
+[[arm]]
+entry = "800243F0"
+range = "0x8002495C..0x8002495C"
+verdict = "unreachable"
+reason = "the side-band stage word gp+0x748 is only cleared (0x80024AE8) or stepped from 0 by the walk it indexes, which sets 10 at most (0x80024A38 / 0x80024AA8) and clears it there, so it never reaches 11 and the jump-table bound never falls through"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024988..0x80024988"
+verdict = "unported"
+reason = "the side-band walk's stage-0 wait on the drive (FUN_8003DE7C(1) busy returns); the engine's side-band load is synchronous - the field host settles sound_stream in the same call that requests it (sound_cues.rs) - so no stage waits"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024AB0..0x80024AB0"
+verdict = "unreachable"
+reason = "`beq a1,zero` on the BGM-settled flag, but the side-band walk is entered only through `bne a1,zero` at 0x8002458C, so a1 is never zero here"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024B18..0x80024B18"
+verdict = "unported"
+reason = "the side-band walk's wait on the drive between its reads (FUN_8003DE7C(1) busy returns); the engine's side-band load is synchronous (sound_stream settles in the requesting call), so no stage waits"
+
+[[arm]]
+entry = "800243F0"
+range = "0x80024B74..0x80024C58"
+verdict = "unported"
+reason = "the field-idle battle-file preloader the poller runs once both slots are settled: _DAT_8007B858 counts to 2, then on the field (mode 3) with _DAT_8007B648 not 0x80 it steps _DAT_8007BA98 through FUN_8003E360, a CD-idle wait and the player-file loader FUN_80052770; the engine reads the party's battle files when a battle starts (engine-scene stream_file), not ahead of it"
+[[arm]]
+entry = "800520F0"
+range = "0x80052108..0x80052108"
+verdict = "unported"
+reason = "picks loader state 9, the shared CD-wait arm (FUN_8003DE7C poll at 0x800526C8) that on state 9 also LoadImages each TIM of the effect pack at gp+0xA8C (0x800526E8..0x80052734); the engine loads a battle synchronously and uploads the effect TIMs through engine-scene's upload_effect_textures_into_vram, so no state waits"
+
+[[arm]]
+entry = "800520F0"
+range = "0x8005212C..0x8005212C"
+verdict = "unported"
+reason = "picks loader state 1, the CD-wait arm at 0x800526C8 (FUN_8003DE7C poll, state++ once idle) after state 0's slot-7 read; the engine's battle load is synchronous and has no wait states"
+
+[[arm]]
+entry = "800520F0"
+range = "0x8005213C..0x8005213C"
+verdict = "unreachable"
+reason = "falls through only for a state byte (lbu) below 2 that is neither 1 (0x8005212C) nor 0, which no byte value is"
+
+[[arm]]
+entry = "800520F0"
+range = "0x80052150..0x80052158"
+verdict = "unported"
+reason = "0x80052150 falls through to state 3 and 0x80052158 picks it: the CD-wait arm at 0x800526C8 after state 2's slot-8 read (the engine's load is synchronous); 0x80052158's own fall-through needs a state in 2..4 other than 2, 3 and 4, which none is"
+
+[[arm]]
+entry = "800520F0"
+range = "0x8005216C..0x80052184"
+verdict = "unported"
+reason = "past state 6 (0x8005216C, its fall-through) picks loader states 5 and 7 (CD waits at 0x800526C8) and 8 (FUN_8002630C on the slot-2 bank, then the effect TMD pack raw 0x368 or its h: path at 0x80015358, by halfword 0x8007B8C2); the engine stages the banks through AudioDirector and reads the befect entries through ProtIndex when the battle starts; 0x80052184's fall-through needs a state in 5..9 other than 5..9"
+
+[[arm]]
+entry = "800520F0"
+range = "0x800521A0..0x800521C0"
+verdict = "unported"
+reason = "the compares that pick loader states 0xA (vdf / efect reads, raw 0x369 / 0x36A or their h: paths), 0xB and 0xD (CD waits) and 0xC (FUN_8001FBCC over the effect pack, FUN_80026B4C TMD registration, raw 0x36B); the engine reads those befect entries through ProtIndex (engine-scene effect_textures, PROT_BEFECT_DATA_ENTRY) with no loader states"
+
+[[arm]]
+entry = "800520F0"
+range = "0x800521D4..0x800521E4"
+verdict = "unported"
+reason = "the compares that pick loader states 0x11 and 0xF (CD waits at 0x800526C8), 0x12 (state 0xFF and DAT_8007BDB0 = -1) and the 0xFF arm; the engine's synchronous load has no wait states and enters a fight running (battle_sideband::BATTLE_RUNNING)"
+
+[[arm]]
+entry = "800520F0"
+range = "0x800521EC..0x800521EC"
+verdict = "unreachable"
+reason = "falls through only for a state in 0xF..0x11 that is none of 0xF (0x800521E4), 0x11 (0x800521D4) and 0x10, which no byte value is"
+
+[[arm]]
+entry = "800520F0"
+range = "0x80052200..0x80052208"
+verdict = "unported"
+reason = "state 0x12 parks the loader at 0xFF and clears the voice latch DAT_8007BDB0, state 0xFF calls the battle overlay's side-band handler 0x801F17F8 every frame, and anything else (0xFE, the ending fight) returns; the engine runs the fight's per-frame side-band from its battle loop (engine-battle battle_sideband), not from a loader state"
+
+[[arm]]
+entry = "800520F0"
+range = "0x8005248C..0x80052620"
+verdict = "unported"
+reason = "states 8, 0xA and 0xC: the effect-pack reads (raw 0x368..0x36B through FUN_8003E8A8, or h: paths through FUN_8003E6BC on halfword 0x8007B8C2), the pack walk FUN_8001FBCC and the TMD registration FUN_80026B4C that stops the loader on a failure; the engine reads the befect entries through ProtIndex when the battle scene is entered (engine-scene effect_textures)"
+
+[[arm]]
+entry = "800520F0"
+range = "0x800526D0..0x80052730"
+verdict = "unported"
+reason = "the shared CD-wait arm: return while FUN_8003DE7C(1) reports the read busy, then on state 9 LoadImage each TIM of the pack at gp+0xA8C through FUN_800198E0 before state++; the engine loads synchronously and uploads the effect TIMs through upload_effect_textures_into_vram"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x80022334..0x8002237C"
+verdict = "unreachable"
+reason = "the `bgez` on |edge| - |d| per axis in the emitter falloff runs only with the focus inside the box (0x80022204..0x80022278; a zero +0x9C skips to 0x800223E8), and inside it the edge 0x800222CC / 0x800222EC picks on the focus's side always exceeds |d|, so the difference is never negative"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x800223D4..0x800223D4"
+verdict = "unreachable"
+reason = "the product of the two falloffs is tested for a negative before its `sra 7`, but each falloff is (|edge| - |d|) << 7 / |edge| with 0 <= |d| < |edge| inside the box, so both lie in 0..0x80 and the product is never negative"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x800224A4..0x800224B0"
+verdict = "unreachable"
+reason = "the `bgez s3` / `bgez s2` floors test the results of `srl s3,v1,7` / `srl s2,t1,7`, a logical shift whose result is never negative"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x80022524..0x80022524"
+verdict = "unported"
+reason = "while the forced-channel latch _DAT_8007BA88 (gp+0x770) is up the emitter keys mixer record 6 instead of the cue's category; the port applies that latch once for every cue in the session's AudioDirector::sfx_vab_for_category (World::sfx_forced_slot, FUN_80016B6C's port), not in sfx_emitter::emitter_tick"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x80022608..0x80022620"
+verdict = "unreachable"
+reason = "the round-toward-zero bias on the key-on volume pair tests s3 / s2 for a negative, but both were floored at 0 and capped at 0x3F80 (0x800224A4..0x800224D0) and only averaged since, so neither is negative"
+
+[[arm]]
+entry = "80021DF4"
+range = "0x800228A8..0x800228A8"
+verdict = "unreachable"
+reason = "0x800228A0 is reached only by falling out of the mode-3 arm (every other mode branches from 0x800226E0 straight to 0x800228B0), so `+0x5A == 3` always holds there and the fall-through is never taken"
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E6254..0x801E6304"
+verdict = "unported"
+reason = "PROT 0898's Done band teardown inlines FUN_801E805C's multi-cast readout close: with the value window 0x801F6980 holding a value it unloads (id - 4, 1) then (id, 1) for each of the 0x801F6974 rows at 0x801F6834; the action context carries neither the window nor the count, and the engine closes the readout only through FUN_801E805C's own pass (battle_value_readout)."

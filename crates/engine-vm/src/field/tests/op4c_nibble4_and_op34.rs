@@ -658,6 +658,7 @@ fn op_37_arm_encounter_forwards_record_window_when_armed() {
     // overlays the opcode: [opcode][op1][op2][count][ids..].
     let mut host = TestHost {
         scripted_encounter_armed: true,
+        halt_acquire_predicate: true,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
@@ -677,7 +678,10 @@ fn op_37_arm_encounter_forwards_record_window_when_armed() {
 fn op_37_yield_does_not_arm_encounter_when_unarmed() {
     // Default host is unarmed: a generic 0x37 yield must not be mistaken
     // for an encounter arm.
-    let mut host = TestHost::default();
+    let mut host = TestHost {
+        halt_acquire_predicate: true,
+        ..TestHost::default()
+    };
     let mut ctx = FieldCtx::default();
     let bc = [0x37, 0x00, 0x00, 0x02, 0x4F, 0x50, 0x00, 0x00];
     let r = step(&mut host, &mut ctx, &bc, 0);

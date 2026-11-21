@@ -89,6 +89,8 @@ impl World {
             right: held(PadButton::Right),
             cross: self.input.just_pressed(PadButton::Cross),
             circle: self.input.just_pressed(PadButton::Circle),
+            cross_entry: self.toggles.battle_command
+                == legaia_engine_system::option_values::BattleCommandOpt::CrossButton,
         };
         // The spell list is a kind-4 list window, so the list kernel moves
         // its hand: one direction a frame, Up ahead of Down ahead of the page
@@ -458,6 +460,13 @@ impl World {
             None
         };
 
+        // The target surfaces read the pad in retail's order instead
+        // (`Self::item_target_input`): the enemy cursor steps on the ring.
+        let ev = match self.item_target_input(&mut menu) {
+            Some(target_ev) => target_ev,
+            None => ev,
+        };
+
         // The item under the cursor before the input - `current_item` reads
         // the `item_cursor` in TargetSelect, so this is the item that a Confirm
         // on a target row resolves to (the Done state no longer exposes it).
@@ -486,6 +495,35 @@ impl World {
                 item_cursor,
                 cursor: own,
             };
+        }
+        // The one-enemy sub-cursor opens on the member's own target when it
+        // is a monster seat (`+0x1DD - 3 < 5`, `0x801D1918..0x801D1928`) and
+        // on the first living monster otherwise (`FUN_801DB8B4`,
+        // `0x801D1930..0x801D1950`), not on the row the item helps most.
+        //
+        // PORT: FUN_801D0748 (`0x801D18F4..0x801D1958`)
+        if !matches!(state_before, InventoryUseState::TargetSelect { .. })
+            && let InventoryUseState::TargetSelect {
+                item_cursor,
+                cursor,
+            } = menu.state
+            && menu.targets.get(cursor).is_some_and(|t| t.is_enemy)
+        {
+            let pc = self.party.party_count.clamp(1, 3);
+            let own = self
+                .actors
+                .get(usize::from(self.battle_ctx.active_actor))
+                .map(|a| a.battle.active_target)
+                .filter(|t| (pc..pc + 5).contains(t));
+            let seat = own
+                .and_then(|t| menu.targets.iter().position(|r| r.is_enemy && r.slot == t))
+                .or_else(|| menu.targets.iter().position(|r| r.is_enemy && r.alive));
+            if let Some(seat) = seat {
+                menu.state = InventoryUseState::TargetSelect {
+                    item_cursor,
+                    cursor: seat,
+                };
+            }
         }
         // The event log drives the window's blip (`super::ui_cues`) and is
         // otherwise discarded; `used_slots` is the authoritative list of
@@ -599,6 +637,111 @@ impl World {
                     self.open_battle_command(actor);
                 }
             }
+        }
+    }
+
+    /// One frame of the item window's target sub-cursors, in retail's test
+    /// order, or `None` off them (the list reads the pad as before).
+    ///
+    /// - One enemy (`0x5B`, `0x801D23F0..0x801D2584`): Right, then Left,
+    ///   each stepping the ring `FUN_801D8D00` and ending the frame only when
+    ///   the target moved; then Up or Down with no side direction (under the
+    ///   directional entry) or the confirm mask commits; then the cancel mask.
+    /// - One ally (`0x64`, `0x801D2A00..0x801D2B38`): the cancel mask first;
+    ///   then, with more than one member seated, Left steps the seat up and
+    ///   Right down; then Up / Down or the confirm commits.
+    /// - All enemies / all allies (`0x5D` / `0x66`): the cancel mask first,
+    ///   then Up / Down or the confirm.
+    ///
+    /// `None` off the target surfaces; on them `Some(Some(input))` for the
+    /// input the session takes, `Some(None)` for a frame that takes nothing
+    /// or a ring step applied here.
+    ///
+    /// PORT: FUN_801D0748 (states `0x5B` / `0x5D` / `0x64` / `0x66`)
+    fn item_target_input(
+        &mut self,
+        menu: &mut legaia_engine_menus::inventory_use::InventoryUseSession,
+    ) -> Option<Option<legaia_engine_menus::inventory_use::InventoryUseInput>> {
+        use legaia_engine_menus::inventory_use::{InventoryUseInput as In, InventoryUseState};
+        use legaia_engine_system::input::PadButton;
+        let pressed = |b: PadButton| self.input.just_pressed(b);
+        let (left, right, up, down) = (
+            pressed(PadButton::Left),
+            pressed(PadButton::Right),
+            pressed(PadButton::Up),
+            pressed(PadButton::Down),
+        );
+        let (cross, circle) = (pressed(PadButton::Cross), pressed(PadButton::Circle));
+        let cross_entry = self.toggles.battle_command
+            == legaia_engine_system::option_values::BattleCommandOpt::CrossButton;
+        let commit = cross || (!cross_entry && (up || down) && !(left || right));
+        match menu.state {
+            InventoryUseState::AllPartyConfirm { .. }
+            | InventoryUseState::AllEnemiesConfirm { .. } => Some(if circle {
+                Some(In::Cancel)
+            } else if commit {
+                Some(In::Confirm)
+            } else {
+                None
+            }),
+            InventoryUseState::TargetSelect {
+                item_cursor,
+                cursor,
+            } => {
+                let enemy = menu.targets.get(cursor).is_some_and(|t| t.is_enemy);
+                if !enemy {
+                    let seated = menu.targets.iter().filter(|t| !t.is_enemy).count();
+                    return Some(if circle {
+                        Some(In::Cancel)
+                    } else if seated != 1 && left {
+                        Some(In::Down)
+                    } else if seated != 1 && right {
+                        Some(In::Up)
+                    } else if commit {
+                        Some(In::Confirm)
+                    } else {
+                        None
+                    });
+                }
+                let pc = self.party.party_count.clamp(1, 3);
+                let from = menu.targets[cursor].slot.wrapping_sub(pc);
+                let (party, monsters) = self.battle_target_rows();
+                let acting = party
+                    .get(usize::from(self.battle_ctx.active_actor))
+                    .copied()
+                    .unwrap_or(party[0]);
+                let step = |dir: i8| {
+                    legaia_engine_battle::target_picker::enemy_ring_step(
+                        acting, &monsters, from, dir,
+                    )
+                    .filter(|&s| s != from)
+                    .and_then(|s| {
+                        menu.targets
+                            .iter()
+                            .position(|t| t.is_enemy && t.slot == pc + s)
+                    })
+                };
+                let moved = if right { step(1) } else { None }
+                    .or_else(|| if left { step(-1) } else { None });
+                if let Some(next) = moved {
+                    menu.state = InventoryUseState::TargetSelect {
+                        item_cursor,
+                        cursor: next,
+                    };
+                    self.push_battle_ui_cue(
+                        legaia_engine_battle_loop::ui_cues::BattleUiCue::Cursor,
+                    );
+                    return Some(None);
+                }
+                Some(if commit {
+                    Some(In::Confirm)
+                } else if circle {
+                    Some(In::Cancel)
+                } else {
+                    None
+                })
+            }
+            _ => None,
         }
     }
 

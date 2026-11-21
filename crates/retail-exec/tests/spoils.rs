@@ -50,6 +50,9 @@ struct Win {
     chance: [u8; 5],
     purse: u32,
     special: u32,
+    /// The pose seat `ctx[+0x13]`, whose character id seats the results
+    /// camera.
+    pose_seat: u8,
     seed: u32,
 }
 
@@ -74,8 +77,10 @@ fn gen_win(rng: &mut Rng, threshold: impl Fn(usize, u8) -> u32) -> Win {
             _ => rng.below(100_000),
         },
         special: if rng.below(10) == 0 { 0x200 } else { 0 },
+        pose_seat: 0,
         seed: rng.next(),
     };
+    w.pose_seat = rng.below(w.party as u32) as u8;
     let mut standing = 0;
     for m in 0..3 {
         w.member_hp[m] = if rng.below(4) == 0 {
@@ -87,7 +92,8 @@ fn gen_win(rng: &mut Rng, threshold: impl Fn(usize, u8) -> u32) -> Win {
         if m < w.party && w.member_hp[m] != 0 && w.member_status[m] == 0 {
             standing += 1;
         }
-        w.word1[m] = [0, 0, 0x1_0000, 0x2_0000][rng.below(4) as usize];
+        // `0x1_0000` Gold Boost, `0x2_0000` Items Up, `0x8000` EXP Boost.
+        w.word1[m] = [0, 0, 0x1_0000, 0x2_0000, 0x8000, 0x1_8000][rng.below(6) as usize];
         w.word0[m] = if rng.below(4) == 0 { 0x8000 } else { 0 };
         w.level[m] = 1 + rng.below(90) as u8;
         // Close to the next level, or at the EXP cap's edge.
@@ -128,6 +134,8 @@ fn seed_retail(cpu: &mut Cpu, w: &Win) {
     }
     cpu.mem.wr8(CTX, w.party as u8);
     cpu.mem.wr8(CTX + 1, w.monsters as u8);
+    cpu.mem.wr8(CTX + 0x13, w.pose_seat);
+    cpu.mem.wr16(CTX + 0x6D0, 0x0C00);
     cpu.mem.wr8(gp + 0x332, 0);
     // The arm that pays: state 5, the seat's line finished, first pass.
     cpu.mem.wr32(gp + 0xA14, 5);
@@ -294,6 +302,18 @@ fn a_win_pays_what_retail_pays() {
                 (cpu.mem.rd32(rec), cpu.mem.rd8(rec + 0x130))
             })
             .collect();
+        // The results camera (`0x8004EF1C..0x8004EF4C`): the pose seat's
+        // character id is its seat byte, `seat + 1` here.
+        let (yaw, depth) = legaia_engine_battle::victory::victory_results_camera(w.pose_seat + 1);
+        assert_eq!(
+            (
+                cpu.mem.rd16(CTX + 0x6DA) as i32,
+                cpu.mem.rd16(CTX + 0x6D0) as i16
+            ),
+            (yaw, depth),
+            "round {round}: results camera, pose seat {}",
+            w.pose_seat
+        );
         let retail = (
             cpu.mem.rd32(PURSE),
             retail_xp,
@@ -329,4 +349,230 @@ fn a_win_pays_what_retail_pays() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(drops > 100, "{drops} drops");
+}
+
+/// The results hold (`gp+0xA54`, `0x8004F740..0x8004F778`): the results frame
+/// zeroes it and adds the frame step on that same pass, and the exit fade
+/// (`FUN_80024E80`) is spawned on the pass the count reaches `0x100`. Run
+/// pass by pass from the results frame at a frame step of one vsync, against
+/// `World::tick_battle_end_sequence` counted from the tick that opens the
+/// results frame.
+#[test]
+fn the_results_hold_spawns_the_fade_when_retail_does() {
+    differential!(scus(SPOILS));
+    use legaia_engine_battle_vm::battle_action::BattleEndCause;
+    use legaia_engine_core::world::test_drivers::BattleTestDrivers;
+    let (Some(mut cpu), Some(scus), Some(disc)) = (scus_cpu(), scus(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    let state = Rc::new(Cell::new(0u32));
+    let stream = state.clone();
+    cpu.hook(RAND, move |r, _| {
+        let next = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+        stream.set(next);
+        r.r[V0] = (next >> 16) & 0x7FFF;
+    });
+    let faded = Rc::new(Cell::new(false));
+    let f2 = faded.clone();
+    cpu.hook(0x8002_4E80, move |_, _| f2.set(true));
+    for stub in [
+        0x8003_CE08u32,
+        0x8003_CBF8,
+        0x8003_CA38,
+        0x8005_6758,
+        0x8003_563C,
+        0x8004_FCC8,
+        0x801D_5854,
+        0x801D_8DE8,
+        0x8004_21D4,
+        0x8002_5358,
+        0x8001_7B94,
+    ] {
+        cpu.stub(stub, 0);
+    }
+    let mut world = World::default();
+    world.install_retail_progression_tables(&scus);
+    world.set_accessory_passives(AccessoryPassives::from_disc(
+        &AccessoryPassiveTable::from_scus(&scus).expect("passives"),
+    ));
+    let mut rng = Rng(0x484F_4C44);
+    for round in 0..20 {
+        let tracker = &world.party.level_up_tracker;
+        let w = gen_win(&mut rng, |m, level| {
+            tracker.threshold_for(m, level).unwrap_or(0)
+        });
+        seed_retail(&mut cpu, &w);
+        // The frame step, and the load state the win's fade waits on.
+        cpu.mem.wr8(0x1F80_0393, 1);
+        cpu.mem.wr8(CTX + 0xB, 0);
+        cpu.mem.wr8(CTX + 0xC, 2);
+        state.set(w.seed);
+        faded.set(false);
+        let mut retail = None;
+        for pass in 0..0x200u32 {
+            assert_eq!(
+                cpu.call(SPOILS, &[]),
+                Stop::Returned,
+                "round {round} pass {pass}"
+            );
+            if faded.get() {
+                retail = Some(pass);
+                break;
+            }
+        }
+
+        let (formation, catalog) = seed_port(&mut world, &w);
+        world.battle.active_formation = Some(formation);
+        world.tables.monster_catalog = catalog;
+        world.battle.victory = None;
+        world.presentation.fade = None;
+        world.game_over_hold = false;
+        world.battle.end = Some(BattleEndCause::MonsterWipe);
+        world.begin_battle_end_sequence();
+        let mut results_at = None;
+        let mut port = None;
+        for tick in 0..0x400u32 {
+            world.tick_battle_end_sequence();
+            let in_results = matches!(
+                world.battle.victory.map(|v| v.phase),
+                Some(legaia_engine_battle::victory::VictoryPhase::Results { .. })
+            );
+            if results_at.is_none() && in_results {
+                results_at = Some(tick);
+            }
+            if world.presentation.fade.is_some() {
+                port = results_at.map(|r| tick - r);
+                break;
+            }
+        }
+        assert_eq!(
+            retail, port,
+            "round {round}: passes from the results frame to the fade"
+        );
+    }
+}
+
+/// A win with only Terra standing (`docs/subsystems/level-up.md`, XP
+/// distribution): seat byte `4` leaves the divisor loop
+/// (`0x8004F130..0x8004F178`), so with Noa down the `divu` at `0x8004F198`
+/// divides by zero. Run with the R3000's answer (`lo` all ones), the pass pays
+/// Terra the all-ones share, which wraps her EXP down by one or caps an EXP
+/// of `0` at 9,999,999, and parks the same word in `gp+0xA04` for the window.
+/// Retail only; the port floors the divisor at one by the owner's choice.
+#[test]
+fn a_terra_only_win_pays_her_all_ones() {
+    not_a_differential!("retail only: the port floors the Terra-only divisor at one by choice");
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.hardware_zero_div = true;
+    cpu.hook(RAND, |r, _| r.r[V0] = 0x1234);
+    for stub in [
+        0x8003_CE08u32,
+        0x8003_CBF8,
+        0x8003_CA38,
+        0x8005_6758,
+        0x8003_563C,
+        0x8004_FCC8,
+        0x801D_5854,
+        0x801D_8DE8,
+    ] {
+        cpu.stub(stub, 0);
+    }
+    let terra_exp = RECORDS + 3 * STRIDE;
+    for (before, after) in [(0u32, 9_999_999u32), (1234, 1233), (9_999_999, 9_999_998)] {
+        let mut w = gen_win(&mut Rng(1), |_, _| 0);
+        w.party = 2;
+        w.monsters = 2;
+        w.member_hp = [0, 200, 0];
+        w.member_status = [0; 3];
+        w.word0 = [0; 3];
+        w.word1 = [0; 3];
+        w.xp = [156, before, 0];
+        w.level = [3, 1, 1];
+        w.dead = [true; 5];
+        w.captured = [false; 5];
+        w.exp = [40, 0, 0, 0, 0];
+        w.special = 0;
+        seed_retail(&mut cpu, &w);
+        // Seat Noa (2) and Terra (4) on their own record indices.
+        let recs: Vec<Vec<u8>> = (0..2u32)
+            .map(|seat| {
+                (0..STRIDE)
+                    .map(|b| cpu.mem.rd8(RECORDS + seat * STRIDE + b))
+                    .collect()
+            })
+            .collect();
+        for (seat, id) in [(0u32, 2u32), (1, 4)] {
+            cpu.mem.wr8(SEATS + seat, id as u8);
+            for (b, v) in recs[seat as usize].iter().enumerate() {
+                cpu.mem.wr8(RECORDS + (id - 1) * STRIDE + b as u32, *v);
+            }
+        }
+        let gp = cpu.regs.r[GP];
+        assert_eq!(cpu.call(SPOILS, &[]), Stop::Returned);
+        assert_eq!(cpu.mem.rd32(terra_exp), after, "Terra's EXP from {before}");
+        assert_eq!(cpu.mem.rd32(gp + 0xA04), u32::MAX, "the share");
+    }
+}
+
+/// The spoils window's EXP figure is a `u32` number record that
+/// `FUN_80031D00` reads live and compares signed against its power table
+/// (`0x80032068..0x800320A0`), so the all-ones share of a Terra-only win draws
+/// a single `0` in the field's last cell.
+#[test]
+fn the_window_draws_all_ones_as_zero() {
+    not_a_differential!("retail only: what the spoils readout draws for an all-ones share");
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let gp = cpu.regs.r[GP];
+    let glyphs = Rc::new(RefCell::new(Vec::<(i16, u16)>::new()));
+    let log = glyphs.clone();
+    // The numeral blit: rect `(x, y)` in `a0`, texel `(u, v)` in `a1`.
+    cpu.hook(0x8003_C11C, move |r, m| {
+        let x = m.rd16(r.r[4]) as i16;
+        let u = m.rd16(r.r[5]);
+        log.borrow_mut().push((x, u / 8));
+    });
+    cpu.stub(0x8003_1AE4, 0);
+    cpu.stub(0x8003_6888, 0);
+    const LIST: u32 = 0x8017_0000;
+    const ACTOR_A: u32 = 0x8017_0100;
+    const RECORD: u32 = 0x8017_0400;
+    const VALUE: u32 = 0x8017_0600;
+    for (value, digits) in [
+        (u32::MAX, vec![(78, 0)]),
+        (1234, vec![(54, 1), (62, 2), (70, 3), (78, 4)]),
+    ] {
+        for b in 0..0x800 {
+            cpu.mem.wr8(LIST + b, 0);
+        }
+        // A one-actor ring holding one five-cell `u32` record at x `0x2E`.
+        cpu.mem.wr32(gp + 0x148, LIST);
+        cpu.mem.wr32(LIST, ACTOR_A);
+        cpu.mem.wr32(ACTOR_A, LIST);
+        cpu.mem.wr32(ACTOR_A + 0x2C, RECORD);
+        cpu.mem.wr16(ACTOR_A + 0x30, 1);
+        cpu.mem.wr32(VALUE, value);
+        cpu.mem.wr32(RECORD, VALUE);
+        cpu.mem.wr32(RECORD + 4, 4);
+        cpu.mem.wr16(RECORD + 8, 0x2E);
+        cpu.mem.wr16(RECORD + 0xA, 0x0E);
+        cpu.mem.wr16(RECORD + 0xC, 5);
+        cpu.mem.wr16(RECORD + 0xE, 7);
+        cpu.mem.wr32(gp + 0x15C, 0);
+        glyphs.borrow_mut().clear();
+        assert_eq!(cpu.call(0x8003_1D00, &[]), Stop::Returned);
+        assert_eq!(*glyphs.borrow(), digits, "value {value:#x}");
+    }
 }

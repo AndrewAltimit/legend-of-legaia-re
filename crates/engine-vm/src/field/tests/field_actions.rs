@@ -411,26 +411,28 @@ fn op_43_subop_ff_halts_at_pc() {
 }
 
 #[test]
-fn op_4c_n4_sub_e_or_f_halts_at_pc() {
-    // 0x4C outer-nibble 4 inner switch (line 5901 of the dump) has cases
-    // 0..=0xD followed by an explicit `default:` that prints
-    // `SUB_40_ERROR` and routes via `switchD_801e00f4::default()` ⇒
-    // halt at PC for sub-ops 0xE/0xF. The instruction is 6 bytes.
+fn op_4c_n4_sub_e_or_f_skips_the_instruction() {
+    // 0x4C outer-nibble 4's inner table holds sub-ops 0..=0xD
+    // (`sltiu v0,v1,0xe` at `0x801E114C`); 0xE/0xF print `SUB_40_ERROR`
+    // and return the PC the arm already moved past the six-byte
+    // instruction (`addiu s8,s8,6` at `0x801E1138`).
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
-    let r = step(
-        &mut host,
-        &mut ctx,
-        &[0x4C, 0x4E, 0x00, 0x00, 0x00, 0x00],
-        0,
-    );
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
-    let r = step(
-        &mut host,
-        &mut ctx,
-        &[0x4C, 0x4F, 0x00, 0x00, 0x00, 0x00],
-        0,
-    );
+    for sub in [0x4E, 0x4F] {
+        let r = step(&mut host, &mut ctx, &[0x4C, sub, 0x00, 0x00, 0x00, 0x00], 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 6 });
+    }
+}
+
+#[test]
+fn op_4c_nf_runs_only_ff() {
+    // Outer nibble 0xF: `4C FF` advances two bytes (`0x801E3540`); any
+    // other sub-op prints `SUB_CMD_0F_ERROR` and restores the entry PC.
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &[0x4C, 0xFF], 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
+    let r = step(&mut host, &mut ctx, &[0x4C, 0xF3], 0);
     assert_eq!(r, StepResult::Halt { final_pc: 0 });
 }
 

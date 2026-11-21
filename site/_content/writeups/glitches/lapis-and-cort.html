@@ -190,6 +190,26 @@
   </ul>
 </section>
 
+<section class="doc-section" id="mp-paid-from-zero">
+  <h2>A spell queued before Lapis Wave is paid out of zero MP</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>"If the cost is too high you just can't cast it" - true at the menu</dd>
+    <dt>Cause</dt><dd>The magic menu is the only MP check a party cast meets; the price is paid at the cast's own turn with a 16-bit subtract and no second test, so MP lost in between makes the subtract wrap</dd>
+    <dt>Where</dt><dd>The menu check at <code>0x801D1C0C</code> (<code>FUN_801D0748</code>) and the spend at <code>0x801E4584..0x801E4594</code> (<code>FUN_801E295C</code>, state <code>0x28</code>), both in PROT entry 0898</dd>
+    <dt>Affects</dt><dd>The Lapis fight (Lapis Wave) and fights with Evil Shadow, Shade or Nightmare (Fatal Decision)</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">explained</span> - from disassembly and disc data; the wrap itself captured on an injected cast, the two routes into it not played</dd>
+  </dl>
+  <p>All three commands are entered before anyone acts, and the menu refuses a spell the caster cannot pay for. The price is paid later, when the caster's turn comes, and nothing checks it again. If something lowers the caster's MP in between, the spell goes ahead anyway and the 16-bit subtract wraps: a caster at 0 MP paying 10 for Gimard is left at 65526.</p>
+  <p>Two monster moves can do that during the round. <strong>Lapis Wave</strong> sets every party member's current and maximum MP to 0, so a member who chose a spell and acts after Lapis that round pays from 0. <strong>Fatal Decision</strong> (Evil Shadow, Shade and Nightmare) can halve or zero its target's MP, and a victim whose spell costs more than what is left pays into the wrap.</p>
+  <p>The wrapped value is ordinary MP for the rest of the battle: the menu's test is "current MP at least the price", so every later spell passes until the pool is spent down from 65,000-odd, and the MP field draws the five-digit number over its own frame. Lapis counts any member with MP as a reason to wave, so against Lapis the windfall lasts until its next wave.</p>
+  <p>Monsters cannot get there. A monster picks its action at its own turn, immediately before running it, and only takes a spell its MP covers; no one acts between the pick and the payment.</p>
+  <h3>Open questions</h3>
+  <ul>
+    <li>Neither route has been played: the check is to queue a spell on a member slower than Lapis (speed 451) and read MP across <code>0x801E458C</code>.</li>
+    <li>What the character record keeps after the battle. Fleeing copies current MP to the record, and the record routine <code>FUN_80042558</code> clamps current MP to the maximum when it runs; which battle-end path runs it was not traced.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="lapis-can-be-escaped-from">
   <h2>Lapis can be escaped from</h2>
   <dl class="kv">

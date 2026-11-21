@@ -9,14 +9,17 @@
 //!
 //! 1. it **lands** the three elements with `FUN_801D5718` from the surfaces
 //!    the player was just looking at - the acting plaque (record `0x1A`), the
-//!    command chip that was chosen (record `0x0D` `Attack` on the attack arm
-//!    `0x20`, record `0x0B` `Spirit` on the Spirit arms `0x11` / `0x23`) and
-//!    the target plaque (record `0x29`, the Spirit arms write an empty string
-//!    of width `0` instead);
+//!    command chip that was chosen (record `0x0D` `Attack` on the attack arms
+//!    `0xE` / `0x20`, record `0x0B` `Spirit` on the Spirit arms `0x11` /
+//!    `0x23`, the staged spell or item name [`RECORD_COMMIT_NAME`] on the
+//!    Magic / Item arms `0x15` / `0x22`) and the target plaque (record
+//!    `0x29`, the Spirit arms write an empty string of width `0` instead);
 //! 2. it lays the row out left to right: the name at `x = 16`
 //!    (`sh 0x10, +0x0A`), the command at `name_w + 0x20` and the target at
 //!    `name_w + 0x60` (`0x801D4488..0x801D44D4`, again at
-//!    `0x801D49A4..0x801D49C8` and `0x801D408C..0x801D40B0`);
+//!    `0x801D49A4..0x801D49C8` and `0x801D408C..0x801D40B0`), or at
+//!    `name_w + command_w + 0x30` on the Magic / Item arms
+//!    (`0x801D4278..0x801D428C`);
 //! 3. it scrolls the log so the newest row sits lowest: one row rests at
 //!    `y = 170` (`0xAA`); a second commit moves the first to `146` (`0x92`)
 //!    and seats itself at `170`; a third seats at `194` (`0xC2`).
@@ -66,6 +69,17 @@ pub const RECORD_CHIP_ATTACK: usize = 0x0D;
 pub const RECORD_CHIP_MAGIC: usize = 0x0E;
 /// The target plaque (the target source).
 pub const RECORD_TARGET_PLAQUE: usize = 0x29;
+/// The spell or item name a Magic / Item commit logs as its command: the
+/// target sub-cursors' raise stages the item name (`0x80074368 + 12 * id`,
+/// `+4`) or the spell name (`0x800754C8 + 12 * id`, `+8`) into its `+0x14`,
+/// with its width measured by `FUN_80035F04` into `+0x06`
+/// (`0x801D4138..0x801D41A8`, `0x801D42F0..0x801D4388`), and the Magic /
+/// Item commit arms land the command column from it (`li a1,0x3b` at
+/// `0x801D421C`).
+pub const RECORD_COMMIT_NAME: usize = 0x3B;
+/// The Magic / Item commit arms seat the target column past the command's
+/// own measured width: `name_w + command_w + 0x30` (`0x801D4278..0x801D428C`).
+pub const NAMED_TARGET_GAP: u16 = 0x30;
 /// The whole-enemy-side target label (`"  All"`).
 pub const RECORD_ALL_ENEMIES: usize = 0x3D;
 /// The whole-party target label (`"All Allies"`).
@@ -153,7 +167,9 @@ pub enum CommitLogTarget {
 pub struct CommitLogRow {
     pub name: String,
     pub command: String,
-    /// Placement record of the command chip ([`RECORD_CHIP_ATTACK`] etc).
+    /// Placement record of the command chip ([`RECORD_CHIP_ATTACK`] etc),
+    /// or [`RECORD_COMMIT_NAME`] for a Magic / Item commit, whose command
+    /// column is the spell or item name.
     pub command_record: usize,
     pub target: CommitLogTarget,
     /// The element badge a single monster target's column wears: the commit
@@ -191,13 +207,18 @@ impl CommitLogRow {
     }
 
     /// The row as the layout kernel reads it, given a width measure. The
-    /// name and the target are measured strings; the command chip keeps its
-    /// record's preset width ([`CHIP_WIDTH`]).
+    /// name and the target are measured strings; a command chip keeps its
+    /// record's preset width ([`CHIP_WIDTH`]), and a spell or item name
+    /// ([`RECORD_COMMIT_NAME`]) is measured.
     pub fn commit(&self, width: impl Fn(&str) -> u16) -> LogCommit {
         LogCommit {
             name_width: width(&self.name),
             command_record: self.command_record,
-            command_width: CHIP_WIDTH,
+            command_width: if self.command_record == RECORD_COMMIT_NAME {
+                width(&self.command)
+            } else {
+                CHIP_WIDTH
+            },
             target: match &self.target {
                 CommitLogTarget::Single(t) => LogTarget::Single {
                     width: width(t)
@@ -223,6 +244,7 @@ const SLOTS: usize = RECORD_ALL_ALLIES + 1;
 /// commit arms for row `n`.
 ///
 /// PORT: FUN_801D388C (cases `0x11` / `0x20` / `0x23`: the log landing at `0x801D4444..0x801D4540`, `0x801D4918..0x801D49C8`, `0x801D4020..0x801D4124`)
+/// PORT: FUN_801D388C (cases `0xE` / `0x15` / `0x22`: `0x801D3E38..0x801D3F28`, `0x801D41F4..0x801D42EC`, `0x801D476C..0x801D4914`)
 pub fn stage_commit_row(slots: &mut [ElementPlacement], n: usize, commit: &LogCommit) {
     let r = LOG_FIRST_RECORD + LOG_RECORDS_PER_ROW * n;
     if r + 2 >= slots.len() {
@@ -257,7 +279,13 @@ pub fn stage_commit_row(slots: &mut [ElementPlacement], n: usize, commit: &LogCo
     let name_w = slots[r].f06;
     slots[r].f0a = NAME_X;
     slots[r + 1].f0a = name_w.wrapping_add(COMMAND_GAP);
-    slots[r + 2].f0a = name_w.wrapping_add(TARGET_GAP);
+    slots[r + 2].f0a = if commit.command_record == RECORD_COMMIT_NAME {
+        name_w
+            .wrapping_add(slots[r + 1].f06)
+            .wrapping_add(NAMED_TARGET_GAP)
+    } else {
+        name_w.wrapping_add(TARGET_GAP)
+    };
     let row = |slots: &mut [ElementPlacement], base: usize, y: u16| {
         for s in slots.iter_mut().skip(base).take(LOG_RECORDS_PER_ROW) {
             s.f0c = y;

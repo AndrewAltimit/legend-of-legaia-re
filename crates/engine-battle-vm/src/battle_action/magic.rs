@@ -221,10 +221,10 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     let cost = crate::battle_formulas::mp_cost_after_ability_bits(mp_cost as u16, modifier);
     // `lhu v0,0x150(s3); subu v0,v0,s0; sh v0,0x150(s3)` at
     // `0x801E4584..0x801E4594`: a halfword wrap, not a floor. The command
-    // menu and the monster pick only offer a spell the caster can pay for,
-    // so only a seat that skips them (the cast-sequence oracle's inject)
-    // reaches the wrap; retail's readout then shows `65518` for a
-    // 45-MP Seru cast at 27 MP.
+    // menu checks MP only at selection, so a caster whose MP falls before
+    // its turn - Lapis Wave zeroes the party's, Fatal Decision halves or
+    // zeroes its target's - pays from what is left and wraps; retail's
+    // readout then shows `65518` for a 45-MP Seru cast at 27 MP.
     if let Some(actor) = host.actor_mut(slot) {
         actor.mp = actor.mp.wrapping_sub(cost);
         actor.last_mp_cost = cost;
@@ -275,12 +275,16 @@ pub(super) fn magic_pre_cast_wait<H: BattleActionHost + ?Sized>(
     // Summon-route check (`lbu v1,0x1e0(s3); li v0,0x9; bne` at
     // `0x801E45EC`).
     let sub_route = host.actor(slot).map(|a| a.sub_route).unwrap_or(0);
-    if sub_route == 9 {
+    // Only a party caster reads it: the monster path branches past the
+    // trigger and the route test together (`beq` at `0x801E45D4`).
+    let summon_route = slot < party_count && sub_route == 9;
+    if summon_route {
         // `0x801E45F8..0x801E4604`: the summon route frames the caster at
-        // the near `0x600` depth.
+        // the near `0x600` depth and stores state `0x32`, then falls into
+        // the bump below (`0x801E4640` runs on to `0x801E4644`): the cursor
+        // still steps, and a `0xFF` there still ends the action.
         ctx.camera_frame_height = super::summon::SUMMON_ROUTE_FRAME_HEIGHT;
         host.camera_frame_height(super::summon::SUMMON_ROUTE_FRAME_HEIGHT);
-        return transition(ctx, ActionState::SummonInvoke);
     }
 
     // Bump, then read + stage (`0x801E4644..0x801E4664`).
@@ -325,11 +329,13 @@ pub(super) fn magic_pre_cast_wait<H: BattleActionHost + ?Sized>(
             host.one_shot_sfx(cue);
         }
     } else if let Some(actor) = host.actor_mut(slot) {
-        // `0x801E4744`: a Seru id that did not take the summon route stages
-        // nothing.
+        // `0x801E4744`: a Seru id stages nothing.
         actor.queued_anim = 0;
     }
     host.pose(slot, Pose::Idle);
+    if summon_route {
+        return transition(ctx, ActionState::SummonInvoke);
+    }
     transition(ctx, ActionState::MagicAnimChain)
 }
 
@@ -338,6 +344,18 @@ fn queue_byte<H: BattleActionHost + ?Sized>(host: &H, slot: u8, i: usize) -> u8 
     host.actor(slot)
         .and_then(|a| a.params.get(i).copied())
         .unwrap_or(0xFF)
+}
+
+/// The byte two behind the cursor, `lbu a1,0x1dd(cursor + actor)`
+/// (`0x801E47EC`, `0x801E4830`): with the cursor under `2` the read lands
+/// ahead of the queue, on the category `+0x1DE` (cursor `1`) or the target
+/// `+0x1DD` (cursor `0`).
+fn queue_byte_behind<H: BattleActionHost + ?Sized>(host: &H, slot: u8, cursor: usize) -> u8 {
+    match cursor {
+        0 => host.actor(slot).map_or(0xFF, |a| a.active_target),
+        1 => host.actor(slot).map_or(0xFF, |a| a.action_category),
+        c => queue_byte(host, slot, c - 2),
+    }
 }
 
 /// State `0x2A` - the cast's anim chain (`0x801E475C..0x801E47F8`).
@@ -382,7 +400,7 @@ pub(super) fn magic_anim_chain<H: BattleActionHost + ?Sized>(
         actor.spell_iter = 1;
     }
     let cursor = host.actor(slot).map_or(0, |a| usize::from(a.strike_index));
-    let shot = queue_byte(host, slot, cursor.wrapping_sub(2));
+    let shot = queue_byte_behind(host, slot, cursor);
     cast_effect_driver(host, ctx, slot, shot);
     stay(ctx)
 }
@@ -402,7 +420,7 @@ pub(super) fn magic_sustain<H: BattleActionHost + ?Sized>(
     let shot = if cursor == 2 {
         queue_byte(host, slot, 2)
     } else {
-        queue_byte(host, slot, cursor.wrapping_sub(2))
+        queue_byte_behind(host, slot, cursor)
     };
     cast_effect_driver(host, ctx, slot, shot);
     let iter_done = host.actor(slot).map(|a| a.spell_iter == 0).unwrap_or(false);

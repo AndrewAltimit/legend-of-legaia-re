@@ -139,3 +139,185 @@ fn the_party_gauges_take_retail_colours() {
     }
     assert!(grey > 5000 && raw_only > 3000, "{grey} {raw_only}");
 }
+
+const FRAME_END: u32 = 0x8004_7430;
+const CTX_PTR: u32 = 0x8007_BD24;
+const CTX: u32 = 0x8012_0000;
+const FRAME_STEP: u32 = 0x1F80_0393;
+const SPECIAL_WORD: u32 = 0x8007_BAC0;
+const RUMBLE_HOLD: u32 = 0x8007_BD34;
+const PULSE: u32 = 0x8007_B92C;
+const LEVEL: u32 = 0x8007_B930;
+const PULSE_RATE: u32 = 0x8007_BD48;
+const LEVEL_RATE: u32 = 0x8007_BD4C;
+const KEEP_OBJECT_1: u32 = 0x8007_B64B;
+const SLOT_1_YAW: u32 = 0x8008_91D2;
+const MESSAGE_HOLD: u32 = 0x801F_6964;
+const ELEMENT: u32 = 0x801D_8DE8;
+const BATTLE_SIGNAL: u32 = 0x8007_BD71;
+
+/// The frame driver past the gauges, run from its entry with every call
+/// stubbed: the battle-exit pass's party loop (`battle_exit_party_reset`:
+/// the status word cleared outside an arena leg, a fallen member stood at 1
+/// HP), the countdown clamp at `0x42` while the exit is held, and the rumble
+/// hold and decay of a frame that does not exit (`BattleRumbleDecay::step`),
+/// the slot-1 backdrop spin (`World::tick_battle_backdrop_spin`, through
+/// `BattleArmDrivers`) and the timed message's hold after the SM's pass
+/// (`BattleState::tick_timed_message`, one engine tick a vsync of the step).
+#[test]
+fn the_frame_driver_exits_and_decays_as_retail_does() {
+    use legaia_engine_battle_vm::battle_formulas::battle_exit_party_reset;
+    use legaia_engine_system::rumble::{BattleRumbleDecay, RumbleMotors};
+
+    differential!(scus(FRAME));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub_outside = Some((FRAME, FRAME_END));
+    let unloads = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let sink = unloads.clone();
+    cpu.hook(ELEMENT, move |r, _| {
+        sink.borrow_mut().push((r.r[4], r.r[5]))
+    });
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x4558_4954);
+    let (mut spun, mut timed_out) = (0, 0);
+    let (mut exits, mut held, mut decayed) = (0, 0, 0);
+    for round in 0..20000 {
+        let party = 1 + rng.below(3);
+        let countdown = [0x10i16, 0x42, 0x43, 0x60][rng.below(4) as usize];
+        let hold_exit = rng.below(3) == 0;
+        let special = [0u32, 0x100, 0x101][rng.below(3) as usize];
+        let step = 1 + rng.below(3) as u8;
+        let hold = [0i32, 0, 1, 2, 5, -3][rng.below(6) as usize];
+        let pulse = [0i32, 0, 3, 0x40, 0xFF, 0x200, -5][rng.below(7) as usize];
+        let level = [0i32, 0, 3, 0x40, 0xFF, 0x200, -5][rng.below(7) as usize];
+        let pulse_rate = [8i32, 1, 0, -4, 0x40][rng.below(5) as usize];
+        let level_rate = [8i32, 1, 0, -4, 0x40][rng.below(5) as usize];
+        let status: [u16; 3] = std::array::from_fn(|_| rng.next() as u16);
+        let hp: [u16; 3] = std::array::from_fn(|_| [0u16, 1, 77][rng.below(3) as usize]);
+        let keep = rng.below(2) != 0;
+        let yaw = rng.next() as u16;
+        let message = [0i32, -3, 1, 2, 3, 0x78][rng.below(6) as usize];
+
+        cpu.mem = clean.clone();
+        unloads.borrow_mut().clear();
+        cpu.mem.wr8(KEEP_OBJECT_1, u8::from(keep));
+        cpu.mem.wr16(SLOT_1_YAW, yaw);
+        cpu.mem.wr32(MESSAGE_HOLD, message as u32);
+        // The action SM's pass runs, and the hold after it.
+        cpu.mem.wr8(BATTLE_SIGNAL, 0xFF);
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.wr8(CTX, party as u8);
+        cpu.mem.wr8(CTX + 0xB, u8::from(hold_exit));
+        cpu.mem.wr16(CTX + 0x6CE, countdown as u16);
+        cpu.mem.wr8(CTX + 6, 0xFF);
+        cpu.mem.wr8(FRAME_STEP, step);
+        cpu.mem.wr32(SPECIAL_WORD, special);
+        cpu.mem.wr32(RUMBLE_HOLD, hold as u32);
+        cpu.mem.wr32(PULSE, pulse as u32);
+        cpu.mem.wr32(LEVEL, level as u32);
+        cpu.mem.wr32(PULSE_RATE, pulse_rate as u32);
+        cpu.mem.wr32(LEVEL_RATE, level_rate as u32);
+        for g in 0..4u32 {
+            for c in 0..4u32 {
+                cpu.mem
+                    .wr32(GAUGES + g * 16 + c * 4, CELLS + (g * 4 + c) * 2);
+            }
+        }
+        for s in 0..3u32 {
+            let a = ACTOR + s * ACTOR_STRIDE;
+            cpu.mem.wr32(ACTORS + s * 4, a);
+            cpu.mem.wr16(a + 0x14C, hp[s as usize]);
+            cpu.mem.wr16(a + 0x16E, status[s as usize]);
+            cpu.mem.wr16(a + 0x14E, 100);
+        }
+        assert_eq!(cpu.call(FRAME, &[]), Stop::Returned, "round {round}");
+        let at = format!(
+            "round {round}: party {party} countdown {countdown:#x} hold {hold_exit} special \
+             {special:#x} step {step} rumble {hold}/{pulse}/{level}/{pulse_rate}/{level_rate}"
+        );
+        // The spin runs ahead of the exit test, on every pass.
+        let mut w = legaia_engine_core::world::World::new();
+        w.battle.frame_clock.step = step;
+        w.battle.backdrop_slot_1_yaw = yaw;
+        w.encounters.region_setup =
+            Some(legaia_engine_battle::region_encounter::RegionBattleSetup {
+                stage_variant: 0,
+                keep_backdrop_object_1: Some(keep),
+                door_of_light_blocked: false,
+                door_of_wind_blocked: false,
+                world_map_return: None,
+            });
+        {
+            use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+            w.backdrop_spin();
+        }
+        assert_eq!(
+            cpu.mem.rd16(SLOT_1_YAW),
+            w.battle.backdrop_slot_1_yaw,
+            "spin, {at}"
+        );
+        spun += i32::from(keep && step > 1);
+        let exiting = countdown > 0x42 && !hold_exit;
+        if exiting {
+            for s in 0..3u32 {
+                let a = ACTOR + s * ACTOR_STRIDE;
+                let retail = (cpu.mem.rd16(a + 0x16E), cpu.mem.rd16(a + 0x14C));
+                let want = if s < party {
+                    battle_exit_party_reset(special, status[s as usize], hp[s as usize])
+                } else {
+                    (status[s as usize], hp[s as usize])
+                };
+                assert_eq!(retail, want, "seat {s}, {at}");
+            }
+            exits += 1;
+            continue;
+        }
+        let clamped = if countdown > 0x42 { 0x42 } else { countdown };
+        assert_eq!(cpu.mem.rd16(CTX + 0x6CE) as i16, clamped, "{at}");
+        held += i32::from(countdown > 0x42);
+        let mut decay = BattleRumbleDecay {
+            hold,
+            pulse_rate,
+            level_rate,
+        };
+        let mut motors = RumbleMotors { pulse, level };
+        decay.step(&mut motors, i32::from(step));
+        let retail = (
+            cpu.mem.rd32(RUMBLE_HOLD) as i32,
+            cpu.mem.rd32(PULSE) as i32,
+            cpu.mem.rd32(LEVEL) as i32,
+        );
+        assert_eq!(
+            retail,
+            (decay.hold, motors.pulse, motors.level),
+            "rumble, {at}"
+        );
+        decayed += i32::from(retail.1 != pulse || retail.2 != level);
+        // The timed message's hold.
+        let mut state = legaia_engine_battle_loop::battle_state::BattleState::default();
+        let mut banner = legaia_engine_battle_loop::message_banner::BattleMessageBanner::raised(
+            legaia_engine_battle_loop::message_banner::TIMED_MESSAGE_ELEMENT,
+            String::new(),
+            message,
+        );
+        banner.glide = None;
+        state.message_banner = Some(banner);
+        for _ in 0..step {
+            state.tick_timed_message();
+        }
+        let b = state.message_banner.as_ref().expect("banner");
+        let retail_hold = cpu.mem.rd32(MESSAGE_HOLD) as i32;
+        let port_hold = if message > 0 { b.hold.max(0) } else { b.hold };
+        assert_eq!(retail_hold, port_hold, "message hold, {at}");
+        let retail_unload = unloads.borrow().contains(&(0x66, 1));
+        assert_eq!(retail_unload, b.leaving(), "message unload, {at}");
+        timed_out += i32::from(retail_unload);
+    }
+    assert!(
+        exits > 3000 && held > 2000 && decayed > 3000 && spun > 3000 && timed_out > 1000,
+        "{exits} {held} {decayed} {spun} {timed_out}"
+    );
+}

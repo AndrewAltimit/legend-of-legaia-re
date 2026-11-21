@@ -2,6 +2,21 @@
 
 use super::*;
 
+/// Whether the pager reads the player's pad on this call: not while the
+/// automatic press `_DAT_80073F00` (op `4C 89`) is still positive, whatever
+/// the state - the pager loads the pressed word and then zeroes it when the
+/// count is above zero (`lh v0,0x3F00` / `blez` / `move s1,zero` at
+/// `0x801D8604..0x801D8614`). So a page a script turns by itself can be
+/// neither skipped while it types nor turned early while it waits, and an
+/// open picker's cursor does not move. Hosts test it on the count as it
+/// stands ahead of the frame's pager call; the automatic press itself
+/// ([`OwnedDialogPanel::take_auto_press`]) is not masked.
+///
+/// PORT: FUN_801D84D0 (`0x801D8600..0x801D8614`, the pad mask under the automatic press)
+pub fn pager_reads_pad(auto_press: i16) -> bool {
+    auto_press <= 0
+}
+
 impl OwnedDialogPanel {
     pub fn set_glyphs_per_frame(&mut self, n: u8) {
         self.glyphs_per_frame = n.max(1);
@@ -31,7 +46,9 @@ impl OwnedDialogPanel {
     /// PORT: FUN_801D84D0 (state `0x19`'s `_DAT_80073F00` countdown, `0x801D8F4C..0x801D8F88`)
     pub fn tick_at_auto(&mut self, frame_step: u8, auto_press: &mut i16) -> PanelState {
         let pager_call = self.window.is_some() && self.vsync_phase == 0;
-        let in_wait = self.waiting_for_input && !self.menu_active && !self.done;
+        // State `0x19` holds every page end, the last one included: a done
+        // box waits there for the press that dispatches its closing byte.
+        let in_wait = (self.waiting_for_input || self.done) && !self.menu_active;
         let st = self.tick_at(frame_step);
         if pager_call && in_wait && *auto_press > 0 {
             *auto_press = auto_press.saturating_sub(i16::from(frame_step.max(1)));

@@ -878,7 +878,7 @@ impl World {
     /// ahead of those gates (`0x8005040C`).
     ///
     /// PORT: FUN_80050120 (arm 2's monster sink and its `ctx[+0x288]` latch)
-    pub(super) fn tick_battle_defeat_sink(&mut self) {
+    pub(in crate::world) fn tick_battle_defeat_sink(&mut self) {
         // One sink step a battle frame: the pass multiplies the size by the
         // frame step before the shift (`mult v1,v0` over `0x1F800393`,
         // `sra 2`, `0x80050480..0x800504A0`), so a step-`2` frame sinks
@@ -904,29 +904,38 @@ impl World {
                 && a.battle.render_color & 0x00FF_FFFF != 0
         });
         if fading {
+            // The Jette count opens the block (`0x80050384..0x80050408`),
+            // ahead of the teardown.
+            self.apply_jette_count();
             self.audio.sfx_ring_ops.push(SfxRingOp::ReleaseSustained);
         }
-        if self.battle_ctx.absorbed_seru != 0 {
-            return;
-        }
         let step = i32::from(self.battle.frame_clock.step.max(1));
+        // A scripted fight (`ctx[+0x287]`) whose formation's second cell
+        // `gp+0x9F5` is empty (`0x80050444..0x8005045C`, `0x800504C4..
+        // 0x800504DC`).
         let lone_scripted =
-            self.battle_ctx.scripted_fight != 0 && self.battle_monster_slots().len() <= 1;
+            self.battle_ctx.scripted_fight != 0 && self.battle_formation_cell(1) == 0;
+        let absorbing = self.battle_ctx.absorbed_seru != 0;
         for slot in first..(first + 4).min(self.actors.len()) {
             let a = &self.actors[slot];
             if !a.active
                 || a.battle_monster_id.is_none()
                 || a.battle.render_flag
                     != legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
-                || a.battle.capture_state != 0
                 || a.battle.render_color & 0x00FF_FFFF == 0
             {
                 continue;
             }
             if lone_scripted {
                 // `0x80050454..0x8005045C` skips the sink; `0x800504BC..
-                // 0x800504E8` raises the latch.
+                // 0x800504E8` raises the latch - also behind a staged Seru
+                // absorb (`ctx[+0x269]`, `0x80050424`) or a capture
+                // (`+0x225`, `0x80050434`), whose branches land on the latch
+                // test rather than past it.
                 self.battle_ctx.lone_defeat_latch = 1;
+                continue;
+            }
+            if absorbing || a.battle.capture_state != 0 {
                 continue;
             }
             // `(size * dt) >> 2` a battle frame of `dt` vsyncs.

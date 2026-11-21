@@ -295,6 +295,9 @@ pub fn dialog_window_chrome_draws_for(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
+    if !dialog_window_drawn(dst_stage) {
+        return Vec::new();
+    }
     let scale = stage_scale.max(1) as i32;
     let footprint = dialog_window_footprint(dst_stage);
     let fill = dialog_window_fill_rect(dst_stage);
@@ -311,6 +314,14 @@ pub fn dialog_window_chrome_draws_for(
     });
     nine_slice_border_into(&mut out, rects, footprint, stage_origin, stage_scale);
     out
+}
+
+/// Whether the emitter draws the window at all: a zero-by-zero centre rect
+/// returns before the style is read (`0x8002C6D4` / `0x8002C6DC`).
+///
+/// PORT: FUN_8002C69C (the zero-size early out)
+pub fn dialog_window_drawn(dst_stage: (i32, i32, i32, i32)) -> bool {
+    dst_stage.2 != 0 || dst_stage.3 != 0
 }
 
 /// The dialog window's gradient fill rect for the centre rect `dst_stage`:

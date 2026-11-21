@@ -390,7 +390,10 @@ fn op_43_sub_3_4_5_6_camera_zone_ramps() {
 
 #[test]
 fn yield_propagates_to_caller_when_target_is_player() {
-    let mut host = TestHost::default();
+    let mut host = TestHost {
+        halt_acquire_predicate: true,
+        ..TestHost::default()
+    };
     let mut target = FieldCtx {
         script_id: 0xFB, // arbitrary - caller designates as player below
         ..Default::default()
@@ -406,7 +409,10 @@ fn yield_propagates_to_caller_when_target_is_player() {
 
 #[test]
 fn yield_does_not_propagate_when_target_not_player() {
-    let mut host = TestHost::default();
+    let mut host = TestHost {
+        halt_acquire_predicate: true,
+        ..TestHost::default()
+    };
     let mut target = FieldCtx::default();
     let mut caller = FieldCtx::default();
     let r = step_with_caller(&mut host, &mut target, &mut caller, false, &[0x37], 0);
@@ -431,7 +437,10 @@ fn yield_saved_pc_is_pre_extended_when_extended_dispatch() {
     // The original stores pbVar43 (the address of the OPCODE byte) in
     // ctx.saved_pc, regardless of extended/non-extended. So an extended
     // YIELD at pc=0 saves 0, not 1.
-    let mut host = TestHost::default();
+    let mut host = TestHost {
+        halt_acquire_predicate: true,
+        ..TestHost::default()
+    };
     let mut ctx = FieldCtx::default();
     // 0xB7 = 0x80 | 0x37. Extended YIELD on a (synthetic) target.
     let r = step(&mut host, &mut ctx, &[0xB7, 0x00], 0);

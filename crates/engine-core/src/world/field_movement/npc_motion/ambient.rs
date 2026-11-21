@@ -679,16 +679,15 @@ impl World {
             // park - the variant preamble included. The ramp pool is its own actor
             // and keeps running.
             // REF: FUN_80038158 (0x80038188..0x800381F4)
-            let defer = *defers
-                && (player_engaged
-                    || release_held.contains(&slot)
-                    || talker == Some(slot)
-                    || chan_flags & 0x500 != 0
-                    || seat.is_some_and(|(x, z)| x >= 0x3F81 && z >= 0x3F81));
+            let defer = FieldNpcAmbient::defer_gate(
+                *defers,
+                player_engaged || release_held.contains(&slot) || talker == Some(slot),
+                chan_flags,
+                seat,
+            );
             if !defer && *live != Some(pick) {
                 *live = Some(pick);
-                vm.pc = 0;
-                vm.cursor = 0;
+                vm.rebind_variant();
             }
             let Some((_, code)) = variants.get(live.unwrap_or(pick)) else {
                 continue;

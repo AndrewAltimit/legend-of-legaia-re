@@ -23,6 +23,10 @@ default = ["cli"]
 # The command-line binary and its argument parser; library dependents take
 # the crate with default features off.
 cli = ["dep:clap"]
+# Branch coverage of the routines a run executes (`branch_cov`), recorded
+# when `PSX_RETAIL_EXEC_BRANCHES` is also set; off, the interpreter's loop
+# carries none of it. `scripts/ci/branch-coverage.py --record` turns it on.
+branch-cov = []
 
 [dependencies]
 anyhow.workspace = true
@@ -37,6 +41,7 @@ legaia-art.workspace = true
 legaia-disc-audit.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-hud.workspace = true
+legaia-engine-battle-menus.workspace = true
 legaia-font.workspace = true
 legaia-mes.workspace = true
 legaia-engine-battle-loop.workspace = true
@@ -44,7 +49,7 @@ legaia-engine-battle-vm.workspace = true
 legaia-engine-camera.workspace = true
 legaia-engine-cast.workspace = true
 legaia-engine-audio.workspace = true
-legaia-engine-core.workspace = true
+legaia-engine-core = { workspace = true, features = ["test-drivers"] }
 legaia-engine-dialog.workspace = true
 legaia-engine-ui.workspace = true
 legaia-engine-effects.workspace = true

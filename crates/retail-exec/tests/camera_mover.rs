@@ -169,6 +169,101 @@ fn the_mover_tick_matches_the_glide() {
     );
 }
 
+/// Glides with a duration within a step of `0x7FFF`, joined late in their
+/// travel (a progress some steps short of the duration, as the tick left it
+/// frames earlier), against `CameraMover::tick` and `store_frame` until
+/// arrival: the halfword progress wraps negative past `0x7FFF`, escapes the
+/// clamp and runs every curve from a negative progress back up to the
+/// duration, steps up to `0x40`. The globals, the progress and the arrival
+/// are compared whole every frame.
+#[test]
+fn the_mover_tick_wraps_its_progress_past_0x7fff() {
+    differential!(prot(897, TICK));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
+    cpu.mem.wr32(CAM_CTX_PTR, CAM_CTX);
+    cpu.hook(FREE, |_, _| {});
+    cpu.mem.wr32(AMPLITUDE, 0);
+    let mut rng = Rng(0x5752_4150);
+    let (mut wrapped, mut arrivals) = (0usize, 0usize);
+    for glide in 0..60 {
+        let curve = (glide % 6) as u16;
+        let d = 0x7FFF - rng.below(0x10) as u16;
+        let mut pairs = [(0i32, 0i32); AXIS_COUNT];
+        for (k, p) in pairs.iter_mut().enumerate() {
+            let s = (rng.below(0x4000) as i32 - 0x2000) as i16;
+            let e = if rng.below(6) == 0 {
+                s
+            } else {
+                (rng.below(0x4000) as i32 - 0x2000) as i16
+            };
+            *p = (i32::from(s), i32::from(e));
+            cpu.mem.wr16(BLOCK + 4 * k as u32, s as u16);
+            cpu.mem.wr16(BLOCK + 4 * k as u32 + 2, e as u16);
+        }
+        let mut live = pairs.map(|p| p.0);
+        write_globals(&mut cpu.mem, &live);
+        let mut offset = [0i32; 2];
+        cpu.mem.wr32(CAM_CTX + 0x18, 0);
+        cpu.mem.wr32(CAM_CTX + 0x1C, 0);
+        let t0 = i32::from(d) - 1 - rng.below(0x80) as i32;
+        cpu.mem.wr16(ACTOR + 0x9C, t0 as u16);
+        cpu.mem.wr16(ACTOR + 0x9E, d);
+        cpu.mem.wr16(ACTOR + 0x50, curve);
+        cpu.mem.wr32(ACTOR + 0x90, BLOCK);
+        cpu.mem.wr32(ACTOR + 0x10, 0);
+        let mut mover = CameraMover {
+            pairs,
+            t: t0,
+            d: i32::from(d as i16),
+            curve: curve as i16,
+        };
+        let mut seed = 0u32;
+        let mut went_negative = false;
+        for frame in 0.. {
+            let step = 1 + rng.below(0x40) as u8;
+            cpu.mem.wr8(FRAME_STEP, step);
+            assert_eq!(cpu.call(TICK, &[ACTOR]), Stop::Returned);
+            let arrived = mover.tick(i32::from(step));
+            let mut port = live;
+            mover.store_frame(&mut port, &mut offset, 0, &mut seed);
+            live = port;
+            let ctx = format!(
+                "glide {glide} frame {frame} curve {curve} d {d} t {}",
+                mover.t
+            );
+            assert_eq!(
+                read_globals(&mut cpu.mem),
+                as_globals(port),
+                "globals, {ctx}"
+            );
+            assert_eq!(
+                cpu.mem.rd16(ACTOR + 0x9C) as i16 as i32,
+                mover.t,
+                "progress, {ctx}"
+            );
+            assert_eq!(
+                cpu.mem.rd32(ACTOR + 0x10) & 8 != 0,
+                arrived,
+                "arrival, {ctx}"
+            );
+            went_negative |= mover.t < 0;
+            if arrived {
+                arrivals += 1;
+                break;
+            }
+        }
+        wrapped += usize::from(went_negative);
+    }
+    assert!(
+        arrivals == 60 && wrapped > 30,
+        "arrivals {arrivals} wrapped {wrapped}"
+    );
+}
+
 const ARM: u32 = 0x801D_D310;
 const FIND: u32 = 0x8003_CF04;
 const SPAWN: u32 = 0x8002_0DE0;

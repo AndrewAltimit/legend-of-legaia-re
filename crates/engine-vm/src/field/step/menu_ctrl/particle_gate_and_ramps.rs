@@ -344,13 +344,14 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                     }
                 }
             }
-            // Sub-ops 0xE/0xF have no `case` arm in the original
-            // case-4 inner switch (line 6188 of the dump): they
-            // hit `default: func_0x8001a068(s_SUB_40_ERROR_801cec88);
-            // iVar18 = switchD_801e00f4::default(); return iVar18;`
-            // - the dispatcher's default returns `param_2` ⇒ halt
-            // at PC.
-            0xE..=0xF => StepResult::Halt { final_pc: pc },
+            // Sub-ops 0xE/0xF have no arm in the case-4 inner table
+            // (`sltiu v0,v1,0xe` at `0x801E114C`): they print
+            // SUB_40_ERROR and return the PC the arm already moved
+            // past the six-byte instruction (`addiu s8,s8,6` at
+            // `0x801E1138`, `move v0,s8` at `0x801E177C`).
+            0xE..=0xF => StepResult::Advance {
+                next_pc: pc + header_size + 5,
+            },
             // `op0 & 0x0F` is at most 0xF; the arms above cover
             // every value, so this arm is dead code.
             16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),

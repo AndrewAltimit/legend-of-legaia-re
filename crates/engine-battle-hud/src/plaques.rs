@@ -1225,7 +1225,7 @@ pub fn battle_raseru_cross_out(world: &legaia_engine_core::world::World) -> bool
 /// stamps Rot on the Attack chip (`FUN_801DBD04(0xA0, 0x42)`) and its
 /// `+0x16E & 0x1000` lays the Curse plate on the Magic chip
 /// (`FUN_801DBEC4(0xF8, 0x42)`). The two status tests are the ones the ring
-/// refuses a press on (`legaia_engine_core::world` `ring_arm_refused`); the member word is
+/// refuses a press on (`legaia_engine_battle_menus::battle_input::RingGates`); the member word is
 /// [`legaia_engine_core::world::World::battle_command_status_word`], the same composed
 /// word the refusal reads.
 ///

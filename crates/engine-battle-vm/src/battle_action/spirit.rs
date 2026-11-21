@@ -43,6 +43,13 @@ pub(super) fn spirit_pre_arm<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
+    // A party caster is framed at the near depth first (`li v0,0x800` /
+    // `sh v0,0x6d0(v1)` at `0x801E3B34..0x801E3B3C`, behind `ctx[+0x13] < 3`),
+    // ahead of the arm's case-6 framing call.
+    if slot < host.party_count() {
+        ctx.camera_frame_height = SPIRIT_CAMERA_DEPTH;
+        host.camera_frame_height(SPIRIT_CAMERA_DEPTH);
+    }
     host.pose(slot, Pose::Idle);
     if let Some(actor) = host.actor_mut(slot) {
         actor.queued_anim = actor.queued_anim_b;
@@ -61,7 +68,13 @@ pub(super) fn spirit_pre_arm<H: BattleActionHost + ?Sized>(
     if !matches!(category, ActionCategory::Item) {
         // Spell path: compute MP cost, apply ability bits (Half 0x20 first).
         let mp_cost = host.spell_mp_cost(spell_id);
-        let bits = host.character_ability_bits(slot);
+        // The cost passives are read off a party member's record only
+        // (`sltiu v1,v1,0x3` / `beq` at `0x801E3CC4..0x801E3CC8`).
+        let bits = if slot < host.party_count() {
+            host.character_ability_bits(slot)
+        } else {
+            0
+        };
         let modifier = crate::battle_formulas::MpCostModifier::from_ability_flags(bits);
         let cost = crate::battle_formulas::mp_cost_after_ability_bits(mp_cost as u16, modifier);
         if let Some(actor) = host.actor_mut(slot) {
@@ -129,22 +142,41 @@ pub(super) fn spirit_fire<H: BattleActionHost + ?Sized>(
         return stay(ctx);
     }
     host.ui_element(0x4C, 1);
+    // A party member's spell also sends its name plate out (`FUN_801D8DE8(0x34,
+    // 1)` at `0x801E3E78`, behind `+0x1DE == 2` and `ctx[+0x13] < 3`).
+    let category = host.actor(slot).map_or(ActionCategory::TacticalArts, |a| {
+        ActionCategory::from_byte(a.action_category)
+    });
+    if matches!(category, ActionCategory::Magic) && slot < host.party_count() {
+        host.ui_element(SPELL_NAME_ELEMENT, 1);
+    }
     let class = host.actor(slot).map(|a| a.cast_class).unwrap_or(0);
     if class == GAUGE_EXTEND_CLASS {
         gauge_extend_fire(host, ctx, slot);
     } else {
         spirit_fire_target_plates(host, ctx, slot);
-    }
-    // The Point Card's selector comes from its id, not its descriptor
-    // (`0x801E4080..0x801E40C0`).
-    if let Some(a) = host.actor_mut(slot)
-        && a.params[0] == 0xFE
-        && matches!(
-            ActionCategory::from_byte(a.action_category),
-            ActionCategory::Item
-        )
-    {
-        a.cast_class = 0x0E;
+        // The Point Card (`0x801E4080..0x801E40C0`), keyed on the queue's
+        // head byte alone: the frame is re-sized (`FUN_801F0348`) and pulled
+        // in to three quarters, and the selector comes from the id, not the
+        // descriptor. The gauge-extension arm jumps past this block.
+        if host
+            .actor(slot)
+            .is_some_and(|a| a.params[0] == POINT_CARD_ID)
+        {
+            let target = host.actor(slot).map_or(8, |a| a.active_target);
+            let party_count = host.party_count();
+            let h =
+                crate::battle_formulas::camera_height_for_frame(slot, target, party_count, |s| {
+                    host.monster_size_class(s)
+                });
+            // `sll v0,v1,1` / `addu` / `sra v0,v0,2` at `0x801E40AC..0x801E40B4`.
+            let h = ((i32::from(h) * 3) >> 2) as i16;
+            ctx.camera_frame_height = h;
+            host.camera_frame_height(h);
+            if let Some(a) = host.actor_mut(slot) {
+                a.cast_class = 0x0E;
+            }
+        }
     }
     ctx.frame_timer = 0x20;
     transition(ctx, ActionState::SpiritFireDamage)
@@ -188,6 +220,13 @@ fn spirit_fire_target_plates<H: BattleActionHost + ?Sized>(
 /// table's "extend action gauge for one battle" class (Fury Boost) -
 /// `lbu v1,0x1e8(s3)` / `li v0,0x5` / `bne` at `0x801E3E80..0x801E3E88`.
 pub const GAUGE_EXTEND_CLASS: u8 = 5;
+
+/// The Point Card's item id, the queue head state `0x3E` keys its arm on
+/// (`li v0,0xfe` at `0x801E4084`).
+pub const POINT_CARD_ID: u8 = 0xFE;
+
+/// The spell-name plate state `0x3E` sends out for a party caster.
+pub const SPELL_NAME_ELEMENT: u8 = 0x34;
 
 /// Ceiling of the extended gauge the arm stages (`slti v0,v0,0x121` /
 /// `li v0,0x120` at `0x801E3F90..0x801E3F98`).
@@ -413,6 +452,22 @@ fn place_cue_group<H: BattleActionHost + ?Sized>(host: &mut H, class: u8, tier: 
     }
 }
 
+/// State `0x40`, the applier's afterglow (`0x801E4148..0x801E4294`).
+///
+/// - A gauge-extension cast (committed class [`GAUGE_EXTEND_CLASS`]) grows
+///   its bar [`BattleActionCtx::gauge_extend_bar`] one frame step toward
+///   `ctx[+0x6DC] - 6` and, on the same passes, steps the AP plate toward
+///   `ctx[+0x6DE]` (`0x801E415C..0x801E4204`).
+/// - The countdown is tested **before** it steps: a timer at or above `0`
+///   loses a frame step and the pass ends (`bgez` at `0x801E4210` into
+///   `0x801E53E8`), so the band leaves on the pass after it goes negative.
+/// - Then it waits on the target (`+0x1DD < 7`): a living target whose
+///   committed clip is not idle and whose colour word `+0x04` is lit holds
+///   the band (`0x801E4218..0x801E4260`).
+/// - Leaving, it clears the acting actor's category `+0x1DE` and, for a
+///   party caster, frames at the near `0x800` depth (`0x801E4268..0x801E4294`).
+///
+/// PORT: FUN_801E295C (state `0x40`, `0x801E4148..0x801E4294`)
 pub(super) fn spirit_post_damage<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -420,8 +475,32 @@ pub(super) fn spirit_post_damage<H: BattleActionHost + ?Sized>(
     let slot = ctx.active_actor;
     let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
     host.pose(target, Pose::Idle);
-    if !tick_frame_timer(host, ctx) {
+    let class = host.actor(slot).map_or(0, |a| a.cast_class);
+    if ctx.gauge_extend_bar < ctx.damage_target.wrapping_sub(SPIRIT_BAR_WIDTH_BIAS)
+        && class == GAUGE_EXTEND_CLASS
+    {
+        let step = host.frame_dt();
+        ctx.gauge_extend_bar = ctx.gauge_extend_bar.wrapping_add(step);
+        step_spirit_plate(ctx, step);
+    }
+    if ctx.frame_timer >= 0 {
+        ctx.frame_timer = ctx.frame_timer.wrapping_sub(host.frame_dt());
         return stay(ctx);
+    }
+    let holds = usize::from(target) < 7
+        && host.actor(target).is_some_and(|t| t.liveness != 0)
+        && host
+            .reaction_hold_view(target)
+            .is_some_and(|(anim, drawn)| anim != 0 && drawn);
+    if holds {
+        return stay(ctx);
+    }
+    if let Some(a) = host.actor_mut(slot) {
+        a.action_category = 0;
+    }
+    if slot < host.party_count() {
+        ctx.camera_frame_height = SPIRIT_CAMERA_DEPTH;
+        host.camera_frame_height(SPIRIT_CAMERA_DEPTH);
     }
     transition(ctx, ActionState::DoneCleanup)
 }

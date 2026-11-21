@@ -54,7 +54,17 @@ impl World {
         self.battle.command = Some(if round_open {
             BattleCommandSession::new_round_open(actor, actor, self.battle.no_escape)
         } else {
-            BattleCommandSession::new(actor, actor)
+            let mut s = BattleCommandSession::new(actor, actor);
+            // Under the cross-button entry a ring reopened from a chipless
+            // surface keeps the highlight word where the last ring left it
+            // (`BattleState::ring_highlight`).
+            if self.toggles.battle_command
+                == legaia_engine_system::option_values::BattleCommandOpt::CrossButton
+                && let Some(cursor) = self.battle.ring_highlight
+            {
+                s.phase = legaia_engine_battle_menus::battle_input::CommandPhase::Menu { cursor };
+            }
+            s
         });
         if self.battle.flow == Flow::Idle {
             self.battle.set_battle_flow(Flow::TurnPrompt);
@@ -95,40 +105,34 @@ impl World {
         {
             self.push_battle_ui_cue(legaia_engine_battle_loop::ui_cues::BattleUiCue::Cursor);
         }
-        // The ring's refusals: a press on a refused arm is dropped with the
-        // buzz cue, and the ring stays up. Two are status bits
-        // (`ring_arm_refused`); the Magic arm's first test is the member's
-        // Ra-Seru marker (`beq v0,zero,0x801D2968` at `0x801D1420`), and the
-        // Item arm's only one is the special word's `0x100`
-        // (`0x801D1370..0x801D137C`).
-        if let CommandPhase::Menu { .. } = session.phase {
-            use legaia_engine_battle_menus::battle_input::BattleCommand;
-            let status = self.raw_status_word(session.actor);
-            let cursor_arm = session.menu_command();
-            let no_raseru = !self.ring_member_has_raseru(session.actor);
-            let no_items = self.special_battle_word() & SPECIAL_ITEM_FORBIDDEN != 0;
-            let mut refused = false;
-            for (pressed, arm) in [
-                (&mut ev.up, Some(BattleCommand::Item)),
-                (&mut ev.left, Some(BattleCommand::Attack)),
-                (&mut ev.right, Some(BattleCommand::Magic)),
-                (&mut ev.cross, cursor_arm),
-            ] {
-                if *pressed
-                    && arm.is_some_and(|a| {
-                        ring_arm_refused(status, a)
-                            || (a == BattleCommand::Magic && no_raseru)
-                            || (a == BattleCommand::Item && no_items)
-                    })
-                {
-                    *pressed = false;
-                    refused = true;
-                }
-            }
-            if refused {
+        // The ring's refusals: the first arm pressed, in retail's test order,
+        // decides, and a refused one keys the buzz cue with the ring left up.
+        // Two are status bits (`RingGates::status`); the Magic arm's first test
+        // is the member's Ra-Seru marker (`beq v0,zero,0x801D2968` at
+        // `0x801D1420`), and the special word refuses Item (`0x100`,
+        // `0x801D1370..0x801D137C`) and Magic (`0x200`, `0x801D1448..0x801D1454`).
+        if let CommandPhase::Menu { cursor } = session.phase {
+            ev.gates = legaia_engine_battle_menus::battle_input::RingGates {
+                status: self.raw_status_word(session.actor),
+                no_raseru: !self.ring_member_has_raseru(session.actor),
+                items_forbidden: self.special_battle_word() & SPECIAL_ITEM_FORBIDDEN != 0,
+                magic_forbidden: self.battle.raseru_forbidden(),
+            };
+            if legaia_engine_battle_menus::battle_input::ring_press_refused(cursor, &ev) {
                 // `FUN_8004FCC8(0x23)` through the shared tail `0x801D2968`.
                 self.push_battle_ui_cue(legaia_engine_battle_loop::ui_cues::BattleUiCue::Back);
             }
+        }
+        // The highlight word the next ring opens on: the ring's own lit arm,
+        // reset by a two-chip prompt (the 2 <-> 4 panel swap, `0x6E`).
+        // PORT: FUN_801D388C (`0x801D4C38..0x801D4C74`)
+        match session.phase {
+            CommandPhase::Menu { cursor } => self.battle.ring_highlight = Some(cursor),
+            CommandPhase::RoundPrompt { .. }
+            | CommandPhase::AttackMode { .. }
+            | CommandPhase::RunConfirm { .. }
+            | CommandPhase::CommitConfirm { .. } => self.battle.ring_highlight = None,
+            _ => {}
         }
         let was_round_prompt = matches!(session.phase, CommandPhase::RoundPrompt { .. });
         let phase_before = session.phase.clone();

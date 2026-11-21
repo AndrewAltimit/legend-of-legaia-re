@@ -95,9 +95,10 @@ fn the_victory_frames_the_pose_actor_not_the_far_orbit() {
             VictoryPhase::Results { hold } => {
                 assert_eq!(phase, BattleCamPhase::Action, "case 6 from the results");
                 // The results frame's own pass frames before the staged pose
-                // is latched: the script indexes no pose there.
+                // is latched: the script indexes no pose there. That pass
+                // adds its own step, so it spans holds `1..=step`.
                 let anim = battle_cam_inputs(&w).action.anim_id;
-                if u32::from(hold) < u32::from(w.battle_frame_step().max(1)) {
+                if u32::from(hold) <= u32::from(w.battle_frame_step().max(1)) {
                     assert_eq!(anim, 0, "hold {hold}");
                 } else {
                     assert_eq!(anim, 0x14, "hold {hold}");

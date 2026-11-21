@@ -539,3 +539,350 @@ fn the_lure_flies_and_comes_in_as_retails_does() {
     }
     assert!(landed > 1400 && pulled > 1000, "{landed} {pulled}");
 }
+
+/// The session machine's state 1, the venue select: the departure scene
+/// `_DAT_8007BAC4` (`map02` -> Vidna's pond, `map03` -> Buma's) against
+/// `venue_for_departure_scene`, over both venues the word held and scenes
+/// either side of the two ids, every call out of the routine stubbed but the
+/// actor spawn `FUN_80020DE0`, which hands out zeroed actors.
+#[test]
+fn the_venue_select_picks_the_pond_as_retail_does() {
+    differential!(prot(972, SESSION));
+    use legaia_engine_fishing::fishing::venue_for_departure_scene;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    const SCENE_ID: u32 = 0x8007_BAC4;
+    const ACTORS: u32 = 0x8014_8000;
+    cpu.stub_outside = Some((SESSION, SESSION_END));
+    let next = std::rc::Rc::new(std::cell::Cell::new(ACTORS));
+    {
+        let next = next.clone();
+        cpu.hook(0x8002_0DE0, move |r, m| {
+            let at = next.get();
+            next.set(at + 0x100);
+            for o in (0..0x100).step_by(4) {
+                m.wr32(at + o, 0);
+            }
+            r.r[V0] = at;
+        });
+    }
+    let mut seen = [0usize; 2];
+    for scene in [0u32, 0xF3, 0xF4, 0xF5, 0x186, 0x187, 0x188, 0x3FF] {
+        for current in 0..2usize {
+            cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+            cpu.mem.wr32(SESSION_STATE, 1);
+            cpu.mem.wr32(SCENE_ID, scene);
+            cpu.mem.wr32(VENUE, current as u32);
+            next.set(ACTORS);
+            assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "scene {scene:#x}");
+            let want = venue_for_departure_scene(scene, current);
+            assert_eq!(
+                cpu.mem.rd32(VENUE) as usize,
+                want,
+                "scene {scene:#x} venue {current}"
+            );
+            seen[want] += 1;
+        }
+    }
+    assert!(seen.iter().all(|&n| n > 4), "{seen:?}");
+}
+
+/// The session machine's camera states against `VenueCamera`: the cast
+/// wind-up `0xD` (`wind_up`: the TR floors, the pitch cap and the focus step
+/// out along the lead's facing through the overlay's polar helper
+/// `FUN_801D7BB8`, run live), the catch showcase `0x20` (`showcase`, both
+/// venues) and its tilt `0x21` (`showcase_tilt`), each from random camera
+/// globals at frame steps `1..=3`. Every other call out of the routine
+/// returns `0`.
+#[test]
+fn the_camera_states_frame_the_pond_as_retail_does() {
+    differential!(prot(972, SESSION));
+    use legaia_engine_fishing::fishing::WINDUP_FRAMES;
+    use legaia_engine_fishing::fishing_actors::VenueCamera;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    const POLAR: u32 = 0x801D_7BB8;
+    const LEAD_PTR: u32 = 0x801D_9284;
+    const WIND_UP: u32 = 0x801D_9054;
+    const PITCH: u32 = 0x8007_B790;
+    const TR: u32 = 0x8008_40B8;
+    const FOCUS: u32 = 0x8008_9118;
+    let mut targets: Vec<u32> = overlay
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_le_bytes(*w))
+        .filter(|w| w >> 26 == 3)
+        .map(|w| ((w & 0x03FF_FFFF) << 2) | 0x8000_0000)
+        .filter(|&t| !(SESSION..SESSION_END).contains(&t) && t != POLAR)
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    for t in targets {
+        cpu.stub(t, 0);
+    }
+    let mut rng = Rng(0x5645_4E55);
+    let read = |cpu: &mut psx_retail_exec::Cpu| {
+        let mut c = VenueCamera::default();
+        c.rot = std::array::from_fn(|i| cpu.mem.rd16(PITCH + 2 * i as u32) as i16);
+        c.tr = std::array::from_fn(|i| cpu.mem.rd32(TR + 4 * i as u32) as i32);
+        c.focus = std::array::from_fn(|i| cpu.mem.rd32(FOCUS + 4 * i as u32) as i32);
+        c
+    };
+    let (mut tilts_done, mut wound) = (0, 0);
+    for case in 0..1500 {
+        cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+        cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+        cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+        let step = 1 + rng.below(3);
+        cpu.mem.wr8(FRAME_STEP, step as u8);
+        cpu.mem.wr32(PRESSED, 0);
+        let facing = rng.below(0x1000) as i16;
+        for o in (0..0x100).step_by(4) {
+            cpu.mem.wr32(ROD_ACTOR + o, 0);
+        }
+        cpu.mem.wr16(ROD_ACTOR + 0x26, facing as u16);
+        cpu.mem.wr32(LEAD_PTR, ROD_ACTOR);
+        for i in 0..3u32 {
+            cpu.mem
+                .wr16(PITCH + 2 * i, (rng.below(0x300) as i16 - 0x180) as u16);
+            cpu.mem.wr32(TR + 4 * i, rng.below(0x1800) - 0x400);
+            cpu.mem.wr32(FOCUS + 4 * i, rng.below(0x4000) - 0x2000);
+        }
+        let state = [0xD, 0x20, 0x21][case % 3];
+        let venue = rng.below(2);
+        cpu.mem.wr32(VENUE, venue);
+        cpu.mem.wr32(SESSION_STATE, state);
+        let counter = rng.below(16);
+        cpu.mem.wr32(WIND_UP, counter);
+        let mut port = read(&mut cpu);
+        assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "case {case}");
+        let at = format!("case {case} state {state:#x} step {step} venue {venue}");
+        let next = match state {
+            0xD => {
+                port.wind_up(facing, step as i32);
+                let total = counter as i32 + step as i32;
+                if total >= WINDUP_FRAMES {
+                    wound += 1;
+                    0x14
+                } else {
+                    0xD
+                }
+            }
+            0x20 => {
+                port.showcase(venue as usize);
+                0x21
+            }
+            _ => {
+                let landed = port.showcase_tilt(step as i32);
+                tilts_done += usize::from(landed);
+                if landed { 0x22 } else { 0x21 }
+            }
+        };
+        let got = read(&mut cpu);
+        assert_eq!(
+            (got.rot, got.tr, got.focus),
+            (port.rot, port.tr, port.focus),
+            "{at}: the camera"
+        );
+        // State 0xD falls into 0x14's meter, which leaves the state be on a
+        // frame with no press.
+        assert_eq!(cpu.mem.rd32(SESSION_STATE), next, "{at}: the state");
+    }
+    assert!(tilts_done > 20 && wound > 20, "{tilts_done} {wound}");
+}
+
+/// The hub: state `0x0C`'s open edge (`andi 0x110`, `0x801CF9EC`), the menu
+/// state `0x64` through its routine `FUN_801D0474` and the help pages `0x65`
+/// / `0x66` through `FUN_801D72A0` (both run live), frame by frame over
+/// random pad edges against `FishingHub::open` / `FishingHub::step`: the
+/// state, the menu cursor `0x801D912C` and the cue `0x8007B6D8`. A run ends
+/// where the host takes over (back to the shore, the tackle and exchange
+/// screens, the venue exit).
+#[test]
+fn the_hub_menu_and_help_pages_step_as_retail_does() {
+    differential!(prot(972, SESSION));
+    use legaia_engine_fishing::fishing_hub::{FishingHub, HUB_OPEN_MASK, HubExit, HubScreen};
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    const MENU: u32 = 0x801D_0474;
+    const HELP: u32 = 0x801D_72A0;
+    const CURSOR: u32 = 0x801D_912C;
+    const CUE: u32 = 0x8007_B6D8;
+    let mut targets: Vec<u32> = overlay
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_le_bytes(*w))
+        .filter(|w| w >> 26 == 3)
+        .map(|w| ((w & 0x03FF_FFFF) << 2) | 0x8000_0000)
+        .filter(|&t| !(SESSION..SESSION_END).contains(&t) && t != MENU && t != HELP)
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    for t in targets {
+        cpu.stub(t, 0);
+    }
+    let mut rng = Rng(0x4855_4253);
+    let edges = [
+        0u32, 0, 0x1000, 0x4000, 0x20, 0x40, 0x04, 0x01, 0x10, 0x80, 0x100,
+    ];
+    let mut seen = std::collections::BTreeSet::new();
+    for run in 0..300 {
+        cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+        cpu.mem.wr32(SESSION_STATE, 0x0C);
+        let mut hub: Option<FishingHub> = None;
+        for frame in 0..60 {
+            let edge = edges[rng.below(edges.len() as u32) as usize];
+            // The shore's cast edge (`& 0xC0`) is the wind-up's, not the hub's.
+            let edge = if hub.is_none() { edge & !0xC0 } else { edge };
+            cpu.mem.wr32(PRESSED, edge);
+            cpu.mem.wr16(CUE, 0);
+            cpu.mem.wr8(FRAME_STEP, 1);
+            assert_eq!(
+                cpu.call(SESSION, &[]),
+                Stop::Returned,
+                "run {run} frame {frame}"
+            );
+            let at = format!("run {run} frame {frame} edge {edge:#x}");
+            let (state, cue) = match hub.as_mut() {
+                None if edge & HUB_OPEN_MASK != 0 => {
+                    hub = Some(FishingHub::open());
+                    (0x64, 0x21)
+                }
+                None => (0x0C, 0),
+                Some(h) => {
+                    let mut equip = (None, None);
+                    let step = h.step(edge, 0, |_| 0, &mut equip);
+                    let state = match (step.exit, h.screen) {
+                        (Some(HubExit::Resume), _) => 0x0A,
+                        (Some(HubExit::Leave), _) => 0xC8,
+                        (Some(HubExit::OpenExchange), _) | (None, HubScreen::Exchange) => 0x78,
+                        (None, HubScreen::Menu) => 0x64,
+                        (None, HubScreen::Help(0)) => 0x65,
+                        (None, HubScreen::Help(_)) => 0x66,
+                        (None, HubScreen::Tackle) => 0x6E,
+                    };
+                    (state, step.sfx.unwrap_or(0))
+                }
+            };
+            assert_eq!(cpu.mem.rd32(SESSION_STATE), state, "{at}: the state");
+            assert_eq!(cpu.mem.rd16(CUE), cue, "{at}: the cue");
+            if let Some(h) = hub.as_ref() {
+                assert_eq!(
+                    cpu.mem.rd32(CURSOR) as i32,
+                    h.menu.cursor,
+                    "{at}: the cursor"
+                );
+            }
+            seen.insert(state);
+            if matches!(state, 0x0A | 0x6E | 0x78 | 0xC8) {
+                break;
+            }
+        }
+    }
+    assert!(
+        [0x0A, 0x64, 0x65, 0x66, 0x6E, 0x78, 0xC8]
+            .iter()
+            .all(|s| seen.contains(s)),
+        "{seen:x?}"
+    );
+}
+
+/// The shore's lure gate: state `0xB`'s fade-in, whose end steps to `0xC`
+/// and runs the gate `FUN_801D712C` (live, over a hooked bag count), parking
+/// the session on the no-lure screen `0x96` when it fails; and state `0x96`,
+/// which re-runs the gate every frame. Against `select_owned_rod` (the gate
+/// `PondSession::shore_lure_gate` runs): the state and the re-pointed lure
+/// word `0x80084450`.
+#[test]
+fn the_shore_lure_gate_parks_the_session_as_retail_does() {
+    differential!(prot(972, SESSION));
+    use legaia_engine_fishing::fishing::select_owned_rod;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    const GATE: u32 = 0x801D_712C;
+    const BAG_COUNT: u32 = 0x8004_2F4C;
+    const FADE: u32 = 0x801D_905C;
+    let mut targets: Vec<u32> = overlay
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_le_bytes(*w))
+        .filter(|w| w >> 26 == 3)
+        .map(|w| ((w & 0x03FF_FFFF) << 2) | 0x8000_0000)
+        .filter(|&t| !(SESSION..SESSION_END).contains(&t) && t != GATE)
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    for t in targets {
+        cpu.stub(t, 0);
+    }
+    let bag = std::rc::Rc::new(std::cell::Cell::new([0i32; 6]));
+    {
+        let bag = bag.clone();
+        cpu.hook(BAG_COUNT, move |r, _| {
+            let id = r.r[psx_retail_exec::A0];
+            r.r[V0] = if (0x9D..=0xA2).contains(&id) {
+                bag.get()[(id - 0x9D) as usize] as u32
+            } else {
+                0
+            };
+        });
+    }
+    let mut rng = Rng(0x4741_5445);
+    let mut parked = [0usize; 2];
+    for case in 0..2000 {
+        cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+        let counts: [i32; 6] = std::array::from_fn(|_| [0, 0, 1, 3][rng.below(4) as usize]);
+        bag.set(counts);
+        let lure = rng.below(3);
+        let state = if case % 3 == 0 { 0x96 } else { 0x0B };
+        let fade = rng.below(0x40);
+        let step = 1 + rng.below(3);
+        cpu.mem.wr32(SESSION_STATE, state);
+        cpu.mem.wr32(LURE_ROW, lure);
+        cpu.mem.wr32(FADE, fade);
+        cpu.mem.wr8(FRAME_STEP, step as u8);
+        cpu.mem.wr32(PRESSED, 0);
+        assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "case {case}");
+        let at = format!("case {case} state {state:#x} bag {counts:?} lure {lure} fade {fade}");
+        let mut port_lure = lure;
+        let count_of = |id: u32| counts[(id - 0x9D) as usize];
+        let want = if state == 0x96 {
+            select_owned_rod(&mut port_lure, count_of);
+            0x96
+        } else if fade as i32 - ((step as i32) << 4) >= 0 {
+            0x0B
+        } else if select_owned_rod(&mut port_lure, count_of) {
+            parked[0] += 1;
+            0x0C
+        } else {
+            parked[1] += 1;
+            0x96
+        };
+        assert_eq!(cpu.mem.rd32(SESSION_STATE), want, "{at}: the state");
+        assert_eq!(cpu.mem.rd32(LURE_ROW), port_lure, "{at}: the lure");
+    }
+    assert!(parked.iter().all(|&n| n > 50), "{parked:?}");
+}

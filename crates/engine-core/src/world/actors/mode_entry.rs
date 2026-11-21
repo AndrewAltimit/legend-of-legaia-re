@@ -177,9 +177,16 @@ impl World {
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
         self.battle.entry_serial = self.battle.entry_serial.wrapping_add(1);
+        // The framing depth opens on its floor: a won fight's sequencer
+        // leaves `ctx[+0x6D0]` at the results frame's `0x4E0`, and the next
+        // fight's first dispatch re-derives it (`FUN_801F0348`).
+        self.battle.camera_frame_height =
+            legaia_engine_battle_vm::battle_formulas::CAMERA_HEIGHT_MIN;
+        self.battle.ring_highlight = None;
         // Every empty pool seat starts the fight on the origin.
         self.battle.empty_seat_ground = [(0, 0); 7];
         self.battle.seed_recentre_held = false;
+        self.battle.formation_second_cleared = false;
         self.battle.capture_reseat = None;
         self.battle.capture_reseat_bars.clear();
         self.battle.capture_approach_yaw = None;

@@ -707,6 +707,103 @@ pub fn build_goods_candidate_rows(
     out
 }
 
+/// The quick-travel landmark list's row words, `CLASS_LANDMARK | ordinal`,
+/// over the placement table `0x80073A98` in table order as
+/// `(ordinal, name_idx, discovery_flag)`.
+///
+/// The walk stops at a `name_idx` of `0xFF`; a record repeating the name of
+/// the **last accepted** row is skipped (`0x800318A8` compares against `s0`,
+/// which only moves on an accept, so a locked landmark does not shadow the
+/// next record sharing its name); a survivor needs system flag
+/// `discovery_flag + 0x20` (`FUN_8003CE64` at `0x800318B4`).
+///
+/// PORT: FUN_80030628 (case `0x19`, `0x80031870..0x800318DC`)
+pub fn landmark_list_rows<I>(records: I, flag_set: impl Fn(u16) -> bool) -> Vec<u16>
+where
+    I: IntoIterator<Item = (u32, u8, u8)>,
+{
+    let mut out = Vec::new();
+    let mut last = 0xFFu8;
+    for (ordinal, name_idx, flag) in records {
+        if name_idx == 0xFF {
+            break;
+        }
+        if name_idx == last || !flag_set(u16::from(flag) + 0x20) {
+            continue;
+        }
+        out.push(CLASS_LANDMARK | ordinal as u16);
+        last = name_idx;
+    }
+    out
+}
+
+/// Whether an item may appear in an **armament** candidate list: item record
+/// class `1`, its equipment record's `+7` category bits (`(b & 0x60) >> 5`)
+/// equal to the row's category (`0x8007B484` per content id), and its `+6`
+/// mask sharing a bit with the character's (`0x8007B48C[char]`).
+///
+/// PORT: FUN_80030628 (armament filter, `0x80031574..0x800315C8`)
+///
+/// NOT WIRED: `EquipSession` filters with its own `item_fits_slot`, which
+/// gates the head and hand slots on the character mask alone where retail
+/// also tests the category; this retail-held filter is what it should call.
+pub fn armament_candidate_accepts(
+    kind: u8,
+    equip_flags: u8,
+    equip_mask: u8,
+    category: u8,
+    char_bit: u8,
+) -> bool {
+    kind == 1 && (equip_flags & 0x60) >> 5 == category && equip_mask & char_bit != 0
+}
+
+/// The four **armament** candidate lists (content ids `7`..`0xA` and
+/// `0x15`..`0x18`): the Remove verb ([`CLASS_VERB`]) always first, the
+/// equipped id as [`CLASS_ITEM_ICON`] when the slot holds one, then every
+/// bag slot of the window that `accepts` its id, in slot order and tagged
+/// [`CLASS_BAG_EQUIP`] - the equipped id skipped - and then rows `1..n`
+/// selection-sorted on `stat` of each row word, highest first.
+///
+/// The sort is retail's own (`0x80031608..0x800316DC`): for each position
+/// from `1` to one short of the last, the scan runs through the last row and
+/// a row displaces the running best only when strictly greater, then the two
+/// swap - so ties keep the order the swaps leave, not the bag order. The
+/// equipped row takes part. `stat` is `FUN_800302E4(char, word, category)`.
+///
+/// PORT: FUN_80030628 (armament walk and sort, `0x80031460..0x80031718`)
+pub fn build_armament_candidate_rows(
+    bag_ids: &[u8],
+    slot_base: u16,
+    equipped_id: u8,
+    accepts: impl Fn(u8) -> bool,
+    stat: impl Fn(u16) -> u32,
+) -> Vec<u16> {
+    let mut rows = vec![CLASS_VERB];
+    if equipped_id != 0 {
+        rows.push(CLASS_ITEM_ICON | u16::from(equipped_id));
+    }
+    for (i, &id) in bag_ids.iter().enumerate() {
+        if id == 0 || (equipped_id != 0 && id == equipped_id) || !accepts(id) {
+            continue;
+        }
+        rows.push(CLASS_BAG_EQUIP | (slot_base + i as u16));
+    }
+    let n = rows.len();
+    for i in 1..n.saturating_sub(1) {
+        let mut best = i;
+        let mut best_key = stat(rows[i]);
+        for (j, &row) in rows.iter().enumerate().skip(i + 1) {
+            let k = stat(row);
+            if best_key < k {
+                best_key = k;
+                best = j;
+            }
+        }
+        rows.swap(i, best);
+    }
+    rows
+}
+
 /// Lowest item id the shop **buy** list will build a row for.
 ///
 /// The same `0x1A` bound gates both of the builder's passes - `sltiu

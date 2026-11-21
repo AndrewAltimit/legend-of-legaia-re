@@ -496,8 +496,11 @@ fn battle_end_cam_inputs(
             // and the pose's own shot starts a pass later:
             // `battle_jou_gala_finisher_results_retail`, `3` vsyncs into the
             // hold on a step of `3`, holds the table's endpoints on
-            // `(0, -5 * y, 0x500)` with the accumulator at `96`.
-            if u32::from(hold) < u32::from(world.battle_frame_step().max(1)) {
+            // `(0, -5 * y, 0x500)` with the accumulator at `96`. The hold
+            // reads `1` on the tick that stands for the results pass (the
+            // pass adds its own step), so that pass spans holds up to the
+            // step.
+            if u32::from(hold) <= u32::from(world.battle_frame_step().max(1)) {
                 inputs.action.anim_id = 0;
             }
         }

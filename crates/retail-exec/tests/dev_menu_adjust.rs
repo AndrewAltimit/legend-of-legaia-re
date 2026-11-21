@@ -272,3 +272,47 @@ fn the_list_pickers_active_leg_steps_as_retail_steps() {
     }
     assert!(seen.iter().all(|&n| n > 500), "{seen:?}");
 }
+
+/// `FUN_801E9F64`'s camera row (`actor[+0x9e] == 3`, `0x801EA1A4`) against
+/// `camera_follow_step`: the follow byte `_DAT_8007B606` flipped on either
+/// horizontal edge of `_DAT_8007B874`, and the snap pair
+/// `FUN_801DB8EC` / `FUN_801DAA50` run while it is set.
+#[test]
+fn the_camera_row_flips_and_snaps_as_retail_does() {
+    differential!(prot(897, ADJUST));
+    use legaia_engine_dev_menu::dev_menu_adjust::camera_follow_step;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        return;
+    };
+    const FOLLOW: u32 = 0x8007_B606;
+    const PRESSED: u32 = 0x8007_B874;
+    const SNAPS: u32 = 0x8012_1000;
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.hook(0x801D_B8EC, |_, m| {
+        let n = m.rd32(SNAPS);
+        m.wr32(SNAPS, n + 1)
+    });
+    cpu.hook(0x801D_AA50, |_, m| {
+        let n = m.rd32(SNAPS);
+        m.wr32(SNAPS, n + 0x100)
+    });
+    let mut rng = Rng(0x4341_4D52);
+    for run in 0..4000 {
+        cpu.mem.wr16(ACTOR + 0x9E, 3);
+        let follow = [0u8, 1, 2, 0xFF][rng.below(4) as usize];
+        let pad = match rng.below(4) {
+            0 => 0,
+            1 => [0x2000, 0x8000, 0xA000][rng.below(3) as usize],
+            _ => rng.next() & 0xFFFF,
+        };
+        cpu.mem.wr8(FOLLOW, follow);
+        cpu.mem.wr32(PRESSED, pad);
+        cpu.mem.wr32(SNAPS, 0);
+        assert_eq!(cpu.call(ADJUST, &[ACTOR]), Stop::Returned, "run {run}");
+        let (want, snap) = camera_follow_step(follow, pad);
+        let what = format!("run {run}: follow {follow:#x} pad {pad:#x}");
+        assert_eq!(cpu.mem.rd8(FOLLOW), want, "{what}");
+        assert_eq!(cpu.mem.rd32(SNAPS), if snap { 0x101 } else { 0 }, "{what}");
+    }
+}

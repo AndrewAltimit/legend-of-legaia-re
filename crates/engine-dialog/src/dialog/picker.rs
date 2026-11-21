@@ -49,12 +49,8 @@ impl OwnedDialogPanel {
             consumed: PICKER_PAD_MASK,
             ..PickerPadStep::default()
         };
-        if pressed & PICKER_PAD_UP != 0 {
-            step.moved |= self.move_picker_cursor(-1);
-        }
-        if pressed & PICKER_PAD_DOWN != 0 {
-            step.moved |= self.move_picker_cursor(1);
-        }
+        step.moved =
+            self.step_picker_cursor(pressed & PICKER_PAD_UP != 0, pressed & PICKER_PAD_DOWN != 0);
         if pressed & PICKER_PAD_CONFIRM != 0 {
             step.chosen = self.confirm_menu();
         }
@@ -199,12 +195,18 @@ impl OwnedDialogPanel {
     /// `0x801D941C` tests for its state `0x12`). No-op when the box isn't a
     /// menu, and while an open menu still slides in.
     ///
+    /// The hosts move the cursor ahead of the frame's pager call. The handler
+    /// runs in the active state, which the call that zeroes the slide's count
+    /// installs (`0x801D9404..0x801D9418`), so a move ahead of a call is live
+    /// once the count rests at `0` - the first active call reads Up and Down
+    /// as it reads the commit.
+    ///
     /// Returns whether the cursor moved - retail's test for the move cue
     /// ([`PICKER_MOVE_CUE`]): the handler compares the cursor it loaded on
     /// entry against the stored one (`beq s0,v0` at `0x801D9508`), so a
     /// clamped press at either end of a `0x2A` menu is silent.
     pub fn move_picker_cursor(&mut self, delta: i32) -> bool {
-        if self.menu_active && !self.picker_takes_input() {
+        if self.menu_active && !self.picker_slide.as_ref().is_none_or(|s| s.hand_drawn()) {
             return false;
         }
         let before = self.picker_cursor;
@@ -218,6 +220,24 @@ impl OwnedDialogPanel {
             } else {
                 ((next % n + n) % n) as usize
             };
+        }
+        self.picker_cursor != before
+    }
+
+    /// One call of the pager's cursor handler on this frame's Up and Down
+    /// edges: Up first, then Down from where Up left the cursor
+    /// (`0x801D9454..0x801D94F0`). Returns whether the move cue
+    /// ([`PICKER_MOVE_CUE`]) sounds: the handler compares the cursor it
+    /// loaded on entry with the one it ends on (`beq s0,v0` at
+    /// `0x801D9508`), so Up and Down on the same frame that land back where
+    /// they started are silent.
+    pub fn step_picker_cursor(&mut self, up: bool, down: bool) -> bool {
+        let before = self.picker_cursor;
+        if up {
+            self.move_picker_cursor(-1);
+        }
+        if down {
+            self.move_picker_cursor(1);
         }
         self.picker_cursor != before
     }

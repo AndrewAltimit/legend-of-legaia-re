@@ -92,17 +92,12 @@ impl World {
         let mut dismissed = false;
         // A box is open: tick the typewriter + route input.
         if let Some(panel) = id.panel.as_mut() {
-            if panel.menu_active() {
+            // The player's pad, unless the automatic press is counting.
+            let live = legaia_engine_dialog::dialog::pager_reads_pad(self.dialog.auto_press);
+            if panel.menu_active() && live {
                 // The pager's cursor handler cues once when the cursor ends
                 // the frame somewhere else (`0x801D9508..0x801D9514`).
-                let mut moved = false;
-                if up {
-                    moved |= panel.move_picker_cursor(-1);
-                }
-                if down {
-                    moved |= panel.move_picker_cursor(1);
-                }
-                if moved {
+                if panel.step_picker_cursor(up, down) {
                     self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_MOVE_CUE);
                 }
             }
@@ -128,7 +123,7 @@ impl World {
             }
             // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
             // confirm the player did not make.
-            let confirm = confirm || panel.take_auto_press();
+            let confirm = (confirm && live) || panel.take_auto_press();
             if confirm {
                 if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
                     // The menu opened this frame, or still slides in: show it,
@@ -1496,6 +1491,19 @@ impl World {
                     id.pc = final_pc;
                     break;
                 }
+                // Op `0x36` holds the same way: `36 FF FF` while the drive
+                // word `_DAT_8007BC20` is up (a field XA one-shot still
+                // reading, `0x801E02F0..0x801E0308`), and sub-ops `0` / `1` /
+                // `2` and the XA arm while the side-band request pair is
+                // unsettled (`0x801E0340`, `0x801E037C`, `0x801E03A8`,
+                // `0x801E040C`) - each re-runs its own PC next frame.
+                // REF: FUN_801DE840 (op `0x36`)
+                FieldStepResult::Halt { final_pc } if (b & 0x7F) == 0x36 => {
+                    id.pc = final_pc;
+                    break;
+                }
+                // `4C C9` holds the same way while a BGM swap is in flight
+                // (`0x801E2920`).
                 // `4C 53` / `4C 54` poll the staged mode switch
                 // `FUN_801D65D8` and re-run their own PC while it is in
                 // flight (the wait join at `0x801E28C4`, `0x801DEE4C`): a
@@ -1510,7 +1518,7 @@ impl World {
                         && matches!(
                             id.bytecode
                                 .get(final_pc + if b & 0x80 != 0 { 2 } else { 1 }),
-                            Some(&(0x53 | 0x54))
+                            Some(&(0x53 | 0x54 | 0xC9))
                         ) =>
                 {
                     id.pc = final_pc;
@@ -1830,6 +1838,44 @@ impl World {
         self.npcs.face_legs.contains_key(&slot)
             || self.cutscene.timeline.as_ref().is_some_and(in_timeline)
             || self.field_vm.helper_contexts.iter().any(in_timeline)
+    }
+
+    /// Whether the acquire guard refuses the facing op at `pc` for a caller
+    /// the prologue's halted-target test lets through (the system script):
+    /// the op acquires (a `B8 <id>` turn whose budget `op1 & 0x7F` is not
+    /// zero, `0x801DEE58..0x801DEE64`; `CC <id> 85|8E|8F`), its placement
+    /// target's halt is up and the spawn bracket is down
+    /// (`0x801DEEB0..0x801DEED8`, `0x801E2168..0x801E2190`). The port keeps a
+    /// placement's halt as its channel's `0x400` or its in-flight leg
+    /// ([`Self::npc_leg_in_flight`], which counts a leg landed this game
+    /// frame, as retail's bit stands until the target's own tick). The
+    /// guard's other clause, a target running no script, does not arise:
+    /// every placement runs a record (`+0x94 = -1` from `0x8003A464`).
+    ///
+    /// REF: FUN_801DE840 (0x801DEE90..0x801DEED8, 0x801E2148..0x801E2190)
+    pub fn facing_acquire_refused(&self, bc: &[u8], pc: usize) -> bool {
+        let (Some(&op), Some(&t)) = (bc.get(pc), bc.get(pc + 1)) else {
+            return false;
+        };
+        let acquires = op & 0x80 != 0
+            && match op & 0x7F {
+                0x38 => bc.get(pc + 3).is_some_and(|op1| op1 & 0x7F != 0),
+                0x4C => matches!(bc.get(pc + 2), Some(&(0x85 | 0x8E | 0x8F))),
+                _ => false,
+            };
+        if !acquires || self.field_vm.entry_prerun || self.field_vm.object_prerun {
+            return false;
+        }
+        let Some(slot) = self.placement_slot_for_target(t) else {
+            return false;
+        };
+        let held = self
+            .field_vm
+            .channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            .is_some_and(|c| c.ctx.is_halted());
+        held || self.npc_leg_in_flight(slot)
     }
 
     /// A facing op aimed at another placement from a context that is not a
