@@ -1903,3 +1903,160 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
         assert!(seen.get(key).copied().unwrap_or(0) > 10, "{key}: {seen:?}");
     }
 }
+
+/// The commit confirm's Reselect (`0x6E`, `0x801D3054..0x801D30E0`) with the
+/// window opener `FUN_801D388C` run for real: its case `0x21` steps the member
+/// cursor back from past the party's end (`FUN_801D32BC(1)` at `0x801D4750`),
+/// and the dispatcher hands the landing member's committed item back
+/// (`FUN_800421D4(+0x1DF, 1)` at `0x801D30BC..0x801D30C0`) when its category
+/// `+0x1DE` is Item; with nobody able (`FUN_801DBA04` equal to the count) it
+/// returns to the round prompt `0x1E` instead. Against
+/// `World::reselect_battle_commands`: the landing member, the refund into the
+/// bag, and the surface it reopens.
+#[test]
+fn the_reselect_refunds_the_landing_members_item_as_retail() {
+    differential!(prot(898, STATE_MACHINE));
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
+    use legaia_engine_battle_menus::battle_flow::BattleFlowState;
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(898).expect("PROT 0898"));
+    cpu.stub_outside = Some((OVERLAY_BASE, OVERLAY_END));
+    for leaf in [
+        0x801D_3444u32,
+        0x801D_B8F4,
+        0x801D_B8B4,
+        0x801D_A34C,
+        0x801D_8A88,
+        0x801D_A6B4,
+        0x801D_BB8C,
+        0x801D_8DE8,
+        0x801D_99BC,
+        0x801D_9AE8,
+        0x801D_5854,
+        0x801D_B318,
+        0x801D_57E8,
+        0x801D_5718,
+    ] {
+        cpu.stub(leaf, 0);
+    }
+    cpu.stub(GLIDE, 0);
+    const REFUND: u32 = 0x8004_21D4;
+    let refunds = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+    let r2 = refunds.clone();
+    cpu.hook(REFUND, move |r, _| r2.borrow_mut().push((r.r[A0], r.r[5])));
+    let mut rng = Rng(0x5245_5345);
+    let mut seen = std::collections::HashMap::<&str, u32>::new();
+    for round in 0..3000 {
+        let party = 1 + rng.below(3) as u8;
+        let mut hp = [0u16; 3];
+        let mut status = [0u16; 3];
+        let mut item = [None::<u8>; 3];
+        for s in 0..usize::from(party) {
+            hp[s] = if rng.below(4) == 0 {
+                0
+            } else {
+                1 + rng.below(500) as u16
+            };
+            status[s] = [0u16, 0, 0, 0x4, 0x80, 0x1][rng.below(6) as usize];
+            item[s] = (rng.below(2) == 0).then(|| 1 + rng.below(0x60) as u8);
+        }
+        // Retail.
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        cpu.mem.wr8(CTX, party);
+        cpu.mem.wr8(CTX + 0x06, 0x6E);
+        cpu.mem.wr8(CTX + 0x13, party);
+        cpu.mem.wr8(CTX + 0x1F, party);
+        for s in 0..u32::from(party) {
+            let a = ACTOR + STRIDE * s;
+            cpu.mem.wr16(a + 0x14C, hp[s as usize]);
+            cpu.mem.wr16(a + 0x16E, status[s as usize]);
+            match item[s as usize] {
+                Some(id) => {
+                    cpu.mem.wr8(a + 0x1DE, 1);
+                    cpu.mem.wr8(a + 0x1DF, id);
+                }
+                None => cpu.mem.wr8(a + 0x1DE, 2),
+            }
+        }
+        cpu.mem.wr32(PAD, CANCEL);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, 0);
+        cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
+        cpu.mem.wr32(CANCEL_MASK, CANCEL);
+        cpu.mem.wr8(BATTLE_ID, 0);
+        refunds.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let after = cpu.mem.rd8(CTX + 0x06);
+        let landed = cpu.mem.rd8(CTX + 0x13);
+
+        // The port.
+        let mut w = World::new();
+        w.load_party(legaia_save::Party::zeroed(usize::from(party)));
+        w.enter_battle(party, 2);
+        w.party.party_count = party;
+        w.battle.player_driven = true;
+        w.party.inventory.clear();
+        for s in 0..usize::from(party) {
+            let a = &mut w.actors[s].battle;
+            a.liveness = u16::from(hp[s] != 0);
+            a.set_hp_synced(hp[s]);
+            seat_status(&mut w, s as u8, status[s], false);
+            w.battle.round_flow.pending[s] = Some(match item[s] {
+                Some(id) => PendingPartyAction::Item {
+                    item_id: id,
+                    used_slots: vec![],
+                },
+                None => PendingPartyAction::Attack { target: party },
+            });
+        }
+        let actor = party - 1;
+        w.reselect_battle_commands(actor);
+        let label = format!(
+            "round {round}: party {party} hp {hp:?} status {status:x?} items {item:?} -> {after:#x} landed {landed} refunds {:?}",
+            refunds.borrow()
+        );
+        if after == 0x1E {
+            assert_eq!(w.battle.flow, BattleFlowState::TurnPrompt, "{label}");
+            assert!(refunds.borrow().is_empty(), "{label}");
+            *seen.entry("prompt").or_default() += 1;
+            continue;
+        }
+        assert_eq!(after, 0x28, "{label}");
+        assert_eq!(w.battle.flow, BattleFlowState::CategoryMenu, "{label}");
+        assert_eq!(
+            w.battle.round_flow.cursor, landed,
+            "{label}: the landing member"
+        );
+        let slot = usize::from(landed);
+        match item[slot] {
+            Some(id) => {
+                assert_eq!(*refunds.borrow(), [(u32::from(id), 1)], "{label}");
+                assert_eq!(w.party.inventory.get(&id).copied(), Some(1), "{label}: the bag");
+                assert!(w.battle.round_flow.pending[slot].is_none(), "{label}");
+                *seen.entry("refund").or_default() += 1;
+            }
+            None => {
+                assert!(refunds.borrow().is_empty(), "{label}");
+                *seen.entry("no refund").or_default() += 1;
+            }
+        }
+    }
+    for key in ["prompt", "refund", "no refund"] {
+        assert!(seen.get(key).copied().unwrap_or(0) > 50, "{key}: {seen:?}");
+    }
+}

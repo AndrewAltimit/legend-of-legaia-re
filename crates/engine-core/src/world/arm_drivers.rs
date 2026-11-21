@@ -80,6 +80,9 @@ pub trait BattleArmDrivers {
     /// PROT 0922 (Puera)'s monster, creature and part writes for one pass of
     /// its director (`World::apply_puera_writes`).
     fn puera_writes(&mut self, phase: u8, passed: bool, before: i32, monster_count: u8);
+    /// The commit confirm's Reselect (`World::reselect_battle_commands`,
+    /// `FUN_801D0748` `0x801D3054..0x801D30E0`): `actor` raised the screen.
+    fn reselect_battle_commands(&mut self, actor: u8);
 }
 
 impl BattleArmDrivers for World {
@@ -157,5 +160,8 @@ impl BattleArmDrivers for World {
     }
     fn puera_writes(&mut self, phase: u8, passed: bool, before: i32, monster_count: u8) {
         World::apply_puera_writes(self, phase, passed, before, monster_count)
+    }
+    fn reselect_battle_commands(&mut self, actor: u8) {
+        World::reselect_battle_commands(self, actor)
     }
 }
