@@ -68,6 +68,12 @@ struct Host {
     reordered: u32,
     tag_list: Option<Vec<u8>>,
     ranged: bool,
+    /// Retail's spell records (`0x800754C8`, twelve bytes an id) and the
+    /// item effect pairs (`0x80074368` -> `0x800752C0`), read off the
+    /// executable a test runs.
+    spells: Vec<[u8; 12]>,
+    item_pairs: Vec<(u8, u8)>,
+    applied: Vec<(u8, u8, u8, u8)>,
 }
 
 impl BattleActionHost for Host {
@@ -121,6 +127,26 @@ impl BattleActionHost for Host {
     fn reaction_hold_view(&self, slot: u8) -> Option<(u8, bool)> {
         let a = self.actors.get(usize::from(slot))?;
         Some((a.current_anim, self.drawn[usize::from(slot)]))
+    }
+    fn spell_class_byte(&self, spell_id: u8) -> Option<u8> {
+        self.spells.get(usize::from(spell_id)).map(|r| r[0])
+    }
+    fn spell_sub_class_byte(&self, spell_id: u8) -> Option<u8> {
+        self.spells.get(usize::from(spell_id)).map(|r| r[1])
+    }
+    fn spell_mp_cost(&self, spell_id: u8) -> u8 {
+        self.spells.get(usize::from(spell_id)).map_or(0, |r| r[3])
+    }
+    fn item_effect_class_pair(&self, item_id: u8) -> Option<(u8, u8)> {
+        self.item_pairs.get(usize::from(item_id)).copied()
+    }
+    fn apply_damage(&mut self, icon: u8, page: u8, target_slot: u8, party_slot: u8) {
+        self.applied.push((icon, page, target_slot, party_slot));
+    }
+    fn roster_character_id(&self, slot: u8) -> u8 {
+        // The bytes past the party's three in `DAT_8007BD10` read `4` for the
+        // monster seats, as the engine's host reports them.
+        if slot < 3 { slot + 1 } else { 4 }
     }
     fn range_check(&self, actor_slot: u8, target_slot: u8) -> u16 {
         if !self.ranged {
@@ -1604,4 +1630,219 @@ fn the_approach_walks_and_shoves_as_retail_does() {
         seen.insert((state, retail.0));
     }
     assert!(seen.len() >= 9 && shoved > 300, "{seen:x?} {shoved}");
+}
+
+const APPLIER: u32 = 0x8004_02F4;
+const CAST_CUE: u32 = 0x801F_3990;
+
+/// States `0x3C`, `0x3D`, `0x3F` and `0x40`, the cast and item band around the
+/// applier (`0x801E3B20..0x801E3E10`, `0x801E40D8..0x801E4294`) against
+/// `spirit_pre_arm`, `spirit_wait`, `spirit_fire_damage` and
+/// `spirit_post_damage`: the clip staged, the class pair off the spell record
+/// or the item table, the MP price with the two cost passives, the readout
+/// bar's member and the element calls; the wait; the countdown into the
+/// applier `FUN_800402F4(class, tier, target, character)`; and the afterglow's
+/// Fury Boost bar and plate, its countdown, its hold on a reacting target and
+/// its exit.
+#[test]
+fn the_cast_and_item_band_is_retails() {
+    differential!(prot(898, SM));
+    let Some(mut r) = Retail::new() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let applied = Rc::new(RefCell::new(Vec::new()));
+    let sink = applied.clone();
+    r.cpu.hook(APPLIER, move |regs, _| {
+        sink.borrow_mut().push((
+            regs.r[4] as u8,
+            regs.r[5] as u8,
+            regs.r[6] as u8,
+            regs.r[7] as u8,
+        ))
+    });
+    r.cpu.stub(CAST_CUE, 0);
+    let m = &mut r.cpu.mem;
+    let spells: Vec<[u8; 12]> = (0..256u32)
+        .map(|id| std::array::from_fn(|k| m.rd8(0x8007_54C8 + id * 12 + k as u32)))
+        .collect();
+    let item_pairs: Vec<(u8, u8)> = (0..256u32)
+        .map(|id| {
+            let e = u32::from(m.rd8(0x8007_4368 + id * 12 + 1));
+            (m.rd8(0x8007_52C0 + e * 4), m.rd8(0x8007_52C0 + e * 4 + 1))
+        })
+        .collect();
+    let mut rng = Rng(0x4341_5354);
+    let mut seen = std::collections::HashSet::new();
+    for round in 0..30000 {
+        let state = [0x3Cu8, 0x3D, 0x3F, 0x40][rng.below(4) as usize];
+        let slot = rng.below(5) as u8;
+        let target = [0u8, 1, 3, 4, 7, 8, 9][rng.below(7) as usize];
+        let category = [1u8, 2, 2, 0][rng.below(4) as usize];
+        let id = if rng.below(8) == 0 {
+            0xFE
+        } else {
+            rng.below(0x90) as u8
+        };
+        // Retail's spend is a bare `subu` and wraps below the price; the
+        // port floors it at zero. The menus and the picker only cast what the
+        // pool can pay, so the pool here always covers the price.
+        let mp = [0x100u16, 999][rng.below(2) as usize];
+        let bits = [0u32, 0x10, 0x20, 0x30][rng.below(4) as usize];
+        let current = [0u8, 0, 3][rng.below(3) as usize];
+        let queued = [0u8, 3][rng.below(2) as usize];
+        let staged = rng.below(0x20) as u8;
+        // `0x3F` is entered on `0x3E`'s `0x20`, so its countdown starts at or
+        // above zero and leaves on the pass it goes negative.
+        let timer = if state == 0x3F {
+            [0i16, 1, 2, 0x20][rng.below(4) as usize]
+        } else {
+            [-2i16, -1, 0, 1, 2, 0x80][rng.below(6) as usize]
+        };
+        let dt = 1 + rng.below(2) as u8;
+        let class = [5u8, 5, 1, 0x14, 0x0E][rng.below(5) as usize];
+        let tier = rng.below(4) as u8;
+        let goal = [0i16, 0x20, 0x120][rng.below(3) as usize];
+        let bar = [0i16, 0x19, 0x11A][rng.below(3) as usize];
+        let plate = [0i16, 40, 100][rng.below(3) as usize];
+        let plate_target = [40i16, 100][rng.below(2) as usize];
+        let t_hp = [0u16, 30][rng.below(2) as usize];
+        let t_anim = [0u8, 4][rng.below(2) as usize];
+        let t_colour = [0u32, 0x2008_0200][rng.below(2) as usize];
+        if target < 8 && target == slot {
+            continue;
+        }
+
+        r.reset();
+        applied.borrow_mut().clear();
+        let m = &mut r.cpu.mem;
+        m.wr8(FRAME_STEP, dt);
+        m.wr8(CTX + 7, state);
+        m.wr8(CTX + 0x13, slot);
+        m.wr16(S7 + 2, timer as u16);
+        m.wr16(S7 + 6, goal as u16);
+        m.wr16(S7 + 8, plate_target as u16);
+        m.wr32(PLATE, PLATE_RECORD);
+        m.wr16(PLATE_RECORD + 0x10, plate as u16);
+        m.wr32(CTX + 0x1080, BAR_RECORD);
+        m.wr16(BAR_RECORD + 0xE, bar as u16);
+        for s in 0..8u32 {
+            m.wr8(SEATS + s, if s < 3 { s as u8 + 1 } else { 4 });
+            if s < 3 {
+                m.wr32(RECORDS + s * 0x414 + 0x6BC, bits);
+            }
+        }
+        let a = actor(slot);
+        m.wr8(a + 0x1D9, current);
+        m.wr8(a + 0x1DA, queued);
+        m.wr8(a + 0x1DD, target);
+        m.wr8(a + 0x1DE, category);
+        m.wr8(a + 0x1DF, id);
+        m.wr8(a + 0x1E7, staged);
+        m.wr8(a + 0x1E8, class);
+        m.wr8(a + 0x1E9, tier);
+        m.wr16(a + 0x150, mp);
+        if target < 8 {
+            let t = actor(target);
+            m.wr16(t + 0x14C, t_hp);
+            m.wr8(t + 0x1D9, t_anim);
+            m.wr32(t + 4, t_colour);
+        }
+        r.pass();
+        let m = &mut r.cpu.mem;
+        let retail = (
+            m.rd8(CTX + 7),
+            m.rd16(S7 + 2) as i16,
+            m.rd8(a + 0x1DA),
+            m.rd8(a + 0x1DE),
+            m.rd8(a + 0x1E8),
+            m.rd8(a + 0x1E9),
+            m.rd16(a + 0x150),
+            m.rd16(a + 0x178),
+            m.rd8(CTX + 0x243),
+        );
+        let retail_hud = (
+            m.rd16(BAR_RECORD + 0xE) as i16,
+            m.rd16(PLATE_RECORD + 0x10) as i16,
+            m.rd16(CTX + 0x6D0) as i16,
+        );
+
+        let mut h = host();
+        h.dt = i16::from(dt);
+        h.bits = bits;
+        h.spells = spells.clone();
+        h.item_pairs = item_pairs.clone();
+        let b = &mut h.actors[usize::from(slot)];
+        b.current_anim = current;
+        b.queued_anim = queued;
+        b.active_target = target;
+        b.action_category = category;
+        b.params[0] = id;
+        b.queued_anim_b = staged;
+        b.cast_class = class;
+        b.cast_sub_class = tier;
+        b.mp = mp;
+        if target < 8 {
+            let t = &mut h.actors[usize::from(target)];
+            t.liveness = t_hp;
+            t.hp = t_hp;
+            t.current_anim = t_anim;
+            h.drawn[usize::from(target)] = t_colour != 0;
+        }
+        let mut ctx = BattleActionCtx {
+            action_state: state,
+            active_actor: slot,
+            frame_timer: timer,
+            damage_target: goal,
+            hp_bar_target: plate_target,
+            spirit_plate_value: plate,
+            gauge_extend_bar: bar,
+            ..Default::default()
+        };
+        ba::step(&mut h, &mut ctx);
+        let b = &h.actors[usize::from(slot)];
+        let port = (
+            ctx.action_state,
+            ctx.frame_timer,
+            b.queued_anim,
+            b.action_category,
+            b.cast_class,
+            b.cast_sub_class,
+            b.mp,
+            b.last_mp_cost,
+            ctx.gauge_rearm_latch,
+        );
+        let at = format!(
+            "round {round}: state {state:#x} slot {slot} target {target} category {category} \
+             id {id:#x} mp {mp} bits {bits:#x} anim {current}/{queued} timer {timer} dt {dt} \
+             class {class}/{tier} goal {goal} bar {bar} plate {plate}->{plate_target} target \
+             {t_hp}/{t_anim}/{t_colour:#x}"
+        );
+        assert_eq!(retail, port, "{at}");
+        if state == 0x40 {
+            let depth = if ctx.camera_frame_height != 0 {
+                ctx.camera_frame_height
+            } else {
+                0
+            };
+            assert_eq!(
+                retail_hud,
+                (ctx.gauge_extend_bar, ctx.spirit_plate_value, depth),
+                "afterglow, {at}"
+            );
+        }
+        if state == 0x3C {
+            assert_eq!(*r.ui.borrow(), h.ui, "elements, {at}");
+            assert_eq!(retail_hud.2, ctx.camera_frame_height, "depth, {at}");
+        }
+        let retail_applied: Vec<_> = applied
+            .borrow()
+            .iter()
+            .copied()
+            .filter(|c| ba::effect_selector_dispatches(c.0))
+            .collect();
+        assert_eq!(retail_applied, h.applied, "applier, {at}");
+        seen.insert((state, retail.0));
+    }
+    assert!(seen.len() >= 7, "{seen:x?}");
 }

@@ -1426,6 +1426,12 @@ pub struct BattleActionCtx {
     /// (`0x801E5468..0x801E54A8`) - the visible "the AP gauge extends" of a
     /// Spirit turn. The same `-6` law sizes the arts-entry bar off the pool.
     pub spirit_bar_width: i16,
+    /// The gauge-extension item's bar: the HUD record `ctx[+0x1080]`'s
+    /// `+0x0E`, which state `0x40` grows toward `ctx[+0x6DC] - 6` one frame
+    /// step at a time while the committed class is `5` (Fury Boost,
+    /// `0x801E415C..0x801E419C`), the same law as
+    /// [`Self::spirit_bar_width`] on the other record.
+    pub gauge_extend_bar: i16,
     /// The Spirit band's **AP plate** value - the `+0x10` halfword of the
     /// element-`0x52` widget whose handle the dispatch arm parks at
     /// `0x801F6968` (`sw v0,0x6968(v1)` at `0x801E2FEC`). Seeded with the
