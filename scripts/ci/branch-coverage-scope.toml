@@ -310,6 +310,13 @@ range = "0x801F8F24..0x801F8F24"
 verdict = "unreachable"
 reason = "PROT 0922: an arm's countdown read at its head (`lw -0x5F48`, `blez`); the word is positive on entry, since the arm before passes once it drains to at most zero and then adds at least scalar << 4 (summon_holds::PUERA), which a pass's scalar * step drain never exceeds at a battle frame step under 16."
 
+[[arm]]
+entry = "0x801F69D8"
+image = "ffcdaddceadee7f2"
+range = "0x801F6ADC..0x801F6AE4"
+verdict = "unreachable"
+reason = "PROT 0905 (Vera): the dispatch's `beq 6` / `beq 7`, reached only for a phase of 6 or 7; no phase store makes 6 or 7 (shared +1 tail 0x801F7F4C, arm 3's +1, arm 5's +3 from 5 to 8, and 0xFF)."
+
 # lane D
 [[arm]]
 entry = "0x801DD35C"
