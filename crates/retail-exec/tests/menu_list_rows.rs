@@ -1542,3 +1542,100 @@ fn the_spell_list_lights_the_rows_the_magic_screens_admit() {
     }
     assert!(lit > 2000 && dim > 2000, "{lit} {dim}");
 }
+
+/// The list kernel's confirm and cancel (`0x80032CCC..0x80032DD0`) against
+/// `InventoryUseSession` under `with_list_kernel_rows`: a confirm on a row
+/// whose word carries `0x800` buzzes (cue `0x23`, the list stays), on any
+/// other row the list hands over (mode `2`, cue `0x20`) as the session
+/// enters its target select; a cancel leaves (mode `3`, cue `0x37`) as the
+/// session cancels. The masks are the record's `0x800846D0` / `0x800846D4`.
+#[test]
+fn the_list_kernel_confirms_and_cancels_as_the_items_screen_does() {
+    differential!(scus(LIST_DRAW));
+    use legaia_engine_menus::inventory_use::{
+        InventoryContext, InventoryUseEvent, InventoryUseInput, InventoryUseSession, TargetRow,
+    };
+    use legaia_engine_menus::items::ItemCatalog;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const LIST: u32 = 0x8013_1000;
+    const NAV_IDS: u32 = 0x8007_3E1C;
+    const CONFIRM_MASK: u32 = 0x8008_46D0;
+    const CANCEL_MASK: u32 = 0x8008_46D4;
+    const CUES: u32 = 0x8007_B6D8;
+    cpu.stub_outside = Some((LIST_DRAW, 0x8003_37B0));
+    let content = cpu.mem.rd8(NAV_IDS);
+    let mut rng = Rng(0x434F_4E46);
+    let mut seen = [0usize; 4];
+    for case in 0..4000 {
+        let count = 1 + rng.below(6) as usize;
+        let disabled: Vec<bool> = (0..count).map(|_| rng.below(2) == 0).collect();
+        let press = [0u32, 0x40, 0x40, 0x20][rng.below(4) as usize];
+        cpu.mem.wr32(GP + 0x87C, 1);
+        cpu.mem.wr32(GP + 0x86C, 0);
+        cpu.mem.wr32(0x8007_B874, press);
+        cpu.mem.wr32(CONFIRM_MASK, 0x40);
+        cpu.mem.wr32(CANCEL_MASK, 0x20);
+        // The four-slot cue ring: a cancel queues at the write index
+        // `gp+0x158` and advances it; a confirm overwrites the slot the last
+        // cue went to, `gp+0x15A` (`0x80032D14` / `0x80032D2C`).
+        let (slot, last) = (rng.below(4), rng.below(4));
+        cpu.mem.wr16(GP + 0x158, slot as u16);
+        cpu.mem.wr16(GP + 0x15A, last as u16);
+        for k in 0..4 {
+            cpu.mem.wr16(CUES + 2 * k, 0xAAAA);
+        }
+        cpu.mem.wr32(NODE + 0x18, LIST);
+        cpu.mem.wr8(NODE + 0x1C, content);
+        for (o, v) in [(0xA, 40u16), (0xC, 30), (0xE, 200), (0x10, 160)] {
+            cpu.mem.wr16(NODE + o, v);
+        }
+        cpu.mem.wr16(LIST, 0);
+        cpu.mem.wr16(LIST + 2, 8);
+        cpu.mem.wr16(LIST + 4, count as u16);
+        cpu.mem.wr16(LIST + 6, 0);
+        for (k, d) in disabled.iter().enumerate() {
+            cpu.mem.wr16(
+                LIST + 0x28 + 2 * k as u32,
+                0x1000 | k as u16 | if *d { 0x800 } else { 0 },
+            );
+        }
+        assert_eq!(cpu.call(LIST_DRAW, &[NODE]), Stop::Returned, "case {case}");
+
+        let targets = vec![TargetRow::new(0, "A").with_stats(10, 100, 1, 10)];
+        let mut s = InventoryUseSession::new(
+            ItemCatalog::vanilla(),
+            vec![0x01; count],
+            targets,
+            InventoryContext::Battle,
+        )
+        .with_list_kernel_rows(disabled.clone(), 8);
+        match press {
+            0x40 => s.input(InventoryUseInput::Confirm),
+            0x20 => s.input(InventoryUseInput::Cancel),
+            _ => {}
+        }
+        let events = s.drain_events();
+        let mode = cpu.mem.rd32(GP + 0x87C);
+        let cue = cpu
+            .mem
+            .rd16(CUES + 2 * if press == 0x40 { last } else { slot });
+        let ctx = format!("case {case}: press {press:#x} disabled {disabled:?}");
+        let (want_events, want_mode, want_cue) = match (press, disabled[0]) {
+            (0x40, true) => (vec![InventoryUseEvent::InvalidConfirm], 1, 0x23),
+            (0x40, false) => (vec![InventoryUseEvent::EnteredTargetSelect], 2, 0x20),
+            (0x20, _) => (vec![InventoryUseEvent::Cancelled], 3, 0x37),
+            _ => (vec![], 1, 0xAAAA),
+        };
+        assert_eq!(events, want_events, "{ctx}: the port");
+        assert_eq!((mode, cue), (want_mode, want_cue), "{ctx}: retail");
+        seen[match (press, disabled[0]) {
+            (0x40, true) => 0,
+            (0x40, false) => 1,
+            (0x20, _) => 2,
+            _ => 3,
+        }] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
+}
