@@ -1317,3 +1317,120 @@ fn zenoirs_shatter_pass_raises_the_seats_the_port_raises() {
 }
 
 const ZENOIR: u32 = 0x801F_69D8;
+
+/// PROT 0907's verdict words: the kill roll's remainder and the resist flag.
+const NIGHTO_KILL_WORD: u32 = 0x801F_8534;
+const NIGHTO_RESIST_WORD: u32 = 0x801F_853C;
+
+/// PROT 0907's arm 0 (`0x801F6B50..0x801F6F28`), Nighto's verdict, against
+/// `nighto_outcome` and `NightoOutcome::arm0_credit`: a scripted `rand()`
+/// stream, the caster's level for the spell, the caster's character index
+/// (the third takes the extra throw), the scripted-fight flag and the
+/// victim's record `+0x20` byte (the immune target draws no resist throw),
+/// and the special-battle word. The draws retail takes, its kill and resist
+/// words, the spell-XP word and the Monsters Defeated word (`+0x664`) are
+/// compared.
+#[test]
+fn nightos_verdict_rolls_and_credits_as_the_port_does() {
+    differential!(prot(907, NIGHTO));
+    use legaia_engine_cast::seru_magic_ticks::{NightoRoll, nighto_outcome};
+    let Some((mut cpu, module)) = heal_rig(907) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let stream = Rc::new(std::cell::Cell::new(1u32));
+    let draws = Rc::new(RefCell::new(Vec::<u32>::new()));
+    {
+        let (stream, draws) = (stream.clone(), draws.clone());
+        cpu.hook(RAND, move |r, _| {
+            let n = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+            stream.set(n);
+            r.r[V0] = (n >> 16) & 0x7FFF;
+            draws.borrow_mut().push(r.r[V0]);
+        });
+    }
+    let mut rng = Rng(0x4E49_4748);
+    let mut seen = [0usize; 4];
+    for case in 0..4000 {
+        let victim = 3 + rng.below(4) as u8;
+        let c = seed_heal_case(&mut cpu, &module, &mut rng, 0, 0x87, victim);
+        // The roster's character ids, the caster's among them (1-based).
+        let caster = u32::from(cpu.mem.rd8(CTX + 0x13));
+        let character = 1 + rng.below(4) as u8;
+        cpu.mem.wr8(ROSTER + caster, character);
+        let rec = CHAR_RECORDS + u32::from(character - 1) * CHAR_STRIDE;
+        if rec != c.rec {
+            for i in 0..0x24u32 {
+                let (id, lv) = (
+                    cpu.mem.rd8(c.rec + 0x705 + i),
+                    cpu.mem.rd8(c.rec + 0x729 + i),
+                );
+                cpu.mem.wr8(rec + 0x705 + i, id);
+                cpu.mem.wr8(rec + 0x729 + i, lv);
+                cpu.mem.wr32(rec + 0x5D0 + 4 * i, 0);
+            }
+        }
+        cpu.mem.wr32(rec + 0x664, 0);
+        let scripted = rng.below(2) == 0;
+        cpu.mem.wr8(CTX + 0x287, u8::from(scripted));
+        let immune_byte = rng.below(2) as u8;
+        for k in 0..4u32 {
+            let r = MONSTER_RECORD + 0x40 * k;
+            cpu.mem.wr32(RECORDS + 4 * k, r);
+            cpu.mem.wr8(r + 0x20, immune_byte);
+        }
+        stream.set(rng.next());
+        draws.borrow_mut().clear();
+        assert_eq!(cpu.call(NIGHTO, &[]), Stop::Returned, "case {case}");
+        let d = draws.borrow().clone();
+        let target_immune = scripted && immune_byte != 0;
+        let mut k = 0;
+        let mut next = || {
+            k += 1;
+            d.get(k - 1).copied()
+        };
+        let kill_roll = next().expect("the kill roll");
+        let resist_roll = if target_immune {
+            0
+        } else {
+            next().expect("the throw")
+        };
+        let extra_roll = (character == 3).then(|| next().expect("the extra throw"));
+        let want = nighto_outcome(&NightoRoll {
+            kill_roll,
+            resist_roll,
+            magic_level: c.level,
+            target_immune,
+            extra_roll,
+        });
+        let credit = want.arm0_credit();
+        let what = format!(
+            "case {case}: level {} character {character} scripted {scripted} immune byte {immune_byte} special {} draws {d:?}",
+            c.level, c.special
+        );
+        assert_eq!(k, d.len(), "{what}: the draws");
+        assert_eq!(
+            (
+                cpu.mem.rd32(NIGHTO_KILL_WORD) == 0,
+                cpu.mem.rd32(NIGHTO_RESIST_WORD) != 0
+            ),
+            (want.deadly(), want.resisted()),
+            "{what}: the verdict"
+        );
+        let xp = if c.special { 0 } else { credit.spell_xp };
+        assert_eq!(
+            cpu.mem.rd32(rec + 0x5D0 + 4 * c.idx),
+            xp,
+            "{what}: the spell-XP word"
+        );
+        assert_eq!(
+            cpu.mem.rd32(rec + 0x664),
+            u32::from(credit.defeated),
+            "{what}: Monsters Defeated"
+        );
+        seen[usize::from(want.deadly()) + 2 * usize::from(want.resisted())] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 100), "{seen:?}");
+}
+
+const NIGHTO: u32 = 0x801F_69E8;

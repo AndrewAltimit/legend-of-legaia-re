@@ -381,7 +381,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     let overlay = disc.read_entry(898).expect("PROT 0898");
     let mut failures = Vec::new();
     let all: Vec<(u32, u32, u8)> = BODIES.iter().chain(&PACED).copied().collect();
-    for (entry, va, code) in all {
+    // Each module runs twice: on the full row, then with the second monster
+    // seat fallen and faded (`+0x14C = 0`, `+0x04 = 0`), which the row walks
+    // (settles, sweeps, shows) skip or wait past.
+    let runs = all.iter().flat_map(|&b| [(b, false), (b, true)]);
+    for ((entry, va, code), fallen) in runs {
         let module = disc.read_entry(entry as usize).expect("module");
         let action = action_of(entry);
         let profile = cam::module_profile(entry).expect("directed");
@@ -442,6 +446,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         });
         {
             seed(&mut cpu, &module, action, code);
+            if fallen {
+                let a = ACTOR + (VICTIM + 1) * STRIDE;
+                cpu.mem.wr16(a + 0x14C, 0);
+                cpu.mem.wr32(a + 4, 0);
+            }
             let mut st = ModuleCamState {
                 lead_roster: 1,
                 opens_pass: true,
@@ -789,7 +798,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     bad += 1;
                     if bad <= 12 {
                         failures.push(format!(
-                            "PROT {entry:04} target {code} pass {pass} arm {phase:#x}: {}",
+                            "PROT {entry:04} target {code} fallen {fallen} pass {pass} arm {phase:#x}: {}",
                             diffs.join("; ")
                         ));
                     }
@@ -813,13 +822,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 eprintln!("PROT {entry:04}: retail rolls the camera up to {max_roll}");
             }
             eprintln!(
-                "PROT {entry:04} target {code}: {bad} differing passes, arms {:x?}{}",
+                "PROT {entry:04} target {code} fallen {fallen}: {bad} differing passes, arms {:x?}{}",
                 path,
                 if finished { " Done" } else { "" }
             );
             if !finished {
                 failures.push(format!(
-                    "PROT {entry:04} target {code}: no finish, stuck at arm {:#x}",
+                    "PROT {entry:04} target {code} fallen {fallen}: no finish, stuck at arm {:#x}",
                     cpu.mem.rd8(CTX + 0x279)
                 ));
             }
