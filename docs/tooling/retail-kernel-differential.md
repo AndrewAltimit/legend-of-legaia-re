@@ -248,7 +248,15 @@ It also showed the Mystic Shield stopped no plain swing and halved instead, the
 block breaker's quarter damage and the drain clip had no port, the shared
 finisher's no-damage floor had been wired onto a routine that has none, the Spirit
 percent wraps at a byte in this routine alone, and a block the roll grants spends
-the approach terms even when the verdict is then overturned.
+the approach terms even when the verdict is then overturned. Seated with the
+clip's power run, the strike cursor, the stream and its entry table, it showed
+the blocked hit's copy of the apply look-ahead skipping itself in action states
+`0x6E..=0x77`, where the port landed the total early.
+
+The item applier `FUN_800402F4`, run on a monster's casts, showed a class-1 group
+heal on the monster side walks the four monster seats `3..7` and stops short of
+the summon seat, which the port's walk included. No arm of it pushes a damage
+number, so a use that restores nothing shows no `0`.
 
 The spoils arm of `FUN_8004E568` showed the port paying EXP and gold for every
 seat in the formation, where retail pays for a seat that died and was not

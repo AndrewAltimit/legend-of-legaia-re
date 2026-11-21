@@ -212,9 +212,16 @@ a Hyper / Super clip that replays its window re-fires its hits each cycle.
 target's combo word `+0x0` and its HP-bar word `+0x10` (`0x801EDB40` /
 `0x801EDB58`); live HP `+0x14C` is written by one arm, `0x801EEA10..0x801EEA3C`
 (`hp - total`, floored at zero, then `sw zero,0x0` at `0x801EEA74`), selected
-by a mode register the kernel computes after the roll (`s2`, the two copies at
-`0x801EDEE4..0x801EE130` and `0x801EE790..0x801EE980` are the party / monster
-attacker branches):
+by a mode register the kernel computes after the roll (`s2`). It has two
+copies: `0x801EDEE4..0x801EE130` on a hit that lands, `0x801EE720..0x801EE980`
+on one the defender blocks (the block arm, which bumps the attacker's `+0x1F6`
+at `0x801EE6EC`). Both compute `s2` only for a party attacker on a monster
+(`0x801EDEB8..0x801EDED0`, `0x801EE724..0x801EE734`); a monster attacker or a
+party target keeps `s2 = 0`. The blocked copy also skips its whole look-ahead,
+the War God arm included, while the action state `ctx[+0x07]` is in
+`0x6E..=0x77` (`addiu v0,v0,-0x6e; sltiu v0,v0,0xa; bne` at
+`0x801EE710..0x801EE718`), so a blocked hit there lands the total only on the
+ordinary pair (`World::melee_hit_plan`):
 
 - `s2 = 0` - the ordinary case: apply only when the strike cursor is parked
   (`ctx[+0x15] == 0xFF`, `0x801EE9A4`) **and** this is the clip's last listed
