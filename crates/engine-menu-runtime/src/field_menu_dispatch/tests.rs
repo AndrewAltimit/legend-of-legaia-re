@@ -265,6 +265,59 @@ fn equip_opens_on_the_character_picker() {
     assert!(s.is_done());
 }
 
+/// The Status and Equip pickers share retail's party cursor
+/// `DAT_801E46C4`: Status left on the third member reopens on it, the Equip
+/// picker opens there too and its own walk carries back to Status, and the
+/// page does not survive the close (the root picker rewrites
+/// `DAT_801E46C0`, so Status always reopens on Condition). The menu's open
+/// zeroes the cursor (`FUN_801DC6B4` state 0).
+#[test]
+fn status_and_equip_reopen_on_the_shared_party_cursor() {
+    use legaia_engine_menus::status_screen::STATUS_PAGE_CONDITION;
+    let mut w = fresh_world();
+    w.install_present_party_list(vec![0, 1, 2]);
+    let status = |s: &FieldMenuSubsession| match s {
+        FieldMenuSubsession::Status(st) => (st.cursor(), st.page()),
+        _ => panic!("expected Status"),
+    };
+    let equip_slot = |s: &FieldMenuSubsession| match s {
+        FieldMenuSubsession::Equip { char_slot, .. } => *char_slot,
+        _ => panic!("expected Equip"),
+    };
+    let mut s = build(FieldMenuRow::Status, &w);
+    assert_eq!(status(&s), (0, STATUS_PAGE_CONDITION));
+    for edge in [PadButton::Down, PadButton::Down, PadButton::Right] {
+        tick_open_subsession(&mut s, edge.mask(), None, &mut w);
+    }
+    assert_eq!(status(&s), (2, 1));
+    tick_open_subsession(&mut s, PadButton::Circle.mask(), None, &mut w);
+    assert!(s.is_done());
+    let mut s = build(FieldMenuRow::Status, &w);
+    assert_eq!(
+        status(&s),
+        (2, STATUS_PAGE_CONDITION),
+        "member kept, page not"
+    );
+    tick_open_subsession(&mut s, PadButton::Circle.mask(), None, &mut w);
+
+    let mut s = build(FieldMenuRow::Equip, &w);
+    assert_eq!(
+        equip_slot(&s),
+        2,
+        "Equip opens where Status left the cursor"
+    );
+    tick_open_subsession(&mut s, PadButton::Up.mask(), None, &mut w);
+    assert_eq!(equip_slot(&s), 1);
+    tick_open_subsession(&mut s, PadButton::Circle.mask(), None, &mut w);
+    assert!(s.is_done());
+    let s = build(FieldMenuRow::Status, &w);
+    assert_eq!(status(&s), (1, STATUS_PAGE_CONDITION));
+
+    w.menu.party_cursor = 0;
+    let s = build(FieldMenuRow::Status, &w);
+    assert_eq!(status(&s), (0, STATUS_PAGE_CONDITION), "a fresh menu");
+}
+
 #[test]
 fn build_equip_uses_active_leader() {
     let mut w = fresh_world();

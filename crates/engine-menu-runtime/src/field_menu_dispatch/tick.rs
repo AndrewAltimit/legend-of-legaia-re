@@ -69,6 +69,7 @@ pub fn tick_open_subsession(
     {
         apply_equip_swaps(session, *char_slot, world);
     }
+    keep_party_cursor(active, world);
     // The Status page's list permuted its own copy; replay its exchanges onto
     // the live record through the ported swap.
     if let FieldMenuSubsession::Status(status) = active
@@ -77,6 +78,28 @@ pub fn tick_open_subsession(
         let _ = apply_list_order_outcome(&list, world);
     }
     active.take_rebound_mapping()
+}
+
+/// The Status and Equip pickers walk one shared cursor, retail's
+/// `DAT_801E46C4` (a present-party position): each writes it as it moves, and
+/// the next screen to open starts from it
+/// ([`World::menu`]`.party_cursor`, zeroed at the menu's open). A closing
+/// Status session reports no cursor, and leaves the last one standing.
+///
+/// REF: FUN_801DA2A0, FUN_801D98F0
+fn keep_party_cursor(active: &FieldMenuSubsession, world: &mut World) {
+    let at = match active {
+        FieldMenuSubsession::Status(s) if !s.is_done() => Some(s.cursor()),
+        FieldMenuSubsession::Equip { char_slot, .. } => world
+            .present_party_list()
+            .iter()
+            .position(|&s| s == *char_slot)
+            .map(|p| p as u8),
+        _ => None,
+    };
+    if let Some(at) = at {
+        world.menu.party_cursor = at;
+    }
 }
 
 /// A use or cast that just committed applies here and leaves the screen up:

@@ -110,6 +110,16 @@ pub struct MenuState {
     /// ([`crate::world::World::draw_mode`]). Set by the session's menu
     /// press, cleared at the spawn and the close.
     pub suspended_mode: Option<legaia_engine_mode::mode::SceneMode>,
+    /// The pause menu's shared party cursor, retail's `DAT_801E46C4 & 0xFFF`:
+    /// a position in the present-party list. The menu driver zeroes it when
+    /// the menu opens (`FUN_801DC6B4` state 0, `sw zero` at `0x801DC8FC`) and
+    /// nothing between screens resets it: the Status screen's step 0 keeps it
+    /// (`0x801DA2DC..0x801DA338` stores it back masked) and the Equip
+    /// character picker only masks it (`FUN_801D98F0`), so either screen
+    /// reopens on the member the last one left the cursor on. The Status
+    /// **page** is not kept: the root picker's phase 0 writes `0x1000` over
+    /// `DAT_801E46C0` (`0x801D6B6C`) and Status step 0 masks that to page `0`.
+    pub party_cursor: u8,
 }
 
 impl MenuState {
@@ -135,6 +145,7 @@ impl MenuState {
             pending_art_notice: None,
             pending_spell_notice: None,
             suspended_mode: None,
+            party_cursor: 0,
         }
     }
 

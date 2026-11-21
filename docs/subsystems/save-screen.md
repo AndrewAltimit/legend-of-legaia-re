@@ -1828,6 +1828,28 @@ record no longer carries is dropped.
 The rows handed over are the shown character's list in record order, and the
 second cursor's other column changes nothing the port draws.
 
+### What a reopened Status screen keeps
+
+The screen keeps the **member** and not the **page**. Closing it writes
+sub-screen `0x01`, and the driver zeroes the step on the change, so the root
+picker runs its phase 0 on the way back: that phase writes `0x1000` over the
+page word `DAT_801E46C0` (`0x801D6B6C`), and Status step 0 masks it to page
+`0` (`0x801DA34C..0x801DA35C`) - every visit opens on Condition. The party
+cursor `DAT_801E46C4` has no such reset between screens: Status step 0 stores
+it back masked (`0x801DA2DC`, `0x801DA338`) and the Equip character picker
+only masks it (`FUN_801D98F0`), so each opens on the member the other last
+left the cursor on. Only the driver's state 0 zeroes it (`0x801DC8FC`), once
+per pause-menu open.
+
+In the port that cursor is `World::menu.party_cursor`: the session's menu open
+zeroes it, `FieldMenuSubsession::build` opens Status
+(`StatusScreenSession::with_cursor`) and the Equip picker on it, and
+`tick_open_subsession` writes back where either picker stands. The item and
+spell target pickers (`0x09`..`0x0B`, `FUN_801D9594`) walk the same word in
+retail and do not feed it in the port. The retail-exec test
+`list_order::a_reopened_status_screen_keeps_the_member_and_not_the_page` runs
+the root picker's phase 0 and Status step 0 against the session.
+
 ## See also
 
 [Save record](../formats/save-record.md) ·

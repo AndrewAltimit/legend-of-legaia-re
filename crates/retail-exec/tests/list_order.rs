@@ -20,6 +20,8 @@ const OVERLAY_BASE: u32 = 0x801C_E818;
 const SCREEN: u32 = 0x801D_A2A0;
 const SCREEN_END: u32 = SCREEN + 1880;
 const PICKER: u32 = 0x801D_688C;
+/// The pause menu's root command picker (sub-screen `0x01`).
+const ROOT_PICKER: u32 = 0x801D_6B20;
 const SFX_A: u32 = 0x8003_5BD0;
 const SFX_B: u32 = 0x8003_5B50;
 const STEP: u32 = 0x801E_46AC;
@@ -262,4 +264,61 @@ fn the_status_pager_turns_and_confirms_as_retail_does() {
         seen[0] += usize::from(v == 2);
     }
     assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
+}
+
+/// What a reopened Status screen shows: the pause menu's close of Status
+/// lands on the root picker, whose phase 0 (`FUN_801D6B20`, `0x801D6B54..
+/// 0x801D6B78`) runs before Status' own step 0 (`0x801DA31C..0x801DA36C`)
+/// on the way back in. Over random page words, party cursors and flag bits
+/// left by the previous visit, retail's page comes back `0` (the root's
+/// `sw 0x1000` at `0x801D6B6C`, masked by Status step 0) and the party
+/// cursor comes back masked but kept - which is `StatusScreenSession::new`
+/// with `with_cursor` on the cursor the last screen left.
+#[test]
+fn a_reopened_status_screen_keeps_the_member_and_not_the_page() {
+    differential!(prot(899, SCREEN), prot(899, ROOT_PICKER));
+    use legaia_engine_menus::status_screen::{StatusScreenSession, StatusSnapshot};
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const PAGE: u32 = 0x801E_46C0;
+    const ROOT_CURSOR: u32 = 0x801E_46BC;
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &disc().expect("disc").read_entry(899).expect("PROT 0899"),
+    );
+    cpu.stub(0x801D_6628, 0);
+    cpu.stub(0x8003_1D00, 0);
+    let snaps: Vec<StatusSnapshot> = (0..3)
+        .map(|i| StatusSnapshot::placeholder(i, "A"))
+        .collect();
+    let mut rng = Rng(0x5245_4F50);
+    for case in 0..4000 {
+        let page = rng.next() & 0xF00F;
+        let member = rng.below(3);
+        let flags = rng.next() & 0xF000;
+        cpu.mem.wr32(PAGE, page);
+        cpu.mem.wr32(CHAR_CURSOR, flags | member);
+        cpu.mem.wr32(ROOT_CURSOR, rng.next() & 0xF007);
+        cpu.mem.wr8(PARTY_ORDER + member, member as u8);
+        // The root picker's phase 0, then the Status screen's step 0 (the
+        // driver zeroes the step on every change of sub-screen).
+        cpu.mem.wr32(STEP, 0);
+        assert_eq!(cpu.call(ROOT_PICKER, &[0]), Stop::Returned, "case {case}");
+        cpu.mem.wr32(STEP, 0);
+        assert_eq!(cpu.call(SCREEN, &[0]), Stop::Returned, "case {case}");
+        let s = StatusScreenSession::new(snaps.clone()).with_cursor(member as u8);
+        let ctx = format!("case {case}: page {page:#x} cursor {:#x}", flags | member);
+        assert_eq!(cpu.mem.rd32(STEP), 1, "{ctx}: step 0 arms the pager");
+        assert_eq!(
+            cpu.mem.rd32(PAGE) & 0xFFF,
+            u32::from(s.page()),
+            "{ctx}: page"
+        );
+        assert_eq!(
+            cpu.mem.rd32(CHAR_CURSOR),
+            u32::from(s.cursor()),
+            "{ctx}: the member"
+        );
+    }
 }

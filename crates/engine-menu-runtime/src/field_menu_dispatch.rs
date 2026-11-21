@@ -137,9 +137,16 @@ impl FieldMenuSubsession {
         match row {
             FieldMenuRow::Items => Self::Items(build_pause_items_session(world)),
             FieldMenuRow::Equip => {
-                // The picker opens on the leader - the head of the present
-                // party list retail's picker walks.
-                let first = active_leader_slot(world);
+                // The picker opens on the pause menu's shared party cursor
+                // (`DAT_801E46C4`, which `FUN_801D98F0` only masks): the
+                // member the Status or Equip picker last left it on. At the
+                // menu's open the cursor is `0`, the leader - the head of
+                // the present party list retail's picker walks.
+                let first = match world.menu.party_cursor {
+                    0 => None,
+                    at => world.present_party_list().get(usize::from(at)).copied(),
+                }
+                .unwrap_or_else(|| active_leader_slot(world));
                 let mut session = build_equip_session(world, first, equipment_table);
                 session.set_slot_cursor_hidden(true);
                 Self::Equip {
@@ -149,7 +156,13 @@ impl FieldMenuSubsession {
                 }
             }
             FieldMenuRow::Magic => Self::Spells(build_spell_session(world, spell_catalog)),
-            FieldMenuRow::Status => Self::Status(StatusScreenSession::new(status_snapshots(world))),
+            // Status reopens on the member the shared party cursor names
+            // (its step 0 keeps `DAT_801E46C4`), on the Condition page (the
+            // root picker reset the page word on the way back).
+            FieldMenuRow::Status => Self::Status(
+                StatusScreenSession::new(status_snapshots(world))
+                    .with_cursor(world.menu.party_cursor),
+            ),
             FieldMenuRow::Load => {
                 Self::Save(SaveSelectSession::for_rack(SaveSelectMode::Load, save_rack))
             }

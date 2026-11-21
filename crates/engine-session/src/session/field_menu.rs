@@ -56,6 +56,9 @@ impl<S: AudioSink> BootSession<S> {
         if world.minigames.casino_coins != 0 {
             world.system_flag_set(legaia_engine_menus::field_menu::SYSTEM_FLAG_CASINO_COIN_ROW);
         }
+        // The same state zeroes the menu's cursor words (`0x801DC8E8..
+        // 0x801DC908`), the shared party cursor `DAT_801E46C4` among them.
+        world.menu.party_cursor = 0;
         let mut session = FieldMenuSession::new();
         session.money = world.party.money.max(0) as u32;
         session.play_time_seconds = world.clock.play_time_seconds;
