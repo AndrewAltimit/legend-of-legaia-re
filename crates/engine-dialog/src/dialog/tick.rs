@@ -46,7 +46,9 @@ impl OwnedDialogPanel {
     /// PORT: FUN_801D84D0 (state `0x19`'s `_DAT_80073F00` countdown, `0x801D8F4C..0x801D8F88`)
     pub fn tick_at_auto(&mut self, frame_step: u8, auto_press: &mut i16) -> PanelState {
         let pager_call = self.window.is_some() && self.vsync_phase == 0;
-        let in_wait = self.waiting_for_input && !self.menu_active && !self.done;
+        // State `0x19` holds every page end, the last one included: a done
+        // box waits there for the press that dispatches its closing byte.
+        let in_wait = (self.waiting_for_input || self.done) && !self.menu_active;
         let st = self.tick_at(frame_step);
         if pager_call && in_wait && *auto_press > 0 {
             *auto_press = auto_press.saturating_sub(i16::from(frame_step.max(1)));
