@@ -377,6 +377,13 @@ a vsync.
 
 `0x14` seeds `ctx[+0x880] = 0x8000` (`0x801D0ECC`), so a freshly armed prompt is
 highlighted on its Left arm.
+The window opener resets the word to Left only when the flow reads `0x6E` or
+its step's panel count swaps between `2` and `4` (`FUN_801D388C`,
+`0x801D4C38..0x801D4C74`; the step scripts at `0x801F4D34` carry the count in
+their third byte). A ring reopened from a chipless surface - the item or magic
+window, a target cursor, the next member after a commit - comes from a panel of
+`0`, so it opens lit where the last ring left it. The port carries the ring's
+lit arm between sessions as `BattleState::ring_highlight`.
 
 Which `s2` bit routes where, in the three prompt states:
 

@@ -182,6 +182,7 @@ impl World {
         // fight's first dispatch re-derives it (`FUN_801F0348`).
         self.battle.camera_frame_height =
             legaia_engine_battle_vm::battle_formulas::CAMERA_HEIGHT_MIN;
+        self.battle.ring_highlight = None;
         // Every empty pool seat starts the fight on the origin.
         self.battle.empty_seat_ground = [(0, 0); 7];
         self.battle.seed_recentre_held = false;

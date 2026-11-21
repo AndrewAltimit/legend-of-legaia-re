@@ -774,6 +774,15 @@ pub struct BattleState {
     /// `World::GLIDE_PAD_BUFFER_BELOW`, handed to the first dispatched pass
     /// that reads no press of its own.
     pub command_pad_buffer: Option<legaia_engine_battle_menus::battle_input::BattleCommandInput>,
+    /// The ring arm the cross-button entry's highlight word `ctx[+0x880]`
+    /// last rested on, carried between command sessions. The window opener
+    /// resets the word to Left only when the panel count swaps between `2`
+    /// and `4` or the flow reads `0x6E` (`FUN_801D388C`,
+    /// `0x801D4C38..0x801D4C74`), so a ring reopened from a chipless surface
+    /// (a window, a target cursor, the next member after a commit) opens lit
+    /// where the last ring left it. `None` once a two-chip prompt has reset
+    /// it.
+    pub ring_highlight: Option<u8>,
     /// The result windows' raise glide: the results frame spawns the report
     /// (`0x41`) or loss (`0x42`) window and the level-up window
     /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
@@ -1807,6 +1816,7 @@ impl BattleState {
             pass_glide_live: false,
             pass_glide_gated: false,
             command_pad_buffer: None,
+            ring_highlight: None,
             result_windows_glide: None,
             target_plate_cleared: false,
             action_hud_wiped: false,

@@ -54,7 +54,17 @@ impl World {
         self.battle.command = Some(if round_open {
             BattleCommandSession::new_round_open(actor, actor, self.battle.no_escape)
         } else {
-            BattleCommandSession::new(actor, actor)
+            let mut s = BattleCommandSession::new(actor, actor);
+            // Under the cross-button entry a ring reopened from a chipless
+            // surface keeps the highlight word where the last ring left it
+            // (`BattleState::ring_highlight`).
+            if self.toggles.battle_command
+                == legaia_engine_system::option_values::BattleCommandOpt::CrossButton
+                && let Some(cursor) = self.battle.ring_highlight
+            {
+                s.phase = legaia_engine_battle_menus::battle_input::CommandPhase::Menu { cursor };
+            }
+            s
         });
         if self.battle.flow == Flow::Idle {
             self.battle.set_battle_flow(Flow::TurnPrompt);
@@ -112,6 +122,17 @@ impl World {
                 // `FUN_8004FCC8(0x23)` through the shared tail `0x801D2968`.
                 self.push_battle_ui_cue(legaia_engine_battle_loop::ui_cues::BattleUiCue::Back);
             }
+        }
+        // The highlight word the next ring opens on: the ring's own lit arm,
+        // reset by a two-chip prompt (the 2 <-> 4 panel swap, `0x6E`).
+        // PORT: FUN_801D388C (`0x801D4C38..0x801D4C74`)
+        match session.phase {
+            CommandPhase::Menu { cursor } => self.battle.ring_highlight = Some(cursor),
+            CommandPhase::RoundPrompt { .. }
+            | CommandPhase::AttackMode { .. }
+            | CommandPhase::RunConfirm { .. }
+            | CommandPhase::CommitConfirm { .. } => self.battle.ring_highlight = None,
+            _ => {}
         }
         let was_round_prompt = matches!(session.phase, CommandPhase::RoundPrompt { .. });
         let phase_before = session.phase.clone();
