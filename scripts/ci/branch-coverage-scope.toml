@@ -2155,3 +2155,57 @@ entry = "0x800402F4"
 range = "0x80041F10..0x80041F10"
 verdict = "unreachable"
 reason = "class 10's party-count exit `ctx[+0x00] == 0`: a battle always seats a party"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x8004749C..0x800474AC"
+verdict = "unported"
+reason = "a monster seat's tick under `_DAT_8007BD60 & 0x80` (gp+0xA48) with first formation id `gp+0x9F4 != 0xB5` sets node +0x10 bit 3 and ctx[+0x0C] = 1 and returns; battle init clears that bit (`andi 0x7F` at 0x80051A14), so it is up again only once a battle-end path raises the survived bit (0x801F735C) under the fade to black, and the engine leaves the battle there without modelling the freeze"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x80047508..0x80047508"
+verdict = "unreachable"
+reason = "the HP ramp's signed divide fixup `bgez (pending + 3)` on a positive readout word: it fails only for a pending delta above 0x7FFFFFFC, and +0x10 holds an HP difference"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x80047528..0x80047528"
+verdict = "unreachable"
+reason = "the HP ramp's second fixup `bgez (pending + 3)`, same positive readout word, same bound"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x8004753C..0x8004753C"
+verdict = "unreachable"
+reason = "the HP ramp's negative-arm fixup `bgez (pending - 3)` behind `blez pending`: a pending word at or below zero minus 3 is always negative"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x8004755C..0x8004755C"
+verdict = "unreachable"
+reason = "the HP ramp's second negative-arm fixup `bgez (pending - 3)`, same sign argument"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x800475AC..0x800475AC"
+verdict = "unreachable"
+reason = "the MP ramp's fixup `bgez (pending + 3)` on a positive `lh` of +0x178: a halfword plus 3 cannot go negative"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x800475D0..0x800475D0"
+verdict = "unreachable"
+reason = "the MP ramp's second positive fixup on the `lh` word, same bound"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x800475E4..0x800475E4"
+verdict = "unreachable"
+reason = "the MP ramp's negative-arm fixup `bgez (pending - 3)` behind `blez pending`: always negative"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x80047608..0x80047608"
+verdict = "unreachable"
+reason = "the MP ramp's second negative-arm fixup, same sign argument"

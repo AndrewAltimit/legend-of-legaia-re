@@ -376,12 +376,7 @@ impl World {
             // the whole advance (`0x80047638..0x800476D4`, jumping to the
             // epilogue at `0x800480B0`).
             // PORT: FUN_80047430 (`0x80047638..0x800476D4`, the frozen idle)
-            let frozen_idle = self.raw_status_word(i as u8)
-                & legaia_engine_battle_vm::battle_anim_rate::FROZEN_IDLE_STATUS_BITS
-                != 0
-                && self.actors[i].battle.current_anim == 0
-                && self.actors[i].battle_reaction.is_none();
-            if frozen_idle {
+            if self.battle_seat_frozen_idle(i) {
                 self.finish_battle_node_slice(i, commit_after, hits, &mut foreign);
                 continue;
             }
@@ -433,13 +428,7 @@ impl World {
             // next pass on its first keyframe. The engine installed it
             // already, so this pass's advance is skipped.
             let fresh_from_hit = commit_after && fresh.get(i).copied().unwrap_or(false);
-            // The `>> 2` branch of the cursor advance is taken only by a
-            // **Slowed** actor on idle: `andi v0,v0,0x1000` on `+0x16E` at
-            // `0x800476E0`, then `+0x1D9 == 0` at `0x800476EC`. Every other
-            // actor - idle included - advances on the `>> 1` branch.
-            let slowed = self.raw_status_word(i as u8)
-                & legaia_engine_battle_vm::battle_anim_rate::SLOW_STATUS_BIT
-                != 0;
+            let slowed_idle = self.battle_seat_slowed_idle(i);
             let creature_seat = self.casting.summon_actor_slot == Some(i as u8);
             let commits_at_advance = self.actors[i].battle_clip_commits;
             // A byte staged under `+0x1DC` bit 0 is cut in before the
@@ -478,8 +467,6 @@ impl World {
                 } else {
                     actor.battle.anim_rate
                 };
-                let slowed_idle =
-                    slowed && actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
                 let mut pose = player.tick_rated_vsyncs(rate, slowed_idle, vsyncs);
                 // The decoder fills the pose pool `ctx+0x6F4` as far as the
                 // stream's part count and the draw reads an entry per mesh
@@ -2190,6 +2177,38 @@ impl World {
             }
             b.render_flag = state;
         }
+    }
+
+    /// Whether seat `i` stands frozen on its idle this tick: a Stone or Numb
+    /// status (`+0x16E & 0x404`) with no committed clip (`+0x1D9 == 0`). The
+    /// tick then skips the whole advance (`0x80047638..0x800476D4`, jumping
+    /// to the epilogue at `0x800480B0`).
+    ///
+    /// PORT: FUN_80047430 (`0x80047638..0x80047658`, the frozen-idle gate)
+    pub(in crate::world) fn battle_seat_frozen_idle(&self, i: usize) -> bool {
+        self.raw_status_word(i as u8)
+            & legaia_engine_battle_vm::battle_anim_rate::FROZEN_IDLE_STATUS_BITS
+            != 0
+            && self
+                .actors
+                .get(i)
+                .is_some_and(|a| a.battle.current_anim == 0 && a.battle_reaction.is_none())
+    }
+
+    /// Whether seat `i`'s cursor advances on the halved shift this tick. The
+    /// `>> 2` branch is taken only by a **Slowed** actor on idle:
+    /// `andi v0,v0,0x1000` on `+0x16E` at `0x800476E0`, then `+0x1D9 == 0`
+    /// at `0x800476EC`. Every other actor - idle included - advances on the
+    /// `>> 1` branch.
+    ///
+    /// PORT: FUN_80047430 (`0x800476D8..0x800476F4`, the Slowed-idle gate)
+    pub(in crate::world) fn battle_seat_slowed_idle(&self, i: usize) -> bool {
+        self.raw_status_word(i as u8) & legaia_engine_battle_vm::battle_anim_rate::SLOW_STATUS_BIT
+            != 0
+            && self
+                .actors
+                .get(i)
+                .is_some_and(|a| a.battle.current_anim == 0 && a.battle_reaction.is_none())
     }
 
     /// The anim tick's Rage arm: a party seat whose character record carries

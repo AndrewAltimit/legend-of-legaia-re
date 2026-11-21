@@ -59,6 +59,15 @@ pub trait BattleArmDrivers {
     /// (`World::fold_battle_item_action`, `FUN_801E295C`
     /// `0x801E4108..0x801E4138` into `FUN_800402F4`).
     fn fold_battle_item_action(&mut self, class: u8, tier: u8, target: u8);
+    /// The anim tick's Rage arm on one seat (`World::stamp_rage_delegation`,
+    /// `FUN_80047430` `0x80047F10..0x80047F98`).
+    fn rage_delegation(&mut self, slot: usize);
+    /// The anim tick's frozen-idle gate (`World::battle_seat_frozen_idle`,
+    /// `FUN_80047430` `0x80047638..0x80047658`).
+    fn frozen_idle(&self, slot: usize) -> bool;
+    /// The anim tick's Slowed-idle gate (`World::battle_seat_slowed_idle`,
+    /// `FUN_80047430` `0x800476D8..0x800476F4`).
+    fn slowed_idle(&self, slot: usize) -> bool;
 }
 
 impl BattleArmDrivers for World {
@@ -112,5 +121,14 @@ impl BattleArmDrivers for World {
     }
     fn fold_battle_item_action(&mut self, class: u8, tier: u8, target: u8) {
         World::fold_battle_item_action(self, class, tier, target)
+    }
+    fn rage_delegation(&mut self, slot: usize) {
+        World::stamp_rage_delegation(self, slot)
+    }
+    fn frozen_idle(&self, slot: usize) -> bool {
+        World::battle_seat_frozen_idle(self, slot)
+    }
+    fn slowed_idle(&self, slot: usize) -> bool {
+        World::battle_seat_slowed_idle(self, slot)
     }
 }

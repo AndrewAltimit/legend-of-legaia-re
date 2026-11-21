@@ -303,3 +303,152 @@ fn the_natural_end_lands_on_the_count_at_every_advance() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// The tick's tail on an advancing seat (`0x80047F10..0x80048060`): a party
+/// seat's Rage stamp (record `+0xF8 & 0x2000`, skipped under the battle-end
+/// signal `DAT_8007BD71 == 0xFE` and while `+0x21C` is up) against
+/// `World::stamp_rage_delegation`, and the history ring's id `+0x1FB` - the
+/// committed `+0x1D9` on a party seat, the entry's `+0x87` / `+0x77` on a
+/// monster's - against `battle_afterimage`; and the frozen-idle exit ahead of
+/// it (`+0x16E & 0x404` with `+0x1D9 == 0`).
+#[test]
+fn the_tail_stamps_what_retail_stamps() {
+    differential!(scus(TICK));
+    use legaia_engine_battle::battle_afterimage::{monster_ring_id, party_ring_id};
+    use legaia_engine_battle_vm::battle_action::BattleEndCause;
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+    use legaia_save::Party;
+    const RECORDS: u32 = 0x8008_4708;
+    const SIGNAL: u32 = 0x8007_BD71;
+    let Some(mut cpu) = retail() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut w = World::new();
+    w.load_party(Party::zeroed(3));
+    w.enter_battle(3, 2);
+    w.party.party_count = 3;
+    let mut rng = Rng(0x5241_4745);
+    let (mut stamped, mut monsters, mut frozen) = (0u32, 0u32, 0u32);
+    for round in 0..20_000 {
+        let seat = rng.below(7);
+        let actor = ACTOR + seat * 0x400;
+        cpu.mem.wr32(ACTORS + seat * 4, actor);
+        let char_id = if seat < 3 { 1 + rng.below(4) as u8 } else { 4 };
+        cpu.mem.wr8(SEATS + seat, char_id);
+        cpu.mem.wr16(NODE + 0x5A, seat as u16);
+        cpu.mem.wr32(NODE + 0x74, 0x10);
+        cpu.mem.wr32(NODE + 0x4C, ENTRY);
+        cpu.mem.wr16(NODE + 0x68, 0);
+        cpu.mem.wr8(ENTRY + 0x78, 1);
+        cpu.mem.wr32(ENTRY + 0x88, STREAM);
+        cpu.mem.wr8(STREAM + 1, 9);
+        let (flag_87, key_77) = (rng.below(3) as u8, rng.below(0x40) as u8);
+        cpu.mem.wr8(ENTRY + 0x87, flag_87);
+        cpu.mem.wr8(ENTRY + 0x77, key_77);
+        cpu.mem.wr8(actor + 0x21D, 8);
+        cpu.mem.wr32(actor + 0x10, 0);
+        cpu.mem.wr16(actor + 0x178, 0);
+        cpu.mem.wr8(actor + 0x1DC, 0);
+        cpu.mem.wr8(FRAME_STEP, 1);
+        let committed = if rng.below(4) == 0 {
+            0
+        } else {
+            1 + rng.below(0x20) as u8
+        };
+        let status = [
+            0u16, 0x0001, 0x0080, 0x0200, 0x0004, 0x0400, 0x0404, 0x1000, 0x1001,
+        ][rng.below(9) as usize];
+        let (render, impact) = (
+            (rng.below(4) == 0) as u8,
+            [0u8, 0, 1, 3][rng.below(4) as usize],
+        );
+        let colour = rng.next();
+        let ability = if rng.below(2) == 0 { 0x2000 } else { 0 } | (rng.next() & !0x2000);
+        let signal = [0u8, 0, 0xFE, 0x10][rng.below(4) as usize];
+        cpu.mem.wr8(actor + 0x1D9, committed);
+        cpu.mem.wr16(actor + 0x16E, status);
+        cpu.mem.wr8(actor + 0x21C, render);
+        cpu.mem.wr8(actor + 0x21F, impact);
+        cpu.mem.wr32(actor + 0x04, colour);
+        cpu.mem.wr32(actor + 0x0C, 0);
+        cpu.mem.wr8(SIGNAL, signal);
+        if seat < 3 {
+            cpu.mem
+                .wr32(RECORDS + (u32::from(char_id) - 1) * 0x414 + 0xF8, ability);
+        }
+        cpu.calls.clear();
+        assert_eq!(cpu.call(TICK, &[NODE]), Stop::Returned, "{round}");
+        // The frozen idle leaves through the pose copy `FUN_8004A908`.
+        let retail_frozen = cpu.calls.contains(&0x8004_A908);
+        {
+            let b = &mut w.actors[seat as usize];
+            b.battle.field_flags = status;
+            b.battle.current_anim = committed;
+            b.battle_reaction = None;
+        }
+        w.battle.status_effects = Default::default();
+        assert_eq!(
+            retail_frozen,
+            w.frozen_idle(seat as usize),
+            "round {round} seat {seat} status {status:#x} committed {committed:#x}"
+        );
+        if retail_frozen {
+            frozen += 1;
+            continue;
+        }
+        // A Slowed idle advances on `>> 2`: rate 8, clip rate 1, step 1 moves
+        // the cursor `2` sixteenths, the `>> 1` branch `4`.
+        let retail_slowed = cpu.mem.rd16(NODE + 0x68) == 2;
+        assert_eq!(
+            retail_slowed,
+            w.slowed_idle(seat as usize),
+            "round {round} seat {seat} status {status:#x} committed {committed:#x}"
+        );
+        let retail = (
+            cpu.mem.rd32(actor + 0x04),
+            cpu.mem.rd32(actor + 0x0C),
+            cpu.mem.rd16(actor + 0x16E),
+            cpu.mem.rd8(actor + 0x21F),
+            cpu.mem.rd8(actor + 0x1FB),
+        );
+        let port = if seat < 3 {
+            for m in w.party.roster.members.iter_mut() {
+                let mut bits = m.ability_bits();
+                bits[4..8].copy_from_slice(&ability.to_le_bytes());
+                m.set_ability_bits(bits);
+            }
+            w.battle.end = (signal == 0xFE).then_some(BattleEndCause::Escaped);
+            let s = seat as usize;
+            let b = &mut w.actors[s].battle;
+            b.render_flag = render;
+            b.impact_state = impact;
+            b.field_flags = status;
+            b.render_color = colour;
+            b.render_blend = 0;
+            w.rage_delegation(s);
+            let b = &w.actors[s].battle;
+            stamped += u32::from(b.field_flags != status);
+            (
+                b.render_color,
+                b.render_blend,
+                b.field_flags,
+                b.impact_state,
+                party_ring_id(committed),
+            )
+        } else {
+            monsters += 1;
+            (colour, 0, status, impact, monster_ring_id(key_77, flag_87))
+        };
+        assert_eq!(
+            retail, port,
+            "round {round} seat {seat} char {char_id} ability {ability:#x} signal {signal:#x} \
+             render {render} 87 {flag_87} 77 {key_77:#x}"
+        );
+    }
+    assert!(
+        stamped > 1000 && monsters > 5000 && frozen > 500,
+        "{stamped} {monsters} {frozen}"
+    );
+}
