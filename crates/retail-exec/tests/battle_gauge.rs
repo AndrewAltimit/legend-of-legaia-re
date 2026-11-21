@@ -150,12 +150,20 @@ const PULSE: u32 = 0x8007_B92C;
 const LEVEL: u32 = 0x8007_B930;
 const PULSE_RATE: u32 = 0x8007_BD48;
 const LEVEL_RATE: u32 = 0x8007_BD4C;
+const KEEP_OBJECT_1: u32 = 0x8007_B64B;
+const SLOT_1_YAW: u32 = 0x8008_91D2;
+const MESSAGE_HOLD: u32 = 0x801F_6964;
+const ELEMENT: u32 = 0x801D_8DE8;
+const BATTLE_SIGNAL: u32 = 0x8007_BD71;
 
 /// The frame driver past the gauges, run from its entry with every call
 /// stubbed: the battle-exit pass's party loop (`battle_exit_party_reset`:
 /// the status word cleared outside an arena leg, a fallen member stood at 1
 /// HP), the countdown clamp at `0x42` while the exit is held, and the rumble
-/// hold and decay of a frame that does not exit (`BattleRumbleDecay::step`).
+/// hold and decay of a frame that does not exit (`BattleRumbleDecay::step`),
+/// the slot-1 backdrop spin (`World::tick_battle_backdrop_spin`, through
+/// `BattleArmDrivers`) and the timed message's hold after the SM's pass
+/// (`BattleState::tick_timed_message`, one engine tick a vsync of the step).
 #[test]
 fn the_frame_driver_exits_and_decays_as_retail_does() {
     use legaia_engine_battle_vm::battle_formulas::battle_exit_party_reset;
@@ -167,8 +175,14 @@ fn the_frame_driver_exits_and_decays_as_retail_does() {
         return;
     };
     cpu.stub_outside = Some((FRAME, FRAME_END));
+    let unloads = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let sink = unloads.clone();
+    cpu.hook(ELEMENT, move |r, _| {
+        sink.borrow_mut().push((r.r[4], r.r[5]))
+    });
     let clean = cpu.mem.clone();
     let mut rng = Rng(0x4558_4954);
+    let (mut spun, mut timed_out) = (0, 0);
     let (mut exits, mut held, mut decayed) = (0, 0, 0);
     for round in 0..20000 {
         let party = 1 + rng.below(3);
@@ -183,13 +197,22 @@ fn the_frame_driver_exits_and_decays_as_retail_does() {
         let level_rate = [8i32, 1, 0, -4, 0x40][rng.below(5) as usize];
         let status: [u16; 3] = std::array::from_fn(|_| rng.next() as u16);
         let hp: [u16; 3] = std::array::from_fn(|_| [0u16, 1, 77][rng.below(3) as usize]);
+        let keep = rng.below(2) != 0;
+        let yaw = rng.next() as u16;
+        let message = [0i32, -3, 1, 2, 3, 0x78][rng.below(6) as usize];
 
         cpu.mem = clean.clone();
+        unloads.borrow_mut().clear();
+        cpu.mem.wr8(KEEP_OBJECT_1, u8::from(keep));
+        cpu.mem.wr16(SLOT_1_YAW, yaw);
+        cpu.mem.wr32(MESSAGE_HOLD, message as u32);
+        // The action SM's pass runs, and the hold after it.
+        cpu.mem.wr8(BATTLE_SIGNAL, 0xFF);
         cpu.mem.wr32(CTX_PTR, CTX);
         cpu.mem.wr8(CTX, party as u8);
         cpu.mem.wr8(CTX + 0xB, u8::from(hold_exit));
         cpu.mem.wr16(CTX + 0x6CE, countdown as u16);
-        cpu.mem.wr8(CTX + 6, 0);
+        cpu.mem.wr8(CTX + 6, 0xFF);
         cpu.mem.wr8(FRAME_STEP, step);
         cpu.mem.wr32(SPECIAL_WORD, special);
         cpu.mem.wr32(RUMBLE_HOLD, hold as u32);
@@ -215,6 +238,28 @@ fn the_frame_driver_exits_and_decays_as_retail_does() {
             "round {round}: party {party} countdown {countdown:#x} hold {hold_exit} special \
              {special:#x} step {step} rumble {hold}/{pulse}/{level}/{pulse_rate}/{level_rate}"
         );
+        // The spin runs ahead of the exit test, on every pass.
+        let mut w = legaia_engine_core::world::World::new();
+        w.battle.frame_clock.step = step;
+        w.battle.backdrop_slot_1_yaw = yaw;
+        w.encounters.region_setup =
+            Some(legaia_engine_battle::region_encounter::RegionBattleSetup {
+                stage_variant: 0,
+                keep_backdrop_object_1: Some(keep),
+                door_of_light_blocked: false,
+                door_of_wind_blocked: false,
+                world_map_return: None,
+            });
+        {
+            use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+            w.backdrop_spin();
+        }
+        assert_eq!(
+            cpu.mem.rd16(SLOT_1_YAW),
+            w.battle.backdrop_slot_1_yaw,
+            "spin, {at}"
+        );
+        spun += i32::from(keep && step > 1);
         let exiting = countdown > 0x42 && !hold_exit;
         if exiting {
             for s in 0..3u32 {
@@ -251,9 +296,28 @@ fn the_frame_driver_exits_and_decays_as_retail_does() {
             "rumble, {at}"
         );
         decayed += i32::from(retail.1 != pulse || retail.2 != level);
+        // The timed message's hold.
+        let mut state = legaia_engine_battle_loop::battle_state::BattleState::default();
+        let mut banner = legaia_engine_battle_loop::message_banner::BattleMessageBanner::raised(
+            legaia_engine_battle_loop::message_banner::TIMED_MESSAGE_ELEMENT,
+            String::new(),
+            message,
+        );
+        banner.glide = None;
+        state.message_banner = Some(banner);
+        for _ in 0..step {
+            state.tick_timed_message();
+        }
+        let b = state.message_banner.as_ref().expect("banner");
+        let retail_hold = cpu.mem.rd32(MESSAGE_HOLD) as i32;
+        let port_hold = if message > 0 { b.hold.max(0) } else { b.hold };
+        assert_eq!(retail_hold, port_hold, "message hold, {at}");
+        let retail_unload = unloads.borrow().contains(&(0x66, 1));
+        assert_eq!(retail_unload, b.leaving(), "message unload, {at}");
+        timed_out += i32::from(retail_unload);
     }
     assert!(
-        exits > 3000 && held > 2000 && decayed > 3000,
-        "{exits} {held} {decayed}"
+        exits > 3000 && held > 2000 && decayed > 3000 && spun > 3000 && timed_out > 1000,
+        "{exits} {held} {decayed} {spun} {timed_out}"
     );
 }

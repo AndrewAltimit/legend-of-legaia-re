@@ -27,6 +27,10 @@ pub trait BattleArmDrivers {
     fn mystic_shield_sphere(&self) -> Option<(i16, u16, [i16; 3], bool)>;
     /// Effect scenes the action has seated (the break's burst among them).
     fn action_fx_count(&self) -> usize;
+    /// The frame driver's slot-1 backdrop spin
+    /// (`World::tick_battle_backdrop_spin`, `FUN_80046A20`
+    /// `0x80046D34..0x80046D5C`).
+    fn backdrop_spin(&mut self);
 }
 
 impl BattleArmDrivers for World {
@@ -53,5 +57,8 @@ impl BattleArmDrivers for World {
     }
     fn action_fx_count(&self) -> usize {
         self.casting.active_action_fx.len()
+    }
+    fn backdrop_spin(&mut self) {
+        World::tick_battle_backdrop_spin(self)
     }
 }
