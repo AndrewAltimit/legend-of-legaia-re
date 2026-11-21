@@ -397,6 +397,7 @@ mod stat_aggregator;
 mod status_clut_restore;
 mod status_icon;
 mod status_page;
+mod status_readout;
 mod str_player;
 mod streak_ribbon;
 mod stream_slot;

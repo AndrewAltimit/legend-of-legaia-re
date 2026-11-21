@@ -37,16 +37,16 @@ pub(crate) const BAR_MP_LABEL: (i32, i32) = (192, 194);
 pub(super) const BAR_HP_SEPARATOR: (i32, i32) = (136, 188);
 pub(super) const BAR_MP_SEPARATOR: (i32, i32) = (240, 188);
 /// Numeral pen row, every field in the bar.
-pub(crate) const BAR_DIGIT_Y: i32 = 192;
+pub(crate) const BAR_DIGIT_Y: i32 = bar_digit_y();
 /// Right edges the four numeral fields are laid out back from. **Both**
 /// halves of a `cur / max` pair are right-aligned - the field grows leftward
 /// one 8-px cell per digit - which is what keeps a four-digit HP inside its
 /// own field. A forward-running maximum is what a capture whose values are
 /// all three digits looks like, and it overruns as soon as they are not.
-pub(crate) const BAR_HP_CUR_RIGHT: i32 = 134;
-pub(super) const BAR_HP_MAX_RIGHT: i32 = 178;
-pub(crate) const BAR_MP_CUR_RIGHT: i32 = 238;
-pub(super) const BAR_MP_MAX_RIGHT: i32 = 274;
+pub(crate) const BAR_HP_CUR_RIGHT: i32 = bar_right(0);
+pub(super) const BAR_HP_MAX_RIGHT: i32 = bar_right(1);
+pub(crate) const BAR_MP_CUR_RIGHT: i32 = bar_right(2);
+pub(super) const BAR_MP_MAX_RIGHT: i32 = bar_right(3);
 
 /// Width and horizontal pitch of one HUD numeral cell - retail's, and the
 /// unit every numeral field above is measured in.
@@ -57,16 +57,16 @@ pub(super) const HIDDEN_READOUT_GLYPH: u16 = 0xC;
 /// records with a cell count of `3` (`li s2,0x3` at `0x801D9684` on a panel, `0x801D98E8` on the bar) where a
 /// member's figure field takes `4`; the right edge is unchanged
 /// (`x = 0x5E` against `0x56` on the bar, `0x1C` against `0x14` on a panel).
-pub(super) const HIDDEN_HP_CELLS: i32 = 3;
+pub(super) const HIDDEN_HP_CELLS: i32 = record_cells(true, 0);
 /// Cells a hidden MP field draws: `2` (`0x801D96DC` / `0x801D993C`),
 /// against `3`.
-pub(super) const HIDDEN_MP_CELLS: i32 = 2;
+pub(super) const HIDDEN_MP_CELLS: i32 = record_cells(true, 2);
 /// Cells a member's HP figure field takes, on the panel and the bar alike
 /// (`li s0,0x4` at `0x801D958C`, `li s2,0x4` at `0x801D982C`).
-pub(super) const HP_FIELD_CELLS: i32 = 4;
+pub(super) const HP_FIELD_CELLS: i32 = record_cells(false, 0);
 /// Cells a member's MP figure field takes (`li s3,0x3` at `0x801D9604`,
 /// `li s2,0x3` at `0x801D9888`).
-pub(super) const MP_FIELD_CELLS: i32 = 3;
+pub(super) const MP_FIELD_CELLS: i32 = record_cells(false, 2);
 
 /// Plate top-left of the actor-name plaque on its action seat (placement
 /// record 68: content `(16, 14)`, plate `(8, 8)`).
@@ -132,13 +132,13 @@ pub(super) const PANEL_HP_LABEL: (i32, i32) = (4, 21);
 pub(super) const PANEL_MP_LABEL: (i32, i32) = (4, 36);
 pub(super) const PANEL_HP_SEPARATOR: (i32, i32) = (57, 15);
 pub(super) const PANEL_MP_SEPARATOR: (i32, i32) = (57, 30);
-pub(super) const PANEL_HP_DIGIT_Y: i32 = 19;
-pub(super) const PANEL_MP_DIGIT_Y: i32 = 34;
-pub(super) const PANEL_CUR_RIGHT: i32 = 57;
+pub(super) const PANEL_HP_DIGIT_Y: i32 = panel_digit_y(0);
+pub(super) const PANEL_MP_DIGIT_Y: i32 = panel_digit_y(2);
+pub(super) const PANEL_CUR_RIGHT: i32 = panel_right(0);
 /// Right edge a maximum is laid out back from. `102 - 5`: the panel's
 /// content box is inset five pixels on both sides, so a four-digit maximum
 /// runs `65..97` and still clears the plate.
-pub(super) const PANEL_MAX_RIGHT: i32 = 97;
+pub(super) const PANEL_MAX_RIGHT: i32 = panel_right(1);
 
 /// Panel-background x seats for a party of `count`, left to right
 /// (`battle_chrome::panel_seats`). These are the **backgrounds**;
@@ -225,4 +225,32 @@ pub fn enemy_target_menu_rows_y(host_box: Option<(i32, i32, i32, i32)>) -> i32 {
         y -= ENEMY_MENU_STEP;
     }
     y
+}
+
+// The figure fields above are the number records the readout spawner
+// registers (`crate::battle_chrome::readout_layout`, the port of
+// `FUN_801D8DE8`'s two readout tails), placed from each surface's window
+// origin. A hidden field closes on the same right edge as a shown one.
+use crate::battle_chrome::{
+    BAR_READOUT_ORIGIN, PANEL_READOUT_ORIGIN, ReadoutSurface, readout_layout,
+};
+
+const fn bar_right(field: usize) -> i32 {
+    (BAR_READOUT_ORIGIN.0 + readout_layout(ReadoutSurface::Bar, false)[field].right()) as i32
+}
+
+const fn bar_digit_y() -> i32 {
+    (BAR_READOUT_ORIGIN.1 + readout_layout(ReadoutSurface::Bar, false)[0].y) as i32
+}
+
+const fn panel_right(field: usize) -> i32 {
+    (PANEL_READOUT_ORIGIN.0 + readout_layout(ReadoutSurface::Panel, false)[field].right()) as i32
+}
+
+const fn panel_digit_y(field: usize) -> i32 {
+    (PANEL_READOUT_ORIGIN.1 + readout_layout(ReadoutSurface::Panel, false)[field].y) as i32
+}
+
+const fn record_cells(hidden: bool, field: usize) -> i32 {
+    readout_layout(ReadoutSurface::Panel, hidden)[field].cells as i32
 }

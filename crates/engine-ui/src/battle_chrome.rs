@@ -389,19 +389,6 @@ pub const fn digits_left_of(right: i16, digits: u16) -> i16 {
     right - (digits * DIGIT_W) as i16
 }
 
-/// Left edge of a `digits`-long figure in a number record's field of `cells`
-/// cells that ends at `right`. The record's draw (`FUN_80031D00`,
-/// `0x80032064..0x80032148`) walks its places from the field's left edge and
-/// spends a blank cell only on a leading zero inside the field, so a figure
-/// that fits is right-aligned and a longer one starts on the left edge and
-/// runs past `right`.
-///
-/// PORT: FUN_80031D00 (the type-2 record's place walk)
-pub const fn figure_left(right: i16, cells: u16, digits: u16) -> i16 {
-    let n = if digits < cells { digits } else { cells };
-    digits_left_of(right, n)
-}
-
 /// The cells a number record's field draws for `value` in a field of
 /// `cells` cells: `(x offset from the field's left edge, digit)` per glyph.
 ///
@@ -417,14 +404,11 @@ pub const fn figure_left(right: i16, cells: u16, digits: u16) -> i16 {
 /// figure wider than its field loses its interior zeros above the field.
 /// A negative value draws a single `0` on the last place.
 ///
-/// [`figure_left`] is the first cell of this walk for a figure whose zeros
-/// all fall inside the field.
+/// So a figure that fits is right-aligned in its field, and a longer one
+/// starts on the field's left edge and runs past its right one. Both hosts
+/// place every battle-HUD figure with this walk.
 ///
 /// PORT: FUN_80031D00 (the number record's place walk)
-///
-/// NOT WIRED: the hosts place figures with [`figure_left`], which agrees with
-/// this walk on every figure that fits its field; only the retail kernel
-/// differential calls it.
 pub fn number_record_cells(value: i32, cells: i16) -> Vec<(i16, u8)> {
     let mut out = Vec::new();
     let (mut v, mut x, mut drawn) = (value, 0i16, false);
@@ -460,6 +444,173 @@ pub fn number_record_cells(value: i32, cells: i16) -> Vec<(i16, u8)> {
     }
     out
 }
+
+/// Which actor figure a status-readout number record points at - the
+/// battle actor's displayed HP `+0x172`, HP ceiling `+0x14E`, displayed MP
+/// `+0x174` and MP ceiling `+0x152`, in the order `FUN_801D8DE8` registers
+/// them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadoutField {
+    /// Displayed HP (`+0x172`).
+    Hp,
+    /// HP ceiling (`+0x14E`).
+    HpMax,
+    /// Displayed MP (`+0x174`).
+    Mp,
+    /// MP ceiling (`+0x152`).
+    MpMax,
+}
+
+impl ReadoutField {
+    /// The battle-actor offset the record reads its value through.
+    pub const fn actor_offset(self) -> u32 {
+        match self {
+            Self::Hp => 0x172,
+            Self::HpMax => 0x14E,
+            Self::Mp => 0x174,
+            Self::MpMax => 0x152,
+        }
+    }
+}
+
+/// The two surfaces a member's HP / MP readout is raised on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadoutSurface {
+    /// A roster panel at rest (elements `6` / `0x4E` / `0x4F`, one per
+    /// seat).
+    Panel,
+    /// The full-width active-actor bar (elements `7` / `0x34`).
+    Bar,
+}
+
+/// One number record a status readout registers: `FUN_8003563C(window,
+/// field, kind, x, y, cells, tier)`. `kind` `2` draws the figure, kind `5`
+/// draws `cells` `?` glyphs and never reads it; `(x, y)` is the field's left
+/// edge inside the window and `tier` its font ink.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReadoutRecord {
+    pub field: ReadoutField,
+    pub kind: u8,
+    pub x: i16,
+    pub y: i16,
+    pub cells: u8,
+    pub tier: u8,
+}
+
+impl ReadoutRecord {
+    /// The field's right edge inside the window, which every figure is laid
+    /// out back from; a hidden field closes on the same edge.
+    pub const fn right(&self) -> i16 {
+        self.x + 8 * self.cells as i16
+    }
+}
+
+const fn readout_row(field: ReadoutField, kind: u8, x: i16, y: i16, cells: u8) -> ReadoutRecord {
+    ReadoutRecord {
+        field,
+        kind,
+        x,
+        y,
+        cells,
+        tier: 7,
+    }
+}
+
+/// The four records of each readout, by surface and by whether the member's
+/// figures are hidden (`[panel shown, panel hidden, bar shown, bar hidden]`).
+/// A member with character id `4` (Terra) takes the hidden rows: kind `5`,
+/// one cell fewer, the left edge one cell on, so the right edge holds.
+const READOUT_ROWS: [[ReadoutRecord; 4]; 4] = {
+    use ReadoutField::*;
+    [
+        [
+            readout_row(Hp, 2, 0x14, 0xF, 4),
+            readout_row(HpMax, 2, 0x3C, 0xF, 4),
+            readout_row(Mp, 2, 0x1C, 0x1E, 3),
+            readout_row(MpMax, 2, 0x44, 0x1E, 3),
+        ],
+        [
+            readout_row(Hp, 5, 0x1C, 0xF, 3),
+            readout_row(HpMax, 5, 0x44, 0xF, 3),
+            readout_row(Mp, 5, 0x24, 0x1E, 2),
+            readout_row(MpMax, 5, 0x4C, 0x1E, 2),
+        ],
+        [
+            readout_row(Hp, 2, 0x56, 0, 4),
+            readout_row(HpMax, 2, 0x82, 0, 4),
+            readout_row(Mp, 2, 0xC6, 0, 3),
+            readout_row(MpMax, 2, 0xEA, 0, 3),
+        ],
+        [
+            readout_row(Hp, 5, 0x5E, 0, 3),
+            readout_row(HpMax, 5, 0x8A, 0, 3),
+            readout_row(Mp, 5, 0xCE, 0, 2),
+            readout_row(MpMax, 5, 0xF2, 0, 2),
+        ],
+    ]
+};
+
+/// The readout's records with their layout only (`tier` left at `7`): what
+/// the hosts place figures and `?` cells from.
+pub const fn readout_layout(surface: ReadoutSurface, hidden: bool) -> [ReadoutRecord; 4] {
+    let row = match surface {
+        ReadoutSurface::Panel => 0,
+        ReadoutSurface::Bar => 2,
+    } + if hidden { 1 } else { 0 };
+    READOUT_ROWS[row]
+}
+
+/// The readout element for roster seat `seat` (`6`, `0x4E`, `0x4F`), and
+/// whether the spawner raises it for a party of `party_count`: element
+/// `0x4E` returns at once on a one-member party and `0x4F` on anything but
+/// a full one (`0x801D8E1C..0x801D8E5C`).
+pub const fn readout_panel_element(seat: u8, party_count: u8) -> Option<u8> {
+    match seat {
+        0 => Some(6),
+        1 if party_count != 1 => Some(0x4E),
+        2 if party_count == 3 => Some(0x4F),
+        _ => None,
+    }
+}
+
+/// The four number records `FUN_801D8DE8` registers for a member's readout.
+///
+/// A hidden readout (character id `4`) registers kind-`5` records in ink
+/// `7`. Otherwise HP and MP share one tier pick, the gauge's
+/// ([`legaia_engine_battle_vm::battle_gauge::gauge_colors`]): `2` for a
+/// member at `0` displayed HP, `3` for any bit of the status word `+0x16E`,
+/// else each figure's own half / quarter tier (`7` / `6` / `9`). The frame
+/// driver re-inks the records every frame afterwards (`FUN_80046A20`).
+///
+/// PORT: FUN_801D8DE8 (`0x801D9488..0x801D9714` the panel tail, `0x801D9718..0x801D9974` the bar tail)
+pub fn status_readout_records(
+    surface: ReadoutSurface,
+    hidden: bool,
+    (hp, hp_max): (u16, u16),
+    (mp, mp_max): (u16, u16),
+    status: u16,
+) -> [ReadoutRecord; 4] {
+    let mut rows = readout_layout(surface, hidden);
+    if !hidden {
+        let (hp_tier, mp_tier) =
+            legaia_engine_battle_vm::battle_gauge::gauge_colors(hp, hp_max, mp, mp_max, status);
+        for r in &mut rows {
+            r.tier = match r.field {
+                ReadoutField::Hp | ReadoutField::HpMax => hp_tier,
+                ReadoutField::Mp | ReadoutField::MpMax => mp_tier,
+            };
+        }
+    }
+    rows
+}
+
+/// The window origin the active-actor bar's records are placed from: their
+/// `(x, y)` plus this is the screen seat ([`BAR_HP_CUR_RIGHT`] is the HP
+/// record's right edge from here).
+pub const BAR_READOUT_ORIGIN: (i16, i16) = (16, 192);
+/// The window origin a roster panel's records are placed from, relative to
+/// the panel background's top-left corner.
+pub const PANEL_READOUT_ORIGIN: (i16, i16) = (5, 4);
 
 /// Cell count a value occupies, which is its decimal digit count (retail
 /// pads nothing - a level of `1` is one cell, `99` is two).
@@ -828,6 +979,44 @@ mod target_select_tests {
 }
 
 #[cfg(test)]
+mod readout_tests {
+    use super::*;
+
+    #[test]
+    fn the_packet_pinned_seats_are_the_readout_records() {
+        let bar = readout_layout(ReadoutSurface::Bar, false);
+        let rights: Vec<i16> = bar
+            .iter()
+            .map(|r| BAR_READOUT_ORIGIN.0 + r.right())
+            .collect();
+        assert_eq!(
+            rights,
+            [
+                BAR_HP_CUR_RIGHT,
+                BAR_HP_MAX_RIGHT,
+                BAR_MP_CUR_RIGHT,
+                BAR_MP_MAX_RIGHT
+            ]
+        );
+        assert_eq!(BAR_READOUT_ORIGIN.1 + bar[0].y, BAR_DIGIT_Y);
+        let p = readout_layout(ReadoutSurface::Panel, false);
+        let o = PANEL_READOUT_ORIGIN;
+        assert_eq!(o.0 + p[0].right(), panel::CUR_RIGHT);
+        assert_eq!(o.0 + p[1].right(), panel::MAX_RIGHT);
+        assert_eq!(o.0 + p[2].right(), panel::CUR_RIGHT);
+        assert_eq!(o.1 + p[0].y, panel::HP_DIGIT_Y);
+        assert_eq!(o.1 + p[2].y, panel::MP_DIGIT_Y);
+        for s in [ReadoutSurface::Panel, ReadoutSurface::Bar] {
+            let (a, b) = (readout_layout(s, false), readout_layout(s, true));
+            for (a, b) in a.iter().zip(&b) {
+                assert_eq!(a.right(), b.right());
+                assert_eq!(a.cells, b.cells + 1);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -954,10 +1143,15 @@ mod tests {
     /// wrapped `65518` in the three-cell MP field runs two cells past it.
     #[test]
     fn a_figure_longer_than_its_field_runs_past_the_right_edge() {
-        assert_eq!(figure_left(panel::CUR_RIGHT, 3, 2), panel::CUR_RIGHT - 16);
-        assert_eq!(figure_left(panel::CUR_RIGHT, 3, 3), panel::CUR_RIGHT - 24);
-        assert_eq!(figure_left(panel::CUR_RIGHT, 3, 5), panel::CUR_RIGHT - 24);
-        assert_eq!(figure_left(BAR_HP_CUR_RIGHT, 4, 5), BAR_HP_CUR_RIGHT - 32);
+        let first = |v: i32, cells: i16| number_record_cells(v, cells)[0].0;
+        assert_eq!(first(20, 3), 8);
+        assert_eq!(first(180, 3), 0);
+        assert_eq!(first(65518, 3), 0);
+        assert_eq!(number_record_cells(65518, 3).len(), 5);
+        assert_eq!(first(12345, 4), 0);
+        // Above a non-empty field an interior zero takes no cell.
+        let cells: Vec<u8> = number_record_cells(60518, 3).iter().map(|c| c.1).collect();
+        assert_eq!(cells, [6, 5, 1, 8]);
     }
 
     #[test]
