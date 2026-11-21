@@ -222,6 +222,62 @@ impl World {
     /// page from [`crate::world::CutsceneState::narration`]; [`Self::tick`] advances its
     /// per-page timer.
     pub fn open_cutscene_narration(&mut self, pages: Vec<String>) {
+        self.open_crawl(pages, None);
+    }
+
+    /// Open a crawl the op aimed at `target` (its target byte, or
+    /// [`legaia_scene_formats::cutscene_text::OWN_CONTEXT_CRAWL`] for the
+    /// own-context form): the arm halt-acquires that context
+    /// (`ori v0,v0,0x400` at `0x801E1F24`) and links the roller to it
+    /// (`sw s5,0x94(v0)` at `0x801E1F80`), which the roller frees as it
+    /// retires its last page (`0x800376F4..0x80037710`). A target that names
+    /// a channel has its `0x400` raised here; the player and the opener's
+    /// own context keep no word for it in the port, and their waits read the
+    /// roller ([`Self::cutscene_narration_active`]).
+    ///
+    /// REF: FUN_801DE840 (0x801E1F18..0x801E1F84), FUN_80037174
+    pub fn open_cutscene_narration_on(&mut self, pages: Vec<String>, target: u8) {
+        if pages.is_empty() {
+            return;
+        }
+        self.open_crawl(pages, Some(target));
+        if let Some(ci) = Self::crawl_parent_channel(&self.field_vm.channels, target) {
+            self.field_vm.channels[ci].ctx.flags |= 0x400;
+        }
+    }
+
+    /// The channel a crawl op's target byte names, whose `0x400` stands for
+    /// the roller's parent: `None` for the player, the system context and
+    /// the own-context form, whose opener keeps its own word.
+    pub(crate) fn crawl_parent_channel(
+        channels: &[legaia_engine_field::field_channels::FieldChannel],
+        target: u8,
+    ) -> Option<usize> {
+        if target == legaia_scene_formats::cutscene_text::OWN_CONTEXT_CRAWL {
+            return None;
+        }
+        legaia_engine_field::field_channels::resolve_target(channels, target)
+    }
+
+    /// Clear the halt bit of every crawl parent a retirement or a kill
+    /// released ([`crate::world::CutsceneState::crawl_released`]) on the
+    /// channel set `channels`: the roller's `and v0,v0,-0x401` on its
+    /// `+0x94` (`0x80037704..0x80037710`), the kill's on the same word
+    /// (`0x801E345C..0x801E3468`).
+    ///
+    /// PORT: FUN_80037174 (0x800376F4..0x80037710)
+    pub(crate) fn release_crawl_parents(
+        released: &mut Vec<u8>,
+        channels: &mut [legaia_engine_field::field_channels::FieldChannel],
+    ) {
+        for target in released.drain(..) {
+            if let Some(ci) = Self::crawl_parent_channel(channels, target) {
+                channels[ci].ctx.flags &= !0x400;
+            }
+        }
+    }
+
+    fn open_crawl(&mut self, pages: Vec<String>, parent: Option<u8>) {
         if pages.is_empty() {
             return;
         }
@@ -231,13 +287,15 @@ impl World {
         // `DAT_8007B9D8` to 3 through move-VM ext sub-op `0x2F` (opdeene's
         // record 16), which is what the capture reads - so no per-roller
         // override is needed.
-        self.cutscene.narration = Some(
-            legaia_engine_field::cutscene_narration::CutsceneNarration::with_seed(
-                pages,
-                self.cutscene.narration_seed,
-                u16::from(self.clock.frame_step),
-            ),
+        let roller = legaia_engine_field::cutscene_narration::CutsceneNarration::with_seed(
+            pages,
+            self.cutscene.narration_seed,
+            u16::from(self.clock.frame_step),
         );
+        self.cutscene.narration = Some(match parent {
+            Some(p) => roller.with_parent(p),
+            None => roller,
+        });
         // Monotonic "which crawl block is showing" counter. Because a
         // non-blocking crawl lets the next block open the very tick the prior
         // one scrolls out (continuous crawl, no blank frame), a rising-edge
@@ -353,6 +411,9 @@ impl World {
         };
         let still_active = narration.skip_page();
         if !still_active {
+            self.cutscene
+                .crawl_released
+                .extend(narration.take_released_parent());
             self.cutscene.narration = None;
         }
         still_active

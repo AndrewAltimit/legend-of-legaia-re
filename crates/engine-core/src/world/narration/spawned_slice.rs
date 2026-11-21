@@ -51,6 +51,8 @@ impl World {
         // Host hooks resolve cross-context ids against the channel set while
         // one of these is executing; the live vector is moved out for the
         // borrow, so they read this copy (`World::channel_view`).
+        // A crawl a kill freed since the set was last in the world.
+        Self::release_crawl_parents(&mut self.cutscene.crawl_released, &mut channels);
         self.field_vm.stepping_view = channels.clone();
         let channel_pre_pos: Vec<(u16, u16)> = channels
             .iter()
@@ -404,7 +406,14 @@ impl World {
                             {
                                 host.world.cutscene.narration_seed = seed;
                             }
-                            host.world.open_cutscene_narration(pages);
+                            // The arm halt-acquires the op's target and
+                            // links the roller to it; the channel set is out
+                            // of the world for the slice, so the bit lands on
+                            // the slice's copy.
+                            host.world.open_cutscene_narration_on(pages, site.target);
+                            if let Some(ci) = Self::crawl_parent_channel(&channels, site.target) {
+                                channels[ci].ctx.flags |= 0x400;
+                            }
                             tl.narration_target = Some(site.target);
                             // Non-blocking: the roller scrolls on its own
                             // (`World::tick`); continue into the camera cuts.
@@ -522,10 +531,19 @@ impl World {
                 // The crawl's target is whichever context its op ran on: `vozz`
                 // P2[17] opens Ozma's crawl on actor `0x06` and waits on
                 // `B3 06 0A` until it retires.
+                // A target the channel set carries holds the bit itself: the
+                // roller's retirement clears it, and so does an explicit
+                // `B2 <id> 0A` or a walk-kernel landing, as on retail's word.
+                // The player keeps no such word in the port; its wait reads
+                // the roller.
+                let crawl_target = tl.narration_target.unwrap_or(0xF8);
                 if opcode_byte == 0xB3
-                    && tl.bytecode.get(pc + 1).copied() == Some(tl.narration_target.unwrap_or(0xF8))
+                    && tl.bytecode.get(pc + 1).copied() == Some(crawl_target)
                     && tl.bytecode.get(pc + 2) == Some(&0x0A)
-                    && host.world.cutscene_narration_active()
+                    && match Self::crawl_parent_channel(&channels, crawl_target) {
+                        Some(ci) => channels[ci].ctx.is_halted(),
+                        None => host.world.cutscene_narration_active(),
+                    }
                 {
                     tl.frames = tl.frames.saturating_sub(1);
                     break;

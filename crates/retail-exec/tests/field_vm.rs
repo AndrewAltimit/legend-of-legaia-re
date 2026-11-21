@@ -1014,8 +1014,11 @@ fn a_coin_delta_moves_the_bank_as_retail_moves_it() {
 /// release count `+0x52` (`w3 == 1`, `w0 != 0`), resumes it (`w3 == 2`) or
 /// retires it (`w3 == 3`: `+0x10 |= 8`) (`0x801E3378..0x801E34BC`). The port
 /// keeps the block as `cutscene.narration_seed` and the actor as
-/// `cutscene.narration`. Compared: the block, the pause bit and whether the
-/// crawl lives on.
+/// `cutscene.narration`. The kill also frees the context the crawl's op
+/// halt-acquired, the actor's `+0x94` when it is not null
+/// (`0x801E344C..0x801E3468`); the port's link is the roller's parent, a
+/// channel here. Compared: the block, the pause bit, whether the crawl lives
+/// on and whether the parent still holds `0x400`.
 #[test]
 fn a_crawl_config_op_moves_the_crawl_as_retail_moves_it() {
     differential!(prot(897, VM));
@@ -1101,8 +1104,27 @@ fn a_crawl_config_op_moves_the_crawl_as_retail_moves_it() {
 
         let mut w = legaia_engine_core::world::World::new();
         w.cutscene.narration_seed = seed;
+        // The crawl's parent: a channel holding the halt bit, as the crawl
+        // op left it.
+        w.field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 5,
+                ctx: legaia_engine_vm::field::FieldCtx {
+                    script_id: 0x06,
+                    flags: 0x400,
+                    ..Default::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: true,
+                object_bind: false,
+            });
         if present {
             let mut n = CutsceneNarration::with_seed(vec!["line".into()], seed, 1);
+            if waiter != 0 {
+                n = n.with_parent(0x06);
+            }
             if paused {
                 n.pause();
             }
@@ -1122,12 +1144,16 @@ fn a_crawl_config_op_moves_the_crawl_as_retail_moves_it() {
                 .as_ref()
                 .map_or((retail_crawl.unwrap().0, false), |n| (n.is_paused(), true))
         });
+        // The parent's halt bit: freed by the kill alone, through the link.
+        let retail_held = cpu.mem.rd32(WAITER + 0x10) & 0x400 != 0;
+        let port_held = w.field_vm.channels[0].ctx.flags & 0x400 != 0;
         seen.insert((w3.min(4), present));
-        if port_seed != retail_seed || port_crawl != retail_crawl {
+        if port_seed != retail_seed || port_crawl != retail_crawl || port_held != retail_held {
             *differ
                 .entry(format!(
-                    "w {w0} {w1} {w2} {w3} live {present}: retail {retail_seed:?} {retail_crawl:?}, \
-                     port {port_seed:?} {port_crawl:?}"
+                    "w {w0} {w1} {w2} {w3} live {present} parent {waiter:#x}: retail \
+                     {retail_seed:?} {retail_crawl:?} held {retail_held}, \
+                     port {port_seed:?} {port_crawl:?} held {port_held}"
                 ))
                 .or_default() += 1;
         }

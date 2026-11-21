@@ -336,7 +336,10 @@ impl World {
                     .iter()
                     .map(|p| host.world.narration_page_text(&p.raw))
                     .collect();
-                host.world.open_cutscene_narration(pages);
+                host.world.open_cutscene_narration_on(pages, block.target);
+                if block.target == legaia_scene_formats::cutscene_text::OWN_CONTEXT_CRAWL {
+                    id.ctx.flags |= 0x400;
+                }
                 id.crawl = Some(block.target);
                 id.pc = block.byte_span().1;
                 continue;
@@ -352,6 +355,11 @@ impl World {
                         && id.bytecode.get(id.pc + 2) == Some(&0x0A)
                 };
                 if !host.world.cutscene_narration_active() {
+                    // The retirement frees the talker's own context; a
+                    // channel target is freed by the world's release.
+                    if target == legaia_scene_formats::cutscene_text::OWN_CONTEXT_CRAWL {
+                        id.ctx.flags &= !0x400;
+                    }
                     id.crawl = None;
                 } else if waits {
                     break;

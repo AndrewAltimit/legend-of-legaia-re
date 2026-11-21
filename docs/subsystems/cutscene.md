@@ -1314,7 +1314,16 @@ lines (`0x80037610..0x800376D4`), so it executes before them, and a second pair 
 environment's area linked ahead of them (`0x80037434..0x800374D4`). A full 16-pixel climb shifts the slot
 states up one, counts a retired page when slot 0 held one, and admits the next page at slot `n`.
 The block ends when the retired count reaches the page count: the roller clears its parent's
-`+0x10` bit `0x400` and kills itself.
+`+0x10` bit `0x400` and kills itself. The parent is the roller's `+0x94`, the context the crawl
+op halt-acquired (`sw s5,0x94(v0)` at `0x801E1F80`); with it null the clear is skipped
+(`beq a0,zero` at `0x800376FC`). The `4C E8` kill (`word3 == 3`) frees the same word before it
+raises `+0x10 |= 8` (`0x801E344C..0x801E3468`), and a block of no pages retires on its first pass.
+The port keeps the link as the roller's parent (`CutsceneNarration::with_parent`, the op's
+target byte): a target the channel set carries has its `0x400` raised at the op and cleared by
+the retirement or the kill (`World::release_crawl_parents`), so a record's `B3 <id> 0A` reads
+that word and an explicit `B2 <id> 0A`, the one cross-context op the halted-target early-out lets
+through, frees the wait under the scroll. The player keeps no `+0x10` word in the port, so a
+`B3 F8 0A` wait reads the roller. Both roller differentials compare the release.
 
 <a id="the-crawl-lines-x"></a>
 

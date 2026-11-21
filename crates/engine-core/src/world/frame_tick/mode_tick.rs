@@ -528,8 +528,17 @@ impl World {
         if let Some(narration) = &mut self.cutscene.narration
             && !narration.tick(self.clock.display_frame_step as u32)
         {
+            self.cutscene
+                .crawl_released
+                .extend(narration.take_released_parent());
             self.cutscene.narration = None;
         }
+        // The retirement (or a kill inside a record's slice) frees the
+        // context the crawl's op halt-acquired.
+        Self::release_crawl_parents(
+            &mut self.cutscene.crawl_released,
+            &mut self.field_vm.channels,
+        );
         // Fade the "It was the Seru." caption image (opdeene's baked-TIM
         // caption, `Self::cutscene_caption`). It is target-visible in the
         // FIRST gap after a narration crawl block has shown (a block opened,

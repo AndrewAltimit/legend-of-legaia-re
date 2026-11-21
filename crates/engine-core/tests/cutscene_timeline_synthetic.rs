@@ -394,3 +394,82 @@ fn an_actor_targeted_crawl_holds_the_halt_test_on_its_target() {
         "the record runs on once the crawl is gone"
     );
 }
+
+/// The crawl's link to its parent (`FUN_80037174`'s `+0x94`): a crawl
+/// opened on a channel's context (`CC 06 80 N`) raises that channel's halt
+/// bit `0x400` (`0x801E1F24`), the roller clears it as it retires its last
+/// page (`0x80037704..0x80037710`), and the record's `B3 06 0A` reads the
+/// channel's word. An explicit `B2 06 0A` - the release the dispatcher's
+/// halted-target early-out exempts (`0x801DE8E0..0x801DE904`) - frees the
+/// wait as well, while the pages still scroll.
+fn crawl_on_a_channel(release_early: bool) -> (bool, bool, bool) {
+    use legaia_engine_field::cutscene_timeline::NarrationSite;
+    use legaia_scene_formats::cutscene_text::NarrationKind;
+    let mut w = World {
+        mode: SceneMode::Field,
+        ..World::default()
+    };
+    w.field_vm
+        .channels
+        .push(legaia_engine_field::field_channels::FieldChannel {
+            placement_index: 3,
+            ctx: legaia_engine_vm::field::FieldCtx {
+                script_id: 0x06,
+                ..Default::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: true,
+            object_bind: false,
+        });
+    let mut tl = CutsceneTimeline::new(
+        vec![
+            0xCC, 0x06, 0x80, 0x02, 0x1F, b'H', b'i', 0x00, 0x1F, b'Y', b'o', 0x00, 0xB3, 0x06,
+            0x0A, 0x2E, 0x10,
+        ],
+        0,
+    );
+    tl.narration_blocks = vec![NarrationSite {
+        op_offset: 0,
+        end: 12,
+        pages: vec!["Hi".to_string(), "Yo".to_string()],
+        kind: NarrationKind::Crawl,
+        target: 0x06,
+    }];
+    w.cutscene.timeline = Some(tl);
+    for _ in 0..4 {
+        step_frame(&mut w);
+    }
+    assert!(w.cutscene_narration_active(), "the crawl opens");
+    let held_at_open = w.field_vm.channels[0].ctx.flags & 0x400 != 0;
+    if release_early {
+        w.field_bytecode = vec![0xB2, 0x06, 0x0A, 0x21];
+        w.field_pc = 0;
+        let _ = w.step_field();
+    }
+    for _ in 0..4 {
+        step_frame(&mut w);
+    }
+    let ran_under_crawl = w.cutscene_narration_active() && w.flags.story_flags & (1 << 16) != 0;
+    let mut frames = 0;
+    while w.cutscene_narration_active() && frames < 4000 {
+        step_frame(&mut w);
+        frames += 1;
+    }
+    for _ in 0..4 {
+        step_frame(&mut w);
+    }
+    let freed =
+        w.field_vm.channels[0].ctx.flags & 0x400 == 0 && w.flags.story_flags & (1 << 16) != 0;
+    (held_at_open, ran_under_crawl, freed)
+}
+
+#[test]
+fn a_crawl_holds_its_parent_channel_until_it_retires() {
+    assert_eq!(crawl_on_a_channel(false), (true, false, true));
+}
+
+#[test]
+fn a_released_parent_lets_the_record_run_under_the_crawl() {
+    assert_eq!(crawl_on_a_channel(true), (true, true, true));
+}
