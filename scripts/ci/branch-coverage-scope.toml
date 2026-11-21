@@ -2657,3 +2657,17 @@ entry = "0x801DA9F8"
 range = "0x801DAC84..0x801DAC84"
 verdict = "unreachable"
 reason = "PROT 0899: the popup lookup's run off the table's end; the overlay's option table at 0x801E44B8 is non-empty and holds a record for every id the layout table 0x801E4404 names (0,1,2,3,6,4,7,9,8,10)"
+
+[[arm]]
+entry = "0x801E3E00"
+image = "0db2b7293bfadcc2"
+range = "0x801E3E48..0x801E3E48"
+verdict = "unreachable"
+reason = "PROT 0897: the record switch's fall past `beqz` on a `lbu` opcode below 2 and not 1, so the opcode there is always 0"
+
+[[arm]]
+entry = "0x801E3E00"
+image = "0db2b7293bfadcc2"
+range = "0x801E400C..0x801E43C8"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's divide guards on the keyframe's nine per-channel `(target - start) * frame / duration` steps; the arm runs only while `frame < duration` (`slt` / `bnez` at 0x801E3E94) and the frame counter starts each keyframe at 0 (`sh zero,0x9c` at 0x801E3F38 ends the last one) and only grows, so the duration is 1..0x7FFF there, and an s16 difference times an s16 frame cannot reach 0x80000000"
