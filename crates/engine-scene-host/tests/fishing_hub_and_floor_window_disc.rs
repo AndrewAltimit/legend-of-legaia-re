@@ -108,8 +108,19 @@ fn the_venue_hub_reads_the_disc_and_walks_both_help_pages() {
     press(world, PadButton::Up);
     press(world, PadButton::Up);
     press(world, PadButton::Cross);
+    // Row 4 is state 200: the venue fades to black (32 frame steps of the
+    // counter) and then leaves.
+    assert_eq!(world.mode, SceneMode::Fishing, "the exit fades first");
+    let mut ticks = 0;
+    while world.minigames.fishing.is_some() {
+        assert!(ticks < 200, "the fade runs out");
+        if world.screen_tint_push_args().is_empty() {
+            assert_eq!(ticks, 0, "the fade pushes its grey every frame");
+        }
+        let _ = world.tick();
+        ticks += 1;
+    }
     assert_eq!(world.mode, SceneMode::Field, "row 4 leaves the venue");
-    assert!(world.minigames.fishing.is_none());
 }
 
 #[test]
@@ -213,12 +224,12 @@ fn a_shore_return_with_no_lure_left_parks_the_no_lure_screen_and_leaves() {
     // A face-button edge leaves the venue, on the next game frame (the
     // screen's frames span three vsyncs).
     press(world, PadButton::Cross);
-    for _ in 0..4 {
+    for _ in 0..200 {
         if world.minigames.fishing.is_none() {
             break;
         }
         let _ = world.tick();
     }
-    assert!(world.minigames.fishing.is_none());
+    assert!(world.minigames.fishing.is_none(), "the exit fade runs out");
     assert_ne!(world.mode, SceneMode::Fishing);
 }
