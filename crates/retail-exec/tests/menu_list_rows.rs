@@ -1414,6 +1414,134 @@ fn the_armament_candidate_lists_build_the_rows_retail_builds() {
     assert!(sorted > 1000, "{sorted}");
 }
 
+/// The equip screen's four armament candidate lists as the **session**
+/// builds them (`EquipSession::items_for_slot` with the disc restrictions
+/// installed, the host path) against `FUN_80030628`'s armament arms over the
+/// disc's own item and equipment tables (`0x80074368`, `0x80074F68`) and the
+/// overlay favour term `FUN_801DD0C0` live from PROT 0899: random bags,
+/// characters and worn bytes. Filter (class `1`, `+7` category, `+6` mask
+/// against `0x8007B48C[char]`), walk order and sort compare row by row as
+/// item ids.
+#[test]
+fn the_equip_session_lists_the_armament_rows_retail_lists() {
+    differential!(scus(WINDOW_BUILD));
+    use legaia_engine_menus::equip_session::{
+        EquipSession, REMOVE_ROW_ID, engine_equip_from_record,
+    };
+    use legaia_engine_menus::equipment::{DiscEquipInfo, equip_modifier_table_from_disc};
+    use legaia_engine_menus::item_bag::ItemBag;
+    use legaia_engine_menus::menu_item_category::parse_category_table;
+    use legaia_game_tables::equip_stats::EquipStatTable;
+    let (Some(mut cpu), Some(disc), Some(scus)) =
+        (scus_cpu(), crate::common::disc(), crate::common::scus())
+    else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const CATEGORY: u32 = 0x8007_B484;
+    const WEAPON_SLOT: u32 = 0x8007_B42C;
+    let overlay = disc.read_entry_footprint(899).expect("PROT 0899");
+    cpu.mem.load(0x801C_E818, &overlay);
+    let favour = parse_category_table(&overlay).expect("category table");
+    let stats = EquipStatTable::from_scus(&scus).expect("equipment");
+    let table = equip_modifier_table_from_disc(&stats);
+    let info = DiscEquipInfo::from_disc(&stats);
+    cpu.stub(BAG_WINDOW, 0);
+    grant_lists(&mut cpu);
+    cpu.mem.wr32(GRANT, 1);
+    // Content row -> the engine slot showing the same category.
+    let slot_of = |category: u16| match category {
+        0 => 2u8, // body
+        1 => 1,   // head
+        2 => 0,   // weapon
+        _ => 4,   // footwear
+    };
+    let equipment_ids: Vec<u8> = (1..=255u8).filter(|&id| info.is_equipment(id)).collect();
+    let mut rng = Rng(0x4152_4D45);
+    let (mut sorted, mut refused) = (0, 0);
+    for case in 0..4000 {
+        let who = rng.below(3);
+        let mut slots = vec![(0u8, 0u8); 256];
+        for _ in 0..rng.below(48) {
+            let at = rng.below(256) as usize;
+            let id = if rng.below(4) == 0 {
+                1 + rng.below(255) as u8
+            } else {
+                equipment_ids[rng.below(equipment_ids.len() as u32) as usize]
+            };
+            slots[at] = (id, 1 + rng.below(3) as u8);
+        }
+        let mut bytes = [0u8; 8];
+        for b in bytes.iter_mut() {
+            *b = match rng.below(3) {
+                0 => 0,
+                _ => equipment_ids[rng.below(equipment_ids.len() as u32) as usize],
+            };
+        }
+        let session = EquipSession::new(
+            legaia_engine_battle::battle_stats::StatRecord {
+                equip: engine_equip_from_record(bytes, who as u8),
+                ..Default::default()
+            },
+            ItemBag::from_slots(&slots),
+            table.clone(),
+            Default::default(),
+            Vec::new(),
+        )
+        .with_weapon_category(favour.clone())
+        .with_restrictions(info.clone(), who as u8);
+        let (start, end) = session.inventory().window_bounds();
+        cpu.mem.wr16(GP + 0x2D2, start as u16);
+        cpu.mem.wr16(GP + 0x2D4, end as u16);
+        for (k, (id, n)) in slots.iter().enumerate() {
+            cpu.mem.wr8(BAG + 2 * k as u32, *id);
+            cpu.mem.wr8(BAG + 2 * k as u32 + 1, *n);
+        }
+        cpu.mem.wr32(GP + 0x874, who);
+        for k in 0..8 {
+            cpu.mem.wr8(equipment(who) + k, bytes[k as usize]);
+        }
+        let row = rng.below(4);
+        let content = 0x15 + row as u8;
+        let category = cpu.mem.rd16(CATEGORY + 2 * row);
+        let _ = cpu.mem.rd16(WEAPON_SLOT + 2 * who);
+        cpu.mem.wr8(NODE + 0x1C, content);
+        for k in 0..0x120 {
+            cpu.mem.wr16(LIST_BUF + 0x28 + 2 * k, 0xDEAD);
+        }
+        assert_eq!(
+            cpu.call(WINDOW_BUILD, &[NODE]),
+            Stop::Returned,
+            "case {case}"
+        );
+        let mut got = Vec::new();
+        for k in 0..0x120 {
+            let w = cpu.mem.rd16(LIST_BUF + 0x28 + 2 * k);
+            if w == 0xDEAD {
+                break;
+            }
+            got.push(match w & 0xF000 {
+                0x4000 => REMOVE_ROW_ID,
+                0x7000 => (w & 0x3FF) as u8,
+                _ => slots[usize::from(w & 0x3FF)].0,
+            });
+        }
+        let slot = slot_of(category);
+        let want: Vec<u8> = session.items_for_slot(slot).iter().map(|i| i.id).collect();
+        assert_eq!(
+            got, want,
+            "case {case}: char {who} content {content:#x} slot {slot}"
+        );
+        sorted += usize::from(want.len() > 3);
+        refused += usize::from(
+            slots
+                .iter()
+                .any(|&(id, _)| id != 0 && info.is_equipment(id) && !want.contains(&id)),
+        );
+    }
+    assert!(sorted > 1000 && refused > 1000, "{sorted} {refused}");
+}
+
 /// `FUN_80030628`'s spell list (content ids `5` / `0x20`): in the field
 /// (`gp+0x85C` = 0, `0x80031118..0x80031260`) against the Magic screen's
 /// `SpellMenuSession::current_spell_rows`, in battle (`gp+0x85C` = 1,

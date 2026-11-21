@@ -217,8 +217,10 @@ pub fn equip_modifier_table_from_disc(
 /// pinned - the `+7` byte does not distinguish helmet vs. ring vs. accessory
 /// (all read as "head"), so this table cannot fully drive the engine's 8-slot
 /// model. [`DiscEquipInfo::category`] returns the disc category; the equip
-/// session maps it onto the four unambiguous UI slots and falls back to the
-/// mask-only gate for the ambiguous head/hand slots.
+/// session maps it onto the four armament slots (retail's own filter,
+/// [`crate::menu_list_rows::armament_candidate_accepts`]), the Goods slots
+/// take the separate Goods family, and the engine-only Hand Guard slot takes
+/// nothing.
 #[derive(Debug, Clone, Default)]
 pub struct DiscEquipInfo {
     entries: std::collections::HashMap<u8, DiscEquipEntry>,
@@ -418,9 +420,10 @@ impl DiscEquipInfo {
 /// Map an engine [`EquipSlot`] (8-slot UI model) to the disc slot category it
 /// unambiguously corresponds to, or `None` for the slots the disc `+7` byte
 /// cannot distinguish (hand guard + rings + accessory all collapse to the
-/// "head" category, and helmet shares it). The four mapped slots get
-/// disc-category filtering in the equip session; the rest fall back to a
-/// mask-only gate. See [`DiscEquipInfo`] for the disambiguation limitation.
+/// "head" category, and helmet shares it). The four mapped slots are the
+/// armament rows the equip session filters on category and mask; the Goods
+/// slots use the Goods family and Hand Guard has no retail row. See
+/// [`DiscEquipInfo`] for the disambiguation limitation.
 pub fn engine_slot_disc_category(
     slot: EquipSlot,
 ) -> Option<legaia_game_tables::equip_stats::EquipSlot> {
@@ -431,7 +434,7 @@ pub fn engine_slot_disc_category(
         EquipSlot::Helmet => Some(Disc::Head),
         EquipSlot::Boot => Some(Disc::Footwear),
         // Hand guard, both rings, and accessory are not separable from the
-        // disc "head" category, so they are not category-filtered.
+        // disc "head" category, so none is an armament category.
         EquipSlot::HandGuard | EquipSlot::Ring1 | EquipSlot::Ring2 | EquipSlot::Accessory => None,
     }
 }

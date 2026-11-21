@@ -824,8 +824,9 @@ pub fn goods_candidate_accepts(kind: u8, marker: u8) -> bool {
 /// questions the filter asks from `DiscEquipInfo::install_goods`), and
 /// `legaia_engine_world_views::pause_screens` hands those rows to both hosts' equip screen. So
 /// the Goods list is retail's shape - Remove always first, the equipped item
-/// second as a no-commit row, then bag slots in slot order - while the four
-/// armament lists keep the engine's id-sorted rows.
+/// second as a no-commit row, then bag slots in slot order - and the four
+/// armament lists take retail's walk and sort through
+/// [`build_armament_candidate_rows`].
 ///
 /// Row order: the Remove verb ([`CLASS_VERB`], payload 0) always leads; the
 /// currently-equipped id follows as [`CLASS_ITEM_ICON`] when the slot is
@@ -892,9 +893,12 @@ where
 ///
 /// PORT: FUN_80030628 (armament filter, `0x80031574..0x800315C8`)
 ///
-/// NOT WIRED: `EquipSession` filters with its own `item_fits_slot`, which
-/// gates the head and hand slots on the character mask alone where retail
-/// also tests the category; this retail-held filter is what it should call.
+/// WIRED: `crate::equip_session::EquipSession`'s armament filter (the
+/// private `item_fits_slot`, which `items_for_slot` runs through
+/// [`build_armament_candidate_rows`]) answers through this whenever the
+/// session carries disc restrictions, the character bit taken from
+/// `0x8007B48C` = `01 02 04` by roster slot. The engine-only Hand Guard slot
+/// has no retail row and no category, so it takes no candidates.
 pub fn armament_candidate_accepts(
     kind: u8,
     equip_flags: u8,
