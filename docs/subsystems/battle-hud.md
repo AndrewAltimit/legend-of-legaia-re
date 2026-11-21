@@ -712,7 +712,7 @@ of vanishing:
 | `0x12` | the left chip, gold plate, record `0x10`'s `Begin` / `Escape` | `x = 92 -> -56`, off the left edge |
 | `0x14` | `Reselect`, blue plate | `x = 180 -> 328`, off the right edge |
 | `0x3F` / `0x40` | the `Begin` / `Run` tab | `y = 14 -> -24`, off the top edge |
-| `0x2B..` (mode `1`, step `0x24` only) | the commit log | one display width left of its rest seat |
+| `0x2B..` (mode `1`, step `0x24` only) | every commit-log row | one display width left of its rest seat; the first row ends on `y = 0xAA` behind a Spirit second commit ([the rows' seat A](battle-command-flow.md)) |
 
 The gate holds the `0xFE` arm until the records land; the pass after, its
 handle reset (`FUN_801D99BC` at `0x801D31E8`) drains them with every text

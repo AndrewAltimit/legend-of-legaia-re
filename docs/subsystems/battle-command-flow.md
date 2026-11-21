@@ -682,9 +682,21 @@ script has already reset the handle list (`FUN_801D99BC`), so the clones are
 the only log on screen. The glide is `FUN_801D9BBC`'s linear step over
 `ctx[+0x1C]` frames, which the round reset `FUN_801D88CC` seeds to `0x10`. The
 Begin confirm's steps `0x24` / `0x29` take the tail table's plain exit, with
-no launch clones; step `0x24`'s own pairs (`2B/1 2C/1 2D/1`) slide the log
-rows one display width left beside the confirm's chips
+no launch clones; step `0x24`'s own pairs (`2B/1 2C/1 2D/1`) and its tail
+(records `0x2E + k` for `k < 3 * ctx[+0x1F]` in mode `1`,
+`0x801D56A0..0x801D56E4`) slide every row one display width left beside the
+confirm's chips
 ([the confirm's exit](battle-hud.md#the-rounds-confirm-leaves-on-a-glide)).
+The step moves only seat A's `x` for every row (`0x801D4AE0..0x801D4B08`) and
+rewrites the latest row's `y` onto its rest row (the block `ctx[+0x1F]`
+names, `0x801D4B34..0x801D4B98`); the older rows keep the seat A their
+landings left. Every landing rewrites the rows above it onto their rest
+rows except a Spirit landing on the second row, whose glide starts the first
+row from the lower row `0xAA`, and the third row's Attack and Magic / Item
+arms leave the first row alone. So behind a Spirit second commit (with two
+rows, or with a non-Spirit third) the first row glides down `24` pixels as it
+leaves; every other row slides straight left. Port:
+`battle_commit_log::commit_exit_seats`, carried as `CommitLogRow::slide_y`.
 
 The capture `party_basic_attack_vs_gobu_gobu` (solo Vahn at `0x6E`,
 `ctx[+0x1F] = 1`) holds records `0x2B` / `0x2C` / `0x2D` at seat B
