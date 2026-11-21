@@ -1985,3 +1985,10 @@ entry = "0x80032A44"
 range = "0x80032E3C..0x80032E3C"
 verdict = "unreachable"
 reason = "The header's page walk `blez a0` runs only past `beq a0,zero` at 0x80032E18, so it is taken only on a negative row count (`lh` node +0x4); the allocator FUN_80030104 stores the builder's count of copied rows, at most the 0x100 bag slots, never a negative halfword"
+
+[[arm]]
+entry = "0x801F69D8"
+range = "0x801F76B8..0x801F76B8"
+verdict = "unreachable"
+image = "ffcdaddceadee7f2"
+reason = "PROT 0905 (Vera): inside arms 6 and 7 (0x801F7440..0x801F785C), which no phase reaches - the image steps the phase by the shared tail's +1 (0x801F7F4C), arm 3's +1 (0x801F6E94) and arm 5's +3 (0x801F7434, 5 -> 8) and sets 0xFF; the lane E rows beside it (0x801F74A4, 0x801F74D4, 0x801F76E8) leave this one branch of the same arms out"

@@ -950,3 +950,286 @@ const PUERA: u32 = 0x801F_6A3C;
 const JUGGERNAUT: u32 = 0x801F_6A84;
 const BLAZING_SLASH: u32 = 0x801F_6DD8;
 const KEMARO: u32 = 0x801F_6C70;
+
+/// The character records (`0x80084140 + (id - 1) * 0x414`): the spell list
+/// `+0x705`, its levels `+0x729` and the spell-XP words `+0x5D0`.
+const CHAR_RECORDS: u32 = 0x8008_4140;
+const CHAR_STRIDE: u32 = 0x414;
+/// The cure selector `FUN_801F3D3C` latches (`0x801F6960`).
+const CURE_SELECTOR: u32 = 0x801F_6960;
+/// The special-battle word that gates every spell-XP bump (`0x8007BAC0`).
+const SPECIAL_BATTLE: u32 = 0x8007_BAC0;
+/// PROT 0919's arm countdown word.
+const SPOON_COUNTDOWN: u32 = 0x801F_8E5C;
+
+/// A machine with PROT 0898 and `entry`'s image placed, every call out of
+/// the image stubbed.
+fn heal_rig(entry: u32) -> Option<(psx_retail_exec::Cpu, Vec<u8>)> {
+    let disc = disc()?;
+    let mut cpu = scus_cpu()?;
+    cpu.mem.load(OVERLAY_BASE, &disc.read_entry(898).ok()?);
+    let module = disc.read_entry(entry as usize).ok()?;
+    for target in jal_targets(&module) {
+        cpu.stub(target, 0);
+    }
+    cpu.mem.wr32(CTX_PTR, CTX);
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+    Some((cpu, module))
+}
+
+/// One heal-arm case: the image fresh, the context on `phase` with a party
+/// caster casting `action` at `target`, eight seats of random HP (fallen,
+/// whole or hurt), max HP, status words (Stone on one in four) and AP, the
+/// caster's record listing the spell at a random place (or nowhere) with a
+/// random level beside every entry, the cure selector and the special-battle
+/// word. Returns the caster's record and the list index the walk finds
+/// (`0x20` past the list when it is missing).
+struct HealCase {
+    rec: u32,
+    idx: u32,
+    level: u8,
+    selector: u8,
+    special: bool,
+}
+
+fn seed_heal_case(
+    cpu: &mut psx_retail_exec::Cpu,
+    module: &[u8],
+    rng: &mut Rng,
+    phase: u8,
+    action: u8,
+    target: u8,
+) -> HealCase {
+    cpu.mem.load(BASE, module);
+    for b in 0..CTX_LEN as u32 {
+        cpu.mem.wr8(CTX + b, 0);
+    }
+    let caster = rng.below(3);
+    cpu.mem.wr8(CTX, 3);
+    cpu.mem.wr8(CTX + 1, 3);
+    cpu.mem.wr8(CTX + 0x13, caster as u8);
+    cpu.mem.wr8(CTX + 0x279, phase);
+    for s in 0..8u32 {
+        let a = ACTOR + s * STRIDE as u32;
+        cpu.mem.wr32(ACTORS + s * 4, a);
+        for o in (0..STRIDE as u32).step_by(4) {
+            cpu.mem.wr32(a + o, 0);
+        }
+        let max = 200 + rng.below(3000) as u16;
+        let hp = match rng.below(5) {
+            0 => 0,
+            1 => max,
+            _ => 1 + rng.below(u32::from(max)) as u16,
+        };
+        cpu.mem.wr16(a + 0x14C, hp);
+        cpu.mem.wr16(a + 0x14E, max);
+        let mut status = rng.next() as u16 & 0x0FFF;
+        if rng.below(4) != 0 {
+            status &= !4;
+        }
+        cpu.mem.wr16(a + 0x16E, status);
+        cpu.mem.wr16(a + 0x170, rng.below(101) as u16);
+        cpu.mem.wr8(a + 0x1DD, target);
+        cpu.mem.wr8(a + 0x1DF, action);
+        cpu.mem.wr8(a + 0x21D, 8);
+        let node = NODES + s * 0x100;
+        cpu.mem.wr32(a + 0x22C, node);
+        cpu.mem.wr16(node + 0x72, 0x1000);
+    }
+    for i in 0..3 {
+        cpu.mem.wr8(ROSTER + i, 1 + i as u8);
+    }
+    let rec = CHAR_RECORDS + caster * CHAR_STRIDE;
+    let at = rng.below(0x22);
+    for i in 0..0x24u32 {
+        cpu.mem
+            .wr8(rec + 0x705 + i, if i == at { action } else { 0x30 });
+        cpu.mem.wr8(rec + 0x729 + i, rng.below(10) as u8);
+        cpu.mem.wr32(rec + 0x5D0 + 4 * i, 0);
+    }
+    let selector = [1u8, 2, 3, 4, 5, 10][rng.below(6) as usize];
+    cpu.mem.wr32(CURE_SELECTOR, u32::from(selector));
+    let special = rng.below(4) == 0;
+    cpu.mem.wr32(SPECIAL_BATTLE, u32::from(special));
+    cpu.mem.wr8(SCALAR, cam::SPEED_SCALAR as u8);
+    cpu.mem.wr8(STEP, 1);
+    // The list walk stops on the first match or at 0x20 (`sltiu 0x20`).
+    let idx = at.min(0x20);
+    HealCase {
+        rec,
+        idx,
+        level: cpu.mem.rd8(rec + 0x729 + idx),
+        selector,
+        special,
+    }
+}
+
+/// Run the arm on `phase` until it leaves, its countdown word drained each
+/// pass.
+fn leave_arm(cpu: &mut psx_retail_exec::Cpu, phase: u8, countdown: u32, what: &str) {
+    for _ in 0..200 {
+        cpu.mem.wr32(countdown, 0);
+        assert_eq!(cpu.call(BASE, &[]), Stop::Returned, "{what}");
+        if cpu.mem.rd8(CTX + 0x279) != phase {
+            return;
+        }
+    }
+    panic!("{what}: arm {phase} never left");
+}
+
+fn actors(cpu: &mut psx_retail_exec::Cpu) -> Vec<CastActorState> {
+    (0..8)
+        .map(|s| read_actor(&mut cpu.mem, ACTOR + s * STRIDE as u32))
+        .collect()
+}
+
+/// PROT 0919's arm 7 (`0x801F7F48..0x801F83D8`), Spoon's party heal, against
+/// its ports over [`seed_heal_case`]'s cases: each party seat's HP is held to
+/// `spoon_heal_amount` under the missing-HP cap on a standing, un-stoned
+/// seat; its status word and AP to `spoon_cure_sweep`; and the caster's
+/// spell-XP word to the sum of `module_heal_xp_gain` over the standing seats.
+#[test]
+fn spoons_heal_arm_heals_cures_and_credits_as_the_ports_do() {
+    differential!(prot(919, SPOON));
+    use legaia_engine_battle::magic_xp::module_heal_xp_gain;
+    use legaia_engine_battle_vm::battle_formulas::spoon_heal_amount;
+    use legaia_engine_cast::seru_magic_ticks::{ORB_CLEANSE_MIN_LEVEL, spoon_cure_sweep};
+    let Some((mut cpu, module)) = heal_rig(919) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5350_4F4F);
+    let mut seen = [0usize; 6];
+    for case in 0..1500 {
+        let c = seed_heal_case(&mut cpu, &module, &mut rng, 7, 0x91, 8);
+        let before = actors(&mut cpu);
+        leave_arm(&mut cpu, 7, SPOON_COUNTDOWN, &format!("case {case}"));
+        let mut want = before.clone();
+        let mut xp = 0u32;
+        for (s, v) in want.iter_mut().take(3).enumerate() {
+            if v.hp == 0 {
+                continue;
+            }
+            let max = cpu.mem.rd16(ACTOR + s as u32 * STRIDE as u32 + 0x14E);
+            if !c.special {
+                xp += module_heal_xp_gain(0x91, c.level, v.hp, max);
+            }
+            if v.flags & 4 == 0 {
+                v.hp += spoon_heal_amount(c.level).min(u32::from(max - v.hp)) as u16;
+            }
+        }
+        let cleanse = (c.level >= ORB_CLEANSE_MIN_LEVEL).then_some(c.selector);
+        spoon_cure_sweep(&mut want, cleanse);
+        let ctx = format!(
+            "case {case}: level {} selector {} special {}",
+            c.level, c.selector, c.special
+        );
+        let got = actors(&mut cpu);
+        for s in 0..3 {
+            assert_eq!(
+                (got[s].hp, got[s].flags, got[s].spirit_gauge),
+                (want[s].hp, want[s].flags, want[s].spirit_gauge),
+                "{ctx}: seat {s} (was {:?})",
+                (before[s].hp, before[s].flags, before[s].spirit_gauge)
+            );
+        }
+        assert_eq!(
+            cpu.mem.rd32(c.rec + 0x5D0 + 4 * c.idx),
+            xp,
+            "{ctx}: the spell-XP word"
+        );
+        seen[usize::from(cleanse.unwrap_or(0).min(5))] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 50), "{seen:?}");
+}
+
+/// PROT 0905's countdown word (`cast_module_camera::VERA_COUNTDOWN_VA`).
+const VERA_COUNTDOWN: u32 = 0x801F_8818;
+
+/// PROT 0905's arm 9 (`0x801F7BB8..0x801F7F4C`), Vera's restore, against
+/// `vera_tick` with the restore applied and `module_heal_xp_gain`: the target
+/// a random party seat, fallen, stoned, hurt or whole, over
+/// [`seed_heal_case`]'s levels, selectors and special-battle word. The target's
+/// HP, HP-bar delta, status word and AP and the caster's spell-XP word are
+/// compared.
+#[test]
+fn veras_restore_arm_heals_cures_and_credits_as_the_ports_do() {
+    differential!(prot(905, VERA));
+    use legaia_engine_battle::magic_xp::module_heal_xp_gain;
+    use legaia_engine_cast::seru_magic_ticks::{SeruSeats, VeraRestore, vera_tick};
+    let Some((mut cpu, module)) = heal_rig(905) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5645_5241);
+    let mut seen = [0usize; 4];
+    for case in 0..1500 {
+        let target = rng.below(3) as u8;
+        let c = seed_heal_case(&mut cpu, &module, &mut rng, 9, 0x83, target);
+        let before = actors(&mut cpu);
+        let t = usize::from(target);
+        let max = cpu
+            .mem
+            .rd16(ACTOR + u32::from(target) * STRIDE as u32 + 0x14E);
+        leave_arm(&mut cpu, 9, VERA_COUNTDOWN, &format!("case {case}"));
+        let mut want = before.clone();
+        let mut ctx = t::CastModuleCtx {
+            phase: 9,
+            ..Default::default()
+        };
+        let caster = cpu.mem.rd8(CTX + 0x13);
+        vera_tick(
+            &mut ctx,
+            &mut want,
+            SeruSeats {
+                caster,
+                victim: target,
+                summon: 7,
+            },
+            Some(VeraRestore {
+                magic_level: c.level,
+                max_hp: max,
+                cure_tier: c.selector,
+                apply_hp: true,
+            }),
+        );
+        let xp = if c.special {
+            0
+        } else {
+            module_heal_xp_gain(0x83, c.level, before[t].hp, max)
+        };
+        let got = actors(&mut cpu);
+        let what = format!(
+            "case {case}: level {} selector {} special {} target {:?}",
+            c.level,
+            c.selector,
+            c.special,
+            (before[t].hp, max, before[t].flags)
+        );
+        assert_eq!(
+            (
+                got[t].hp,
+                got[t].hp_bar_delta,
+                got[t].flags,
+                got[t].spirit_gauge
+            ),
+            (
+                want[t].hp,
+                want[t].hp_bar_delta,
+                want[t].flags,
+                want[t].spirit_gauge
+            ),
+            "{what}"
+        );
+        assert_eq!(
+            cpu.mem.rd32(c.rec + 0x5D0 + 4 * c.idx),
+            xp,
+            "{what}: the spell-XP word"
+        );
+        seen[usize::from(before[t].hp == 0) + 2 * usize::from(before[t].flags & 4 != 0)] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 20), "{seen:?}");
+}
+
+const VERA: u32 = 0x801F_69D8;
