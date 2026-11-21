@@ -1078,8 +1078,8 @@ reason = "The kind bound after the clamp: a kind of 0x24 or more is replaced by 
 [[arm]]
 entry = "0x80031D00"
 range = "0x80032208..0x800322C8"
-verdict = "unported"
-reason = "Kind 1's typewriter internals: the +0x20 hold, the +0x1E reveal counter walked over the record's length-prefixed segments, and the hand-off to kind 0x11 when it completes; text_actor_arm ports the dispatch only, the engine's dialogue typewriter is its own (engine-dialog)"
+verdict = "unreachable"
+reason = "Kind 1's typewriter internals (the +0x20 hold, the +0x1E reveal counter over the record's length-prefixed segments, the hand-off to kind 0x11): no window of kind 1 is ever created - every FUN_8003541C call site in SCUS and the mapped overlays passes a traced kind other than 1, as do the menu window table and PROT 0897's FUN_80032434 configs (static scan; a node rewritten at runtime would reopen this row)"
 
 [[arm]]
 entry = "0x80031D00"
@@ -2386,24 +2386,6 @@ entry = "0x801cf3bc"
 range = "0x801CFF30..0x801CFF50"
 verdict = "unreachable"
 reason = "Session state 0x2D (the banner timer 0x801D9268 through FUN_801D6F10): no store in PROT 0972 puts 0x2D in the state word 0x801D926C - its writers are the literals 0, 1, 0xA, 0x14, 0x19 (0x801D2980), 0x1E, 0x20, 0x28, 0x32, 0x64, 0x66, 0x6E, 0x78, 0x79, 0x7A, 0x96, 0xC8 and the +1 steps out of 0xA, 0xB, 0xC, 0x14, 0x20 and 0x21."
-
-[[arm]]
-entry = "0x801cf3bc"
-range = "0x801CFD54..0x801CFD68"
-verdict = "unported"
-reason = "State 0x1E, the catch close-up, moves to the showcase 0x20 only once the rod sub-state 0x801D91AC reads 0x14 and the line actor's lift word 0x801D91B0 is 0; the engine hands the camera to the showcase off the line actor's close-up timer instead (VenueCameraDriver::landed, close_up_done past +0x22 0xD2), with no state word to gate."
-
-[[arm]]
-entry = "0x801cf3bc"
-range = "0x801D00F0..0x801D019C"
-verdict = "unported"
-reason = "State 0xC8, the venue exit fade: re-runs the lure gate FUN_801D712C (drawing the no-lure line when it fails), ramps 0x801D90C0 by the frame step to a grey level (x8, capped 0xFF) pushed through FUN_80024EE4, and once it reaches 0x100 with 0x8007BC20 clear calls 0x800567A8 and FUN_80026018 to leave; the engine leaves the venue on the frame the exit is chosen (World::exit_fishing), with no fade."
-
-[[arm]]
-entry = "0x801d0c3c"
-range = "0x801D0D28..0x801D0DB0"
-verdict = "unported"
-reason = "The prize list's confirm edge (& 0x44) opens the quantity picker on an available row (state 0x79, qty 0x801D90B0 = 1, cue 0x20; cue 0x22 when FUN_801D6F90 refuses) and its cancel edge (& 0x21) returns to the hub menu (state 0x64, cue 0x37); the engine's exchange (World::fishing_exchange_input) buys one unit per Buy and closes on its toggle, with no picker or confirm screen."
 
 # lane B2 (w52)
 
