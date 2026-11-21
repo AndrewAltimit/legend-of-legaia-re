@@ -140,13 +140,6 @@ const KNOWN: &[(u32, u8, usize, usize, &str)] = &[
         "the party freeze beside the hide the port does not carry",
     ),
     (963, 0x11, 0, 0x21D, "the restore of that freeze"),
-    (
-        935,
-        0xFF,
-        4,
-        0x21D,
-        "the terminal arm's restore on a struck monster seat: the action SM's Done tail puts it back (FUN_801E93C8)",
-    ),
 ];
 
 /// A director's seat write onto one record's bytes, as
@@ -325,7 +318,9 @@ fn run_body(
             cpu.mem
                 .wr8(a + o, 0x10 + k as u8 * 0x10 + rng.below(0x10) as u8);
         }
-        cpu.mem.wr8(a + 0x21D, 8);
+        // A fallen seat holds the rate its last reaction left, so a sweep
+        // that skips it shows.
+        cpu.mem.wr8(a + 0x21D, if hp == 0 { 4 } else { 8 });
         cpu.mem.wr8(a + 0x1DF, action);
         cpu.mem.wr16(a + 0x46, rng.below(0x1000) as u16);
         for o in [0x34u32, 0x38, 0x3C, 0x40] {
@@ -528,6 +523,14 @@ fn run_body(
         if let Some(rate) = t::party_rate_sweep(body.prot_entry, Some(body.body), phase) {
             for s in 0..3 {
                 want[s * STRIDE + 0x21D] = rate;
+            }
+        }
+        if let Some(rate) = t::live_seat_rate_sweep(body.prot_entry, phase) {
+            for s in 0..usize::from(t::LIVE_SEAT_SWEEP_ROWS) {
+                let hp = u16::from_le_bytes([want[s * STRIDE + 0x14C], want[s * STRIDE + 0x14D]]);
+                if hp > 0 {
+                    want[s * STRIDE + 0x21D] = rate;
+                }
             }
         }
         if let Some(a) = dir {

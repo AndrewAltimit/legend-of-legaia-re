@@ -765,6 +765,25 @@ impl World {
             victim = self.cast_view(victim_slot);
             seat = self.cast_view(seat_slot);
         }
+        // A closing arm's rate restore over every living seat of retail's
+        // first seven rows, party and monsters alike.
+        if let Some(rate) =
+            legaia_engine_cast::cast_module_ticks::live_seat_rate_sweep(entry, phase_in)
+        {
+            let map = self.cast_seat_map();
+            for r in 0..legaia_engine_cast::cast_module_ticks::LIVE_SEAT_SWEEP_ROWS {
+                if let Some(a) = map
+                    .engine(r)
+                    .and_then(|e| self.actors.get_mut(usize::from(e)))
+                    .filter(|a| a.battle.hp > 0)
+                {
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(rate);
+                }
+            }
+            caster = self.cast_view(caster_slot);
+            victim = self.cast_view(victim_slot);
+            seat = self.cast_view(seat_slot);
+        }
         if let Some((hit_arm, settle_arm, settle)) =
             ticks::gated_hit_arm(entry, if has_trampoline { body } else { None })
             && !capture_held

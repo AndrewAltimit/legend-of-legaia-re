@@ -72,7 +72,8 @@
 //! runner's three views do not name: a hit arm's rate on each seat it struck
 //! ([`ChainArm::hit_rate`]) and an arm's per-pass rate on the party row
 //! ([`party_rate_sweep`]). The action SM's Done tail puts those seats back
-//! (`FUN_801E93C8`), and PROT 0935's own `0xFF` arm does it sooner.
+//! (`FUN_801E93C8`), and PROT 0935's own `0xFF` arm does it sooner, on every
+//! living seat ([`live_seat_rate_sweep`]).
 
 use super::*;
 
@@ -529,7 +530,7 @@ pub const SPOON_CHAIN: ChainBody = ChainBody {
 /// `8` or below `3`, else the enemy row minus the caster (`0x801F7C50`) -
 /// shape A both ways, each hit seat staged with its own reaction at rate `4`.
 /// Arm 6 waits for the row to settle and stores `0xFF`; `0xFF` restores every
-/// live seat's rate to `8` ([`party_rate_sweep`]) and clears the busy register
+/// live seat's rate to `8`, monsters included ([`live_seat_rate_sweep`]), and clears the busy register
 /// (`0x801F7FBC`).
 ///
 /// Not ported: the packet and camera arms, the party-row presentation
@@ -570,17 +571,36 @@ pub const EARTHQUAKE_CHAIN: ChainBody = ChainBody {
 /// |---|---|---|
 /// | PROT 0941 `0xB9` arm 3 | `2` | `0x801F7180` |
 /// | PROT 0964 `0xB0..=0xB2` arms `7`, `0x37`, `0x69` | `2` | `0x801F86B4`, `0x801F7E98`, `0x801F7648` |
-/// | PROT 0935 `0xFF` | `8` | `0x801F7FA8` |
 /// | PROT 0963 `0xB3` arm `0x0F` | `2` | `0x801F7DB0` |
 pub fn party_rate_sweep(entry: u32, body: Option<u32>, phase: u8) -> Option<u8> {
     match (entry, phase) {
         (941, 3) if body == Some(crate::cast_arm_ticks::STEAL_SWEEP_TICK) => Some(2),
         (964, 7 | 0x37 | 0x69) if body == Some(ELEMENT_STRIKE_CHAIN.body) => Some(2),
-        (935, DONE) => Some(8),
         (963, 0x0F) if body == Some(GENOCIDAL_CANNON_CHAIN.body) => Some(2),
         _ => None,
     }
 }
+
+/// The rate an arm stores on every **living** seat of the actor table's first
+/// seven rows - the party row and the monster row alike, a fallen seat
+/// (`+0x14C == 0`) skipped - on its pass.
+///
+/// | Arm | Rate | Site |
+/// |---|---|---|
+/// | PROT 0935 `0xFF` | `8` | `0x801F7FA8`, in the `sltiu 7` walk `0x801F7F60..0x801F7FB8` |
+///
+/// Earthquake's closing arm is the one: its walk also shows each living seat
+/// (`+0x04 = 0x20080200`, `+0x21C = 0`), which is presentation, so a monster
+/// row the cast struck at rate `4` is back at `8` when the body ends.
+pub fn live_seat_rate_sweep(entry: u32, phase: u8) -> Option<u8> {
+    match (entry, phase) {
+        (935, DONE) => Some(8),
+        _ => None,
+    }
+}
+
+/// The actor-table rows [`live_seat_rate_sweep`] walks (`sltiu v0,s3,0x7`).
+pub const LIVE_SEAT_SWEEP_ROWS: u8 = 7;
 
 /// PROT 0936 (Hyper Crush, `0x4B`) tick body, `0x801F69D8..0x801F7BD0`.
 ///
@@ -1543,7 +1563,9 @@ mod chain_tests {
         }
         assert_eq!(party_rate_sweep(964, strike, 6), None);
         assert_eq!(party_rate_sweep(964, Some(0x801F_0000), 7), None);
-        assert_eq!(party_rate_sweep(935, None, DONE), Some(8));
+        assert_eq!(party_rate_sweep(935, None, DONE), None);
+        assert_eq!(live_seat_rate_sweep(935, DONE), Some(8));
+        assert_eq!(live_seat_rate_sweep(935, 5), None);
         assert_eq!(
             party_rate_sweep(941, Some(crate::cast_arm_ticks::STEAL_SWEEP_TICK), 3),
             Some(2)
