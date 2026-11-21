@@ -226,7 +226,10 @@ fn cflag_tst_halts_while_set() {
 
 #[test]
 fn yield_sets_halt_and_saves_pc() {
-    let mut host = TestHost::default();
+    let mut host = TestHost {
+        halt_acquire_predicate: true,
+        ..TestHost::default()
+    };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x37], 0);
     assert_eq!(r, StepResult::Yield { resume_pc: 3 });
@@ -236,7 +239,10 @@ fn yield_sets_halt_and_saves_pc() {
 
 #[test]
 fn yield_4_uses_pc_plus_4() {
-    let mut host = TestHost::default();
+    let mut host = TestHost {
+        halt_acquire_predicate: true,
+        ..TestHost::default()
+    };
     let mut ctx = FieldCtx::default();
     // Pad so pc=5 is in-bounds (yield reads only the opcode byte).
     let mut bc = [0u8; 6];
@@ -454,4 +460,15 @@ fn extended_032_with_other_bit_does_not_bypass_halt() {
     assert_eq!(r, StepResult::Halt { final_pc: 0 });
     // Bit 4 should NOT have been cleared (the dispatch never fired).
     assert_eq!(ctx.flags, 0x400 | 0x10);
+}
+
+#[test]
+fn a_refused_yield_keeps_its_pc() {
+    // The acquire guard (`0x801DEF28..0x801DEF70`): refused, the op neither
+    // halts nor saves a PC, and runs again next frame.
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &[0x37], 0);
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert!(!ctx.is_halted());
 }

@@ -306,6 +306,11 @@ pub fn step_from_caller<H: FieldHost>(
                 let end = (pc + 8).min(bytecode.len());
                 host.install_scripted_encounter(bytecode.get(pc..end).unwrap_or(&[]));
             }
+            // The acquire guard every acquiring arm opens with
+            // (`0x801DEF28..0x801DEF70`): refused, the PC stays.
+            if !host.field_halt_acquire_predicate(ctx, opcode) {
+                return StepResult::Halt { final_pc: pc };
+            }
             ctx.saved_pc = pc as u32;
             ctx.wait_accum = 0;
             ctx.halt();
@@ -317,6 +322,10 @@ pub fn step_from_caller<H: FieldHost>(
         // 0x47 - YIELD_4: same as 0x37/0x41 but the post-yield PC delta is 4
         // (i.e. iVar24 = 4 in the original).
         0x47 => {
+            // The same guard (`0x801DEFC0..0x801DF008`).
+            if !host.field_halt_acquire_predicate(ctx, opcode) {
+                return StepResult::Halt { final_pc: pc };
+            }
             ctx.saved_pc = pc as u32;
             ctx.wait_accum = 0;
             ctx.halt();

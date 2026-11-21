@@ -1127,6 +1127,19 @@ impl World {
         // turns that placement, not the system context.
         let pc = self.field_pc;
         let bc = std::mem::take(&mut self.field_bytecode);
+        // A facing op that acquires its target (a `B8` turn with a budget,
+        // `CC <id> 85|8E|8F`) opens with the acquire guard
+        // (`0x801DEE90..0x801DEED8`, `0x801E2148..0x801E2190`): the system
+        // caller passes the prologue's halted-target test, and the arm still
+        // refuses a target whose halt is up while the spawn bracket is down,
+        // keeping the PC for the next pass. The port keeps a placement's halt
+        // as its in-flight leg (one landed this game frame included: retail
+        // clears the bit on the target's own tick, after the system node, so
+        // a zero-budget snap leaves it clear by the next pass).
+        if self.facing_acquire_refused(&bc, pc) {
+            self.field_bytecode = bc;
+            return Some(FieldStepResult::Halt { final_pc: pc });
+        }
         let routed = self.run_placement_facing_op(&bc, pc);
         self.field_bytecode = bc;
         if let Some(next_pc) = routed {

@@ -1211,45 +1211,45 @@ reason = "PROT 0897 op 22, the player's arm (`s5 == *0x8007C364`): move id 0x63 
 
 [[arm]]
 entry = "801DE840"
-range = "0x801DEE98..0x801DEED4"
-verdict = "unported"
-reason = "PROT 0897 op 38 halt acquire: refused (PC kept) when the context runs no script (+0x94 == 0) and is not the player, or already holds the halt bit outside the spawn bracket `*(0x801C6EA4) + 8`; the VM acquires anyway, since the engine lifts the halt bit around a routed step (step_on_resolved_channel), the system context's halt is no suspension there and saved_pc is an offset; field_ctx's seeded test skips the two refusing states"
+range = "0x801DEE98..0x801DEEA8"
+verdict = "unreachable"
+reason = "PROT 0897 op 38 halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
 
 [[arm]]
 entry = "801DE840"
-range = "0x801DEF30..0x801DEF6C"
-verdict = "unported"
-reason = "PROT 0897 op 37 / 41 halt acquire: the same refusal guard as op 38 (no script and not the player, or already halted outside the spawn bracket); the VM acquires anyway (see the op-38 row)"
+range = "0x801DEF30..0x801DEF40"
+verdict = "unreachable"
+reason = "PROT 0897 op 37 / 41 halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
 
 [[arm]]
 entry = "801DE840"
-range = "0x801DEFC8..0x801DF004"
-verdict = "unported"
-reason = "PROT 0897 op 47 halt acquire: the same refusal guard as op 38 (no script and not the player, or already halted outside the spawn bracket); the VM acquires anyway (see the op-38 row)"
+range = "0x801DEFC8..0x801DEFD8"
+verdict = "unreachable"
+reason = "PROT 0897 op 47 halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
 
 [[arm]]
 entry = "801DE840"
-range = "0x801DF38C..0x801DF3C8"
-verdict = "unported"
-reason = "PROT 0897 op 43 sub 0/1/A/B arc acquire: the same refusal guard as op 38; the VM refuses only through FieldHaltHost::arc_target_halted, which the engine answers from its own arc state, not from the context's halt bit (see the op-38 row)"
+range = "0x801DF38C..0x801DF39C"
+verdict = "unreachable"
+reason = "PROT 0897 op 43 sub 0/1/A/B halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
 
 [[arm]]
 entry = "801DE840"
-range = "0x801E1BC8..0x801E1C04"
-verdict = "unported"
-reason = "PROT 0897 op 4C 6x halt acquire (behind a nonzero +0xD operand on an extended op): the same refusal guard as op 38; the VM acquires anyway (see the op-38 row)"
+range = "0x801E1BC8..0x801E1BD8"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C 61 halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
 
 [[arm]]
 entry = "801DE840"
-range = "0x801E1ED4..0x801E1F10"
-verdict = "unported"
-reason = "PROT 0897 op 4C 80 halt acquire: the same refusal guard as op 38; the VM acquires anyway (see the op-38 row)"
+range = "0x801E1ED4..0x801E1EE4"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C 80 halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
 
 [[arm]]
 entry = "801DE840"
-range = "0x801E2150..0x801E218C"
-verdict = "unported"
-reason = "PROT 0897 op 4C 85 / 8E / 8F halt acquire: the same refusal guard as op 38; the VM acquires anyway (see the op-38 row)"
+range = "0x801E2150..0x801E2160"
+verdict = "unreachable"
+reason = "PROT 0897 op 4C 85 / 8E / 8F halt acquire, the guard's first clause: refused when the target runs no script (+0x94 == 0) and is not the player (*0x8007C364); every context an op can address gets +0x94 = -1 at creation (placements 0x8003A464, objects 0x8003A8C0, the system context 0x8003ACCC), and the contexts left at 0 (record-less objects, id 0xFF; P2 spawns on list 0x8007C34C, which FUN_8003C83C does not search) are not addressable"
 
 [[arm]]
 entry = "801DE840"

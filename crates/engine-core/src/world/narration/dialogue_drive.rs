@@ -1840,6 +1840,44 @@ impl World {
             || self.field_vm.helper_contexts.iter().any(in_timeline)
     }
 
+    /// Whether the acquire guard refuses the facing op at `pc` for a caller
+    /// the prologue's halted-target test lets through (the system script):
+    /// the op acquires (a `B8 <id>` turn whose budget `op1 & 0x7F` is not
+    /// zero, `0x801DEE58..0x801DEE64`; `CC <id> 85|8E|8F`), its placement
+    /// target's halt is up and the spawn bracket is down
+    /// (`0x801DEEB0..0x801DEED8`, `0x801E2168..0x801E2190`). The port keeps a
+    /// placement's halt as its channel's `0x400` or its in-flight leg
+    /// ([`Self::npc_leg_in_flight`], which counts a leg landed this game
+    /// frame, as retail's bit stands until the target's own tick). The
+    /// guard's other clause, a target running no script, does not arise:
+    /// every placement runs a record (`+0x94 = -1` from `0x8003A464`).
+    ///
+    /// REF: FUN_801DE840 (0x801DEE90..0x801DEED8, 0x801E2148..0x801E2190)
+    pub fn facing_acquire_refused(&self, bc: &[u8], pc: usize) -> bool {
+        let (Some(&op), Some(&t)) = (bc.get(pc), bc.get(pc + 1)) else {
+            return false;
+        };
+        let acquires = op & 0x80 != 0
+            && match op & 0x7F {
+                0x38 => bc.get(pc + 3).is_some_and(|op1| op1 & 0x7F != 0),
+                0x4C => matches!(bc.get(pc + 2), Some(&(0x85 | 0x8E | 0x8F))),
+                _ => false,
+            };
+        if !acquires || self.field_vm.entry_prerun || self.field_vm.object_prerun {
+            return false;
+        }
+        let Some(slot) = self.placement_slot_for_target(t) else {
+            return false;
+        };
+        let held = self
+            .field_vm
+            .channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            .is_some_and(|c| c.ctx.is_halted());
+        held || self.npc_leg_in_flight(slot)
+    }
+
     /// A facing op aimed at another placement from a context that is not a
     /// cutscene timeline (the scene's system script, a talk record):
     /// `B8 <id> <op0> <op1>` - the compass write, or with a budget the

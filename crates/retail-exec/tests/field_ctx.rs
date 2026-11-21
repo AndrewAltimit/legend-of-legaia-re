@@ -861,19 +861,19 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                     host.flags
                 ));
             }
-            // A halt-acquire is refused on retail when its context already
-            // holds the halt bit outside the spawn bracket, or runs no script
-            // (`+0x94 == 0`) and is not the player: the guard every acquiring
-            // arm opens with (`0x801DEE90..0x801DEED8` for `38`). The port's
-            // VM acquires anyway: the engine lifts the halt bit off a context
-            // around its step (`step_on_resolved_channel`), the system
-            // context's own halt is no suspension there, and `saved_pc` is an
-            // offset, not a script pointer. A port gap, not compared.
+            // A halt-acquire is also refused on retail when its context runs
+            // no script (`+0x94 == 0`) and is not the player (the guard's
+            // first clause, `0x801DEE90..0x801DEEA8` for `38`). No context an
+            // op addresses is ever in that state - retail gives each one
+            // `+0x94 = -1` at creation (`0x8003A464`, `0x8003A8C0`,
+            // `0x8003ACCC`) - and the port, whose `saved_pc` is an offset,
+            // does not model it, so that one state is not compared. The
+            // halted clause is (variants 3 and 4).
             let acquire = matches!(label.as_str(), "37" | "38" | "41" | "47")
                 || label.starts_with("43 0")
                 || label.starts_with("4C 6")
                 || matches!(label.as_str(), "4C 80" | "4C 85" | "4C 8E" | "4C 8F");
-            if matches!(variant, 4 | 6) && acquire {
+            if variant == 6 && acquire {
                 continue;
             }
             // The port has no player context: `A2 F8` raises an ExecMove

@@ -236,6 +236,7 @@ mod spell_model_single_source_disc;
 mod sprite_arm_seat_spawn_disc;
 mod stone_delilas_confrontation_disc;
 mod suimon_controller_disc;
+mod system_face_acquire_disc;
 mod system_flag_wait_raisers_disc;
 mod talk_facing_static_class_disc;
 mod talk_heading_restore_disc;

@@ -1123,14 +1123,6 @@ fn a_crawl_config_op_moves_the_crawl_as_retail_moves_it() {
                 .map_or((retail_crawl.unwrap().0, false), |n| (n.is_paused(), true))
         });
         seen.insert((w3.min(4), present));
-        // A release count with no crawl live: retail drops it (the write
-        // sits behind the actor lookup, `0x801E33DC`), the port keeps it on
-        // the seed for a presenter it installs later
-        // (`World::open_cutscene_narration`), which can trail the op.
-        // Reported, not compared.
-        if w3 == 1 && w0 != 0 && !present {
-            continue;
-        }
         if port_seed != retail_seed || port_crawl != retail_crawl {
             *differ
                 .entry(format!(
