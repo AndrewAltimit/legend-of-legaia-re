@@ -2241,8 +2241,10 @@ except a header row above the cursor.
 **Interaction**: Up / Down move the cursor, skipping valueless rows; Cross
 opens the popup seeded with the current value; Cross inside writes the popup
 cursor **directly into the config word** (committing "Events" to Off also
-zeroes the live rumble state `0x8007B92C / 0x8007B930`); Circle backs out.
-There is no revert. The popup's x / w `(170, 128)` are static; y / h are
+zeroes the live rumble state `0x8007B92C / 0x8007B930`, on every such
+commit, an Off over an Off included); Circle backs out. The picker tests the
+confirm mask before the cancel mask, so Cross with Circle on one frame opens
+the popup. There is no revert. The popup's x / w `(170, 128)` are static; y / h are
 stamped per open: `y = window-48 y + 0x16 + sum of advances above the cursor
 row`, `h = choices * 13 - 4`, flipped up by `choices * 13 + 0x1C` when the
 bottom would pass y = `0xB0`. `FUN_801D2B44` lists the choices at a 13-px

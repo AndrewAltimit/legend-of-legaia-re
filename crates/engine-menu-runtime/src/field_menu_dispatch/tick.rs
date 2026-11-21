@@ -63,6 +63,13 @@ pub fn tick_open_subsession(
         active.tick_pad_edge_with_key(edge, key_pressed);
     }
     resume_after_use(active, world);
+    // An Events-vibration-Off commit zeroes the two motor words
+    // (`0x801DAD18..0x801DAD24`), whatever the setting held before.
+    if let FieldMenuSubsession::Config(options) = active
+        && options.take_motor_stop()
+    {
+        world.rumble.motors = Default::default();
+    }
     if let FieldMenuSubsession::Equip {
         session, char_slot, ..
     } = active

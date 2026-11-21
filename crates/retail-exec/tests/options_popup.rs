@@ -157,11 +157,24 @@ const SUBSCREEN: u32 = 0x801E_46A4;
 /// The rumble motor words the Events commit zeroes (`0x801DACF0..0x801DAD24`).
 const RUMBLE: [u32; 2] = [0x8007_B92C, 0x8007_B930];
 
+fn opts(
+    sub: &legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession,
+) -> &legaia_engine_menus::options::OptionsSession {
+    match sub {
+        legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession::Config(s) => s,
+        _ => unreachable!(),
+    }
+}
+
 #[test]
 fn the_options_picker_steps_as_retail_steps() {
-    use legaia_engine_menus::options::{
-        OptionsEvent, OptionsInput, OptionsPhase, OptionsSession, OptionsSetting, OptionsState,
+    use legaia_engine_menu_runtime::field_menu_dispatch::{
+        FieldMenuSubsession, tick_open_subsession,
     };
+    use legaia_engine_menus::options::{
+        OptionsInput, OptionsPhase, OptionsSession, OptionsSetting, OptionsState,
+    };
+    use legaia_engine_system::pad::PadButton;
     differential!(prot(899, PICKER));
     let Some((mut cpu, cues)) = rig() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -190,6 +203,7 @@ fn the_options_picker_steps_as_retail_steps() {
         .unwrap();
     let mut rng = Rng(0x4F50_5453);
     let (mut commits, mut cancels, mut exits, mut wraps, mut stops) = (0, 0, 0, 0, 0);
+    let (mut both, mut recommits) = (0, 0);
     for case in 0..600 {
         let mut state = OptionsState::default();
         for (def, ptr) in OPTIONS_DISPLAY_ROWS.iter().zip(&ptrs) {
@@ -199,7 +213,11 @@ fn the_options_picker_steps_as_retail_steps() {
                 cpu.mem.wr32(*p, u32::from(v));
             }
         }
-        let mut port = OptionsSession::new(state);
+        // The port as the pause menu hosts it: the sub-session stepped by the
+        // shared `tick_open_subsession` over a world, whose motor words an
+        // Events-Off commit zeroes.
+        let mut sub = FieldMenuSubsession::Config(OptionsSession::new(state));
+        let mut world = legaia_engine_core::world::World::new();
         // State 0: the cursor home, the window opened, then the browse.
         cpu.mem.wr32(STEP, 0);
         cpu.mem.wr32(CURSOR, 0xFFF);
@@ -215,6 +233,7 @@ fn the_options_picker_steps_as_retail_steps() {
                 3 => Some((cpu.mem.rd32(CURSOR) as u8, Some(cpu.mem.rd32(CHOICE) as u8))),
                 s => panic!("{what}: step {s}"),
             };
+            let port = opts(&sub);
             let port_phase = match port.phase() {
                 OptionsPhase::Browsing { cursor } => Some((cursor, None)),
                 OptionsPhase::Editing { cursor, choice } => Some((cursor, Some(choice))),
@@ -235,7 +254,7 @@ fn the_options_picker_steps_as_retail_steps() {
                 exits += 1;
                 break;
             };
-            let input = match rng.below(9) {
+            let input = match rng.below(10) {
                 0..=2 => OptionsInput {
                     up: true,
                     ..Default::default()
@@ -246,6 +265,12 @@ fn the_options_picker_steps_as_retail_steps() {
                 },
                 6..=7 => OptionsInput {
                     cross: true,
+                    ..Default::default()
+                },
+                // Both on one frame: the confirm mask is tested first.
+                8 => OptionsInput {
+                    cross: true,
+                    circle: true,
                     ..Default::default()
                 },
                 _ => OptionsInput {
@@ -265,7 +290,7 @@ fn the_options_picker_steps_as_retail_steps() {
             for w in RUMBLE {
                 cpu.mem.wr32(w, 0x55);
             }
-            let events_was = OptionsSetting::VibrationEvents.get(port.state());
+            let events_was_off = OptionsSetting::VibrationEvents.get(opts(&sub).state()) == 1;
             cues.borrow_mut().clear();
             assert_eq!(cpu.call(PICKER, &[0, 9, 0x30, 1]), Stop::Returned, "{what}");
             // A closed popup's state 1 reruns the window script and is back on
@@ -275,59 +300,72 @@ fn the_options_picker_steps_as_retail_steps() {
                 cpu.mem.wr32(REPEAT, 0);
                 assert_eq!(cpu.call(PICKER, &[0, 9, 0x30, 1]), Stop::Returned);
             }
-            let before = port.phase();
-            let events = port.tick(input);
-            let committed = events
-                .iter()
-                .any(|e| matches!(e, OptionsEvent::ValueChanged { .. }));
+            let before = opts(&sub).phase();
+            let pad = [
+                (input.up, PadButton::Up),
+                (input.down, PadButton::Down),
+                (input.cross, PadButton::Cross),
+                (input.circle, PadButton::Circle),
+            ]
+            .iter()
+            .filter(|(on, _)| *on)
+            .fold(0u16, |w, (_, b)| w | b.mask());
+            world.rumble.motors.pulse = 0x55;
+            world.rumble.motors.level = 0x55;
+            tick_open_subsession(&mut sub, pad, None, &mut world);
+            let after = opts(&sub).phase();
+            let closed_popup = matches!(before, OptionsPhase::Editing { .. })
+                && matches!(after, OptionsPhase::Browsing { .. });
+            let committed = closed_popup && input.cross;
             assert_eq!(
                 cues.borrow().contains(&0x20),
                 committed,
                 "{what}: the commit cue"
             );
             commits += usize::from(committed);
-            cancels += usize::from(events.contains(&OptionsEvent::EditCancelled));
+            cancels += usize::from(closed_popup && !input.cross);
             if let (
                 OptionsPhase::Editing { choice: a, .. },
                 OptionsPhase::Editing { choice: b, .. },
-            ) = (before, port.phase())
+            ) = (before, after)
             {
                 wraps += usize::from(a.abs_diff(b) > 1);
             }
-            // Committing Events Off stops the motors; the port's push does
-            // it on the On-to-Off edge (`legaia_engine_core::options`).
-            if committed
-                && before.eq(&OptionsPhase::Editing {
-                    cursor: events_row as u8,
-                    choice: 1,
-                })
-                && events_was == 0
-            {
-                let mut world = legaia_engine_core::world::World::new();
-                let mut was = OptionsState::default();
-                OptionsSetting::VibrationEvents.set(&mut was, 0);
-                legaia_engine_core::options::apply_to_world(&was, &mut world);
-                world.rumble.motors.pulse = 0x55;
-                world.rumble.motors.level = 0x55;
-                legaia_engine_core::options::apply_to_world(port.state(), &mut world);
-                assert_eq!(
-                    RUMBLE.map(|w| cpu.mem.rd32(w)),
-                    [0, 0],
-                    "{what}: the motors stop"
-                );
-                assert_eq!(
-                    (world.rumble.motors.pulse, world.rumble.motors.level),
-                    (0, 0),
-                    "{what}: the port's motors"
+            both += usize::from(
+                input.cross && input.circle && matches!(before, OptionsPhase::Browsing { .. }),
+            );
+            // Committing Events Off stops the motors, Off over Off included.
+            let stopped = RUMBLE.map(|w| cpu.mem.rd32(w)) == [0, 0];
+            assert_eq!(
+                (world.rumble.motors.pulse, world.rumble.motors.level) == (0, 0),
+                stopped,
+                "{what}: the motors"
+            );
+            if stopped {
+                assert!(
+                    committed
+                        && before
+                            == OptionsPhase::Editing {
+                                cursor: events_row as u8,
+                                choice: 1,
+                            },
+                    "{what}"
                 );
                 stops += 1;
-            } else if !(committed && port.cursor() as usize == events_row) {
+                recommits += usize::from(events_was_off);
+            } else {
                 assert_eq!(RUMBLE.map(|w| cpu.mem.rd32(w)), [0x55, 0x55], "{what}");
             }
         }
     }
     assert!(
-        commits > 300 && cancels > 100 && exits > 100 && wraps > 50 && stops > 10,
-        "{commits} {cancels} {exits} {wraps} {stops}"
+        commits > 300
+            && cancels > 100
+            && exits > 100
+            && wraps > 50
+            && stops > 10
+            && both > 100
+            && recommits > 5,
+        "{commits} {cancels} {exits} {wraps} {stops} {both} {recommits}"
     );
 }
