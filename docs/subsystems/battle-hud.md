@@ -1665,8 +1665,8 @@ What state `0x3C` puts on screen, read out of its own display list. The
 | item-list window | system-UI window-skin tile grid (widget page `(896, 256)`, CLUT row 511 sub-palette 2), spanning x `166..=313`, y `28..=164` |
 | description window | same skin, x `8..=167`, y `122..=164`; shows the highlighted item's info-window description in ink 7 on placement record `0x17`'s pen `(16, 132 - 2)`, a second line one `0xE` pitch down |
 | hand cursor | 16x16 pointing-finger `POLY_FT4` (CLUT row 511 sub-palette 7), the [list kernel's](field-menu.md#the-kind-4-list-kernel-scus-fun_80032a44) `FUN_8002B994(0, browsing, WX - 6, row_y)`: `x = 168` plus the bob table's `-2..2` (`167` on this capture), `y = 45 + 14*row` - row pitch 14 |
-| rows | eight per page on the list kernel's pen `WX = 174` (placement record `0x16`'s content box `(174, 38)`): name at `WX + 0xC` on the hand's own `row_y`, ink from `y = 47`; the bag count in the three-cell number field at `WX + 0x6C`; ink 7, ink 0 for a disabled row - its enable bit, not the hand |
-| header | the kernel's `PAGE` tag and digits, as on a shop list (`battle_item_window_gaza2_retail`: tag at `(249, 35)`, digits at x `279`, `293`, `299`); the page triangles at `(308, 94)` and `(162, 94)` blink on the frame word |
+| rows | eight per page on the list kernel's node `(WX, WY, w, h) = (174, 36, 131, 120)` (read off the live node in the state; placement record `0x16`'s content box `(174, 38)`): name at `WX + 0xC` on the hand's own `row_y`, ink from `y = 47`; the bag count in the three-cell number field at `WX + 0x6C`; ink 7, ink 0 for a disabled row - its enable bit, not the hand |
+| header | the kernel's `PAGE` tag and digits at `WY - 2`, as on a shop list (`battle_item_window_gaza2_retail`: tag at `(249, 34)`, digits at x `279`, `293`, `299`); the page triangles at `(WX + w + 4, WY + h/2 - 3)` = `(309, 93)` and `(WX - 0xC, ..)` = `(162, 93)` blink on the frame word |
 | breadcrumbs | the HUD's [trail](#the-actor-name-plaque): `Begin` tab (record 1), the plaque behind it (record `0x1A`), the `Item` tab (record `0x0C`) |
 
 **Row enable.** Which rows are selectable is the SCUS list builder's call

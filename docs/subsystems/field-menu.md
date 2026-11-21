@@ -1182,6 +1182,12 @@ when the row's `0x800` bit is set and to 1 when `0x400` is set - **unless the
 list is parked** (mode 4), which keeps every row white. So a list goes from
 all-white to its per-row inks the moment the hand enters it; a page that reads
 all-grey is a page whose rows are each individually disabled.
+The `0x4000` verb and `0x8000` landmark arms stage no ink at all: they draw in
+whatever the row above left (or the ink the caller staged, on a page's first
+row), so a verb row under a disabled row draws grey. `0x2000` / `0x5000`,
+`0x6000`, `0x7000`, `0x9000` and the shop arms stage 7, 0 when dim; `0xA000`
+then 5; and the kernel leaves 7 on its way out. A count draws in the row's ink
+through the CLUT `ink + 0x7F86`, the same place walk as `FUN_80034B78`.
 
 **Hand + page arrows** (`80032f5c..8003304c`): hand
 `FUN_8002B994(0, browsing, WX - 6, row_y)`, suppressed when parked and, in
@@ -1197,7 +1203,9 @@ wrap, page flip) and `engine-menus::menu_list_rows` - the allocator
 `FUN_8002FF8C`), content-builder cases (below) and the live-window upsert
 (`LiveWindowSet`, `FUN_80032434`). The description dispatcher is
 `engine-ui::menu::window_painters::description_source`. Row and header draws
-are in `engine-ui::menu::screens::pause_lists`.
+are in `engine-ui::menu::screens::pause_lists` (the triangles off the node rect:
+`list_page_arrow_draws_at`); the per-row class arms are
+`menu_list_rows::list_row_draws`.
 
 ### Use-list row build (content id 3, `FUN_80030628`)
 

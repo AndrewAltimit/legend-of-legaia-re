@@ -184,6 +184,154 @@ pub fn list_row_ink(entry: u16, parked: bool) -> u8 {
     }
 }
 
+/// The equipment pictogram a [`CLASS_BAG_EQUIP`] row draws, by the armament
+/// category of the item's equipment record (`(+7 & 0x60) >> 5`): the
+/// halfword table at `0x80073A90` - body armour, helmet, weapon, footwear.
+pub const ARMAMENT_PICTOGRAMS: [u16; 4] = [0x23, 0x22, 0x24, 0x25];
+/// The pictogram a [`CLASS_ITEM_ICON`] row (the worn item) draws.
+pub const WORN_PICTOGRAM: u16 = 0x21;
+/// The pictogram a [`CLASS_PASSIVE`] (Goods) row draws.
+pub const GOODS_PICTOGRAM: u16 = 0x46;
+
+/// The pictogram the kernel draws at a row's `WX + 0xC`, ahead of a name
+/// moved to `WX + 0x1C`: the worn item's, a Goods row's, or an equipment
+/// bag row's category pictogram ([`ARMAMENT_PICTOGRAMS`]) when the slot's
+/// item is equipment (`kind == 1`). `None` for every other row - a
+/// [`CLASS_BAG_EQUIP`] row whose item is not equipment draws its name and
+/// count instead.
+///
+/// PORT: FUN_80032A44 (the `0x6000` / `0x7000` / `0x9000` pictogram arms, `0x80033294..0x800332F0`, `0x80033478..0x800334FC`)
+///
+/// REPLACED-BY: `crate::pause_screens::equip_model`'s candidate icons, keyed by
+/// the slot the list serves; the armament filter admits only that slot's
+/// category, so the two agree - see family 2 in the module heading.
+pub fn list_row_pictogram(entry: u16, item_kind: u8, equip_flags: u8) -> Option<u16> {
+    match entry & ROW_CLASS_MASK {
+        CLASS_ITEM_ICON => Some(WORN_PICTOGRAM),
+        CLASS_PASSIVE => Some(GOODS_PICTOGRAM),
+        CLASS_BAG_EQUIP if item_kind == 1 => {
+            Some(ARMAMENT_PICTOGRAMS[usize::from((equip_flags & 0x60) >> 5)])
+        }
+        _ => None,
+    }
+}
+
+/// What the kind-4 list kernel draws for one row, every offset from the
+/// window's content x (`WX`, node `+0xA`) on the row's own `row_y`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListRowDraw {
+    /// The ink staged in `gp+0x13C` for the row's string and digits.
+    pub ink: u8,
+    /// A pictogram `(dx, ICO id)` drawn through `FUN_8002C488`.
+    pub pictogram: Option<(i32, u16)>,
+    /// The name `(dx, source)` drawn through `FUN_80036888`.
+    pub name: Option<(i32, RowNameSource)>,
+    /// A blank-padded number field `(dx, value, cells)` - the same place walk
+    /// as `FUN_80034B78`, inlined.
+    pub number: Option<(i32, i32, i32)>,
+    /// The landmark arm draws its name with the glyph pitch byte
+    /// `0x80073F20` raised to `0x10`, restored after.
+    pub wide: bool,
+}
+
+/// The kernel's per-row pass (`0x80033050..0x80033778`) over one page of
+/// `rows`, from the ink `gp+0x13C` held when it starts.
+///
+/// Each class arm stages its own ink - `7`, then `0` for a dim row unless the
+/// list is parked; a bag row's alt-ink bit then wins ([`list_row_ink`]); a
+/// [`CLASS_SHOP_ALT`] row ends on `5` - and the verb ([`CLASS_VERB`]) and
+/// landmark ([`CLASS_LANDMARK`]) arms stage none, so they draw in the ink the
+/// row above left (or `ink_in` on the page's first row). Bag rows
+/// ([`CLASS_BAG`]) carry the slot's count in three cells at `WX + 0x6C`; an
+/// equipment-bag row whose item is not equipment the same at `WX + 0x78`;
+/// shop rows ([`CLASS_ITEM`] / [`CLASS_SHOP_ALT`]) the price in five cells at
+/// `WX + 0x80`, the name off the item record at `WX + 0x18`. Class `0` and
+/// the nibbles past `0xA` draw nothing and keep the ink.
+///
+/// PORT: FUN_80032A44 (the per-row class arms, `0x80033050..0x80033778`)
+///
+/// REPLACED-BY: the typed rows each screen draws from - see family 2 in the
+/// module heading. The bag count's cells are `legaia_engine_ui`'s
+/// `decimal_field_cells`, the shop ink [`crate::shop::shop_buy_row_ink`].
+pub fn list_row_draws(
+    rows: &[u16],
+    parked: bool,
+    bag: &[(u8, u8)],
+    tables: &dyn ItemRowTables,
+    ink_in: u8,
+) -> Vec<Option<ListRowDraw>> {
+    let mut ink = ink_in;
+    let slot = |entry: u16| {
+        bag.get(usize::from(entry & ROW_NAME_PAYLOAD_MASK))
+            .copied()
+            .unwrap_or((0, 0))
+    };
+    rows.iter()
+        .map(|&entry| {
+            let class = entry & ROW_CLASS_MASK;
+            let dim = !parked && entry & ROW_DISABLED != 0;
+            let staged = |featured: bool| {
+                if featured {
+                    5
+                } else if dim {
+                    LIST_INK_DISABLED
+                } else {
+                    LIST_INK_NORMAL
+                }
+            };
+            let name = |dx: i32| Some((dx, row_name_source(entry)));
+            let mut draw = ListRowDraw {
+                ink,
+                pictogram: None,
+                name: None,
+                number: None,
+                wide: false,
+            };
+            match class {
+                CLASS_BAG => {
+                    ink = list_row_ink(entry, parked);
+                    draw.name = name(0xC);
+                    draw.number = Some((0x6C, i32::from(slot(entry).1), 3));
+                }
+                CLASS_SPELL | CLASS_SPELL_ALT => {
+                    ink = staged(false);
+                    draw.name = name(0xC);
+                }
+                CLASS_ITEM | CLASS_SHOP_ALT => {
+                    ink = staged(class == CLASS_SHOP_ALT);
+                    let id = (entry & ROW_NAME_PAYLOAD_MASK) as u8;
+                    draw.name = Some((0x18, RowNameSource::Item(u16::from(id))));
+                    draw.number = Some((0x80, i32::from(tables.price(id)), 5));
+                }
+                CLASS_VERB => draw.name = name(0xC),
+                CLASS_LANDMARK => {
+                    draw.name = name(0xC);
+                    draw.wide = true;
+                }
+                CLASS_BAG_EQUIP | CLASS_ITEM_ICON | CLASS_PASSIVE => {
+                    ink = staged(false);
+                    let (id, count) = slot(entry);
+                    let kind = tables.kind(id);
+                    let flags = tables.equip_flags(tables.subtype(id));
+                    match list_row_pictogram(entry, kind, flags) {
+                        Some(ico) => {
+                            draw.pictogram = Some((0xC, ico));
+                            draw.name = name(0x1C);
+                        }
+                        None => {
+                            draw.name = name(0xC);
+                            draw.number = Some((0x78, i32::from(count), 3));
+                        }
+                    }
+                }
+                _ => return None,
+            }
+            draw.ink = ink;
+            Some(draw)
+        })
+        .collect()
+}
+
 /// The persisted scroll / selection pair the allocator clamps and re-seeds
 /// each list from: the retail globals `0x8007BB90` (scroll top, `gp+0x878`)
 /// and `0x8007BB98` (selected row, `gp+0x880`). Keeping them across window

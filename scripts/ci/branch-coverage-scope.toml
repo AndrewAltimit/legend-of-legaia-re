@@ -1977,3 +1977,11 @@ entry = "0x8004E568"
 range = "0x8004ED4C..0x8004EE08"
 verdict = "unported"
 reason = "The win's load phases 2..4 poll the CD (FUN_8003DE7C(1) at 0x8004ED4C / 0x8004EDA8 / 0x8004EDEC) before installing the voice bank in VAB slot 7, streaming PROT 0889 toward slot 11 (FUN_8001FC00(0x37B, 0xB)) and installing it with gp+0xA48 |= 0x80; the engine streams nothing and holds the measured VICTORY_LOAD_FRAMES instead, so the waits have no port."
+
+# lane D (w52)
+
+[[arm]]
+entry = "0x80032A44"
+range = "0x80032E3C..0x80032E3C"
+verdict = "unreachable"
+reason = "The header's page walk `blez a0` runs only past `beq a0,zero` at 0x80032E18, so it is taken only on a negative row count (`lh` node +0x4); the allocator FUN_80030104 stores the builder's count of copied rows, at most the 0x100 bag slots, never a negative halfword"

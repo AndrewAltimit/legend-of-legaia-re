@@ -1639,3 +1639,323 @@ fn the_list_kernel_confirms_and_cancels_as_the_items_screen_does() {
     }
     assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
 }
+
+const ICON_DRAW: u32 = 0x8002_C488;
+const CELL_DRAW: u32 = 0x8003_C11C;
+const GLYPH_PITCH: u32 = 0x8007_3F20;
+const BLINK: u32 = 0x8008_4570;
+
+/// A hook's log.
+type Calls<T> = Rc<RefCell<Vec<T>>>;
+
+/// One `FUN_80036888` string draw: pointer, pen, ink and glyph pitch byte.
+type StringCall = (u32, i32, i32, u8, u8);
+
+/// [`ItemRowTables`] over the item and equipment tables as the executable
+/// holds them.
+struct ScusRowTables {
+    items: Vec<[u8; 4]>,
+    equip_flags: Vec<u8>,
+}
+
+impl ScusRowTables {
+    fn read(cpu: &mut Cpu) -> Self {
+        let items = (0..256u32)
+            .map(|id| {
+                let r = ITEMS + id * 12;
+                [0, 1, 2, 3].map(|k| cpu.mem.rd8(r + k))
+            })
+            .collect();
+        let equip_flags = (0..256u32)
+            .map(|s| cpu.mem.rd8(EQUIP + s * 8 + 7))
+            .collect();
+        Self { items, equip_flags }
+    }
+}
+
+impl legaia_engine_menus::menu_list_rows::ItemRowTables for ScusRowTables {
+    fn kind(&self, id: u8) -> u8 {
+        self.items[usize::from(id)][0]
+    }
+    fn subtype(&self, id: u8) -> u8 {
+        self.items[usize::from(id)][1]
+    }
+    fn price(&self, id: u8) -> u16 {
+        let r = self.items[usize::from(id)];
+        u16::from_le_bytes([r[2], r[3]])
+    }
+    fn effect_flags(&self, _: u8) -> u8 {
+        0
+    }
+    fn effect_marker(&self, _: u8) -> u8 {
+        0
+    }
+    fn equip_flags(&self, subtype: u8) -> u8 {
+        self.equip_flags[usize::from(subtype)]
+    }
+}
+
+/// The list kernel `FUN_80032A44`'s per-row arms (`0x80033050..0x80033778`)
+/// against `list_row_draws`: random pages of rows of every class nibble, dim
+/// and alt bits, a random bag (ids and counts) over the executable's item
+/// and equipment tables, the kernel in every list mode but the pad-driven
+/// one, from a random staged ink. The pictograms (`FUN_8002C488`), the
+/// strings (`FUN_80036888`, with the ink and glyph pitch they draw under)
+/// and the number cells (`FUN_8003C11C`, against `decimal_field_cells`) are
+/// compared whole, row by row.
+#[test]
+fn the_list_kernel_draws_each_row_class_as_the_port_lays_it() {
+    differential!(scus(LIST_DRAW));
+    use legaia_engine_menus::menu_list_rows::{RowNameSource, list_row_draws};
+    use legaia_engine_ui::menu::decimal_field::decimal_field_cells;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const LIST: u32 = 0x8013_1000;
+    const FAKE: u32 = 0x8140_0000;
+    cpu.stub_outside = Some((LIST_DRAW, 0x8003_37B0));
+    cpu.hook(ROW_NAME, |r, _| r.r[V0] = FAKE + (r.r[A0] & 0xFFFF));
+    let strings: Calls<StringCall> = Rc::default();
+    let icons: Calls<(i32, i32, u16)> = Rc::default();
+    let cells: Calls<(i32, i32, u16, u16)> = Rc::default();
+    let s = strings.clone();
+    cpu.hook(DRAW_STRING, move |r, m| {
+        let y = m.rd32(r.r[psx_retail_exec::SP] + 0x10) as i32;
+        s.borrow_mut().push((
+            r.r[A0],
+            r.r[A3] as i32,
+            y,
+            m.rd32(GP + 0x13C) as u8,
+            m.rd8(GLYPH_PITCH),
+        ));
+    });
+    let i = icons.clone();
+    cpu.hook(ICON_DRAW, move |r, _| {
+        i.borrow_mut()
+            .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2] as u16));
+    });
+    let c = cells.clone();
+    cpu.hook(CELL_DRAW, move |r, m| {
+        c.borrow_mut().push((
+            m.rd16(r.r[A0]) as i16 as i32,
+            m.rd16(r.r[A0] + 2) as i16 as i32,
+            m.rd16(r.r[A1]),
+            r.r[A2] as u16,
+        ));
+    });
+    let tables = ScusRowTables::read(&mut cpu);
+    let pitch = cpu.mem.rd8(GLYPH_PITCH);
+    let (wx, wy, w) = (40i32, 30i32, 200i32);
+    let mut rng = Rng(0x524F_5753);
+    let mut seen = [0usize; 16];
+    for case in 0..3000 {
+        let bag: Vec<(u8, u8)> = (0..256)
+            .map(|_| {
+                let count = match rng.below(4) {
+                    0 => 0,
+                    1 => rng.below(10) as u8,
+                    2 => [10u8, 40, 99, 100, 200, 255][rng.below(6) as usize],
+                    _ => rng.below(256) as u8,
+                };
+                (rng.below(256) as u8, count)
+            })
+            .collect();
+        for (k, (id, n)) in bag.iter().enumerate() {
+            cpu.mem.wr8(BAG + 2 * k as u32, *id);
+            cpu.mem.wr8(BAG + 2 * k as u32 + 1, *n);
+        }
+        let count = 1 + rng.below(30) as u16;
+        let visible = 1 + rng.below(10) as u16;
+        let top = rng.below(u32::from(count)) as u16;
+        let h = 14 * i32::from(visible) + 4 + rng.below(6) as i32;
+        let rows: Vec<u16> = (0..count)
+            .map(|_| {
+                let class = (rng.below(12) as u16) << 12;
+                let bits = [0u16, 0x800, 0x400, 0xC00][rng.below(4) as usize];
+                class | bits | rng.below(256) as u16
+            })
+            .collect();
+        let mode = [0u32, 2, 4, 1][rng.below(4) as usize];
+        let ink_in = rng.below(8) as u8;
+        cpu.mem.wr32(GP + 0x87C, mode);
+        cpu.mem.wr32(GP + 0x13C, u32::from(ink_in));
+        cpu.mem.wr32(GP + 0x15C, 0);
+        cpu.mem.wr32(BLINK, 0);
+        cpu.mem.wr32(NODE + 0x18, LIST);
+        // Content `0x24` is outside the navigable table: mode 1 draws only.
+        cpu.mem.wr8(NODE + 0x1C, 0x24);
+        for (o, v) in [(0xA, wx), (0xC, wy), (0xE, w), (0x10, h)] {
+            cpu.mem.wr16(NODE + o, v as u16);
+        }
+        cpu.mem.wr16(LIST, top);
+        cpu.mem.wr16(LIST + 2, visible);
+        cpu.mem.wr16(LIST + 4, count);
+        cpu.mem.wr16(LIST + 6, top);
+        for (k, r) in rows.iter().enumerate() {
+            cpu.mem.wr16(LIST + 0x28 + 2 * k as u32, *r);
+        }
+        strings.borrow_mut().clear();
+        icons.borrow_mut().clear();
+        cells.borrow_mut().clear();
+        assert_eq!(cpu.call(LIST_DRAW, &[NODE]), Stop::Returned, "case {case}");
+
+        let page = &rows[usize::from(top)..usize::from((top + visible).min(count))];
+        let draws = list_row_draws(page, mode == 4, &bag, &tables, ink_in);
+        let (mut want_s, mut want_i, mut want_c) = (Vec::new(), Vec::new(), Vec::new());
+        let y0 = wy + ((h - 14 * i32::from(visible)) >> 1) + 5;
+        for (k, (entry, d)) in page.iter().zip(&draws).enumerate() {
+            let y = y0 + 14 * k as i32;
+            let Some(d) = d else { continue };
+            seen[usize::from(entry >> 12)] += 1;
+            if let Some((dx, ico)) = d.pictogram {
+                want_i.push((wx + dx, y, ico));
+            }
+            if let Some((dx, src)) = d.name {
+                let ptr = match src {
+                    RowNameSource::Item(id) if dx == 0x18 => {
+                        cpu.mem.rd32(ITEMS + u32::from(id) * 12 + 4)
+                    }
+                    _ => FAKE + u32::from(*entry),
+                };
+                want_s.push((ptr, wx + dx, y, d.ink, if d.wide { 0x10 } else { pitch }));
+            }
+            if let Some((dx, value, n)) = d.number {
+                for (cx, digit) in decimal_field_cells(value, n, false) {
+                    want_c.push((
+                        wx + dx + cx,
+                        y,
+                        u16::from(digit) * 8,
+                        u16::from(d.ink) + 0x7F86,
+                    ));
+                }
+            }
+        }
+        let ctx = format!("case {case}: mode {mode} ink {ink_in} rows {page:04x?}");
+        // The header's pictograms stand at `WY - 2`, over every row.
+        let got_i: Vec<_> = icons
+            .borrow()
+            .iter()
+            .copied()
+            .filter(|c| c.1 != wy - 2)
+            .collect();
+        assert_eq!(got_i, want_i, "{ctx}: the pictograms");
+        assert_eq!(*strings.borrow(), want_s, "{ctx}: the strings");
+        assert_eq!(*cells.borrow(), want_c, "{ctx}: the number cells");
+        assert_eq!(cpu.mem.rd32(GP + 0x13C), 7, "{ctx}: the ink left");
+    }
+    assert!(seen.iter().take(11).skip(1).all(|&n| n > 300), "{seen:?}");
+}
+
+/// The kernel's header and page triangles (`0x80032E18..0x8003304C`) against
+/// `page_header_draws` and `list_page_arrow_draws_at`: random node rects,
+/// page sizes, counts and page-aligned tops, the kernel in list mode 1 on a
+/// navigable content id (the triangles' gate `s4`) or in another mode, the
+/// frame word's blink bits random. Every pictogram outside the rows is
+/// compared with the port's draws, mapped back to the ICO ids through a
+/// synthetic font's sprite cells.
+#[test]
+fn the_list_kernel_header_and_page_triangles_draw_where_the_port_draws_them() {
+    differential!(scus(LIST_DRAW));
+    use legaia_engine_ui::{list_page_arrow_draws_at, shop_screen::page_header_draws};
+    use legaia_font::sprite_cell_ids as ids;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const LIST: u32 = 0x8013_1000;
+    const NAV_IDS: u32 = 0x8007_3E1C;
+    cpu.stub_outside = Some((LIST_DRAW, 0x8003_37B0));
+    let icons: Calls<(i32, i32, u16)> = Rc::default();
+    let i = icons.clone();
+    cpu.hook(ICON_DRAW, move |r, _| {
+        i.borrow_mut()
+            .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2] as u16));
+    });
+    // Retail ICO id <-> the port's sprite cell id.
+    let pairs: Vec<(u16, u16)> = [
+        (0x76, ids::PAGE_TAG),
+        (0x79, ids::PAGE_SLASH),
+        (0x27, ids::PAGE_PREV),
+        (0x28, ids::PAGE_NEXT),
+    ]
+    .into_iter()
+    .chain((0..10).map(|d| (0x7A + d, ids::PAGE_DIGIT + d)))
+    .collect();
+    let font = legaia_font::synthetic_for_tests().with_sprite_cells(
+        &pairs
+            .iter()
+            .map(|&(_, id)| legaia_font::SpriteCellSrc {
+                id,
+                w: 8,
+                h: 8,
+                rgba: vec![0xFF; 8 * 8 * 4],
+            })
+            .collect::<Vec<_>>(),
+    );
+    let ico_of = |src: (u32, u32, u32, u32)| -> u16 {
+        pairs
+            .iter()
+            .find(|&&(_, id)| {
+                font.sprite_cell(id)
+                    .is_some_and(|c| (c.atlas_x, c.atlas_y) == (src.0, src.1))
+            })
+            .expect("a known cell")
+            .0
+    };
+    let content = cpu.mem.rd8(NAV_IDS);
+    let mut rng = Rng(0x5041_4745);
+    let mut seen = [0usize; 3];
+    for case in 0..4000 {
+        let (wx, wy) = (20 + rng.below(80) as i32, 20 + rng.below(40) as i32);
+        let w = 0x60 + rng.below(0x60) as i32;
+        let visible = 1 + rng.below(12) as i32;
+        let h = 14 * visible + 4 + rng.below(8) as i32;
+        let count = 1 + rng.below(60) as i32;
+        let pages = (count + visible - 1) / visible;
+        let page = 1 + rng.below(pages as u32) as i32;
+        let top = (page - 1) * visible;
+        let mode = [1u32, 1, 1, 0, 2][rng.below(5) as usize];
+        let blink = [0u32, 0x08, 0x10, 0x18, 0x3A_8105, 0x3A_8125][rng.below(6) as usize];
+        cpu.mem.wr32(GP + 0x87C, mode);
+        cpu.mem.wr32(GP + 0x86C, 0);
+        cpu.mem.wr32(0x8007_B874, 0);
+        cpu.mem.wr32(BLINK, blink);
+        cpu.mem.wr32(NODE + 0x18, LIST);
+        cpu.mem.wr8(NODE + 0x1C, content);
+        for (o, v) in [(0xA, wx), (0xC, wy), (0xE, w), (0x10, h)] {
+            cpu.mem.wr16(NODE + o, v as u16);
+        }
+        cpu.mem.wr16(LIST, top as u16);
+        cpu.mem.wr16(LIST + 2, visible as u16);
+        cpu.mem.wr16(LIST + 4, count as u16);
+        cpu.mem.wr16(LIST + 6, top as u16);
+        // Class-0 rows draw nothing, so every pictogram is the header's.
+        for k in 0..count as u32 {
+            cpu.mem.wr16(LIST + 0x28 + 2 * k, 0);
+        }
+        icons.borrow_mut().clear();
+        assert_eq!(cpu.call(LIST_DRAW, &[NODE]), Stop::Returned, "case {case}");
+        let gate = mode == 1 && blink & 0x18 != 0;
+        let mut want: Vec<(i32, i32, u16)> =
+            page_header_draws(&font, (wx, wy, w), page as usize, pages as usize)
+                .into_iter()
+                .chain(list_page_arrow_draws_at(
+                    &font,
+                    (page as u16, pages as u16),
+                    gate,
+                    (wx, wy, w, h),
+                ))
+                .map(|d| (d.dst.0, d.dst.1, ico_of(d.src)))
+                .collect();
+        let mut got = icons.borrow().clone();
+        want.sort_unstable();
+        got.sort_unstable();
+        let ctx = format!(
+            "case {case}: node ({wx}, {wy}, {w}, {h}) visible {visible} count {count} page {page}/{pages} mode {mode} blink {blink:#x}"
+        );
+        assert_eq!(got, want, "{ctx}");
+        seen[0] += usize::from(gate && page > 1);
+        seen[1] += usize::from(gate && page < pages);
+        seen[2] += usize::from(!gate && pages > 1);
+    }
+    assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
+}
