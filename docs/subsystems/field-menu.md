@@ -222,6 +222,25 @@ linked first. So where two windows overlap, the **lower id is on top**: a
 closing item list (15) covers the party panel (51) sliding in under it, and
 the closing command window (13) covers the root list (50).
 
+**The typewriter kind has no producer.** The walker's kind-`1` arm
+(`0x800321F0..0x800322DC`) is a typewriter: it draws nothing while the total
+`+0x14` is zero or the slide word `+0x20` is non-zero, and otherwise the
+reveal counter `+0x1E` steps once a frame and is walked over the
+record string's length-prefixed segments, each segment drawn on its own row
+`0xE` px below the last and the segment the counter stops in drawn partly;
+when the counter reaches the total at `+0x14` the node turns to kind `0x11`,
+which a press under the record's masks turns to `0xD`
+(`0x80032340`). A static sweep finds nothing that registers a kind-`1` node.
+The `FUN_8003541C` call sites in `SCUS_942.54` and the mapped overlays pass
+the kind `0`, `0xC` or `0xD` as an immediate or a zeroed register, or (in
+`FUN_801D8DE8`) a record's default kind `0` / `13`, an id offset `3..6` or
+one of the literals `6` / `7` / `9` / `0x1E`. The menu window table's content
+ids are the list ids above, and field 0897's six `FUN_80032434` calls read
+kind `0` configs (`0x801F2B98`). The port therefore draws no kind-`1` node:
+`menu_list_rows::text_actor_arm` names the arm and nothing builds one. A
+node the game builds at run time could still reach it, and a capture of a
+`gp+0x148` list holding one would reopen the question.
+
 ### Window-script runner (`FUN_801D6628`)
 
 A sub-screen opens and closes windows by handing `FUN_801D6628` a script of
