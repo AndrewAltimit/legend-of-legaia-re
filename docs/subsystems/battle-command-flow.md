@@ -140,7 +140,14 @@ cursor: `0x5B` / `0x5C` walk the monster seats through `FUN_801D8D00` on the
 the party count, frozen for a party of one: Left (`0x8000`) adds one
 (`0x801D2C34`, past the last seat to `0`) and Right (`0x2000`) subtracts one
 (`0x801D2CC4`, below `0` to the last seat). Both open on the caster's seat,
-and the walk applies no liveness test. The all-target states have no
+and the walk applies no liveness test. Nor does the confirm: `0x64` commits
+the seat it stands on whatever the item can do there (`0x801D2A64..0x801D2AA4`),
+the copy comes off at the commit through `FUN_80042310`, and the applier at the
+dispatch decides the outcome, so a revive on a standing member or a leaf on a
+full one spends the copy and the turn for nothing. The field Items screen is
+the other way: its confirm asks the validator `FUN_8003FB10` first and buzzes
+on a seat it cannot help (`0x801D8448..0x801D8484` in `FUN_801D8308`). Port:
+`InventoryUseSession` refuses only the wrong side in the battle context. The all-target states have no
 cursor to move, but they still wait for the confirm: the window's press
 raises the state, a second press commits.
 
