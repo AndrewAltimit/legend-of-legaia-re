@@ -1514,3 +1514,11 @@ directional entry, and the magic window's party cursor skipped downed members wh
 monster picker skipped the recent-target ring for monsters `0x97` / `0x98` under a `0x380` status and aimed Koru's
 mode-3 cast at an engine seat where retail names the first monster seat. The spoils arm showed the Crimson Book's EXP
 Boost unported: retail credits the member's share twice.
+
+The window content builder's armament lists and spell lists, run against the equip session's candidate rows and both
+Magic screens, match: the armament walk and its stat sort are now one kernel the equip session builds through. The window
+walk `FUN_80031D00`'s number records drop a figure's interior zeros above its field when the figure is wider than the
+field; the port's right-aligned layout agrees on every figure that fits. The Status pager in `FUN_801DA2A0` turns Left and
+then Right on one frame, so pressing both lands where it started; the port took Left alone. Retail reopens Status on the
+page it last showed, and the port opens it on the first. The list kernel's confirm cue overwrites the cue ring's last slot
+where its cancel queues a new one.
