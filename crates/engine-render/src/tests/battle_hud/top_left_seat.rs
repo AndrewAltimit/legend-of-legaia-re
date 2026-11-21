@@ -344,6 +344,7 @@ fn the_commit_log_target_wears_its_badge() {
             target: log::CommitLogTarget::Single("Vera".to_string()),
             target_badge: badge,
             slide_x: 0,
+            slide_y: [0; 3],
         }];
         battle_hud_draws_for(
             &font,

@@ -5,7 +5,9 @@
 //! `0x1D` for an item) where the commit has one, against `CommitLogRow::commit`
 //! and `commit_log_layout`. Every member of a round commits in turn; after
 //! each commit the log's records `0x2B..` are compared whole: the resting
-//! seat, the width, and the record whose content each element adopted.
+//! seat, the width, and the record whose content each element adopted. After
+//! the last commit the Begin confirm's exit (case `0x24`) runs, and every row's
+//! seat A is compared against `commit_exit_seats`.
 //!
 //! The text measure `FUN_80035F04` is hooked to a byte count on both sides,
 //! and the run stops at the shared step-script tail (spawns and glides).
@@ -14,7 +16,7 @@ use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_battle_vm::battle_commit_log::{
     CommitLogRow, CommitLogTarget, LOG_FIRST_RECORD, RECORD_ACTING_PLAQUE, RECORD_ALL_ALLIES,
     RECORD_ALL_ENEMIES, RECORD_CHIP_ATTACK, RECORD_CHIP_SPIRIT, RECORD_COMMIT_NAME,
-    RECORD_TARGET_PLAQUE, commit_log_layout,
+    RECORD_TARGET_PLAQUE, commit_exit_seats, commit_log_layout,
 };
 use psx_retail_exec::{A0, RETURN_SENTINEL, Stop, V0};
 
@@ -97,6 +99,7 @@ fn the_commit_log_lands_every_command_as_retail() {
     let width = |t: &str| t.chars().count() as u16 * GLYPH;
     let mut rng = Rng(0x434F_4D4C);
     let mut named = 0;
+    let mut exits = 0;
     for round in 0..1500 {
         cpu.mem.load(PLACEMENTS, &table);
         cpu.mem.load(CTX, &[0u8; 0x900]);
@@ -127,6 +130,11 @@ fn the_commit_log_lands_every_command_as_retail() {
             cpu.mem.wr32(rec(RECORD_ACTING_PLAQUE) + 0x14, name_at);
             cpu.mem.wr16(rec(RECORD_ACTING_PLAQUE) + 6, width(&name));
             cpu.mem.wr32(rec(RECORD_TARGET_PLAQUE) + 0x14, target_at);
+            // Every single-target cursor seats the plaque on row `0xA2` as it
+            // opens (`0x801D3E28`, `0x801D5498`); an earlier member's
+            // all-target pick copied a label's seat over it.
+            cpu.mem.wr16(rec(RECORD_TARGET_PLAQUE) + 4, 0xA2);
+            cpu.mem.wr16(rec(RECORD_TARGET_PLAQUE) + 0xC, 0xA2);
             cpu.mem.wr16(rec(RECORD_TARGET_PLAQUE) + 6, width(&target));
             cpu.mem.wr8(CTX + 0x13, n as u8);
             cpu.mem.wr8(CTX + 0x1F, n as u8);
@@ -234,6 +242,7 @@ fn the_commit_log_lands_every_command_as_retail() {
                 target: tgt,
                 target_badge: None,
                 slide_x: 0,
+                slide_y: [0; 3],
             });
             let commits: Vec<_> = rows.iter().map(|r| r.commit(width)).collect();
             let layout = commit_log_layout(&commits);
@@ -255,6 +264,32 @@ fn the_commit_log_lands_every_command_as_retail() {
                 }
             }
         }
+        // The Begin confirm's exit, step `0x24`, with the cursor walked past
+        // every member but the last.
+        cpu.mem.wr8(CTX + 0x1F, (party - 1) as u8);
+        assert_eq!(
+            cpu.call(WINDOW, &[0x24, 0]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let commits: Vec<_> = rows.iter().map(|r| r.commit(width)).collect();
+        let layout = commit_log_layout(&commits);
+        for (i, seats) in commit_exit_seats(&layout).iter().enumerate() {
+            for (k, &(x, y)) in seats.iter().enumerate() {
+                if k == 2 && matches!(acts[i], Act::Spirit) {
+                    continue;
+                }
+                let r = rec(LOG_FIRST_RECORD + 3 * i + k);
+                let seat_a = (cpu.mem.rd16(r + 2) as i16, cpu.mem.rd16(r + 4) as i16);
+                assert_eq!(
+                    seat_a,
+                    (x, y),
+                    "round {round}: exit seat A, row {i} element {k}: {acts:?}"
+                );
+            }
+        }
+        exits += 1;
     }
     assert!(named > 1000, "{named}");
+    assert_eq!(exits, 1500);
 }

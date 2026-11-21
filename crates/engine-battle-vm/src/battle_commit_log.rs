@@ -182,6 +182,10 @@ pub struct CommitLogRow {
     /// Horizontal offset of the whole row from its resting seats while the
     /// log is launching ([`LogLaunch::x_offset`]); `0` at rest.
     pub slide_x: i16,
+    /// Vertical offset of each element (`[name, command, target]`) from its
+    /// resting seat while the Begin confirm's exit glides it toward its seat
+    /// A ([`commit_exit_seats`]); `[0; 3]` otherwise.
+    pub slide_y: [i16; 3],
 }
 
 /// How much wider a badged target column is: the 20-pixel element badge and
@@ -339,6 +343,79 @@ pub fn commit_log_layout(commits: &[LogCommit]) -> Vec<[LogElement; 3]> {
         .collect()
 }
 
+/// How far the Begin confirm's exit (step `0x24`) sends the log left: one
+/// display width (`addiu v0,v0,-0x140` at `0x801D4AF8`).
+pub const EXIT_DX: i16 = -0x140;
+
+/// The rest row `y` of the source record a latest-row element landed from:
+/// its seat B in the SCUS placement table, which the commit arm copies into
+/// the element's seat A (`FUN_801D5718`). The acting plaque and the tab-row
+/// chips and the staged name sit on the tab row `14`, the Spirit chip on the
+/// ring's down arm `98`, the target plaque and `"  All"` at `162`,
+/// `"All Allies"` at `122`. The target plaque's row is the one every
+/// single-target cursor seats it on (`li v1,0xa2` into record `0x29` at
+/// `0x801D3E28` / `0x801D5498`); an all-target pick copies the label's seat
+/// over it instead (`FUN_801D57E8(0x29, 0x3D / 0x3E)`, `0x801D4410` /
+/// `0x801D4430`), and that commit lands from the label.
+pub const fn landing_source_y(source: usize) -> Option<i16> {
+    Some(match source {
+        RECORD_ACTING_PLAQUE | RECORD_CHIP_ITEM | RECORD_CHIP_ATTACK | RECORD_CHIP_MAGIC
+        | RECORD_COMMIT_NAME => 14,
+        RECORD_CHIP_SPIRIT => 98,
+        RECORD_TARGET_PLAQUE | RECORD_ALL_ENEMIES => 162,
+        RECORD_ALL_ALLIES => 122,
+        _ => return None,
+    })
+}
+
+/// The seat each log element glides to as the Begin confirm leaves the
+/// screen - step `0x24`, whose shared tail re-spawns row 0 (records
+/// `0x2B..0x2D`) and every later row (`0x2E + k` for `k < 3 * ctx[+0x1F]`,
+/// `0x801D56A0..0x801D56E4`) in mode `1`, so every row glides from its rest
+/// seat (B) to its seat A over the one sixteen-vsync step.
+///
+/// Seat A is one display width left of rest for every element
+/// (`0x801D4AE0..0x801D4B08`). Its row is the rest row, except: the step
+/// rewrites one row's seat-A `y` by the member count behind the cursor
+/// (`ctx[+0x1F]`, `0x801D4B34..0x801D4B98`) - with two rows the first
+/// glides down onto the lower row `0xAA`, with three the second keeps its
+/// own `0xAA`; and the latest row still holds the seat A its commit landing
+/// gave it, the seat of the record each element landed from
+/// ([`landing_source_y`]), so it glides up toward the plaques as it leaves.
+/// With three rows the first keeps the seat A the landings left it: a
+/// Spirit third commit rewrites it onto its rest row (`0x801D4A6C..0x801D4AC8`),
+/// the Attack and Magic / Item arms leave it (their third-row arms write only
+/// rows two and three, `0x801D4544..0x801D459C`, `0x801D48A8..0x801D4900`),
+/// so it is where the second commit put it: the lower row `0xAA` its Spirit
+/// glide started from, else its rest row.
+///
+/// PORT: FUN_801D388C (case `0x24`, `0x801D4AE0..0x801D4B98`, and its tail `0x801D56A0..0x801D56E4`)
+pub fn commit_exit_seats(layout: &[[LogElement; 3]]) -> Vec<[(i16, i16); 3]> {
+    let n = layout.len();
+    let spirit =
+        |row: Option<&[LogElement; 3]>| row.is_some_and(|r| r[1].source == RECORD_CHIP_SPIRIT);
+    // The first of three rows glides down onto `0xAA` only behind a Spirit
+    // second commit and a non-Spirit third.
+    let first_lowered = n == 3 && spirit(layout.get(1)) && !spirit(layout.get(2));
+    layout
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            std::array::from_fn(|k| {
+                let el = row[k];
+                let y = if i + 1 == n {
+                    landing_source_y(el.source).unwrap_or(el.y)
+                } else if i + 2 == n || first_lowered {
+                    ROW_Y_LOWER as i16
+                } else {
+                    el.y
+                };
+                (el.x.wrapping_add(EXIT_DX), y)
+            })
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // The launch: the log sliding off, and back on, as the member leaves the ring
 // ---------------------------------------------------------------------------
@@ -476,6 +553,15 @@ impl LogLaunch {
         (i32::from(start) + span * i32::from(self.elapsed) / i32::from(self.total.max(1))) as i16
     }
 
+    /// The part of a `delta` from seat B toward seat A this glide has
+    /// covered - `FUN_801D9BBC`'s linear step, the whole of it once settled.
+    pub fn covered(&self, delta: i16) -> i16 {
+        if self.settled() {
+            return delta;
+        }
+        (i32::from(delta) * i32::from(self.elapsed) / i32::from(self.total.max(1))) as i16
+    }
+
     /// Is the log off screen for good - an outbound launch that has landed?
     pub const fn gone(&self) -> bool {
         !self.inbound && self.settled()
@@ -507,6 +593,29 @@ mod tests {
         assert_eq!(name.source, RECORD_ACTING_PLAQUE);
         assert_eq!(cmd.source, RECORD_CHIP_ATTACK);
         assert_eq!(tgt.source, RECORD_TARGET_PLAQUE);
+    }
+
+    #[test]
+    fn the_begin_exit_sends_every_row_off_the_left_edge() {
+        let one = commit_log_layout(&[attack(27, 55)]);
+        // The lone row glides toward the plaques it landed from.
+        assert_eq!(
+            commit_exit_seats(&one)[0],
+            [(-304, 14), (59 - 320, 14), (123 - 320, 162)]
+        );
+        let two = commit_log_layout(&[attack(27, 55), attack(24, 40)]);
+        let seats = commit_exit_seats(&two);
+        assert_eq!(
+            seats[0][0],
+            (16 - 320, ROW_Y_LOWER as i16),
+            "row 0 drops onto 0xAA"
+        );
+        assert_eq!(seats[1][0].1, 14);
+        let three = commit_log_layout(&[attack(27, 55), attack(24, 40), attack(30, 40)]);
+        let ys: Vec<i16> = commit_exit_seats(&three).iter().map(|r| r[0].1).collect();
+        assert_eq!(ys, [146, 170, 14]);
+        let g = LogLaunch::new(false);
+        assert_eq!(g.covered(-160), 0);
     }
 
     #[test]

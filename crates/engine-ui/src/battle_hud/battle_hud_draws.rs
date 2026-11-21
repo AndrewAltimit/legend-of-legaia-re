@@ -1128,7 +1128,10 @@ pub fn battle_hud_draws_for(
                 if content.is_empty() {
                     continue;
                 }
-                let (x, y) = (i32::from(el.x) + i32::from(row.slide_x), i32::from(el.y));
+                let (x, y) = (
+                    i32::from(el.x) + i32::from(row.slide_x),
+                    i32::from(el.y) + i32::from(row.slide_y[k]),
+                );
                 plate_run(
                     &mut text,
                     &mut sprites,
