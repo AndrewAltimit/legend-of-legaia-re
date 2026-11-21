@@ -53,3 +53,88 @@ fn the_placement_spawner_bank_select_matches_retail() {
         assert_eq!(s3 == 0x0100_0000, port.translucent, "model byte {id:#x}");
     }
 }
+
+/// The same spawner's placement read up to the spawn: the record found
+/// through partition 1's offset table past partition 0, its local pairs
+/// skipped (`0x8003A2B0..0x8003A2CC`), and the spawn vector off the tile
+/// bytes, the half-tile bit 7 of each (`0x8003A328..0x8003A384`), against
+/// `ManFile::actor_placement`.
+#[test]
+fn the_placement_spawner_reads_the_record_the_port_reads() {
+    use crate::common::Rng;
+    use legaia_scene_formats::man_section;
+    use psx_retail_exec::A0;
+    const S1: usize = 17;
+    differential!(scus(SPAWNER));
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    let seen = Rc::new(RefCell::new(None));
+    let s = seen.clone();
+    cpu.hook(SPAWN, move |r, m| {
+        let v = r.r[A0];
+        *s.borrow_mut() = Some((
+            m.rd16(v) as i16,
+            m.rd16(v + 2) as i16,
+            m.rd16(v + 4) as i16,
+            r.r[S1],
+        ));
+        r.r[RA] = RETURN_SENTINEL;
+    });
+    cpu.mem.wr32(MAN_PTR, MAN);
+    cpu.mem.wr16(SCENE_BASE, SCENE_BANK_BASE);
+    cpu.mem.wr16(PLAYER_BASE, PLAYER_BANK_BASE);
+    let mut rng = Rng(0x504C_4143);
+    let (mut halves, mut skipped) = (0, 0);
+    for case in 0..3000 {
+        let (n0, n1) = (rng.below(4) as usize, 2 + rng.below(5) as usize);
+        let mut man = vec![0u8; 0x2B];
+        man[0x22..0x24].copy_from_slice(&(n0 as i16).to_le_bytes());
+        man[0x24..0x26].copy_from_slice(&(n1 as i16).to_le_bytes());
+        // The records, then the offset table in front of them.
+        let mut data = Vec::new();
+        let mut offsets = Vec::new();
+        for _ in 0..n0 + n1 {
+            offsets.push(data.len() as u32);
+            let locals = rng.below(4) as usize;
+            data.push(locals as u8);
+            data.extend((0..2 * locals).map(|_| rng.next() as u8));
+            data.extend([
+                rng.next() as u8,
+                rng.next() as u8,
+                rng.next() as u8,
+                rng.next() as u8,
+            ]);
+            data.extend([0u8; 4]);
+        }
+        for o in &offsets {
+            man.extend(&o.to_le_bytes()[..3]);
+        }
+        man[0x28..0x2B].copy_from_slice(&(data.len() as u32).to_le_bytes()[..3]);
+        man.extend(&data);
+        // The section chain behind the records: five one-byte sections and
+        // the terminator.
+        for _ in 0..5 {
+            man.extend([1, 0, 0, 0]);
+        }
+        man.extend([0u8; 16]);
+        cpu.mem.load(MAN, &man);
+        let index = rng.below(n1 as u32) as usize;
+        *seen.borrow_mut() = None;
+        assert_eq!(cpu.call(SPAWNER, &[index as u32, 0]), Stop::Returned);
+        let (x, y, z, header) = seen.borrow().expect("the spawn was reached");
+        let file = man_section::parse(&man).expect("MAN");
+        let p = file.actor_placement(&man, index).expect("placement");
+        let what = format!("case {case}: n0 {n0} n1 {n1} index {index}");
+        assert_eq!((x, y, z), (p.world_x, 0, p.world_z), "{what}");
+        assert_eq!(
+            header - MAN,
+            (p.record_offset + 1 + 2 * p.local_count) as u32,
+            "{what}: the header"
+        );
+        let hb = man[p.record_offset + 1 + 2 * p.local_count + 2];
+        halves += usize::from(hb & 0x80 != 0);
+        skipped += usize::from(p.local_count > 0);
+    }
+    assert!(halves > 500 && skipped > 1000, "{halves} {skipped}");
+}
