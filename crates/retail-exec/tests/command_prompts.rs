@@ -1074,3 +1074,291 @@ fn the_glide_gate_holds_and_parks_as_retail() {
         "{gated} {parked} {latched} {consumed}"
     );
 }
+
+/// The item window's target sub-cursors (`0x801D23F0..0x801D2EF0`): the
+/// one-enemy cursor `0x5B`, the all-enemies confirm `0x5D`, the one-ally
+/// cursor `0x64` and the all-allies confirm `0x66`, against
+/// `World::tick_battle_item_menu` over an open item session. The enemy ring
+/// steps through `FUN_801D8D00` run for real, as on `0x5A`.
+#[test]
+fn the_item_target_cursors_go_where_retail_goes() {
+    differential!(prot(898, STATE_MACHINE), prot(898, RING_STEP));
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
+    use legaia_engine_battle_vm::battle_action::{
+        PoolActor, bearing_12bit_approx, build_attack_target_queue,
+    };
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::test_drivers::BattleTestDrivers;
+    use legaia_engine_menus::inventory_use::InventoryUseState;
+    use legaia_engine_menus::items::{ItemCatalog, ItemEffect, ItemEntry};
+    use legaia_engine_system::option_values::BattleCommandOpt;
+    use legaia_engine_system::pad::PadButton;
+    let Some((mut cpu, _, _, _)) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.watched.insert(RING_STEP);
+    // One item per surface: a single heal, a single bomb, a party-wide heal,
+    // an every-enemy bomb.
+    let items: [(u8, ItemEffect, bool, bool); 4] = [
+        (0x01, ItemEffect::Heal { amount: 50 }, false, false),
+        (0x13, ItemEffect::Damage { amount: 50 }, true, false),
+        (0x02, ItemEffect::Heal { amount: 50 }, false, true),
+        (0x14, ItemEffect::Damage { amount: 50 }, true, true),
+    ];
+    let mut catalog = ItemCatalog::new();
+    for (id, effect, enemy, all) in items {
+        catalog.insert(ItemEntry {
+            id,
+            name: "item",
+            effect,
+            usable_in_battle: true,
+            usable_in_field: false,
+        });
+        catalog.set_enemy_side(id, enemy);
+        catalog.set_all_party(id, all);
+    }
+    let mut rng = Rng(0x4954_454D);
+    let mut seen = std::collections::HashMap::<(u8, &str), u32>::new();
+    for round in 0..3000 {
+        let state = [0x64u8, 0x5B, 0x66, 0x5D][rng.below(4) as usize];
+        let (item, _, enemy_side, _) = items[[0x64u8, 0x5B, 0x66, 0x5D]
+            .iter()
+            .position(|s| *s == state)
+            .unwrap()];
+        let party = 1 + rng.below(3) as u8;
+        let seat = rng.below(u32::from(party)) as u8;
+        let count = 1 + rng.below(4) as usize;
+        let cross_entry = rng.below(2) == 1;
+        let mut alive = [false; 4];
+        for a in alive.iter_mut().take(count) {
+            *a = rng.below(4) != 0;
+        }
+        let live: Vec<u8> = (0..count as u8)
+            .filter(|&i| alive[usize::from(i)])
+            .collect();
+        if live.is_empty() {
+            continue;
+        }
+        let cur_enemy = live[rng.below(live.len() as u32) as usize];
+        let cur_ally = rng.below(u32::from(party)) as u8;
+        let span = 0x800;
+        let mut pos = || {
+            (
+                (rng.below(span * 2) as i32 - span as i32) as i16,
+                (rng.below(span * 2) as i32 - span as i32) as i16,
+            )
+        };
+        let me = pos();
+        let monster_pos: [(i16, i16); 4] = std::array::from_fn(|_| pos());
+        let dirs = [
+            0,
+            LEFT,
+            RIGHT,
+            UP,
+            DOWN,
+            LEFT | UP,
+            RIGHT | DOWN,
+            LEFT | DOWN,
+        ];
+        let mut pad = dirs[rng.below(dirs.len() as u32) as usize];
+        if rng.below(3) == 0 {
+            pad |= CONFIRM;
+        }
+        if rng.below(4) == 0 {
+            pad |= CANCEL;
+        }
+        let mut pool = [PoolActor::default(); 8];
+        pool[0] = PoolActor {
+            alive: true,
+            x: me.0,
+            z: me.1,
+            target_slot: 3 + cur_enemy,
+            status: 0,
+        };
+        for i in 0..4 {
+            pool[3 + i] = PoolActor {
+                alive: alive[i],
+                x: monster_pos[i].0,
+                z: monster_pos[i].1,
+                target_slot: 0,
+                status: 0,
+            };
+        }
+        let q = build_attack_target_queue(&pool, 0, bearing_12bit_approx);
+
+        // Retail.
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        let actor = ACTOR + STRIDE * u32::from(seat);
+        cpu.mem.wr8(CTX, party);
+        cpu.mem.wr8(CTX + 0x06, state);
+        cpu.mem.wr8(CTX + 0x13, seat);
+        for (i, b) in [
+            q.count,
+            q.wrap_slot,
+            q.ordered[0],
+            q.ordered[1],
+            q.ordered[2],
+        ]
+        .iter()
+        .enumerate()
+        {
+            cpu.mem.wr8(CTX + 0x244 + i as u32, *b);
+        }
+        let start = match state {
+            0x5B => 3 + cur_enemy,
+            0x64 => cur_ally,
+            0x5D => 9,
+            _ => 8,
+        };
+        cpu.mem.wr8(actor + 0x1DD, start);
+        cpu.mem.wr8(actor + 0x1DF, item);
+        cpu.mem.wr32(PAD, pad);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, u32::from(cross_entry));
+        cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
+        cpu.mem.wr32(CANCEL_MASK, CANCEL);
+        cpu.mem.wr8(BATTLE_ID, 0);
+        cpu.stub(NEXT_ABLE, u32::from(party));
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let after = cpu.mem.rd8(CTX + 0x06);
+        let target = cpu.mem.rd8(actor + 0x1DD);
+
+        // The port: an item window open on the same surface.
+        let mut w = World {
+            mode: legaia_engine_mode::mode::SceneMode::Battle,
+            ..World::default()
+        };
+        w.battle.player_driven = true;
+        w.party.party_count = party;
+        w.set_item_catalog(catalog.clone());
+        w.toggles.battle_command = if cross_entry {
+            BattleCommandOpt::CrossButton
+        } else {
+            BattleCommandOpt::DirectionalButtons
+        };
+        let pc = usize::from(party);
+        for i in 0..pc {
+            let a = &mut w.actors[i];
+            a.active = true;
+            a.battle.max_hp = 200;
+            a.battle.hp = 100;
+            a.battle.liveness = 1;
+            a.move_state.world_x = me.0;
+            a.move_state.world_z = me.1;
+        }
+        for i in 0..count {
+            let a = &mut w.actors[pc + i];
+            a.active = true;
+            a.battle.max_hp = 200;
+            a.battle.hp = if alive[i] { 200 } else { 0 };
+            a.battle.liveness = u16::from(alive[i]);
+            a.battle_monster_id = Some(0x40 + i as u16);
+            a.move_state.world_x = monster_pos[i].0;
+            a.move_state.world_z = monster_pos[i].1;
+        }
+        w.battle_ctx.active_actor = seat;
+        w.party.inventory.insert(item, 1);
+        let mut menu = w.build_battle_item_session();
+        let row = |slot: usize, enemy: bool| {
+            menu.targets
+                .iter()
+                .position(|t| t.is_enemy == enemy && usize::from(t.slot) == slot)
+        };
+        menu.state = match state {
+            0x5B => InventoryUseState::TargetSelect {
+                item_cursor: 0,
+                cursor: row(pc + usize::from(cur_enemy), true).expect("enemy row"),
+            },
+            0x64 => InventoryUseState::TargetSelect {
+                item_cursor: 0,
+                cursor: row(usize::from(cur_ally), false).expect("party row"),
+            },
+            0x5D => InventoryUseState::AllEnemiesConfirm { item_cursor: 0 },
+            _ => InventoryUseState::AllPartyConfirm { item_cursor: 0 },
+        };
+        w.battle.item_menu = Some(menu);
+        let mask = [
+            (LEFT, PadButton::Left),
+            (RIGHT, PadButton::Right),
+            (UP, PadButton::Up),
+            (DOWN, PadButton::Down),
+            (CONFIRM, PadButton::Cross),
+            (CANCEL, PadButton::Circle),
+        ]
+        .iter()
+        .filter(|(p, _)| pad & p != 0)
+        .fold(0u16, |m, (_, b)| m | b.mask());
+        w.set_pad(0);
+        w.set_pad(mask);
+        w.tick_battle_item_menu();
+        let label = format!(
+            "round {round}: state {state:#x} pad {pad:#x} cross-entry {cross_entry} party {party} \
+             seat {seat} cur {cur_enemy}/{cur_ally} alive {alive:?} -> {after:#x} target {target}"
+        );
+        let outcome = match (&w.battle.item_menu, after) {
+            (Some(m), s) if s == state => match m.state {
+                InventoryUseState::TargetSelect { cursor, .. } => {
+                    let t = &m.targets[cursor];
+                    let slot = usize::from(t.slot);
+                    let want = if t.is_enemy { slot - pc + 3 } else { slot };
+                    assert_eq!(usize::from(target), want, "cursor: {label}");
+                    if usize::from(target) == usize::from(start) {
+                        "stay"
+                    } else {
+                        "step"
+                    }
+                }
+                InventoryUseState::AllPartyConfirm { .. }
+                | InventoryUseState::AllEnemiesConfirm { .. } => "stay",
+                ref other => panic!("port {other:?}: {label}"),
+            },
+            (Some(m), 0x3C) if matches!(m.state, InventoryUseState::Browsing { .. }) => "cancel",
+            (None, 0x28 | 0x6E) => {
+                let Some(Some(PendingPartyAction::Item { used_slots, .. })) =
+                    w.battle.round_flow.pending.get(usize::from(seat))
+                else {
+                    panic!("no item committed: {label}");
+                };
+                if state == 0x5B || state == 0x64 {
+                    let slot = usize::from(used_slots[0]);
+                    let want = if enemy_side { slot - pc + 3 } else { slot };
+                    assert_eq!(usize::from(target), want, "commit target: {label}");
+                }
+                "commit"
+            }
+            (m, after) => panic!(
+                "port {:?} retail {after:#x}: {label}",
+                m.as_ref().map(|m| m.state)
+            ),
+        };
+        *seen.entry((state, outcome)).or_default() += 1;
+    }
+    for key in [
+        (0x5B, "stay"),
+        (0x5B, "step"),
+        (0x5B, "commit"),
+        (0x5B, "cancel"),
+        (0x64, "step"),
+        (0x64, "commit"),
+        (0x64, "cancel"),
+        (0x5D, "commit"),
+        (0x5D, "cancel"),
+        (0x66, "commit"),
+        (0x66, "cancel"),
+    ] {
+        assert!(
+            seen.get(&key).copied().unwrap_or(0) > 20,
+            "{key:?}: {seen:?}"
+        );
+    }
+}

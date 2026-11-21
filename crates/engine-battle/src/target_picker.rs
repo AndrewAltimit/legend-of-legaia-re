@@ -401,15 +401,6 @@ impl TargetPickerSession {
         (0..len).find(|&s| self.is_valid(row, s))
     }
 
-    /// Pool slots the retail attack-target scans cover: `3..=6`, i.e. the
-    /// first four monster rows. `FUN_801D8A88`'s count loop stops at
-    /// `sltiu s0,0x7` and its angle loop runs four entries, so the fifth
-    /// seat (pool slot `7`, a Divide clone's) has no ring entry in retail
-    /// either: it is a target only once the four below it are down, as the
-    /// default (`FUN_801DB8B4` falls through to `7`). The linear scan from
-    /// that seat finds nothing else standing.
-    const RING_MONSTERS: usize = 4;
-
     /// Step the **enemy** cursor the way retail does: to the angularly nearest
     /// live alternate, not to the next slot index.
     ///
@@ -428,58 +419,9 @@ impl TargetPickerSession {
     ///
     /// REF: FUN_801D8A88, FUN_801D8D00, FUN_80019B28
     fn retail_enemy_step(&self, from: u8, dir: i8) -> Option<u8> {
-        use legaia_engine_battle_vm::battle_action::{
-            PoolActor, TargetCycle, bearing_12bit_approx, build_attack_target_queue,
-            cycle_attack_target,
-        };
-        if (from as usize) >= Self::RING_MONSTERS {
-            return None;
-        }
         let acting = self.party.get(self.actor_slot as usize).copied()?;
-        // Degenerate seats (a host with no positions) cannot order anything.
-        let seated = self.monsters[..Self::RING_MONSTERS]
-            .iter()
-            .any(|m| m.x != 0 || m.z != 0);
-        if !seated {
-            return None;
-        }
-        let mut pool = [PoolActor::default(); 8];
-        pool[0] = PoolActor {
-            alive: true,
-            x: acting.x,
-            z: acting.z,
-            target_slot: 3 + from,
-            status: 0,
-        };
-        for i in 0..Self::RING_MONSTERS {
-            let m = self.monsters[i];
-            pool[3 + i] = PoolActor {
-                alive: m.present && m.alive,
-                x: m.x,
-                z: m.z,
-                target_slot: 0,
-                status: 0,
-            };
-        }
-        let q = build_attack_target_queue(&pool, 0, bearing_12bit_approx);
-        let ring = [
-            q.count,
-            q.wrap_slot,
-            q.ordered[0],
-            q.ordered[1],
-            q.ordered[2],
-        ];
-        let mode = if dir >= 0 {
-            TargetCycle::Next
-        } else {
-            TargetCycle::Prev
-        };
-        let next = cycle_attack_target(&ring, 3 + from, mode);
-        let slot = next.checked_sub(3)?;
-        if (slot as usize) >= Self::RING_MONSTERS || !self.is_valid(CursorRow::Enemy, slot) {
-            return None;
-        }
-        Some(slot)
+        let slot = enemy_ring_step(acting, &self.monsters, from, dir)?;
+        self.is_valid(CursorRow::Enemy, slot).then_some(slot)
     }
 
     fn step_within_row(&self, row: CursorRow, from: u8, dir: i8) -> Option<u8> {
@@ -609,6 +551,78 @@ impl TargetPickerSession {
             }
         }
     }
+}
+
+/// One step of the enemy ring `FUN_801D8D00` from monster row `from`, the
+/// ring `FUN_801D8A88` builds around the acting member's seat: `dir >= 0`
+/// steps to the next seat clockwise (Right), `< 0` the previous (Left). The
+/// pool is assembled from the rows: slot `0` the acting member, whose current
+/// target is `from`, and slots `3..=6` the first four monster rows with their
+/// battle-world seats (the fifth seat is no ring entry in retail either).
+/// `None` when the ring cannot answer: no seats, a cursor outside the four
+/// ring rows, or a ring entry that is not a live monster.
+///
+/// REF: FUN_801D8A88, FUN_801D8D00, FUN_80019B28
+pub fn enemy_ring_step(
+    acting: SlotState,
+    monsters: &[SlotState; 5],
+    from: u8,
+    dir: i8,
+) -> Option<u8> {
+    use legaia_engine_battle_vm::battle_action::{
+        PoolActor, TargetCycle, bearing_12bit_approx, build_attack_target_queue,
+        cycle_attack_target,
+    };
+    // Pool slots the retail attack-target scans cover: `3..=6`, i.e. the
+    // first four monster rows. `FUN_801D8A88`'s count loop stops at
+    // `sltiu s0,0x7` and its angle loop runs four entries, so the fifth
+    // seat (pool slot `7`, a Divide clone's) has no ring entry in retail
+    // either: it is a target only once the four below it are down, as the
+    // default (`FUN_801DB8B4` falls through to `7`). The linear scan from
+    // that seat finds nothing else standing.
+    const RING_MONSTERS: usize = 4;
+    if usize::from(from) >= RING_MONSTERS {
+        return None;
+    }
+    if !monsters[..RING_MONSTERS]
+        .iter()
+        .any(|m| m.x != 0 || m.z != 0)
+    {
+        return None;
+    }
+    let mut pool = [PoolActor::default(); 8];
+    pool[0] = PoolActor {
+        alive: true,
+        x: acting.x,
+        z: acting.z,
+        target_slot: 3 + from,
+        status: 0,
+    };
+    for (i, m) in monsters.iter().take(RING_MONSTERS).enumerate() {
+        pool[3 + i] = PoolActor {
+            alive: m.present && m.alive,
+            x: m.x,
+            z: m.z,
+            target_slot: 0,
+            status: 0,
+        };
+    }
+    let q = build_attack_target_queue(&pool, 0, bearing_12bit_approx);
+    let ring = [
+        q.count,
+        q.wrap_slot,
+        q.ordered[0],
+        q.ordered[1],
+        q.ordered[2],
+    ];
+    let mode = if dir >= 0 {
+        TargetCycle::Next
+    } else {
+        TargetCycle::Prev
+    };
+    let slot = cycle_attack_target(&ring, 3 + from, mode).checked_sub(3)?;
+    let m = monsters.get(usize::from(slot))?;
+    (usize::from(slot) < RING_MONSTERS && m.present && m.alive).then_some(slot)
 }
 
 // ---------------------------------------------------------------------------
