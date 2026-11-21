@@ -366,7 +366,8 @@ fn a_party_join_or_leave_edits_the_list_as_retail_does() {
         cpu.mem.wr8(COUNT, list.len() as u8);
         cpu.mem.wr8(LEADER, leader);
         for i in 0..4 {
-            cpu.mem.wr8(LIST + i, list.get(i as usize).copied().unwrap_or(0));
+            cpu.mem
+                .wr8(LIST + i, list.get(i as usize).copied().unwrap_or(0));
         }
         cpu.mem.load(SCRIPT, &[op, id]);
         assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
@@ -491,13 +492,18 @@ fn a_spell_skill_or_item_test_skips_as_retail_skips() {
         }
         if port != retail {
             *differ
-                .entry(format!("{script:02x?} on {list:?}: retail {retail} port {port}"))
+                .entry(format!(
+                    "{script:02x?} on {list:?}: retail {retail} port {port}"
+                ))
                 .or_default() += 1;
         }
     }
     let report: Vec<String> = differ.keys().take(20).cloned().collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
-    assert!(ran == 4000 && taken > 500 && ran - taken > 500, "{ran} {taken}");
+    assert!(
+        ran == 4000 && taken > 500 && ran - taken > 500,
+        "{ran} {taken}"
+    );
 }
 
 /// Every opcode `0x21..=0x4F` with every first operand byte and four tails
@@ -597,7 +603,10 @@ fn every_operand_byte_steps_where_retail_steps() {
             let e = differ.entry(key).or_default();
             e.0 += 1;
             if e.0 == 1 {
-                e.1 = format!("retail {retail:#x} port {port:#x} bytes {:02x?}", &script[..8]);
+                e.1 = format!(
+                    "retail {retail:#x} port {port:#x} bytes {:02x?}",
+                    &script[..8]
+                );
             }
         }
     }
@@ -605,7 +614,11 @@ fn every_operand_byte_steps_where_retail_steps() {
         .iter()
         .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
         .collect();
-    assert!(report.is_empty(), "{ran} ran {agree} agree\n{}", report.join("\n"));
+    assert!(
+        report.is_empty(),
+        "{ran} ran {agree} agree\n{}",
+        report.join("\n")
+    );
     assert!(ran > 40_000, "{ran}");
 }
 
@@ -647,7 +660,11 @@ fn a_sound_cue_or_bgm_barrier_waits_as_retail_waits() {
         let pick = |rng: &mut crate::common::Rng| [-1, 3, 5, 8][rng.below(4) as usize];
         let (req, ack) = (pick(&mut rng), pick(&mut rng));
         let dual = if rng.below(4) == 0 { 1 } else { 0 };
-        let drive = if rng.below(2) == 0 { 0 } else { 1 + rng.below(20) };
+        let drive = if rng.below(2) == 0 {
+            0
+        } else {
+            1 + rng.below(20)
+        };
         let walk = rng.below(3);
         let arg = rng.below(0x100) as u16;
         let script: Vec<u8> = if round % 3 == 0 {

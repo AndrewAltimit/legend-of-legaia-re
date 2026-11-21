@@ -147,7 +147,7 @@ fn the_pager_pages_as_retail_pages() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    stub_pager(&mut cpu, &d);
+    stub_pager(&mut cpu, d);
     use legaia_engine_dialog::cursor_sprite::CursorSprites;
     use legaia_engine_dialog::dialog::pager_reads_pad;
     use legaia_engine_dialog::dialog_window::WINDOW_ROWS;

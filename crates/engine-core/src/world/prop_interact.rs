@@ -497,10 +497,8 @@ impl World {
         if let Some(panel) = id.panel.as_mut() {
             // The player's pad, unless the automatic press is counting.
             let live = legaia_engine_dialog::dialog::pager_reads_pad(self.dialog.auto_press);
-            if panel.menu_active() && live {
-                if panel.step_picker_cursor(up, down) {
-                    self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_MOVE_CUE);
-                }
+            if panel.menu_active() && live && panel.step_picker_cursor(up, down) {
+                self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_MOVE_CUE);
             }
             // Same one-frame rule as the inline runner: a menu that opened
             // on this frame's tick is shown first and commits on a later

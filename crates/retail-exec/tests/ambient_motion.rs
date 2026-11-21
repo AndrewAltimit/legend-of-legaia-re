@@ -168,7 +168,10 @@ struct Calls {
     blits: Vec<([u16; 4], i16, i16)>,
 }
 
-fn setup() -> Option<(Cpu, Rc<Cell<u32>>, Rc<RefCell<Calls>>)> {
+/// The CPU with its hooks in, the hooked `rand()` seed and the recorded calls.
+type Rig = (Cpu, Rc<Cell<u32>>, Rc<RefCell<Calls>>);
+
+fn setup() -> Option<Rig> {
     let mut cpu = scus_cpu()?;
     let seed = Rc::new(Cell::new(0u32));
     let s = seed.clone();

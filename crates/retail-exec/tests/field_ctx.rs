@@ -831,7 +831,10 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
             }
             let flags = cpu.mem.rd32(FLAGS);
             if flags != host.flags {
-                wrong.push(format!("story flags retail {flags:#x} port {:#x}", host.flags));
+                wrong.push(format!(
+                    "story flags retail {flags:#x} port {:#x}",
+                    host.flags
+                ));
             }
             // A halt-acquire is refused on retail when its context already
             // holds the halt bit outside the spawn bracket, or runs no script
@@ -914,7 +917,8 @@ fn an_attached_light_is_found_where_retail_finds_it() {
     let mut scripts = corpus();
     scripts.extend(crate::field_vm::synthetic());
     for (script, pc, label) in scripts {
-        if !(label.starts_with("34") && matches!(script[pc + 1 + usize::from(script[pc] >> 7)] >> 4, 1 | 2))
+        if !(label.starts_with("34")
+            && matches!(script[pc + 1 + usize::from(script[pc] >> 7)] >> 4, 1 | 2))
         {
             continue;
         }
@@ -935,7 +939,9 @@ fn an_attached_light_is_found_where_retail_finds_it() {
                 continue;
             }
             let retail = cpu.regs.r[2] as usize & 0xFFFF;
-            let parked = mine.map(|i| cpu.mem.rd32(LIGHTS + i * 0x100 + 0x94)).filter(|&p| p != 0);
+            let parked = mine
+                .map(|i| cpu.mem.rd32(LIGHTS + i * 0x100 + 0x94))
+                .filter(|&p| p != 0);
             let mut host = Seeded {
                 flags: 0,
                 pad: 0,
@@ -955,7 +961,9 @@ fn an_attached_light_is_found_where_retail_finds_it() {
             };
             ran += 1;
             found += u32::from(mine.is_some());
-            let port_block = host.captured.map(|len| SCRIPT + (script.len() - len) as u32);
+            let port_block = host
+                .captured
+                .map(|len| SCRIPT + (script.len() - len) as u32);
             captured += u32::from(parked.is_some());
             let mut wrong = Vec::new();
             if port & 0xFFFF != retail {
@@ -982,5 +990,8 @@ fn an_attached_light_is_found_where_retail_finds_it() {
         .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
         .collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
-    assert!(ran > 200 && found > 50 && captured > 5, "{ran} {found} {captured}");
+    assert!(
+        ran > 200 && found > 50 && captured > 5,
+        "{ran} {found} {captured}"
+    );
 }
