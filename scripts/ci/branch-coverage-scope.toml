@@ -2671,3 +2671,24 @@ image = "0db2b7293bfadcc2"
 range = "0x801E400C..0x801E43C8"
 verdict = "unreachable"
 reason = "PROT 0897: the compiler's divide guards on the keyframe's nine per-channel `(target - start) * frame / duration` steps; the arm runs only while `frame < duration` (`slt` / `bnez` at 0x801E3E94) and the frame counter starts each keyframe at 0 (`sh zero,0x9c` at 0x801E3F38 ends the last one) and only grows, so the duration is 1..0x7FFF there, and an s16 difference times an s16 frame cannot reach 0x80000000"
+
+[[arm]]
+entry = "0x801DD4C4"
+image = "fecb2f76fffac2c9"
+range = "0x801DD554..0x801DD5B0"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's divide guards on the eased move's x step `(target - start) * t / d * t / d`; it runs only when the elapsed halfword (`lhu +0x50`, so 0 or more) is below the duration (`lh +0x9E`, signed `slt`), so d is 1..0x7FFF, and an s16 difference times t below 0x7FFF stays inside 31 bits, never 0x80000000"
+
+[[arm]]
+entry = "0x801DD4C4"
+image = "fecb2f76fffac2c9"
+range = "0x801DD61C..0x801DD678"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's divide guards on the eased move's y step `(target - start) * t / d * t / d`; it runs only when the elapsed halfword (`lhu +0x50`, so 0 or more) is below the duration (`lh +0x9E`, signed `slt`), so d is 1..0x7FFF, and an s16 difference times t below 0x7FFF stays inside 31 bits, never 0x80000000"
+
+[[arm]]
+entry = "0x801DD4C4"
+image = "fecb2f76fffac2c9"
+range = "0x801DD6FC..0x801DD758"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's divide guards on the eased move's z step `(target - start) * t / d * t / d`; it runs only when the elapsed halfword (`lhu +0x50`, so 0 or more) is below the duration (`lh +0x9E`, signed `slt`), so d is 1..0x7FFF, and an s16 difference times t below 0x7FFF stays inside 31 bits, never 0x80000000"
