@@ -297,8 +297,9 @@ impl ActionState {
 /// never writes the anim fields; anim ids are entry indices with idle = 0,
 /// aligned with this space at 7/8/9 by design - see
 /// `docs/subsystems/battle-action.md`). The engine's pose host hook also
-/// drives the same-numbered action clips, which matches the frames retail
-/// shows.
+/// drives the idle loop off `6..=8`; `9` (case 9's group framing, from the
+/// run seed and the monster flight) drives no clip, as retail's arm stores
+/// to no actor field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Pose {

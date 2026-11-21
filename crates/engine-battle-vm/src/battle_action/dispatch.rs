@@ -1013,8 +1013,12 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
         host.seed_formation_recentre(actor_slot);
     }
 
-    // Idle pose.
-    host.pose(actor_slot, Pose::Idle);
+    // The case-6 framing, behind the same Run test as the recentre
+    // (`jal 0x801d5854` with `a1 = 6` at `0x801E2D4C..0x801E2D54`): a Run
+    // takes none here; its party arm frames case 9 below.
+    if !matches!(category, ActionCategory::Run) {
+        host.pose(actor_slot, Pose::Idle);
+    }
     // `li v0,0x6` in the delay slot of the Run test and `sh v0,0x2(s7)` at
     // `0x801E2D3C..0x801E2D5C`: every category leaves the seed with the
     // countdown at `6`.
@@ -1057,6 +1061,10 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
         ActionCategory::Spirit => spirit_seed_band(host, ctx),
         ActionCategory::Run => {
             if actor_slot < party_count {
+                // `clear a0; li a1,0x9; jal 0x801d5854` at
+                // `0x801E2DA0..0x801E2DD8`: the party's flight frames the
+                // whole group (case 9), a framing that plays no clip.
+                host.pose(0, Pose::Defeat);
                 ActionState::RunBegin
             } else {
                 // `jal 0x801efe44` at `0x801E2DE8`, the monster arm only.

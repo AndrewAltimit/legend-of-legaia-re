@@ -70,54 +70,29 @@ fn ready_and_recover_poses_play_the_idle_loop_not_the_downed_chain() {
     }
 }
 
+/// `FUN_801D5854(0, 9)` (the run seed, the monster flight's `0x6A` / `0x6B`)
+/// is case 9's group framing, which stores to no actor field
+/// (`0x801D6EF4..0x801D7134`): party seat 0 keeps the clip it plays and is
+/// not handed its entry 9.
 #[test]
-fn battle_pose_defeat_holds_final_frame() {
+fn battle_pose_case_nine_plays_no_clip() {
     let mut world = pose_test_world();
+    world.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
+    let before = world.actors[0].battle_pose;
     world.apply_battle_pose(
         0,
         legaia_engine_battle_vm::battle_action::Pose::Defeat as u8,
     );
+    assert_eq!(world.actors[0].battle_pose, before);
     world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
-    for _ in 0..5 {
-        world.tick_battle_animations();
-    }
-    // Defeat never falls back to idle: the downed pose holds.
-    assert_eq!(
-        world.actors[0].battle_pose,
-        Some(legaia_engine_battle_vm::battle_action::Pose::Defeat as u8)
-    );
-    assert!(
-        world.actors[0]
-            .battle_animation
-            .as_ref()
-            .unwrap()
-            .finished()
-    );
-}
-
-#[test]
-fn battle_pose_missing_slot_falls_back_to_idle_loop() {
-    let mut world = pose_test_world();
-    // Slot 9 (defeat) is empty in this set: the request binds the idle loop
-    // instead and records the pose so the SM isn't retried.
-    let mut clips = (**world.actors[0].battle_action_clips.as_ref().unwrap()).clone();
-    clips[9] = None;
-    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
-    world.apply_battle_pose(
-        0,
-        legaia_engine_battle_vm::battle_action::Pose::Defeat as u8,
-    );
-    assert_eq!(
-        world.actors[0].battle_pose,
-        Some(legaia_engine_battle_vm::battle_action::Pose::Defeat as u8)
-    );
     world.tick_battle_animations();
     assert!(
         !world.actors[0]
             .battle_animation
             .as_ref()
             .unwrap()
-            .finished()
+            .finished(),
+        "the idle loop keeps playing"
     );
 }
 

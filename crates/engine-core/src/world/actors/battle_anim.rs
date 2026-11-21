@@ -2013,10 +2013,13 @@ impl World {
     /// (`world::battle::clip_ladder`), three catalogued states read a dead
     /// party member on entry 8, and none of the action SM's literal `+0x1DA`
     /// stores names 7 or 8 - so a living attacker never plays them. Pose 9
-    /// plays entry 9 as a one-shot (the SM does stage id 9,
-    /// `0x801E4A14`), holding its last frame via
-    /// [`Self::tick_battle_animations`]; a missing slot falls back to idle.
-    /// Re-requesting the actor's current pose keeps the playing clip.
+    /// plays nothing: its one caller is case 9's group framing
+    /// (`FUN_801D5854(0, 9)` from the run seed and the monster flight's
+    /// `0x6A` / `0x6B`), whose arm (`0x801D6EF4..0x801D7134`) frames the
+    /// group through `FUN_801DCEAC` and the tween `FUN_801D829C` and, like
+    /// the whole routine, stores to no actor field - so party seat `0` is
+    /// not handed a clip. Re-requesting the actor's current pose keeps the
+    /// playing clip.
     // REF: FUN_801D5854 - the SM's pose dispatch this hook answers; the
     // id->slot mapping is an engine interpretation, not a port of its body.
     pub fn apply_battle_pose(&mut self, slot: usize, pose_id: u8) {
@@ -2029,6 +2032,10 @@ impl World {
         } else {
             pose_id
         };
+        // Case 9 is a framing only (doc above).
+        if pose_id == Pose::Defeat as u8 {
+            return;
+        }
         let seats = self.battle_seat_map();
         let Some(actor) = self.actors.get_mut(slot) else {
             return;
@@ -2067,20 +2074,9 @@ impl World {
         if actor.battle_pose == Some(pose_id) {
             return;
         }
-        let clip_slot = if pose_id == Pose::Defeat as u8 {
-            pose_id as usize
-        } else {
-            0
-        };
-        let selected = match clips.get(clip_slot).and_then(|c| c.as_ref()) {
-            Some(clip) if clip_slot != 0 => {
-                legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(clip)
-                    .map(|p| (p, clip))
-            }
-            _ => clips.first().and_then(|c| c.as_ref()).and_then(|clip| {
-                legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(clip).map(|p| (p, clip))
-            }),
-        };
+        let selected = clips.first().and_then(|c| c.as_ref()).and_then(|clip| {
+            legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(clip).map(|p| (p, clip))
+        });
         if let Some((mut player, clip)) = selected {
             // Anim record swapped: install its effect script and zero the
             // effect-script cursor (retail FUN_8004AD80, `sb zero,0x1f5`).
@@ -2089,7 +2085,6 @@ impl World {
             // (`FUN_800513F0`, `0x80051544..0x80051574` and the monster twin
             // at `0x800518D0`): `(rand() % frames) << 4`.
             if let Some(draw) = actor.battle_idle_phase_draw.take()
-                && clip_slot == 0
                 && player.is_looping()
             {
                 let frames = player.frame_count().max(1);

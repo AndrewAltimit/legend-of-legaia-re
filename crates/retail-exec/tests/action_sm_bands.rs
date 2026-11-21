@@ -1157,12 +1157,7 @@ fn the_action_seed_is_retails() {
         let log = log.borrow();
         let tail = &h.ui[h.ui.len() - log.ui.len().min(h.ui.len())..];
         assert_eq!(log.ui, tail, "elements, {at}");
-        // The Run arm frames through `FUN_801D5854(0, 9)` for a party
-        // runner and nothing for a monster; the port's pose channel plays
-        // clips, so it keeps the runner on its idle call instead.
-        if category != 5 {
-            assert_eq!(log.poses, h.poses, "poses, {at}");
-        }
+        assert_eq!(log.poses, h.poses, "poses, {at}");
         seen.insert((category, retail.0));
     }
     assert!(seen.len() >= 9, "{seen:?}");
