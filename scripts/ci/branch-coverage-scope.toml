@@ -1992,3 +1992,166 @@ range = "0x801F76B8..0x801F76B8"
 verdict = "unreachable"
 image = "ffcdaddceadee7f2"
 reason = "PROT 0905 (Vera): inside arms 6 and 7 (0x801F7440..0x801F785C), which no phase reaches - the image steps the phase by the shared tail's +1 (0x801F7F4C), arm 3's +1 (0x801F6E94) and arm 5's +3 (0x801F7434, 5 -> 8) and sets 0xFF; the lane E rows beside it (0x801F74A4, 0x801F74D4, 0x801F76E8) leave this one branch of the same arms out"
+# lane B (w52)
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x8004044C..0x8004044C"
+verdict = "unreachable"
+reason = "the `sltiu v0,v1,0x84` bound on the class jump table at 0x80014FA0: every caller passes a class from the item table 0x800752C0 (highest 0x83), the spell table 0x800754C8 (applier classes 0..8), the field VM's `4C C7` (0x0B..0x0D) or a constant (4 / 0x0E), so no class reaches 0x84"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x800404EC..0x80040518"
+verdict = "unreachable"
+reason = "class 0's dispatch past tier 2: the only class-0 caller with a tier above 2 is the field Magic commit for spell 0x83 (record pair (0, 3)); no item (class-0 tiers 0..2), spell record or other caller passes (0, 4) or (0, 5), so the sub 4 / sub 5 tests run one way"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040580..0x80040580"
+verdict = "unreachable"
+reason = "class 0 sub 3's not-found exit (`beq v1,0x20`): the arm scans the caster's own spell list for 0x83, and only a caster holding 0x83 can cast it from the Magic screen"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x800405C4..0x800405C4"
+verdict = "unreachable"
+reason = "class 0 sub 3's capped-arm not-found exit (`beq a2,0x20`): the caster holds 0x83, as above"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x800405FC..0x800407B0"
+verdict = "unreachable"
+reason = "class 0 sub 4 and sub 5 (the single-target 0x89 scans, caps 0x200 + lv << 6 and 0x400 + lv << 7): no spell record or item carries (0, 4) or (0, 5), so no caller reaches either body"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x800407B8..0x800407B8"
+verdict = "unreachable"
+reason = "the shared spell arms' not-found test at 0x800407B4: the caster's list holds the spell it casts (see the sub 3 scan above)"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040800..0x80040800"
+verdict = "unreachable"
+reason = "the spell level-up's battle-mode skip (`_DAT_8007B83C == 0x15`): only the field Magic commit reaches the spell arms (tiers 3..5); every battle caller passes an item, monster or companion spell record pair, all at tier 0..2"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040930..0x80040930"
+verdict = "unreachable"
+reason = "class 1's empty-range exit (`sltu v1,s7` false on entry): s1 / s7 are the constants 0 / 3 or 3 / 7, so the seat loop always runs"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x800409CC..0x80040A88"
+verdict = "unreachable"
+reason = "class 1's dispatch to sub 3 and its 0x83 scan: no spell record or item carries (1, 3) - the group heals are (1, 0), (1, 1) on items and (1, 4) / (1, 5) on spells 0x89 / 0x91"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040AF8..0x80040AF8"
+verdict = "unreachable"
+reason = "class 1 sub 4's not-found test after the 0x89 scan: the caster casting 0x89 holds it"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040B3C..0x80040B3C"
+verdict = "unreachable"
+reason = "class 1 sub 4's capped-arm not-found test: the caster holds 0x89"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040BAC..0x80040BAC"
+verdict = "unreachable"
+reason = "class 1 sub 5's not-found test after the 0x91 scan: the caster casting 0x91 holds it"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040BF0..0x80040BF0"
+verdict = "unreachable"
+reason = "class 1 sub 5's capped-arm not-found test: the caster holds 0x91"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040C1C..0x80040C1C"
+verdict = "unreachable"
+reason = "the class-1 spell arms' shared not-found test at 0x80040C14: the caster holds the spell it casts"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040C58..0x80040C58"
+verdict = "unreachable"
+reason = "class 1's spell level-up battle-mode skip: the group spell arms (sub 4 / 5) are reached from the field Magic commit only, every battle class-1 caller passes tier 0 or 1"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040E70..0x80040E70"
+verdict = "unreachable"
+reason = "class 3's `_DAT_8007B83C == 0x15` test: the class-3 items (0x08, 0x7F) carry descriptor flags 0x84, battle use only, and spell 0x11 is cast in battle, so the routine never runs class 3 outside battle"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040EEC..0x80040EEC"
+verdict = "unreachable"
+reason = "class 3's tail battle-mode test: battle use only (flags 0x84), as above"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80040F9C..0x80040F9C"
+verdict = "unreachable"
+reason = "class 4's battle-mode test: the revive items (0x09, 0x80) carry flags 0x84 and the other callers (state 0x50's FUN_801E6968, PROT 0897's constant (4, 1) calls, spells 0x16 / 0x21) all run in battle"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x8004107C..0x8004107C"
+verdict = "unreachable"
+reason = "class 4's tail battle-mode test: battle callers only, as above"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80041148..0x80041154"
+verdict = "unreachable"
+reason = "class 6's guards: the field validator FUN_8003FB10 refuses a stat boost on a fallen member before the menu calls the applier, and the class-6 items' tiers are 0..6, so neither the zero-HP exit nor the `sltiu 7` exit is taken"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x8004147C..0x8004147C"
+verdict = "unreachable"
+reason = "class 7's `beq tier,1` after the tier-0..1 split: the class-7 items carry tiers 1..4 only, so tier 0 never reaches it"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80041498..0x80041498"
+verdict = "unreachable"
+reason = "class 7's `beq tier,4` after the tier-3 test: no class-7 item carries a tier above 4"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80041BE0..0x80041C48"
+verdict = "unreachable"
+reason = "class 8's battle-mode tests: the class-8 items (0x14, 0x7E) carry flags 0x84 and spells 0x0C / 0x20 are cast in battle"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80041C7C..0x80041C7C"
+verdict = "unreachable"
+reason = "classes 9 / 10's battle-mode test: only the monster AI's status procs reach these classes, in battle"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80041D74..0x80041D74"
+verdict = "unreachable"
+reason = "class 9's party-count exit `ctx[+0x00] == 0`: a battle always seats a party"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80041E70..0x80041E70"
+verdict = "unreachable"
+reason = "class 10's battle-mode test: monster AI status procs only, in battle"
+
+[[arm]]
+entry = "0x800402F4"
+range = "0x80041F10..0x80041F10"
+verdict = "unreachable"
+reason = "class 10's party-count exit `ctx[+0x00] == 0`: a battle always seats a party"

@@ -21,8 +21,17 @@ const RAND: u32 = 0x8005_6798;
 pub(crate) fn seed(rng: &mut Rng) -> Vec<u8> {
     let mut r = vec![0u8; STRIDE as usize];
     let mut w = |off: usize, v: u32| r[off..off + 2].copy_from_slice(&(v as u16).to_le_bytes());
-    let hp = 1 + rng.below(9999);
-    let mp = 1 + rng.below(999);
+    // A pool or a stat now and then at its top, so the boosts' caps
+    // (`9999`, `999`, `280`) clamp.
+    let near = |rng: &mut Rng, top: u32| -> u32 {
+        if rng.below(4) == 0 {
+            top - rng.below(12)
+        } else {
+            1 + rng.below(top)
+        }
+    };
+    let hp = near(rng, 9999);
+    let mp = near(rng, 999);
     w(0x11C, hp);
     w(0x11E, mp);
     w(0x120, 100);
@@ -36,9 +45,9 @@ pub(crate) fn seed(rng: &mut Rng) -> Vec<u8> {
         },
     );
     w(0x10A, rng.below(mp + 1));
-    w(0x122, 1 + rng.below(280));
+    w(0x122, near(rng, 280));
     for off in [0x124, 0x126, 0x128, 0x12A, 0x12C] {
-        w(off, 1 + rng.below(1000));
+        w(off, near(rng, 999));
     }
     r
 }

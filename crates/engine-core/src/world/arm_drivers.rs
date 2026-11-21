@@ -55,6 +55,10 @@ pub trait BattleArmDrivers {
         committed: u8,
         apply: MeleeApply,
     ) -> (u16, bool);
+    /// The action SM's applier call for the acting seat
+    /// (`World::fold_battle_item_action`, `FUN_801E295C`
+    /// `0x801E4108..0x801E4138` into `FUN_800402F4`).
+    fn fold_battle_item_action(&mut self, class: u8, tier: u8, target: u8);
 }
 
 impl BattleArmDrivers for World {
@@ -105,5 +109,8 @@ impl BattleArmDrivers for World {
     ) -> (u16, bool) {
         let fold = self.melee_equipment_fold(attacker, committed);
         self.land_melee_hit_folded(attacker, target, power_byte, committed, apply, fold)
+    }
+    fn fold_battle_item_action(&mut self, class: u8, tier: u8, target: u8) {
+        World::fold_battle_item_action(self, class, tier, target)
     }
 }

@@ -107,14 +107,22 @@ fn a_menu_cast_writes_the_records_retail_writes() {
                 m.set_equipment(equip);
             }
             let mut list = members[usize::from(caster)].spell_list();
-            list.count = 1;
-            list.ids[0] = spell;
-            list.levels[0] = level;
+            // The cast spell sits behind up to three others, so the heal
+            // arms' level scans walk past a slot before they find it.
+            let at = rng.below(4) as usize;
+            list.count = at as u8 + 1;
+            for k in 0..at {
+                list.ids[k] = [0x81, 0x82, 0x84, 0x85, 0x86][(k + round as usize) % 5];
+                list.levels[k] = 1 + rng.below(9) as u8;
+            }
+            list.ids[at] = spell;
+            list.levels[at] = level;
             members[usize::from(caster)].set_spell_list(list);
             // The slot's XP word sits anywhere up to the top threshold, so a
             // cast can cross one.
             let xp = rng.below(560);
-            members[usize::from(caster)].raw[8..12].copy_from_slice(&xp.to_le_bytes());
+            let xp_at = 8 + 4 * at;
+            members[usize::from(caster)].raw[xp_at..xp_at + 4].copy_from_slice(&xp.to_le_bytes());
             for (i, m) in members.iter().enumerate() {
                 cpu.mem.load(RECORDS + i as u32 * STRIDE, &m.write());
             }
@@ -198,7 +206,7 @@ fn a_menu_cast_writes_the_records_retail_writes() {
             assert_eq!(stop, Stop::Returned, "spell {spell:#04x}");
             assert_eq!(cpu.call(AGGREGATOR, &[]), Stop::Returned);
             cast += 1;
-            let lv_at = RECORDS + u32::from(caster) * STRIDE + 0x161;
+            let lv_at = RECORDS + u32::from(caster) * STRIDE + 0x161 + at as u32;
             leveled += u32::from(cpu.mem.rd8(lv_at) != level);
             *per_spell.entry(spell).or_default() += 1;
             compare(&mut cpu, &world, &mut failures, || {
