@@ -18,9 +18,12 @@ impl<'a> FieldCameraMotionHost for FieldHostImpl<'a> {
                     n.pause();
                 }
             }
+            // The write sits behind the roller lookup (`FUN_8003CF04`,
+            // `beqz a1` at `0x801E33DC`): with no live roller retail stores
+            // nothing, so a later roller starts on the block as it was.
             1 => {
-                cut.narration_seed.release = zoom_x;
                 if let Some(n) = cut.narration.as_mut() {
+                    cut.narration_seed.release = zoom_x;
                     n.set_release(zoom_x);
                 }
             }
