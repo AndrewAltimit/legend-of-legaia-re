@@ -126,11 +126,11 @@ stateDiagram-v2
 | `0x19` | Lure in water (sets the allow-leave flag only). The lure tick ends it - see [Fight exits](#fight-exits). |
 | `0x1e` | The catch. Clears `DAT_801d90bc` and the catch-HUD word `DAT_801d9058` (`0x801CFD44`), waits for the rod swing word `DAT_801d91ac` to reach `0x14` and the line actor's close-up flag `DAT_801d91b0` to clear, then jumps to `0x20`. |
 | `0x20..0x22` | The catch showcase: `0x20` cuts the camera to a fixed shot of the party, `0x21` tilts it up, `0x22` holds; `0x21` / `0x22` read the result-accept word `DAT_801d90bc`. |
-| `0x28` | Waits on the converging banner (`DAT_801d9164`, `FUN_801d7528`), then returns to `10`. |
+| `0x28` | Waits on the converging banner (`DAT_801d9164`, `FUN_801d7528`, which draws while the timer is under `0xC8`), then returns to `10`; the timer gains the frame step either way and the leave edge stays shut. |
 | `0x2d` | Miss / retry bookkeeping: runs the `DAT_801d9268` timer through `FUN_801d6f10`, then back to `0x32`. No store on the disc sets this state ([Open](#open)). |
 | `0x64..0x66`, `0x6e`, `0x78..0x7a` | The [hub menu](#the-hub-menu) and its sub-screens. |
 | `0x96` | "You have lost the lure" / no-rod end screen; a button edge advances to `200`. |
-| `200` (`0xc8`) | Exit: ramps the fade to white and, once full, plays the leaving XA cue and tears the mode down. |
+| `200` (`0xc8`) | Exit: ramps the fade to white (`DAT_801d90c0` gains the frame step, level `x8` capped `0xFF`) and, once full with `0x8007BC20` clear, plays the leaving XA cue and tears the mode down. The engine leaves on the frame the exit is chosen, with no fade. |
 
 ### The venue's game tick
 
@@ -554,7 +554,7 @@ The shop branch (states `0x78..0x7a`) spends the fishing-point pool `_DAT_800844
 | Quantity picker (`0x7a`) | `FUN_801d092c` | "Trade how many?" Max = `min(points / price, limit - owned)`, `owned` being the live inventory count (`func_0x80042f4c`); a not-yet-purchased one-time row treats `owned` as 0. |
 | Confirm (`0x79`) | `FUN_801d06c8` | "Are you sure?" Yes grants `func_0x800421d4(item_id, qty)`, deducts `price * qty`, raises cue `0x206` (`0x801D089C`), and for a `limit == 1` row latches bit `row + venue*8` of `_DAT_8008446C`. |
 
-**Row 0 is hidden until strictly affordable**: the cursor floor is `(price0 < points) ^ 1`, so each venue's top prize only appears once the pool exceeds its price. The cursor **wraps** at both ends: up past the floor lands on row 5, down past row 5 on the floor (`0x801D0CF8..0x801D0D24`). A row is available (white, not grey; `FUN_801d6f90`) when it is affordable, the inventory count is not `99`, and - for a one-time row - its purchased bit is not latched.
+**Row 0 is hidden until strictly affordable**: the cursor floor is `(price0 < points) ^ 1`, so each venue's top prize only appears once the pool exceeds its price. The cursor **wraps** at both ends: up past the floor lands on row 5, down past row 5 on the floor (`0x801D0CF8..0x801D0D24`). A cursor already under the floor, left on row 0 by a purchase that took the pool below its price, moves to row 5 before the press is read (`0x801D0C88..0x801D0C9C`), so Up from it lands on row 4. A row is available (white, not grey; `FUN_801d6f90`) when it is affordable, the inventory count is not `99`, and - for a one-time row - its purchased bit is not latched.
 
 **Record** (12-byte stride, 6 rows per venue, read through `PTR_DAT_801d90b8`):
 

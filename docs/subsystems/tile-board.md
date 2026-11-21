@@ -386,6 +386,15 @@ walk SM off op `0x49` sub-5. The play-window's `LEGAIA_TILE_BOARD_DEMO=1`
 synthesizes a retail-shaped install near the player, since no scene provides
 one.
 
+The port runs the board on the vsync: the walk moves `TILE / 8` a tick, which
+at the field's frame step `2` is retail's `+-0x20` a game frame, and the
+retail kernel differential holds state 2's position and facing to the walker
+frame by frame at that step. The arrival differs in latency: retail's state 2
+finds the delta spent on the frame after the one that reached the centre, binds
+the idle clip and steps to `3`, and the arrival pass runs a frame later still;
+the port binds and runs the arrival on the tick that reaches the centre, two
+game frames sooner. No shipped scene installs a board, so only mod boards see it.
+
 ## Evidence
 
 - Install: field-VM op `0x49` in `ghidra/scripts/funcs/overlay_0897_801de840.txt`
