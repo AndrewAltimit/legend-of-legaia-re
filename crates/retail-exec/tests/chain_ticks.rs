@@ -1233,3 +1233,78 @@ fn veras_restore_arm_heals_cures_and_credits_as_the_ports_do() {
 }
 
 const VERA: u32 = 0x801F_69D8;
+
+/// PROT 0908's latched victim seat (`lw s3,-0x7458` at `0x801F6A5C`).
+const ZENOIR_VICTIM: u32 = 0x801F_8BA8;
+
+/// PROT 0908's arm 12 shatter loop (`0x801F81C8..0x801F8264`), one pass,
+/// against `zenoir_shatter_pass`: random monster rows (fallen or standing, the
+/// colour word drained or not), the scripted-fight flag, the latched victim's
+/// record `+0x20` byte, the formation's first id (a Berserker or not) and the
+/// frame product. Every seat's shatter word `+0x1BA` is compared.
+#[test]
+fn zenoirs_shatter_pass_raises_the_seats_the_port_raises() {
+    differential!(prot(908, ZENOIR));
+    use legaia_engine_cast::seru_magic_ticks::{
+        ZENOIR_SHATTER_ARM, ZenoirShatterGate, zenoir_shatter_pass,
+    };
+    let Some((mut cpu, module)) = heal_rig(908) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5A45_4E4F);
+    let mut raised = [0usize; 2];
+    for case in 0..3000 {
+        seed_heal_case(&mut cpu, &module, &mut rng, ZENOIR_SHATTER_ARM, 0x88, 4);
+        let victim = 3 + rng.below(4);
+        cpu.mem.wr32(ZENOIR_VICTIM, victim);
+        for s in 3..8u32 {
+            let a = ACTOR + s * STRIDE as u32;
+            if rng.below(3) == 0 {
+                cpu.mem.wr32(a + 4, 0);
+            } else {
+                cpu.mem.wr32(a + 4, 0x2008_0200);
+            }
+            cpu.mem.wr16(a + 0x1BA, rng.below(0x400) as u16);
+        }
+        let scripted = rng.below(2) == 0;
+        cpu.mem.wr8(CTX + 0x287, u8::from(scripted));
+        cpu.mem.wr16(CTX + 0x6D8, 0x7000);
+        let records: Vec<u8> = (0..4).map(|_| rng.below(2) as u8).collect();
+        for (k, b) in records.iter().enumerate() {
+            let r = MONSTER_RECORD + 0x40 * k as u32;
+            cpu.mem.wr32(RECORDS + 4 * k as u32, r);
+            cpu.mem.wr8(r + 0x20, *b);
+        }
+        let first = [0x4Du8, 0xAD, 0xAE, 0x10, 0x2A, 0x10][rng.below(6) as usize];
+        cpu.mem.wr8(FORMATION, first);
+        let (scalar, step) = (1 + rng.below(8) as u8, 1 + rng.below(4) as u8);
+        cpu.mem.wr8(SCALAR, scalar);
+        cpu.mem.wr8(STEP, step);
+        let before = actors(&mut cpu);
+        assert_eq!(cpu.call(BASE, &[]), Stop::Returned, "case {case}");
+        let mut want = before.clone();
+        let n = zenoir_shatter_pass(
+            &mut want,
+            ZenoirShatterGate {
+                scripted,
+                victim_record_20: records[(victim - 3) as usize],
+                formation_first: first,
+            },
+            u16::from(scalar) * u16::from(step),
+            |_, _| false,
+        );
+        let got = actors(&mut cpu);
+        for s in 3..7 {
+            assert_eq!(
+                got[s].shatter, want[s].shatter,
+                "case {case}: seat {s} scripted {scripted} record {records:?} victim {victim} first {first:#x} hp {} colour {:#x}",
+                before[s].hp, before[s].present_04
+            );
+        }
+        raised[usize::from(n > 0)] += 1;
+    }
+    assert!(raised.iter().all(|&n| n > 300), "{raised:?}");
+}
+
+const ZENOIR: u32 = 0x801F_69D8;

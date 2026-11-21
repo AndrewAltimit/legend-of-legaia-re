@@ -200,3 +200,198 @@ fn a_map_display_session_runs_as_retail_runs_it() {
         "{exits} {steps} {pans} {cycles}"
     );
 }
+
+/// The draw half's callees: the sprite `FUN_8001CD68`, the glyph run
+/// `FUN_80036888`, the system-flag test `FUN_8003CE64`, and the rest (the
+/// projection, `AddPrim`, `SetDrawMode`, the label backing) stubbed.
+const SPRITE: u32 = 0x8001_CD68;
+const GLYPHS: u32 = 0x8003_6888;
+const FLAG_TEST: u32 = 0x8003_CE64;
+const SHOW_ALL: u32 = 0x8007_B868;
+
+/// The system flags a case reads as raised.
+fn flag_raised(flag: u16) -> bool {
+    (u32::from(flag).wrapping_mul(0x9E37_79B9) >> 9) & 1 != 0
+}
+
+/// The tick run whole, through its draw half (`0x801CF00C..0x801CF4A8`), on
+/// the same generated sessions, against `MapDisplay::chrome` and
+/// `MapDisplay::visible_labels`: every frame's mini-map sprites (player dot,
+/// view box, the map, the compass backings) as `FUN_8001CD68` takes them, the
+/// compass letters' pens, and which records' names draw - their kingdom, their
+/// discovery flag (scripted per flag) and the show-all word - in table order.
+#[test]
+fn the_map_display_draws_its_chrome_and_labels_as_the_port_does() {
+    differential!(prot(981, TICK));
+    use legaia_engine_field::map_display::ChromeSprite;
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &disc().unwrap().read_entry(981).expect("PROT 0981"),
+    );
+    for stub in [
+        0x8001_72C0u32,
+        0x8002_4EE4,
+        0x8002_71A8,
+        0x8005_67A8,
+        0x801D_58F0,
+        SPAWNED_TICK,
+        0x8002_C69C,
+        0x8003_4B6C,
+        0x8003_5F04,
+        0x8003_D2C4,
+        0x8003_D368,
+        0x8005_9010,
+    ] {
+        cpu.stub(stub, 0);
+    }
+    cpu.stub(0x8002_1B04, SPAWNED);
+    use psx_retail_exec::{A0, A1, A2, A3, SP, V0};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let sprites: Rc<RefCell<Vec<ChromeSprite>>> = Rc::default();
+    let glyphs: Rc<RefCell<Vec<(u32, i16, i16)>>> = Rc::default();
+    let s = sprites.clone();
+    cpu.hook(SPRITE, move |r, m| {
+        let mut arg = |k: u32| m.rd32(r.r[SP] + 0x10 + 4 * k);
+        s.borrow_mut().push(ChromeSprite {
+            x: r.r[A0] as i16,
+            y: r.r[A1] as i16,
+            w: r.r[A2] as i16,
+            h: r.r[A3] as i16,
+            u: arg(0) as u8,
+            v: arg(1) as u8,
+            tpage: arg(2) as u16,
+            clut: arg(3) as u16,
+            semi: arg(4) != 0,
+        });
+    });
+    let g = glyphs.clone();
+    cpu.hook(GLYPHS, move |r, m| {
+        let y = m.rd32(r.r[SP] + 0x10) as i16;
+        g.borrow_mut().push((r.r[A0], r.r[A3] as i16, y));
+    });
+    cpu.hook(FLAG_TEST, |r, _| {
+        r.r[V0] = u32::from(flag_raised(r.r[A0] as u16));
+    });
+    cpu.mem.wr32(TABLE_PTR, TABLE);
+    cpu.mem.wr32(PLAYER_PTR, PLAYER);
+    cpu.mem.wr32(SPAWNED + 0xC, SPAWNED_TICK);
+    let mut rng = Rng(0x4D41_5044);
+    let (mut panels, mut labelled, mut hidden) = (0usize, 0usize, 0usize);
+    for session in 0..200 {
+        let count = 1 + rng.below(29) as usize;
+        let kingdom = rng.below(3);
+        let mut locations: Vec<MapLocation> = (0..count)
+            .map(|_| MapLocation {
+                region: rng.below(3) as u8,
+                map_x: rng.below(0x80) as u8,
+                map_y: rng.below(0x80) as u8,
+                discovery_flag: rng.below(0x400) as u16,
+                name: Vec::new(),
+            })
+            .collect();
+        let i = rng.below(count as u32) as usize;
+        locations[i].region = kingdom as u8;
+        let mut table = vec![0u8; 1 + count * 0x20];
+        table[0] = count as u8;
+        for (i, l) in locations.iter().enumerate() {
+            let r = 1 + i * 0x20;
+            table[r] = l.region;
+            table[r + 1] = l.map_x;
+            table[r + 2] = l.map_y;
+            table[r + 3..r + 5].copy_from_slice(&l.discovery_flag.to_le_bytes());
+        }
+        cpu.mem.load(TABLE, &table);
+        cpu.mem.wr32(KINGDOM, kingdom);
+        let show_all = rng.below(4) == 0;
+        cpu.mem.wr32(SHOW_ALL, u32::from(show_all));
+        let player = (
+            rng.below(0x4000) as i32 - 0x200,
+            rng.below(0x4000) as i32 - 0x200,
+        );
+        cpu.mem.wr16(PLAYER + 0x14, player.0 as u16);
+        cpu.mem.wr16(PLAYER + 0x18, player.1 as u16);
+        for at in (BLOCK..BLOCK_END).step_by(4) {
+            cpu.mem.wr32(at, 0);
+        }
+        assert_eq!(cpu.call(ENTER, &[]), Stop::Returned);
+        let mut m = MapDisplay::enter();
+        for frame in 0..200 {
+            if m.mode == 1 {
+                cpu.mem.wr32(CAM, (-player.0) as u32);
+                cpu.mem.wr32(CAM + 8, (-player.1) as u32);
+            }
+            let held = (rng.below(16) as u16) << 12;
+            let edge = match rng.below(12) {
+                0 => [0x20u16, 0x01, 0x80, 0x10, 0x100][rng.below(5) as usize],
+                1 => 0x80,
+                2 => 0x10,
+                _ => 0,
+            } | if frame > 150 && rng.below(10) == 0 {
+                0x01
+            } else {
+                0
+            };
+            cpu.mem.wr32(PAD_HELD, u32::from(held));
+            cpu.mem.wr32(PAD_EDGE, u32::from(edge));
+            if m.mode == 4 {
+                cpu.mem.wr32(POINTER, SPAWNED);
+            }
+            sprites.borrow_mut().clear();
+            glyphs.borrow_mut().clear();
+            let stop = cpu.call(TICK, &[]);
+            assert_eq!(stop, Stop::Returned, "session {session} frame {frame}");
+            let out = m.tick(held, edge, player, &locations, kingdom);
+            // The survey camera as retail left it: the chrome's view box reads
+            // it after the pan (and the port's walk camera differs once mode
+            // `3` has restored retail's saved one, which no panel draws on).
+            if m.camera_staged {
+                m.cam_x = cpu.mem.rd32(CAM) as i32;
+                m.cam_z = cpu.mem.rd32(CAM + 8) as i32;
+            }
+            let label = format!(
+                "session {session} frame {frame} mode {} overlay {}",
+                m.mode, m.overlay
+            );
+            let mut want_sprites = Vec::new();
+            let mut want_glyphs = Vec::new();
+            if let Some(c) = m.chrome(player) {
+                want_sprites.extend([c.player_dot, c.view_box, c.minimap]);
+                for mark in c.compass {
+                    want_glyphs.push((mark.letter, mark.pen));
+                    want_sprites.push(mark.sprite);
+                }
+                panels += 1;
+            }
+            assert_eq!(*sprites.borrow(), want_sprites, "{label}");
+            let names = m.visible_labels(&locations, kingdom, show_all, flag_raised);
+            let got = glyphs.borrow().clone();
+            let (compass, rest) = got.split_at(want_glyphs.len().min(got.len()));
+            let compass: Vec<(u8, (i16, i16))> = compass
+                .iter()
+                .map(|&(p, x, y)| (cpu.mem.rd8(p), (x, y)))
+                .collect();
+            assert_eq!(compass, want_glyphs, "{label}: the compass");
+            let drawn: Vec<usize> = rest
+                .iter()
+                .map(|&(p, _, _)| ((p - TABLE - 1 - 8) / 0x20) as usize)
+                .collect();
+            assert_eq!(drawn, names, "{label}: the labels");
+            labelled += usize::from(!names.is_empty());
+            hidden += usize::from(
+                m.mode == legaia_engine_field::map_display::MODE_INTERACTIVE && names.is_empty(),
+            );
+            if out.exit {
+                break;
+            }
+        }
+    }
+    assert!(
+        panels > 2000 && labelled > 2000 && hidden > 300,
+        "{panels} {labelled} {hidden}"
+    );
+}
