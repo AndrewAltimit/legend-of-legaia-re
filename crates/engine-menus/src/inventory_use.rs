@@ -918,9 +918,21 @@ impl InventoryUseSession {
                     self.events.push(InventoryUseEvent::InvalidConfirm);
                     return;
                 }
+                // The battle sub-cursors commit on any seat they stand on: the
+                // one-ally cursor `0x64` takes the confirm with no test of the
+                // seat (`0x801D2A64..0x801D2AA4`, the commit through
+                // `FUN_801DB81C`), and the item is spent at the commit and
+                // lands at the dispatch through the applier, which does
+                // nothing to a seat it cannot help. The cursor's walk keeps it
+                // on the item's own side. The field screens ask the action
+                // validator first and refuse (`FUN_801D8308` / `FUN_801D7FF8`).
+                // PORT: FUN_801D0748 (`0x801D2A64..0x801D2AA4`, the one-ally confirm)
                 let valid = match &self.field_target_gate {
                     Some(accepted) if self.context == InventoryContext::Field => {
                         accepted.contains(&(entry.id, target.slot))
+                    }
+                    _ if self.context == InventoryContext::Battle => {
+                        target_on_effect_side(&entry.effect, &target)
                     }
                     _ => target_valid_for_effect(&entry.effect, &target),
                 };
@@ -1628,10 +1640,12 @@ mod tests {
     }
 
     #[test]
-    fn revive_on_living_ally_emits_invalid_confirm_when_a_fallen_ally_exists() {
+    fn a_battle_revive_on_a_living_ally_is_spent_on_that_ally() {
         // With one fallen ally the revive item IS offered; the start cursor
-        // lands on the fallen member, but the player can still scroll to a
-        // living one - confirming there bounces with InvalidConfirm.
+        // lands on the fallen member, and the player can still scroll to a
+        // living one. Retail's one-ally cursor `0x64` commits on any seat
+        // it stands on, so the confirm spends the item there; the applier
+        // at the dispatch does nothing to a living member.
         let mut targets = party_targets(); // Vahn (slot 0) alive, Noa (slot 1) alive
         targets[1].alive = false;
         targets[1].hp = 0;
@@ -1645,12 +1659,8 @@ mod tests {
         s.input(InventoryUseInput::Confirm); // -> target select (cursor on the fallen Noa)
         s.input(InventoryUseInput::Up); // move to the living Vahn (slot 0)
         s.input(InventoryUseInput::Confirm); // confirm on a living ally
-        assert!(matches!(s.state, InventoryUseState::TargetSelect { .. }));
-        let evs = s.drain_events();
-        assert!(
-            evs.iter()
-                .any(|e| matches!(e, InventoryUseEvent::InvalidConfirm))
-        );
+        assert!(matches!(s.state, InventoryUseState::Done(_)));
+        assert_eq!(s.used_slots, vec![0]);
     }
 
     #[test]

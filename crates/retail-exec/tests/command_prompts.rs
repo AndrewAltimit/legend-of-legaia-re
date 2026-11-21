@@ -1142,6 +1142,15 @@ fn the_item_target_cursors_go_where_retail_goes() {
         }
         let cur_enemy = live[rng.below(live.len() as u32) as usize];
         let cur_ally = rng.below(u32::from(party)) as u8;
+        // The acting member stands, hurt (so a party-wide heal always has a
+        // seat it helps); the others may be at full HP or down.
+        let member_hp: [u16; 3] = std::array::from_fn(|i| {
+            if i == usize::from(seat) {
+                100
+            } else {
+                [100, 200, 0][rng.below(3) as usize]
+            }
+        });
         let span = 0x800;
         let mut pos = || {
             (
@@ -1247,12 +1256,14 @@ fn the_item_target_cursors_go_where_retail_goes() {
             BattleCommandOpt::DirectionalButtons
         };
         let pc = usize::from(party);
-        for i in 0..pc {
+        // A member the item cannot help (at full HP, or down) takes the
+        // cursor and the confirm as any other: retail tests no seat.
+        for (i, &hp) in member_hp.iter().enumerate().take(pc) {
             let a = &mut w.actors[i];
             a.active = true;
             a.battle.max_hp = 200;
-            a.battle.hp = 100;
-            a.battle.liveness = 1;
+            a.battle.hp = hp;
+            a.battle.liveness = u16::from(hp != 0);
             a.move_state.world_x = me.0;
             a.move_state.world_z = me.1;
         }
