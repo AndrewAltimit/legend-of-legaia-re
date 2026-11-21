@@ -163,7 +163,7 @@ impl World {
     /// `FUN_800204F8` (`0x801EFAC0..0x801EFAEC`) - and run the arrival pass.
     ///
     /// PORT: FUN_801EF2B0 (state 2)
-    pub(super) fn tile_board_walk_step(&mut self, slot: usize, tx: i32, tz: i32) {
+    pub(in crate::world) fn tile_board_walk_step(&mut self, slot: usize, tx: i32, tz: i32) {
         let ms = &mut self.actors[slot].move_state;
         let (x, z) = (ms.world_x as i32, ms.world_z as i32);
         if let Some(octant) =

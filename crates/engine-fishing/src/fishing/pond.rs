@@ -148,6 +148,21 @@ impl PondSession {
         self.reel_repeat_in = countdown;
     }
 
+    /// Seat the session on the line-break screen (state `0x28`) with its
+    /// banner timer (`DAT_801D9164`) at `banner`, as a harness standing the
+    /// pond on a retail state does.
+    #[doc(hidden)]
+    pub fn seat_line_break(&mut self, banner: i32) {
+        self.phase = PondPhase::Snapped;
+        self.break_banner = banner;
+    }
+
+    /// The line-break banner timer (`DAT_801D9164`).
+    #[doc(hidden)]
+    pub fn line_break_banner(&self) -> i32 {
+        self.break_banner
+    }
+
     /// The band check's strike countdown (`DAT_801D90EC`).
     pub fn band_countdown(&self) -> i32 {
         self.band.countdown

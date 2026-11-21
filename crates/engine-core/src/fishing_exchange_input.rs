@@ -119,7 +119,16 @@ impl World {
             ExchangeInput::Buy => {
                 let row = self.minigames.fishing_exchange.as_ref().map(|e| e.cursor);
                 match row.and_then(|r| self.fishing_exchange_buy(r, 1)) {
-                    Some(p) => ExchangeOutcome::Bought(p),
+                    Some(p) => {
+                        // The list's next frame opens on its entry clamp:
+                        // a purchase that took the points below row 0's
+                        // price moves a cursor left on it to the last row.
+                        let points = self.minigames.fishing_points;
+                        if let Some(ex) = &mut self.minigames.fishing_exchange {
+                            ex.cursor = ex.step_cursor(ex.cursor, points, false, false);
+                        }
+                        ExchangeOutcome::Bought(p)
+                    }
                     None => ExchangeOutcome::Refused,
                 }
             }

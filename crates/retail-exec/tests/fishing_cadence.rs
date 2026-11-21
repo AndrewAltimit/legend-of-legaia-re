@@ -886,3 +886,91 @@ fn the_shore_lure_gate_parks_the_session_as_retail_does() {
     }
     assert!(parked.iter().all(|&n| n > 50), "{parked:?}");
 }
+
+/// The line-break screen, state `0x28` (`0x801CFEE4..0x801CFF20`): the
+/// converging pair `FUN_801D7528` (run live; its box draw stubbed) draws
+/// while its timer `DAT_801D9164` is under `0xC8` and the session goes back
+/// to the shore (state `0xA`) on the frame it stops; the timer gains the
+/// frame step either way, and the leave edge does nothing (the arm leaves
+/// `$s7` clear). Against `PondSession` seated on `PondPhase::Snapped`: the
+/// state and, while it holds, the timer.
+#[test]
+fn the_line_break_screen_returns_to_the_shore_as_retail_does() {
+    differential!(prot(972, SESSION));
+    use legaia_engine_fishing::fishing::{
+        CAST_POWER_STEP, FishingRecord, PondInput, PondPhase, PondSession,
+    };
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    const PAIR: u32 = 0x801D_7528;
+    const BANNER: u32 = 0x801D_9164;
+    let mut targets: Vec<u32> = overlay
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_le_bytes(*w))
+        .filter(|w| w >> 26 == 3)
+        .map(|w| ((w & 0x03FF_FFFF) << 2) | 0x8000_0000)
+        .filter(|&t| !(SESSION..SESSION_END).contains(&t) && t != PAIR)
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    for t in targets {
+        cpu.stub(t, 0);
+    }
+    let mut rng = Rng(0x4252_4B4E);
+    let (mut held, mut back) = (0u32, 0u32);
+    for case in 0..20_000u32 {
+        cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+        let banner = match rng.below(3) {
+            0 => 0xC8 - 4 + rng.below(8) as i32,
+            1 => rng.below(0x120) as i32,
+            _ => -(rng.below(8) as i32),
+        };
+        let step = 1 + rng.below(3) as i32;
+        let edge = [0u32, 0x20, 0x01, 0x21, 0x40][rng.below(5) as usize];
+        cpu.mem.wr32(SESSION_STATE, 0x28);
+        cpu.mem.wr32(BANNER, banner as u32);
+        cpu.mem.wr8(FRAME_STEP, step as u8);
+        cpu.mem.wr32(PRESSED, edge);
+        assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "case {case}");
+        let retail = (cpu.mem.rd32(SESSION_STATE), cpu.mem.rd32(BANNER) as i32);
+        let mut port = PondSession::new(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            0,
+            0,
+            0,
+            0,
+            FishingRecord::default(),
+            0,
+            1,
+        );
+        port.seat_line_break(banner);
+        let input = PondInput {
+            leave_edge: edge & 0x21 != 0,
+            cast_edge: edge & 0xC0 != 0,
+            ..Default::default()
+        };
+        port.tick(input, step, CAST_POWER_STEP);
+        let at = format!("case {case} banner {banner} step {step} edge {edge:#x}");
+        match port.phase() {
+            PondPhase::Snapped => {
+                assert_eq!(retail, (0x28, port.line_break_banner()), "{at}");
+                held += 1;
+            }
+            PondPhase::Idle => {
+                assert_eq!(retail, (0x0A, banner + step), "{at}");
+                back += 1;
+            }
+            p => panic!("{at}: the port left for {p:?}"),
+        }
+    }
+    assert!(held > 5000 && back > 3000, "{held} {back}");
+}

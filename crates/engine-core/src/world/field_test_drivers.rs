@@ -16,6 +16,10 @@ pub trait FieldTestDrivers {
     fn effect_target_rgb(&self) -> [i16; 3];
     /// Seed that latch, as a previous `34 0x` left it.
     fn seed_effect_target_rgb(&mut self, rgb: [i16; 3]);
+    /// One tick of the tile board walker's state 2 on actor `slot`
+    /// (`World::tile_board_walk_step`, `FUN_801EF2B0` `0x801EFA88`) toward
+    /// the committed target; a no-op with none.
+    fn tile_board_walk(&mut self, slot: usize);
 }
 
 impl FieldTestDrivers for World {
@@ -24,5 +28,10 @@ impl FieldTestDrivers for World {
     }
     fn seed_effect_target_rgb(&mut self, rgb: [i16; 3]) {
         self.presentation.effect_target_rgb = rgb;
+    }
+    fn tile_board_walk(&mut self, slot: usize) {
+        if let Some((tx, tz)) = self.board.target {
+            self.tile_board_walk_step(slot, tx, tz);
+        }
     }
 }

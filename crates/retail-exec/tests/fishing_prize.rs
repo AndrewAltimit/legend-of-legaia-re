@@ -218,8 +218,13 @@ fn the_prize_list_cursor_moves_as_retails_does() {
         let points = [0, price0 - 1, price0, price0 + 1, rng.below(20_000) as i32]
             [rng.below(5) as usize]
             .max(0);
-        let cursor =
-            ex.first_visible(points) + rng.below(6 - ex.first_visible(points) as u32) as usize;
+        // Now and then a cursor under the floor, as a purchase leaves row 0
+        // when it takes the points below its price.
+        let cursor = if rng.below(6) == 0 {
+            0
+        } else {
+            ex.first_visible(points) + rng.below(6 - ex.first_visible(points) as u32) as usize
+        };
         let pad = [0, 0x1000, 0x4000, 0x5000][rng.below(4) as usize];
         s.cpu.mem.wr32(POINTS, points as u32);
         s.cpu.mem.wr32(CURSOR, cursor as u32);
