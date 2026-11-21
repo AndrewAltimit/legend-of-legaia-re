@@ -1837,7 +1837,10 @@ without applying it. Two runner rules:
    `0xA6`, 0961 and 0963 leave their caster slowed or frozen and rely on a reset
    outside the module. A rate on the seats a hit strikes (`ChainArm::hit_rate`) and
    an arm's per-pass party-row store (`party_rate_sweep`) are carried: they pace the
-   reactions, and the Done tail's `FUN_801E93C8` puts them back.
+   reactions, and the Done tail's `FUN_801E93C8` puts them back. A store past a
+   sweep's skip label lands on every party seat (`ChainArm::row_rate`, PROT 0963's
+   arm `0x0E`), and Earthquake's `0xFF` arm restores `8` on every living seat of the
+   actor table's first seven rows, monsters included (`live_seat_rate_sweep`).
 
 **Arm gates.** Every capture-class chain body opens its arms on the countdown
 shape, and its table sits in `cast_module_camera::capture_countdown`, keyed

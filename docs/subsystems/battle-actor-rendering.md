@@ -332,7 +332,7 @@ The first row holds on a re-commit too, a looping clip's natural end included: a
 
 Outside the commit, a cast's arms slow the seats they strike, beside each reaction
 stage, and so pace its knockdown and get-up. Earthquake stores `4` and restores `8` in
-its own `0xFF` arm. The Rogue strikes and Stone Circle store `2` on the hit and again
+its own `0xFF` arm, on every living seat, monsters included. The Rogue strikes and Stone Circle store `2` on the hit and again
 on every pass of their next arm, so a commit's decay to `4` lasts one frame
 (`cast_module_ticks::party_rate_sweep`, `ChainArm::hit_rate`). Scythe Wind's arm 2 drops caster and victim to `1` as it stages the swing, so
 the caster's commit lifts it to `4` and the victim idles at `1` until the damage arm.
