@@ -2603,3 +2603,15 @@ entry = "0x801E9504"
 range = "0x801E9DF8..0x801E9DF8"
 verdict = "unreachable"
 reason = "PROT 0898: the threshold sum's `beq level,zero` skip after `addiu level,1` on a byte the entry test held below 99, so the level is 2..99 there"
+
+[[arm]]
+entry = "0x8003AEB0"
+range = "0x8003B158..0x8003B240"
+verdict = "unreachable"
+reason = "the section chain's `beq len,zero` skips, which leave a section's successor pointer unset; sections 0..4 of every retail scene MAN are non-empty (scene-formats `man_section_corpus` asserts it), only the section-5 terminator is empty and its length is never tested"
+
+[[arm]]
+entry = "0x8003AEB0"
+range = "0x8003B924..0x8003B924"
+verdict = "unreachable"
+reason = "the motion-table install's `beq ctrl[+0],zero` skip; ctrl[+0] is section 1's pointer, set at 0x8003B164 from a non-empty section 0 and advanced by 3 at 0x8003B284, so it is never zero"

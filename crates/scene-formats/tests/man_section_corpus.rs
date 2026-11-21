@@ -97,6 +97,12 @@ fn man_section_parses_every_retail_scene_bundle() {
                 man_bytes.len(),
             );
         }
+        // Sections 0..=4 are never empty: the installer's `beq len,zero`
+        // skips at `0x8003B158..0x8003B240` (which would leave a section's
+        // successor pointer stale) never take on the disc.
+        for (i, s) in man.sections[..5].iter().enumerate() {
+            assert!(s.length != 0, "section {i} of {} is empty", path.display());
+        }
         // Section 5 must be a zero-length terminator.
         assert!(
             man.terminator().is_terminator(),
