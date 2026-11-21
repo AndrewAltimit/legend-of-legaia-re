@@ -928,6 +928,16 @@ The target plaque's name carries the `0xCE` badge escape (`Gimard` at `x = 241`,
 `Tail Fire` 135, `Glare` 146. The cluster's own seats are in
 `engine-battle-vm::battle_value_readout`.
 
+**The cluster counts the total's digits over the whole word.** Its draw
+(`FUN_801E805C`, `0x801E89D8..0x801E91B8`) seats every part off record 80's
+widget: the word at `x + 0x50 - 0x10 * digits` (`DAMAGE` eight further left,
+when the push count `ctx[+0x273]` reads `1`), the value's 16-px cells ending at
+`x + 0x88`, and on a count above `1` the `HIT` word and the count's 24-px cells
+above. The digit loops multiply by ten over the 32-bit total in
+`DAT_8007BD14`, so a string's total past `65535` draws all its digits rather
+than saturating. `crates/retail-exec/tests/value_readout.rs`
+(`the_combo_cluster_draws_as_retail`) holds `combo_cluster` to that draw.
+
 **A melee string opens the cluster when its total lands.** The melee kernel
 banks each hit's damage in the target's word `+0x00` and writes the bank to
 live HP in one arm (`FUN_801EC3E4`, `0x801EEA10..0x801EEA78`, selected by the
