@@ -347,65 +347,38 @@ pub fn commit_log_layout(commits: &[LogCommit]) -> Vec<[LogElement; 3]> {
 /// display width (`addiu v0,v0,-0x140` at `0x801D4AF8`).
 pub const EXIT_DX: i16 = -0x140;
 
-/// The rest row `y` of the source record a latest-row element landed from:
-/// its seat B in the SCUS placement table, which the commit arm copies into
-/// the element's seat A (`FUN_801D5718`). The acting plaque and the tab-row
-/// chips and the staged name sit on the tab row `14`, the Spirit chip on the
-/// ring's down arm `98`, the target plaque and `"  All"` at `162`,
-/// `"All Allies"` at `122`. The target plaque's row is the one every
-/// single-target cursor seats it on (`li v1,0xa2` into record `0x29` at
-/// `0x801D3E28` / `0x801D5498`); an all-target pick copies the label's seat
-/// over it instead (`FUN_801D57E8(0x29, 0x3D / 0x3E)`, `0x801D4410` /
-/// `0x801D4430`), and that commit lands from the label.
-pub const fn landing_source_y(source: usize) -> Option<i16> {
-    Some(match source {
-        RECORD_ACTING_PLAQUE | RECORD_CHIP_ITEM | RECORD_CHIP_ATTACK | RECORD_CHIP_MAGIC
-        | RECORD_COMMIT_NAME => 14,
-        RECORD_CHIP_SPIRIT => 98,
-        RECORD_TARGET_PLAQUE | RECORD_ALL_ENEMIES => 162,
-        RECORD_ALL_ALLIES => 122,
-        _ => return None,
-    })
-}
-
 /// The seat each log element glides to as the Begin confirm leaves the
 /// screen - step `0x24`, whose shared tail re-spawns row 0 (records
-/// `0x2B..0x2D`) and every later row (`0x2E + k` for `k < 3 * ctx[+0x1F]`,
+/// `0x2B..0x2D`) and the rows after it (`0x2E + k` for `k < 3 * ctx[+0x1F]`,
 /// `0x801D56A0..0x801D56E4`) in mode `1`, so every row glides from its rest
 /// seat (B) to its seat A over the one sixteen-vsync step.
 ///
 /// Seat A is one display width left of rest for every element
-/// (`0x801D4AE0..0x801D4B08`). Its row is the rest row, except: the step
-/// rewrites one row's seat-A `y` by the member count behind the cursor
-/// (`ctx[+0x1F]`, `0x801D4B34..0x801D4B98`) - with two rows the first
-/// glides down onto the lower row `0xAA`, with three the second keeps its
-/// own `0xAA`; and the latest row still holds the seat A its commit landing
-/// gave it, the seat of the record each element landed from
-/// ([`landing_source_y`]), so it glides up toward the plaques as it leaves.
-/// With three rows the first keeps the seat A the landings left it: a
-/// Spirit third commit rewrites it onto its rest row (`0x801D4A6C..0x801D4AC8`),
-/// the Attack and Magic / Item arms leave it (their third-row arms write only
-/// rows two and three, `0x801D4544..0x801D459C`, `0x801D48A8..0x801D4900`),
-/// so it is where the second commit put it: the lower row `0xAA` its Spirit
-/// glide started from, else its rest row.
+/// (`0x801D4AE0..0x801D4B08`). Its row is what the landings left there: the
+/// step rewrites the latest row's (the block `ctx[+0x1F]`, the member count
+/// at the confirm, names) onto its rest row (`0x801D4B34..0x801D4B98`), and
+/// every later landing rewrites the rows above it onto theirs - except a
+/// Spirit landing on the second row, whose glide starts the first row from
+/// the lower row `0xAA` (`0x801D4A34..0x801D4A64`). So the first of two rows
+/// behind a Spirit second commit glides down onto `0xAA`, and so does the
+/// first of three when the third commit (whose Attack and Magic / Item arms
+/// write only the second and third rows, `0x801D4544..0x801D459C`,
+/// `0x801D48A8..0x801D4900`) is not a Spirit, which rewrites it onto its rest
+/// row (`0x801D4A6C..0x801D4AC8`). Every other row slides straight left.
 ///
 /// PORT: FUN_801D388C (case `0x24`, `0x801D4AE0..0x801D4B98`, and its tail `0x801D56A0..0x801D56E4`)
 pub fn commit_exit_seats(layout: &[[LogElement; 3]]) -> Vec<[(i16, i16); 3]> {
     let n = layout.len();
     let spirit =
         |row: Option<&[LogElement; 3]>| row.is_some_and(|r| r[1].source == RECORD_CHIP_SPIRIT);
-    // The first of three rows glides down onto `0xAA` only behind a Spirit
-    // second commit and a non-Spirit third.
-    let first_lowered = n == 3 && spirit(layout.get(1)) && !spirit(layout.get(2));
+    let first_lowered = spirit(layout.get(1)) && (n == 2 || (n == 3 && !spirit(layout.get(2))));
     layout
         .iter()
         .enumerate()
         .map(|(i, row)| {
             std::array::from_fn(|k| {
                 let el = row[k];
-                let y = if i + 1 == n {
-                    landing_source_y(el.source).unwrap_or(el.y)
-                } else if i + 2 == n || first_lowered {
+                let y = if i == 0 && first_lowered {
                     ROW_Y_LOWER as i16
                 } else {
                     el.y
@@ -598,22 +571,29 @@ mod tests {
     #[test]
     fn the_begin_exit_sends_every_row_off_the_left_edge() {
         let one = commit_log_layout(&[attack(27, 55)]);
-        // The lone row glides toward the plaques it landed from.
         assert_eq!(
             commit_exit_seats(&one)[0],
-            [(-304, 14), (59 - 320, 14), (123 - 320, 162)]
+            [(-304, 170), (59 - 320, 170), (123 - 320, 170)]
         );
-        let two = commit_log_layout(&[attack(27, 55), attack(24, 40)]);
+        let spirit = LogCommit {
+            name_width: 20,
+            command_record: RECORD_CHIP_SPIRIT,
+            command_width: CHIP_WIDTH,
+            target: LogTarget::None,
+        };
+        let two = commit_log_layout(&[attack(27, 55), spirit]);
         let seats = commit_exit_seats(&two);
         assert_eq!(
             seats[0][0],
             (16 - 320, ROW_Y_LOWER as i16),
             "row 0 drops onto 0xAA"
         );
-        assert_eq!(seats[1][0].1, 14);
-        let three = commit_log_layout(&[attack(27, 55), attack(24, 40), attack(30, 40)]);
+        assert_eq!(seats[1][0].1, 170);
+        let plain = commit_log_layout(&[attack(27, 55), attack(24, 40)]);
+        assert_eq!(commit_exit_seats(&plain)[0][0].1, 146);
+        let three = commit_log_layout(&[attack(27, 55), spirit, attack(30, 40)]);
         let ys: Vec<i16> = commit_exit_seats(&three).iter().map(|r| r[0].1).collect();
-        assert_eq!(ys, [146, 170, 14]);
+        assert_eq!(ys, [170, 170, 194]);
         let g = LogLaunch::new(false);
         assert_eq!(g.covered(-160), 0);
     }

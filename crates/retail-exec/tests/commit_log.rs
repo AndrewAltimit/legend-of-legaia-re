@@ -130,11 +130,6 @@ fn the_commit_log_lands_every_command_as_retail() {
             cpu.mem.wr32(rec(RECORD_ACTING_PLAQUE) + 0x14, name_at);
             cpu.mem.wr16(rec(RECORD_ACTING_PLAQUE) + 6, width(&name));
             cpu.mem.wr32(rec(RECORD_TARGET_PLAQUE) + 0x14, target_at);
-            // Every single-target cursor seats the plaque on row `0xA2` as it
-            // opens (`0x801D3E28`, `0x801D5498`); an earlier member's
-            // all-target pick copied a label's seat over it.
-            cpu.mem.wr16(rec(RECORD_TARGET_PLAQUE) + 4, 0xA2);
-            cpu.mem.wr16(rec(RECORD_TARGET_PLAQUE) + 0xC, 0xA2);
             cpu.mem.wr16(rec(RECORD_TARGET_PLAQUE) + 6, width(&target));
             cpu.mem.wr8(CTX + 0x13, n as u8);
             cpu.mem.wr8(CTX + 0x1F, n as u8);
@@ -264,9 +259,10 @@ fn the_commit_log_lands_every_command_as_retail() {
                 }
             }
         }
-        // The Begin confirm's exit, step `0x24`, with the cursor walked past
-        // every member but the last.
-        cpu.mem.wr8(CTX + 0x1F, (party - 1) as u8);
+        // The Begin confirm's exit, step `0x24`: by `0x6E` the forward walk
+        // has stepped past every member (`party_basic_attack_vs_gobu_gobu`
+        // holds `ctx[+0x1F] = 1` on a party of one).
+        cpu.mem.wr8(CTX + 0x1F, party as u8);
         assert_eq!(
             cpu.call(WINDOW, &[0x24, 0]),
             Stop::Returned,
