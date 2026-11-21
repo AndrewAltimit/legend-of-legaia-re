@@ -142,22 +142,41 @@ pub(super) fn spirit_fire<H: BattleActionHost + ?Sized>(
         return stay(ctx);
     }
     host.ui_element(0x4C, 1);
+    // A party member's spell also sends its name plate out (`FUN_801D8DE8(0x34,
+    // 1)` at `0x801E3E78`, behind `+0x1DE == 2` and `ctx[+0x13] < 3`).
+    let category = host.actor(slot).map_or(ActionCategory::TacticalArts, |a| {
+        ActionCategory::from_byte(a.action_category)
+    });
+    if matches!(category, ActionCategory::Magic) && slot < host.party_count() {
+        host.ui_element(SPELL_NAME_ELEMENT, 1);
+    }
     let class = host.actor(slot).map(|a| a.cast_class).unwrap_or(0);
     if class == GAUGE_EXTEND_CLASS {
         gauge_extend_fire(host, ctx, slot);
     } else {
         spirit_fire_target_plates(host, ctx, slot);
-    }
-    // The Point Card's selector comes from its id, not its descriptor
-    // (`0x801E4080..0x801E40C0`).
-    if let Some(a) = host.actor_mut(slot)
-        && a.params[0] == 0xFE
-        && matches!(
-            ActionCategory::from_byte(a.action_category),
-            ActionCategory::Item
-        )
-    {
-        a.cast_class = 0x0E;
+        // The Point Card (`0x801E4080..0x801E40C0`), keyed on the queue's
+        // head byte alone: the frame is re-sized (`FUN_801F0348`) and pulled
+        // in to three quarters, and the selector comes from the id, not the
+        // descriptor. The gauge-extension arm jumps past this block.
+        if host
+            .actor(slot)
+            .is_some_and(|a| a.params[0] == POINT_CARD_ID)
+        {
+            let target = host.actor(slot).map_or(8, |a| a.active_target);
+            let party_count = host.party_count();
+            let h =
+                crate::battle_formulas::camera_height_for_frame(slot, target, party_count, |s| {
+                    host.monster_size_class(s)
+                });
+            // `sll v0,v1,1` / `addu` / `sra v0,v0,2` at `0x801E40AC..0x801E40B4`.
+            let h = ((i32::from(h) * 3) >> 2) as i16;
+            ctx.camera_frame_height = h;
+            host.camera_frame_height(h);
+            if let Some(a) = host.actor_mut(slot) {
+                a.cast_class = 0x0E;
+            }
+        }
     }
     ctx.frame_timer = 0x20;
     transition(ctx, ActionState::SpiritFireDamage)
@@ -201,6 +220,13 @@ fn spirit_fire_target_plates<H: BattleActionHost + ?Sized>(
 /// table's "extend action gauge for one battle" class (Fury Boost) -
 /// `lbu v1,0x1e8(s3)` / `li v0,0x5` / `bne` at `0x801E3E80..0x801E3E88`.
 pub const GAUGE_EXTEND_CLASS: u8 = 5;
+
+/// The Point Card's item id, the queue head state `0x3E` keys its arm on
+/// (`li v0,0xfe` at `0x801E4084`).
+pub const POINT_CARD_ID: u8 = 0xFE;
+
+/// The spell-name plate state `0x3E` sends out for a party caster.
+pub const SPELL_NAME_ELEMENT: u8 = 0x34;
 
 /// Ceiling of the extended gauge the arm stages (`slti v0,v0,0x121` /
 /// `li v0,0x120` at `0x801E3F90..0x801E3F98`).

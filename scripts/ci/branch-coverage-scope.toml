@@ -1921,3 +1921,9 @@ entry = "80021DF4"
 range = "0x800228A8..0x800228A8"
 verdict = "unreachable"
 reason = "0x800228A0 is reached only by falling out of the mode-3 arm (every other mode branches from 0x800226E0 straight to 0x800228B0), so `+0x5A == 3` always holds there and the fall-through is never taken"
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E6254..0x801E6304"
+verdict = "unported"
+reason = "PROT 0898's Done band teardown inlines FUN_801E805C's multi-cast readout close: with the value window 0x801F6980 holding a value it unloads (id - 4, 1) then (id, 1) for each of the 0x801F6974 rows at 0x801F6834; the action context carries neither the window nor the count, and the engine closes the readout only through FUN_801E805C's own pass (battle_value_readout)."

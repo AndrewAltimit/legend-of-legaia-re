@@ -183,8 +183,10 @@ impl BattleActionHost for Host {
     fn actor_anchor(&self, slot: u8) -> Option<(i16, i16)> {
         self.placed.then(|| self.anchor[usize::from(slot)])
     }
-    fn character_ability_bits_high(&self, _party_slot: u8) -> u32 {
-        self.bits_high
+    fn character_ability_bits_high(&self, party_slot: u8) -> u32 {
+        // A monster seat has no character record; retail's `DAT_8007BD10`
+        // byte there names the empty record `3`.
+        if party_slot < 3 { self.bits_high } else { 0 }
     }
     fn previous_action_cleared(&self, _arg: u8) -> bool {
         !self.busy
@@ -1845,4 +1847,148 @@ fn the_cast_and_item_band_is_retails() {
         seen.insert((state, retail.0));
     }
     assert!(seen.len() >= 7, "{seen:x?}");
+}
+
+const CAMERA_SIZE: u32 = 0x801F_0348;
+
+/// State `0x3E`, the cast's release (`0x801E3E14..0x801E40D4`) against
+/// `spirit_fire`: the wait on the clip, the element calls (the `0x4C` close,
+/// a party spell's name plate, the target plates or the gauge extension's
+/// two bars), the gauge extension's `rand()` camera variant, extended gauge
+/// and AP target, and the Point Card's selector and three-quarter frame. The
+/// frame sizing `FUN_801F0348` answers through `camera_height_for_frame`.
+#[test]
+fn the_cast_release_is_retails() {
+    use legaia_engine_battle_vm::battle_formulas::camera_height_for_frame;
+    differential!(prot(898, SM));
+    let Some(mut r) = Retail::new() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let stream = Rc::new(std::cell::Cell::new(0u32));
+    let s2 = stream.clone();
+    r.cpu.hook(RAND, move |regs, _| {
+        s2.set(lcg(s2.get()));
+        regs.r[2] = (s2.get() >> 16) & 0x7FFF;
+    });
+    r.cpu.hook(CAMERA_SIZE, |regs, m| {
+        let slot = m.rd8(CTX + 0x13);
+        let target = m.rd8(actor(slot) + 0x1DD);
+        let h = camera_height_for_frame(slot, target, 3, |_| 0);
+        m.wr16(CTX + 0x6D0, h as u16);
+        regs.r[2] = 0;
+    });
+    r.cpu.stub(0x8003_19A8, 0);
+    // The plate record the `0x52` raise answers with.
+    r.cpu.unhook(ELEMENT);
+    let ui = r.ui.clone();
+    r.cpu.hook(ELEMENT, move |regs, _| {
+        ui.borrow_mut().push((regs.r[4] as u8, regs.r[5] as u8));
+        regs.r[2] = PLATE_RECORD;
+    });
+    let mut rng = Rng(0x5245_4C45);
+    let (mut extended, mut carded) = (0, 0);
+    for round in 0..20000 {
+        let slot = rng.below(5) as u8;
+        let target = [0u8, 1, 2, 3, 4, 8][rng.below(6) as usize];
+        let category = [1u8, 2, 3][rng.below(3) as usize];
+        let class = [5u8, 1, 0x14][rng.below(3) as usize];
+        let head = if rng.below(4) == 0 {
+            0xFE
+        } else {
+            rng.below(0x80) as u8
+        };
+        let current = [0u8, 0, 4][rng.below(3) as usize];
+        let base = [0u16, 7, 100, 250][rng.below(4) as usize];
+        let spirit = [0u16, 50, 95][rng.below(3) as usize];
+        let bits = [0u32, 0x200][rng.below(2) as usize];
+        let depth = [0x800i16, 0x1400][rng.below(2) as usize];
+        let seed = rng.next();
+        if target == slot {
+            continue;
+        }
+        r.reset();
+        stream.set(seed);
+        let m = &mut r.cpu.mem;
+        m.wr8(CTX + 7, 0x3E);
+        m.wr8(CTX + 0x13, slot);
+        m.wr16(CTX + 0x6D0, depth as u16);
+        for s in 0..8u32 {
+            m.wr8(SEATS + s, if s < 3 { s as u8 + 1 } else { 4 });
+            if s < 3 {
+                m.wr32(RECORDS + s * 0x414 + 0x6C0, bits);
+            }
+        }
+        let a = actor(slot);
+        m.wr8(a + 0x1D9, current);
+        m.wr8(a + 0x1DD, target);
+        m.wr8(a + 0x1DE, category);
+        m.wr8(a + 0x1DF, head);
+        m.wr8(a + 0x1E8, class);
+        m.wr16(a + 0x170, spirit);
+        if target < 8 {
+            m.wr16(actor(target) + 0x156, base);
+        }
+        r.pass();
+        let m = &mut r.cpu.mem;
+        let retail = (
+            m.rd8(CTX + 7),
+            m.rd16(S7 + 2) as i16,
+            m.rd16(S7 + 6) as i16,
+            m.rd16(S7 + 8) as i16,
+            m.rd8(CTX + 0x19),
+            m.rd8(CTX + 0x0D),
+            m.rd8(a + 0x1E8),
+            m.rd8(CTX + 0x18),
+            m.rd16(CTX + 0x6D0) as i16,
+        );
+        let retail_member = m.rd8(CTX + 0x20);
+
+        let mut h = host();
+        h.bits_high = bits;
+        h.rand = seed;
+        let b = &mut h.actors[usize::from(slot)];
+        b.current_anim = current;
+        b.active_target = target;
+        b.action_category = category;
+        b.params[0] = head;
+        b.cast_class = class;
+        b.spirit_gauge = spirit;
+        if target < 8 {
+            h.actors[usize::from(target)].agl_base = base;
+        }
+        let mut ctx = BattleActionCtx {
+            action_state: 0x3E,
+            active_actor: slot,
+            camera_frame_height: depth,
+            ..Default::default()
+        };
+        ba::step(&mut h, &mut ctx);
+        let b = &h.actors[usize::from(slot)];
+        let fired = current == 0;
+        let port = (
+            ctx.action_state,
+            ctx.frame_timer,
+            ctx.damage_target,
+            ctx.hp_bar_target,
+            ctx.spirit_action_count,
+            ctx.camera_variant,
+            b.cast_class,
+            ctx.action_ui_element,
+            ctx.camera_frame_height,
+        );
+        let at = format!(
+            "round {round}: slot {slot} target {target} category {category} class {class} head \\
+             {head:#x} clip {current} base {base} spirit {spirit} bits {bits:#x}"
+        );
+        assert_eq!(retail, port, "{at}");
+        assert_eq!(*r.ui.borrow(), h.ui, "elements, {at}");
+        assert_eq!(stream.get(), h.rand, "rand, {at}");
+        if fired && target < 3 && class != 5 {
+            assert_eq!(retail_member, ctx.readout_bar_member, "{at}");
+        }
+        extended += i32::from(fired && class == 5);
+        carded += i32::from(fired && class != 5 && head == 0xFE);
+    }
+    assert!(extended > 1000 && carded > 500, "{extended} {carded}");
 }
