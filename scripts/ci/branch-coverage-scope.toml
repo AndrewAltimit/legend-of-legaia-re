@@ -2674,3 +2674,11 @@ image = "fecb2f76fffac2c9"
 range = "0x801DD6FC..0x801DD758"
 verdict = "unreachable"
 reason = "PROT 0897: the compiler's divide guards on the eased move's z step `(target - start) * t / d * t / d`; it runs only when the elapsed halfword (`lhu +0x50`, so 0 or more) is below the duration (`lh +0x9E`, signed `slt`), so d is 1..0x7FFF, and an s16 difference times t below 0x7FFF stays inside 31 bits, never 0x80000000"
+
+# lane G2 (w52)
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A27C..0x8003A27C"
+verdict = "unreachable"
+reason = "the record lookup's fall to the fallback record 0x80073EE8 when P0 + index runs past the record table; the MAN installer passes indices 1..P1-1 and every `4C D2 b1` on the disc names a partition-1 record (index b1 - P0; scene-formats `every_placement_spawn_names_a_partition_one_record`)"

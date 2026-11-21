@@ -238,3 +238,59 @@ fn the_census_walk_stays_coherent_over_most_of_its_instructions() {
         "clean {clean} of total {total} decoded instructions"
     );
 }
+
+/// Every `4C D2 b1` on the disc - the field VM's "spawn placement `b1` if no
+/// context answers" - names a partition-1 record of its own MAN. The arm
+/// hands the placement spawner `FUN_8003A1E4` the index `b1 - P0`
+/// (`FUN_8003D064` reads the three partition counts; `subu` at
+/// `0x801E2BCC`), and the spawner reads record `P0 + index` = `b1` while
+/// that is inside the record table, else the fallback record at
+/// `0x80073EE8` (`slt` / `beq` at `0x8003A278..0x8003A27C`). So no shipped
+/// script reaches the fallback, nor spawns a partition-0 or partition-2
+/// record as a placement.
+#[test]
+fn every_placement_spawn_names_a_partition_one_record() {
+    let Some(dir) = prot_dir() else {
+        eprintln!("[skip] extracted/PROT not present");
+        return;
+    };
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .collect();
+    entries.sort();
+    let k = key(0x4C, Some(0xD2));
+    let (mut sites, mut outside) = (0usize, Vec::new());
+    for path in &entries {
+        let Ok(buf) = std::fs::read(path) else {
+            continue;
+        };
+        let mut seen: BTreeSet<Vec<u8>> = BTreeSet::new();
+        for man in man_payloads(&buf) {
+            if !seen.insert(man.clone()) {
+                continue;
+            }
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
+                continue;
+            };
+            let [p0, p1, _] = man_file.header.partition_counts.map(|c| c.max(0) as usize);
+            for (_, _, start, pc0, len) in man_script_spans(&man_file, &man) {
+                let body = &man[start..start + len];
+                for pc in clean_hit_offsets(body, pc0, k) {
+                    let Some(&b1) = body.get(pc + 2) else {
+                        continue;
+                    };
+                    sites += 1;
+                    if !(p0..p0 + p1).contains(&usize::from(b1)) {
+                        outside.push((path.display().to_string(), b1, p0, p1));
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("[4C D2] {sites} sites");
+    assert!(sites > 0, "the census found the op");
+    assert!(outside.is_empty(), "outside partition 1: {outside:?}");
+}
