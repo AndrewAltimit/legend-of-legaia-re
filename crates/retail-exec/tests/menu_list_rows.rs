@@ -2087,3 +2087,141 @@ fn the_list_kernel_header_and_page_triangles_draw_where_the_port_draws_them() {
     }
     assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
 }
+
+/// A Ra-Seru bearer with **no** learned spell opens the battle Magic
+/// window (content id `5`, `gp+0x85C = 1`). `FUN_80030628` hands a zero
+/// row count to the real allocator `FUN_80030104`, which builds no list:
+/// it copies the window's message (`gp+0x188`) into a fresh `0x80`-byte
+/// buffer at `+0x18` and marks `+0x14 = 0x80` (`0x80030130..0x800301D4`).
+/// The per-frame walker `FUN_80031D00` then sends that node to the caption
+/// arm `FUN_80035CB8` (`+0x14 != 0`, `0x8003239C..0x800323BC`), never to
+/// the list kernel, so no string byte is read as a count or a row. In the
+/// battle mode the caption takes a press under the confirm **or** cancel
+/// mask (`0x800846D0 | 0x800846D4`) as a cancel: cue `0x37`, list mode `3`,
+/// which `0x46` turns back to the ring. Against `BattleSpellSession` over
+/// an empty learned list: Cross and Circle both back out, anything else
+/// holds the empty window.
+#[test]
+fn an_empty_battle_magic_window_cancels_on_either_press() {
+    differential!(scus(WINDOW_BUILD), scus(0x8003_1D00));
+    use legaia_engine_battle::battle_magic::{BattleSpellInput, BattleSpellSession, SpellPhase};
+    use legaia_engine_battle::target_picker::SlotState;
+    let (Some(mut cpu), Some(exe)) = (scus_cpu(), crate::common::scus()) else {
+        return;
+    };
+    let catalog = legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&exe)
+        .expect("Seru magic table");
+    const BUF: u32 = 0x8013_8000;
+    const HEAD: u32 = 0x8013_9000;
+    const RASERU_SLOT: u32 = 0x8007_B424;
+    const PRESSED: u32 = 0x8007_B874;
+    const HELD: u32 = 0x8007_B850;
+    const MODE: u32 = 0x8007_B83C;
+    const CONFIRM_MASK: u32 = 0x8008_46D0;
+    const CANCEL_MASK: u32 = 0x8008_46D4;
+    const RESULT: u32 = GP + 0x87C;
+    const CUES: u32 = 0x8007_B6D8;
+    cpu.hook(MALLOC, |r, _| r.r[V0] = BUF);
+    cpu.stub(FREE, 0);
+    cpu.hook(TEXT_WIDTH, |r, _| r.r[V0] = 0x40);
+    let kernel = Rc::new(RefCell::new(0u32));
+    let k = kernel.clone();
+    cpu.hook(0x8003_2A44, move |_, _| *k.borrow_mut() += 1);
+    for stub in [0x8003_CC98, 0x8002_C69C, 0x8003_1AE4, 0x8003_19A8] {
+        cpu.stub(stub, 0);
+    }
+    let message = cpu.mem.rd32(GP + 0x188);
+    let mut rng = Rng(0x4E4F_4D47);
+    let mut seen = [0u32; 3];
+    for case in 0..600 {
+        let who = rng.below(3);
+        cpu.mem.wr32(GP + 0x874, who);
+        cpu.mem.wr32(GP + 0x85C, 1);
+        let record = 0x8008_4140 + 0x414 * who;
+        cpu.mem.wr8(record + 0x704, 0);
+        let raseru_slot = rng.below(4) as u16;
+        cpu.mem.wr16(RASERU_SLOT + 2 * who, raseru_slot);
+        cpu.mem.wr8(
+            record + 0x75E + u32::from(raseru_slot),
+            1 + rng.below(0xFF) as u8,
+        );
+        cpu.mem.load(NODE, &[0u8; 0x34]);
+        cpu.mem.wr8(NODE + 0x1C, 5);
+        for k in 0..0x80 {
+            cpu.mem.wr8(BUF + k, rng.next() as u8);
+        }
+        assert_eq!(
+            cpu.call(WINDOW_BUILD, &[NODE]),
+            Stop::Returned,
+            "case {case}"
+        );
+        assert_eq!(
+            cpu.mem.rd32(NODE + 0x18),
+            BUF,
+            "case {case}: the text buffer"
+        );
+        assert_eq!(
+            cpu.mem.rd16(NODE + 0x14),
+            0x80,
+            "case {case}: marked as text"
+        );
+        let mut k = 0;
+        loop {
+            let b = cpu.mem.rd8(message + k);
+            assert_eq!(cpu.mem.rd8(BUF + k), b, "case {case}: the message copy");
+            if b == 0 {
+                break;
+            }
+            k += 1;
+        }
+
+        // One walker pass over a list holding only that node.
+        cpu.mem.wr32(GP + 0x148, HEAD);
+        cpu.mem.wr32(HEAD, NODE);
+        cpu.mem.wr32(NODE, HEAD);
+        cpu.mem.wr16(MODE, 0x15);
+        cpu.mem.wr32(CONFIRM_MASK, 0x4000);
+        cpu.mem.wr32(CANCEL_MASK, 0x2000);
+        let press = [0x4000u32, 0x2000, 0, 0x1000, 0x8000][rng.below(5) as usize];
+        cpu.mem.wr32(PRESSED, press);
+        cpu.mem.wr32(HELD, 0);
+        cpu.mem.wr32(RESULT, 1);
+        cpu.mem.wr16(GP + 0x158, 0);
+        cpu.mem.wr16(CUES, 0);
+        *kernel.borrow_mut() = 0;
+        assert_eq!(cpu.call(0x8003_1D00, &[]), Stop::Returned, "case {case}");
+        assert_eq!(
+            *kernel.borrow(),
+            0,
+            "case {case}: the list kernel never runs"
+        );
+        let cancelled = cpu.mem.rd32(RESULT) == 3;
+        if cancelled {
+            assert_eq!(cpu.mem.rd16(CUES), 0x37, "case {case}: the cancel cue");
+        } else {
+            assert_eq!(cpu.mem.rd32(RESULT), 1, "case {case}: the window holds");
+        }
+
+        let mut session = BattleSpellSession::new(0, 0, &[], &catalog, 99, 0);
+        session.input(
+            BattleSpellInput {
+                cross: press == 0x4000,
+                circle: press == 0x2000,
+                up: press == 0x1000,
+                left: press == 0x8000,
+                ..BattleSpellInput::default()
+            },
+            &catalog,
+            [SlotState::alive(true, true); 3],
+            [SlotState::dead(false); 5],
+        );
+        let aborted = matches!(session.phase, SpellPhase::Aborted);
+        assert_eq!(aborted, cancelled, "case {case}: press {press:#x}");
+        seen[match press {
+            0x4000 => 0,
+            0x2000 => 1,
+            _ => 2,
+        }] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 50), "{seen:?}");
+}
