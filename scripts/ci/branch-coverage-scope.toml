@@ -2209,3 +2209,69 @@ entry = "0x80047430"
 range = "0x80047608..0x80047608"
 verdict = "unreachable"
 reason = "the MP ramp's second negative-arm fixup, same sign argument"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x80049E04..0x80049E04"
+verdict = "unreachable"
+reason = "the blend's short-arc magnitude pick compares |a - b| (v1) with |b - a| (a1), the same value, so `slt a1,v1` is never true and the branch runs one way; both operands are 13-bit angle differences, so no overflow breaks the tie"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x80049EC0..0x80049EC0"
+verdict = "unreachable"
+reason = "the blend's short-arc magnitude pick compares |a - b| (v1) with |b - a| (a1), the same value, so `slt a1,v1` is never true and the branch runs one way; both operands are 13-bit angle differences, so no overflow breaks the tie"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x80049F8C..0x80049F8C"
+verdict = "unreachable"
+reason = "the blend's short-arc magnitude pick compares |a - b| (v1) with |b - a| (a1), the same value, so `slt a1,v1` is never true and the branch runs one way; both operands are 13-bit angle differences, so no overflow breaks the tie"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x8004A058..0x8004A058"
+verdict = "unreachable"
+reason = "the blend's short-arc magnitude pick compares |a - b| (v1) with |b - a| (a1), the same value, so `slt a1,v1` is never true and the branch runs one way; both operands are 13-bit angle differences, so no overflow breaks the tie"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x8004A10C..0x8004A10C"
+verdict = "unreachable"
+reason = "the blend's short-arc magnitude pick compares |a - b| (v1) with |b - a| (a1), the same value, so `slt a1,v1` is never true and the branch runs one way; both operands are 13-bit angle differences, so no overflow breaks the tie"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x8004A1D0..0x8004A1D0"
+verdict = "unreachable"
+reason = "the blend's short-arc magnitude pick compares |a - b| (v1) with |b - a| (a1), the same value, so `slt a1,v1` is never true and the branch runs one way; both operands are 13-bit angle differences, so no overflow breaks the tie"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x80049BF8..0x80049BF8"
+verdict = "unported"
+reason = "the blend loop's zero-part exit (`beq parts * 3, zero`): a stream whose byte 0 holds no parts skips the part loop; the port's MonsterAnimPlayer refuses a clip with no parts (no player, nothing decoded)"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x8004A298..0x8004A298"
+verdict = "unported"
+reason = "the whole-frame decode's zero-part exit, the same zero part count as 0x80049BF8, which the port never plays"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x8004A534..0x8004A534"
+verdict = "unported"
+reason = "the body-pair store's `+0x44` pitch arm (0x8004A538..0x8004A5F8), which re-derives the pair's Y and Z under a pitch: the engine refreshes the pair without it (World::refresh_battle_body_pairs), since only PROT 0917's creature and victim carry a pitch and no framing reads their pair while they are turned"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x8004A854..0x8004A854"
+verdict = "unreachable"
+reason = "the selector-2 rumble's signed `% 64` fixup `bgez v0` on a `rand()` draw, which is 0..0x7FFF and never negative"
+
+[[arm]]
+entry = "0x8004998C"
+range = "0x8004A888..0x8004A888"
+verdict = "unreachable"
+reason = "the second rumble draw's signed `% 64` fixup, on a `rand()` result that is never negative"
