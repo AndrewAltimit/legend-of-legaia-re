@@ -2404,3 +2404,17 @@ entry = "0x801d0c3c"
 range = "0x801D0D28..0x801D0DB0"
 verdict = "unported"
 reason = "The prize list's confirm edge (& 0x44) opens the quantity picker on an available row (state 0x79, qty 0x801D90B0 = 1, cue 0x20; cue 0x22 when FUN_801D6F90 refuses) and its cancel edge (& 0x21) returns to the hub menu (state 0x64, cue 0x37); the engine's exchange (World::fishing_exchange_input) buys one unit per Buy and closes on its toggle, with no picker or confirm screen."
+
+# lane B2 (w52)
+
+[[arm]]
+entry = "0x80047430"
+range = "0x80047968..0x80047968"
+verdict = "unported"
+reason = "the event cut's `+0x228` test ahead of its pro-rated step: the port takes the byte as clear, since no byte store to a battle actor's +0x228 appears in the dump corpus (the `sw ...,0x228` stores there are field and menu objects)"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x80047ABC..0x80047ABC"
+verdict = "unported"
+reason = "the natural end's `+0x228` test ahead of its full step, the same byte the port takes as clear (motion::natural_end_steps)"

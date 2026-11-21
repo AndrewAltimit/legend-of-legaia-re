@@ -172,6 +172,9 @@ impl World {
             for a in self.actors.iter_mut() {
                 a.battle.damage_accum = 0;
             }
+            // The absorb puff's cue latch `0x801F698C`, cleared by the same
+            // Begin arm (`sw zero` at `0x801E2CB0`).
+            self.battle.absorb_cue_latch = false;
         }
         self.battle.hit_commit_rewalk.clear();
     }
@@ -233,12 +236,8 @@ impl World {
         // Hyper / Super constant restarts its hit index and effect cursor,
         // so the windowed clip re-fires its hits each cycle.
         // PORT: FUN_80047430 (`0x80047840..0x80047878`)
-        if rewound {
+        if rewound && self.loop_rewind_rezeroes(i) {
             let a = &mut self.actors[i];
-            if a.battle_monster_id.is_none()
-                && a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
-                && a.battle.latched_anim
-                    >= legaia_engine_battle_vm::battle_action::LOOP_REZERO_LATCHED_MIN
             {
                 a.battle.input_cursor = 0;
                 a.battle_effect_cursor = 0;

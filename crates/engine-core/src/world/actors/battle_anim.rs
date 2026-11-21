@@ -312,6 +312,11 @@ impl World {
     ) -> Vec<bool> {
         let start: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
         let mut foreign = vec![0u32; self.actors.len()];
+        // The hit and effect-script walks run only while the battle is live
+        // (`DAT_8007BD71 == 0xFF`); the cue walk keeps running once the end
+        // signal is up.
+        let walks = self.battle_node_walk_gates();
+        let hits = hits && walks.hits_and_effects;
         if self.battle.anim_slice_commits.len() != self.actors.len() {
             self.battle.anim_slice_commits = start.clone();
         }
@@ -387,12 +392,7 @@ impl World {
             // (Palma's flinch), and a creature hidden on its seat holds its
             // first frames until a module shows it (Terra's arms 3..6).
             // PORT: FUN_80047430 (`0x800474D4..0x800474E0`, the zero-colour skip)
-            if (self.actors[i].battle_monster_id.is_some()
-                || self.casting.summon_actor_slot == Some(i as u8))
-                && self.actors[i]
-                    .battle_node_colour_zero
-                    .unwrap_or_else(|| self.battle_node_colour_is_zero(i))
-            {
+            if self.battle_node_tick_skipped(i) {
                 continue;
             }
             // A module's bump the skip held (`CastFxState::module_bump_deferred`)
@@ -536,11 +536,12 @@ impl World {
                 slice_natural_end = natural_end;
                 if natural_end {
                     let step = player.end_root_step();
-                    let latched = actor
-                        .battle
-                        .flag_bits
-                        .has(legaia_engine_battle_vm::battle_action::ActorFlags::FX_SUPPRESSED);
-                    if step != 0 && !latched && (actor.battle.hp != 0 || seru_staged) {
+                    if legaia_engine_battle_vm::battle_action::motion::natural_end_steps(
+                        step,
+                        actor.battle.flag_bits.0,
+                        actor.battle.hp,
+                        seru_staged,
+                    ) {
                         let (sin, cos) =
                             legaia_engine_system::trig::trig12(actor.battle.facing_angle);
                         let (dx, dz) =
@@ -680,8 +681,12 @@ impl World {
             // zeroed already, and no loop's event frame stands past its count.
             // PORT: FUN_80047430 (`0x800478A8..0x800478E8` ahead of `0x80047B54`)
             if looped_recommit && let Some(f) = walk_frame {
-                self.step_actor_effect_script(i, f);
-                self.step_actor_anim_cues(i, f);
+                if walks.hits_and_effects {
+                    self.step_actor_effect_script(i, f);
+                }
+                if walks.cues {
+                    self.step_actor_anim_cues(i, f);
+                }
             }
             if looped_recommit {
                 // The commit's effect-cursor zero (`sb zero,0x1f5` at
@@ -799,11 +804,15 @@ impl World {
                 // A loop's crossing walked its ending cycle above; this walk
                 // is the new cycle's, retail's post-commit walk.
                 let walk_frame = walk_frame.filter(|_| !looped_recommit).unwrap_or(frame);
-                self.step_actor_effect_script(i, walk_frame);
+                if walks.hits_and_effects {
+                    self.step_actor_effect_script(i, walk_frame);
+                }
                 // ... and its third call, the animation cue track
                 // (`FUN_800508DC`, same arguments).
                 // REF: FUN_800508dc (the cue walk the crossing frame feeds)
-                self.step_actor_anim_cues(i, walk_frame);
+                if walks.cues {
+                    self.step_actor_anim_cues(i, walk_frame);
+                }
             }
             // A reaction a hit staged on this seat commits here, behind the
             // advance and the old clip's walks
@@ -812,6 +821,9 @@ impl World {
                 self.commit_staged_battle_reaction(i, slice_natural_end, prev_juggle);
             }
             self.finish_battle_node_slice(i, commit_after, hits && !hit_first, &mut foreign);
+            if slice_natural_end {
+                self.absorb_natural_end_puff(i);
+            }
             // A clip this seat's own slice committed behind its advance (the
             // natural end, the event cut, the staged commit) is what the
             // pass's draw decodes, on its first keyframe.
@@ -2179,6 +2191,91 @@ impl World {
         }
     }
 
+    /// Whether seat `i`'s node tick is skipped whole: a seat past the party
+    /// (a monster, or the summon creature on seat 7) whose node colour word
+    /// reads zero in its low 24 bits (`lw v0,0x74(s5)`, `beq v0,zero,
+    /// 0x800480B0` at `0x800474D4..0x800474E0`, behind `sltiu v0,s1,0x3`).
+    ///
+    /// PORT: FUN_80047430 (`0x80047484..0x800474E0`, the zero-colour skip)
+    pub(in crate::world) fn battle_node_tick_skipped(&self, i: usize) -> bool {
+        (self.actors[i].battle_monster_id.is_some()
+            || self.casting.summon_actor_slot == Some(i as u8))
+            && self.actors[i]
+                .battle_node_colour_zero
+                .unwrap_or_else(|| self.battle_node_colour_is_zero(i))
+    }
+
+    /// Whether a loop window's rewind re-zeroes seat `i`'s hit index and
+    /// effect and cue cursors (`+0x1F4`, `+0x1F5`, `+0x1F6`): a party seat
+    /// (`sltiu v0,s1,0x3`) playing dynamic slot `0x11` (`+0x1D9`) under a
+    /// latched Hyper / Super constant (`+0x1DB >= 0x2B`), on the multi-cycle
+    /// arm's exit (`0x80047840..0x80047878`).
+    ///
+    /// PORT: FUN_80047430 (`0x80047840..0x80047878`, the loop re-zero gate)
+    pub(in crate::world) fn loop_rewind_rezeroes(&self, i: usize) -> bool {
+        self.actors.get(i).is_some_and(|a| {
+            a.battle_monster_id.is_none()
+                && a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
+                && a.battle.latched_anim
+                    >= legaia_engine_battle_vm::battle_action::LOOP_REZERO_LATCHED_MIN
+        })
+    }
+
+    /// The anim tick's walk gates on the battle loader's step byte
+    /// `DAT_8007BD71`: the hit walk `FUN_801EC3E4` and the effect-script walk
+    /// `FUN_801DEA50` run only at `0xFF`, the battle live
+    /// (`0x8004787C..0x80047888`, `0x80047BC8..0x80047BD8`); the cue walk
+    /// `FUN_800508DC` at any value above `0x10`, so it runs on under the end
+    /// signal `0xFE` (`0x800478C0..0x800478D0`, `0x80047C10..0x80047C20`).
+    /// The engine raises the end signal as [`BattleState::end`]; it has no
+    /// loader step (its node ticks start once the battle is live), so the cue
+    /// walk always runs.
+    ///
+    /// PORT: FUN_80047430 (`0x8004787C..0x800478D0`, `0x80047BC4..0x80047C20`,
+    /// the walk gates)
+    pub(in crate::world) fn battle_node_walk_gates(&self) -> NodeWalkGates {
+        NodeWalkGates {
+            hits_and_effects: self.battle.end.is_none(),
+            cues: true,
+        }
+    }
+
+    /// The Seru-absorb puff at a natural end (`0x80047B5C..0x80047BC0`): once
+    /// the commit leaves seat `i` on idle (`+0x1D9 == 0`) at zero HP with a
+    /// Seru staged (`ctx[+0x269]`), effect `0x14` rises at its live pair
+    /// (`FUN_801DFDF0(0x14, &+0x34, 0)`), and the first such puff of the
+    /// action sounds cue `0x1B` (`FUN_8004FCC8`, behind the overlay word
+    /// `0x801F698C`).
+    ///
+    /// PORT: FUN_80047430 (`0x80047B5C..0x80047BC0`, the absorb puff)
+    pub(in crate::world) fn absorb_natural_end_puff(&mut self, i: usize) {
+        let Some((at, cue)) = self.absorb_puff_plan(i) else {
+            return;
+        };
+        self.try_spawn_effect(ABSORB_PUFF_EFFECT, at, 0);
+        if cue {
+            self.battle.absorb_cue_latch = true;
+            self.dispatch_battle_cue(ABSORB_PUFF_CUE);
+        }
+    }
+
+    /// What [`Self::absorb_natural_end_puff`] does on seat `i`: `None`, or
+    /// the puff's position and whether its cue sounds.
+    pub(in crate::world) fn absorb_puff_plan(&self, i: usize) -> Option<([i16; 3], bool)> {
+        let a = self.actors.get(i)?;
+        if a.battle.current_anim != 0 || a.battle.hp != 0 || self.battle_ctx.absorbed_seru == 0 {
+            return None;
+        }
+        Some((
+            [
+                a.move_state.world_x,
+                a.move_state.world_y,
+                a.move_state.world_z,
+            ],
+            !self.battle.absorb_cue_latch,
+        ))
+    }
+
     /// Whether seat `i` stands frozen on its idle this tick: a Stone or Numb
     /// status (`+0x16E & 0x404`) with no committed clip (`+0x1D9 == 0`). The
     /// tick then skips the whole advance (`0x80047638..0x800476D4`, jumping
@@ -2308,4 +2405,18 @@ pub(super) fn clip_morph_weights(
         }
     }
     out
+}
+
+/// The Seru-absorb puff's effect (`li a0,0x14` at `0x80047B94`).
+const ABSORB_PUFF_EFFECT: u8 = 0x14;
+/// Its one-shot cue (`li a0,0x1b` at `0x80047BC0`).
+const ABSORB_PUFF_CUE: u16 = 0x1B;
+
+/// The anim tick's walk gates ([`World::battle_node_walk_gates`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NodeWalkGates {
+    /// The hit walk and the effect-script walk run.
+    pub hits_and_effects: bool,
+    /// The cue walk runs.
+    pub cues: bool,
 }

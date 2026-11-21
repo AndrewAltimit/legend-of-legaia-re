@@ -252,6 +252,10 @@ pub struct BattleState {
     pub prev_action_cleared: bool,
     /// Last-issued battle-end cause (for inspection / engine side-effects).
     pub end: Option<BattleEndCause>,
+    /// The overlay word `0x801F698C`: the Seru-absorb puff's one-shot cue
+    /// `0x1B` has sounded this action (`FUN_80047430` `0x80047BA0..
+    /// 0x80047BBC`). The action SM's Begin arm clears it (`0x801E2CB0`).
+    pub absorb_cue_latch: bool,
     /// The armed end-of-battle presentation (retail's results sequencer
     /// `FUN_8004E568`, run every frame the battle-end signal is up). While
     /// `Some` the scene stays in [`legaia_engine_mode::mode::SceneMode::Battle`], the action SM does
@@ -1743,6 +1747,7 @@ impl BattleState {
             monster_budget_armed: None,
             prev_action_cleared: true,
             end: None,
+            absorb_cue_latch: false,
             hit_fx: Vec::new(),
             hit_events: Vec::new(),
             clut_stages: Vec::new(),

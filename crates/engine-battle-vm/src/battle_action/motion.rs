@@ -248,6 +248,17 @@ pub fn end_root_step(sin: i16, cos: i16, step: i16) -> (i32, i32) {
     (d(sin), d(cos))
 }
 
+/// Whether the natural end's displacement ([`end_root_step`]) runs: the
+/// committed entry carries a step (`+0x0E`), the root latch `+0x1DC` bit 3 is
+/// down, and the actor stands or a Seru is staged (`ctx[+0x269]`), in
+/// retail's order (`0x80047A68..0x80047AAC`). The `+0x228` byte the arm also
+/// tests at `0x80047AB4` is taken as clear.
+///
+/// PORT: FUN_80047430 (`0x80047A68..0x80047AB0`, the natural end's gates)
+pub fn natural_end_steps(step: i16, flags_1dc: u8, hp: u16, seru_staged: bool) -> bool {
+    step != 0 && flags_1dc & 0x08 == 0 && (hp != 0 || seru_staged)
+}
+
 /// The same displacement taken on the **event-path** commit, which cuts the
 /// clip short: pro-rated by the cursor's whole frame over the stream's frame
 /// count, `(trig * step * frame / frames) >> 12` with retail's truncating

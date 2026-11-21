@@ -452,3 +452,93 @@ fn the_tail_stamps_what_retail_stamps() {
         "{stamped} {monsters} {frozen}"
     );
 }
+
+/// The zero-colour skip at the tick's head (`0x80047484..0x800474E0`) against
+/// `World::battle_node_tick_skipped`, and the loop window's re-zero of the
+/// hit index and effect / cue cursors (`0x80047840..0x80047878`) against
+/// `World::loop_rewind_rezeroes`.
+#[test]
+fn the_skip_and_the_rezero_are_retails() {
+    differential!(scus(TICK));
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+    use legaia_save::Party;
+    let Some(mut cpu) = retail() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut w = World::new();
+    w.load_party(Party::zeroed(3));
+    w.enter_battle(3, 4);
+    w.party.party_count = 3;
+    let mut rng = Rng(0x5A45_524F);
+    let (mut skipped, mut rezeroed) = (0u32, 0u32);
+    for round in 0..20_000 {
+        let seat = rng.below(7);
+        let actor = ACTOR + seat * 0x400;
+        cpu.mem.wr32(ACTORS + seat * 4, actor);
+        cpu.mem
+            .wr8(SEATS + seat, if seat < 3 { 1 + seat as u8 } else { 4 });
+        let colour = [0u32, 0x10, 0x0100_0000, 0x80_8080][rng.below(4) as usize];
+        cpu.mem.wr16(NODE + 0x5A, seat as u16);
+        cpu.mem.wr32(NODE + 0x74, colour);
+        cpu.mem.wr32(NODE + 0x4C, ENTRY);
+        // A window `start < end` the advance crosses.
+        let end = 4 + rng.below(8) as u8;
+        let start = rng.below(u32::from(end)) as u8;
+        let count = 1 + rng.below(3) as u16;
+        cpu.mem.wr16(NODE + 0x68, (u16::from(end) << 4) - 2);
+        cpu.mem.wr8(ENTRY + 0x78, 1);
+        cpu.mem.wr8(ENTRY + 0x85, start);
+        cpu.mem.wr8(ENTRY + 0x86, end);
+        cpu.mem.wr16(ENTRY + 0xE, 0);
+        cpu.mem.wr16(ENTRY + 0xC, 0);
+        cpu.mem.wr8(ENTRY + 0x76, 0);
+        cpu.mem.wr32(ENTRY + 0x88, STREAM);
+        cpu.mem.wr8(STREAM, 1);
+        cpu.mem.wr8(STREAM + 1, 0x30);
+        cpu.mem.wr8(FRAME_STEP, 1);
+        cpu.mem.wr8(actor + 0x21D, 8);
+        cpu.mem.wr16(actor + 0x176, count << 4);
+        cpu.mem.wr8(actor + 0x21B, count as u8);
+        cpu.mem.wr16(actor + 0x16E, 0);
+        let committed = [0x11u8, 0x11, 0x10, 0x0C][rng.below(4) as usize];
+        let latched = 0x28 + rng.below(8) as u8;
+        cpu.mem.wr8(actor + 0x1D9, committed);
+        cpu.mem.wr8(actor + 0x1DB, latched);
+        cpu.mem.wr8(actor + 0x1DC, 0);
+        for k in 0x1F4..0x1F7 {
+            cpu.mem.wr8(actor + k, 5);
+        }
+        cpu.mem.wr32(actor + 0x10, 7);
+        cpu.mem.wr16(actor + 0x178, 0);
+        assert_eq!(cpu.call(TICK, &[NODE]), Stop::Returned, "{round}");
+        // A skipped tick leaves the readout word alone; any other ramps it.
+        let retail_skipped = cpu.mem.rd32(actor + 0x10) == 7;
+        let i = seat as usize;
+        {
+            let a = &mut w.actors[i];
+            a.battle_monster_id = (seat >= 3).then_some(0x40);
+            a.battle_node_colour_zero = Some(colour & 0x00FF_FFFF == 0);
+            a.battle.current_anim = committed;
+            a.battle.latched_anim = latched;
+        }
+        assert_eq!(
+            retail_skipped,
+            w.node_tick_skipped(i),
+            "round {round} seat {seat} colour {colour:#x}"
+        );
+        if retail_skipped {
+            skipped += 1;
+            continue;
+        }
+        let retail_rezero = (0x1F4..0x1F7).all(|k| cpu.mem.rd8(actor + k) == 0);
+        assert_eq!(
+            retail_rezero,
+            w.loop_rewind_rezeroes(i),
+            "round {round} seat {seat} committed {committed:#x} latched {latched:#x}"
+        );
+        rezeroed += u32::from(retail_rezero);
+    }
+    assert!(skipped > 1000 && rezeroed > 1000, "{skipped} {rezeroed}");
+}

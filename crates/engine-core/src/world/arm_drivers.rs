@@ -87,6 +87,27 @@ pub trait BattleArmDrivers {
     /// (`World::message_banner_ui_element`, `FUN_801D8DE8` element `0x59`'s
     /// compose under `mode == 0`).
     fn message_banner_ui_element(&mut self, element: u8, mode: u8);
+    /// The anim tick's in-range back-off with the range poll given
+    /// (`World::drive_in_range_backoff_with`, `FUN_80047430`
+    /// `0x80047C3C..0x80047D1C`); the frame's carry starts fresh.
+    fn in_range_backoff(&mut self, slot: usize, dt: u8, range: u16);
+    /// The signed root-motion term with the range poll given
+    /// (`World::drive_playing_root_motion_with`, `0x80047D20..0x80047E18`);
+    /// the frame's carry starts fresh.
+    fn playing_root_motion(&mut self, slot: usize, dt: u8, range: u16);
+    /// The walk gates (`World::battle_node_walk_gates`): `(hits and effect
+    /// script, cues)`.
+    fn node_walk_gates(&self) -> (bool, bool);
+    /// The Seru-absorb puff behind a natural end
+    /// (`World::absorb_puff_plan`, `0x80047B5C..0x80047BC0`): its position
+    /// and whether its cue sounds.
+    fn absorb_puff(&self, slot: usize) -> Option<([i16; 3], bool)>;
+    /// The zero-colour skip (`World::battle_node_tick_skipped`,
+    /// `0x80047484..0x800474E0`).
+    fn node_tick_skipped(&self, slot: usize) -> bool;
+    /// The loop re-zero gate (`World::loop_rewind_rezeroes`,
+    /// `0x80047840..0x80047878`).
+    fn loop_rewind_rezeroes(&self, slot: usize) -> bool;
 }
 
 impl BattleArmDrivers for World {
@@ -170,5 +191,30 @@ impl BattleArmDrivers for World {
     }
     fn message_banner_ui_element(&mut self, element: u8, mode: u8) {
         World::message_banner_ui_element(self, element, mode)
+    }
+    fn in_range_backoff(&mut self, slot: usize, dt: u8, range: u16) {
+        if let Some(a) = self.actors.get_mut(slot) {
+            a.battle.backoff_carry = Default::default();
+        }
+        World::drive_in_range_backoff_with(self, slot, dt, Some(range))
+    }
+    fn playing_root_motion(&mut self, slot: usize, dt: u8, range: u16) {
+        if let Some(a) = self.actors.get_mut(slot) {
+            a.battle.root_carry = Default::default();
+        }
+        World::drive_playing_root_motion_with(self, slot, dt, Some(range))
+    }
+    fn node_walk_gates(&self) -> (bool, bool) {
+        let g = World::battle_node_walk_gates(self);
+        (g.hits_and_effects, g.cues)
+    }
+    fn absorb_puff(&self, slot: usize) -> Option<([i16; 3], bool)> {
+        World::absorb_puff_plan(self, slot)
+    }
+    fn node_tick_skipped(&self, slot: usize) -> bool {
+        World::battle_node_tick_skipped(self, slot)
+    }
+    fn loop_rewind_rezeroes(&self, slot: usize) -> bool {
+        World::loop_rewind_rezeroes(self, slot)
     }
 }

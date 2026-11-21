@@ -489,12 +489,7 @@ impl World {
             // The root-motion term sits in the node's tick, which a zero
             // colour word skips (`0x800474D4..0x800474E0`): a creature whose
             // fade has drained stands where it stopped.
-            if (self.actors[i].battle_monster_id.is_some()
-                || self.casting.summon_actor_slot == Some(i as u8))
-                && self.actors[i]
-                    .battle_node_colour_zero
-                    .unwrap_or_else(|| self.battle_node_colour_is_zero(i))
-            {
+            if self.battle_node_tick_skipped(i) {
                 continue;
             }
             self.drive_playing_root_motion(i, dt);
@@ -644,6 +639,18 @@ impl World {
     // PORT: FUN_80047430 (`0x80047D20..0x80047E18`, the signed root-motion
     // term; the approach half is `drive_attack_approach`)
     fn drive_playing_root_motion(&mut self, slot: usize, dt: u8) {
+        self.drive_playing_root_motion_with(slot, dt, None);
+    }
+
+    /// [`Self::drive_playing_root_motion`] with the range poll's answer
+    /// given (`Some(metric)`, retail's `FUN_8004E2F0` return; `0` reads in
+    /// range) instead of measured.
+    pub(in crate::world) fn drive_playing_root_motion_with(
+        &mut self,
+        slot: usize,
+        dt: u8,
+        range: Option<u16>,
+    ) {
         // A frozen node (`+0x21D = 0`) scales the product to nothing: a body
         // a cast module holds mid-reaction stands where the freeze found it
         // (PROT 0958's victim through arms 18..=23).
@@ -690,7 +697,7 @@ impl World {
         if latched {
             return;
         }
-        if speed > 0 && self.root_motion_range(slot, target) == 0 {
+        if speed > 0 && range.unwrap_or_else(|| self.root_motion_range(slot, target)) == 0 {
             return;
         }
         let (sin, cos) = legaia_engine_system::trig::trig12(facing);
@@ -743,6 +750,18 @@ impl World {
     /// against the root term's `15`: a speed of `4` on the same law, subtracted.
     // PORT: FUN_80047430 (`0x80047C3C..0x80047D1C`, the in-range back-off)
     fn drive_in_range_backoff(&mut self, slot: usize, dt: u8) {
+        self.drive_in_range_backoff_with(slot, dt, None);
+    }
+
+    /// [`Self::drive_in_range_backoff`] with the range poll's answer given
+    /// (`Some(metric)`, retail's `FUN_8004E2F0` return, which reads every
+    /// target `>= 8` as out of range) instead of measured.
+    pub(in crate::world) fn drive_in_range_backoff_with(
+        &mut self,
+        slot: usize,
+        dt: u8,
+        range: Option<u16>,
+    ) {
         use legaia_engine_battle_loop::round_flow::RoundPhase;
         if self.battle.round_flow.phase != RoundPhase::Execute {
             return;
@@ -756,10 +775,14 @@ impl World {
                 a.battle.anim_rate.get(),
             )
         };
-        if category != BACKOFF_CATEGORY
-            || target >= 8
-            || self.battle_range_metric(slot as u8, target) != 0
-        {
+        let range = range.unwrap_or_else(|| {
+            if target >= 8 {
+                1
+            } else {
+                self.battle_range_metric(slot as u8, target)
+            }
+        });
+        if category != BACKOFF_CATEGORY || range != 0 {
             return;
         }
         // A frozen actor (`+0x21D == 0`) multiplies the step to nothing.
