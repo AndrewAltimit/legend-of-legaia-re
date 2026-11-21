@@ -843,10 +843,11 @@ fn the_shore_lure_gate_parks_the_session_as_retail_does() {
         let bag = bag.clone();
         cpu.hook(BAG_COUNT, move |r, _| {
             let id = r.r[psx_retail_exec::A0];
-            r.r[V0] = (0x9D..=0xA2)
-                .contains(&id)
-                .then(|| bag.get()[(id - 0x9D) as usize] as u32)
-                .unwrap_or(0);
+            r.r[V0] = if (0x9D..=0xA2).contains(&id) {
+                bag.get()[(id - 0x9D) as usize] as u32
+            } else {
+                0
+            };
         });
     }
     let mut rng = Rng(0x4741_5445);
