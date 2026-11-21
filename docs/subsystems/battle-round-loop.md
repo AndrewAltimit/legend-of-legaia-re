@@ -286,9 +286,12 @@ Victory timeline, measured on `rim_elm_gimard_victory` under PCSX-Redux (`script
 | `+0` | `0x5A` gate: `DAT_8007BD71 = 0xFE`, cause `0` | `BattleComplete` arms the sequence |
 | `+0..+80` | CD loads, pose-8 framing on the pose actor | `VICTORY_LOAD_FRAMES` hold, same framing |
 | `+80` | results frame: flag `0x35`, round bump, pose clip staged, HP floor at 1 for downed members, XP / gold / drop / level-ups, result window `0x41`, level-up window `0x44+mask` + cue `0x50` | same, through `apply_battle_loot` |
-| `+80..+336` | hold (`gp+0xA54` to `0x100`), framing 6 | `VICTORY_RESULTS_HOLD_FRAMES` |
-| `+336` | exit-fade template (kind 2, `0x40` frames, black -> white), phase halfword from 2 | `screen_fade` = the escape template, drawn by both hosts |
-| `+402` | `ctx[+0x6CE] >= 0x43`: `game_mode = 2` | `finish_battle`, windows come down |
+| `+80..+335` | hold (`gp+0xA54` to `0x100`), framing 6 | `VICTORY_RESULTS_HOLD_FRAMES` |
+| `+335` | exit-fade template (kind 2, `0x40` frames, black -> white), phase halfword from 2 | `screen_fade` = the escape template, drawn by both hosts |
+| `+401` | `ctx[+0x6CE] >= 0x43`: `game_mode = 2` | `finish_battle`, windows come down |
+
+**Why the fade is 255 vsyncs after the results frame, not 256.** The hold `gp+0xA54` counts vsyncs, not passes: each pass adds the frame step `0x1F800393` (`0x8004F758..0x8004F76C`), and the results frame zeroes the word (`sw zero,0xa54(gp)` at `0x8004F738`) and then falls into that same add, so the results frame's own step counts. The fade is spawned on the pass that takes the word to `0x100` (`sltiu v0,v0,0x100` at `0x8004F778`), `0x100` vsyncs after the frame *before* the results frame.
+On `rim_elm_gimard_victory` the battle runs at two vsyncs a pass: the word reads `2` on the results frame (v402), `254` at v655 and `256` with the fade template loaded (`0x40` frames) at v657, and `game_mode` reads `2` at v723. The port counts one pass per vsync and seeds the count with the results frame's step, so its fade lands on the same vsync (`World::open_battle_results_frame`).
 
 **The pose actor** is `ctx[+0x13]`, the acting slot, so the member who finished the fight poses.
 The sequencer reads it at entry (`lbu s8,0x13(a0)` at `0x8004E5A4`, `a0 = *0x8007BD24`, the battle context), and the action SM's victory arm is its last writer: `FUN_801E295C` runs with `s5 = ctx + 0x11` (`0x801E2994`), so the arm's `sb v1,0x2(s5)` stores (`0x801E66EC`, `0x801E6740`, `0x801E6760`) land on `ctx[+0x13]` - the re-pick of a downed finisher and the Songi seats below.

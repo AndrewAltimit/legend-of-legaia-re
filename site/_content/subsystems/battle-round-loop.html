@@ -249,12 +249,13 @@
       <tr><td><code>+0</code></td><td>the gate sets the signal and cause</td></tr>
       <tr><td><code>+0..+80</code></td><td>CD loads (voice clip, jingle bank); camera frames the posing actor</td></tr>
       <tr><td><code>+80</code></td><td>results frame: pose staged, downed members floored at 1 HP, XP / gold / drop / level-ups applied, result and level-up windows raised</td></tr>
-      <tr><td><code>+80..+336</code></td><td>hold</td></tr>
-      <tr><td><code>+336</code></td><td>exit fade starts (a subtractive fade to black)</td></tr>
-      <tr><td><code>+402</code></td><td>phase halfword reaches <code>0x43</code>: <code>game_mode = 2</code></td></tr>
+      <tr><td><code>+80..+335</code></td><td>hold</td></tr>
+      <tr><td><code>+335</code></td><td>exit fade starts (a subtractive fade to black)</td></tr>
+      <tr><td><code>+401</code></td><td>phase halfword reaches <code>0x43</code>: <code>game_mode = 2</code></td></tr>
     </tbody>
   </table>
   </div>
+  <p>The hold counts vsyncs, and the results frame&rsquo;s own frame step is its first count, so the fade comes <code>255</code> vsyncs after the results frame rather than <code>256</code>; the port seeds its count the same way and fades on retail&rsquo;s vsync.</p>
   <p>The posing actor is the battle context&rsquo;s <strong>acting slot</strong>, so the member who finished the fight poses - not the leader, and not whoever levelled. The action SM&rsquo;s victory arm is the slot&rsquo;s last writer (it re-picks a living member when the finisher is down), and captures of wins that different members finished each show that member posing. Escape runs a shorter arm with no results and the same exit gate.</p>
   <ul class="bullets">
     <li><strong>The pose</strong> comes from a table in the executable through the finisher&rsquo;s HP-quarter tier, aged by the round count and forced weak by a status mask. Two overrides follow the pick: holding Start with a direction, a shoulder button or a button combination picks one of the eight poses by hand, and the Songi fights force one of their own.</li>
