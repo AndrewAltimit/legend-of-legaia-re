@@ -18,8 +18,9 @@ pub trait FieldTestDrivers {
     fn seed_effect_target_rgb(&mut self, rgb: [i16; 3]);
     /// One tick of the tile board walker's state 2 on actor `slot`
     /// (`World::tile_board_walk_step`, `FUN_801EF2B0` `0x801EFA88`) toward
-    /// the committed target; a no-op with none.
-    fn tile_board_walk(&mut self, slot: usize);
+    /// the committed target, `game_frame` whether the tick is a game frame;
+    /// a no-op with none.
+    fn tile_board_walk(&mut self, slot: usize, game_frame: bool);
 }
 
 impl FieldTestDrivers for World {
@@ -29,9 +30,9 @@ impl FieldTestDrivers for World {
     fn seed_effect_target_rgb(&mut self, rgb: [i16; 3]) {
         self.presentation.effect_target_rgb = rgb;
     }
-    fn tile_board_walk(&mut self, slot: usize) {
+    fn tile_board_walk(&mut self, slot: usize, game_frame: bool) {
         if let Some((tx, tz)) = self.board.target {
-            self.tile_board_walk_step(slot, tx, tz);
+            self.tile_board_walk_step(slot, tx, tz, game_frame);
         }
     }
 }

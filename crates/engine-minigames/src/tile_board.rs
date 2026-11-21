@@ -166,6 +166,9 @@ impl TileBoardHeader {
 pub mod sm {
     /// Fade-in (`0x801EF680`): input ignored while the tiles scale up.
     pub const FADE_IN: u8 = 1;
+    /// The arrival pass (`0x801EF6FC`), on the game frame after state 2
+    /// found the walk spent and bound the idle clip; it falls into state 4.
+    pub const ARRIVE: u8 = 3;
     /// Walking - reading input (state 4) or interpolating (state 2); the
     /// port keeps the two apart with `TileBoardState::target`.
     pub const WALK: u8 = 4;

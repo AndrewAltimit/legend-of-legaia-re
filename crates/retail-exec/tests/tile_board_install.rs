@@ -466,8 +466,8 @@ fn the_board_install_matches_retail() {
         // the first tick writes off the frame's own delta (each axis clamped
         // to `+-0x20`, the octant of the signs, `+0x26 = octant << 9`). On
         // the frame retail finds no delta left it binds the idle clip and
-        // steps to the arrival `3`; the port has run its arrival on the tick
-        // that reached the centre, a game frame earlier.
+        // steps to the arrival `3`, as the port does on that game frame (its
+        // second tick of the frame).
         {
             use legaia_engine_core::world::field_test_drivers::FieldTestDrivers;
             let target = (g.below(0x800) as i32, g.below(0x800) as i32);
@@ -501,17 +501,22 @@ fn the_board_install_matches_retail() {
                     cpu.mem.rd16(lead + 0x14) as i16,
                     cpu.mem.rd16(lead + 0x18) as i16,
                 );
+                w.tile_board_walk(slot, false);
+                let facing = w.actors[slot].move_state.render_26;
+                w.tile_board_walk(slot, true);
                 if state == 3 {
                     assert_eq!(pos, before, "{c}: the arrival frame holds");
                     assert_eq!((i32::from(pos.0), i32::from(pos.1)), target, "{c}: arrived");
-                    assert_eq!(w.board.target, None, "{c}: the port arrived");
+                    assert_eq!(
+                        (w.board.target, w.board.sm),
+                        (None, sm::ARRIVE),
+                        "{c}: the port binds on the same game frame"
+                    );
                     walked += 1;
                     break;
                 }
                 assert_eq!(state, 2, "{c}");
-                w.tile_board_walk(slot);
-                let facing = w.actors[slot].move_state.render_26;
-                w.tile_board_walk(slot);
+                assert_eq!(w.board.sm, sm::WALK, "{c}: the port still walks");
                 let ms = &w.actors[slot].move_state;
                 assert_eq!((ms.world_x, ms.world_z), pos, "{c}: the position");
                 let retail_facing = ((cpu.mem.rd16(lead + 0x26) + 0x800) & 0xFFF) as i16;

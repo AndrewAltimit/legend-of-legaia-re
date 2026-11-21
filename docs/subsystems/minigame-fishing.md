@@ -124,13 +124,13 @@ stateDiagram-v2
 | `0x14` | Power meter: bounces `DAT_801d9274` between `0x20` and `0x1000`, `0x20` per frame-step. On the `& 0xC0` edge (`0x801CFBA4`) it locks the power, clears the line-break latch `DAT_801d91a4`, spawns the rod, lure and line actors, computes the lure spawn point from the locked power and advances to `0x15`. |
 | `0x15` | No case of its own: the lure is in flight. The lure tick moves the state to `0x19` when the flown lure's power countdown reaches zero, raising cue `0x204` and bumping the cast counter. |
 | `0x19` | Lure in water (sets the allow-leave flag only). The lure tick ends it - see [Fight exits](#fight-exits). |
-| `0x1e` | The catch. Clears `DAT_801d90bc` and the catch-HUD word `DAT_801d9058` (`0x801CFD44`), waits for the rod swing word `DAT_801d91ac` to reach `0x14` and the line actor's close-up flag `DAT_801d91b0` to clear, then jumps to `0x20`. |
+| `0x1e` | The catch. Clears `DAT_801d90bc`, the surge `DAT_801d90f4` and the catch-HUD word `DAT_801d9058` (`0x801CFD44`), waits for the rod swing word `DAT_801d91ac` to reach `0x14` and the line actor's close-up flag `DAT_801d91b0` to clear (raised as the close-up starts, cleared as its timer passes `0xD2`), then jumps to `0x20`. The engine's camera driver holds the restored camera on the same gate (`catch_showcase_due`). |
 | `0x20..0x22` | The catch showcase: `0x20` cuts the camera to a fixed shot of the party, `0x21` tilts it up, `0x22` holds; `0x21` / `0x22` read the result-accept word `DAT_801d90bc`. |
 | `0x28` | Waits on the converging banner (`DAT_801d9164`, `FUN_801d7528`, which draws while the timer is under `0xC8`), then returns to `10`; the timer gains the frame step either way and the leave edge stays shut. |
 | `0x2d` | Miss / retry bookkeeping: runs the `DAT_801d9268` timer through `FUN_801d6f10`, then back to `0x32`. No store on the disc sets this state ([Open](#open)). |
 | `0x64..0x66`, `0x6e`, `0x78..0x7a` | The [hub menu](#the-hub-menu) and its sub-screens. |
 | `0x96` | "You have lost the lure" / no-rod end screen; a button edge advances to `200`. |
-| `200` (`0xc8`) | Exit: ramps the fade to white (`DAT_801d90c0` gains the frame step, level `x8` capped `0xFF`) and, once full with `0x8007BC20` clear, plays the leaving XA cue and tears the mode down. The engine leaves on the frame the exit is chosen, with no fade. |
+| `200` (`0xc8`) | Exit: re-runs the lure gate (the no-lure line stays drawn when it fails), ramps a subtractive grey wash `FUN_80024EE4(0, 2, grey)` to black (`DAT_801d90c0` gains the frame step, level `x8` held at `0xFF` from `0x100`) and, once full with the XA drive word `0x8007BC20` idle, plays the leaving cue and tears the mode down. The engine runs the same fade (`PondSession::exit_fade_level`, `World::fishing_exit_fade_push_args`); its venue sounds no XA, so the word reads idle. |
 
 ### The venue's game tick
 
@@ -191,8 +191,8 @@ The pond is entered directly at the idle shore; the menu opens from there on Tri
 | `0x66` | Help page 1, `FUN_801d72a0(0x14, 0x10, 1)` | any `& 0xF0` edge -> `0x64`, SFX `0x37` |
 | `0x6E` | Rod / lure select `FUN_801d0f5c(1)` | cancel -> `0x64` (`0x801D1088`) |
 | `0x78` | Prize list `FUN_801d0c3c(1)` | cancel -> `0x64` (`0x801D0DB0`) |
-| `0x7a` | Quantity picker `FUN_801d092c` | - |
-| `0x79` | Confirm `FUN_801d06c8` | - |
+| `0x79` | Quantity picker `FUN_801d092c` | Left / Right step the quantity, `& 0x44` -> `0x7A`, `& 0x21` -> `0x78` |
+| `0x7a` | Confirm `FUN_801d06c8` | Up / Down toggle Yes / No, Yes buys -> `0x78`, No or cancel -> `0x79` |
 
 The sub-screens draw over the menu, which runs non-interactive beneath them. The row strings are fixed overlay addresses the picker forms with `lui`/`addiu` pairs (`0x801CEF04 .. 0x801CEF44`).
 
@@ -551,8 +551,8 @@ The shop branch (states `0x78..0x7a`) spends the fishing-point pool `_DAT_800844
 | Screen | Function | Behaviour |
 |---|---|---|
 | Prize list (`0x78`) | `FUN_801d0c3c` | 6 rows. Each prints its item name through the MES `0xC2` item-name token plus the per-unit price; the point total renders capped at `999999`. |
-| Quantity picker (`0x7a`) | `FUN_801d092c` | "Trade how many?" Max = `min(points / price, limit - owned)`, `owned` being the live inventory count (`func_0x80042f4c`); a not-yet-purchased one-time row treats `owned` as 0. |
-| Confirm (`0x79`) | `FUN_801d06c8` | "Are you sure?" Yes grants `func_0x800421d4(item_id, qty)`, deducts `price * qty`, raises cue `0x206` (`0x801D089C`), and for a `limit == 1` row latches bit `row + venue*8` of `_DAT_8008446C`. |
+| Quantity picker (`0x79`) | `FUN_801d092c` | "Trade how many?" Max = `min(points / price, limit - owned)`, `owned` being the live inventory count (`func_0x80042f4c`); a not-yet-purchased one-time row treats `owned` as 0. |
+| Confirm (`0x7a`) | `FUN_801d06c8` | "Are you sure?" Yes grants `func_0x800421d4(item_id, qty)`, deducts `price * qty`, raises cue `0x206` (`0x801D089C`), and for a `limit == 1` row latches bit `row + venue*8` of `_DAT_8008446C`. |
 
 **Row 0 is hidden until strictly affordable**: the cursor floor is `(price0 < points) ^ 1`, so each venue's top prize only appears once the pool exceeds its price. The cursor **wraps** at both ends: up past the floor lands on row 5, down past row 5 on the floor (`0x801D0CF8..0x801D0D24`). A cursor already under the floor, left on row 0 by a purchase that took the pool below its price, moves to row 5 before the press is read (`0x801D0C88..0x801D0C9C`), so Up from it lands on row 4. A row is available (white, not grey; `FUN_801d6f90`) when it is affordable, the inventory count is not `99`, and - for a one-time row - its purchased bit is not latched.
 
@@ -573,9 +573,13 @@ The shop branch (states `0x78..0x7a`) spends the fishing-point pool `_DAT_800844
 
 Both venues spend and latch against the same globals. The rows match the curated walkthrough prize lists ([`gamedata.md`](../reference/gamedata.md)) row for row, plus one entry the walkthroughs miss: **Vidna's row 0 is a 50,000-point one-time War God Icon**, invisible until the pool exceeds its price. Row contents decode from the user's disc.
 
-Parser: [`legaia_minigame_formats::fishing_exchange`](../../crates/minigame-formats/src/fishing_exchange.rs); disc-gated `fishing_exchange_real` pins the structural invariants. Engine: `fishing::PrizeExchange` (list floor, availability, quantity cap, confirm), with the grant committed by `World::fishing_exchange_buy` against `World::minigames.fishing_points` and `fishing_prizes_purchased`; disc-free oracle `fishing_exchange_runtime`. Both play hosts route input through `engine-core::fishing_exchange_input` and draw `engine-ui::fishing::exchange`. The patcher edits prices in place (`--fishing-price`, [`randomizer.md`](../tooling/randomizer.md)).
+Parser: [`legaia_minigame_formats::fishing_exchange`](../../crates/minigame-formats/src/fishing_exchange.rs); disc-gated `fishing_exchange_real` pins the structural invariants. Engine: `fishing::PrizeExchange` (list floor, availability, quantity cap, confirm), with the grant committed by `World::fishing_exchange_buy` against `World::minigames.fishing_points` and `fishing_prizes_purchased`; disc-free oracle `fishing_exchange_runtime`.
 
-In the port the exchange opens from the hub's row 3 (or the native window's `P`) and owns the pad while open: Up / Down move, Cross or L1 trades one, Circle or L2 closes back to the hub, and Left / Right switch the venue page (a port affordance).
+Both play hosts route the pad through `World::fishing_exchange_pad`, which runs the list, the quantity picker and the confirm as retail does (`PrizeExchange::pad_step`, held to the three routines by the retail kernel differential), and draw `engine-ui::fishing::exchange`: the list in the port's own layout, the picker and the confirm at retail's pens (`PrizeExchange::dialog_draw`) with their lines off the overlay. The panel frames are not drawn. The hosts' own exchange keys (`engine-core::fishing_exchange_input`) still buy one unit a press.
+
+The patcher edits prices in place (`--fishing-price`, [`randomizer.md`](../tooling/randomizer.md)).
+
+In the port the exchange opens from the hub's row 3 (or the native window's `P`) and owns the pad while open: on the list Up / Down move, Cross or L1 opens the quantity picker, Circle or L2 closes back to the hub, and Left / Right switch the venue page (a port affordance); the picker and the confirm take the pad as retail's do.
 
 ## Fishing actors and scene render
 

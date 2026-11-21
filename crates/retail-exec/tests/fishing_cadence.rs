@@ -1106,3 +1106,54 @@ fn the_venue_exit_fades_and_leaves_as_retail_does() {
     }
     assert!(left > 3000 && lined > 2000, "{left} {lined}");
 }
+
+/// State `0x1E`, the catch close-up (`0x801CFD30..0x801CFD7C`): it clears
+/// the plate's accept word `DAT_801D90BC`, the surge `DAT_801D90F4` and the
+/// catch-HUD word `DAT_801D9058`, then moves to the showcase `0x20` only
+/// with the rod's sub-state `0x801D91AC` at `0x14` and the close-up flag
+/// `0x801D91B0` clear. Against `catch_showcase_due`, the gate
+/// `VenueCameraDriver` holds the restored camera on.
+#[test]
+fn the_catch_waits_for_the_rod_and_the_close_up_as_retail_does() {
+    differential!(prot(972, SESSION));
+    use legaia_engine_fishing::fishing_actors::catch_showcase_due;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    const SWING: u32 = 0x801D_91AC;
+    const CLOSE_UP: u32 = 0x801D_91B0;
+    const CLEARED: [u32; 3] = [0x801D_90BC, 0x801D_90F4, 0x801D_9058];
+    cpu.stub_outside = Some((SESSION, SESSION_END));
+    let mut rng = Rng(0x5348_4F57);
+    let mut shown = [0u32; 2];
+    for case in 0..4000u32 {
+        cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+        let swing = [0u32, 1, 2, 10, 0x14, 0x14][rng.below(6) as usize];
+        let flag = [0u32, 0, 1, rng.next()][rng.below(4) as usize];
+        cpu.mem.wr32(SESSION_STATE, 0x1E);
+        cpu.mem.wr32(SWING, swing);
+        cpu.mem.wr32(CLOSE_UP, flag);
+        for w in CLEARED {
+            cpu.mem.wr32(w, rng.next() | 1);
+        }
+        cpu.mem.wr8(FRAME_STEP, 1);
+        cpu.mem.wr32(PRESSED, 0);
+        assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "case {case}");
+        let due = catch_showcase_due(swing == 0x14, flag != 0);
+        let at = format!("case {case} swing {swing:#x} flag {flag:#x}");
+        assert_eq!(
+            cpu.mem.rd32(SESSION_STATE),
+            if due { 0x20 } else { 0x1E },
+            "{at}"
+        );
+        for w in CLEARED {
+            assert_eq!(cpu.mem.rd32(w), 0, "{at}: {w:#x} cleared");
+        }
+        shown[usize::from(due)] += 1;
+    }
+    assert!(shown.iter().all(|&n| n > 500), "{shown:?}");
+}

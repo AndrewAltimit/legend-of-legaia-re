@@ -100,12 +100,26 @@ impl World {
                 self.tile_board_teardown();
                 return;
             }
+            // The arrival pass, a game frame after the walk's idle bind; an
+            // ordinary cell falls straight into state 4's input below
+            // (`0x801EF6FC..0x801EF79C`).
+            sm::ARRIVE => {
+                if self.clock.script_frame_delta() == 0 {
+                    return;
+                }
+                self.board.sm = sm::WALK;
+                self.tile_board_arrival();
+                if self.board.sm != sm::WALK {
+                    return;
+                }
+            }
             _ => {}
         }
 
         // Interpolating toward a committed target tile (state 2).
         if let Some((tx, tz)) = self.board.target {
-            self.tile_board_walk_step(slot, tx, tz);
+            let game_frame = self.clock.script_frame_delta() != 0;
+            self.tile_board_walk_step(slot, tx, tz, game_frame);
             return;
         }
 
@@ -140,7 +154,8 @@ impl World {
                 // State 4 stores state 2 and falls straight into it
                 // (`sh s3,0x54(s4)` at `0x801EFA84`, then `0x801EFA88`), so
                 // the first step moves on the accepting tick.
-                self.tile_board_walk_step(slot, tx, tz);
+                let game_frame = self.clock.script_frame_delta() != 0;
+                self.tile_board_walk_step(slot, tx, tz, game_frame);
             }
             None => {
                 // Off the board or into a wall: the bonk through the ring's
@@ -158,14 +173,39 @@ impl World {
 
     /// One tick of the walker's state 2 (`0x801EFA88`): step toward the
     /// committed target, facing the octant of the remaining delta
-    /// (`+0x26 = octant << 9`, `0x801EFB30..0x801EFBCC`); on arrival bind
-    /// the idle clip - `_DAT_8007BDD8 = 2`, `+0x5C = leader * 7 + 2`,
-    /// `FUN_800204F8` (`0x801EFAC0..0x801EFAEC`) - and run the arrival pass.
+    /// (`+0x26 = octant << 9`, `0x801EFB30..0x801EFBCC`). The frame that
+    /// finds no delta left - a game frame after the step that reached the
+    /// centre - binds the idle clip (`_DAT_8007BDD8 = 2`, `+0x5C = leader *
+    /// 7 + 2`, `FUN_800204F8`, `0x801EFAC0..0x801EFAEC`) and steps to the
+    /// arrival `3`, which runs on the game frame after that. The port walks
+    /// on the vsync; `game_frame` is whether this tick is a game frame, on
+    /// which alone the bind lands.
     ///
     /// PORT: FUN_801EF2B0 (state 2)
-    pub(in crate::world) fn tile_board_walk_step(&mut self, slot: usize, tx: i32, tz: i32) {
+    pub(in crate::world) fn tile_board_walk_step(
+        &mut self,
+        slot: usize,
+        tx: i32,
+        tz: i32,
+        game_frame: bool,
+    ) {
         let ms = &mut self.actors[slot].move_state;
         let (x, z) = (ms.world_x as i32, ms.world_z as i32);
+        if (x, z) == (tx, tz) {
+            if game_frame {
+                if std::mem::take(&mut self.board.walk_spent) {
+                    self.board.target = None;
+                    self.field_player_strided_clip(
+                        legaia_engine_field::field_player_clip::BASE_IDLE,
+                    );
+                    self.board.sm = legaia_engine_minigames::tile_board::sm::ARRIVE;
+                } else {
+                    // The game frame that closes on the centre.
+                    self.board.walk_spent = true;
+                }
+            }
+            return;
+        }
         if let Some(octant) =
             legaia_engine_minigames::tile_board::walker_facing_octant(tx - x, tz - z)
         {
@@ -175,15 +215,11 @@ impl World {
         let nz = step_toward(z, tz, TILE_BOARD_SPEED);
         ms.world_x = nx as i16;
         ms.world_z = nz as i16;
+        self.board.walk_spent = game_frame && (nx, nz) == (tx, tz);
         // The walk is the pad's, not a script's: the clip player keeps the
         // bound bank clip instead of the motion-derived pair.
         if let Some(anim) = &mut self.locomotion.player_anim {
             anim.pad_drove_this_frame = true;
-        }
-        if nx == tx && nz == tz {
-            self.board.target = None;
-            self.field_player_strided_clip(legaia_engine_field::field_player_clip::BASE_IDLE);
-            self.tile_board_arrival();
         }
     }
 

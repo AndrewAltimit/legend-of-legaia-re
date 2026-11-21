@@ -540,7 +540,11 @@ fn tile_board_animated_cell_cycles_on_arrival() {
         w.board.target = Some((tx, tz));
     }
     w.set_pad(0);
-    let _ = w.tick();
+    // The spent walk binds the idle clip on a game frame and the arrival
+    // pass runs on the next.
+    for _ in 0..8 {
+        let _ = w.tick();
+    }
     assert_eq!(
         w.board.grid.as_ref().unwrap().cells[0],
         legaia_engine_minigames::tile_board::CELL_ANIM_FIRST,
