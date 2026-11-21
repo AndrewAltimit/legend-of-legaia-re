@@ -193,9 +193,12 @@ impl BattleActorTick {
 ///
 /// PORT: FUN_8001ADA4 (`0x8001AE4C..0x8001AE58` the `+0x10 & 0xA` skip, `0x8001AEE0..0x8001AEF4` the mode-2 near reject)
 ///
-/// NOT WIRED: the retail kernel differential holds this gate to retail; the
-/// engine's battle draw pass makes its own skip and near-reject decisions and
-/// does not call it yet.
+/// WIRED: `legaia_engine_core::world::World::battle_actor_draw_plan` gates
+/// every battle body's draw on it (a body the host projects passes
+/// [`FLAG_TRANSFORM`] and its view depth), and both play hosts call that per
+/// body per frame - the native window's battle actor pass
+/// (`engine-shell` `redraw_draws::actors`) and the browser page's
+/// `play_battle_render::camera`.
 pub fn dispatch_draws(flags: u32, view_depth: i32) -> bool {
     if flags & DISPATCH_SKIP_MASK != 0 {
         return false;
