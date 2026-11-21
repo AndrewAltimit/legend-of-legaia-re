@@ -552,6 +552,8 @@ const READOUT_ROWS: [[ReadoutRecord; 4]; 4] = {
 
 /// The readout's records with their layout only (`tier` left at `7`): what
 /// the hosts place figures and `?` cells from.
+///
+/// PORT: FUN_801D8DE8 (the record arguments, `0x801D9564..0x801D9714` and `0x801D9804..0x801D9974`)
 pub const fn readout_layout(surface: ReadoutSurface, hidden: bool) -> [ReadoutRecord; 4] {
     let row = match surface {
         ReadoutSurface::Panel => 0,
@@ -583,6 +585,12 @@ pub const fn readout_panel_element(seat: u8, party_count: u8) -> Option<u8> {
 /// driver re-inks the records every frame afterwards (`FUN_80046A20`).
 ///
 /// PORT: FUN_801D8DE8 (`0x801D9488..0x801D9714` the panel tail, `0x801D9718..0x801D9974` the bar tail)
+///
+/// NOT WIRED: the hosts take the records' layout from [`readout_layout`] and
+/// ink the figures every frame from the gauge pass
+/// (`BattleSlotHud::gauge_fill_indices`, `FUN_80046A20`'s re-ink), which
+/// overwrites the spawn ink this returns before a frame shows it; only the
+/// retail kernel differential calls it.
 pub fn status_readout_records(
     surface: ReadoutSurface,
     hidden: bool,
