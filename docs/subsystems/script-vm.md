@@ -1226,6 +1226,19 @@ the second walk starts only when the first lands. The engine keeps the same
 rule for the modal timeline and the helper contexts
 (`FieldVmState::halted_elsewhere`).
 
+The acquiring arms test the target again themselves, and that test reads no caller:
+38 (with `op1 & 0x7F`), 37 / 41, 47, the 43 arcs, the extended 4C 61 with a count,
+4C 80 and 4C 85 / 8E / 8F keep the PC when the target holds `0x400` while the bracket
+word is zero, or runs no script and is not the player (`0x801DEE90`, `0x801DEF28`,
+`0x801DEFC0`, `0x801DF384`, `0x801E1BC0`, `0x801E1ECC`, `0x801E2148`). So the system
+script waits too, on a leg already running. The second clause reaches nothing: every
+addressable context is created with `+0x94 = -1`. The port runs the first clause in
+`FieldHaltHost::field_halt_acquire_predicate` and, for the system script's facing ops,
+in `World::facing_acquire_refused`. A zero-budget face lands within its own call and
+holds the target only for the rest of that game frame, as retail clears the bit on the
+target's own tick after the system node, so `town0e`'s and `geremi`'s per-frame snaps
+acquire on every pass.
+
 A placed object takes the same compass arm. `taiku2`'s arrival `P2[0]` walks its sky dome,
 partition-0 record `0x14`, with `C1 14 84 4A` as the shot starts; the leg spends the frame
 step once a game frame, so at step `2` the `64 * 2 / 128` step moves one unit a game frame

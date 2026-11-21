@@ -1291,7 +1291,7 @@ operand `+1/+3/+5/+7` via `FUN_8003CE9C`. `word3` is a selector only - it is nev
 | `word3` | Action | Store address |
 |---|---|---|
 | `0` | seed the three geometry words at `_DAT_801C6EA4`: `+0x4C = word0`, `+0x4E = word1`, `+0x50 = word2`; a source word of `0` takes the default `0x40` / `0x08` / `0x04` | stores `0x801E34B0/B4/BC`, defaults `0x801E348C/98/A4` |
-| `1` | find the live roller by handler (`FUN_8003CF04`), then **pause** it (`word0 == 0`: actor `+0x10 \|= 0x80000`) or write the stop trigger `+0x52 = word0` | `0x801E3408` / `0x801E3414` |
+| `1` | find the live roller by handler (`FUN_8003CF04`), then **pause** it (`word0 == 0`: actor `+0x10 \|= 0x80000`) or write the stop trigger `+0x52 = word0`; with no live roller (`beqz` at `0x801E33DC`) nothing is written | `0x801E3408` / `0x801E3414` |
 | `2` | **resume** the roller (clear `+0x10 & ~0x80000`) | `0x801E343C` |
 | `3` | unlink the child and raise the terminal-kill flag (`+0x10 \|= 8`) | `0x801E347C` |
 
