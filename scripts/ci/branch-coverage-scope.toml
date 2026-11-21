@@ -2615,3 +2615,45 @@ entry = "0x8003AEB0"
 range = "0x8003B924..0x8003B924"
 verdict = "unreachable"
 reason = "the motion-table install's `beq ctrl[+0],zero` skip; ctrl[+0] is section 1's pointer, set at 0x8003B164 from a non-empty section 0 and advanced by 3 at 0x8003B284, so it is never zero"
+
+[[arm]]
+entry = "0x801DA9F8"
+range = "0x801DAA44..0x801DAA44"
+verdict = "unreachable"
+reason = "PROT 0899: the step switch's default arm; the sub-screen dispatcher zeroes the step word 0x801E46AC whenever the sub-screen id changes (`sw zero,0x46ac` at 0x801DC96C) and while sub-screen 0x17 runs only this routine stores it, with 1, 2 or 3, so it is never negative"
+
+[[arm]]
+entry = "0x801DA9F8"
+range = "0x801DAA5C..0x801DAA5C"
+verdict = "unreachable"
+reason = "PROT 0899: the step switch's default arm; the sub-screen dispatcher zeroes the step word 0x801E46AC whenever the sub-screen id changes (`sw zero,0x46ac` at 0x801DC96C) and while sub-screen 0x17 runs only this routine stores it, with 1, 2 or 3, so it is never above 3"
+
+[[arm]]
+entry = "0x801DA9F8"
+range = "0x801DAAEC..0x801DAAEC"
+verdict = "unreachable"
+reason = "PROT 0899: the browse lookup's empty-table skip; the overlay's option table at 0x801E44B8 is non-empty and holds a record for every id the layout table 0x801E4404 names (0,1,2,3,6,4,7,9,8,10)"
+
+[[arm]]
+entry = "0x801DA9F8"
+range = "0x801DAB10..0x801DAB10"
+verdict = "unreachable"
+reason = "PROT 0899: the browse lookup's run off the table's end; the overlay's option table at 0x801E44B8 is non-empty and holds a record for every id the layout table 0x801E4404 names (0,1,2,3,6,4,7,9,8,10)"
+
+[[arm]]
+entry = "0x801DA9F8"
+range = "0x801DAB54..0x801DAB54"
+verdict = "unreachable"
+reason = "PROT 0899: the confirm's no-record error cue 0x23; the overlay's option table at 0x801E44B8 is non-empty and holds a record for every id the layout table 0x801E4404 names (0,1,2,3,6,4,7,9,8,10), so the record is never null"
+
+[[arm]]
+entry = "0x801DA9F8"
+range = "0x801DAC60..0x801DAC60"
+verdict = "unreachable"
+reason = "PROT 0899: the popup lookup's empty-table skip; the overlay's option table at 0x801E44B8 is non-empty and holds a record for every id the layout table 0x801E4404 names (0,1,2,3,6,4,7,9,8,10)"
+
+[[arm]]
+entry = "0x801DA9F8"
+range = "0x801DAC84..0x801DAC84"
+verdict = "unreachable"
+reason = "PROT 0899: the popup lookup's run off the table's end; the overlay's option table at 0x801E44B8 is non-empty and holds a record for every id the layout table 0x801E4404 names (0,1,2,3,6,4,7,9,8,10)"
