@@ -75,14 +75,24 @@ The footprint is in bounds: run in the `crates/retail-exec` interpreter with the
 Reaching it takes a fight that ends while every other member is down, with no party action ending it, which is a monster's flee: state `0x68`'s takedown `FUN_801E7824` zeroes the fleer's HP (`0x801E78A0`), and the monster scan then counts every seat down.
 Terra cannot be the one to finish: with seat 0 at 0 HP her pick is always spell `0x16` (Revive, 0 MP) on seat 0 ([the companion pick](battle-action-helpers.md#the-ai-companion-pick-in-fun_801eed1c)).
 A member cannot fall to damage over time either, since the per-round tick clamps at 1 HP (`addiu a1,v0,-0x1` at `0x801E75C4`, Venom's twin at `0x801E765C`).
-So Noa has to fall to a monster that then opens the next round ahead of Terra and flees, with every other monster already dead (a dead monster counts as down; only the survivors must leave).
+Terra's pick also keeps Noa at half HP or more: below `+0x14E >> 1` it is spell `0x0D` (Heal) on seat 0 (`0x801EEE8C..0x801EEEC4`), the `FUN_800402F4(0, 0)` restore of `+200`.
+So monster hits must take Noa from at least half her maximum to 0 after one of Terra's turns, and the last monster must then flee before her next one: Noa falls after Terra in one round, and the survivor opens the next round ahead of her (a dead monster counts as down; only the survivors must leave).
 
-In Snowdrift Cave, the one scene that raises flag `0x13` (`cave01` `P1[2]` and `P2[15]`; Terra's group is the `0x015E` region group, formation rows `0..5`:
-Theeder, Mushroom and Blue Piura alone and in pairs), the monster escape roll [`FUN_801EC0DC`](battle-formulas.md#monster-escape-roll---fun_801ec0dc) with Noa down passes in one case: a Mushroom left alone of a pair at a few HP.
-A downed member doubles the monster side, so the roll also needs Terra's HP above about 240, and every party queue build resets her HP to `200` (`0x801EEE20..0x801EEE38`):
-Noa must heal Terra after the last build of the round and then fall to the Mushroom, whose SPD 48 can open the next round ahead of Terra's 45.
-Each check then passes at best about 0.3% of the time (Mushroom at 1 HP, Terra at 400).
-Evidence: disassembly, the MAN tables and the `terra_party_battle` capture (seat stats, flags, Terra's EXP `0`) for reachability, the interpreter for the footprint and the readout; the win itself has not been captured.
+Terra's HP at that flee roll is at most 200. Each party member's queue build stores `200` to her live HP `+0x14C` (`sh v0,0x14c(v1)` at `0x801EEE38`, beside MP `+0x150` and the gauge mirrors `+0x172` / `+0x174`), and the roll reads `+0x14C` (`0x801EC1B8`).
+Only Noa's own action, after her build, can lift Terra above 200 by healing her.
+A downed member doubles the monster side of the roll [`FUN_801EC0DC`](battle-formulas.md#monster-escape-roll---fun_801ec0dc), so the survivor must be nearly dead and Terra's HP high.
+
+**Snowdrift Cave cannot produce it.** `cave01` is the one scene that raises flag `0x13` (`P1[2]` and `P2[15]`), and Terra's fights there draw the `0x015E` region group, formation rows `0..5`: Theeder, Mushroom and Blue Piura, alone and in pairs.
+With Terra at 200 or less no survivor's roll can pass; a Mushroom left alone of a pair needs her above about 240, which only Noa's heal on Terra gives.
+The fall then fails: a Mushroom swing does at most about 25 to Noa (ATK 18 rolled to 20, the top power tier 28, earth on wind 104%, less Noa's defence), short of the half of her maximum the fall needs.
+A partner adding its hits has to die in the same span, and only Noa's action can kill it then, so her one action cannot both remove the partner and heal Terra.
+
+**Drake's overworld is the one open path.** Terra stays seated from the cave to Mt. Rikuroa, where `rikuroa` `P2[48]` clears the flag, and `map01`'s region group for that story state includes the Hornet triples (rows `31..36`, tiles x `51..85`, z `66..101`).
+A Hornet left alone of a triple at 1 to 3 HP passes the roll with Terra at 192 to 207 HP, about one check in 1,200, and opens every round ahead of her (SPD 88 against 45).
+It has to survive Terra's turn, which needs her pick's coin flip to stand by, since her two companion swings land on the underdog rewrite for a few HP each; and its swing has to take Noa from half to 0, which its top power tier can.
+Whether Noa's walk to Mt. Rikuroa can reach that region has not been settled.
+
+Evidence: disassembly, the scenes' formation and region tables, and the `terra_party_battle` capture (seat stats, flags, Terra's EXP `0`) for reachability; the interpreter for the footprint and the readout. The win itself has not been captured.
 
 Port: `apply_battle_xp` floors the divisor at 1 and pays Terra the whole pool's share, and the window shows that share where retail shows `0`.
 
