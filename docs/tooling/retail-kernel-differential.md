@@ -360,6 +360,16 @@ SpecialStarter's voices and the shout call match, and so do the actor pass
 frame driver `FUN_80046A20`'s exit pass and rumble decay, and the presentation tick
 `FUN_80050120`'s scene ramps.
 
+The World-only arms run through `world::arm_drivers`: the commit's reach snap, the
+Mystic Shield arm, the frame driver's backdrop spin and the fade's sink match. The
+Jette count, which clears the formation's second cell once Jette and his clones are
+down, had no port, and the fade's lone-fight latch was skipped behind a staged Seru
+absorb or a capture. Running the rest of the state machine found the War God Icon's
+pair counter never reset at the walk's arrival, so only a battle's first pair replayed;
+state `0x40` leaving a pass early, without its hold on a reacting target, its category
+clear or the Fury Boost bar; the spell plate never sent out at `0x3E`; and the Point
+Card's frame left whole.
+
 The shared cast kernel `FUN_801DD0AC`, its scale and finisher, and the two wrappers
 `FUN_801DD4B0` / `FUN_801DD6B4`, on both branches, found no cast waking a sleeper or
 freeing a Numbed seat, where the finisher strips `0x0F80` as the melee resolver does;

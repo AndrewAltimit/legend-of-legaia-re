@@ -430,7 +430,9 @@ OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`.
 
 #### State `0x3C` - Spirit / Item - pre-arm
 
-`FUN_801D5854(actor, 6)`. Sets `actor[+0x1DA] = actor[+0x1E7]` (queued anim), the ring commit's [clip](battle-action-helpers.md#the-commit-clip-actor0x1e7) (`9` for Item). Sets `ctx[+0x243] = 1` ("action in progress" marker). **Seeds the `(class, tier)` pair `actor[+0x1E8]` / `+0x1E9`** ([below](battle-action-exit-gates.md#the-class-tier-seed-at-state-0x3c)). Item leg also writes HUD via `_DAT_80077332..+0x35C`; `actor[+0x1DF] == 0xFE` (Pomander) → label = `s_Points_returned_801CED34`. Non-Item computes MP cost (with ability-bit half/quarter), subtracts from `actor[+0x150]`; for party_id < 3 fires `FUN_801D8DE8(7, 0)` (UI element). Always fires `FUN_801D8DE8(0x4C, 0)` (HUD label).
+A party caster is framed at the near depth first (`ctx[+0x6D0] = 0x800`, `0x801E3B34..0x801E3B3C`). `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DA] = actor[+0x1E7]` (queued anim), the ring commit's [clip](battle-action-helpers.md#the-commit-clip-actor0x1e7) (`9` for Item). Sets `ctx[+0x243] = 1` ("action in progress" marker). **Seeds the `(class, tier)` pair `actor[+0x1E8]` / `+0x1E9`** ([below](battle-action-exit-gates.md#the-class-tier-seed-at-state-0x3c)). 
+
+Item leg also writes HUD via `_DAT_80077332..+0x35C`; `actor[+0x1DF] == 0xFE` (Pomander) → label = `s_Points_returned_801CED34`. Non-Item computes MP cost (with ability-bit half/quarter, read off a party member's record only - a monster caster pays the record price), subtracts from `actor[+0x150]` with a bare `subu`; for party_id < 3 fires `FUN_801D8DE8(7, 0)` (UI element). Always fires `FUN_801D8DE8(0x4C, 0)` (HUD label).
 
 **Next:** `0x3D`.
 
@@ -442,7 +444,9 @@ OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`.
 
 #### State `0x3E` - Spirit - fire
 
-`FUN_801D5854(actor, 6)`. Holds while `actor[+0x1D9] != 0`. Calls `func_0x800319A8(0x21)` and `FUN_801D8DE8(0x4C, 1)`. For spirit-type 4 (Originals) on party, fires `FUN_801D8DE8(0x34, 1)`. For item class 5 (gauge extension, `0x801E3E90..0x801E4018`) it raises HUD elements `0x0F` / `0x52`, draws one `rand()` (`0x801E3F2C`) for the camera variant `(rand % 2) * 2`, stages the extended gauge `min(0x120, target base * 7 / 5 + 8)` into `ctx[+0x6DC]` and the actor's spirit `+8` (`+10` with ability bit `0x200`) capped at 100 into `ctx[+0x6DE]`, a gauge extension rather than damage (`spirit::gauge_extend_fire`). Otherwise re-fires UI elements 6/0x4E/0x4F (monster effect) or 7 (party effect) per slot. Sets `ctx[+0x6D8] = 0x20` (post-cast timer).
+`FUN_801D5854(actor, 6)`. Holds while `actor[+0x1D9] != 0`. Calls `func_0x800319A8(0x21)` and `FUN_801D8DE8(0x4C, 1)`. A party member's spell (`+0x1DE == 2`) also sends its name plate out, `FUN_801D8DE8(0x34, 1)` (`0x801E3E78`). For item class 5 (gauge extension, `0x801E3E90..0x801E4018`) it raises HUD elements `0x0F` / `0x52`, draws one `rand()` (`0x801E3F2C`) for the camera variant `(rand % 2) * 2`, stages the extended gauge `min(0x120, target base * 7 / 5 + 8)` into `ctx[+0x6DC]` and the actor's spirit `+8` (`+10` with ability bit `0x200`) capped at 100 into `ctx[+0x6DE]`, a gauge extension rather than damage (`spirit::gauge_extend_fire`).
+
+Otherwise re-fires UI elements 6/0x4E/0x4F (monster effect) or 7 (party effect) per slot, and a queue head of `0xFE` (the Point Card, whatever the category) re-sizes the frame (`FUN_801F0348`), pulls it in to three quarters (`0x801E40A4..0x801E40B8`) and commits class `0x0E`. Sets `ctx[+0x6D8] = 0x20` (post-cast timer).
 
 **Next:** `0x3F`.
 
@@ -456,7 +460,7 @@ The call does not test the actor's side: a monster's heal or buff (a spell recor
 
 #### State `0x40` - Spirit - post-damage
 
-`FUN_801D5854(target, 6)`. Iterates HP-bar widget at `ctx[+0x1080]+0xE`: ramps it toward `ctx[+0x6DC]` (target HP) by `DAT_1F800393` per frame; mirrors damage-popup widget at `_DAT_801F6968+0x10`. When `ctx[+0x6D8] < 0` and target is no longer valid (dead or out of slot), sets `actor[+0x1DE] = 0` and clears HUD.
+`FUN_801D5854(target, 6)`. For a gauge extension (class `5`) it grows the bar at `ctx[+0x1080]+0xE` one frame step toward `ctx[+0x6DC] - 6` and, on the same passes, steps the AP plate `_DAT_801F6968+0x10` toward `ctx[+0x6DE]` (`0x801E415C..0x801E4204`). The countdown is tested before it steps: a `ctx[+0x6D8]` at or above `0` loses a frame step and the pass ends (`0x801E4210` into `0x801E53E8`), so the band leaves on the pass after it goes negative. Then a target in a table seat (`+0x1DD < 7`) that is alive, on a non-idle clip and lit (`+0x04 != 0`) holds the band; otherwise it sets `actor[+0x1DE] = 0`, frames a party caster at `0x800` and leaves (`0x801E4268..0x801E4294`). Port: `spirit::spirit_post_damage`.
 
 **Next:** `0x50`.
 
