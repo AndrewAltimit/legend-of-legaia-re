@@ -470,3 +470,175 @@ fn the_status_clut_arms_upload_what_retail_uploads() {
     }
     assert!(stoned > 1000 && rotted > 2000, "{stoned} {rotted}");
 }
+
+const SHIELD_WORD: u32 = 0x8007_BD84;
+const SPHERE: u32 = 0x8016_0000;
+const BURST_TABLE: u32 = 0x801C_90F0;
+const CUE_ROUTE: u32 = 0x8004_FE5C;
+
+/// The pass's Mystic Shield arm (`0x8004D534..0x8004D674`) from its entry,
+/// against `World::tick_mystic_shield` through `BattleArmDrivers` over a
+/// shield `World::raise_mystic_shield` seated from the disc's records: the
+/// sphere drawn (`+0x56 = 4`) with the seat's scale and display trio while
+/// its colour word is up and hidden while it is blank, and at half HP the
+/// break - the reaction run restored, the sphere retired, the burst seated,
+/// the word cleared and the cue `0x10D` sounded.
+#[test]
+fn the_mystic_shield_arm_poses_and_breaks_as_retail_does() {
+    use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+    use legaia_engine_core::world::{Actor, World};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    differential!(scus(ENTRY));
+    let (Some(mut cpu), Some(scus)) = (scus_cpu(), crate::common::scus()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let scus: std::sync::Arc<[u8]> = std::sync::Arc::from(scus);
+    cpu.stub_outside = Some((ENTRY, ROUTINE_END));
+    let cues = Rc::new(RefCell::new(Vec::new()));
+    let sink = cues.clone();
+    cpu.hook(CUE_ROUTE, move |r, _| {
+        sink.borrow_mut().push((r.r[4], r.r[5]))
+    });
+    // The burst's spawn `FUN_80021B04(pos, rot, record, scale)`: logged, and
+    // answering a node handle.
+    let spawns = Rc::new(RefCell::new(Vec::new()));
+    let sink = spawns.clone();
+    cpu.hook(0x8002_1B04, move |r, _| {
+        sink.borrow_mut().push((r.r[4], r.r[5], r.r[6], r.r[7]));
+        r.r[2] = 0x8017_0000;
+    });
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x5348_4C44);
+    let (mut drawn, mut hidden, mut broke) = (0, 0, 0);
+    for round in 0..4000 {
+        let max = [100u16, 1000, 50_000][rng.below(3) as usize];
+        let hp = match rng.below(4) {
+            0 => max / 2,
+            1 => max / 2 + 1,
+            2 => rng.below(u32::from(max) + 1) as u16,
+            _ => max,
+        };
+        let colour = [0u32, 0x2008_0200, 0x1806_0180][rng.below(3) as usize];
+        let scale = [None, Some(0x800u16), Some(0x1000)][rng.below(3) as usize];
+        let (x, y, z) = (
+            rng.next() as i16 >> 4,
+            rng.next() as i16 >> 6,
+            rng.next() as i16 >> 4,
+        );
+
+        cpu.mem = clean.clone();
+        let m = &mut cpu.mem;
+        m.wr32(CTX_PTR, CTX);
+        m.wr8(CTX, 3);
+        m.wr8(CTX + 0x13, 5);
+        m.wr8(FORMATION, 0xB4);
+        m.wr32(SHIELD_WORD, SPHERE);
+        for o in (0..0x100).step_by(4) {
+            m.wr32(SPHERE + o, 0);
+        }
+        m.wr16(SPHERE + 0x56, 9);
+        for k in 0..0x60 {
+            m.wr32(BURST_TABLE + 4 * k, 1);
+        }
+        m.wr32(BURST_TABLE + 4 * 7, 0);
+        for s in 0..8u32 {
+            let a = ACTOR + s * ACTOR_STRIDE;
+            m.wr32(ACTOR_TABLE + s * 4, a);
+            m.wr32(a + 0x22C, NODES + s * 0x100);
+            m.wr32(NODES + s * 0x100 + 0x4C, RECORDS_AT + s * 0x100);
+        }
+        m.wr8(ACTOR + 5 * ACTOR_STRIDE + 0x1DD, 6);
+        let seat = ACTOR + 3 * ACTOR_STRIDE;
+        m.wr32(seat + 4, colour);
+        m.wr16(seat + 0x14C, hp);
+        m.wr16(seat + 0x14E, max);
+        m.wr16(seat + 0x3C, x as u16);
+        m.wr16(seat + 0x3E, y as u16);
+        m.wr16(seat + 0x40, z as u16);
+        m.wr16(seat + 0x42, 0);
+        m.wr16(NODES + 3 * 0x100 + 0x72, scale.unwrap_or(0x1000));
+        cues.borrow_mut().clear();
+        spawns.borrow_mut().clear();
+        assert_eq!(cpu.call(ENTRY, &[]), Stop::Returned, "round {round}");
+        let m = &mut cpu.mem;
+        let retail_sphere = (
+            m.rd16(SPHERE + 0x56) as i16,
+            m.rd16(SPHERE + 0x72),
+            [
+                m.rd16(SPHERE + 0x14) as i16,
+                m.rd16(SPHERE + 0x16) as i16,
+                m.rd16(SPHERE + 0x18) as i16,
+            ],
+            m.rd32(SPHERE + 0x10) & 8 != 0,
+        );
+        let retail_params: Vec<u8> = (0..4).map(|k| m.rd8(seat + 0x1EF + k)).collect();
+        let retail_word = m.rd32(SHIELD_WORD);
+        let retail_burst = m.rd32(BURST_TABLE + 4 * 7);
+
+        let mut w = World::default();
+        w.party.party_count = 3;
+        for _ in 0..4 {
+            w.actors.push(Actor::default());
+        }
+        w.tables.scus = Some(scus.clone());
+        let c = &mut w.actors[3];
+        c.battle_monster_id = Some(0xB4);
+        c.battle.max_hp = max;
+        c.battle.hp = hp;
+        c.battle.render_color = colour;
+        c.battle.render_scale = scale;
+        c.battle.seat = Some((x, z));
+        c.move_state.world_y = y;
+        w.raise_mystic_shield();
+        let seated = w.mystic_shield_sphere().expect("shield seated");
+        w.mystic_shield_tick();
+        let (kind, field_72, pos, finished) = w.mystic_shield_sphere().expect("sphere");
+        let port_params: Vec<u8> = (0..4)
+            .map(|k| w.actors[3].battle.params[0x1EF - 0x1DF + k])
+            .collect();
+        let at = format!(
+            "round {round}: hp {hp}/{max} colour {colour:#x} scale {scale:?} trio {x},{y},{z}"
+        );
+        // A hidden sphere keeps the pose the seat left on it.
+        let want_pos = if colour != 0 { pos } else { seated.2 };
+        let retail_pos = if colour != 0 {
+            retail_sphere.2
+        } else {
+            seated.2
+        };
+        assert_eq!(retail_sphere.0, kind, "draw kind, {at}");
+        if colour != 0 {
+            assert_eq!(retail_sphere.1, field_72, "scale, {at}");
+        }
+        assert_eq!(retail_pos, want_pos, "position, {at}");
+        assert_eq!(retail_sphere.3, finished, "retired, {at}");
+        let breaks = retail_word == 0;
+        assert_eq!(breaks, !w.battle.mystic_shield_up(), "word, {at}");
+        if breaks {
+            assert_eq!(retail_params, port_params, "reaction run, {at}");
+            assert_eq!(*cues.borrow(), vec![(0x10D, 3)], "cue, {at}");
+            // The burst seated on the sphere's pose, off the SCUS record the
+            // port spawns (`MYSTIC_SHIELD_BURST_RECORD`), into the free slot.
+            assert_eq!(
+                *spawns.borrow(),
+                vec![(SPHERE + 0x14, SPHERE + 0x24, 0x8007_86C4, 0x1000)],
+                "burst, {at}"
+            );
+            assert_eq!(retail_burst, 0x8017_0000, "burst slot, {at}");
+            assert_eq!(w.action_fx_count(), 1, "burst, {at}");
+            broke += 1;
+        } else {
+            assert!(cues.borrow().is_empty(), "{at}");
+            assert_eq!(w.action_fx_count(), 0, "{at}");
+        }
+        drawn += i32::from(kind == 4);
+        hidden += i32::from(kind == 0);
+    }
+    assert!(
+        drawn > 1000 && hidden > 500 && broke > 500,
+        "{drawn} {hidden} {broke}"
+    );
+}

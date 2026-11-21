@@ -19,6 +19,14 @@ pub trait BattleArmDrivers {
     fn defeat_sink(&mut self);
     /// The formation's second cell as the battle reads it (`gp+0x9F5`).
     fn formation_second_cell(&self) -> u8;
+    /// The actor pass's Mystic Shield arm (`World::tick_mystic_shield`,
+    /// `FUN_8004CE2C` `0x8004D534..0x8004D674`).
+    fn mystic_shield_tick(&mut self);
+    /// The shield's sphere as the arm left it: draw kind (`+0x56`), scale
+    /// (`+0x72`), position, retired - `None` with no shield seated.
+    fn mystic_shield_sphere(&self) -> Option<(i16, u16, [i16; 3], bool)>;
+    /// Effect scenes the action has seated (the break's burst among them).
+    fn action_fx_count(&self) -> usize;
 }
 
 impl BattleArmDrivers for World {
@@ -30,5 +38,20 @@ impl BattleArmDrivers for World {
     }
     fn formation_second_cell(&self) -> u8 {
         World::battle_formation_cell(self, 1)
+    }
+    fn mystic_shield_tick(&mut self) {
+        World::tick_mystic_shield(self)
+    }
+    fn mystic_shield_sphere(&self) -> Option<(i16, u16, [i16; 3], bool)> {
+        let p = self.casting.mystic_shield_fx.as_ref()?.parts.first()?;
+        Some((
+            p.state.move_substate,
+            p.state.field_72,
+            [p.state.world_x, p.state.world_y, p.state.world_z],
+            p.finished,
+        ))
+    }
+    fn action_fx_count(&self) -> usize {
+        self.casting.active_action_fx.len()
     }
 }
