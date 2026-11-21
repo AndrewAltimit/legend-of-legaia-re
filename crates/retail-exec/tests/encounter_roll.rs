@@ -356,3 +356,127 @@ fn the_counter_reroll_is_retails() {
     }
     assert!(low > 5_000 && high > 5_000, "{low} {high}");
 }
+
+/// The region reader's holds against `World::on_field_step`: the player's
+/// engaged bit (`+0x10 & 0x80000`, `0x801DA144`), the post-load pad hold
+/// `_DAT_8007B6B4` (`0x801DA154`), the kind-0 warp timer `_DAT_8007B6B0`
+/// (`bgtz` at `0x801DA164`) and the Incense window `_DAT_8007B600`
+/// (`0x801DA17C`), each after the battle-setup half and before the rate
+/// scale. A held step draws nothing and leaves the counter; an open one
+/// rolls as the tracker rolls. The World carries the four as the player
+/// actor's move flags, `locomotion.warp.hold`, `locomotion.warp.timer` and
+/// `locomotion.walk_regen_window`.
+#[test]
+fn a_held_step_rolls_nothing_in_the_world() {
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::field_test_drivers::FieldTestDrivers;
+    use legaia_engine_mode::mode::SceneMode;
+    differential!(prot(897, ROLL));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
+    let state = Rc::new(Cell::new(0u32));
+    let stream = state.clone();
+    cpu.hook(0x8005_6798, move |r, _| {
+        let next = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+        stream.set(next);
+        r.r[2] = (next >> 16) & 0x7FFF;
+    });
+    // No story flag and no ability bit: the last group's fallback, no rate
+    // shifts.
+    cpu.hook(0x8003_CE64, |r, _| r.r[2] = 0);
+    cpu.hook(0x8004_31D0, |r, _| r.r[2] = 0);
+    let mut rng = Rng(0x484F_4C44);
+    let (mut held, mut open, mut battles) = ([0usize; 4], 0, 0);
+    for scene in 0..1500 {
+        let mut s = gen_scene(&mut rng);
+        if let Some(g) = s.groups.last_mut() {
+            g.0 = 0xFFFF;
+        }
+        seed_retail(&mut cpu, &s);
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        let slot = world.spawn_handler_actor(Default::default()).unwrap();
+        world.player_actor_slot = Some(slot as u8);
+        world.install_encounter_bracket();
+        let mut tracker = RegionEncounterTracker::new(port_table(&s));
+        let start = 1 + rng.below(400) as i32;
+        tracker.set_counter(start);
+        cpu.mem.wr32(COUNTER, start as u32);
+        let latch = rng.below(14) as u8;
+        tracker.set_last_formation(latch);
+        cpu.mem.wr8(LATCH, latch);
+        world.terrain.region_tracker = Some(tracker);
+        let seed = rng.next();
+        state.set(seed);
+        world.rng_state = seed;
+        for step in 0..20 {
+            let (x, z) = (rng.below(0x1000) as i16, rng.below(0x1000) as i16);
+            let engaged = rng.below(6) == 0;
+            let hold = if rng.below(6) == 0 {
+                1 + rng.below(0x28) as i32
+            } else {
+                0
+            };
+            let timer = match rng.below(8) {
+                0 => 1 + rng.below(30) as i32,
+                1 => -(1 + rng.below(30) as i32),
+                _ => 0,
+            };
+            let incense = if rng.below(6) == 0 {
+                1 + rng.below(0x200) as i32
+            } else {
+                0
+            };
+            cpu.mem.wr32(SCRATCH_GATE, 0);
+            cpu.mem
+                .wr32(PLAYER + 0x10, if engaged { 0x8_0000 } else { 0 });
+            cpu.mem.wr32(0x8007_B6B4, hold as u32);
+            cpu.mem.wr32(0x8007_B6B0, timer as u32);
+            cpu.mem.wr32(0x8007_B600, incense as u32);
+            cpu.mem.wr8(ENTITY + 0x8E, 0xFF);
+            cpu.mem.wr8(ENTITY + 0x8F, 0xFF);
+            cpu.mem.wr16(ENTITY + 0x8A, 0);
+            cpu.mem.wr16(PLAYER + 0x14, x as u16);
+            cpu.mem.wr16(PLAYER + 0x18, z as u16);
+            cpu.mem.wr8(SETTING, 1);
+            assert_eq!(cpu.call(ROLL, &[ENTITY, 1]), Stop::Returned);
+
+            {
+                let a = &mut world.actors[slot];
+                a.move_state.world_x = x;
+                a.move_state.world_z = z;
+                a.move_state.flags = if engaged { 0x8_0000 } else { 0 };
+            }
+            world.seed_warp_holds(timer, hold);
+            world.locomotion.walk_regen_window = incense;
+            let fired = world.on_field_step();
+            let what = format!(
+                "scene {scene} step {step}: engaged {engaged} hold {hold} timer {timer} incense {incense}"
+            );
+            assert_eq!(cpu.mem.rd16(ENTITY + 0x8A) != 0, fired, "{what}: fired");
+            let tracker = world.terrain.region_tracker.as_ref().unwrap();
+            assert_eq!(cpu.mem.rd32(COUNTER) as i32, tracker.counter(), "{what}");
+            assert_eq!(cpu.mem.rd8(LATCH), tracker.last_formation(), "{what}");
+            assert_eq!(state.get(), world.rng_state, "{what}: the draws");
+            let gates = [engaged, hold != 0, timer > 0, incense != 0];
+            if let Some(g) = gates.iter().position(|&g| g) {
+                held[g] += 1;
+            } else {
+                open += 1;
+            }
+            if fired {
+                battles += 1;
+                // A fight ends the scene's steps: the session is committed.
+                break;
+            }
+        }
+    }
+    assert!(
+        held.iter().all(|&n| n > 300) && open > 3000 && battles > 100,
+        "{held:?} {open} {battles}"
+    );
+}

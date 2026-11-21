@@ -21,6 +21,10 @@ pub trait FieldTestDrivers {
     /// the committed target, `game_frame` whether the tick is a game frame;
     /// a no-op with none.
     fn tile_board_walk(&mut self, slot: usize, game_frame: bool);
+    /// the committed target; a no-op with none.
+    /// Seed the kind-0 warp's timer `_DAT_8007B6B0` and post-warp pad hold
+    /// `_DAT_8007B6B4`, the two encounter holds the warp owns.
+    fn seed_warp_holds(&mut self, timer: i32, hold: i32);
 }
 
 impl FieldTestDrivers for World {
@@ -34,5 +38,9 @@ impl FieldTestDrivers for World {
         if let Some((tx, tz)) = self.board.target {
             self.tile_board_walk_step(slot, tx, tz, game_frame);
         }
+    }
+    fn seed_warp_holds(&mut self, timer: i32, hold: i32) {
+        self.locomotion.warp.timer = timer;
+        self.locomotion.warp.hold = hold;
     }
 }
