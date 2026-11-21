@@ -73,6 +73,13 @@ pub trait BattleArmDrivers {
     /// `FUN_801E295C` `0x801E308C..0x801E30C8`), off the acting seat's and
     /// its target's facings as the pass left them.
     fn face_angle_term(&mut self) -> i16;
+    /// Water Hazard's arm-3 settle walk over the seats the caster's target
+    /// code names (`World::capture_target_settled`, PROT 0956
+    /// `0x801F7C2C..0x801F7DA4`).
+    fn capture_target_settled(&self, caster: u8) -> bool;
+    /// PROT 0922 (Puera)'s monster, creature and part writes for one pass of
+    /// its director (`World::apply_puera_writes`).
+    fn puera_writes(&mut self, phase: u8, passed: bool, before: i32, monster_count: u8);
 }
 
 impl BattleArmDrivers for World {
@@ -144,5 +151,11 @@ impl BattleArmDrivers for World {
             &StepOutcome::Stay,
         );
         self.battle.attack_ramp
+    }
+    fn capture_target_settled(&self, caster: u8) -> bool {
+        World::capture_target_settled(self, caster)
+    }
+    fn puera_writes(&mut self, phase: u8, passed: bool, before: i32, monster_count: u8) {
+        World::apply_puera_writes(self, phase, passed, before, monster_count)
     }
 }
