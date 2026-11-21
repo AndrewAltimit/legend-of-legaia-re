@@ -116,6 +116,15 @@ pub(super) fn attack_face<H: BattleActionHost + ?Sized>(
         }
         next
     };
+    // Both approach arms leave through `j 0x801e35c4` with
+    // `ori v0,v0,0x1` in its delay slot (`0x801E32D4..0x801E32DC`), the
+    // store at `0x801E35C8`: the staged clip's bit `+0x1DC & 1` is raised.
+    // The in-range exit to `0x1E` (`0x801E3228`) does not.
+    if next != ActionState::AttackChain
+        && let Some(actor) = host.actor_mut(actor_slot)
+    {
+        actor.flag_bits.set(ActorFlags::WINDUP_DONE);
+    }
     transition(ctx, next)
 }
 

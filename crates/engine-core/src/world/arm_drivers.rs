@@ -68,6 +68,11 @@ pub trait BattleArmDrivers {
     /// The anim tick's Slowed-idle gate (`World::battle_seat_slowed_idle`,
     /// `FUN_80047430` `0x800476D8..0x800476F4`).
     fn slowed_idle(&self, slot: usize) -> bool;
+    /// The melee's angle term state `0x14` leaves at `ctx[+0x6D2]`
+    /// (`World::track_block_approach_terms` after an `AttackFace` pass,
+    /// `FUN_801E295C` `0x801E308C..0x801E30C8`), off the acting seat's and
+    /// its target's facings as the pass left them.
+    fn face_angle_term(&mut self) -> i16;
 }
 
 impl BattleArmDrivers for World {
@@ -130,5 +135,14 @@ impl BattleArmDrivers for World {
     }
     fn slowed_idle(&self, slot: usize) -> bool {
         World::battle_seat_slowed_idle(self, slot)
+    }
+    fn face_angle_term(&mut self) -> i16 {
+        use legaia_engine_battle_vm::battle_action::{ActionState, StepOutcome};
+        World::track_block_approach_terms(
+            self,
+            ActionState::AttackFace.as_byte(),
+            &StepOutcome::Stay,
+        );
+        self.battle.attack_ramp
     }
 }
