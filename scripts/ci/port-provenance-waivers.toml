@@ -1279,16 +1279,6 @@ which the pool helpers beside it never read.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-battle-vm/src/battle_action/summon.rs:801f12d0"
-reason = """
-Read against PROT 0898's bytes: the stage-4 test (`lb +0x277` sign, `== 0x36`,
-else `sb zero,0x276` at 0x801F1644..0x801F1660) and the stage-6 `sltiu 0xcb`
-(0x801F16A0) are `sideband_slot_count`. The tag is scoped to that slice; the
-routine's `LoadImage` uploads are summon_readef's, so its data (the side-band
-addresses) is shared with nothing in the action-SM module.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-cast/src/cast_module_ticks.rs:801f76c4"
 reason = """
 Read against PROT 0946's bytes: three seats `0x801F7928` / `0x801F79C0` /
