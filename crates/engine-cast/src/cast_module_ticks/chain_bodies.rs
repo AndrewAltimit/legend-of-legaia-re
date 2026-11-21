@@ -244,6 +244,11 @@ pub struct ChainArm {
     /// The `+0x21D` store beside each struck seat's reaction stage. It lands on
     /// the seats the fold hits, so the band's caller makes it.
     pub hit_rate: Option<u8>,
+    /// The [`Self::hit_rate`] store sits past the sweep's skip label, so it
+    /// lands on every party seat `0 .. ctx[+0x00]` the arm's pass walks - a
+    /// fallen or stoned seat the sweep does not strike included (PROT 0963's
+    /// arm `0x0E`, `0x801F7D24..0x801F7D30`).
+    pub row_rate: bool,
     /// Any other simulation write.
     pub effect: Option<ChainEffect>,
     /// The seats whose clips the arm waits on before it leaves. The runner
@@ -264,6 +269,7 @@ const fn arm(phase: u8, entry: u32, exit: ChainExit) -> ChainArm {
         clears_0d: false,
         wrapper_site: None,
         hit_rate: None,
+        row_rate: false,
         effect: None,
         settle: None,
     }
@@ -292,6 +298,11 @@ impl ChainArm {
     }
     const fn hit_rate(mut self, rate: u8) -> Self {
         self.hit_rate = Some(rate);
+        self
+    }
+    const fn row_rate(mut self, rate: u8) -> Self {
+        self.hit_rate = Some(rate);
+        self.row_rate = true;
         self
     }
 
@@ -1248,8 +1259,9 @@ pub const DEAD_END_CRISIS_CHAIN: ChainBody = ChainBody {
 /// clears the caster's stage (no bump). Arm `0x11` is terminal: `ctx[+0x0D]
 /// = 0` (`0x801F8104`), busy cleared in the delay slot at `0x801F8120`.
 ///
-/// The sweep's struck seats go to rate `2` beside their reactions
-/// (`0x801F7D30`, [`ChainArm::hit_rate`]) and arm `0x0F` holds the party row
+/// The sweep puts every party seat at rate `2` on its pass, struck or not:
+/// the store (`0x801F7D30`) sits past the label a fallen or stoned seat skips
+/// to (`0x801F7D24`, [`ChainArm::row_rate`]). Arm `0x0F` holds the party row
 /// there on every pass (`0x801F7DB0`, [`party_rate_sweep`]).
 ///
 /// The caster's rates on arms 6..0x0B (`3` / `4`), arm `0x10`'s party
@@ -1282,7 +1294,7 @@ pub const GENOCIDAL_CANNON_CHAIN: ChainBody = ChainBody {
             .stages(&[reaction(Bump, 0x801F_7CF0)])
             .ctx_278(1)
             .hit(0x801F_7C54)
-            .hit_rate(2), // `0x801F7D30`
+            .row_rate(2), // `0x801F7D30`, past the skip label `0x801F7D24`
         arm(0x0F, 0x801F_7D80, Advance),
         arm(0x10, 0x801F_7ED0, Advance).stages(&[stage(
             Caster,

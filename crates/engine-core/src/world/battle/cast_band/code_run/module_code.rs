@@ -603,7 +603,7 @@ impl World {
                     ticks::direct_chain_body(entry)
                 }
                 .and_then(|c| c.arm(phase_in))
-                .and_then(|a| a.hit_rate),
+                .copied(),
             );
             for s in struck {
                 self.face_seat_away_from_caster(s, caster_slot);
@@ -855,7 +855,7 @@ impl World {
                 {
                     self.battle.status_effects.apply(victim_slot, roll.kind);
                 }
-                self.fold_pending_cast_at_rate(arm.hit_rate);
+                self.fold_pending_cast_at_rate(Some(*arm));
                 if marks {
                     self.casting.module_fold_quiet = false;
                     let v = usize::from(victim_slot);
@@ -2930,15 +2930,23 @@ impl World {
     }
 
     /// [`Self::fold_pending_cast`] for a chain arm that stores a rate on each
-    /// seat it strikes, beside the reaction ([`ticks::ChainArm::hit_rate`]). The
+    /// seat it strikes, beside the reaction ([`ticks::ChainArm::hit_rate`]), or
+    /// on every party seat its pass walks ([`ticks::ChainArm::row_rate`]). The
     /// clip commit that follows decays anything off normal to `4`.
-    fn fold_pending_cast_at_rate(&mut self, rate: Option<u8>) {
-        let struck: Vec<u8> = match (&self.casting.pending_cast, rate) {
+    fn fold_pending_cast_at_rate(
+        &mut self,
+        arm: Option<legaia_engine_cast::cast_module_ticks::ChainArm>,
+    ) {
+        let rate = arm.and_then(|a| a.hit_rate);
+        let seats: Vec<u8> = match (&self.casting.pending_cast, rate) {
+            _ if rate.is_some() && arm.is_some_and(|a| a.row_rate) => {
+                (0..self.party.party_count).collect()
+            }
             (Some(pc), Some(_)) => pc.targets.clone(),
             _ => Vec::new(),
         };
         self.fold_pending_cast();
-        for s in struck {
+        for s in seats {
             if let (Some(a), Some(rate)) = (self.actors.get_mut(usize::from(s)), rate) {
                 a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(rate);
             }
