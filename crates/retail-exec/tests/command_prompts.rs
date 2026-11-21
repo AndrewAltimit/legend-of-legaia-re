@@ -1544,3 +1544,362 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
         assert!(seen.get(&s).copied().unwrap_or(0) > 20, "{s:#x}: {seen:?}");
     }
 }
+
+/// The magic window `0x46` (`0x801D19F8..0x801D1D80`): the list kernel's
+/// result word `DAT_8007BB94` read once per pass. The pass prices the
+/// highlighted spell `DAT_8007BB88` off the SCUS table's `+3` byte with the
+/// caster's ability-word discount (`+0x6BC` bits `0x20` / `0x10`), then a
+/// cancel (`3`) goes back to the ring and a confirm (`2`) is refused while
+/// `actor+0x150` is below the price (the word cleared, the window kept) or
+/// raises the sub-cursor the table's `+2` target bits pick: `0x5C` one
+/// enemy, `0x5E` all enemies, `0x65` one ally on the caster's seat, `0x67`
+/// all allies. Against `BattleSpellSession`'s list step over the disc
+/// catalog (`seru_magic_catalog_from_scus`): Circle, Cross, or nothing on
+/// the highlighted row.
+#[test]
+fn the_magic_window_prices_and_commits_as_retail() {
+    differential!(prot(898, STATE_MACHINE));
+    use legaia_engine_battle::battle_magic::{BattleSpellInput, BattleSpellSession, SpellPhase};
+    use legaia_engine_battle::target_picker::{CursorRow, PickerState};
+    let (Some((mut cpu, windows, _, _)), Some(scus)) = (retail_cpu(), crate::common::scus()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const SPELL: u32 = 0x8007_BB88;
+    const RESULT: u32 = 0x8007_BB94;
+    const CHAR_IDS: u32 = 0x8007_BD10;
+    const RECORDS: u32 = 0x8008_4140;
+    const RECORD_STRIDE: u32 = 0x414;
+    let catalog =
+        legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&scus).expect("SCUS");
+    let ids: Vec<u8> = catalog.iter().map(|d| d.id).collect();
+    assert!(ids.len() > 20, "{} spells", ids.len());
+    let mut rng = Rng(0x4D41_4749);
+    let mut seen = std::collections::HashMap::<&str, u32>::new();
+    for round in 0..6000 {
+        let party = 1 + rng.below(3) as u8;
+        let seat = rng.below(u32::from(party)) as u8;
+        let char_id = 1 + rng.below(3) as u8;
+        // The caster's learned list, the highlighted spell among it.
+        let n = 1 + rng.below(12) as usize;
+        let mut learned = Vec::new();
+        while learned.len() < n {
+            let id = ids[rng.below(ids.len() as u32) as usize];
+            if !learned.contains(&id) {
+                learned.push(id);
+            }
+        }
+        let row = rng.below(n as u32) as usize;
+        let spell = learned[row];
+        let ability = [0u32, 0x10, 0x20, 0x30, 0x8000_0001][rng.below(5) as usize];
+        let cost = legaia_engine_battle::spells::caster_mp_cost(
+            catalog.get(spell).expect("listed"),
+            ability,
+        );
+        let mp = match rng.below(4) {
+            0 => cost.saturating_sub(1),
+            1 => cost,
+            2 => rng.below(u32::from(cost) + 1) as u16,
+            _ => rng.below(1000) as u16,
+        };
+        let result = [0u32, 2, 2, 3, 1][rng.below(5) as usize];
+
+        // Retail.
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        let actor = ACTOR + STRIDE * u32::from(seat);
+        cpu.mem.wr8(CTX, party);
+        cpu.mem.wr8(CTX + 0x06, 0x46);
+        cpu.mem.wr8(CTX + 0x13, seat);
+        cpu.mem.wr8(CTX + 0x1D, 4);
+        cpu.mem.wr16(actor + 0x150, mp);
+        cpu.mem.wr8(actor + 0x1DD, 3);
+        for s in 0..3 {
+            cpu.mem.wr8(CHAR_IDS + s, 0);
+        }
+        cpu.mem.wr8(CHAR_IDS + u32::from(seat), char_id);
+        let rec = RECORDS + RECORD_STRIDE * u32::from(char_id - 1);
+        cpu.mem.load(rec + 0x6BC, &[0u8; 0x70]);
+        cpu.mem.wr32(rec + 0x6BC, ability);
+        cpu.mem.wr8(rec + 0x704, n as u8);
+        for (i, id) in learned.iter().enumerate() {
+            cpu.mem.wr8(rec + 0x705 + i as u32, *id);
+            cpu.mem.wr8(rec + 0x729 + i as u32, 1 + i as u8);
+        }
+        cpu.mem.wr32(SPELL, u32::from(spell));
+        cpu.mem.wr32(RESULT, result);
+        cpu.mem.wr32(PAD, 0);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, 0);
+        cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
+        cpu.mem.wr32(CANCEL_MASK, CANCEL);
+        cpu.mem.wr8(BATTLE_ID, 0);
+        windows.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let after = cpu.mem.rd8(CTX + 0x06);
+        let target = cpu.mem.rd8(actor + 0x1DD);
+        assert_eq!(cpu.mem.rd8(actor + 0x1DF), spell, "round {round}");
+        assert_eq!(
+            u16::from(cpu.mem.rd8(CTX + 0x24)),
+            cost,
+            "round {round}: the price, spell {spell:#x} ability {ability:#x}"
+        );
+        assert_eq!(
+            cpu.mem.rd8(CTX + 0x26),
+            1 + row as u8,
+            "round {round}: level"
+        );
+
+        // The port.
+        let party_rows: [SlotState; 3] = std::array::from_fn(|i| {
+            if i < usize::from(party) {
+                SlotState::alive(true, true)
+            } else {
+                SlotState::dead(false)
+            }
+        });
+        let monsters: [SlotState; 5] = std::array::from_fn(|i| SlotState::alive(i < 2, i < 2));
+        let mut session = BattleSpellSession::new(seat, seat, &learned, &catalog, mp, ability);
+        session.phase = SpellPhase::Select { cursor: row as u8 };
+        session.input(
+            BattleSpellInput {
+                cross: result == 2,
+                circle: result == 3,
+                ..BattleSpellInput::default()
+            },
+            &catalog,
+            party_rows,
+            monsters,
+        );
+        let label = format!(
+            "round {round}: spell {spell:#x} cost {cost} mp {mp} result {result} party {party} \
+             seat {seat} -> {after:#x} target {target} windows {:x?} port {:?}",
+            windows.borrow(),
+            session.phase
+        );
+        let outcome = match (&session.phase, after) {
+            (SpellPhase::Select { cursor }, 0x46) => {
+                assert_eq!(usize::from(*cursor), row, "{label}");
+                if result == 2 {
+                    assert_eq!(cpu.mem.rd32(RESULT), 0, "refused: {label}");
+                    "refused"
+                } else {
+                    "browse"
+                }
+            }
+            (SpellPhase::Aborted, 0x28) => "cancel",
+            (SpellPhase::Targeting { picker, .. }, 0x5C) => {
+                assert!(
+                    matches!(
+                        picker.state(),
+                        PickerState::Cursor {
+                            row: CursorRow::Enemy,
+                            ..
+                        }
+                    ),
+                    "{label}"
+                );
+                "one enemy"
+            }
+            (SpellPhase::Targeting { picker, .. }, 0x65) => {
+                assert_eq!(
+                    picker.state(),
+                    PickerState::Cursor {
+                        row: CursorRow::Ally,
+                        slot: seat
+                    },
+                    "{label}"
+                );
+                assert_eq!(target, seat, "{label}");
+                "one ally"
+            }
+            (
+                SpellPhase::SweepConfirm {
+                    row: CursorRow::Enemy,
+                    ..
+                },
+                0x5E,
+            ) => {
+                assert_eq!(target, 9, "{label}");
+                "all enemies"
+            }
+            (
+                SpellPhase::SweepConfirm {
+                    row: CursorRow::Ally,
+                    ..
+                },
+                0x67,
+            ) => {
+                assert_eq!(target, 8, "{label}");
+                "all allies"
+            }
+            _ => panic!("{label}"),
+        };
+        *seen.entry(outcome).or_default() += 1;
+    }
+    for key in [
+        "browse",
+        "refused",
+        "cancel",
+        "one enemy",
+        "one ally",
+        "all enemies",
+        "all allies",
+    ] {
+        assert!(seen.get(key).copied().unwrap_or(0) > 20, "{key}: {seen:?}");
+    }
+}
+
+/// The battle open, flow `0x00 -> 0x0A -> 0x0B` and the round start `0x14`
+/// (`0x801D0DD0..0x801D0F0C`): `0x00` seats the panel anchors and stores
+/// `0x0A`; `0x0A` composes the enemy names and seeds the intro timer
+/// `ctx[+0x6D6]` (`0x5A`, or `0x78` when the formation byte `ctx[+0x290]` is
+/// set), except for a first monster `0xB5`, which parks on `0x0C` with no
+/// names; `0x0B` drains the timer by the frame step and leaves for `0xFE`
+/// on a back attack (`+0x290 == 1`) or `0x14`; `0x14` raises the round
+/// prompt `0x1E` and ticks the status DoTs from the second round on
+/// (`ctx[+0x28A] != 0`). Against `World::arm_battle_intro_names` and
+/// `BattleState::step_battle_intro_names` (the hold's seed and its drain),
+/// the formation byte's decode the round start's ambush test reads, and the
+/// round counter `World::battle_mode` the DoT gate reads.
+#[test]
+fn the_battle_open_holds_and_opens_the_round_as_retail() {
+    differential!(prot(898, STATE_MACHINE));
+    use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::test_drivers::BattleTestDrivers;
+    let Some((mut cpu, windows, _, _)) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const ANCHORS: u32 = 0x801D_84C0;
+    const NAMES: u32 = 0x801D_9D3C;
+    const DOT: u32 = 0x801E_752C;
+    const STEP: u32 = 0x1F80_0393;
+    let calls = Rc::new(RefCell::new(Vec::<u32>::new()));
+    for leaf in [
+        ANCHORS,
+        NAMES,
+        DOT,
+        0x801D_88CC,
+        0x801D_A780,
+        0x801D_5854,
+        0x801D_8DE8,
+    ] {
+        let c2 = calls.clone();
+        cpu.hook(leaf, move |_, _| c2.borrow_mut().push(leaf));
+    }
+    let mut rng = Rng(0x4F50_454E);
+    let mut seen = std::collections::HashMap::<&str, u32>::new();
+    for round in 0..400 {
+        let adv = [0u8, 0, 1, 2, 3][rng.below(5) as usize];
+        let first = if rng.below(4) == 0 {
+            0xB5
+        } else {
+            rng.below(0xB5) as u8
+        };
+        let rounds_done = [0u8, 0, 1, 5][rng.below(4) as usize];
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        cpu.mem.wr8(CTX, 3);
+        cpu.mem.wr8(CTX + 0x290, adv);
+        cpu.mem.wr8(CTX + 0x28A, rounds_done);
+        cpu.mem.wr8(BATTLE_ID, first);
+        cpu.mem.wr8(STEP, 1);
+        cpu.mem.wr32(PAD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, 0);
+        let pass = |cpu: &mut Cpu| {
+            calls.borrow_mut().clear();
+            windows.borrow_mut().clear();
+            assert_eq!(
+                cpu.call(STATE_MACHINE, &[]),
+                Stop::Returned,
+                "round {round}"
+            );
+            cpu.mem.rd8(CTX + 0x06)
+        };
+        assert_eq!(pass(&mut cpu), 0x0A, "round {round}");
+        assert_eq!(*calls.borrow(), [ANCHORS], "round {round}");
+        let after = pass(&mut cpu);
+        let seed = cpu.mem.rd16(CTX + 0x6D6);
+        let named = calls.borrow().contains(&NAMES);
+
+        // The port's seed.
+        let mut w = World::new();
+        w.load_party(legaia_save::Party::zeroed(3));
+        w.enter_battle(3, 2);
+        w.party.party_count = 3;
+        w.actors[3].battle_monster_id = Some(u16::from(first));
+        w.battle_ctx.formation_advantage = adv;
+        w.arm_battle_intro_names();
+        let label = format!("round {round}: adv {adv} first {first:#x} rounds {rounds_done}");
+        if first == 0xB5 {
+            // Parked for the arrival module: no names, no hold of the port's.
+            assert_eq!(after, 0x0C, "{label}");
+            assert!(!named, "{label}");
+            assert_eq!(w.battle.intro_lead_ticks, 0, "{label}");
+            assert_eq!(w.battle.intro_names_frames, 0, "{label}");
+            assert_eq!(pass(&mut cpu), 0x0C, "{label}: 0x0C is not dispatched");
+            *seen.entry("nameless").or_default() += 1;
+            continue;
+        }
+        assert_eq!(after, 0x0B, "{label}");
+        assert!(named, "{label}");
+        assert_eq!(seed, w.battle.intro_names_frames, "{label}: the hold");
+        // The drain, one pass a vsync.
+        w.battle.intro_lead_ticks = 0;
+        let mut retail_passes = 0;
+        let exit = loop {
+            let s = pass(&mut cpu);
+            retail_passes += 1;
+            if s != 0x0B {
+                break s;
+            }
+            assert!(retail_passes < 0x100, "{label}");
+        };
+        let mut port_ticks = 0;
+        while w.battle.battle_open_held() {
+            w.battle.step_battle_intro_names();
+            port_ticks += 1;
+        }
+        assert_eq!(retail_passes, port_ticks, "{label}");
+        let ambushed = FormationAdvantage::from_byte(adv) == FormationAdvantage::BackAttack;
+        if ambushed {
+            assert_eq!(exit, 0xFE, "{label}");
+            *seen.entry("ambushed").or_default() += 1;
+            continue;
+        }
+        assert_eq!(exit, 0x14, "{label}");
+        // The round start.
+        assert_eq!(pass(&mut cpu), 0x1E, "{label}");
+        assert_eq!(*windows.borrow(), [0], "{label}: FUN_801D388C(0, 0)");
+        w.battle.monster_ai_state.mode_flags = rounds_done;
+        assert_eq!(
+            calls.borrow().contains(&DOT),
+            w.battle_mode() != 0,
+            "{label}: the DoT tick"
+        );
+        *seen
+            .entry(if rounds_done == 0 {
+                "first round"
+            } else {
+                "later round"
+            })
+            .or_default() += 1;
+    }
+    for key in ["nameless", "ambushed", "first round", "later round"] {
+        assert!(seen.get(key).copied().unwrap_or(0) > 10, "{key}: {seen:?}");
+    }
+}
