@@ -1844,7 +1844,7 @@ read back leaves the handshake off and the copy runs at once.
 | 0x45 | `CAMERA` | Sub-dispatch on `op0 & 0xC0`: `0x00` = configure 10 sub-words (`5 + 2 * set_bits` bytes), `0x40` = LOAD (`FUN_801DBC20`, 20 bytes), `0x80` = SAVE (`FUN_801DE004`, 2 bytes), `0xC0` = APPLY (`FUN_801DAB90` + `FUN_801DAA50`, 4 bytes). Every arm falls through - see [Detail](#0x45-camera-arm-widths). |
 | 0x46 | `VIEW_WINDOW` | Camera visible-tile-window setter (`0x1F8003E8..EB`, signed `[nearX, nearZ, farX, farZ]` tile offsets from the camera tile - see [`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Long form `46 24 n0 n1 f0 f1` writes the four bytes directly; short form `46 a b` builds a window of half-width `a >> 1` in X about offset `-1` and `b >> 1` in Z about `+2`. Not fog. |
 | 0x49 | `STATE_RESUME` | Tristate state machine on `_DAT_8007B450`, sub-cases 0..0xD. [Detail](#0x49-state_resume). |
-| 0x4A | `WAIT_FRAMES` | `ctx[+0x54] += scratch_delta; if (sum < operand) return; else PC += default`. Frame timer. |
+| 0x4A | `WAIT_FRAMES` | `ctx[+0x54] += scratch_delta; if (sum < operand) return; else PC += default`. Frame timer. The operand is a signed halfword and the sum wraps at 16 bits (`sh`, re-read signed, `0x801E09D4..0x801E09F0`), so a negative operand passes at once. |
 | 0x4B | `ANIMATE` | **VDF morph-lane arm** - the field sibling of move-VM op `0x0A`, not a clip select. Writes sub-entry `base + N` to `ctx[+0xB0+N]`, the up / down ramp velocities to `+0xB8` / `+0xC8`, weight 0 to `+0xA0`; sets `+0x10` bit 0x1000, `+0x62 = (+0x62 \| 0x1000) & 0xD3FF`, `+0x6C = count`. PC += 3 + count*4. See [field-ambient-fx](field-ambient-fx.md#the-vdf-vertex-morph-chain). |
 | 0x4C | `MENU_CTRL` | Outer-nibble-dispatched (16 sub-dispatchers). See [`script-vm-menuctrl.md`](script-vm-menuctrl.md). |
 | 0x4D | `BBOX_TEST` | Inside-box advances PC by 7; outside-box jumps to `pc + header_size + 4 + LE_u16(operand[4..6])` via `FUN_801E3614`. |
@@ -1991,7 +1991,7 @@ Every conditional arm of `FUN_801DE840` that moves the PC anywhere but past its 
 | `0x26` `JMP_REL` | `26 d:u16` | always | `pc + 1 + d` |
 | `0x42` `COND_JMP` | `42 mode sel d:u16` | mode 0: bit `sel` of `_DAT_8007B8F4`; mode 1: the held pad's compass or face button (`sel >= 0xC` always) | `pc + 3 + d` |
 | `0x4D` `BBOX_TEST` | `4D x0 z0 x1 z1 s:u16` | the context's tile is outside the box | `pc + 7 + s - 2` |
-| `0x4E` `INVENTORY_CMP` | `4E page mode v:u16 s:u16 [v_hi:u16]` | the loader's value is below (`mode & 0xF == 0`) / above (`1`) `v` | `pc + 5 + s`, at both widths |
+| `0x4E` `INVENTORY_CMP` | `4E page mode v:s16 s:u16 [v_hi:u16]` (the 7-byte forms read `v` signed through `FUN_8003CE9C` and compare it signed) | the loader's value is below (`mode & 0xF == 0`) / above (`1`) `v` | `pc + 5 + s`, at both widths |
 | `0x70..0x7F` TEST | `7x idx d:u16` | system flag set | `pc + 2 + d` |
 | `4C A0..A2` | `4C Ax bit s:u16` | the bit is set | `pc + 5 + s - 2` |
 | `4C 8B` | `4C 8B spell s:i16` | a present member knows `spell` | `pc + 5 + s - 2` |

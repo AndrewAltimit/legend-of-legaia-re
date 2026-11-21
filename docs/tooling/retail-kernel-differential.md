@@ -1546,7 +1546,9 @@ synthetic operand corpus under seeded story flags, pad, region mask and halted o
 `4C 4F` halting where the nibble-4 head has already stepped six bytes, every `4C Fx` advancing where only `4C FF` does,
 local-flag bits of 16 or more wrapping onto the low bits where retail's 32-bit shift stored with `sh` drops them, op
 `3D` clearing the leader byte when it empties the list, `4C DC` matching item id `0` on an empty bag slot, and
-`36 FF FF` running on where it waits out a field XA one-shot's drive word `_DAT_8007BC20`. The
+`36 FF FF` running on where it waits out a field XA one-shot's drive word `_DAT_8007BC20`; and `4C C9` running on
+where it holds while a BGM swap is in flight. Its operand reader `FUN_8003CE9C` sign-extends, so `4A` and the
+7-byte `4E` forms read their operands signed, which the port read unsigned (no shipped operand reaches `0x8000`). The
 camera mover `FUN_801DC0BC` keeps its progress in the halfword `+0x9C`, so a sum past `0x7FFF` goes negative and runs
 the curve from there; the port clamped a wider integer and arrived. The ambient motion VM `FUN_80038158` resets the
 actor's default-move record and wander state on a variant swap, which the port kept, and op `0x0D` compares unsigned.
