@@ -397,7 +397,8 @@ fn the_burn_emitter_spawns_what_retail_spawns() {
         stream.set(next);
         r.r[V0] = (next >> 16) & 0x7FFF;
     });
-    let spawned: Rc<RefCell<Vec<(u8, [i16; 3], i16)>>> = Rc::new(RefCell::new(Vec::new()));
+    type Spawns = Vec<(u8, [i16; 3], i16)>;
+    let spawned: Rc<RefCell<Spawns>> = Rc::new(RefCell::new(Vec::new()));
     let log = spawned.clone();
     cpu.hook(SPAWN, move |r, m| {
         let at = r.r[A1];
