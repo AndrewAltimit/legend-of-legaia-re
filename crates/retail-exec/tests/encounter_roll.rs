@@ -6,7 +6,7 @@
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_battle::region_encounter::{
     EncounterRateModifiers, EncounterRateSetting, EncounterRegion, RegionEncounterTable,
-    RegionEncounterTracker, RegionGroup, RegionSetupBytes, region_battle_setup,
+    RegionEncounterTracker, RegionGroup, RegionSetupBytes, is_region_step, region_battle_setup,
 };
 use psx_retail_exec::{Cpu, Stop};
 use std::cell::Cell;
@@ -162,7 +162,7 @@ fn a_step_rolls_what_retail_rolls() {
     });
 
     let mut rng = Rng(0x454E_434F);
-    let (mut battles, mut steps) = (0, 0);
+    let (mut battles, mut steps, mut refused) = (0, 0, 0);
     for scene in 0..3000 {
         let s = gen_scene(&mut rng);
         seed_retail(&mut cpu, &s);
@@ -189,8 +189,23 @@ fn a_step_rolls_what_retail_rolls() {
 
             cpu.mem.wr32(SCRATCH_GATE, 0);
             cpu.mem.wr32(PLAYER + 0x10, 0);
-            cpu.mem.wr8(ENTITY + 0x8E, 0xFF);
-            cpu.mem.wr8(ENTITY + 0x8F, 0xFF);
+            // The reader's tile cache: the `0xFF` preset (op `0x3E`) reads
+            // a region whatever the tile; a cached tile reads one only on a
+            // step to a different tile at most one away on each axis
+            // (`0x801D9EC4..0x801D9F0C`, `is_region_step`).
+            let (tx, tz) = (i32::from(x) >> 7, i32::from(z) >> 7);
+            let cache = match rng.below(6) {
+                0 | 1 => None,
+                2 => Some((tx, tz)),
+                3 => Some((tx + rng.below(3) as i32 - 1, tz + rng.below(3) as i32 - 1)),
+                4 => Some((0xFF, (tz + rng.below(5) as i32 - 2).clamp(0, 0xFE))),
+                _ => Some((tx + rng.below(9) as i32 - 4, tz + rng.below(9) as i32 - 4)),
+            }
+            .map(|(a, b)| (a.clamp(0, 0xFF), b.clamp(0, 0xFF)));
+            let (cx, cz) = cache.unwrap_or((0xFF, 0xFF));
+            cpu.mem.wr8(ENTITY + 0x8E, cx as u8);
+            cpu.mem.wr8(ENTITY + 0x8F, cz as u8);
+            let reads = cache.is_none_or(|prev| is_region_step(prev, (tx, tz)));
             cpu.mem.wr16(ENTITY + 0x8A, 0);
             cpu.mem.wr16(ENTITY + 0x88, 0xFFFF);
             cpu.mem.wr16(PLAYER + 0x14, x as u16);
@@ -211,14 +226,24 @@ fn a_step_rolls_what_retail_rolls() {
                 flag_low: bits & 2 != 0,
             });
             let region = tracker.table().region_at_world(x, z).copied();
-            let roll = tracker.on_step(x, z, || {
-                let n = port_state
-                    .get()
-                    .wrapping_mul(0x41C6_4E6D)
-                    .wrapping_add(0x3039);
-                port_state.set(n);
-                (n >> 16) & 0x7FFF
-            });
+            let roll = if reads {
+                tracker.on_step(x, z, || {
+                    let n = port_state
+                        .get()
+                        .wrapping_mul(0x41C6_4E6D)
+                        .wrapping_add(0x3039);
+                    port_state.set(n);
+                    (n >> 16) & 0x7FFF
+                })
+            } else {
+                None
+            };
+            assert_eq!(
+                (cpu.mem.rd8(ENTITY + 0x8E), cpu.mem.rd8(ENTITY + 0x8F)),
+                (tx as u8, tz as u8),
+                "scene {scene} step {step}: the cache takes the tile"
+            );
+            refused += usize::from(!reads);
             let context = format!(
                 "scene {scene} step {step}: ({x},{z}) setting {setting} word {word:#x} {:?} {region:?} groups {:?}",
                 tracker.modifiers(),
@@ -243,7 +268,7 @@ fn a_step_rolls_what_retail_rolls() {
             assert_eq!(cpu.mem.rd32(COUNTER) as i32, tracker.counter(), "{context}");
             assert_eq!(state.get(), port_state.get(), "{context}");
             let gate = cpu.mem.rd32(SCRATCH_GATE);
-            match region {
+            match region.filter(|_| reads) {
                 Some(r) => {
                     let setup = region_battle_setup(&r.setup);
                     assert_eq!(cpu.mem.rd8(STAGE), setup.stage_variant, "{context}");
@@ -284,8 +309,8 @@ fn a_step_rolls_what_retail_rolls() {
         }
     }
     assert!(
-        battles > 200 && steps > 10000,
-        "{battles} battles {steps} steps"
+        battles > 200 && steps > 10000 && refused > 10000,
+        "{battles} battles {steps} steps {refused} refused"
     );
 }
 
