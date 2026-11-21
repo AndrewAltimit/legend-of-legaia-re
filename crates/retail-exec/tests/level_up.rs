@@ -50,12 +50,22 @@ fn a_level_up_grows_the_record_retail_grows() {
 
     let mut rng = Rng(0x4C56_4C55);
     let mut levelled = 0;
+    let (mut terra, mut topped) = (0, 0);
     for round in 0..1500 {
-        let who = rng.below(3) as usize;
-        let level = 1 + rng.below(98) as u8;
+        // Roster record 3 (Terra) banks the EXP and never levels
+        // (`beq a0,v0,0x801E9FA4` at `0x801E9538`); a member at level 99
+        // returns before the threshold (`0x801E9568..0x801E956C`).
+        let who = rng.below(4) as usize;
+        let level = if rng.below(8) == 0 {
+            99
+        } else {
+            1 + rng.below(98) as u8
+        };
+        terra += usize::from(who == 3);
+        topped += usize::from(level == 99 && who != 3);
         // Most rounds cross a threshold or several; the stats reach the caps.
-        let xp_base = table[level as usize - 1];
-        let mut records: Vec<Vec<u8>> = vec![vec![0u8; STRIDE as usize]; 3];
+        let xp_base = table[level.min(98) as usize - 1];
+        let mut records: Vec<Vec<u8>> = vec![vec![0u8; STRIDE as usize]; 4];
         let r = &mut records[who];
         let mut w = |off: usize, v: u32| r[off..off + 2].copy_from_slice(&(v as u16).to_le_bytes());
         w(0x11C, 1 + rng.below(9999));
@@ -73,6 +83,10 @@ fn a_level_up_grows_the_record_retail_grows() {
         let share = reward - (reward >> 2);
         let start_xp = xp_base.saturating_sub(rng.below(2000));
         r[0..4].copy_from_slice(&start_xp.to_le_bytes());
+        // The next-level word as the last grant left it: the applier rewrites
+        // it, or (Terra, level 99) leaves it.
+        let next_word = rng.next();
+        r[4..8].copy_from_slice(&next_word.to_le_bytes());
 
         // Retail: `FUN_8004E568` adds the share, then calls the applier, then
         // the scene setup reruns the aggregator.
@@ -91,17 +105,24 @@ fn a_level_up_grows_the_record_retail_grows() {
         let retail = cpu.mem.read(RECORDS + who as u32 * STRIDE, STRIDE as usize);
 
         // The port.
-        let mut party = Party::zeroed(3);
+        let mut party = Party::zeroed(4);
         for (i, rec) in records.iter().enumerate() {
             party.members[i] = CharacterRecord::parse(rec).unwrap();
         }
         world.party.roster = party;
         world.party.party_count = 3;
+        // Terra stands in the third seat.
+        world.party.active_party = if who == 3 {
+            vec![0, 1, 3]
+        } else {
+            vec![0, 1, 2]
+        };
+        let seat = who.min(2);
         world.party.level_up_tracker.level = [1; 4].map(|_| level);
         world.party.level_up_tracker.xp[who] = start_xp;
         world.rng_state = seed;
         for (i, a) in world.actors.iter_mut().take(3).enumerate() {
-            a.battle.hp = u16::from(i == who);
+            a.battle.hp = u16::from(i == seat);
         }
         world.apply_battle_xp(reward);
         world.refresh_party_ability_bits();
@@ -118,4 +139,8 @@ fn a_level_up_grows_the_record_retail_grows() {
         assert_eq!(world.rng_state, state.get(), "round {round}: rand draws");
     }
     assert!(levelled > 300, "{levelled} rounds levelled");
+    assert!(
+        terra > 100 && topped > 100,
+        "{terra} Terra rounds, {topped} at 99"
+    );
 }

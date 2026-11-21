@@ -46,6 +46,17 @@ impl World {
         // The growth pass draws from retail's one `rand()` stream: eight draws a
         // level (`jal 0x80056798`, eight sites in `FUN_801E9504`), so the stream
         // is lent to the tracker for the grant and taken back.
+        // The applier returns before it writes anything for the fourth roster
+        // record (Terra, `beq a0,v0,0x801E9FA4` at `0x801E9538`) or a member
+        // already at level 99 (`0x801E9568..0x801E956C`): the next-level word
+        // `+0x4` keeps what it held. Only the share `FUN_8004E568` added moves.
+        let applies = (char_id as usize) != legaia_engine_battle::levelup::NO_LEVEL_SLOT
+            && self
+                .party
+                .level_up_tracker
+                .level
+                .get(char_id as usize)
+                .is_some_and(|&l| l < legaia_engine_battle::levelup::MAX_LEVEL);
         self.party.level_up_tracker.jitter_rng =
             Some(legaia_engine_system::rand::BiosRand::new(self.rng_state));
         let result = self.party.level_up_tracker.grant_xp(char_id, xp);
@@ -68,7 +79,9 @@ impl World {
                 .unwrap_or(0);
             if let Some(rec) = self.party.roster.members.get_mut(slot) {
                 rec.set_cumulative_xp(self.party.level_up_tracker.xp[slot]);
-                rec.set_next_level_xp(next);
+                if applies {
+                    rec.set_next_level_xp(next);
+                }
                 rec.set_magic_rank(cur_level);
             }
         }

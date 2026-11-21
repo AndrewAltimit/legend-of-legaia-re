@@ -2517,3 +2517,89 @@ image = "6aca2ff339cc9feb"
 range = "0x801EEAF4..0x801EEAF4"
 verdict = "unreachable"
 reason = "PROT 0898: the grunt's `beq char_id,1` after the id-2 and id-below-3 tests: a seated party member's id is 1..4, so the only id left there is 1"
+
+# lane G (w52)
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E957C..0x801E957C"
+verdict = "unreachable"
+reason = "PROT 0898: the threshold sum's `beq level,zero` skip; the applier runs only for a credited party record, whose level byte starts at 1 in the new-game records and only this routine raises it"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E967C..0x801E967C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guard on the slots-1/2 correction divisor `lh (*0x8007B81C)[level*0x28]`; the SCUS table at 0x80070A2C is zero only at index 0 and the index is a seated record's level, 1..99"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E96D0..0x801E96D0"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guard on the slots-1/2 correction divisor `lh (*0x8007B81C)[level*0x28]`; the SCUS table at 0x80070A2C is zero only at index 0 and the index is a seated record's level, 1..99"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E9EF4..0x801E9EF4"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guard on the slots-1/2 correction divisor `lh (*0x8007B81C)[level*0x28]`; the SCUS table at 0x80070A2C is zero only at index 0 and the index is a seated record's level, 1..99"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E9F40..0x801E9F40"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guard on the slots-1/2 correction divisor `lh (*0x8007B81C)[level*0x28]`; the SCUS table at 0x80070A2C is zero only at index 0 and the index is a seated record's level, 1..99"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E976C..0x801E97F0"
+verdict = "unreachable"
+reason = "PROT 0898: the HP gain's divide guards on `2*jitter+1` (a byte, so 1..511, never 0 or -1) and its floor-at-1 arm, which needs core <= jitter, and the SCUS growth rows (0x80076918, curves 0x800769CC) give every character a core above its jitter at every level 1..98"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E9824..0x801E98A8"
+verdict = "unreachable"
+reason = "PROT 0898: the MP gain's divide guards on `2*jitter+1` (a byte, so 1..511, never 0 or -1) and its floor-at-1 arm, which needs core <= jitter, and the SCUS growth rows (0x80076918, curves 0x800769CC) give every character a core above its jitter at every level 1..98"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E9998..0x801E9A1C"
+verdict = "unreachable"
+reason = "PROT 0898: the ATK gain's divide guards on `2*jitter+1` (a byte, so 1..511, never 0 or -1) and its floor-at-1 arm, which needs core <= jitter, and the SCUS growth rows (0x80076918, curves 0x800769CC) give every character a core above its jitter at every level 1..98"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E9A50..0x801E9AD4"
+verdict = "unreachable"
+reason = "PROT 0898: the UDF gain's divide guards on `2*jitter+1` (a byte, so 1..511, never 0 or -1) and its floor-at-1 arm, which needs core <= jitter, and the SCUS growth rows (0x80076918, curves 0x800769CC) give every character a core above its jitter at every level 1..98"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E9B08..0x801E9B8C"
+verdict = "unreachable"
+reason = "PROT 0898: the LDF gain's divide guards on `2*jitter+1` (a byte, so 1..511, never 0 or -1) and its floor-at-1 arm, which needs core <= jitter, and the SCUS growth rows (0x80076918, curves 0x800769CC) give every character a core above its jitter at every level 1..98"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E9BC0..0x801E9C44"
+verdict = "unreachable"
+reason = "PROT 0898: the SPD gain's divide guards on `2*jitter+1` (a byte, so 1..511, never 0 or -1) and its floor-at-1 arm, which needs core <= jitter, and the SCUS growth rows (0x80076918, curves 0x800769CC) give every character a core above its jitter at every level 1..98"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E9C78..0x801E9CFC"
+verdict = "unreachable"
+reason = "PROT 0898: the INT gain's divide guards on `2*jitter+1` (a byte, so 1..511, never 0 or -1) and its floor-at-1 arm, which needs core <= jitter, and the SCUS growth rows (0x80076918, curves 0x800769CC) give every character a core above its jitter at every level 1..98"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E98DC..0x801E98F4"
+verdict = "unreachable"
+reason = "PROT 0898: the AGL gain's divide guards on `2*jitter+1`, a byte, so 1..511 and never 0 or -1"
+
+[[arm]]
+entry = "0x801E9504"
+range = "0x801E9DF8..0x801E9DF8"
+verdict = "unreachable"
+reason = "PROT 0898: the threshold sum's `beq level,zero` skip after `addiu level,1` on a byte the entry test held below 99, so the level is 2..99 there"
