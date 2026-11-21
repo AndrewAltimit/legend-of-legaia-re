@@ -87,6 +87,8 @@ pub(crate) struct Host {
     pub(crate) party: Option<u8>,
     /// The audio ducks asked for, in percent.
     pub(crate) ducks: Vec<u8>,
+    /// The timed message's hold `0x801F6964`.
+    pub(crate) timed_hold: u32,
 }
 
 impl BattleActionHost for Host {
@@ -233,6 +235,11 @@ impl BattleActionHost for Host {
     }
     fn duck_audio_level(&mut self, target_pct: u8) {
         self.ducks.push(target_pct);
+    }
+    fn cut_timed_message_hold(&mut self) {
+        if self.timed_hold != 0 {
+            self.timed_hold = 1;
+        }
     }
 }
 
@@ -546,8 +553,11 @@ fn the_end_of_an_action_ends_what_retail_ends() {
         let cursor = rng.below(8) as u8;
         let skip = rng.below(3) as u8;
         let seed = rng.next();
-        // Retail's re-pick spins without a living, unmasked member.
-        if (0..3).all(|s| hp[s] == 0 || status[s] & 0x404 != 0) {
+        // Retail's re-pick spins without a living, unmasked member - on the
+        // monster wipe, which a party wipe (every member down or Stoned,
+        // scanned first) never reaches.
+        let party_wiped = (0..3).all(|s| hp[s] == 0 || status[s] & 4 != 0);
+        if !party_wiped && (0..3).all(|s| hp[s] == 0 || status[s] & 0x404 != 0) {
             continue;
         }
 
@@ -1394,6 +1404,7 @@ fn the_done_cleanup_frame_is_retails() {
     let reorders = Rc::new(std::cell::Cell::new(0u32));
     let count = reorders.clone();
     r.cpu.hook(REORDER, move |_, _| count.set(count.get() + 1));
+    let poses = log_calls(&mut r.cpu, &[0x801D_5854]);
     let mut rng = Rng(0x434C_4E55);
     let (mut reordered, mut skipped) = (0, 0);
     for round in 0..20000 {
@@ -1403,6 +1414,7 @@ fn the_done_cleanup_frame_is_retails() {
         let banner = [0u8, 0, 0x2E][rng.below(3) as usize];
         let latch = rng.below(3) as u8;
         let flags = rng.below(0x10) as u8;
+        let target = [0u8, 1, 2, 3, 4, 8, 9][rng.below(7) as usize];
         let mut hp = [0u16; 8];
         let mut status = [0u16; 8];
         let all_down = rng.below(3) == 0;
@@ -1417,6 +1429,7 @@ fn the_done_cleanup_frame_is_retails() {
         }
         r.reset();
         reorders.set(0);
+        poses.borrow_mut().clear();
         let m = &mut r.cpu.mem;
         m.wr8(CTX, 3);
         m.wr8(CTX + 1, monsters);
@@ -1429,6 +1442,7 @@ fn the_done_cleanup_frame_is_retails() {
             m.wr16(actor(s) + 0x16E, status[usize::from(s)]);
         }
         m.wr8(actor(slot) + 0x1DC, flags);
+        m.wr8(actor(slot) + 0x1DD, target);
         m.wr8(actor(slot) + 0x1DE, category);
         // The rate restore's gate stays shut: a party seat's staged id `>= 0x10`.
         m.wr8(actor(slot) + 0x1D9, 0x11);
@@ -1458,6 +1472,7 @@ fn the_done_cleanup_frame_is_retails() {
         let b = &mut h.actors[usize::from(slot)];
         b.flag_bits = ba::ActorFlags(flags);
         b.action_category = category;
+        b.active_target = target;
         b.current_anim = 0x11;
         let mut ctx = BattleActionCtx {
             action_state: 0x50,
@@ -1479,6 +1494,12 @@ fn the_done_cleanup_frame_is_retails() {
              {banner:#x} hp {hp:?} status {status:x?}"
         );
         assert_eq!(retail, port, "{at}");
+        let framed: Vec<(u8, u8)> = poses
+            .borrow()
+            .iter()
+            .map(|&(_, a0, a1)| (a0 as u8, a1 as u8))
+            .collect();
+        assert_eq!(framed, h.poses, "poses, target {target}, {at}");
         reordered += i32::from(retail.4 != 0);
         skipped += i32::from(retail.4 == 0);
     }

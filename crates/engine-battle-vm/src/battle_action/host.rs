@@ -211,6 +211,14 @@ pub trait BattleActionHost {
     /// reads it before the pass ends. Default no-op.
     fn camera_variant_pinned(&mut self, _style: u8) {}
 
+    /// State `0x36`'s last store: the timed message's hold `0x801F6964` (the
+    /// Seru side-effect line a module raises at `0xB4`, the counter line at
+    /// `0x78`) is cut to its last frame when it is still up
+    /// (`lw v0,0x6964(v1); beq v0,zero; sw 1` at `0x801E4D34..0x801E4D4C`),
+    /// so no line outlives the summon. Default no-op: a host with no timed
+    /// line holds nothing to cut.
+    fn cut_timed_message_hold(&mut self) {}
+
     /// State `0x36`'s call into the summon-magic level check `FUN_801E70BC`
     /// (after the visibility restore, ahead of `0x37`). Default no-op.
     fn summon_magic_level_check(&mut self) {}

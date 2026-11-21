@@ -422,6 +422,13 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn summon_magic_level_check(&mut self) {
         self.world.run_summon_magic_level_check();
     }
+    fn cut_timed_message_hold(&mut self) {
+        if let Some(b) = self.world.battle.message_banner.as_mut()
+            && b.hold != 0
+        {
+            b.hold = 1;
+        }
+    }
     fn summon_band_exit(&mut self) {
         self.world.casting.module_ctx_278 = 0;
         self.world.casting.module_caption = None;

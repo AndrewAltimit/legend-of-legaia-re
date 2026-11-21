@@ -23,6 +23,7 @@ const RAND: u32 = 0x8005_6798;
 const ELEMENT: u32 = 0x801D_8DE8;
 const AUDIO_LIVE: u32 = 0x8007_B910;
 const AUDIO_MASTER: u32 = 0x8008_457C;
+const TIMED_HOLD: u32 = 0x801F_6964;
 const FADE_NODE: u32 = 0x8017_0000;
 const CREATURE_NODE: u32 = 0x8017_0100;
 
@@ -156,6 +157,7 @@ fn the_summon_band_is_retails() {
         let menu = rng.below(2) as u8;
         let staging = rng.below(2) as u8;
         let monsters = 1 + rng.below(4) as u8;
+        let hold = [0u32, 0, 0x78, 0xB4][rng.below(4) as usize];
         let live = 0x40 + rng.below(0x40);
         let master = 0x40 + rng.below(0x40);
         let mut seats = [Seat {
@@ -195,6 +197,7 @@ fn the_summon_band_is_retails() {
         m.wr8(a + 0x1F5, cue);
         m.wr8(a + 0x1FA, iter);
         m.wr32(actor(7) + 0x22C, CREATURE_NODE);
+        m.wr32(TIMED_HOLD, hold);
         r.pass();
         let m = &mut r.cpu.mem;
         let retail = (
@@ -215,8 +218,10 @@ fn the_summon_band_is_retails() {
             .map(|s| (m.rd8(actor(s) + 0x21C), m.rd32(actor(s) + 4)))
             .collect();
         let retail_live = m.rd32(AUDIO_LIVE);
+        let retail_hold = m.rd32(TIMED_HOLD);
 
         h.dt = i16::from(dt);
+        h.timed_hold = hold;
         h.drive_busy = drive;
         h.stager_busy = busy;
         let b = &mut h.actors[usize::from(slot)];
@@ -280,6 +285,7 @@ fn the_summon_band_is_retails() {
         // (see `magic_capture_finalize`), so the prim words compare only
         // where the band hides.
         assert_eq!(retail_seats, port_seats, "seats, {at}");
+        assert_eq!(retail_hold, h.timed_hold, "timed hold, {at}");
         let log = log.borrow();
         assert_eq!(log.poses, h.poses, "poses, {at}");
         assert_eq!(log.calls, h.calls, "calls, {at}");
@@ -1375,4 +1381,96 @@ fn the_attack_opening_and_the_make_way_tail_are_retails() {
         seen.len() >= 3 && stepped > 3000 && floored > 300,
         "{seen:x?} {stepped} {floored}"
     );
+}
+
+/// The framing forks of the post-strike states `0x1F` (`0x801E3A88..
+/// 0x801E3AC8`) and `0x20` (`0x801E5660..0x801E56C0`) and of the end of an
+/// action `0x5A` (`0x801E6428..0x801E6470`), against the camera's phase
+/// kernels `post_strike_phase` and `end_of_action_phase`: case 7 or 8 on the
+/// target's knockdown, get-up or death clip, and case 8, 6 or none by the
+/// category and the results half.
+#[test]
+fn the_framing_forks_are_retails() {
+    use legaia_engine_battle_vm::battle_cam_script::{
+        BattleCamPhase, DoneBandInputs, end_of_action_phase, post_strike_phase,
+    };
+    differential!(prot(898, SM));
+    let Some(mut r) = Retail::new() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let log = hook_calls(&mut r);
+    let mut rng = Rng(0x464F_524B);
+    let mut seen = std::collections::HashSet::new();
+    for round in 0..20000 {
+        let state = [0x1Fu8, 0x20, 0x5A][rng.below(3) as usize];
+        let slot = rng.below(7) as u8;
+        let target = loop {
+            let t = rng.below(7) as u8;
+            if t != slot {
+                break t;
+            }
+        };
+        let category = rng.below(6) as u8;
+        let knock = [0u8, 0x0C][rng.below(2) as usize];
+        let getup = [0u8, 0x0D][rng.below(2) as usize];
+        let clip = [0u8, 0x0C, 0x0D, 7, 8, 3][rng.below(6) as usize];
+        let hp = [0u16, 30][rng.below(2) as usize];
+        let results = [0u16, 0, 1][rng.below(3) as usize];
+
+        r.reset();
+        *log.borrow_mut() = Calls::default();
+        let m = &mut r.cpu.mem;
+        m.wr8(CTX, 3);
+        m.wr8(CTX + 1, 4);
+        m.wr8(CTX + 7, state);
+        m.wr8(CTX + 0x13, slot);
+        m.wr16(CTX + 0x6CE, results);
+        let a = actor(slot);
+        // `0x20` reaches its fork while the attacker's clip still plays.
+        m.wr8(a + 0x1D9, 0x11);
+        m.wr8(a + 0x1DC, 2);
+        m.wr8(a + 0x1DD, target);
+        m.wr8(a + 0x1DE, category);
+        let t = actor(target);
+        m.wr8(t + 0x1D9, clip);
+        m.wr8(t + 0x1F1, knock);
+        m.wr8(t + 0x1F2, getup);
+        m.wr16(t + 0x14C, hp);
+        for s in 0..7u8 {
+            if s != target {
+                m.wr16(actor(s) + 0x14C, 30);
+            }
+        }
+        r.pass();
+        let retail = log.borrow().poses.first().copied();
+
+        let done = DoneBandInputs {
+            category,
+            target_party_seat: target < 3,
+            target_dead: hp == 0,
+            target_knocked: clip == knock || (clip == getup && clip != 0),
+            target_death_clip: matches!(clip, 7 | 8),
+            results_begun: results != 0,
+        };
+        let phase = if state == 0x5A {
+            Some(end_of_action_phase(done))
+        } else {
+            post_strike_phase(state, done)
+        };
+        let port = match phase {
+            Some(BattleCamPhase::Recover) => Some(7),
+            Some(BattleCamPhase::ActionEnd) => Some(8),
+            Some(BattleCamPhase::Action) => Some(6),
+            Some(BattleCamPhase::Menu) | None => None,
+            Some(other) => panic!("phase {other:?}"),
+        };
+        let at = format!(
+            "round {round}: state {state:#x} slot {slot} target {target} category {category} \
+             clip {clip:#x} knock {knock:#x}/{getup:#x} hp {hp} results {results}"
+        );
+        assert_eq!(retail, port.map(|mode| (slot, mode)), "{at}");
+        seen.insert((state, port));
+    }
+    assert!(seen.len() >= 7, "{seen:?}");
 }

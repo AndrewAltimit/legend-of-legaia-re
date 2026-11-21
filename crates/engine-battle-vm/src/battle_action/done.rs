@@ -109,9 +109,17 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
     // (`0x801E5F00`) poses nothing: it turns the camera yaw `-= step * 2`,
     // which the battle camera's idle orbit carries (the Done band's Run
     // category resolves to the Menu phase, `done_band_phase`).
+    // Any other category frames on case 8 too when its target is a party
+    // seat that is down (`sltu v0,t2,v0` with `v0 = 3`, then
+    // `lhu v0,0x14c(s8); bne` at `0x801E5EB4..0x801E5ED0`): a member a
+    // monster's cast or a failed revive left at 0 HP.
+    let target = host.actor(slot).map_or(8, |a| a.active_target);
+    let downed_member =
+        target < host.party_count() && host.actor(target).is_some_and(|a| a.liveness == 0);
     match category {
         ActionCategory::Run => {}
         ActionCategory::Attack => host.pose(slot, Pose::Recover),
+        _ if downed_member => host.pose(slot, Pose::Recover),
         _ => host.pose(slot, Pose::Idle),
     }
 
