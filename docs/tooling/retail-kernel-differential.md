@@ -1557,3 +1557,9 @@ The pager `FUN_801D84D0` zeroes the pad word while the automatic press counts, c
 `A1 <id>`, whose masked byte reads `0x21`. The part tick `FUN_80021DF4` leaves straight from the sound emitter's arm
 on the tick it takes its stop request, with no move-VM run and no clamps. The BGM poller's stage walk `FUN_800243F0`,
 run call by call against `BgmSwapPoller` at one call a game frame, matches.
+
+The list kernel `FUN_80032A44`'s header and page triangles, run on random node rects, showed the battle item
+and magic lists drawing both one pixel low and the next-page triangle one pixel left: their seats were read off a
+capture rather than the live node `(174, 36, 131, 120)` the kernel draws from. A walk of PROT 0963's Genocidal Cannon
+at a party row with a fallen and a stoned seat showed its sweep's rate store sitting past the skip label, so every
+party seat takes rate `2`, not only the struck ones.
