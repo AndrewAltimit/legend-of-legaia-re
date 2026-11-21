@@ -255,10 +255,13 @@ pub(super) fn attack_short_step<H: BattleActionHost + ?Sized>(
     }
     if let Some(actor) = host.actor_mut(slot) {
         actor.flag_bits.set(ActorFlags::WINDUP_DONE);
-        actor.combo_bit = 0;
         // Retail clears the queued approach anim on arrival (`+0x1DA = 0`).
         actor.queued_anim = 0;
     }
+    // `sb zero,0x5(s5)` at `0x801E35B4`: `s5` is `ctx + 0x11`, so the store
+    // is the Attack x2 pass counter `ctx[+0x16]`, the band's one reset of
+    // it - every walk into the strike loop opens a fresh War God Icon pair.
+    ctx.attack_x2_pass = 0;
     transition(ctx, ActionState::AttackChain)
 }
 

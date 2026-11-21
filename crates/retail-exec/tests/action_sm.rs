@@ -66,6 +66,8 @@ struct Host {
     drawn: [bool; 8],
     taunt: u8,
     reordered: u32,
+    tag_list: Option<Vec<u8>>,
+    ranged: bool,
 }
 
 impl BattleActionHost for Host {
@@ -120,7 +122,19 @@ impl BattleActionHost for Host {
         let a = self.actors.get(usize::from(slot))?;
         Some((a.current_anim, self.drawn[usize::from(slot)]))
     }
+    fn range_check(&self, actor_slot: u8, target_slot: u8) -> u16 {
+        if !self.ranged {
+            return 0;
+        }
+        test_range(actor_slot, target_slot, &self.live, &self.anchor)
+    }
+    fn set_actor_anchor(&mut self, slot: u8, x: i16, z: i16) {
+        self.anchor[usize::from(slot)] = (x, z);
+    }
     fn monster_action_tags(&self, _slot: u8) -> Option<Vec<u8>> {
+        if let Some(t) = &self.tag_list {
+            return Some(t.clone());
+        }
         let mut tags = vec![0u8; 8];
         if let Some(t) = tags.get_mut(usize::from(self.taunt)) {
             *t = ba::KO_TAUNT_TAG;
@@ -1402,4 +1416,189 @@ fn the_done_cleanup_frame_is_retails() {
         skipped += i32::from(retail.4 == 0);
     }
     assert!(reordered > 3000 && skipped > 3000, "{reordered} {skipped}");
+}
+
+/// The range law both sides answer through: `motion::range_metric` (held to
+/// `FUN_8004E2F0` by `range_metric`) over live and anchor pairs, every seat
+/// below 3 a party seat with roster id `seat + 1`, monster size classes `0`.
+fn test_range(attacker: u8, target: u8, live: &[(i16, i16); 8], anchor: &[(i16, i16); 8]) -> u16 {
+    use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
+    use legaia_engine_battle_vm::battle_action::motion::{
+        PARTY_REACH_OFFSETS, RangeInputs, range_metric,
+    };
+    if attacker >= 8 || target >= 8 {
+        return 1;
+    }
+    let inputs = RangeInputs {
+        attacker_party: attacker < 3,
+        target_party: target < 3,
+        attacker_reach: if attacker < 3 {
+            PARTY_REACH_OFFSETS[usize::from(attacker)]
+        } else {
+            0
+        },
+        attacker_size: 0,
+        target_size: 0,
+        attacker_pos: live[usize::from(attacker)],
+        target_ref: anchor[usize::from(target)],
+    };
+    let bearing = bearing_12bit_approx(
+        inputs.target_ref.1,
+        inputs.target_ref.0,
+        inputs.attacker_pos.1,
+        inputs.attacker_pos.0,
+    );
+    let angle = legaia_engine_battle_vm::battle_approach::approach_angle(bearing) as u16;
+    let (sin, cos) = legaia_engine_system::trig::trig12(angle);
+    range_metric(&inputs, sin, cos)
+}
+
+/// The live and anchor pairs of the eight seats as retail RAM holds them.
+fn pairs(m: &mut Memory) -> ([(i16, i16); 8], [(i16, i16); 8]) {
+    let mut live = [(0, 0); 8];
+    let mut anchor = [(0, 0); 8];
+    for s in 0..8u8 {
+        let a = actor(s);
+        live[usize::from(s)] = (m.rd16(a + 0x34) as i16, m.rd16(a + 0x38) as i16);
+        anchor[usize::from(s)] = (m.rd16(a + 0x3C) as i16, m.rd16(a + 0x40) as i16);
+    }
+    (live, anchor)
+}
+
+/// States `0x15` to `0x19`, the approach (`0x801E32E0..0x801E35EC`) against
+/// `attack_windup`, `attack_advance`, `attack_close_range`, `attack_strike`
+/// and `attack_short_step`: the facing store, each state's wait on its staged
+/// clip, the walk and close-in staged off the monster's tag list, the range
+/// polls, and the arrival shove that pushes the target's live and body pairs
+/// back out to the reach's edge. The range law, the bearing and the tag
+/// lookup `FUN_80050E2C` answer through the port's kernels.
+#[test]
+fn the_approach_walks_and_shoves_as_retail_does() {
+    use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
+    differential!(prot(898, SM));
+    let Some(mut r) = Retail::new() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    r.cpu.hook(BEARING, |regs, _| {
+        let [a0, a1, a2, a3] = [4, 5, 6, 7].map(|i| regs.r[i] as i16);
+        regs.r[2] = u32::from(bearing_12bit_approx(a0, a1, a2, a3));
+    });
+    r.cpu.hook(0x8004_E2F0, |regs, m| {
+        let (live, anchor) = pairs(m);
+        regs.r[2] = u32::from(test_range(regs.r[4] as u8, regs.r[5] as u8, &live, &anchor));
+    });
+    let tag_map = Rc::new(RefCell::new(Vec::<u8>::new()));
+    let tags = tag_map.clone();
+    r.cpu.hook(TAG_LOOKUP, move |regs, _| {
+        let want = regs.r[5] as u8;
+        regs.r[2] = tags
+            .borrow()
+            .iter()
+            .position(|&t| t == want)
+            .map_or(0xFF, |i| i as u32);
+    });
+    let mut rng = Rng(0x4150_5052);
+    let mut seen = std::collections::HashSet::new();
+    let mut shoved = 0;
+    for round in 0..30000 {
+        let state = 0x15 + rng.below(5) as u8;
+        let slot = rng.below(5) as u8;
+        let target = loop {
+            let t = rng.below(5) as u8;
+            if t != slot {
+                break t;
+            }
+        };
+        let current = rng.below(3) as u8;
+        let queued = if rng.below(2) == 0 {
+            current
+        } else {
+            rng.below(3) as u8
+        };
+        let list: Vec<u8> = (0..6)
+            .map(|_| [0u8, 1, 0x20, 0x21, 5][rng.below(5) as usize])
+            .collect();
+        let reach = [0x60i16, 0x200][rng.below(2) as usize];
+        let mut c = || (rng.below(2 * reach as u32) as i32 - i32::from(reach)) as i16;
+        let mut live = [(0i16, 0i16); 8];
+        let mut anchor = [(0i16, 0i16); 8];
+        for s in 0..5 {
+            live[s] = (c(), c());
+            anchor[s] = (c(), c());
+        }
+        let flags = rng.below(4) as u8;
+        let x2 = rng.below(3) as u8;
+
+        r.reset();
+        *tag_map.borrow_mut() = list.clone();
+        let m = &mut r.cpu.mem;
+        m.wr32(SIN_PTR, SINE_TABLE);
+        m.wr32(COS_PTR, SINE_TABLE + 0x800);
+        m.wr8(CTX + 7, state);
+        m.wr8(CTX + 0x13, slot);
+        m.wr8(CTX + 0x16, x2);
+        for k in 0..5 {
+            m.wr32(MONSTER_TABLES + 4 * k, TABLE);
+        }
+        for s in 0..8u8 {
+            let a = actor(s);
+            let (l, b) = (live[usize::from(s)], anchor[usize::from(s)]);
+            m.wr16(a + 0x34, l.0 as u16);
+            m.wr16(a + 0x38, l.1 as u16);
+            m.wr16(a + 0x3C, b.0 as u16);
+            m.wr16(a + 0x40, b.1 as u16);
+        }
+        let a = actor(slot);
+        m.wr8(a + 0x1D9, current);
+        m.wr8(a + 0x1DA, queued);
+        m.wr8(a + 0x1DC, flags);
+        m.wr8(a + 0x1DD, target);
+        r.pass();
+        let m = &mut r.cpu.mem;
+        let retail = (
+            m.rd8(CTX + 7),
+            m.rd8(CTX + 0x16),
+            m.rd8(a + 0x1DA),
+            m.rd8(a + 0x1DC),
+            m.rd16(a + 0x46),
+        );
+        let retail_pairs = pairs(m);
+
+        let mut h = host();
+        h.placed = true;
+        h.ranged = true;
+        h.live = live;
+        h.anchor = anchor;
+        h.tag_list = Some(list.clone());
+        let b = &mut h.actors[usize::from(slot)];
+        b.current_anim = current;
+        b.queued_anim = queued;
+        b.flag_bits = ba::ActorFlags(flags);
+        b.active_target = target;
+        let mut ctx = BattleActionCtx {
+            action_state: state,
+            active_actor: slot,
+            attack_x2_pass: x2,
+            ..Default::default()
+        };
+        ba::step(&mut h, &mut ctx);
+        let b = &h.actors[usize::from(slot)];
+        let port = (
+            ctx.action_state,
+            ctx.attack_x2_pass,
+            b.queued_anim,
+            b.flag_bits.0,
+            b.facing_angle,
+        );
+        let at = format!(
+            "round {round}: state {state:#x} slot {slot} target {target} anim \
+             {current}/{queued} tags {list:x?} live {live:?} anchor {anchor:?}"
+        );
+        assert_eq!(retail, port, "{at}");
+        assert_eq!(retail_pairs, (h.live, h.anchor), "pairs, {at}");
+        shoved += i32::from(retail_pairs.0 != live);
+        seen.insert((state, retail.0));
+    }
+    assert!(seen.len() >= 9 && shoved > 300, "{seen:x?} {shoved}");
 }
