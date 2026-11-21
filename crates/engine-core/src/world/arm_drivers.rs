@@ -83,6 +83,10 @@ pub trait BattleArmDrivers {
     /// The commit confirm's Reselect (`World::reselect_battle_commands`,
     /// `FUN_801D0748` `0x801D3054..0x801D30E0`): `actor` raised the screen.
     fn reselect_battle_commands(&mut self, actor: u8);
+    /// The element spawner's raise / unload of the message-banner elements
+    /// (`World::message_banner_ui_element`, `FUN_801D8DE8` element `0x59`'s
+    /// compose under `mode == 0`).
+    fn message_banner_ui_element(&mut self, element: u8, mode: u8);
 }
 
 impl BattleArmDrivers for World {
@@ -163,5 +167,8 @@ impl BattleArmDrivers for World {
     }
     fn reselect_battle_commands(&mut self, actor: u8) {
         World::reselect_battle_commands(self, actor)
+    }
+    fn message_banner_ui_element(&mut self, element: u8, mode: u8) {
+        World::message_banner_ui_element(self, element, mode)
     }
 }

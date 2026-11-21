@@ -190,3 +190,103 @@ fn the_status_readouts_register_retails_records() {
         "{refused} {hidden} {dead} {ailing}"
     );
 }
+
+/// The spawner's label arms: elements `10`, `0xE` and `0x58` point their
+/// record's content word (`0x80076D14`, `0x80076D74`, `0x80077464`) at an
+/// entry of the overlay's Ra-Seru label run `0x801F4B9E + 10 * i` - the
+/// seat's own character's when its gate `ctx[+0x25F + seat]` is set, the
+/// lone `-` (entry `4`) when it is clear - on the acting seat `ctx[+0x13]`
+/// for `10` / `0xE` and on `ctx[+0x21]` (clamped to `2`) for `0x58`, against
+/// `legaia_engine_battle_hud::raseru_label_index`. And element `0x59`, the
+/// absorb banner, composes its line (`FUN_8003CA78` at `0x801D9188`) only in
+/// mode `0` (`bne s5,zero` at `0x801D914C`), against
+/// `World::message_banner_ui_element`, which raises the composed line on
+/// mode `0` and unloads it on mode `1` (the only two modes the overlay's two
+/// `0x59` call sites pass).
+#[test]
+fn the_label_arms_pick_the_ra_seru_name_and_compose_on_mode_zero_as_retail() {
+    differential!(prot(898, SPAWN));
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(898).expect("PROT 0898"));
+    cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
+    cpu.hook(REGISTER, |r, _| r.r[V0] = 0x8015_0000);
+    cpu.hook(GLIDE, |_, _| {});
+    let composed = Rc::new(RefCell::new(0u32));
+    let c2 = composed.clone();
+    cpu.hook(0x8003_CA78, move |_, _| *c2.borrow_mut() += 1);
+    cpu.mem.wr32(CTX_PTR, CTX);
+    const LABELS: u32 = 0x801F_4B9E;
+    let mut rng = Rng(0x4C41_4245);
+    let mut seen = [0u32; 6];
+    for round in 0..2000 {
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        let acting = rng.below(3) as u8;
+        let target = rng.below(4) as u8;
+        cpu.mem.wr8(CTX + 0x13, acting);
+        cpu.mem.wr8(CTX + 0x21, target);
+        let gates: [bool; 3] = std::array::from_fn(|_| rng.below(2) == 0);
+        let chars: [u8; 3] = std::array::from_fn(|_| 1 + rng.below(4) as u8);
+        for s in 0..3u32 {
+            cpu.mem.wr8(CTX + 0x25F + s, u8::from(gates[s as usize]));
+            cpu.mem.wr8(CHAR_IDS + s, chars[s as usize]);
+        }
+        let (element, record, seat) = match rng.below(4) {
+            0 => (10u32, 0x8007_6D14u32, acting),
+            1 => (0xE, 0x8007_6D74, acting),
+            2 => (0x58, 0x8007_7464, target.min(2)),
+            _ => (0x59, 0, acting),
+        };
+        let mode = rng.below(2);
+        *composed.borrow_mut() = 0;
+        cpu.mem.wr32(record.max(0x8007_6C10), 0);
+        assert_eq!(
+            cpu.call(SPAWN, &[element, mode]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let label = format!(
+            "round {round}: element {element:#x} mode {mode} seat {seat} gates {gates:?} chars {chars:?}"
+        );
+        if element == 0x59 {
+            let mut w = World::new();
+            w.load_party(legaia_save::Party::zeroed(3));
+            w.enter_battle(3, 2);
+            w.battle_ctx.active_actor = acting;
+            w.battle_ctx.absorbed_seru = 1 + rng.below(0x20) as u8;
+            // Mode 1 unloads a raised line: it leaves with the text it had,
+            // composing nothing (the stale buffer is what retail glides out).
+            if mode == 1 {
+                w.message_banner_ui_element(0x59, 0);
+                if let Some(b) = w.battle.message_banner.as_mut() {
+                    b.text = "stale".into();
+                }
+            }
+            w.message_banner_ui_element(0x59, mode as u8);
+            let b = w.battle.message_banner.as_ref().expect("a line");
+            assert_eq!(
+                *composed.borrow() == 1,
+                mode == 0,
+                "{label}: retail compose"
+            );
+            assert_eq!(b.text != "stale", mode == 0, "{label}: the port's compose");
+            assert_eq!(b.leaving(), mode == 1, "{label}: the port's unload");
+            seen[4 + mode as usize] += 1;
+            continue;
+        }
+        let ptr = cpu.mem.rd32(record);
+        assert_eq!((ptr - LABELS) % 10, 0, "{label}: {ptr:#x}");
+        let retail = (ptr - LABELS) / 10;
+        let s = usize::from(seat);
+        let port = legaia_engine_battle_hud::raseru_label_index(gates[s], chars[s]);
+        assert_eq!(retail, u32::from(port), "{label}");
+        seen[usize::from(gates[s]) * 2 + usize::from(port == 4)] += 1;
+    }
+    // `seen[0]` (no gate, a name) cannot happen.
+    assert!(seen[1..].iter().all(|&n| n > 20), "{seen:?}");
+}

@@ -1135,6 +1135,24 @@ pub fn battle_member_has_raseru(world: &legaia_engine_core::world::World, ordina
         .is_some_and(|m| m.equipment().slots[slot] != 0)
 }
 
+/// The entry of the overlay's Ra-Seru label run (`0x801F4B9E + 10 * i`) the
+/// element spawner points a magic label at for a member with character id
+/// `char_id`: the character's own Ra-Seru when the member's gate
+/// `ctx[+0x25F + seat]` is set, else entry `4`, the lone `-` - which is also
+/// what Terra (`char_id` 4) lands on with the gate set. Cases `10` (the
+/// ring's right arm), `0xE` (the magic breadcrumb tab, both on the acting
+/// seat `ctx[+0x13]`) and `0x58` (on the target seat `ctx[+0x21]`, clamped
+/// to `2`) share it.
+///
+/// PORT: FUN_801D8DE8 (`0x801D8EC8..0x801D8F2C`, `0x801D8F30..0x801D8F94`, `0x801D90E8..0x801D9148`)
+pub const fn raseru_label_index(gate: bool, char_id: u8) -> u8 {
+    if gate && char_id >= 1 && char_id <= 3 {
+        char_id
+    } else {
+        4
+    }
+}
+
 /// The command ring's right arm for the member at battle ordinal
 /// `ordinal`: `(label, enabled)`.
 ///
@@ -1157,11 +1175,7 @@ pub fn battle_magic_chip(world: &legaia_engine_core::world::World, ordinal: u8) 
     let forbidden = world.battle.raseru_forbidden();
     let roster = world.party_roster_slot(ordinal as usize);
     let char_id = roster as u8 + 1;
-    let idx = if has_raseru && (1..=3).contains(&char_id) {
-        char_id
-    } else {
-        4
-    };
+    let idx = raseru_label_index(has_raseru, char_id);
     let label = world
         .battle
         .ui_strings

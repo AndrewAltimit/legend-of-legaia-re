@@ -2046,7 +2046,11 @@ fn the_reselect_refunds_the_landing_members_item_as_retail() {
         match item[slot] {
             Some(id) => {
                 assert_eq!(*refunds.borrow(), [(u32::from(id), 1)], "{label}");
-                assert_eq!(w.party.inventory.get(&id).copied(), Some(1), "{label}: the bag");
+                assert_eq!(
+                    w.party.inventory.get(&id).copied(),
+                    Some(1),
+                    "{label}: the bag"
+                );
                 assert!(w.battle.round_flow.pending[slot].is_none(), "{label}");
                 *seen.entry("refund").or_default() += 1;
             }
