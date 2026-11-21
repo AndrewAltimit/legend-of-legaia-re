@@ -1434,3 +1434,80 @@ fn nightos_verdict_rolls_and_credits_as_the_port_does() {
 }
 
 const NIGHTO: u32 = 0x801F_69E8;
+
+/// PROT 0916's resist word (`0x801F9010`): set where the cast does not kill.
+const ALURU_RESIST_WORD: u32 = 0x801F_9010;
+
+/// PROT 0916's arm 0 verdict (`0x801F6D44..0x801F6E88`), Aluru's instant kill,
+/// against `aluru_kill_verdict`: a scripted `rand()` stream, the caster's
+/// level for the spell, the scripted-fight flag, the victim's record `+0x20`
+/// byte and Stone on the victim (an immune record skips the draw unless the
+/// victim is stoned), and the special-battle word. The draws retail takes, its
+/// resist word and the spell-XP word (`ALURU_KILL_XP` on a kill) are compared.
+#[test]
+fn alurus_kill_verdict_rolls_and_credits_as_the_port_does() {
+    differential!(prot(916, ALURU));
+    use legaia_engine_cast::cast_module_camera::{ALURU_KILL_XP, aluru_kill_verdict};
+    let Some((mut cpu, module)) = heal_rig(916) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let stream = Rc::new(std::cell::Cell::new(1u32));
+    let draws = Rc::new(RefCell::new(Vec::<u32>::new()));
+    {
+        let (stream, draws) = (stream.clone(), draws.clone());
+        cpu.hook(RAND, move |r, _| {
+            let n = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+            stream.set(n);
+            r.r[V0] = (n >> 16) & 0x7FFF;
+            draws.borrow_mut().push(r.r[V0]);
+        });
+    }
+    let mut rng = Rng(0x414C_5552);
+    let mut seen = [0usize; 3];
+    for case in 0..4000 {
+        let victim = 3 + rng.below(4) as u8;
+        let c = seed_heal_case(&mut cpu, &module, &mut rng, 0, 0x8E, victim);
+        let scripted = rng.below(2) == 0;
+        cpu.mem.wr8(CTX + 0x287, u8::from(scripted));
+        let wide = rng.below(2) as u8;
+        for k in 0..4u32 {
+            let r = MONSTER_RECORD + 0x40 * k;
+            cpu.mem.wr32(RECORDS + 4 * k, r);
+            cpu.mem.wr8(r + 0x20, wide);
+        }
+        let stoned = cpu
+            .mem
+            .rd16(ACTOR + u32::from(victim) * STRIDE as u32 + 0x16E)
+            & 4
+            != 0;
+        stream.set(rng.next());
+        draws.borrow_mut().clear();
+        cpu.mem.wr32(ALURU_RESIST_WORD, 0xAAAA);
+        assert_eq!(cpu.call(ALURU, &[]), Stop::Returned, "case {case}");
+        let d = draws.borrow().clone();
+        let skipped = scripted && wide != 0 && !stoned;
+        let roll = (!skipped).then(|| d.first().copied().expect("the roll"));
+        let kill = aluru_kill_verdict(roll, c.level);
+        let what = format!(
+            "case {case}: level {} scripted {scripted} wide {wide} stoned {stoned} special {} draws {d:?}",
+            c.level, c.special
+        );
+        assert_eq!(d.len(), usize::from(!skipped), "{what}: the draws");
+        assert_eq!(
+            cpu.mem.rd32(ALURU_RESIST_WORD) == 0,
+            kill,
+            "{what}: the verdict"
+        );
+        let xp = if kill && !c.special { ALURU_KILL_XP } else { 0 };
+        assert_eq!(
+            cpu.mem.rd32(c.rec + 0x5D0 + 4 * c.idx),
+            xp,
+            "{what}: the spell-XP word"
+        );
+        seen[if skipped { 2 } else { usize::from(kill) }] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 100), "{seen:?}");
+}
+
+const ALURU: u32 = 0x801F_69F8;

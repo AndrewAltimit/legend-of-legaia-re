@@ -295,7 +295,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         let countdown_va = cam::capture_countdown_va(body.action);
         let rounds = match body.action {
             0x76 => 30,
-            0x71 => 12,
+            0x71 | 0x70 => 12,
             _ => 6,
         };
         for round in 0..rounds {
@@ -304,7 +304,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // The caster's formation id, which a body can fork on: Terror
             // Scream's owners (Terror Face `0x7F`, the `0x28` row).
             let monster = match body.action {
-                0x70 => [0x28u8, 0x7F][round % 2],
+                // The three caster bands its arm 0 forks on (`0x801F7764`,
+                // `0x801F78B8`): Terror Face `0x7F`, the `0x28` row and the
+                // `0x83` row, each picking its cue and cast clip.
+                0x70 => [0x28u8, 0x7F, 0x83, 0x29, 0x84, 0x2A, 0x85][round % 7],
                 // The two casters that deal a stacked table.
                 0x76 => [0u8, 0x9D, 0x9E][round % 3],
                 _ => 0,
