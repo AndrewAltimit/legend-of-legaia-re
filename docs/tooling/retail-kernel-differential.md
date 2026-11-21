@@ -253,6 +253,21 @@ clip's power run, the strike cursor, the stream and its entry table, it showed
 the blocked hit's copy of the apply look-ahead skipping itself in action states
 `0x6E..=0x77`, where the port landed the total early.
 
+Its second round, with the Seru absorb staged, the `0xB3` cell, the vibration
+row, Terra on seat 2 and monsters striking each other, showed a monster
+attacker's hit computing the apply look-ahead that both copies skip for any
+attacker past seat 2, the grunt sounding on a hit that does not land the total
+or on a broken block's pose (retail's grunt sits behind the apply arm and
+reads the pick ahead of the pose override), and the Mystic Shield's rumble
+written only for a party attacker.
+
+The anim node tick `FUN_80047430`, driven through World seams with the range
+poll given, showed two arms with no port: the Seru-absorb puff behind a
+natural end (effect `0x14` at a downed seat committed to idle while a Seru is
+staged, and cue `0x1B` once an action), and the walk gates on
+`DAT_8007BD71`, which stop the hit and effect-script walks once the battle-end
+signal is up while the cue walk runs on.
+
 The item applier `FUN_800402F4`, run on a monster's casts, showed a class-1 group
 heal on the monster side walks the four monster seats `3..7` and stops short of
 the summon seat, which the port's walk included. No arm of it pushes a damage
