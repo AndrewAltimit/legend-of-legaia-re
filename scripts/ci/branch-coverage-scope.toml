@@ -2275,3 +2275,106 @@ entry = "0x8004998C"
 range = "0x8004A888..0x8004A888"
 verdict = "unreachable"
 reason = "the second rumble draw's signed `% 64` fixup, on a `rand()` result that is never negative"
+# lane A (w52)
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E29DC..0x801E2A44"
+verdict = "unported"
+reason = "PROT 0898: the SM prologue steps the ctx[+0x6DA] clock by dt*4/3 (at least 1) unless 0x800746C0 == 2, and in states 0x00 / 0x0B steps the battle camera yaw 0x8007B792 by -2*dt; the action port keeps neither word (the seed seeds the clock, the battle camera keeps its own yaw)."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E2A90..0x801E2A90"
+verdict = "unreachable"
+reason = "PROT 0898: `sltiu v0,v1,0x100` tests the state byte the `lbu` at 0x801E2A84 loaded, which is always below 0x100, so the default exit is never taken here."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E2AE4..0x801E2AE4"
+verdict = "unreachable"
+reason = "PROT 0898: state 0x00 reaches this `beq v1,zero` only with the advantage byte (an `lbu`, so >= 0) neither 1 nor >= 2, so it is always 0 and the branch always taken."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E2BA4..0x801E2BA4"
+verdict = "unported"
+reason = "PROT 0898: state 0x0A's held arm picks between two camera-yaw steps of 0x8007B792 (+dt*4/3 while 0x801F69D0 is set, else -2*dt at 0x801E5BF0); pre_action_wait writes no yaw, the battle camera keeps its own."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E2D14..0x801E2D14"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's signed-remainder fix-up on rand() % 4 at the seed; rand() (0x80056798) returns 0..0x7FFF, so the `bgez` is always taken."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E2D6C..0x801E2D6C"
+verdict = "unreachable"
+reason = "PROT 0898: the seed's category table bound (`sltiu v1,0x6`); every store to actor +0x1DE in the dumped battle, menu, AI and cast routines writes a constant 0..5 (the one register store, 0x801EB808, writes a0 == 2), so a category >= 6 never reaches the seed."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E4D10..0x801E4D18"
+verdict = "unported"
+reason = "PROT 0898: state 0x36's restore writes the draw-mode word +0x08 = 0x81000000 on a seat whose prim word +0x04 is zero; not ported for the reason the 0x71 twin gives (magic_capture_finalize): the port's colour word rests at 0, so the store would light every resting seat."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E4DE4..0x801E4DE4"
+verdict = "unreachable"
+reason = "PROT 0898: state 0x37's group walk is skipped only for a monster count ctx[+0x01] of zero, and a battle always seats its formation's monsters (FUN_800513F0 seats 3 + k for each), so the count is at least 1 here."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E5180..0x801E5180"
+verdict = "unreachable"
+reason = "PROT 0898: state 0x71's party walk is skipped only for a party count ctx[+0x00] of zero; a battle always seats at least one member (the same count the 0x5A wipe scan divides by at 0x801E66BC)."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E5280..0x801E5288"
+verdict = "unported"
+reason = "PROT 0898: state 0x71's restore writes +0x08 = 0x81000000 on a seat whose prim word +0x04 is zero; the PORT tag on magic_capture_finalize excludes it (the port's colour word rests at 0)."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E5600..0x801E5600"
+verdict = "unreachable"
+reason = "PROT 0898: state 0x20's exit walk over the party seats is skipped only for a party count ctx[+0x00] of zero, which no battle seats."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E5808..0x801E5808"
+verdict = "unreachable"
+reason = "PROT 0898: the run arm 0x64's turn-skip walk over the party is skipped only for a party count ctx[+0x00] of zero, which no battle seats."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E58FC..0x801E58FC"
+verdict = "unreachable"
+reason = "PROT 0898: the escape's revive walk over the party is skipped only for a party count ctx[+0x00] of zero, which no battle seats."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E610C..0x801E610C"
+verdict = "unreachable"
+reason = "PROT 0898: state 0x51 reaches its exit block (0x801E60F8) only with the countdown negative, and 0x801E60DC..0x801E60E4 has already pinned it to 12 whenever ctx[+0x276] is set, so this re-test of ctx[+0x276] always reads zero."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E6524..0x801E6524"
+verdict = "unreachable"
+reason = "PROT 0898: the 0x5A party-wipe scan is skipped only for a party count ctx[+0x00] of zero, which no battle seats (the host's slot_seated note in battle_action/host.rs)."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E65FC..0x801E65FC"
+verdict = "unreachable"
+reason = "PROT 0898: the 0x5A monster-wipe scan is skipped only for a monster count ctx[+0x01] of zero, and a battle always seats its formation's monsters."
+
+[[arm]]
+entry = "801E295C"
+range = "0x801E66C0..0x801E66D8"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's divide guards (`break 7` / `break 6`) on rand() % ctx[+0x00] in the victory re-pick; the party count is 1..3, never 0 or -1."
