@@ -633,12 +633,18 @@ fn read_ctx_from(ctx: &[u8], _now: t::CastModuleCtx) -> t::CastModuleCtx {
 }
 
 /// The walks a body takes: two at a standing party seat and one at a party
-/// seat beside a fallen one; a body that settles or sweeps a row (PROT 0935,
-/// 0936, 0960, 0963 - a monster's spell at the party) also at the party row as
-/// a group, whole and with a fallen and a stoned seat; and PROT 0935, whose
-/// sweep and settle take the row its target code names
-/// ([`ChainSettle::TargetRow`](t::ChainSettle)), at the monster row and at a
-/// monster seat, with a fallen and a stoned monster.
+/// seat beside a fallen one; a body whose spell record's target shape (`+2`)
+/// takes a whole side - Earthquake `0x4A` and Hyper Crush `0x4B` (`0x64`),
+/// Power Up `0xAA`, Neo Star Slash `0xA6`, Dead End Crisis `0xB4` (and `0xA1`,
+/// `0x64`), Genocidal Cannon `0xB3` and Element Strike `0xB0..0xB2` (`0x66`),
+/// which the monster picker turns into the party
+/// code `8` (`0x801EA934`) - also at the party row as a group, whole and with
+/// a fallen and a stoned seat; and PROT 0935, whose sweep and settle take the
+/// row its target code names ([`ChainSettle::TargetRow`](t::ChainSettle)), at
+/// the monster row and at a monster seat, with a fallen and a stoned monster.
+/// The rest carry `0x44`, one opponent, which the picker turns into a party
+/// seat (`rand() % party_count`, `0x801EA8CC..0x801EA918`): no group code
+/// reaches them.
 fn fields(entry: u32) -> Vec<(u64, Field)> {
     let f = |target, dead, stoned| Field {
         target,
@@ -650,7 +656,7 @@ fn fields(entry: u32) -> Vec<(u64, Field)> {
         (0x5449_434B, Field::default()),
         (0x5345_4154, f(Some(2), 0b001, 0)),
     ];
-    if [935, 936, 960, 963].contains(&entry) {
+    if [935, 936, 942, 960, 961, 963, 964].contains(&entry) {
         out.push((0x4752_5031, f(Some(8), 0b010, 0b100)));
         out.push((0x4752_5032, f(Some(8), 0, 0)));
     }
