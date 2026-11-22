@@ -488,6 +488,7 @@ The MAIN INIT gate folds into `World::finish_battle`. Its party-wipe arm mirrors
 - It reads the scripted-loss latch (story-flag index 0 = system flag 0). When set, it consumes it (`andi 0x7f`, `0x8003B608`) and returns to the field like any battle end.
 - With the latch clear it clears the survived-flag bit (`andi 0xbf`, `0x8003B5A0`), raises `World::game_over`, and queues the BGM pause (`jal 0x800266E0(0x8007052C)` at `0x8003B5EC`, the primitive BGM sub-op 2 wraps) in place of the field-BGM cross-fade.
 - The field restore (actor table, scene mode) is deferred behind `World::game_over_hold`, so the scene stays parked on the final battle frame - retail's frozen wipe frame while mode 22 streams. `World::resolve_game_over_hold` completes the restore when the host's session resolves into the title.
+- Retail's field init, which ran the MAN decode, reads the `0x16` back: it skips its BGM poll (`0x801D72DC`), keeps CARD INIT rather than storing MAIN MODE (`0x801D7474`), and closes both BGM sources with their loaded indices at `-1` (`0x801D7498..0x801D74D4`), so no field track sounds before the title. The port's hold queues no field track, and its resolve stops the battle score (`NativeSession::step_party_wipe_hold`); `field_init::the_field_initialiser_seats_what_the_port_seats` drives the arm.
 
 Regression: `crates/engine-core/tests/game_over_routes_to_title.rs`.
 

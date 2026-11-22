@@ -46,6 +46,8 @@ const PLAYER: u32 = 0x8010_0000;
 const SPAWNED: u32 = 0x8010_1000;
 const HEAP: u32 = 0x8012_0000;
 const BUFFER: u32 = 0x8016_0000;
+/// `_DAT_8007B83C`, the game mode word.
+const GAME_MODE: u32 = 0x8007_B83C;
 /// `_DAT_8007B750`, the sound flag word; bit 2 is op 0x35 sub-op 6's.
 const SOUND_FLAGS: u32 = 0x8007_B750;
 /// `_DAT_8007B7C8`, the scene object list the status word's bit `0x20`
@@ -88,6 +90,10 @@ fn the_field_initialiser_seats_what_the_port_seats() {
     cpu.stub_outside = Some((FIELD_INIT, FIELD_INIT_END));
     cpu.step_budget = 4_000_000;
     let seen: Rc<RefCell<Seen>> = Rc::default();
+    // Whether the MAN decoder takes its party-wipe arm, which stores game
+    // mode `0x16` (CARD INIT) at `0x8003B5D4`, and whether the resolver
+    // settles the bank and the slot on separate passes.
+    let wipe: Rc<RefCell<(bool, bool)>> = Rc::default();
     let read_cost: Rc<RefCell<u32>> = Rc::default();
     let anchor: Rc<RefCell<([i16; 2], i16, u32)>> = Rc::default();
     {
@@ -95,8 +101,12 @@ fn the_field_initialiser_seats_what_the_port_seats() {
         // scene's TMD count back.
         let anchor = anchor.clone();
         let seen = seen.clone();
+        let wipe = wipe.clone();
         cpu.hook(MAN_DECODE, move |r, m| {
             seen.borrow_mut().man_a0.push(r.r[A0]);
+            if wipe.borrow().0 {
+                m.wr16(GAME_MODE, 0x16);
+            }
             let (xz, tmds, bgm_id) = *anchor.borrow();
             // The scene's BGM id is the decoder's to set; the initialiser
             // clears the word ahead of the call.
@@ -144,12 +154,17 @@ fn the_field_initialiser_seats_what_the_port_seats() {
     // call: the requested pair becomes the playing pair.
     {
         let seen = seen.clone();
+        let wipe = wipe.clone();
         cpu.hook(0x8002_43F0, move |_, m| {
             let mut s = seen.borrow_mut();
             s.resolver_calls += 1;
+            let staggered = wipe.borrow().1;
             if s.resolver_calls >= 2 {
-                let (bank, slot) = (m.rd32(0x8007_BABC), m.rd32(BGM_SLOT));
+                let bank = m.rd32(0x8007_BABC);
                 m.wr32(0x8007_BAA0, bank);
+            }
+            if s.resolver_calls >= 2 + u32::from(staggered) {
+                let slot = m.rd32(BGM_SLOT);
                 m.wr32(BGM_PLAYING, slot);
             }
         });
@@ -209,7 +224,7 @@ fn the_field_initialiser_seats_what_the_port_seats() {
     let mut rng = Rng(0x4649_4E49);
     let (mut cold, mut warp, mut other, mut recentred, mut two_part, mut latched) =
         (0, 0, 0, 0, 0, 0);
-    let (mut ramps, mut kept, mut battle_ramps) = (0, 0, 0);
+    let (mut ramps, mut kept, mut battle_ramps, mut wipes) = (0, 0, 0, 0);
     for round in 0..3_000 {
         let raw_mode = [0u32, 0, 2, 2, 1, 3][rng.below(6) as usize];
         let coord = |rng: &mut Rng| match rng.below(4) {
@@ -260,6 +275,9 @@ fn the_field_initialiser_seats_what_the_port_seats() {
         let objects = rng.below(4);
         *status.borrow_mut() = st;
         let bank_latched = rng.below(2) == 0;
+        let wiped = rng.below(5) == 0;
+        let staggered = rng.below(2) == 0;
+        *wipe.borrow_mut() = (wiped, staggered);
         *read_cost.borrow_mut() = [0, 8, 0x30, 0x80][rng.below(4) as usize];
         // The battle source: its loaded index (`_DAT_8007B880`, negative
         // with none) and the scene record's battle-track halfword.
@@ -291,6 +309,7 @@ fn the_field_initialiser_seats_what_the_port_seats() {
         cpu.mem.wr32(TWO_PART_LATCH, u32::from(was_latched));
         cpu.mem.wr32(SFX_LATCH, u32::from(bank_latched));
         cpu.mem.wr32(HOLD_CLOCK, 0x100);
+        cpu.mem.wr16(GAME_MODE, 2);
         cpu.mem.wr32(SOUND_FLAGS, if keep_music { 4 } else { 0 });
         cpu.mem.wr32(0x8007_BB10, u32::from(source_up));
         cpu.mem.wr16(0x8007_0534, u16::from(record_bgm) * 0x7D3);
@@ -401,9 +420,16 @@ fn the_field_initialiser_seats_what_the_port_seats() {
                 assert!(two.is_empty(), "{ctx}: {two:x?}");
                 // The barrier sits behind the same one-shot as the
                 // two-part read (`0x801D7190`).
+                // A wiped party's init skips it (`0x801D72DC`); a resolver
+                // that settles the slot a pass after the bank takes one
+                // more (`0x801D731C`).
                 assert_eq!(
                     s.resolver_calls,
-                    if was_latched { 0 } else { 2 },
+                    if was_latched || wiped {
+                        0
+                    } else {
+                        2 + u32::from(staggered)
+                    },
                     "{ctx}: the wait barrier"
                 );
                 // The latch the wait barrier reads; the two-part arm
@@ -466,6 +492,30 @@ fn the_field_initialiser_seats_what_the_port_seats() {
             let floor = u32::from(legaia_engine_system::mode_entry_init::FIELD_INIT_FLOOR_VSYNCS);
             assert!(cpu.mem.rd32(HOLD_CLOCK) >= floor, "{ctx}: the floor");
         }
+        // The party wipe (`0x801D7474..`): the init keeps CARD INIT, which
+        // hands to the title, and closes both BGM sources with their loaded
+        // indices at `-1`, so no field track sounds; any other entry goes on
+        // to MAIN MODE. The engine takes the wipe off the battle instead
+        // (`World::game_over`, `NativeSession::take_party_wipe`), and the
+        // hold it resolves queues no field track
+        // (`World::resolve_game_over_hold`).
+        if wiped {
+            assert_eq!(cpu.mem.rd16(GAME_MODE), 0x16, "{ctx}: CARD INIT kept");
+            assert_eq!(
+                (cpu.mem.rd32(0x8007_BABC), cpu.mem.rd32(0x8007_BAA0)),
+                (u32::MAX, u32::MAX),
+                "{ctx}: the sources' indices"
+            );
+            let mut w = legaia_engine_core::world::World::new();
+            w.game_over_hold = true;
+            w.audio.battle_bgm_active = true;
+            w.resolve_game_over_hold();
+            assert!(!w.game_over_hold, "{ctx}");
+            assert!(w.pending_field_events.is_empty(), "{ctx}");
+            wipes += 1;
+        } else {
+            assert_eq!(cpu.mem.rd16(GAME_MODE), 3, "{ctx}: MAIN MODE");
+        }
         // The walker's status: the pack read, the objects, the MAN decode.
         assert_eq!(
             s.packs,
@@ -526,7 +576,8 @@ fn the_field_initialiser_seats_what_the_port_seats() {
             && latched > 300
             && ramps > 100
             && kept > 1000
-            && battle_ramps > 100,
+            && battle_ramps > 100
+            && wipes > 300,
         "{cold} {warp} {other} {recentred} {two_part} {latched} {ramps} {kept} {battle_ramps}"
     );
 }

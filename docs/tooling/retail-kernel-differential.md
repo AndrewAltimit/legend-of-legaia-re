@@ -1390,7 +1390,9 @@ one-shot `_DAT_8007B9B8` gating the BGM wait barrier as well as the read. Its en
 vary too: sound-flag bit 2, the field and battle BGM sources, the descriptor walker's status (pack
 read, scene objects, MAN decode argument), the field SFX bank latch and the read time the `0x7E`
 floor absorbs, against `World::release_field_init_voices`, `SfxBankResidency::field_init` and
-`FIELD_INIT_FLOOR_VSYNCS`. The boot init
+`FIELD_INIT_FLOOR_VSYNCS`. A MAN decode that takes the party-wipe arm (game mode `0x16`) skips
+the BGM poll and keeps CARD INIT with both sources closed; the engine takes a wipe off the battle
+instead (`take_party_wipe`), and its hold queues no field track. The boot init
 `FUN_8001D424` matches the initmap sanitiser, the duel arena initialiser `FUN_801CF00C` its record
 of seeds (`duel_init`), the battle loader `FUN_800520F0` the stage overlay it names, the mode-entry
 prologue `FUN_80016230` its verdicts (`mode_transition`), and the part tick `FUN_80021DF4` the

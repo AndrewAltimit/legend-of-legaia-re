@@ -4910,3 +4910,12 @@ image = "d0e9500b8fd6d1a5"
 range = "0x801DD438..0x801DD438"
 verdict = "unreachable"
 reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+# lane B (w53)
+
+[[arm]]
+entry = "0x801D6704"
+image = "94ede8022b42a198"
+range = "0x801D739C..0x801D739C"
+verdict = "unreachable"
+reason = "PROT 0897: the fog-pool clear's empty-pool test; the init stores the pool's count `0x50` at `+0x02` in the delay slot of the free-list seeder `FUN_8001FA00` (`0x801D7388`), which writes only from `+0x04` on, so the count it reads back is never `0`"
