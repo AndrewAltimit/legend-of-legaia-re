@@ -3773,6 +3773,38 @@ expected_game_mode = 0x19
 topics = ["minigame", "slot machine", "casino", "retail", "route walk"]
 
 [[scenarios]]
+label = "minigame_slot_machine_retail_picker"
+backup_fingerprint = "96775d4834ab15101929b53d2d6fc5675c1d0b4ff9705b9007a63edfa755a33a"
+description = "Casino slot machine cash-out picker (reel state word 0x801D3C84 = 0x32) on row 0, cursor 0x801D4110 = 0, widget style gp+0x14C = 0x44, mode 0x19. From minigame_slot_machine_retail_reels (balance = coin bank 9999999), autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 LEGAIA_PLAY_SCRIPT='30:TRIANGLE,150:DOWN,180:DOWN,280:CROSS,480:CROSS' (Triangle opens the cash-out picker, Down twice to the rules row, Cross fades into the rules, Cross turns to the payout chart), LEGAIA_SHOTS='120,250,450,620'; saved 120 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail"]
+
+[[scenarios]]
+label = "minigame_slot_machine_retail_picker_rules_row"
+backup_fingerprint = "b6bf1be1d61e55beea29f00cae783d48666afa2a01658adaf475c1be68a822f8"
+description = "Casino slot machine cash-out picker on row 2, the rules row (state 0x32, cursor 2), mode 0x19. Same run as minigame_slot_machine_retail_picker, saved 250 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail"]
+
+[[scenarios]]
+label = "minigame_slot_machine_retail_rules_page"
+backup_fingerprint = "99c3d0fd53988a6de1324a070c051bd7285bf57b9c71f91706c2e0752ac5c579"
+description = "Casino slot machine rules, the attract text page (state 0x35), 320-wide display, mode 0x19. Same run as minigame_slot_machine_retail_picker, saved 450 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail"]
+
+[[scenarios]]
+label = "minigame_slot_machine_retail_payout_chart"
+backup_fingerprint = "328b4a784918348fbd10bd3e753bb9019e2e9e255b37e098509789ae0a30ac2e"
+description = "Casino slot machine rules, the payout chart page (state 0x36), mode 0x19. Same run as minigame_slot_machine_retail_picker, saved 620 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail"]
+
+[[scenarios]]
 label = "minigame_muscle_dome_retail_welcome"
 backup_fingerprint = "4d8231b96abf72680f215d5cc981a623af908731174e7c6ce8927271a6e16848"
 description = "Muscle Dome hub, the 'Welcome to the Muscle Dome!' card, mode 0x19. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> koin1, then from the koin1 arrival state a walk to the P1[9] sign-up counter and an ACT paging the counter's talk with Cross (every picker left on its default: enter, pay the fee, the first entrant, the first course offered); saved 300 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"

@@ -60,6 +60,11 @@ impl SlotMachine {
         }
     }
 
+    /// The cash-out picker's cursor (`DAT_801d4110`).
+    pub fn menu_cursor(&self) -> u32 {
+        self.menu_cursor
+    }
+
     /// What to draw ([`SlotScreen`]).
     pub fn screen(&self) -> SlotScreen {
         match (self.phase, self.menu_state) {
