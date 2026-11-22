@@ -604,3 +604,12 @@ impl World {
             .min(self.actors.len())
     }
 }
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// The win arm's unspent-item refund ([`Self::refund_unacted_items`]),
+    /// for the spoils differential.
+    pub fn drive_refund_unacted_items(&mut self) {
+        self.refund_unacted_items();
+    }
+}

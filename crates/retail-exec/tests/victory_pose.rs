@@ -74,7 +74,9 @@ fn the_win_pose_and_its_camera_are_retails() {
             _ => 1 + rng.below(u32::from(max_hp)) as u16,
         };
         let status: u16 = [0, 0, 0, 0x01, 0x40, 0x1000, 0x80][rng.below(7) as usize];
-        let mode = rng.below(8) as u8;
+        // Past eight rounds a pose tier already at its top stays there
+        // (`0x8004E80C`).
+        let mode = rng.below(12) as u8;
         let first_monster: u8 = [0x10, 0x40, 0xB3, 0xB4, 0xB5][rng.below(5) as usize];
         let held: u16 = [
             0,
@@ -85,7 +87,10 @@ fn the_win_pose_and_its_camera_are_retails() {
             0x0800 | 0x0148,
             0x0800 | 0x0002,
             0x1000,
-        ][rng.below(8) as usize];
+            0x0800 | 0x8000,
+            0x0800 | 0x4000 | 0x0001,
+            0x0800 | 0x0001,
+        ][rng.below(11) as usize];
         let option = rng.below(3) as u8;
         let depth: i16 = [0x0C00, 0x1400, 0x0E80, 0x0D01][rng.below(4) as usize];
         let seed = rng.next();
