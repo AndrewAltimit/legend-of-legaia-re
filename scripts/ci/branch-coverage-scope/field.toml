@@ -34,3 +34,10 @@ image = "f8d115a5ee81f25a"
 range = "0x801E2858..0x801E2858"
 verdict = "unreachable"
 reason = "Op 4C C3's tile-z round toward zero: +0x18 is built the same way from the record's next byte (0x801E2734..0x801E2790), so z - 0x40 is never negative."
+
+[[arm]]
+entry = "0x801DE840"
+image = "f8d115a5ee81f25a"
+range = "0x801E263C..0x801E2654"
+verdict = "unreachable"
+reason = "Divide traps of 4C C0's clip-phase roll, rand() % the bound clip's frame count (the record ctx[+0x4C], +2): the arm runs only with a clip playing (ctx[+0x5C] > 0, 0x801E260C..0x801E2614), whose frame count is non-zero, and the count is loaded with lhu, so it is never -1."
