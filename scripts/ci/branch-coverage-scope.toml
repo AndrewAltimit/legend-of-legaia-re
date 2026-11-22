@@ -4416,3 +4416,17 @@ entry = "0x80052770"
 range = "0x80052AE0..0x80052F80"
 verdict = "unported"
 reason = "The battle player-file streamer's cases 5..10 and its busy return: the per-section CD reads into the actor's mesh slots and the completion flag (0x8007B648 bit 0x80 / gp+0xA58). The engine assembles the battle body from the file in one pass (battle_char_assembly::select_sections and the assembly after it), with no streaming state."
+
+[[arm]]
+entry = "0x801E1D98"
+image = "393baed662b4213e"
+range = "0x801E1EAC..0x801E2060"
+verdict = "unreachable"
+reason = "PROT 0898: the corner jitter's divide traps and its rand() sign fix-up. The jitter span s5 is the segment's height delta floored at 0x40 (0x801E1E78..0x801E1E90), a non-negative s16, so the divisors (s5 >> 1) + 1, (s5 >> 2) + 1 and s5 >> 3 are at least 0x21, 0x11 and 8, never 0 or -1; rand() is 0..0x7FFF, so the bgez at 0x801E2060 always takes."
+
+[[arm]]
+entry = "0x801E1D98"
+image = "393baed662b4213e"
+range = "0x801E2140..0x801E21F8"
+verdict = "unreachable"
+reason = "PROT 0898: the second segment half's divide traps on the same jitter span: s4 = s5 >> 2 (at least 0x10) and s0 = (s5 >> 1) + 1 (0x801E2190..0x801E2194), never 0 or -1."
