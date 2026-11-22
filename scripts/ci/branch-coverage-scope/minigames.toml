@@ -111,3 +111,38 @@ image = "c6300bc092182707"
 range = "0x801D5BBC..0x801D5BD4"
 verdict = "unreachable"
 reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801CF870"
+image = "63404152651b4e2c"
+range = "0x801CF8E8..0x801CF8E8"
+verdict = "unreachable"
+reason = "PROT 0977 contest hub: the jump table's bound test; the state word 0x801D1A78 only takes 0..6, 0x0A..0x0C, 0x14..0x17 and 0x32 (the arena init at 0x801CECA4 / 0x801CEDD0..0x801CEE8C and the arms' +1 steps), all under 0x33"
+
+[[arm]]
+entry = "0x801CF870"
+image = "63404152651b4e2c"
+range = "0x801CFB48..0x801CFB48"
+verdict = "unreachable"
+reason = "PROT 0977 contest hub: arm 4's wait on the XA in-flight flag; the only line a first visit starts before it is arm 0's intro, arm 3 leaves only once that line is idle, and nothing between starts another"
+
+[[arm]]
+entry = "0x801CF870"
+image = "63404152651b4e2c"
+range = "0x801CFC74..0x801CFC74"
+verdict = "unported"
+reason = "PROT 0977 contest hub: arm 6's wait for the loader state 0x8007B648 == 0x80 that arm 4 kicked; the port's loads are synchronous, so the done value is always there (FirstVisitHub)"
+
+[[arm]]
+entry = "0x801CF870"
+image = "63404152651b4e2c"
+range = "0x801CFDD8..0x801CFDD8"
+verdict = "unreachable"
+reason = "PROT 0977 contest hub: arm 0x0B's roll-stopped-but-still-dimming arm; the dim needs lane 0's fade at 0x10 plus 0x40 / 2 = 32 frame-step units, while the roll cannot stop before all four lanes have each counted past 0x10 (over 60 units), so the still is always at 0x40 when the tally returns 0"
+
+[[arm]]
+entry = "0x801CF870"
+image = "63404152651b4e2c"
+range = "0x801CFE48..0x801CFE5C"
+verdict = "unported"
+reason = "PROT 0977 contest hub: arm 0x0C's exit waits on the drive (FUN_8003DE7C(1)) and the loader state 0x8007B648 == 0x80; the port's reads and loads are synchronous, so ReentryHub models only the XA wait"
