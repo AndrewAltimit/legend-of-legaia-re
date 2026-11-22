@@ -53,6 +53,10 @@ const FISHING_LIST_CURSOR: u32 = 0x801D_90A8;
 const FISHING_QTY: u32 = 0x801D_90B0;
 const FISHING_CONFIRM_ROW: u32 = 0x801D_90B4;
 const FISHING_HUB_CURSOR: u32 = 0x801D_912C;
+/// The tackle list's cursor (`0x801D90DC`) and the equipped lure
+/// (`_DAT_80084450`), which the hub copies into it as the list opens.
+const FISHING_TACKLE_CURSOR: u32 = 0x801D_90DC;
+const FISHING_LURE: u32 = 0x8008_4450;
 /// The exchange's three screens: the list, the quantity picker, the confirm.
 const FISHING_EXCHANGE_STATES: std::ops::RangeInclusive<u32> = 0x78..=0x7A;
 /// Ticks past the warp the exchange drive's first press waits: the shore is
@@ -141,17 +145,24 @@ pub struct FishingExchangeWords {
     pub qty: i32,
     /// `0x801D90B4`, the confirm's row (`0` Yes, `1` No).
     pub confirm_row: u32,
-    /// `0x801D912C`, the hub menu's cursor (row `3` opens the list).
+    /// `0x801D912C`, the hub menu's cursor (row `1` opens the help pages,
+    /// row `2` the tackle list, row `3` the prize list).
     pub hub_cursor: u32,
+    /// `0x801D90DC`, the tackle list's cursor.
+    pub tackle_cursor: u32,
+    /// `_DAT_80084450`, the equipped lure the tackle list opens on.
+    pub lure: u32,
 }
 
-/// The pad edges that walk the engine from the idle shore to the exchange
-/// screen `state` holds, as `(tick offset, button)` from the first press:
-/// Triangle opens the hub (`& 0x110` at `0x801CF9EC`), Down to its row,
-/// Cross opens the list; Up from the list's entry row to the cursor (the
-/// list opens on the overlay's zeroed cursor, which its entry clamp sends to
-/// row `5`); Cross opens the picker on quantity `1`, Right to the quantity;
-/// Cross opens the confirm on No, Up to Yes.
+/// The pad edges that walk the engine from the idle shore to the hub screen
+/// `state` holds, as `(tick offset, button)` from the first press: Triangle
+/// opens the hub (`& 0x110` at `0x801CF9EC`), Down to its row, Cross opens
+/// the row's screen. Help page 1 is a Cross past page 0; the tackle list
+/// opens on the equipped lure and Down walks it to the cursor. On the prize
+/// list: Up from the list's entry row to the cursor (the list opens on the
+/// overlay's zeroed cursor, which its entry clamp sends to row `5`); Cross
+/// opens the picker on quantity `1`, Right to the quantity; Cross opens the
+/// confirm on No, Up to Yes.
 fn fishing_exchange_presses(
     state: u32,
     w: &FishingExchangeWords,
@@ -160,6 +171,21 @@ fn fishing_exchange_presses(
     let mut seq = vec![B::Triangle];
     seq.extend(std::iter::repeat_n(B::Down, w.hub_cursor as usize));
     seq.push(B::Cross);
+    if state == 0x66 {
+        seq.push(B::Cross);
+    }
+    if state == 0x6E {
+        seq.extend(std::iter::repeat_n(
+            B::Down,
+            w.tackle_cursor.saturating_sub(w.lure) as usize,
+        ));
+    }
+    if !FISHING_EXCHANGE_STATES.contains(&state) {
+        return (0u64..)
+            .zip(seq)
+            .map(|(i, b)| (i * FISHING_DRIVE_GAP, b))
+            .collect();
+    }
     seq.extend(std::iter::repeat_n(
         B::Up,
         5usize.saturating_sub(w.list_cursor as usize),
@@ -326,6 +352,8 @@ impl RetailMinigame {
                     qty: game_anchors::u32_at(ram, FISHING_QTY) as i32,
                     confirm_row: game_anchors::u32_at(ram, FISHING_CONFIRM_ROW),
                     hub_cursor: game_anchors::u32_at(ram, FISHING_HUB_CURSOR),
+                    tackle_cursor: game_anchors::u32_at(ram, FISHING_TACKLE_CURSOR),
+                    lure: game_anchors::u32_at(ram, FISHING_LURE),
                 }
             }),
             dance_song: (minigame == Some(MinigameSubId::Dance)).then(|| {
@@ -346,8 +374,13 @@ impl RetailMinigame {
     ) -> Option<(u32, Vec<(u64, legaia_engine_system::input::PadButton)>)> {
         let state = self.phase.map(|p| p.0)?;
         let w = self.fishing_exchange?;
-        (FISHING_EXCHANGE_STATES.contains(&state) && w.hub_cursor == 3 && w.list_cursor <= 5)
-            .then(|| (state, fishing_exchange_presses(state, &w)))
+        let reached = match state {
+            0x65 | 0x66 => w.hub_cursor == 1,
+            0x6E => w.hub_cursor == 2 && w.tackle_cursor >= w.lure,
+            s if FISHING_EXCHANGE_STATES.contains(&s) => w.hub_cursor == 3 && w.list_cursor <= 5,
+            _ => false,
+        };
+        reached.then(|| (state, fishing_exchange_presses(state, &w)))
     }
 
     fn minigame(&self) -> Option<MinigameSubId> {
@@ -393,8 +426,9 @@ impl RetailMinigame {
             // no cast has rolled anything. State `0xB` is the fade in front
             // of it, whose frame still holds what stood before.
             (Some(MinigameSubId::Fishing), _) if matches!(self.phase, Some((0xC, _))) => None,
-            // The exchange's screens, reached from the idle shore through the
-            // hub's row 3: pad history the drive replays, no rand() in it.
+            // The hub's screens - the help pages, the tackle list and the
+            // exchange's - reached from the idle shore through the hub's
+            // rows: pad history the drive replays, no rand() in it.
             (Some(MinigameSubId::Fishing), _) if self.fishing_exchange_drive().is_some() => None,
             (Some(MinigameSubId::Fishing), _) => Some(
                 "fishing past the idle shore: the cast, its drift and the bite rolls are \
@@ -629,8 +663,18 @@ fn run_engine_minigame(
         session.host.world.input.set_pad(0);
         let m = &session.host.world.minigames;
         use legaia_engine_fishing::fishing::PrizeScreen;
+        use legaia_engine_fishing::fishing_hub::HubScreen;
+        let hub = m.fishing.as_ref().and_then(|s| s.hub());
         exchange = Some(match &m.fishing_exchange {
-            None => (0, 0, 0, 0),
+            None => match hub {
+                Some(h) => match h.screen {
+                    HubScreen::Help(0) => (0x65, 0, 0, 0),
+                    HubScreen::Help(_) => (0x66, 0, 0, 0),
+                    HubScreen::Tackle => (0x6E, h.tackle.cursor.max(0) as u32, 0, 0),
+                    _ => (0x64, 0, 0, 0),
+                },
+                None => (0, 0, 0, 0),
+            },
             Some(ex) => {
                 let d = &m.fishing_exchange_dialog;
                 let state = match d.screen {
@@ -723,7 +767,11 @@ pub(super) fn run_minigame(
     if let (Some((state, _)), Some(w)) = (&drive, mg.fishing_exchange) {
         let e = engine.exchange.unwrap_or_default();
         words.push(e.0 == *state);
-        words.push(e.1 == w.list_cursor);
+        if *state == 0x6E {
+            words.push(e.1 == w.tackle_cursor);
+        } else if FISHING_EXCHANGE_STATES.contains(state) {
+            words.push(e.1 == w.list_cursor);
+        }
         if *state >= 0x79 {
             words.push(e.2 == w.qty);
         }
@@ -950,6 +998,8 @@ mod tests {
             qty: 3,
             confirm_row: 0,
             hub_cursor: 3,
+            tackle_cursor: 0,
+            lure: 0,
         };
         let fish = |state| RetailMinigame {
             sub_id: 0,
@@ -990,5 +1040,29 @@ mod tests {
         );
         // The list alone stops at its cursor.
         assert_eq!(fishing_exchange_presses(0x78, &words).len(), 6);
+        // The help pages and the tackle list, through rows 1 and 2.
+        let hub = |state, hub_cursor, tackle_cursor| RetailMinigame {
+            fishing_exchange: Some(FishingExchangeWords {
+                hub_cursor,
+                tackle_cursor,
+                lure: 1,
+                ..words
+            }),
+            ..fish(state)
+        };
+        assert_eq!(hub(0x66, 1, 0).unseeded_reason(), None);
+        assert_eq!(hub(0x6E, 2, 2).unseeded_reason(), None);
+        assert!(
+            hub(0x6E, 2, 0).unseeded_reason().is_some(),
+            "under the lure"
+        );
+        let tackle: Vec<B> = hub(0x6E, 2, 2)
+            .fishing_exchange_drive()
+            .unwrap()
+            .1
+            .into_iter()
+            .map(|p| p.1)
+            .collect();
+        assert_eq!(tackle, [B::Triangle, B::Down, B::Down, B::Cross, B::Down]);
     }
 }

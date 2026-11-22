@@ -3904,6 +3904,38 @@ expected_game_mode = 0x19
 topics = ["minigame", "fishing", "retail", "prize exchange", "map02"]
 
 [[scenarios]]
+label = "minigame_fishing_retail_help_page0"
+backup_fingerprint = "fd757ddd4d04b10cfca4540b4d7b5e7c279d4db7db08eef9d93f181b1d3e0dc7"
+description = "Fishing hub help page 0 (state word 0x801D926C = 0x65), the hub menu cursor 0x801D912C = 1, widget style gp+0x14C = 0x44, mode 0x19. From minigame_fishing_retail_shore, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 LEGAIA_PLAY_SCRIPT='30:TRIANGLE,60:DOWN,90:CROSS,210:CROSS,330:CROSS,360:DOWN,390:CROSS,510:DOWN' (hub row 1 opens help page 0, Cross turns to page 1 and back to the menu, Down to row 2 opens the tackle list, Down moves its cursor), LEGAIA_SHOTS='180,300,480,600'; saved 180 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "hub menu", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_help_page1"
+backup_fingerprint = "384a5a0a1f8b62c4502223ea8aa807421d4957574e20b62399dd008e3b67700a"
+description = "Fishing hub help page 1 (state 0x66), mode 0x19. Same run as minigame_fishing_retail_help_page0, saved 300 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "hub menu", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_tackle"
+backup_fingerprint = "aba94872e7fc24568d92e160a24ba6b6378096a4c7bd7a3449e67c4d5c03ecbd"
+description = "Fishing hub tackle list (state 0x6E) on the equipped Normal Lure (cursor 0x801D90DC = 1, lure 1, Old Rod), over the hub menu (cursor 2), mode 0x19. Same run as minigame_fishing_retail_help_page0, saved 480 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "hub menu", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_tackle_row2"
+backup_fingerprint = "b756ccb1f1df29c0a5a1743e091e91468b8b2f7595b043a6b5ddb73d976a8509"
+description = "Fishing hub tackle list, the cursor moved down one (state 0x6E, cursor 2, Heavy Lure), mode 0x19. Same run as minigame_fishing_retail_help_page0, saved 600 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "hub menu", "map02"]
+
+[[scenarios]]
 label = "minigame_baka_fighter_retail_attract"
 backup_fingerprint = "0df782c93ffb88d1dbec4122742b23c0812f059356dbb6f27add4ef2a1b43546"
 description = "Baka Fighter, the attract title card: cabinet state word 0x801DBF44 = 1, mode 0x19. RETAIL disc, pad only, no pokes: koin1_field_route_walk played forward by autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav (the P1[52] cabinet, ACT face Z+ until the record seats the player and warps); saved by LEGAIA_WATCH=0x801dbf44:1:60, 392 vsyncs after the game mode left the field."
