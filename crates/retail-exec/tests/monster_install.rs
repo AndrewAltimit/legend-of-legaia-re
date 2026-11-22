@@ -141,3 +141,99 @@ fn a_monster_record_installs_as_retail_installs_it() {
         "{scripted} {fallback} {repeated}"
     );
 }
+
+/// The name half of `FUN_80054CB0`: the seat's short name line
+/// `ctx + 0x292 + seat * 0x20` (`0x80054D68..0x80054FF4`) over generated
+/// names - a `> ` lead, a `^X` caret escape with or without its space, a
+/// `$` level suffix, spaces, and lines either side of the `0x40` width -
+/// against `battle_name_line`. The text measure `FUN_80035F04` answers with
+/// a width the port's measure is handed too; the summon body's seat `4`
+/// writes no line.
+#[test]
+fn the_seat_name_line_is_retails() {
+    differential!(scus(INSTALL));
+    use legaia_engine_battle::monster_catalog::battle_name_line;
+    use psx_retail_exec::{A0, V0};
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(CTX_PTR, CTX);
+    for s in 0..8 {
+        cpu.mem.wr32(ACTORS + s * 4, ACTOR + s * 0x400);
+    }
+    // A width of five pixels a byte, plus one for each capital.
+    fn width(t: &[u8]) -> u32 {
+        t.iter()
+            .map(|&b| 5 + u32::from(b.is_ascii_uppercase()))
+            .sum()
+    }
+    cpu.hook(0x8003_5F04, |r, m| {
+        let mut t = Vec::new();
+        let mut a = r.r[A0];
+        while m.rd8(a) != 0 {
+            t.push(m.rd8(a));
+            a += 1;
+        }
+        r.r[V0] = width(&t);
+    });
+    let mut rng = Rng(0x4E41_4D45);
+    let (mut cut, mut abbreviated, mut led) = (0, 0, 0);
+    for n in 0..20_000 {
+        let seat = rng.below(5);
+        let mut name = Vec::new();
+        if rng.below(4) == 0 {
+            name.extend(b"Lv> ");
+        }
+        match rng.below(4) {
+            0 => name.extend([b'^', b'A' + rng.below(8) as u8, b' ']),
+            1 => name.extend([b'^', b'A' + rng.below(8) as u8]),
+            _ => {}
+        }
+        for _ in 0..1 + rng.below(18) {
+            name.push(match rng.below(6) {
+                0 => b' ',
+                1 => b'A' + rng.below(26) as u8,
+                _ => b'a' + rng.below(26) as u8,
+            });
+        }
+        if rng.below(3) == 0 {
+            name.extend([b' ', b'$', b'1' + rng.below(5) as u8]);
+        }
+        name.truncate(0x1E);
+        // Now and then a record whose name is empty.
+        if rng.below(40) == 0 {
+            name.clear();
+        }
+        let mut z = name.clone();
+        z.push(0);
+        cpu.mem.load(NAME, &z);
+        let mut raw = vec![0u8; 0x4C];
+        raw[0..4].copy_from_slice(&NAME.to_le_bytes());
+        cpu.mem.load(RECORD, &raw);
+        let line_at = CTX + 0x292 + seat * 0x20;
+        cpu.mem.load(line_at, &[0xEE; 0x20]);
+        assert_eq!(cpu.call(INSTALL, &[RECORD, seat]), Stop::Returned, "n {n}");
+        let what = format!(
+            "n {n} seat {seat} name {:?}",
+            String::from_utf8_lossy(&name)
+        );
+        if seat == 4 {
+            assert_eq!(cpu.mem.read(line_at, 0x20), vec![0xEE; 0x20], "{what}");
+            continue;
+        }
+        let want = battle_name_line(&name, width);
+        let got = cpu.mem.read(line_at, want.len() + 1);
+        assert_eq!(&got[..want.len()], &want[..], "{what}");
+        assert_eq!(got[want.len()], 0, "{what}: the terminator");
+        cut += usize::from(name.contains(&b'$'));
+        abbreviated += usize::from(want.get(1) == Some(&b'.'));
+        led += usize::from(name.starts_with(b"Lv>"));
+    }
+    assert!(
+        cut > 3000 && abbreviated > 1000 && led > 3000,
+        "{cut} {abbreviated} {led}"
+    );
+}

@@ -320,6 +320,60 @@ impl MonsterCatalog {
     }
 }
 
+/// The width past which [`battle_name_line`] abbreviates (`slti v0,v0,0x40`
+/// at `0x80054EFC`).
+pub const BATTLE_NAME_LINE_MAX_WIDTH: u32 = 0x40;
+
+/// The short name line a monster's battle install writes for its seat
+/// (`ctx + 0x292 + seat * 0x20`), which the value window's name plates print
+/// for each row of a multi-target cast (`FUN_801E6D84`, `0x801E6EF0..`).
+///
+/// From the record's name: past a `> ` lead when the name carries a `>`
+/// (else from the start), past a `^X` caret escape and the space after it,
+/// up to a `$` or the end. When the line measures `width >= 0x40` and its
+/// last space sits at index `3` or later, it becomes the first letter, a
+/// `.` and the rest from that space (`Abcd Efgh` -> `A. Efgh`). No instance
+/// letter is added (the twin letters go to `+0x1BC` only) and no badge
+/// escape survives. `width` is the text measure `FUN_80035F04`.
+///
+/// PORT: FUN_80054CB0 (`0x80054D68..0x80054FF4`, the seat's name line)
+///
+/// REF: FUN_801E6D84, FUN_80035F04
+pub fn battle_name_line(raw: &[u8], width: impl Fn(&[u8]) -> u32) -> Vec<u8> {
+    let at = |i: usize| raw.get(i).copied().unwrap_or(0);
+    // `0x80054D68..0x80054DDC`: past the `>` and the byte after it.
+    let mut start = 0;
+    if at(0) != 0 {
+        let mut i = 0;
+        while at(i) != 0 && at(i) != b'>' {
+            i += 1;
+        }
+        start = if at(i) != 0 { i + 2 } else { 0 };
+    }
+    // `0x80054DE0..0x80054E30`: a caret escape, and the space after it.
+    if at(start) == b'^' {
+        start += if at(start + 2) == b' ' { 3 } else { 2 };
+    }
+    // `0x80054E34..0x80054EE4`: up to the `$` or the end.
+    let mut line = Vec::new();
+    while at(start + line.len()) != 0 && at(start + line.len()) != b'$' {
+        line.push(at(start + line.len()));
+    }
+    // `0x80054EF4..0x80054FF4`: the abbreviation.
+    if width(&line) >= BATTLE_NAME_LINE_MAX_WIDTH && !line.is_empty() {
+        let mut i = line.len() - 1;
+        while i > 0 && line[i] != b' ' {
+            i -= 1;
+        }
+        if i >= 3 {
+            let mut short = vec![line[0], b'.'];
+            short.extend_from_slice(&line[i..]);
+            line = short;
+        }
+    }
+    line
+}
+
 /// Build a [`MonsterDef`] from a disc-resident monster stat record (PROT
 /// entry 867; see [`legaia_actor_formats::monster_archive`]).
 ///

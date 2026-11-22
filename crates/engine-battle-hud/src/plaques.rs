@@ -922,9 +922,17 @@ pub fn battle_multi_readout_rows(world: &legaia_engine_core::world::World) -> Op
 /// The value window's name plates: each row's monster, the content-box `x` its
 /// record rests on and the plate's rise. Records `0x60..=0x63` rise from
 /// `y = 236` to `194` as the row opens, on the value record's sixteen frames.
+///
+/// A row prints its seat's short name line, not the plaque's name: the row
+/// arm hands each record `ctx + 0x292 + (seat - 3) * 0x20`
+/// (`0x801E6EF0..0x801E6F78`), the line the battle install cut from the
+/// record's name ([`legaia_engine_battle::monster_catalog::battle_name_line`],
+/// measured in `font`). So a row carries no instance letter, no `$` level
+/// mark and no element badge, and a long name is abbreviated.
 pub fn battle_multi_readout_plates(
     world: &legaia_engine_core::world::World,
     hud: &BattleHud,
+    font: &legaia_font::Font,
 ) -> Vec<(String, Option<u8>, i32, i32)> {
     use legaia_engine_battle_vm::battle_value_readout as vr;
     let Some(m) = hud.multi_readout.as_ref().filter(|m| m.open) else {
@@ -937,9 +945,22 @@ pub fn battle_multi_readout_plates(
         .take(n)
         .enumerate()
         .map(|(k, &(slot, _))| {
+            let line = world
+                .actors
+                .get(slot as usize)
+                .and_then(|a| a.battle_monster_id)
+                .and_then(|id| world.tables.monster_catalog.get(id))
+                .map(|d| {
+                    let opts = legaia_font::MeasureOptions::default();
+                    let line = legaia_engine_battle::monster_catalog::battle_name_line(
+                        d.name.as_bytes(),
+                        |t| font.measure(t, &opts).max_px,
+                    );
+                    String::from_utf8_lossy(&line).into_owned()
+                });
             (
-                monster_name(world, slot),
-                monster_element_badge(world, slot),
+                line.unwrap_or_else(|| monster_name(world, slot)),
+                None,
                 vr::MULTI_ROW_X[n - 1 - k],
                 dy,
             )

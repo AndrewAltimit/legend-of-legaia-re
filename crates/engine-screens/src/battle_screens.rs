@@ -243,7 +243,7 @@ pub fn battle_hud_frame_draws(
     let plaque = bh::battle_active_actor(w);
     let third_tab = bh::battle_breadcrumb_third_tab(w);
     let target_plaque = bh::battle_target_plaque(w);
-    let multi_plates = bh::battle_multi_readout_plates(w, inputs.hud);
+    let multi_plates = bh::battle_multi_readout_plates(w, inputs.hud, inputs.font);
     let target_select = bh::battle_target_select_plate(w);
     // The plaque's slide is the HUD model's, ticked with the world
     // (`BattleHud::sync_target_select`); a model that has not seen this

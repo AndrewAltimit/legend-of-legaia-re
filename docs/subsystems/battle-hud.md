@@ -1004,6 +1004,17 @@ no cluster to open. It opens a pair of records per row instead (`0x801E8128..`):
 row's name plate `0x60..=0x63`, rising from `y = 236` to `194`, and its value record
 `0x5C..=0x5F` at the same `x`, gliding in from `160` right; `0x801F6834` lists the
 records by row count, so one row rests at `x = 244` and four at `16 / 92 / 168 / 244`.
+
+A row's name plate does not print the plaque's name. The seed hands each plate the
+seat's **name line** `ctx + 0x292 + (seat - 3) * 0x20` (`0x801E6EF0..0x801E6F78`),
+which the battle install cuts from the record's name (`FUN_80054CB0`,
+`0x80054D68..0x80054FF4`): past a `> ` lead, past the `^X` caret escape and its
+space, up to the `$` level mark. A line measuring `0x40` or wider whose last space
+sits at index `3` or later becomes its first letter, a `.` and the rest from that
+space. The twin letters (`Gimard A`) go to the plaque's `+0x1BC` copy only, so a row
+carries no instance letter, no level mark and no element badge. Port:
+`monster_catalog::battle_name_line`, which `battle_multi_readout_plates` prints;
+`monster_install::the_seat_name_line_is_retails` holds it to retail.
 `FUN_801E805C` draws a row's digits as `16` px cells under its value record and the
 `DAMAGE` word once, over the last row. A hit that keeps the flag down counts without
 opening: PROT 0915's rolls store `0` there and its arm `0xC`'s pass raises it
