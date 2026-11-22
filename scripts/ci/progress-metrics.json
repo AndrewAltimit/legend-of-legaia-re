@@ -46,9 +46,9 @@
       "covered": 1058,
       "ported": 1058,
       "routines": 1076,
-      "tests": 888,
+      "tests": 931,
       "headline": "1058 of 1058 ported routines run against retail's bytes",
-      "detail": "Of the retail addresses a PORT tag names, the share a retail kernel differential runs: the routine executes off the user's disc in an R3000 interpreter beside the Rust kernel, on generated inputs, and the regions both wrote must match. Each test declares the routines it runs and fails unless the run entered exactly those bytes. 888 tests run 1076 retail routines in all; the rest are setup calls or helpers with no tag of their own. Counted from the declarations, so it needs no disc.",
+      "detail": "Of the retail addresses a PORT tag names, the share a retail kernel differential runs: the routine executes off the user's disc in an R3000 interpreter beside the Rust kernel, on generated inputs, and the regions both wrote must match. Each test declares the routines it runs and fails unless the run entered exactly those bytes. 931 tests run 1076 retail routines in all; the rest are setup calls or helpers with no tag of their own. Counted from the declarations, so it needs no disc.",
       "denominator": "PORT-tagged addresses",
       "href": "tooling/retail-kernel-differential.html"
     }
