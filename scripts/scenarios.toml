@@ -3872,6 +3872,38 @@ expected_game_mode = 0x19
 topics = ["minigame", "fishing", "retail", "route walk", "map02"]
 
 [[scenarios]]
+label = "minigame_fishing_retail_exchange_list"
+backup_fingerprint = "8730f6677f893ff73fcbdede05b6653eb8405727104b7ffa4f71b1ba9b17e475"
+description = "Fishing prize list on its first open (state word 0x801D926C = 0x78): the list cursor 0x801D90A8 = 5, the entry clamp's row (the cursor was 0, under the row-0 floor), Power Ring greyed, the hub menu cursor 0x801D912C = 3 under it, mode 0x19. From minigame_fishing_retail_shore (1640 points, Vidna page, purchased mask 0), autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 LEGAIA_PLAY_SCRIPT='30:TRIANGLE,60:DOWN,80:DOWN,100:DOWN,130:CROSS,250:UP,360:CROSS,390:RIGHT,420:RIGHT,530:CROSS,560:UP' (hub row 3 opens the list; one Up; Cross opens the picker on row 4; two Rights; Cross opens the confirm; Up to Yes), LEGAIA_SHOTS='230,330,500,640'; saved 230 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "prize exchange", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_exchange_list_row4"
+backup_fingerprint = "96e08c36739fa9e6eb976af8ec0f45f256b1b7a1c26faf8de88bc331a7415652"
+description = "Fishing prize list, the cursor moved up one (state 0x78, list cursor 4, Lippian Flute), mode 0x19. Same run as minigame_fishing_retail_exchange_list, saved 330 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "prize exchange", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_exchange_quantity"
+backup_fingerprint = "7c0568602927f7b291b5ffdfc3cdb67a1e0c55ec504c953dcde645e030de590d"
+description = "Fishing prize quantity picker (state 0x79) on row 4, quantity 0x801D90B0 = 3 of a cap of 8, cost 600, over the list, mode 0x19. Same run as minigame_fishing_retail_exchange_list, saved 500 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "prize exchange", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_exchange_confirm"
+backup_fingerprint = "35d7b7ddcfb0d616f8469565aad0a090f21ee52e23b53c40097df1336fb9e3ac"
+description = "Fishing prize confirm (state 0x7A) on Yes (0x801D90B4 = 0) over the quantity picker (row 4, quantity 3) and the list, mode 0x19. Same run as minigame_fishing_retail_exchange_list, saved 640 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "prize exchange", "map02"]
+
+[[scenarios]]
 label = "minigame_baka_fighter_retail_attract"
 backup_fingerprint = "0df782c93ffb88d1dbec4122742b23c0812f059356dbb6f27add4ef2a1b43546"
 description = "Baka Fighter, the attract title card: cabinet state word 0x801DBF44 = 1, mode 0x19. RETAIL disc, pad only, no pokes: koin1_field_route_walk played forward by autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav (the P1[52] cabinet, ACT face Z+ until the record seats the player and warps); saved by LEGAIA_WATCH=0x801dbf44:1:60, 392 vsyncs after the game mode left the field."
