@@ -1,0 +1,141 @@
+# SCUS system plumbing: the CD sync and stream gates, the St streaming library.
+
+[[arm]]
+entry = "0x8003DE7C"
+image = "7238aa934e0465e6"
+range = "0x8003DEA8..0x8003DED8"
+verdict = "unreachable"
+reason = "the development cell 0x8007BA70 arm (debug wait line, gp+0x91C countdown): 0x8007BA70 is SCUS bss and no store to it (-0x4590 off 0x8008, or 0x758(gp)) exists in SCUS_942.54 or any code overlay, so the beqz at 0x8003DE90 always skips it"
+
+[[arm]]
+entry = "0x8003DE7C"
+image = "7238aa934e0465e6"
+range = "0x8003DEF0..0x8003DF58"
+verdict = "unreachable"
+reason = "the by-name development host path, taken when _DAT_8007B8C2 == 0; retail boots with the PROT-index flag set (stored at 0x80015F08, docs/subsystems/asset-loader.md), and the block inside also needs the dev cell 0x8007BA70 that nothing writes"
+
+[[arm]]
+entry = "0x8003DE7C"
+image = "7238aa934e0465e6"
+range = "0x8003DF90..0x8003DFC8"
+verdict = "cannot-drive"
+reason = "the blocking wait (a0 == 0) with a stream queued at gp+0x928: prints the wait line, CdSync(0)s and spins on FUN_8005FB84 until the CD callback empties the queue; the interpreter has no CD interrupt to clear it, so the loop never exits"
+
+[[arm]]
+entry = "0x8003DE7C"
+image = "7238aa934e0465e6"
+range = "0x8003DFE0..0x8003DFF8"
+verdict = "unported"
+reason = "the per-frame poll's CdSync(1) (FUN_8003F2B8 over FUN_8005BE8C) and stream-queue tests; the port issues no libcd command to sync and keeps no stream queue, its reads completing when issued (ProtCdDmaHost::read_wait_poll)"
+
+[[arm]]
+entry = "0x8003DE7C"
+image = "7238aa934e0465e6"
+range = "0x8003E010..0x8003E024"
+verdict = "unported"
+reason = "the blocking wait's libcd read state: a negative gp+0x988 (the read callback's error) re-arms state gp+0x980 = 6, and state 0 spins on FUN_8005FB84 until the callback moves it; the port's read is synchronous and reports a failure as its error flag"
+
+[[arm]]
+entry = "0x8003DE7C"
+image = "7238aa934e0465e6"
+range = "0x8003E088..0x8003E09C"
+verdict = "unported"
+reason = "the per-frame poll's libcd read state: a negative gp+0x988 re-arms state 6 (0x8003E090) and state 0 answers busy (0x8003E0B4); the port keeps no read state between issue and completion"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F034..0x8005F034"
+verdict = "unported"
+reason = "St demux early-out while a frame is pending (0x801CADB4 == 1): on the CD source the last chunk's DMA completes into the frame latch FUN_8005ECD4 asynchronously, and a sector arriving before it is dropped; the port runs the latch inline, as the memory source does (0x8005F97C)"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F068..0x8005F080"
+verdict = "unported"
+reason = "St demux with the mode word 0x801CAD98 set: a DMA still busy on *(0x80079790) bit 24 parks the sector (0x801CADA4 = 1, trace 1); the port's ring has no DMA in flight"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F0BC..0x8005F0E0"
+verdict = "unported"
+reason = "St demux on the drive's CdReady answer: result 5 (CdlDiskError) returns and status bit 2 stores trace 3; the port's sectors come off the disc image with no drive status"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F1D4..0x8005F228"
+verdict = "unported"
+reason = "St demux drain of the CD data FIFO when 0x801CD208 is clear: four sub-header bytes land in the slot header's +0x1C (0x8005F2D8..0x8005F2E8), which the latch copies out at 0x8005ED04; the port's ring carries no sub-header"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F23C..0x8005F2C4"
+verdict = "cannot-drive"
+reason = "St demux header transfer: the CD source moves the 32-byte header by DMA channel 3 (FUN_8005F9C8) and busy-waits on *(0x800797A0) bit 24; the interpreter has no drive or DMA, so the test runs the memory source (FUN_8005F994) and the wait never sees a busy bit"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F360..0x8005F360"
+verdict = "cannot-drive"
+reason = "St demux memory-source test on 0x801CADC8: the CD-source direction runs after a header the drive delivered by DMA, which the interpreter cannot supply; the memory direction is the one the test drives, and retail only ever stores 0 to the word (0x8005EDF4)"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F3D8..0x8005F3D8"
+verdict = "cannot-drive"
+reason = "St demux memory-source test on 0x801CADC8: the CD-source direction runs after a header the drive delivered by DMA, which the interpreter cannot supply; the memory direction is the one the test drives, and retail only ever stores 0 to the word (0x8005EDF4)"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F4A0..0x8005F4A0"
+verdict = "cannot-drive"
+reason = "St demux memory-source test on 0x801CADC8: the CD-source direction runs after a header the drive delivered by DMA, which the interpreter cannot supply; the memory direction is the one the test drives, and retail only ever stores 0 to the word (0x8005EDF4)"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F594..0x8005F594"
+verdict = "cannot-drive"
+reason = "St demux memory-source test on 0x801CADC8: the CD-source direction runs after a header the drive delivered by DMA, which the interpreter cannot supply; the memory direction is the one the test drives, and retail only ever stores 0 to the word (0x8005EDF4)"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F640..0x8005F640"
+verdict = "cannot-drive"
+reason = "St demux memory-source test on 0x801CADC8: the CD-source direction runs after a header the drive delivered by DMA, which the interpreter cannot supply; the memory direction is the one the test drives, and retail only ever stores 0 to the word (0x8005EDF4)"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F6A0..0x8005F6A0"
+verdict = "cannot-drive"
+reason = "St demux memory-source test on 0x801CADC8: the CD-source direction runs after a header the drive delivered by DMA, which the interpreter cannot supply; the memory direction is the one the test drives, and retail only ever stores 0 to the word (0x8005EDF4)"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F810..0x8005F810"
+verdict = "cannot-drive"
+reason = "St demux memory-source test on 0x801CADC8: the CD-source direction runs after a header the drive delivered by DMA, which the interpreter cannot supply; the memory direction is the one the test drives, and retail only ever stores 0 to the word (0x8005EDF4)"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F8B4..0x8005F8B4"
+verdict = "cannot-drive"
+reason = "St demux memory-source test on 0x801CADC8: the CD-source direction runs after a header the drive delivered by DMA, which the interpreter cannot supply; the memory direction is the one the test drives, and retail only ever stores 0 to the word (0x8005EDF4)"
+
+[[arm]]
+entry = "0x8005F024"
+image = "d0ba1441869c2cfe"
+range = "0x8005F960..0x8005F960"
+verdict = "cannot-drive"
+reason = "St demux memory-source test on 0x801CADC8: the CD-source direction runs after a header the drive delivered by DMA, which the interpreter cannot supply; the memory direction is the one the test drives, and retail only ever stores 0 to the word (0x8005EDF4)"
