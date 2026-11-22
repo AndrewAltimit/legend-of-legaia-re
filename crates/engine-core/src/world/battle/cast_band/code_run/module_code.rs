@@ -35,6 +35,15 @@ impl World {
         // steps it (PROT 0909's arm 0 is its stager's).
         let phase_entry = ctx.phase;
         let caster_slot = self.battle_ctx.active_actor;
+        // The party seats a hit loop reaches, as the tick opens: retail's
+        // loops test HP and Stone ahead of the hit and store their tint after
+        // it, so a seat the hit fells is still tinted.
+        let party_hittable: [bool; 3] = std::array::from_fn(|s| {
+            self.actors
+                .get(s)
+                .is_some_and(|a| a.active && a.battle.hp != 0)
+                && !self.battle.actor_is_petrified(s as u8)
+        });
         let live_victim = self
             .actors
             .get(caster_slot as usize)
@@ -265,7 +274,9 @@ impl World {
                 // PROT 0917's arm 1 rises to TR y `0x800` first
                 // (`iRam800840bc` under `0x800`), PROT 0919's drifts while its
                 // word runs. An arm that would pass makes none of its exit's
-                // stores, and keeps its drain and its drift.
+                // stores, and keeps its drain, its drift and its nudge: PROT
+                // 0920's arm 1 pushes TR z out by `p` every pass ahead of
+                // its poll, which the director hands over as a nudge.
                 // The drive's wait holds the same way: the seek arm until the
                 // drive takes the seek, the poll arm until the seek is done.
                 let polling = (st.sideband_busy
@@ -282,6 +293,7 @@ impl World {
                         st.countdown = ahead.countdown;
                         legaia_engine_cast::cast_module_camera::ArmDirection {
                             drift: d.drift,
+                            nudge: d.nudge,
                             ..legaia_engine_cast::cast_module_camera::ArmDirection::HOLD
                         }
                     }
@@ -2353,8 +2365,16 @@ impl World {
                         self.apply_capture_seat_writes(slot, arm.others_write);
                     }
                 }
+                let map = self.cast_seat_map();
                 for slot in monsters {
-                    if !skips(slot) && self.actors[usize::from(slot)].battle.hp > 0 {
+                    // Retail's seven-seat walk stops short of seat 7.
+                    if !arm.others_reach_seat_7 && map.retail(slot) >= 7 {
+                        continue;
+                    }
+                    let a = &self.actors[usize::from(slot)];
+                    let seated = a.battle_monster_id.is_some();
+                    let reached = a.battle.hp > 0 || (arm.others_reach_fallen_monsters && seated);
+                    if !skips(slot) && reached {
                         self.apply_capture_seat_writes(slot, arm.others_write);
                     }
                 }
@@ -2533,6 +2553,7 @@ impl World {
             caster_slot,
             victim_slot,
             seat_slot,
+            party_hittable,
         );
         self.apply_cast_kill_results(
             entry,

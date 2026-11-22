@@ -486,6 +486,38 @@ fn a_limb_mismatched_party_hit_misses() {
     assert_eq!(w.battle.hit_events.len(), 1);
 }
 
+/// A strike that goes on after its target fell still takes the limb miss
+/// on the fallen seat's class (`0x801EC450`, `0x801EC488..0x801EC554`):
+/// the cue cursor steps over the impact cue, so nothing sounds
+/// (`captures/w53-E/films/absorb_trace`, Vahn's third `343` strike).
+#[test]
+fn a_strike_on_a_fallen_target_still_limb_misses() {
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
+    let mut w = duel();
+    let mut cat = MonsterCatalog::new();
+    let mut def = MonsterDef::new(7, "Floater", 500, 10);
+    def.swing_class = legaia_engine_battle_vm::battle_action::MISS_CLASS_LOW;
+    cat.insert(def);
+    w.set_monster_catalog(cat);
+    w.actors[1].battle_monster_id = Some(7);
+    w.actors[1].battle.hp = 0;
+    w.actors[1].battle.liveness = 0;
+    w.actors[0].battle.active_target = 1;
+    let hit = legaia_engine_battle_vm::battle_action::HitEvent {
+        hit_index: 0,
+        power_byte: 0x12,
+        event_frame: 4,
+    };
+    w.resolve_hit_event(0, hit, [0x12, 0, 0, 0], [4, 0, 0, 0]);
+    assert!(w.battle.hit_events.is_empty());
+    assert_eq!(
+        w.actors[0].battle_anim_cue_cursor, 1,
+        "the impact cue skipped"
+    );
+    assert_eq!(w.actors[0].battle_effect_cursor, 1);
+    assert_eq!(w.battle_ctx.effect_skip_strobe, 0, "consumed");
+}
+
 /// A blocked hit skips the damage body (`bne s7,zero,0x801EE6D4`): no
 /// damage, no accumulation, no popup, and the attacker's anim cue cursor
 /// steps over one cue. Driven through the real roll: the first seed

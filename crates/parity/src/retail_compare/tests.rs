@@ -458,6 +458,27 @@ fn a_card_grid_capture_drives_past_its_pill_row() {
     let (pill, pill_tick) = title_screen_drive(TitleScreen::Pill);
     assert!(TITLE_CONTINUE_PRESSES.starts_with(&pill) && pill.starts_with(&menu));
     assert!(menu_tick < pill_tick && pill_tick < TITLE_CONTINUE_CAPTURE_TICK);
+    // A committed pill: the port and the frame count since the commit.
+    let mut ram = ram_with_subscreen(0);
+    let o = (CARD_SCREEN_SUBMODE & 0x1F_FFFF) as usize;
+    ram[o..o + 4].copy_from_slice(&TITLE_SUBMODE_CARD_CHECK.to_le_bytes());
+    ram[(TITLE_CARD_PORT & 0x1F_FFFF) as usize] = 1;
+    let f = (TITLE_CARD_FRAMES & 0x1F_FFFF) as usize;
+    ram[f..f + 4].copy_from_slice(&0x25u32.to_le_bytes());
+    let check = RetailMenu::from_ram(&ram, "opdeene").unwrap().title_screen;
+    assert_eq!(
+        check,
+        Some(TitleScreen::CardCheck {
+            port: 1,
+            frames: 0x25
+        })
+    );
+    let (slot2, slot2_tick) = title_screen_drive(check.unwrap());
+    assert!(slot2.starts_with(&pill) && slot2.contains("880:Down"));
+    assert_eq!(
+        slot2_tick,
+        CARD_CHECK_COMMIT_TICK + 0x25 + CARD_CHECK_COUNT_LAG
+    );
 }
 
 #[test]

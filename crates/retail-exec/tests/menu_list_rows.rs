@@ -540,13 +540,31 @@ fn the_item_detail_printer_draws_what_retail_draws() {
     cpu.mem.wr8(EMPTY, 0);
     let mut rng = Rng(0x4954_454D);
     let (mut templated, mut equipped) = (0, 0);
-    for pass in 0..2 {
+    // Passes 2.. rewrite each piece of equipment's bonus bytes (record `+1`
+    // names its row of the table at `0x80074F68`) with values whose
+    // digits carry zeros after a lead, which the disc's own bonuses rarely
+    // do: the numeral loop's zero-after-a-digit arms.
+    let mut tables = tables;
+    for pass in 0..8 {
         for id in 0..=255u8 {
             let is_equip = tables.kind[usize::from(id)] == 1;
-            if pass == 1 && !is_equip {
+            if pass >= 1 && !is_equip {
                 continue;
             }
-            let desc = if pass == 0 {
+            if pass >= 2 {
+                let row = cpu.mem.rd8(ITEMS + 12 * u32::from(id) + 1);
+                let mut bonus = [0u8; 8];
+                for (k, b) in bonus.iter_mut().enumerate().take(4) {
+                    *b = [0, 1, 9, 10, 20, 99, 100, 105, 110, 200, 255][rng.below(11) as usize];
+                    cpu.mem.wr8(0x8007_4F68 + u32::from(row) * 8 + k as u32, *b);
+                }
+                let at = 0x8007_4F68 + u32::from(row) * 8;
+                for (k, b) in bonus.iter_mut().enumerate().skip(4) {
+                    *b = cpu.mem.rd8(at + k as u32);
+                }
+                tables.equip[usize::from(id)] = Some(bonus);
+            }
+            let desc = if pass != 1 {
                 cpu.mem.rd32(ITEMS + 12 * u32::from(id) + 8)
             } else {
                 EMPTY

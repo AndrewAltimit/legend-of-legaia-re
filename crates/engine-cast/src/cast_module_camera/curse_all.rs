@@ -27,9 +27,9 @@ const CURSED_TINT: u32 = 0x3FF0_03FF;
 ///
 /// | arm | camera and seats | word |
 /// |---|---|---|
-/// | 0 (`0x801F7524`) | the caster turned on its target (the row's centroid off `FUN_801DCEAC`), shown with flag `6`, every present party seat and live monster hidden; pitch `-0x20`, yaw `0x800 - facing`, TR `(0, 0x400, depth / 3)`, `0x20` frames | `= scalar << 5` |
+/// | 0 (`0x801F7524`) | the caster turned on its target (the row's centroid off `FUN_801DCEAC`), shown with flag `6`, every seated party member (fallen or not) and live monster hidden; pitch `-0x20`, yaw `0x800 - facing`, TR `(0, 0x400, depth / 3)`, `0x20` frames | `= scalar << 5` |
 /// | 1 (`0x801F7728`) | gate; a record; pitch `0`, the same yaw, TR `(0, 0x400, depth)`, `0x80` frames | `+= scalar * 0xA0` |
-/// | 2 (`0x801F7848`) | gate; the caster hidden, the target row shown; on the row: yaw `-caster[+0x46]`, TR `(0, 0x500, 2 * extent)`, a cut | `+= scalar << 5` |
+/// | 2 (`0x801F7848`) | gate; the caster hidden, the target row shown (a fallen member too); on the row: yaw `-caster[+0x46]`, TR `(0, 0x500, 2 * extent)`, a cut | `+= scalar << 5` |
 /// | 3 (`0x801F7AF4`) | gate; the row tinted and marked; a record; TR z `3 * extent`, `0x60` frames | `+= scalar << 7` |
 /// | 4 (`0x801F7D58`) | gate; every live monster and present party seat shown; done | - |
 ///
@@ -64,8 +64,12 @@ pub fn curse_all_camera(
             }
             .wrapping_add(0x800)
                 & 0xFFF;
+            // The party walk reads the roster byte `0x8007BD10 + seat`, not
+            // HP, so a fallen member is hidden too (`0x801F7650..0x801F7694`);
+            // the monster walk runs by count, `3 .. 3 + ctx[+0x01]`
+            // (`0x801F76A4`, `0x801F7940`).
             arm.others_write = HIDDEN;
-            arm.others_live_only = true;
+            arm.others_reach_seat_7 = true;
             arm.caster_write = CaptureSeatWrite {
                 facing: Some(onto),
                 render_flag: Some(6),
@@ -98,9 +102,10 @@ pub fn curse_all_camera(
             if gate(st) {
                 arm.hold = true;
             } else {
+                // The party row by roster byte, a fallen member included
+                // (`0x801F78E8..0x801F792C`).
                 arm.caster_write = HIDDEN;
                 arm.party_write = SHOWN;
-                arm.party_live_only = true;
                 arm.shot = Some(ModuleShot {
                     angles: [0, yaw_from(0, c.facing), 0],
                     tr: [0, 0x500, (2 * extent) as i16],
@@ -133,8 +138,9 @@ pub fn curse_all_camera(
             if gate(st) {
                 arm.hold = true;
             } else {
+                // The same two walks (`0x801F78E8..0x801F79AC`).
                 arm.others_write = SHOWN;
-                arm.others_live_only = true;
+                arm.others_reach_seat_7 = true;
             }
         }
         _ => {}

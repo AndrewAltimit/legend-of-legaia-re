@@ -3910,6 +3910,19 @@
       "phase": 1.0,
       "scene": 1.0
     },
+    "battle_rikuroa_party_vahn_seru_absorb_strike": {
+      "battle_party": 1.0,
+      "bgm": 1.0,
+      "camera": 1.0,
+      "enemies": 1.0,
+      "enemy_hp": 1.0,
+      "flags": 1.0,
+      "image": 0.998,
+      "inventory": 1.0,
+      "mode": 1.0,
+      "phase": 1.0,
+      "scene": 1.0
+    },
     "battle_rikuroa_pump_bat_windcutter_mid_cast": {
       "battle_party": 1.0,
       "bgm": 1.0,
@@ -6725,6 +6738,22 @@
       "phase": 1.0,
       "scene": 1.0
     },
+    "field_kor_incense_notice_retail": {
+      "bgm": 1.0,
+      "camera": 1.0,
+      "facing": 1.0,
+      "flags": 1.0,
+      "fog_gate": 1.0,
+      "footing": 1.0,
+      "image": 0.997,
+      "inventory": 1.0,
+      "mode": 1.0,
+      "npcs": 1.0,
+      "party": 1.0,
+      "position": 1.0,
+      "scene": 1.0,
+      "view_window": 1.0
+    },
     "field_walled_collision_pin": {
       "bgm": 1.0,
       "camera": 1.0,
@@ -7828,6 +7857,12 @@
       "position": 1.0,
       "scene": 1.0
     },
+    "load_slot2_grid": {
+      "image": 0.429
+    },
+    "load_slot2_now_checking": {
+      "image": 1.0
+    },
     "lu_delilas_plasma_strike_mid_cast": {
       "battle_party": 1.0,
       "bgm": 1.0,
@@ -8291,6 +8326,18 @@
       "mode": 1.0,
       "scene": 1.0
     },
+    "minigame_baka_fighter_retail_select": {
+      "image": 0.963,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_baka_fighter_retail_select_right": {
+      "image": 0.97,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
     "minigame_baka_pcsx": {
       "bgm": 1.0,
       "camera": 1.0,
@@ -8371,8 +8418,56 @@
       "position": 1.0,
       "scene": 1.0
     },
+    "minigame_fishing_retail_exchange_confirm": {
+      "image": 0.999,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_fishing_retail_exchange_list": {
+      "image": 1.0,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_fishing_retail_exchange_list_row4": {
+      "image": 1.0,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_fishing_retail_exchange_quantity": {
+      "image": 1.0,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_fishing_retail_help_page0": {
+      "image": 1.0,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_fishing_retail_help_page1": {
+      "image": 1.0,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
     "minigame_fishing_retail_shore": {
       "image": 1.0,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_fishing_retail_tackle": {
+      "image": 1.0,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_fishing_retail_tackle_row2": {
+      "image": 0.998,
       "minigame": 1.0,
       "mode": 1.0,
       "scene": 1.0
@@ -8477,8 +8572,32 @@
       "scene": 1.0,
       "view_window": 1.0
     },
+    "minigame_slot_machine_retail_payout_chart": {
+      "image": 1.0,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_slot_machine_retail_picker": {
+      "image": 0.997,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_slot_machine_retail_picker_rules_row": {
+      "image": 0.997,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
     "minigame_slot_machine_retail_reels": {
       "image": 0.997,
+      "minigame": 1.0,
+      "mode": 1.0,
+      "scene": 1.0
+    },
+    "minigame_slot_machine_retail_rules_page": {
+      "image": 1.0,
       "minigame": 1.0,
       "mode": 1.0,
       "scene": 1.0
@@ -10270,6 +10389,32 @@
       "phase": 1.0,
       "scene": 1.0
     },
+    "theeder_summon_value_rows_parked": {
+      "battle_party": 1.0,
+      "bgm": 1.0,
+      "camera": 0.927,
+      "enemies": 1.0,
+      "enemy_hp": 0.75,
+      "flags": 1.0,
+      "image": 0.614,
+      "inventory": 1.0,
+      "mode": 1.0,
+      "phase": 1.0,
+      "scene": 1.0
+    },
+    "theeder_summon_value_rows_rising": {
+      "battle_party": 1.0,
+      "bgm": 1.0,
+      "camera": 0.935,
+      "enemies": 1.0,
+      "enemy_hp": 0.75,
+      "flags": 1.0,
+      "image": 0.403,
+      "inventory": 1.0,
+      "mode": 1.0,
+      "phase": 1.0,
+      "scene": 1.0
+    },
     "title_attract": {
       "image": 1.0
     },
@@ -11578,6 +11723,7 @@
     "battle_rikuroa_caruban_fire_breath_mid_cast": "battle",
     "battle_rikuroa_caruban_strike": "battle",
     "battle_rikuroa_party_vahn_chain_open": "battle",
+    "battle_rikuroa_party_vahn_seru_absorb_strike": "battle",
     "battle_rikuroa_pump_bat_windcutter_mid_cast": "battle",
     "battle_rikuroa_worm_strike": "battle",
     "battle_ropeway_curry_devil_cross_beam_mid_cast": "battle",
@@ -11783,6 +11929,7 @@
     "evil_medallion_rage_battle": "battle",
     "evolved_0x90_midcast": "battle",
     "evolved_0x91_midcast": "battle",
+    "field_kor_incense_notice_retail": "field",
     "field_load_first_town": "field_init",
     "field_walled_collision_pin": "world_map",
     "first_town_interactive": "field",
@@ -11861,6 +12008,8 @@
     "koru_thunder_needle_mid_cast": "battle",
     "load_grid_endgame_card": "menu",
     "load_grid_pause_conc_retail": "menu",
+    "load_slot2_grid": "menu",
+    "load_slot2_now_checking": "menu",
     "lu_delilas_plasma_strike_mid_cast": "battle",
     "map01_field_door_hop": "world_map",
     "map01_tree_revival_cutscene": "world_map",
@@ -11899,6 +12048,8 @@
     "minigame_baka_fighter_retail_attract": "minigame",
     "minigame_baka_fighter_retail_fight": "minigame",
     "minigame_baka_fighter_retail_round2": "minigame",
+    "minigame_baka_fighter_retail_select": "minigame",
+    "minigame_baka_fighter_retail_select_right": "minigame",
     "minigame_baka_pcsx": "field",
     "minigame_dance_noa": "minigame",
     "minigame_dance_pcsx": "field",
@@ -11911,9 +12062,17 @@
     "minigame_fishing_pcsx": "world_map",
     "minigame_fishing_retail_catch_lift": "minigame",
     "minigame_fishing_retail_catch_plate": "minigame",
+    "minigame_fishing_retail_exchange_confirm": "minigame",
+    "minigame_fishing_retail_exchange_list": "minigame",
+    "minigame_fishing_retail_exchange_list_row4": "minigame",
+    "minigame_fishing_retail_exchange_quantity": "minigame",
+    "minigame_fishing_retail_help_page0": "minigame",
+    "minigame_fishing_retail_help_page1": "minigame",
     "minigame_fishing_retail_lure_cast": "minigame",
     "minigame_fishing_retail_ready": "minigame",
     "minigame_fishing_retail_shore": "minigame",
+    "minigame_fishing_retail_tackle": "minigame",
+    "minigame_fishing_retail_tackle_row2": "minigame",
     "minigame_muscle_dome": "minigame",
     "minigame_muscle_dome_pcsx": "field",
     "minigame_muscle_dome_retail_course_card": "minigame",
@@ -11925,7 +12084,11 @@
     "minigame_muscle_dome_retail_welcome": "minigame",
     "minigame_slot_machine": "minigame",
     "minigame_slot_machine_pcsx": "field",
+    "minigame_slot_machine_retail_payout_chart": "minigame",
+    "minigame_slot_machine_retail_picker": "minigame",
+    "minigame_slot_machine_retail_picker_rules_row": "minigame",
     "minigame_slot_machine_retail_reels": "minigame",
+    "minigame_slot_machine_retail_rules_page": "minigame",
     "minigame_slot_machine_retail_spin_decided": "minigame",
     "movie_mv2_t300_retail": "cutscene",
     "movie_mv2_t900_retail": "cutscene",
@@ -12061,6 +12224,8 @@
     "terra_summon_mid_cast": "battle",
     "theeder_pre_cast_vs_gobu_gobu": "battle",
     "theeder_summon_mid_cast": "battle",
+    "theeder_summon_value_rows_parked": "battle",
+    "theeder_summon_value_rows_rising": "battle",
     "title_attract": "menu",
     "title_menu_idle": "menu",
     "title_screen_new_game": "menu",

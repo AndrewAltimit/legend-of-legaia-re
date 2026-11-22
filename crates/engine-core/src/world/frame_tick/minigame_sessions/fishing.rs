@@ -17,6 +17,8 @@ impl World {
             self.minigames.fishing_return_mode = self.mode;
         }
         self.minigames.fishing = Some(session);
+        // The overlay's load zeroes the list cursor (`DAT_801D90A8`).
+        self.minigames.fishing_exchange_cursor = 0;
         self.minigames.fishing_events.clear();
         self.minigames.fishing_cues.reset();
         self.mode = SceneMode::Fishing;
@@ -148,22 +150,30 @@ impl World {
     /// Open the fishing point-exchange (prize shop) list on `exchange`.
     /// The host renders [`legaia_engine_minigame_scenes::minigame_state::MinigameState::fishing_exchange`] and commits buys through
     /// [`World::fishing_exchange_buy`].
+    ///
+    /// The list opens on the cursor it was left on
+    /// ([`legaia_engine_minigame_scenes::minigame_state::MinigameState::fishing_exchange_cursor`],
+    /// retail's `DAT_801D90A8`), not on its first visible row: a cursor
+    /// under the row-0 floor is the list's own entry clamp to resolve, which
+    /// sends it to the last row (`0x801D0C88..0x801D0C9C`). Retail's list
+    /// first opens there.
     pub fn open_fishing_exchange(
         &mut self,
         mut exchange: legaia_engine_fishing::fishing::PrizeExchange,
     ) {
-        // Row 0 hides until strictly affordable - floor the cursor to the
-        // first visible row for the current point pool.
-        exchange.cursor = exchange
-            .cursor
-            .max(exchange.first_visible(self.minigames.fishing_points));
+        if let Some(open) = &self.minigames.fishing_exchange {
+            self.minigames.fishing_exchange_cursor = open.cursor;
+        }
+        exchange.cursor = self.minigames.fishing_exchange_cursor;
         self.minigames.fishing_exchange = Some(exchange);
         self.minigames.fishing_exchange_dialog = Default::default();
     }
 
-    /// Close the point-exchange list.
+    /// Close the point-exchange list, keeping its cursor for the next visit.
     pub fn close_fishing_exchange(&mut self) {
-        self.minigames.fishing_exchange = None;
+        if let Some(open) = self.minigames.fishing_exchange.take() {
+            self.minigames.fishing_exchange_cursor = open.cursor;
+        }
     }
 
     /// Commit a point-exchange purchase of `qty` units of `row`

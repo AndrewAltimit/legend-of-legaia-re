@@ -54,8 +54,12 @@ fn rig() -> Option<(Cpu, Rc<RefCell<Frame>>)> {
         ));
     });
     let f = frame.clone();
-    cpu.hook(XA, move |r, _| {
+    // The clip starter raises the CD-XA in-flight word `_DAT_8007BC20` as it
+    // starts a clip (`sw s1,0x908(gp)` at `0x8003D65C`), which the all-clear
+    // announcer re-reads after each line.
+    cpu.hook(XA, move |r, m| {
         f.borrow_mut().lines.push((r.r[A0], r.r[A1], r.r[A2]));
+        m.wr32(0x8007_BC20, 2);
     });
     let f = frame.clone();
     cpu.hook(TINT, move |r, _| f.borrow_mut().tints.push(r.r[A2]));
@@ -184,13 +188,10 @@ fn the_all_clear_announcer_counts_as_retail_counts() {
             cpu.mem.wr32(STACK_TOP + 0x10, 0);
             assert_eq!(cpu.call(ANNOUNCER, &[]), Stop::Returned);
             let port = countdown_frame(&mut st, step, loading, banner, title, stage);
-            // A frame that both arms and finds the load done calls the
-            // announcer twice; the drive takes the later clip, and the port
-            // carries one line a frame.
-            let mut retail = std::mem::take(&mut *frame.borrow_mut());
-            if retail.lines.len() > 1 {
-                retail.lines.drain(..retail.lines.len() - 1);
-            }
+            // The starter's own store stops the routine after one line, so a
+            // frame never starts two.
+            let retail = std::mem::take(&mut *frame.borrow_mut());
+            assert!(retail.lines.len() <= 1, "run {run} frame {f}");
             assert_eq!(retail, expect(&port), "run {run} frame {f}");
             assert_eq!(
                 (cpu.mem.rd32(STATE) as i32, cpu.mem.rd32(TIMER) as i32),

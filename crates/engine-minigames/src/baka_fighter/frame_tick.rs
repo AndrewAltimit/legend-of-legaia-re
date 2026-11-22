@@ -126,6 +126,16 @@ impl BakaFight {
                 return BakaFrameOutcome::default();
             }
         }
+        // The all-clear fighter's load, run inside the frame that left
+        // `0xFB` ([`super::CLEAR_FIGHTER_LOAD_VSYNCS`]): no frame opens until
+        // it is read.
+        if self.clear_load_wait > 0 {
+            self.clear_load_wait -= 1;
+            self.held_edge |= edge;
+            self.pacer.skip(1);
+            self.chrome_frame.xa = None;
+            return BakaFrameOutcome::default();
+        }
         // A game tick once the frame before has spanned its vsyncs
         // ([`super::pacing`]): its step, or longer when its cost ran past
         // it. A press between two ticks is held for the next, as the pad
@@ -147,8 +157,15 @@ impl BakaFight {
             }
             None => (edge | std::mem::take(&mut self.held_edge), held),
         };
+        let ran = self.cabinet.state();
         let out = self.frame_tick(edge, held, pot, step);
         self.end_frame();
+        if self.install_load_hold
+            && ran == crate::baka_cabinet::ST_CLEAR_B
+            && self.cabinet.state() == crate::baka_cabinet::ST_CLEAR_C
+        {
+            self.clear_load_wait = super::CLEAR_FIGHTER_LOAD_VSYNCS;
+        }
         out
     }
 
@@ -252,7 +269,16 @@ impl BakaFight {
     /// this frame's edge-triggered face-button test (`_DAT_8007b874 & 0xf0`),
     /// which snaps the end-of-match tally to its end state.
     pub fn tick_with_input(&mut self, frame_step: i32, face_button: bool) {
+        // The pool walk runs the player's combat tick ahead of the round SM
+        // and the opponent's after it, so each reads the critical flag on its
+        // own side of the resolution.
+        let player_crit = self.f[0].crit_pending;
         self.tick_rules(frame_step, face_button);
+        let frames = self.cabinet.frame_counter();
+        self.fighter_colour = [
+            super::crit_flash_colour(player_crit, frames),
+            super::crit_flash_colour(self.f[1].crit_pending, frames),
+        ];
         self.tick_presentation(frame_step);
     }
 
@@ -464,6 +490,9 @@ impl BakaFight {
         }
         match self.phase {
             MatchPhase::MatchOver(_) => {
+                // The round SM's prologue runs the rumble levels out ahead of
+                // its duel-state gate, until the match phase is torn down.
+                self.decay_rumble(frame_step);
                 // The match is decided: the tally screen runs (FUN_801d239c).
                 if let Some(t) = self.tally.as_mut() {
                     t.tick(frame_step, face_button);
@@ -480,6 +509,20 @@ impl BakaFight {
                 // (`0x801D0620..0x801D063C`, the timer zeroed with it); the
                 // next round starts there.
                 if self.cabinet.state() == crate::baka_cabinet::ST_DUEL {
+                    // The pool walk still runs both combat ticks around the
+                    // round SM: a downed seat steps its knockdown at the rate
+                    // its last clip left, the standing seat returns to idle
+                    // at its clip's end and commits nothing against a downed
+                    // foe (`0x801D4488..0x801D4490`), and the round SM's
+                    // prologue runs the rumble levels out.
+                    if self.strike.is_some() {
+                        self.combat_tick(0, frame_step);
+                        self.decay_rumble(frame_step);
+                        self.combat_tick(1, frame_step);
+                        self.clips_stepped = true;
+                    } else {
+                        self.decay_rumble(frame_step);
+                    }
                     return;
                 }
                 self.round += 1;

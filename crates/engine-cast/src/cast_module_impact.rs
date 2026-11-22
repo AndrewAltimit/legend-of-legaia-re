@@ -25,10 +25,10 @@ pub enum ImpactSeat {
     LiveMonsters,
     /// `actor_table[0..ctx[+0]]`: the party row.
     Party,
-    /// The party row's seats with HP `+0x14C`: the loops that skip a fallen
-    /// seat ahead of its hit. The host reads the HP after the tick's hits, so
-    /// a seat this hit felled goes untinted, and it does not read the
-    /// `+0x16E & 4` skip.
+    /// The party row's seats with HP `+0x14C` and no Stone (`+0x16E & 4`):
+    /// the loops that skip such a seat ahead of their hit and store the tint
+    /// after it. The host reads both as the tick opens, so a seat the hit
+    /// fells is still tinted.
     LiveParty,
 }
 
@@ -66,6 +66,8 @@ pub struct ModuleImpact {
 const RED: u32 = 0x3FF;
 /// `+0x21C = 7`: the tint state that ramps a body's red lane up.
 const SOFT_RED_TINT_STATE: u8 = 7;
+/// `0xFFC00`: the colour word's green lane at its top.
+const WIND_GREEN: u32 = 0x000F_FC00;
 /// `0x3FF00000`: the colour word's blue lane at its top.
 const BLUE: u32 = 0x3FF0_0000;
 /// `0x3FF003FF`: red and blue.
@@ -286,14 +288,16 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
         selector: Some(0),
         tint_state: None,
     },
-    // PROT 0963 Genocidal Cannon: arm 14's party row (`0x801F7D10..0x801F7D20`).
+    // PROT 0963 Genocidal Cannon: arm 14's party row (`0x801F7D10..0x801F7D20`),
+    // inside the hit loop past its fallen / Stoned skip (`0x801F7C28`,
+    // `0x801F7C3C`).
     ModuleImpact {
         entry: 963,
         // `(0xB3, 0x801F6A20)`: Genocidal Cannon's trampoline arm.
         body: 0x801F_6A20,
         arm: 14,
         edge: ImpactEdge::Pass,
-        seat: ImpactSeat::Party,
+        seat: ImpactSeat::LiveParty,
         colour: Some(RED),
         full_blend: false,
         selector: Some(1),
@@ -338,6 +342,16 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
         None,
         Some(8),
     ),
+    // Wind's party loop: `+0x04 = 0xFFC00` and no selector store
+    // (`0x801F7DF8`).
+    element(
+        0x32 + 4,
+        ImpactEdge::Pass,
+        ImpactSeat::LiveParty,
+        Some(WIND_GREEN),
+        None,
+        None,
+    ),
     element(
         0x64 + 3,
         ImpactEdge::Pass,
@@ -368,7 +382,7 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
 /// `+0x21C = 3`, `+0x21F = 1` (`0x801F828C..0x801F829C`); its `k = 4` head
 /// `+0x21F = 1` (`0x801F82D0`) and party loop `+0x04 = 0x3FF`, `+0x21F = 1`
 /// (`0x801F8608..0x801F8618`). Wind's `k = 3` pass: `+0x21C = 8`
-/// (`0x801F7AD0`). Thunder's `k = 3` pass: `+0x21C = 4`, `+0x21F = 2`
+/// (`0x801F7AD0`); its party loop `+0x04 = 0xFFC00` (`0x801F7DF8`). Thunder's `k = 3` pass: `+0x21C = 4`, `+0x21F = 2`
 /// (`0x801F7208..0x801F7218`); its `k = 4` head `+0x21F = 1` (`0x801F7238`)
 /// and party loop `+0x04 = 0x3FF00000`, `+0x21F = 2` (`0x801F7598..0x801F75A8`).
 /// Each party loop skips a seat with no HP or with `+0x16E & 4` ahead of its

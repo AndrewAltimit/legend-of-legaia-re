@@ -84,6 +84,12 @@ shatter renderer's `RTPT`).
    `differential!(prot(ENTRY, VA))`, naming every routine it compares
    ([below](#declaring-what-a-test-runs)). A test with no declaration fails
    the coverage gate.
+5. When the test needs a `World` step that is not public, expose it beside the
+   arm it drives: a `#[cfg(feature = "test-drivers")] impl World { pub fn ... }`
+   block in that arm's own module, not a new method on the shared
+   `world::arm_drivers` / `world::field_test_drivers` / `world::test_drivers`
+   traits. Those traits are closed to new methods, so tests for different arms
+   never edit the same file.
 
 ## Declaring what a test runs
 
@@ -266,7 +272,17 @@ poll given, showed two arms with no port: the Seru-absorb puff behind a
 natural end (effect `0x14` at a downed seat committed to idle while a Seru is
 staged, and cue `0x1B` once an action), and the walk gates on
 `DAT_8007BD71`, which stop the hit and effect-script walks once the battle-end
-signal is up while the cue walk runs on.
+signal is up while the cue walk runs on. A cast-sequence film across a `rikuroa`
+kill that absorbs then showed the port puffing one clip early: the arm reads
+`+0x1D9`, which is the reaction channel's entry while a reaction plays, so the
+fallen monster puffs when its death entry ends and leaves it on idle, sixty
+vsyncs after the knockdown's end, where the port had tested the action
+channel alone ([the film](cast-sequence-oracle.md#the-seru-absorb-puff)).
+The same film, run four hundred vsyncs past the end-of-action gate that raises
+the end signal, shows no ring cue on either side after it and the win pose's
+camera agreeing once the pose's `rand()` pick is seated, so on this fight the
+walk gates have nothing observable to stop. No film yet shows a hit or effect
+walk the gate cuts.
 
 The item applier `FUN_800402F4`, run on a monster's casts, showed a class-1 group
 heal on the monster side walks the four monster seats `3..7` and stops short of
@@ -475,6 +491,8 @@ The lure's flight and in-water move in `FUN_801D26CC`, with the tail's record, r
 Baka Fighter's damage kernel `FUN_801D3B18`, called on its own over every attack type and streak (`baka_leaves`), found the port zeroing a special's damage, where the kernel runs the same arithmetic for it: a power of `0` leaves the streak term `(streak - 1) * 0x40`, taken off a struck seat with HP left. No duel reaches it, since the special is thrown at a seat already at `0`.
 
 Baka Fighter's chrome timelines, each called as its caller calls it with the widget emitter, the announcer and the tint hooked (`baka_chrome`): the round banner `FUN_801D5C7C` and the all-clear announcer `FUN_801D21FC` match, and the intro title card `FUN_801D59D4` found the subtitle's four-frame flash carried as white where the routine pushes the colour word `0xFF`, red alone. The sprite-actor draw callback `FUN_801D67F0` found the port rounding the fade level up before its shift, where the level is read unsigned and takes a plain `>> 4`, a brightness one step high on most frames. The impact pair `FUN_801D4DF8` and the all-clear fighter's tick `FUN_801D6F18` match.
+
+With the clip starter's hook raising the CD-XA word `_DAT_8007BC20` as the real starter does, the announcer found the port starting both of its opening lines on one frame, so the second replaced the first and channel `0x0A` never sounded; the cabinet's own run (`baka_cabinet`) found the beat `0xFB` moving on with a line still playing, where retail holds at full black.
 
 The slot machine's payline pass `FUN_801D3380` and the Muscle Dome's contest-start restore `FUN_801D0ED8` and leg staging `FUN_801D1510` match.
 
@@ -857,6 +875,41 @@ turn on the victim's display pair `+0x3C` / `+0x40`, not its live pair. Stone Ci
 cut is on the origin the prologue zeroed. Dead End Crisis's arm 0 lines the party up off `0x80077628` and stands
 seat 3 opposite before it frames, which the port did not carry.
 
+The same walk now compares what three bodies write to their seats. Death Game's picked card (`0x801F922C..0x801F9794`)
+runs on seats at full, short and wounded HP against `death_game_outcome` and the arm's seat writes, and agrees.
+Melt Spray's debuff, on the pass arm 3's countdown runs out, did not: retail cuts each of the ten halfwords by
+`(x + 9) / 10`, where the port cut a fifth and turned a stat of `0` or `1` into `0xFFFF`. Terror Scream's caster
+bands are held against a census of the AI picker's jump table, the monster records and every formation on the
+disc. The summon cameras run on retail's stage seats as well as the walk's own row, and hold the side-band stage
+up on each image's poll arm: Palma's arm 3 framed a lift its first monster does not make once that monster is
+down, and the band's poll dropped the TR z push Slippery's arm 1 makes while it waits.
+
+The arms that scale a stat or HP by a constant all run against their kernels now, since a magic-number divide
+is the easy one to misread: Fatal Decision's outcome arm on every outcome but the item theft (`fatal_outcomes`),
+White Shield, Power Charge, Power Up and the surge on the pass that leaves their arm, and the split hits of Hyper
+Lightning and Spore Gas on varied rolls (`chain_ticks`). All agree. Terror Scream's turn steal did not: its arm 3
+tests the Item category alone, where the port ran Kiss of Death's idiom, which also needs the initiative key.
+Kemaro's arm 17 runs on every formation byte (`kemaro_spear`), so its per-species jump table takes every case.
+
+<a id="the-band-shadow"></a>
+**The band shadow.** Each capture cast also runs on an engine `World` seated off the same actor records
+(`World::drive_arm_capture_cast_module`), stepped through `World::run_cast_module_code` while the band walks
+retail's phase, so every layer that writes a seat (director, tick body, band, impact table) is in the comparison.
+Retail's HP as each pass opens and the colour words the harness stages between passes (a defeat fade, a settle)
+reach the shadow as they reach retail, and every seat `0..7`'s `+0x04` and `+0x21C` must agree. Seats rest on
+`0x20080200`, and on one round in four a party member lies fallen on clip `8` and a monster is faded to `0`. It
+found the seven-seat walk the band did not keep, the roster-byte and HP-less walks, Guilty Cross's and Mystic
+Circle's hides, Void Accessories' show a pass early, the hit tints of Chaos Breath, Mystic Circle and Element
+Strike's Wind loop, and party-row tints that missed a seat the hit felled
+([the seat walks](../subsystems/cast-module.md#the-seat-walks)). Two things stay outside it, each named in the
+test: the creature seat of PROT 0964 and 0966, which a stubbed `FUN_801F19EC` seats, and Death Game past its spin,
+whose pad reaches retail alone. A cast whose band leaves retail's phase walk stops being compared at that pass;
+most of those are a band holding an arm one pass longer on a clip settle the harness does not stage.
+
+The capture-camera walk also starts every fifth round on a framing depth below zero: state `0x6F` drains
+`ctx[+0x6D0]` by `16 * step` a vsync with no floor while it waits on the module's seek, so a negative depth reaches
+a module (Death Game's `/ 4` fix-up at `0x801F7B2C` takes it).
+
 That line-up and the `0xFF` arm's restore now run off the module image against their port (`dead_end_crisis`): all
 eight records whole, the module's saved words and the context. The `cort_evolved_final_crisis_mid_cast` capture
 reads the stood seats and the saved poses. PROT 0927's stager arm 7, which jitters its caller's `+0x84` and rotation
@@ -1172,6 +1225,29 @@ case `0xB` (`clut_walk`), the placement spawner's model-bank select (`model_sele
 entry step (`field_load_entry`), the sustained-cue teardown (in `sfx_drain`) and the battle XA
 seek-ahead (`battle_voice`) all match.
 
+The placement spawner also runs whole (`model_select`): every placement of every scene in spawn
+order, with the real field VM pre-running each `0x24` / `0x25` prologue, on a fresh flag bank and on
+a random one. Its seats, headings, retire bits and stopping pcs match the World's own pre-run
+(`World::pre_run_field_channel_prologues`). The rig has to stand up what the scene init stands up
+around the loop: the actor list the context resolver `FUN_8003C83C` walks, holding the placements
+already spawned, and the spawn bracket `*(_DAT_801C6EA4) + 8` (`0x8003B73C`), without which every
+cross-context op on a halted actor stalls the pre-run. The spawn itself runs for real, off the node
+pool `FUN_800203EC` seeds: ops that free and append nodes relink the actor lists, and a stand-in
+list broke the resolver's walk.
+
+Generated scenes, whose prologues aim cross-context ops at earlier placements, later ones and ids
+nothing carries, found the World running an op with no answering context on the poker's own actor
+(a move or turn landing on the wrong placement) and running an op aimed at a placement not spawned
+yet. Retail's resolver answers zero for both, the dispatcher hands back the pc it was given and the
+pre-run ends there; the World's channel stepper now does the same.
+
+The monster install `FUN_80054CB0` (`monster_install`) also holds the seat's short name line
+(`ctx + 0x292`) to `battle_name_line` over generated names: the value window's row plates print that
+line, where the port had printed the plaque's name with its twin letter and badge. The save screen's
+header tab (`save_slide`, mode `1`) and the zone census (`camera_follow::the_zone_divisions_census`)
+match; the census finds the composer's zero-span divisions only on four scenes' single-tile regions,
+and those tiles lie off the walkable floor, so retail's trap never fires.
+
 PROT 0898's streak ribbon `FUN_801E1D98` (`streak_ribbon`), its corner builder answering with generated
 bottom quads, found the chain loop a `do`-`while`: the first segment above the bottom quad is drawn
 whatever the baseline, where the port tested first, so a bottom billboard at or above the screen top
@@ -1284,6 +1360,12 @@ under the boot latch `DAT_8007B71C`, so it reads "the first scene since boot". A
 such a scene holds it set, and no scene script on the disc reads it; the test holds retail to that
 rule and leaves the bit out of the comparison.
 
+The same run holds the card-load seat (`0x8003B764..0x8003B798`) to `SceneHost::arm_resume_seat`
+over the position `read_retail_field_position` reads off the save block: the two position words
+land in the entry operand and the arrival facing is zeroed. The one difference is the engine's own:
+a save whose snapshot reads `(0, 0)`, never taken, gets the scene's seat, where retail seats the
+party on the grid's corner.
+
 The pad pump `FUN_8001822C` (`pad_pump`), as one stream of calls over digital and analog reports,
 missing pads, the stick fold-ins on both sides of their dead zone, opposed directions and every
 frame step, matches on the held, changed and pressed words, the 32-vsync word and the repeat pulse.
@@ -1323,7 +1405,13 @@ overlay loaders `FUN_8003EBE4` / `FUN_8003EC70` and the read sync `FUN_8005EA84`
 A large routine whose port is a slice of it runs whole with `Cpu::stub_outside` and its few live
 callees hooked. The field initialiser `FUN_801D6704` (`field_init`) matches `field_spawn`,
 `field_bgm_plan` and `field_prim_buffer_bytes` over every entry mode, and showed the two-part
-one-shot `_DAT_8007B9B8` gating the BGM wait barrier as well as the read. The boot init
+one-shot `_DAT_8007B9B8` gating the BGM wait barrier as well as the read. Its environment words
+vary too: sound-flag bit 2, the field and battle BGM sources, the descriptor walker's status (pack
+read, scene objects, MAN decode argument), the field SFX bank latch and the read time the `0x7E`
+floor absorbs, against `World::release_field_init_voices`, `SfxBankResidency::field_init` and
+`FIELD_INIT_FLOOR_VSYNCS`. A MAN decode that takes the party-wipe arm (game mode `0x16`) skips
+the BGM poll and keeps CARD INIT with both sources closed; the engine takes a wipe off the battle
+instead (`take_party_wipe`), and its hold queues no field track. The boot init
 `FUN_8001D424` matches the initmap sanitiser, the duel arena initialiser `FUN_801CF00C` its record
 of seeds (`duel_init`), the battle loader `FUN_800520F0` the stage overlay it names, the mode-entry
 prologue `FUN_80016230` its verdicts (`mode_transition`), and the part tick `FUN_80021DF4` the

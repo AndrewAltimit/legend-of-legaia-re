@@ -98,6 +98,7 @@
   </table>
   </div>
   <p>The picker cursor wraps with an <em>unsigned</em> remainder: Up on row 0 stays on row 0, Down on row 2 wraps to row 0. Pressing cancel and confirm on the same frame on the rules row lands in a spin-up with no bet charged - a retail collision the port does not reproduce.</p>
+  <p>The picker and both rules pages sit in the game&rsquo;s blue marble frame, the same box the fishing counter and the save screens use. The port draws it from the resident system sheet, and retail captures of the picker and both rules pages score the port&rsquo;s frames at 0.997 to 1.000.</p>
 
   <h3>The reel strips</h3>
   <p>Each reel is a 20-slot strip. Init builds two source strips per reel in one interleaved pass: for each slot it draws a random position mod 20 and probes forward to a free one (step 13 for symbols, step 1 for numerals). So <strong>every symbol appears exactly twice on every reel</strong>, at scattered positions, and so does every bonus numeral. A third strip, the <strong>display strip</strong>, is the only one the win evaluator and the renderer read.</p>

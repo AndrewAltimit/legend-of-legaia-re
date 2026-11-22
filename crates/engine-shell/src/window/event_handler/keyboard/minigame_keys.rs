@@ -163,7 +163,7 @@ impl PlayWindowApp {
                 self.session.host.world.close_minigame_round_trip();
             } else if self.start_fishing_minigame() {
                 log::info!(
-                    "fishing: started - Circle casts/locks, Cross reels(A), Square reels(B), L to quit, P = prize exchange"
+                    "fishing: started - Circle casts/locks, Cross reels(A), Square reels(B), L to quit, P = prize exchange (arrows, Enter, Backspace)"
                 );
             }
             return true;
@@ -171,9 +171,12 @@ impl PlayWindowApp {
         false
     }
 
-    /// `P` (while fishing): toggle the point-exchange prize list
-    /// decoded from the fishing overlay's per-venue tables. While
-    /// open: Up/Down move, Left/Right switch venue, Enter buys one.
+    /// `P` (while fishing): toggle the point-exchange prize list on the
+    /// pond's own page. While open the keys are the pad's on the exchange's
+    /// three screens: Up / Down move the list cursor and the confirm's row,
+    /// Enter opens the quantity picker on an available row, then the confirm,
+    /// and buys on its Yes; Backspace backs out a screen; Left / Right step
+    /// the picker's quantity, and on the list switch the venue page.
     fn key_fishing_exchange(&mut self, code: KeyCode, state: ElementState) -> bool {
         if self.session.host.world.mode == SceneMode::Fishing
             && state == ElementState::Pressed
@@ -182,18 +185,18 @@ impl PlayWindowApp {
             use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
             let world = &mut self.session.host.world;
             let open = world.minigames.fishing_exchange.is_some();
-            // The key -> input map is this host's; what each input DOES
-            // (the points bank on open, the cursor floor, the venue flip, the
-            // buy at the cursor) is the shared engine kernel the browser
-            // play page's exchange panel drives too.
+            // The key -> input map is this host's; what each input DOES (the
+            // points bank and the pond's page on open, the venue flip, and
+            // the list / picker / confirm the pad runs) is the shared engine
+            // kernel the browser play page's exchange panel drives too.
             let input = match code {
                 KeyCode::KeyP => Some(ExchangeInput::Toggle),
                 KeyCode::ArrowUp if open => Some(ExchangeInput::Up),
                 KeyCode::ArrowDown if open => Some(ExchangeInput::Down),
-                KeyCode::ArrowLeft | KeyCode::ArrowRight if open => {
-                    Some(ExchangeInput::SwitchVenue)
-                }
+                KeyCode::ArrowLeft if open => Some(ExchangeInput::Left),
+                KeyCode::ArrowRight if open => Some(ExchangeInput::Right),
                 KeyCode::Enter if open => Some(ExchangeInput::Buy),
+                KeyCode::Backspace if open => Some(ExchangeInput::Cancel),
                 _ => None,
             };
             if let Some(input) = input {

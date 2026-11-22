@@ -44,7 +44,7 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_fishing::fishing::{PondPhase, PondSession, TENSION_MAX};
-use legaia_engine_ui::{self as ui, BarAxis, FishingCaptions, FishingHudAtlas, HudDraw, TextDraw};
+use legaia_engine_ui::{self as ui, BarAxis, FishingCaptions, FishingHudAtlas, HudDraw};
 use wasm_bindgen::prelude::*;
 
 /// The empty payload. Kept as one literal so every early return agrees.
@@ -158,22 +158,6 @@ impl LegaiaRuntime {
     /// world.
     fn fishing_session(&self) -> Option<&PondSession> {
         self.scene_host.host()?.world.minigames.fishing.as_ref()
-    }
-
-    /// The venue hub's draws (menu, help pages, tackle list) - empty while no
-    /// hub is up.
-    fn fishing_hub_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
-            return Vec::new();
-        };
-        let lines = world.fishing_hub_lines();
-        legaia_engine_ui::fishing::hub::fishing_hub_draws_for(
-            font,
-            lines
-                .iter()
-                .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
-            [1.0, 1.0, 1.0, 1.0],
-        )
     }
 
     /// This frame's retail HUD draw list
@@ -379,22 +363,30 @@ impl LegaiaRuntime {
         // The phase line, the reel hint and the session affordances are not
         // text in this frame: they are the caption
         // (`play_mg_caption_json`, `minigame_status::fishing_status_rows`).
-        // The venue's point-exchange sub-screen, when one is open. This page
-        // used to answer the rows as a JSON side-channel only
-        // (`play_fishing_prizes_json`), so the screen the native window
-        // draws over the pond existed on one host and a data feed on the
-        // other. Both now compose it through
-        // `legaia_engine_ui::fishing::exchange`.
-        texts.extend(self.fishing_exchange_draws(font));
-        // The venue's hub menu / help pages / tackle list, laid out by the
-        // engine (`World::fishing_hub_lines`) and composed by the one
-        // `legaia_engine_ui::fishing::hub` draw the native window uses.
-        texts.extend(self.fishing_hub_draws(font));
+        // The venue's screens over the pond - the hub, the no-lure line and
+        // the point exchange's list, quantity picker and confirm - composed
+        // once for both hosts (`legaia_engine_screens::fishing_venue_screen`),
+        // the text here and the panels as chrome sprites the
+        // page blits under it.
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+        let mut sprites = Vec::new();
+        if let Some(world) = self.scene_host.host().map(|h| &h.world) {
+            let rects = assets.chrome_rects();
+            let venue = legaia_engine_screens::fishing_venue_screen(world, font, rects.is_some());
+            if let Some(rects) = rects {
+                sprites = legaia_engine_screens::venue_chrome_sprites(
+                    &venue.chrome,
+                    rects,
+                    surface_w.max(1),
+                    surface_h.max(1),
+                );
+            }
+            texts.extend(venue.texts);
+        }
         ui::scale_stage_text_draws(&mut texts, origin, scale);
         serde_json::json!({
             "open": true,
-            "sprites": Vec::<serde_json::Value>::new(),
+            "sprites": sprites.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
             "texts": texts.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
             "bars": bars,
             "stage": [origin.0, origin.1, scale],
@@ -456,32 +448,14 @@ impl LegaiaRuntime {
         .to_string()
     }
 
-    /// The open point-exchange sub-screen's draws, through the composition
-    /// both hosts share (`legaia_engine_screens::fishing_exchange_draws`: the
-    /// venue panel, the rows and their live bag counts).
-    fn fishing_exchange_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
-            return Vec::new();
-        };
-        legaia_engine_screens::fishing_exchange_draws(
-            world,
-            font,
-            // The page drives this screen from its click panel (Buy, the
-            // venue tabs, Close) - it binds no key to it, so the footer
-            // names the panel rather than the native window's keys.
-            "   (Buy / venue tabs / Close in the panel)",
-            [1.0, 1.0, 1.0, 1.0],
-            [0.65, 0.72, 0.8, 1.0],
-        )
-    }
-
     /// Drive the point-exchange sub-screen through the shared engine kernel
     /// ([`World::fishing_exchange_input`]): `code` `0` toggle, `1` up, `2`
-    /// down, `3` switch venue, `4` buy at the cursor. The screen stays open
-    /// on the world between calls, which is what lets this page's HUD compose
-    /// ([`Self::fishing_exchange_draws`]) draw it every frame the way the
-    /// native window does. Returns the remaining points after a buy, `-1`
-    /// for a refused input, `0` otherwise.
+    /// down, `3` switch venue, `4` confirm, `5` left, `6` right, `7` cancel.
+    /// The keys run the list, the quantity picker and the confirm as the
+    /// pad does, so a buy is the confirm's Yes. The screen stays open on the
+    /// world between calls, which is what lets this page's HUD compose draw
+    /// it every frame the way the native window does. Returns the remaining
+    /// points after a buy, `-1` for a refused input, `0` otherwise.
     ///
     /// [`World::fishing_exchange_input`]: legaia_engine_core::world::World::fishing_exchange_input
     pub fn play_fishing_exchange_input(&mut self, code: u32) -> i32 {
@@ -504,17 +478,39 @@ impl LegaiaRuntime {
     }
 
     /// The point-exchange sub-screen's live state as JSON - `{ "open": bool,
-    /// "venue": n, "cursor": n }` - so the page's side panel can mirror what
-    /// the canvas draws.
+    /// "venue": n, "cursor": n, "screen": "list" | "quantity" | "confirm",
+    /// "row": n, "qty": n, "max": n, "cost": n, "yes": bool }` - so the
+    /// page's side panel can mirror what the canvas draws (`row` .. `yes`
+    /// are the picker's and the confirm's words).
     pub fn play_fishing_exchange_state_json(&self) -> String {
-        let ex = self
-            .scene_host
-            .host()
-            .and_then(|h| h.world.minigames.fishing_exchange.as_ref());
-        match ex {
-            Some(e) => serde_json::json!({ "open": true, "venue": e.venue, "cursor": e.cursor }),
-            None => serde_json::json!({ "open": false }),
-        }
+        use legaia_engine_fishing::fishing::PrizeScreen;
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
+            return serde_json::json!({ "open": false }).to_string();
+        };
+        let Some(e) = world.minigames.fishing_exchange.as_ref() else {
+            return serde_json::json!({ "open": false }).to_string();
+        };
+        let d = &world.minigames.fishing_exchange_dialog;
+        let owned = e.rows.get(d.row).map_or(0, |r| {
+            u32::from(world.party.inventory.get(&r.item_id).copied().unwrap_or(0))
+        });
+        let points = world.minigames.fishing_points;
+        let mask = world.minigames.fishing_prizes_purchased;
+        serde_json::json!({
+            "open": true,
+            "venue": e.venue,
+            "cursor": e.cursor,
+            "screen": match d.screen {
+                PrizeScreen::List => "list",
+                PrizeScreen::Quantity => "quantity",
+                PrizeScreen::Confirm => "confirm",
+            },
+            "row": d.row,
+            "qty": d.qty,
+            "max": e.max_qty(d.row, points, owned, mask),
+            "cost": e.rows.get(d.row).map_or(0, |r| i64::from(r.price) * i64::from(d.qty)),
+            "yes": d.confirm_row == 0,
+        })
         .to_string()
     }
 
@@ -540,13 +536,14 @@ impl LegaiaRuntime {
         .to_string()
     }
 
-    /// Buy prize row `row` at `venue` with the live point pool, through the
-    /// same kernel: opens the sub-screen on `venue` when it is not already
-    /// showing it, puts the cursor on `row`, buys, and **leaves the screen
-    /// open** - it used to open, buy and close inside this one call, so the
-    /// screen the HUD compose draws was never open when a frame composed.
-    /// Returns the remaining points, or `-1` when the row is unavailable (too
-    /// few points, a latched one-time prize, or a full stack).
+    /// Pick prize row `row` at `venue` through the same kernel: opens the
+    /// sub-screen on `venue` when it is not already showing it, puts the
+    /// list's cursor on `row` and confirms it, which opens the quantity
+    /// picker as the pad's confirm does. The buy is the confirm's Yes
+    /// ([`Self::play_fishing_exchange_input`] `4` on the picker, then on
+    /// Yes); the screen stays open. Returns `0` when the picker opened, or
+    /// `-1` when the row is unavailable (too few points, a latched one-time
+    /// prize, or a full stack).
     pub fn play_fishing_prize_buy(&mut self, venue: u32, row: usize) -> i32 {
         use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
         let Some(host) = self.scene_host.host_mut() else {
@@ -567,9 +564,12 @@ impl LegaiaRuntime {
         if let Some(ex) = &mut world.minigames.fishing_exchange {
             ex.cursor = row.min(ex.rows.len().saturating_sub(1));
         }
+        // A pick from the panel starts on the list, as a pad confirm does.
+        world.minigames.fishing_exchange_dialog.screen =
+            legaia_engine_fishing::fishing::PrizeScreen::List;
         match world.fishing_exchange_input(venues, ExchangeInput::Buy) {
-            ExchangeOutcome::Bought(_) => world.minigames.fishing_points,
-            _ => -1,
+            ExchangeOutcome::Refused => -1,
+            _ => 0,
         }
     }
 }

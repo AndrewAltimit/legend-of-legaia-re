@@ -128,6 +128,11 @@
         ctx.fillRect(st[0] + b.x * st[2], st[1] + b.y * st[2],
           Math.max(1, b.w * st[2]), Math.max(1, b.h * st[2]));
       }
+      /* The venue screens' panels (the hub menu, the prize list and its
+       * dialogs) in the class-0 frame (style 0x44), under their text. */
+      if (this._menuChrome && hud.sprites && hud.sprites.length) {
+        this._menuChrome.blit(ctx, hud.sprites);
+      }
       if (this._menuFont) this._menuFont.blit(ctx, hud.texts);
       this._overlayActive = true;
       return true;

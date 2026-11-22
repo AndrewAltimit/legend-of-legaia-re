@@ -115,8 +115,8 @@ navigation logic depends on the GPU backend.
   turn-limited boss fight; gate and numbers are `engine-world-views::timed_fight`.
 - `baka_strips` - the Baka Fighter HUD's digit strips (`FUN_801d69e4`,
   `FUN_801d6ef4`, `FUN_801d6f44`), drawn as font glyphs at the ported cell x.
-- `fishing::hub` / `fishing::exchange` / `fishing::rod` - the fishing
-  venue's hub menu and help pages, its point-exchange sub-screen, and the
+- `fishing::exchange` / `fishing::rod` - the fishing venue's
+  point-exchange sub-screen and the
   first-person rod's faces (`PondSession::rod_faces`) as flat prims.
 - `fishing::sprite` - the fishing HUD's sprite quads (the overlay's shared
   emitter `FUN_801D63B0` and its digit wrappers) as `POLY_GT4`s sampling the

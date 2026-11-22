@@ -16,8 +16,10 @@ def build_rust_graph(
 
     Resolution order per call site, most to least specific:
 
-    - `Qual::name` - matched against `impl Qual` methods, then against a module
-      (file stem) named `Qual`, then falls back to the bare name.
+    - `Qual::name` - matched against `impl Qual` methods and, when `Qual` is a
+      trait, against the methods of every `impl Qual for X` block (the
+      `Trait::method(self, ..)` call form), then against a module (file stem)
+      named `Qual`, then falls back to the bare name.
     - `.name(...)` - matched against every in-tree method of that name. Receiver
       types are not inferred, so this is the main over-approximation.
     - `name(...)` - a free call; matched against every in-tree `fn name`.
@@ -69,13 +71,23 @@ def build_rust_graph(
     for i, f in enumerate(fns):
         f.uid = i
 
+    tree_traits = {name for src in srcs.values() for *_, name in src.trait_spans}
     by_name: dict[str, list[RustFn]] = defaultdict(list)
     by_qual: dict[tuple[str, str], list[RustFn]] = defaultdict(list)
     by_mod: dict[tuple[str, str], list[RustFn]] = defaultdict(list)
+    by_trait: dict[tuple[str, str], list[RustFn]] = defaultdict(list)
     for f in fns:
         by_name[f.name].append(f)
         if f.impl_type:
             by_qual[(f.impl_type, f.name)].append(f)
+        # `Trait::name(self, ..)` is a method call spelt through the trait. It
+        # names no receiver type, so it reaches every implementor's body (and
+        # the trait's own default, filed under the trait name above). Only
+        # in-tree traits: `Default::default()` / `Clone::clone(&x)` name a std
+        # trait, and letting them reach every in-tree `impl Default` is the
+        # `Vec::new` over-reach the free-function fallback below refuses.
+        if f.impl_trait and f.impl_trait != f.impl_type and f.impl_trait in tree_traits:
+            by_trait[(f.impl_trait, f.name)].append(f)
         by_mod[(f.path.stem, f.name)].append(f)
     methods_by_name: dict[str, list[RustFn]] = defaultdict(list)
     free_by_name: dict[str, list[RustFn]] = defaultdict(list)
@@ -151,11 +163,19 @@ def build_rust_graph(
                 # (`Vec::new`, `String::from`, `Duration::from_secs`), and
                 # letting those reach every in-tree `Type::new` wires up whole
                 # modules that nothing constructs.
-                cands = (
-                    by_qual.get((qual, name))
-                    or by_mod.get((qual, name))
-                    or free_by_name.get(name, [])
-                )
+                # A trait-qualified call reaches the trait's default (in
+                # `by_qual`) plus every implementor. Which implementor is
+                # ambiguous in exactly the way a `.name(...)` edge is, so the
+                # strict graph gates the implementors on the receiver.
+                impls = by_trait.get((qual, name))
+                if impls:
+                    cands = by_qual.get((qual, name), []) + gated(f, impls)
+                else:
+                    cands = (
+                        by_qual.get((qual, name))
+                        or by_mod.get((qual, name))
+                        or free_by_name.get(name, [])
+                    )
                 targets.update(c.uid for c in cands)
             for name in calls.methods:
                 key = (f.path, name)

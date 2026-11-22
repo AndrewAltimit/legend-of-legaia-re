@@ -48,9 +48,9 @@ pub(super) fn run_tick_latched(
 /// refunds.
 pub const ACTION_CATEGORY_ITEM: u8 = 1;
 
-/// The band's **turn-steal** idiom, shared by PROT 0955's Kiss of Death miss
-/// arm (`0x801F8CF4..0x801F8D54`) and its Terror Scream arm 3
-/// (`0x801F7E18..0x801F7E4C`).
+/// The band's **turn-steal** idiom, PROT 0955's Kiss of Death miss arm
+/// (`0x801F8CF4..0x801F8D54`) and PROT 0956's `0x75` arm 2. Terror Scream's
+/// arm 3 tests neither key: [`steal_turn_unguarded`].
 ///
 /// ```text
 /// if victim[+0x1DE] == 1 && victim[+0x16C] != 0 { FUN_800421D4(victim[+0x1DF], 1) }
@@ -75,6 +75,24 @@ pub fn steal_turn(ctx: &mut CastModuleCtx, victim: &mut CastActorState) -> Optio
         ctx.turn_cursor = ctx.turn_cursor.wrapping_add(1);
         victim.init_key = 0;
     }
+    refund
+}
+
+/// PROT 0955 Terror Scream arm 3's turn steal (`0x801F7E18..0x801F7E4C`),
+/// which tests the Item category alone:
+///
+/// ```text
+/// if victim[+0x1DE] == 1 { FUN_800421D4(victim[+0x1DF], 1) }
+/// victim[+0x1DE] = 0 ; victim[+0x16C] = 0 ; ctx[+0x1A] += 1
+/// ```
+///
+/// A victim whose initiative key is already spent still gets its item back
+/// and still advances the turn cursor, where [`steal_turn`] leaves both.
+pub fn steal_turn_unguarded(ctx: &mut CastModuleCtx, victim: &mut CastActorState) -> Option<u8> {
+    let refund = (victim.action_category == ACTION_CATEGORY_ITEM).then_some(victim.queued_action);
+    victim.action_category = 0;
+    victim.init_key = 0;
+    ctx.turn_cursor = ctx.turn_cursor.wrapping_add(1);
     refund
 }
 
@@ -189,6 +207,8 @@ pub fn chaos_breath_tick(
                 let knockdown = v.knockdown_anim;
                 v.staged_anim = knockdown;
                 v.restage = 1;
+                // The hit tint (`sw a1,0x4(a0)` at `0x801F788C`).
+                v.present_04 = CHAOS_BREATH_HIT_TINT;
                 let (a, b) = status(seat);
                 if a & 7 == 0 {
                     v.flags |= FLAG_VENOM;
@@ -222,6 +242,13 @@ pub fn chaos_breath_tick(
     });
     (step, hits)
 }
+
+/// The colour word PROT 0938's `0x4E` sweep leaves on each hit seat
+/// (`lui 0x3FF0; ori 0x4040`, `0x801F7860..0x801F788C`).
+pub const CHAOS_BREATH_HIT_TINT: u32 = 0x3FF0_4040;
+/// The colour word PROT 0938's `0xB7` sweep leaves on each hit seat
+/// (`lui 0x3FF8; ori 0x300`, `0x801F71A4..0x801F71C0`).
+pub const MYSTIC_CIRCLE_HIT_TINT: u32 = 0x3FF8_0300;
 
 /// The baked power PROT 0938's `0xB7` body hands `FUN_801DD4B0`
 /// (`addiu a0,zero,0x309` at `0x801F70DC`, in the `beqz` delay slot).
@@ -280,6 +307,8 @@ pub fn mystic_circle_tick(
                 let knockdown = v.knockdown_anim;
                 stage_clip(v, knockdown);
                 v.anim_rate = MYSTIC_CIRCLE_HIT_ANIM_RATE;
+                // The hit tint (`sw a0,0x4(v0)` at `0x801F71C0`).
+                v.present_04 = MYSTIC_CIRCLE_HIT_TINT;
                 hits.push(SweepHit { seat, applied });
             }
         }

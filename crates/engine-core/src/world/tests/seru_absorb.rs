@@ -213,3 +213,55 @@ fn the_catch_rate_setting_replaces_the_records_chance() {
     assert_eq!(staged(100, None), 1);
     assert_eq!(staged(100, Some(0)), 0);
 }
+
+/// The natural-end puff reads `+0x1D9`, which is the reaction channel's
+/// entry while one plays: a dead monster on its death entry does not puff
+/// when the knockdown before it ends, only once the death entry's own end
+/// leaves it on idle (`captures/w53-E/films/rikuroa_absorb_b3`: retail
+/// puffs and sounds `0x1B` on the death entry's end, sixty vsyncs after the
+/// knockdown's).
+#[test]
+fn the_absorb_puff_waits_for_the_death_entry_to_end() {
+    let mut world = absorb_world(100, true);
+    world.battle_ctx.absorbed_seru = 1;
+    world.actors[1].battle.hp = 0;
+    world.actors[1].battle.current_anim = 0;
+    world.actors[1].battle_reaction_entry = Some(4);
+    assert_eq!(world.absorb_puff_plan(1), None, "on the death entry");
+    world.actors[1].battle_reaction_entry = None;
+    assert!(
+        world.absorb_puff_plan(1).is_some_and(|(_, cue)| cue),
+        "idle at zero HP with the Seru staged puffs and sounds"
+    );
+}
+
+/// The defeat fade's lanes hold while `+0x1D9` reads a reaction entry that
+/// is neither idle nor the knockdown: the get-up a staged Seru restages on
+/// the fallen monster keeps it lit while it rises for the absorb, and the
+/// fade runs once the get-up ends on idle
+/// (`captures/w53-E/films/rikuroa_absorb_long`).
+#[test]
+fn the_defeat_fade_holds_under_the_absorb_get_up() {
+    use legaia_engine_battle_vm::battle_formulas::{STATE_DEFEAT_FADE, TINT_NEUTRAL};
+    let mut world = absorb_world(100, true);
+    world.mode = SceneMode::Battle;
+    world.battle_ctx.absorbed_seru = 1;
+    let a = &mut world.actors[1];
+    a.active = true;
+    a.battle.hp = 0;
+    a.battle.current_anim = 0;
+    a.battle.render_flag = STATE_DEFEAT_FADE;
+    a.battle.render_color = TINT_NEUTRAL;
+    a.battle_reaction_entry = Some(4);
+    world.tick_battle_impact_fx();
+    assert_eq!(
+        world.actors[1].battle.render_color, TINT_NEUTRAL,
+        "lit under the get-up"
+    );
+    world.actors[1].battle_reaction_entry = None;
+    world.tick_battle_impact_fx();
+    assert!(
+        world.actors[1].battle.render_color < TINT_NEUTRAL,
+        "the fade runs on idle"
+    );
+}

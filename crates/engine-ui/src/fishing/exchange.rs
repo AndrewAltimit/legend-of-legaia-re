@@ -1,135 +1,89 @@
-//! The fishing **point-exchange sub-screen** - one composition, both hosts.
+//! The fishing **point-exchange screens** - one composition, both hosts.
 //!
-//! The venue's prize counter is its own screen over the pond: retail frames
-//! it with the overlay's menu-picker rect (`FUN_801d74b0`, centre `(0xA0,
-//! 0x50)`, `0x68 x 0x50`), which holds still, and lists the rows the venue's page decodes with the unaffordable ones
-//! greyed.
+//! The venue's prize counter is three screens over the hub menu: the prize
+//! list (`FUN_801D0C3C`), the quantity picker (`FUN_801D092C`) and the
+//! confirm (`FUN_801D06C8`). Their layout is
+//! `legaia_engine_fishing::fishing::PrizeExchange::list_draw` /
+//! `dialog_layers`, in retail's 320x240 space; this module turns it into
+//! dialog-font [`TextDraw`]s.
 //!
-//! The native window built that list inline in its HUD pass and the browser
-//! play page shipped the rows as a JSON side-channel its own script drew, so
-//! the screen existed on one host and a data feed on the other. What decides
-//! a row's ink and its tag is the same three-way refusal on both - price,
-//! the owned-stack cap and the one-time latch - and that is what lives here.
-//!
-//! The latch is the trap this module keeps separated: `is_available` folds
-//! all three refusals together, so reading it as "already bought" prints
-//! `sold` beside every prize a fresh save cannot yet afford. The tag reads
-//! the latch on its own.
+//! Each screen sits on its own panel (`FUN_801D74B0`, widget style `0x44`,
+//! [`venue_panel_draws_for`]), drawn by the hosts' chrome pass under every
+//! text. A
+//! later screen's panel covers the text of the screens under it (retail's
+//! ordering table draws a routine's text over its own panel and the next
+//! routine's panel over both), so [`occlude_text_draws`] crops the lower
+//! screens' glyphs against the panels drawn above them.
 
 use crate::*;
 
-/// One prize row, resolved for display.
-pub struct ExchangeRowView<'a> {
-    /// Item name, or the host's `item 0xNN` stand-in.
-    pub name: &'a str,
-    /// Price in fishing points.
-    pub price: u32,
-    /// How many of this item the party already holds.
-    pub owned: u32,
-    /// The row can be taken right now (price, stack cap and latch all pass).
+/// The list's ink for an available row (ink `7`).
+pub const EXCHANGE_INK: [f32; 4] = crate::MENU_TEXT_WHITE;
+/// The list's ink for a row [`legaia_engine_fishing`]'s availability refuses
+/// (ink `0`).
+pub const EXCHANGE_DIM_INK: [f32; 4] = crate::MENU_TEXT_GREY;
+
+/// One prize-list row: the item name at its pen and the price field
+/// `(value, places, x, y)`, both in the row's ink.
+pub struct ExchangeListRow<'a> {
+    pub name: &'a [u8],
+    pub name_at: (i32, i32),
+    pub price: (i64, i32, i32, i32),
     pub available: bool,
-    /// The row is a one-time prize.
-    pub one_time: bool,
-    /// The one-time bit is **latched** - this prize has been taken.
-    pub latched: bool,
 }
 
-/// Everything the sub-screen draws.
-pub struct ExchangeView<'a> {
-    /// `0` Buma, `1` Vidna.
-    pub venue: u8,
-    /// The live point pool.
-    pub points: i32,
-    /// Row the cursor sits on.
-    pub cursor: usize,
-    /// First row the venue's own scroll rule puts on screen.
-    pub first_visible: usize,
-    pub rows: &'a [ExchangeRowView<'a>],
-}
-
-/// Venue label for a venue index.
-pub fn venue_name(venue: u8) -> &'static str {
-    if venue == 0 { "Buma" } else { "Vidna" }
-}
-
-/// Vertical pitch between rows, in stage pixels.
-pub const EXCHANGE_ROW_PITCH: i32 = 18;
-/// Drop from the panel's top-left to the first row.
-pub const EXCHANGE_LIST_TOP_DY: i32 = 18;
-
-/// The tag printed at the end of a row: what kind of prize it is, and
-/// whether it is gone.
-///
-/// `one_time && latched` is the only spelling of "sold": a one-time prize
-/// the player cannot yet afford is still `one-time`, not `sold`.
-pub fn exchange_row_tag(one_time: bool, latched: bool) -> &'static str {
-    match (one_time, latched) {
-        (true, true) => "sold",
-        (true, false) => "one-time",
-        (false, _) => "each",
-    }
-}
-
-/// The screen's header line.
-pub fn exchange_header_line(venue: u8, points: i32, prompt: &str) -> String {
-    format!(
-        "PRIZE EXCHANGE ({})  points {points}{prompt}",
-        venue_name(venue)
-    )
-}
-
-/// One row's line, at the column layout both hosts print.
-pub fn exchange_row_line(row: &ExchangeRowView<'_>, on_cursor: bool) -> String {
-    let cursor = if on_cursor { ">" } else { " " };
-    let tag = exchange_row_tag(row.one_time, row.latched);
-    let (name, price, owned) = (row.name, row.price, row.owned);
-    format!("{cursor} {name:<18} {price:>6} pts  {tag}  (own {owned})")
-}
-
-/// Compose the whole sub-screen into [`TextDraw`]s at `pen`, the panel's
-/// resolved top-left.
-///
-/// `prompt` is the host's own input legend - the two hosts bind different
-/// keys - and is appended to the header rather than given a line of its own,
-/// which is where both hosts already put it.
-pub fn exchange_screen_draws_for(
+/// The prize list's text (`FUN_801D0C3C`): each row's name and price in ink
+/// `7` or `0`, and the points label and the point pool in ink `7`. Its
+/// cursor icon is a sprite ([`venue_hand_draw_for`]).
+pub fn exchange_list_draws_for(
     font: &legaia_font::Font,
-    view: &ExchangeView<'_>,
-    prompt: &str,
-    pen: (i32, i32),
-    ink: [f32; 4],
-    dim: [f32; 4],
+    rows: &[ExchangeListRow<'_>],
+    points_label: (&[u8], i32, i32),
+    points: (i64, i32, i32, i32),
 ) -> Vec<TextDraw> {
-    let mut out: Vec<TextDraw> = Vec::new();
-    let head = exchange_header_line(view.venue, view.points, prompt);
-    let layout = font.layout_ascii(&head);
-    push_layout(&mut out, &layout, pen, ink);
-    for (i, r) in view.rows.iter().enumerate().skip(view.first_visible) {
-        let line = exchange_row_line(r, i == view.cursor);
-        let layout = font.layout_ascii(&line);
-        let y = pen.1 + EXCHANGE_LIST_TOP_DY + EXCHANGE_ROW_PITCH * (i - view.first_visible) as i32;
-        push_layout(
-            &mut out,
-            &layout,
-            (pen.0, y),
-            if r.available { ink } else { dim },
-        );
+    let mut out = Vec::new();
+    for r in rows {
+        let ink = if r.available {
+            EXCHANGE_INK
+        } else {
+            EXCHANGE_DIM_INK
+        };
+        out.extend(text_draws_for(&font.layout(r.name), r.name_at, ink));
+        let (value, places, x, y) = r.price;
+        out.extend(crate::menu::decimal_field::decimal_field_draws(
+            font,
+            value,
+            (x, y),
+            places,
+            false,
+            ink,
+        ));
     }
+    let (label, x, y) = points_label;
+    out.extend(text_draws_for(&font.layout(label), (x, y), EXCHANGE_INK));
+    let (value, places, x, y) = points;
+    out.extend(crate::menu::decimal_field::decimal_field_draws(
+        font,
+        value,
+        (x, y),
+        places,
+        false,
+        EXCHANGE_INK,
+    ));
     out
 }
 
 /// The exchange's quantity picker and confirm over the list, from the
-/// layout `legaia_engine_fishing::fishing::PrizeExchange::dialog_draw` puts
-/// in retail's 320x240 space: text at its pen (`FUN_80036888`), the decimal
-/// fields `(value, places, x, y)` through the menu numerals
-/// (`FUN_80034B78`), separator glyph `6` (`/`, `FUN_8003C1F8`) and the
-/// cursor icon as the `>` every host draws for icon `0x4E`.
+/// layout `legaia_engine_fishing::fishing::PrizeExchange::dialog_layers`
+/// puts in retail's 320x240 space: text at its pen (`FUN_80036888`), the
+/// decimal fields `(value, places, x, y)` through the menu numerals
+/// (`FUN_80034B78`) and separator glyph `6` (`/`, `FUN_8003C1F8`). Their
+/// cursor icons are sprites ([`venue_hand_draw_for`]).
 pub fn exchange_dialog_draws_for(
     font: &legaia_font::Font,
     texts: &[(&[u8], i32, i32)],
     numbers: &[(i64, i32, i32, i32)],
     slash: Option<(i32, i32)>,
-    cursors: &[(i32, i32)],
     ink: [f32; 4],
 ) -> Vec<TextDraw> {
     let mut out = crate::text_lines::text_line_draws_for(
@@ -156,105 +110,157 @@ pub fn exchange_dialog_draws_for(
             ink,
         ));
     }
-    out.extend(crate::text_lines::text_line_draws_for(
-        font,
-        cursors.iter().map(|&(x, y)| (&b">"[..], x, y, false)),
-        ink,
-        ink,
-    ));
     out
 }
 
-fn push_layout(
-    out: &mut Vec<TextDraw>,
-    layout: &legaia_font::Layout,
+/// The venue screens' cursor icon `FUN_8002C488(x, y, 0x4E)`: widget record
+/// `0x4E` is the 16x16 pointing hand (sheet `(0x98, 0x40)`, CLUT row 7) with
+/// no pen offset, so its top-left is the pen - the save screen's hand
+/// (`SaveMenuAtlasRects::cursor`).
+pub fn venue_hand_draw_for(
+    rects: &SaveMenuAtlasRects,
     pen: (i32, i32),
-    color: [f32; 4],
-) {
-    for g in &layout.glyphs {
-        out.push(TextDraw {
-            dst: (pen.0 + g.dst_x, pen.1 + g.dst_y, g.width, g.height),
-            src: (g.atlas_x, g.atlas_y, g.width, g.height),
-            color,
-        });
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let s = stage_scale.max(1);
+    let (_, _, w, h) = rects.cursor;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + pen.0 * s as i32,
+            stage_origin.1 + pen.1 * s as i32,
+            w * s,
+            h * s,
+        ),
+        src: rects.cursor,
+        color: [1.0, 1.0, 1.0, 1.0],
     }
+}
+
+/// One venue panel: the box emitter `FUN_8002C69C(x, y, w, h)` in the
+/// style `FUN_801D74B0` stages, `0x44`
+/// ([`crate::battle_hud_chrome::class0_box_draws_for`]).
+pub fn venue_panel_draws_for(
+    rects: &SaveMenuAtlasRects,
+    rect: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    crate::battle_hud_chrome::class0_box_draws_for(rects, rect, stage_origin, stage_scale)
+}
+
+/// Crop stage-pixel text draws against a panel's footprint `(x, y, w, h)`
+/// drawn over them: a glyph inside it goes, a glyph whose top or bottom
+/// band it covers (across the glyph's whole width) keeps the rest, and a
+/// glyph it covers only at a corner or not at all stays whole.
+///
+/// Retail's dialog fill is two half-transparent quads, so text under a panel
+/// shows at a quarter of its strength there; over the fill's marble that is
+/// not visible on a retail frame, which is what dropping it reproduces.
+/// The crop keeps source and destination in step, so it holds for draws at
+/// stage scale (one source texel a stage pixel), before the host scales them.
+pub fn occlude_text_draws(draws: &mut Vec<TextDraw>, footprint: (i32, i32, i32, i32)) {
+    let (fx, fy, fw, fh) = footprint;
+    let (fx1, fy1) = (fx + fw, fy + fh);
+    draws.retain_mut(|d| {
+        let (x, y, w, h) = (d.dst.0, d.dst.1, d.dst.2 as i32, d.dst.3 as i32);
+        let (x1, y1) = (x + w, y + h);
+        if x1 <= fx || x >= fx1 || y1 <= fy || y >= fy1 {
+            return true;
+        }
+        let spans_x = x >= fx && x1 <= fx1;
+        let spans_y = y >= fy && y1 <= fy1;
+        if spans_x && spans_y {
+            return false;
+        }
+        let scaled = d.dst.2 == d.src.2 && d.dst.3 == d.src.3;
+        if spans_x && scaled {
+            if y >= fy {
+                // The panel covers the glyph's top band.
+                let cut = fy1 - y;
+                d.dst.1 += cut;
+                d.dst.3 -= cut as u32;
+                d.src.1 += cut as u32;
+                d.src.3 -= cut as u32;
+            } else if y1 <= fy1 {
+                let keep = (fy - y) as u32;
+                d.dst.3 = keep;
+                d.src.3 = keep;
+            }
+        } else if spans_y && scaled {
+            if x >= fx {
+                let cut = fx1 - x;
+                d.dst.0 += cut;
+                d.dst.2 -= cut as u32;
+                d.src.0 += cut as u32;
+                d.src.2 -= cut as u32;
+            } else if x1 <= fx1 {
+                let keep = (fx - x) as u32;
+                d.dst.2 = keep;
+                d.src.2 = keep;
+            }
+        }
+        true
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn row(one_time: bool, latched: bool, available: bool) -> ExchangeRowView<'static> {
-        ExchangeRowView {
-            name: "Bait",
-            price: 100,
-            owned: 0,
-            available,
-            one_time,
-            latched,
+    fn glyph(x: i32, y: i32) -> TextDraw {
+        TextDraw {
+            dst: (x, y, 8, 12),
+            src: (100, 200, 8, 12),
+            color: [1.0; 4],
         }
     }
 
     #[test]
-    fn an_unaffordable_one_time_prize_is_not_sold() {
-        // The failure this module exists to stop: `available` is false for
-        // three different reasons, and only the latch means "gone".
-        assert_eq!(exchange_row_tag(true, false), "one-time");
-        assert_eq!(exchange_row_tag(true, true), "sold");
-        assert_eq!(exchange_row_tag(false, true), "each");
+    fn a_glyph_under_a_panel_goes_and_one_beside_it_stays() {
+        let mut d = vec![glyph(10, 10), glyph(100, 10)];
+        occlude_text_draws(&mut d, (0, 0, 50, 50));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].dst.0, 100);
     }
 
     #[test]
-    fn the_cursor_marks_exactly_one_row() {
-        let rows = [row(false, false, true), row(false, false, true)];
-        let a = exchange_row_line(&rows[0], true);
-        let b = exchange_row_line(&rows[1], false);
-        assert!(a.starts_with('>'));
-        assert!(b.starts_with(' '));
+    fn a_panel_over_a_glyphs_top_band_keeps_its_bottom() {
+        let mut d = vec![glyph(10, 40)];
+        occlude_text_draws(&mut d, (0, 0, 50, 45));
+        assert_eq!(d[0].dst, (10, 45, 8, 7));
+        assert_eq!(d[0].src, (100, 205, 8, 7));
+        let mut d = vec![glyph(10, 40)];
+        occlude_text_draws(&mut d, (0, 46, 50, 45));
+        assert_eq!(d[0].dst, (10, 40, 8, 6));
+        assert_eq!(d[0].src, (100, 200, 8, 6));
     }
 
     #[test]
-    fn rows_below_first_visible_are_not_drawn_and_the_rest_step_by_the_pitch() {
+    fn an_unavailable_row_takes_ink_0() {
         let font = legaia_font::synthetic_for_tests();
         let rows = [
-            row(false, false, true),
-            row(false, false, true),
-            row(false, false, true),
+            ExchangeListRow {
+                name: b"A",
+                name_at: (0x52, 0x58),
+                price: (5, 6, 0xD4, 0x58),
+                available: false,
+            },
+            ExchangeListRow {
+                name: b"B",
+                name_at: (0x52, 0x68),
+                price: (5, 6, 0xD4, 0x68),
+                available: true,
+            },
         ];
-        let view = ExchangeView {
-            venue: 1,
-            points: 500,
-            cursor: 2,
-            first_visible: 1,
-            rows: &rows,
+        let out = exchange_list_draws_for(&font, &rows, (b"p", 0x52, 0xB8), (1640, 6, 0xD4, 0xB8));
+        let at = |y: i32| -> Vec<[f32; 4]> {
+            out.iter()
+                .filter(|d| d.dst.1 == y)
+                .map(|d| d.color)
+                .collect()
         };
-        let out = exchange_screen_draws_for(&font, &view, "", (10, 20), [1.0; 4], [0.5; 4]);
-        let ys: Vec<i32> = out.iter().map(|d| d.dst.1).collect();
-        let tops: std::collections::BTreeSet<i32> = ys.into_iter().collect();
-        // Header + two rows, the skipped row absent.
-        assert!(tops.contains(&(20 + EXCHANGE_LIST_TOP_DY)));
-        assert!(tops.contains(&(20 + EXCHANGE_LIST_TOP_DY + EXCHANGE_ROW_PITCH)));
-        assert!(!tops.contains(&(20 + EXCHANGE_LIST_TOP_DY + 2 * EXCHANGE_ROW_PITCH)));
-    }
-
-    #[test]
-    fn an_unavailable_row_takes_the_dim_ink() {
-        let font = legaia_font::synthetic_for_tests();
-        let rows = [row(false, false, false)];
-        let view = ExchangeView {
-            venue: 0,
-            points: 0,
-            cursor: 0,
-            first_visible: 0,
-            rows: &rows,
-        };
-        let out = exchange_screen_draws_for(&font, &view, "", (0, 0), [1.0; 4], [0.25; 4]);
-        let row_ink = out
-            .iter()
-            .filter(|d| d.dst.1 >= EXCHANGE_LIST_TOP_DY)
-            .map(|d| d.color[0])
-            .next()
-            .unwrap();
-        assert_eq!(row_ink, 0.25);
+        assert!(at(0x58).iter().all(|&c| c == EXCHANGE_DIM_INK));
+        assert!(at(0x68).iter().all(|&c| c == EXCHANGE_INK));
     }
 }

@@ -11,7 +11,8 @@
 //! The render tail's state-5 arm (`0x801EFED8..0x801EFFA8`) draws, in this
 //! order: the title line at the frame's top-left pen, the two option rows,
 //! the pointing hand (`FUN_8002B994` kind 0) beside the selected row, then
-//! the frame itself (`FUN_80034B6C(0x44)`, `FUN_8002C69C(100, 92, 120, 40)`).
+//! the frame itself (`FUN_80034B6C(0x44)`, `FUN_8002C69C(100, 92, 120, 40)`):
+//! style `0x44` is the class-0 frame, the blue marble in the gold border.
 //! The three lines are strings of the field overlay's own data segment,
 //! which the host reads off the disc; this module lays them out.
 //!
@@ -39,7 +40,14 @@ pub fn tile_board_prompt_sprites_for(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    let mut out = dialog_window_chrome_draws_for(rects, layout.frame, stage_origin, stage_scale);
+    // Style `0x44` is widget record `0x44`, the class-0 frame, as the
+    // fishing venue's panels are (`FUN_801D74B0` stages the same value).
+    let mut out = crate::fishing::exchange::venue_panel_draws_for(
+        rects,
+        layout.frame,
+        stage_origin,
+        stage_scale,
+    );
     let scale = stage_scale.max(1) as i32;
     let (_, _, w, h) = rects.cursor;
     let row_y = layout.rows[cursor.min(1)].1;

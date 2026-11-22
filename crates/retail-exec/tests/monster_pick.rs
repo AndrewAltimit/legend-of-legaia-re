@@ -13,6 +13,8 @@ use psx_retail_exec::{Cpu, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 
+const LATCHES: u32 = 0x801C_8FE0;
+const GATE: u32 = 0x8007_BD84;
 const PICKER: u32 = 0x801E_9FD4;
 const RAND: u32 = 0x8005_6798;
 const OVERLAY_BASE: u32 = 0x801C_E818;
@@ -73,6 +75,17 @@ struct Pick {
     party_atk: [u16; 3],
     /// The special-battle word, which drops a granted flee.
     special: u32,
+    /// The switch's cooldown and phase words `DAT_801C8FE0[0..16]` and the
+    /// one-shot gate `DAT_8007BD84`, as earlier turns left them.
+    latches: [i32; 16],
+    gate: u8,
+    /// Terra (character `4`) in party seat 1, `DAT_8007BD10[1] == 4`: the
+    /// physical arm drops its target onto seat 0 (`0x801EA91C..0x801EA930`).
+    terra: bool,
+    /// Monster `0xB3`'s queue-armed byte, first record `+0x1C` (`0x16` /
+    /// `0x17`), when it sits in monster seat 0 and picks: retail reads the
+    /// seat-0 record (`0x801EBB84..0x801EBB98`), the port its `b3_armed`.
+    armed: u8,
     seed: u32,
 }
 
@@ -102,8 +115,8 @@ fn gen_monster(rng: &mut Rng) -> Monster {
         id: match rng.below(3) {
             0 => [
                 0x4C, 0x4F, 0x53, 0x54, 0x55, 0x88, 0x89, 0x8A, 0xA2, 0xA3, 0xA4, 0xA6, 0xA8, 0xA9,
-                0xB3, 0xB4, 0xB5, 0xB6,
-            ][rng.below(18) as usize],
+                0xB3, 0xB4, 0xB5, 0xB6, 0x0E, 0x0F, 0x09, 0x25, 0x59, 0xA7, 0x4D, 0x8B,
+            ][rng.below(26) as usize],
             _ => 1 + rng.below(0xC0) as u8,
         },
         hp: match rng.below(3) {
@@ -112,7 +125,7 @@ fn gen_monster(rng: &mut Rng) -> Monster {
             _ => 1 + rng.below(u32::from(max_hp)) as u16,
         },
         max_hp,
-        mp: [0, 5, 40, 999][rng.below(4) as usize],
+        mp: [0, 5, 40, 0x62, 0x63, 0x81, 0x82, 999][rng.below(8) as usize],
         atk: rng.below(500) as u16,
         int: rng.below(500) as u16,
         gauge: [0, 1, 8, 50, 288][rng.below(5) as usize],
@@ -126,7 +139,14 @@ fn gen_monster(rng: &mut Rng) -> Monster {
 
 fn gen_pick(rng: &mut Rng) -> Pick {
     let count = 1 + rng.below(4) as usize;
-    let monsters: Vec<Monster> = (0..count).map(|_| gen_monster(rng)).collect();
+    let mut monsters: Vec<Monster> = (0..count).map(|_| gen_monster(rng)).collect();
+    let caster = rng.below(count as u32) as u8;
+    // A fallen ally beside the caster, which the heal-patient scan passes by.
+    for (i, m) in monsters.iter_mut().enumerate() {
+        if i != usize::from(caster) && rng.below(5) == 0 {
+            m.hp = 0;
+        }
+    }
     Pick {
         party: 1 + rng.below(3) as u8,
         party_hp: [
@@ -145,17 +165,21 @@ fn gen_pick(rng: &mut Rng) -> Pick {
             rng.below(2) as u16 * 40,
         ],
         party_status: [
-            [0, 0, 4, 0x400][rng.below(4) as usize],
-            [0, 0, 4, 0x400][rng.below(4) as usize],
-            [0, 0, 4, 0x400][rng.below(4) as usize],
+            [0, 0, 4, 0x400, 0x1000][rng.below(5) as usize],
+            [0, 0, 4, 0x400, 0x1000][rng.below(5) as usize],
+            [0, 0, 4, 0x400, 0x1000][rng.below(5) as usize],
         ],
-        caster: rng.below(count as u32) as u8,
+        caster,
         monsters,
         round: rng.below(6) as u8,
         no_flee: rng.below(2) == 0,
         ring: std::array::from_fn(|_| [0, 1, 2, 0, 1, 3, 4, 0xFF][rng.below(8) as usize]),
         party_atk: std::array::from_fn(|_| [0, 0, 50, 400, 999][rng.below(5) as usize]),
         special: [0, 0, 0, 0x100][rng.below(4) as usize],
+        latches: std::array::from_fn(|_| [0, 0, 0, 1, 2, 3, 5][rng.below(7) as usize]),
+        gate: u8::from(rng.below(3) == 0),
+        terra: rng.below(4) == 0,
+        armed: [0, 0x16, 0x17][rng.below(3) as usize],
         seed: rng.next(),
     }
 }
@@ -172,8 +196,12 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
     cpu.mem.wr32(SPECIAL_WORD, p.special);
     // The AI's memory across turns: per-seat latches and the recent-target ring.
     for b in 0..0x60 {
-        cpu.mem.wr8(0x801C_8FE0 + b, 0);
+        cpu.mem.wr8(LATCHES + b, 0);
     }
+    for (i, v) in p.latches.iter().enumerate() {
+        cpu.mem.wr32(LATCHES + 4 * i as u32, *v as u32);
+    }
+    cpu.mem.wr8(GATE, p.gate);
     for (b, slot) in p.ring.iter().enumerate() {
         cpu.mem.wr8(RING + b as u32, *slot);
     }
@@ -196,6 +224,10 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
         cpu.mem.wr16(a + 0x16E, p.party_status[m as usize]);
         cpu.mem.wr16(a + 0x158, p.party_atk[m as usize]);
     }
+    if p.terra && p.party > 1 {
+        cpu.mem.wr8(SEATS + 1, 4);
+    }
+    let b3 = p.caster == 0 && p.monsters[0].id == 0xB3;
     let mut entry = ENTRY;
     for (i, m) in p.monsters.iter().enumerate() {
         let i = i as u32;
@@ -216,6 +248,9 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
         }
         cpu.mem.wr32(MONSTER_RECORDS + i * 4, r);
         cpu.mem.load(r + 0x20, &m.ai);
+        if b3 && i == 0 {
+            cpu.mem.wr8(r + 0x1C, p.armed);
+        }
         cpu.mem.wr8(r + 0x4A, m.tags.len() as u8);
         for (k, t) in m.tags.iter().enumerate() {
             cpu.mem.wr32(r + 0x4C + k as u32 * 4, entry);
@@ -229,12 +264,21 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
 fn seed_port(w: &mut World, p: &Pick) {
     w.load_party(Party::zeroed(usize::from(p.party)));
     w.enter_battle(p.party, p.monsters.len() as u8);
+    w.party.active_party = (0..p.party).collect();
+    if p.terra && p.party > 1 {
+        w.party.active_party[1] = 3;
+    }
     w.party.party_count = p.party;
     w.battle.status_effects = Default::default();
     w.battle.no_escape = p.no_flee;
     w.battle.special_word = p.special;
     w.battle.monster_ai_state = Default::default();
     w.battle.monster_ai_state.mode_flags = p.round;
+    w.battle.monster_ai_state.dat = p.latches;
+    w.battle.monster_ai_state.flag_bd84 = p.gate;
+    if p.caster == 0 && p.monsters[0].id == 0xB3 {
+        w.battle.monster_ai_state.b3_armed[usize::from(p.party)] = p.armed;
+    }
     w.battle.monster_ai_state.recent_targets = p.ring.map(|s| engine_slot(p.party, s));
     for a in w.actors.iter_mut() {
         a.battle.hp = 0;
@@ -284,7 +328,7 @@ fn seed_port(w: &mut World, p: &Pick) {
         a.battle.agl = m.gauge;
         a.battle.agl_base = m.gauge.max(1);
         a.battle.spirit_gauge = m.spirit;
-        a.battle.liveness = 1;
+        a.battle.liveness = u16::from(m.hp != 0);
         a.battle_monster_id = Some(key);
         seat_status(w, seat as u8, m.status, p.seed >> (8 + i) & 1 != 0);
     }
@@ -310,9 +354,18 @@ fn a_monster_picks_what_retail_picks() {
     cpu.stub(0x8003_EAE4, 0);
     let mut w = World::new();
     w.menu.text = Some(MenuTextTables::from_scus(&scus));
-    let mut rng = Rng(0x5049_434B);
+    // `PICK_SEED` (hex) and `PICK_ROUNDS` sweep other generator streams; the
+    // default run is the one CI keeps.
+    let mut rng = Rng(std::env::var("PICK_SEED")
+        .ok()
+        .and_then(|v| u64::from_str_radix(&v, 16).ok())
+        .unwrap_or(0x5049_434B));
+    let rounds: u32 = std::env::var("PICK_ROUNDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50_000);
     let (mut failures, mut casts, mut swings) = (Vec::new(), 0, 0);
-    for round in 0..8000 {
+    for round in 0..rounds {
         let p = gen_pick(&mut rng);
         seed_retail(&mut cpu, &p);
         state.set(p.seed);
@@ -339,7 +392,16 @@ fn a_monster_picks_what_retail_picks() {
         // redirect and Counterattack roll read next.
         let ring: [u8; 4] =
             std::array::from_fn(|b| engine_slot(p.party, cpu.mem.rd8(RING + b as u32)));
-        let retail = (retail_cat, retail_spell, state.get(), ring);
+        let latches: [i32; 16] =
+            std::array::from_fn(|i| cpu.mem.rd32(LATCHES + 4 * i as u32) as i32);
+        let retail = (
+            retail_cat,
+            retail_spell,
+            state.get(),
+            ring,
+            latches,
+            cpu.mem.rd8(GATE),
+        );
         // `0xB4`'s arms store a spell and leave the category to the forced magic
         // arm, which a generated record with no cast entry never sets.
         if p.monsters[usize::from(p.caster)].id == 0xB4 && retail_cat != 2 {
@@ -361,6 +423,8 @@ fn a_monster_picks_what_retail_picks() {
             spell,
             w.rng_state,
             w.battle.monster_ai_state.recent_targets,
+            w.battle.monster_ai_state.dat,
+            w.battle.monster_ai_state.flag_bd84,
         );
         if retail != port {
             failures.push(format!(
@@ -394,4 +458,36 @@ fn no_shipped_monster_names_a_spell_past_the_table() {
             assert!(usize::from(*id) < SPELL_COUNT, "{:#x}: {id:#x}", r.id);
         }
     }
+}
+
+/// The census the picker's divide traps rest on. The physical arm divides
+/// its pick by the record's swing-candidate count (tag `0x0C..=0x1F`, cost
+/// not `0xFF`; `rand() % sp[0x10]` at `0x801EA30C`): every shipped record has
+/// one but Cort's `0xB4` and `0xB7..=0xBA`, which the census pins. Record
+/// `0xB4`'s id forces the spell slot `1` past the slot test
+/// (`0x801EA18C..0x801EA198`), so it takes the magic arm, whose count
+/// (`0x801EA41C`) its castable spell keeps above zero.
+#[test]
+fn every_shipped_monster_but_cort_has_a_swing() {
+    not_a_differential!("a census of the PROT 0867 records' action lists; runs no routine");
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let entry = disc.read_entry(867).expect("PROT 0867");
+    let records = legaia_actor_formats::monster_archive::records(&entry).expect("archive");
+    let mut empty = Vec::new();
+    for r in &records {
+        if !r.spells.iter().any(|s| s.is_castable()) {
+            empty.push((r.id, r.name.clone()));
+        }
+    }
+    let cort = records.iter().find(|r| r.id == 0xB4).expect("record 0xB4");
+    assert!(
+        cort.ai_bytes[1..4].iter().any(|&id| id >= 2),
+        "0xB4 spells {:?}",
+        &cort.ai_bytes[1..4]
+    );
+    let ids: Vec<u16> = empty.iter().map(|e| e.0).collect();
+    assert_eq!(ids, [0xB4, 0xB7, 0xB8, 0xB9, 0xBA], "{empty:?}");
 }

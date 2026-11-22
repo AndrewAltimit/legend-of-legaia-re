@@ -220,6 +220,8 @@ struct Run {
     gaps: Vec<String>,
     known: usize,
     hits: usize,
+    /// Passes whose split hits were compared.
+    split_checked: usize,
 }
 
 /// Who a walk casts at and which seats stand: `target` a seat or a group code
@@ -249,6 +251,7 @@ fn run_body(
     cpu.mem.wr32(CTX_PTR, CTX);
     let stream = Rc::new(std::cell::Cell::new(seed as u32));
     let hits = Rc::new(RefCell::new(Vec::<usize>::new()));
+    let rolls = Rc::new(RefCell::new(Vec::<u32>::new()));
     for target in jal_targets(&module) {
         if target == RAND {
             let stream = stream.clone();
@@ -271,9 +274,19 @@ fn run_body(
             });
         } else if WRAPPERS.contains(&target) {
             let hits = hits.clone();
+            let rolls = rolls.clone();
+            // A split-hit body (PROT 0937, 0939) rolls each hit for real and
+            // keeps a share: its rolls vary, so the share's divisor shows.
+            let split = t::split_hits_for(body.prot_entry, body.body).is_some();
             cpu.hook(target, move |r, _| {
                 hits.borrow_mut().push((r.r[A2] as usize).min(7));
-                r.r[V0] = ROLL;
+                let roll = if split {
+                    [ROLL, 997, 64, 5000][rolls.borrow().len() % 4]
+                } else {
+                    ROLL
+                };
+                rolls.borrow_mut().push(roll);
+                r.r[V0] = roll;
             });
         } else if target == AIM {
             // The group aim runs live: a group framing needs it whole.
@@ -380,6 +393,7 @@ fn run_body(
         gaps: Vec::new(),
         known: 0,
         hits: 0,
+        split_checked: 0,
     };
     let mut held = 0;
     for _ in 0..40_000 {
@@ -433,6 +447,41 @@ fn run_body(
             out.gaps.push(format!("{c0}: {stop:?}"));
             return Some(out);
         }
+        // A split-hit body lands each hit's share itself (`SplitHits::landed`):
+        // HP and the bar delta on the victim, hit by hit.
+        if let Some(split) = t::split_hits_for(body.prot_entry, body.body)
+            && !hits.borrow().is_empty()
+            && victim < 8
+        {
+            let all = rolls.borrow().clone();
+            let first = all.len() - hits.borrow().len();
+            let mut hp = u16::from_le_bytes([rec0[vi * STRIDE + 0x14C], rec0[vi * STRIDE + 0x14D]]);
+            let mut bar = i32::from_le_bytes(
+                rec0[vi * STRIDE + 0x10..vi * STRIDE + 0x14]
+                    .try_into()
+                    .unwrap(),
+            );
+            let stoned = rec0[vi * STRIDE + 0x16E] & 4 != 0;
+            for (k, &roll) in all[first..].iter().enumerate() {
+                if hp == 0 || stoned {
+                    break;
+                }
+                let n = (first + k + 1) as u8;
+                let d = split.landed(n, roll as i32, hp);
+                hp -= d as u16;
+                bar += d;
+            }
+            let a = ACTOR + (vi * STRIDE) as u32;
+            let got = (cpu.mem.rd16(a + 0x14C), cpu.mem.rd32(a + 0x10) as i32);
+            if got != (hp, bar) {
+                out.gaps.push(format!(
+                    "PROT {:04} {action:#04x} {field:?} arm {phase:#x}: split hits retail {got:?} port {:?}",
+                    body.prot_entry,
+                    (hp, bar)
+                ));
+            }
+            out.split_checked += 1;
+        }
         let busy = cpu.regs.r[V0] != 0;
         let after = cpu.mem.rd8(CTX + 0x279);
         if busy && after == phase {
@@ -447,6 +496,7 @@ fn run_body(
         out.path.push(phase);
         let mut struck: Vec<usize> = hits.borrow().clone();
         out.hits += struck.len();
+
         // The fold lands on the cast's victim whichever seat a wrapper was
         // handed (PROT 0959 aims its own at seat 0), and PROT 0919's arm 7 is
         // the party row's heal.
@@ -691,6 +741,7 @@ fn the_chain_bodies_walk_as_retail_does() {
     }
     let mut failures = Vec::new();
     let (mut casts, mut arms, mut hits, mut known) = (0, 0, 0, 0);
+    let mut split = 0usize;
     for body in t::chain_bodies() {
         // PROT 0961 rolls its sweep in the evolved Cort's formation only; PROT
         // 0964 forks on the last Element Change roll.
@@ -708,6 +759,7 @@ fn the_chain_bodies_walk_as_retail_does() {
                     arms += run.path.len();
                     hits += run.hits;
                     known += run.known;
+                    split += run.split_checked;
                     let terminal = run.path.last().and_then(|&p| body.arm(p));
                     if !terminal.is_some_and(|a| a.exit == t::ChainExit::Finish) {
                         failures.push(format!(
@@ -722,6 +774,7 @@ fn the_chain_bodies_walk_as_retail_does() {
     }
     eprintln!("{casts} casts, {arms} arms left, {hits} wrapper hits, {known} known gaps hit");
     assert!(hits > 20, "{hits} hits");
+    assert!(split >= 4, "{split} split-hit passes compared");
     failures.dedup();
     let n = failures.len();
     failures.truncate(200);

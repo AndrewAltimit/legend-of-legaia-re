@@ -14,3 +14,4 @@ s88 --spell 0x88 --state party_basic_attack_vs_gobu_gobu --target 3 --retail-fro
 rikuroa_vahn_chain_open --physical --state battle_rikuroa_party_vahn_chain_open --hit-trace --strike-deal --retail-from captures/film-retail/rikuroa_vahn_chain_open/retail
 garmel_vahn_hyper_elbow_mid --physical --state battle_garmel_party_vahn_hyper_elbow_mid --hit-trace --strike-deal --retail-from captures/film-retail/garmel_vahn_hyper_elbow_mid/retail
 jou_noa_chain_mid --physical --state battle_jou_party_noa_chain_mid --hit-trace --strike-deal --retail-from captures/film-retail/jou_noa_chain_mid/retail
+rikuroa_vahn_seru_absorb --physical --state battle_rikuroa_party_vahn_seru_absorb_strike --hit-trace --strike-deal --tail 200 --retail-from captures/film-retail/rikuroa_vahn_seru_absorb/retail

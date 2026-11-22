@@ -1582,6 +1582,16 @@ Specifics:
   raises `World::raise_incense_notice` (the ported `FUN_801F1E48`), drawn by
   `engine-ui::incense_notice_sprites_for` / `incense_notice_text_draws_for`
   with the line read off the disc.
+  The notice is field-overlay panel window `16`, and every panel window
+  past the four pause-menu records names frame style `3` in its config's
+  `+0x06` halfword (`0x801F2B98`); `FUN_80032434` copies it to the live
+  window's `+0x1D` (`0x80032490` / `0x80032604`) and the walker
+  `FUN_80031D00` stages it before the box (`0x800323D8..0x800323E4`). Record
+  `3` is the class-0 frame, byte for byte record `0x44`, so the notice is the
+  blue marble in the gold border over its content rect, not the reading box's
+  gradient (record `0x61`). A retail state holds it
+  (`field_kor_incense_notice_retail`). The painter's marker sprite
+  (`FUN_8002B994(1, 1, x + w - 0x10, y - 2)`, an animated kind) is not drawn.
 
 - **Row ink** follows the kernel's [row-ink rule](#the-kind-4-list-kernel-scus-fun_80032a44):
   each `PauseItemRow` keeps its slot's dim / alt-ink bits from both builds

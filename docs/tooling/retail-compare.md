@@ -836,6 +836,12 @@ engine verdict:
   ([place-names](../formats/place-names.md)). With the line and the frame
   `kor3_field_route_walk` reads `.988` and `kor4_field_route_walk` `.984`.
 
+  The Incense wear-off notice goes the same way: a field state whose armed
+  entry context `_DAT_8007B450` is the field overlay's notice record
+  `0x801F2278` hands the child `LEGAIA_SEAT_INCENSE_NOTICE=1`, which raises
+  the notice at seeding (the walk tick that raised it ran before the
+  capture). Its window is style `3`, the class-0 frame too.
+
   The mode-4 VRAM scrollers get the same treatment: their rotation count
   is time since the entry, so the state's live scroller rects (`+0x5A = 4`,
   rect `+0xD0..+0xD6`, `retail_scroll_rects`) go to the child with the
@@ -4231,7 +4237,13 @@ NEW GAME at tick `750`, on CONTINUE at `810`, the pill row at `890`) - and
 score the image channel only. A scenario that names a `memory_card` mounts it
 even short of the grid: no card contents show there, but the port's title
 greys CONTINUE on a rack with no save (a port guard retail does not have), so
-the drive onto CONTINUE needs one. Any other title sub-mode (the launch fade
+the drive onto CONTINUE needs one. `0x15` is a committed pill (the card read):
+the drive picks the committed port off `_DAT_8007B834`, commits at tick `940`
+and captures the card screen's own frame count since the commit
+(`_DAT_801EF124`) later, with the scenario's card in port 2 (`--card`) when
+the capture committed `SLOT 2`. The engine's card read is instant, so a
+capture caught mid-read (`load_slot2_grid`) scores the read's end against
+retail's placeholder cells. Any other title sub-mode (the launch fade
 `0x16` a card-boot capture is caught in) is kept with a `menu not seedable:`
 reason and counted as a classified limit.
 
@@ -4358,6 +4370,27 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   departure scene the mode-24 init backed up (`_DAT_8007BAC4`). State `0xB`, the
   fade in front of it, still shows what stood before: `minigame_fishing_retail_ready`
   is parked there on the rod and water of an earlier cast, and stays unseeded.
+- **The fishing hub's screens**: the help pages (`0x65` / `0x66`, hub row 1),
+  the tackle list (`0x6E`, row 2) and the prize exchange's list, quantity
+  picker and confirm (`0x78..=0x7A`, row 3), read off the hub menu's cursor
+  `0x801D912C`. They are pad history with no `rand()` in it. The seed replays
+  the pad from the idle shore, on the headless session and as the image
+  child's `--pad-script`: Triangle opens the hub, Down to the row, Cross; a
+  Cross to help page 1; Down from the equipped lure `_DAT_80084450` to the
+  tackle cursor `0x801D90DC`; on the prize list, Up from its entry row (`5`) to
+  the capture's cursor `0x801D90A8`, Cross and Right to its quantity
+  `0x801D90B0`, Cross and Up to its confirm row `0x801D90B4`. The `minigame`
+  channel adds the screen and those words.
+- **The Baka Fighter's player select** (cabinet state `0x0B`): Start on the
+  attract card, then Right to the capture's cursor `DAT_801DBF70` once the
+  lineup takes the pad. The lineup's one `rand()` lands in a focus id no
+  fighter carries, so the screen does not depend on it. The `minigame` channel
+  adds the state and the cursor.
+- **The slot machine's cash-out picker and rules pages** (`0x32`, `0x35`,
+  `0x36`) on a machine never played (balance still the bank's): Triangle opens
+  the picker, Down to its cursor `DAT_801D4110`; row 2's Cross fades into the
+  rules, and a Cross once faded in turns to the payout chart. The `minigame`
+  channel adds the picker's row.
 - **The dance's count-in** (`DAT_801D5334` in `3..=5`), sampled at the capture's
   own banner counter `DAT_801D5158` or `GO!` accumulator `DAT_801D515C`.
 - **The dance's play loop on a floor the pad never reached** (`DAT_801D5334 = 0xA`
@@ -4420,7 +4453,7 @@ measured channels.
 | `inventory` | fraction of non-empty bag slots equal, slot for slot, plus gold |
 | `enemies` / `enemy_hp` / `battle_party` / `phase` | battle states only ([above](#battle-states)) |
 | `menu` | menu states only: 1 when the engine's pause menu holds retail's sub-screen ([above](#menu-states)) |
-| `minigame` | minigame states only: fraction of the session's words equal - the slot machine's state word and balance and the coin bank ([above](#minigame-states)) |
+| `minigame` | minigame states only: fraction of the session's words equal - the slot machine's state word and balance, the coin bank, and on a fishing exchange screen its screen, cursor, quantity and confirm row ([above](#minigame-states)) |
 | `card_panel` | card-screen states only: fraction of the info panel's pixels within tolerance ([above](#card-screens)) |
 | `image` | fraction of `8 x 8` blocks within tolerance ([below](#the-image-channel)) |
 

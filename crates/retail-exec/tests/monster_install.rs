@@ -141,3 +141,177 @@ fn a_monster_record_installs_as_retail_installs_it() {
         "{scripted} {fallback} {repeated}"
     );
 }
+
+/// The name half of `FUN_80054CB0`: the seat's short name line
+/// `ctx + 0x292 + seat * 0x20` (`0x80054D68..0x80054FF4`) over generated
+/// names - a `> ` lead, a `^X` caret escape with or without its space, a
+/// `$` level suffix, spaces, and lines either side of the `0x40` width -
+/// against `battle_name_line`. The text measure `FUN_80035F04` answers with
+/// a width the port's measure is handed too; the summon body's seat `4`
+/// writes no line.
+#[test]
+fn the_seat_name_line_is_retails() {
+    differential!(scus(INSTALL));
+    use legaia_engine_battle::monster_catalog::battle_name_line;
+    use psx_retail_exec::{A0, V0};
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(CTX_PTR, CTX);
+    for s in 0..8 {
+        cpu.mem.wr32(ACTORS + s * 4, ACTOR + s * 0x400);
+    }
+    // A width of five pixels a byte, plus one for each capital.
+    fn width(t: &[u8]) -> u32 {
+        t.iter()
+            .map(|&b| 5 + u32::from(b.is_ascii_uppercase()))
+            .sum()
+    }
+    cpu.hook(0x8003_5F04, |r, m| {
+        let mut t = Vec::new();
+        let mut a = r.r[A0];
+        while m.rd8(a) != 0 {
+            t.push(m.rd8(a));
+            a += 1;
+        }
+        r.r[V0] = width(&t);
+    });
+    let mut rng = Rng(0x4E41_4D45);
+    let (mut cut, mut abbreviated, mut led) = (0, 0, 0);
+    for n in 0..20_000 {
+        let seat = rng.below(5);
+        let mut name = Vec::new();
+        if rng.below(4) == 0 {
+            name.extend(b"Lv> ");
+        }
+        match rng.below(4) {
+            0 => name.extend([b'^', b'A' + rng.below(8) as u8, b' ']),
+            1 => name.extend([b'^', b'A' + rng.below(8) as u8]),
+            _ => {}
+        }
+        for _ in 0..1 + rng.below(18) {
+            name.push(match rng.below(6) {
+                0 => b' ',
+                1 => b'A' + rng.below(26) as u8,
+                _ => b'a' + rng.below(26) as u8,
+            });
+        }
+        if rng.below(3) == 0 {
+            name.extend([b' ', b'$', b'1' + rng.below(5) as u8]);
+        }
+        name.truncate(0x1E);
+        // Now and then a record whose name is empty.
+        if rng.below(40) == 0 {
+            name.clear();
+        }
+        let mut z = name.clone();
+        z.push(0);
+        cpu.mem.load(NAME, &z);
+        let mut raw = vec![0u8; 0x4C];
+        raw[0..4].copy_from_slice(&NAME.to_le_bytes());
+        cpu.mem.load(RECORD, &raw);
+        let line_at = CTX + 0x292 + seat * 0x20;
+        cpu.mem.load(line_at, &[0xEE; 0x20]);
+        assert_eq!(cpu.call(INSTALL, &[RECORD, seat]), Stop::Returned, "n {n}");
+        let what = format!(
+            "n {n} seat {seat} name {:?}",
+            String::from_utf8_lossy(&name)
+        );
+        if seat == 4 {
+            assert_eq!(cpu.mem.read(line_at, 0x20), vec![0xEE; 0x20], "{what}");
+            continue;
+        }
+        let want = battle_name_line(&name, width);
+        let got = cpu.mem.read(line_at, want.len() + 1);
+        assert_eq!(&got[..want.len()], &want[..], "{what}");
+        assert_eq!(got[want.len()], 0, "{what}: the terminator");
+        cut += usize::from(name.contains(&b'$'));
+        abbreviated += usize::from(want.get(1) == Some(&b'.'));
+        led += usize::from(name.starts_with(b"Lv>"));
+    }
+    assert!(
+        cut > 3000 && abbreviated > 1000 && led > 3000,
+        "{cut} {abbreviated} {led}"
+    );
+}
+
+/// The install's twin letters (`0x80054FF8..0x80055144`): a seat whose
+/// monster id matches the nearest earlier seat's (the formation cells at
+/// `0x8007BD0C`) takes ` B` and, with `ctx[+7]` clear, that seat ` A`; a
+/// seat after a lettered twin takes the next letter. Formations of up to four
+/// seats over three monsters, installed seat by seat, against the names the
+/// plaque prints (`engine-battle-hud::monster_name`).
+#[test]
+fn twins_are_lettered_as_retail_letters_them() {
+    differential!(scus(INSTALL));
+    use legaia_engine_core::world::World;
+    const CELLS: u32 = 0x8007_BD0C;
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(CTX_PTR, CTX);
+    for s in 0..8 {
+        cpu.mem.wr32(ACTORS + s * 4, ACTOR + s * 0x400);
+    }
+    cpu.stub(0x8003_5F04, 0x20);
+    let names: [&[u8]; 3] = [b"Gimard", b"Skeleton", b"Gobu Gobu"];
+    let mut rng = Rng(0x5457_494E);
+    let mut lettered = 0;
+    for n in 0..2000 {
+        let seats = 1 + rng.below(4) as usize;
+        let ids: Vec<u8> = (0..seats).map(|_| rng.below(3) as u8).collect();
+        cpu.mem.wr8(CTX + 7, 0);
+        for (seat, &id) in ids.iter().enumerate() {
+            cpu.mem.wr8(CELLS + seat as u32, 1 + id);
+        }
+        for (seat, &id) in ids.iter().enumerate() {
+            let record = RECORD + seat as u32 * 0x100;
+            let name = NAME + seat as u32 * 0x20;
+            let mut z = names[usize::from(id)].to_vec();
+            z.push(0);
+            cpu.mem.load(name, &z);
+            let mut raw = vec![0u8; 0x4C];
+            raw[0..4].copy_from_slice(&name.to_le_bytes());
+            cpu.mem.load(record, &raw);
+            assert_eq!(
+                cpu.call(INSTALL, &[record, seat as u32]),
+                Stop::Returned,
+                "n {n}"
+            );
+        }
+        let mut w = World::new();
+        w.party.party_count = 3;
+        for slot in 0..3 + seats {
+            w.spawn_actor(slot);
+        }
+        for (seat, &id) in ids.iter().enumerate() {
+            let mut def = MonsterDef::new(1 + u16::from(id), "", 100, 0);
+            def.name = String::from_utf8(names[usize::from(id)].to_vec()).unwrap();
+            w.tables.monster_catalog.insert(def);
+            let a = &mut w.actors[3 + seat];
+            a.battle_monster_id = Some(1 + u16::from(id));
+            a.battle.max_hp = 100;
+        }
+        for seat in 0..seats {
+            let at = ACTOR + (seat as u32 + 3) * 0x400 + 0x1BC;
+            let mut retail = Vec::new();
+            while cpu.mem.rd8(at + retail.len() as u32) != 0 {
+                retail.push(cpu.mem.rd8(at + retail.len() as u32));
+            }
+            let port = legaia_engine_battle_hud::monster_name(&w, 3 + seat as u8);
+            assert_eq!(
+                String::from_utf8_lossy(&retail),
+                port,
+                "n {n} ids {ids:?} seat {seat}"
+            );
+            lettered += usize::from(port.len() > names[usize::from(ids[seat])].len());
+        }
+    }
+    assert!(lettered > 1000, "{lettered}");
+}

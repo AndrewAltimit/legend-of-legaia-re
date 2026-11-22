@@ -1385,21 +1385,38 @@ reset. Ports: `cast_module_ticks::power_up_tick`, `all_stats_surge_tick`.
 |---|---|
 | `0x801F8F0C` White Shield | both halves of both defence pairs (`+0x15C` / `+0x15E`, `+0x160` / `+0x162`) = the caster's **record** base `x 3/2`, read through `0x801C9348[seat - 3]`; idempotent, since the source is the record |
 | `0x801F7158` Power Charge | both halves of the ATK pair (`+0x158` / `+0x15A`) `+= x >> 2`, each capped at `999` (`sltiu 0x3E8` at `0x801F74D4`) |
-| `0x801F7FA4` Melt Spray | ten halfwords (ATK, UDF, LDF, SPD, INT, working and base), each `x - (x + 9) / 5` |
+| `0x801F7FA4` Melt Spray | ten halfwords (ATK, UDF, LDF, SPD, INT, working and base), each `x - (x + 9) / 10` |
 | `0x801F6A28` Void Accessories | `rand() % 3` picks one of the victim's accessory slots (`record[+0x19B + slot]`); on a second `rand() & 1 == 0` and a non-empty slot it refunds the id to the bag (`FUN_800421D4`), clears the record byte and rebuilds the ability bitfield (`FUN_80042558`) |
 
-Melt Spray's floor: each store is followed by `bnez ...; addiu v0,v0,1`, which
-tests the full 32-bit difference while the store is a 16-bit `sh`. A stat of
-`2` lands on zero and is corrected to `1`; a stat of `0` or `1` goes to `-1`,
-misses the `bnez`, and is written back as `0xFFFF`. This differs from the item
-buffs' `x * 6/5` clamped to `0xFFFF`
-([battle-formulas.md](battle-formulas.md)), and from 0954's floor of `1`.
+Melt Spray's cut is the `0x66666667` reciprocal with `sra 2`: a tenth of
+`x + 9` (`0x801F8324..0x801F83E4`, and the base halves from `0x801F8448`), never
+more than the stat, so the difference is never negative. Each store is followed
+by `bnez ...; addiu v0,v0,1`, which lifts the zero a stat of `0` or `1` lands
+on to `1`. This differs from the item buffs' `x * 6/5` clamped to `0xFFFF`
+([battle-formulas.md](battle-formulas.md)). The port had read the reciprocal as
+a fifth, so a Melt Spray took twice the stats retail takes and turned a stat of
+`0` or `1` into `65535`; the capture-camera differential now runs the debuff on
+the pass arm 3's countdown runs out over random stats and the floor's edge
+values, and the two agree. The `battle_map03_acid_slime_melt_spray_mid_cast` state
+played forward in PCSX-Redux confirms it: the victim's ten halfwords read ATK `122`,
+UDF `190`, LDF `183`, SPD `110` and INT `126` (both halves) through arms 1..3 and
+`109`, `171`, `164`, `99` and `113` from the pass arm 3 leaves, a tenth each, where a
+fifth would have left ATK at `96`. Grade `disassembly` + `capture`.
 
-**The turn steal.** The other two 0955 bodies share one idiom
-(`0x801F8CF4..0x801F8D54` in Kiss of Death's miss arm,
-`0x801F7E18..0x801F7E4C` in Terror Scream's arm 3): refund the victim's queued
-item when `+0x1DE == 1` and `+0x16C != 0`, clear `+0x1DE`, clear the
-initiative key `+0x16C` and bump the turn cursor `ctx[+0x1A]`. Kiss of Death
+**The turn steal.** The other two 0955 bodies steal the victim's turn.
+Kiss of Death's miss arm (`0x801F8CF4..0x801F8D54`) refunds the victim's
+queued item when `+0x1DE == 1` and `+0x16C != 0`, clears `+0x1DE`, and only
+while `+0x16C` is non-zero clears it and bumps the turn cursor `ctx[+0x1A]`.
+Terror Scream's arm 3 (`0x801F7E18..0x801F7E4C`) tests the Item category
+alone: it refunds on `+0x1DE == 1`, then clears `+0x1DE` and `+0x16C` and bumps
+the cursor whatever the key held, so a victim that has already acted still
+advances the cursor. It cannot get a used item back twice: the item band's
+exit, state `0x40`, clears the acting member's `+0x1DE` as it stores `0x50`
+(`sb zero,0x1de(s3)` at `0x801E4274`), so only an item committed and not yet
+used (the item window took the copy out of the bag at commit) is refunded. The port had read both as
+Kiss of Death's; the capture-camera differential now runs arm 3 on every
+category and key, with the refund call `FUN_800421D4` logged. Grade
+`disassembly`. Kiss of Death
 reaches it only on the odd half of a `FUN_80056798() & 1` coin flip and sets
 `+0x16E` bit `0x400` beside it; its even half clears `+0x16E & 0x0F80`,
 applies exactly one point of damage and stages the victim's reaction.
@@ -3180,7 +3197,7 @@ so the arm holds for whatever of that the band head did not cover. The
 engine's side-band is resident, but the byte is up for the reads' CD time
 (`World::tick_sideband_token`, `sideband_token_vsyncs`), and
 `cast_module_camera::sideband_wait_arm` names the arm: the band holds a director
-there while the byte is up. The poll holds the arm's way out, not what runs ahead of it: PROT 0917's arm 1 finishes its rise first, and PROT 0919's drifts while its word runs. Among the
+there while the byte is up. The poll holds the arm's way out, not what runs ahead of it: PROT 0917's arm 1 finishes its rise first, PROT 0919's drifts while its word runs, and PROT 0920's arm 1 pushes TR z out by `p` every pass before it reads the byte. The band keeps a held pass's drift and nudge both; it kept only the drift, so Slippery's camera fell `p` behind for every pass the read held it. The summon-camera differential holds the byte up for the first three passes of every image's poll arm. Among the
 corpus's summon states only `jedo_summon_mid_cast` sits in a poll arm with the
 byte still up (`8`, one pass into the sustain).
 
@@ -3557,6 +3574,18 @@ at its spray's last point: the loop leaves the third record's `rand()` pair at
 `0x16..0x19` keep (`ModuleCamState::ozma_spray_point`). One part stays out:
 Palma's sweep rolls the camera (by up to `0x80`), which the battle camera has
 no channel for.
+
+Palma's arm 3 lifts the monster row and frames on the first seat's height. Below
+`T = scalar * 160` each pass raises every monster with HP by `2 p` (`+0x36 -= 2 p`
+behind a `+0x14C` test, `0x801F7108..0x801F7138`), then stores TR y as
+`0x200 - 4 * actor_table[3].y` (`0x801F714C..0x801F7170`). With the first
+monster seat down, nothing lifts it and the camera holds at `0x200` while the
+sweep runs. The director had TR y climb `8 p` a pass whatever stood there; it
+now holds while `ModuleCamState::lead_monster_down` is set (`feed_seru_cam`).
+The summon-camera differential runs every director on three seatings: the walk's
+own row, and retail's stage seats with the caster on a wing and the victim across
+a three- and a four-monster row, each also with a fallen seat. Only Palma's arm 3
+then disagreed, on the four-monster row with seat 3 fallen. Grade `disassembly`.
 
 A **pre-hit** is the module's own non-lethal hit ahead of the fold: the
 summon branch of `FUN_801DD0AC` rolled per target, clamped to `HP - 1`, with
@@ -4790,6 +4819,20 @@ Its opening frames by the caster's own monster id: Terror Face (`0x7F`) stages c
 `7` on the far framing and a slow pitch drift, `0x28..=0x2A` clip `9` and
 `0x83..=0x85` clip `8` on the near framing and a yaw drift. Arms 1 and 2 each cut
 to a seat and seat the same four ring records on it, the caster and then the victim.
+
+The cue and the framing fork on different bands. Arm 0 plays cue `0x190` for
+`0x7D..=0x7F` (`0x801F7758..0x801F77B8`), but its shot fork (`0x801F78B8..0x801F78F0`)
+and arm 1's drift fork (`0x801F7A30..0x801F7A60`) frame only `0x7F`, `0x28..=0x2A`
+and `0x83..=0x85`: Gold Face `0x7D` and Lava Face `0x7E` would hear the cue under an
+unmoved camera, where the director frames the near shot. No retail cast reaches that.
+The AI picker `FUN_801E9FD4` queues `0x70` from one arm of its monster-id switch
+(`li v0,0x70` at `0x801EB3FC`, the disc's only immediate `0x70` stored to `+0x1DF`),
+which the jump table `0x801CF1CC` enters for `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85`,
+and no monster record's magic window `+0x20..+0x27` holds `0x70`. Gold Face sits in a
+scripted formation and Lava Face in random ones, but both take the switch's common
+tail; Medusa `0x83` and Nurga `0x84` never cast it either. The
+`capture_cameras` differential holds the census
+(`terror_scream_casters_all_sit_in_a_framed_band`). Grade `disassembly` + disc data.
 
 ### PROT 0955 (White Shield, Power Charge, Melt Spray)
 
@@ -6441,6 +6484,36 @@ table's length. The Glare split's clone is seated right after the engine's
 seated monsters (`World::apply_glare_divide_split`), bounded by the same five
 monster seats; at the raw retail index a lone member's clone would land past
 the enemy row the target picker walks.
+
+### The seat walks
+
+A module's hide and show loops are not one walk. Most run seats `0..7`
+behind `sltiu 7` and an HP test (PROT 0955's `0x801F7114`, PROT 0956's
+`0x801F74A0`), so they never reach seat `7`, the fifth monster's: it keeps
+whatever it had through the cast. Others walk the party by `ctx[+0x00]` and the
+monster row by count, `3 .. 3 + ctx[+0x01]`, and those reach a fifth monster
+(Guilty Cross arm 0 at `0x801F6C44`, Curse All arms 0 and 4, Glare arm 1). Some
+party walks test the roster byte `0x8007BD10 + seat` instead of HP, so a fallen
+member is hidden and shown with the row (Guilty Cross arm 0, Curse All arms 0,
+2 and 4), and Glare's arm 1 tests no HP on either row, so a fallen monster
+takes its hide. The flags on `CaptureCamArm` name the shape: `others_live_only`,
+`others_reach_seat_7` and `others_reach_fallen_monsters`, with the default
+the seven-seat walk.
+
+Guilty Cross's arm 5 show is a seven-seat walk while its arm 0 hide is a count
+walk, so a fifth monster stays hidden from arm 0 to the band's finalize
+(state `0x71`'s seat sweep). That is retail's, and the port keeps it.
+
+The party sweeps that tint each struck seat store the word after the hit, past
+an HP and Stone skip that runs ahead of it, so a seat the hit fells is still
+tinted (Element Strike's three loops: `0x3FF` at `0x801F860C`, `0xFFC00` at
+`0x801F7DF8`, `0x3FF00000` at `0x801F759C`; Genocidal Cannon's arm 14 at
+`0x801F7D14`). The band reads both conditions as the tick opens.
+
+The capture-camera differential checks all of it: each cast runs on an engine
+`World` beside the module image, and every seat's word and flag must agree on
+every pass while the two walk one phase
+([retail-kernel differential](../tooling/retail-kernel-differential.md#the-band-shadow)).
 
 ### A fade takes its spawning frame's step
 

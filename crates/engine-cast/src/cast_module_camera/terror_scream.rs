@@ -45,6 +45,13 @@ fn ring(on: ModuleSeat) -> [Option<ModuleSpawn>; 5] {
 /// | 4 (`0x801F7E64`) | the same drift; the gate, then the victim's settle | - |
 /// | `0xFF` (`0x801F7F28`) | every live seat shown | - |
 ///
+/// Retail's shot forks frame only `0x7F`, `0x28..=0x2A` and `0x83..=0x85`
+/// (`0x801F78B8..0x801F78F0`, `0x801F7A30..0x801F7A60`); any other caster
+/// keeps the camera where it stands. The near framing here stands for every
+/// id but `0x7F`, which is retail's for every monster that can cast `0x70`
+/// (the AI switch's `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85`; see
+/// `docs/subsystems/cast-module.md`, PROT 0955).
+///
 /// PORT: overlay_cast_white_shield_0955_801f767c (PROT 0955 `0x70`; the camera arms, the ring and the seat hides)
 pub fn terror_scream_camera(
     st: &mut ModuleCamState,

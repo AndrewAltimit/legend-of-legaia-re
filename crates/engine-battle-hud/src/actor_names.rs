@@ -23,7 +23,7 @@ pub(super) fn party_member_name(world: &legaia_engine_core::world::World, slot: 
 }
 
 /// A monster's catalog name by actor slot.
-pub(super) fn monster_name(world: &legaia_engine_core::world::World, slot: u8) -> String {
+pub fn monster_name(world: &legaia_engine_core::world::World, slot: u8) -> String {
     let pc = party_count(world);
     let catalog = |s: usize| -> Option<String> {
         world

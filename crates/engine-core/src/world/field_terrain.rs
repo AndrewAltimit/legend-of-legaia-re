@@ -83,6 +83,14 @@ pub struct FieldTerrain {
     /// rungs afterwards, so a scripted floor bob never shakes the camera.
     /// See [`crate::world::World::sample_field_floor_height_static`].
     pub floor_height_lut_static: [i16; 16],
+    /// The ladder the scene's MAN ships, negated: the header words as the
+    /// asset dispatcher decodes them, before any `4C 9E` install rewrites
+    /// the resident copy ([`Self::floor_height_lut_static`]). The return
+    /// from a battle decodes the MAN afresh (`FUN_8001F05C`'s MAN arm), so
+    /// the loader `FUN_8003AEB0` re-seats the live rungs from these words,
+    /// not from the install; the scene system script's re-run installs again
+    /// (`captures/w53-E/jou_return`, `jouinb_return`).
+    pub floor_height_lut_header: [i16; 16],
     /// The ladder the scene-init sweep `FUN_8003A55C` spawned the **bound**
     /// placed objects against (scratchpad frame). A placed object is an actor
     /// whose Y is `ladder[nibble] + y_off` stored once into `+0x16` at spawn
@@ -180,6 +188,7 @@ impl FieldTerrain {
             zone_record: None,
             floor_height_lut: [0i16; 16],
             floor_height_lut_static: [0i16; 16],
+            floor_height_lut_header: [0i16; 16],
             placed_spawn_lut: [0i16; 16],
             object_cells: Vec::new(),
             floor_cell_bit: legaia_scene_formats::field_objects::CELL_WALK_VISIBLE,

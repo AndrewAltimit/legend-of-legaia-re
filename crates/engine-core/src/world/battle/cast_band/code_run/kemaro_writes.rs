@@ -311,6 +311,15 @@ fn kemaro_arm8_height(w: i32) -> i16 {
     (-(6 * w + sin / 4)) as i16
 }
 
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`kemaro_spear_height`], for the differential that runs arm 17's
+    /// switch over every monster id.
+    pub fn drive_kemaro_spear_height(h: i32, monster: Option<u16>) -> i16 {
+        kemaro_spear_height(h, monster)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

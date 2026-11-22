@@ -222,8 +222,8 @@ pub const PALMA_SETTLE_PHASE: u8 = 0xC8;
 
 /// One of arms 3 and 4's per-pass stores, worked out of the word `t`: the
 /// globals land straight on these values every pass.
-fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
-    let (pitch, yaw, tr_y, tr_z) = palma_sweep_globals(phase, t);
+fn palma_sweep(phase: u8, t: i32, lead_down: bool) -> ArmDirection {
+    let (pitch, yaw, tr_y, tr_z) = palma_sweep_globals(phase, t, lead_down);
     // TR z lands as stored, not through the builder's prescale.
     ArmDirection {
         tr_z_store: Some(tr_z),
@@ -232,18 +232,24 @@ fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
 }
 
 /// The pitch, yaw, TR y and TR z globals [`palma_sweep`] lands on.
-fn palma_sweep_globals(phase: u8, t: i32) -> (i32, i32, i32, i32) {
+/// `lead_down`: the first monster seat has no HP, so arm 3's lift skips it.
+fn palma_sweep_globals(phase: u8, t: i32, lead_down: bool) -> (i32, i32, i32, i32) {
     let sin = |a: i32| i32::from(legaia_engine_system::trig::sin12((a & 0xFFF) as u16));
     if phase == 3 {
         let yaw = sin(3 * t / 8 + 0x800);
         if t >= 160 * S {
             (0x40 - sin(2 * t) / 8, yaw, 0, 0x1800 - sin(t))
         } else {
-            // Monster 3 is lifted `2 p` a pass; TR y follows it.
+            // Every living monster is lifted `2 p` a pass (`+0x36 -= 2 p`,
+            // `0x801F7108..0x801F7138`, behind a `+0x14C` test), and TR y is
+            // `0x200 - 4 * actor_table[3].y` (`0x801F714C..0x801F7170`): it
+            // follows the first seat's lift, or stands on `0x200` with that
+            // seat down.
+            let lift = if lead_down { 0 } else { 2 * t };
             (
                 0x80 - sin(2 * t) / 16,
                 yaw,
-                0x200 + 4 * 2 * t,
+                0x200 + 4 * lift,
                 0x2000 - sin(t),
             )
         }
@@ -268,7 +274,7 @@ fn palma_sweep_globals(phase: u8, t: i32) -> (i32, i32, i32, i32) {
 /// screen with it.
 fn palma_pan_origin(st: &ModuleCamState, t: i32) -> Option<CaptureDrift> {
     let (pitch, tr) = st.live_pitch_tr?;
-    let (p, yaw, tr_y, _) = palma_sweep_globals(4, t);
+    let (p, yaw, tr_y, _) = palma_sweep_globals(4, t, st.lead_monster_down);
     Some(drift(
         p - pitch,
         yaw_to(st, yaw),
@@ -358,13 +364,13 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
             if st.countdown.0 < end {
                 return ArmDirection {
                     hold: true,
-                    ..palma_sweep(phase, st.countdown.0)
+                    ..palma_sweep(phase, st.countdown.0, st.lead_monster_down)
                 };
             }
             if phase == 3 {
                 // The exit pass stores the globals at the word it reached
                 // too, before it clears the word.
-                let stores = palma_sweep(phase, st.countdown.0);
+                let stores = palma_sweep(phase, st.countdown.0, st.lead_monster_down);
                 st.countdown.0 = 0;
                 return ArmDirection {
                     hold: false,

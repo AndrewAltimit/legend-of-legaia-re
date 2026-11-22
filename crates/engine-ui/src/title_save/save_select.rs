@@ -256,8 +256,9 @@ pub const SAVE_SELECT_SLOT1_POS: (i32, i32) = (137, 97);
 /// texel in on both axes (same tile as the Browsing pills), so the
 /// engine's tight atlas crop anchors at `(25, 41)` - quad + (1, 1) -
 /// the same inset that puts the Browsing crop at
-/// [`SAVE_SELECT_SLOT1_POS`]. Pairs with
-/// [`SAVE_SELECT_CURSOR_POS_LOAD_ACTIVE`].
+/// [`SAVE_SELECT_SLOT1_POS`]. SLOT 2's committed pill parks here too: the
+/// mode draws its one quad at the slid point whichever card it is. Pairs
+/// with [`SAVE_SELECT_CURSOR_POS_LOAD_ACTIVE`].
 pub const SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE: (i32, i32) = (25, 41);
 /// Vertical pitch between consecutive slot pill sprite tops in
 /// framebuffer pixels. Retail quads at y=96 / y=112 (visible rows
@@ -292,6 +293,22 @@ pub const SAVE_SELECT_CURSOR_X_OFFSET: i32 = -14;
 /// Pairs with [`SAVE_SELECT_TITLE_COLOR`] (the bright-text CLUT entry
 /// retail picks from the menu CLUT block at VRAM `(208, 510)`).
 pub const SAVE_SELECT_TITLE_POS: (i32, i32) = (35, 13);
+
+/// Where the header tab's word starts: the tab draws it through the
+/// centring text drawer `FUN_801E3EE0(word, 0x30, 6)`, which places it at
+/// `(0x30 - w / 2, 6 + 7)` with `w` the width measure `FUN_80035F04`
+/// (`0x801E3F18..0x801E3F44`, a signed halving). Both USA words land on
+/// [`SAVE_SELECT_TITLE_POS`]; a translated word centres on the same tab.
+///
+/// PORT: FUN_801E1C1C (mode `1`, `0x801E1D38..0x801E1D64`, the tab's word)
+///
+/// REF: FUN_801E3EE0, FUN_80035F04
+pub fn save_select_title_pos(font: &legaia_font::Font, title: &str) -> (i32, i32) {
+    let w = font
+        .measure(title.as_bytes(), &legaia_font::MeasureOptions::default())
+        .max_px as i32;
+    (0x30 - w / 2, 6 + 7)
+}
 
 /// RGBA tint applied to the dialog-font stencil when rendering the
 /// load-screen title word. Pinned to retail's framebuffer pixel
@@ -933,7 +950,7 @@ pub fn save_select_draws_for(
     emit_scaled(
         &mut out,
         &title_l,
-        SAVE_SELECT_TITLE_POS,
+        save_select_title_pos(font, title),
         scale,
         SAVE_SELECT_TITLE_COLOR,
     );

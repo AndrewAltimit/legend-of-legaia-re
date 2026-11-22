@@ -69,7 +69,6 @@ pub const NO_LURE_LINE_VA: u32 = 0x801C_EBBC;
 
 /// The centre `x` and the `y` state `0x96` hands `FUN_801D73B8` and its panel
 /// `FUN_801D74B0(0xA0, 0x68, glyphs * 13, 13)` (`0x801D00A0..0x801D00C8`).
-// REF: FUN_801d74b0 (the panel the line sits on; not drawn by the port)
 pub const NO_LURE_LINE_AT: (i16, i16) = (0xA0, 0x68);
 
 /// Where states `0x65` / `0x66` put the help panel (`a0 = 0x14`, `a1 = 0x10`
@@ -110,25 +109,57 @@ pub struct FishingHubText {
     /// The no-lure screen's line ([`NO_LURE_LINE_VA`]); empty when the image
     /// does not hold it.
     pub no_lure: Vec<u8>,
-    /// The exchange dialogs' lines ([`PRIZE_TEXT_VAS`]: the quantity
-    /// picker's label, the confirm's question, Yes, No); empty when the image
-    /// does not hold them.
-    pub prize: [Vec<u8>; 4],
+    /// The exchange's lines ([`PRIZE_TEXT_VAS`]: the quantity picker's
+    /// label, the confirm's question, Yes, No, and the prize list's points
+    /// label); empty when the image does not hold them.
+    pub prize: [Vec<u8>; 5],
 }
 
-/// The exchange dialogs' strings: the quantity picker's label (`addiu
-/// a0,a0,-0x1078` at `0x801D0B78`) and the confirm's question, Yes and No
-/// (`-0x1094` / `-0x1084` / `-0x1080` at `0x801D0730..0x801D0780`).
-pub const PRIZE_TEXT_VAS: [u32; 4] = [0x801C_EF88, 0x801C_EF6C, 0x801C_EF7C, 0x801C_EF80];
+/// The exchange's strings: the quantity picker's label (`addiu
+/// a0,a0,-0x1078` at `0x801D0B78`), the confirm's question, Yes and No
+/// (`-0x1094` / `-0x1084` / `-0x1080` at `0x801D0730..0x801D0780`) and the
+/// prize list's points label (`-0x1064` at `0x801D0E7C`).
+pub const PRIZE_TEXT_VAS: [u32; 5] = [
+    0x801C_EF88,
+    0x801C_EF6C,
+    0x801C_EF7C,
+    0x801C_EF80,
+    0x801C_EF9C,
+];
+
+// REF: FUN_801d74b0 (the venue panels; drawn by engine-ui::fishing::exchange), FUN_8002c69c (the box it emits)
+/// The hub menu's panel, `FUN_801D74B0(0xA0, 0x50, 0x68, 0x50)`
+/// (`0x801D05EC..0x801D05F8`), drawn whether or not the menu takes the pad.
+pub const MENU_PANEL: (i16, i16, i16, i16) = (0xA0, 0x50, 0x68, 0x50);
+
+/// The tackle list's panel, `FUN_801D74B0(s1 + 0x20, 0x48, 0x8F, 0x60)` with
+/// `s1 = 0xB0` (`0x801D1388..0x801D1398`).
+pub const TACKLE_PANEL: (i16, i16, i16, i16) = (0xD0, 0x48, 0x8F, 0x60);
 
 /// The NUL-terminated string at `va` in an image loaded at
 /// [`FISHING_OVERLAY_BASE`], or `None` when `va` is outside the image or the
 /// string runs off its end.
+///
+/// The string ends at the first `0` that is not an escape's operand: the
+/// glyph renderer `FUN_80036888` reads the byte after `0xCF` (an ink) or
+/// `0xCE` (an icon) and steps past both (`0x8003694C..0x80036950`), so
+/// `0xCE 0x00`, the Cross button, does not end the line (the help pages'
+/// "Press the (Cross) button.").
+// REF: FUN_80036888 (the escape bytes it steps over), FUN_80034b78 (the tackle counts)
 fn c_string_at(image: &[u8], va: u32) -> Option<Vec<u8>> {
     let off = va.checked_sub(FISHING_OVERLAY_BASE)? as usize;
     let rest = image.get(off..)?;
-    let end = rest.iter().position(|&b| b == 0)?;
-    Some(rest[..end].to_vec())
+    let mut i = 0;
+    loop {
+        match *rest.get(i)? {
+            0 => return Some(rest[..i].to_vec()),
+            0xCE | 0xCF => {
+                rest.get(i + 1)?;
+                i += 2;
+            }
+            _ => i += 1,
+        }
+    }
 }
 
 impl FishingHubText {
@@ -306,9 +337,39 @@ impl FishingHub {
         text: &FishingHubText,
         lure: u32,
         rod: i32,
-        mut tackle_row: impl FnMut(u32) -> (Vec<u8>, i32),
+        tackle_row: impl FnMut(u32) -> (Vec<u8>, i32),
     ) -> Vec<HubLine> {
+        self.layers(text, lure, rod, tackle_row)
+            .into_iter()
+            .flat_map(|l| l.lines)
+            .collect()
+    }
+
+    /// [`Self::lines`] one panel at a time, back to front: the menu's layer
+    /// ([`MENU_PANEL`]) under the tackle list's ([`TACKLE_PANEL`]). The
+    /// session calls the tackle screen before the menu, so the ordering table
+    /// draws the menu under it.
+    ///
+    /// The help pages are one layer on their own box: `FUN_801D72A0` emits
+    /// `FUN_8002C69C(x, y, 0x119, 0xC3)` (`0x801D7384..0x801D7390`) without
+    /// staging a style, so it draws in the style `gp+0x14C` holds. The only
+    /// store the fishing overlay makes to it is `FUN_801D74B0`'s `0x44`
+    /// (`0x801D74E0`), and the only way onto a help page is the menu's row 1,
+    /// whose routine runs that panel every frame ahead of its edge test
+    /// (`0x801D05F8`): the frame is the class-0 frame the panels draw in
+    /// (*capture*: `gp+0x14C = 0x44` on both help pages, where the idle shore
+    /// before the menu holds the field's `0x61`).
+    // REF: FUN_801d72a0 (the help frame), FUN_80034b6c (the style store)
+    pub fn layers(
+        &self,
+        text: &FishingHubText,
+        lure: u32,
+        rod: i32,
+        mut tackle_row: impl FnMut(u32) -> (Vec<u8>, i32),
+    ) -> Vec<HubLayer> {
+        let mut layers = Vec::new();
         let mut out = Vec::new();
+        let mut frame = None;
         let menu = |out: &mut Vec<HubLine>, interactive: bool, cursor: i32| {
             for (row, t) in text.menu_rows.iter().enumerate() {
                 out.push(HubLine {
@@ -317,6 +378,7 @@ impl FishingHub {
                     y: crate::fishing::FISHING_MENU_ROW_Y0
                         + crate::fishing::FISHING_MENU_ROW_PITCH * row as i16,
                     marked: false,
+                    number: None,
                 });
             }
             if interactive {
@@ -324,12 +386,26 @@ impl FishingHub {
                 out.push(HubLine::cursor(x, y));
             }
         };
+        let menu_layer = |layers: &mut Vec<HubLayer>, out: &mut Vec<HubLine>| {
+            layers.push(HubLayer {
+                panel: Some(MENU_PANEL),
+                frame: None,
+                lines: std::mem::take(out),
+            });
+        };
         match self.screen {
-            HubScreen::Menu => menu(&mut out, true, self.menu.cursor),
-            HubScreen::Exchange => menu(&mut out, false, self.menu.cursor),
+            HubScreen::Menu => {
+                menu(&mut out, true, self.menu.cursor);
+                menu_layer(&mut layers, &mut out);
+            }
+            HubScreen::Exchange => {
+                menu(&mut out, false, self.menu.cursor);
+                menu_layer(&mut layers, &mut out);
+            }
             HubScreen::Help(page) => {
                 let (x, y) = HELP_PANEL_ORIGIN;
                 let layout = help_panel_layout(x, y, page != 0);
+                frame = Some(layout.frame);
                 let lines = &text.help[usize::from(page.min(1))];
                 for l in &layout.lines {
                     if let Some(t) = lines.get(usize::from(l.string_index)) {
@@ -338,6 +414,7 @@ impl FishingHub {
                             x: l.x,
                             y: l.y,
                             marked: false,
+                            number: None,
                         });
                     }
                 }
@@ -346,10 +423,12 @@ impl FishingHub {
                     x: layout.footer.0,
                     y: layout.footer.1,
                     marked: false,
+                    number: None,
                 });
             }
             HubScreen::Tackle => {
                 menu(&mut out, false, self.menu.cursor);
+                menu_layer(&mut layers, &mut out);
                 let mut y = TACKLE_ROW_Y0;
                 // Three lure rows, always drawn, each with its bag count; the
                 // equipped one in the marked ink (`_DAT_8007B454 = 7`).
@@ -361,6 +440,7 @@ impl FishingHub {
                         x: TACKLE_ROW_X,
                         y,
                         marked,
+                        number: None,
                     });
                     // The count's numerals take the ink word the row's name
                     // left (`FUN_80034B78` reads `_DAT_8007B454`).
@@ -369,6 +449,7 @@ impl FishingHub {
                         x: TACKLE_COUNT_X,
                         y,
                         marked,
+                        number: Some((i64::from(count), 4)),
                     });
                     y += TACKLE_ROW_PITCH;
                 }
@@ -383,6 +464,7 @@ impl FishingHub {
                         x: TACKLE_ROW_X,
                         y,
                         marked: rod == i as i32,
+                        number: None,
                     });
                     y += TACKLE_ROW_PITCH;
                 }
@@ -390,10 +472,33 @@ impl FishingHub {
                     TACKLE_CURSOR_X,
                     TACKLE_ROW_Y0 + TACKLE_ROW_PITCH * self.tackle.cursor as i16,
                 ));
+                layers.push(HubLayer {
+                    panel: Some(TACKLE_PANEL),
+                    frame: None,
+                    lines: std::mem::take(&mut out),
+                });
             }
         }
-        out
+        if !out.is_empty() {
+            layers.push(HubLayer {
+                panel: None,
+                frame,
+                lines: out,
+            });
+        }
+        layers
     }
+}
+
+/// One panel of the hub and the lines drawn over it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HubLayer {
+    /// `FUN_801D74B0`'s `(cx, y, w, h)` ([`crate::fishing_chrome::centred_panel`]).
+    pub panel: Option<(i16, i16, i16, i16)>,
+    /// A box the screen emits itself, `FUN_8002C69C(x, y, w, h)`, in the
+    /// style the panels stage (the help pages' frame).
+    pub frame: Option<(i16, i16, i16, i16)>,
+    pub lines: Vec<HubLine>,
 }
 
 /// One laid-out hub line.
@@ -405,9 +510,20 @@ pub struct HubLine {
     pub y: i16,
     /// Drawn in the highlight ink (the equipped tackle).
     pub marked: bool,
+    /// A decimal field `(value, places)` drawn at the pen through the menu
+    /// numerals (`FUN_80034B78`), which `text` spells for a host without
+    /// them (the tackle list's counts).
+    pub number: Option<(i64, i32)>,
 }
 
 impl HubLine {
+    /// Whether this line is the cursor icon's `>` stand-in
+    /// ([`Self::cursor`]), which a host with the system-UI atlas draws as
+    /// the icon itself.
+    pub fn is_cursor(&self) -> bool {
+        self.text == b">"
+    }
+
     /// The cursor icon (`FUN_8002C488(x, y, 0x4E)`), as the `>` stand-in every
     /// host draws for that icon.
     fn cursor(x: i16, y: i16) -> Self {
@@ -416,6 +532,7 @@ impl HubLine {
             x,
             y,
             marked: false,
+            number: None,
         }
     }
 }
@@ -497,12 +614,38 @@ impl crate::fishing::PondSession {
         text: &FishingHubText,
         tackle_row: impl FnMut(u32) -> (Vec<u8>, i32),
     ) -> Vec<HubLine> {
+        self.hub_layers(text, tackle_row)
+            .into_iter()
+            .flat_map(|l| l.lines)
+            .collect()
+    }
+
+    /// [`Self::hub_lines`] with the panels they sit on, back to front
+    /// ([`FishingHub::layers`]); the no-lure screen's line sits on
+    /// `FUN_801D74B0(0xA0, 0x68, 13 * n, 13)`, `n` the caption routine's
+    /// return (`0x801D00AC..0x801D00C8`).
+    pub fn hub_layers(
+        &self,
+        text: &FishingHubText,
+        tackle_row: impl FnMut(u32) -> (Vec<u8>, i32),
+    ) -> Vec<HubLayer> {
         if self.phase() == crate::fishing::PondPhase::NoLure {
-            return no_lure_lines(text);
+            let lines = no_lure_lines(text);
+            if lines.is_empty() {
+                return Vec::new();
+            }
+            let (cx, y) = NO_LURE_LINE_AT;
+            let n = centred_caption(text.no_lure.len(), i32::from(cx), i32::from(y))
+                .map_or(0, |(_, n)| n);
+            return vec![HubLayer {
+                panel: Some((cx, y, (13 * n) as i16, 13)),
+                frame: None,
+                lines,
+            }];
         }
         self.hub
             .as_ref()
-            .map(|h| h.lines(text, self.lure, self.rod, tackle_row))
+            .map(|h| h.layers(text, self.lure, self.rod, tackle_row))
             .unwrap_or_default()
     }
 }
@@ -539,6 +682,7 @@ fn no_lure_lines(text: &FishingHubText) -> Vec<HubLine> {
         x: x as i16,
         y: y as i16,
         marked: false,
+        number: None,
     }]
 }
 
@@ -675,6 +819,40 @@ mod tests {
         assert_eq!(h.screen, HubScreen::Exchange);
         h.exchange_closed();
         assert_eq!(h.screen, HubScreen::Menu);
+    }
+
+    #[test]
+    fn the_tackle_list_sits_on_its_panel_over_the_menus() {
+        let t = FishingHubText::from_overlay(&image()).unwrap();
+        let h = FishingHub {
+            screen: HubScreen::Tackle,
+            ..FishingHub::open()
+        };
+        let l = h.layers(&t, 0, 0, |_| (b"x".to_vec(), 1));
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0].panel, Some(MENU_PANEL));
+        assert_eq!(l[0].lines.len(), 5, "the menu's rows, its cursor off");
+        assert_eq!(l[1].panel, Some(TACKLE_PANEL));
+        // The help pages sit on their own box, `FUN_8002C69C(0x14, 0x10,
+        // 0x119, 0xC3)`.
+        let h = FishingHub {
+            screen: HubScreen::Help(0),
+            ..FishingHub::open()
+        };
+        let l = h.layers(&t, 0, 0, |_| (Vec::new(), 0));
+        assert_eq!(
+            (l[0].panel, l[0].frame),
+            (None, Some((0x14, 0x10, 0x119, 0xC3)))
+        );
+    }
+
+    #[test]
+    fn a_zero_escape_operand_does_not_end_the_string() {
+        let mut img = image();
+        let o = (NO_LURE_LINE_VA - FISHING_OVERLAY_BASE) as usize;
+        img[o..o + 9].copy_from_slice(b"ab\xCE\x00 cd\0\0");
+        let t = FishingHubText::from_overlay(&img).unwrap();
+        assert_eq!(t.no_lure, b"ab\xCE\x00 cd");
     }
 
     #[test]

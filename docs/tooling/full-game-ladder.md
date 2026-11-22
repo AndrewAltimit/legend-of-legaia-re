@@ -789,6 +789,15 @@ party still holds when it reaches the door, and what a reload hands back:
   prepared left Zora higher than the attempt before it. Spirit turns earn the same
   in the boss's own rounds, so only Koru's race takes the walk: that race is lost
   on the rounds spent standing.
+- **Every errand walks on its own budget.** The charge for a race, the heal hunt,
+  training and the walk back to an errand's last bed (`pad_errand_from_rest`) each
+  take a frame budget of their own (the charge's never shorter than what the
+  stretch had left), and the stretch gets back what it had when the errand began.
+  The race growing walks against a deadline a third short of the stretch's, and
+  its fights draw on an allowance of their own. A walk that stalls or runs out of
+  time ends the errand, not the stretch; only a wipe is the stretch's. A
+  retail-correct engine change re-deals every later encounter, and on a shared
+  budget one errand that ran long on the new deal spent the stretch.
 - **A doomed save is not reloaded for ever.** A milestone's save counts as fit
   when nobody is under two fifths of its HP, the party holds a third of its MP or
   the bag's MP reserve, and the bag holds its heal reserve; a scene whose rest
@@ -2137,6 +2146,7 @@ The ladder arms `npcs.solid` in every session it opens, as both play hosts do (`
 - **A failed plan is remembered only while the bodies stand where they stood.** One walking past un-seals what it sealed.
 - **A talk side inside a wall is skipped.** Walking at one can slide into a pocket a body closes: south of `cave01`'s Terra the probes ahead of a step south clear her box from a row where the probes ahead of a step north do not, so the way in is one-way.
 - **A lean a third body stops short steps along the counter and leans again** (`koin4`'s baker P1[3], a customer a tile to the south).
+- **A probe that lands on another NPC walks round it.** The steps along the counter are taken about the NPC, and a body square between the player and it is still between after each: `koin1b` P1[9]'s probe lands on P1[18] from every one of them. The hand then leans to a point a tile to either side of the body in the way, across the line to the NPC, and leans in from there. The same holds with `npcs.solid` off, where bodies overlap and the probe still finds the nearer one.
 - **A wall corner the planner reads open is stepped off sideways.** The locomotion's leading probes reach past the player's own column, so a walk standing a few units off a one-tile corridor's line presses into the wall beside it while the lattice route runs straight ahead. After eight frames pressed without moving, the walk takes a frame's step to the side whose probe and the forward probe from there are both clear. `rugi` P2[67]'s warp leaves the party at (5176, 8198), against the wall east of the corridor north of (40, 64), and every later beat of the scene stalled there until the stretch's frame budget ran out. The rule is armed with the bodies only, so the walk with them off is unchanged.
 - **A walk held off its line by a person steps back onto it.** A body can stop a walk standing a few units off the lattice line that the line itself passes clear: the actor probes reach 32 units to each side, and the body's box is 40. The hand steps back onto the line for a prop's box on either arm; with the bodies solid it does so for a person too, since one who stands still holds the walk for good. `bubu1` P1[6] at (8500, 3904) stopped the walk north at (8568, 4006), eight units west of the line at x 8576, until the stretch's budget ran out.
 - **A door contact that lands on the tile it is pressed from is not an exit.** With two assistants beside the player on `doman`'s (103, 100), P1[15]'s contact read as the only way out and the walk pressed into it for good; the open step is east.

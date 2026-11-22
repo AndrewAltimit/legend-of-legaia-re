@@ -23,6 +23,16 @@ pub fn shake_decay(amplitude: i32, frame_step: i32) -> i32 {
     }
 }
 
+/// PORT: FUN_801cf388 (`0x801CF3CC`..`0x801CF3F4`) - the frame's rumble words.
+///
+/// The cabinet opens every frame by zeroing both motor words
+/// (`_DAT_8007B92C` / `_DAT_8007B930`) and, unless the options screen's Dual
+/// Shock "Events" row is off (`_DAT_800845A8 != 0`), copying the duel's two
+/// levels (`DAT_801DBEA0` / `DAT_801DBEA4`) into them.
+pub fn cabinet_rumble(events_vibration_off: bool, levels: [i32; 2]) -> [i32; 2] {
+    if events_vibration_off { [0; 2] } else { levels }
+}
+
 /// What the cabinet did this frame, for the host.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CabinetFrame {
@@ -131,6 +141,13 @@ pub struct CabinetInput {
     /// ([`crate::baka_duel::DuelCamera::spin`]); a cabinet driven with no
     /// camera leaves this clear and steps straight through.
     pub camera_hold: bool,
+    /// `_DAT_8007BC20 != 0`: a CD-XA clip is in flight. The all-clear beat
+    /// `0xFB` holds on its black screen until it clears (`0x801D1A70..0x801D1A7C`),
+    /// and the all-clear announcer `FUN_801D21FC` advances only while it is
+    /// clear. A host with no model of the drive leaves it clear.
+    ///
+    /// REF: FUN_801D21FC
+    pub xa_in_flight: bool,
 }
 
 /// PORT: FUN_801cf388 - the Baka Fighter cabinet's top-level state machine.
@@ -404,6 +421,11 @@ impl BakaCabinet {
     /// Publish the running score (`DAT_801DBEE4`) the secret-opponent gate reads.
     pub fn set_high_score(&mut self, score: i32) {
         self.high_score = score;
+    }
+
+    /// The cabinet's own frame counter `DAT_801DC130`, one a tick.
+    pub fn frame_counter(&self) -> i32 {
+        self.frames
     }
 
     /// Kick the screen shake (`DAT_801DBEC0`); the epilogue decays it.

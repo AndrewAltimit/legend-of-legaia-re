@@ -966,7 +966,16 @@ impl BakaDuelScene {
             let yaw = fight.fighter_yaw(slot);
             let range = self.fighter[slot].clone();
             let rec = asset.first_record + m.record;
-            self.pose_range(&asset.tmd, &asset.bank, rec, m.frame(), range, origin, yaw);
+            self.pose_range(
+                &asset.tmd,
+                &asset.bank,
+                rec,
+                m.frame(),
+                range.clone(),
+                origin,
+                yaw,
+            );
+            self.tint_fighter(range, fight.fighter_colour(slot));
             let mut drawn = [false; 2];
             for (owner, frame) in fight.afterimages() {
                 if *owner != slot {
@@ -1006,6 +1015,27 @@ impl BakaDuelScene {
             }
         }
         self.pose_impact(fight);
+    }
+
+    /// Cue a duel fighter's packets under its colour word and level (the
+    /// comeback critical's flash, [`BakaFight::fighter_colour`]): the mesh
+    /// pass hands the actor's `+0x74` / `+0x78` to `FUN_80043390`, which
+    /// depth-cues every packet colour toward the word's far colour.
+    fn tint_fighter(&mut self, range: Range<usize>, (word, level): (u32, u16)) {
+        let colour = legaia_render_kernels::sprite_arm::ColourWord::from_words(word, level);
+        let mut changed = false;
+        for i in range {
+            changed |= set(&mut self.colors[i], colour.cue(self.base_colors[i]));
+            let b = &self.base_flat[i * 4..i * 4 + 4];
+            let c = colour.cue([b[0], b[1], b[2]]);
+            let dst: &mut [u8; 4] = (&mut self.flat_rgba[i * 4..i * 4 + 4])
+                .try_into()
+                .expect("four bytes");
+            changed |= set(dst, [c[0], c[1], c[2], b[3]]);
+        }
+        if changed {
+            self.attr_generation = self.attr_generation.wrapping_add(1);
+        }
     }
 
     /// Pose the all-clear fighter, or drop it when none is on stage. It is an

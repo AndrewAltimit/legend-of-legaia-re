@@ -13,6 +13,10 @@
 //! in scope. The glide steps that read and write the battle state alone are
 //! public `BattleState` methods in `legaia-engine-battle-loop`, so a test
 //! steps them as `world.battle.step_action_plate_glides()` without the trait.
+//!
+//! Closed to new methods: a new driver is a `#[cfg(feature = "test-drivers")]`
+//! `impl World` block in the module of the arm it drives, so tests for different
+//! arms never edit this file.
 
 use super::World;
 use legaia_engine_battle_loop::round_flow::PendingPartyAction;

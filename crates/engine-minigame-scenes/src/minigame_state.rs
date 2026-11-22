@@ -83,6 +83,11 @@ pub struct MinigameState {
     /// confirm) takes the pad, the picked row, the quantity and the
     /// confirm's row. Reset each time the list opens.
     pub fishing_exchange_dialog: legaia_engine_fishing::fishing::PrizeDialog,
+    /// The prize list's cursor between visits (`DAT_801D90A8`): only the
+    /// list routine `FUN_801D0C3C` writes it and the overlay's load zeroes
+    /// it, so it holds across the list's openings within a session and
+    /// starts at `0` (which the list's entry clamp sends to its last row).
+    pub fishing_exchange_cursor: usize,
     /// The two point-exchange venue pages (`0` Buma, `1` Vidna) PROT 0972
     /// carries beside the session tables, decoded by
     /// `SceneHost::enter_fishing_from_overlay` - the one
@@ -387,6 +392,7 @@ impl MinigameState {
             fishing_cues: PondCueClock::default(),
             fishing_exchange: None,
             fishing_exchange_dialog: Default::default(),
+            fishing_exchange_cursor: 0,
             fishing_prize_venues: None,
             fishing_hub_text: None,
             fishing_sprites: None,

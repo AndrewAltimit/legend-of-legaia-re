@@ -131,8 +131,11 @@ enum Pass {
 /// Passes the port runs before it gives up on a pick that keeps failing.
 /// Retail's retry is unbounded; a gate that can roll the physical arm ends
 /// it with probability one, and only a forced magic arm (monster `0xB4`)
-/// whose every match fails would spin.
-pub const MAX_PASSES: usize = 64;
+/// whose every match fails would spin. The forced arm can also end late: a
+/// `0xB4` record whose matches mostly fail on MP walks until the draw lands
+/// an affordable one, which can take past sixty-four passes, so the bound sits
+/// far above any pick that ends.
+pub const MAX_PASSES: usize = 0x1000;
 
 /// A [`CorePick::Magic`] target that means "the actor's `+0x1DD` as it stands":
 /// the pick of a pass that failed before its target store.
@@ -152,18 +155,42 @@ pub fn pick(
     // A pass that matched a cast and then failed on its target has already stored
     // the spell, clip and category: they stand if the retry stores nothing over
     // them (`0x801EA528..0x801EA570` ahead of the `LAB_801EA8B8` failures).
+    //
+    // The target is the same: every match that resolves one stores it in
+    // `+0x1DD` on the spot (`sb ..,0x1dd(s4)` in each target arm), and the walk
+    // goes on to the next tag-`0x23` entry, which re-matches. A later match
+    // that fails leaves that store standing, in this pass and into the
+    // retries, so a pick that keeps its target keeps the last one written.
     let mut stored = None;
+    let mut written = None;
+    let keep = |p: CorePick, written: Option<u8>| match p {
+        CorePick::Magic {
+            spell,
+            clip,
+            spirit_clip,
+            target: KEEP_TARGET,
+        } => CorePick::Magic {
+            spell,
+            clip,
+            spirit_clip,
+            target: written.unwrap_or(KEEP_TARGET),
+        },
+        p => p,
+    };
     for n in 1..=MAX_PASSES {
-        match one_pass(input, spell, rand) {
+        match one_pass(input, spell, rand, &mut written) {
             Pass::Done(CorePick::Unmatched) => {
-                return (stored.unwrap_or(CorePick::Unmatched), n);
+                return (keep(stored.unwrap_or(CorePick::Unmatched), written), n);
             }
-            Pass::Done(p) => return (p, n),
+            Pass::Done(p) => return (keep(p, written), n),
             Pass::Failed(Some(s)) => stored = Some(s),
             Pass::Failed(None) => {}
         }
     }
-    (stored.unwrap_or(CorePick::Unmatched), MAX_PASSES)
+    (
+        keep(stored.unwrap_or(CorePick::Unmatched), written),
+        MAX_PASSES,
+    )
 }
 
 fn odd_round(input: &CoreInput<'_>) -> bool {
@@ -174,6 +201,7 @@ fn one_pass(
     input: &CoreInput<'_>,
     spell: &dyn Fn(u8) -> Option<SpellBytes>,
     rand: &mut dyn FnMut() -> u32,
+    written: &mut Option<u8>,
 ) -> Pass {
     let slots = &input.ai_bytes[1..4];
     // The gate.
@@ -301,6 +329,7 @@ fn one_pass(
             }
             _ => 9,
         };
+        *written = Some(target);
         picked = Some(CorePick::Magic {
             spell: id,
             clip,

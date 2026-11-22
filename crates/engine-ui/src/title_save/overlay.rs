@@ -219,6 +219,13 @@ pub fn save_select_overlay_draws(
         darken: None,
     };
     if let Some(rects) = rects {
+        // The committed card's pill slides on SLOT 1's track whichever card
+        // it is: mode 2 of `FUN_801E1C1C` draws the one quad, its tile picked
+        // by `_DAT_8007B834`, at the slid point itself (`0x801E2284..`), so
+        // SLOT 2's pill leaves from SLOT 1's row and parks under the panel
+        // too. The pill drawer adds a pitch per card index; take it back off.
+        // PORT: FUN_801E1C1C (mode `2`, `0x801E2284..0x801E24CC`, the committed pill)
+        let row = view.pills.first().map_or(0, |&p| i32::from(p));
         let anchor = if view.single_pill {
             (
                 slide(
@@ -230,7 +237,7 @@ pub fn save_select_overlay_draws(
                     SAVE_SELECT_SLOT1_POS.1,
                     SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE.1,
                     view.slide_t,
-                ),
+                ) - row * SAVE_SELECT_SLOT_PITCH_Y,
             )
         } else {
             SAVE_SELECT_SLOT1_POS

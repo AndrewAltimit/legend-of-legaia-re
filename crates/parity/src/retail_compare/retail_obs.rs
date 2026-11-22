@@ -17,6 +17,12 @@ pub struct CameraObs {
     pub focus: [i32; 2],
 }
 
+/// The armed entry context (`_DAT_8007B450`), which the walk tick points at
+/// the field overlay's Incense notice record when the window runs out.
+const ARMED_RECORD: u32 = 0x8007_B450;
+/// The field overlay's Incense wear-off record (kind `0x0B`, `0x801F2278`).
+const INCENSE_NOTICE_RECORD: u32 = 0x801F_2278;
+
 /// Everything read off one retail state.
 pub struct RetailObs {
     pub scene: String,
@@ -254,6 +260,11 @@ pub struct RetailObs {
     /// place-name banner a door leaves up - for a field state, handed to the
     /// image child as `LEGAIA_SEAT_BALLOON` (`none` when it drew none).
     pub balloon: Option<Option<legaia_engine_dialog::text_balloon::TextBalloon>>,
+    /// The Incense wear-off notice is up: the field overlay's notice record
+    /// ([`INCENSE_NOTICE_RECORD`]) is the armed entry context
+    /// `_DAT_8007B450`. Handed to the image child as
+    /// `LEGAIA_SEAT_INCENSE_NOTICE`, which raises it.
+    pub incense_notice: bool,
     /// The live mode-4 scroller rects and their captured texels
     /// ([`retail_scroll_rects`]), handed to the image child as a
     /// `LEGAIA_SEAT_VRAM_RECTS` file.
@@ -554,6 +565,8 @@ impl RetailObs {
             balloon: (class == StateClass::Field)
                 .then(|| retail_balloon(ram))
                 .flatten(),
+            incense_notice: class == StateClass::Field
+                && game_anchors::u32_at(ram, ARMED_RECORD) == INCENSE_NOTICE_RECORD,
             turning_parts: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_turning_parts(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
             } else {
@@ -897,6 +910,9 @@ impl RetailObs {
         }
         if let Some(b) = &self.balloon {
             env.push(("LEGAIA_SEAT_BALLOON", balloon_env(b.as_ref())));
+        }
+        if self.incense_notice {
+            env.push(("LEGAIA_SEAT_INCENSE_NOTICE", "1".to_string()));
         }
         if !self.turning_parts.is_empty() {
             env.push((

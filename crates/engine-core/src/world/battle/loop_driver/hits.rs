@@ -323,6 +323,35 @@ impl World {
         };
         let art = staged_art_constant(latched, chosen, party);
         let Some(target) = self.resolve_attack_target(attacker) else {
+            // Retail's kernel reads the target `+0x1DD` as it stands
+            // (`lbu s4,0x1dd(v0)` at `0x801EC450`) and tests the limb miss
+            // before anything reads its HP (`0x801EC488..0x801EC554`), so a
+            // strike that goes on after its target fell still misses on its
+            // class and raises the skip strobe: the cue cursor steps over
+            // the impact cue. Vahn's third strike of a `343` chain on a
+            // `rikuroa` monster the second one killed is silent in retail
+            // (`captures/w53-E/films/absorb_trace`); the port, finding no
+            // living target, returned before the miss and its walk sounded
+            // the impact cue `0x08` on a body that was not there.
+            let fallen = self
+                .actors
+                .get(attacker as usize)
+                .map(|a| a.battle.active_target)
+                .filter(|&t| {
+                    self.actors
+                        .get(usize::from(t))
+                        .is_some_and(|x| x.battle_monster_id.is_some())
+                });
+            if let Some(t) = fallen
+                && legaia_engine_battle_vm::battle_action::limb_misses(
+                    party,
+                    hit.power_byte,
+                    self.attack_swing_class_of(t),
+                )
+            {
+                self.battle_ctx.effect_skip_strobe = 1;
+                self.consume_effect_skip_strobe(attacker as usize);
+            }
             return;
         };
         let Some(apply) = self.melee_hit_plan(attacker, target, &hit, &power_run, &event_frames)

@@ -21,6 +21,7 @@ impl World {
         caster: u8,
         victim: u8,
         creature: u8,
+        party_hittable: [bool; 3],
     ) {
         use legaia_engine_cast::cast_module_impact::{ImpactSeat, module_impacts_due};
         let party = self.party.party_count.clamp(1, 3);
@@ -31,11 +32,7 @@ impl World {
                 ImpactSeat::Creature => vec![creature],
                 ImpactSeat::Party => (0..party).collect(),
                 ImpactSeat::LiveParty => (0..party)
-                    .filter(|&s| {
-                        self.actors
-                            .get(usize::from(s))
-                            .is_some_and(|a| a.active && a.battle.hp != 0)
-                    })
+                    .filter(|&s| party_hittable[usize::from(s)])
                     .collect(),
                 ImpactSeat::LiveMonsters => (party..party + 4)
                     .filter(|&s| {

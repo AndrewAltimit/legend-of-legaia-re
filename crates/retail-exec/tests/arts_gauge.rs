@@ -223,6 +223,13 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
     const SELECT_ATTACK: u32 = 0x8008_46C4;
     let dead = SlotState::default();
     let (mut replays, mut kept, mut wiped) = (0, 0, 0);
+    let mut windows_wiped = 0;
+    const HANDLES: u32 = 0x8018_0000;
+    let freed: std::rc::Rc<std::cell::RefCell<Vec<u32>>> = Default::default();
+    let log = freed.clone();
+    cpu.hook(0x8003_19A8, move |r, _| {
+        log.borrow_mut().push(r.r[psx_retail_exec::A0])
+    });
     for round in 0..3000 {
         let costs: [u8; 4] =
             std::array::from_fn(|_| [0x1E, 0x1E, 0x2A, 0x36][rng.below(4) as usize]);
@@ -281,7 +288,21 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
         for (i, b) in preseed.iter().enumerate() {
             cpu.mem.wr8(ACTOR + 0x1DF + i as u32, b + 0x0B);
         }
+        // The gauge build's text windows, which the first press's wipe
+        // retires: handles in `ctx[+0x1074..]` whose kind `+0x8` is
+        // `5..=0xD` (`0x801D3C2C..0x801D3C94`), the pennant windows the
+        // port draws from `bar_commands` alone.
+        let kinds: Vec<u16> = (0..40).map(|_| rng.below(0x14) as u16).collect();
+        for (k, kind) in kinds.iter().enumerate() {
+            let h = HANDLES + 0x10 * k as u32;
+            cpu.mem.wr16(h + 8, *kind);
+            cpu.mem.wr32(CTX + 0x1074 + 4 * k as u32, h);
+        }
+        freed.borrow_mut().clear();
+        let mut windows_before = kinds.iter().any(|k| (5..=0xD).contains(k));
         for step in 0..14 {
+            let phase_before = s.phase.clone();
+            let shown_before = !s.preseed.is_empty();
             let press = match rng.below(10) {
                 0..=2 => COMMANDS[rng.below(4) as usize].0,
                 3..=5 => CONFIRM,
@@ -312,6 +333,39 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
             // pass that carries a direction, so both sides end an exhausted
             // entry on this one.
             s.input(ArtsCommandPad::default(), [dead; 3], [dead; 5]);
+            // The port drops the preseed's pennants on the entry's first
+            // press; retail frees the windows on the same press.
+            let wiped_port = matches!(phase_before, ArtsInputPhase::Entering)
+                && shown_before
+                && s.preseed.is_empty()
+                && !s.replay;
+            let live: Vec<bool> = (0..40)
+                .map(|k| cpu.mem.rd32(CTX + 0x1074 + 4 * k) != 0)
+                .collect();
+            let windows_left = kinds
+                .iter()
+                .zip(&live)
+                .any(|(&kind, &l)| (5..=0xD).contains(&kind) && l);
+            if wiped_port {
+                assert!(
+                    !windows_left,
+                    "windows outlive the wipe: round {round} step {step}"
+                );
+                windows_wiped += 1;
+            }
+            // And the converse: a step that retired the windows and nothing
+            // else (no handle-table reset, `FUN_801D99BC`) is the wipe.
+            let others_live = kinds
+                .iter()
+                .zip(&live)
+                .all(|(&kind, &l)| (5..=0xD).contains(&kind) || l);
+            if windows_before && !windows_left && others_live && shown_before {
+                assert!(
+                    wiped_port,
+                    "round {round} step {step}: retail wiped, port kept"
+                );
+            }
+            windows_before = windows_left;
             let retail_state = cpu.mem.rd8(CTX + 0x06);
             let retail_pool = cpu.mem.rd16(CTX + 0x6DC) as i16;
             let retail_count = cpu.mem.rd8(CTX + 0x19);
@@ -362,7 +416,7 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
         }
     }
     assert!(
-        replays > 300 && kept > 100 && wiped > 30,
-        "{replays} {kept} {wiped}"
+        replays > 300 && kept > 100 && wiped > 30 && windows_wiped > 100,
+        "{replays} {kept} {wiped} {windows_wiped}"
     );
 }

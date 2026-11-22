@@ -633,27 +633,48 @@ fn a_spawn_prologue_compass_walk_moves_the_placement_after_the_seat() {
 
 /// The cross-context form (`C1 <id> b0 b1`) in one placement's spawn
 /// section walks the placement it names, not the poking record's own actor:
-/// direction `1` is `-X -Z` in the axis table at `0x80073F14`.
+/// direction `1` is `-X -Z` in the axis table at `0x80073F14`. The poked
+/// placement spawned first; one spawned after the poker has no context yet
+/// at load, and the op waits on the poker's pc instead.
 #[test]
 fn a_spawn_prologue_cross_context_compass_walk_moves_its_target() {
     let mut w = World {
         mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
     };
-    // Record 0 pokes channel `0x16`; record 1 (offset 6) does nothing.
+    // Record 0 (placement 9) pokes channel `0x10`, placement 3's; record 1
+    // (offset 6) does nothing.
+    let man = vec![0x25, 0xC1, 0x10, 0x01, 0x01, 0x21, 0x25, 0x21];
+    w.field_vm.channels = vec![prologue_channel(3, 0x10, 6), prologue_channel(9, 0x16, 0)];
+    w.field_vm.channels_man = Some(std::sync::Arc::new(man));
+    w.npcs.positions.insert(9, (1000, 1000));
+    w.npcs.positions.insert(3, (2240, 2368));
+    w.pre_run_field_channel_prologues();
+    assert!(w.npcs.glide_legs.contains_key(&3));
+    assert!(!w.npcs.glide_legs.contains_key(&9));
+    for _ in 0..8 {
+        w.tick_field_npc_motions();
+    }
+    assert_eq!(w.npcs.positions.get(&3), Some(&(2176, 2304)));
+    assert_eq!(w.npcs.positions.get(&9), Some(&(1000, 1000)));
+
+    // Aimed the other way - placement 3 poking placement 9, not yet spawned -
+    // nothing walks and the poker's pre-run stops on the op.
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
     let man = vec![0x25, 0xC1, 0x16, 0x01, 0x01, 0x21, 0x25, 0x21];
     w.field_vm.channels = vec![prologue_channel(3, 0x10, 0), prologue_channel(9, 0x16, 6)];
     w.field_vm.channels_man = Some(std::sync::Arc::new(man));
     w.npcs.positions.insert(3, (1000, 1000));
     w.npcs.positions.insert(9, (2240, 2368));
     w.pre_run_field_channel_prologues();
-    assert!(w.npcs.glide_legs.contains_key(&9));
-    assert!(!w.npcs.glide_legs.contains_key(&3));
-    for _ in 0..8 {
-        w.tick_field_npc_motions();
-    }
-    assert_eq!(w.npcs.positions.get(&9), Some(&(2176, 2304)));
-    assert_eq!(w.npcs.positions.get(&3), Some(&(1000, 1000)));
+    assert!(w.npcs.glide_legs.is_empty());
+    assert_eq!(
+        w.field_vm.channels[0].pc, 1,
+        "parked on the cross-context op"
+    );
 }
 
 /// A cutscene's closing swap (`geremi` P2[1]: `35 FF 07 09` then

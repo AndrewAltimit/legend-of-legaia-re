@@ -207,3 +207,20 @@ fn start_and_up_held_at_the_win_pick_pose_0x11() {
         "R1 does not arm the select"
     );
 }
+
+/// A monster Stoned on its own turn is the acting slot at the monster wipe
+/// with its HP standing. Retail's keep test reads HP alone (`lhu a0,0x14c(s3)`
+/// / `bne a0,zero,0x801E6728`), so it keeps the monster seat and reads its
+/// character id past the three-byte roster `DAT_8007BD10` (`0x801E6770`): the
+/// charm softlock's garbage win-pose request. The port re-picks a standing
+/// member instead (`victory_pose_fixup`), a deliberate deviation.
+#[test]
+fn a_monster_stoned_on_its_own_turn_hands_the_pose_to_a_member() {
+    let mut world = world_won_by(3);
+    world.actors[3].battle.hp = 100;
+    world.actors[3].battle.liveness = 1;
+    world.actors[3].battle.field_flags = 4;
+    let seat = pose_seat(&mut world);
+    assert!(seat < 3, "a standing member poses, got seat {seat}");
+    assert_eq!(usize::from(world.battle_ctx.active_actor), seat);
+}

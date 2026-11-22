@@ -92,6 +92,9 @@ impl BakaFight {
             // clip, no knockdown latch up.
             pause_ready: self.motion[0].record == 0 && !self.motion[0].down && !self.motion[1].down,
             camera_hold,
+            // The drive word the all-clear beat `0xFB` and its announcer
+            // wait on, from the lines the pacer has cued.
+            xa_in_flight: self.pacer.xa_in_flight(),
         };
         let ran = self.cabinet.state();
         self.cabinet_frame = self.cabinet.tick(&input);

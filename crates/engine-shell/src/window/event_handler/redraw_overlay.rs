@@ -242,6 +242,19 @@ impl PlayWindowApp {
         // cursors) shares the system-UI atlas slot; a dialog box
         // and the boot/menu chrome are mutually exclusive states.
         save_chrome_draw_vec.extend(self.dialog_chrome_sprite_draws(w, h));
+        // The fishing venue's panels (the hub menu, the tackle list, the
+        // no-lure line, the prize list and its two dialogs) in the class-0
+        // frame of style 0x44, and their hand cursors, under the text layer
+        // that draws their text.
+        if let Some(menu) = self.save_menu.as_ref() {
+            save_chrome_draw_vec.extend(legaia_engine_screens::fishing_venue_chrome_sprites(
+                &self.session.host.world,
+                &self.font,
+                &menu.rects,
+                w,
+                h,
+            ));
+        }
         // Name-entry window chrome (grid + name-field filigree
         // windows + hand cursor) shares the same atlas slot.
         save_chrome_draw_vec.extend(self.name_entry_chrome_sprite_draws(w, h));

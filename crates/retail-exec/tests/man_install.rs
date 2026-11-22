@@ -10,7 +10,10 @@
 //!   clock's penalty (`EscapeTimer::field_return_penalty`),
 //! - the place-name banner and the flag it consumes
 //!   (`place_name_banner::man_load_place_name_banner`), behind the
-//!   map-install tail (`World::seat_map_install_tail`).
+//!   map-install tail (`World::seat_map_install_tail`),
+//! - the card-load seat: the save's position words copied into the entry
+//!   operand and the arrival facing zeroed (`SceneHost::arm_resume_seat`,
+//!   over the position `read_retail_field_position` reads off the block).
 //!
 //! Compared: the first four bytes of the system flag bank as the routine
 //! leaves them, the mode word, the clock, and the banner actor's name,
@@ -84,6 +87,10 @@ const CLOCK_ARMED: u32 = 0x8008_45B8;
 /// The card-load flag `_DAT_8007B8C0` the save screen's load arm raises.
 const CARD_LOAD: u32 = 0x8007_B8C0;
 const CLOCK: u32 = 0x8008_45A0;
+/// The save block's field-position words and the entry operand (x, z,
+/// arrival facing) the card-load arm fills from them.
+const SAVED_POSITION: u32 = 0x8008_4568;
+const ENTRY_OPERAND: u32 = 0x8007_3EF4;
 const PLAYER_PTR: u32 = 0x8007_C364;
 const LISTS: [u32; 3] = [0x8007_C34C, 0x8007_C350, 0x8007_C354];
 
@@ -164,6 +171,13 @@ fn the_man_installer_is_retails() {
     }
     cpu.mem.wr32(LISTS[0], LIST0);
 
+    // The card-load seat runs on a scene host, off the save the load
+    // hydrated; its draws come from their own stream.
+    let mut host = legaia_engine_scene_host::scene_host::SceneHost::new(std::sync::Arc::new(
+        crate::walk_on::index(),
+    ));
+    let mut aux = Rng(0x5345_4154);
+    let (mut seated_loads, mut unseated_loads) = (0, 0);
     let mut rng = Rng(0x4D41_4E49);
     let (mut banners, mut game_overs, mut returns, mut failures) = (0, 0, 0, Vec::new());
     let (mut retired, mut stamped, mut detached, mut restarts) = (0, 0, 0, 0);
@@ -255,6 +269,21 @@ fn the_man_installer_is_retails() {
         let card_load = entry != 2 && rng.below(3) == 0;
         cpu.mem.wr16(CARD_LOAD, u16::from(card_load));
         cpu.mem.wr32(CLOCK, clock as u32);
+        // The save's field position (two sign-extended halfwords, as
+        // `FUN_80016230` writes them), sometimes the never-taken `(0, 0)`, and
+        // whatever the entry operand held before.
+        let saved: (i16, i16) = if aux.below(8) == 0 {
+            (0, 0)
+        } else {
+            (aux.next() as i16, aux.next() as i16)
+        };
+        cpu.mem.wr32(SAVED_POSITION, i32::from(saved.0) as u32);
+        cpu.mem.wr32(SAVED_POSITION + 4, i32::from(saved.1) as u32);
+        // (A battle return seats it off the player instead, `0x8003B610`.)
+        let operand_before = [aux.next(), aux.next(), aux.next()];
+        for (k, v) in operand_before.iter().enumerate() {
+            cpu.mem.wr32(ENTRY_OPERAND + 4 * k as u32, *v);
+        }
         cpu.mem.load(PLAYER, &[0u8; 0x100]);
         spawned.borrow_mut().clear();
         placed.borrow_mut().clear();
@@ -346,8 +375,10 @@ fn the_man_installer_is_retails() {
         detached += usize::from(fog_count == 0);
         // The ladder: the scene entry seats the negated header words, and a
         // battle return re-seats them over a ladder its oscillators moved.
+        // The resident copy holds an install the return's fresh decode wiped.
         let lut = man_file.header.depth_lut.map(i16::wrapping_neg);
-        w.terrain.floor_height_lut_static = lut;
+        w.terrain.floor_height_lut_header = lut;
+        w.terrain.floor_height_lut_static = std::array::from_fn(|_| rng.next() as i16);
         w.terrain.floor_height_lut = std::array::from_fn(|_| rng.next() as i16);
         if entry == 2 {
             w.battle_return_man_sweeps();
@@ -360,6 +391,12 @@ fn the_man_installer_is_retails() {
             retail_lut, w.terrain.floor_height_lut,
             "case {case}: the ladder"
         );
+        if entry == 2 {
+            assert_eq!(
+                w.terrain.floor_height_lut_static, lut,
+                "case {case}: the MAN-header copy is the shipped ladder"
+            );
+        }
         // The pre-run loop: records 1..N1, as `actor_placements` lists them;
         // a battle return skips it with the rest of the respawn
         // (`j 0x8003B9A8` at `0x8003B650`).
@@ -445,7 +482,46 @@ fn the_man_installer_is_retails() {
             banners += 1;
         }
         game_overs += usize::from(game_over);
+        // The card-load seat (`0x8003B764..0x8003B798`).
+        let operand: [u32; 3] = std::array::from_fn(|k| cpu.mem.rd32(ENTRY_OPERAND + 4 * k as u32));
+        if card_load {
+            let mut block = vec![0u8; legaia_save::card::RETAIL_FIELD_POS_Z_OFFSET + 4];
+            block[0x428..0x42C].copy_from_slice(&i32::from(saved.0).to_le_bytes());
+            block[0x42C..0x430].copy_from_slice(&i32::from(saved.1).to_le_bytes());
+            let mut save = legaia_save::SaveFile::default();
+            save.ext_v2.field_position = legaia_save::card::read_retail_field_position(&block);
+            host.disarm_entry_seat();
+            host.world.locomotion.arrival_facing = 0x123;
+            host.arm_resume_seat(&save, "town01", "town01");
+            assert_eq!(
+                (operand[2], host.world.locomotion.arrival_facing),
+                (0, 0),
+                "{ctx}: the arrival facing"
+            );
+            match host.entry_seat() {
+                Some((x, z)) => {
+                    assert_eq!(
+                        [operand[0], operand[1]],
+                        [i32::from(x) as u32, i32::from(z) as u32],
+                        "{ctx}: the seat"
+                    );
+                    seated_loads += 1;
+                }
+                // The engine reads `(0, 0)` as a snapshot never taken and
+                // lets the scene seat the party (`read_retail_field_position`);
+                // retail seats it on the grid's corner.
+                None => {
+                    assert_eq!(saved, (0, 0), "{ctx}: no seat");
+                    assert_eq!([operand[0], operand[1]], [0, 0], "{ctx}");
+                    unseated_loads += 1;
+                }
+            }
+        }
     }
+    assert!(
+        seated_loads > 200 && unseated_loads > 20,
+        "{seated_loads} {unseated_loads}"
+    );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(
         banners > 500 && game_overs > 100 && returns > 1500,

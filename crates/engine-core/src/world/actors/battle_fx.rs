@@ -1270,6 +1270,8 @@ impl World {
             if a.battle_dead_idle_passes >= DEAD_IDLE_FADE_PASSES {
                 a.battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
             }
+            // `+0x1D9`: the reaction channel's entry while one plays.
+            let committed = a.battle_reaction_entry.unwrap_or(a.battle.current_anim);
             let b = &mut a.battle;
             let words = TintWords {
                 color: b.render_color,
@@ -1286,11 +1288,18 @@ impl World {
             // knockdown entry - compares against the cached `+0x1F1` itself,
             // as retail's gate does; with the gate fed `0xFF` there such a
             // body never faded and every row poll over it held for good.
+            // Any other reaction entry is what `+0x1D9` reads, so it holds
+            // the lanes: the get-up a staged Seru restages on a fallen
+            // monster (`0x8004B688..0x8004B6A0`) keeps the body lit while it
+            // rises for the absorb, and the fade runs once the get-up ends
+            // on idle (`captures/w53-E/films/rikuroa_absorb_long`; the port
+            // had read the action channel's `0` and faded the body under the
+            // get-up).
             let fade = FadeInputs {
                 party,
-                committed_anim: b.current_anim,
+                committed_anim: committed,
                 knockdown_entry: if on_knockdown {
-                    b.current_anim
+                    committed
                 } else {
                     cached_knockdown.unwrap_or(0xFF)
                 },

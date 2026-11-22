@@ -1670,3 +1670,49 @@ fn the_opponent_install_holds_for_its_load_only_under_retail_holds() {
     assert_eq!(vsyncs_in_install(false), 1);
     assert_eq!(vsyncs_in_install(true), OPPONENT_INSTALL_LOAD_VSYNCS as u32);
 }
+
+/// The all-clear on PCSX-Redux against a retail capture
+/// (`captures/w53-E/baka_clear`, `autorun_baka_flash_xa.lua`, the stage
+/// counter and the opponent's HP poked so a duel from
+/// `minigame_baka_fighter_retail_fight` reaches it). From the vsync that
+/// enters `0xFA` and cues line `0x0A` (`dur 70`), retail cues `0x0B`
+/// (`dur 77`) at `+89`, once the drive word has dropped; the beat `0xFB`
+/// holds at black until it drops again and leaves at `+186`; the fighter's
+/// load holds the next frame `32` vsyncs past its span; the closing `0x0C`
+/// is cued at `+259`. Without retail's load holds the load is instant.
+#[test]
+fn the_all_clear_runs_on_retail_s_drive_word_and_fighter_load() {
+    use crate::baka_cabinet::{ST_CLEAR_A, ST_CLEAR_B, ST_CLEAR_E};
+    let timeline = |hold: bool| {
+        let mut f = fight();
+        f.set_install_load_hold(hold);
+        f.enter_all_clear(13);
+        let mut cues = Vec::new();
+        let mut left_b = None;
+        let mut v = 0u32;
+        while v < 600 && (ST_CLEAR_A..=ST_CLEAR_E).contains(&f.cabinet.state()) {
+            let before = f.cabinet.state();
+            f.frame(0, 0, 0);
+            if let Some(x) = f.chrome_frame.xa {
+                cues.push((x.chan, v));
+            }
+            if before == ST_CLEAR_B && f.cabinet.state() != ST_CLEAR_B {
+                left_b = Some(v);
+            }
+            v += 1;
+        }
+        let at = |chan: u8| cues.iter().find(|c| c.0 == chan).map(|c| c.1);
+        (at(0x0A), at(0x0B), left_b, at(0x0C))
+    };
+    let near = |got: Option<u32>, want: u32| got.is_some_and(|g| g.abs_diff(want) <= 3);
+    let (a, b, left, c) = timeline(true);
+    assert_eq!(a, Some(0));
+    assert!(near(b, 89), "0x0B at {b:?}");
+    assert!(near(left, 186), "0xFB left at {left:?}");
+    assert!(near(c, 259), "0x0C at {c:?}");
+    let (_, _, _, instant) = timeline(false);
+    assert!(
+        near(instant, 259 - CLEAR_FIGHTER_LOAD_VSYNCS as u32),
+        "{instant:?}"
+    );
+}

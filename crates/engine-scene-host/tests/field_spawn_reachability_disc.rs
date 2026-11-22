@@ -280,3 +280,37 @@ fn izumi_spawn_is_walkable_and_pad_moves_the_player() {
         "pad input must move the izumi player on both axes (max |dx|={max_dx}, max |dz|={max_dz})"
     );
 }
+
+/// The single-tile regions where the camera composer `FUN_801DAB90` would
+/// divide by a span of zero (retail's `break 7`; the census is
+/// `psx-retail-exec`'s `camera_follow::the_zone_divisions_census`): every
+/// sub-cell of every such tile is off the walk-visible floor and outside
+/// every walk component, so the player never stands there to latch the box.
+#[test]
+fn the_flat_camera_boxes_lie_off_the_walkable_floor() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    let mut probed = 0;
+    for (name, tiles) in [
+        ("tunnela", &[(15, 104), (16, 104), (15, 105), (16, 105)][..]),
+        ("tunnelb", &[(25, 108), (26, 108), (25, 109), (26, 109)][..]),
+        ("nilboa", &[(126, 125), (126, 126)][..]),
+        ("nilboa2", &[(126, 125), (126, 126)][..]),
+    ] {
+        host.enter_field_scene(name, 0).expect("the scene enters");
+        assert!(host.world.field_largest_walk_component_size() > 0, "{name}");
+        for &(tx, tz) in tiles {
+            for (ox, oz) in [(0x20, 0x20), (0x60, 0x20), (0x20, 0x60), (0x60, 0x60)] {
+                let (x, z) = ((tx * 0x80 + ox) as i16, (tz * 0x80 + oz) as i16);
+                assert!(
+                    !host.world.field_tile_is_walk_visible(x, z)
+                        && host.world.field_walk_component_size(x, z) == 0,
+                    "{name} tile ({tx},{tz}) sub-cell ({x},{z}) is standable"
+                );
+                probed += 1;
+            }
+        }
+    }
+    assert_eq!(probed, 48);
+}

@@ -424,16 +424,17 @@ fn power_charge_raises_both_halves_and_caps_at_999() {
     assert_eq!(power_charge_tick(&mut c, &mut caster), CastTickStep::Done);
 }
 
-/// Melt Spray's step is `x - (x + 9)/5` with a floor of one, and it lands on
+/// Melt Spray's step is `x - (x + 9)/10` with a floor of one, and it lands on
 /// ten halfwords - five stats, both halves each.
 #[test]
 fn melt_spray_debuffs_five_stats_on_both_halves() {
-    assert_eq!(melt_spray_step(100), 79, "100 - (109 / 5)");
-    // The floor fires only on an exact zero, because retail's `bnez` tests
-    // the full 32-bit difference and the store is a 16-bit `sh`.
-    assert_eq!(melt_spray_step(2), 1, "2 - 2 == 0, so the floor writes 1");
-    assert_eq!(melt_spray_step(1), 0xFFFF, "1 - 2 == -1: it underflows");
-    assert_eq!(melt_spray_step(0), 0xFFFF, "0 - 1 == -1, likewise");
+    assert_eq!(melt_spray_step(100), 90, "100 - (109 / 10)");
+    assert_eq!(melt_spray_step(606), 545, "606 - (615 / 10)");
+    assert_eq!(melt_spray_step(2), 1, "2 - 1");
+    // A stat of `0` or `1` lands on zero and the floor lifts it to `1`.
+    assert_eq!(melt_spray_step(1), 1, "1 - 1 == 0, floored");
+    assert_eq!(melt_spray_step(0), 1, "0 - 0 == 0, floored");
+    assert_eq!(melt_spray_step(0xFFFF), 0xFFFF - 6554);
 
     let mut c = ctx(MELT_SPRAY_DEBUFF_ARM, 7);
     let mut v = actor(500);
@@ -464,7 +465,7 @@ fn melt_spray_debuffs_five_stats_on_both_halves() {
         v.intel,
         v.intel_base,
     ] {
-        assert_eq!(got, 79);
+        assert_eq!(got, 90);
     }
     assert_eq!(v.restage, 1);
 }

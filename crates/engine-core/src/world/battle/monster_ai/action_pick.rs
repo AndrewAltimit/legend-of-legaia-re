@@ -264,7 +264,13 @@ impl World {
             {
                 overridden = true;
                 category = cast.category;
-                spell_id = cast.spell_id;
+                // An arm that keeps the core's target with no spell of its own
+                // (`0x97` / `0x98` under a `0x380` status, `0x801EAD58..
+                // 0x801EAD80`) stores nothing to `+0x1DF`: the core's spell
+                // stands, and the ring reads it (the `0x70` exemption).
+                if !(cast.keep_target && cast.spell_id == 0) {
+                    spell_id = cast.spell_id;
+                }
                 if !cast.keep_target {
                     target_class = cast.target_class;
                 }

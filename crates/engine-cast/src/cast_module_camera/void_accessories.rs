@@ -34,7 +34,8 @@ pub const VOID_RECORDS: [u32; 6] = [
 /// | 1 (`0x801F6CAC`) | gate; pitch `-0xA0`, the same yaw, TR `(0, 0x740, depth / 3)`, `0xA0` frames; the caster's flag `7` | `+= scalar * 0xA0` |
 /// | 2 (`0x801F6D7C`) | gate; the victim turned on the caster and shown, the caster hidden; a cut on the victim: pitch `0`, yaw `0x800 - facing`, TR `(0, 0x300, 0x600)` | `+= scalar << 7` |
 /// | 3 (`0x801F6E60`) | TR z `+scalar`; gate; the strip ([`crate::cast_module_ticks::void_accessories_tick`]) | `+= scalar << 7` |
-/// | 4 (`0x801F7080`) | TR z `+scalar`; gate; every live seat shown as the body finishes | - |
+/// | 4 (`0x801F7080`) | TR z `+scalar`; gate | - |
+/// | `0xFF` (`0x801F70D4`) | every live seat shown as the body finishes | - |
 ///
 /// PORT: overlay_cast_white_shield_0955_801f6a28 (PROT 0955 `0x73`; the camera arms, the seat hides and the records)
 pub fn void_accessories_camera(
@@ -118,10 +119,13 @@ pub fn void_accessories_camera(
             arm.drift = pull;
             if st.countdown.drain_above(0) {
                 arm.hold = true;
-            } else {
-                arm.others_write = SHOWN;
-                arm.others_live_only = true;
             }
+        }
+        // The `0xFF` arm, the pass after arm 4's, shows every seat with HP
+        // (`0x801F70D4..0x801F7118`).
+        0xFF => {
+            arm.others_write = SHOWN;
+            arm.others_live_only = true;
         }
         _ => {}
     }

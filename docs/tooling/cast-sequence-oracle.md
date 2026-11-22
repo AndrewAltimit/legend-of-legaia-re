@@ -2874,6 +2874,57 @@ Magic's `XA22`. A capture child (a film, the retail comparison's image child, th
 PCSX-Redux's `4` (`CastFxState::capture_seek_recorded`), the hold the films' recordings measure and
 the corpus's seeds stand on.
 
+## The Seru-absorb puff
+
+The anim node tick's absorb arm (`FUN_80047430` `0x80047B5C..0x80047BC0`)
+needs a kill that stages a Seru, and no library strike state holds one: every
+party there already knows its targets' Seru. A harvest run made one
+(`autorun_battle_harvest.lua` from `rikuroa_field_card_walk`, a synthetic
+formation of monster `26` over row 0 through `LEGAIA_WANT_FORCE`, monster HP
+cut to `1`, Vahn's `343` chain, `LEGAIA_PARTY_KEY_BATTLE` so each fight keeps
+its own strike state, and `LEGAIA_ABSORB_LOG`, which logs the arm's effect
+spawn and cue). Vahn knows spells `0x81` and `0x83` only and monster `26`
+carries Seru `2`, so a roll can land; the third fight's does. Retail puffs on the fallen monster twice, as its death entry ends on
+idle in state `0x20` and again sixty vsyncs later in the Done band, and sounds
+`0x1B` (ring id `0x01A`) once.
+
+A `--physical` film from that fight's strike state put the port's cue sixty ticks early: the port
+tested the action channel, which a dead monster's reaction leaves on `0`, so
+it puffed when the knockdown ended. Reading the reaction channel's entry first,
+as `+0x1D9` holds it, moves the cue onto retail's tick (cue score `.857` to
+`.952`, image `.829` to `.830`). The one cue left was a `0x007` the engine
+sounded on Vahn's third strike against the dead monster, which retail leaves
+silent: that strike's power byte limb-misses the monster's class, and retail's
+kernel tests the miss on the seat `+0x1DD` names whether it lives or not, so the
+skip strobe steps the cue cursor over the impact cue. The port found no living
+target and returned before the miss ([the limb miss](../subsystems/battle-formulas.md#the-limb-vs-height-miss));
+with the miss tested on the fallen seat the film reads cue `1.000` and image
+`.997`. The state is `battle_rikuroa_party_vahn_seru_absorb_strike`, its film
+`rikuroa_vahn_seru_absorb` in the arts set, its recording under
+`captures/film-retail/`.
+
+Run on past the end of the action (`--tail 700`), the same film showed the
+fallen monster's body gone and the close-up begun sixty vsyncs early. The
+death arm restages the get-up on a monster whose Seru is staged, and the
+defeat fade's lane gate (`FUN_80050120` arm 2) holds while `+0x1D9` reads it,
+neither idle nor the knockdown: retail's monster rises lit, glows through the
+get-up, and fades once the get-up ends on idle, so the Done band's case-8
+framing holds the wide shot through `0x51` and its close-up runs in `0x52`.
+The port fed the gate the action channel's `0` and faded the body under the
+get-up. With the reaction channel's entry fed in, and the rand stream seated
+on retail's at `0x5A` (`--rand-at 0x5A:0`; the win pose is a `rand()` pick),
+the film reads `.814` to `.916`: state `0x51` `.461` to `.980`, `0x52` `.791`
+to `.994`, `0x5A` `.797` to `.825`. The lit body also ticks a second natural
+end in the Done band, as retail's log has it.
+
+## Puera's yellow ease
+
+The `s94` film (Puera's Dream Illusion from `party_basic_attack_vs_gobu_gobu`)
+reads `.972` with cues `1.000`. Its worst arm is `12`, the white flash Puera
+sinks into, at `.721`; with the arm-11 pass's yellow tint taken out the arm
+reads `.712`, so the ease is retail's, and the creature's mean colour tracks
+retail's through arms 11 and 12 within a few levels.
+
 ## See also
 
 - [Retail comparison corpus](retail-compare.md) - the per-state breadth sibling and its image metric

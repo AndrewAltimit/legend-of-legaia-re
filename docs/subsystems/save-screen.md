@@ -1345,9 +1345,12 @@ Read off the GP0 draw list of the running load screen:
 - **Slot pills**: 48x16 textured quads at `(136, 96)` / `(136, 112)` sampling
   atlas `(32, 96)` / `(32, 112)`; the tile content starts one texel in, so the
   visible pills sit at `(137, 97)` / `(137, 113)`. While browsing each pill is
-  drawn twice semi-transparent (two CLUT variants) over the dimmed art; once a
-  port is committed only the picked pill draws, opaque, parked at quad
-  `(24, 40)` under the Load panel.
+  drawn twice semi-transparent over the dimmed art: an additive pass on the
+  record's CLUT (tpage `0x2F`), then a subtractive one on CLUT `+2` (`0x4F`).
+  Once a port is committed only the picked pill draws, opaque, at the slid
+  point itself whichever card it is (`0x801E2284..0x801E24CC`, the tile picked
+  by `_DAT_8007B834`), so `SLOT 2`'s pill leaves from `SLOT 1`'s row and parks at
+  the same quad `(24, 40)` under the Load panel.
 - **The 5x3 grid** (`FUN_801E06C0`) is staged off-screen right while browsing
   (cell quads at x = 354..1386, 104 px stagger) and slides left on commit.
   Landed: 32x32 cells, row 0 at `(98, 28)`, pitch `(40, 20)`, each row shifted
@@ -1467,7 +1470,10 @@ slide's real-time speed constant.
 Port: `save_select::interpolate_anim` is the lerp and
 `SaveSelectSession::slide_anim_t()` the timer for modes 0 and 2, which the
 port runs off one timer. The pill composite interpolates
-`(136, 96) -> (24, 40)` (mode 2 with the `-24` shift applied to the start);
+`(136, 96) -> (24, 40)` (mode 2 with the `-24` shift applied to the start)
+for either card; the port draws each pill once, so the at-rest double pass is
+not modelled. `save_slide::the_card_pills_slide_where_the_port_draws_them`
+holds the pill quads to retail's packets;
 `now_checking_{panel,text}_draws_for` take the mode-0 `x` offset and
 `confirm_dialog_{panel,text}_draws_for` the mode-3 `y` offset.
 

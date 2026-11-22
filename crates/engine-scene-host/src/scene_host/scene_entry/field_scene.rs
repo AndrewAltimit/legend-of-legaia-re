@@ -738,6 +738,8 @@ impl SceneHost {
                 // The camera composer reads this pristine copy, never the
                 // live rungs the floor-tier oscillators write.
                 self.world.terrain.floor_height_lut_static = self.world.terrain.floor_height_lut;
+                // The shipped words, which a battle return re-seats from.
+                self.world.terrain.floor_height_lut_header = self.world.terrain.floor_height_lut;
                 // The ladder `FUN_8003A55C` spawns the bound placed objects
                 // against: the one just installed (the system script that may
                 // replace it runs after the sweep).

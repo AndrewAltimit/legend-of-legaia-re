@@ -916,6 +916,14 @@ impl PondSession {
                 may_leave = true;
                 self.drive_rod(input, true, fs);
                 self.step_lure(Some(self.last_swim), fs);
+                // The walk-grid drift runs with a fish on too; the water class
+                // beside it feeds only the strike roll, which a hooked frame
+                // draws and drops.
+                if let (Some(lure), Some(venue)) =
+                    (self.lure_actor.as_mut(), self.venue_map.as_ref())
+                {
+                    self.lure_probe.drift = lure.drift(&venue.map, self.casts, fs);
+                }
                 if let Some(lure) = self.lure_actor.as_mut() {
                     lure.pull_step(reel_edge, fs);
                     lure.sink_step(self.line_record, self.lure, fs);
@@ -1036,11 +1044,16 @@ impl PondSession {
     /// One game frame of state `200` (`0x801D0138..0x801D019C`): the counter
     /// gains the frame step and the grey level is eight times it; once that
     /// reaches `0x100` the level holds at `0xFF` and, the XA drive word
-    /// `0x8007BC20` reading idle, the venue leaves. The port's venue sounds
-    /// no XA, so the word is always idle; the hub's row 4 also clears it on
-    /// the way in (`0x801D069C`).
+    /// `0x8007BC20` reading idle, the venue leaves. The wait never binds in
+    /// the venue, so the port does not read the word: PROT 0972 calls none of
+    /// the routines that raise it (the clip player `FUN_8003D53C`, the seeks
+    /// `FUN_80019794` / `FUN_8003EAE4`), the hub's row 4 zeroes it on the way
+    /// in (`0x801D069C`), and the venue's entry loads go through the CD
+    /// loader `FUN_8003E800`, which stops a stream in flight and zeroes it
+    /// (`FUN_8003ED04`, `0x8003ED28`).
     ///
     /// PORT: FUN_801cf3bc (case 0xc8: the exit fade, 0x801D0138..0x801D019C)
+    // REF: FUN_8003d53c, FUN_80019794, FUN_8003eae4 (the XA drive word's raisers), FUN_8003e800, FUN_8003ed04 (the loader that zeroes it)
     fn exit_fade_step(&mut self, frame_step: i32) {
         let c = self.exit_fade.get_or_insert(0);
         *c += frame_step;

@@ -2258,7 +2258,17 @@ impl World {
     /// the puff's position and whether its cue sounds.
     pub(in crate::world) fn absorb_puff_plan(&self, i: usize) -> Option<([i16; 3], bool)> {
         let a = self.actors.get(i)?;
-        if a.battle.current_anim != 0 || a.battle.hp != 0 || self.battle_ctx.absorbed_seru == 0 {
+        // `+0x1D9` is the reaction channel's entry while one plays: a dead
+        // monster's knockdown commits its death entry (tag `4`) at the
+        // knockdown's natural end, and only the death entry's own end
+        // commits idle and puffs. A `rikuroa` film across a kill that
+        // absorbs (`captures/w53-E/films/rikuroa_absorb_b3`) puffs and sounds
+        // `0x1B` there; testing the action channel alone puffed one clip
+        // early, on the knockdown's end.
+        if self.battle_current_anim(i) != 0
+            || a.battle.hp != 0
+            || self.battle_ctx.absorbed_seru == 0
+        {
             return None;
         }
         Some((

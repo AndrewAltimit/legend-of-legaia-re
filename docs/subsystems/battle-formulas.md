@@ -166,7 +166,11 @@ bumps the actor's `+0x1F5` effect and `+0x1F6` cue cursors without walking a
 record (`0x801DEBF4..0x801DEC48`). The apply-mode look-ahead tests the same
 partition when it asks whether anything left in the action can still connect
 ([battle-action.md](battle-action.md), the `s2` arms), so a missed last hit
-never strands a total. Monster attackers never take this gate.
+never strands a total. Monster attackers never take this gate. Nothing ahead of
+the gate reads the target's HP: the target is `+0x1DD` as it stands
+(`lbu s4,0x1dd(v0)` at `0x801EC450`), so a chain's strike that comes after its
+target fell still misses on that seat's class and steps the cue cursor over
+its impact cue.
 
 **Provenance.** `overlay_0898_801ec3e4.txt`, `0x801EC488..0x801EC554`.
 **Port.** `legaia_engine_battle_vm::battle_action::limb_misses`, tested by

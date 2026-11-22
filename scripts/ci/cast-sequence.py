@@ -330,6 +330,10 @@ def child_cmd(a, out: Path) -> Path | None:
     library = REPO / "saves" / "library"
     if not library.is_dir():
         library = main_checkout() / "saves" / "library"
+    # A state outside the shared library (a fresh capture, its scenario row
+    # naming it by `backup_fingerprint` and `pcsx_redux_sstate`).
+    if os.environ.get("LEGAIA_FILM_LIBRARY"):
+        library = Path(os.environ["LEGAIA_FILM_LIBRARY"])
     extracted = REPO / "extracted"
     if not (extracted / "PROT.DAT").exists():
         extracted = main_checkout() / "extracted"

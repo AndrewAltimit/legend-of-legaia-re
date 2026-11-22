@@ -95,6 +95,8 @@
 --                    LEGAIA_PARTY_HOLDS (default "6,30,60") into the loop,
 --                    key p<char>_a<art tokens>_h<hold>. LEGAIA_SPIRIT_ROUNDS
 --                    still applies first (0 = attack from round one).
+--                    LEGAIA_PARTY_KEY_BATTLE=1 adds the battle count to the
+--                    key, so LEGAIA_PER_KEY counts per fight.
 --   LEGAIA_MONSTER_TOUGH 1 = at each round prompt write every monster's HP back
 --                    to its maximum, so the fight outlasts the arts lists; say
 --                    so in the state's description
@@ -103,6 +105,11 @@
 --                    libsnd sequence, its play flags, tick wait, read cursor)
 --                    and the sounding voice records split by owner: what a
 --                    fight does to the music between the step and the return
+--   LEGAIA_ABSORB_LOG 1 = log the anim node tick's Seru-absorb puff
+--                    (FUN_80047430: the effect 0x14 spawn at 0x80047B98, the
+--                    cue 0x1B at 0x80047BBC) with the node, its HP and clip,
+--                    the staged Seru ctx[+0x269] and the cue latch
+--                    (breakpoints: run without --fast)
 --   LEGAIA_OSC_LOG   1 = write osc.csv, one row per vsync: the game mode, the
 --                    list-0 node counts of the three handlers the MAN loader's
 --                    sweeps retire (camera mover 0x801DC0BC, floor-ladder
@@ -111,7 +118,11 @@
 --                    0x1F80035C; and log each entry of the MAN loader
 --                    FUN_8003AEB0, its sweeps' end 0x8003B444 and the
 --                    system-script install FUN_8003AB2C with the same counts
---                    (breakpoints: run without --fast). LEGAIA_OSC_SHOTS=N
+--                    (breakpoints: run without --fast); each line also
+--                    carries the MAN buffer _DAT_8007B898 and its header
+--                    ladder (+2, sixteen raw shorts), and the asset
+--                    dispatcher's MAN arm (FUN_8001F05C, a1 >> 24 == 3) logs
+--                    "osc man_decode" when a MAN is decoded afresh. LEGAIA_OSC_SHOTS=N
 --                    adds a field screenshot every N vsyncs
 --                    (shot_<vsync>.raw + .meta). LEGAIA_OSC_AFTER=N ends the
 --                    run N field vsyncs after the first battle's return.
@@ -168,6 +179,9 @@ end
 P.TRACE = probe.getenv_num("LEGAIA_PARTY_TRACE", 0) == 1
 P.trace = {}
 P.MONSTER_TOUGH = probe.getenv_num("LEGAIA_MONSTER_TOUGH", 0) == 1
+-- 1 = key each party capture by the battle count too (`_b<n>`), so
+-- LEGAIA_PER_KEY counts per fight rather than per art.
+P.KEY_BATTLE = probe.getenv_num("LEGAIA_PARTY_KEY_BATTLE", 0) == 1
 local SCENE_SETTLE = probe.getenv_num("LEGAIA_SCENE_SETTLE", 150)
 local LOADED_DEFINE = 0x80084540
 local PLAYER_PTR = 0x8007c364
@@ -375,6 +389,27 @@ local function log_audio(vsync, mode)
         src(0x8007052C), src(0x8007056C), music, cue)
 end
 
+-- The Seru-absorb puff behind a natural end (FUN_80047430
+-- 0x80047B5C..0x80047BC0): the effect 0x14 spawn at 0x80047B98, the cue
+-- 0x1B at 0x80047BBC, each with the node, its HP and the staged Seru.
+local ABSORB = { on = probe.getenv_num("LEGAIA_ABSORB_LOG", 0) == 1, vsync = function() return 0 end }
+function ABSORB.arm()
+    local bp = require("probe.bp")
+    for _, t in ipairs({ { 0x80047B98, "puff" }, { 0x80047BBC, "puff_cue" } }) do
+        bp.arm(t[1], "Exec", 4, t[2], function()
+            local g = PCSX.getRegisters().GPR.n
+            local node = tonumber(g.s2) or 0
+            local ctx = probe.read_u32(0x8007BD24) or 0
+            logf("absorb %s vsync=%d node=0x%08x hp=%d anim=%d seru=%d acting=%d st7=%d pos=%d,%d,%d latch=%d",
+                t[2], ABSORB.vsync(), node, probe.read_u16(node + 0x14C) or -1,
+                probe.read_u8(node + 0x1D9) or -1, probe.read_u8(ctx + 0x269) or -1,
+                probe.read_u8(ctx + 0x13) or -1, probe.read_u8(ctx + 0x07) or -1,
+                probe.read_u16(node + 0x34) or 0, probe.read_u16(node + 0x36) or 0,
+                probe.read_u16(node + 0x38) or 0, probe.read_u32(0x801F698C) or -1)
+        end)
+    end
+end
+
 local OSC = {
     on = probe.getenv_num("LEGAIA_OSC_LOG", 0) == 1,
     shots = probe.getenv_num("LEGAIA_OSC_SHOTS", 0),
@@ -382,6 +417,7 @@ local OSC = {
     vsync = 0,
     returned_at = nil,
 }
+ABSORB.vsync = function() return OSC.vsync end
 function OSC.counts()
     local live = { [0x801DC0BC] = 0, [0x801DA930] = 0, [0x80037018] = 0 }
     local dead = { [0x801DC0BC] = 0, [0x801DA930] = 0, [0x80037018] = 0 }
@@ -411,14 +447,38 @@ function OSC.rungs()
     end
     return table.concat(r, ",")
 end
+-- The MAN-header copy of the ladder (`*(_DAT_8007B898) + 2`, sixteen raw
+-- shorts): what the loader re-seats the live rungs from (negated), and what
+-- `4C 9E` also writes.
+function OSC.header()
+    local man = probe.read_u32(0x8007B898) or 0
+    if not ok_ptr(man) then return string.format("man=0x%08x hdr=-", man) end
+    local r = {}
+    for i = 0, 15 do
+        local v = probe.read_u16(man + 2 + 2 * i) or 0
+        if v >= 0x8000 then v = v - 0x10000 end
+        r[#r + 1] = tostring(v)
+    end
+    return string.format("man=0x%08x hdr=%s", man, table.concat(r, ","))
+end
 function OSC.arm()
     local bp = require("probe.bp")
+    -- The asset dispatcher's MAN arm (`a1 >> 24 == 3`): a MAN decoded from
+    -- the scene table, i.e. a fresh header.
+    bp.arm(0x8001F05C, "Exec", 4, "asset_dispatch", function()
+        local g = PCSX.getRegisters().GPR.n
+        local a1 = tonumber(g.a1) or 0
+        if bit.rshift(a1, 24) == 3 then
+            logf("osc man_decode vsync=%d mode=0x%02x src=0x%08x %s", OSC.vsync,
+                probe.read_u8(GAME_MODE_VA) or 0, tonumber(g.a0) or 0, OSC.header())
+        end
+    end)
     for _, t in ipairs({ { 0x8003AEB0, "man_load" }, { 0x8003B444, "sweeps_done" },
             { 0x8003AB2C, "system_install" }, { 0x8003BAE0, "system_install_done" } }) do
         bp.arm(t[1], "Exec", 4, t[2], function()
-            logf("osc %s vsync=%d mode=0x%02x a0=%d entry=%d counts=%s rungs=%s", t[2], OSC.vsync,
+            logf("osc %s vsync=%d mode=0x%02x a0=%d entry=%d counts=%s rungs=%s %s", t[2], OSC.vsync,
                 probe.read_u8(GAME_MODE_VA) or 0, tonumber(PCSX.getRegisters().GPR.n.a0),
-                probe.read_u32(0x8007B8B8) or -1, OSC.counts(), OSC.rungs())
+                probe.read_u32(0x8007B8B8) or -1, OSC.counts(), OSC.rungs(), OSC.header())
         end)
     end
     OSC.csv = probe.csv_open(probe.out_path("osc.csv"),
@@ -427,9 +487,13 @@ end
 function OSC.tick(ctx, vsync, mode)
     OSC.vsync = vsync
     OSC.csv:row("%d,%d,%s,%s", vsync, mode, OSC.counts(), OSC.rungs())
+    if vsync == 1 then logf("osc start counts=%s rungs=%s %s", OSC.counts(), OSC.rungs(), OSC.header()) end
     if mode == 0x03 and battles > 0 and OSC.returned_at == nil then
         OSC.returned_at = vsync
-        logf("osc field return vsync=%d", vsync)
+        logf("osc field return vsync=%d counts=%s rungs=%s %s", vsync, OSC.counts(), OSC.rungs(), OSC.header())
+    end
+    if OSC.returned_at ~= nil and vsync - OSC.returned_at == 120 then
+        logf("osc field return+120 vsync=%d counts=%s rungs=%s %s", vsync, OSC.counts(), OSC.rungs(), OSC.header())
     end
     if mode == 0x03 and OSC.shots > 0 and vsync % OSC.shots == 0 then
         local ok, ss = pcall(function() return PCSX.GPU.takeScreenShot() end)
@@ -455,12 +519,14 @@ probe.run({
         logf("sstate=%s frames=%d hold=%d per_key=%d max=%d",
             SSTATE_PATH, FRAMES, HOLD, PER_KEY, MAX_CAPS)
         if OSC.on then OSC.arm() end
+        if ABSORB.on then ABSORB.arm() end
         return {}
     end,
 
     on_capture = function(ctx, vsync)
         release_if_due(vsync)
         local mode = probe.read_u8(GAME_MODE_VA) or 0
+        OSC.vsync = vsync
         if OSC.on then OSC.tick(ctx, vsync, mode) end
         if probe.getenv_num("LEGAIA_AUDIO_LOG", 0) == 1 then
             audio_log = audio_log or probe.csv_open(probe.out_path("audio.csv"),
@@ -602,6 +668,7 @@ probe.run({
                     local el = vsync - P.since
                     for _, h in ipairs(P.HOLDS) do
                         local key = string.format("p%d_a%s_h%d", char, P.art[seat] or "x", h)
+                        if P.KEY_BATTLE then key = string.format("%s_b%d", key, battles) end
                         if el >= h and (per_key[key] or 0) < PER_KEY and caps < MAX_CAPS then
                             local name = string.format("%s_%s_%s_v%d", PREFIX, key, scene_name(), vsync)
                             if save_checkpoint(name, vsync) then

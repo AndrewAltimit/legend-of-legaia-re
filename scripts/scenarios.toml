@@ -3773,6 +3773,38 @@ expected_game_mode = 0x19
 topics = ["minigame", "slot machine", "casino", "retail", "route walk"]
 
 [[scenarios]]
+label = "minigame_slot_machine_retail_picker"
+backup_fingerprint = "96775d4834ab15101929b53d2d6fc5675c1d0b4ff9705b9007a63edfa755a33a"
+description = "Casino slot machine cash-out picker (reel state word 0x801D3C84 = 0x32) on row 0, cursor 0x801D4110 = 0, widget style gp+0x14C = 0x44, mode 0x19. From minigame_slot_machine_retail_reels (balance = coin bank 9999999), autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 LEGAIA_PLAY_SCRIPT='30:TRIANGLE,150:DOWN,180:DOWN,280:CROSS,480:CROSS' (Triangle opens the cash-out picker, Down twice to the rules row, Cross fades into the rules, Cross turns to the payout chart), LEGAIA_SHOTS='120,250,450,620'; saved 120 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail"]
+
+[[scenarios]]
+label = "minigame_slot_machine_retail_picker_rules_row"
+backup_fingerprint = "b6bf1be1d61e55beea29f00cae783d48666afa2a01658adaf475c1be68a822f8"
+description = "Casino slot machine cash-out picker on row 2, the rules row (state 0x32, cursor 2), mode 0x19. Same run as minigame_slot_machine_retail_picker, saved 250 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail"]
+
+[[scenarios]]
+label = "minigame_slot_machine_retail_rules_page"
+backup_fingerprint = "99c3d0fd53988a6de1324a070c051bd7285bf57b9c71f91706c2e0752ac5c579"
+description = "Casino slot machine rules, the attract text page (state 0x35), 320-wide display, mode 0x19. Same run as minigame_slot_machine_retail_picker, saved 450 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail"]
+
+[[scenarios]]
+label = "minigame_slot_machine_retail_payout_chart"
+backup_fingerprint = "328b4a784918348fbd10bd3e753bb9019e2e9e255b37e098509789ae0a30ac2e"
+description = "Casino slot machine rules, the payout chart page (state 0x36), mode 0x19. Same run as minigame_slot_machine_retail_picker, saved 620 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail"]
+
+[[scenarios]]
 label = "minigame_muscle_dome_retail_welcome"
 backup_fingerprint = "4d8231b96abf72680f215d5cc981a623af908731174e7c6ce8927271a6e16848"
 description = "Muscle Dome hub, the 'Welcome to the Muscle Dome!' card, mode 0x19. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> koin1, then from the koin1 arrival state a walk to the P1[9] sign-up counter and an ACT paging the counter's talk with Cross (every picker left on its default: enter, pay the fee, the first entrant, the first course offered); saved 300 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
@@ -3872,12 +3904,92 @@ expected_game_mode = 0x19
 topics = ["minigame", "fishing", "retail", "route walk", "map02"]
 
 [[scenarios]]
+label = "minigame_fishing_retail_exchange_list"
+backup_fingerprint = "8730f6677f893ff73fcbdede05b6653eb8405727104b7ffa4f71b1ba9b17e475"
+description = "Fishing prize list on its first open (state word 0x801D926C = 0x78): the list cursor 0x801D90A8 = 5, the entry clamp's row (the cursor was 0, under the row-0 floor), Power Ring greyed, the hub menu cursor 0x801D912C = 3 under it, mode 0x19. From minigame_fishing_retail_shore (1640 points, Vidna page, purchased mask 0), autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 LEGAIA_PLAY_SCRIPT='30:TRIANGLE,60:DOWN,80:DOWN,100:DOWN,130:CROSS,250:UP,360:CROSS,390:RIGHT,420:RIGHT,530:CROSS,560:UP' (hub row 3 opens the list; one Up; Cross opens the picker on row 4; two Rights; Cross opens the confirm; Up to Yes), LEGAIA_SHOTS='230,330,500,640'; saved 230 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "prize exchange", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_exchange_list_row4"
+backup_fingerprint = "96e08c36739fa9e6eb976af8ec0f45f256b1b7a1c26faf8de88bc331a7415652"
+description = "Fishing prize list, the cursor moved up one (state 0x78, list cursor 4, Lippian Flute), mode 0x19. Same run as minigame_fishing_retail_exchange_list, saved 330 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "prize exchange", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_exchange_quantity"
+backup_fingerprint = "7c0568602927f7b291b5ffdfc3cdb67a1e0c55ec504c953dcde645e030de590d"
+description = "Fishing prize quantity picker (state 0x79) on row 4, quantity 0x801D90B0 = 3 of a cap of 8, cost 600, over the list, mode 0x19. Same run as minigame_fishing_retail_exchange_list, saved 500 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "prize exchange", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_exchange_confirm"
+backup_fingerprint = "35d7b7ddcfb0d616f8469565aad0a090f21ee52e23b53c40097df1336fb9e3ac"
+description = "Fishing prize confirm (state 0x7A) on Yes (0x801D90B4 = 0) over the quantity picker (row 4, quantity 3) and the list, mode 0x19. Same run as minigame_fishing_retail_exchange_list, saved 640 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "prize exchange", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_help_page0"
+backup_fingerprint = "fd757ddd4d04b10cfca4540b4d7b5e7c279d4db7db08eef9d93f181b1d3e0dc7"
+description = "Fishing hub help page 0 (state word 0x801D926C = 0x65), the hub menu cursor 0x801D912C = 1, widget style gp+0x14C = 0x44, mode 0x19. From minigame_fishing_retail_shore, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 LEGAIA_PLAY_SCRIPT='30:TRIANGLE,60:DOWN,90:CROSS,210:CROSS,330:CROSS,360:DOWN,390:CROSS,510:DOWN' (hub row 1 opens help page 0, Cross turns to page 1 and back to the menu, Down to row 2 opens the tackle list, Down moves its cursor), LEGAIA_SHOTS='180,300,480,600'; saved 180 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "hub menu", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_help_page1"
+backup_fingerprint = "384a5a0a1f8b62c4502223ea8aa807421d4957574e20b62399dd008e3b67700a"
+description = "Fishing hub help page 1 (state 0x66), mode 0x19. Same run as minigame_fishing_retail_help_page0, saved 300 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "hub menu", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_tackle"
+backup_fingerprint = "aba94872e7fc24568d92e160a24ba6b6378096a4c7bd7a3449e67c4d5c03ecbd"
+description = "Fishing hub tackle list (state 0x6E) on the equipped Normal Lure (cursor 0x801D90DC = 1, lure 1, Old Rod), over the hub menu (cursor 2), mode 0x19. Same run as minigame_fishing_retail_help_page0, saved 480 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "hub menu", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_tackle_row2"
+backup_fingerprint = "b756ccb1f1df29c0a5a1743e091e91468b8b2f7595b043a6b5ddb73d976a8509"
+description = "Fishing hub tackle list, the cursor moved down one (state 0x6E, cursor 2, Heavy Lure), mode 0x19. Same run as minigame_fishing_retail_help_page0, saved 600 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "hub menu", "map02"]
+
+[[scenarios]]
 label = "minigame_baka_fighter_retail_attract"
 backup_fingerprint = "0df782c93ffb88d1dbec4122742b23c0812f059356dbb6f27add4ef2a1b43546"
 description = "Baka Fighter, the attract title card: cabinet state word 0x801DBF44 = 1, mode 0x19. RETAIL disc, pad only, no pokes: koin1_field_route_walk played forward by autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav (the P1[52] cabinet, ACT face Z+ until the record seats the player and warps); saved by LEGAIA_WATCH=0x801dbf44:1:60, 392 vsyncs after the game mode left the field."
 phase = "minigame"
 expected_game_mode = 0x19
 topics = ["minigame", "baka fighter", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_baka_fighter_retail_select"
+backup_fingerprint = "ea60502e00de9437d6797de200f0522a5a978038f41de21054395fb121c657c0"
+description = "Baka Fighter player select (cabinet state word 0x801DBF44 = 0x0B), cursor 0x801DBF70 = 0 (Vahn), the PLAYER SELECT widget over the lineup, mode 0x19. From minigame_baka_fighter_retail_attract, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 LEGAIA_PLAY_SCRIPT='30:START,260:RIGHT' (Start leaves the attract card for the lineup, Right moves the select cursor), LEGAIA_SHOTS='230,360'; saved 230 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "baka fighter", "retail"]
+
+[[scenarios]]
+label = "minigame_baka_fighter_retail_select_right"
+backup_fingerprint = "220000f83a725c7a5b5b302996f5a252d3579feb558609d35c611c1e5a3d8eff"
+description = "Baka Fighter player select, the cursor moved right (state 0x0B, cursor 1), mode 0x19. Same run as minigame_baka_fighter_retail_select, saved 360 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "baka fighter", "retail"]
 
 [[scenarios]]
 label = "minigame_muscle_dome_retail_title"
@@ -7207,6 +7319,15 @@ topics = ["menu", "items", "retail-compare"]
 staging_source = "kor_field_route_walk"
 
 [[scenarios]]
+label = "field_kor_incense_notice_retail"
+backup_fingerprint = "80f10ad41ce57a872eb62e36d7b11a586d44d7225b87689a53a36385f880710c"
+description = "The Incense wear-off notice over kor (window record 16, painter FUN_801F1B64, field-overlay record 0x801F2278 armed in _DAT_8007B450, Incense window _DAT_8007B600 run to 0), waiting for its confirm, mode 0x03. Pad only past menu_incense_kor_retail (inherits its source's caveats): autorun_screen_walk.lua Cross on Yes, Circle out to the field, then Up / Down 70 vsyncs each until the window drained (two runs, the second from the first's last save); saved with the notice up."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor"
+topics = ["field", "items", "incense", "notice", "retail-compare"]
+
+[[scenarios]]
 label = "menu_door_wind_map03_retail"
 backup_fingerprint = "dfc686f835c2ec533bac8fbfdc54b0a2800ac1ddd64847b99c9e1a0cea6069c7"
 description = "Door of Wind destination list over map03, sub-screen 0x0C. RETAIL disc, pad only past the source: map03_field_door_hop (autorun_screen_walk.lua --turbo); inherits the door hop's tile pokes."
@@ -7960,6 +8081,16 @@ expected_game_mode = 0x15
 expected_active_scene = "ropeway"
 ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
 topics = ["battle", "party strike", "arts", "ropeway", "harvest"]
+
+[[scenarios]]
+label = "battle_rikuroa_party_vahn_seru_absorb_strike"
+backup_fingerprint = "8d5eef2fbcb98236d923f876d20a8f47faac515c13f60f598f1cf259c8a99a0d"
+description = "rikuroa battle, SYNTHETIC formation [26] (one Theeder-Seru monster written over MAN row 0 by LEGAIA_WANT_FORCE; no rikuroa row holds it), party strike: Vahn alone, a raw 343 chain, six vsyncs into the strike loop of the walk's third fight; the kill rolls the Seru absorb (Vahn knows 0x81 and 0x83 only), so the Done band takes 0x52. RETAIL disc and executable: rikuroa_field_card_walk played forward by autorun_battle_harvest.lua (LEGAIA_WANT=26;26;26 LEGAIA_WANT_FORCE=1 LEGAIA_TOUGH=1 LEGAIA_FINISH=1 LEGAIA_SPIRIT_ROUNDS=0 LEGAIA_PARTY_ARTS=343 LEGAIA_PARTY_HOLDS=6 LEGAIA_PARTY_KEY_BATTLE=1); monster HP poked to 1 at the round prompt. Saved 4923 vsyncs in. The absorb puff and defeat-fade film (docs/tooling/cast-sequence-oracle.md, the Seru-absorb puff)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rikuroa"
+ram_poked = ["MAN region rows and row 0 (synthetic formation [26])", "party HP restored and monster HP set to 1 at round prompts"]
+topics = ["battle", "party strike", "arts", "rikuroa", "seru", "absorb", "synthetic", "harvest"]
 
 [[scenarios]]
 label = "battle_ropeway_party_gala_flying_knee_late"
@@ -8938,3 +9069,37 @@ description = "RETAIL disc, probe-poked: party_basic_attack_vs_gobu_gobu played 
 phase = "battle"
 expected_game_mode = 0x15
 topics = ["battle", "summon", "Theeder", "spell 0x82", "pre-cast", "calc lock", "audio"]
+
+[[scenarios]]
+label = "theeder_summon_value_rows_rising"
+backup_fingerprint = "2629f02c1ca1263ef7836a8ead5ad443cb901f95ddfcf79bc0febe84641da70f"
+description = "RETAIL disc and SCUS, no RAM pokes, no pad: theeder_summon_mid_cast (Vahn's Theeder, spell 0x82, on three Giliums) stepped 1410 frames on Mednafen with frame advance and saved. The summon's value window is open: each Gilium's name plate (0x60..=0x62) and its damage value record (0x5C..=0x5E) rising into their rows, plates printing the install's name line without an instance letter."
+phase = "battle"
+expected_game_mode = 0x15
+topics = ["battle", "summon", "Theeder", "spell 0x82", "value window", "name plates"]
+
+[[scenarios]]
+label = "theeder_summon_value_rows_parked"
+backup_fingerprint = "22bcdc13f934b4aaa562ada7dc45fc27b4e3105ceffaf0002fdad136f87ee445"
+description = "RETAIL disc and SCUS, no RAM pokes, no pad: theeder_summon_mid_cast (Vahn's Theeder, spell 0x82, on three Giliums) stepped 1470 frames on Mednafen with frame advance and saved. The summon's value window has landed: three rows, each a Gilium name plate (the install's name line `Gilium`, no instance letter, no badge) under its damage value, and the DAMAGE word over the last row."
+phase = "battle"
+expected_game_mode = 0x15
+topics = ["battle", "summon", "Theeder", "spell 0x82", "value window", "name plates"]
+
+[[scenarios]]
+label = "load_slot2_now_checking"
+backup_fingerprint = "3db1fdcc586e046959a4ed6e87f61bc728a561b935fc7b6e6826959e6b36b1c2"
+description = "RETAIL disc and SCUS, no RAM pokes: save_select_idle played forward on PCSX-Redux with the pad only (DOWN at vsync 30, CROSS at 90, autorun_film.lua's schedule), memory card 2 holding a seven-save endgame card; saved 130 vsyncs after the load. SLOT 2 committed: its pill has slid up on SLOT 1's track and parked under the Load tab, and the Now checking dialog is up."
+phase = "menu"
+expected_game_mode = 0x17
+memory_card = "playthrough-endgame-7saves.mcr"
+topics = ["menu", "save screen", "load", "SLOT 2", "now checking"]
+
+[[scenarios]]
+label = "load_slot2_grid"
+backup_fingerprint = "4b13079a5029d99fd2922746e6e06dc77fc9846ed43d1dc8e5612c525473a532"
+description = "RETAIL disc and SCUS, no RAM pokes: save_select_idle played forward on PCSX-Redux with the pad only (DOWN at vsync 30, CROSS at 90, autorun_film.lua's schedule), memory card 2 holding a seven-save endgame card; saved 330 vsyncs after the load. SLOT 2's pill parked under the Load tab beside the card's block grid with its save faces, the Now checking dialog still up."
+phase = "menu"
+expected_game_mode = 0x17
+memory_card = "playthrough-endgame-7saves.mcr"
+topics = ["menu", "save screen", "load", "SLOT 2", "block grid"]

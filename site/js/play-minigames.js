@@ -548,10 +548,13 @@
    * canvas every frame it is open - the same screen the native window draws
    * - and this click panel is only its input surface: the button toggles it
    * through the shared input kernel (`play_fishing_exchange_input`), the
-   * venue tabs switch its page, Buy puts the cursor on a row and buys
-   * (`play_fishing_prize_buy`, which leaves the screen open). Retail reaches
-   * the exchange through the venue clerk; the page offers it as a button
-   * beside the frame. */
+   * venue tabs switch its page, and a row's Trade button puts the cursor on
+   * it and confirms it (`play_fishing_prize_buy`), which opens the quantity
+   * picker as the pad does. The picker's and the confirm's buttons are the
+   * same kernel's keys (left / right, confirm, cancel, up), so a buy is the
+   * confirm's Yes on this page as on the pad. Retail reaches the exchange
+   * through the hub menu's row; the page offers it as a button beside the
+   * frame too. */
 
   function ensurePrizePanel(view) {
     if (S.prize) return S.prize;
@@ -574,7 +577,7 @@
       + 'border:1px solid #6c7a90;border-radius:8px;padding:10px;display:none;';
     wrap.appendChild(btn);
     wrap.appendChild(panel);
-    const p = { btn, panel, open: false, venue: 0, rt: null };
+    const p = { btn, panel, open: false, venue: 0, rt: null, dialog: '' };
     btn.addEventListener('click', () => {
       /* Toggle the engine's sub-screen; the panel follows it (prizeFrame). */
       if (p.rt && typeof p.rt.play_fishing_exchange_input === 'function') {
@@ -599,10 +602,23 @@
     if (!st) return false;
     const open = !!st.open;
     const venue = open ? (st.venue | 0) : p.venue;
-    const changed = open !== p.open || venue !== p.venue;
+    /* The picker's and the confirm's words, so a pad press on the canvas
+     * re-renders the panel's controls too. */
+    const dialog = open ? [st.screen, st.row, st.qty, st.max, st.cost, st.yes].join(',') : '';
+    const changed = open !== p.open || venue !== p.venue || dialog !== p.dialog;
     p.open = open;
     p.venue = venue;
+    p.dialog = dialog;
+    p.state = st;
     return changed;
+  }
+
+  /* One key of the exchange's screens through the shared kernel. */
+  function prizeKey(p, code) {
+    if (!p.rt || typeof p.rt.play_fishing_exchange_input !== 'function') return;
+    try { p.rt.play_fishing_exchange_input(code); } catch (e) { /* refused */ }
+    syncPrizeOpen(p);
+    renderPrizePanel(p);
   }
 
   function renderPrizePanel(p) {
@@ -617,7 +633,24 @@
     h.push('<div style="margin-bottom:6px">' + tab(0, 'Buma') + tab(1, 'Vidna')
       + '<button type="button" data-close="1" style="float:right;padding:3px 8px;border-radius:4px;'
       + 'border:1px solid #6c7a90;background:#1b2230;color:#e8ecf3;cursor:pointer">Close</button></div>');
-    if (!data) {
+    const st = p.state || {};
+    const btnCss = 'padding:2px 8px;border-radius:4px;border:1px solid #6c7a90;background:#1b2230;'
+      + 'color:#e8ecf3;cursor:pointer;margin-right:6px';
+    if (data && (st.screen === 'quantity' || st.screen === 'confirm')) {
+      const r = data.rows[st.row | 0] || { name: '?' };
+      h.push(`<div style="margin-bottom:6px"><b>${r.name}</b>: ${st.qty} of ${st.max}, `
+        + `${st.cost} points</div>`);
+      if (st.screen === 'quantity') {
+        h.push(`<button type="button" data-key="5" style="${btnCss}">-</button>`
+          + `<button type="button" data-key="6" style="${btnCss}">+</button>`
+          + `<button type="button" data-key="4" style="${btnCss}">Trade</button>`
+          + `<button type="button" data-key="7" style="${btnCss}">Back</button>`);
+      } else {
+        h.push('<div style="margin-bottom:6px">Are you sure?</div>'
+          + `<button type="button" data-yes="1" style="${btnCss}">Yes</button>`
+          + `<button type="button" data-key="7" style="${btnCss}">No</button>`);
+      }
+    } else if (!data) {
       h.push('<div>The exchange pages did not decode from this disc.</div>');
     } else {
       h.push(`<div style="margin-bottom:6px"><b>${data.points}</b> points</div>`);
@@ -629,7 +662,7 @@
           + `<td style="padding:2px 4px">${tag} (own ${r.owned})</td>`
           + `<td style="padding:2px 4px"><button type="button" data-buy="${i}" ${r.available ? '' : 'disabled'} `
           + 'style="padding:2px 8px;border-radius:4px;border:1px solid #6c7a90;background:#1b2230;color:#e8ecf3;'
-          + 'cursor:pointer">Buy</button></td></tr>');
+          + 'cursor:pointer">Trade</button></td></tr>');
       });
       h.push('</table>');
     }
@@ -649,6 +682,17 @@
       syncPrizeOpen(p);
       renderPrizePanel(p);
     }));
+    p.panel.querySelectorAll('button[data-key]').forEach(b => b.addEventListener('click', () => {
+      prizeKey(p, +b.dataset.key);
+    }));
+    const yes = p.panel.querySelector('button[data-yes]');
+    if (yes) yes.addEventListener('click', () => {
+      /* The confirm opens on No: Up to Yes, then confirm. */
+      if (!(p.state && p.state.yes)) {
+        try { rt.play_fishing_exchange_input(1); } catch (e) { /* refused */ }
+      }
+      prizeKey(p, 4);
+    });
     const close = p.panel.querySelector('button[data-close]');
     if (close) close.addEventListener('click', () => {
       if (typeof rt.play_fishing_exchange_input === 'function') {

@@ -488,6 +488,7 @@ The MAIN INIT gate folds into `World::finish_battle`. Its party-wipe arm mirrors
 - It reads the scripted-loss latch (story-flag index 0 = system flag 0). When set, it consumes it (`andi 0x7f`, `0x8003B608`) and returns to the field like any battle end.
 - With the latch clear it clears the survived-flag bit (`andi 0xbf`, `0x8003B5A0`), raises `World::game_over`, and queues the BGM pause (`jal 0x800266E0(0x8007052C)` at `0x8003B5EC`, the primitive BGM sub-op 2 wraps) in place of the field-BGM cross-fade.
 - The field restore (actor table, scene mode) is deferred behind `World::game_over_hold`, so the scene stays parked on the final battle frame - retail's frozen wipe frame while mode 22 streams. `World::resolve_game_over_hold` completes the restore when the host's session resolves into the title.
+- Retail's field init, which ran the MAN decode, reads the `0x16` back: it skips its BGM poll (`0x801D72DC`), keeps CARD INIT rather than storing MAIN MODE (`0x801D7474`), and closes both BGM sources with their loaded indices at `-1` (`0x801D7498..0x801D74D4`), so no field track sounds before the title. The port's hold queues no field track, and its resolve stops the battle score (`NativeSession::step_party_wipe_hold`); `field_init::the_field_initialiser_seats_what_the_port_seats` drives the arm.
 
 Regression: `crates/engine-core/tests/game_over_routes_to_title.rs`.
 
@@ -653,6 +654,9 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 | `World::advance_battle_mode` | The `ctx+0x28a` writer: the action SM's `case 0xFF` (`_DAT_8007BD24[0x28A] += 1`). |
 | `World::expansion_boss_pick` | Not retail: an expansion pack's [boss script](../formats/expansion-pack-battle.md#boss-scripts) picks for a scripted pack monster ahead of the generic core; `None` (the retail pick) for every other seat. |
 
+- Every target arm of the core stores `+0x1DD` the moment it resolves, and the walk goes on to re-match the next tag-`0x23` entry. A re-match that then fails (a heal with no patient) leaves the earlier store standing, in its pass and through the retries, so a self-heal whose second match fails still lands on the caster. The port's pick carries the last target written for exactly that case.
+- Under a `0x380` status the `0x97` / `0x98` arm clears a cast's category and stores nothing to `+0x1DF`, so the recent-target ring reads the core's spell: a spell `0x70` pick takes the ring's exemption and draws nothing.
+- Monsters `0x0E` and `0x0F` pass a Cursed member by: their arms draw a party member, then test its `+0x16E & 0x1000` ahead of the cast roll (`0x801EAE94` / `0x801EAF88`), so a Cursed pick ends the arm with no cast and one draw fewer.
 - The cooldown latches arm once per battle with no per-round re-arm: retail clears the array only at battle init in `FUN_80055b6c`, so a boss self-heals at most once per fight.
 - The picker drives the live loop's monster turns, folding a chosen cast through `cast_spell_on_slots` (the shared player / monster cast path) and parking the SM at `EndOfAction`.
 - Scripted casts emit retail spell ids. They fold when the active catalog knows the id (the disc spell table; a capture-class special resolves off its disc record through `World::monster_cast_def`) and otherwise degrade to a physical strike. `SpellCatalog::vanilla` is a disc-free test fixture; no boot catalog carries it.
@@ -697,6 +701,7 @@ The randomizer's enemy-ally ("charm") feature rides the stock `0x380` delegation
 
 **Port.** `battle_action`'s `end_of_action` (`crates/engine-battle-vm/src/battle_action/done.rs`) carries the full gate. Both wipe scans mask `0x4`, `BattleActionCtx::charm_widen` models the `0x384` widen, and `victory_pose_fixup` ports the victory arm with the corrected invariant.
 The re-pick triggers whenever the acting slot is not a living party slot (dead, or a monster slot) and picks uniformly among eligible slots instead of rejection-sampling, so it cannot spin.
+The same widened keep covers the one retail path to a standing monster at the victory arm: a monster Stoned on its own turn, which the wipe scan counts down (`andi 0x4`) while its HP stands. Retail keeps that seat and reads its character id past the roster, the charm softlock's request; the port re-picks a standing member, which is what poses (`a_monster_stoned_on_its_own_turn_hands_the_pose_to_a_member`).
 The arm leaves its seat in `World::battle_ctx`'s `active_actor`, which `World::begin_battle_end_sequence` takes as the pose actor; the Songi override reads `BattleActionHost::first_monster_id`, which the engine host answers from the formation's first slot. The archive request itself surfaces as `BattleActionHost::victory_stage(party_slot)`, which no host owes a body: the engine reads the whole side-band file at battle load. Dump: `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`.
 
 ## Seru capture + spell learning

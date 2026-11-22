@@ -828,6 +828,28 @@ impl World {
                 let self_target = ext.is_some_and(|t| {
                     legaia_engine_field::field_channels::resolve_target(&channels, t) == Some(i)
                 });
+                // A cross-context op whose id no context answers:
+                // `FUN_8003C83C` returns zero and the dispatcher hands back
+                // the pc it was given (`0x801DE8B4` -> `0x801E3624`), so the
+                // spawner's loop ends on the unchanged pc (`0x8003A4D4`) and
+                // the op waits there; it never runs on the caller. At scene
+                // load the spawn loop seats the placements in order and the
+                // object sweep `FUN_8003A55C` runs after it, so a later
+                // placement or an object answers nothing yet either.
+                // PORT: FUN_8003A1E4 (`0x8003A4C4..0x8003A4D8`, the pre-run's stall)
+                // REF: FUN_8003C83C, FUN_801DE840 (`0x801DE8A8..0x801DE8DC`)
+                let unanswered = match target {
+                    Some(ci) => {
+                        self.field_vm.entry_prerun
+                            && only.is_none()
+                            && (channels[ci].object_bind
+                                || channels[ci].placement_index > channels[i].placement_index)
+                    }
+                    None => ext.is_some_and(|t| t != 0xF8 && t != 0xFB) && !self_target,
+                };
+                if unanswered {
+                    break;
+                }
                 self.field_vm.executing_object = target
                     .filter(|&ci| channels[ci].object_bind)
                     .map(|ci| channels[ci].placement_index as u16);

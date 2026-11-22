@@ -9,8 +9,12 @@ impl World {
     /// Leaves the previous setup in place when the tile is in no region,
     /// as retail's globals would be.
     ///
-    /// REF: FUN_801D9E1C (ported as
-    /// [`legaia_engine_battle::region_encounter::region_battle_setup`])
+    /// The call's zero argument sends it out at `beqz fp` (`0x801DA16C`)
+    /// before the step roll, so the counter, the latch and the `rand()`
+    /// stream stand. The setup itself is
+    /// [`legaia_engine_battle::region_encounter::region_battle_setup`].
+    ///
+    /// PORT: FUN_801D9E1C (`0x801DA16C`, the `a1 = 0` exit before the roll)
     pub fn apply_region_battle_setup_at_player(&mut self) {
         let Some((wx, wz)) = self
             .player_actor_slot

@@ -6,6 +6,10 @@
 //! `test-drivers` feature only, as [`super::test_drivers`] does for the
 //! battle-screen steps. The caller seats the world the arm reads and asserts
 //! what it wrote; the gate the arm's own caller applies stays with that caller.
+//!
+//! Closed to new methods: a new driver is a `#[cfg(feature = "test-drivers")]`
+//! `impl World` block in the module of the arm it drives, so tests for different
+//! arms never edit this file.
 
 use super::World;
 pub use super::battle::MeleeApply;

@@ -2682,3 +2682,2233 @@ entry = "0x8003A1E4"
 range = "0x8003A27C..0x8003A27C"
 verdict = "unreachable"
 reason = "the record lookup's fall to the fallback record 0x80073EE8 when P0 + index runs past the record table; the MAN installer passes indices 1..P1-1 and every `4C D2 b1` on the disc names a partition-1 record (index b1 - P0; scene-formats `every_placement_spawn_names_a_partition_one_record`)"
+
+# lane A (w53)
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D3F8C..0x801D3FA4"
+verdict = "cannot-drive"
+reason = "PROT 0976: the match-phase gates (DAT_801DBF78 0 = teardown sets the retire bit and returns, 1 = paused returns); the duel harness pins the phase at 2, and the port's pause and teardown are the cabinet's states (baka_cabinet::fight_on_hold, BakaFight::seat_retired), which the combat-tick differential does not run."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4020..0x801D4028"
+verdict = "cannot-drive"
+reason = "PROT 0976: with DAT_801DBED4 up the player's tick hides the actor and returns; the word is raised only by the cabinet tally's secret branch and dropped by the spin arm 0x35 (FUN_801CF388), neither of which the duel harness runs."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D404C..0x801D404C"
+verdict = "unported"
+reason = "PROT 0976: the actor hide bit (+0x10 |= 2 while block +0x9C is clear); +0x9C is the cabinet's (the round setup raises both at 0x801CFFF0, 0x801D027C clears the player's, 0x801D0360 raises it again) and the port's duel scene draws both seats from the round setup on. PORT GAP: a film of the round setup would show the frames the player is hidden."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D40F0..0x801D4100"
+verdict = "unreachable"
+reason = "PROT 0976: debug trace gated on DAT_801DBF94, which only the developer menu (cabinet state 0xC8) writes; the cabinet enters 0xC8 only with _DAT_8007B868 non-zero, a word the boot zeroes and nothing sets (minigame-baka-fighter.md, the dev-kit screens)."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4188..0x801D4190"
+verdict = "unreachable"
+reason = "PROT 0976: debug trace gated on DAT_801DBF94 (developer menu only, behind _DAT_8007B868, which nothing sets)."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D41F0..0x801D4200"
+verdict = "unreachable"
+reason = "PROT 0976: the CPU picker FUN_801D487C returns an unsigned value mod 3 (multu by 0xAAAAAAAB at 0x801D49C0..0x801D49DC), so the result is 0..2 and the negative and above-2 arms of the 0x80 / 0x20 / 0x40 map are never taken."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4230..0x801D42D8"
+verdict = "unreachable"
+reason = "PROT 0976: the dev mirror remap: _DAT_8007B868 (only cleared, docs/subsystems/minigame-baka-fighter.md), _DAT_8007B9B0 (its one static store is sw zero at 0x8001D448, docs/reference/builds.md) and DAT_801DBF94 == 2 (developer menu only)."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D436C..0x801D4390"
+verdict = "unreachable"
+reason = "PROT 0976: the hit-frame debug trace and its rounding fix-ups, gated on DAT_801DBF94 (developer menu only, behind _DAT_8007B868, which nothing sets)."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4424..0x801D4424"
+verdict = "unreachable"
+reason = "PROT 0976: a second read of the special latch DAT_801DBF50, reached only past the first read's beq at 0x801D43B0 (latch clear) with no store to it between, so it is always clear here."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4624..0x801D4624"
+verdict = "unreachable"
+reason = "PROT 0976: the rounding fix-up for a negative afterimage step speed * DAT_1F80037D; every clip speed in the disc's action tables is non-negative (asserted by baka_fight::whole_rounds_play_out_as_retail_plays_them) and the divisor is 4 or 8."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D47B0..0x801D47C8"
+verdict = "unreachable"
+reason = "PROT 0976: the rounding fix-up for a negative clip rate (no shipped speed is negative, asserted by baka_fight::whole_rounds_play_out_as_retail_plays_them) and the mot-speed debug trace gated on DAT_801DBF94 (developer menu only)."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3180..0x801D3180"
+verdict = "unreachable"
+reason = "PROT 0972: printf gated on the overlay print flag _DAT_8007B9B0, whose one static store is sw zero at 0x8001D448 (docs/reference/builds.md)."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D32E0..0x801D32F4"
+verdict = "unreachable"
+reason = "PROT 0972: the debug bite-cadence override behind _DAT_8007B9B0 and held pad bit 0x2 (minigame-fishing.md); the flag's one static store is sw zero at 0x8001D448."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D33B0..0x801D33B0"
+verdict = "unreachable"
+reason = "PROT 0972: the water class's debug print behind _DAT_8007B9B0 (only ever stored zero, 0x8001D448)."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D33E8..0x801D33E8"
+verdict = "unreachable"
+reason = "PROT 0972: the water class's debug print behind _DAT_8007B9B0 (only ever stored zero, 0x8001D448)."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3420..0x801D3420"
+verdict = "unreachable"
+reason = "PROT 0972: the water class's debug print behind _DAT_8007B9B0 (only ever stored zero, 0x8001D448)."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D34DC..0x801D34DC"
+verdict = "unreachable"
+reason = "PROT 0972: the debug strike override behind _DAT_8007B9B0 (only ever stored zero, 0x8001D448)."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D40A0..0x801D40A0"
+verdict = "cannot-drive"
+reason = "PROT 0976: the combat tick outside the cabinet's duel state 0x64 (round setup, banners, the win and loss screens) steps the clip and returns; ported as combat_tick's !live arm, but the duel differential runs only the duel state and a knockdown's hold, where the cabinet stays at 0x64."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4138..0x801D4138"
+verdict = "unreachable"
+reason = "PROT 0976: the idle reset's knockdown test; a seat with its finisher latch +0x2C up has already left at 0x801D4090 (bne to the clip step and return at 0x801D40A8), so the latch reads clear here."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4480..0x801D4480"
+verdict = "unreachable"
+reason = "PROT 0976: the commit gate's own-knockdown test; a downed seat has already left at 0x801D4090, so the latch reads clear here."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4490..0x801D4490"
+verdict = "cannot-drive"
+reason = "PROT 0976: the commit refused against a downed foe needs a commit inside a knockdown's hold: the standing seat is locked by the deciding exchange until its clip ends and the idle reset clears +0x20, and the opponent commits only in answer to the player. The differential runs forty frames into each hold; a run of whole holds (0xB4 frames) landed no press after that reset either."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4830..0x801D4830"
+verdict = "unreachable"
+reason = "PROT 0976: the tail's own-knockdown test before clearing DAT_801DBEC4; a downed seat has already left at 0x801D4090, so the latch reads clear here."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D334C..0x801D3364"
+verdict = "unreachable"
+reason = "PROT 0972: the divide traps on the strike draw's rand() % s0; s0 is one of the record ladder's constants 0xC8 / 0x15E / 0x190 / 0x1F4 / 0x3E8 / 0x7D0 (0x801D3290..0x801D32D0) or the debug 0x20, never 0 or -1."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D372C..0x801D3744"
+verdict = "unreachable"
+reason = "PROT 0972: the divide traps on the hook's size draw rand() % s4; s4 is the water class's weight, 10 (li s4,0xa at 0x801D3304, ahead of the class) or 100 / 300 / 500 (li s4 at 0x801D33B4 / 0x801D33EC / 0x801D3424), never 0 or -1."
+
+# lane B (w53)
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF4B4..0x801CF4B4"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF4C4..0x801CF4C4"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF4F0..0x801CF4F0"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF524..0x801CF524"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF540..0x801CF540"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF56C..0x801CF56C"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF5B4..0x801CF5B4"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF5D8..0x801CF5D8"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF5F4..0x801CF5F4"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF628..0x801CF628"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF644..0x801CF644"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF668..0x801CF668"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF684..0x801CF684"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF5EC..0x801CF5EC"
+verdict = "unreachable"
+reason = "PROT 0976: the compare that enters the two-row pause menu `0xBE`; no store in the overlay writes `0xBE` to the state word (the duel's pause edge stores `0xBF`, and no case is `0xBD` to step into it), so its taken arm never runs"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D131C..0x801D1458"
+verdict = "unreachable"
+reason = "PROT 0976: the body of state `0xBE`, the two-row pause menu, which nothing enters (the duel's pause edge stores `0xBF`; no `0xBE` store and no `0xBD` case in the overlay)"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF878..0x801CF878"
+verdict = "unported"
+reason = "PROT 0976: the null test on the fade actor handle `DAT_801DBF40` that `FUN_801D657C` returns; the live direction retires or keeps that actor (`+0x10 |= 8`, or no second spawn), a presentation the port leaves to the host (the cabinet surfaces no actor handles), and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CFEDC..0x801CFEDC"
+verdict = "unported"
+reason = "PROT 0976: the null test on the fade actor handle `DAT_801DBF40` that `FUN_801D657C` returns; the live direction retires or keeps that actor (`+0x10 |= 8`, or no second spawn), a presentation the port leaves to the host (the cabinet surfaces no actor handles), and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D0F0C..0x801D0F0C"
+verdict = "unported"
+reason = "PROT 0976: the null test on the fade actor handle `DAT_801DBF40` that `FUN_801D657C` returns; the live direction retires or keeps that actor (`+0x10 |= 8`, or no second spawn), a presentation the port leaves to the host (the cabinet surfaces no actor handles), and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D10D4..0x801D10D4"
+verdict = "unported"
+reason = "PROT 0976: the null test on the fade actor handle `DAT_801DBF40` that `FUN_801D657C` returns; the live direction retires or keeps that actor (`+0x10 |= 8`, or no second spawn), a presentation the port leaves to the host (the cabinet surfaces no actor handles), and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D12C4..0x801D12C4"
+verdict = "unported"
+reason = "PROT 0976: the null test on the fade actor handle `DAT_801DBF40` that `FUN_801D657C` returns; the live direction retires or keeps that actor (`+0x10 |= 8`, or no second spawn), a presentation the port leaves to the host (the cabinet surfaces no actor handles), and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF9AC..0x801CF9AC"
+verdict = "unported"
+reason = "PROT 0976: the signed `/ 4` rounding (`bgez` / `addiu 3` / `sra 2`) of a spawned actor's `+0x6A` as the arm seats it; the actor records are presentation the port leaves to the host, and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CFC64..0x801CFC64"
+verdict = "unported"
+reason = "PROT 0976: the signed `/ 4` rounding (`bgez` / `addiu 3` / `sra 2`) of a spawned actor's `+0x6A` as the arm seats it; the actor records are presentation the port leaves to the host, and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CFE38..0x801CFE38"
+verdict = "unported"
+reason = "PROT 0976: the signed `/ 4` rounding (`bgez` / `addiu 3` / `sra 2`) of a spawned actor's `+0x6A` as the arm seats it; the actor records are presentation the port leaves to the host, and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D1E08..0x801D1E08"
+verdict = "unported"
+reason = "PROT 0976: the signed `/ 4` rounding (`bgez` / `addiu 3` / `sra 2`) of a spawned actor's `+0x6A` as the arm seats it; the actor records are presentation the port leaves to the host, and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D04B4..0x801D04B4"
+verdict = "unported"
+reason = "PROT 0976: state `0x37` waits on the scene-ready bit `0x1F800394 & 0x80` the streamed round assets raise; the port loads the arena synchronously and takes the bit as up"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D0518..0x801D0518"
+verdict = "unreachable"
+reason = "PROT 0976: the clamp of `timer * 8` to `0x100` in state `0x38`; the arm runs only with the timer below `0x20` (`slti` / `beqz` at 0x801D0508), so the product is at most `0xF8`"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D0560..0x801D0560"
+verdict = "unreachable"
+reason = "PROT 0976: state `0x38` re-reads its timer `DAT_801DC128` after the widget call `FUN_801D5ED0`, having just found it below `0x20`; every store to the word is in the cabinet body (none in the widget emitter), so the re-read cannot differ"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D0670..0x801D0670"
+verdict = "unported"
+reason = "PROT 0976: the round-over arm calls the round score `FUN_801D2A28` when the result sub-state `DAT_801DBF84` is `3` (player won); the port makes that call from the fight's `end_round` on the player's round win, and `baka_fight` runs `FUN_801D2A28` itself"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D07B4..0x801D07E0"
+verdict = "unreachable"
+reason = "PROT 0976: the debug shortcut that arms a secret rung from the held pad when the developer print flag `_DAT_8007B9B0` is set; nothing in SCUS_942.54 or the overlay stores that word, so retail ships with it clear"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D0A7C..0x801D0A7C"
+verdict = "unported"
+reason = "PROT 0976: the tally's nudge of the player actor `DAT_801DBFA0` (`+0x18 += 0x3C` when `+0x5A == 1`); actor records are presentation the port leaves to the host, and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D114C..0x801D114C"
+verdict = "unreachable"
+reason = "PROT 0976: state `0x6D` skips its timer step while the timer is zero, but the arm seeds the timer to `1` when it finds it zero (0x801D10A4..0x801D10B0) before this test and the timer only grows"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D11B0..0x801D11B0"
+verdict = "unreachable"
+reason = "PROT 0976: the `0xF0` clamp on state `0x96`'s timer as it reads it for the wipe; the duel arm enters `0x96` the first frame the round timer reaches `0xB5` (0x801D0620), the arm adds `2 * step` (step at most 4) and leaves zeroing it at `0xF1`, so the read never exceeds `0xF0`"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D18D4..0x801D18D4"
+verdict = "unreachable"
+reason = "PROT 0976: the default arm of the developer menu's debug-mode switch on `DAT_801DBF94`, which its only editor wraps unsigned `% 3`, so it is always 0, 1 or 2; the menu itself needs the developer gate `_DAT_8007B868`, which retail never sets"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D1D14..0x801D1D14"
+verdict = "unreachable"
+reason = "PROT 0976: the keyframe editor `0x190` past its third row (`DAT_801DBF04 >= 3`); the editor is reached only through the developer menu, behind the gate `_DAT_8007B868` that retail never sets, and the row word is moved only by the editor helpers the harness stubs"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D203C..0x801D203C"
+verdict = "unreachable"
+reason = "PROT 0976: the shake decay overshooting zero from above; the step is `a * dt / 6 + 1` with the frame step `dt` at most 4 (the step law's `1..4`, the cabinet's floors `1` / `4`), so for every amplitude `a >= 1` the step is at most `a` and the result is never negative"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D2068..0x801D2068"
+verdict = "unreachable"
+reason = "PROT 0976: the shake decay overshooting zero from below; the step is `|a| * dt / 6 + 1` with the frame step `dt` at most 4, so the result never passes zero"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D20C4..0x801D20C4"
+verdict = "unported"
+reason = "PROT 0976: the epilogue skips the floor grid `FUN_801CEB84` while the camera pitch `0x8007B790` is below `-0x4F`; the port's duel scene draws the floor every frame (`baka_duel_scene`), and the harness moves no camera pitch"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A424..0x8003A424"
+verdict = "cannot-drive"
+reason = "the compiler's zero-divisor guard (`break 7`) on the spawn clip phase `rand() % frames`; the frame count is the bound clip's `+2` halfword, and the rig hooks the clip bind `FUN_800204F8` with a non-zero count, since it loads no scene clip table"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A434..0x8003A43C"
+verdict = "unreachable"
+reason = "the compiler's `-1` / `0x80000000` divide guard on `rand() % frames`; the frame count is read `lhu`, so it is never `-1`"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A4A0..0x8003A4A0"
+verdict = "unreachable"
+reason = "the pre-run's below-`0x20` test on the record's first op; the loop is entered only when that op is `0x24` or `0x25` (`addiu -0x24` / `sltiu 2` at 0x8003A480), whose low seven bits are above `0x20`"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A4F4..0x8003A4F4"
+verdict = "unreachable"
+reason = "the pre-run's exit on a below-`0x20` byte; over every placement of every scene, on a fresh and a random flag bank (`model_select::every_placement_spawns_where_the_port_seats_it`), each prologue path ends on its `0x21` before any text lead"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A508..0x8003A508"
+verdict = "unreachable"
+reason = "the signed rounding of `(x - 0x40) / 0x80` for the tile byte `+0x8C`; the seat is a grid byte's `(b & 0x7F) * 0x80 + 0x40` (or `+ 0x80`), from the header or the prologue's grid-encoded moves, so `x - 0x40` is not negative, and the every-placement census on a fresh and a random flag bank (`model_select`) finds no seat below it"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A524..0x8003A524"
+verdict = "unreachable"
+reason = "the signed rounding of `(z - 0x40) / 0x80` for the tile byte `+0x8D`; the seat is a grid byte's `(b & 0x7F) * 0x80 + 0x40` (or `+ 0x80`), so `z - 0x40` is not negative, and the every-placement census on a fresh and a random flag bank (`model_select`) finds no seat below it"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB064..0x801DB06C"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `-1` / `0x80000000` divide guard on the composer's ease; the divisor `s2` is a value shifted left by 6 (`sll s2,..,6` just above), so it is never `-1`"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB0C4..0x801DB0CC"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `-1` / `0x80000000` divide guard on the composer's ease; the divisor `s2` is a value shifted left by 6 (`sll s2,..,6` just above), so it is never `-1`"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB164..0x801DB16C"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `-1` / `0x80000000` divide guard on the composer's ease; the divisor `s2` is a value shifted left by 7 (`sll s2,..,7` just above), so it is never `-1`"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB1D4..0x801DB1DC"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `-1` / `0x80000000` divide guard on the composer's ease; the divisor `s2` is a value shifted left by 7 (`sll s2,..,7` just above), so it is never `-1`"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB288..0x801DB290"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `-1` / `0x80000000` divide guard on the composer's ease; the divisor `s2` is a value shifted left by 7 (`sll s2,..,7` just above), so it is never `-1`"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB348..0x801DB360"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's divide guards (`break 7` / `break 6`) on a division by the constant `4` (`addiu s2,zero,4` at 0x801DB33C)"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB398..0x801DB3B0"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's divide guards (`break 7` / `break 6`) on a division by the constant `8` (`addiu s2,zero,8` at 0x801DB38C)"
+
+# lane C (w53)
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F711C..0x801F711C"
+verdict = "unreachable"
+reason = "PROT 0935: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F70E0`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F73B0..0x801F73B0"
+verdict = "unreachable"
+reason = "PROT 0935: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7390`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F7034..0x801F7034"
+verdict = "unreachable"
+reason = "PROT 0915: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7018`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F7280..0x801F7280"
+verdict = "unreachable"
+reason = "PROT 0915: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7264`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F7AC8..0x801F7AC8"
+verdict = "unreachable"
+reason = "PROT 0915: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7ABC`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F7864..0x801F7864"
+verdict = "unreachable"
+reason = "PROT 0936: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7858`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F7A8C..0x801F7A8C"
+verdict = "unreachable"
+reason = "PROT 0936: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7A68`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6F34..0x801F6F34"
+verdict = "unreachable"
+reason = "PROT 0964: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F6F14`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F7944..0x801F7944"
+verdict = "unreachable"
+reason = "PROT 0964: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7938`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F7FBC..0x801F7FBC"
+verdict = "unreachable"
+reason = "PROT 0964: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7F9C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9e9d52ef03115e27"
+range = "0x801F7040..0x801F7040"
+verdict = "unreachable"
+reason = "PROT 0920: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7038`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9e9d52ef03115e27"
+range = "0x801F72A4..0x801F72A4"
+verdict = "unreachable"
+reason = "PROT 0920: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7298`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F7558..0x801F7558"
+verdict = "unreachable"
+reason = "PROT 0919: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F754C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F77DC..0x801F77DC"
+verdict = "unreachable"
+reason = "PROT 0919: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F77D0`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "af0b90e2d32e7187"
+range = "0x801F7854..0x801F7854"
+verdict = "unreachable"
+reason = "PROT 0908: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F783C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "af0b90e2d32e7187"
+range = "0x801F793C..0x801F793C"
+verdict = "unreachable"
+reason = "PROT 0908: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7920`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "cc67ba6b801c4ad3"
+range = "0x801F6CBC..0x801F6CBC"
+verdict = "unreachable"
+reason = "PROT 0961: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F6CA0`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "cc67ba6b801c4ad3"
+range = "0x801F6CEC..0x801F6CEC"
+verdict = "unreachable"
+reason = "PROT 0961: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F6CD4`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "cc67ba6b801c4ad3"
+range = "0x801F6EE4..0x801F6EE4"
+verdict = "unreachable"
+reason = "PROT 0961: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F6ED8`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "cc67ba6b801c4ad3"
+range = "0x801F70F0..0x801F70F0"
+verdict = "unreachable"
+reason = "PROT 0961: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F70BC`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e7154eacbb14e34c"
+range = "0x801F6C40..0x801F6C40"
+verdict = "unreachable"
+reason = "PROT 0962: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F6C34`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ffcdaddceadee7f2"
+range = "0x801F787C..0x801F787C"
+verdict = "unreachable"
+reason = "PROT 0905: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7870`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ffcdaddceadee7f2"
+range = "0x801F7AD8..0x801F7AD8"
+verdict = "unreachable"
+reason = "PROT 0905: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7AA4`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ffcdaddceadee7f2"
+range = "0x801F7F80..0x801F7F80"
+verdict = "unreachable"
+reason = "PROT 0905: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7F74`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6B5C..0x801F6B5C"
+verdict = "unreachable"
+reason = "PROT 0907: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F6B50`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F7198..0x801F7198"
+verdict = "unreachable"
+reason = "PROT 0959: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7160`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F72D4..0x801F72D4"
+verdict = "unreachable"
+reason = "PROT 0959: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F729C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F76EC..0x801F76EC"
+verdict = "unreachable"
+reason = "PROT 0959: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F76E4`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F79B4..0x801F79B4"
+verdict = "unreachable"
+reason = "PROT 0959: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F78DC`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "e4ff18f5566963e2"
+range = "0x801F6E68..0x801F6E68"
+verdict = "unreachable"
+reason = "PROT 0942: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F6E4C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "e4ff18f5566963e2"
+range = "0x801F6EC4..0x801F6EC4"
+verdict = "unreachable"
+reason = "PROT 0942: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F6E80`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "e4ff18f5566963e2"
+range = "0x801F742C..0x801F742C"
+verdict = "unreachable"
+reason = "PROT 0942: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F740C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "e4ff18f5566963e2"
+range = "0x801F7A60..0x801F7A60"
+verdict = "unreachable"
+reason = "PROT 0942: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7A40`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6E94..0x801F6E94"
+verdict = "unreachable"
+reason = "PROT 0928: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F6E74`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6F58..0x801F6F58"
+verdict = "unreachable"
+reason = "PROT 0928: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F6F48`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F7254..0x801F7254"
+verdict = "unreachable"
+reason = "PROT 0928: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`), tripled (`mult` at `0x801F7244`), at most `0x2FA03` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F83BC..0x801F83BC"
+verdict = "unreachable"
+reason = "PROT 0928: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F83A0`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F858C..0x801F858C"
+verdict = "unreachable"
+reason = "PROT 0928: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F8570`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F8714..0x801F8714"
+verdict = "unreachable"
+reason = "PROT 0928: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F8708`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F8880..0x801F8880"
+verdict = "unreachable"
+reason = "PROT 0928: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F8874`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F8C94..0x801F8C94"
+verdict = "unreachable"
+reason = "PROT 0928: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F8C8C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6EAC..0x801F6EAC"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F6EA4`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6F60..0x801F6F60"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F6F40`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F76E8..0x801F76E8"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F76DC`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F7868..0x801F7868"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F785C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F7928..0x801F7928"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F791C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F7B30..0x801F7B30"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7B24`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F7BA0..0x801F7BA0"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7B74`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F7D70..0x801F7D70"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7D50`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F7F24..0x801F7F24"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7F18`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F8600..0x801F8600"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F85F4`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F8660..0x801F8660"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F8644`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F8954..0x801F8954"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F8948`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F8B34..0x801F8B34"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on a 12-bit angle (`andi 0xFFF` at `0x801F8B28`), `0..0xFFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F8B88..0x801F8B88"
+verdict = "unreachable"
+reason = "PROT 0929: `bgez` on a 12-bit angle (`andi 0xFFF` at `0x801F8B78`), `0..0xFFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F7534..0x801F7534"
+verdict = "unreachable"
+reason = "PROT 0921: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F751C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F76B0..0x801F76B0"
+verdict = "unreachable"
+reason = "PROT 0921: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F76A8`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F76F8..0x801F76F8"
+verdict = "unreachable"
+reason = "PROT 0921: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F76F0`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F7740..0x801F7740"
+verdict = "unreachable"
+reason = "PROT 0921: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7738`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F7788..0x801F7788"
+verdict = "unreachable"
+reason = "PROT 0921: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7780`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F70C4..0x801F70C4"
+verdict = "unreachable"
+reason = "PROT 0917: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F70BC`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F7120..0x801F7120"
+verdict = "unreachable"
+reason = "PROT 0917: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7118`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F767C..0x801F767C"
+verdict = "unreachable"
+reason = "PROT 0917: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7674`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F7AB0..0x801F7AB0"
+verdict = "unreachable"
+reason = "PROT 0917: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7A64`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F7C78..0x801F7C78"
+verdict = "unreachable"
+reason = "PROT 0917: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7C70`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F7F44..0x801F7F44"
+verdict = "unreachable"
+reason = "PROT 0917: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7F3C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7D78..0x801F7D78"
+verdict = "unreachable"
+reason = "PROT 0922: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7D44`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7E2C..0x801F7E2C"
+verdict = "unreachable"
+reason = "PROT 0922: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7E14`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7E84..0x801F7E84"
+verdict = "unreachable"
+reason = "PROT 0922: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7E54`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F7EB0..0x801F7EB0"
+verdict = "unreachable"
+reason = "PROT 0922: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7E9C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F8558..0x801F8558"
+verdict = "unreachable"
+reason = "PROT 0922: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F8548`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F6F1C..0x801F6F1C"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F6F10`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F6F4C..0x801F6F4C"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F6F40`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F710C..0x801F710C"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7100`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F713C..0x801F713C"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7130`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F738C..0x801F738C"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7380`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F73BC..0x801F73BC"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F73B0`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F758C..0x801F758C"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7580`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F75BC..0x801F75BC"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F75B0`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F783C..0x801F783C"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7830`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F786C..0x801F786C"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7860`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F8ED0..0x801F8ED0"
+verdict = "unreachable"
+reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F8EC0`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7100..0x801F7100"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F70DC`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7278..0x801F7278"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7270`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7358..0x801F7358"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7350`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F75EC..0x801F75EC"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F75E0`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F76F8..0x801F76F8"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F76D0`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F77BC..0x801F77BC"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7794`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7914..0x801F7914"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7908`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F79F8..0x801F79F8"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F79F0`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7B24..0x801F7B24"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7B00`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7C04..0x801F7C04"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7BF8`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7D54..0x801F7D54"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7D4C`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7724..0x801F7724"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream's phase dispatch: this test runs only for a phase byte (`lbu 0x279` at `0x801F7700`) under 3 that is neither 0 nor 2, which is 1, so the branch is always taken."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7748..0x801F7748"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream's phase dispatch default, phases `5..0xFE`: arms 0..3 step the phase by one (`0x801F787C`, `0x801F7C00`, `0x801F7D28`, `0x801F7E60`) and arm 4 stores `0xFF` (`0x801F7F24`), so no other phase is ever stored."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F777C..0x801F777C"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream arm 0's cue fork on the caster's monster id: the arms for an id outside `0x28..=0x2A`, `0x7D..=0x7F` and `0x83..=0x85` never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7784..0x801F7784"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream arm 0's cue fork on the caster's monster id: the arms for an id outside `0x28..=0x2A`, `0x7D..=0x7F` and `0x83..=0x85` never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F779C..0x801F779C"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream arm 0's cue fork on the caster's monster id: the arms for an id outside `0x28..=0x2A`, `0x7D..=0x7F` and `0x83..=0x85` never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F77A4..0x801F77A4"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream arm 0's cue fork on the caster's monster id: the arms for an id outside `0x28..=0x2A`, `0x7D..=0x7F` and `0x83..=0x85` never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F78D0..0x801F78D0"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream's shot and drift forks on the caster's monster id: the no-shot arms for an id outside `0x28..=0x2A`, `0x7F` and `0x83..=0x85` (Gold Face `0x7D` and Lava Face `0x7E` among them) never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F78D8..0x801F78D8"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream's shot and drift forks on the caster's monster id: the no-shot arms for an id outside `0x28..=0x2A`, `0x7F` and `0x83..=0x85` (Gold Face `0x7D` and Lava Face `0x7E` among them) never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F78E8..0x801F78E8"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream's shot and drift forks on the caster's monster id: the no-shot arms for an id outside `0x28..=0x2A`, `0x7F` and `0x83..=0x85` (Gold Face `0x7D` and Lava Face `0x7E` among them) never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F78F0..0x801F78F0"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream's shot and drift forks on the caster's monster id: the no-shot arms for an id outside `0x28..=0x2A`, `0x7F` and `0x83..=0x85` (Gold Face `0x7D` and Lava Face `0x7E` among them) never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7A40..0x801F7A40"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream's shot and drift forks on the caster's monster id: the no-shot arms for an id outside `0x28..=0x2A`, `0x7F` and `0x83..=0x85` (Gold Face `0x7D` and Lava Face `0x7E` among them) never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7A48..0x801F7A48"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream's shot and drift forks on the caster's monster id: the no-shot arms for an id outside `0x28..=0x2A`, `0x7F` and `0x83..=0x85` (Gold Face `0x7D` and Lava Face `0x7E` among them) never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7A58..0x801F7A58"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream's shot and drift forks on the caster's monster id: the no-shot arms for an id outside `0x28..=0x2A`, `0x7F` and `0x83..=0x85` (Gold Face `0x7D` and Lava Face `0x7E` among them) never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7A60..0x801F7A60"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream's shot and drift forks on the caster's monster id: the no-shot arms for an id outside `0x28..=0x2A`, `0x7F` and `0x83..=0x85` (Gold Face `0x7D` and Lava Face `0x7E` among them) never run, since only monsters `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85` ever cast Terror Scream: the AI picker `FUN_801E9FD4` (PROT 0898) queues `0x70` only at `0x801EB3FC`, in the switch arm its jump table `0x801CF1CC` enters for those five ids, and no monster record's magic window `+0x20..+0x27` holds `0x70` (capture_cameras::terror_scream_casters_all_sit_in_a_framed_band)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7ABC..0x801F7ABC"
+verdict = "unreachable"
+reason = "PROT 0955: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`) (`mult` at `0x801F7A84`), at most `0xFE01` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7EB4..0x801F7EB4"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream arm 4's settle for a monster victim (`sltiu s1,3` at `0x801F7EB0`, the arm at `0x801F7EE4..0x801F7F1C`) never runs: the victim is always a party seat: the picker's `0x70` arm stores the caster's target `+0x1DD = rand() % ctx[0]`, the party count (`0x801EB2F4..0x801EB340`, `sb s1,0x1dd(s4)` at `0x801EB408`)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7EEC..0x801F7EEC"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream arm 4's settle for a monster victim (`sltiu s1,3` at `0x801F7EB0`, the arm at `0x801F7EE4..0x801F7F1C`) never runs: the victim is always a party seat: the picker's `0x70` arm stores the caster's target `+0x1DD = rand() % ctx[0]`, the party count (`0x801EB2F4..0x801EB340`, `sb s1,0x1dd(s4)` at `0x801EB408`)."
+
+[[arm]]
+entry = "0x801F767C"
+image = "e1fe9a800f3f137b"
+range = "0x801F7F14..0x801F7F14"
+verdict = "unreachable"
+reason = "PROT 0955 Terror Scream arm 4's settle for a monster victim (`sltiu s1,3` at `0x801F7EB0`, the arm at `0x801F7EE4..0x801F7F1C`) never runs: the victim is always a party seat: the picker's `0x70` arm stores the caster's target `+0x1DD = rand() % ctx[0]`, the party count (`0x801EB2F4..0x801EB340`, `sb s1,0x1dd(s4)` at `0x801EB408`)."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F7A54..0x801F7A54"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's phase dispatch: this test runs only for a phase byte (`lbu 0x279` at `0x801F7A18`) under 2 that is not 1 (`0x801F7A44`, `0x801F7A48`), which is 0, so the branch is always taken."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F7AC0..0x801F7AC0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's phase dispatch default, phases `0xE..0xFE`: the phase stores are `+1` (the shared step `0x801F90B0`, jumped to from arms 0..8 only, and `0x801F8F54`, `0x801F91D0`, `0x801F938C`), arm 9's `+2` (`0x801F95CC`) and `+3` (`0x801F9718`) on top of its `+1`, and `0xFF` (`0x801F9834`, `0x801F986C`, `0x801F9914`, `0x801F9960`) from arms `0xA..0xD`, so no phase above `0xD` but `0xFF` is ever stored."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F7BF0..0x801F7BF0"
+verdict = "unreachable"
+reason = "PROT 0957: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7BE4`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F7C7C..0x801F7C7C"
+verdict = "unreachable"
+reason = "PROT 0957: the stacked deal for caster `0x9D` walks the four dealt cards for the first worth 3 or more (`slti 3` at `0x801F7C6C`, exit at `0x801F7C70`); arm 0's deal fills the table with each of 1..4 once (`0x801F7BE4..0x801F7C2C`), so a card of 3 or 4 is always found before the walk runs out."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F7E98..0x801F7E98"
+verdict = "unreachable"
+reason = "PROT 0957: the card-value switch reaches this test only for a value under 3 that is not 2, and the dealt table holds only 1..4 (arm 0's deal stores each of 1..4 once at `0x801F7C24`, and the only other stores, the stacked deals at `0x801F7AD8` and `0x801F7CD0`, store 1), so the value is 1 and the branch is always taken."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F7EB4..0x801F7EB4"
+verdict = "unreachable"
+reason = "PROT 0957: the card-value switch reaches this test only for a value of 3 or more that is not 3, and the dealt table holds only 1..4 (arm 0's deal stores each of 1..4 once at `0x801F7C24`, and the only other stores, the stacked deals at `0x801F7AD8` and `0x801F7CD0`, store 1), so the value is 4 and the branch is always taken."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F7FC4..0x801F7FC4"
+verdict = "unreachable"
+reason = "PROT 0957: the card-value switch reaches this test only for a value under 3 that is not 2, and the dealt table holds only 1..4 (arm 0's deal stores each of 1..4 once at `0x801F7C24`, and the only other stores, the stacked deals at `0x801F7AD8` and `0x801F7CD0`, store 1), so the value is 1 and the branch is always taken."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F7FE0..0x801F7FE0"
+verdict = "unreachable"
+reason = "PROT 0957: the card-value switch reaches this test only for a value of 3 or more that is not 3, and the dealt table holds only 1..4 (arm 0's deal stores each of 1..4 once at `0x801F7C24`, and the only other stores, the stacked deals at `0x801F7AD8` and `0x801F7CD0`, store 1), so the value is 4 and the branch is always taken."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8178..0x801F8178"
+verdict = "unreachable"
+reason = "PROT 0957: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F816C`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F819C..0x801F819C"
+verdict = "unreachable"
+reason = "PROT 0957: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F8190`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F839C..0x801F839C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F83CC..0x801F83CC"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F841C..0x801F841C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F844C..0x801F844C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F847C..0x801F847C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F84AC..0x801F84AC"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8670..0x801F8670"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F86A0..0x801F86A0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F86F0..0x801F86F0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8720..0x801F8720"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8750..0x801F8750"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8780..0x801F8780"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's shuffle arc: the swap clock `0x801FA27C` (`-0x5D84`) is the frame step on the swap's opening pass and grows by the step each later pass, clamped at `0x10` (`0x801F84CC..0x801F84F0`), so the sine index `clock << 7` (`sll 8` bytes into the rsin table `*0x8007B81C`) stays within `0..0x800`, half a turn, where the sine is never negative; the rounding fix-up of its divide never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F9204..0x801F9204"
+verdict = "unreachable"
+reason = "PROT 0957: the card-value switch reaches this test only for a value under 3 that is not 2, and the dealt table holds only 1..4 (arm 0's deal stores each of 1..4 once at `0x801F7C24`, and the only other stores, the stacked deals at `0x801F7AD8` and `0x801F7CD0`, store 1), so the value is 1 and the branch is always taken."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F921C..0x801F921C"
+verdict = "unreachable"
+reason = "PROT 0957: the card-value switch reaches this test only for a value of 3 or more that is not 3, and the dealt table holds only 1..4 (arm 0's deal stores each of 1..4 once at `0x801F7C24`, and the only other stores, the stacked deals at `0x801F7AD8` and `0x801F7CD0`, store 1), so the value is 4 and the branch is always taken."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F939C..0x801F939C"
+verdict = "unreachable"
+reason = "PROT 0957: `bgez` on HP `+0x14C` plus 3 (`lhu` at `0x801F9390`), `3..0x10002` and never negative, so the quarter's rounding fix-up never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F93C0..0x801F93C0"
+verdict = "unreachable"
+reason = "PROT 0957: `bgez` on HP `+0x14C` plus 3 (`lhu` at `0x801F93B4`), `3..0x10002` and never negative, so the quarter's rounding fix-up never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F93D4..0x801F93D4"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's bleed: the cut is `(hp + 3) >> 2` of the seat's own HP (`0x801F93B4..0x801F93CC`, `0x801F9560..0x801F9578`), which is never above `hp`, so the `sltu hp, cut` clamp to the HP left never fires."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F953C..0x801F953C"
+verdict = "unreachable"
+reason = "PROT 0957: `bgez` on HP `+0x14C` plus 3 (`lhu` at `0x801F9530`), `3..0x10002` and never negative, so the quarter's rounding fix-up never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F956C..0x801F956C"
+verdict = "unreachable"
+reason = "PROT 0957: `bgez` on HP `+0x14C` plus 3 (`lhu` at `0x801F9560`), `3..0x10002` and never negative, so the quarter's rounding fix-up never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F9580..0x801F9580"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's bleed: the cut is `(hp + 3) >> 2` of the seat's own HP (`0x801F93B4..0x801F93CC`, `0x801F9560..0x801F9578`), which is never above `hp`, so the `sltu hp, cut` clamp to the HP left never fires."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F9728..0x801F9728"
+verdict = "unreachable"
+reason = "PROT 0957: `bgez` on maximum HP `+0x14E` plus 3 (`lhu` at `0x801F971C`), `3..0x10002` and never negative, so the quarter's rounding fix-up never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F9774..0x801F9774"
+verdict = "unreachable"
+reason = "PROT 0957: `bgez` on maximum HP `+0x14E` plus 3 (`lhu` at `0x801F9768`), `3..0x10002` and never negative, so the quarter's rounding fix-up never runs."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D4BE4..0x801D4BE4"
+verdict = "unreachable"
+reason = "The tail's kind dispatch past kinds 1 and 2 tests for 3; every step record PTR_DAT_801F4D34[0..0x32] carries a kind byte of 0..=3 (asserted by step_script_tail), so a kind above 3 never falls through."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D4E3C..0x801D4E3C"
+verdict = "unreachable"
+reason = "Cases 9 / 0x2C: a second read of the staged string's first byte actor[+0x1DF], reached only past the first read's beq at 0x801D4DEC (non-zero) with only ctx stores between, so it is never zero here."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA420..0x801EA428"
+verdict = "unreachable"
+reason = "Divide trap on the magic arm's rand() % s1, s1 the record's spell slots +0x21..+0x23 holding an id >= 2: the arm is entered only with the rolled slot s6 non-zero, and a slot below 2 zeroes s6 first (0x801EA15C..0x801EA17C), so the rolled slot is itself counted; the one bypass, record 0xB4 forcing s6 = 1 (0x801EA18C..0x801EA198), carries a castable spell (monster_pick::every_shipped_monster_but_cort_has_a_swing)."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB0A0..0x801EB0A8"
+verdict = "unreachable"
+reason = "Divide trap on the 0x62..0x64 arm's rand() % (0x66 - id): the switch (table 0x801CF1CC, case 0x801EB068) sends only ids 0x62..0x64 here, so the divisor is 2..4."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB380..0x801EB388"
+verdict = "unreachable"
+reason = "Divide trap on the interrupt arm's rand() % s2: s2 is seeded 5 in the switch's delay slot (0x801EA9E0) and the entries for 0x2A / 0x7F / 0x85 and 0x29 step it down once or twice (0x801EB2EC / 0x801EB2F0), so it is 3..5."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB604..0x801EB60C"
+verdict = "unreachable"
+reason = "Divide trap on the 0x9C..0x9E arm's rand() % (id - 0x99): the switch sends only ids 0x9C..0x9E to 0x801EB5D0, so the divisor is 3..5."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB690..0x801EB698"
+verdict = "unreachable"
+reason = "Divide trap on the 0x99..0x9B arm's rand() % (0x9D - id): the switch sends only ids 0x99..0x9B to 0x801EB658, so the divisor is 2..4."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB76C..0x801EB774"
+verdict = "unreachable"
+reason = "Divide trap on the 0x9F..0xA1 arm's rand() % (0xA3 - id): the switch sends only ids 0x9F..0xA1 to 0x801EB734, so the divisor is 2..4."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA5C4..0x801EA5D4"
+verdict = "unreachable"
+reason = "The cast's shape dispatch on a0 = shape & 0x60 (0x801EA5A4): past the 0x40 test, a value below 0x41 and non-zero can only be 0x20 and one above 0x40 only 0x60, so neither compare's fall to the shared exit at 0x801EA950 is taken."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA610..0x801EA610"
+verdict = "unreachable"
+reason = "The heal-patient scan's entry test 0 < ctx[+1]: a monster is picking, so the seated monster count is at least 1 and the scan is always entered."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3B00..0x801D3B1C"
+verdict = "cannot-drive"
+reason = "PROT 0972: the off-screen break latch on the lure's projected x (< -0x20 or > 0x160, from FUN_8003D368); the port takes that latch from the host's line projection (PondSession's line_frame_retail), which the lure-tick differential does not run, so its rig projects every point on screen."
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB054..0x801DB054"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; the every-tile census (`camera_follow::the_zone_divisions_census`) finds a dividing zone over a box with no span only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`, and every sub-cell of those tiles is off the walkable floor (`the_flat_camera_boxes_lie_off_the_walkable_floor`), so the player never latches them"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB0B4..0x801DB0B4"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; the every-tile census (`camera_follow::the_zone_divisions_census`) finds a dividing zone over a box with no span only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`, and every sub-cell of those tiles is off the walkable floor (`the_flat_camera_boxes_lie_off_the_walkable_floor`), so the player never latches them"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB154..0x801DB154"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; the every-tile census (`camera_follow::the_zone_divisions_census`) finds a dividing zone over a box with no span only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`, and every sub-cell of those tiles is off the walkable floor (`the_flat_camera_boxes_lie_off_the_walkable_floor`), so the player never latches them"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB1C4..0x801DB1C4"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; the every-tile census (`camera_follow::the_zone_divisions_census`) finds a dividing zone over a box with no span only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`, and every sub-cell of those tiles is off the walkable floor (`the_flat_camera_boxes_lie_off_the_walkable_floor`), so the player never latches them"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB278..0x801DB278"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; the every-tile census (`camera_follow::the_zone_divisions_census`) finds a dividing zone over a box with no span only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`, and every sub-cell of those tiles is off the walkable floor (`the_flat_camera_boxes_lie_off_the_walkable_floor`), so the player never latches them"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB244..0x801DB244"
+verdict = "unreachable"
+reason = "PROT 0897: the toward-zero rounding of `span * (n - 1) / 4` for a negative span; over every tile of every field scene no depth-sweeping zone (`b609` nibble `2..=5`) latches a box whose z bounds run backwards (`camera_follow::the_zone_divisions_census`)"
+
+[[arm]]
+entry = "0x80054CB0"
+range = "0x80054CE8..0x80054CE8"
+verdict = "unreachable"
+reason = "the copy loop's skip on `(strlen & 0xFF) + 1 == 0`; the masked length plus one is at least `1`"
+
+[[arm]]
+entry = "0x80054CB0"
+range = "0x80054F1C..0x80054F1C"
+verdict = "unreachable"
+reason = "the abbreviation's exit on a one-byte line; it runs only when the line measures `0x40` or wider (0x80054EFC), and no single glyph of the font is that wide"
+
+[[arm]]
+entry = "0x80054CB0"
+range = "0x80054F98..0x80054F98"
+verdict = "unreachable"
+reason = "the abbreviation's copy guard on the byte at the last space; that byte is the space itself, never `0`"
+
+[[arm]]
+entry = "0x80054CB0"
+range = "0x80055004..0x80055004"
+verdict = "unreachable"
+reason = "the twin-letter walk's guard on `seat - 1 < 0`; seat `0` already left at `beqz s5` (0x80054FF8)"
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D38E0..0x801D38E0"
+verdict = "unreachable"
+reason = "The case bound a0 < 0x32: all 39 calls sit in FUN_801D0748 and each loads a0 as a constant 0..0x31 (li a0 / clear a0 ahead of every jal 0x801D388C, the 0x1B commit reaching the 0x801D2D1C jal by j 0x801D2D1C with a0 already 0x1B), so the bound never fails."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D43B0..0x801D43B0"
+verdict = "unreachable"
+reason = "Cases 0x19 / 0x1B / 0x1F dispatch on the target kind a1 (s7) 0..3; their calls pass a1 = 0 (0x801D1CD0), 2 (0x801D1CE8), 1 (0x801D1D44) and 3 (0x801D1D58), so the fall past kind 3 is never taken."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D481C..0x801D481C"
+verdict = "unreachable"
+reason = "Case 0x22's row dispatch on s3 = 0x2B + 3 * ctx[+0x1F] (0x801D4774..0x801D477C): the row index is the members already logged, 0..2, so s3 is 0x2B, 0x2E or 0x31 and a value below 0x2F other than 0x2E is 0x2B."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D4A00..0x801D4A00"
+verdict = "unreachable"
+reason = "Case 0x23's row dispatch on s3 = 0x2B + 3 * ctx[+0x1F] (0x801D4918..0x801D4928): the row index is 0..2, so s3 is 0x2B, 0x2E or 0x31 and a value below 0x2F other than 0x2E is 0x2B."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D4B5C..0x801D4B5C"
+verdict = "unreachable"
+reason = "Case 0x24 dispatches on ctx[+0x1F], the member count at the Begin confirm, 1..3 (a party seats at most three), so a value of 3 or more is 3 and the fall to the shared step is never taken."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA23C..0x801EA23C"
+verdict = "unreachable"
+reason = "The physical arm's empty action list (record +0x4A == 0): only Cort's 0xB4 and 0xB7..0xBA carry no swing candidate (monster_pick::every_shipped_monster_but_cort_has_a_swing); 0xB4's id forces the magic arm (0x801EA18C..0x801EA198) and no formation seats 0xB7..0xBA (patcher cort_forms_unseated_real; the arena init's PROT 0977 table names none and FUN_8005567C's debug id _DAT_8007B7FC has no writer)."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA310..0x801EA318"
+verdict = "unreachable"
+reason = "Divide trap on the physical pick rand() % sp[0x10], the record's swing-candidate count: zero only for Cort's 0xB4 (forced onto the magic arm by its id, 0x801EA18C..0x801EA198) and 0xB7..0xBA, which no formation seats (patcher cort_forms_unseated_real), so a picking monster always has one."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EBAE0..0x801EBAE0"
+verdict = "unreachable"
+reason = "Monster 0xB5's arm: a second read of the phase word DAT_801C8FE4, reached only past the first read's bne at 0x801EBA7C (zero) with nothing but the rand() call between, so it is always zero here."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EBC4C..0x801EBC4C"
+verdict = "unreachable"
+reason = "Monster 0xA7's MP scan over the party ctx[+0x00] seats: battle setup seats 1..3 members, so the empty-party skip is never taken."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D2740..0x801D2750"
+verdict = "unreachable"
+reason = "PROT 0972: the lure's state halfword +0x22 dispatch; the actor spawns with it zeroed and the tick's only writers step it by one, out of state 0 (0x801D2764) and on state 1's landing (0x801D2988), so it is 0, 1 or 2 and neither the negative nor the above-2 fall to 0x801D39C8 is taken."
+
+# lane A (w53 round 4)
+
+[[arm]]
+entry = "0x80052770"
+range = "0x80052788..0x80052970"
+verdict = "unported"
+reason = "The battle player-file streamer's state gate and cases 0..3 (state 0x8007B648, jump table 0x800153C8): CD sync polls (FUN_8003DE7C), the read kick-off that parks the state at 0x80, and the section-pointer reset. The engine reads the member's battle file whole (legaia_actor_formats::battle_char_assembly) and runs no streaming state; only case 4, the section selector, is ported."
+
+[[arm]]
+entry = "0x80052770"
+range = "0x80052AE0..0x80052F80"
+verdict = "unported"
+reason = "The battle player-file streamer's cases 5..10 and its busy return: the per-section CD reads into the actor's mesh slots and the completion flag (0x8007B648 bit 0x80 / gp+0xA58). The engine assembles the battle body from the file in one pass (battle_char_assembly::select_sections and the assembly after it), with no streaming state."
+
+[[arm]]
+entry = "0x801E1D98"
+image = "393baed662b4213e"
+range = "0x801E1EAC..0x801E2060"
+verdict = "unreachable"
+reason = "PROT 0898: the corner jitter's divide traps and its rand() sign fix-up. The jitter span s5 is the segment's height delta floored at 0x40 (0x801E1E78..0x801E1E90), a non-negative s16, so the divisors (s5 >> 1) + 1, (s5 >> 2) + 1 and s5 >> 3 are at least 0x21, 0x11 and 8, never 0 or -1; rand() is 0..0x7FFF, so the bgez at 0x801E2060 always takes."
+
+[[arm]]
+entry = "0x801E1D98"
+image = "393baed662b4213e"
+range = "0x801E2140..0x801E21F8"
+verdict = "unreachable"
+reason = "PROT 0898: the second segment half's divide traps on the same jitter span: s4 = s5 >> 2 (at least 0x10) and s0 = (s5 >> 1) + 1 (0x801E2190..0x801E2194), never 0 or -1."
+
+[[arm]]
+entry = "0x80054CB0"
+range = "0x800550BC..0x800550BC"
+verdict = "unported"
+reason = "the twin-letter walk's gate on the action-state byte `ctx[+0x7]`: the battle init installs with it at `0`, so the earlier twin takes ` A`; only the summon's seat-`4` install (`0x801F1D1C`) runs with it set, and the port gives the summon actor no instance letter (`monster_install::twins_are_lettered_as_retail_letters_them`)"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033870..0x80033870"
+verdict = "unreachable"
+reason = "the slot-class fold's last test: the class is the two-bit field `(b7 & 0x60) >> 5`, and `2`, `1` and `0` have left by here, so it is `3`"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x800338F4..0x800338F4"
+verdict = "unreachable"
+reason = "the template walk's first-byte test for the `0xC1` op: none of the eight SCUS-resident slot templates (`0x80073E2C`) opens with it, and the walk finds the op further in"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033A0C..0x80033A0C"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033B48..0x80033B48"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033C78..0x80033C78"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033DB4..0x80033DB4"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033EE4..0x80033EE4"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80034014..0x80034014"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80034144..0x80034144"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033A8C..0x80033A8C"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033BC8..0x80033BC8"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033CF8..0x80033CF8"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033E34..0x80033E34"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033F64..0x80033F64"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80034094..0x80034094"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x800341C4..0x800341C4"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F6AAC..0x801F6AAC"
+verdict = "unreachable"
+reason = "PROT 0935's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 255}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6A8C..0x801F6A8C"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (1) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6AA8..0x801F6AA8"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (4) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6AD4..0x801F6AD4"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (7) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6AF0..0x801F6AF0"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (10) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6B2C..0x801F6B2C"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (13) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6B48..0x801F6B48"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (16) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6B74..0x801F6B74"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (19) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "c5d240f2c9243856"
+range = "0x801F6A88..0x801F6A88"
+verdict = "unreachable"
+reason = "PROT 0956's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 255}` reaches the compare tree; walked through the tree, the only phases that reach this test (1) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ea133e1d0a56dd22"
+range = "0x801F6A90..0x801F6A90"
+verdict = "unreachable"
+reason = "PROT 0939's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 255}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6ABC..0x801F6ABC"
+verdict = "unreachable"
+reason = "PROT 0907's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x4`, `0xf`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6AE4..0x801F6AE4"
+verdict = "unreachable"
+reason = "PROT 0907's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x4`, `0xf`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (7) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6AA0..0x801F6AA0"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6AB8..0x801F6AB8"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (3) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6AE0..0x801F6AE0"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (6) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6AFC..0x801F6AFC"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (9) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6B38..0x801F6B38"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (12) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6B54..0x801F6B54"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (15) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6B80..0x801F6B80"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (18) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6B34..0x801F6B34"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x3`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (6) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6B50..0x801F6B50"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x3`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (9) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6B8C..0x801F6B8C"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x3`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (12) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6BA8..0x801F6BA8"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x3`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (15) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6BD4..0x801F6BD4"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x3`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (18) all go the taken way."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F6B04..0x801F6B04"
+verdict = "unreachable"
+reason = "PROT 0917's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F6B30..0x801F6B30"
+verdict = "unreachable"
+reason = "PROT 0917's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (7) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6D44..0x801F6D44"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6D5C..0x801F6D5C"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (3) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6D84..0x801F6D84"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (6) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6DA0..0x801F6DA0"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (9) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6DE0..0x801F6DE0"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (14) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6E0C..0x801F6E0C"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (17) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6E20..0x801F6E20"
+verdict = "unreachable"
+reason = "PROT 0918 (Kemaro)'s phase dispatch default, phases `0x14..0xFE`: the image's phase stores are `+1` (`0x801F747C`, `0x801F7BE0`, `0x801F836C`, `0x801F8868`) and `0xFF` (`0x801F8A5C`); the `+1` of the arm `0x801F8698` that phases `0x12` and `0x13` share runs only on `0x12` (`li v0,0x12; bne` at `0x801F8790..0x801F8794`) and `0x13` leaves through the `0xFF` store, so no phase above `0x13` but `0xFF` is stored."
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD124..0x801DD124"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: a halfword (or its `>> 1` / `>> 3`) plus one, at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD1D8..0x801DD1D8"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: the move-power record's sign-extended `+0` shifted plus one; every record the action map at `0x801F4E64` reaches (44 records, and the out-of-table row `255` reads `0`) holds a power of `0` or more, so it is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD214..0x801DD214"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: a halfword (or its `>> 1` / `>> 3`) plus one, at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD27C..0x801DD27C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: a halfword (or its `>> 1` / `>> 3`) plus one, at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD334..0x801DD334"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: a halfword (or its `>> 1` / `>> 3`) plus one, at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD3E4..0x801DD3E4"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: the move-power record's sign-extended `+0` shifted plus one; every record the action map at `0x801F4E64` reaches (44 records, and the out-of-table row `255` reads `0`) holds a power of `0` or more, so it is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD420..0x801DD420"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: a halfword (or its `>> 1` / `>> 3`) plus one, at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD134..0x801DD134"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD1E8..0x801DD1E8"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD224..0x801DD224"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD28C..0x801DD28C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD344..0x801DD344"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD3F4..0x801DD3F4"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD430..0x801DD430"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD13C..0x801DD13C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD1F0..0x801DD1F0"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD22C..0x801DD22C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD294..0x801DD294"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD34C..0x801DD34C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD3FC..0x801DD3FC"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD438..0x801DD438"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+# lane B (w53)
+
+[[arm]]
+entry = "0x801D6704"
+image = "94ede8022b42a198"
+range = "0x801D739C..0x801D739C"
+verdict = "unreachable"
+reason = "PROT 0897: the fog-pool clear's empty-pool test; the init stores the pool's count `0x50` at `+0x02` in the delay slot of the free-list seeder `FUN_8001FA00` (`0x801D7388`), which writes only from `+0x04` on, so the count it reads back is never `0`"

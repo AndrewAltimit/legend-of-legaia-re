@@ -372,11 +372,13 @@ pub(super) fn run_one(
             }
             None => None,
         };
+        let port_two = matches!(screen, TitleScreen::CardCheck { port: 1, .. });
         title_front_run(
             opts,
             entry,
             &retail,
             card,
+            port_two,
             &presses,
             tick,
             false,
@@ -410,6 +412,7 @@ pub(super) fn run_one(
                 entry,
                 &retail,
                 Some(card.unwrap_or(Path::new(""))),
+                false,
                 TITLE_CONTINUE_PRESSES,
                 TITLE_CONTINUE_CAPTURE_TICK,
                 true,
@@ -625,6 +628,12 @@ pub const TITLE_CONTINUE_PRESSES: &str =
 /// then ([`TITLE_CONTINUE_PRESSES`]' last confirm plus the card read).
 pub const TITLE_CONTINUE_CAPTURE_TICK: u64 = 1200;
 
+/// The tick [`TitleScreen::CardCheck`]'s drive commits its pill on.
+pub const CARD_CHECK_COMMIT_TICK: u64 = 940;
+/// Vsyncs between a commit and the card screen's frame count starting
+/// (`load_slot2_now_checking`: `0x25` frames `40` vsyncs after `Cross`).
+pub const CARD_CHECK_COUNT_LAG: u64 = 3;
+
 /// The title front-end screens short of the card grid, driven by the first
 /// edges of [`TITLE_CONTINUE_PRESSES`] and captured a beat before the next
 /// edge would leave the screen: the menu on NEW GAME (`700:Cross` past
@@ -636,6 +645,15 @@ pub fn title_screen_drive(screen: TitleScreen) -> (String, u64) {
         TitleScreen::Menu { row: 0 } => (TO_MENU.into(), 750),
         TitleScreen::Menu { .. } => (format!("{TO_MENU},760:Down"), 810),
         TitleScreen::Pill => (format!("{TO_MENU},760:Down,820:Cross"), 890),
+        // The pill row, onto the committed card's pill, `Cross`, and the
+        // card screen's own frame count past the commit.
+        TitleScreen::CardCheck { port, frames } => {
+            let pick = if port == 1 { ",880:Down" } else { "" };
+            (
+                format!("{TO_MENU},760:Down,820:Cross{pick},{CARD_CHECK_COMMIT_TICK}:Cross"),
+                CARD_CHECK_COMMIT_TICK + u64::from(frames) + CARD_CHECK_COUNT_LAG,
+            )
+        }
     }
 }
 
@@ -650,6 +668,7 @@ fn title_front_run(
     entry: &CorpusEntry,
     retail: &RetailObs,
     card: Option<&Path>,
+    card_in_port_two: bool,
     presses: &str,
     tick: u64,
     card_panel: bool,
@@ -661,6 +680,11 @@ fn title_front_run(
             "not scored: a title screen scores its frame only, and this run has none".into(),
         );
         return;
+    };
+    let (card, port_two) = if card_in_port_two {
+        (None, card)
+    } else {
+        (card, None)
     };
     let dir = match card {
         Some(card) => card_save_dir(opts.out_dir, &entry.label, card),
@@ -679,13 +703,24 @@ fn title_front_run(
             return;
         }
     };
-    let extra = vec![
+    let mut extra = vec![
         "--boot-ui".to_string(),
         "--save-dir".to_string(),
         dir.display().to_string(),
         "--pad-script".to_string(),
         presses.to_string(),
     ];
+    // A card the capture read from port 2 mounts there (`--card`), copied
+    // beside the save directory so nothing the drive does reaches the
+    // library's image.
+    if let Some(card) = port_two {
+        let copy = dir.join("port2.mcr");
+        if let Err(e) = std::fs::copy(card, &copy) {
+            report.unseeded = format!("seeding failed: copy memory card {}: {e}", card.display());
+            return;
+        }
+        extra.extend(["--card".to_string(), copy.display().to_string()]);
+    }
     match crate::retail_compare_image::engine_frame_with(
         exe,
         opts.extracted,

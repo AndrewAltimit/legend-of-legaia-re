@@ -1015,3 +1015,12 @@ impl World {
         false
     }
 }
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`Self::arm_capture_cast_module`], for the differential that runs a
+    /// capture cast through the band beside the module image.
+    pub fn drive_arm_capture_cast_module(&mut self, spell_id: u8) {
+        self.arm_capture_cast_module(spell_id);
+    }
+}

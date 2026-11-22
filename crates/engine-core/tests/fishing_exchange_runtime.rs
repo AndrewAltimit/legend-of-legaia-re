@@ -32,9 +32,12 @@ fn buy_commits_points_mask_and_inventory() {
     world.minigames.fishing_points = 5_000;
     world.open_fishing_exchange(venue(1));
 
-    // The 20k top prize is hidden/unavailable at 5k points; the cursor
-    // floored past it on open.
-    assert_eq!(world.minigames.fishing_exchange.as_ref().unwrap().cursor, 1);
+    // The 20k top prize is hidden/unavailable at 5k points. The list opens
+    // on the overlay's zeroed cursor, under that floor, and its entry clamp
+    // sends it to the last row.
+    let ex = world.minigames.fishing_exchange.as_ref().unwrap();
+    assert_eq!(ex.cursor, 0);
+    assert_eq!(ex.step_cursor(ex.cursor, 5_000, false, false), 2);
     assert!(world.fishing_exchange_buy(0, 1).is_none());
 
     // One-time prize: grants, deducts, latches the venue-1 bit block.

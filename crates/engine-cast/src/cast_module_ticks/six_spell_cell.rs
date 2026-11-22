@@ -174,31 +174,20 @@ pub fn kiss_of_death_tick(
     (step, refund)
 }
 
-/// PROT 0955's Melt Spray (`0x6F`) stat step: `x - (x + 9) / 5` - a `-20%`
-/// with a `+9` rounding bias - with a floor that fires only on an exact
-/// zero.
+/// PROT 0955's Melt Spray (`0x6F`) stat step: `x - (x + 9) / 10`, a `-10%`
+/// with a `+9` rounding bias, floored at `1`.
 ///
-/// The division is the signed magic `0x66666667` (`mult`, `mfhi`, `sra 2`,
-/// minus the sign) at `0x801F8314..0x801F8378`. The floor is the
-/// `bnez ...; addiu v0,v0,1` pair each store is followed by, and the
-/// arithmetic that reaches the store is 32-bit `subu` while the store itself
-/// is a 16-bit `sh` - so a stat of `2` lands on zero and is corrected to `1`,
-/// but a stat of `0` or `1` goes to `-1` and is written back as `0xFFFF`,
-/// which the floor's `bnez` then sees as non-zero and leaves alone. Retail
-/// underflows a one-point stat into 65535; that is the behaviour, not a port
-/// artefact, and it is why the floor cannot be modelled as `max(1, ..)`.
-///
-/// Only the first floor of each five-stat block tests a live 32-bit register
-/// (`move v1,a1` at `0x801F83E0` / `0x801F8504`, then `bnez v1`); the other
-/// four re-`lhu` the halfword they just stored and test that
-/// (`0x801F83F8`, `0x801F840C`, `0x801F8420`, `0x801F8434`, and the same
-/// four in the base block from `0x801F851C`). The two shapes agree on every
-/// reachable value - `-1` truncates to `0xFFFF`, which is non-zero either
-/// way - so the underflow is a property of the `subu`/`sh` width mismatch,
-/// not of which register the `bnez` reads.
+/// The division is the signed magic `0x66666667` with `mfhi` and `sra 2`,
+/// minus the sign (`0x801F8324..0x801F83E4` for the working halves,
+/// `0x801F8448..` for the base halves): `x / 10`, not `x / 5`, which would be
+/// `sra 1`. For an `lhu` stat the cut is never above the stat, so the
+/// difference is never negative; each store is followed by
+/// `bnez ...; addiu v0,v0,1`, which lifts the exact zero a stat of `0` or `1`
+/// lands on to `1`. Nothing underflows.
 pub fn melt_spray_step(stat: u16) -> u16 {
-    let x = i32::from(stat);
-    let reduced = x - (x + 9) / 5;
+    let x = u32::from(stat);
+    // `(x + 9) / 10` is the tenth rounded up.
+    let reduced = x - x.div_ceil(10);
     if reduced == 0 { 1 } else { reduced as u16 }
 }
 
@@ -215,9 +204,9 @@ pub fn melt_spray_step(stat: u16) -> u16 {
 ///
 /// It is the widest single stat write in the band and the row
 /// `docs/subsystems/cast-module.md` grades "none": the module calls no damage
-/// wrapper, and what it does instead is a five-stat, ten-halfword `-20%`.
+/// wrapper, and what it does instead is a five-stat, ten-halfword `-10%`.
 /// Note the shape differs from the item buffs' `x * 6/5` clamped to `0xFFFF`
-/// (`battle-formulas.md`): this is `x - (x + 9)/5` floored at `1`.
+/// (`battle-formulas.md`): this is `x - (x + 9)/10` floored at `1`.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
@@ -270,8 +259,9 @@ pub fn melt_spray_tick(
 /// `s3`, victim `s2 = actor_table[caster[+0x1DD]]`.
 ///
 /// Arm `3` (`0x801F7D98`) is the whole spell, and it writes **no** stat and
-/// **no** status bit: it runs the [`steal_turn`] idiom unconditionally on the
-/// victim (`0x801F7E18..0x801F7E4C`). Arm `4` polls the victim for a settled
+/// **no** status bit: it steals the victim's turn
+/// ([`steal_turn_unguarded`], `0x801F7E18..0x801F7E4C`), with no test of the
+/// initiative key. Arm `4` polls the victim for a settled
 /// pose and jumps the phase to `0xFF`; the `0xFF` arm clears `ctx[+0x0D]`,
 /// restores the seven combat seats and reports done.
 ///
@@ -292,7 +282,7 @@ pub fn terror_scream_tick(
     let mut refund = None;
     let step = run_tick_latched(ctx, |c| match c.phase {
         3 => {
-            refund = steal_turn(c, victim);
+            refund = steal_turn_unguarded(c, victim);
             CastArmStep::Advance
         }
         4 => {

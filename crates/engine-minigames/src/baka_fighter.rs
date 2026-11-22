@@ -73,6 +73,16 @@ pub const SECRET_TALLY_FRAME_STEP: i32 = 4;
 /// capture). The port's load is instant by default.
 pub const OPPONENT_INSTALL_LOAD_VSYNCS: i32 = 26;
 
+/// Vsyncs the all-clear's `0xFB -> 0xFC` edge holds the cabinet on its CD
+/// load when the host runs retail's load holds. The edge loads roster `4`'s
+/// fighter (`FUN_801D4C50(6)`, `0x801D1A84..0x801D1B3C`) synchronously inside
+/// the frame that moves to `0xFC`, so the next frame opens late: a PCSX-Redux
+/// capture across the all-clear (`autorun_baka_flash_xa.lua`,
+/// `captures/w53-E/baka_clear`) has the cabinet's frame counter `DAT_801DC130`
+/// stand still `34` vsyncs after that frame on a step-`2` cadence, `32` past
+/// its span. Without the hold the closing line `0x0C` came `35` vsyncs early.
+pub const CLEAR_FIGHTER_LOAD_VSYNCS: i32 = 32;
+
 /// Starting HP each round (`FUN_801d1744` round seed: `DAT_801dbfc4 = 0xc80`).
 pub const HP_START: i32 = 0xC80;
 

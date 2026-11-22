@@ -24,7 +24,7 @@ The port runs the whole game as one session type, `PondSession`, on all three ho
 | Parsers | `legaia_minigame_formats::fishing_species`, `fishing_exchange`, `fishing_sprites`, `fishing_captions` |
 | Rules port | crate [`engine-fishing`](../../crates/engine-fishing/README.md) (`legaia_engine_fishing::fishing*`) |
 | World / scene port | `engine-minigame-scenes`: `fishing_venue`, `fishing_scene`, `fishing_rod`, `MinigameState`; `engine-core`: `fishing_venue::tick_fishing_venue_on_host`, `fishing_hub`, `fishing_exchange_input`, `World::tick_fishing` |
-| Draw port | `engine-ui`: `fishing`, `fishing::sprite`, `fishing::hub`, `fishing::exchange`, `fishing::line`, `fishing::rod` |
+| Draw port | `engine-ui`: `fishing`, `fishing::sprite`, `fishing::exchange`, `fishing::line`, `fishing::rod` |
 
 Dump files are `ghidra/scripts/funcs/overlay_fishing_<addr>.txt` for every `FUN_801cxxxx` / `FUN_801dxxxx` named on this page.
 
@@ -196,15 +196,24 @@ The pond is entered directly at the idle shore; the menu opens from there on Tri
 
 The sub-screens draw over the menu, which runs non-interactive beneath them. The row strings are fixed overlay addresses the picker forms with `lui`/`addiu` pairs (`0x801CEF04 .. 0x801CEF44`).
 
+**Panels and draw order.** Each screen sits on a panel `FUN_801D74B0(cx, y, w, h)`: the menu's `(0xA0, 0x50, 0x68, 0x50)`, drawn whether or not it takes the pad; the tackle list's `(0xD0, 0x48, 0x8F, 0x60)` (`s1 + 0x20` with `s1 = 0xB0`, `0x801D1388`); the prize list's and its dialogs' ([Point exchange](#point-exchange-prize-shop)). The panel stages widget style `0x44` (`FUN_80034B6C`, a store to `gp+0x14C`).
+It emits the box `FUN_8002C69C(cx - w/2 - 2, y + 6, w, h)`; widget record `0x44` is byte-identical to record `3`, the class-0 frame (blue marble in the gold border, [battle-hud](battle-hud.md)), whose emit grows the rect by 8 on every side.
+A screen's routine adds its text before its panel and the session calls the live screen first (`0x801D0028..0x801D0080`), so in the ordering table each screen's text draws over its own panel and the next screen's panel draws over both. The cursor icon `FUN_8002C488(x, y, 0x4E)` is widget record `0x4E`, the 16x16 pointing hand (sheet `(0x98, 0x40)`, CLUT row 7) with no pen offset.
+
+Port: `FishingHub::layers` / `PondSession::hub_layers` carry each screen's lines with its panel; `legaia_engine_screens::fishing_venue_screen` stacks the hub and the exchange in that order for both play hosts, draws the panels (`engine-ui::fishing::exchange::venue_panel_draws_for`, the class-0 frame) and the hand cursors in the chrome pass, and crops each screen's text under the panels drawn over it (`occlude_text_draws`), since a host's text pass draws over all of its chrome. Retail's fill is half-transparent twice over, so covered text shows at a quarter of its strength there, which a retail frame does not show over the marble.
+The help pages' frame `FUN_8002C69C(x, y, 0x119, 0xC3)` stages no style, so it draws in whatever `gp+0x14C` holds. The fishing overlay's one store to that word is the panels' `0x44` (`0x801D74E0`), and a help page is reached only through the menu's row 1, whose routine runs its panel every frame ahead of its edge test, so the frame is the same class-0 frame (*capture*: `gp+0x14C = 0x44` on both help pages; the idle shore before the menu holds the field's `0x61`). The port draws it as the help layer's `HubLayer::frame`.
+The persistent HUD runs in the driver's tail, after the state's screens, so the ordering table draws it under every panel: the help frame covers the whole HUD. `fishing_hud_items` drops an item a venue panel covers (`venue_panel_footprints`).
+
 Rows 2 and 3 copy the persistent lure index `_DAT_80084450` into `0x801D90DC` before switching (`0x801D0680..0x801D0690`). That word is the tackle screen's cursor, so the screen opens on the equipped lure.
 
 **Help pages.** `FUN_801d72a0(x, y, page)` (PROT 0972 file offset `0x8A88`) draws 14 text lines from the string-pointer table at `0x801D8130` for page 0 and 15 lines from `0x801D8168` for page 1 (the second table starts exactly 14 words after the first). Both use a 13 px line pitch through the glyph renderer `FUN_80036888`, draw a per-page footer string (`0x801CF048` / `0x801CF050`) at `(0xE0, 0xCA)`, emit the widget frame `FUN_8002C69C(x, y, 0x119, 0xC3)`, and store the field-subsystem mode byte `DAT_80073F20 = 0x10` on entry.
 
 **Rod / lure select.** `FUN_801d0f5c` is input and render in one. It counts owned rods (ids `0xa0..0xa2`), moves the cursor `DAT_801d90dc` on the D-pad edge (`0x1000` / `0x4000`), and wraps it against `owned + 2`. The accept edge (`0x44`) equips the highlighted entry: a lure (cursor `< 3`, item `0x9d` + cursor) writes `_DAT_80084450`; a rod (cursor `>= 3`, item `0xa0`+) writes `_DAT_80084454`. Cancel (`0x21`) sets the leave SFX and stores `100` into `DAT_801d926c`.
 
-Rows are named by the `0xC2 id` item-name escape over lure ids `0x9D..0x9F` and rod ids `0xA0..0xA2`, at `x = 0x89` from `y = 0x50` on a 16 px pitch, lure counts at `x = 0xF1`, the equipped row in palette `7` (`_DAT_8007b454 = 7`), rods only when owned, cursor at `x = 0x78`.
+Rows are named by the `0xC2 id` item-name escape over lure ids `0x9D..0x9F` and rod ids `0xA0..0xA2`, at `x = 0x89` from `y = 0x50` on a 16 px pitch, lure counts at `x = 0xF1`, the equipped lure (when held) and the equipped rod in ink `7` and every other row in ink `0` (grey; `0x801D1120..0x801D1334`), the counts as four-place fields through `FUN_80034B78` in the row's ink, rods only when owned, cursor at `x = 0x78`.
 
-Port: `fishing_hub` - `FishingHubText` reads the text off the user's disc; `FishingHub` runs the screens over the ported picker (`FishingMenu`), help layout (`help_panel_layout`) and tackle kernel (`RodLureSelect`); `PondSession::hub_step` opens it from the idle phase. The native window and the browser play page reach it through `World::tick_fishing_hub` / `World::fishing_hub_lines` and draw it with `engine-ui::fishing::hub`; the minigames page steps the same kernel and draws its `fishing_hub_json` lines. The help footers' `0xCE` button escapes are consumed without a glyph on every host.
+Port: `fishing_hub` - `FishingHubText` reads the text off the user's disc; `FishingHub` runs the screens over the ported picker (`FishingMenu`), help layout (`help_panel_layout`) and tackle kernel (`RodLureSelect`); `PondSession::hub_step` opens it from the idle phase. The native window and the browser play page reach it through `World::tick_fishing_hub` / `World::fishing_hub_lines` and draw it with `engine-screens::fishing::fishing_venue_screen`; the minigames page steps the same kernel and draws its `fishing_hub_json` lines.
+The overlay's strings end at the first `0` that is not an escape operand: `FUN_80036888` steps over the byte after `0xCE` / `0xCF`, so the help pages' `0xCE 0x00` (the Cross button) is a glyph mid-line, not the line's end, and `FishingHubText` reads it that way. The play hosts draw the button glyphs; `hub_text_lossy` drops them for a host without the dialog font.
 
 ## Reel input
 
@@ -382,7 +391,7 @@ The species ids themselves decode from the user's disc (`fishing_species::parse_
 Both of `FUN_801D26CC`'s per-frame map reads take the same point - the tick's own actor at `+0x14` / `+0x18`, which is the lure the cast arm spawned:
 
 - the `+0x8000` cell word's bit `0x4000` is the water gate above, and feeds the credit;
-- `FUN_801D7030`'s `+0x4000` high-nibble probe (`jal` at `0x801D2E10`, see [Scene geometry helpers](#scene-geometry-helpers)) **drifts the lure**: on a hit the handler adds or subtracts `frame_delta << 11` on the 24.8 `x` accumulator `0x801D9174` (`0x801D2E34..0x801D2E58`). The sign is the low bit of the cast counter `_DAT_80084460` (`0x801D2E28`): odd adds (`0x801D2E34`), even subtracts (`0x801D2E48`). Since the counter advances once per cast, the drift direction alternates between casts.
+- `FUN_801D7030`'s `+0x4000` high-nibble probe (`jal` at `0x801D2E10`, see [Scene geometry helpers](#scene-geometry-helpers)) **drifts the lure**: on a hit the handler adds or subtracts `frame_delta << 11` on the 24.8 `x` accumulator `0x801D9174` (`0x801D2E34..0x801D2E58`). The sign is the low bit of the cast counter `_DAT_80084460` (`0x801D2E28`): odd adds (`0x801D2E34`), even subtracts (`0x801D2E48`). Since the counter advances once per cast, the drift direction alternates between casts. The probe sits ahead of the state-2 arm's hooked test, so it runs with a fish on too; port `LureActor::drift`, called from both the waiting and the hooked frame.
 
 Capture evidence (`scripts/pcsx-redux/autorun_fishing_lure_drift.lua`): an exec tap on each arm splits cleanly by counter parity, and the accumulator moves by exactly `frame_delta << 11` per hit. Across two full casts the walk-grid probe returned zero on every call, so the pond never triggers the drift on its own.
 
@@ -540,9 +549,19 @@ The accept word is the leave gate: Circle puts the catch away once the counter r
 
 State `0xb`'s fade ends in the lure gate `FUN_801d712c` (`jal` at `0x801CF978`), on every return to the shore: the equipped lure index `_DAT_80084450` re-points at a lure the bag still holds, and with none held the driver stores `0x96` (`0x801CF980..0x801CF98C`). Only a line break spends a lure, so the screen is where a break of the last one leads.
 
-State `0x96` (`0x801D0088..0x801D00EC`) re-runs the gate each frame; while it still fails it draws the overlay's line at `0x801CEBBC` through `FUN_801D73B8(text, 0xA0, 0x68)` on the panel `FUN_801D74B0(0xA0, 0x68, glyphs * 13, 13)`. A face-button edge (`_DAT_8007B874 & 0xF0`) stores `200`, the exit fade.
+State `0x96` (`0x801D0088..0x801D00EC`) re-runs the gate each frame; while it still fails it draws the overlay's line at `0x801CEBBC` through `FUN_801D73B8(text, 0xA0, 0x68)` on the panel `FUN_801D74B0(0xA0, 0x68, n * 13, 13)`, `n` the caption routine's return `(len - 1) / 2`. A face-button edge (`_DAT_8007B874 & 0xF0`) stores `200`, the exit fade.
 
-Port: `PondSession::shore_lure_gate`, which `World::tick_fishing` and the minigames page call on a frame that raised `PondEvent::Recast`, after that frame's spent lures left the bag. A failed gate parks `PondPhase::NoLure`; its face edge (`PondInput::face_edge`) raises `take_exit_request`, and the world leaves the venue as the hub's Leave row does. The line is a hub line (`FishingHubText::no_lure`), so the two play hosts and the minigames page draw it through their hub text; the panel is not drawn. A host launcher that enters with no lure (the signboard refuses that) leaves the gate unable to park (`PondSession::disarm_lure_gate`).
+Port: `PondSession::shore_lure_gate`, which `World::tick_fishing` and the minigames page call on a frame that raised `PondEvent::Recast`, after that frame's spent lures left the bag. A failed gate parks `PondPhase::NoLure`; its face edge (`PondInput::face_edge`) raises `take_exit_request`, and the world leaves the venue as the hub's Leave row does. The line is a hub line (`FishingHubText::no_lure`), so the two play hosts and the minigames page draw it through their hub text; the play hosts draw its panel with the hub's (`PondSession::hub_layers`).
+
+### The exit fade's XA wait
+
+State `200` leaves only once the XA drive word `_DAT_8007BC20` reads `0` (`0x801D0160..0x801D017C`, the overlay's `wait xa` log line); until then the fade holds at `0xFF`. In the venue the wait never binds:
+
+- PROT 0972 starts no XA. Its whole image holds no `jal` to the clip player `FUN_8003D53C` or the seeks `FUN_80019794` / `FUN_8003EAE4`, the only writers that raise the word (`0x8003D5D8`, `0x8003D65C`, `0x8003EB78`); its three references to it are the leave's read, the driver tail's read (`0x801D0284`, the latch `0x801D90CC` nothing else reads) and a store of `0`.
+- The hub's row 4 zeroes the word itself on the way into state `200` (`sw zero` at `0x801D069C`), so that exit cannot wait.
+- The no-lure edge does not zero it, but the venue's entry loads its blocks through the CD loader `FUN_8003E800`, which stops a stream still playing and zeroes the word through `FUN_8003ED04` (`0x8003ED28`). A word left raised by a seek with no stream behind it is the one case that would survive the entry; the two fishing signboards' records run no XA op *(inference)*, and every retail fishing state in the library reads `0`.
+
+The port's leave does not read the word (`PondSession::exit_fade_step`). A host launcher that enters with no lure (the signboard refuses that) leaves the gate unable to park (`PondSession::disarm_lure_gate`).
 
 ## Point exchange (prize shop)
 
@@ -575,11 +594,17 @@ Both venues spend and latch against the same globals. The rows match the curated
 
 Parser: [`legaia_minigame_formats::fishing_exchange`](../../crates/minigame-formats/src/fishing_exchange.rs); disc-gated `fishing_exchange_real` pins the structural invariants. Engine: `fishing::PrizeExchange` (list floor, availability, quantity cap, confirm), with the grant committed by `World::fishing_exchange_buy` against `World::minigames.fishing_points` and `fishing_prizes_purchased`; disc-free oracle `fishing_exchange_runtime`.
 
-Both play hosts route the pad through `World::fishing_exchange_pad`, which runs the list, the quantity picker and the confirm as retail does (`PrizeExchange::pad_step`, held to the three routines by the retail kernel differential), and draw `engine-ui::fishing::exchange`: the list in the port's own layout, the picker and the confirm at retail's pens (`PrizeExchange::dialog_draw`) with their lines off the overlay. The panel frames are not drawn. The hosts' own exchange keys (`engine-core::fishing_exchange_input`) still buy one unit a press.
+**The list's layout** (`0x801D0DB4..0x801D0F28`): each row from the floor to row `5`, its item name at `(0x52, 0x48 + 16 * row)` through the `0xC2` escape and its price as a six-place field at `x = 0xD4`, both in ink `7` when the row is available and ink `0` (grey) when not; the overlay's points label (`0x801CEF9C`) at `(0x52, 0xB8)` and the pool, held at `999999`, at `(0xD4, 0xB8)`; the cursor hand at `(0x42, 0x48 + 16 * cursor)` only while the list takes the pad; and the panel `(0xA6, 0x40 + 16 * floor, 0xD0, 16 * (8 - floor))`, so a hidden row 0 shortens it from the top. The quantity picker's panel is `(0xA6, 0x50, 0x11E, 0x20)` and the confirm's `(0xA6, 0x80, 0x75, 0x30)`. The list draws no venue name and no owned count.
+
+**The page and the cursor.** The venue select points the list's table pointer `PTR_DAT_801D90B8` at the pond's own page (`0x801CF5F8..0x801CF63C`), so each pond's counter shows its own prizes. The cursor `DAT_801D90A8` is written only by the list routine and zeroed by the overlay's load, so it holds across the list's openings within a visit, and the first opening lands on the entry clamp's row: `0` sits under the row-0 floor and goes to row `5` *(capture: `minigame_fishing_retail_exchange_list`)*.
+
+Both play hosts route the pad through `World::fishing_exchange_pad`, which runs the list, the quantity picker and the confirm as retail does (`PrizeExchange::pad_step`), and draw them through `legaia_engine_screens::fishing_venue_screen` at retail's pens (`PrizeExchange::list_draw`, `dialog_layers`), with their panels and hands ([the hub menu](#the-hub-menu)).
+The retail kernel differential holds the step, every list and dialog pen, the list's inks and every panel to the three routines. The list opens on the session's venue and on `MinigameState::fishing_exchange_cursor`.
+The hosts' own exchange keys (`engine-core::fishing_exchange_input`) are the pad's keys on these screens, so a buy is the confirm's Yes on every host. Retail states sit on all three screens, and retail-compare seeds them by the pad path from the idle shore ([retail-compare](../tooling/retail-compare.md#minigame-states)).
 
 The patcher edits prices in place (`--fishing-price`, [`randomizer.md`](../tooling/randomizer.md)).
 
-In the port the exchange opens from the hub's row 3 (or the native window's `P`) and owns the pad while open: on the list Up / Down move, Cross or L1 opens the quantity picker, Circle or L2 closes back to the hub, and Left / Right switch the venue page (a port affordance); the picker and the confirm take the pad as retail's do.
+In the port the exchange opens from the hub's row 3 (or the native window's `P`) and owns the pad while open: on the list Up / Down move, Cross or L1 opens the quantity picker, Circle or L2 closes back to the hub, and Left / Right switch the venue page (a port affordance); the picker and the confirm take the pad as retail's do. The native window's keys are the same screens' keys: the arrows, Enter to confirm and Backspace to back out; the play page's panel offers a row's Trade, then the picker's `-` / `+` / Trade / Back and the confirm's Yes / No.
 
 ## Fishing actors and scene render
 

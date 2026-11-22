@@ -192,6 +192,17 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
   <p>Each seat&rsquo;s HP comes from the recording&rsquo;s cast begin, not the state&rsquo;s HUD bars: a <code>--monster-pick</code> recording plays the party&rsquo;s turns to the pick, so the caster and its victims stand at other HP when the cast begins, and the damage rolls read the attacker&rsquo;s HP. A monster those turns killed is seated dead. <code>--wrapper-trace</code> reads each capture-class damage roll straight off retail - the power, the slots, the seed word, the stat words and the two roll words around the finisher - so a cast&rsquo;s damage is checked on its inputs rather than off the HP columns.</p>
 </section>
 
+<section class="doc-section" id="seru-absorb-puff" data-doc="the-seru-absorb-puff">
+  <h2>The Seru-absorb puff</h2>
+  <p>A kill that absorbs a Seru needs a party member who does not know it yet, and no library strike state had one, so the harvest made one: Vahn alone on Mt. Rikuroa against a single Theeder-Seru monster written over the scene&rsquo;s first formation row, its HP cut to one. On the kill retail stands the fallen monster back up, lit and glowing, holds the wide shot, puffs smoke from it with the absorb sound once the get-up ends, and only then fades it and cuts to Vahn.</p>
+  <p>The film of that strike found three port slips, all fixed: the puff came one clip early, the body faded under its get-up (so the close-up came sixty frames early), and Vahn&rsquo;s third strike against the fallen monster sounded an impact retail leaves silent. The film reads sound <code>1.000</code> and picture <code>.997</code>.</p>
+</section>
+
+<section class="doc-section" id="puera-yellow-ease" data-doc="pueras-yellow-ease">
+  <h2>Puera&rsquo;s yellow ease</h2>
+  <p>Puera&rsquo;s Dream Illusion film reads <code>.972</code> with every sound matched. Taking out the yellow tint Puera takes as she sinks lowers the flash she sinks into, so the tint is retail&rsquo;s.</p>
+</section>
+
 <section class="doc-section" id="reading-the-report" data-doc="reading-the-report,limits">
   <h2>Reading the report, and its limits</h2>
   <p><code>report.md</code> opens with the mean, the minimum and the excluded counts, then the segment table (each key's retail length in wall vsyncs and on the game clock, the engine's in ticks, its pairs and mean), the worst pairs, the strip rows (<code>retail | engine | |diff|</code>) and the sound score. Lengths that part are a pacing defect; a one-tick engine segment against a long retail one is an arm the engine runs through without its countdown.</p>

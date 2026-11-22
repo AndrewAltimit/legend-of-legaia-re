@@ -27,8 +27,8 @@ nothing. This crate is the projection between them for:
   pass that cannot advance them; the **fishing HUD draw list**
   (`fishing_hud_items`: persistent rows, catch HUD, result plate, banners)
   and the **rod and line** screen prims (`fishing_line_screen_prims`), and
-  the **point-exchange screen** (`fishing_exchange_draws`) on the swaying
-  venue panel;
+  the **venue screens** (`fishing_venue_screen`: the hub menu, help pages,
+  tackle list and point exchange, layered back to front);
 - the **battle value readout's layout** (`battle_value_readout_layout`): the
   combo cluster and the newest numeral per struck actor, seated through the
   host's camera;
@@ -105,6 +105,6 @@ each host that calls one of the crate's entries (`shop_overlay_frame`,
 `field_menu_root_draws`, `field_menu_sub_draws`, `battle_text_draws`,
 `dialog_box_chrome_draws`, `dialog_box_text_draws`, `field_party_hud_draws`,
 `save_select_overlay_draws`, `battle_value_readout_layout`,
-`fishing_hud_items`, `fishing_line_screen_prims`, `fishing_exchange_draws`,
+`fishing_hud_items`, `fishing_line_screen_prims`, `fishing_venue_screen`,
 `passive_hud_text_draws`;
 [`host-drift.md`](../../docs/tooling/host-drift.md)).

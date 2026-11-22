@@ -269,6 +269,7 @@ staging after the disc load. `--cpu-throttle` and `--gl swiftshader` are proxies
 scripts/ci/cost-ratchet.py --check                # the gate, against scripts/ci/cost-baseline.json
 scripts/ci/cost-ratchet.py --measure --runs 10    # the spread between runs, nothing compared
 scripts/ci/cost-ratchet.py --write-baseline       # after a real change, with its ledger entry
+scripts/ci/cost-ratchet.py --check --lane         # a worktree with no site/wasm: native counts only
 ```
 
 Times flake and counts should not, so this ratchets counts, each from a tick-locked run
@@ -291,6 +292,18 @@ feature moves the bundle, and a field added to a per-frame JSON answer moves its
 always gets an entry. The browser counts cover the frame alone, because the page's own timers
 (the memory card's write-back, the XA banks landing) fire when they fire, between frames, and
 counted across them the bytes moved by a few dozen a run.
+
+`--lane` is for a worktree that has no `site/wasm`, where a branch is worked before the
+bundle is built. It leaves the bundle and browser parts out and checks the native counts
+alone: the `bench-alloc` binary it builds and the play-window runs it drives need only the
+extracted disc and a display. It ends on `OK (lane, native only)` with the number of counts it
+did not measure, never on a bare `OK`, and it refuses `--write-baseline`, since a baseline
+written from part of the counts would drop the rest. A per-frame host change measured this way
+still owes the full gate its bundle and browser rows. Run it under the same memory cap as any
+play-window run (`systemd-run --user --scope -p MemoryMax=24G`, `XMODIFIERS=@im=none`).
+
+Without `--lane`, a tree with no built bundle reads as a `[skip]` for both the bundle and the
+browser parts.
 
 The bundle is read only off the shipped build: a `--fast` bundle is a `[skip]`, and a skip
 is not a pass. Browser allocations are not ratcheted, since they would need a second

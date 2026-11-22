@@ -579,7 +579,7 @@ Decrements `ctx[+0x6D8]`; only a count that has gone negative meets the streamin
 
 #### State `0x6F` - Magic-capture - fade
 
-If `ctx[+0x287] != 0`: duck the audio level `_DAT_8007B910 -= DAT_1F800393`, clamp to `(_DAT_8008457C * 0x4B) / 100`. Adjusts ctx-buffer X position. Waits on `func_0x8003F2B8(1)`, the seek `0x6E` issued: the port holds it for the drive law's seek from the module's head to that file ([audio](audio.md#the-capture-bands-seek)).
+If `ctx[+0x287] != 0`: duck the audio level `_DAT_8007B910 -= DAT_1F800393`, clamp to `(_DAT_8008457C * 0x4B) / 100`. Drains the framing depth `ctx[+0x6D0]` by `16 * step` a vsync with no floor (`0x801E4FFC..0x801E5014`, `lhu` / `subu` / `sh`), so a seek that outlasts the seed hands the cast module a depth below zero; the capture-camera differential runs every module on such a depth too. Waits on `func_0x8003F2B8(1)`, the seek `0x6E` issued: the port holds it for the drive law's seek from the module's head to that file ([audio](audio.md#the-capture-bands-seek)).
 
 **Next:** `0x70`.
 

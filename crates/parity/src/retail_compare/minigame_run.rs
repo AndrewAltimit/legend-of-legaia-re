@@ -34,6 +34,15 @@ const COIN_BANK: u32 = 0x8008_45A4;
 const BATTLE_RETURN_FLAG: u32 = 0x8007_B8B8;
 /// The slot machine's attract state.
 const SLOT_IDLE: i32 = 1;
+/// The slot machine's cash-out picker cursor (`DAT_801D4110`).
+const SLOT_CURSOR: u32 = 0x801D_4110;
+/// A menu drive's pad edges, `(tick offset, button)` from the first press.
+type Presses = Vec<(u64, legaia_engine_system::input::PadButton)>;
+/// The cash-out picker (`0x32`) and the two rules pages (`0x35`, `0x36`).
+const SLOT_MENU_STATES: [i32; 3] = [0x32, 0x35, 0x36];
+/// Ticks a rules page's fade takes before its Cross reads (`0x10` a frame
+/// to and from black, `0x33..0x35`).
+const SLOT_PAGE_GAP: u64 = 60;
 /// The dance's game state (`DAT_801D5334`, PROT 0980) and the READY banner
 /// counter its state `3` draws (`DAT_801D5158`, `0x801D015C..0x801D0184`).
 const DANCE_STATE: u32 = 0x801D_5334;
@@ -46,6 +55,27 @@ const HUB_HOLD: u32 = 0x801D_1A84;
 const DEPARTURE_DEFINE: u32 = 0x8007_BAC4;
 /// The fishing driver's state word (`DAT_801D926C`, PROT 0972).
 const FISHING_STATE: u32 = 0x801D_926C;
+/// The prize list's cursor (`DAT_801D90A8`), its quantity (`0x801D90B0`),
+/// the confirm's row (`0x801D90B4`, `0` Yes) and the hub menu's cursor
+/// (`0x801D912C`).
+const FISHING_LIST_CURSOR: u32 = 0x801D_90A8;
+const FISHING_QTY: u32 = 0x801D_90B0;
+const FISHING_CONFIRM_ROW: u32 = 0x801D_90B4;
+const FISHING_HUB_CURSOR: u32 = 0x801D_912C;
+/// The tackle list's cursor (`0x801D90DC`) and the equipped lure
+/// (`_DAT_80084450`), which the hub copies into it as the list opens.
+const FISHING_TACKLE_CURSOR: u32 = 0x801D_90DC;
+const FISHING_LURE: u32 = 0x8008_4450;
+/// The exchange's three screens: the list, the quantity picker, the confirm.
+const FISHING_EXCHANGE_STATES: std::ops::RangeInclusive<u32> = 0x78..=0x7A;
+/// Ticks past the warp the exchange drive's first press waits: the shore is
+/// idle well before it, and the hub opens only from there.
+const FISHING_DRIVE_FIRST: u64 = 200;
+/// Ticks between two of its presses: each is a one-tick edge the hub and the
+/// exchange read on the tick it lands.
+const FISHING_DRIVE_GAP: u64 = 6;
+/// Ticks the drive's last screen settles before the frame.
+const FISHING_DRIVE_SETTLE: u64 = 30;
 /// The dance's `GO!` accumulator (`DAT_801D515C`).
 const DANCE_GO: u32 = 0x801D_515C;
 /// The dance's song timer (`DAT_801D5820`): `dt * 10` a game frame in the play
@@ -62,6 +92,13 @@ const HUB_CARD_HOLD: u32 = 0x801D_1A70;
 const BAKA_STATE: u32 = 0x801D_BF44;
 /// The title card's clock (`DAT_801DBE94`), the `t` `FUN_801D59D4` draws from.
 const BAKA_CARD_CLOCK: u32 = 0x801D_BE94;
+/// The player-select cursor (`DAT_801DBF70`).
+const BAKA_SELECT_CURSOR: u32 = 0x801D_BF70;
+/// The player-select state (`0x0B`).
+const BAKA_SELECT: u32 = 0x0B;
+/// Ticks from the attract card's Start to the select screen taking the pad:
+/// the fade-out (`0x02`, to blink phase `0x3D`) and the lineup (`0x0A`).
+const BAKA_SELECT_GAP: u64 = 150;
 /// The tick the seed takes the warp on, after the scene entry settles and
 /// ahead of any talk the save's seat would walk into: `koin1`'s sign-up
 /// counter opens its refusal line at tick `31` when the player is left there,
@@ -111,6 +148,80 @@ pub struct RetailMinigame {
     /// press (score, latch or miss non-zero), when the dance is the overlay
     /// resident.
     pub dance_song: Option<(u32, bool)>,
+    /// The fishing exchange's words, when the fishing overlay is resident.
+    pub fishing_exchange: Option<FishingExchangeWords>,
+    /// The slot machine's cash-out picker cursor, when its overlay is
+    /// resident.
+    pub slot_cursor: u32,
+    /// The Baka Fighter's player-select cursor, when its overlay is resident.
+    pub baka_cursor: u32,
+}
+
+/// The fishing prize exchange's words a capture on one of its screens holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FishingExchangeWords {
+    /// `DAT_801D90A8`, the list cursor.
+    pub list_cursor: u32,
+    /// `0x801D90B0`, the picker's quantity.
+    pub qty: i32,
+    /// `0x801D90B4`, the confirm's row (`0` Yes, `1` No).
+    pub confirm_row: u32,
+    /// `0x801D912C`, the hub menu's cursor (row `1` opens the help pages,
+    /// row `2` the tackle list, row `3` the prize list).
+    pub hub_cursor: u32,
+    /// `0x801D90DC`, the tackle list's cursor.
+    pub tackle_cursor: u32,
+    /// `_DAT_80084450`, the equipped lure the tackle list opens on.
+    pub lure: u32,
+}
+
+/// The pad edges that walk the engine from the idle shore to the hub screen
+/// `state` holds, as `(tick offset, button)` from the first press: Triangle
+/// opens the hub (`& 0x110` at `0x801CF9EC`), Down to its row, Cross opens
+/// the row's screen. Help page 1 is a Cross past page 0; the tackle list
+/// opens on the equipped lure and Down walks it to the cursor. On the prize
+/// list: Up from the list's entry row to the cursor (the list opens on the
+/// overlay's zeroed cursor, which its entry clamp sends to row `5`); Cross
+/// opens the picker on quantity `1`, Right to the quantity; Cross opens the
+/// confirm on No, Up to Yes.
+fn fishing_exchange_presses(state: u32, w: &FishingExchangeWords) -> Presses {
+    use legaia_engine_system::input::PadButton as B;
+    let mut seq = vec![B::Triangle];
+    seq.extend(std::iter::repeat_n(B::Down, w.hub_cursor as usize));
+    seq.push(B::Cross);
+    if state == 0x66 {
+        seq.push(B::Cross);
+    }
+    if state == 0x6E {
+        seq.extend(std::iter::repeat_n(
+            B::Down,
+            w.tackle_cursor.saturating_sub(w.lure) as usize,
+        ));
+    }
+    if !FISHING_EXCHANGE_STATES.contains(&state) {
+        return (0u64..)
+            .zip(seq)
+            .map(|(i, b)| (i * FISHING_DRIVE_GAP, b))
+            .collect();
+    }
+    seq.extend(std::iter::repeat_n(
+        B::Up,
+        5usize.saturating_sub(w.list_cursor as usize),
+    ));
+    if state >= 0x79 {
+        seq.push(B::Cross);
+        seq.extend(std::iter::repeat_n(B::Right, w.qty.max(1) as usize - 1));
+    }
+    if state >= 0x7A {
+        seq.push(B::Cross);
+        if w.confirm_row == 0 {
+            seq.push(B::Up);
+        }
+    }
+    (0u64..)
+        .zip(seq)
+        .map(|(i, b)| (i * FISHING_DRIVE_GAP, b))
+        .collect()
 }
 
 /// The hall's animated plain floor actors (tick `FUN_801D4098`) by clip: each
@@ -253,6 +364,26 @@ impl RetailMinigame {
             } else {
                 [None; DANCE_PROP_CLIPS]
             },
+            baka_cursor: if minigame == Some(MinigameSubId::BakaFighter) {
+                game_anchors::u32_at(ram, BAKA_SELECT_CURSOR)
+            } else {
+                0
+            },
+            slot_cursor: if minigame == Some(MinigameSubId::SlotMachine) {
+                game_anchors::u32_at(ram, SLOT_CURSOR)
+            } else {
+                0
+            },
+            fishing_exchange: (minigame == Some(MinigameSubId::Fishing)).then(|| {
+                FishingExchangeWords {
+                    list_cursor: game_anchors::u32_at(ram, FISHING_LIST_CURSOR),
+                    qty: game_anchors::u32_at(ram, FISHING_QTY) as i32,
+                    confirm_row: game_anchors::u32_at(ram, FISHING_CONFIRM_ROW),
+                    hub_cursor: game_anchors::u32_at(ram, FISHING_HUB_CURSOR),
+                    tackle_cursor: game_anchors::u32_at(ram, FISHING_TACKLE_CURSOR),
+                    lure: game_anchors::u32_at(ram, FISHING_LURE),
+                }
+            }),
             dance_song: (minigame == Some(MinigameSubId::Dance)).then(|| {
                 (
                     game_anchors::u32_at(ram, DANCE_SONG),
@@ -262,6 +393,92 @@ impl RetailMinigame {
                 )
             }),
         }
+    }
+
+    /// The exchange screen the capture holds and the presses that reach it,
+    /// when it holds one the hub's row 3 opened.
+    fn fishing_exchange_drive(&self) -> Option<(u32, Presses)> {
+        let state = self.phase.map(|p| p.0)?;
+        let w = self.fishing_exchange?;
+        let reached = match state {
+            0x65 | 0x66 => w.hub_cursor == 1,
+            0x6E => w.hub_cursor == 2 && w.tackle_cursor >= w.lure,
+            s if FISHING_EXCHANGE_STATES.contains(&s) => w.hub_cursor == 3 && w.list_cursor <= 5,
+            _ => false,
+        };
+        reached.then(|| (state, fishing_exchange_presses(state, &w)))
+    }
+
+    /// The slot machine's menu screen the capture holds and the presses that
+    /// reach it from the machine at rest: Triangle opens the cash-out picker
+    /// on row `0` (`& 0x110`, state `1`), Down to its cursor; row `2`'s Cross
+    /// fades into the rules' first page, and a Cross once it has faded in
+    /// turns to the payout chart. Only a machine whose balance is still the
+    /// bank's - never played - is seeded, as at rest.
+    fn slot_drive(&self) -> Option<(u32, Presses)> {
+        use legaia_engine_system::input::PadButton as B;
+        let (state, balance) = self.slot?;
+        if !SLOT_MENU_STATES.contains(&state)
+            || !self.door_entry
+            || i64::from(balance) != i64::from(self.coin_bank)
+        {
+            return None;
+        }
+        let mut out = vec![(0, B::Triangle)];
+        let rows = if state == 0x32 { self.slot_cursor } else { 2 };
+        let mut t = 0;
+        for _ in 0..rows.min(2) {
+            t += FISHING_DRIVE_GAP;
+            out.push((t, B::Down));
+        }
+        if state != 0x32 {
+            t += FISHING_DRIVE_GAP;
+            out.push((t, B::Cross));
+        }
+        if state == 0x36 {
+            t += SLOT_PAGE_GAP;
+            out.push((t, B::Cross));
+        }
+        Some((state as u32, out))
+    }
+
+    /// The Baka Fighter's player select and the presses that reach it from
+    /// the attract card: Start (`& 0x844` in state `1`), then, once the
+    /// lineup takes the pad, Right to the cursor. The lineup's one `rand()`
+    /// (`0x801CF88C`) lands in a focus id no fighter carries, so the screen
+    /// does not depend on it.
+    fn baka_drive(&self) -> Option<(u32, Presses)> {
+        use legaia_engine_system::input::PadButton as B;
+        if self.minigame() != Some(MinigameSubId::BakaFighter)
+            || self.phase.map(|p| p.0) != Some(BAKA_SELECT)
+            || self.baka_cursor > 2
+        {
+            return None;
+        }
+        let mut out = vec![(0, B::Start)];
+        for i in 0..u64::from(self.baka_cursor) {
+            out.push((BAKA_SELECT_GAP + i * FISHING_DRIVE_GAP, B::Right));
+        }
+        Some((BAKA_SELECT, out))
+    }
+
+    /// The pad drive a menu screen's capture is seeded by
+    /// ([`Self::fishing_exchange_drive`], [`Self::slot_drive`]), and the
+    /// ticks its last screen settles.
+    fn drive(&self) -> Option<(u32, Presses, u64)> {
+        if let Some((s, p)) = self.fishing_exchange_drive() {
+            return Some((s, p, FISHING_DRIVE_SETTLE));
+        }
+        if let Some((s, p)) = self.baka_drive() {
+            // The last Right, or the Start alone, then the lineup's settle.
+            let settle = if p.len() > 1 {
+                SLOT_PAGE_GAP
+            } else {
+                BAKA_SELECT_GAP
+            };
+            return Some((s, p, settle));
+        }
+        self.slot_drive().map(|(s, p)| (s, p, SLOT_PAGE_GAP))
     }
 
     fn minigame(&self) -> Option<MinigameSubId> {
@@ -294,6 +511,9 @@ impl RetailMinigame {
             {
                 None
             }
+            // The cash-out picker and the rules pages of a machine never
+            // played: pad history from the rest state, no rand() in it.
+            (Some(MinigameSubId::SlotMachine), Some(_)) if self.slot_drive().is_some() => None,
             (Some(MinigameSubId::SlotMachine), Some((SLOT_IDLE, balance))) => Some(format!(
                 "slot machine at rest after play (balance {balance}, coin bank {}): the reel \
                  positions and the balance are rand() history the seed does not replay",
@@ -307,6 +527,10 @@ impl RetailMinigame {
             // no cast has rolled anything. State `0xB` is the fade in front
             // of it, whose frame still holds what stood before.
             (Some(MinigameSubId::Fishing), _) if matches!(self.phase, Some((0xC, _))) => None,
+            // The hub's screens - the help pages, the tackle list and the
+            // exchange's - reached from the idle shore through the hub's
+            // rows: pad history the drive replays, no rand() in it.
+            (Some(MinigameSubId::Fishing), _) if self.fishing_exchange_drive().is_some() => None,
             (Some(MinigameSubId::Fishing), _) => Some(
                 "fishing past the idle shore: the cast, its drift and the bite rolls are \
                  rand() history the seed does not replay"
@@ -342,6 +566,8 @@ impl RetailMinigame {
             ),
             // State `1`: the title card, before any press.
             (Some(MinigameSubId::BakaFighter), _) if matches!(self.phase, Some((1, _))) => None,
+            // The player select: the attract card's Start and the cursor.
+            (Some(MinigameSubId::BakaFighter), _) if self.baka_drive().is_some() => None,
             (Some(MinigameSubId::BakaFighter), _) => Some(
                 "Baka Fighter past the title card: the rounds are pad input and the AI's \
                  rand() picks"
@@ -362,8 +588,13 @@ fn at_captured_phase(world: &legaia_engine_core::world::World, mg: &RetailMiniga
     let m = &world.minigames;
     match (mg.minigame(), mg.phase) {
         (Some(MinigameSubId::SlotMachine), _) => {
+            // A menu screen's drive starts from the machine at rest.
+            let want = match mg.slot_drive() {
+                Some(_) => Some(SLOT_IDLE),
+                None => mg.slot.map(|s| s.0),
+            };
             world.mode == SceneMode::SlotMachine
-                && m.slot_machine.as_ref().map(|s| s.retail_state()) == mg.slot.map(|s| s.0)
+                && m.slot_machine.as_ref().map(|s| s.retail_state()) == want
         }
         (Some(MinigameSubId::Fishing), _) => {
             world.mode == SceneMode::Fishing
@@ -408,6 +639,8 @@ fn at_captured_phase(world: &legaia_engine_core::world::World, mg: &RetailMiniga
                 })
         }
         (Some(MinigameSubId::BakaFighter), Some((_, clock))) => {
+            // The select's drive starts from the attract card.
+            let clock = if mg.baka_drive().is_some() { 0 } else { clock };
             world.mode == SceneMode::BakaFighter
                 && m.baka_fighter.as_ref().is_some_and(|f| {
                     f.cabinet().state() == 1
@@ -475,6 +708,14 @@ struct EngineMinigame {
     coin_bank: u32,
     /// The tick the captured phase was reached on, past the warp.
     reached: Option<u64>,
+    /// After the exchange drive: the exchange's screen as the retail state
+    /// word (`0x78..=0x7A`, `0` closed), its list cursor, quantity and
+    /// confirm row.
+    exchange: Option<(u32, u32, i32, u32)>,
+    /// After a slot menu drive: the cash-out picker's row, while it is up.
+    slot_cursor: Option<u32>,
+    /// After a Baka Fighter drive: the cabinet state and the select cursor.
+    baka: Option<(u32, i32)>,
 }
 
 fn run_engine_minigame(
@@ -519,6 +760,57 @@ fn run_engine_minigame(
             break;
         }
     }
+    let mut exchange = None;
+    let mut slot_cursor = None;
+    let mut baka = None;
+    if let (Some((_, presses, settle)), Some(at)) = (mg.drive(), reached) {
+        // The drive's presses, from the first-press tick past the warp; the
+        // hub, the exchange and the cash-out picker read the raw pad edge.
+        let first = FISHING_DRIVE_FIRST.max(at + 1);
+        let end = first + presses.last().map_or(0, |p| p.0) + settle;
+        for t in (at + 1)..end {
+            let mask = presses
+                .iter()
+                .filter(|p| first + p.0 == t)
+                .fold(0u16, |m, p| m | p.1.mask());
+            session.host.world.input.set_pad(mask);
+            session.tick()?;
+        }
+        session.host.world.input.set_pad(0);
+        let m = &session.host.world.minigames;
+        baka = m
+            .baka_fighter
+            .as_ref()
+            .map(|f| (f.cabinet().state(), f.cabinet().select_cursor()));
+        slot_cursor = m
+            .slot_machine
+            .as_ref()
+            .filter(|s| s.retail_state() == 0x32)
+            .map(|s| s.menu_cursor());
+        use legaia_engine_fishing::fishing::PrizeScreen;
+        use legaia_engine_fishing::fishing_hub::HubScreen;
+        let hub = m.fishing.as_ref().and_then(|s| s.hub());
+        exchange = Some(match &m.fishing_exchange {
+            None => match hub {
+                Some(h) => match h.screen {
+                    HubScreen::Help(0) => (0x65, 0, 0, 0),
+                    HubScreen::Help(_) => (0x66, 0, 0, 0),
+                    HubScreen::Tackle => (0x6E, h.tackle.cursor.max(0) as u32, 0, 0),
+                    _ => (0x64, 0, 0, 0),
+                },
+                None => (0, 0, 0, 0),
+            },
+            Some(ex) => {
+                let d = &m.fishing_exchange_dialog;
+                let state = match d.screen {
+                    PrizeScreen::List => 0x78,
+                    PrizeScreen::Quantity => 0x79,
+                    PrizeScreen::Confirm => 0x7A,
+                };
+                (state, ex.cursor as u32, d.qty, d.confirm_row)
+            }
+        });
+    }
     if let Some(film) = film {
         film.run(
             &mut session,
@@ -543,6 +835,9 @@ fn run_engine_minigame(
             .map(|m| (m.retail_state(), m.balance())),
         coin_bank: w.minigames.casino_coins,
         reached,
+        exchange,
+        slot_cursor,
+        baka,
     })
 }
 
@@ -586,13 +881,47 @@ pub(super) fn run_minigame(
         "scene".to_string(),
         f64::from(u8::from(engine.scene == departure)),
     );
-    let words = [
+    let mut words = vec![
         // The phase reached stands for the session's word when there is no
         // balance to compare.
         engine.reached.is_some() && engine.slot.map(|s| s.0) == mg.slot.map(|s| s.0),
         engine.slot.map(|s| s.1) == mg.slot.map(|s| s.1),
         engine.coin_bank == mg.coin_bank,
     ];
+    // On the player select, its state and cursor.
+    if mg.baka_drive().is_some() {
+        words.push(engine.baka == Some((BAKA_SELECT, mg.baka_cursor as i32)));
+    }
+    // On the cash-out picker, its row.
+    if mg.slot_drive().is_some_and(|(s, _)| s == 0x32) {
+        words.push(engine.slot_cursor == Some(mg.slot_cursor));
+    }
+    // On an exchange screen: the screen, the list cursor, and on the dialogs
+    // the quantity and the confirm's row.
+    let drive = mg.drive();
+    if let (Some((state, _, _)), Some(w)) = (&drive, mg.fishing_exchange) {
+        let e = engine.exchange.unwrap_or_default();
+        words.push(e.0 == *state);
+        if *state == 0x6E {
+            words.push(e.1 == w.tackle_cursor);
+        } else if FISHING_EXCHANGE_STATES.contains(state) {
+            words.push(e.1 == w.list_cursor);
+        }
+        if *state >= 0x79 {
+            words.push(e.2 == w.qty);
+        }
+        if *state >= 0x7A {
+            words.push(e.3 == w.confirm_row);
+        }
+        report.detail.insert(
+            "exchange".into(),
+            format!(
+                "retail state {state:#X} cursor {} qty {} confirm {}; engine (state, cursor, qty, \
+                 confirm) {:?}",
+                w.list_cursor, w.qty, w.confirm_row, engine.exchange
+            ),
+        );
+    }
     ch.insert(
         "minigame".to_string(),
         round3(words.iter().filter(|&&w| w).count() as f64 / words.len() as f64),
@@ -615,11 +944,42 @@ pub(super) fn run_minigame(
             // stood.
             Some(MinigameSubId::Dance) => ("K", engine.reached.unwrap_or(0) + 1),
             Some(MinigameSubId::MuscleDome) => ("M", engine.reached.unwrap_or(0) + 1),
-            Some(MinigameSubId::Fishing) => ("L", FRAME_TICKS_PAST_WARP),
-            Some(MinigameSubId::BakaFighter) => ("B", engine.reached.unwrap_or(0) + 1),
+            // An exchange screen: the drive's last press plus its settle.
+            Some(MinigameSubId::Fishing) => (
+                "L",
+                drive
+                    .as_ref()
+                    .map_or(FRAME_TICKS_PAST_WARP, |(_, p, settle)| {
+                        FISHING_DRIVE_FIRST + p.last().map_or(0, |l| l.0) + settle
+                    }),
+            ),
+            Some(MinigameSubId::SlotMachine) => (
+                "O",
+                drive
+                    .as_ref()
+                    .map_or(FRAME_TICKS_PAST_WARP, |(_, p, settle)| {
+                        FISHING_DRIVE_FIRST + p.last().map_or(0, |l| l.0) + settle
+                    }),
+            ),
+            Some(MinigameSubId::BakaFighter) => (
+                "B",
+                drive
+                    .as_ref()
+                    .map_or(engine.reached.unwrap_or(0) + 1, |(_, p, settle)| {
+                        FISHING_DRIVE_FIRST + p.last().map_or(0, |l| l.0) + settle
+                    }),
+            ),
             _ => ("O", FRAME_TICKS_PAST_WARP),
         };
-        let extra = vec!["--key-script".to_string(), format!("{warp}:{key}")];
+        let mut extra = vec!["--key-script".to_string(), format!("{warp}:{key}")];
+        if let Some((_, presses, _)) = &drive {
+            let script = presses
+                .iter()
+                .map(|(t, b)| format!("{}:{b:?}", warp + FISHING_DRIVE_FIRST + t))
+                .collect::<Vec<_>>()
+                .join(",");
+            extra.extend(["--pad-script".to_string(), script]);
+        }
         let mut seats: Vec<(&'static str, String)> = mg
             .dance_markers
             .iter()
@@ -715,6 +1075,9 @@ mod tests {
             dance_markers: Default::default(),
             dance_props: [None; DANCE_PROP_CLIPS],
             dance_song: None,
+            fishing_exchange: None,
+            slot_cursor: 0,
+            baka_cursor: 0,
         }
     }
 
@@ -741,6 +1104,9 @@ mod tests {
             dance_markers: Default::default(),
             dance_props: [None; DANCE_PROP_CLIPS],
             dance_song: None,
+            fishing_exchange: None,
+            slot_cursor: 0,
+            baka_cursor: 0,
         };
         assert!(baka.unseeded_reason().unwrap().contains("Baka Fighter"));
     }
@@ -758,6 +1124,9 @@ mod tests {
             dance_markers: Default::default(),
             dance_props: [None; DANCE_PROP_CLIPS],
             dance_song: None,
+            fishing_exchange: None,
+            slot_cursor: 0,
+            baka_cursor: 0,
         };
         assert_eq!(mg(6, 3).unseeded_reason(), None);
         // The play loop: seeded on a floor the pad never reached, not on one
@@ -777,5 +1146,115 @@ mod tests {
         assert_eq!(mg(0, 0xC).unseeded_reason(), None);
         assert!(mg(0, 0xB).unseeded_reason().is_some());
         assert!(mg(0, 0x19).unseeded_reason().is_some());
+    }
+
+    #[test]
+    fn the_slot_menu_screens_of_an_unplayed_machine_are_seeded_by_their_presses() {
+        use legaia_engine_system::input::PadButton as B;
+        let menu = |state, cursor, balance| RetailMinigame {
+            slot_cursor: cursor,
+            ..slot(state, balance, 9_999_999, true)
+        };
+        for state in [0x32, 0x35, 0x36] {
+            assert_eq!(
+                menu(state, 2, 9_999_999).unseeded_reason(),
+                None,
+                "{state:#X}"
+            );
+        }
+        // Played: the balance moved off the bank.
+        assert!(menu(0x32, 0, 9_999_996).unseeded_reason().is_some());
+        let buttons = |state, cursor| -> Vec<B> {
+            menu(state, cursor, 9_999_999)
+                .slot_drive()
+                .unwrap()
+                .1
+                .into_iter()
+                .map(|p| p.1)
+                .collect()
+        };
+        assert_eq!(buttons(0x32, 1), [B::Triangle, B::Down]);
+        assert_eq!(
+            buttons(0x36, 2),
+            [B::Triangle, B::Down, B::Down, B::Cross, B::Cross]
+        );
+    }
+
+    #[test]
+    fn an_exchange_screen_reached_through_the_hub_is_seeded_by_its_presses() {
+        use legaia_engine_system::input::PadButton as B;
+        let words = FishingExchangeWords {
+            list_cursor: 4,
+            qty: 3,
+            confirm_row: 0,
+            hub_cursor: 3,
+            tackle_cursor: 0,
+            lure: 0,
+        };
+        let fish = |state| RetailMinigame {
+            sub_id: 0,
+            slot: None,
+            coin_bank: 0,
+            door_entry: true,
+            phase: Some((state, 0)),
+            phase2: 0,
+            departure_define: 0,
+            dance_markers: Default::default(),
+            dance_props: [None; DANCE_PROP_CLIPS],
+            dance_song: None,
+            fishing_exchange: Some(words),
+            slot_cursor: 0,
+            baka_cursor: 0,
+        };
+        for state in [0x78, 0x79, 0x7A] {
+            assert_eq!(fish(state).unseeded_reason(), None, "{state:#X}");
+        }
+        assert!(fish(0x6E).unseeded_reason().is_some());
+        let buttons: Vec<B> = fishing_exchange_presses(0x7A, &words)
+            .into_iter()
+            .map(|p| p.1)
+            .collect();
+        assert_eq!(
+            buttons,
+            [
+                B::Triangle,
+                B::Down,
+                B::Down,
+                B::Down,
+                B::Cross,
+                B::Up,
+                B::Cross,
+                B::Right,
+                B::Right,
+                B::Cross,
+                B::Up
+            ]
+        );
+        // The list alone stops at its cursor.
+        assert_eq!(fishing_exchange_presses(0x78, &words).len(), 6);
+        // The help pages and the tackle list, through rows 1 and 2.
+        let hub = |state, hub_cursor, tackle_cursor| RetailMinigame {
+            fishing_exchange: Some(FishingExchangeWords {
+                hub_cursor,
+                tackle_cursor,
+                lure: 1,
+                ..words
+            }),
+            ..fish(state)
+        };
+        assert_eq!(hub(0x66, 1, 0).unseeded_reason(), None);
+        assert_eq!(hub(0x6E, 2, 2).unseeded_reason(), None);
+        assert!(
+            hub(0x6E, 2, 0).unseeded_reason().is_some(),
+            "under the lure"
+        );
+        let tackle: Vec<B> = hub(0x6E, 2, 2)
+            .fishing_exchange_drive()
+            .unwrap()
+            .1
+            .into_iter()
+            .map(|p| p.1)
+            .collect();
+        assert_eq!(tackle, [B::Triangle, B::Down, B::Down, B::Cross, B::Down]);
     }
 }
