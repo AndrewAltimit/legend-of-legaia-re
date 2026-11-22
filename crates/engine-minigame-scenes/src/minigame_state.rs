@@ -167,7 +167,7 @@ pub struct MinigameState {
     /// off the lead's HP at the leg's end by
     /// [`legaia_engine_minigames::muscle_ringside::still_prot_index`]. `None` until a leg
     /// ends. A re-entered hub draws it as its backdrop
-    /// ([`legaia_engine_minigames::muscle_ringside::HubBackdrop`]).
+    /// ([`legaia_engine_minigames::muscle_ringside::ReentryHub`]).
     pub muscle_ringside_still: Option<u32>,
     /// The arena hub is between two legs of an open contest: a survived leg
     /// with the course not exhausted keeps the mode on the arena, and the

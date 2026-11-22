@@ -1968,7 +1968,7 @@ The disclosure had named two blockers: the sequencer above the loader
 only a blocker for the *schedule*: the pick and the rects do not need the
 sequencer, because the port's battle end for a dome leg is a single call and
 the port reads the entry whole. The second was real and is now built - the
-contest hub's backdrop level (`muscle_ringside::HubBackdrop`) and its still
+contest hub's backdrop level (`muscle_ringside::ReentryHub`) and its still
 arm (`ringside_backdrop::ringside_still_quads`, `FUN_801D00F8`), drawn on both
 play hosts.
 

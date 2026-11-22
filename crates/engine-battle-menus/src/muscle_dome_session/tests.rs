@@ -863,7 +863,6 @@ fn hub_screens_fade_hold_and_fade_at_the_measured_literals() {
         HubScreen::intro_card(),
         HubScreen::round_banner(),
         HubScreen::opponent_card(),
-        HubScreen::interval(HUB_TALLY_ROLL_LEAD_TICKS),
     ] {
         let total = e.total_ticks();
         for _ in 0..total {

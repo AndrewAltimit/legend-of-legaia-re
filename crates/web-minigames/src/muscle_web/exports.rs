@@ -511,7 +511,12 @@ impl LegaiaMinigames {
     /// `1`), so neither host can pick a frame count or a frame rate of its own.
     ///
     /// `screen`: 0 = intro card, 1 = ROUND banner, 2 = opponent / ROUND-n
-    /// card, 3 = the between-legs INTERVAL + tally. Returns
+    /// card, 3 = the between-legs INTERVAL + tally. Screen 3 replays the
+    /// re-entered hub itself (`muscle_ringside::ReentryHub`, the kernel the
+    /// play hosts step): its `brightness` is the heading's level, its hold
+    /// lasts as long as the tally's roll, `total` is the vsync the heading
+    /// has drained on, and `pad` is not read (the fast-forward press is
+    /// [`Self::muscle_tally_press`]'s). Returns
     /// `{brightness, stage, done, total}` - `brightness` is exactly the
     /// argument [`Self::muscle_hub_quads_json`] wants (`0 ..= 0x80`; `0x80`
     /// is the emitter's neutral, **not** `0x100`), `stage` is
@@ -523,12 +528,7 @@ impl LegaiaMinigames {
             0 => legaia_engine_minigames::muscle_dome::HubScreen::intro_card(),
             1 => legaia_engine_minigames::muscle_dome::HubScreen::round_banner(),
             2 => legaia_engine_minigames::muscle_dome::HubScreen::opponent_card(),
-            _ => legaia_engine_minigames::muscle_dome::HubScreen::interval(
-                legaia_engine_minigames::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS
-                    + *legaia_engine_minigames::muscle_dome::HUB_TALLY_CUE_STAGGER
-                        .last()
-                        .unwrap_or(&0) as i32,
-            ),
+            _ => return self.muscle_interval_screen_json(vsync),
         };
         // The screen's length on the cadence: the vsync of the game tick
         // that finishes it.
@@ -557,6 +557,51 @@ impl LegaiaMinigames {
             "brightness": env.brightness(),
             "stage": stage,
             "done": env.done(),
+            "total": total,
+        })
+        .to_string()
+    }
+
+    /// Screen 3 of [`Self::muscle_hub_screen_json`]: the INTERVAL heading of
+    /// the hub re-entered after the open contest's last leg, at the screen's
+    /// `vsync`-th vsync. `stage` is `0` while arm `0x0A` fades it in, `1`
+    /// while arm `0x0B` holds it over the roll, `2` while arm `0x0C` drains
+    /// it and `3` once the hub has passed it.
+    fn muscle_interval_screen_json(&self, vsync: i32) -> String {
+        use legaia_engine_minigames::muscle_ringside::{HubCadence, ReentryArm};
+        let past = |h: &legaia_engine_minigames::muscle_ringside::ReentryHub| {
+            !matches!(
+                h.arm(),
+                ReentryArm::HeadingIn | ReentryArm::Roll | ReentryArm::HeadingOut
+            )
+        };
+        // The screen's length: the ticks the hub runs before passing arm
+        // `0x0C` (the delayed fast-forward press included).
+        let mut ticks = 0;
+        if self
+            .muscle_reentry_replay(1 << 14, past, |_, _| ticks += 1)
+            .is_none()
+        {
+            return serde_json::json!({
+                "brightness": 0, "stage": 3, "done": true, "total": 0,
+            })
+            .to_string();
+        }
+        let total = HubCadence::vsync_of_tick(ticks);
+        let hub = self
+            .muscle_reentry_through(HubCadence::ticks_through(vsync.clamp(0, total)))
+            .expect("a contest is open");
+        let f = hub.frame();
+        let stage = match hub.arm() {
+            ReentryArm::HeadingIn => 0,
+            ReentryArm::Roll => 1,
+            ReentryArm::HeadingOut => 2,
+            _ => 3,
+        };
+        serde_json::json!({
+            "brightness": f.heading.unwrap_or(0),
+            "stage": stage,
+            "done": stage == 3,
             "total": total,
         })
         .to_string()

@@ -234,8 +234,7 @@ stills into its hub atlas, and the play page samples them out of the hub's own
 VRAM image (`ringside_backdrop::hub_vram`, the bands written at the same rects
 from `(384, 0)`) through a 15-bit page, as retail's packets do. The standalone minigames page draws the same pair under
 its INTERVAL screen (HUD sheet `7`, `muscle_interval_still_json`): it replays
-the older `HubBackdrop` envelope beside the INTERVAL envelope and the tally roll to the screen's
-tick, picks the variant through `still_prot_index` over the fighter's HP as
+the same `ReentryHub` to the screen's tick, picks the variant through `still_prot_index` over the fighter's HP as
 the leg ended, and blacks out the arena behind it, since the hub draws no
 arena. The frame-sliced read schedule itself is not ported as a
 schedule - the port reads the whole entry at once.

@@ -233,23 +233,6 @@ impl HubScreen {
         )
     }
 
-    /// The between-legs INTERVAL + score tally: arm `0x0A` fades it in at the
-    /// fast rate, arm `0x0B` dims the backdrop toward
-    /// [`HUB_BACKDROP_HALF`] at the slow rate while the tally rolls, and arm
-    /// `0x0C` drains the rest. Those last two are one fade-out here, at the
-    /// slow rate, since nothing between them changes what is drawn.
-    ///
-    /// Its "hold" is the tally roll, which is data-dependent (the four lanes
-    /// step one row per tick after a [`HUB_TALLY_ROLL_LEAD_TICKS`] lead-in),
-    /// so the hold length is the caller's: pass the roll length in ticks.
-    /// Retail's hold is the roll itself (the heading leaves only once the
-    /// tally stops); the play hosts run those arms whole through
-    /// `crate::muscle_ringside::ReentryHub`, and this envelope stays for the
-    /// standalone minigames page.
-    pub const fn interval(roll_ticks: i32) -> Self {
-        Self::new(HUB_FADE_STEP_FAST, roll_ticks, HUB_FADE_STEP_SLOW, 0, false)
-    }
-
     /// Advance one hub tick. `dt` is the adaptive frame-skip factor
     /// `_DAT_1F800393` every counter step is scaled by (`1` at the normal
     /// cadence); `pad` is the arm's edge snapshot `DAT_801D1A9C`, which ends
