@@ -1300,6 +1300,12 @@ under the boot latch `DAT_8007B71C`, so it reads "the first scene since boot". A
 such a scene holds it set, and no scene script on the disc reads it; the test holds retail to that
 rule and leaves the bit out of the comparison.
 
+The same run holds the card-load seat (`0x8003B764..0x8003B798`) to `SceneHost::arm_resume_seat`
+over the position `read_retail_field_position` reads off the save block: the two position words
+land in the entry operand and the arrival facing is zeroed. The one difference is the engine's own:
+a save whose snapshot reads `(0, 0)`, never taken, gets the scene's seat, where retail seats the
+party on the grid's corner.
+
 The pad pump `FUN_8001822C` (`pad_pump`), as one stream of calls over digital and analog reports,
 missing pads, the stick fold-ins on both sides of their dead zone, opposed directions and every
 frame step, matches on the held, changed and pressed words, the 32-vsync word and the repeat pulse.

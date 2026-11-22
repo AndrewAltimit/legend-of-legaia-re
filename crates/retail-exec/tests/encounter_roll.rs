@@ -2,6 +2,10 @@
 //! `RegionEncounterTracker::on_step`: runs of steps over one scene's story groups
 //! and regions, every rate setting and modifier, the formation pick with its
 //! one-step anti-repeat, the counter reroll and the region's battle setup.
+//! Some steps are op `0x3E`'s region re-read instead: the tile cache preset
+//! to `0xFF` and the caller's argument zero, so the reader seats the region's
+//! battle setup and leaves at `0x801DA16C` before the roll, against
+//! `World::apply_region_battle_setup_at_player`.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_battle::region_encounter::{
@@ -162,7 +166,9 @@ fn a_step_rolls_what_retail_rolls() {
     });
 
     let mut rng = Rng(0x454E_434F);
-    let (mut battles, mut steps, mut refused) = (0, 0, 0);
+    // The re-reads draw from their own stream, so the rolled steps keep theirs.
+    let mut aux = Rng(0x3345_5245);
+    let (mut battles, mut steps, mut refused, mut rereads) = (0, 0, 0, 0);
     for scene in 0..3000 {
         let s = gen_scene(&mut rng);
         seed_retail(&mut cpu, &s);
@@ -211,6 +217,66 @@ fn a_step_rolls_what_retail_rolls() {
             cpu.mem.wr16(PLAYER + 0x14, x as u16);
             cpu.mem.wr16(PLAYER + 0x18, z as u16);
             cpu.mem.wr8(SETTING, setting);
+            if aux.below(5) == 0 {
+                // Op `0x3E`: the cached tile forced stale (`0x801E06E4` /
+                // `0x801E06F0`), then `FUN_801D9E1C(player, 0)`.
+                cpu.mem.wr8(ENTITY + 0x8E, 0xFF);
+                cpu.mem.wr8(ENTITY + 0x8F, 0xFF);
+                let (counter, draws) = (cpu.mem.rd32(COUNTER), state.get());
+                let stop = cpu.call(ROLL, &[ENTITY, 0]);
+                assert!(
+                    matches!(stop, Stop::Returned),
+                    "scene {scene} step {step}: {stop:?}"
+                );
+                let mut w = legaia_engine_core::world::World::default();
+                for f in 0x10..0x14u16 {
+                    if word >> (f & 0x3F) & 1 != 0 {
+                        w.system_flag_set(f);
+                    }
+                }
+                w.spawn_actor(0);
+                w.player_actor_slot = Some(0);
+                w.actors[0].move_state.world_x = x;
+                w.actors[0].move_state.world_z = z;
+                w.terrain.region_tracker = Some(tracker.clone());
+                w.apply_region_battle_setup_at_player();
+                let context =
+                    format!("scene {scene} step {step}: re-read at ({x},{z}) word {word:#x}");
+                assert_eq!(cpu.mem.rd16(ENTITY + 0x8A), 0, "{context}: no roll");
+                assert_eq!(
+                    (cpu.mem.rd32(COUNTER), state.get()),
+                    (counter, draws),
+                    "{context}: the counter and the draws stand"
+                );
+                let gate = cpu.mem.rd32(SCRATCH_GATE);
+                match w.encounters.region_setup {
+                    Some(setup) => {
+                        assert_eq!(cpu.mem.rd8(STAGE), setup.stage_variant, "{context}");
+                        assert_eq!(
+                            (gate & 0x10_0000 != 0, gate & 0x20_0000 != 0),
+                            (setup.door_of_light_blocked, setup.door_of_wind_blocked),
+                            "{context}"
+                        );
+                        if let Some(keep) = setup.keep_backdrop_object_1 {
+                            assert_eq!(cpu.mem.rd8(KEEP_OBJECT) != 0, keep, "{context}");
+                        }
+                        if let Some(ret) = setup.world_map_return {
+                            assert_eq!(
+                                [0x8008_4628, 0x8008_4624, 0x8008_462C].map(|a| cpu.mem.rd32(a)),
+                                [
+                                    u32::from(ret.map_word),
+                                    u32::from(ret.tile_x),
+                                    u32::from(ret.tile_z)
+                                ],
+                                "{context}"
+                            );
+                        }
+                        rereads += 1;
+                    }
+                    None => assert_eq!(gate, 0, "{context}"),
+                }
+                continue;
+            }
             let stop = cpu.call(ROLL, &[ENTITY, 1]);
             assert!(
                 matches!(stop, Stop::Returned),
@@ -309,8 +375,8 @@ fn a_step_rolls_what_retail_rolls() {
         }
     }
     assert!(
-        battles > 200 && steps > 10000 && refused > 10000,
-        "{battles} battles {steps} steps {refused} refused"
+        battles > 200 && steps > 10000 && refused > 10000 && rereads > 2000,
+        "{battles} battles {steps} steps {refused} refused {rereads} re-reads"
     );
 }
 

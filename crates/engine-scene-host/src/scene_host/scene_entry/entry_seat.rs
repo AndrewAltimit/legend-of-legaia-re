@@ -204,6 +204,11 @@ impl SceneHost {
         self.pending_entry_seat = Some((x, z));
     }
 
+    /// The armed entry operand `(x, z)`, while no scene entry has consumed it.
+    pub fn entry_seat(&self) -> Option<(i16, i16)> {
+        self.pending_entry_seat
+    }
+
     /// `true` while an entry operand is armed and no scene entry has
     /// consumed it yet.
     pub fn entry_seat_armed(&self) -> bool {
@@ -233,7 +238,7 @@ impl SceneHost {
     /// (`0x8003B778`) - a save stores no heading - so the entry script's
     /// `4C 3A` stands the player facing retail's `0`, towards the camera.
     ///
-    /// REF: FUN_8003AEB0 (`0x8003B764..0x8003B798`, the card-load seat)
+    /// PORT: FUN_8003AEB0 (`0x8003B764..0x8003B798`, the card-load seat)
     pub fn arm_resume_seat(
         &mut self,
         save: &legaia_save::SaveFile,

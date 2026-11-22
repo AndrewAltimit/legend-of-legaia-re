@@ -127,7 +127,7 @@ World-map encounter handler. 349 instructions / 1396 bytes. `(entity_ptr, resolv
 
 Maps to [`WorldMapEntityHost::on_encounter`] in `crates/engine-field/src/world_map_entity.rs`.
 
-With `a1 = 0` it is the **region re-read** that field op `0x3E`'s scripted-battle arm runs (`jal` at `0x801E0710`): it re-derives the player's region and re-seats its battle setup - `_DAT_8007BD60 = region[+8] & 0x1F`, scratchpad `0x1F800394 |= 0x300000`, and on the `ctrl[+0x5F] >= 0xC` layout `_DAT_8007B64B` and the `0x800845xx` triple from `region[+9..+11]` - then returns at `beqz fp` (`0x801DA16C`) before the step roll. The roll itself is an inlined copy of `FUN_801DDF48` (`0x801DA2D4..0x801DA35C`) storing `_DAT_8007B5FC`. The port models neither half of the region re-read.
+With `a1 = 0` it is the **region re-read** that field op `0x3E`'s scripted-battle arm runs (`jal` at `0x801E0710`): it re-derives the player's region and re-seats its battle setup - `_DAT_8007BD60 = region[+8] & 0x1F`, scratchpad `0x1F800394 |= 0x300000`, and on the `ctrl[+0x5F] >= 0xC` layout `_DAT_8007B64B` and the `0x800845xx` triple from `region[+9..+11]` - then returns at `beqz fp` (`0x801DA16C`) before the step roll. The roll itself is an inlined copy of `FUN_801DDF48` (`0x801DA2D4..0x801DA35C`) storing `_DAT_8007B5FC`. The port runs the re-read as `World::apply_region_battle_setup_at_player` before op `0x3E`'s fight, and `encounter_roll` holds it to retail's zero-argument call: the same setup, no roll, the counter and the `rand()` stream untouched.
 
 ### `FUN_801D7EA0` (world_map overlay, 832 bytes)
 
