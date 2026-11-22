@@ -697,6 +697,7 @@ The randomizer's enemy-ally ("charm") feature rides the stock `0x380` delegation
 
 **Port.** `battle_action`'s `end_of_action` (`crates/engine-battle-vm/src/battle_action/done.rs`) carries the full gate. Both wipe scans mask `0x4`, `BattleActionCtx::charm_widen` models the `0x384` widen, and `victory_pose_fixup` ports the victory arm with the corrected invariant.
 The re-pick triggers whenever the acting slot is not a living party slot (dead, or a monster slot) and picks uniformly among eligible slots instead of rejection-sampling, so it cannot spin.
+The same widened keep covers the one retail path to a standing monster at the victory arm: a monster Stoned on its own turn, which the wipe scan counts down (`andi 0x4`) while its HP stands. Retail keeps that seat and reads its character id past the roster, the charm softlock's request; the port re-picks a standing member, which is what poses (`a_monster_stoned_on_its_own_turn_hands_the_pose_to_a_member`).
 The arm leaves its seat in `World::battle_ctx`'s `active_actor`, which `World::begin_battle_end_sequence` takes as the pose actor; the Songi override reads `BattleActionHost::first_monster_id`, which the engine host answers from the formation's first slot. The archive request itself surfaces as `BattleActionHost::victory_stage(party_slot)`, which no host owes a body: the engine reads the whole side-band file at battle load. Dump: `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`.
 
 ## Seru capture + spell learning
