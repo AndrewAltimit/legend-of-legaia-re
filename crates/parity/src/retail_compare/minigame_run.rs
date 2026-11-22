@@ -92,6 +92,13 @@ const HUB_CARD_HOLD: u32 = 0x801D_1A70;
 const BAKA_STATE: u32 = 0x801D_BF44;
 /// The title card's clock (`DAT_801DBE94`), the `t` `FUN_801D59D4` draws from.
 const BAKA_CARD_CLOCK: u32 = 0x801D_BE94;
+/// The player-select cursor (`DAT_801DBF70`).
+const BAKA_SELECT_CURSOR: u32 = 0x801D_BF70;
+/// The player-select state (`0x0B`).
+const BAKA_SELECT: u32 = 0x0B;
+/// Ticks from the attract card's Start to the select screen taking the pad:
+/// the fade-out (`0x02`, to blink phase `0x3D`) and the lineup (`0x0A`).
+const BAKA_SELECT_GAP: u64 = 150;
 /// The tick the seed takes the warp on, after the scene entry settles and
 /// ahead of any talk the save's seat would walk into: `koin1`'s sign-up
 /// counter opens its refusal line at tick `31` when the player is left there,
@@ -146,6 +153,8 @@ pub struct RetailMinigame {
     /// The slot machine's cash-out picker cursor, when its overlay is
     /// resident.
     pub slot_cursor: u32,
+    /// The Baka Fighter's player-select cursor, when its overlay is resident.
+    pub baka_cursor: u32,
 }
 
 /// The fishing prize exchange's words a capture on one of its screens holds.
@@ -355,6 +364,11 @@ impl RetailMinigame {
             } else {
                 [None; DANCE_PROP_CLIPS]
             },
+            baka_cursor: if minigame == Some(MinigameSubId::BakaFighter) {
+                game_anchors::u32_at(ram, BAKA_SELECT_CURSOR)
+            } else {
+                0
+            },
             slot_cursor: if minigame == Some(MinigameSubId::SlotMachine) {
                 game_anchors::u32_at(ram, SLOT_CURSOR)
             } else {
@@ -428,12 +442,41 @@ impl RetailMinigame {
         Some((state as u32, out))
     }
 
+    /// The Baka Fighter's player select and the presses that reach it from
+    /// the attract card: Start (`& 0x844` in state `1`), then, once the
+    /// lineup takes the pad, Right to the cursor. The lineup's one `rand()`
+    /// (`0x801CF88C`) lands in a focus id no fighter carries, so the screen
+    /// does not depend on it.
+    fn baka_drive(&self) -> Option<(u32, Presses)> {
+        use legaia_engine_system::input::PadButton as B;
+        if self.minigame() != Some(MinigameSubId::BakaFighter)
+            || self.phase.map(|p| p.0) != Some(BAKA_SELECT)
+            || self.baka_cursor > 2
+        {
+            return None;
+        }
+        let mut out = vec![(0, B::Start)];
+        for i in 0..u64::from(self.baka_cursor) {
+            out.push((BAKA_SELECT_GAP + i * FISHING_DRIVE_GAP, B::Right));
+        }
+        Some((BAKA_SELECT, out))
+    }
+
     /// The pad drive a menu screen's capture is seeded by
     /// ([`Self::fishing_exchange_drive`], [`Self::slot_drive`]), and the
     /// ticks its last screen settles.
     fn drive(&self) -> Option<(u32, Presses, u64)> {
         if let Some((s, p)) = self.fishing_exchange_drive() {
             return Some((s, p, FISHING_DRIVE_SETTLE));
+        }
+        if let Some((s, p)) = self.baka_drive() {
+            // The last Right, or the Start alone, then the lineup's settle.
+            let settle = if p.len() > 1 {
+                SLOT_PAGE_GAP
+            } else {
+                BAKA_SELECT_GAP
+            };
+            return Some((s, p, settle));
         }
         self.slot_drive().map(|(s, p)| (s, p, SLOT_PAGE_GAP))
     }
@@ -523,6 +566,8 @@ impl RetailMinigame {
             ),
             // State `1`: the title card, before any press.
             (Some(MinigameSubId::BakaFighter), _) if matches!(self.phase, Some((1, _))) => None,
+            // The player select: the attract card's Start and the cursor.
+            (Some(MinigameSubId::BakaFighter), _) if self.baka_drive().is_some() => None,
             (Some(MinigameSubId::BakaFighter), _) => Some(
                 "Baka Fighter past the title card: the rounds are pad input and the AI's \
                  rand() picks"
@@ -594,6 +639,8 @@ fn at_captured_phase(world: &legaia_engine_core::world::World, mg: &RetailMiniga
                 })
         }
         (Some(MinigameSubId::BakaFighter), Some((_, clock))) => {
+            // The select's drive starts from the attract card.
+            let clock = if mg.baka_drive().is_some() { 0 } else { clock };
             world.mode == SceneMode::BakaFighter
                 && m.baka_fighter.as_ref().is_some_and(|f| {
                     f.cabinet().state() == 1
@@ -667,6 +714,8 @@ struct EngineMinigame {
     exchange: Option<(u32, u32, i32, u32)>,
     /// After a slot menu drive: the cash-out picker's row, while it is up.
     slot_cursor: Option<u32>,
+    /// After a Baka Fighter drive: the cabinet state and the select cursor.
+    baka: Option<(u32, i32)>,
 }
 
 fn run_engine_minigame(
@@ -713,6 +762,7 @@ fn run_engine_minigame(
     }
     let mut exchange = None;
     let mut slot_cursor = None;
+    let mut baka = None;
     if let (Some((_, presses, settle)), Some(at)) = (mg.drive(), reached) {
         // The drive's presses, from the first-press tick past the warp; the
         // hub, the exchange and the cash-out picker read the raw pad edge.
@@ -728,6 +778,10 @@ fn run_engine_minigame(
         }
         session.host.world.input.set_pad(0);
         let m = &session.host.world.minigames;
+        baka = m
+            .baka_fighter
+            .as_ref()
+            .map(|f| (f.cabinet().state(), f.cabinet().select_cursor()));
         slot_cursor = m
             .slot_machine
             .as_ref()
@@ -783,6 +837,7 @@ fn run_engine_minigame(
         reached,
         exchange,
         slot_cursor,
+        baka,
     })
 }
 
@@ -833,6 +888,10 @@ pub(super) fn run_minigame(
         engine.slot.map(|s| s.1) == mg.slot.map(|s| s.1),
         engine.coin_bank == mg.coin_bank,
     ];
+    // On the player select, its state and cursor.
+    if mg.baka_drive().is_some() {
+        words.push(engine.baka == Some((BAKA_SELECT, mg.baka_cursor as i32)));
+    }
     // On the cash-out picker, its row.
     if mg.slot_drive().is_some_and(|(s, _)| s == 0x32) {
         words.push(engine.slot_cursor == Some(mg.slot_cursor));
@@ -902,7 +961,14 @@ pub(super) fn run_minigame(
                         FISHING_DRIVE_FIRST + p.last().map_or(0, |l| l.0) + settle
                     }),
             ),
-            Some(MinigameSubId::BakaFighter) => ("B", engine.reached.unwrap_or(0) + 1),
+            Some(MinigameSubId::BakaFighter) => (
+                "B",
+                drive
+                    .as_ref()
+                    .map_or(engine.reached.unwrap_or(0) + 1, |(_, p, settle)| {
+                        FISHING_DRIVE_FIRST + p.last().map_or(0, |l| l.0) + settle
+                    }),
+            ),
             _ => ("O", FRAME_TICKS_PAST_WARP),
         };
         let mut extra = vec!["--key-script".to_string(), format!("{warp}:{key}")];
@@ -1011,6 +1077,7 @@ mod tests {
             dance_song: None,
             fishing_exchange: None,
             slot_cursor: 0,
+            baka_cursor: 0,
         }
     }
 
@@ -1039,6 +1106,7 @@ mod tests {
             dance_song: None,
             fishing_exchange: None,
             slot_cursor: 0,
+            baka_cursor: 0,
         };
         assert!(baka.unseeded_reason().unwrap().contains("Baka Fighter"));
     }
@@ -1058,6 +1126,7 @@ mod tests {
             dance_song: None,
             fishing_exchange: None,
             slot_cursor: 0,
+            baka_cursor: 0,
         };
         assert_eq!(mg(6, 3).unseeded_reason(), None);
         // The play loop: seeded on a floor the pad never reached, not on one
@@ -1135,6 +1204,7 @@ mod tests {
             dance_song: None,
             fishing_exchange: Some(words),
             slot_cursor: 0,
+            baka_cursor: 0,
         };
         for state in [0x78, 0x79, 0x7A] {
             assert_eq!(fish(state).unseeded_reason(), None, "{state:#X}");

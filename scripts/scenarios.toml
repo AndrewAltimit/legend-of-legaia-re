@@ -3976,6 +3976,22 @@ expected_game_mode = 0x19
 topics = ["minigame", "baka fighter", "retail", "route walk"]
 
 [[scenarios]]
+label = "minigame_baka_fighter_retail_select"
+backup_fingerprint = "ea60502e00de9437d6797de200f0522a5a978038f41de21054395fb121c657c0"
+description = "Baka Fighter player select (cabinet state word 0x801DBF44 = 0x0B), cursor 0x801DBF70 = 0 (Vahn), the PLAYER SELECT widget over the lineup, mode 0x19. From minigame_baka_fighter_retail_attract, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 LEGAIA_PLAY_SCRIPT='30:START,260:RIGHT' (Start leaves the attract card for the lineup, Right moves the select cursor), LEGAIA_SHOTS='230,360'; saved 230 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "baka fighter", "retail"]
+
+[[scenarios]]
+label = "minigame_baka_fighter_retail_select_right"
+backup_fingerprint = "220000f83a725c7a5b5b302996f5a252d3579feb558609d35c611c1e5a3d8eff"
+description = "Baka Fighter player select, the cursor moved right (state 0x0B, cursor 1), mode 0x19. Same run as minigame_baka_fighter_retail_select, saved 360 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "baka fighter", "retail"]
+
+[[scenarios]]
 label = "minigame_muscle_dome_retail_title"
 backup_fingerprint = "731e37f777d12986b34b9e5cc19ebee23a0980b2abcfc6f956f4ce2e436daaa0"
 description = "Muscle Dome hub, the course-title zoom: arm byte 0x801D1A78 = 3, mode 0x19. From minigame_muscle_dome_retail_welcome, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 with no press; saved by LEGAIA_WATCH=0x801d1a78:3:30, 127 vsyncs after the load."
