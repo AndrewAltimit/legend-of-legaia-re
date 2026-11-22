@@ -146,3 +146,31 @@ image = "63404152651b4e2c"
 range = "0x801CFE48..0x801CFE5C"
 verdict = "unported"
 reason = "PROT 0977 contest hub: arm 0x0C's exit waits on the drive (FUN_8003DE7C(1)) and the loader state 0x8007B648 == 0x80; the port's reads and loads are synchronous, so ReentryHub models only the XA wait"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D6890..0x801D6890"
+verdict = "unreachable"
+reason = "PROT 0972 plate fish draw: the unlocked node path (MulMatrix2 with the camera, 0x801D68B4); the draw's only caller is the result actor's tick (jal at 0x801D5468), and that actor's only spawn (0x801D2164) ORs 0x420 into +0x52 (0x801D217C), which no 0972 code stores again, so +0x52 & 0x780 is never zero"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D6868..0x801D6868"
+verdict = "cannot-drive"
+reason = "PROT 0972 plate fish draw: the parent-matrix arm on +0x42 (also 0x801D692C); the spawn's FUN_80020DE0 zeroes +0x42 (0x80020EFC) and only the pose leaves (0x8001B4C8, 0x8001BCD8) the actor's animation runs set it, so driving it needs the real species model and clip seated as the result actor's tick builds them"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D692C..0x801D692C"
+verdict = "cannot-drive"
+reason = "PROT 0972 plate fish draw: the second scale on the +0x42 parent matrix (see 0x801D6868); needs the real species model and clip the pose leaves run over"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D6970..0x801D6B34"
+verdict = "cannot-drive"
+reason = "PROT 0972 plate fish draw: the part loop (FUN_8001BE80 pose per part, the tie part's angles, the tie vertex's projection into 0x801E9154 at part 0, FUN_80043390's draw); it runs only when the clip's part count matches the model's (0x801D6970), so it needs a real species TMD block at +0x44 and clip at +0x4C relocated as FUN_80020DE0 / FUN_800204F8 build them; the port poses the body in float (fishing_catch::pose_into) and the tie projection (plate_line) has no integer differential yet"

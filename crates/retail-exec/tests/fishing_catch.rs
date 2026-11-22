@@ -75,6 +75,13 @@ fn the_plate_fish_matrix_is_retails() {
         cpu.mem.wr16(ACTOR + 0x26, rot[1] as u16);
         cpu.mem.wr16(ACTOR + 0x28, rot[2] as u16);
         cpu.mem.wr16(ACTOR + 0x52, 0x400);
+        // A depth-biased actor (`+0x10 & 0x80800000`) draws 0x14 OT slots
+        // nearer (`0x801D6818..0x801D6820`) and restores the bias after
+        // its part loop: the matrix is the same either way.
+        if round % 4 == 3 {
+            cpu.mem
+                .wr32(ACTOR + 0x10, [0x0080_0000, 0x8000_0000][(round / 4) % 2]);
+        }
         cpu.mem.wr16(ACTOR + 0x72, scale);
         cpu.mem.wr32(ACTOR + 0x44, MODEL);
         cpu.mem.wr32(ACTOR + 0x4C, CLIP);
