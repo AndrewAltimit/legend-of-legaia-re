@@ -82,6 +82,10 @@ struct Pick {
     /// Terra (character `4`) in party seat 1, `DAT_8007BD10[1] == 4`: the
     /// physical arm drops its target onto seat 0 (`0x801EA91C..0x801EA930`).
     terra: bool,
+    /// Monster `0xB3`'s queue-armed byte, first record `+0x1C` (`0x16` /
+    /// `0x17`), when it sits in monster seat 0 and picks: retail reads the
+    /// seat-0 record (`0x801EBB84..0x801EBB98`), the port its `b3_armed`.
+    armed: u8,
     seed: u32,
 }
 
@@ -175,6 +179,7 @@ fn gen_pick(rng: &mut Rng) -> Pick {
         latches: std::array::from_fn(|_| [0, 0, 0, 1, 2, 3, 5][rng.below(7) as usize]),
         gate: u8::from(rng.below(3) == 0),
         terra: rng.below(4) == 0,
+        armed: [0, 0x16, 0x17][rng.below(3) as usize],
         seed: rng.next(),
     }
 }
@@ -222,6 +227,7 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
     if p.terra && p.party > 1 {
         cpu.mem.wr8(SEATS + 1, 4);
     }
+    let b3 = p.caster == 0 && p.monsters[0].id == 0xB3;
     let mut entry = ENTRY;
     for (i, m) in p.monsters.iter().enumerate() {
         let i = i as u32;
@@ -242,6 +248,9 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
         }
         cpu.mem.wr32(MONSTER_RECORDS + i * 4, r);
         cpu.mem.load(r + 0x20, &m.ai);
+        if b3 && i == 0 {
+            cpu.mem.wr8(r + 0x1C, p.armed);
+        }
         cpu.mem.wr8(r + 0x4A, m.tags.len() as u8);
         for (k, t) in m.tags.iter().enumerate() {
             cpu.mem.wr32(r + 0x4C + k as u32 * 4, entry);
@@ -267,6 +276,9 @@ fn seed_port(w: &mut World, p: &Pick) {
     w.battle.monster_ai_state.mode_flags = p.round;
     w.battle.monster_ai_state.dat = p.latches;
     w.battle.monster_ai_state.flag_bd84 = p.gate;
+    if p.caster == 0 && p.monsters[0].id == 0xB3 {
+        w.battle.monster_ai_state.b3_armed[usize::from(p.party)] = p.armed;
+    }
     w.battle.monster_ai_state.recent_targets = p.ring.map(|s| engine_slot(p.party, s));
     for a in w.actors.iter_mut() {
         a.battle.hp = 0;
