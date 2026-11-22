@@ -624,6 +624,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     cpu.mem.wr8(a + 0x21C, 0xFF);
                 }
             }
+            let mut dead_passes = [0usize; 4];
             let mut st = ModuleCamState {
                 lead_roster: 1,
                 opens_pass: true,
@@ -730,6 +731,30 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 if matches!((entry, phase), (915, 0xD) | (917, 0xF)) {
                     cpu.mem.wr32(ACTOR + CREATURE * STRIDE + 4, 0);
                 }
+                // A monster a hit felled fades out: the tint pass eases its
+                // word to zero outside the module, which the walk stands in
+                // for once its word has stood six passes after the kill. The settle gates read it as
+                // retail's do (a dead seat settled once its word is zero, a
+                // living one once its clip is).
+                for s in 3..7u32 {
+                    let a = ACTOR + s * STRIDE;
+                    let dead = cpu.mem.rd16(a + 0x14C) == 0 && cpu.mem.rd32(a + 4) != 0;
+                    let k = (s - 3) as usize;
+                    dead_passes[k] = if dead { dead_passes[k] + 1 } else { 0 };
+                    if dead_passes[k] == 7 {
+                        cpu.mem.wr32(a + 4, 0);
+                    }
+                }
+                let settled = |m: &mut psx_retail_exec::Memory, s: u32| {
+                    let a = ACTOR + s * STRIDE;
+                    if m.rd16(a + 0x14C) == 0 {
+                        m.rd32(a + 4) == 0
+                    } else {
+                        m.rd8(a + 0x1D9) == 0
+                    }
+                };
+                st.row_settled = (3..3 + layout.monsters).all(|s| settled(&mut cpu.mem, s));
+                st.victim_settled = settled(&mut cpu.mem, victim);
                 let t0 = Target::read(&mut cpu.mem);
                 let live_code = cpu.mem.rd8(ACTOR + layout.caster * STRIDE + 0x1DD);
                 let seats = ModuleCamSeats {
@@ -914,6 +939,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         v.restage = r.restage;
                         w.drive_write_cast_view(s as u8, &v);
                     }
+                    // The band's word `ctx[+0x6D8]` the paced arms poll
+                    // (PROT 0907's arm 3), as the SM leaves it this pass.
+                    w.battle_ctx.frame_timer = cpu.mem.rd16(CTX + 0x6D8) as i16 as _;
+                    w.casting.band_word_live = None;
                     w.rng_state = stream.get();
                     // The side-band stage the walk stands up, as a turn's
                     // side-band read raises it.
