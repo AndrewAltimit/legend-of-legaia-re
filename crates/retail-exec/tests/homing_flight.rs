@@ -15,6 +15,7 @@
 //! selector.
 
 use crate::common::{Rng, disc, scus_cpu};
+use legaia_engine_battle_vm::battle_cast_census::{CensusSlot, cast_census};
 use legaia_engine_effects::action_effect_script::{HomingSlot, HomingSlots, MoveFxStreak};
 use psx_retail_exec::{A0, A1, A2, Stop, V0};
 use std::cell::RefCell;
@@ -151,6 +152,7 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
     let mut failures: Vec<String> = Vec::new();
     let (mut flown, mut landed_counting, mut hit, mut trailed, mut tracked, mut flashed) =
         (0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
+    let (mut sole, mut idle) = (0u32, 0u32);
     'scenario: for scenario in 0..3000 {
         let mut rec = shipped[rng.below(shipped.len() as u32) as usize].clone();
         match rng.below(6) {
@@ -185,9 +187,33 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
             cpu.mem.wr16(a + 0x38, p[2] as u16);
             cpu.mem.wr16(a + 0x3A, 0);
             cpu.mem.wr32(a + 0x04, u32::from(rng.below(2) == 0));
-            cpu.mem.wr16(a + 0x14C, 1 + rng.below(100) as u16);
+            // The census head's inputs: an animation id (`8`, a downed
+            // member's, is taken back out on a party seat) and the HP that
+            // doubles as liveness, a few seats down.
+            cpu.mem
+                .wr8(a + 0x1D9, [0u8, 0, 0, 8, 3][rng.below(5) as usize]);
+            let hp = if rng.below(4) == 0 {
+                0
+            } else {
+                1 + rng.below(100) as u16
+            };
+            cpu.mem.wr16(a + 0x14C, hp);
             cpu.mem.wr16(a + 0x16E, 0);
         }
+        // The census reads the seats as the pass finds them: the landing's
+        // shiver and the hit arm write the victims between passes.
+        let census_slots = |cpu: &mut psx_retail_exec::Cpu| -> Vec<CensusSlot> {
+            (0..7u32)
+                .map(|s| CensusSlot {
+                    render_word: cpu.mem.rd32(actor(s) + 0x04),
+                    current_anim: cpu.mem.rd8(actor(s) + 0x1D9),
+                    liveness: cpu.mem.rd16(actor(s) + 0x14C),
+                })
+                .collect()
+        };
+        let census_of = |cpu: &mut psx_retail_exec::Cpu| {
+            [0x249u32, 0x24A, 0x24B, 0x24D].map(|o| cpu.mem.rd8(CTX + o))
+        };
         cpu.mem.wr8(CTX + 0x13, rng.below(7) as u8);
         cpu.mem.wr8(CTX + 0x262, 0);
 
@@ -258,6 +284,7 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
                 next_handle,
                 ..Seen::default()
             };
+            let slots_now = census_slots(&mut cpu);
             assert_eq!(cpu.call(TICK, &[]), Stop::Returned, "{scenario}/{pass}");
 
             // The port, as `World::tick_homing_slots_pass` drives it.
@@ -298,6 +325,19 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
             if children != census {
                 why.push(format!("children retail {children} port {census}"));
             }
+            // The rest of the census head, against `cast_census`.
+            let c = cast_census(&slots_now, [1; 4], [0; 4]);
+            let head = census_of(&mut cpu);
+            let want = [
+                c.anim_outstanding,
+                c.sole_party_target,
+                c.sole_monster_target,
+                children,
+            ];
+            if head != want {
+                why.push(format!("census retail {head:x?} port {want:x?}"));
+            }
+            sole += u32::from(c.sole_party_target != 0 && c.sole_monster_target != 0);
 
             let seen_now = std::mem::take(&mut *seen.borrow_mut());
             seen.borrow_mut().next_handle = seen_now.next_handle;
@@ -387,9 +427,27 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
                 ));
                 continue 'scenario;
             }
-            if (0..4).all(|i| cpu.mem.rd8(CTX + 0x24E + i) == 0)
-                || (0..4).all(|i| cpu.mem.rd8(CTX + 0x252 + i) == 0)
-            {
+            if (0..4).all(|i| cpu.mem.rd8(CTX + 0x24E + i) == 0) {
+                // The loop gate: with every slot's phase clear the tick
+                // leaves after the census (`0x801E0BA8`), its child count
+                // left at zero, whatever the child bytes still hold.
+                cpu.mem.wr8(FRAME_STEP, step);
+                let slots_now = census_slots(&mut cpu);
+                assert_eq!(cpu.call(TICK, &[]), Stop::Returned, "{scenario}: idle");
+                let c = cast_census(&slots_now, [0; 4], [1; 4]);
+                let head = census_of(&mut cpu);
+                let want = [
+                    c.anim_outstanding,
+                    c.sole_party_target,
+                    c.sole_monster_target,
+                    c.effect_children,
+                ];
+                assert_eq!(head, want, "{scenario}: the idle pass's census");
+                assert!(seen.borrow().spawns.is_empty() && seen.borrow().hits.is_empty());
+                idle += 1;
+                break;
+            }
+            if (0..4).all(|i| cpu.mem.rd8(CTX + 0x252 + i) == 0) {
                 break;
             }
         }
@@ -405,4 +463,5 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
     );
     assert!(flown > 1000 && landed_counting > 100 && hit > 1000);
     assert!(trailed > 100 && tracked > 100 && flashed > 10);
+    assert!(sole > 100 && idle > 100, "sole {sole} idle {idle}");
 }
