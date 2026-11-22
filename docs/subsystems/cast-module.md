@@ -1397,7 +1397,11 @@ on to `1`. This differs from the item buffs' `x * 6/5` clamped to `0xFFFF`
 a fifth, so a Melt Spray took twice the stats retail takes and turned a stat of
 `0` or `1` into `65535`; the capture-camera differential now runs the debuff on
 the pass arm 3's countdown runs out over random stats and the floor's edge
-values, and the two agree. Grade `disassembly`.
+values, and the two agree. The `battle_map03_acid_slime_melt_spray_mid_cast` state
+played forward in PCSX-Redux confirms it: the victim's ten halfwords read ATK `122`,
+UDF `190`, LDF `183`, SPD `110` and INT `126` (both halves) through arms 1..3 and
+`109`, `171`, `164`, `99` and `113` from the pass arm 3 leaves, a tenth each, where a
+fifth would have left ATK at `96`. Grade `disassembly` + `capture`.
 
 **The turn steal.** The other two 0955 bodies share one idiom
 (`0x801F8CF4..0x801F8D54` in Kiss of Death's miss arm,

@@ -89,6 +89,18 @@ fn bodies() -> Vec<Body> {
     out
 }
 
+/// The bodies whose arms raise the caster's stat block: White Shield, Power
+/// Charge (PROT 0955), Power Up (PROT 0942) and the surge (PROT 0945).
+fn is_buff(body: &Body) -> bool {
+    matches!(
+        (body.entry, body.va),
+        (955, t::WHITE_SHIELD_TICK)
+            | (955, t::POWER_CHARGE_TICK)
+            | (942, t::POWER_UP_TICK)
+            | (945, t::ALL_STATS_SURGE_TICK)
+    )
+}
+
 /// Every `jal` target the image's words encode.
 fn jal_targets(module: &[u8]) -> Vec<u32> {
     let mut out: Vec<u32> = module
@@ -175,6 +187,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         prot(944, GUILTY_CROSS),
         prot(944, CURSE_ALL),
         prot(945, WATER_COLUMN),
+        prot(945, JUGGER_POWER),
         prot(950, SHADOW_BREAK),
         prot(950, ROLLING_FLARE),
         prot(951, SCYTHE_WIND),
@@ -254,6 +267,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut unsettled_holds = 0usize;
     let (mut results, mut heal_capped) = (0usize, false);
     let mut debuffs = 0usize;
+    let mut buffs = 0usize;
     let all = bodies();
     for body in &all {
         let module = disc.read_entry(body.entry as usize).expect("module");
@@ -327,6 +341,31 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // Death Game's heal reads each seat's maximum `+0x14E` and caps
             // the quarter at the missing HP: a seat at full, one short and
             // one wounded.
+            // The record table `0x801C9348[seat - 3]` White Shield's defence
+            // and Power Up's / the surge's AGL read (`+0x14` / `+0x16`,
+            // `+0x0E`), and the caster's stat block the buffs raise.
+            if is_buff(body) {
+                for s in 0..5u32 {
+                    let r = MONSTER_RECORDS + s * 0x100;
+                    cpu.mem.wr32(RECORDS + 4 * s, r);
+                    for o in [0x0Eu32, 0x14, 0x16] {
+                        cpu.mem.wr16(
+                            r + o,
+                            [0, 1, 0x7FFF, 0xAAAA][round % 4]
+                                .max(rng.below(1000) as u16 * u16::from(round % 4 > 1)),
+                        );
+                    }
+                }
+                for (k, o) in (0x154u32..0x16C).step_by(2).enumerate() {
+                    let v = match (round + k) % 5 {
+                        0 => 0,
+                        1 => 998,
+                        2 => 0xFFFF,
+                        _ => rng.below(1000) as u16,
+                    };
+                    cpu.mem.wr16(ca + o, v);
+                }
+            }
             // Melt Spray's five stats on the victim, both halves, the floor's
             // edge values among them (`0`, `1`, `2`).
             if body.action == 0x6F {
@@ -631,6 +670,52 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     failures.push(format!("{c}: shot retail {got:?} port {want:?}"));
                 }
                 let after = cpu.mem.rd8(CTX + 0x279);
+                // The buffs' stat writes, on the pass that leaves their arm,
+                // against the kernels the host runs there.
+                if after != phase && is_buff(body) {
+                    let mut pc = before[0];
+                    let mut pctx = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
+                    pctx.phase = phase;
+                    let rec = cpu.mem.rd32(RECORDS + 4 * (caster - 3));
+                    let agl = cpu.mem.rd16(rec + 0x0E);
+                    match body.va {
+                        t::WHITE_SHIELD_TICK => {
+                            let d = (cpu.mem.rd16(rec + 0x14), cpu.mem.rd16(rec + 0x16));
+                            t::white_shield_tick(&mut pctx, &mut pc, d);
+                        }
+                        t::POWER_CHARGE_TICK => {
+                            t::power_charge_tick(&mut pctx, &mut pc);
+                        }
+                        t::POWER_UP_TICK => {
+                            t::power_up_tick(&mut pctx, &mut pc, agl);
+                        }
+                        _ => {
+                            t::all_stats_surge_tick(&mut pctx, &mut pc, agl);
+                        }
+                    }
+                    let got = crate::cast_view::read_actor(&mut cpu.mem, ca);
+                    let key = |x: &t::CastActorState| {
+                        (
+                            [x.agl, x.atk, x.udf, x.ldf, x.spd, x.intel],
+                            [
+                                x.agl_base,
+                                x.atk_base,
+                                x.udf_base,
+                                x.ldf_base,
+                                x.spd_base,
+                                x.intel_base,
+                            ],
+                        )
+                    };
+                    if key(&got) != key(&pc) {
+                        failures.push(format!(
+                            "{c}: buff retail {:?} port {:?}",
+                            key(&got),
+                            key(&pc)
+                        ));
+                    }
+                    buffs += 1;
+                }
                 // Melt Spray's debuff, on the pass arm 3's countdown runs out
                 // (`0x801F82E0`, then `0x801F8314..0x801F8598`), against the
                 // kernel the host runs on that pass (`melt_spray_tick`).
@@ -769,6 +854,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     eprintln!("Death Game outcomes {outcomes:?}");
     assert_eq!(outcomes.len(), 4, "Death Game outcomes {outcomes:?}");
     assert!(debuffs >= 4, "Melt Spray debuffs compared {debuffs}");
+    eprintln!("buff passes compared {buffs}");
+    assert!(buffs >= 12, "buff passes compared {buffs}");
     assert!(
         results >= 4 && heal_capped,
         "Death Game results compared {results}, a heal capped by the missing HP {heal_capped}"
@@ -804,6 +891,7 @@ const LAPIS_WAVE: u32 = 0x801F_6A04;
 const GUILTY_CROSS: u32 = 0x801F_6A04;
 const CURSE_ALL: u32 = 0x801F_7470;
 const WATER_COLUMN: u32 = 0x801F_6EDC;
+const JUGGER_POWER: u32 = 0x801F_69F8;
 const SHADOW_BREAK: u32 = 0x801F_6A24;
 const ROLLING_FLARE: u32 = 0x801F_79F8;
 const SCYTHE_WIND: u32 = 0x801F_77E8;
@@ -836,6 +924,9 @@ const EVIL_SERU_MAGIC: u32 = 0x801F_6A74;
 /// The part spawn `FUN_80021B04` and the pool the walk hands parts from.
 const SPAWN_PART: u32 = 0x8002_1B04;
 const PARTS: u32 = 0x8016_0000;
+/// The monster-record pointer table and the records the buff bodies read.
+const RECORDS: u32 = 0x801C_9348;
+const MONSTER_RECORDS: u32 = 0x8017_0000;
 /// The seated part spawn `FUN_80050ED4` Death Game's faces come from
 /// (`0x801F7F08`).
 const SPAWN_SEATED: u32 = 0x8005_0ED4;
