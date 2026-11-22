@@ -4241,9 +4241,10 @@ the drive onto CONTINUE needs one. `0x15` is a committed pill (the card read):
 the drive picks the committed port off `_DAT_8007B834`, commits at tick `940`
 and captures the card screen's own frame count since the commit
 (`_DAT_801EF124`) later, with the scenario's card in port 2 (`--card`) when
-the capture committed `SLOT 2`. The engine's card read is instant, so a
-capture caught mid-read (`load_slot2_grid`) scores the read's end against
-retail's placeholder cells. Any other title sub-mode (the launch fade
+the capture committed `SLOT 2`. The engine runs retail's card check
+([save-screen](../subsystems/save-screen.md#the-card-check-under-now-checking)),
+so a capture caught mid-check (`load_slot2_grid`, the check's 235th frame)
+shows the grid of `USED` cells and the empty panel under the dialog. Any other title sub-mode (the launch fade
 `0x16` a card-boot capture is caught in) is kept with a `menu not seedable:`
 reason and counted as a classified limit.
 

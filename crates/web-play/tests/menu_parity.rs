@@ -34,6 +34,11 @@ const ROW_OPTIONS: usize = 4;
 const ROW_LOAD: usize = 5;
 const ROW_SAVE: usize = 6;
 
+/// Frames the "Now checking" beat holds the grid off: a first probe's
+/// `0x10E`-frame grace, then the block scan, eight frames a save
+/// (`legaia_engine_menus::save_select::card_scan_frames`), with room.
+const CARD_CHECK_FRAMES: usize = 440;
+
 /// Stand through the scene load's post-load pad hold (`FUN_8003ADAC`,
 /// `_DAT_8007B6B4 = 0x28`): the field frame pump keeps the pad controller and
 /// its menu accept off until it drains.
@@ -302,7 +307,7 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
     );
 
     // The dialog holds for its retail beat, then the grid comes up.
-    for _ in 0..200 {
+    for _ in 0..CARD_CHECK_FRAMES {
         rt.play_menu_input(0);
     }
     let (grid_sprites, empty_cell_texts) = draw_counts(&rt);
@@ -408,7 +413,7 @@ fn save_screen_writes_the_session_into_the_inserted_card() {
     rt.play_menu_settle();
     open_row(&mut rt, ROW_SAVE);
     rt.play_menu_press(CROSS); // pick SLOT 1
-    for _ in 0..200 {
+    for _ in 0..CARD_CHECK_FRAMES {
         rt.play_menu_input(0); // "Now checking" beat
     }
     // Walk to cell 2 (= block 3, the existing save) and confirm.
@@ -457,7 +462,7 @@ fn confirm_a_save_into_a_blank_card(rt: &mut LegaiaRuntime) {
     rt.play_menu_settle();
     open_row(rt, ROW_SAVE);
     rt.play_menu_press(CROSS); // pick SLOT 1
-    for _ in 0..200 {
+    for _ in 0..CARD_CHECK_FRAMES {
         rt.play_menu_input(0); // "Now checking" beat
     }
     rt.play_menu_press(CROSS); // cell 0 = block 1, free
@@ -829,7 +834,7 @@ fn a_cold_title_continue_loads_a_save_off_the_card() {
     assert_eq!(outcome, "continue", "Cross on the Continue row hands off");
     assert!(rt.boot_continue_is_open(), "the Load screen is up");
     assert_eq!(rt.boot_continue_step(CROSS), ""); // SLOT 1
-    for _ in 0..200 {
+    for _ in 0..CARD_CHECK_FRAMES {
         rt.boot_continue_step(0);
     }
     rt.boot_continue_step(CROSS); // block 1 -> "Do you wish to load?"

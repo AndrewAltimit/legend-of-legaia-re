@@ -395,9 +395,47 @@ pub enum ConfirmKind {
     Delete,
 }
 
-/// Default duration of the "Now checking" dialog in frames @ 60 Hz.
-/// Two seconds of game time mirrors the retail memory-card scan beat.
-pub const DEFAULT_NOW_CHECKING_FRAMES: u16 = 120;
+/// The card check's grace on every probe: card-op staging (sub-mode `0x07`,
+/// `0x801DE134`) seeds `state[+0x228]` with `0x78`, and the card check
+/// (`0x15`, `0x801DE260`) holds while it is non-zero, taking one frame step
+/// off it a frame.
+pub const CARD_CHECK_GRACE: u16 = 0x78;
+/// What `0x07` adds to the grace on a screen's first probe (`state` probed
+/// flag clear): `+0x96`, so the first card check holds `0x10E` frames.
+pub const CARD_CHECK_FIRST_PROBE_EXTRA: u16 = 0x96;
+/// Default grace of the "Now checking" dialog in frames @ 60 Hz: a first
+/// probe's `0x78 + 0x96`. Later probes in the same session hold
+/// [`CARD_CHECK_GRACE`].
+pub const DEFAULT_NOW_CHECKING_FRAMES: u16 = CARD_CHECK_GRACE + CARD_CHECK_FIRST_PROBE_EXTRA;
+/// Frames from the commit until the card answers: the async reader clears
+/// the scan request `state[+0x224]` and publishes the save count. Measured,
+/// not traced: a PCSX-Redux film of the SLOT 2 commit
+/// (`load_slot2_*`'s source run) answers on the 78th frame of `0x15`. The
+/// card-text fade and the grid wait on that answer.
+pub const CARD_ANSWER_FRAMES: u16 = 78;
+/// Frames the block scan (`0x0A`) spends per save, after the one frame of
+/// scan setup (`0x09`): the same film reads its seven saves one every eight
+/// frames and opens the grid (`0x0B`) eight frames after the last.
+pub const CARD_SCAN_FRAMES_PER_SAVE: u16 = 8;
+/// The card-text fade's rate: the dispatcher tail adds the frame step `<< 6`
+/// to `0x801EF1A0` (`0x801DFE44..0x801DFE54`).
+pub const CARD_TEXT_RATE: u16 = 0x40;
+
+/// The scan's length for a card holding `saves` Legend of Legaia saves: the
+/// setup frame, then [`CARD_SCAN_FRAMES_PER_SAVE`] per save and one more
+/// period before the grid opens.
+pub fn card_scan_frames(saves: u8) -> u16 {
+    1 + CARD_SCAN_FRAMES_PER_SAVE * (u16::from(saves) + 1)
+}
+
+/// How many of a card's saves the scan has stamped `scan_elapsed` frames
+/// into it (cell order): the `k`-th save lands four frames into its period.
+pub fn card_scan_stamped(scan_elapsed: u16) -> u16 {
+    if scan_elapsed < 1 + 4 {
+        return 0;
+    }
+    (scan_elapsed - 1 - 4) / CARD_SCAN_FRAMES_PER_SAVE + 1
+}
 
 /// Slide-in animation timer rate, in 12-bit fixed-point units per tick.
 /// Mirrors retail's `DAT_801ef194 += DAT_1f800393 * 0x100` increment in

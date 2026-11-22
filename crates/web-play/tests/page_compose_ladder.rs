@@ -124,9 +124,10 @@ fn open_row(rt: &mut LegaiaRuntime, row: usize) {
     rt.play_menu_press(CROSS);
 }
 
-/// Sit on the "Now checking" beat until the grid comes up.
+/// Sit on the "Now checking" beat until the grid comes up: a first probe's
+/// `0x10E`-frame grace, then the block scan, eight frames a save.
 fn settle_card_read(rt: &mut LegaiaRuntime) {
-    for _ in 0..240 {
+    for _ in 0..440 {
         rt.play_menu_input(0);
     }
 }

@@ -25,10 +25,12 @@ pub const MENU_OPEN_WIPE_TICKS: u64 =
     20 + legaia_engine_system::pause_wipe::LOAD_HOLD_OPEN_VSYNCS as u64;
 
 /// Ticks a card screen's grid takes to come up after its pill-row confirm:
-/// the "Now checking" card read runs first (`FUN_801DD35C` sub-modes `0x04`
-/// / `0x05`). Measured on `play-window`: the grid is up about `100` ticks
-/// after the confirm.
-pub const CARD_READ_SETTLE_TICKS: u64 = 160;
+/// the "Now checking" card check runs first (`FUN_801DD35C` sub-modes
+/// `0x07` / `0x15` / `0x09` / `0x0A`): a first probe's `0x10E`-frame grace,
+/// then the block scan, eight frames a save
+/// (`legaia_engine_menus::save_select::card_scan_frames`). A full card's
+/// grid is up `0x10E + 129` ticks after the confirm; this waits past it.
+pub const CARD_READ_SETTLE_TICKS: u64 = 440;
 
 /// Ticks the prize counter's windows take to slide in after the arm.
 pub const PRIZE_SETTLE_TICKS: u64 = 90;

@@ -509,7 +509,17 @@ impl SaveScreenFlow {
                 self.grid_cursor = 0;
                 self.blocks = None;
             }
-            SelectPhase::NowChecking { .. } => self.grid_cursor = 0,
+            SelectPhase::NowChecking { .. } => {
+                self.grid_cursor = 0;
+                // The card under check, once lifted, sets the block scan's
+                // length: retail's scan walks the card's Legaia saves.
+                if let Some((p, blocks)) = self.blocks.as_ref()
+                    && *p == port
+                {
+                    let saves = blocks.iter().filter(|b| b.present).count();
+                    session.set_card_scan(saves.min(usize::from(u8::MAX)) as u8);
+                }
+            }
             _ => {}
         }
         // The commit beat: the write panel takes no input; on the result
@@ -817,6 +827,9 @@ pub struct SaveOverlayPreview<'a> {
     pub caption_icon: Option<u8>,
     /// The info panel's slide delta from its parked y (`0` = landed).
     pub panel_y_offset: i32,
+    /// The grid's slide timer: the card-text fade `0x801EF1A0` that
+    /// `FUN_801E06C0` interpolates every cell's x by (`0x1000` = landed).
+    pub grid_t: u16,
 }
 
 /// Everything the save-select screen draws this frame - the one sequence both
@@ -870,10 +883,36 @@ impl SaveScreenFlow {
         };
         let pill_cursor =
             (layout.pill_cursor && ports > 0).then(|| (session.current_slot() as usize).min(1));
-        let preview = layout.preview.then(|| {
+        // Under the "Now checking" dialog the grid and the empty info panel
+        // come up once the card answers, and every cell the block scan has
+        // not stamped yet draws the `USED` frame (record 5): the class array
+        // is the scan's to fill (`FUN_801E1208`), so retail's capture at the
+        // check's 235th frame shows fifteen `USED` cells.
+        let checking = matches!(phase, SelectPhase::NowChecking { .. });
+        let preview = (layout.preview || (checking && session.card_answered())).then(|| {
             let (blocks, cell) = self.preview(session);
+            let stamped_through = if checking {
+                let stamped = session
+                    .card_scan_elapsed()
+                    .map_or(0, crate::save_select::card_scan_stamped);
+                blocks
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, b)| b.present)
+                    .nth(usize::from(stamped).wrapping_sub(1))
+                    .filter(|_| stamped > 0)
+                    .map(|(i, _)| i)
+            } else {
+                Some(usize::MAX)
+            };
             let cells = (0..SLOT_GRID_CELLS as usize)
                 .map(|i| {
+                    if stamped_through.is_none_or(|t| i > t) {
+                        return SaveOverlayCell {
+                            foreign: true,
+                            ..Default::default()
+                        };
+                    }
                     blocks
                         .get(i)
                         .map(|b| SaveOverlayCell {
@@ -885,7 +924,7 @@ impl SaveScreenFlow {
                         .unwrap_or_default()
                 })
                 .collect();
-            let focused = blocks.get(cell as usize);
+            let focused = blocks.get(cell as usize).filter(|_| !checking);
             let info = focused.filter(|b| b.present);
             let mode = match (info, focused) {
                 (None, Some(b)) => Some(crate::save_select::SlotInfoMode::for_grid_cell(cell, b)),
@@ -910,6 +949,7 @@ impl SaveScreenFlow {
                 caption,
                 caption_icon,
                 panel_y_offset: y - crate::save_select::INFO_PANEL_PARKED_Y,
+                grid_t: session.info_panel_slide_anim_t(),
             }
         });
         let confirm = layout.confirm.then_some(match phase {
@@ -1113,6 +1153,92 @@ mod tests {
         }
     }
 
+    /// Retail's card check, as a PCSX-Redux film of the SLOT 2 commit shows
+    /// it (`load_slot2_now_checking` / `load_slot2_grid`'s source run): the
+    /// card answers on the 78th frame and the grid and an empty info panel
+    /// come up under the dialog, every cell the `USED` frame; the first
+    /// probe's grace runs `0x10E` frames; the block scan then stamps the
+    /// saves in cell order, eight frames each, and the grid opens one period
+    /// after the last.
+    #[test]
+    fn the_card_check_answers_then_scans_under_the_dialog() {
+        use crate::save_select::{
+            CARD_ANSWER_FRAMES, DEFAULT_NOW_CHECKING_FRAMES, card_scan_frames,
+        };
+        let saves = [0u8, 1, 2, 3, 4, 10, 14];
+        let mut s = SaveSelectSession::for_rack(SaveSelectMode::Load, &card_rack(&[false, true]));
+        let mut flow = SaveScreenFlow::new();
+        let frame = |flow: &mut SaveScreenFlow, s: &mut SaveSelectSession, edge: u16| {
+            if let Some(port) = flow.pending_read(s) {
+                flow.install_blocks(
+                    port,
+                    (0..15).map(|i| block(i, saves.contains(&i))).collect(),
+                );
+            }
+            let edge = flow.before_tick(s, edge);
+            s.tick(SelectInput::from_pad_edge(edge));
+        };
+        frame(&mut flow, &mut s, PadButton::Down.mask());
+        frame(&mut flow, &mut s, cross());
+        assert!(matches!(
+            s.phase(),
+            SelectPhase::NowChecking { slot: 1, .. }
+        ));
+        // Before the answer: the dialog alone.
+        for _ in 1..CARD_ANSWER_FRAMES {
+            frame(&mut flow, &mut s, 0);
+            assert!(flow.overlay_model(&s).unwrap().preview.is_none());
+        }
+        frame(&mut flow, &mut s, 0);
+        let m = flow.overlay_model(&s).unwrap();
+        let p = m.preview.as_ref().expect("the grid comes up on the answer");
+        assert!(m.now_checking);
+        assert!(p.cells.iter().all(|c| c.foreign && !c.present));
+        assert!(p.info.is_none() && p.caption.is_none());
+        // The card-text fade ramps 0x40 a frame: landed 64 frames on.
+        for _ in 0..64 {
+            frame(&mut flow, &mut s, 0);
+        }
+        let m = flow.overlay_model(&s).unwrap();
+        let p = m.preview.as_ref().unwrap();
+        assert_eq!((p.grid_t, p.panel_y_offset), (0x1000, 0));
+        // The grace runs out on the first probe's 0x10E-th frame.
+        while s.card_scan_elapsed().is_none() {
+            frame(&mut flow, &mut s, 0);
+        }
+        assert_eq!(s.card_check_elapsed(), DEFAULT_NOW_CHECKING_FRAMES + 1);
+        // Four frames into the first period cell 0 is stamped, the rest not.
+        for _ in 0..5 {
+            frame(&mut flow, &mut s, 0);
+        }
+        let m = flow.overlay_model(&s).unwrap();
+        let cells = &m.preview.as_ref().unwrap().cells;
+        assert!(cells[0].present && !cells[0].foreign);
+        assert!(cells[1..].iter().all(|c| c.foreign));
+        // The grid opens once the scan is out, and the panel fills.
+        let mut n = 6;
+        while matches!(s.phase(), SelectPhase::NowChecking { .. }) {
+            frame(&mut flow, &mut s, 0);
+            n += 1;
+        }
+        assert_eq!(n, card_scan_frames(saves.len() as u8) + 1);
+        let m = flow.overlay_model(&s).unwrap();
+        let p = m.preview.as_ref().unwrap();
+        assert!(!m.now_checking && p.info.is_some());
+        assert!(p.cells.iter().all(|c| !c.foreign));
+        // A second check in the same screen holds the plain 0x78 grace.
+        frame(&mut flow, &mut s, PadButton::Circle.mask());
+        assert!(matches!(s.phase(), SelectPhase::Browsing { .. }));
+        frame(&mut flow, &mut s, cross());
+        while s.card_scan_elapsed().is_none() {
+            frame(&mut flow, &mut s, 0);
+        }
+        assert_eq!(
+            s.card_check_elapsed(),
+            crate::save_select::CARD_CHECK_GRACE + 1
+        );
+    }
+
     /// The read is asked for once per port, not once per frame.
     #[test]
     fn pending_read_asks_once_per_port() {
@@ -1160,7 +1286,8 @@ mod tests {
             // Run out the card-read beat, driving the flow every frame: the
             // card op has to publish before a confirm of either direction is
             // accepted, and the outer fade has to clear the input threshold.
-            let beat = s.now_checking_frames() + 1;
+            let beat =
+                s.now_checking_frames() + 1 + crate::save_select::card_scan_frames(SLOT_GRID_CELLS);
             run_beat(&mut flow, &mut s, beat);
             assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
             assert_eq!(flow.card_io_result(), 1, "the card op published success");
@@ -1193,7 +1320,8 @@ mod tests {
             cross: true,
             ..Default::default()
         });
-        let beat = s.now_checking_frames() + 1;
+        let beat =
+            s.now_checking_frames() + 1 + crate::save_select::card_scan_frames(SLOT_GRID_CELLS);
         for _ in 0..beat {
             if let Some(port) = flow.pending_read(&s) {
                 flow.install_blocks(port, (0..15).map(|i| block(i, false)).collect());
@@ -1246,7 +1374,8 @@ mod tests {
             cross: true,
             ..Default::default()
         });
-        let beat = s.now_checking_frames() + 1;
+        let beat =
+            s.now_checking_frames() + 1 + crate::save_select::card_scan_frames(SLOT_GRID_CELLS);
         run_beat(&mut flow, &mut s, beat);
         flow.install_blocks(1, (0..15).map(|i| block(i, true)).collect());
         let edge = flow.before_tick(&mut s, PadButton::Right.mask());
@@ -1307,7 +1436,8 @@ mod tests {
                 cross: true,
                 ..Default::default()
             });
-            let beat = s.now_checking_frames() + 1;
+            let beat =
+                s.now_checking_frames() + 1 + crate::save_select::card_scan_frames(SLOT_GRID_CELLS);
             run_beat(&mut flow, &mut s, beat);
             for e in [cross(), PadButton::Left.mask(), cross()] {
                 let edge = flow.before_tick(&mut s, e);
@@ -1364,7 +1494,8 @@ mod tests {
                 cross: true,
                 ..Default::default()
             });
-            let beat = s.now_checking_frames() + 1;
+            let beat =
+                s.now_checking_frames() + 1 + crate::save_select::card_scan_frames(SLOT_GRID_CELLS);
             run_beat(&mut flow, &mut s, beat);
             for e in [cross(), PadButton::Left.mask(), cross()] {
                 let edge = flow.before_tick(&mut s, e);
@@ -1401,7 +1532,8 @@ mod tests {
             cross: true,
             ..Default::default()
         });
-        let beat = s.now_checking_frames() + 1;
+        let beat =
+            s.now_checking_frames() + 1 + crate::save_select::card_scan_frames(SLOT_GRID_CELLS);
         run_beat(&mut flow, &mut s, beat);
         flow.install_blocks(
             0,
@@ -1449,7 +1581,8 @@ mod tests {
             cross: true,
             ..Default::default()
         });
-        let beat = s.now_checking_frames() + 1;
+        let beat =
+            s.now_checking_frames() + 1 + crate::save_select::card_scan_frames(SLOT_GRID_CELLS);
         run_beat(&mut flow, &mut s, beat);
         flow.install_blocks(
             0,
@@ -1484,7 +1617,8 @@ mod tests {
             cross: true,
             ..Default::default()
         });
-        let beat = s.now_checking_frames() + 1;
+        let beat =
+            s.now_checking_frames() + 1 + crate::save_select::card_scan_frames(SLOT_GRID_CELLS);
         run_beat(&mut flow, &mut s, beat);
         // run_beat's card holds a save in cell 2 only.
         assert_eq!(flow.confirm_prompt(&s), "Do you wish to save?");
@@ -1509,7 +1643,9 @@ mod tests {
             cross: true,
             ..Default::default()
         });
-        for _ in 0..s.now_checking_frames() + 1 {
+        for _ in
+            0..s.now_checking_frames() + 1 + crate::save_select::card_scan_frames(SLOT_GRID_CELLS)
+        {
             s.tick(SelectInput::default());
         }
         s.tick(SelectInput {
@@ -1536,7 +1672,9 @@ mod tests {
             cross: true,
             ..Default::default()
         });
-        for _ in 0..s.now_checking_frames() + 1 {
+        for _ in
+            0..s.now_checking_frames() + 1 + crate::save_select::card_scan_frames(SLOT_GRID_CELLS)
+        {
             s.tick(SelectInput::default());
         }
         flow.install_blocks(0, (0..15).map(|i| block(i, true)).collect());

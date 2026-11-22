@@ -142,6 +142,11 @@ fn tap_button(session: &mut NativeSession, b: PadButton) {
     tap(session, b.mask());
 }
 
+/// Frames a card check holds its pill-row confirm off the grid: a first
+/// probe's `0x10E`-frame grace, then retail's block scan, eight frames a
+/// save (`legaia_engine_menus::save_select::card_scan_frames`), with room.
+const CARD_CHECK_IDLE: usize = 440;
+
 /// Hold neutral for `n` frames - what a player does across a beat that
 /// accepts no input (the memory-card read).
 fn idle(session: &mut NativeSession, n: usize) {
@@ -561,7 +566,7 @@ fn pad_driven_menu_ladder() {
                     Some(SelectPhase::NowChecking { .. }) | Some(SelectPhase::SlotPreview { .. })
                 );
                 // The read beat accepts no input - wait it out.
-                idle(&mut s, 140);
+                idle(&mut s, CARD_CHECK_IDLE);
                 let phase = sub_select_phase(&s);
                 eprintln!("[rung 8] after read beat: {phase:?} (entered_read={entered_read})");
                 if !matches!(phase, Some(SelectPhase::SlotPreview { .. })) {
@@ -686,7 +691,7 @@ fn pad_driven_menu_ladder() {
                         // Port 1 is mounted: Cross starts the card read, the
                         // beat accepts no input, then the 5x3 grid appears.
                         tap_button(&mut w, PadButton::Cross);
-                        idle(&mut w, 140);
+                        idle(&mut w, CARD_CHECK_IDLE);
                         let phase = sub_select_phase(&w);
                         eprintln!("[rung 10] after read beat: {phase:?}");
                         if !matches!(phase, Some(SelectPhase::SlotPreview { .. })) {

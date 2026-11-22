@@ -9,7 +9,7 @@
 //! `FUN_801E0418` against `title_strip_rows`, and the record quad
 //! `FUN_801E3FF0` against `save_ui_record_quad`, and the per-cell drawer
 //! `FUN_801E0FD0` (live, its record quads hooked) against
-//! `slot_preview_grid_draws_for`.
+//! `slot_preview_grid_draws_at`.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_menus::save_select::{SlotContent, SlotInfoMode, SlotSnapshot};
@@ -451,8 +451,14 @@ fn every_grid_cell_draws_what_retail_draws() {
             });
         }
         let cursor = rng.below(15);
-        let port =
-            legaia_engine_ui::slot_preview_grid_draws_for(&rects, &cells, cursor as u8, (0, 0), 1);
+        let port = legaia_engine_ui::slot_preview_grid_draws_at(
+            &rects,
+            &cells,
+            cursor as u8,
+            legaia_engine_ui::SLOT_GRID_SLIDE_LANDED,
+            (0, 0),
+            1,
+        );
         let mut want = Vec::new();
         for slot in 0..15u32 {
             let (c, r) = (slot % 5, slot / 5);

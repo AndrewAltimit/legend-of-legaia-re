@@ -566,6 +566,50 @@ subtracted from the ink of text already emitted (both hosts draw text after
 sprites); the native window blends it through its ABR-2 overlay span, the
 browser page subtracts it from canvas pixels (`AtlasBlitter::blitDarkened`).
 
+### The card check under "Now checking"
+
+The "Now checking" beat is not a fixed dialog over a finished read. Card-op
+staging (sub-mode `0x07`, `0x801DE134`) seeds a grace in `state[+0x228]` -
+`0x78`, plus `0x96` while the screen's probed flag is clear - and raises the
+flag, so a screen's first card check holds `0x10E` frames and a later one
+`0x78`. The check (`0x15`, `0x801DE260`) takes the frame step off the grace
+every frame and leaves only once it is spent and the probe has answered; it
+then hands to scan setup (`0x09`), the block scan (`0x0A`) and the grid
+(`0x0B`).
+
+The card answers inside the grace. The async reader clears the scan request
+`state[+0x224]` and publishes the save count `state[+0x1E4]`, and the
+dispatcher tail starts the card-text fade `0x801EF1A0`, `+ frame step << 6`
+a frame, gated on the fade flag `0x801EF198`, the slide timer `0x801EF194`
+landed, no block count, no fault and the request cleared
+(`0x801DFDD4..0x801DFE64`). That fade is the info panel's y
+(`FUN_801E08D8`) and the grid's slide (`FUN_801E06C0` reads it at
+`0x801E0740`), so the grid fans in from the right and an empty panel rises
+under the dialog while the check still runs, and every cell draws the `USED`
+frame: the class array is the scan's to fill. The scan then stamps the saves
+in cell order and the free cells it walks past.
+
+A PCSX-Redux film of the `SLOT 2` commit (`save_select_idle`, `DOWN` at vsync
+30, `CROSS` at 90, the seven-save endgame card in port 2, card words logged
+every vsync) times it: `0x15` from vsync 93 with grace `270`; the answer at
+171, the check's 78th frame (7 saves); the fade landed at 235; the grace out
+at 369; one save stamped every 8 vsyncs (cell 0 at 374, cell 14 at 426); the
+grid at 434. `load_slot2_now_checking` and `load_slot2_grid` are frames 37
+and 235 of that check. Two of those numbers are the emulated card's latency,
+not code: the answer's 78 frames and the scan's 8 a save.
+
+**Port.** `SaveSelectSession` runs the check: `begin_card_check` seeds the
+grace (`DEFAULT_NOW_CHECKING_FRAMES = 0x10E`, `CARD_CHECK_GRACE` once the
+session has probed), `SaveScreenFlow::before_tick` hands it the lifted card's
+save count (`set_card_scan`), `card_answered` raises the preview and the fade
+(`CARD_ANSWER_FRAMES`, `CARD_TEXT_RATE`) and the scan runs
+`card_scan_frames(saves)` under the dialog, stamping by `card_scan_stamped`.
+`SaveScreenFlow::overlay_model` draws the unstamped cells as `USED` with no
+info or caption, and `save_select_overlay_draws` links the preview under the
+dialog's box and darkening, slid by `slot_preview_grid_draws_at`. A host
+that latches card events still ends the beat early, and a test that fixes the
+beat (`set_now_checking_frames`) skips the scan.
+
 ### Libcd I/O state machine (`FUN_801E3294`)
 
 The memory-card calls live in `FUN_801E3294`, a 5-state driver on
@@ -1352,7 +1396,7 @@ Read off the GP0 draw list of the running load screen:
   by `_DAT_8007B834`), so `SLOT 2`'s pill leaves from `SLOT 1`'s row and parks at
   the same quad `(24, 40)` under the Load panel.
 - **The 5x3 grid** (`FUN_801E06C0`) is staged off-screen right while browsing
-  (cell quads at x = 354..1386, 104 px stagger) and slides left on commit.
+  (cell quads at x = 354..1386, 104 px stagger) and slides left on the card-text fade once the card answers ([below](#the-card-check-under-now-checking)).
   Landed: 32x32 cells, row 0 at `(98, 28)`, pitch `(40, 20)`, each row shifted
   `+4` px right. Per cell the renderer interpolates a slide base
   `0x15A + prev*64 -> 0x5A` in 12-bit fixed point, adds `col*40 + row*4`, and
@@ -1362,7 +1406,7 @@ Read off the GP0 draw list of the running load screen:
   column apart and the last cell's right edge lands on the captured 1386. The focused cell draws at
   `0x80` modulation, the others at `0x60`; the save-icon faces (tile = cell) are 16x16 at cell
   `+8, +8`; the finger cursor sits at cell quad `+(-10, +4)`. Port:
-  `engine-ui::slot_grid_quad_x` / `slot_preview_grid_draws_for`.
+  `engine-ui::slot_grid_quad_x` / `slot_preview_grid_draws_at`.
 - **Dimmed title art** (`FUN_801E02A4`): two `0x64` sprites split at x = 192
   across texture pages 8 / 9, RGB = a brightness byte. The caller computes a
   per-frame ramp clamped to `0..=0xFF` and passes it to both this and
@@ -1690,8 +1734,10 @@ empty frame at `(0x50, local_34 + 0x14)`, and the block badge. "No data" and
 under a grey ramp from `0x40` to `0x88` over the box's height - the pause
 windows' fill. A 29-row box (the header tab) is one band.
 
-**Port.** `SaveSelectSession::info_panel_slide_anim_t()` holds at 0 during
-Browsing / NowChecking / Done and ramps during SlotPreview / Confirm, between
+**Port.** `SaveSelectSession::info_panel_slide_anim_t()` is that timer: it
+holds at 0 while Browsing / Done and until the card answers, rises under the
+"Now checking" dialog once it has ([below](#the-card-check-under-now-checking)),
+and keeps ramping through SlotPreview / Confirm, between
 `save_select::INFO_PANEL_OFFSCREEN_Y = 394` and `INFO_PANEL_PARKED_Y = 138`.
 `engine-ui::slot_info_panel_draws_for` (the sprite half: chrome, badge, faces,
 labels, numerals, `/`) and `slot_info_panel_text_draws_for` (location,
