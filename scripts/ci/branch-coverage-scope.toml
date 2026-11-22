@@ -4763,3 +4763,150 @@ image = "1a117ddfa651aab2"
 range = "0x801F6E20..0x801F6E20"
 verdict = "unreachable"
 reason = "PROT 0918 (Kemaro)'s phase dispatch default, phases `0x14..0xFE`: the image's phase stores are `+1` (`0x801F747C`, `0x801F7BE0`, `0x801F836C`, `0x801F8868`) and `0xFF` (`0x801F8A5C`); the `+1` of the arm `0x801F8698` that phases `0x12` and `0x13` share runs only on `0x12` (`li v0,0x12; bne` at `0x801F8790..0x801F8794`) and `0x13` leaves through the `0xFF` store, so no phase above `0x13` but `0xFF` is stored."
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD124..0x801DD124"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: a halfword (or its `>> 1` / `>> 3`) plus one, at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD1D8..0x801DD1D8"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: the move-power record's sign-extended `+0` shifted plus one; every record the action map at `0x801F4E64` reaches (44 records, and the out-of-table row `255` reads `0`) holds a power of `0` or more, so it is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD214..0x801DD214"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: a halfword (or its `>> 1` / `>> 3`) plus one, at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD27C..0x801DD27C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: a halfword (or its `>> 1` / `>> 3`) plus one, at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD334..0x801DD334"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: a halfword (or its `>> 1` / `>> 3`) plus one, at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD3E4..0x801DD3E4"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: the move-power record's sign-extended `+0` shifted plus one; every record the action map at `0x801F4E64` reaches (44 records, and the out-of-table row `255` reads `0`) holds a power of `0` or more, so it is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD420..0x801DD420"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's zero-divisor guard (`break 7`) on a `rand()` modulus: a halfword (or its `>> 1` / `>> 3`) plus one, at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD134..0x801DD134"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD1E8..0x801DD1E8"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD224..0x801DD224"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD28C..0x801DD28C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD344..0x801DD344"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD3F4..0x801DD3F4"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD430..0x801DD430"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `-1`-divisor test ahead of the overflow trap; every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD13C..0x801DD13C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD1F0..0x801DD1F0"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD22C..0x801DD22C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD294..0x801DD294"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD34C..0x801DD34C"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD3FC..0x801DD3FC"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
+
+[[arm]]
+entry = "0x801DD0AC"
+image = "d0e9500b8fd6d1a5"
+range = "0x801DD438..0x801DD438"
+verdict = "unreachable"
+reason = "PROT 0898: the compiler's `INT_MIN / -1` overflow guard (`break 6`); every modulus here is at least `1`"
