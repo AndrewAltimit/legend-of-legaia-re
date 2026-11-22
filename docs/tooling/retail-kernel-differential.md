@@ -884,6 +884,13 @@ disc. The summon cameras run on retail's stage seats as well as the walk's own r
 up on each image's poll arm: Palma's arm 3 framed a lift its first monster does not make once that monster is
 down, and the band's poll dropped the TR z push Slippery's arm 1 makes while it waits.
 
+The arms that scale a stat or HP by a constant all run against their kernels now, since a magic-number divide
+is the easy one to misread: Fatal Decision's outcome arm on every outcome but the item theft (`fatal_outcomes`),
+White Shield, Power Charge, Power Up and the surge on the pass that leaves their arm, and the split hits of Hyper
+Lightning and Spore Gas on varied rolls (`chain_ticks`). All agree. Terror Scream's turn steal did not: its arm 3
+tests the Item category alone, where the port ran Kiss of Death's idiom, which also needs the initiative key.
+Kemaro's arm 17 runs on every formation byte (`kemaro_spear`), so its per-species jump table takes every case.
+
 That line-up and the `0xFF` arm's restore now run off the module image against their port (`dead_end_crisis`): all
 eight records whole, the module's saved words and the context. The `cort_evolved_final_crisis_mid_cast` capture
 reads the stood seats and the saved poses. PROT 0927's stager arm 7, which jitters its caller's `+0x84` and rotation
