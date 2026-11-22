@@ -571,6 +571,19 @@ fn the_venue_select_picks_the_pond_as_retail_does() {
             r.r[V0] = at;
         });
     }
+    // State 0 on a venue entered from the field: `_DAT_8007B8B8` is up, so
+    // the machine skips the debug venue list and steps straight to state 1
+    // (`0x801CF494..0x801CF4B4`), where the port's session opens.
+    cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+    cpu.mem.wr32(SESSION_STATE, 0);
+    cpu.mem.wr32(0x8007_B8B8, 1);
+    assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "state 0");
+    assert_eq!(
+        cpu.mem.rd32(SESSION_STATE),
+        1,
+        "state 0 hands over to the venue select"
+    );
+    cpu.mem.wr32(0x8007_B8B8, 0);
     let mut seen = [0usize; 2];
     for scene in [0u32, 0xF3, 0xF4, 0xF5, 0x186, 0x187, 0x188, 0x3FF] {
         for current in 0..2usize {

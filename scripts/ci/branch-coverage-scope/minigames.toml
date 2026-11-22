@@ -223,3 +223,101 @@ image = "d34a946ed9c68fe0"
 range = "0x801D028C..0x801D028C"
 verdict = "unported"
 reason = "PROT 0972 fishing session tail: the XA in-flight test that clears or raises the latch 0x801D90CC; PROT 0972 starts no CD-XA line (no jal to FUN_8003D53C / FUN_80019794 / FUN_8003EAE4) and nothing reads the latch (docs/subsystems/minigame-fishing.md), so the port keeps no latch"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D26F8..0x801D26F8"
+verdict = "unported"
+reason = "PROT 0972 fishing lure tick: the lure's self-retire when the session has cleared its alive word 0x801D91A8 (stores at 0x801CF8AC / 0x801CFBC8): the actor sets its own +0x10 bit 8 and returns (0x801D3CD0); the port's session drops the lure with its phase, and keeps no actor flag word"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D27BC..0x801D27BC"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the round-toward-zero arm of `power * 5 << 7 / 0x1000`; the cast power 0x801D9274 is seeded 0x40 (0x801CF910), held in 0x20..0x1000 by the meter (0x801CFB5C..0x801CFB94), and every flight-frame decrement ends clamped at 0 (0x801D2920 / 0x801D2944), so the product is never negative"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D2C54..0x801D2C54"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the clamp of `(record - 0x12C) << 3` below zero: the arm reads the previous frame's line record 0x801D927C, and the tail lands or recasts the cast on the frame the record drops under 0x136 (0x801D3C70), so a running in-water arm always sees a record of 0x136 or more"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D2CD0..0x801D2CD0"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the clamp of `(record - 0x12C) << 4` below zero, behind the same record of 0x136 or more as 0x801D2C54"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D2FD4..0x801D2FD4"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the round-toward-zero arm of `pull * 3 << 9 >> 13`; the pull 0x801D9148 is 0 or a 0xA00 / 0xC00 seed stepped down by dt << 7 and zeroed once under 0x600 (0x801D2ED8..0x801D2F40), so it is never negative"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D302C..0x801D302C"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the round-toward-zero arm of `pull * 5 << 8 >> 13`, over the same non-negative pull as 0x801D2FD4"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D34CC..0x801D34CC"
+verdict = "unported"
+reason = "PROT 0972 fishing lure tick: the dev print behind _DAT_8007B9B0, which SCUS only clears (0x8001D448) and only the PROT 0971 debug menu sets (0x801CED64); the port prints nothing"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3754..0x801D3754"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the round-toward-zero arm of `record / 32`; the line record 0x801D927C is FUN_801D765C's square root clamped at 0 (0x801D76C4) or the session's seed 10 (0x801CF89C), never negative"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3770..0x801D3770"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the divide trap on `rand() % (rod + 1)`; the rod word 0x80084454 is the bag's rod index, so the unsigned divisor is never 0"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3614..0x801D3614"
+verdict = "unported"
+reason = "PROT 0972 fishing lure tick: the hook's sound swap behind the latch 0x801D92A4 (seeded -1 at 0x801CF358, cleared at 0x801CF804 / 0x801CFDAC): it stops the source at 0x8007056C, reinstalls category 5 from the staging buffer _DAT_8007B85C + 0x32000 through FUN_8001E54C and restarts it; the port keeps the departure scene's music and has no such swap (PORT GAP)"
+
+[[arm]]
+entry = "0x801CF3BC"
+image = "d34a946ed9c68fe0"
+range = "0x801CF7E8..0x801CF7E8"
+verdict = "unported"
+reason = "PROT 0972 fishing session: the swap back of the hook's sound install when the latch 0x801D92A4 is up (0x801CF7F0..0x801CF828, FUN_8001E54C over _DAT_8007B85C); the port has no hook swap to undo (see the lure tick's 0x801D3614)"
+
+[[arm]]
+entry = "0x801CF3BC"
+image = "d34a946ed9c68fe0"
+range = "0x801CFD8C..0x801CFD8C"
+verdict = "unported"
+reason = "PROT 0972 fishing session: the second swap-back site for the hook's sound install (0x801CFD94..0x801CFDD4), as 0x801CF7E8"
+
+[[arm]]
+entry = "0x801CF3BC"
+image = "d34a946ed9c68fe0"
+range = "0x801CF46C..0x801CF46C"
+verdict = "unreachable"
+reason = "PROT 0972 fishing session: the jump table's bound test on the state 0x801D926C, an overlay word only 0972 stores; its 33 stores are the constants 0 / 1 / 0xA / 0x14 / 0x19 / 0x1E / 0x20 / 0x28 / 0x32 / 0x64 / 0x66 / 0x78 / 0x79 / 0x7A / 0x96 / 0xC8 and six +1 steps inside the arms of states 0xA, 0xB, 0xC, 0x14, 0x20 and 0x21, so it never reaches 0xC9"
+
+[[arm]]
+entry = "0x801CF3BC"
+image = "d34a946ed9c68fe0"
+range = "0x801CF400..0x801CF400"
+verdict = "unported"
+reason = "PROT 0972 fishing session head: with the Dual Shock Events option 0x800845A8 clear it copies the venue's motor words 0x801D90E0 / 0x801D90E4 into the pad's 0x8007B92C / 0x8007B930 every frame; the port's fishing drives no vibration (PORT GAP)"

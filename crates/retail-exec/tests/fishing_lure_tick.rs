@@ -209,6 +209,7 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         map
     };
     let (mut on_water, mut drifted) = (0u32, 0u32);
+    let mut lift_capped = 0u32;
     let templates = fs::parse_cadence_templates(&overlay).expect("templates");
     // Distinct species ids, so the lookup shows.
     let n = species.len() as u32;
@@ -383,6 +384,11 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             if rng.below(6) == 0 {
                 next |= [0x2000u32, 0x4000, 0x8000][rng.below(3) as usize];
             }
+            // One cast in five holds the lift a long stretch at a time, so
+            // the lift runs into its `0x1000` clamp (`0x801D2AEC..0x801D2AFC`).
+            if scenario % 5 == 2 && (frame / 40) % 2 == 0 {
+                next |= 0x4000;
+            }
             for (i, bit) in [0x40u32, 0x80].into_iter().enumerate() {
                 held_for[i] = if next & bit != 0 { held_for[i] + fs } else { 0 };
                 if held_for[i] >= 24 {
@@ -416,6 +422,7 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
                 "{:x?}",
                 cpu.calls
             );
+            lift_capped += u32::from(cpu.mem.rd32(LIFT) == 0x1000);
             // The landing hands over to the machine's state `0x19`, whose
             // entry resets the band check and the cadence ring.
             if state_before == 1 && cpu.mem.rd16(LURE + 0x22) == 2 {
@@ -601,8 +608,8 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
          classed water {on_water} drift {drifted}"
     );
     assert!(
-        on_water > 0 && drifted > 0,
-        "water {on_water} drift {drifted}"
+        on_water > 0 && drifted > 0 && lift_capped > 0,
+        "water {on_water} drift {drifted} lift capped {lift_capped}"
     );
     // A strike wants a held reel against a credit that mostly comes from a
     // recognised gesture (`0x801D31F4`), which a random pad seldom makes:
