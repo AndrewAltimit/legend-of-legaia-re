@@ -900,6 +900,12 @@
       "retail_cues": 7,
       "recording": "dd7845841b17"
     },
+    "rikuroa_vahn_seru_absorb": {
+      "cue": 1.0,
+      "matched": 10,
+      "retail_cues": 10,
+      "recording": "023a6900a1e0"
+    },
     "rikuroa_worm_strike": {
       "cue": 1.0,
       "matched": 4,
