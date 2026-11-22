@@ -2147,9 +2147,20 @@ impl RetailBattle {
                             && self.caster_clip > 1)
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.caster_clip),
+                    // Not on a results or exit capture: its target byte is
+                    // the finishing blow's, the last of a chain of turns, and
+                    // aiming every turn of the chain at it reorders the kills
+                    // (`battle_jou_gala_finisher_results_retail`: the film's
+                    // pad confirms each turn's default and kills rows 0, 1, 2,
+                    // leaving `+0x1DD = 5`; aimed, the replay killed 2, 0, 1
+                    // and left `3`).
                     aim: (seat < 3
                         && self.queued_category == 3
-                        && (3..8).contains(&self.target_code))
+                        && (3..8).contains(&self.target_code)
+                        && !matches!(
+                            self.span_gate,
+                            SpanGate::Results { .. } | SpanGate::Exit { .. }
+                        ))
                     .then(|| self.target_code - 3),
                     queue: ((seat < 3 && self.queued_category == 3 && self.arts_queue)
                         || (self.strike_stream_steer && self.strike_stream_steerable())
