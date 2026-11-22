@@ -610,7 +610,11 @@ every vsync) times it: `0x15` from vsync 93 with grace `270`; the answer at
 171, the check's 78th frame (7 saves); the fade landed at 235; the grace out
 at 369; one save stamped every 8 vsyncs (cell 0 at 374, cell 14 at 426); the
 grid at 434. `load_slot2_now_checking` and `load_slot2_grid` are frames 37
-and 235 of that check. Two of those numbers are the emulated card's latency,
+and 235 of that check. The pause menu's Load runs the same beat: a film of
+`conc_field_card_boot` (`SELECT`, five `DOWN`s onto Load, `CROSS`, `CROSS` on
+the `SLOT 1` pill, the same card in port 1) enters `0x15` with grace `270`,
+answers on the check's 77th frame, scans 64 frames and opens the grid 340
+frames after the commit, as the title's does. Two of those numbers are the emulated card's latency,
 not code: the answer's 78 frames and the 8 a save read holds the walk.
 
 **Port.** `SaveSelectSession` runs the check: `begin_card_check` seeds the
