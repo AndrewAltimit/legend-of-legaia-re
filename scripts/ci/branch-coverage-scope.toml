@@ -4341,3 +4341,64 @@ entry = "0x80054CB0"
 range = "0x80055004..0x80055004"
 verdict = "unreachable"
 reason = "the twin-letter walk's guard on `seat - 1 < 0`; seat `0` already left at `beqz s5` (0x80054FF8)"
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D38E0..0x801D38E0"
+verdict = "unreachable"
+reason = "The case bound a0 < 0x32: all 39 calls sit in FUN_801D0748 and each loads a0 as a constant 0..0x31 (li a0 / clear a0 ahead of every jal 0x801D388C, the 0x1B commit reaching the 0x801D2D1C jal by j 0x801D2D1C with a0 already 0x1B), so the bound never fails."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D43B0..0x801D43B0"
+verdict = "unreachable"
+reason = "Cases 0x19 / 0x1B / 0x1F dispatch on the target kind a1 (s7) 0..3; their calls pass a1 = 0 (0x801D1CD0), 2 (0x801D1CE8), 1 (0x801D1D44) and 3 (0x801D1D58), so the fall past kind 3 is never taken."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D481C..0x801D481C"
+verdict = "unreachable"
+reason = "Case 0x22's row dispatch on s3 = 0x2B + 3 * ctx[+0x1F] (0x801D4774..0x801D477C): the row index is the members already logged, 0..2, so s3 is 0x2B, 0x2E or 0x31 and a value below 0x2F other than 0x2E is 0x2B."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D4A00..0x801D4A00"
+verdict = "unreachable"
+reason = "Case 0x23's row dispatch on s3 = 0x2B + 3 * ctx[+0x1F] (0x801D4918..0x801D4928): the row index is 0..2, so s3 is 0x2B, 0x2E or 0x31 and a value below 0x2F other than 0x2E is 0x2B."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D4B5C..0x801D4B5C"
+verdict = "unreachable"
+reason = "Case 0x24 dispatches on ctx[+0x1F], the member count at the Begin confirm, 1..3 (a party seats at most three), so a value of 3 or more is 3 and the fall to the shared step is never taken."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA23C..0x801EA23C"
+verdict = "unreachable"
+reason = "The physical arm's empty action list (record +0x4A == 0): only Cort's 0xB4 and 0xB7..0xBA carry no swing candidate (monster_pick::every_shipped_monster_but_cort_has_a_swing); 0xB4's id forces the magic arm (0x801EA18C..0x801EA198) and no formation seats 0xB7..0xBA (patcher cort_forms_unseated_real; the arena init's PROT 0977 table names none and FUN_8005567C's debug id _DAT_8007B7FC has no writer)."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA310..0x801EA318"
+verdict = "unreachable"
+reason = "Divide trap on the physical pick rand() % sp[0x10], the record's swing-candidate count: zero only for Cort's 0xB4 (forced onto the magic arm by its id, 0x801EA18C..0x801EA198) and 0xB7..0xBA, which no formation seats (patcher cort_forms_unseated_real), so a picking monster always has one."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EBAE0..0x801EBAE0"
+verdict = "unreachable"
+reason = "Monster 0xB5's arm: a second read of the phase word DAT_801C8FE4, reached only past the first read's bne at 0x801EBA7C (zero) with nothing but the rand() call between, so it is always zero here."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EBC4C..0x801EBC4C"
+verdict = "unreachable"
+reason = "Monster 0xA7's MP scan over the party ctx[+0x00] seats: battle setup seats 1..3 members, so the empty-party skip is never taken."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D2740..0x801D2750"
+verdict = "unreachable"
+reason = "PROT 0972: the lure's state halfword +0x22 dispatch; the actor spawns with it zeroed and the tick's only writers step it by one, out of state 0 (0x801D2764) and on state 1's landing (0x801D2988), so it is 0, 1 or 2 and neither the negative nor the above-2 fall to 0x801D39C8 is taken."
