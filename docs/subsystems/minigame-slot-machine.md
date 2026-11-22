@@ -158,7 +158,10 @@ The picker draws three things each frame:
 
 - the **row words**, one 80x48 4bpp image rather than text: `FUN_801D317C(0xEC, 0x62)` emits a `POLY_FT4` over framebuffer `(236, 98)..(404, 146)` sampling page `(832, 256)` at `uv (0, 160)` under CLUT `0x7B43`;
 - the **cursor**, HUD widget 2 through `FUN_801D2CC0(0, 0xDC, row * 0x10 + 0x6C, 2, 0x80, 0x2000, 0x1000)`, its x scale doubled for the 640-wide mode;
-- the **box**, `FUN_8002C69C(0xDC, 0x68, 0xD2, 0x27)` with the skin record `gp+0x14C` holds, which the `minigame_slot_machine` capture reads as `0x44` (the dialog skin). It is the two semi-transparent gouraud fill passes and the border tiles of the system-UI sheet the boot loads at `(896, 256)` (`PROT.DAT` `0x018E0`) and never unloads. The tiles are framebuffer sprites, so in the 640-wide mode they come out half as wide. The port uploads the sheet beside the art pack (`SlotCabinetAssets::with_system_ui`).
+- the **box**, `FUN_8002C69C(0xDC, 0x68, 0xD2, 0x27)` with the skin record `gp+0x14C` holds, which the `minigame_slot_machine` capture reads as `0x44`. Widget record `0x44` is the class-0 frame (kind `0`, fill tile `(0x80, 0x00)` 32x32 under palette 2 of row 511): `FUN_8002BDC4` fills the box inflated by 8 with opaque `POLY_GT4`s of the tile, banded and shaded `0x40 -> 0x88` down it - the blue marble on every retail capture of the picker and the rules.
+  The border tiles of the system-UI sheet the boot loads at `(896, 256)` (`PROT.DAT` `0x018E0`) and never unloads go over it. Both are framebuffer pixels, so in the 640-wide mode they come out half as wide. The port uploads the sheet beside the art pack (`SlotCabinetAssets::with_system_ui`) and draws both (`slot_cabinet::box_marble`, `box_border`); without the sheet it falls back to a gradient.
+
+Retail states sit on the picker (rows 0 and 2) and on both rules pages, seeded by retail-compare from the machine at rest ([retail-compare](../tooling/retail-compare.md#minigame-states)).
 
 The rules row (states `0x33..0x39`) fades to black `0x10` a frame (`FUN_80024EE4(0, 2, level * 0x10101)`), switches the display to 320 wide (`FUN_8001DAF8(0x140)`) and shows two pages in a full-screen box:
 

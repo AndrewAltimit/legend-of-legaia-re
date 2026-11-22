@@ -4358,15 +4358,22 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   departure scene the mode-24 init backed up (`_DAT_8007BAC4`). State `0xB`, the
   fade in front of it, still shows what stood before: `minigame_fishing_retail_ready`
   is parked there on the rod and water of an earlier cast, and stays unseeded.
-- **The fishing prize exchange's screens** (state word `0x78..=0x7A` with the hub
-  menu's cursor `0x801D912C` on row `3`): the list, the quantity picker and the
-  confirm are pad history with no `rand()` in it. The seed replays the pad from
-  the idle shore, on the headless session and as the image child's
-  `--pad-script`: Triangle opens the hub, Down to row 3, Cross; Up from the
-  list's entry row (`5`) to the capture's cursor `0x801D90A8`; Cross and Right
-  to its quantity `0x801D90B0`; Cross and Up to its confirm row `0x801D90B4`.
-  The `minigame` channel adds the screen, the cursor, the quantity and the
-  confirm row.
+- **The fishing hub's screens**: the help pages (`0x65` / `0x66`, hub row 1),
+  the tackle list (`0x6E`, row 2) and the prize exchange's list, quantity
+  picker and confirm (`0x78..=0x7A`, row 3), read off the hub menu's cursor
+  `0x801D912C`. They are pad history with no `rand()` in it. The seed replays
+  the pad from the idle shore, on the headless session and as the image
+  child's `--pad-script`: Triangle opens the hub, Down to the row, Cross; a
+  Cross to help page 1; Down from the equipped lure `_DAT_80084450` to the
+  tackle cursor `0x801D90DC`; on the prize list, Up from its entry row (`5`) to
+  the capture's cursor `0x801D90A8`, Cross and Right to its quantity
+  `0x801D90B0`, Cross and Up to its confirm row `0x801D90B4`. The `minigame`
+  channel adds the screen and those words.
+- **The slot machine's cash-out picker and rules pages** (`0x32`, `0x35`,
+  `0x36`) on a machine never played (balance still the bank's): Triangle opens
+  the picker, Down to its cursor `DAT_801D4110`; row 2's Cross fades into the
+  rules, and a Cross once faded in turns to the payout chart. The `minigame`
+  channel adds the picker's row.
 - **The dance's count-in** (`DAT_801D5334` in `3..=5`), sampled at the capture's
   own banner counter `DAT_801D5158` or `GO!` accumulator `DAT_801D515C`.
 - **The dance's play loop on a floor the pad never reached** (`DAT_801D5334 = 0xA`

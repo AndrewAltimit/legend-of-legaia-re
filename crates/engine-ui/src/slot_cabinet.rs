@@ -527,12 +527,12 @@ pub const MENU_OT: u32 = 1;
 /// The picker's box sits one bucket behind its words and cursor.
 const MENU_BOX_OT: u32 = 2;
 
-/// Interior of one `FUN_8002C69C` box over the centre rect `(x, y, w, h)`:
-/// the two stacked semi-transparent (`B/2 + F/2`) `POLY_G4` passes, top
-/// `(0x18, 0x18, 0x28)` to bottom `(0x40, 0x40, 0xA0)`, over the centre rect
-/// inflated by 4. `half_x` halves x for the 640-wide mode. The skin's border
-/// tiles sample the resident system-UI sheet, which the machine's VRAM here
-/// does not carry, so only the fill is drawn.
+/// A gradient stand-in for one `FUN_8002C69C` box's interior over the
+/// centre rect `(x, y, w, h)`, for VRAM without the system-UI sheet
+/// ([`box_marble`] is the box itself): two stacked semi-transparent
+/// (`B/2 + F/2`) `POLY_G4` passes, top `(0x18, 0x18, 0x28)` to bottom
+/// `(0x40, 0x40, 0xA0)`, over the centre rect inflated by 4. `half_x` halves
+/// x for the 640-wide mode.
 fn box_fill(rect: (i32, i32, i32, i32), half_x: bool, ot: u32, out: &mut Vec<ScreenPrim>) {
     let (x, y, w, h) = (rect.0 - 4, rect.1 - 4, rect.2 + 8, rect.3 + 8);
     let sx = |v: i32| {
@@ -555,6 +555,48 @@ fn box_fill(rect: (i32, i32, i32, i32), half_x: bool, ot: u32, out: &mut Vec<Scr
             ot_index: ot,
             depth: None,
         }));
+    }
+}
+
+/// The fill of one `FUN_8002C69C` box in style `0x44`, the value
+/// `gp+0x14C` holds while the machine runs: widget record `0x44` is the
+/// class-0 frame (kind `0`, fill tile `(0x80, 0x00)` 32x32 under palette 2 of
+/// row 511 on the system-UI page), whose fill `FUN_8002BDC4` covers the
+/// centre rect inflated by 8 with opaque `POLY_GT4`s of the tile, banded and
+/// shaded `0x40 -> 0x88` down the box
+/// ([`crate::battle_hud_chrome::class0_fill_quads`]). The quads are
+/// framebuffer pixels, texels 1:1, so in the 640-wide mode they come out half
+/// as wide. Retail's picker and rules pages show this marble, not a gradient.
+///
+/// REF: FUN_8002BDC4
+fn box_marble(rect: (i32, i32, i32, i32), mode_320: bool, ot: u32, out: &mut Vec<ScreenPrim>) {
+    use legaia_ui_formats::title_pak as tp;
+    const TPAGE: u16 = 0x1E;
+    const CLUT: u16 = 0x7FC0 + tp::OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW;
+    const TILE_UV: (u8, u8) = (0x80, 0x00);
+    let frame = (rect.0 - 8, rect.1 - 8, rect.2 + 16, rect.3 + 16);
+    let tile = crate::battle_hud_chrome::CLASS0_FILL_TILE;
+    let k = if mode_320 { 2.0 } else { 1.0 };
+    let grey = |g: i32| {
+        let g = g.clamp(0, 0xFF) as u32;
+        g | (g << 8) | (g << 16)
+    };
+    for q in crate::battle_hud_chrome::class0_fill_quads(frame, (tile, tile)) {
+        let (x0, x1) = (q.x as f32 * k, (q.x + q.w) as f32 * k);
+        let (y0, y1) = (q.y as f32, (q.y + q.h) as f32);
+        let (u0, v0) = TILE_UV;
+        let (u1, v1) = (u0 + q.w as u8, v0 + q.h as u8);
+        let (t, b) = (grey(q.top), grey(q.bottom));
+        out.push(textured(
+            [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+            [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
+            CLUT,
+            TPAGE,
+            t,
+            Some([t, t, b, b]),
+            false,
+            ot,
+        ));
     }
 }
 
@@ -704,8 +746,10 @@ pub fn slot_menu_prims(
             }
             if assets.system_ui {
                 box_border((0xDC, 0x68, 0xD2, 0x27), false, MENU_BOX_OT, &mut out);
+                box_marble((0xDC, 0x68, 0xD2, 0x27), false, MENU_BOX_OT, &mut out);
+            } else {
+                box_fill((0xDC, 0x68, 0xD2, 0x27), true, MENU_BOX_OT, &mut out);
             }
-            box_fill((0xDC, 0x68, 0xD2, 0x27), true, MENU_BOX_OT, &mut out);
         }
         sc::SlotScreen::NoCoins => {
             // `SPRT` 256x48: the last texel column / row is the u8 edge.
@@ -733,8 +777,10 @@ pub fn slot_menu_prims(
             }
             if assets.system_ui {
                 box_border((0, 0, 0x140, 0xF0), true, MENU_BOX_OT, &mut out);
+                box_marble((0, 0, 0x140, 0xF0), true, MENU_BOX_OT, &mut out);
+            } else {
+                box_fill((0, 0, 0x140, 0xF0), false, MENU_BOX_OT, &mut out);
             }
-            box_fill((0, 0, 0x140, 0xF0), false, MENU_BOX_OT, &mut out);
             out.push(ScreenPrim::Flat(FlatQuad {
                 xy: [(0, 0), (320, 0), (0, 240), (320, 240)],
                 color: [0, 0, 0, 0xFF],
