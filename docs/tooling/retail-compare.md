@@ -4237,7 +4237,13 @@ NEW GAME at tick `750`, on CONTINUE at `810`, the pill row at `890`) - and
 score the image channel only. A scenario that names a `memory_card` mounts it
 even short of the grid: no card contents show there, but the port's title
 greys CONTINUE on a rack with no save (a port guard retail does not have), so
-the drive onto CONTINUE needs one. Any other title sub-mode (the launch fade
+the drive onto CONTINUE needs one. `0x15` is a committed pill (the card read):
+the drive picks the committed port off `_DAT_8007B834`, commits at tick `940`
+and captures the card screen's own frame count since the commit
+(`_DAT_801EF124`) later, with the scenario's card in port 2 (`--card`) when
+the capture committed `SLOT 2`. The engine's card read is instant, so a
+capture caught mid-read (`load_slot2_grid`) scores the read's end against
+retail's placeholder cells. Any other title sub-mode (the launch fade
 `0x16` a card-boot capture is caught in) is kept with a `menu not seedable:`
 reason and counted as a classified limit.
 

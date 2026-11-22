@@ -9092,6 +9092,7 @@ backup_fingerprint = "3db1fdcc586e046959a4ed6e87f61bc728a561b935fc7b6e6826959e6b
 description = "RETAIL disc and SCUS, no RAM pokes: save_select_idle played forward on PCSX-Redux with the pad only (DOWN at vsync 30, CROSS at 90, autorun_film.lua's schedule), memory card 2 holding a seven-save endgame card; saved 130 vsyncs after the load. SLOT 2 committed: its pill has slid up on SLOT 1's track and parked under the Load tab, and the Now checking dialog is up."
 phase = "menu"
 expected_game_mode = 0x17
+memory_card = "playthrough-endgame-7saves.mcr"
 topics = ["menu", "save screen", "load", "SLOT 2", "now checking"]
 
 [[scenarios]]
@@ -9100,4 +9101,5 @@ backup_fingerprint = "4b13079a5029d99fd2922746e6e06dc77fc9846ed43d1dc8e5612c5254
 description = "RETAIL disc and SCUS, no RAM pokes: save_select_idle played forward on PCSX-Redux with the pad only (DOWN at vsync 30, CROSS at 90, autorun_film.lua's schedule), memory card 2 holding a seven-save endgame card; saved 330 vsyncs after the load. SLOT 2's pill parked under the Load tab beside the card's block grid with its save faces, the Now checking dialog still up."
 phase = "menu"
 expected_game_mode = 0x17
+memory_card = "playthrough-endgame-7saves.mcr"
 topics = ["menu", "save screen", "load", "SLOT 2", "block grid"]

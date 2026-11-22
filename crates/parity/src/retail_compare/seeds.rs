@@ -2285,12 +2285,24 @@ pub enum TitleScreen {
     /// `0x14` `MainMenu`, the `SLOT 1` / `SLOT 2` pill row CONTINUE opens
     /// over the title, before any card is read.
     Pill,
+    /// `0x15`, a pill committed: the card read under "Now checking", the
+    /// pill parked under the Load tab and, once the card answers, its
+    /// block grid. `port` is the committed card (`_DAT_8007B834`), and
+    /// `frames` the screen's frame count since the commit
+    /// (`_DAT_801EF124`), which says how far the read has got.
+    CardCheck { port: u8, frames: u16 },
 }
 
 /// [`CARD_SCREEN_SUBMODE`] on the live title menu (`AttractIdle`).
 pub const TITLE_SUBMODE_MENU: u32 = 0x10;
 /// [`CARD_SCREEN_SUBMODE`] on the title's pill row (`MainMenu`).
 pub const TITLE_SUBMODE_PILL: u32 = 0x14;
+/// [`CARD_SCREEN_SUBMODE`] once a pill is committed (the card read).
+pub const TITLE_SUBMODE_CARD_CHECK: u32 = 0x15;
+/// `_DAT_8007B834`, the committed card port (`0` SLOT 1, `1` SLOT 2).
+pub const TITLE_CARD_PORT: u32 = 0x8007_B834;
+/// `_DAT_801EF124`, the card screen's frame count since the commit.
+pub const TITLE_CARD_FRAMES: u32 = 0x801E_F124;
 /// `_DAT_8007B820`, the title menu's row counter (`AttractIdle` steps it on
 /// `Up | Down` and wraps it with `andi 1`, `0x801DDB9C`).
 pub const TITLE_ROW: u32 = 0x8007_B820;
@@ -2338,6 +2350,10 @@ impl RetailMenu {
                 row: game_anchors::u8_at(ram, TITLE_ROW) & 1,
             }),
             TITLE_SUBMODE_PILL => Some(TitleScreen::Pill),
+            TITLE_SUBMODE_CARD_CHECK => Some(TitleScreen::CardCheck {
+                port: game_anchors::u8_at(ram, TITLE_CARD_PORT) & 1,
+                frames: game_anchors::u32_at(ram, TITLE_CARD_FRAMES).min(0x7FFF) as u16,
+            }),
             _ => None,
         };
         if subscreen == 0
