@@ -1834,7 +1834,7 @@ changes = [
 
 [[loosening]]
 file = "scripts/ci/cost-baseline.json"
-reason = "Play-page gzip is the wave's ported behaviour compiled in: the fishing prize quantity picker and confirm screens with their draws, the venue exit fade, the action state machine's summon, run and capture band holds, the Begin exit's per-row glide, the HUD readout records, the Seru-absorb puff and battle-end walk gates, the shared pause-menu party cursor, and the escape clock's save block (+7.6 KB). No asset or dependency added; the tool bundle and every native and browser count stayed under their baselines."
+reason = "Play-page gzip is the wave's ported behaviour compiled in: the fishing prize quantity picker and confirm screens with their draws, the venue exit fade, the action state machine's summon, run and capture band holds, the Begin exit's per-row glide, the HUD readout records, the Seru-absorb puff and battle-end walk gates, the shared pause-menu party cursor, the escape clock's save block and the battle-return floor-oscillator sweep (+7.6 KB). No asset or dependency added; the tool bundle and every native and browser count stayed under their baselines."
 changes = [
-  ["counts/bundle/play_gzip_bytes", 5217178, 5224959],
+  ["counts/bundle/play_gzip_bytes", 5217178, 5224990],
 ]

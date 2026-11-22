@@ -52,7 +52,7 @@
   },
   "bundle": {
    "gzip_bytes": 7363299,
-   "play_gzip_bytes": 5224959
+   "play_gzip_bytes": 5224990
   },
   "native": {
    "battle": {
