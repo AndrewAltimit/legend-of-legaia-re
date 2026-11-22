@@ -531,3 +531,66 @@ image = "39b58a37a5cb0174"
 range = "0x801F9BB0..0x801F9BB0"
 verdict = "unreachable"
 reason = "PROT 0934: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F9BA4`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "84d086d30fca1bb6"
+range = "0x801F6B14..0x801F6B14"
+verdict = "unreachable"
+reason = "PROT 0954: the phase is a `lbu` of `ctx+0x279`; past `slti 7`, `beq 2`, `slti 3` and `beqz` (`0x801F6AE8..0x801F6B0C`) only `1` is left, so `beq v1,fp` with `fp = 1` always takes and its fall to the epilogue never runs."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "84d086d30fca1bb6"
+range = "0x801F6B80..0x801F6B80"
+verdict = "unreachable"
+reason = "PROT 0954: no store leaves the phase in `13..=0xFE`. Every arm steps it by one from `0` (arm 0) to `12`, arm 10's outcome arms step it at most once more to `12`, and arm 12 writes `0xFF` (`0x801F84F8`), so the switch's no-arm fall never runs."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "84d086d30fca1bb6"
+range = "0x801F6C88..0x801F6C88"
+verdict = "unreachable"
+reason = "PROT 0954: `ctx+0` is the party count, at least one in every battle (a formation always seats the lead), so arm 0's party hide loop is never skipped."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "84d086d30fca1bb6"
+range = "0x801F6CE0..0x801F6CE0"
+verdict = "unreachable"
+reason = "PROT 0954: `ctx+1` is the monster count; Fatal Decision is cast by formation monster `0x77`, `0x78` or `0x79` (arm 4's table, `0x801F6FE4..0x801F7014`), so the count is at least one and arm 0's monster hide loop is never skipped."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "84d086d30fca1bb6"
+range = "0x801F7030..0x801F7030"
+verdict = "unreachable"
+reason = "PROT 0954: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7024`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "84d086d30fca1bb6"
+range = "0x801F708C..0x801F708C"
+verdict = "unreachable"
+reason = "PROT 0954: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7080`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "84d086d30fca1bb6"
+range = "0x801F7114..0x801F7114"
+verdict = "unreachable"
+reason = "PROT 0954: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7100`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "84d086d30fca1bb6"
+range = "0x801F7940..0x801F7940"
+verdict = "unreachable"
+reason = "PROT 0954: `bgez` on the step byte (`lbu 0x7F` off `0x1F800314`) times the countdown, which is positive past `bgtz` at `0x801F774C` and at least `0x200` past `slti` at `0x801F7924`, so the product is never negative and the divide's rounding fix-up never runs."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "84d086d30fca1bb6"
+range = "0x801F8190..0x801F8190"
+verdict = "unreachable"
+reason = "PROT 0954: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F8184`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
