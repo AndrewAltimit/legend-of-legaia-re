@@ -202,3 +202,24 @@ image = "2f10b59de1522413"
 range = "0x801CFC78..0x801CFC78"
 verdict = "unported"
 reason = "PROT 0980 dance state 5's wait on the drive (FUN_8003DE7C(1)) before it opens the song stream; the port's reads are synchronous, so CountIn hands over on the GO! fade alone"
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801D011C..0x801D011C"
+verdict = "unported"
+reason = "PROT 0980 dance tick tail: the song-counter dev print (FUN_8001A068) behind _DAT_8007B9B0, which SCUS only clears (0x8001D448) and only the PROT 0971 debug menu sets (0x801CED64); the port prints nothing"
+
+[[arm]]
+entry = "0x801CF3BC"
+image = "d34a946ed9c68fe0"
+range = "0x801CF440..0x801CF440"
+verdict = "unported"
+reason = "PROT 0972 fishing session head: the dev print (FUN_8001A068 of the game-state +0x310 / +0x314 words) behind _DAT_8007B9B0, which SCUS only clears (0x8001D448) and only the PROT 0971 debug menu sets (0x801CED64); the port prints nothing"
+
+[[arm]]
+entry = "0x801CF3BC"
+image = "d34a946ed9c68fe0"
+range = "0x801D028C..0x801D028C"
+verdict = "unported"
+reason = "PROT 0972 fishing session tail: the XA in-flight test that clears or raises the latch 0x801D90CC; PROT 0972 starts no CD-XA line (no jal to FUN_8003D53C / FUN_80019794 / FUN_8003EAE4) and nothing reads the latch (docs/subsystems/minigame-fishing.md), so the port keeps no latch"
