@@ -1385,15 +1385,19 @@ reset. Ports: `cast_module_ticks::power_up_tick`, `all_stats_surge_tick`.
 |---|---|
 | `0x801F8F0C` White Shield | both halves of both defence pairs (`+0x15C` / `+0x15E`, `+0x160` / `+0x162`) = the caster's **record** base `x 3/2`, read through `0x801C9348[seat - 3]`; idempotent, since the source is the record |
 | `0x801F7158` Power Charge | both halves of the ATK pair (`+0x158` / `+0x15A`) `+= x >> 2`, each capped at `999` (`sltiu 0x3E8` at `0x801F74D4`) |
-| `0x801F7FA4` Melt Spray | ten halfwords (ATK, UDF, LDF, SPD, INT, working and base), each `x - (x + 9) / 5` |
+| `0x801F7FA4` Melt Spray | ten halfwords (ATK, UDF, LDF, SPD, INT, working and base), each `x - (x + 9) / 10` |
 | `0x801F6A28` Void Accessories | `rand() % 3` picks one of the victim's accessory slots (`record[+0x19B + slot]`); on a second `rand() & 1 == 0` and a non-empty slot it refunds the id to the bag (`FUN_800421D4`), clears the record byte and rebuilds the ability bitfield (`FUN_80042558`) |
 
-Melt Spray's floor: each store is followed by `bnez ...; addiu v0,v0,1`, which
-tests the full 32-bit difference while the store is a 16-bit `sh`. A stat of
-`2` lands on zero and is corrected to `1`; a stat of `0` or `1` goes to `-1`,
-misses the `bnez`, and is written back as `0xFFFF`. This differs from the item
-buffs' `x * 6/5` clamped to `0xFFFF`
-([battle-formulas.md](battle-formulas.md)), and from 0954's floor of `1`.
+Melt Spray's cut is the `0x66666667` reciprocal with `sra 2`: a tenth of
+`x + 9` (`0x801F8324..0x801F83E4`, and the base halves from `0x801F8448`), never
+more than the stat, so the difference is never negative. Each store is followed
+by `bnez ...; addiu v0,v0,1`, which lifts the zero a stat of `0` or `1` lands
+on to `1`. This differs from the item buffs' `x * 6/5` clamped to `0xFFFF`
+([battle-formulas.md](battle-formulas.md)). The port had read the reciprocal as
+a fifth, so a Melt Spray took twice the stats retail takes and turned a stat of
+`0` or `1` into `65535`; the capture-camera differential now runs the debuff on
+the pass arm 3's countdown runs out over random stats and the floor's edge
+values, and the two agree. Grade `disassembly`.
 
 **The turn steal.** The other two 0955 bodies share one idiom
 (`0x801F8CF4..0x801F8D54` in Kiss of Death's miss arm,

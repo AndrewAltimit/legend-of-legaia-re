@@ -253,6 +253,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut outcomes = std::collections::BTreeSet::new();
     let mut unsettled_holds = 0usize;
     let (mut results, mut heal_capped) = (0usize, false);
+    let mut debuffs = 0usize;
     let all = bodies();
     for body in &all {
         let module = disc.read_entry(body.entry as usize).expect("module");
@@ -326,6 +327,20 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // Death Game's heal reads each seat's maximum `+0x14E` and caps
             // the quarter at the missing HP: a seat at full, one short and
             // one wounded.
+            // Melt Spray's five stats on the victim, both halves, the floor's
+            // edge values among them (`0`, `1`, `2`).
+            if body.action == 0x6F {
+                for (k, o) in (0x158u32..0x16C).step_by(2).enumerate() {
+                    let v = match (round + k) % 6 {
+                        0 => 0,
+                        1 => 1,
+                        2 => 2,
+                        _ => rng.below(1000) as u16,
+                    };
+                    cpu.mem.wr16(va_ + o, v);
+                }
+                cpu.mem.wr8(va_ + 0x1F2, (round % 2) as u8);
+            }
             if death_game {
                 for a in [ca, va_] {
                     let hp = cpu.mem.rd16(a + 0x14C);
@@ -616,6 +631,32 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     failures.push(format!("{c}: shot retail {got:?} port {want:?}"));
                 }
                 let after = cpu.mem.rd8(CTX + 0x279);
+                // Melt Spray's debuff, on the pass arm 3's countdown runs out
+                // (`0x801F82E0`, then `0x801F8314..0x801F8598`), against the
+                // kernel the host runs on that pass (`melt_spray_tick`).
+                if body.action == 0x6F && phase == t::MELT_SPRAY_DEBUFF_ARM && after != phase {
+                    let mut pv = before[1];
+                    let mut pctx = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
+                    pctx.phase = phase;
+                    t::melt_spray_tick(&mut pctx, &mut pv, true);
+                    let got = crate::cast_view::read_actor(&mut cpu.mem, va_);
+                    let key = |x: &t::CastActorState| {
+                        (
+                            [x.atk, x.udf, x.ldf, x.spd, x.intel],
+                            [x.atk_base, x.udf_base, x.ldf_base, x.spd_base, x.intel_base],
+                            x.staged_anim,
+                            x.restage,
+                        )
+                    };
+                    if key(&got) != key(&pv) {
+                        failures.push(format!(
+                            "{c}: Melt Spray retail {:?} port {:?}",
+                            key(&got),
+                            key(&pv)
+                        ));
+                    }
+                    debuffs += 1;
+                }
                 if death_game {
                     // The word `0x801FA278`, which `capture_countdown_va`
                     // does not list.
@@ -727,6 +768,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     eprintln!("{} bodies, {casts} casts, {passes} passes", all.len());
     eprintln!("Death Game outcomes {outcomes:?}");
     assert_eq!(outcomes.len(), 4, "Death Game outcomes {outcomes:?}");
+    assert!(debuffs >= 4, "Melt Spray debuffs compared {debuffs}");
     assert!(
         results >= 4 && heal_capped,
         "Death Game results compared {results}, a heal capped by the missing HP {heal_capped}"

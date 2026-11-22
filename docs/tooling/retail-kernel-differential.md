@@ -870,6 +870,15 @@ turn on the victim's display pair `+0x3C` / `+0x40`, not its live pair. Stone Ci
 cut is on the origin the prologue zeroed. Dead End Crisis's arm 0 lines the party up off `0x80077628` and stands
 seat 3 opposite before it frames, which the port did not carry.
 
+The same walk now compares what three bodies write to their seats. Death Game's picked card (`0x801F922C..0x801F9794`)
+runs on seats at full, short and wounded HP against `death_game_outcome` and the arm's seat writes, and agrees.
+Melt Spray's debuff, on the pass arm 3's countdown runs out, did not: retail cuts each of the ten halfwords by
+`(x + 9) / 10`, where the port cut a fifth and turned a stat of `0` or `1` into `0xFFFF`. Terror Scream's caster
+bands are held against a census of the AI picker's jump table, the monster records and every formation on the
+disc. The summon cameras run on retail's stage seats as well as the walk's own row, and hold the side-band stage
+up on each image's poll arm: Palma's arm 3 framed a lift its first monster does not make once that monster is
+down, and the band's poll dropped the TR z push Slippery's arm 1 makes while it waits.
+
 That line-up and the `0xFF` arm's restore now run off the module image against their port (`dead_end_crisis`): all
 eight records whole, the module's saved words and the context. The `cort_evolved_final_crisis_mid_cast` capture
 reads the stood seats and the saved poses. PROT 0927's stager arm 7, which jitters its caller's `+0x84` and rotation
