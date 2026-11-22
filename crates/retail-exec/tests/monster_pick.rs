@@ -354,9 +354,18 @@ fn a_monster_picks_what_retail_picks() {
     cpu.stub(0x8003_EAE4, 0);
     let mut w = World::new();
     w.menu.text = Some(MenuTextTables::from_scus(&scus));
-    let mut rng = Rng(0x5049_434B);
+    // `PICK_SEED` (hex) and `PICK_ROUNDS` sweep other generator streams; the
+    // default run is the one CI keeps.
+    let mut rng = Rng(std::env::var("PICK_SEED")
+        .ok()
+        .and_then(|v| u64::from_str_radix(&v, 16).ok())
+        .unwrap_or(0x5049_434B));
+    let rounds: u32 = std::env::var("PICK_ROUNDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50_000);
     let (mut failures, mut casts, mut swings) = (Vec::new(), 0, 0);
-    for round in 0..8000 {
+    for round in 0..rounds {
         let p = gen_pick(&mut rng);
         seed_retail(&mut cpu, &p);
         state.set(p.seed);

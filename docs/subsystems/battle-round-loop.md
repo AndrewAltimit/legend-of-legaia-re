@@ -654,6 +654,8 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 | `World::advance_battle_mode` | The `ctx+0x28a` writer: the action SM's `case 0xFF` (`_DAT_8007BD24[0x28A] += 1`). |
 | `World::expansion_boss_pick` | Not retail: an expansion pack's [boss script](../formats/expansion-pack-battle.md#boss-scripts) picks for a scripted pack monster ahead of the generic core; `None` (the retail pick) for every other seat. |
 
+- Every target arm of the core stores `+0x1DD` the moment it resolves, and the walk goes on to re-match the next tag-`0x23` entry. A re-match that then fails (a heal with no patient) leaves the earlier store standing, in its pass and through the retries, so a self-heal whose second match fails still lands on the caster. The port's pick carries the last target written for exactly that case.
+- Under a `0x380` status the `0x97` / `0x98` arm clears a cast's category and stores nothing to `+0x1DF`, so the recent-target ring reads the core's spell: a spell `0x70` pick takes the ring's exemption and draws nothing.
 - Monsters `0x0E` and `0x0F` pass a Cursed member by: their arms draw a party member, then test its `+0x16E & 0x1000` ahead of the cast roll (`0x801EAE94` / `0x801EAF88`), so a Cursed pick ends the arm with no cast and one draw fewer.
 - The cooldown latches arm once per battle with no per-round re-arm: retail clears the array only at battle init in `FUN_80055b6c`, so a boss self-heals at most once per fight.
 - The picker drives the live loop's monster turns, folding a chosen cast through `cast_spell_on_slots` (the shared player / monster cast path) and parking the SM at `EndOfAction`.
