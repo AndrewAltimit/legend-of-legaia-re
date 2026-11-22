@@ -9,7 +9,8 @@ use super::*;
 const MODULE_LINE_FRAME_VSYNCS: u8 = 6;
 
 /// Action state `0x71`, the capture band's finalize: the module has returned
-/// done and the state waits on the victim to settle (`FUN_801E4490`'s table).
+/// done and the state waits on the victim to settle (the arm at `0x801E4490`
+/// inside `FUN_801E295C`).
 const CAPTURE_FINALIZE_STATE: u8 = 0x71;
 /// Action state `0x50`, the Done band's first pass.
 const DONE_CLEANUP_STATE: u8 = 0x50;

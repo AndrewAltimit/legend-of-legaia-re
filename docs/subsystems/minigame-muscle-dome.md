@@ -142,7 +142,7 @@ Both the course and the round live in the low byte of the mode-24 sub-id word `_
 | course | `((word - 1) & 0xFF) >> 4` | `0x801CEBD4..0x801CEBE8`, `0x801CEC30` |
 | round | `(word - 1) & 0xF` | `0x801CEC18` |
 | next leg | `word + 1` | `0x801CEC00` / `0x801CEC08` |
-| re-pack | `(word & ~0xFF) + 1 + (course << 4) + round` | `FUN_801D0088`, `0x801D00B8..0x801D00E4` |
+| re-pack | `(word & ~0xFF) + 1 + (course << 4) + round` | `FUN_801CF870` exit tail, `0x801D00B8..0x801D00E4` |
 
 The re-pack leaves every byte above the low one alone, so the restriction bits seeded at entry (`0x100` / `0x300` above the low byte) survive the whole contest. Decoded course / round land in `DAT_801D1A90` / `DAT_801D1A94`, the pair `FUN_801D1510` indexes the ladder with.
 
@@ -1068,7 +1068,7 @@ Arena overlay (PROT 0977):
 | `FUN_801CF870` | contest hub (dump `overlay_0977_slotA_801cf870.txt`, truncated) |
 | `FUN_801CF074` | score tally screen |
 | `FUN_801D00F8` | hub backdrop emitter (ringside still / brick wall) |
-| `FUN_801D0088` | `(course, round)` re-pack tail |
+| `0x801D0088..0x801D00F0` | `(course, round)` re-pack tail: the exit of `FUN_801CF870`, not a routine of its own |
 | `FUN_801D02F0` / `FUN_801D042C` / `FUN_801D050C` | ROUND banner / course card / scaled sprite emitter |
 | `FUN_801D0CD4` | dev course / round picker |
 | `FUN_801D0ED8` | contest-start restore |

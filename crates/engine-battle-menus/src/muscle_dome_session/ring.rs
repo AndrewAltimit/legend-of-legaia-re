@@ -19,7 +19,7 @@ use super::*;
 /// carry this bit, so **every dome visit with a course unlocked forbids the
 /// Item chip**, while an arena with no course unlocked (word `1`) forbids
 /// nothing. Thereafter the
-/// arena stamps only the low byte (`FUN_801D0088` at
+/// arena stamps only the low byte (the hub `FUN_801CF870`'s exit tail at
 /// `0x801D00B8..0x801D00E4` writes `(old & ~0xFF) + (course << 4) + round + 1`,
 /// preserving the high bits), and the battle round driver reads the high bits
 /// as command restrictions. The low byte is also where the course comes from:
