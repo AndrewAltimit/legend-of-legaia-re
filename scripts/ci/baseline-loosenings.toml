@@ -1838,3 +1838,10 @@ reason = "Play-page gzip is the wave's ported behaviour compiled in: the fishing
 changes = [
   ["counts/bundle/play_gzip_bytes", 5217178, 5224990],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Play-page gzip is the wave's ported behaviour compiled in: the fishing hub's help frame, tackle inks and four-place counts and the exchange list's retail layout, panels and hand cursor; the slot machine's cash-out picker and rules boxes; the class-0 notice frame; the cast seat walks' hides, shows and hit tints; Melt Spray's tenth and the monster-AI re-match fixes; the shipped MAN re-seat and the absorb puff timing (+8.5 KB). No asset or dependency added; the tool bundle and every native and browser count stayed under their baselines."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 5224990, 5233490],
+]
