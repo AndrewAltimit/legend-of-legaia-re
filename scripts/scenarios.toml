@@ -9069,3 +9069,35 @@ description = "RETAIL disc, probe-poked: party_basic_attack_vs_gobu_gobu played 
 phase = "battle"
 expected_game_mode = 0x15
 topics = ["battle", "summon", "Theeder", "spell 0x82", "pre-cast", "calc lock", "audio"]
+
+[[scenarios]]
+label = "theeder_summon_value_rows_rising"
+backup_fingerprint = "2629f02c1ca1263ef7836a8ead5ad443cb901f95ddfcf79bc0febe84641da70f"
+description = "RETAIL disc and SCUS, no RAM pokes, no pad: theeder_summon_mid_cast (Vahn's Theeder, spell 0x82, on three Giliums) stepped 1410 frames on Mednafen with frame advance and saved. The summon's value window is open: each Gilium's name plate (0x60..=0x62) and its damage value record (0x5C..=0x5E) rising into their rows, plates printing the install's name line without an instance letter."
+phase = "battle"
+expected_game_mode = 0x15
+topics = ["battle", "summon", "Theeder", "spell 0x82", "value window", "name plates"]
+
+[[scenarios]]
+label = "theeder_summon_value_rows_parked"
+backup_fingerprint = "22bcdc13f934b4aaa562ada7dc45fc27b4e3105ceffaf0002fdad136f87ee445"
+description = "RETAIL disc and SCUS, no RAM pokes, no pad: theeder_summon_mid_cast (Vahn's Theeder, spell 0x82, on three Giliums) stepped 1470 frames on Mednafen with frame advance and saved. The summon's value window has landed: three rows, each a Gilium name plate (the install's name line `Gilium`, no instance letter, no badge) under its damage value, and the DAMAGE word over the last row."
+phase = "battle"
+expected_game_mode = 0x15
+topics = ["battle", "summon", "Theeder", "spell 0x82", "value window", "name plates"]
+
+[[scenarios]]
+label = "load_slot2_now_checking"
+backup_fingerprint = "3db1fdcc586e046959a4ed6e87f61bc728a561b935fc7b6e6826959e6b36b1c2"
+description = "RETAIL disc and SCUS, no RAM pokes: save_select_idle played forward on PCSX-Redux with the pad only (DOWN at vsync 30, CROSS at 90, autorun_film.lua's schedule), memory card 2 holding a seven-save endgame card; saved 130 vsyncs after the load. SLOT 2 committed: its pill has slid up on SLOT 1's track and parked under the Load tab, and the Now checking dialog is up."
+phase = "menu"
+expected_game_mode = 0x17
+topics = ["menu", "save screen", "load", "SLOT 2", "now checking"]
+
+[[scenarios]]
+label = "load_slot2_grid"
+backup_fingerprint = "4b13079a5029d99fd2922746e6e06dc77fc9846ed43d1dc8e5612c525473a532"
+description = "RETAIL disc and SCUS, no RAM pokes: save_select_idle played forward on PCSX-Redux with the pad only (DOWN at vsync 30, CROSS at 90, autorun_film.lua's schedule), memory card 2 holding a seven-save endgame card; saved 330 vsyncs after the load. SLOT 2's pill parked under the Load tab beside the card's block grid with its save faces, the Now checking dialog still up."
+phase = "menu"
+expected_game_mode = 0x17
+topics = ["menu", "save screen", "load", "SLOT 2", "block grid"]
