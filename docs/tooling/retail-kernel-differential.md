@@ -932,9 +932,21 @@ Gilium's arm `0x11` leaving the row hidden and its row strike an arm early, Slip
 row the band had hidden and its hit tint relighting dead and Stoned seats, Jedo's kill arms missing the dissolve
 state, the defeat fade and the spell XP, Aluru's last arm hiding only a dead victim, Ultimate Rave's row loop (it
 tests `actor_table[3 + i]` and stores through `actor_table[i]`), and the row hits of Viguro, Gola Gola, Gilium,
-Palma and Mule that lit a Stoned seat ([the seat walks](../subsystems/cast-module.md#the-seat-walks)). HP stays
-outside it, since the walk stubs the damage wrapper while the shadow rolls its own; the three paced bodies (PROT
-0905, 0907, 0908) leave the walk on an arm their tick ports pace and stop being compared there.
+Palma and Mule that lit a Stoned seat ([the seat walks](../subsystems/cast-module.md#the-seat-walks)).
+
+The shadow also compares HP and each monster's staged reaction `+0x1DA`. The damage wrapper `FUN_801DD0AC`
+answers each seat's calls with a scripted run of rolls (small, middling, past HP) and the shadow's module rolls
+take the same (`summon_roll_override`, behind `test-drivers`), so every pre-hit's quartering, floor, `HP - 1`
+clamp and kill is compared; the hit arm's own pass is left out, since that hit is the band's fold. The walk seeds
+the group list `0x801F6978` with the living row, fades a felled monster's word out six passes after the kill, and
+gates the settle arms on retail's rule (a dead seat once its word is zero, a living one once its clip is). The
+restage byte `+0x1DC` stays outside: the engine carries its commit bit as the reaction channel, which a seat with no
+clips does not run. Every cast walks retail's phase to its end, the paced bodies included: the shadow reads
+Nighto's verdict off retail's fork and resist words `0x801F8534` / `0x801F853C`, and stands Zenoir's creature on
+its victim for arm 8's range poll. It found Palma's and Meta's pre-hits knocking a monster down where retail stages
+a flinch, Aluru's arms `0x11..0x13` relighting a felled victim, Nighto's and Zenoir's side-band arm missing its step
+over arm 3 when the band word is out, Zenoir's hits tinting a Stoned victim and its splash lighting hidden seats,
+and Vera's fade arm stepping to 11 where it stores `0xFF`.
 
 **The spawned records.** The capture and chain walks log every `FUN_80021B04` / `FUN_80050ED4` call a pass makes,
 as record, point, angle trio and scale, and every literal-anchored record a director seats (its charge records and
