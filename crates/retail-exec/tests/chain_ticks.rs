@@ -417,7 +417,7 @@ fn run_body(
     };
     let mut held = 0;
     let (mut quake_passes, mut quake_phase) = (0usize, 0xFEu8);
-    let quake_hold = 1 + (usize::from(formation) + victim as usize) % 4;
+    let quake_hold = 1 + (usize::from(formation) + victim) % 4;
     for _ in 0..40_000 {
         for s in 0..8u32 {
             let a = ACTOR + s * STRIDE as u32;
