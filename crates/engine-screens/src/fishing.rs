@@ -90,7 +90,71 @@ pub fn fishing_hud_items(world: &World, banners: &[HudDraw]) -> Vec<HudDraw> {
         ));
     }
     items.extend(banners.iter().copied());
+    // The HUD runs in the driver's tail, after the state's screens, so the
+    // ordering table draws it under their panels (`FUN_801D13F0` after the
+    // switch, `0x801D01A4..`): an item a panel covers does not show.
+    let covered = venue_panel_footprints(world);
+    items.retain(|d| {
+        let (x, y) = hud_anchor(d);
+        !covered
+            .iter()
+            .any(|&(fx, fy, fw, fh)| x >= fx && x < fx + fw && y >= fy && y < fy + fh)
+    });
     items
+}
+
+/// Where a HUD item is pinned, for the cover test.
+fn hud_anchor(d: &HudDraw) -> (i32, i32) {
+    match *d {
+        HudDraw::Number { x, y, .. }
+        | HudDraw::LargeNumber { x, y, .. }
+        | HudDraw::Glyph { x, y, .. }
+        | HudDraw::Count { x, y, .. }
+        | HudDraw::Caption { x, y, .. }
+        | HudDraw::Bar { x, y, .. }
+        | HudDraw::PowerBar { x, y, .. } => (x, y),
+    }
+}
+
+/// The footprints (stage pixels, the emitter's rect grown by 8) of the
+/// venue screens' panels this frame: the hub's, and the exchange's list and
+/// dialogs ([`fishing_venue_screen`] draws them).
+pub fn venue_panel_footprints(world: &World) -> Vec<(i32, i32, i32, i32)> {
+    use legaia_engine_fishing::fishing_chrome::centred_panel;
+    let mut rects: Vec<(i16, i16, i16, i16)> = Vec::new();
+    let centred = |cx: i16, y: i16, w: i16, h: i16, out: &mut Vec<_>| {
+        if let Some(p) = centred_panel(cx, y, w, h) {
+            out.push((p.x, p.y, p.w, p.h));
+        }
+    };
+    for l in world.fishing_hub_layers() {
+        if let Some((cx, y, w, h)) = l.panel {
+            centred(cx, y, w, h, &mut rects);
+        }
+        rects.extend(l.frame);
+    }
+    if let Some(ex) = world.minigames.fishing_exchange.as_ref() {
+        let m = &world.minigames;
+        let (cx, y, w, h) = ex.list_draw(false, m.fishing_points, |_| true).panel;
+        centred(cx, y, w, h, &mut rects);
+        let d = &m.fishing_exchange_dialog;
+        for l in ex.dialog_layers(d, m.fishing_points, 0, m.fishing_prizes_purchased) {
+            for &(cx, y, w, h) in &l.panels {
+                centred(cx, y, w, h, &mut rects);
+            }
+        }
+    }
+    rects
+        .into_iter()
+        .map(|(x, y, w, h)| {
+            legaia_engine_ui::dialog_window_footprint((
+                i32::from(x),
+                i32::from(y),
+                i32::from(w),
+                i32::from(h),
+            ))
+        })
+        .collect()
 }
 
 /// The fishing rod and line as screen primitives for this frame: the rod
@@ -196,6 +260,8 @@ type CentredRect = (i16, i16, i16, i16);
 /// One screen of the venue: its panel, its cursor icons and its text.
 struct VenueLayer {
     panel: Option<CentredRect>,
+    /// A box the screen emits itself (`FUN_8002C69C`'s own rect).
+    frame: Option<CentredRect>,
     hands: Vec<(i32, i32)>,
     texts: Vec<legaia_engine_ui::TextDraw>,
 }
@@ -233,22 +299,45 @@ pub fn fishing_venue_screen(
     };
     let mut layers: Vec<VenueLayer> = Vec::new();
     for l in world.fishing_hub_layers() {
+        // The tackle list's rows stage ink 7 on the equipped lure (if held)
+        // and rod and ink 0 on the rest (`0x801D1120..0x801D1334`); every
+        // other hub line is ink 7.
+        let tackle = l.panel == Some(legaia_engine_fishing::fishing_hub::TACKLE_PANEL);
+        let unmarked = if tackle {
+            legaia_engine_ui::fishing::exchange::EXCHANGE_DIM_INK
+        } else {
+            ink
+        };
         let hands: Vec<(i32, i32)> = l
             .lines
             .iter()
             .filter(|h| hand_sprites && h.is_cursor())
             .map(|h| (i32::from(h.x), i32::from(h.y)))
             .collect();
-        let texts = legaia_engine_ui::fishing::hub::fishing_hub_draws_for(
+        let mut texts = legaia_engine_ui::text_lines::text_line_draws_for(
             font,
             l.lines
                 .iter()
-                .filter(|h| !(hand_sprites && h.is_cursor()))
+                .filter(|h| !(hand_sprites && h.is_cursor()) && h.number.is_none())
                 .map(|h| (&h.text[..], i32::from(h.x), i32::from(h.y), h.marked)),
+            unmarked,
             ink,
         );
+        for h in &l.lines {
+            if let Some((value, places)) = h.number {
+                texts.extend(legaia_engine_ui::menu::decimal_field::decimal_field_draws(
+                    font,
+                    value,
+                    (i32::from(h.x), i32::from(h.y)),
+                    places,
+                    false,
+                    if h.marked { ink } else { unmarked },
+                ));
+            }
+        }
         layers.push(VenueLayer {
             panel: l.panel,
+            frame: l.frame,
             hands,
             texts,
         });
@@ -315,6 +404,7 @@ pub fn fishing_venue_screen(
         }
         layers.push(VenueLayer {
             panel: Some(list.panel),
+            frame: None,
             hands: if hand_sprites { hands } else { Vec::new() },
             texts,
         });
@@ -358,6 +448,7 @@ pub fn fishing_venue_screen(
             }
             layers.push(VenueLayer {
                 panel: d.panels.first().copied(),
+                frame: None,
                 hands: if hand_sprites { hands } else { Vec::new() },
                 texts,
             });
@@ -368,14 +459,9 @@ pub fn fishing_venue_screen(
         .map(|l| {
             l.panel
                 .and_then(|(cx, y, w, h)| centred_panel(cx, y, w, h))
-                .map(|p| {
-                    (
-                        i32::from(p.x),
-                        i32::from(p.y),
-                        i32::from(p.w),
-                        i32::from(p.h),
-                    )
-                })
+                .map(|p| (p.x, p.y, p.w, p.h))
+                .or(l.frame)
+                .map(|(x, y, w, h)| (i32::from(x), i32::from(y), i32::from(w), i32::from(h)))
         })
         .collect();
     let mut out = FishingVenueScreen::default();
