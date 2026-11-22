@@ -79,6 +79,9 @@ struct Pick {
     /// one-shot gate `DAT_8007BD84`, as earlier turns left them.
     latches: [i32; 16],
     gate: u8,
+    /// Terra (character `4`) in party seat 1, `DAT_8007BD10[1] == 4`: the
+    /// physical arm drops its target onto seat 0 (`0x801EA91C..0x801EA930`).
+    terra: bool,
     seed: u32,
 }
 
@@ -171,6 +174,7 @@ fn gen_pick(rng: &mut Rng) -> Pick {
         special: [0, 0, 0, 0x100][rng.below(4) as usize],
         latches: std::array::from_fn(|_| [0, 0, 0, 1, 2, 3, 5][rng.below(7) as usize]),
         gate: u8::from(rng.below(3) == 0),
+        terra: rng.below(4) == 0,
         seed: rng.next(),
     }
 }
@@ -215,6 +219,9 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
         cpu.mem.wr16(a + 0x16E, p.party_status[m as usize]);
         cpu.mem.wr16(a + 0x158, p.party_atk[m as usize]);
     }
+    if p.terra && p.party > 1 {
+        cpu.mem.wr8(SEATS + 1, 4);
+    }
     let mut entry = ENTRY;
     for (i, m) in p.monsters.iter().enumerate() {
         let i = i as u32;
@@ -248,6 +255,10 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
 fn seed_port(w: &mut World, p: &Pick) {
     w.load_party(Party::zeroed(usize::from(p.party)));
     w.enter_battle(p.party, p.monsters.len() as u8);
+    w.party.active_party = (0..p.party).collect();
+    if p.terra && p.party > 1 {
+        w.party.active_party[1] = 3;
+    }
     w.party.party_count = p.party;
     w.battle.status_effects = Default::default();
     w.battle.no_escape = p.no_flee;
