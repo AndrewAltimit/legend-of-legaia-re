@@ -416,6 +416,8 @@ fn run_body(
         spawns_checked: 0,
     };
     let mut held = 0;
+    let (mut quake_passes, mut quake_phase) = (0usize, 0xFEu8);
+    let quake_hold = 1 + (usize::from(formation) + victim as usize) % 4;
     for _ in 0..40_000 {
         for s in 0..8u32 {
             let a = ACTOR + s * STRIDE as u32;
@@ -425,6 +427,24 @@ fn run_body(
             cpu.mem.wr16(NODES + s * 0x100 + 0x68, 0x7FFF);
         }
         let phase = cpu.mem.rd8(CTX + 0x279);
+        // Earthquake's two clip holds: arm 1 waits out the wind-up's first
+        // run (`+0x21B == 0xFF`, the `beq` to its busy exit at `0x801F6C78`)
+        // and arm 3 the caster's node cursor reaching `0x160`; each walk
+        // holds them for a field-keyed number of passes.
+        quake_passes = if phase == quake_phase {
+            quake_passes + 1
+        } else {
+            0
+        };
+        quake_phase = phase;
+        if body.prot_entry == 935 && quake_passes < quake_hold {
+            let ca = ACTOR + (CASTER * STRIDE) as u32;
+            match phase {
+                1 => cpu.mem.wr8(ca + 0x21B, 0xFF),
+                3 => cpu.mem.wr16(NODES + CASTER as u32 * 0x100 + 0x68, 0x100),
+                _ => {}
+            }
+        }
         let (ctx0, rec0) = (cpu.mem.read(CTX, CTX_LEN), cpu.mem.read(ACTOR, 8 * STRIDE));
         let vi = usize::from(rec0[CASTER * STRIDE + 0x1DD].min(7));
         // The group aim, as the host measures it each pass; a row the body
@@ -454,6 +474,10 @@ fn run_body(
                 facing: h(0x46) as u16 & 0xFFF,
             }
         });
+        // The caster's loop byte and node cursor, as `feed_capture_cam`
+        // feeds them.
+        st.caster_loops = Some(rec0[CASTER * STRIDE + 0x21B]);
+        st.caster_frame = Some(cpu.mem.rd16(NODES + CASTER as u32 * 0x100 + 0x68));
         // PROT 0964's last Element Change roll, which the host keeps.
         if body.prot_entry == 964 {
             st.module_words[0] = i32::from(selector);
