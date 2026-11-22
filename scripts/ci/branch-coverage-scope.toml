@@ -4532,3 +4532,234 @@ entry = "0x800337B0"
 range = "0x800341C4..0x800341C4"
 verdict = "unreachable"
 reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F6AAC..0x801F6AAC"
+verdict = "unreachable"
+reason = "PROT 0935's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 255}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6A8C..0x801F6A8C"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (1) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6AA8..0x801F6AA8"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (4) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6AD4..0x801F6AD4"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (7) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6AF0..0x801F6AF0"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (10) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6B2C..0x801F6B2C"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (13) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6B48..0x801F6B48"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (16) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6B74..0x801F6B74"
+verdict = "unreachable"
+reason = "PROT 0923's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (19) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "c5d240f2c9243856"
+range = "0x801F6A88..0x801F6A88"
+verdict = "unreachable"
+reason = "PROT 0956's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 255}` reaches the compare tree; walked through the tree, the only phases that reach this test (1) all go the taken way."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ea133e1d0a56dd22"
+range = "0x801F6A90..0x801F6A90"
+verdict = "unreachable"
+reason = "PROT 0939's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 255}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6ABC..0x801F6ABC"
+verdict = "unreachable"
+reason = "PROT 0907's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x4`, `0xf`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6AE4..0x801F6AE4"
+verdict = "unreachable"
+reason = "PROT 0907's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x4`, `0xf`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (7) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6AA0..0x801F6AA0"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6AB8..0x801F6AB8"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (3) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6AE0..0x801F6AE0"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (6) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6AFC..0x801F6AFC"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (9) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6B38..0x801F6B38"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (12) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6B54..0x801F6B54"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (15) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6B80..0x801F6B80"
+verdict = "unreachable"
+reason = "PROT 0928's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xc8`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (18) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6B34..0x801F6B34"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x3`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (6) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6B50..0x801F6B50"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x3`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (9) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6B8C..0x801F6B8C"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x3`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (12) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6BA8..0x801F6BA8"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x3`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (15) all go the taken way."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6BD4..0x801F6BD4"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1`, `2` or as `0x3`, `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (18) all go the taken way."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F6B04..0x801F6B04"
+verdict = "unreachable"
+reason = "PROT 0917's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F6B30..0x801F6B30"
+verdict = "unreachable"
+reason = "PROT 0917's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (7) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6D44..0x801F6D44"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (0) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6D5C..0x801F6D5C"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (3) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6D84..0x801F6D84"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (6) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6DA0..0x801F6DA0"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (9) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6DE0..0x801F6DE0"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (14) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6E0C..0x801F6E0C"
+verdict = "unreachable"
+reason = "PROT 0918's phase dispatch: the phase byte (`lbu 0x279`) is only ever stored as itself plus `1` or as `0xff` (every `sb` of it in the image; PROT 0898 only stores `0`), so no phase outside `{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...}` reaches the compare tree; walked through the tree, the only phases that reach this test (17) all go the taken way."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6E20..0x801F6E20"
+verdict = "unreachable"
+reason = "PROT 0918 (Kemaro)'s phase dispatch default, phases `0x14..0xFE`: the image's phase stores are `+1` (`0x801F747C`, `0x801F7BE0`, `0x801F836C`, `0x801F8868`) and `0xFF` (`0x801F8A5C`); the `+1` of the arm `0x801F8698` that phases `0x12` and `0x13` share runs only on `0x12` (`li v0,0x12; bne` at `0x801F8790..0x801F8794`) and `0x13` leaves through the `0xFF` store, so no phase above `0x13` but `0xFF` is stored."

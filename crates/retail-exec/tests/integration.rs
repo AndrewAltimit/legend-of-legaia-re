@@ -255,6 +255,7 @@ mod item_probe;
 mod item_use_screen;
 mod items_command;
 mod items_panels;
+mod kemaro_spear;
 mod key_on_volume;
 mod keyframe_editor;
 mod kiss_of_death;
