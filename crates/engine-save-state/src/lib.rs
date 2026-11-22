@@ -253,7 +253,7 @@ impl WorldSaveState for World {
         }
         self.load_story_flags(&sf);
         self.party.money = sf.ext.money;
-        LoadFullTail::load_full_tail(self, sf);
+        self.load_full_tail(sf);
         // A save from a build whose shop equip-now row misfiled a piece
         // (body armour on a weapon byte, a weapon on the body byte) loads
         // with the piece put back. A retail record never matches.
