@@ -8074,6 +8074,16 @@ ram_poked = ["MAN region rows (formation pick) and party / monster HP at round p
 topics = ["battle", "party strike", "arts", "ropeway", "harvest"]
 
 [[scenarios]]
+label = "battle_rikuroa_party_vahn_seru_absorb_strike"
+backup_fingerprint = "8d5eef2fbcb98236d923f876d20a8f47faac515c13f60f598f1cf259c8a99a0d"
+description = "rikuroa battle, SYNTHETIC formation [26] (one Theeder-Seru monster written over MAN row 0 by LEGAIA_WANT_FORCE; no rikuroa row holds it), party strike: Vahn alone, a raw 343 chain, six vsyncs into the strike loop of the walk's third fight; the kill rolls the Seru absorb (Vahn knows 0x81 and 0x83 only), so the Done band takes 0x52. RETAIL disc and executable: rikuroa_field_card_walk played forward by autorun_battle_harvest.lua (LEGAIA_WANT=26;26;26 LEGAIA_WANT_FORCE=1 LEGAIA_TOUGH=1 LEGAIA_FINISH=1 LEGAIA_SPIRIT_ROUNDS=0 LEGAIA_PARTY_ARTS=343 LEGAIA_PARTY_HOLDS=6 LEGAIA_PARTY_KEY_BATTLE=1); monster HP poked to 1 at the round prompt. Saved 4923 vsyncs in. The absorb puff and defeat-fade film (docs/tooling/cast-sequence-oracle.md, the Seru-absorb puff)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rikuroa"
+ram_poked = ["MAN region rows and row 0 (synthetic formation [26])", "party HP restored and monster HP set to 1 at round prompts"]
+topics = ["battle", "party strike", "arts", "rikuroa", "seru", "absorb", "synthetic", "harvest"]
+
+[[scenarios]]
 label = "battle_ropeway_party_gala_flying_knee_late"
 backup_fingerprint = "cf06ae7e9fb841e1829fb3c52d849e10cbf42955e632dde8acc6cca7d37a4f51"
 description = "ropeway battle, formation [83, 62], party strike: Gala, the same art, sixty vsyncs in. RETAIL disc: ropeway_field_route_walk played forward by autorun_battle_harvest.lua with LEGAIA_PARTY_ARTS (the party's Arts entered on the pad), formation row picked by LEGAIA_WANT (the MAN region rows point at it), party and monster HP restored at round prompts (LEGAIA_TOUGH=1, LEGAIA_MONSTER_TOUGH=1). Saved 3048 vsyncs in."
