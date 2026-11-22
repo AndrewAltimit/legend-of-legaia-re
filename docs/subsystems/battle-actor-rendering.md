@@ -237,6 +237,8 @@ A downed party member's chain is knockdown, entry `7`, entry `8`; entry `8` re-c
 
 **Monster death.** An earlier arm of the routine (`0x8004B094..0x8004B6A0`) handles a committing monster whose **previous** entry is tagged `4` at HP `0`. It re-installs that entry held on its last frame, runs the death spoils, sets `+0x21C = 2` and the same bit-`3` latch. With a Seru staged in `ctx[+0x269]` it overwrites `+0x1DC = 4` and restages the get-up `+0x1F2` (`0x8004B688..0x8004B6A0`), so the fallen monster rises for the absorb. Captures hold both: dead monsters on their knockdown entry with `+0x1DC = 8` and `ctx[+0x269] = 0`, and one on its get-up entry with `+0x1DC = 4` while `ctx[+0x269] = 1`.
 
+The fade's lane gate (`FUN_80050120` arm 2) holds while `+0x1D9` reads that get-up, so the risen body stays lit until the get-up ends on idle; its natural ends there raise the absorb puff ([the film](../tooling/cast-sequence-oracle.md#the-seru-absorb-puff)).
+
 **Engine.** `engine-core::world::battle::clip_ladder` ports the ladder as a pure kernel (`commit_tag_ladder`) and runs it on the reaction channel:
 
 - A hit commits the `+0x1EF` / `+0x1F1` entry (the `FUN_80054CB0` map: last match wins, a missing knockdown takes the flinch entry).

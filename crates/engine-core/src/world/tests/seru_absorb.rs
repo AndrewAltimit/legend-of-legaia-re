@@ -234,3 +234,34 @@ fn the_absorb_puff_waits_for_the_death_entry_to_end() {
         "idle at zero HP with the Seru staged puffs and sounds"
     );
 }
+
+/// The defeat fade's lanes hold while `+0x1D9` reads a reaction entry that
+/// is neither idle nor the knockdown: the get-up a staged Seru restages on
+/// the fallen monster keeps it lit while it rises for the absorb, and the
+/// fade runs once the get-up ends on idle
+/// (`captures/w53-E/films/rikuroa_absorb_long`).
+#[test]
+fn the_defeat_fade_holds_under_the_absorb_get_up() {
+    use legaia_engine_battle_vm::battle_formulas::{STATE_DEFEAT_FADE, TINT_NEUTRAL};
+    let mut world = absorb_world(100, true);
+    world.mode = SceneMode::Battle;
+    world.battle_ctx.absorbed_seru = 1;
+    let a = &mut world.actors[1];
+    a.active = true;
+    a.battle.hp = 0;
+    a.battle.current_anim = 0;
+    a.battle.render_flag = STATE_DEFEAT_FADE;
+    a.battle.render_color = TINT_NEUTRAL;
+    a.battle_reaction_entry = Some(4);
+    world.tick_battle_impact_fx();
+    assert_eq!(
+        world.actors[1].battle.render_color, TINT_NEUTRAL,
+        "lit under the get-up"
+    );
+    world.actors[1].battle_reaction_entry = None;
+    world.tick_battle_impact_fx();
+    assert!(
+        world.actors[1].battle.render_color < TINT_NEUTRAL,
+        "the fade runs on idle"
+    );
+}

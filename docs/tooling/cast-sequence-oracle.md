@@ -2897,6 +2897,20 @@ as `+0x1D9` holds it, moves the cue onto retail's tick (cue score `.857` to
 sounds on Vahn's third strike against the dead monster, which retail leaves
 silent.
 
+Run on past the end of the action (`--tail 700`), the same film showed the
+fallen monster's body gone and the close-up begun sixty vsyncs early. The
+death arm restages the get-up on a monster whose Seru is staged, and the
+defeat fade's lane gate (`FUN_80050120` arm 2) holds while `+0x1D9` reads it,
+neither idle nor the knockdown: retail's monster rises lit, glows through the
+get-up, and fades once the get-up ends on idle, so the Done band's case-8
+framing holds the wide shot through `0x51` and its close-up runs in `0x52`.
+The port fed the gate the action channel's `0` and faded the body under the
+get-up. With the reaction channel's entry fed in, and the rand stream seated
+on retail's at `0x5A` (`--rand-at 0x5A:0`; the win pose is a `rand()` pick),
+the film reads `.814` to `.916`: state `0x51` `.461` to `.980`, `0x52` `.791`
+to `.994`, `0x5A` `.797` to `.825`. The lit body also ticks a second natural
+end in the Done band, as retail's log has it.
+
 ## Puera's yellow ease
 
 The `s94` film (Puera's Dream Illusion from `party_basic_attack_vs_gobu_gobu`)
