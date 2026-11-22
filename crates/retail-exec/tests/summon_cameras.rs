@@ -938,7 +938,9 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     }
                 }
                 if let Some(w) = shadow.as_ref() {
-                    for s in 0..7usize {
+                    // The seated seats: an unseated monster seat is no actor
+                    // the engine draws.
+                    for s in 0..(3 + layout.monsters as usize).min(7) {
                         let a = ACTOR + s as u32 * STRIDE;
                         let got = (
                             cpu.mem.rd32(a + 4),
@@ -1243,10 +1245,22 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         "summon shadow: {shadow_passes} passes compared, {shadow_left} casts left retail's phase walk, {} mismatches",
         shadow_failures.len()
     );
-    if let Ok(path) = std::env::var("W54_SHADOW_DUMP") {
-        let _ = std::fs::write(&path, shadow_failures.join("\n"));
-        let _ = std::fs::write(format!("{path}.leaves"), shadow_leaves.join("\n"));
+    // The casts whose band leaves retail's walk: the paced bodies (PROT
+    // 0905, 0907, 0908) whose tick ports pace an arm the walk's director
+    // does not.
+    for l in &shadow_leaves {
+        eprintln!("{l}");
     }
+    assert!(
+        shadow_passes >= 200_000,
+        "summon shadow passes {shadow_passes}"
+    );
+    assert!(
+        shadow_failures.is_empty(),
+        "{} summon shadow mismatches:\n{}",
+        shadow_failures.len(),
+        shadow_failures[..shadow_failures.len().min(40)].join("\n")
+    );
     eprintln!(
         "director spawns: {spawns_matched} matched, {} mismatches",
         spawn_failures.len()
@@ -1320,6 +1334,10 @@ fn summon_shadow(
     w.casting.summon_actor_slot = Some(CREATURE as u8);
     w.cast_module_for(action)?;
     w.arm_summon_stager(layout.caster as u8, action);
+    // PROT 0916's verdict: the walk's director runs the damage path (its
+    // `kill` left unset), which is the path retail's roll takes on this
+    // walk's zeroed records; the world's roll reads its own party's levels.
+    w.casting.module_cam.kill = Some(false);
     Some(w)
 }
 
