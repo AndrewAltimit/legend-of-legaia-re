@@ -277,6 +277,13 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     for o in (0..0x80).step_by(4) {
                         m.wr32(at + o, 0);
                     }
+                    // The spawn seats the part on the point `a0` names
+                    // (`FUN_80021B04`, `0x80021B94..0x80021BB8`), which the
+                    // shuffle's slides read back.
+                    for o in [0u32, 2, 4] {
+                        let v = m.rd16(r.r[A0] + o);
+                        m.wr16(at + 0x14 + o, v);
+                    }
                     r.r[V0] = at;
                 });
             }
@@ -492,9 +499,14 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         0
                     };
                     last_phase = phase;
+                    // A left press at the home stop, runs of rights to the
+                    // far stop (`0x801F8910..0x801F8980`), and every fourth
+                    // round no confirm, so the timer picks (`0x801F8B44`).
                     let press = match (phase, arm_passes) {
-                        (5, n) if n == round + 3 => 0x20,
-                        (5, n) if n % 5 == 1 => [0x2000, 0x8000][(n / 5) % 2],
+                        (5, n) if n == round + 3 && round % 4 != 3 => 0x20,
+                        (5, n) if n % 5 == 1 => {
+                            [0x8000, 0x2000, 0x2000, 0x2000, 0x2000][(n / 5) % 5]
+                        }
                         _ => 0,
                     };
                     cpu.mem.wr32(PRESSED, press);
@@ -503,14 +515,24 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     g.pad.confirm = press & 0x20 != 0;
                     // The closing arms: the victim busy, then down on clip 8;
                     // the caster on a clip, then idle and faded.
+                    // The victim settles first; a bled victim that lives
+                    // stands back on clip 0 (`0x801F98DC`). The caster then
+                    // settles idle on even rounds and fades out on its clip
+                    // on odd ones (`0x801F98F0..0x801F9908`).
                     if (10..=12).contains(&phase) {
-                        let done = arm_passes >= round + 2;
-                        cpu.mem.wr8(va_ + 0x1D9, if done { 8 } else { 5 });
-                        cpu.mem.wr8(ca + 0x1D9, if done { 0 } else { 1 });
-                        cpu.mem.wr32(ca + 4, if done { 0 } else { 0x2008_0200 });
-                        st.victim_settled = if phase == 10 { done } else { true && done };
-                        st.caster_settled = done;
-                        st.death_game.caster_faded = done;
+                        let vdone = arm_passes >= round + 2;
+                        let cdone = arm_passes >= round + 2 + round % 3;
+                        let survivor = phase == 12 && round % 2 == 1;
+                        let rest = if survivor { 0 } else { 8 };
+                        let idle = cdone && round % 2 == 0;
+                        let faded = cdone && round % 2 == 1;
+                        cpu.mem.wr8(va_ + 0x1D9, if vdone { rest } else { 5 });
+                        cpu.mem.wr8(ca + 0x1D9, if idle { 0 } else { 1 });
+                        cpu.mem
+                            .wr32(ca + 4, if idle || faded { 0 } else { 0x2008_0200 });
+                        st.victim_settled = vdone;
+                        st.caster_settled = idle;
+                        st.death_game.caster_faded = idle || faded;
                     }
                 }
                 // Water Hazard's arm 3: a seat of the target row plays its
@@ -989,7 +1011,7 @@ fn terror_scream_casters_all_sit_in_a_framed_band() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    const TABLE: u32 = 0x801C_F1CC;
+    const AI_TABLE: u32 = 0x801C_F1CC;
     const TERROR_ARM: std::ops::RangeInclusive<u32> = 0x801E_B2EC..=0x801E_B2F4;
     let overlay = disc.read_entry(898).expect("PROT 0898");
     let word = |va: u32| {
@@ -1000,7 +1022,7 @@ fn terror_scream_casters_all_sit_in_a_framed_band() {
     assert_eq!(word(0x801E_B3FC), 0x2402_0070, "li v0,0x70");
     assert_eq!(word(0x801E_B400), 0xA282_01DF, "sb v0,0x1df(s4)");
     let switch_casters: Vec<u8> = (0..0xB3u32)
-        .filter(|i| TERROR_ARM.contains(&word(TABLE + 4 * i)))
+        .filter(|i| TERROR_ARM.contains(&word(AI_TABLE + 4 * i)))
         .map(|i| (i + 4) as u8)
         .collect();
     assert_eq!(switch_casters, [0x28, 0x29, 0x2A, 0x7F, 0x85]);
