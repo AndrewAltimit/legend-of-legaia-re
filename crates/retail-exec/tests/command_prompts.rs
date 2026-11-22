@@ -2439,3 +2439,97 @@ fn the_timed_fight_strip_stores_what_retail_stores() {
     }
     assert!(koru_rounds > 500, "{koru_rounds}");
 }
+
+/// A flow byte no case of the dispatch names (`0x801D0C84..0x801D0DCC`):
+/// the gaps between the states, `0x0C` (the boss stage's baton) and `0xFF`,
+/// which the frame driver keeps calling the dispatcher on after the armed
+/// round until the action SM's verdict `0x8007BD71` moves
+/// (`0x8004701C..0x800470D0`). The dispatch takes the default exit and
+/// writes nothing - no window, no cue, the flow byte and the context left as
+/// they were - and the port's flow on the same byte (`BattleFlowState::from_raw`,
+/// `Idle` for all of them) opens no surface.
+#[test]
+fn an_unlisted_flow_byte_dispatches_nothing_as_retail() {
+    differential!(prot(898, STATE_MACHINE));
+    use legaia_engine_battle_menus::battle_flow::BattleFlowState;
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::test_drivers::BattleTestDrivers;
+    use legaia_engine_system::pad::PadButton;
+    let Some((mut cpu, windows, cues, _)) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let named = [
+        0x00u8, 0x0A, 0x0B, 0x14, 0x1E, 0x28, 0x32, 0x3C, 0x46, 0x50, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E,
+        0x64, 0x65, 0x66, 0x67, 0x6E, 0x78, 0xFE,
+    ];
+    let unlisted: Vec<u8> = (0..=0xFFu8).filter(|s| !named.contains(s)).collect();
+    let mut rng = Rng(0x4E4F_4E45);
+    for round in 0..2000 {
+        let state = if round % 4 == 0 {
+            0xFF
+        } else {
+            unlisted[rng.below(unlisted.len() as u32) as usize]
+        };
+        let pad = [0, CONFIRM, CANCEL, LEFT, RIGHT | CONFIRM][rng.below(5) as usize];
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..3 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        cpu.mem.wr8(CTX, 1 + rng.below(3) as u8);
+        cpu.mem.wr8(CTX + 0x06, state);
+        cpu.mem.wr32(PAD, pad);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, 0);
+        cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
+        cpu.mem.wr32(CANCEL_MASK, CANCEL);
+        cpu.mem.wr8(BATTLE_ID, 0);
+        let before = cpu.mem.read(CTX, 0x1400);
+        windows.borrow_mut().clear();
+        cues.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let label = format!("round {round}: state {state:#x} pad {pad:#x}");
+        assert!(
+            windows.borrow().is_empty() && cues.borrow().is_empty(),
+            "{label}"
+        );
+        let after = cpu.mem.read(CTX, 0x1400);
+        // The pre-dispatch gate clears the parked pad word `ctx[+0x884]`
+        // (`0x801D0C58`); nothing else moves.
+        let moved: Vec<usize> = (0..0x1400)
+            .filter(|&i| before[i] != after[i] && !(0x884..0x888).contains(&i))
+            .collect();
+        assert!(moved.is_empty(), "{label}: ctx bytes {moved:x?}");
+
+        let mut w = World {
+            mode: legaia_engine_mode::mode::SceneMode::Battle,
+            ..World::default()
+        };
+        w.battle.player_driven = true;
+        w.battle.flow = BattleFlowState::from_raw(state);
+        assert_eq!(w.battle.flow, BattleFlowState::Idle, "{label}");
+        let mask = [
+            (CONFIRM, PadButton::Cross),
+            (CANCEL, PadButton::Circle),
+            (LEFT, PadButton::Left),
+            (RIGHT, PadButton::Right),
+        ]
+        .iter()
+        .filter(|(p, _)| pad & p != 0)
+        .fold(0u16, |m, (_, b)| m | b.mask());
+        w.set_pad(0);
+        w.set_pad(mask);
+        w.tick_battle_command();
+        assert!(
+            w.battle.command.is_none(),
+            "{label}: the port opened a surface"
+        );
+        assert_eq!(w.battle.flow, BattleFlowState::Idle, "{label}");
+    }
+}

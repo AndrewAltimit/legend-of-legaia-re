@@ -1,0 +1,181 @@
+# Battle tier: FUN_801D0748 (PROT 0898), FUN_801E09F8 (PROT 0898) and FUN_8004E568.
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D0844..0x801D0844"
+verdict = "unreachable"
+reason = "The chip count ctx[+0x275] was tested non-zero at 0x801D07F4 on the way into the cross-button walk, and only the cursor cue FUN_8004FCC8 runs between, which stores nothing in the battle context: the chip-reset loop's empty-count skip is never taken."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D08E8..0x801D08E8"
+verdict = "unreachable"
+reason = "The Right arm's copy of the chip-reset loop: ctx[+0x275] was tested non-zero at 0x801D07F4 and only FUN_8004FCC8 (the cue) runs before the re-read."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D09A0..0x801D09A0"
+verdict = "unreachable"
+reason = "The Down arm's copy of the chip-reset loop: ctx[+0x275] was tested non-zero at 0x801D07F4 and only FUN_8004FCC8 (the cue) runs before the re-read."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D0A58..0x801D0A58"
+verdict = "unreachable"
+reason = "The Up arm's copy of the chip-reset loop: ctx[+0x275] was tested non-zero at 0x801D07F4 and only FUN_8004FCC8 (the cue) runs before the re-read."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D0BE4..0x801D0C04"
+verdict = "unported"
+reason = "The side-band hold over every flow state: ctx[+0x6B0] (the sparring caption or the tutorial countdown's hold), ctx[+0x6AE] (the caption timer) or ctx[+0x289] == 2 leaves the pass undispatched with the parked pad word cleared. The engine holds only the round start on the side-band (World::battle_sideband_holds_round), and its tutorial rewind reopens the command menu directly instead of holding the flow under the countdown (TutorialEmission::rewind)."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D0F54..0x801D0F74"
+verdict = "unreachable"
+reason = "Divide traps of Koru's HP percentage: the divisor is the first monster seat's max HP +0x14E, loaded with lhu (zero-extended, never -1) and non-zero for a seated monster record, so neither the zero test nor the overflow test fails."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D15F4..0x801D15F4"
+verdict = "unreachable"
+reason = "The ring's Attack arm forks on the Select Attack option word 0x800846C4 for 1, 0 and 2; the options screen writes only those three values (legaia_engine_system::option_values::SelectAttackOpt), so the fall-through past 2 is never taken."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D2544..0x801D2544"
+verdict = "unported"
+reason = "The item enemy cursor 0x5B reads its cancel only with no glide live in ctx[+0x11B4] (s4, 0x801D0C64). Only the arts pennants glide under the flag 0 that leaves the pass ungated, and the engine tracks them inside the arts session alone (ArtsCommandInputSession::cancel_held); a pennant still sliding when another member's item cursor opens has no port."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D26D8..0x801D26D8"
+verdict = "unported"
+reason = "The magic enemy cursor 0x5C's cancel behind the live-glide scan s4; the flag-0 pennant glides it would wait on are tracked inside the arts session only (ArtsCommandInputSession::cancel_held)."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D278C..0x801D278C"
+verdict = "unported"
+reason = "The item all-enemies confirm 0x5D's cancel behind the live-glide scan s4; the flag-0 pennant glides it would wait on are tracked inside the arts session only (ArtsCommandInputSession::cancel_held)."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D28C0..0x801D28C0"
+verdict = "unported"
+reason = "The magic all-enemies confirm 0x5E's cancel behind the live-glide scan s4; the flag-0 pennant glides it would wait on are tracked inside the arts session only (ArtsCommandInputSession::cancel_held)."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D2A00..0x801D2A00"
+verdict = "unported"
+reason = "The item ally cursor 0x64's cancel behind the live-glide scan s4; the flag-0 pennant glides it would wait on are tracked inside the arts session only (ArtsCommandInputSession::cancel_held)."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D2B3C..0x801D2B3C"
+verdict = "unported"
+reason = "The magic ally cursor 0x65's cancel behind the live-glide scan s4; the flag-0 pennant glides it would wait on are tracked inside the arts session only (ArtsCommandInputSession::cancel_held)."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D2DB4..0x801D2DB4"
+verdict = "unported"
+reason = "The item all-allies confirm 0x66's cancel behind the live-glide scan s4; the flag-0 pennant glides it would wait on are tracked inside the arts session only (ArtsCommandInputSession::cancel_held)."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D2EF4..0x801D2EF4"
+verdict = "unported"
+reason = "The magic all-allies confirm 0x67's cancel behind the live-glide scan s4; the flag-0 pennant glides it would wait on are tracked inside the arts session only (ArtsCommandInputSession::cancel_held)."
+
+[[arm]]
+entry = "0x801E09F8"
+range = "0x801E1154..0x801E1154"
+verdict = "unreachable"
+reason = "The phase-2 arm's empty streak-list skip: a slot reaches phase 2 only through 0x801E0D34, which stores 2 when the record's +0x12 is non-zero (3 otherwise, 0x801E0D00..0x801E0D10), and the record pointer ctx[+0x1014] is rewritten only by FUN_801DEA50 (0x801DF284), which reseeds every slot to phase 1 beside it."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004E5B8..0x8004E5B8"
+verdict = "unreachable"
+reason = "The skip byte gp+0x332: the one store to it the SCUS and battle-overlay dumps hold is the battle frame driver's clear (sb zero at 0x80046E74, FUN_80046A20), so the early exit is never taken."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004E5C8..0x8004E5C8"
+verdict = "unported"
+reason = "The gate into the stream-request hold (ctx[+0x26B]): the engine holds a constant VICTORY_STREAM_FRAMES and does not turn the partner, so the arm behind it (0x8004E5D0..0x8004E5E8) has no port."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004E644..0x8004E644"
+verdict = "unported"
+reason = "The gate into the escape arm (ctx[+7] == 0x67), whose heap frees and field preload (0x8004E654..0x8004E6C4) the engine's synchronous load has no counterpart for."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004E7AC..0x8004E7AC"
+verdict = "unreachable"
+reason = "The sign fix of 3 * max HP / 4: max HP +0x14E is loaded with lhu, so 3 * it is at most 0x2FFFD and never negative; the bgez is always taken."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004E84C..0x8004E84C"
+verdict = "unreachable"
+reason = "The pose switch's bound: gp+0xA4C holds 0..3 from the HP tiers (0x8004E7C8..0x8004E814) or 4 from the status test (0x8004E83C) at that point, always under the table's five entries."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004EE2C..0x8004EE6C"
+verdict = "unported"
+reason = "The phase-dispatch tail that seats the acting seat's +0x1DD on the opposite side (3 for a party seat off a monster, 0 for a monster seat) and turns that seat +0x800 before FUN_801D5854(seat, 8); the engine frames the win from its own camera state and does not turn the partner, as for the stream-request hold."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004EF5C..0x8004EF5C"
+verdict = "unreachable"
+reason = "The monster loop's empty-formation skip: ctx[+1] is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004EFF8..0x8004EFF8"
+verdict = "unreachable"
+reason = "The member loop's empty-party skip: ctx[0] is the party's seat count, one to three in any battle."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004F110..0x8004F110"
+verdict = "unreachable"
+reason = "The member loop's empty-party skip: ctx[0] is the party's seat count, one to three in any battle."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004F1A0..0x8004F1A0"
+verdict = "unreachable"
+reason = "The EXP-share loop's empty-party skip: ctx[0] is the party's seat count, one to three in any battle (the divu at 0x8004F198 divides by the members paid, which a win leaves non-zero)."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004F3E8..0x8004F3E8"
+verdict = "unreachable"
+reason = "The member loop's empty-party skip: ctx[0] is the party's seat count, one to three in any battle."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004F4A0..0x8004F4A0"
+verdict = "unreachable"
+reason = "The drop loop's empty-formation skip: ctx[+1] is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004F784..0x8004F7AC"
+verdict = "unported"
+reason = "The results hold's exit gate: the still-loading byte ctx[+0xB], the hold flag ctx[+0x6CE] and the load slot ctx[+0xC] that pick the field preload through FUN_80025358 and the frees through FUN_80017B94 (0x8004F810..0x8004F890); the engine loads synchronously and keeps no heap."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004FB70..0x8004FB70"
+verdict = "unreachable"
+reason = "The wipe arm's member loop skip on an empty party: ctx[0] is the party's seat count, one to three in any battle."
