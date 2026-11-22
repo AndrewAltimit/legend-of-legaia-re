@@ -52,8 +52,7 @@ pub use banners::banner_stage_draws;
 pub use battle_item::{with_battle_item_frame, with_battle_spell_frame};
 pub use fishing::{
     FishingVenueScreen, VenueChrome, fishing_banner_frame, fishing_hud_items,
-    fishing_line_screen_prims, fishing_venue_chrome_sprites, fishing_venue_screen,
-    venue_chrome_sprites,
+    fishing_line_screen_prims, fishing_venue_screen, venue_chrome_sprites,
 };
 pub use inventory_use::inventory_use_session_draws;
 pub use panel::{FallbackPanel, fallback_panel_draws, panel_frame_rect};
