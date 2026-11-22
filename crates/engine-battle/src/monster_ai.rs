@@ -305,17 +305,26 @@ pub fn decide(
             }
         }
         // Single-target nuke vs the picked party member, MP- and accuracy-gated.
+        // Both test the picked member for Curse (`+0x16E & 0x1000`,
+        // `0x801EAE94` / `0x801EAF88`) ahead of the second roll, so a Cursed
+        // pick ends the arm without drawing it.
         0x0E => {
             let target = (rng() % pc as u32) as u8;
-            // The retail extra gates (target not behind 0x1000, rand%100, MP)
-            // collapse to: cast 0x40 when affordable and the roll lands.
-            if !ai380 && rng() % 100 <= 0xc && ctx.mp >= 99 {
+            let cursed = ctx
+                .party_status
+                .get(usize::from(target))
+                .is_some_and(|s| s & 0x1000 != 0);
+            if !ai380 && !cursed && rng() % 100 <= 0xc && ctx.mp >= 99 {
                 return Some(AiCast::magic(0x40, target));
             }
         }
         0x0F => {
-            let _target = (rng() % pc as u32) as u8;
-            if !ai380 && rng() % 100 < 0xd && ctx.mp > 0x81 {
+            let target = (rng() % pc as u32) as u8;
+            let cursed = ctx
+                .party_status
+                .get(usize::from(target))
+                .is_some_and(|s| s & 0x1000 != 0);
+            if !ai380 && !cursed && rng() % 100 < 0xd && ctx.mp > 0x81 {
                 return Some(cast_all_enemies(0x53));
             }
         }

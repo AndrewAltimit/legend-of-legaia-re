@@ -13,6 +13,8 @@ use psx_retail_exec::{Cpu, Stop, V0};
 use std::cell::Cell;
 use std::rc::Rc;
 
+const LATCHES: u32 = 0x801C_8FE0;
+const GATE: u32 = 0x8007_BD84;
 const PICKER: u32 = 0x801E_9FD4;
 const RAND: u32 = 0x8005_6798;
 const OVERLAY_BASE: u32 = 0x801C_E818;
@@ -73,6 +75,10 @@ struct Pick {
     party_atk: [u16; 3],
     /// The special-battle word, which drops a granted flee.
     special: u32,
+    /// The switch's cooldown and phase words `DAT_801C8FE0[0..16]` and the
+    /// one-shot gate `DAT_8007BD84`, as earlier turns left them.
+    latches: [i32; 16],
+    gate: u8,
     seed: u32,
 }
 
@@ -112,7 +118,7 @@ fn gen_monster(rng: &mut Rng) -> Monster {
             _ => 1 + rng.below(u32::from(max_hp)) as u16,
         },
         max_hp,
-        mp: [0, 5, 40, 999][rng.below(4) as usize],
+        mp: [0, 5, 40, 0x62, 0x63, 0x81, 0x82, 999][rng.below(8) as usize],
         atk: rng.below(500) as u16,
         int: rng.below(500) as u16,
         gauge: [0, 1, 8, 50, 288][rng.below(5) as usize],
@@ -145,9 +151,9 @@ fn gen_pick(rng: &mut Rng) -> Pick {
             rng.below(2) as u16 * 40,
         ],
         party_status: [
-            [0, 0, 4, 0x400][rng.below(4) as usize],
-            [0, 0, 4, 0x400][rng.below(4) as usize],
-            [0, 0, 4, 0x400][rng.below(4) as usize],
+            [0, 0, 4, 0x400, 0x1000][rng.below(5) as usize],
+            [0, 0, 4, 0x400, 0x1000][rng.below(5) as usize],
+            [0, 0, 4, 0x400, 0x1000][rng.below(5) as usize],
         ],
         caster: rng.below(count as u32) as u8,
         monsters,
@@ -156,6 +162,8 @@ fn gen_pick(rng: &mut Rng) -> Pick {
         ring: std::array::from_fn(|_| [0, 1, 2, 0, 1, 3, 4, 0xFF][rng.below(8) as usize]),
         party_atk: std::array::from_fn(|_| [0, 0, 50, 400, 999][rng.below(5) as usize]),
         special: [0, 0, 0, 0x100][rng.below(4) as usize],
+        latches: std::array::from_fn(|_| [0, 0, 0, 1, 2, 3, 5][rng.below(7) as usize]),
+        gate: u8::from(rng.below(3) == 0),
         seed: rng.next(),
     }
 }
@@ -172,8 +180,12 @@ fn seed_retail(cpu: &mut Cpu, p: &Pick) {
     cpu.mem.wr32(SPECIAL_WORD, p.special);
     // The AI's memory across turns: per-seat latches and the recent-target ring.
     for b in 0..0x60 {
-        cpu.mem.wr8(0x801C_8FE0 + b, 0);
+        cpu.mem.wr8(LATCHES + b, 0);
     }
+    for (i, v) in p.latches.iter().enumerate() {
+        cpu.mem.wr32(LATCHES + 4 * i as u32, *v as u32);
+    }
+    cpu.mem.wr8(GATE, p.gate);
     for (b, slot) in p.ring.iter().enumerate() {
         cpu.mem.wr8(RING + b as u32, *slot);
     }
@@ -235,6 +247,8 @@ fn seed_port(w: &mut World, p: &Pick) {
     w.battle.special_word = p.special;
     w.battle.monster_ai_state = Default::default();
     w.battle.monster_ai_state.mode_flags = p.round;
+    w.battle.monster_ai_state.dat = p.latches;
+    w.battle.monster_ai_state.flag_bd84 = p.gate;
     w.battle.monster_ai_state.recent_targets = p.ring.map(|s| engine_slot(p.party, s));
     for a in w.actors.iter_mut() {
         a.battle.hp = 0;
@@ -339,7 +353,16 @@ fn a_monster_picks_what_retail_picks() {
         // redirect and Counterattack roll read next.
         let ring: [u8; 4] =
             std::array::from_fn(|b| engine_slot(p.party, cpu.mem.rd8(RING + b as u32)));
-        let retail = (retail_cat, retail_spell, state.get(), ring);
+        let latches: [i32; 16] =
+            std::array::from_fn(|i| cpu.mem.rd32(LATCHES + 4 * i as u32) as i32);
+        let retail = (
+            retail_cat,
+            retail_spell,
+            state.get(),
+            ring,
+            latches,
+            cpu.mem.rd8(GATE),
+        );
         // `0xB4`'s arms store a spell and leave the category to the forced magic
         // arm, which a generated record with no cast entry never sets.
         if p.monsters[usize::from(p.caster)].id == 0xB4 && retail_cat != 2 {
@@ -361,6 +384,8 @@ fn a_monster_picks_what_retail_picks() {
             spell,
             w.rng_state,
             w.battle.monster_ai_state.recent_targets,
+            w.battle.monster_ai_state.dat,
+            w.battle.monster_ai_state.flag_bd84,
         );
         if retail != port {
             failures.push(format!(
