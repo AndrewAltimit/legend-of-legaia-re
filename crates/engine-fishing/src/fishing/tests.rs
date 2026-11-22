@@ -1590,3 +1590,31 @@ fn the_band_countdown_falls_through_a_fight() {
     assert_eq!(p.phase(), PondPhase::Hooked);
     assert_eq!(p.band_countdown(), BAND_HOLD_FRAMES - 3);
 }
+
+/// The prize list's draw (`FUN_801D0C3C`): a hidden row 0 drops its row and
+/// shortens the panel from the top, and the cursor shows only while live,
+/// on the entry clamp's row.
+#[test]
+fn the_prize_list_draws_from_its_floor_with_the_clamped_cursor() {
+    use legaia_minigame_formats::fishing_exchange::ExchangeRow;
+    let rows: Vec<ExchangeRow> = (0..6)
+        .map(|row| ExchangeRow {
+            row,
+            limit: 99,
+            price: if row == 0 { 50_000 } else { 200 },
+            item_id: 0x10 + row as u32,
+        })
+        .collect();
+    let ex = PrizeExchange::from_asset(1, &rows, None);
+    let l = ex.list_draw(true, 1640, |r| r != 2);
+    assert_eq!(l.rows.len(), 5);
+    assert_eq!(l.rows[0].name_at, (0x52, 0x58));
+    assert_eq!(l.rows[0].price, (200, 6, 0xD4, 0x58));
+    assert!(!l.rows[1].available);
+    assert_eq!(l.panel, (0xA6, 0x50, 0xD0, 0x70));
+    // Cursor 0 sits under the floor: the entry clamp draws it on row 5.
+    assert_eq!(l.cursor, Some((0x42, 0x48 + 16 * 5)));
+    assert_eq!(l.points, (1640, 6, 0xD4, 0xB8));
+    assert_eq!(ex.list_draw(false, 2_000_000, |_| true).points.0, 999_999);
+    assert_eq!(ex.list_draw(false, 1640, |_| true).cursor, None);
+}

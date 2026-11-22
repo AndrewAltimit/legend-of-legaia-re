@@ -162,128 +162,275 @@ pub fn fishing_line_screen_prims(
     prims
 }
 
-/// The open point-exchange sub-screen's draws in 320x240 **stage** pixels,
-/// through `legaia_engine_ui::fishing::exchange` - the row layout, the ink
-/// rule and the one-time tag decided once for both play hosts. Empty with no
-/// exchange open.
+/// The fishing venue's screens over the pond, composed once for both play
+/// hosts: the hub (its menu, tackle list, help pages and the no-lure line)
+/// and the point exchange (the prize list, the quantity picker, the
+/// confirm), each screen with the panel it sits on.
+#[derive(Debug, Clone, Default)]
+pub struct FishingVenueScreen {
+    /// The screens' chrome, back to front: each screen's panel, then its
+    /// cursor icon. Hosts draw it in their chrome pass under every text
+    /// ([`fishing_venue_chrome_sprites`]).
+    pub chrome: Vec<VenueChrome>,
+    /// Stage-pixel texts, back to front, each screen's cropped against the
+    /// panels of the screens drawn over it
+    /// (`legaia_engine_ui::fishing::exchange::occlude_text_draws`).
+    pub texts: Vec<legaia_engine_ui::TextDraw>,
+}
+
+/// One piece of the venue screens' chrome, in stage pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VenueChrome {
+    /// A panel as the box emitter `FUN_8002C69C` takes it (`FUN_801D74B0`'s
+    /// centred rect resolved), in style `0x44`
+    /// (`legaia_engine_ui::fishing::exchange::venue_panel_draws_for`).
+    Panel((i32, i32, i32, i32)),
+    /// The cursor icon `FUN_8002C488(x, y, 0x4E)`
+    /// (`legaia_engine_ui::fishing::exchange::venue_hand_draw_for`).
+    Hand((i32, i32)),
+}
+
+/// A `FUN_801D74B0` panel's `(cx, y, w, h)`.
+type CentredRect = (i16, i16, i16, i16);
+
+/// One screen of the venue: its panel, its cursor icons and its text.
+struct VenueLayer {
+    panel: Option<CentredRect>,
+    hands: Vec<(i32, i32)>,
+    texts: Vec<legaia_engine_ui::TextDraw>,
+}
+
+/// The fishing venue's screens this frame ([`FishingVenueScreen`]). Empty
+/// with nothing up.
 ///
-/// The pen is the venue sub-screen's panel frame (`FUN_801d74b0`): the retail
-/// menu-picker rect, centre-x converted to a left edge with the two-left /
-/// six-down skin bias. The panel holds still: `FUN_801d74b0` reads no offset,
-/// and the scratchpad triple once read as its sway is the pond swell's
-/// floor-ladder head (`FUN_801d03b0`). Each row carries the live bag count of its prize. `legend` is the host's own
-/// key line; `ink` / `dim` are its pens for live and unavailable rows.
-pub fn fishing_exchange_draws(
+/// The layers stack as the session machine calls their routines, the live
+/// one first, so its primitives draw last: the hub menu
+/// (`FUN_801D0474`) under the tackle list or the prize list, the list under
+/// the quantity picker, the picker under the confirm
+/// (`0x801D0028..0x801D0080`). The list opens on the pond's own page and
+/// draws at retail's pens (`PrizeExchange::list_draw`); the dialogs at
+/// theirs (`PrizeExchange::dialog_layers`), their lines off the overlay
+/// (`FishingHubText::prize`) and the item names off the item table.
+///
+/// `hand_sprites`: the host draws the cursor icon from the system-UI atlas
+/// ([`VenueChrome::Hand`]); without the atlas the cursors stay the `>` text
+/// every host draws for that icon.
+pub fn fishing_venue_screen(
     world: &World,
     font: &legaia_font::Font,
-    legend: &str,
-    ink: [f32; 4],
-    dim: [f32; 4],
-) -> Vec<legaia_engine_ui::TextDraw> {
+    hand_sprites: bool,
+) -> FishingVenueScreen {
+    use legaia_engine_fishing::fishing_chrome::centred_panel;
     use legaia_engine_ui::fishing::exchange as fx;
-    let Some(ex) = world.minigames.fishing_exchange.as_ref() else {
-        return Vec::new();
+    let ink = legaia_engine_ui::MENU_TEXT_WHITE;
+    let cursor_text = |hands: &[(i32, i32)]| {
+        legaia_engine_ui::text_lines::text_line_draws_for(
+            font,
+            hands.iter().map(|&(x, y)| (&b">"[..], x, y, false)),
+            ink,
+            ink,
+        )
     };
-    let pen = legaia_engine_fishing::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50)
-        .map(|p| (p.x as i32, p.y as i32))
-        .unwrap_or((8, 98));
-    let names: Vec<String> = ex
-        .rows
-        .iter()
-        .map(|r| {
-            r.name
-                .clone()
-                .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
-        })
-        .collect();
-    let rows: Vec<fx::ExchangeRowView<'_>> = ex
-        .rows
-        .iter()
-        .enumerate()
-        .map(|(i, r)| {
-            let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
-            fx::ExchangeRowView {
-                name: names[i].as_str(),
-                price: r.price,
-                owned,
-                available: ex.is_available(
-                    i,
-                    world.minigames.fishing_points,
-                    owned,
-                    world.minigames.fishing_prizes_purchased,
+    let mut layers: Vec<VenueLayer> = Vec::new();
+    for l in world.fishing_hub_layers() {
+        let hands: Vec<(i32, i32)> = l
+            .lines
+            .iter()
+            .filter(|h| hand_sprites && h.is_cursor())
+            .map(|h| (i32::from(h.x), i32::from(h.y)))
+            .collect();
+        let texts = legaia_engine_ui::fishing::hub::fishing_hub_draws_for(
+            font,
+            l.lines
+                .iter()
+                .filter(|h| !(hand_sprites && h.is_cursor()))
+                .map(|h| (&h.text[..], i32::from(h.x), i32::from(h.y), h.marked)),
+            ink,
+        );
+        layers.push(VenueLayer {
+            panel: l.panel,
+            hands,
+            texts,
+        });
+    }
+    if let Some(ex) = world.minigames.fishing_exchange.as_ref() {
+        let m = &world.minigames;
+        let points = m.fishing_points;
+        let owned = |row: usize| {
+            ex.rows.get(row).map_or(0, |r| {
+                u32::from(world.party.inventory.get(&r.item_id).copied().unwrap_or(0))
+            })
+        };
+        let name = |row: usize| -> Vec<u8> {
+            ex.rows
+                .get(row)
+                .map(|r| {
+                    r.name
+                        .clone()
+                        .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
+                        .into_bytes()
+                })
+                .unwrap_or_default()
+        };
+        let text = m.fishing_hub_text.as_ref();
+        let line = |i: usize| -> Vec<u8> { text.map(|h| h.prize[i].clone()).unwrap_or_default() };
+        let dlg = &m.fishing_exchange_dialog;
+        use legaia_engine_fishing::fishing::{PrizeScreen, PrizeText};
+        let list = ex.list_draw(dlg.screen == PrizeScreen::List, points, |row| {
+            ex.is_available(row, points, owned(row), m.fishing_prizes_purchased)
+        });
+        let names: Vec<Vec<u8>> = list.rows.iter().map(|r| name(r.row)).collect();
+        let rows: Vec<fx::ExchangeListRow<'_>> = list
+            .rows
+            .iter()
+            .zip(&names)
+            .map(|(r, n)| fx::ExchangeListRow {
+                name: n,
+                name_at: (i32::from(r.name_at.0), i32::from(r.name_at.1)),
+                price: (
+                    r.price.0,
+                    r.price.1,
+                    i32::from(r.price.2),
+                    i32::from(r.price.3),
                 ),
-                one_time: r.is_one_time(),
-                latched: ex.is_latched(i, world.minigames.fishing_prizes_purchased),
+                available: r.available,
+            })
+            .collect();
+        let label = line(4);
+        let (lx, ly) = list.points_label_at;
+        let (pv, pn, px, py) = list.points;
+        let hands: Vec<(i32, i32)> = list
+            .cursor
+            .map(|(x, y)| (i32::from(x), i32::from(y)))
+            .into_iter()
+            .collect();
+        let mut texts = fx::exchange_list_draws_for(
+            font,
+            &rows,
+            (&label, i32::from(lx), i32::from(ly)),
+            (pv, pn, i32::from(px), i32::from(py)),
+        );
+        if !hand_sprites {
+            texts.extend(cursor_text(&hands));
+        }
+        layers.push(VenueLayer {
+            panel: Some(list.panel),
+            hands: if hand_sprites { hands } else { Vec::new() },
+            texts,
+        });
+        let item = name(dlg.row);
+        let pick = |t: PrizeText| -> Vec<u8> {
+            match t {
+                PrizeText::ItemName => item.clone(),
+                PrizeText::QuantityLabel => line(0),
+                PrizeText::Question => line(1),
+                PrizeText::Yes => line(2),
+                PrizeText::No => line(3),
             }
+        };
+        for d in ex.dialog_layers(dlg, points, owned(dlg.row), m.fishing_prizes_purchased) {
+            let strings: Vec<(Vec<u8>, i32, i32)> = d
+                .texts
+                .iter()
+                .map(|&(t, x, y)| (pick(t), i32::from(x), i32::from(y)))
+                .collect();
+            let lines: Vec<(&[u8], i32, i32)> =
+                strings.iter().map(|(t, x, y)| (&t[..], *x, *y)).collect();
+            let numbers: Vec<(i64, i32, i32, i32)> = d
+                .numbers
+                .iter()
+                .map(|&(v, n, x, y)| (v, n, i32::from(x), i32::from(y)))
+                .collect();
+            let hands: Vec<(i32, i32)> = d
+                .cursors
+                .iter()
+                .map(|&(x, y)| (i32::from(x), i32::from(y)))
+                .collect();
+            let mut texts = fx::exchange_dialog_draws_for(
+                font,
+                &lines,
+                &numbers,
+                d.slash.map(|(x, y)| (i32::from(x), i32::from(y))),
+                ink,
+            );
+            if !hand_sprites {
+                texts.extend(cursor_text(&hands));
+            }
+            layers.push(VenueLayer {
+                panel: d.panels.first().copied(),
+                hands: if hand_sprites { hands } else { Vec::new() },
+                texts,
+            });
+        }
+    }
+    let rects: Vec<Option<(i32, i32, i32, i32)>> = layers
+        .iter()
+        .map(|l| {
+            l.panel
+                .and_then(|(cx, y, w, h)| centred_panel(cx, y, w, h))
+                .map(|p| {
+                    (
+                        i32::from(p.x),
+                        i32::from(p.y),
+                        i32::from(p.w),
+                        i32::from(p.h),
+                    )
+                })
         })
         .collect();
-    let view = fx::ExchangeView {
-        venue: ex.venue as u8,
-        points: world.minigames.fishing_points,
-        cursor: ex.cursor,
-        first_visible: ex.first_visible(world.minigames.fishing_points),
-        rows: &rows,
-    };
-    let mut out = fx::exchange_screen_draws_for(font, &view, legend, pen, ink, dim);
-    out.extend(fishing_exchange_dialog_draws(world, font, ink));
+    let mut out = FishingVenueScreen::default();
+    for (i, mut l) in layers.into_iter().enumerate() {
+        out.chrome.extend(rects[i].map(VenueChrome::Panel));
+        out.chrome
+            .extend(l.hands.iter().map(|&p| VenueChrome::Hand(p)));
+        for above in rects[i + 1..].iter().flatten() {
+            fx::occlude_text_draws(
+                &mut l.texts,
+                legaia_engine_ui::dialog_window_footprint(*above),
+            );
+        }
+        out.texts.extend(l.texts);
+    }
     out
 }
 
-/// The exchange's quantity picker and confirm over the list, at retail's
-/// pens (`World::fishing_exchange_dialog_draw`), their lines off the
-/// overlay (`FishingHubText::prize`) and the item's name off the item
-/// table. Empty on the list alone.
-fn fishing_exchange_dialog_draws(
+/// A venue screen's chrome as sprites over a `surface_w x surface_h`
+/// surface, `rects` the system-UI chrome atlas: the panels in style `0x44`
+/// and the hand cursors, back to front.
+pub fn venue_chrome_sprites(
+    chrome: &[VenueChrome],
+    rects: &legaia_engine_ui::SaveMenuAtlasRects,
+    surface_w: u32,
+    surface_h: u32,
+) -> Vec<legaia_engine_ui::SpriteDraw> {
+    use legaia_engine_ui::fishing::exchange as fx;
+    let (origin, scale) = legaia_engine_ui::pause_menu::stage_transform(surface_w, surface_h);
+    let mut out = Vec::new();
+    for c in chrome {
+        match *c {
+            VenueChrome::Panel(p) => out.extend(fx::venue_panel_draws_for(rects, p, origin, scale)),
+            VenueChrome::Hand(p) => out.push(fx::venue_hand_draw_for(rects, p, origin, scale)),
+        }
+    }
+    out
+}
+
+/// The venue screens' chrome this frame ([`fishing_venue_screen`] with the
+/// atlas's hand), as sprites. Empty outside fishing.
+pub fn fishing_venue_chrome_sprites(
     world: &World,
     font: &legaia_font::Font,
-    ink: [f32; 4],
-) -> Vec<legaia_engine_ui::TextDraw> {
-    use legaia_engine_fishing::fishing::PrizeText;
-    let Some((ex, d)) = world.fishing_exchange_dialog_draw() else {
+    rects: &legaia_engine_ui::SaveMenuAtlasRects,
+    surface_w: u32,
+    surface_h: u32,
+) -> Vec<legaia_engine_ui::SpriteDraw> {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Fishing {
         return Vec::new();
-    };
-    let row = world.minigames.fishing_exchange_dialog.row;
-    let name: Vec<u8> = ex
-        .rows
-        .get(row)
-        .map(|r| {
-            r.name
-                .clone()
-                .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
-                .into_bytes()
-        })
-        .unwrap_or_default();
-    let text = world.minigames.fishing_hub_text.as_ref();
-    let line = |t: PrizeText| -> &[u8] {
-        match t {
-            PrizeText::ItemName => &name,
-            PrizeText::QuantityLabel => text.map_or(&[][..], |h| &h.prize[0]),
-            PrizeText::Question => text.map_or(&[][..], |h| &h.prize[1]),
-            PrizeText::Yes => text.map_or(&[][..], |h| &h.prize[2]),
-            PrizeText::No => text.map_or(&[][..], |h| &h.prize[3]),
-        }
-    };
-    let texts: Vec<(&[u8], i32, i32)> = d
-        .texts
-        .iter()
-        .map(|&(t, x, y)| (line(t), i32::from(x), i32::from(y)))
-        .collect();
-    let numbers: Vec<(i64, i32, i32, i32)> = d
-        .numbers
-        .iter()
-        .map(|&(v, n, x, y)| (v, n, i32::from(x), i32::from(y)))
-        .collect();
-    let cursors: Vec<(i32, i32)> = d
-        .cursors
-        .iter()
-        .map(|&(x, y)| (i32::from(x), i32::from(y)))
-        .collect();
-    legaia_engine_ui::fishing::exchange::exchange_dialog_draws_for(
-        font,
-        &texts,
-        &numbers,
-        d.slash.map(|(x, y)| (i32::from(x), i32::from(y))),
-        &cursors,
-        ink,
+    }
+    venue_chrome_sprites(
+        &fishing_venue_screen(world, font, true).chrome,
+        rects,
+        surface_w,
+        surface_h,
     )
 }

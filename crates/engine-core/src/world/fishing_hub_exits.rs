@@ -73,8 +73,14 @@ impl crate::world::World {
     /// reads the cursor keys off the screen's auto-repeat word; this reads
     /// the edge. On the list, Left / Right switch the venue page - a port
     /// affordance retail has no key for (each pond shows its own page).
-    pub(crate) fn fishing_exchange_pad(&mut self, edge: u32) {
-        use crate::fishing_exchange_input::ExchangeInput;
+    ///
+    /// The hosts' own exchange keys ([`crate::fishing_exchange_input`]) land
+    /// here too, so a key buys only through the picker and the confirm.
+    pub fn fishing_exchange_pad(
+        &mut self,
+        edge: u32,
+    ) -> crate::fishing_exchange_input::ExchangeOutcome {
+        use crate::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
         use legaia_engine_fishing::fishing::{
             PRIZE_BOUGHT_SFX, PRIZE_CANCEL, PRIZE_CONFIRM, PRIZE_LEFT, PRIZE_RIGHT, PrizeScreen,
         };
@@ -83,21 +89,22 @@ impl crate::world::World {
             // or confirm closes it rather than holding the pad.
             if edge & (PRIZE_CONFIRM | PRIZE_CANCEL) != 0 {
                 self.close_fishing_exchange();
+                return ExchangeOutcome::Closed;
             }
-            return;
+            return ExchangeOutcome::Refused;
         };
         let on_list = self.minigames.fishing_exchange_dialog.screen == PrizeScreen::List;
         if on_list && edge & (PRIZE_LEFT | PRIZE_RIGHT) != 0 {
             self.fishing_exchange_input(&venues, ExchangeInput::SwitchVenue);
             self.minigames.pending_sfx.push(0x21);
-            return;
+            return ExchangeOutcome::Moved;
         }
         let points = self.minigames.fishing_points;
         let mask = self.minigames.fishing_prizes_purchased;
         let bag = &self.party.inventory;
         let mut dlg = self.minigames.fishing_exchange_dialog;
         let Some(ex) = self.minigames.fishing_exchange.as_mut() else {
-            return;
+            return ExchangeOutcome::Refused;
         };
         let step = ex.pad_step(
             &mut dlg,
@@ -108,8 +115,14 @@ impl crate::world::World {
             mask,
         );
         self.minigames.fishing_exchange_dialog = dlg;
+        let mut outcome = match step.sfx {
+            Some(0x22) if dlg.screen == PrizeScreen::List => ExchangeOutcome::Refused,
+            _ => ExchangeOutcome::Moved,
+        };
         if let Some(p) = step.purchase {
-            let _ = self.fishing_exchange_buy(dlg.row, p.qty);
+            if let Some(bought) = self.fishing_exchange_buy(dlg.row, p.qty) {
+                outcome = ExchangeOutcome::Bought(bought);
+            }
             // The next frame's list opens on its entry clamp.
             let points = self.minigames.fishing_points;
             if let Some(ex) = self.minigames.fishing_exchange.as_mut() {
@@ -125,7 +138,9 @@ impl crate::world::World {
         }
         if step.closed {
             self.fishing_exchange_input(&venues, ExchangeInput::Toggle);
+            outcome = ExchangeOutcome::Closed;
         }
+        outcome
     }
 
     /// The exchange dialogs' layout over the list (empty on the list alone),
@@ -158,6 +173,15 @@ impl crate::world::World {
     /// Empty while no hub is up (or no hub text decoded). The one layout
     /// both world hosts hand to `legaia_engine_ui::fishing::hub`.
     pub fn fishing_hub_lines(&self) -> Vec<HubLine> {
+        self.fishing_hub_layers()
+            .into_iter()
+            .flat_map(|l| l.lines)
+            .collect()
+    }
+
+    /// [`Self::fishing_hub_lines`] with the panels they sit on, back to
+    /// front (`PondSession::hub_layers`).
+    pub fn fishing_hub_layers(&self) -> Vec<HubLayer> {
         let (Some(s), Some(text)) = (
             self.minigames.fishing.as_ref(),
             self.minigames.fishing_hub_text.as_ref(),
@@ -166,7 +190,7 @@ impl crate::world::World {
         };
         let names = self.menu.text.as_ref();
         let bag = &self.party.inventory;
-        s.hub_lines(text, |id| {
+        s.hub_layers(text, |id| {
             let name = names
                 .and_then(|t| t.item_name(id as u8))
                 .map(|n| n.as_bytes().to_vec())

@@ -12,8 +12,11 @@
 //!
 //! [`World::fishing_exchange_input`] is that host-side logic moved into the
 //! engine: toggle (banking the live session's points first, as retail's
-//! running pool has them), cursor moves wrapping at the first visible row,
-//! venue switch, and a buy at the cursor. Hosts map their own input onto
+//! running pool has them, and opening on the pond's own page), venue switch,
+//! and the pad keys - the cursor keys, confirm and cancel - which run the
+//! list, the quantity picker and the confirm exactly as the pad does
+//! ([`World::fishing_exchange_pad`]). A confirm on the list opens the picker;
+//! a buy is the confirm's Yes. Hosts map their own input onto
 //! [`ExchangeInput`] and hand over the two decoded venue pages.
 
 use crate::world::World;
@@ -22,23 +25,31 @@ use legaia_engine_fishing::fishing::{PrizeExchange, PrizePurchase};
 /// One input to the open (or closed) point-exchange sub-screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExchangeInput {
-    /// Open the sub-screen on the first venue, or close it when open.
+    /// Open the sub-screen on the pond's own page, or close it when open.
     Toggle,
-    /// Move the cursor up one row, wrapping from the first visible row to
-    /// the last.
+    /// Up: the list's cursor (wrapping from the first visible row to the
+    /// last), the confirm's row.
     Up,
-    /// Move the cursor down one row, wrapping from the last row to the first
-    /// visible one.
+    /// Down: the list's cursor (wrapping from the last row to the first
+    /// visible one), the confirm's row.
     Down,
     /// Switch to the other venue's page.
     SwitchVenue,
-    /// Buy one of the row under the cursor.
+    /// Confirm (`& 0x44`): the list opens the quantity picker on an
+    /// available row, the picker opens the confirm, the confirm's Yes buys.
     Buy,
+    /// Left: the picker's quantity down; on the list, the venue switch.
+    Left,
+    /// Right: the picker's quantity up; on the list, the venue switch.
+    Right,
+    /// Cancel (`& 0x21`): back one screen, and from the list closed.
+    Cancel,
 }
 
 impl ExchangeInput {
     /// Decode the small integer code a browser host passes across the wasm
-    /// boundary: `0` toggle, `1` up, `2` down, `3` venue, `4` buy.
+    /// boundary: `0` toggle, `1` up, `2` down, `3` venue, `4` confirm,
+    /// `5` left, `6` right, `7` cancel.
     pub fn from_code(code: u32) -> Option<Self> {
         Some(match code {
             0 => Self::Toggle,
@@ -46,7 +57,28 @@ impl ExchangeInput {
             2 => Self::Down,
             3 => Self::SwitchVenue,
             4 => Self::Buy,
+            5 => Self::Left,
+            6 => Self::Right,
+            7 => Self::Cancel,
             _ => return None,
+        })
+    }
+
+    /// The packed pad edge the input stands for, for the inputs the screens
+    /// read off the pad.
+    pub fn pad_edge(self) -> Option<u32> {
+        use legaia_engine_fishing::fishing::{
+            PRIZE_CANCEL, PRIZE_CONFIRM, PRIZE_DOWN, PRIZE_LEFT, PRIZE_RIGHT, PRIZE_UP,
+        };
+        Some(match self {
+            Self::Up => PRIZE_UP,
+            Self::Down => PRIZE_DOWN,
+            Self::Left => PRIZE_LEFT,
+            Self::Right => PRIZE_RIGHT,
+            // Cross (`0x40`) and Circle (`0x20`), one bit of each mask.
+            Self::Buy => PRIZE_CONFIRM & 0x40,
+            Self::Cancel => PRIZE_CANCEL & 0x20,
+            Self::Toggle | Self::SwitchVenue => return None,
         })
     }
 }
@@ -58,12 +90,13 @@ pub enum ExchangeOutcome {
     Opened(usize),
     /// The sub-screen closed.
     Closed,
-    /// The cursor or the venue moved.
+    /// The cursor, the quantity, the screen or the venue moved.
     Moved,
     /// A row was bought.
     Bought(PrizePurchase),
     /// The input did nothing: the screen was closed for a non-toggle input,
-    /// or the buy did not validate (points, stack cap, one-time latch).
+    /// or the list refused to open the picker on an unavailable row (points,
+    /// stack cap, one-time latch; cue `0x22`).
     Refused,
 }
 
@@ -93,20 +126,18 @@ impl World {
                 if let Some(points) = self.minigames.fishing.as_ref().map(|s| s.record.points) {
                     self.minigames.fishing_points = points;
                 }
-                self.open_fishing_exchange(venues[0].clone());
-                ExchangeOutcome::Opened(0)
+                // The pond's own page: the venue select points the list's
+                // table pointer `PTR_DAT_801D90B8` at Buma's or Vidna's
+                // (`0x801CF5F8..0x801CF63C`), as it picks the spawn page.
+                let venue = self
+                    .minigames
+                    .fishing
+                    .as_ref()
+                    .map_or(0, |s| s.venue.min(1));
+                self.open_fishing_exchange(venues[venue].clone());
+                ExchangeOutcome::Opened(venue)
             }
             _ if !open => ExchangeOutcome::Refused,
-            ExchangeInput::Up | ExchangeInput::Down => {
-                let points = self.minigames.fishing_points;
-                if let Some(ex) = &mut self.minigames.fishing_exchange {
-                    // Retail's list wraps at both ends, the top end at
-                    // the first visible row.
-                    let up = input == ExchangeInput::Up;
-                    ex.cursor = ex.step_cursor(ex.cursor, points, up, !up);
-                }
-                ExchangeOutcome::Moved
-            }
             ExchangeInput::SwitchVenue => {
                 let current = self
                     .minigames
@@ -116,22 +147,10 @@ impl World {
                 self.open_fishing_exchange(venues[1 - current].clone());
                 ExchangeOutcome::Moved
             }
-            ExchangeInput::Buy => {
-                let row = self.minigames.fishing_exchange.as_ref().map(|e| e.cursor);
-                match row.and_then(|r| self.fishing_exchange_buy(r, 1)) {
-                    Some(p) => {
-                        // The list's next frame opens on its entry clamp:
-                        // a purchase that took the points below row 0's
-                        // price moves a cursor left on it to the last row.
-                        let points = self.minigames.fishing_points;
-                        if let Some(ex) = &mut self.minigames.fishing_exchange {
-                            ex.cursor = ex.step_cursor(ex.cursor, points, false, false);
-                        }
-                        ExchangeOutcome::Bought(p)
-                    }
-                    None => ExchangeOutcome::Refused,
-                }
-            }
+            _ => match input.pad_edge() {
+                Some(edge) => self.fishing_exchange_pad(edge),
+                None => ExchangeOutcome::Refused,
+            },
         }
     }
 }
@@ -157,6 +176,7 @@ mod tests {
     fn toggle_holds_the_screen_open_across_calls_until_toggled_again() {
         let venues = [venue(0), venue(1)];
         let mut w = World::new();
+        w.minigames.fishing_prize_venues = Some(venues.clone());
         assert_eq!(
             w.fishing_exchange_input(&venues, ExchangeInput::Toggle),
             ExchangeOutcome::Opened(0)
@@ -199,6 +219,7 @@ mod tests {
     fn venue_switch_flips_the_page_and_a_buy_spends_points_without_closing() {
         let venues = [venue(0), venue(1)];
         let mut w = World::new();
+        w.minigames.fishing_prize_venues = Some(venues.clone());
         w.minigames.fishing_points = 1000;
         w.fishing_exchange_input(&venues, ExchangeInput::Toggle);
         w.fishing_exchange_input(&venues, ExchangeInput::SwitchVenue);
@@ -207,8 +228,19 @@ mod tests {
             Some(1)
         );
         let before = w.minigames.fishing_points;
+        // A confirm on the list opens the picker, a second its confirm on
+        // No; nothing is spent until Up and a confirm on Yes.
+        for _ in 0..2 {
+            assert_eq!(
+                w.fishing_exchange_input(&venues, ExchangeInput::Buy),
+                ExchangeOutcome::Moved
+            );
+        }
+        assert_eq!(w.minigames.fishing_points, before);
+        w.fishing_exchange_input(&venues, ExchangeInput::Up);
         match w.fishing_exchange_input(&venues, ExchangeInput::Buy) {
             ExchangeOutcome::Bought(p) => {
+                assert_eq!(p.qty, 1);
                 assert_eq!(before - w.minigames.fishing_points, p.cost as i32)
             }
             other => panic!("expected a buy, got {other:?}"),
@@ -261,6 +293,37 @@ mod tests {
         assert!(w.minigames.pending_sfx.contains(&0x37));
     }
 
+    /// The list opens on the pond's own page (`PTR_DAT_801D90B8`, set by the
+    /// venue select) and on the cursor it was left on (`DAT_801D90A8`), which
+    /// starts at `0` and goes to the last row through the list's entry clamp.
+    #[test]
+    fn the_list_opens_on_the_ponds_page_and_its_last_cursor() {
+        let venues = [venue(0), venue(1)];
+        let mut w = World::new();
+        w.minigames.fishing_prize_venues = Some(venues.clone());
+        w.minigames.fishing_points = 1000;
+        let tables = legaia_engine_fishing::fishing::FishingTables {
+            species: Vec::new(),
+            spawn: [Vec::new(), Vec::new()],
+            cadence: Vec::new(),
+        };
+        w.enter_fishing_session(&tables, 1, None);
+        w.minigames.fishing_points = 1000;
+        assert_eq!(
+            w.fishing_exchange_input(&venues, ExchangeInput::Toggle),
+            ExchangeOutcome::Opened(1)
+        );
+        let cursor = |w: &World| w.minigames.fishing_exchange.as_ref().map(|e| e.cursor);
+        assert_eq!(cursor(&w), Some(0), "the overlay's zeroed word");
+        // Row 0 (10 points) is visible at 1000, so the first Up wraps to 5.
+        w.fishing_exchange_input(&venues, ExchangeInput::Up);
+        assert_eq!(cursor(&w), Some(5));
+        w.fishing_exchange_input(&venues, ExchangeInput::Up);
+        w.fishing_exchange_input(&venues, ExchangeInput::Toggle);
+        w.fishing_exchange_input(&venues, ExchangeInput::Toggle);
+        assert_eq!(cursor(&w), Some(4), "kept across a close and reopen");
+    }
+
     #[test]
     fn wasm_codes_round_trip() {
         for (code, want) in [
@@ -269,9 +332,12 @@ mod tests {
             (2, ExchangeInput::Down),
             (3, ExchangeInput::SwitchVenue),
             (4, ExchangeInput::Buy),
+            (5, ExchangeInput::Left),
+            (6, ExchangeInput::Right),
+            (7, ExchangeInput::Cancel),
         ] {
             assert_eq!(ExchangeInput::from_code(code), Some(want));
         }
-        assert_eq!(ExchangeInput::from_code(5), None);
+        assert_eq!(ExchangeInput::from_code(8), None);
     }
 }

@@ -344,7 +344,10 @@ fn a_confirmed_prize_is_granted_as_retail_grants_it() {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct Drawn {
     texts: Vec<(u32, i32, i32)>,
+    /// The ink word `_DAT_8007B454` at each text and each number.
+    text_inks: Vec<u32>,
     numbers: Vec<(i64, i32, i32, i32)>,
+    number_inks: Vec<u32>,
     glyphs: Vec<(u32, i32, i32)>,
     icons: Vec<(i32, i32, u32)>,
     panels: Vec<(i32, i32, i32, i32)>,
@@ -358,7 +361,8 @@ struct Drawn {
 /// list cursor, the picked row, the quantity, the confirm's row, the cue
 /// `0x8007B6D8`, the grant, the points and the one-time latch, and every
 /// text pen, number field, glyph, cursor icon and panel the picker and the
-/// confirm draw.
+/// confirm draw, and on the list every row's name, price and ink, the points
+/// label and total, the cursor icon and the panel (`PrizeExchange::list_draw`).
 #[test]
 fn the_exchange_picker_and_confirm_step_and_draw_as_retail_does() {
     differential!(prot(972, LIST), prot(972, QUANTITY), prot(972, YES));
@@ -372,15 +376,21 @@ fn the_exchange_picker_and_confirm_step_and_draw_as_retail_does() {
     const STATE: u32 = 0x801D_926C;
     const CUE: u32 = 0x8007_B6D8;
     const NAME_BUF: u32 = 0x801D_7E58;
+    const INK: u32 = 0x8007_B454;
+    const POINTS_LABEL: u32 = 0x801C_EF9C;
     let drawn = Rc::new(RefCell::new(Drawn::default()));
     {
         let d = drawn.clone();
         s.cpu.hook(0x8003_6888, move |r, m| {
             let y = m.rd32(r.r[SP] + 0x10) as i32;
-            d.borrow_mut().texts.push((r.r[A0], r.r[A3] as i32, y));
+            let ink = m.rd32(INK);
+            let mut d = d.borrow_mut();
+            d.texts.push((r.r[A0], r.r[A3] as i32, y));
+            d.text_inks.push(ink);
         });
         let d = drawn.clone();
-        s.cpu.hook(0x8003_4B78, move |r, _| {
+        s.cpu.hook(0x8003_4B78, move |r, m| {
+            d.borrow_mut().number_inks.push(m.rd32(INK));
             d.borrow_mut().numbers.push((
                 i64::from(r.r[A0] as i32),
                 r.r[A1] as i32,
@@ -481,7 +491,6 @@ fn the_exchange_picker_and_confirm_step_and_draw_as_retail_does() {
         match screen {
             PrizeScreen::List => {
                 assert_eq!(s.cpu.call(LIST, &[1]), Stop::Returned);
-                *drawn.borrow_mut() = Drawn::default();
             }
             PrizeScreen::Quantity => {
                 assert_eq!(s.cpu.call(QUANTITY, &[1]), Stop::Returned);
@@ -529,6 +538,64 @@ fn the_exchange_picker_and_confirm_step_and_draw_as_retail_does() {
             ex.rows[row]
         );
         assert_eq!(retail, port, "{at}");
+        // The list's draw, after its own cursor step.
+        if screen == PrizeScreen::List {
+            let l = ex.list_draw(true, points, |r| ex.is_available(r, points, own, mask));
+            let got = drawn.borrow().clone();
+            let mut want_texts: Vec<(u32, i32, i32)> = l
+                .rows
+                .iter()
+                .map(|r| (NAME_BUF, i32::from(r.name_at.0), i32::from(r.name_at.1)))
+                .collect();
+            want_texts.push((
+                POINTS_LABEL,
+                i32::from(l.points_label_at.0),
+                i32::from(l.points_label_at.1),
+            ));
+            assert_eq!(got.texts, want_texts, "{at}: the list's text");
+            let mut want_inks: Vec<u32> = l
+                .rows
+                .iter()
+                .map(|r| if r.available { 7 } else { 0 })
+                .collect();
+            want_inks.push(7);
+            assert_eq!(got.text_inks, want_inks, "{at}: the list's inks");
+            assert_eq!(got.number_inks, want_inks, "{at}: the list's number inks");
+            let mut want_numbers: Vec<_> = l
+                .rows
+                .iter()
+                .map(|r| {
+                    (
+                        r.price.0,
+                        r.price.1,
+                        i32::from(r.price.2),
+                        i32::from(r.price.3),
+                    )
+                })
+                .collect();
+            let (v, n, x, y) = l.points;
+            want_numbers.push((v, n, i32::from(x), i32::from(y)));
+            // Retail passes the pool as a word; the port reads it signed.
+            let got_numbers: Vec<_> = got
+                .numbers
+                .iter()
+                .map(|&(v, n, x, y)| (if v < 0 { v } else { v.min(999_999) }, n, x, y))
+                .collect();
+            assert_eq!(got_numbers, want_numbers, "{at}: the list's numbers");
+            assert_eq!(
+                got.icons,
+                l.cursor
+                    .map(|(x, y)| vec![(i32::from(x), i32::from(y), 0x4E)])
+                    .unwrap_or_default(),
+                "{at}: the list's cursor"
+            );
+            let (a, b, c, e) = l.panel;
+            assert_eq!(
+                got.panels,
+                vec![(i32::from(a), i32::from(b), i32::from(c), i32::from(e))],
+                "{at}: the list's panel"
+            );
+        }
         // The draws: the screen the call drew from (the words as it
         // started, but the confirm's row and the quantity its own step
         // leaves).

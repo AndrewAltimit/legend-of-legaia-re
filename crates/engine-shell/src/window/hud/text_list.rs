@@ -688,40 +688,23 @@ impl PlayWindowApp {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
-            // The venue's hub menu / help pages / tackle list (Triangle or
-            // Select on the idle shore), laid out by the engine
-            // (`World::fishing_hub_lines`) and drawn through the one
-            // composition the browser play page uses.
-            let hub = self.session.host.world.fishing_hub_lines();
-            if !hub.is_empty() {
-                let mut hub_draws = legaia_engine_ui::fishing::hub::fishing_hub_draws_for(
-                    &self.font,
-                    hub.iter()
-                        .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
-                    white,
-                );
-                legaia_engine_ui::scale_stage_text_draws(&mut hub_draws, stage_origin, stage_scale);
-                out.extend(hub_draws);
-            }
         }
-        // Fishing point-exchange list: the venue's prize rows with the retail
-        // gating (row 0 hidden until affordable, greyed unavailable rows,
-        // one-time prizes latched after purchase), composed once for both
-        // hosts (`legaia_engine_screens::fishing_exchange_draws`) on the
-        // swaying venue panel. This host supplies its key legend; the pen is
-        // a 320x240 stage position, so the rows scale onto the surface
-        // through the same stage the HUD rows and the browser play page use.
+        // The venue's screens over the pond - the hub menu, its help pages
+        // and tackle list (Triangle or Select on the idle shore), the
+        // no-lure line, and the prize list, quantity picker and confirm -
+        // composed once for both hosts (`legaia_engine_screens::
+        // fishing_venue_screen`), each screen's text cropped under the
+        // panels drawn over it; the panels are the chrome pass's.
         if self.session.host.world.mode == SceneMode::Fishing {
-            let mut ex_draws = legaia_engine_screens::fishing_exchange_draws(
+            let mut venue = legaia_engine_screens::fishing_venue_screen(
                 &self.session.host.world,
                 &self.font,
-                "   (Enter = trade, Left/Right = venue, P = close)",
-                white,
-                dim,
-            );
+                self.save_menu.is_some(),
+            )
+            .texts;
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            legaia_engine_ui::scale_stage_text_draws(&mut ex_draws, stage_origin, stage_scale);
-            out.extend(ex_draws);
+            legaia_engine_ui::scale_stage_text_draws(&mut venue, stage_origin, stage_scale);
+            out.extend(venue);
         }
         // The slot machine's rules pages are its one text draw. Its status
         // rows (the fallback readout while the machine itself is not on

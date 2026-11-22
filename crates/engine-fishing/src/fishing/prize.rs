@@ -391,6 +391,58 @@ impl PrizeExchange {
         by_points.min(i64::from(r.limit) - i64::from(owned))
     }
 
+    /// What the prize list draws (`FUN_801D0C3C`'s draw half,
+    /// `0x801D0DB4..0x801D0F28`), in retail's 320x240 space. Each row from
+    /// the floor ([`Self::first_visible`]) to row `5`: its item name at
+    /// `(0x52, 0x48 + 16 * row)` through the `0xC2` item-name escape, and its
+    /// price as a six-place field at `x = 0xD4` (`FUN_80034B78`), both in ink
+    /// `7` when [`Self::is_available`] holds for it and ink `0` when not (the
+    /// ink word `_DAT_8007B454` the row stages). Then the overlay's points
+    /// label at `(0x52, 0xB8)` and the point pool, held at `999999`, at
+    /// `(0xD4, 0xB8)`, both in ink `7`; the cursor icon `0x4E` at
+    /// `(0x42, 0x48 + 16 * cursor)` only while the list takes the pad
+    /// (`live`); and the panel `(0xA6, 0x40 + 16 * floor, 0xD0,
+    /// 16 * (8 - floor))`, so a hidden row 0 shortens it from the top.
+    ///
+    /// The cursor drawn is the one the routine's entry clamp leaves
+    /// ([`Self::step_cursor`] with no key), which it runs ahead of the draw
+    /// whether or not the list is live.
+    ///
+    /// PORT: FUN_801d0c3c (the list's draw, 0x801D0DB4..0x801D0F28)
+    // REF: FUN_80034b78 (the decimal field), FUN_8002c488 (the cursor icon)
+    pub fn list_draw(
+        &self,
+        live: bool,
+        points: i32,
+        available: impl Fn(usize) -> bool,
+    ) -> PrizeListDraw {
+        let floor = self.first_visible(points);
+        let rows = (floor..self.rows.len().min(6))
+            .map(|row| {
+                let y = 0x48 + 16 * row as i16;
+                PrizeListRow {
+                    row,
+                    name_at: (0x52, y),
+                    price: (i64::from(self.rows[row].price), 6, 0xD4, y),
+                    available: available(row),
+                }
+            })
+            .collect();
+        let cursor = self.step_cursor(self.cursor, points, false, false);
+        PrizeListDraw {
+            rows,
+            points_label_at: (0x52, 0xB8),
+            points: (i64::from(points).min(999_999), 6, 0xD4, 0xB8),
+            cursor: live.then_some((0x42, 0x48 + 16 * cursor as i16)),
+            panel: (
+                0xA6,
+                0x40 + 16 * floor as i16,
+                0xD0,
+                16 * (8 - floor as i16),
+            ),
+        }
+    }
+
     /// What the picker and the confirm draw over the list, in retail's
     /// 320x240 space, or nothing on the list alone. The picker
     /// (`0x801D0B18..0x801D0C14`): the item's name at `(0x38, 0x58)` and its
@@ -412,13 +464,36 @@ impl PrizeExchange {
         purchased_mask: u32,
     ) -> PrizeDialogDraw {
         let mut d = PrizeDialogDraw::default();
+        for l in self.dialog_layers(dlg, points, owned, purchased_mask) {
+            d.texts.extend(l.texts);
+            d.numbers.extend(l.numbers);
+            d.slash = d.slash.or(l.slash);
+            d.cursors.extend(l.cursors);
+            d.panels.extend(l.panels);
+        }
+        d
+    }
+
+    /// [`Self::dialog_draw`] one screen at a time, back to front: the
+    /// picker's layer, then (on the confirm) the confirm's, each with its
+    /// own panel. The session calls the confirm first and the picker after
+    /// it, so the ordering table draws the picker under the confirm.
+    pub fn dialog_layers(
+        &self,
+        dlg: &PrizeDialog,
+        points: i32,
+        owned: u32,
+        purchased_mask: u32,
+    ) -> Vec<PrizeDialogDraw> {
+        let mut out = Vec::new();
         if dlg.screen == PrizeScreen::List {
-            return d;
+            return out;
         }
         let Some(r) = self.rows.get(dlg.row) else {
-            return d;
+            return out;
         };
         let max = self.picker_max(dlg.row, points, owned, purchased_mask);
+        let mut d = PrizeDialogDraw::default();
         d.texts.push((PrizeText::ItemName, 0x38, 0x58));
         d.texts.push((PrizeText::QuantityLabel, 0xA0, 0x58));
         d.numbers.push((i64::from(dlg.qty), 4, 0x5F, 0x68));
@@ -430,16 +505,46 @@ impl PrizeExchange {
             d.cursors.push((0x4F, 0x68));
         }
         d.panels.push((0xA6, 0x50, 0x11E, 0x20));
+        out.push(d);
         if dlg.screen == PrizeScreen::Confirm {
+            let mut d = PrizeDialogDraw::default();
             d.texts.push((PrizeText::Question, 0x6C, 0x88));
             d.texts.push((PrizeText::Yes, 0x93, 0x98));
             d.texts.push((PrizeText::No, 0x93, 0xA8));
             d.cursors
                 .push((0x83, 0x98 + 16 * (dlg.confirm_row & 1) as i16));
             d.panels.push((0xA6, 0x80, 0x75, 0x30));
+            out.push(d);
         }
-        d
+        out
     }
+}
+
+/// One prize-list row as [`PrizeExchange::list_draw`] lays it out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrizeListRow {
+    /// The row of the venue page.
+    pub row: usize,
+    /// The item name's pen.
+    pub name_at: (i16, i16),
+    /// The price field `(value, places, x, y)`.
+    pub price: (i64, i32, i16, i16),
+    /// Ink `7` (available) or ink `0` (not), for both the name and the price.
+    pub available: bool,
+}
+
+/// What [`PrizeExchange::list_draw`] lays out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrizeListDraw {
+    pub rows: Vec<PrizeListRow>,
+    /// The overlay's points label (`0x801CEF9C`).
+    pub points_label_at: (i16, i16),
+    /// The point pool field `(value, places, x, y)`, held at `999999`.
+    pub points: (i64, i32, i16, i16),
+    /// The cursor icon, while the list takes the pad.
+    pub cursor: Option<(i16, i16)>,
+    /// The panel `(cx, y, w, h)` ([`crate::fishing_chrome::centred_panel`]).
+    pub panel: (i16, i16, i16, i16),
 }
 
 /// A string the exchange's dialogs draw: the picked item's name, or one of
