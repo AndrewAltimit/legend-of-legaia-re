@@ -94,7 +94,15 @@ pub fn chaos_breath_camera(
                 frames: 0x100,
             });
             let (s, co) = trig12(c.facing);
-            let ahead = |t: i16| ((i32::from(t) * scale / 6) >> 12) as i16;
+            // `mult` by `0x2AAAAAAB`, `mfhi`, `sra 0xC`, less the sign word
+            // (`0x801F7674..0x801F7698`): a sixth of the product shifted down
+            // and rounded toward zero as a whole, not a truncated sixth
+            // floored by the shift.
+            let ahead = |t: i16| {
+                let v = i32::from(t).wrapping_mul(scale);
+                let hi = ((i64::from(v) * 0x2AAA_AAAB) >> 32) as i32;
+                ((hi >> 12) - (v >> 31)) as i16
+            };
             arm.pass_spawns[0] = Some(ModuleSpawn {
                 record: SpawnRecord::Module(CLOUD_RECORD),
                 anchor: SpawnAnchor::LiteralScaled {
