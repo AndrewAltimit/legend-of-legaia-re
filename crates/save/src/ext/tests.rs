@@ -96,6 +96,7 @@ fn round_trip_v2_full_ext() {
             expansion: None,
             run_rules: None,
             record_tally: None,
+            escape_clock: None,
             active_party: vec![0, 1, 2],
             per_char: vec![
                 (
@@ -382,6 +383,48 @@ fn record_tally_round_trips_through_lgsf_and_the_retail_block() {
     assert_eq!(crate::card::read_retail_record_tally(&sc_block), None);
 }
 
+/// An armed escape countdown rides an `LGSF` file in the optional `LGXH`
+/// block and a retail SC block at `0x460` / `0x478` / `0x47C` / `0x480`; a
+/// disarmed one writes no block and zeroes the block's words.
+#[test]
+fn escape_clock_round_trips_through_lgsf_and_the_retail_block() {
+    use crate::card::{BLOCK_SIZE, RetailEscapeClock};
+    let clock = RetailEscapeClock {
+        remaining: 1234,
+        duration: 2400,
+        threshold: 910,
+        flags: 0x04C7_04C7,
+    };
+    let mut sf = minimal_save();
+    let bare = sf.write();
+    sf.ext_v2.escape_clock = Some(clock);
+    let bytes = sf.write();
+    assert_ne!(bytes, bare);
+    assert!(bytes.windows(4).any(|w| w == SAVE_FILE_EXTH_MAGIC));
+    assert_eq!(
+        SaveFile::parse(&bytes).unwrap().ext_v2.escape_clock,
+        Some(clock)
+    );
+
+    let mut sc_block = vec![0u8; BLOCK_SIZE];
+    sf.write_into_retail_sc_block(&mut sc_block).unwrap();
+    assert_eq!(&sc_block[0x478..0x47C], &2400u32.to_le_bytes());
+    let lifted = SaveFile::from_retail_sc_block(&sc_block, 4).unwrap();
+    assert_eq!(lifted.ext_v2.escape_clock, Some(clock));
+    let window = lifted.ext_v2.retail_window.as_deref().unwrap();
+    assert_eq!(
+        crate::card::read_retail_escape_clock_from_window(window),
+        Some(clock)
+    );
+
+    // Disarmed: no block, and the block's words zeroed over the window's.
+    let mut later = lifted.clone();
+    later.ext_v2.escape_clock = None;
+    later.write_into_retail_sc_block(&mut sc_block).unwrap();
+    assert_eq!(crate::card::read_retail_escape_clock(&sc_block), None);
+    assert!(!later.write().windows(4).any(|w| w == SAVE_FILE_EXTH_MAGIC));
+}
+
 // --- Panic-hardening / adversarial-input regression tests -------------
 
 fn save_with_saved_chain() -> SaveFile {
@@ -404,6 +447,7 @@ fn save_with_saved_chain() -> SaveFile {
             expansion: None,
             run_rules: None,
             record_tally: None,
+            escape_clock: None,
             active_party: vec![0, 1],
             per_char: vec![(
                 0,

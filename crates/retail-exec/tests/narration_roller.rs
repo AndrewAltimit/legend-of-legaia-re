@@ -48,7 +48,7 @@ fn the_narration_roller_matches_retail() {
     cpu.mem.wr32(OT_BASE, OT);
 
     let mut rng = Rng(0x524F_4C4C);
-    let (mut frames_run, mut completed, mut released, mut drawn) = (0, 0, 0, 0);
+    let (mut frames_run, mut completed, mut released, mut drawn, mut orphans) = (0, 0, 0, 0, 0);
     for block in 0..300 {
         // Pages: `0x1F text 0x00`, some with no text.
         let n_pages = rng.below(14) as usize;
@@ -92,10 +92,17 @@ fn the_narration_roller_matches_retail() {
         cpu.mem.wr16(ACTOR + 0x54, 0);
         cpu.mem.wr32(ACTOR + 0x10, rng.next() & !0x8_0008);
         cpu.mem.wr32(ACTOR + 0x90, BLOCK);
-        cpu.mem.wr32(ACTOR + 0x94, PARENT);
+        // A roller with no parent now and then: the retirement's clear is
+        // behind `beq a0,zero` (`0x800376FC`).
+        let parented = rng.below(4) != 0;
+        cpu.mem
+            .wr32(ACTOR + 0x94, if parented { PARENT } else { 0 });
         cpu.mem.wr32(PARENT + 0x10, 0xFFFF_FFFF);
         cpu.mem.wr8(FRAME_STEP, step as u8);
         let mut port = CutsceneNarration::with_seed(pages.clone(), seed, step);
+        if parented {
+            port = port.with_parent(0x06);
+        }
 
         for frame in 0..600 {
             let buf = rng.below(2);
@@ -126,8 +133,21 @@ fn the_narration_roller_matches_retail() {
                 port.seed().release,
                 "release: {ctx}"
             );
+            // The parent's halt bit: cleared by the retirement alone, and
+            // only through the link.
+            let freed = port.take_released_parent();
+            assert_eq!(
+                cpu.mem.rd32(PARENT + 0x10) != 0xFFFF_FFFF,
+                freed.is_some(),
+                "parent: {ctx}"
+            );
             if port.is_complete() {
-                assert_eq!(cpu.mem.rd32(PARENT + 0x10), !0x400, "parent: {ctx}");
+                if parented {
+                    assert_eq!(cpu.mem.rd32(PARENT + 0x10), !0x400, "parent: {ctx}");
+                    assert_eq!(freed, Some(0x06), "parent: {ctx}");
+                } else {
+                    orphans += 1;
+                }
                 completed += 1;
                 break;
             }
@@ -177,7 +197,7 @@ fn the_narration_roller_matches_retail() {
         }
     }
     assert!(
-        frames_run > 30000 && completed > 150 && released > 500 && drawn > 50000,
-        "{frames_run} {completed} {released} {drawn}"
+        frames_run > 30000 && completed > 150 && released > 500 && drawn > 50000 && orphans > 20,
+        "{frames_run} {completed} {released} {drawn} {orphans}"
     );
 }

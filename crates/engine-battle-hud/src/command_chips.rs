@@ -393,7 +393,25 @@ pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<Commit
             target,
             target_badge,
             slide_x,
+            slide_y: [0; 3],
         });
+    }
+    // The Begin confirm's exit glides each element toward its own seat A,
+    // which is off the rest row for the latest row and, with two rows, the
+    // first (`log::commit_exit_seats`); the rows' `y` does not hang on the
+    // widths.
+    if let Some(glide) = exit.map(|x| x.glide) {
+        let commits: Vec<log::LogCommit> = rows.iter().map(|r| r.commit(|_| 0)).collect();
+        let layout = log::commit_log_layout(&commits);
+        for ((row, rest), seats) in rows
+            .iter_mut()
+            .zip(&layout)
+            .zip(log::commit_exit_seats(&layout))
+        {
+            for k in 0..3 {
+                row.slide_y[k] = glide.covered(seats[k].1 - rest[k].y);
+            }
+        }
     }
     rows
 }

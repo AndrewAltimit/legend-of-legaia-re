@@ -129,6 +129,7 @@ fn synthetic_save_file() -> SaveFile {
             expansion: None,
             run_rules: None,
             record_tally: None,
+            escape_clock: None,
         },
     }
 }
@@ -898,6 +899,7 @@ fn real_psx_memory_card_save_drives_full_loop() {
             expansion: None,
             run_rules: None,
             record_tally: None,
+            escape_clock: None,
         },
     };
 

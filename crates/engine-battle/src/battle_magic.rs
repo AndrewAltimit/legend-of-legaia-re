@@ -397,8 +397,11 @@ fn step_select(
 ) -> SpellPhase {
     let n = spells.len();
     if n == 0 {
-        // Empty spell list: Circle (or any confirm) backs out so the player
-        // isn't trapped; otherwise hold the (empty) list.
+        // Empty spell list: retail's window is a text panel, whose caption
+        // arm takes the confirm or the cancel mask as a cancel (cue `0x37`,
+        // list mode `3`; `FUN_80035CB8`, `0x80035CD4..0x80035D54`), so
+        // either press backs out; otherwise hold the (empty) list.
+        // REF: FUN_80035CB8
         if ev.circle || ev.cross {
             return SpellPhase::Aborted;
         }

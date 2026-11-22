@@ -61,6 +61,12 @@ pub struct CutsceneState {
     /// blocks (a non-blocking crawl opens the next block the same tick the prior
     /// scrolls out) that a rising-edge `active`-watch would merge into one.
     pub narration_seq: u32,
+    /// Crawl parents a retirement or a kill released whose halt bit `0x400`
+    /// is still to clear: the roller's `+0x94` link, by the crawl op's
+    /// target byte ([`crate::world::World::release_crawl_parents`]). A kill
+    /// lands inside a record's slice, while the channel set is out of the
+    /// world, so the clear waits for the set to come back.
+    pub crawl_released: Vec<u8>,
     /// The crawl config block (`*0x801C6EA4 +0x4C..+0x52`) the next roller
     /// reads: the scene reset's values until a timeline `CC F8 E8` seed op
     /// overwrites them. See [`legaia_engine_field::cutscene_narration::RollerSeed`].
@@ -191,6 +197,7 @@ impl CutsceneState {
             finished_fmv: None,
             narration: None,
             narration_seq: 0,
+            crawl_released: Vec::new(),
             narration_seed: legaia_engine_field::cutscene_narration::RollerSeed::SCENE_RESET,
             timeline: None,
             in_timeline: false,

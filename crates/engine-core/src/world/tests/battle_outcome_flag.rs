@@ -129,6 +129,7 @@ fn a_return_from_battle_costs_a_running_escape_clock_twenty_seconds() {
         remaining: 21600,
         warn_threshold: 3600,
         armed: true,
+        duration: 1,
     };
     let mut world = battle_world();
     world.battle.escape_timer = armed;
@@ -152,6 +153,7 @@ fn a_return_from_battle_costs_a_running_escape_clock_twenty_seconds() {
         remaining: 900,
         warn_threshold: 0,
         armed: false,
+        duration: 0,
     };
     end_battle(&mut idle, BattleEndCause::Escaped);
     assert_eq!(idle.battle.escape_timer.remaining, 900);

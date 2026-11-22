@@ -142,6 +142,11 @@ pub struct PauseItemsSession {
     /// topped up by every confirm the screen commits, so the gate greys the
     /// row on the use that reaches `0xE0` rather than only on the next open.
     incense_window: i32,
+    /// The pause menu's shared party cursor (`DAT_801E46C4`, a
+    /// present-party position) as this screen holds it: the single-target
+    /// picker opens on it and every move of that picker writes it
+    /// ([`crate::field_menu::party_cursor_on_entry`]).
+    pub party_cursor: u8,
 }
 
 impl PauseItemsSession {
@@ -166,7 +171,14 @@ impl PauseItemsSession {
             incense_blocked: false,
             incense_window: 0,
             arrange_pending: false,
+            party_cursor: 0,
         }
+    }
+
+    /// Open on the shared party cursor the last party picker left.
+    pub fn with_party_cursor(mut self, cursor: u8) -> Self {
+        self.party_cursor = cursor;
+        self
     }
 
     /// Seed the Incense row's gate from the live Incense window
@@ -523,6 +535,9 @@ impl PauseItemsSession {
             if let Some(ev) = simple_inventory_input(pressed) {
                 self.inner.input(ev);
             }
+            if let InventoryUseState::TargetSelect { cursor, .. } = self.inner.state {
+                self.party_cursor = cursor as u8;
+            }
             return;
         }
         match self.focus {
@@ -626,6 +641,18 @@ impl PauseItemsSession {
                             *cursor = fpos;
                         }
                         self.inner.input(InventoryUseInput::Confirm);
+                        // Sub-screen `0x0A` opens its party picker on the
+                        // shared cursor, not on a row the item favours.
+                        let last = self.inner.targets.len().saturating_sub(1);
+                        if let InventoryUseState::TargetSelect { cursor, .. } =
+                            &mut self.inner.state
+                        {
+                            let at = crate::field_menu::party_cursor_on_entry(
+                                crate::field_menu::PartyCursorScreen::ItemTarget,
+                                self.party_cursor,
+                            );
+                            *cursor = usize::from(at).min(last);
+                        }
                     }
                 }
             }

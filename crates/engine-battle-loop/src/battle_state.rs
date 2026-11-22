@@ -252,6 +252,10 @@ pub struct BattleState {
     pub prev_action_cleared: bool,
     /// Last-issued battle-end cause (for inspection / engine side-effects).
     pub end: Option<BattleEndCause>,
+    /// The overlay word `0x801F698C`: the Seru-absorb puff's one-shot cue
+    /// `0x1B` has sounded this action (`FUN_80047430` `0x80047BA0..
+    /// 0x80047BBC`). The action SM's Begin arm clears it (`0x801E2CB0`).
+    pub absorb_cue_latch: bool,
     /// The armed end-of-battle presentation (retail's results sequencer
     /// `FUN_8004E568`, run every frame the battle-end signal is up). While
     /// `Some` the scene stays in [`legaia_engine_mode::mode::SceneMode::Battle`], the action SM does
@@ -789,6 +793,13 @@ pub struct BattleState {
     /// them to seat B over the same `0x10` frames as the action plates
     /// ([`Self::result_windows_dy`]).
     pub result_windows_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// A party wipe's boss bark is still owed: the annihilated arm's results
+    /// frame clears its latch `gp+0xA3C` (`0x8004F9C8`) and every sequencer
+    /// pass after tries the bark while the latch is clear, firing (and
+    /// setting the latch) on the first pass the drive word `0x8007BC20`
+    /// reads below `2` (`0x8004F9FC..0x8004FA28`) - so a bark waits out a
+    /// battle voice clip still reading.
+    pub wipe_bark_pending: bool,
     /// The target plaque's content word was cleared: the strike loop's
     /// counterattack swap zeroes record `0x51`'s string and width
     /// (`sw zero,0x7AC(s1)` / `sh zero,0x79E(s1)` at `0x801E36C8` /
@@ -1736,6 +1747,7 @@ impl BattleState {
             monster_budget_armed: None,
             prev_action_cleared: true,
             end: None,
+            absorb_cue_latch: false,
             hit_fx: Vec::new(),
             hit_events: Vec::new(),
             clut_stages: Vec::new(),
@@ -1822,6 +1834,7 @@ impl BattleState {
             command_pad_buffer: None,
             ring_highlight: None,
             result_windows_glide: None,
+            wipe_bark_pending: false,
             target_plate_cleared: false,
             action_hud_wiped: false,
             action_hud_close: None,

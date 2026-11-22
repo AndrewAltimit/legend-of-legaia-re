@@ -63,12 +63,20 @@ pub fn tick_open_subsession(
         active.tick_pad_edge_with_key(edge, key_pressed);
     }
     resume_after_use(active, world);
+    // An Events-vibration-Off commit zeroes the two motor words
+    // (`0x801DAD18..0x801DAD24`), whatever the setting held before.
+    if let FieldMenuSubsession::Config(options) = active
+        && options.take_motor_stop()
+    {
+        world.rumble.motors = Default::default();
+    }
     if let FieldMenuSubsession::Equip {
         session, char_slot, ..
     } = active
     {
         apply_equip_swaps(session, *char_slot, world);
     }
+    keep_party_cursor(active, world);
     // The Status page's list permuted its own copy; replay its exchanges onto
     // the live record through the ported swap.
     if let FieldMenuSubsession::Status(status) = active
@@ -77,6 +85,41 @@ pub fn tick_open_subsession(
         let _ = apply_list_order_outcome(&list, world);
     }
     active.take_rebound_mapping()
+}
+
+/// The pause menu's party pickers walk one shared cursor, retail's
+/// `DAT_801E46C4` (a present-party position): Status, the Equip picker and
+/// the Items and Magic target pickers each write it as they move, and the
+/// next screen to open starts from it
+/// ([`World::menu`]`.party_cursor`, zeroed at the menu's open). A closing
+/// Status session reports no cursor, and leaves the last one standing.
+///
+/// REF: FUN_801DA2A0, FUN_801D98F0, FUN_801D8308, FUN_801D9280, FUN_801D9594
+fn keep_party_cursor(active: &FieldMenuSubsession, world: &mut World) {
+    let at = match active {
+        FieldMenuSubsession::Status(s) if !s.is_done() => Some(s.cursor()),
+        FieldMenuSubsession::Equip { char_slot, .. } => world
+            .present_party_list()
+            .iter()
+            .position(|&s| s == *char_slot)
+            .map(|p| p as u8),
+        // The Items target picker opens on the cursor and writes it as it
+        // moves (`FUN_801D8308`); the all-party confirm keeps it.
+        FieldMenuSubsession::Items(p) => Some(p.party_cursor),
+        // The Magic target screens zero it on entry (`FUN_801D9280`,
+        // `FUN_801D9594`) and the single-target picker then walks it.
+        FieldMenuSubsession::Spells(s) => match s.phase() {
+            legaia_engine_menus::spell_menu::SpellMenuPhase::TargetSelect { cursor, .. } => {
+                Some(*cursor)
+            }
+            legaia_engine_menus::spell_menu::SpellMenuPhase::GroupConfirm { .. } => Some(0),
+            _ => None,
+        },
+        _ => None,
+    };
+    if let Some(at) = at {
+        world.menu.party_cursor = at;
+    }
 }
 
 /// A use or cast that just committed applies here and leaves the screen up:

@@ -371,6 +371,9 @@ pub struct VenueCameraFrame {
     pub close_up: Option<i16>,
     /// The close-up ends this frame (`+0x22 > 0xD2`).
     pub close_up_done: bool,
+    /// The rod's recover swing has run out: its sub-state `0x801D91AC`
+    /// reads `0x14` (the actor retired, or never cast).
+    pub rod_recovered: bool,
     /// The frame step (`0x1F800393`).
     pub step: i32,
 }
@@ -538,7 +541,7 @@ impl VenueCameraDriver {
                 // No close-up ran (no line actor): straight to the showcase.
                 self.catch = Catch::Restored;
             }
-            (Catch::Restored, _) => {
+            (Catch::Restored, _) if catch_showcase_due(f.rod_recovered, false) => {
                 self.camera.showcase(f.venue);
                 self.catch = Catch::Tilt;
             }
@@ -547,13 +550,24 @@ impl VenueCameraDriver {
                     self.catch = Catch::Held;
                 }
             }
-            (Catch::Held, _) => {}
+            (Catch::Restored | Catch::Held, _) => {}
         }
         if f.close_up_done && matches!(self.catch, Catch::CloseUp(..)) {
             self.camera.celebrate_end();
             self.catch = Catch::Restored;
         }
     }
+}
+
+/// State `0x1E`'s way to the showcase `0x20` (`0x801CFD48..0x801CFD7C`):
+/// the rod's sub-state `0x801D91AC` reads `0x14` - its recover swing has run
+/// out - and the line actor's close-up flag `0x801D91B0` is clear (raised
+/// as the close-up starts, `0x801D4AEC`, and cleared as its timer passes
+/// `0xD2`, `0x801D5158`). The driver holds the restored camera until both.
+///
+/// PORT: FUN_801cf3bc (state 0x1e: the showcase gate, 0x801CFD48..0x801CFD7C)
+pub fn catch_showcase_due(rod_recovered: bool, close_up_live: bool) -> bool {
+    rod_recovered && !close_up_live
 }
 
 /// The cast origin the lure is measured from: the lead's seat less the polar
@@ -619,6 +633,7 @@ mod tests {
             venue: 1,
             close_up: None,
             close_up_done: false,
+            rod_recovered: true,
             step: 1,
         }
     }

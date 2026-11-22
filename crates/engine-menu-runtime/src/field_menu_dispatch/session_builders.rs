@@ -96,7 +96,12 @@ pub(super) fn build_spell_session(world: &World, catalog: &SpellCatalog) -> Spel
             }
         }
     }
-    SpellMenuSession::new(party, targets, catalog.clone()).with_unaffected_spells(unaffected)
+    SpellMenuSession::new(party, targets, catalog.clone())
+        .with_unaffected_spells(unaffected)
+        .with_caster_cursor(legaia_engine_menus::field_menu::party_cursor_on_entry(
+            legaia_engine_menus::field_menu::PartyCursorScreen::SpellCaster,
+            world.menu.party_cursor,
+        ))
 }
 
 fn build_inventory_session(world: &World) -> InventoryUseSession {
@@ -313,6 +318,7 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
         .with_warp_destinations(warp_destinations(world))
         .with_throw_out_row_order(throw_out_slots)
         .with_incense_window(world.locomotion.walk_regen_window)
+        .with_party_cursor(world.menu.party_cursor)
 }
 
 /// The visible rows of the quick-travel landmark list - the Door of Wind

@@ -158,6 +158,7 @@ mod tests {
             remaining: 21600,
             warn_threshold: 3600,
             armed: true,
+            duration: 21600,
         };
         host.world.cutscene.finished_fmv = Some(5);
         let out = host.apply_pending_fmv_handoff();

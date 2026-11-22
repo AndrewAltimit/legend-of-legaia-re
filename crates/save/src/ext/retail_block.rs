@@ -93,6 +93,8 @@ impl SaveFile {
         ext_v2.previous_scene = crate::card::read_retail_previous_scene(sc_block);
         // The records screen's lifetime battle / escape tallies.
         ext_v2.record_tally = crate::card::read_retail_record_tally(sc_block);
+        // The escape countdown, when the save was made while it ran.
+        ext_v2.escape_clock = crate::card::read_retail_escape_clock(sc_block);
         Ok(Self {
             party,
             ext: SaveExt {
@@ -291,6 +293,8 @@ impl SaveFile {
         if let Some(tally) = tally {
             crate::card::write_retail_record_tally(sc_block, tally)?;
         }
+        // The escape countdown's four words, zero when it is disarmed.
+        crate::card::write_retail_escape_clock(sc_block, self.ext_v2.escape_clock)?;
         // The play clock, so retail's save screen prints the time this save
         // was played for and retail's own clock carries on from it.
         // A window whose own clock is still in the same second keeps its

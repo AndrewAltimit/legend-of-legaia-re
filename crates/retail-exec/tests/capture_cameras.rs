@@ -295,7 +295,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         let countdown_va = cam::capture_countdown_va(body.action);
         let rounds = match body.action {
             0x76 => 30,
-            0x71 => 12,
+            0x71 | 0x70 => 12,
             _ => 6,
         };
         for round in 0..rounds {
@@ -304,7 +304,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // The caster's formation id, which a body can fork on: Terror
             // Scream's owners (Terror Face `0x7F`, the `0x28` row).
             let monster = match body.action {
-                0x70 => [0x28u8, 0x7F][round % 2],
+                // The three caster bands its arm 0 forks on (`0x801F7764`,
+                // `0x801F78B8`): Terror Face `0x7F`, the `0x28` row and the
+                // `0x83` row, each picking its cue and cast clip.
+                0x70 => [0x28u8, 0x7F, 0x83, 0x29, 0x84, 0x2A, 0x85][round % 7],
                 // The two casters that deal a stacked table.
                 0x76 => [0u8, 0x9D, 0x9E][round % 3],
                 _ => 0,
@@ -713,3 +716,130 @@ const DEATH_GAME_WORD: u32 = 0x801F_A278;
 const TABLE: u32 = 0x801F_A288;
 const PRESSED: u32 = 0x8007_B874;
 const CONFIRM_MASK: u32 = 0x8008_46D0;
+
+/// Water Hazard's arm 3 (`0x801F7B90`): once its countdown runs out it walks
+/// the seats the caster's target code names and passes (phase `0xFF`) only
+/// when every one has settled (`0x801F7C2C..0x801F7DA4`): a code below `8`
+/// one seat, `8` the `ctx[+0]` party seats, any other the `ctx[+1]` monster
+/// seats from seat `3`; a live seat idle (`+0x1D9 == 0`), a downed party seat
+/// on clip `8`, a dead monster faded (`+0x04 == 0`). Against
+/// `World::capture_target_settled` through `BattleArmDrivers`, on a world
+/// seated from the same table: small parties (the engine's compacted row),
+/// short rows, and now and then an active actor past the seated row that the
+/// walk must not reach.
+#[test]
+fn water_hazard_waits_for_the_seats_it_names_as_retail_does() {
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+    use legaia_save::Party;
+    differential!(prot(956, WATER_HAZARD));
+    let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // Arm 3's countdown word (`lw v1,-0x7960(a0)` at `0x801F7C10`).
+    const COUNTDOWN: u32 = 0x801F_86A0;
+    let body = bodies()
+        .into_iter()
+        .find(|b| b.action == 0x71)
+        .expect("Water Hazard");
+    let module = disc.read_entry(956).expect("PROT 0956");
+    let mut cpu = scus_cpu().expect("SCUS");
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(CTX_PTR, CTX);
+    for target in jal_targets(&module) {
+        cpu.stub(target, 0);
+    }
+    let mut rng = Rng(0x5741_5452);
+    let (mut passed, mut held, mut extras) = (0u32, 0u32, 0u32);
+    let mut codes = std::collections::BTreeSet::new();
+    for round in 0..20_000u32 {
+        let (_, _) = seed(&mut cpu, &mut rng, &module, &body, 3);
+        let pc = 1 + rng.below(3) as u8;
+        let m = 1 + rng.below(5) as u8;
+        let caster = 3 + rng.below(u32::from(m)) as u8;
+        let code = match rng.below(4) {
+            0 => rng.below(u32::from(pc)) as u8,
+            1 => 3 + rng.below(u32::from(m)) as u8,
+            2 => 8,
+            _ => 9,
+        };
+        cpu.mem.wr8(CTX, pc);
+        cpu.mem.wr8(CTX + 1, m);
+        cpu.mem.wr8(CTX + 0x13, caster);
+        cpu.mem.wr32(COUNTDOWN, 1);
+        // (hp, clip, colour word) per retail seat; the empty party seats
+        // are the zeroed structs the loader leaves.
+        let mut seats = [(0u16, 0u8, 0u32); 8];
+        for (s, seat) in seats.iter_mut().enumerate() {
+            let used = s < usize::from(pc) || (3..3 + usize::from(m)).contains(&s);
+            if !used {
+                continue;
+            }
+            let alive = rng.below(3) != 0;
+            *seat = (
+                if alive { 1 + rng.below(300) as u16 } else { 0 },
+                [0u8, 0, 5, 8][rng.below(4) as usize],
+                if rng.below(2) == 0 { 0 } else { 0x1004_0100 },
+            );
+        }
+        for (s, &(hp, clip, colour)) in seats.iter().enumerate() {
+            let a = ACTOR + s as u32 * STRIDE;
+            cpu.mem.wr16(a + 0x14C, hp);
+            cpu.mem.wr8(a + 0x1D9, clip);
+            cpu.mem.wr32(a + 4, colour);
+        }
+        cpu.mem
+            .wr8(ACTOR + u32::from(caster) * STRIDE + 0x1DD, code);
+        assert_eq!(cpu.call(WATER_HAZARD, &[]), Stop::Returned, "{round}");
+        let retail = cpu.mem.rd8(CTX + 0x279) == 0xFF;
+
+        let mut w = World::new();
+        w.load_party(Party::zeroed(pc as usize));
+        w.enter_battle(pc, m);
+        let engine = |r: usize| if r < 3 { r } else { r - 3 + usize::from(pc) };
+        for (r, &(hp, clip, colour)) in seats.iter().enumerate() {
+            if !(r < usize::from(pc) || (3..3 + usize::from(m)).contains(&r)) {
+                continue;
+            }
+            let a = &mut w.actors[engine(r)];
+            a.active = true;
+            a.battle.hp = hp;
+            a.battle.current_anim = clip;
+            a.battle.render_color = colour;
+            a.battle_action_clips = Some(std::sync::Arc::new(Vec::new()));
+            if r >= 3 {
+                a.battle_monster_id = Some(0x20 + r as u16);
+            }
+        }
+        // An actor past the seated row: no seat the walk counts.
+        let past = usize::from(pc + m);
+        let extra = rng.below(4) == 0 && past < w.actors.len();
+        if extra {
+            let a = &mut w.actors[past];
+            a.active = true;
+            a.battle_monster_id = None;
+            a.battle.hp = 0;
+            a.battle.render_color = 0x1004_0100;
+            extras += 1;
+        }
+        let ce = engine(usize::from(caster));
+        w.actors[ce].battle.active_target = match code {
+            3..=7 => engine(usize::from(code)) as u8,
+            c => c,
+        };
+        let port = w.capture_target_settled(ce as u8);
+        assert_eq!(
+            port, retail,
+            "round {round}: party {pc} row {m} code {code} seats {seats:x?} extra {extra}"
+        );
+        passed += u32::from(retail);
+        held += u32::from(!retail);
+        codes.insert(code.min(8 + u8::from(code > 8)));
+    }
+    assert!(
+        passed > 3000 && held > 3000 && extras > 2000 && codes.len() >= 4,
+        "{passed} {held} {extras} {codes:?}"
+    );
+}

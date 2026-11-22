@@ -16,64 +16,79 @@ use psx_retail_exec::{Cpu, Memory, Stop};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-const SM: u32 = 0x801E_295C;
-const SM_END: u32 = 0x801E_6968;
-const OVERLAY_BASE: u32 = 0x801C_E818;
-const CTX_PTR: u32 = 0x8007_BD24;
-const ACTORS: u32 = 0x801C_9370;
-const CTX: u32 = 0x8012_0000;
-const ACTOR: u32 = 0x8013_0000;
-const ACTOR_STRIDE: u32 = 0x400;
-const FRAME_STEP: u32 = 0x1F80_0393;
-const ELEMENT: u32 = 0x801D_8DE8;
-const SERU_GRANT: u32 = 0x801E_92DC;
-const HP_SETTLE: u32 = 0x801E_7250;
-const RAND: u32 = 0x8005_6798;
-const TRIGGER: u32 = 0x801D_BF9C;
-const DRIVER: u32 = 0x801D_C0A0;
-const SFX: u32 = 0x8004_FCC8;
-const WIN_POSE: u32 = 0x8005_5B4C;
-const SEATS: u32 = 0x8007_BD10;
-const FORMATION: u32 = 0x8007_BD0C;
-const SPECIAL_WORD: u32 = 0x8007_BAC0;
-const END_SIGNAL: u32 = 0x8007_BD71;
-const END_CAUSE: u32 = 0x8007_BD2C;
+pub(crate) const SM: u32 = 0x801E_295C;
+pub(crate) const SM_END: u32 = 0x801E_6968;
+pub(crate) const OVERLAY_BASE: u32 = 0x801C_E818;
+pub(crate) const CTX_PTR: u32 = 0x8007_BD24;
+pub(crate) const ACTORS: u32 = 0x801C_9370;
+pub(crate) const CTX: u32 = 0x8012_0000;
+pub(crate) const ACTOR: u32 = 0x8013_0000;
+pub(crate) const ACTOR_STRIDE: u32 = 0x400;
+pub(crate) const FRAME_STEP: u32 = 0x1F80_0393;
+pub(crate) const ELEMENT: u32 = 0x801D_8DE8;
+pub(crate) const SERU_GRANT: u32 = 0x801E_92DC;
+pub(crate) const HP_SETTLE: u32 = 0x801E_7250;
+pub(crate) const RAND: u32 = 0x8005_6798;
+pub(crate) const TRIGGER: u32 = 0x801D_BF9C;
+pub(crate) const DRIVER: u32 = 0x801D_C0A0;
+pub(crate) const SFX: u32 = 0x8004_FCC8;
+pub(crate) const WIN_POSE: u32 = 0x8005_5B4C;
+pub(crate) const SEATS: u32 = 0x8007_BD10;
+pub(crate) const FORMATION: u32 = 0x8007_BD0C;
+pub(crate) const SPECIAL_WORD: u32 = 0x8007_BAC0;
+pub(crate) const END_SIGNAL: u32 = 0x8007_BD71;
+pub(crate) const END_CAUSE: u32 = 0x8007_BD2C;
 /// `ctx + 0x6D6`, the band the SM keeps in `s7`.
-const S7: u32 = CTX + 0x6D6;
+pub(crate) const S7: u32 = CTX + 0x6D6;
 
 /// The port's side: a host holding eight actors that logs each element call.
 #[derive(Default)]
-struct Host {
-    actors: Vec<BattleActor>,
-    ui: Vec<(u8, u8)>,
-    learned: Vec<(u8, u8)>,
-    dt: i16,
-    pad: u16,
-    held: u16,
-    special: u32,
-    first_monster: u8,
-    ended: Vec<ba::BattleEndCause>,
-    staged: Vec<u8>,
-    rand: u32,
-    busy: bool,
-    bits_high: u32,
-    calls: Vec<(u32, u32, u32)>,
-    bits: u32,
-    live: [(i16, i16); 8],
-    anchor: [(i16, i16); 8],
-    placed: bool,
-    counters: Vec<u8>,
-    drawn: [bool; 8],
-    taunt: u8,
-    reordered: u32,
-    tag_list: Option<Vec<u8>>,
-    ranged: bool,
+pub(crate) struct Host {
+    pub(crate) actors: Vec<BattleActor>,
+    pub(crate) ui: Vec<(u8, u8)>,
+    pub(crate) learned: Vec<(u8, u8)>,
+    pub(crate) dt: i16,
+    pub(crate) pad: u16,
+    pub(crate) held: u16,
+    pub(crate) special: u32,
+    pub(crate) first_monster: u8,
+    pub(crate) ended: Vec<ba::BattleEndCause>,
+    pub(crate) staged: Vec<u8>,
+    pub(crate) rand: u32,
+    pub(crate) busy: bool,
+    pub(crate) bits_high: u32,
+    pub(crate) calls: Vec<(u32, u32, u32)>,
+    pub(crate) bits: u32,
+    pub(crate) live: [(i16, i16); 8],
+    pub(crate) anchor: [(i16, i16); 8],
+    pub(crate) placed: bool,
+    pub(crate) counters: Vec<u8>,
+    pub(crate) drawn: [bool; 8],
+    pub(crate) taunt: u8,
+    pub(crate) reordered: u32,
+    pub(crate) tag_list: Option<Vec<u8>>,
+    pub(crate) ranged: bool,
     /// Retail's spell records (`0x800754C8`, twelve bytes an id) and the
     /// item effect pairs (`0x80074368` -> `0x800752C0`), read off the
     /// executable a test runs.
-    spells: Vec<[u8; 12]>,
-    item_pairs: Vec<(u8, u8)>,
-    applied: Vec<(u8, u8, u8, u8)>,
+    pub(crate) spells: Vec<[u8; 12]>,
+    pub(crate) item_pairs: Vec<(u8, u8)>,
+    pub(crate) applied: Vec<(u8, u8, u8, u8)>,
+    /// `FUN_801D5854(slot, mode)` - the framing / pose call - in call order.
+    pub(crate) poses: Vec<(u8, u8)>,
+    /// `FUN_8003DE7C(1)` reports the drive's read in flight.
+    pub(crate) drive_busy: bool,
+    /// `FUN_801F1ED4` / `FUN_801F2160`, the two cast dispatchers, report busy.
+    pub(crate) stager_busy: bool,
+    pub(crate) capture_busy: bool,
+    /// `FUN_80024E80` fades spawned.
+    pub(crate) fades: u32,
+    /// The seated party count `ctx[+0]` (`3` when unset).
+    pub(crate) party: Option<u8>,
+    /// The audio ducks asked for, in percent.
+    pub(crate) ducks: Vec<u8>,
+    /// The timed message's hold `0x801F6964`.
+    pub(crate) timed_hold: u32,
 }
 
 impl BattleActionHost for Host {
@@ -195,24 +210,55 @@ impl BattleActionHost for Host {
         self.rand = lcg(self.rand);
         (self.rand >> 16) & 0x7FFF
     }
+    fn pose(&mut self, actor_id: u8, pose: ba::Pose) {
+        self.poses.push((actor_id, pose as u8));
+    }
+    fn sound_bank_ready(&self, _arg: u8) -> bool {
+        !self.drive_busy
+    }
+    fn summon_invoke_drive_vsyncs(&self, _slot: u8) -> u8 {
+        // The engine's stand-in for the read retail waits out on the
+        // drive; the harness's drive answers at once.
+        0
+    }
+    fn spawn_screen_fade(&mut self, _template: &ba::SummonFadeTemplate, _id: i16) {
+        self.fades += 1;
+    }
+    fn summon_stager_tick(&mut self) -> bool {
+        self.stager_busy
+    }
+    fn capture_stager_tick(&mut self) -> bool {
+        self.capture_busy
+    }
+    fn party_count(&self) -> u8 {
+        self.party.unwrap_or(3)
+    }
+    fn duck_audio_level(&mut self, target_pct: u8) {
+        self.ducks.push(target_pct);
+    }
+    fn cut_timed_message_hold(&mut self) {
+        if self.timed_hold != 0 {
+            self.timed_hold = 1;
+        }
+    }
 }
 
 /// The C library's `rand()` step, which both sides draw from.
-fn lcg(state: u32) -> u32 {
+pub(crate) fn lcg(state: u32) -> u32 {
     state.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039)
 }
 
 /// The retail side: the overlay in, calls stubbed, the element scheduler and
 /// the Seru grant logged.
-struct Retail {
-    cpu: Cpu,
-    clean: Memory,
-    ui: Rc<RefCell<Vec<(u8, u8)>>>,
-    learned: Rc<RefCell<Vec<u8>>>,
+pub(crate) struct Retail {
+    pub(crate) cpu: Cpu,
+    pub(crate) clean: Memory,
+    pub(crate) ui: Rc<RefCell<Vec<(u8, u8)>>>,
+    pub(crate) learned: Rc<RefCell<Vec<u8>>>,
 }
 
 impl Retail {
-    fn new() -> Option<Self> {
+    pub(crate) fn new() -> Option<Self> {
         let mut cpu = scus_cpu()?;
         cpu.mem
             .load(OVERLAY_BASE, &disc()?.read_entry(898).expect("PROT 0898"));
@@ -235,7 +281,7 @@ impl Retail {
     }
 
     /// Fresh memory with the context and the eight actors seated.
-    fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.cpu.mem = self.clean.clone();
         self.cpu.mem.wr32(CTX_PTR, CTX);
         for k in 0..8u32 {
@@ -245,16 +291,16 @@ impl Retail {
         self.learned.borrow_mut().clear();
     }
 
-    fn pass(&mut self) {
+    pub(crate) fn pass(&mut self) {
         assert_eq!(self.cpu.call(SM, &[]), Stop::Returned);
     }
 }
 
-fn actor(slot: u8) -> u32 {
+pub(crate) fn actor(slot: u8) -> u32 {
     ACTOR + u32::from(slot) * ACTOR_STRIDE
 }
 
-fn host() -> Host {
+pub(crate) fn host() -> Host {
     Host {
         actors: vec![BattleActor::default(); 8],
         dt: 1,
@@ -507,8 +553,11 @@ fn the_end_of_an_action_ends_what_retail_ends() {
         let cursor = rng.below(8) as u8;
         let skip = rng.below(3) as u8;
         let seed = rng.next();
-        // Retail's re-pick spins without a living, unmasked member.
-        if (0..3).all(|s| hp[s] == 0 || status[s] & 0x404 != 0) {
+        // Retail's re-pick spins without a living, unmasked member - on the
+        // monster wipe, which a party wipe (every member down or Stoned,
+        // scanned first) never reaches.
+        let party_wiped = (0..3).all(|s| hp[s] == 0 || status[s] & 4 != 0);
+        if !party_wiped && (0..3).all(|s| hp[s] == 0 || status[s] & 0x404 != 0) {
             continue;
         }
 
@@ -719,11 +768,11 @@ fn the_action_opening_states_are_retails() {
     assert_eq!(seen.len(), 6, "{seen:?}");
 }
 
-const PLATE: u32 = 0x801F_6968;
-const PLATE_RECORD: u32 = 0x8016_0000;
-const TABLE: u32 = 0x8016_0200;
-const BAR_RECORD: u32 = 0x8016_0100;
-const RECORDS: u32 = 0x8008_4140;
+pub(crate) const PLATE: u32 = 0x801F_6968;
+pub(crate) const PLATE_RECORD: u32 = 0x8016_0000;
+pub(crate) const TABLE: u32 = 0x8016_0200;
+pub(crate) const BAR_RECORD: u32 = 0x8016_0100;
+pub(crate) const RECORDS: u32 = 0x8008_4140;
 
 /// States `0x46`, `0x47` and `0x48`, the Spirit band
 /// (`0x801E52A4..0x801E57C4`) against `spirit_arts_entry`,
@@ -844,7 +893,7 @@ fn the_spirit_band_steps_as_retail_steps_it() {
 }
 
 /// Hook `entries` to log their first two arguments, in call order.
-fn log_calls(cpu: &mut Cpu, entries: &[u32]) -> Rc<RefCell<Vec<(u32, u32, u32)>>> {
+pub(crate) fn log_calls(cpu: &mut Cpu, entries: &[u32]) -> Rc<RefCell<Vec<(u32, u32, u32)>>> {
     let log = Rc::new(RefCell::new(Vec::new()));
     for &e in entries {
         let sink = log.clone();
@@ -977,13 +1026,13 @@ fn the_cast_band_walks_the_stream_as_retail_does() {
     assert!(seen.len() >= 12, "{seen:x?}");
 }
 
-const BEARING: u32 = 0x8001_9B28;
-const SIN_PTR: u32 = 0x8007_B81C;
-const COS_PTR: u32 = 0x8007_B7F8;
-const SINE_TABLE: u32 = 0x8007_0A2C;
-const SUPER_TRIGGER: u32 = 0x801F_696C;
-const COUNTER: u32 = 0x801F_6970;
-const MARKS: u32 = 0x801F_6990;
+pub(crate) const BEARING: u32 = 0x8001_9B28;
+pub(crate) const SIN_PTR: u32 = 0x8007_B81C;
+pub(crate) const COS_PTR: u32 = 0x8007_B7F8;
+pub(crate) const SINE_TABLE: u32 = 0x8007_0A2C;
+pub(crate) const SUPER_TRIGGER: u32 = 0x801F_696C;
+pub(crate) const COUNTER: u32 = 0x801F_6970;
+pub(crate) const MARKS: u32 = 0x801F_6990;
 
 /// States `0x1E` and `0x1F`, the strike loop and its recovery wait
 /// (`0x801E36E0..0x801E3B1C`) against `attack_chain` and `attack_recovery`:
@@ -1034,7 +1083,7 @@ fn the_strike_loop_stages_and_drifts_as_retail_does() {
             *b = [0x0C, 0x0D, 0x19, 0x1A, 0x1B][rng.below(5) as usize];
         }
         let cursor = rng.below(len as u32 + 1) as u8;
-        let flags = [0u8, 0, 2, 3][rng.below(4) as usize];
+        let flags = [0u8, 0, 1, 2, 3][rng.below(5) as usize];
         let x2 = [0u8, 0, 1, 2][rng.below(4) as usize];
         let bits = [0u32, 0x2000][rng.below(2) as usize];
         let header = [0u8, 0, 1][rng.below(3) as usize];
@@ -1225,9 +1274,9 @@ fn the_strike_loop_stages_and_drifts_as_retail_does() {
     );
 }
 
-const TAG_LOOKUP: u32 = 0x8005_0E2C;
-const MONSTER_TABLES: u32 = 0x801C_9348;
-const NODE: u32 = 0x8015_0000;
+pub(crate) const TAG_LOOKUP: u32 = 0x8005_0E2C;
+pub(crate) const MONSTER_TABLES: u32 = 0x801C_9348;
+pub(crate) const NODE: u32 = 0x8015_0000;
 
 /// State `0x20`, the strike band's return (`0x801E54EC..0x801E5658`) against
 /// `attack_return`: the wait on the attacker's committed clip, the target
@@ -1338,7 +1387,7 @@ fn the_strike_return_waits_and_taunts_as_retail_does() {
     );
 }
 
-const REORDER: u32 = 0x801D_ABA4;
+pub(crate) const REORDER: u32 = 0x801D_ABA4;
 
 /// State `0x50`'s frame around the Spirit block (`0x801E5C6C..0x801E5F60`)
 /// against `done_cleanup`: the standing census that gates the order
@@ -1355,6 +1404,7 @@ fn the_done_cleanup_frame_is_retails() {
     let reorders = Rc::new(std::cell::Cell::new(0u32));
     let count = reorders.clone();
     r.cpu.hook(REORDER, move |_, _| count.set(count.get() + 1));
+    let poses = log_calls(&mut r.cpu, &[0x801D_5854]);
     let mut rng = Rng(0x434C_4E55);
     let (mut reordered, mut skipped) = (0, 0);
     for round in 0..20000 {
@@ -1364,6 +1414,7 @@ fn the_done_cleanup_frame_is_retails() {
         let banner = [0u8, 0, 0x2E][rng.below(3) as usize];
         let latch = rng.below(3) as u8;
         let flags = rng.below(0x10) as u8;
+        let target = [0u8, 1, 2, 3, 4, 8, 9][rng.below(7) as usize];
         let mut hp = [0u16; 8];
         let mut status = [0u16; 8];
         let all_down = rng.below(3) == 0;
@@ -1378,6 +1429,7 @@ fn the_done_cleanup_frame_is_retails() {
         }
         r.reset();
         reorders.set(0);
+        poses.borrow_mut().clear();
         let m = &mut r.cpu.mem;
         m.wr8(CTX, 3);
         m.wr8(CTX + 1, monsters);
@@ -1390,6 +1442,7 @@ fn the_done_cleanup_frame_is_retails() {
             m.wr16(actor(s) + 0x16E, status[usize::from(s)]);
         }
         m.wr8(actor(slot) + 0x1DC, flags);
+        m.wr8(actor(slot) + 0x1DD, target);
         m.wr8(actor(slot) + 0x1DE, category);
         // The rate restore's gate stays shut: a party seat's staged id `>= 0x10`.
         m.wr8(actor(slot) + 0x1D9, 0x11);
@@ -1419,6 +1472,7 @@ fn the_done_cleanup_frame_is_retails() {
         let b = &mut h.actors[usize::from(slot)];
         b.flag_bits = ba::ActorFlags(flags);
         b.action_category = category;
+        b.active_target = target;
         b.current_anim = 0x11;
         let mut ctx = BattleActionCtx {
             action_state: 0x50,
@@ -1440,6 +1494,12 @@ fn the_done_cleanup_frame_is_retails() {
              {banner:#x} hp {hp:?} status {status:x?}"
         );
         assert_eq!(retail, port, "{at}");
+        let framed: Vec<(u8, u8)> = poses
+            .borrow()
+            .iter()
+            .map(|&(_, a0, a1)| (a0 as u8, a1 as u8))
+            .collect();
+        assert_eq!(framed, h.poses, "poses, target {target}, {at}");
         reordered += i32::from(retail.4 != 0);
         skipped += i32::from(retail.4 == 0);
     }
@@ -1449,7 +1509,7 @@ fn the_done_cleanup_frame_is_retails() {
 /// The range law both sides answer through: `motion::range_metric` (held to
 /// `FUN_8004E2F0` by `range_metric`) over live and anchor pairs, every seat
 /// below 3 a party seat with roster id `seat + 1`, monster size classes `0`.
-fn test_range(attacker: u8, target: u8, live: &Pairs, anchor: &Pairs) -> u16 {
+pub(crate) fn test_range(attacker: u8, target: u8, live: &Pairs, anchor: &Pairs) -> u16 {
     use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
     use legaia_engine_battle_vm::battle_action::motion::{
         PARTY_REACH_OFFSETS, RangeInputs, range_metric,
@@ -1482,10 +1542,10 @@ fn test_range(attacker: u8, target: u8, live: &Pairs, anchor: &Pairs) -> u16 {
 }
 
 /// The eight seats' `(x, z)` pairs.
-type Pairs = [(i16, i16); 8];
+pub(crate) type Pairs = [(i16, i16); 8];
 
 /// The live and anchor pairs of the eight seats as retail RAM holds them.
-fn pairs(m: &mut Memory) -> (Pairs, Pairs) {
+pub(crate) fn pairs(m: &mut Memory) -> (Pairs, Pairs) {
     let mut live = [(0, 0); 8];
     let mut anchor = [(0, 0); 8];
     for s in 0..8u8 {
@@ -1903,6 +1963,11 @@ fn the_cast_release_is_retails() {
         let spirit = [0u16, 50, 95][rng.below(3) as usize];
         let bits = [0u32, 0x200][rng.below(2) as usize];
         let depth = [0x800i16, 0x1400][rng.below(2) as usize];
+        // The target's bytes the AP bar is sized off.
+        let t_agl = rng.below(0x100) as u16;
+        let t_shield = rng.below(2) as u8;
+        let t_key = [0u16, 5][rng.below(2) as usize];
+        let t_category = [3u8, 4][rng.below(2) as usize];
         let seed = rng.next();
         if target == slot {
             continue;
@@ -1927,8 +1992,14 @@ fn the_cast_release_is_retails() {
         m.wr8(a + 0x1E8, class);
         m.wr16(a + 0x170, spirit);
         if target < 8 {
-            m.wr16(actor(target) + 0x156, base);
+            let t = actor(target);
+            m.wr16(t + 0x156, base);
+            m.wr16(t + 0x154, t_agl);
+            m.wr8(t + 0x1F9, t_shield);
+            m.wr16(t + 0x16C, t_key);
+            m.wr8(t + 0x1DE, t_category);
         }
+        m.wr16(0x8007_6C10 + 0x16E, 0x77);
         r.pass();
         let m = &mut r.cpu.mem;
         let retail = (
@@ -1943,6 +2014,7 @@ fn the_cast_release_is_retails() {
             m.rd16(CTX + 0x6D0) as i16,
         );
         let retail_member = m.rd8(CTX + 0x20);
+        let retail_bar = m.rd16(0x8007_6C10 + 0x16E) as i16;
 
         let mut h = host();
         h.bits_high = bits;
@@ -1955,11 +2027,17 @@ fn the_cast_release_is_retails() {
         b.cast_class = class;
         b.spirit_gauge = spirit;
         if target < 8 {
-            h.actors[usize::from(target)].agl_base = base;
+            let t = &mut h.actors[usize::from(target)];
+            t.agl_base = base;
+            t.agl = t_agl;
+            t.spirit_shield = t_shield;
+            t.init_key = t_key;
+            t.action_category = t_category;
         }
         let mut ctx = BattleActionCtx {
             action_state: 0x3E,
             active_actor: slot,
+            spirit_bar_width: 0x77,
             camera_frame_height: depth,
             ..Default::default()
         };
@@ -1986,6 +2064,9 @@ fn the_cast_release_is_retails() {
         assert_eq!(stream.get(), h.rand, "rand, {at}");
         if fired && target < 3 && class != 5 {
             assert_eq!(retail_member, ctx.readout_bar_member, "{at}");
+        }
+        if target < 8 {
+            assert_eq!(retail_bar, ctx.spirit_bar_width, "bar, {at}");
         }
         extended += i32::from(fired && class == 5);
         carded += i32::from(fired && class != 5 && head == 0xFE);

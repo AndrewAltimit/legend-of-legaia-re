@@ -887,6 +887,18 @@ fn spirit_seed_band<H: BattleActionHost + ?Sized>(
     ActionState::SpiritArtsEntry
 }
 
+/// The `ctx[+0x6DA]` clock the action seed starts every action on
+/// (`li v0,0x800` / `sh v0,0x4(s7)` at `0x801E2CEC..0x801E2CF8`). The SM's
+/// prologue steps it by `dt * 4 / 3` a pass (`0x801E29E4..0x801E2A24`).
+pub const SEED_CLOCK: i16 = 0x800;
+
+/// The clock the Attack arm re-seeds (`li v0,0x200` at `0x801E2F1C`).
+pub const ATTACK_SEED_CLOCK: i16 = 0x200;
+
+/// The countdown `ctx[+0x6D8]` every category leaves the seed with
+/// (`li v0,0x6` / `sh v0,0x2(s7)` at `0x801E2D40..0x801E2D5C`).
+pub const SEED_COUNTDOWN: i16 = 6;
+
 pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -956,6 +968,16 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     // starts with the level-up banner element cleared, so the extended Done
     // tail belongs to the action that actually raised a banner.
     ctx.levelup_banner_element = 0;
+    // The straight-line stores between the setup hooks and the coin
+    // (`0x801E2CA8..0x801E2CF8`): the acting seat's initiative key is spent
+    // (`sh zero,0x16c(s3)` at `0x801E2CDC`), the stream cursor `ctx[+0x15]`
+    // starts at `0` (`sb zero,0x4(s5)` at `0x801E2CF0`) and the `ctx[+0x6DA]`
+    // clock is seeded at `0x800` (`sh v0,0x4(s7)` at `0x801E2CF8`).
+    if let Some(a) = host.actor_mut(actor_slot) {
+        a.init_key = 0;
+        a.strike_index = 0;
+    }
+    ctx.combo_timer = SEED_CLOCK;
     // `sb zero,0x8(s5)` / `sb zero,0x7(s5)` at `0x801E2D00` / `0x801E2D08`:
     // the Spirit latch `ctx[+0x19]` and the action's own HUD element
     // `ctx[+0x18]` start every action at `0`, so the Done band's teardown
@@ -991,8 +1013,16 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
         host.seed_formation_recentre(actor_slot);
     }
 
-    // Idle pose.
-    host.pose(actor_slot, Pose::Idle);
+    // The case-6 framing, behind the same Run test as the recentre
+    // (`jal 0x801d5854` with `a1 = 6` at `0x801E2D4C..0x801E2D54`): a Run
+    // takes none here; its party arm frames case 9 below.
+    if !matches!(category, ActionCategory::Run) {
+        host.pose(actor_slot, Pose::Idle);
+    }
+    // `li v0,0x6` in the delay slot of the Run test and `sh v0,0x2(s7)` at
+    // `0x801E2D3C..0x801E2D5C`: every category leaves the seed with the
+    // countdown at `6`.
+    ctx.frame_timer = SEED_COUNTDOWN;
 
     // Per-action target banner. Retail's seed body ends every category arm at
     // the same `jal 0x801e6d84` (`overlay_battle_action_801e295c.txt`
@@ -1005,8 +1035,11 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
         ActionCategory::TacticalArts => {
             // Skip - UI input chain handles the chain. Retail's category-0
             // arm still stamps the UI cursor anchor and pins the camera
-            // variant to `0` (`sb zero,0xd(v1)` at `0x801E2E1C`).
+            // variant to `0` (`sb zero,0xd(v1)` at `0x801E2E1C`), with the
+            // framing depth back at the near `0x800` (`0x801E2E14..0x801E2E18`).
             ctx.camera_variant = 0;
+            ctx.camera_frame_height = super::summon::SUMMON_EXIT_FRAME_HEIGHT;
+            host.camera_frame_height(ctx.camera_frame_height);
             ActionState::DoneCleanup
         }
         ActionCategory::Item => item_seed_band(host, ctx, actor_slot),
@@ -1020,13 +1053,18 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
             next
         }
         ActionCategory::Attack => {
-            ctx.combo_timer = 2;
+            // `li v0,0x200; sh v0,0x4(s7)` at `0x801E2F1C..0x801E2F20`.
+            ctx.combo_timer = ATTACK_SEED_CLOCK;
             raise_target_readout_bar(host, ctx, actor_slot, party_count);
             ActionState::AttackFace
         }
         ActionCategory::Spirit => spirit_seed_band(host, ctx),
         ActionCategory::Run => {
             if actor_slot < party_count {
+                // `clear a0; li a1,0x9; jal 0x801d5854` at
+                // `0x801E2DA0..0x801E2DD8`: the party's flight frames the
+                // whole group (case 9), a framing that plays no clip.
+                host.pose(0, Pose::Defeat);
                 ActionState::RunBegin
             } else {
                 // `jal 0x801efe44` at `0x801E2DE8`, the monster arm only.

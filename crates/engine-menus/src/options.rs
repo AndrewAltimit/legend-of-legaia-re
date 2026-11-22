@@ -1010,6 +1010,9 @@ pub struct OptionsSession {
     /// How the Key Config screen labels controller buttons
     /// ([`Self::set_pad_style`]).
     pad_style: legaia_engine_system::gamepad::PadStyle,
+    /// Raised by an Events-vibration-Off commit; taken by
+    /// [`Self::take_motor_stop`].
+    motor_stop: bool,
 }
 
 impl OptionsSession {
@@ -1021,6 +1024,7 @@ impl OptionsSession {
             rebind: None,
             bindings_dirty: false,
             pad_style: Default::default(),
+            motor_stop: false,
         }
     }
 
@@ -1071,6 +1075,12 @@ impl OptionsSession {
     /// The open key-rebind sub-screen, for the renderer.
     pub fn key_rebind(&self) -> Option<&KeyRebindSession> {
         self.rebind.as_ref()
+    }
+
+    /// Report-and-clear: did a commit stop the rumble motors since the last
+    /// call? The host zeroes the two motor words when it answers `true`.
+    pub fn take_motor_stop(&mut self) -> bool {
+        std::mem::take(&mut self.motor_stop)
     }
 
     /// Report-and-clear: did a bind land since the last call?
@@ -1199,6 +1209,19 @@ impl OptionsSession {
         let mut events = Vec::new();
         match self.phase {
             OptionsPhase::Browsing { cursor } => {
+                // The picker `FUN_801D688C` tests the confirm mask before the
+                // cancel mask, so Cross with Circle on one frame opens the
+                // popup (`0x801DAAC8`, its result `1` at `0x801DAB3C`).
+                if input.cross
+                    && let Some(setting) = rows[cursor as usize].setting
+                {
+                    self.phase = OptionsPhase::Editing {
+                        cursor,
+                        choice: setting.get(&self.state),
+                    };
+                    events.push(OptionsEvent::EditOpened { row: cursor });
+                    return events;
+                }
                 if input.circle || input.start {
                     self.phase = OptionsPhase::Done(OptionsOutcome::Closed);
                     events.push(OptionsEvent::Closed);
@@ -1212,16 +1235,6 @@ impl OptionsSession {
                     self.rebind = Some(sub);
                     self.phase = OptionsPhase::Rebinding { cursor };
                     events.push(OptionsEvent::KeyRebindOpened { row: cursor });
-                    return events;
-                }
-                if input.cross
-                    && let Some(setting) = rows[cursor as usize].setting
-                {
-                    self.phase = OptionsPhase::Editing {
-                        cursor,
-                        choice: setting.get(&self.state),
-                    };
-                    events.push(OptionsEvent::EditOpened { row: cursor });
                     return events;
                 }
                 let mut new_cursor = cursor;
@@ -1275,6 +1288,14 @@ impl OptionsSession {
                 let n = setting.choices().len() as i8;
                 if input.cross {
                     setting.set(&mut self.state, choice);
+                    // Committing Events vibration Off stops the motors, on
+                    // every such commit, Off over Off included: the arm
+                    // tests the record id `8` and the word it just wrote
+                    // (`0x801DACF0..0x801DAD24`, zeroing `_DAT_8007B92C` /
+                    // `_DAT_8007B930`).
+                    if setting == OptionsSetting::VibrationEvents && choice != 0 {
+                        self.motor_stop = true;
+                    }
                     self.phase = OptionsPhase::Browsing { cursor };
                     events.push(OptionsEvent::ValueChanged { setting });
                     return events;

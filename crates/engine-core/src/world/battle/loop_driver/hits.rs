@@ -34,6 +34,31 @@ pub(super) struct MeleeBlock {
 /// recorded vsync ([`World::dealt_hit_word`]).
 const DEALT_HIT_SLACK: u64 = 12;
 
+/// The apply decision of one melee hit, for each outcome of its block roll
+/// ([`World::melee_hit_plan`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeleeApply {
+    /// The hit lands: the combo total lands on it.
+    pub landed: bool,
+    /// The hit is blocked: the combo total lands on it all the same.
+    pub blocked: bool,
+}
+
+impl MeleeApply {
+    /// One decision for either outcome.
+    pub fn both(apply: bool) -> Self {
+        Self {
+            landed: apply,
+            blocked: apply,
+        }
+    }
+}
+
+/// The action states whose blocked hits skip the apply look-ahead
+/// (`ctx[+0x07] - 0x6E < 10`, `0x801EE710..0x801EE718`).
+const BLOCK_LOOKAHEAD_SKIP_FIRST: u8 = 0x6E;
+const BLOCK_LOOKAHEAD_SKIP_LAST: u8 = 0x77;
+
 impl World {
     /// The engine seat of retail's per-frame damage-kernel call. For every
     /// actor whose committed one-shot clip is in flight, ask the kernel's
@@ -147,6 +172,9 @@ impl World {
             for a in self.actors.iter_mut() {
                 a.battle.damage_accum = 0;
             }
+            // The absorb puff's cue latch `0x801F698C`, cleared by the same
+            // Begin arm (`sw zero` at `0x801E2CB0`).
+            self.battle.absorb_cue_latch = false;
         }
         self.battle.hit_commit_rewalk.clear();
     }
@@ -208,12 +236,8 @@ impl World {
         // Hyper / Super constant restarts its hit index and effect cursor,
         // so the windowed clip re-fires its hits each cycle.
         // PORT: FUN_80047430 (`0x80047840..0x80047878`)
-        if rewound {
+        if rewound && self.loop_rewind_rezeroes(i) {
             let a = &mut self.actors[i];
-            if a.battle_monster_id.is_none()
-                && a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
-                && a.battle.latched_anim
-                    >= legaia_engine_battle_vm::battle_action::LOOP_REZERO_LATCHED_MIN
             {
                 a.battle.input_cursor = 0;
                 a.battle_effect_cursor = 0;
@@ -286,9 +310,7 @@ impl World {
         power_run: [u8; 4],
         event_frames: [u8; 4],
     ) {
-        use legaia_engine_battle_vm::battle_action::{
-            STRIKE_CURSOR_PARKED, fold_weapon_atk_on_hit, staged_art_constant,
-        };
+        use legaia_engine_battle_vm::battle_action::{fold_weapon_atk_on_hit, staged_art_constant};
         let state = self.battle_ctx.action_state;
         let (party, latched, chosen, committed) = {
             let a = &self.actors[attacker as usize];
@@ -303,18 +325,8 @@ impl World {
         let Some(target) = self.resolve_attack_target(attacker) else {
             return;
         };
-        // The limb-vs-height miss (`0x801EC488..0x801EC554`): ahead of the
-        // equipment fold, the block roll and every damage stage, a party
-        // hit whose power byte cannot reach the target's `+0x1E` class does
-        // nothing but raise the effect-skip strobe and take the epilogue's
-        // `+0x1F4` bump (already taken by the caller). No accumulate, no
-        // apply, no flinch, no hit event - the earlier hit's apply-mode
-        // look-ahead has already landed any total this one could strand.
-        if legaia_engine_battle_vm::battle_action::limb_misses(
-            party,
-            hit.power_byte,
-            self.attack_swing_class_of(target),
-        ) {
+        let Some(apply) = self.melee_hit_plan(attacker, target, &hit, &power_run, &event_frames)
+        else {
             self.battle_ctx.effect_skip_strobe = 1;
             self.consume_effect_skip_strobe(attacker as usize);
             log::debug!(
@@ -324,7 +336,7 @@ impl World {
                 self.attack_swing_class_of(target)
             );
             return;
-        }
+        };
         // The execution-time equipment fold, through the port of the
         // resolver's own arms: a register value (`s0` from `0x801ECB84`) the
         // damage body rolls with, never stored back to `+0x158`.
@@ -332,33 +344,13 @@ impl World {
             let host = BattleHostImpl { world: self };
             fold_weapon_atk_on_hit(&host, attacker, state, &hit)
         };
-        let cursor_parked =
-            self.actors[attacker as usize].battle.strike_index == STRIKE_CURSOR_PARKED;
-        let last_of_clip = hit.hit_index >= 3
-            || event_frames
-                .get(usize::from(hit.hit_index) + 1)
-                .is_none_or(|&f| f == 0);
-        // Retail's apply **mode**, computed after every admitted hit
-        // (`0x801EE060..0x801EE128`). The ordinary arm is the cursor-parked /
-        // last-beat pair above; the early arm lands the total now because
-        // nothing left in the action can connect with the target's size
-        // class; the carry arm lands nothing at all while the War God Icon's
-        // Attack x2 pair is still running. It reads the look-ahead and the
-        // cursor, never the hit's damage, so it is taken ahead of the roll:
-        // the kill check that sits between the two needs it.
-        let mode = self.hit_apply_mode(attacker, target, &power_run, hit.hit_index);
-        let applied = match mode {
-            legaia_engine_battle_vm::battle_action::APPLY_MODE_CARRY => false,
-            legaia_engine_battle_vm::battle_action::APPLY_MODE_EARLY => true,
-            _ => cursor_parked && last_of_clip,
-        };
         // The kill check's own gates (`0x801EE128..0x801EE1A4`) are the apply
         // gate's: mode `0xFF` skips it, a non-zero mode on a monster target
         // takes it, and otherwise it needs the parked cursor
         // (`ctx[+0x15] == 0xFF`, `0x801EE15C`) and the clip's last beat
         // (`entry[0x11 + idx] == 0 || idx == 3`, `0x801EE180..0x801EE19C`).
-        let dmg =
-            self.land_melee_hit_folded(attacker, target, hit.power_byte, committed, applied, fold);
+        let (dmg, applied) =
+            self.land_melee_hit_folded(attacker, target, hit.power_byte, committed, apply, fold);
         if let Some(art) = art {
             self.apply_art_hit_side_data(attacker, target, art, hit.hit_index, dmg);
         }
@@ -385,6 +377,77 @@ impl World {
                 applied,
                 is_art: art.is_some(),
             });
+    }
+
+    /// What one admitted hit does ahead of its roll: `None` when it misses on
+    /// the limb-vs-height law, else whether the combo total lands on this
+    /// hit, for each outcome of the block roll.
+    ///
+    /// The limb-vs-height miss (`0x801EC488..0x801EC554`) comes ahead of the
+    /// equipment fold, the block roll and every damage stage: a party hit
+    /// whose power byte cannot reach the target's `+0x1E` class does nothing
+    /// but raise the effect-skip strobe and take the epilogue's `+0x1F4`
+    /// bump (already taken by the caller). No accumulate, no apply, no
+    /// flinch, no hit event - the earlier hit's apply-mode look-ahead has
+    /// already landed any total this one could strand.
+    ///
+    /// Retail's apply **mode** is computed after every admitted hit
+    /// (`0x801EE060..0x801EE128`). The ordinary arm is the cursor-parked /
+    /// last-beat pair (`ctx[+0x15] == 0xFF` and `entry[0x11 + idx] == 0 ||
+    /// idx == 3`); the early arm lands the total now because nothing left in
+    /// the action can connect with the target's size class; the carry arm
+    /// lands nothing at all while the War God Icon's Attack x2 pair is still
+    /// running. It reads the look-ahead and the cursor, never the hit's
+    /// damage, so it is taken ahead of the roll: the kill check that sits
+    /// between the two needs it.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EC488..0x801EC554`, `0x801EE128..0x801EE1A4`,
+    /// `0x801EE6D4..0x801EE720`, `0x801EE984..0x801EEA40`)
+    pub(in crate::world) fn melee_hit_plan(
+        &self,
+        attacker: u8,
+        target: u8,
+        hit: &legaia_engine_battle_vm::battle_action::HitEvent,
+        power_run: &[u8; 4],
+        event_frames: &[u8; 4],
+    ) -> Option<MeleeApply> {
+        use legaia_engine_battle_vm::battle_action::{
+            APPLY_MODE_CARRY, APPLY_MODE_EARLY, STRIKE_CURSOR_PARKED, limb_misses,
+        };
+        let party = self
+            .actors
+            .get(attacker as usize)
+            .is_some_and(|a| a.battle_monster_id.is_none());
+        if limb_misses(party, hit.power_byte, self.attack_swing_class_of(target)) {
+            return None;
+        }
+        let cursor_parked = self
+            .actors
+            .get(attacker as usize)
+            .is_some_and(|a| a.battle.strike_index == STRIKE_CURSOR_PARKED);
+        let last_of_clip = hit.hit_index >= 3
+            || event_frames
+                .get(usize::from(hit.hit_index) + 1)
+                .is_none_or(|&f| f == 0);
+        let ordinary = cursor_parked && last_of_clip;
+        let landed = match self.hit_apply_mode(attacker, target, power_run, hit.hit_index) {
+            APPLY_MODE_CARRY => false,
+            APPLY_MODE_EARLY => true,
+            _ => ordinary,
+        };
+        // A blocked hit runs its own copy of the look-ahead
+        // (`0x801EE6D4..0x801EE980`), which action states `0x6E..=0x77` skip
+        // whole - War God arm included (`addiu v0,v0,-0x6e; sltiu v0,v0,0xa;
+        // bne v0,zero,0x801EE984` at `0x801EE710..0x801EE718`, with `s2`
+        // still `0`): there the ordinary pair alone decides.
+        let blocked = if (BLOCK_LOOKAHEAD_SKIP_FIRST..=BLOCK_LOOKAHEAD_SKIP_LAST)
+            .contains(&self.battle_ctx.action_state)
+        {
+            ordinary
+        } else {
+            landed
+        };
+        Some(MeleeApply { landed, blocked })
     }
 
     /// Consume the effect-record skip strobe `ctx[+0x263]` on `slot`: clear
@@ -430,6 +493,13 @@ impl World {
         let Some(a) = self.actors.get(attacker as usize) else {
             return legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL;
         };
+        // A monster attacker keeps the ordinary arm: both copies test the
+        // attacker's seat (`sltiu v1,s6,3` / `beq` to the `s2 = 0` exit at
+        // `0x801EDECC..0x801EDED0` and `0x801EE730..0x801EE734`) before any
+        // look-ahead.
+        if a.battle_monster_id.is_some() {
+            return legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL;
+        }
         // **Both** copies of the kernel gate on a monster target before they
         // compute anything: `sltiu v0,a0,0x3` on the target slot at
         // `0x801EDEB8` and `0x801EE724`, each branching past the look-ahead
@@ -692,7 +762,15 @@ impl World {
         kill_check: bool,
     ) -> u16 {
         let fold = self.melee_equipment_fold(attacker, committed);
-        self.land_melee_hit_folded(attacker, target, power_byte, committed, kill_check, fold)
+        self.land_melee_hit_folded(
+            attacker,
+            target,
+            power_byte,
+            committed,
+            MeleeApply::both(kill_check),
+            fold,
+        )
+        .0
     }
 
     /// The execution-time equipment fold for a strike that reaches
@@ -704,7 +782,11 @@ impl World {
     /// here rather than the anim commit's slot number, so an art id maps onto
     /// the art arm the commit would have rewritten it to. Party attackers
     /// only; the monster branch performs no fold.
-    pub(super) fn melee_equipment_fold(&self, attacker: u8, committed: u8) -> Option<u16> {
+    pub(in crate::world) fn melee_equipment_fold(
+        &self,
+        attacker: u8,
+        committed: u8,
+    ) -> Option<u16> {
         if attacker >= self.party.party_count {
             return None;
         }
@@ -720,16 +802,19 @@ impl World {
 
     /// [`Self::land_melee_hit`] with the equipment fold already resolved:
     /// `fold` is what the resolver's arm adds to the base ATK in `s0`
-    /// (`0x801ECB84`), `None` when no arm folds.
-    pub(super) fn land_melee_hit_folded(
+    /// (`0x801ECB84`), `None` when no arm folds. `apply` holds the apply
+    /// decision for each outcome of the block roll; the second value
+    /// returned is the one that held.
+    pub(in crate::world) fn land_melee_hit_folded(
         &mut self,
         attacker: u8,
         target: u8,
         power_byte: u8,
         committed: u8,
-        kill_check: bool,
+        apply: MeleeApply,
         fold: Option<u16>,
-    ) -> u16 {
+    ) -> (u16, bool) {
+        let kill_check = apply.landed;
         let attacker_i = attacker as usize;
         let target_i = target as usize;
         // Base ATK (`+0x158`, seeded without equipment) plus the
@@ -807,6 +892,7 @@ impl World {
             }
             // The sound tail is reached through the apply arm only, and the
             // grunt compares the committed pose against `+0x1F3`.
+            let kill_check = apply.blocked;
             self.fire_melee_impact_cue(attacker, target, kill_check.then_some(block_entry));
             if block.mystic {
                 self.turn_defender_to_attacker(target_i, attacker_i);
@@ -814,7 +900,7 @@ impl World {
                 // `0x801EEC30..0x801EEC6C`: the defender commits its block entry.
                 self.commit_melee_reaction(target_i, attacker_i, block_entry);
             }
-            return 0;
+            return (0, kill_check);
         }
         if attacker < self.party.party_count {
             self.battle.party_melee_pushes = self.battle.party_melee_pushes.wrapping_add(1);
@@ -1005,6 +1091,11 @@ impl World {
             None
         };
         let committed_reaction = committed_reaction.filter(|_| !block.mystic);
+        // The grunt reads the pick ahead of the broken block's pose, and only
+        // on the arm that lands the total (`0x801EEA7C..0x801EEB5C` sits
+        // behind the apply at `0x801EE9F8`; the pose override follows at
+        // `0x801EEBF0`).
+        let grunt_reaction = committed_reaction.filter(|_| kill_check);
         // A broken block still plays the block pose on a defender left
         // standing (`0x801EEBF0..0x801EEC30`, after every other pick).
         // PORT: FUN_801EC3E4 (`0x801EEBF0..0x801EEC30`, the broken block's pose)
@@ -1016,13 +1107,13 @@ impl World {
             _ => committed_reaction,
         };
         // ... and its sound.
-        self.fire_melee_impact_cue(attacker, target, committed_reaction);
+        self.fire_melee_impact_cue(attacker, target, grunt_reaction);
         // The flinch is staged for a target still standing on the accumulated
         // total (`target[+0x0] < hp`, `0x801EEC18..0x801EEC30`).
         if let Some(entry) = committed_reaction {
             self.commit_melee_reaction(target_i, attacker_i, entry);
         }
-        dmg
+        (dmg, kill_check)
     }
 
     /// The melee kernel's reaction commit on the defender
@@ -1425,9 +1516,11 @@ impl World {
                 .is_some_and(|a| a.battle.current_anim < 0x10);
         if mystic {
             blocked = true;
-            if attacker < self.party.party_count {
-                self.battle_rumble(attacks);
-            }
+            // Its rumble (`0x801ECAC8..0x801ECAF8`) is written for every
+            // attacker, a monster's swing included. Retail writes it without
+            // the Battles vibration test the other arms make; the port keeps
+            // that test, so an Off row stays off (a deliberate deviation).
+            self.battle_rumble(attacks);
         }
         let broken = blocked
             && roll

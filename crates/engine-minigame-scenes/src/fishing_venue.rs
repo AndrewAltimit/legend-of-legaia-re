@@ -1004,6 +1004,7 @@ pub fn tick_venue_actors(
                 venue: session.venue,
                 close_up,
                 close_up_done: close_up.is_some_and(|t| t > last),
+                rod_recovered: session.rod_actor().is_none_or(|r| r.retired()),
                 step,
             });
         out.camera = Some(*v.camera.camera());

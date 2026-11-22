@@ -445,6 +445,87 @@ pub fn write_retail_record_tally(sc_block: &mut [u8], tally: RetailRecordTally) 
     Ok(())
 }
 
+/// Byte offsets (`VA - 0x80084140`) of the field-VM `4C D3` countdown's four
+/// words: the live counter `0x800845A0`, the armed duration `0x800845B8`,
+/// the below-threshold line `0x800845BC` and the packed flag pair
+/// `0x800845C0` (expiry in the high half, below-line in the low).
+pub const RETAIL_ESCAPE_CLOCK_REMAINING_OFFSET: usize = 0x460;
+/// See [`RETAIL_ESCAPE_CLOCK_REMAINING_OFFSET`].
+pub const RETAIL_ESCAPE_CLOCK_DURATION_OFFSET: usize = 0x478;
+/// See [`RETAIL_ESCAPE_CLOCK_REMAINING_OFFSET`].
+pub const RETAIL_ESCAPE_CLOCK_THRESHOLD_OFFSET: usize = 0x47C;
+/// See [`RETAIL_ESCAPE_CLOCK_REMAINING_OFFSET`].
+pub const RETAIL_ESCAPE_CLOCK_FLAGS_OFFSET: usize = 0x480;
+
+/// The scripted escape countdown a save made while it ran carries. Retail's
+/// card load restores the four words with the window, and the MAN loader's
+/// card-load arm then restarts the counter from the duration
+/// (`0x8003B964..0x8003B99C`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RetailEscapeClock {
+    /// `0x800845A0` - the counter as the save left it.
+    pub remaining: i32,
+    /// `0x800845B8` - the armed duration; `0` is a disarmed clock.
+    pub duration: i32,
+    /// `0x800845BC` - the below-threshold line.
+    pub threshold: i32,
+    /// `0x800845C0` - the packed flag pair.
+    pub flags: u32,
+}
+
+fn escape_clock_at(word: impl Fn(usize) -> Option<u32>) -> Option<RetailEscapeClock> {
+    let clock = RetailEscapeClock {
+        remaining: word(RETAIL_ESCAPE_CLOCK_REMAINING_OFFSET)? as i32,
+        duration: word(RETAIL_ESCAPE_CLOCK_DURATION_OFFSET)? as i32,
+        threshold: word(RETAIL_ESCAPE_CLOCK_THRESHOLD_OFFSET)? as i32,
+        flags: word(RETAIL_ESCAPE_CLOCK_FLAGS_OFFSET)?,
+    };
+    (clock.duration != 0).then_some(clock)
+}
+
+/// The armed escape clock a retail SC block carries, `None` when its
+/// duration word is `0`.
+pub fn read_retail_escape_clock(sc_block: &[u8]) -> Option<RetailEscapeClock> {
+    escape_clock_at(|o| Some(u32::from_le_bytes(sc_block.get(o..o + 4)?.try_into().ok()?)))
+}
+
+/// [`read_retail_escape_clock`] over a bare live-state window
+/// ([`crate::SaveExtV2::retail_window`]).
+pub fn read_retail_escape_clock_from_window(window: &[u8]) -> Option<RetailEscapeClock> {
+    escape_clock_at(|sc| {
+        let o = sc.checked_sub(RETAIL_LIVE_WINDOW_OFFSET)?;
+        Some(u32::from_le_bytes(window.get(o..o + 4)?.try_into().ok()?))
+    })
+}
+
+/// Write the escape clock's four words, restamping the block checksum. A
+/// disarmed clock (`None`) zeroes only the duration word, the one that arms
+/// it: retail's stop and expiry leave the threshold and flag pair standing
+/// (and expiry the counter), so a lifted block rewrites byte for byte.
+pub fn write_retail_escape_clock(
+    sc_block: &mut [u8],
+    clock: Option<RetailEscapeClock>,
+) -> Result<()> {
+    let end = RETAIL_ESCAPE_CLOCK_FLAGS_OFFSET + 4;
+    if sc_block.len() < end {
+        bail!("sc_block too small for the escape clock (need >= {end})");
+    }
+    let words: &[(usize, u32)] = match clock {
+        Some(c) => &[
+            (RETAIL_ESCAPE_CLOCK_REMAINING_OFFSET, c.remaining as u32),
+            (RETAIL_ESCAPE_CLOCK_DURATION_OFFSET, c.duration as u32),
+            (RETAIL_ESCAPE_CLOCK_THRESHOLD_OFFSET, c.threshold as u32),
+            (RETAIL_ESCAPE_CLOCK_FLAGS_OFFSET, c.flags),
+        ],
+        None => &[(RETAIL_ESCAPE_CLOCK_DURATION_OFFSET, 0)],
+    };
+    for &(o, v) in words {
+        sc_block[o..o + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    restamp_sc_block_checksum(sc_block);
+    Ok(())
+}
+
 /// The options screen's config words a retail save block carries, as each
 /// row's value index (the word retail's picker writes, `FUN_801DA9F8`).
 ///

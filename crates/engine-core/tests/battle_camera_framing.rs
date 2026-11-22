@@ -40,6 +40,9 @@ fn frame_height_for(size_class: u8) -> (i16, bool) {
 
     // Party slot 0 attacks monster slot 3 - retail's target-side arm.
     world.actors[0].battle.active_target = 3;
+    // An Attack: a cleared action (category `0`) re-frames at the near
+    // `0x800` in the same pass (`0x801E2E14..0x801E2E18`).
+    world.actors[0].battle.action_category = 3;
     world.battle_ctx.queued_action = 3; // Attack
     world.battle_ctx.action_state = ActionState::Begin.as_byte();
 

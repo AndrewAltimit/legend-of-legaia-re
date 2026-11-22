@@ -79,6 +79,10 @@ pub struct MinigameState {
     /// list is open on the host's fishing screen; purchases commit through
     /// `World::fishing_exchange_buy`.
     pub fishing_exchange: Option<legaia_engine_fishing::fishing::PrizeExchange>,
+    /// The exchange's picker words: which of its screens (list, quantity,
+    /// confirm) takes the pad, the picked row, the quantity and the
+    /// confirm's row. Reset each time the list opens.
+    pub fishing_exchange_dialog: legaia_engine_fishing::fishing::PrizeDialog,
     /// The two point-exchange venue pages (`0` Buma, `1` Vidna) PROT 0972
     /// carries beside the session tables, decoded by
     /// `SceneHost::enter_fishing_from_overlay` - the one
@@ -382,6 +386,7 @@ impl MinigameState {
             fishing_events: Vec::new(),
             fishing_cues: PondCueClock::default(),
             fishing_exchange: None,
+            fishing_exchange_dialog: Default::default(),
             fishing_prize_venues: None,
             fishing_hub_text: None,
             fishing_sprites: None,

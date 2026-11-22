@@ -646,7 +646,14 @@ field - from a battle, a minigame or an FMV resume, the `_DAT_8007B8B8 == 2`
 arm (`0x8003B62C..0x8003B648`); a cold entry through a door pays nothing - and
 a card load restores it to the full duration (`0x8003B96C..0x8003B98C`). Port:
 `EscapeTimer::field_return_penalty`, called on the battle and minigame returns
-and on the FMV resume arm (`SceneHost::apply_pending_fmv_handoff`).
+and on the FMV resume arm (`SceneHost::apply_pending_fmv_handoff`). The save
+carries the four words (an `LGSF` file in its `LGXH` block, a card block at its
+own offsets), and a load seats them through `World::install_loaded_escape_clock`,
+which restarts an armed clock from its duration and respawns its HUD
+(`EscapeTimer::card_load_restart`). Expiry zeroes the duration word
+(`0x801D2F5C`), so a clock that ran out does not come back on a load.
+`chitei2` carries a save point (op `49 01`), so a save inside its countdown is
+reachable.
 
 ### 0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear
 
@@ -1609,6 +1616,30 @@ rides the ladder like the ground. `rikuroa`'s summit cliff is one
 On `jouina` and `concnow` almost every moving vertex is ground: `concnow`'s
 animated rungs touch about 3500 ground vertices against about 120 translated
 draws, and `jouina`'s touch none of its translated draws.
+
+### What a battle does to the oscillators
+
+Every MAN load runs the oscillators' retire sweep, the return from a battle
+included: `FUN_8003AEB0` re-seats the live ladder from the MAN header
+(`0x8003AF58..0x8003AF74`), and its inlined `FUN_8003CF40` sweeps
+(`0x8003B374..0x8003B43C`) come ahead of the `_DAT_8007B8B8 == 2` branch at
+`0x8003B510`, so the camera movers, the oscillators and the register ramps all
+go. The scene system script's install `FUN_8003AB2C` (`0x8003BAD8`) then runs
+on the same return: it kills the old system actor, spawns a fresh one at
+`P1[0]`'s first opcode and runs its install slice, so a scene whose entry
+script arms the oscillators arms them again. The floor keeps moving after a
+fight, from the header's rest heights and the script's own phases.
+
+A PCSX-Redux capture across a `tunnelc` fight pins it (retail disc,
+`tunnelc_field_route_walk`, the formation row picked through
+`autorun_battle_harvest.lua`'s `LEGAIA_WANT` with `LEGAIA_OSC_LOG`): three live
+oscillators before the fight, rungs 13..15 frozen mid-swing through it; at the
+sweeps' end the rungs sit at the header's `0, 0, 0` and the three are retired;
+after the install three fresh ones are live; the rungs swing again once the
+field is back. Port: `World::battle_return_man_sweeps` (from `finish_battle`),
+then the host's entry-script reload (`SceneHost`'s post-battle return); before
+it the engine kept the old oscillators beside the re-armed ones, one more set
+per fight, and seeded the new set's rest heights off the old swing.
 
 ## Which sub-ops act on the resolved actor
 

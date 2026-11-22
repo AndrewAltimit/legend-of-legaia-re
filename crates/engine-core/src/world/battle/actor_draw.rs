@@ -464,9 +464,20 @@ impl World {
                 seat_state: b.render_flag,
             },
         );
-        let near_ok = pose.is_none() || view_z >= tick::NEAR_REJECT_DEPTH;
+        // The render dispatcher's gate in front of the tick (`FUN_8001ADA4`
+        // mode 2): a body the host projects is a transformed node judged at
+        // its view depth, the fallback without a pose an untransformed one
+        // judged at the parked depth. The engine keeps no node word for the
+        // `+0x10 & 0xA` skip; its hidden bodies go through
+        // [`Self::battle_body_hidden`].
+        let node_flags = if pose.is_some() {
+            tick::FLAG_TRANSFORM
+        } else {
+            0
+        };
+        let dispatched = tick::dispatch_draws(node_flags, view_z);
         Some(BattleActorDrawPlan {
-            drawn: near_ok && verdict.drawn(),
+            drawn: dispatched && verdict.drawn(),
             tint: t,
             draw_colour: verdict.colour,
             grey_stamped: verdict.colour != t.colour,

@@ -271,11 +271,15 @@ Reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band
 
 Calls `FUN_801EFE44` (the [formation recentre](battle-action-helpers.md#fun_801efe44---the-action-seeds-formation-recentre), which puts an Attack's target on the stage origin) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category).
 
+Ahead of the coin the seed spends the acting seat's initiative key (`sh zero,0x16c(s3)` at `0x801E2CDC`), zeroes the stream cursor `ctx[+0x15]` and seeds the `ctx[+0x6DA]` clock at `0x800` (`0x801E2CF0..0x801E2CF8`); the SM prologue steps that clock by `dt * 4 / 3` every pass. Every category leaves with the countdown `ctx[+0x6D8] = 6` (`0x801E2D5C`); the Attack arm re-seeds the clock at `0x200`, and the cleared action's arm (category `0`) frames at the near depth `ctx[+0x6D0] = 0x800` on its way to `0x50`. Category `6` and above has no arm and would leave the state byte alone, but no writer of `+0x1DE` stores one.
+
 **Next:** `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category.
 
 #### State `0x14` - Attack - face target
 
 `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the pool writing each bystander's [make-way heading](battle-action-helpers.md#the-make-way-step-state-0x14-and-the-sm-tail) at `ctx[+0x6E6 + i*2]` and seeds the make-way countdown `ctx[+0x6D6]` with the melee monster's size class; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index.
+
+Both approach exits raise `actor[+0x1DC]` bit 0 with the staged clip (`ori v0,v0,0x1` in the delay slot of `j 0x801e35c4`, `0x801E32D8`); the in-range exit narrows `ctx[+0xD]` to its bit 0 instead. The facing it stores also seeds the melee's angle term `ctx[+0x6D2]` (the [angle and distance terms](battle-formulas.md#angle-and-distance-terms)).
 
 **Next:** `0x15` (monster, tag-0x20 found); `0x19` (party, **or** a monster whose action table has no tag-`0x20` walk - the fallback stages tag `1` and skips the walk chain entirely); `0x1E` (in range).
 
@@ -316,6 +320,8 @@ The byte is not private to the strike loop: the arts-entry gauge build writes th
 #### State `0x1E` - Attack chain - strike loop
 
 Per-strike counters (`+0x15`/`+0x16`) advancing the attack-script byte stream at `actor[+0x1DF + +0x15]`, with counter-attack redirect and ability-flag impact-step physics. Re-faces the attacker every pass ([below](#the-strike-band-re-faces-the-attacker-every-pass)). Full step body: [Attack chain - strike loop (`0x1E`)](#attack-chain---strike-loop-0x1e).
+
+The swap at the head runs only on a pass whose attacker `+0x1DC` reads `0`; while it is not yet clear (the approach clip's commit still owed under bit 0), the head keeps the counterattack latch `0x801F6970` and the latch holds the stage as the in-flight bit does (`0x801E3720..0x801E372C`), so the monster stages no swing until a later pass has run the swap.
 
 **Next:** `0x1F` once the strike-script terminator is hit.
 
@@ -377,7 +383,7 @@ Gated on `ctx[+0x249] == 0`, so a victim's knockdown and get-up clips hold the b
 
 #### State `0x32` - Summon - invoke
 
-`FUN_801D5854(actor, 6)` + waits on `func_0x8003DE7C(1)` (sound bank ready). When ready, computes summon-frame index `bVar5` from `actor[+0x1DF]` (if < 0x9A: `(actor[+0x1DF] + 0x7F) * 3 + 0x80`, else `actor[+0x1DF] * 4 + 99`); writes `ctx[+0x277] = bVar5`, `ctx[+0x276] = 1`, `ctx[+0x278] = 1`. Sets `actor[+0x1DA] = 9`, `actor[+0x1DC] |= 1`, `actor[+0x1FA]++`.
+`FUN_801D5854(actor, 6)` + waits on `func_0x8003DE7C(1)` (sound bank ready). When ready, computes summon-frame index `bVar5` from `actor[+0x1DF]` (if < 0x9A: `(actor[+0x1DF] + 0x7F) * 3 + 0x80`, else `actor[+0x1DF] * 4 + 99`); writes `ctx[+0x277] = bVar5`, `ctx[+0x276] = 1`, `ctx[+0x278] = 1`, and the caster's target byte to `ctx[+0x6DC]` (`0x801E4A10`). Sets `actor[+0x1DA] = 9`, `actor[+0x1DC] |= 1`, `actor[+0x1FA]++`.
 
 The poll holds while the drive's read is in flight (`gp+0x988`, `0x8003DF70`), and the framing call above keeps walking: `14` or `16` vsyncs on every party summon recorded from `party_basic_attack_vs_gobu_gobu` (step `2`), and `15` on the full-party recordings from `battle_kor_spoon_strike` and `battle_tower_swordie_strike` (step `3`, five passes). The read runs on the wall clock, not on passes. The port has no read, so `SUMMON_INVOKE_DRIVE_VSYNCS` holds the arm until its passes have waited out `15` vsyncs, a constant fitted to those recordings; without it `0x33`'s close-up cuts in on a shorter walk, and counted as eight passes it ran a full party's arm `24` vsyncs.
 
@@ -412,13 +418,18 @@ The re-read is what holds the band. PROT 0904 (Theeder), 0907 (Nighto), 0908 (Ze
 Runs `func_0x801F1ED4` and **holds while it returns non-zero** (`bne v0,zero,<exit>` at `0x801E4CB0`) - the stager's own phase machine paces this state. Calls `FUN_801F3C34` at `0x801E4CB8` - the [queued-magic follow-up guard](battle-action-helpers.md#the-queued-magic-follow-up-guard-fun_801f3c34). Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (the summon-magic level-up check - see [`reference/functions.md`](../reference/functions.md); engine `World::accrue_summon_spell_xp` + `battle_formulas::summon_magic_levels_up`).
 The check runs only after the stager has returned, so the "magic level increased" banner rises after the module's last arm, not on the pass its hit banked the XP.
 The engine holds a band hit's XP (`CastFxState::pending_level_check`) and runs the check from this state's host call (`BattleActionHost::summon_magic_level_check`); banked at the hit, the banner covered the last arms of every film that levels.
-Finally clamps the follow-up hold `*(0x801F6964)` to `1` when it is non-zero.
+Finally cuts the timed message's hold `*(0x801F6964)` (the Seru side-effect line, `0xB4`; the counter line, `0x78`) to `1` when it is non-zero, so no line outlives the summon (port: `BattleActionHost::cut_timed_message_hold`, `World`'s message banner).
 
 **Next:** `0x37`.
 
-#### State `0x37` - Summon - verify all alive
+#### State `0x37` - Summon - settle wait
 
-`FUN_801D5854(actor, 6)`. Iterates the 8-actor table (party + active monsters); checks each is alive (`+0x14C != 0` AND `+0x1D9 != 0`). Sets a 4-byte fade-back-in sentinel at `ctx[+0x890..+0x893]` (`84 10 42 08`).
+Every pass stores style `ctx[+0xD] = 1` and calls `FUN_801D5854(actor, 6)`, then holds until the summon's target has settled, keyed on the caster's target byte `+0x1DD` (`0x801E4D70..0x801E4E60`):
+
+- **A seat (`< 7`):** settled once its clip `+0x1D9` is `0`, its prim word `+0x04` is `0`, or its HP `+0x14C` is `0`. A live, drawn seat still in a reaction holds.
+- **A group code (`8`, `9`):** the monster seats `3 .. 3 + ctx[+0x01]`. A live monster holds while it plays a clip, a dead one while its prim word is non-zero (its defeat fade has not run out). The party-wide code takes this arm too, so a heal on the party waits on the monsters.
+
+The exit stores `ctx[+0x6D0] = 0x800`, clears `ctx[+0x243]` / `ctx[+0x278]`, writes the fade-back sentinel `0x08421084` at `ctx[+0x890]`, and on seat `7` (the creature) clears the prim word and raises `+0x21C`. The hide and restore loops of `0x34` / `0x36` walk seats `0..7`, so the creature the stager seats at `7` stays drawn through the band. Port: `summon_verify_settled`, with the capture band's pass bound (`CAPTURE_SETTLE_PASS_LIMIT`) on the wait.
 
 **Next:** `0x38`.
 
@@ -444,7 +455,9 @@ Item leg also writes HUD via `_DAT_80077332..+0x35C`; `actor[+0x1DF] == 0xFE` (P
 
 #### State `0x3E` - Spirit - fire
 
-`FUN_801D5854(actor, 6)`. Holds while `actor[+0x1D9] != 0`. Calls `func_0x800319A8(0x21)` and `FUN_801D8DE8(0x4C, 1)`. A party member's spell (`+0x1DE == 2`) also sends its name plate out, `FUN_801D8DE8(0x34, 1)` (`0x801E3E78`). For item class 5 (gauge extension, `0x801E3E90..0x801E4018`) it raises HUD elements `0x0F` / `0x52`, draws one `rand()` (`0x801E3F2C`) for the camera variant `(rand % 2) * 2`, stages the extended gauge `min(0x120, target base * 7 / 5 + 8)` into `ctx[+0x6DC]` and the actor's spirit `+8` (`+10` with ability bit `0x200`) capped at 100 into `ctx[+0x6DE]`, a gauge extension rather than damage (`spirit::gauge_extend_fire`).
+`FUN_801D5854(actor, 6)`. Holds while `actor[+0x1D9] != 0`. Calls `func_0x800319A8(0x21)` and `FUN_801D8DE8(0x4C, 1)`. A party member's spell (`+0x1DE == 2`) also sends its name plate out, `FUN_801D8DE8(0x34, 1)` (`0x801E3E78`). For item class 5 (gauge extension, `0x801E3E90..0x801E4018`) it raises HUD elements `0x0F` / `0x52`.
+
+The class-5 arm also draws one `rand()` (`0x801E3F2C`) for the camera variant `(rand % 2) * 2`, sizes the AP bar (record `0x0F`'s width `0x80076D7E`) off the target - its AGL `+0x154` less six, or `base * 7 / 5 + 8` with no ceiling when its `+0x1F9` byte is up or its spent turn (`+0x16C == 0`) was a Spirit action - stages the extended gauge `min(0x120, target base * 7 / 5 + 8)` into `ctx[+0x6DC]` and the actor's spirit `+8` (`+10` with ability bit `0x200`) capped at 100 into `ctx[+0x6DE]`, a gauge extension rather than damage (`spirit::gauge_extend_fire`).
 
 Otherwise re-fires UI elements 6/0x4E/0x4F (monster effect) or 7 (party effect) per slot, and a queue head of `0xFE` (the Point Card, whatever the category) re-sizes the frame (`FUN_801F0348`), pulls it in to three quarters (`0x801E40A4..0x801E40B8`) and commits class `0x0E`. Sets `ctx[+0x6D8] = 0x20` (post-cast timer).
 
@@ -536,7 +549,7 @@ Writes the fade template at `DAT_801C9070` - kind 2, time `0x40`, start `(0,0,0)
 
 #### State `0x68` - Capture - start
 
-RNG via `func_0x80056798`. Adjusts `ctx[+0x6DA] += 0x780 + (rand%2)*0x80`. `FUN_801D5854(actor, 6)`, `FUN_801E7824(actor)` (the captured-monster takedown), `FUN_801DABA4`. Sets `ctx[+0x6D8] = 0x1E`.
+Clears the style `ctx[+0xD]` (in the delay slot of the `rand()` call, `0x801E5AA4`), so the flight frames from the default side. RNG via `func_0x80056798`. Adjusts `ctx[+0x6DA] += 0x780 + (rand%2)*0x80`. `FUN_801D5854(actor, 6)`, `FUN_801E7824(actor)` (the captured-monster takedown), `FUN_801DABA4`. Sets `ctx[+0x6D8] = 0x1E`.
 
 **Next:** `0x69`.
 
@@ -548,7 +561,7 @@ RNG via `func_0x80056798`. Adjusts `ctx[+0x6DA] += 0x780 + (rand%2)*0x80`. `FUN_
 
 #### State `0x6A` - Capture - sustain
 
-Decrements `ctx[+0x6D8]`; if `ctx[+0x276] != 0` clamps timer at 1. When < 0: ctx[+0x6D8] = 0x3C, calls `FUN_801D99BC`, `FUN_801D8DE8(0x43, 1)` (run-UI close), `actor[+0x4] = 0`, `FUN_801D5854(0, 9)` (defeat pose). Screen rotates.
+Decrements `ctx[+0x6D8]`; only a count that has gone negative meets the streaming clamp, which pins it back at `1` while `ctx[+0x276] != 0`, so the band never leaves while a stream is in flight, whatever the frame step. When < 0 with no stream: ctx[+0x6D8] = 0x3C, calls `FUN_801D99BC`, `FUN_801D8DE8(0x43, 1)` (run-UI close), `actor[+0x4] = 0`, `FUN_801D5854(0, 9)` (case 9, the group framing - a camera program that stores to no actor field, `0x801D6EF4..0x801D7134`). Screen rotates.
 
 **Next:** `0x6B`.
 
@@ -732,7 +745,7 @@ Read once at `ctx[7] == 0x0C`, the byte `actor[+0x1DE]` selects the action categ
 | `2` | **Magic** | `0x28` (default), overridden to `0x3C` for a low-class, low-id record | The arm stores `0x28` first and overrides only when **both** class byte `< 0x14` **and** spell id `< 0x65` hold - see [the class-byte discriminator](#the-magic-arms-class-byte-discriminator). |
 | `3` | **Attack** | `0x14` | Sets `ctx[+0x6DA/+0x6DB] = (0, 2)` (combo timer). For party_id < 3, sets `actor[+0x20] = +0x1DE` and fires `FUN_801D8DE8(7, 0)` + `actor[+0x18] = 7` (UI weapon-slash element). |
 | `4` | **Spirit (Originals)** | `0x46` | Sets `_DAT_80076D7E = actor[+0x154] - 6` (or `((actor[+0x156] * 7) / 5) + 8` capped at 0x120 if `actor[+0x1F9] != 0`). Fires `FUN_801D8DE8(0xF, 0)` + `0x52` (damage popup), bumps `actor[+0x19]++`. |
-| `5` | **Run / Defend** | `0x64` (party) or `0x68` (monster) | Party run: rotates screen `_DAT_8007B792 += DAT_1F800393 * -2`, fires `FUN_801D5854(0, 9)` (defeat pose). Monster run hits the capture path at `0x68`. Either path clears `_DAT_801F69D0` (`0x801E2E08`) - the turns-begun counter the seed arm increments at `0x801E2C38`, not a counter-attack flag. |
+| `5` | **Run / Defend** | `0x64` (party) or `0x68` (monster) | Party run: rotates screen `_DAT_8007B792 += DAT_1F800393 * -2`, fires `FUN_801D5854(0, 9)` (case 9, the group framing - a camera program that stores to no actor field, `0x801D6EF4..0x801D7134`). Monster run hits the capture path at `0x68`. Either path clears `_DAT_801F69D0` (`0x801E2E08`) - the turns-begun counter the seed arm increments at `0x801E2C38`, not a counter-attack flag. |
 
 ### The Magic arm's class-byte discriminator
 

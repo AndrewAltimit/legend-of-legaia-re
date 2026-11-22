@@ -576,3 +576,249 @@ fn the_window_draws_all_ones_as_zero() {
         assert_eq!(*glyphs.borrow(), digits, "value {value:#x}");
     }
 }
+
+/// The annihilated arm (`0x8004F8C0..0x8004FC7C`), pass by pass from its
+/// results frame to its fade, against `World::begin_battle_end_sequence` /
+/// `World::tick_battle_end_sequence` on a party wipe: the loss window
+/// `0x42` behind the special-battle word, the knockout taunt staged on a
+/// monster pose actor (the first `0x22` entry of its action list, unless it
+/// is the committed clip), the boss bark keyed on the first monster id and
+/// gated on the drive word `0x8007BC20 < 2` (retried every pass until a
+/// clear one; `0xA9` draws `rand()` then), the `0x100` hold and the fade
+/// frame's HP floor on every member.
+#[test]
+fn a_party_wipe_barks_taunts_and_fades_as_retail() {
+    differential!(scus(SPOILS));
+    use legaia_engine_battle_vm::battle_action::{ActorFlags, BattleEndCause};
+    use legaia_engine_battle_vm::battle_cast_cue::{
+        VoiceCueGates, VoiceCueVerdict, admit_voice_cue,
+    };
+    use legaia_engine_core::world::test_drivers::BattleTestDrivers;
+    let (Some(mut cpu), Some(scus), Some(disc)) = (scus_cpu(), scus(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let _ = scus;
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    const XA_WORD: u32 = 0x8007_BC20;
+    const FIRST_MONSTER: u32 = 0x8007_BD0C;
+    const ACTIONS: u32 = 0x8016_8000;
+    let state = Rc::new(Cell::new(0u32));
+    let stream = state.clone();
+    let draws = Rc::new(Cell::new(0u32));
+    let d2 = draws.clone();
+    cpu.hook(RAND, move |r, _| {
+        let next = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+        stream.set(next);
+        d2.set(d2.get() + 1);
+        r.r[V0] = (next >> 16) & 0x7FFF;
+    });
+    let faded = Rc::new(Cell::new(false));
+    let f2 = faded.clone();
+    cpu.hook(0x8002_4E80, move |_, _| f2.set(true));
+    let cues = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let c2 = cues.clone();
+    cpu.hook(0x8004_FCC8, move |r, _| c2.borrow_mut().push(r.r[4]));
+    let windows = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let w2 = windows.clone();
+    cpu.hook(0x801D_8DE8, move |r, _| w2.borrow_mut().push(r.r[4]));
+    for stub in [
+        0x8003_CE08u32,
+        0x8003_CBF8,
+        0x8003_CA38,
+        0x8005_6758,
+        0x8003_563C,
+        0x801D_5854,
+        0x8004_21D4,
+        0x8002_5358,
+        0x8001_7B94,
+    ] {
+        cpu.stub(stub, 0);
+    }
+    let barkers = [
+        0x4Cu8, 0x88, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA9, 0xB4, 0x40, 0x10,
+    ];
+    let durations = vec![300u16; 0x200];
+    let mut rng = Rng(0x5749_5045);
+    let mut seen = std::collections::HashMap::<&str, u32>::new();
+    for round in 0..300 {
+        let mut w = gen_win(&mut rng, |_, _| 0);
+        w.member_hp = [0; 3];
+        w.dead = [false; 5];
+        let first = barkers[rng.below(barkers.len() as u32) as usize];
+        // The pose actor: the monster that landed the blow, or a member.
+        let monster_pose = rng.below(4) != 0;
+        let pose_monster = rng.below(w.monsters as u32) as usize;
+        w.pose_seat = if monster_pose {
+            3 + pose_monster as u8
+        } else {
+            rng.below(w.party as u32) as u8
+        };
+        let busy = [0u16, 0, 1, 3, 20][rng.below(5) as usize];
+        // The pose monster's action list: a `0x22` entry or none.
+        let tags: Vec<u8> = (0..1 + rng.below(8))
+            .map(|_| [0u8, 2, 4, 5, 0x0B, 0x22][rng.below(6) as usize])
+            .collect();
+        let taunt = tags.iter().position(|&t| t == 0x22);
+        let current = match (taunt, rng.below(3)) {
+            (Some(t), 0) => t as u8,
+            _ => rng.below(8) as u8,
+        };
+        seed_retail(&mut cpu, &w);
+        let gp = cpu.regs.r[GP];
+        cpu.mem.wr8(gp + 0xA48, 0);
+        cpu.mem.wr8(FIRST_MONSTER, first);
+        let pose_actor = ACTOR + u32::from(w.pose_seat) * ACTOR_STRIDE;
+        cpu.mem.wr8(pose_actor + 0x1D9, current);
+        if monster_pose {
+            let r = MONSTER + pose_monster as u32 * 0x80;
+            cpu.mem.wr8(r + 0x4A, tags.len() as u8);
+            for (i, t) in tags.iter().enumerate() {
+                let e = ACTIONS + i as u32 * 0x10;
+                cpu.mem.wr8(e, *t);
+                cpu.mem.wr32(r + 0x4C + 4 * i as u32, e);
+            }
+        }
+        cpu.mem.wr8(0x1F80_0393, 1);
+        state.set(w.seed);
+        faded.set(false);
+
+        // The port, armed on the signal tick.
+        let mut world = World::default();
+        let (mut formation, catalog) = seed_port(&mut world, &w);
+        formation.slots[0].monster_id = u16::from(first);
+        world.battle.active_formation = Some(formation);
+        world.tables.monster_catalog = catalog;
+        world.audio.xa_cue_durations = Some(durations.clone());
+        world.battle.victory = None;
+        world.presentation.fade = None;
+        world.game_over_hold = false;
+        world.battle_ctx.active_actor =
+            w.pose_seat - if monster_pose { 3 - w.party as u8 } else { 0 };
+        if monster_pose {
+            let seat = w.party + pose_monster;
+            let clips: Vec<_> = tags.iter().map(|&t| Some(clip(t))).collect();
+            world.set_actor_battle_action_clips(seat, std::sync::Arc::new(clips));
+            world.actors[seat].battle.current_anim = current;
+            world.actors[seat].battle.queued_anim = 0xEE;
+        }
+        world.audio.battle_xa_busy_frames = busy;
+        world.battle.end = Some(BattleEndCause::PartyWipe);
+        world.begin_battle_end_sequence();
+        let opened = world.battle.victory.is_some_and(|v| v.window_opened);
+
+        let label = format!(
+            "round {round}: first {first:#x} pose {} busy {busy} tags {tags:?} current {current} special {:#x}",
+            w.pose_seat, w.special
+        );
+        let mut retail_bark = None;
+        let mut port_bark = None;
+        let mut retail_fade = None;
+        for pass in 0..0x200u32 {
+            // The port's drive word, as its tick counts it down.
+            world.audio.battle_xa_busy_frames = world.audio.battle_xa_busy_frames.saturating_sub(1);
+            let xa_up = world.audio.battle_xa_busy_frames != 0 && port_bark.is_none();
+            cpu.mem.wr32(XA_WORD, if xa_up { 2 } else { 0 });
+            cues.borrow_mut().clear();
+            windows.borrow_mut().clear();
+            draws.set(0);
+            assert_eq!(cpu.call(SPOILS, &[]), Stop::Returned, "{label} pass {pass}");
+            if pass == 0 {
+                assert_eq!(
+                    windows.borrow().contains(&0x42),
+                    opened,
+                    "{label}: the loss window"
+                );
+                // The taunt, on the results frame.
+                let staged = cpu.mem.rd8(pose_actor + 0x1DC) & 2 != 0;
+                if monster_pose {
+                    let seat = w.party + pose_monster;
+                    let a = &world.actors[seat].battle;
+                    let port_staged = a.queued_anim != 0xEE;
+                    assert_eq!(staged, port_staged, "{label}: taunt staged");
+                    if staged {
+                        assert_eq!(cpu.mem.rd8(pose_actor + 0x1DA), a.queued_anim, "{label}");
+                        assert_ne!(a.flag_bits.0 & ActorFlags::ADVANCE_DONE, 0, "{label}");
+                        *seen.entry("taunt").or_default() += 1;
+                    }
+                } else {
+                    assert!(!staged, "{label}: a member pose stages nothing");
+                }
+            }
+            let rand_before = world.rng_state;
+            let xa_before = world.audio.battle_xa_cues.len();
+            world.tick_battle_end_sequence();
+            if let Some(&id) = cues.borrow().iter().find(|&&c| c >= 0x100) {
+                assert!(retail_bark.is_none(), "{label}: one bark");
+                retail_bark = Some((pass, id, draws.get()));
+            }
+            if world.audio.battle_xa_cues.len() > xa_before {
+                let c = world.audio.battle_xa_cues[xa_before];
+                port_bark = Some((pass, c, u32::from(world.rng_state != rand_before)));
+            }
+            if faded.get() {
+                retail_fade = Some(pass);
+                for m in 0..w.party as u32 {
+                    assert_eq!(cpu.mem.rd16(ACTOR + m * ACTOR_STRIDE + 0x14C), 1, "{label}");
+                    assert_eq!(world.actors[m as usize].battle.hp, 1, "{label}: HP floor");
+                }
+                assert!(
+                    world.presentation.fade.is_some(),
+                    "{label}: the fade, pass {pass}"
+                );
+                break;
+            }
+            assert!(
+                world.presentation.fade.is_none(),
+                "{label}: early fade, pass {pass}"
+            );
+        }
+        assert!(retail_fade.is_some(), "{label}");
+        match (retail_bark, port_bark) {
+            (None, None) => *seen.entry("no bark").or_default() += 1,
+            (Some((rp, id, rd)), Some((pp, clip, pd))) => {
+                assert_eq!(rp, pp, "{label}: the bark's pass");
+                let VoiceCueVerdict::Play(req) = admit_voice_cue(
+                    id as u16,
+                    VoiceCueGates {
+                        side_band_stage: 0,
+                        stream_read: false,
+                    },
+                    Some(300),
+                ) else {
+                    panic!("{label}");
+                };
+                assert_eq!(
+                    (req.clip_slot, req.channel),
+                    (clip.clip, clip.channel),
+                    "{label}: bark {id:#x}"
+                );
+                assert_eq!(rd.min(1), pd, "{label}: the bark's rand draw");
+                *seen
+                    .entry(if rp > 0 { "bark held" } else { "bark" })
+                    .or_default() += 1;
+            }
+            (r, p) => panic!("{label}: retail bark {r:?} port {p:?}"),
+        }
+    }
+    for key in ["taunt", "no bark", "bark", "bark held"] {
+        assert!(seen.get(key).copied().unwrap_or(0) > 5, "{key}: {seen:?}");
+    }
+}
+
+fn clip(action_id: u8) -> legaia_actor_formats::monster_archive::MonsterAnimation {
+    legaia_actor_formats::monster_archive::MonsterAnimation {
+        variant_track: Default::default(),
+        action_id,
+        rate: 2,
+        attach_key: 0,
+        solo_flag: 0,
+        impact_class: 0,
+        effect_script: Vec::new(),
+        part_count: 1,
+        frame_count: 2,
+        frames: vec![vec![Default::default()]; 2],
+    }
+}

@@ -10,7 +10,7 @@
 //! the target's own tick later in the same frame (`FUN_8003774C`,
 //! `0x80038004`; the system node runs ahead of the actor list). So the loop
 //! never refuses itself: these tests pin that the port's guard leaves every
-//! pass acquiring, and that the snap still turns the target.
+//! pass acquiring, and that every pass re-faces the target as it moves.
 //!
 //! Skips without `LEGAIA_DISC_BIN` / `extracted/` (disc-gated convention).
 
@@ -43,11 +43,12 @@ fn slot_of(host: &SceneHost, id: u8) -> u8 {
 
 /// Enter `scene`, find the system script's acquire `CC <target> 85 00 00
 /// <toward>`, then run `frames` world ticks, moving what the target faces
-/// (the player, or placement `toward`) to the other side of it before each
-/// one. Returns, over the game frames: how many start and end on the
-/// acquire (refused), how many ran, and whether the target's heading moved off its
-/// spawn heading (the snap landed).
-fn run(scene: &str, target: u8, toward: u8, frames: u32) -> (u32, u32, bool) {
+/// (the player, or placement `toward`) to the other side of it after each
+/// game frame, so every pass finds it across from where the last one did.
+/// Returns, over the game frames: how many start and end on the acquire
+/// (refused), how many ran, and how many re-faced the target (its heading
+/// differs from the previous pass's, the side having flipped between them).
+fn run(scene: &str, target: u8, toward: u8, frames: u32) -> (u32, u32, u32) {
     let dir = extracted_dir().expect("checked by the caller");
     let mut host = SceneHost::open_extracted(&dir).expect("open the host");
     host.enter_field_scene(scene, 0).expect("enter the scene");
@@ -58,16 +59,16 @@ fn run(scene: &str, target: u8, toward: u8, frames: u32) -> (u32, u32, bool) {
         .position(|b| b == [0xCC, target, 0x85, 0x00, 0x00, toward])
         .unwrap_or_else(|| panic!("{scene}: the system acquire"));
     let slot = slot_of(&host, target);
-    let spawn = host.world.npcs.headings.get(&slot).copied();
     let &(tx, tz) = host
         .world
         .npcs
         .positions
         .get(&slot)
         .expect("the target stands");
-    let (mut refused, mut ran, mut turned) = (0u32, 0u32, false);
-    for f in 0..frames {
-        let dx: i16 = if f % 2 == 0 { 0x200 } else { -0x200 };
+    let (mut refused, mut ran, mut refaced) = (0u32, 0u32, 0u32);
+    let mut last = None;
+    for _ in 0..frames {
+        let dx: i16 = if ran % 2 == 0 { 0x200 } else { -0x200 };
         if toward == 0xF8 {
             let p = usize::from(host.world.player_actor_slot.expect("a player"));
             host.world.actors[p].move_state.world_x = tx + dx;
@@ -85,9 +86,11 @@ fn run(scene: &str, target: u8, toward: u8, frames: u32) -> (u32, u32, bool) {
         ran += 1;
         // Refused: the pass stood on the acquire and is still there.
         refused += u32::from(pc == at && host.world.field_pc == at);
-        turned |= host.world.npcs.headings.get(&slot).copied() != spawn;
+        let heading = host.world.npcs.headings.get(&slot).copied();
+        refaced += u32::from(last.is_some() && heading != last);
+        last = heading;
     }
-    (refused, ran, turned)
+    (refused, ran, refaced)
 }
 
 #[test]
@@ -95,10 +98,15 @@ fn town0e_faces_its_villager_on_every_pass() {
     if extracted_dir().is_none() {
         return;
     }
-    let (refused, ran, turned) = run("town0e", 0x1E, 0xF8, 40);
+    let (refused, ran, refaced) = run("town0e", 0x1E, 0xF8, 40);
     assert!(ran > 10, "{ran}");
     assert_eq!(refused, 0, "the system loop refused its own acquire");
-    assert!(turned, "the snap turned the villager");
+    // The first pass may land on the scene's own acquire one game frame
+    // late (the loop's opening `75 F1` spawn arm); every later one re-faces.
+    assert!(
+        refaced + 2 >= ran,
+        "{refaced} of {ran} passes re-faced the villager"
+    );
 }
 
 #[test]
@@ -106,10 +114,15 @@ fn geremi_faces_its_guard_on_every_pass() {
     if extracted_dir().is_none() {
         return;
     }
-    let (refused, ran, turned) = run("geremi", 0x35, 0x37, 40);
+    let (refused, ran, refaced) = run("geremi", 0x35, 0x37, 40);
     assert!(ran > 10, "{ran}");
     assert_eq!(refused, 0, "the system loop refused its own acquire");
-    assert!(turned, "the snap turned the guard");
+    // The first pass may land on the scene's own acquire one game frame
+    // late (the loop's opening `75 F1` spawn arm); every later one re-faces.
+    assert!(
+        refaced + 2 >= ran,
+        "{refaced} of {ran} passes re-faced the guard"
+    );
 }
 
 /// The guard is live: with a 16-frame FaceTarget leg already turning

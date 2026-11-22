@@ -1246,33 +1246,58 @@ pub(crate) fn page_arrow_sprites(
     out
 }
 
-/// The kernel's two 8x8 page-triangle spots, right then left: ICO `0x28` at
-/// `(WX + w + 4, WY + h/2 - 3)` and ICO `0x27` at `(WX - 0xC, ..)`, on the live
-/// list rect (`0x80032FE4..0x8003304C`), which stands `(2, 5)` off the pen. Off the
-/// pen that is `(X + 0x86, Y + 0x58)` and `(X - 0xA, Y + 0x58)`, measured on
+/// The kernel's two 8x8 page-triangle spots, right then left, off its node
+/// rect `(WX, WY, w, h)` (`+0xA..+0x10`): ICO `0x28` at `(WX + w + 4, WY +
+/// (h >> 1) - 3)` and ICO `0x27` at `(WX - 0xC, ..)` (`0x80032FE4..0x8003304C`;
+/// the height is halved as a signed halfword, `sll 16; sra 17`).
+pub fn list_page_arrow_seats((wx, wy, w, h): (i32, i32, i32, i32)) -> ((i32, i32), (i32, i32)) {
+    let y = wy + (i32::from(h as i16) >> 1) - 3;
+    ((wx + w + 4, y), (wx - 0xC, y))
+}
+
+/// The pause lists' node rect off their window pen: the live list rect stands
+/// `(2, 5)` off the pen and measures `0x80 x 0xAC`, so the triangles land at
+/// `(X + 0x86, Y + 0x58)` and `(X - 0xA, Y + 0x58)`, measured on
 /// `menu_equip_candidates_conc_retail`.
+pub(crate) fn pause_list_node((lx, ly): (i32, i32)) -> (i32, i32, i32, i32) {
+    (lx + 2, ly + 5, 0x80, 0xAC)
+}
+
+/// The pause lists' triangle spots, [`list_page_arrow_seats`] on
+/// [`pause_list_node`].
 pub(crate) fn list_page_arrow_spots(list_pen: (i32, i32)) -> ((i32, i32), (i32, i32)) {
-    let (lx, ly) = list_pen;
-    ((lx + 0x86, ly + 0x58), (lx - 0x0a, ly + 0x58))
+    list_page_arrow_seats(pause_list_node(list_pen))
 }
 
 /// The page triangles as retail draws them, the font's 8x8 ICO `0x27` / `0x28`
 /// cells, when it carries them; empty otherwise, and [`page_arrow_sprites`]
 /// stands in. `gate` is the kernel's: `beq s4,zero` (mode 1, the list has the
 /// pad) and the frame word's blink at `0x80032FC0`.
+pub(crate) fn list_page_arrow_draws(
+    font: &legaia_font::Font,
+    pages: (u16, u16),
+    gate: bool,
+    list_pen: (i32, i32),
+) -> Vec<TextDraw> {
+    list_page_arrow_draws_at(font, pages, gate, pause_list_node(list_pen))
+}
+
+/// [`list_page_arrow_draws`] on the kernel's node rect `(WX, WY, w, h)`: the
+/// next-page triangle while a page follows (`top + visible < count`), the
+/// previous-page one past the first page (`top > 0`), for a page-aligned top.
 ///
 /// PORT: FUN_80032A44 (page triangles, `0x80032FB8..0x8003304C`)
-pub(crate) fn list_page_arrow_draws(
+pub fn list_page_arrow_draws_at(
     font: &legaia_font::Font,
     (page, pages): (u16, u16),
     gate: bool,
-    list_pen: (i32, i32),
+    node: (i32, i32, i32, i32),
 ) -> Vec<TextDraw> {
     let mut out = Vec::new();
     if !gate {
         return out;
     }
-    let (right, left) = list_page_arrow_spots(list_pen);
+    let (right, left) = list_page_arrow_seats(node);
     let mut tri = |id: u16, at: (i32, i32)| {
         if let Some(c) = font.sprite_cell(id) {
             out.push(TextDraw {

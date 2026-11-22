@@ -76,6 +76,7 @@ fn the_countdown_runs_as_retail_runs_it() {
             remaining: duration,
             warn_threshold: threshold,
             armed: true,
+            duration,
         };
         let mut hud = EscapeTimerHud::default();
         // Fast-forward big counts with large clock deltas.

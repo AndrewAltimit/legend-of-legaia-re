@@ -248,7 +248,30 @@ It also showed the Mystic Shield stopped no plain swing and halved instead, the
 block breaker's quarter damage and the drain clip had no port, the shared
 finisher's no-damage floor had been wired onto a routine that has none, the Spirit
 percent wraps at a byte in this routine alone, and a block the roll grants spends
-the approach terms even when the verdict is then overturned.
+the approach terms even when the verdict is then overturned. Seated with the
+clip's power run, the strike cursor, the stream and its entry table, it showed
+the blocked hit's copy of the apply look-ahead skipping itself in action states
+`0x6E..=0x77`, where the port landed the total early.
+
+Its second round, with the Seru absorb staged, the `0xB3` cell, the vibration
+row, Terra on seat 2 and monsters striking each other, showed a monster
+attacker's hit computing the apply look-ahead that both copies skip for any
+attacker past seat 2, the grunt sounding on a hit that does not land the total
+or on a broken block's pose (retail's grunt sits behind the apply arm and
+reads the pick ahead of the pose override), and the Mystic Shield's rumble
+written only for a party attacker.
+
+The anim node tick `FUN_80047430`, driven through World seams with the range
+poll given, showed two arms with no port: the Seru-absorb puff behind a
+natural end (effect `0x14` at a downed seat committed to idle while a Seru is
+staged, and cue `0x1B` once an action), and the walk gates on
+`DAT_8007BD71`, which stop the hit and effect-script walks once the battle-end
+signal is up while the cue walk runs on.
+
+The item applier `FUN_800402F4`, run on a monster's casts, showed a class-1 group
+heal on the monster side walks the four monster seats `3..7` and stops short of
+the summon seat, which the port's walk included. No arm of it pushes a damage
+number, so a use that restores nothing shows no `0`.
 
 The spoils arm of `FUN_8004E568` showed the port paying EXP and gold for every
 seat in the formation, where retail pays for a seat that died and was not
@@ -1557,3 +1580,9 @@ The pager `FUN_801D84D0` zeroes the pad word while the automatic press counts, c
 `A1 <id>`, whose masked byte reads `0x21`. The part tick `FUN_80021DF4` leaves straight from the sound emitter's arm
 on the tick it takes its stop request, with no move-VM run and no clamps. The BGM poller's stage walk `FUN_800243F0`,
 run call by call against `BgmSwapPoller` at one call a game frame, matches.
+
+The list kernel `FUN_80032A44`'s header and page triangles, run on random node rects, showed the battle item
+and magic lists drawing both one pixel low and the next-page triangle one pixel left: their seats were read off a
+capture rather than the live node `(174, 36, 131, 120)` the kernel draws from. A walk of PROT 0963's Genocidal Cannon
+at a party row with a fallen and a stoned seat showed its sweep's rate store sitting past the skip label, so every
+party seat takes rate `2`, not only the struck ones.

@@ -525,7 +525,7 @@ Any other action of the monster in the window ends its own clip and consumes the
 
 ### Why a hit alone cannot arm it
 
-A reaction staged by an ordinary hit always reaches its natural end before the action that caused it is over. State `0x20` holds until the struck actor's committed clip is idle (`+0x1D9 == 0`), and a reaction gets back to idle only through its natural end, which clears the bit. A cast waits the same way in its recovery states, and a summon's verify state `0x37` holds until every living monster's `+0x1D9` is `0`.
+A reaction staged by an ordinary hit always reaches its natural end before the action that caused it is over. State `0x20` holds until the struck actor's committed clip is idle (`+0x1D9 == 0`), and a reaction gets back to idle only through its natural end, which clears the bit. A cast waits the same way in its recovery states, and a summon's settle state `0x37` holds until its target's `+0x1D9` is `0` (on a group code, every living monster's, and every dead monster's fade run out).
 
 Captured with `autorun_approach_hazard.lua` (below): over several rounds of party Attack and Gaza melee, every bit 2 raised on a struck actor came down inside the same action's `0x1E` / `0x20` band, and the action-end pose's bit came down inside `0x51`. No approach started with the bit set.
 

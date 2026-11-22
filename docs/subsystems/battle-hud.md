@@ -712,7 +712,7 @@ of vanishing:
 | `0x12` | the left chip, gold plate, record `0x10`'s `Begin` / `Escape` | `x = 92 -> -56`, off the left edge |
 | `0x14` | `Reselect`, blue plate | `x = 180 -> 328`, off the right edge |
 | `0x3F` / `0x40` | the `Begin` / `Run` tab | `y = 14 -> -24`, off the top edge |
-| `0x2B..` (mode `1`, step `0x24` only) | the commit log | one display width left of its rest seat |
+| `0x2B..` (mode `1`, step `0x24` only) | every commit-log row | one display width left of its rest seat; the first row ends on `y = 0xAA` behind a Spirit second commit ([the rows' seat A](battle-command-flow.md)) |
 
 The gate holds the `0xFE` arm until the records land; the pass after, its
 handle reset (`FUN_801D99BC` at `0x801D31E8`) drains them with every text
@@ -927,6 +927,16 @@ The target plaque's name carries the `0xCE` badge escape (`Gimard` at `x = 241`,
 `Skeleton A` at 245, `Gobu Gobu` at 249). Move-name seats: `Somersault` 130,
 `Tail Fire` 135, `Glare` 146. The cluster's own seats are in
 `engine-battle-vm::battle_value_readout`.
+
+**The cluster counts the total's digits over the whole word.** Its draw
+(`FUN_801E805C`, `0x801E89D8..0x801E91B8`) seats every part off record 80's
+widget: the word at `x + 0x50 - 0x10 * digits` (`DAMAGE` eight further left,
+when the push count `ctx[+0x273]` reads `1`), the value's 16-px cells ending at
+`x + 0x88`, and on a count above `1` the `HIT` word and the count's 24-px cells
+above. The digit loops multiply by ten over the 32-bit total in
+`DAT_8007BD14`, so a string's total past `65535` draws all its digits rather
+than saturating. `crates/retail-exec/tests/value_readout.rs`
+(`the_combo_cluster_draws_as_retail`) holds `combo_cluster` to that draw.
 
 **A melee string opens the cluster when its total lands.** The melee kernel
 banks each hit's damage in the target's word `+0x00` and writes the bank to
@@ -1665,8 +1675,8 @@ What state `0x3C` puts on screen, read out of its own display list. The
 | item-list window | system-UI window-skin tile grid (widget page `(896, 256)`, CLUT row 511 sub-palette 2), spanning x `166..=313`, y `28..=164` |
 | description window | same skin, x `8..=167`, y `122..=164`; shows the highlighted item's info-window description in ink 7 on placement record `0x17`'s pen `(16, 132 - 2)`, a second line one `0xE` pitch down |
 | hand cursor | 16x16 pointing-finger `POLY_FT4` (CLUT row 511 sub-palette 7), the [list kernel's](field-menu.md#the-kind-4-list-kernel-scus-fun_80032a44) `FUN_8002B994(0, browsing, WX - 6, row_y)`: `x = 168` plus the bob table's `-2..2` (`167` on this capture), `y = 45 + 14*row` - row pitch 14 |
-| rows | eight per page on the list kernel's pen `WX = 174` (placement record `0x16`'s content box `(174, 38)`): name at `WX + 0xC` on the hand's own `row_y`, ink from `y = 47`; the bag count in the three-cell number field at `WX + 0x6C`; ink 7, ink 0 for a disabled row - its enable bit, not the hand |
-| header | the kernel's `PAGE` tag and digits, as on a shop list (`battle_item_window_gaza2_retail`: tag at `(249, 35)`, digits at x `279`, `293`, `299`); the page triangles at `(308, 94)` and `(162, 94)` blink on the frame word |
+| rows | eight per page on the list kernel's node `(WX, WY, w, h) = (174, 36, 131, 120)` (read off the live node in the state; placement record `0x16`'s content box `(174, 38)`): name at `WX + 0xC` on the hand's own `row_y`, ink from `y = 47`; the bag count in the three-cell number field at `WX + 0x6C`; ink 7, ink 0 for a disabled row - its enable bit, not the hand |
+| header | the kernel's `PAGE` tag and digits at `WY - 2`, as on a shop list (`battle_item_window_gaza2_retail`: tag at `(249, 34)`, digits at x `279`, `293`, `299`); the page triangles at `(WX + w + 4, WY + h/2 - 3)` = `(309, 93)` and `(WX - 0xC, ..)` = `(162, 93)` blink on the frame word |
 | breadcrumbs | the HUD's [trail](#the-actor-name-plaque): `Begin` tab (record 1), the plaque behind it (record `0x1A`), the `Item` tab (record `0x0C`) |
 
 **Row enable.** Which rows are selectable is the SCUS list builder's call

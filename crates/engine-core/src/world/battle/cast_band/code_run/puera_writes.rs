@@ -17,7 +17,7 @@ impl World {
     /// | arm | writes |
     /// |---|---|
     /// | 0 (`0x801F6AE0..0x801F6C1C`, pass) | each live monster: pose saved, moved to half its alternate-family seat less `0x1F4` on `z`, facing `0x800` |
-    /// | 11 (every pass while counting) | the creature sinks `2 * scalar` a tick (`0x801F7330..0x801F734C`) |
+    /// | 11 (every pass while counting; pass `0x801F7378..0x801F737C`) | the creature sinks `2 * scalar` a tick (`0x801F7330..0x801F734C`); on the pass its tint arm `+0x21C` goes to `9`, the yellow ease |
     /// | 12 (every pass; pass `0x801F7524..0x801F75A0`) | the creature sinks `2 * scalar` a tick (`0x801F74A0..0x801F74B0`); on the pass it is hidden and each live monster shown |
     /// | 18 (`0x801F7FE0..0x801F8020`, pass) | the creature at `(0, -0x1100, -0x1100)`, shown, its next clip staged |
     /// | 19 (`0x801F81C8..0x801F8210`, while counting; pass `0x801F82B4..0x801F82C0`) | with `w = (scalar << 6) - countdown`, the creature at `y = 17 w / 2 - 0x1100`, `z = 13 w - 0x1100`; on the pass it is hidden and arm 18's ring re-seated as the crystals ([`Self::seat_puera_crystals`]) |
@@ -27,8 +27,8 @@ impl World {
     /// plus the part halts of [`legaia_engine_cast::cast_module_camera::puera_arm_kills`]
     /// on each pass.
     ///
-    /// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; the monster, creature and part-halt writes of arms 0, 5, 11, 12, 18, 19, 22 and 24, the crystal re-seat of arm 19 and the fall of arm 20)
-    pub(in crate::world::battle::cast_band) fn apply_puera_writes(
+    /// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; the monster, creature and part-halt writes of arms 0, 5, 11 (sink, yellow tint), 12, 18, 19, 22 and 24, the crystal re-seat of arm 19 and the fall of arm 20)
+    pub(in crate::world) fn apply_puera_writes(
         &mut self,
         phase: u8,
         passed: bool,
@@ -75,6 +75,13 @@ impl World {
             }
         }
         match phase {
+            // The creature glows as it goes under: the tint SM's yellow arm
+            // (`li v0,9; sb v0,0x21c(s1)`).
+            11 => {
+                if let Some(a) = creature.and_then(|c| self.actors.get_mut(usize::from(c))) {
+                    a.battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_YELLOW;
+                }
+            }
             0 => {
                 self.casting.module_saved_poses.clear();
                 for &(i, e) in &monster_slots {

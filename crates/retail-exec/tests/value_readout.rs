@@ -201,3 +201,146 @@ fn the_value_readout_tears_down_and_draws_as_retail() {
         "{rows:?}"
     );
 }
+
+/// The combo cluster's draw `0x801E89D8..0x801E91B8`, reached through the
+/// pass with the value window empty and the cluster up (`ctx[+0x271]`):
+/// the `TOTAL` / `DAMAGE` word, the `HIT` word and both digit runs, against
+/// `combo_cluster` with the anchor widget seated where the port seats it
+/// (`COMBO_ANCHOR_REST_X` plus the glide, the value row). The word is the
+/// count's: `DAMAGE` when the push count `ctx[+0x273]` reads `1`. The pass
+/// links the word first and each run units digit first; the packets are
+/// compared as a set.
+#[test]
+fn the_combo_cluster_draws_as_retail() {
+    use legaia_engine_battle_vm::battle_value_readout::{
+        COMBO_ANCHOR_REST_X, COMBO_VALUE_Y, ComboStyle, combo_cluster, fold_combo_records,
+    };
+    const ACTORS: u32 = 0x801C_9370;
+    const SEATS: u32 = 0x8007_BD10;
+    const CHARS: u32 = 0x8008_4708;
+    const ACTOR: u32 = 0x8017_0000;
+    differential!(prot(898, PASS));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(CTX_PTR, CTX);
+    cpu.mem.wr32(OT_PTR, OT);
+    cpu.stub(UI_ELEMENT, 0);
+    let linked = Rc::new(RefCell::new(Vec::new()));
+    {
+        let linked = linked.clone();
+        cpu.hook(ADD_PRIM, move |r, _| linked.borrow_mut().push(r.r[A1]));
+    }
+    let mut rng = Rng(0x434C_5553);
+    let (mut damage, mut hit_total, mut widths, mut folded) = (0, 0, [0u32; 11], 0);
+    for n in 0..20_000 {
+        let pushes = match rng.below(4) {
+            0 => 1u8,
+            1 => 2 + rng.below(8) as u8,
+            _ => 2 + rng.below(254) as u8,
+        };
+        let total = match rng.below(5) {
+            0 => 1 + rng.below(9),
+            1 => 1 + rng.below(999),
+            2 => 1 + rng.below(9999),
+            3 => 1 + rng.below(65535),
+            // A long string's total runs past a halfword.
+            _ => 1 + rng.below(1_000_000),
+        };
+        let slide = rng.below(161) as i32;
+        // No teardown, an empty window, the cluster up. On a party seat the
+        // fold keeps the acting record's Max Damage / Max Hits words
+        // (`0x801E88D4..0x801E89D8`).
+        cpu.mem.wr8(FLAG, 0);
+        cpu.mem.wr32(TOTAL, total);
+        cpu.mem.wr32(COUNT, 0);
+        for s in 0..4 {
+            cpu.mem.wr8(SLOT_IDS + s, 0);
+        }
+        let up = 1 + rng.below(4) as u8;
+        cpu.mem.wr8(CTX + 0x271, up);
+        let seat = rng.below(6) as u8;
+        cpu.mem.wr8(CTX + 0x13, seat);
+        let category = [3u8, 3, 3, 2, 0][rng.below(5) as usize];
+        let record = rng.below(3);
+        let words = (rng.below(200_000), rng.below(300));
+        if seat < 3 {
+            let actor = ACTOR + 0x400 * u32::from(seat);
+            cpu.mem.wr32(ACTORS + 4 * u32::from(seat), actor);
+            cpu.mem.wr8(actor + 0x1DE, category);
+            cpu.mem.wr8(SEATS + u32::from(seat), 1 + record as u8);
+            cpu.mem.wr32(CHARS + record * 0x414 + 0xE8, words.0);
+            cpu.mem.wr32(CHARS + record * 0x414 + 0xEC, words.1);
+        }
+        cpu.mem.wr8(CTX + 0x273, pushes);
+        cpu.mem.wr8(CTX + 0x11B6 + 0xC * u32::from(up), 0x20);
+        cpu.mem.wr32(CTX + 0x1074 + 4 * 0x20, WIDGETS);
+        cpu.mem
+            .wr16(WIDGETS + 0xA, (COMBO_ANCHOR_REST_X + slide) as u16);
+        cpu.mem.wr16(WIDGETS + 0xC, COMBO_VALUE_Y as u16);
+        cpu.mem.wr32(PACKET_PTR, PACKETS);
+        linked.borrow_mut().clear();
+        assert_eq!(cpu.call(PASS, &[]), Stop::Returned, "n {n}");
+
+        if seat < 3 {
+            let want = fold_combo_records(true, seat, category, total, pushes, words);
+            let got = (
+                cpu.mem.rd32(CHARS + record * 0x414 + 0xE8),
+                cpu.mem.rd32(CHARS + record * 0x414 + 0xEC),
+            );
+            assert_eq!(
+                got, want,
+                "n {n}: the fold, seat {seat} category {category}"
+            );
+            folded += usize::from(got != words);
+        }
+        let style = if pushes == 1 {
+            ComboStyle::Damage
+        } else {
+            ComboStyle::HitTotal
+        };
+        let cluster = combo_cluster(style, u16::from(pushes), total, slide);
+        let mut want: Vec<Vec<u32>> = cluster
+            .labels
+            .iter()
+            .map(|l| {
+                let (w, h) = l.size();
+                let (x1, y1) = (l.x + w as i32 - 1, l.y + h as i32 - 1);
+                let (u0, v0, u1, v1) = l.uv;
+                packet(
+                    [(l.x, l.y), (x1, l.y), (l.x, y1), (x1, y1)],
+                    [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
+                )
+            })
+            .chain(cluster.cells.iter().map(|c| {
+                let (x1, y1) = (c.x + c.w as i32 - 1, c.y + c.h as i32 - 1);
+                let (u1, v1) = (c.u + DIGIT_CELL - 1, c.v + DIGIT_CELL - 1);
+                packet(
+                    [(c.x, c.y), (x1, c.y), (c.x, y1), (x1, y1)],
+                    [(c.u, c.v), (u1, c.v), (c.u, v1), (u1, v1)],
+                )
+            }))
+            .collect();
+        let mut got: Vec<Vec<u32>> = linked
+            .borrow()
+            .iter()
+            .map(|&p| (0..10).map(|k| cpu.mem.rd32(p + 4 * k)).collect())
+            .collect();
+        want.sort();
+        got.sort();
+        assert_eq!(
+            got, want,
+            "n {n}: pushes {pushes} total {total} slide {slide}"
+        );
+        damage += usize::from(pushes == 1);
+        hit_total += usize::from(pushes != 1);
+        widths[total.to_string().len()] += 1;
+    }
+    assert!(
+        damage > 2000 && hit_total > 2000 && folded > 1000,
+        "{damage} {hit_total} {widths:?} {folded}"
+    );
+}

@@ -55,6 +55,11 @@ pub struct TileBoardState {
     /// (`DAT_801F35C4`, saved at `0x801EF320` and put back into `gp+0x2D8`
     /// at teardown, `0x801EFE7C`).
     pub saved_octant: u32,
+    /// The walk stood on its target as the last game frame ended: the next
+    /// game frame's state 2 finds no delta and binds the idle clip
+    /// (`0x801EFAB0..0x801EFAF8`). The port walks on the vsync, so a step
+    /// that lands between two game frames waits for one to close on it.
+    pub walk_spent: bool,
 }
 
 impl TileBoardState {
@@ -70,6 +75,7 @@ impl TileBoardState {
             fade: crate::tile_board::FADE_FULL,
             prompt_cursor: 0,
             saved_octant: 0,
+            walk_spent: false,
         }
     }
 }

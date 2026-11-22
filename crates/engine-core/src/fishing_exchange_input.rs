@@ -119,7 +119,16 @@ impl World {
             ExchangeInput::Buy => {
                 let row = self.minigames.fishing_exchange.as_ref().map(|e| e.cursor);
                 match row.and_then(|r| self.fishing_exchange_buy(r, 1)) {
-                    Some(p) => ExchangeOutcome::Bought(p),
+                    Some(p) => {
+                        // The list's next frame opens on its entry clamp:
+                        // a purchase that took the points below row 0's
+                        // price moves a cursor left on it to the last row.
+                        let points = self.minigames.fishing_points;
+                        if let Some(ex) = &mut self.minigames.fishing_exchange {
+                            ex.cursor = ex.step_cursor(ex.cursor, points, false, false);
+                        }
+                        ExchangeOutcome::Bought(p)
+                    }
                     None => ExchangeOutcome::Refused,
                 }
             }
@@ -226,8 +235,26 @@ mod tests {
         w.fishing_exchange_pad(0x1000); // Up
         assert_eq!(cursor(&w), Some(start));
         let before = w.minigames.fishing_points;
-        w.fishing_exchange_pad(0x40); // Cross
-        assert!(w.minigames.fishing_points < before, "Cross buys");
+        use legaia_engine_fishing::fishing::PrizeScreen;
+        let screen = |w: &World| w.minigames.fishing_exchange_dialog.screen;
+        w.fishing_exchange_pad(0x40); // Cross: the quantity picker
+        assert_eq!(screen(&w), PrizeScreen::Quantity);
+        assert_eq!(
+            w.minigames.fishing_points, before,
+            "the picker spends nothing"
+        );
+        w.fishing_exchange_pad(0x2000); // Right: two
+        assert_eq!(w.minigames.fishing_exchange_dialog.qty, 2);
+        w.fishing_exchange_pad(0x40); // Cross: the confirm, on No
+        assert_eq!(screen(&w), PrizeScreen::Confirm);
+        w.fishing_exchange_pad(0x40); // Cross on No: back to the picker
+        assert_eq!(screen(&w), PrizeScreen::Quantity);
+        w.fishing_exchange_pad(0x40);
+        w.fishing_exchange_pad(0x1000); // Up: Yes
+        w.fishing_exchange_pad(0x40); // Cross on Yes buys two
+        assert_eq!(screen(&w), PrizeScreen::List);
+        let price = venue(0).rows[start].price as i32;
+        assert_eq!(before - w.minigames.fishing_points, 2 * price, "two bought");
         assert!(w.minigames.fishing_exchange.is_some());
         w.fishing_exchange_pad(0x20); // Circle
         assert!(w.minigames.fishing_exchange.is_none(), "Circle closes");

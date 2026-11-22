@@ -607,16 +607,32 @@ impl EquipSession {
                 ) {
                     return info.is_goods_candidate(id);
                 }
-                // Must be equippable by the active character (the `+6` mask).
-                if !info.can_equip(id, self.active_party_slot) {
+                // The four armament rows are retail's own filter
+                // (`0x80031574..0x800315C8`): item class `1` (only those
+                // ids carry an entry), the `+7` category equal to the row's,
+                // and the `+6` mask against the character's bit
+                // (`0x8007B48C` = `01 02 04`). The engine-only Hand Guard
+                // slot has no retail row, hence no category, and so no
+                // candidates.
+                let Some(category) = EquipSlot::from_index(slot)
+                    .and_then(engine_slot_disc_category)
+                    .map(|c| slot_map::slot_bits_of_category(c) >> 5)
+                else {
                     return false;
-                }
-                // For the four UI slots the disc `+7` byte resolves cleanly,
-                // require a category match; the ambiguous head/hand slots are
-                // mask-gated only (the disc cannot separate them).
-                match EquipSlot::from_index(slot).and_then(engine_slot_disc_category) {
-                    Some(wanted) => info.category(id) == Some(wanted),
-                    None => true,
+                };
+                let char_bit = [1u8, 2, 4]
+                    .get(usize::from(self.active_party_slot))
+                    .copied()
+                    .unwrap_or(0);
+                match info.entry(id) {
+                    Some(e) => crate::menu_list_rows::armament_candidate_accepts(
+                        1,
+                        slot_map::slot_bits_of_category(e.category),
+                        e.mask,
+                        category,
+                        char_bit,
+                    ),
+                    None => false,
                 }
             }
             // Legacy placeholder: the item id encodes its target slot in the

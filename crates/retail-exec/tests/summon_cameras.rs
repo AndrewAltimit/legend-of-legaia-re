@@ -381,7 +381,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     let overlay = disc.read_entry(898).expect("PROT 0898");
     let mut failures = Vec::new();
     let all: Vec<(u32, u32, u8)> = BODIES.iter().chain(&PACED).copied().collect();
-    for (entry, va, code) in all {
+    // Each module runs twice: on the full row, then with the second monster
+    // seat fallen and faded (`+0x14C = 0`, `+0x04 = 0`), which the row walks
+    // (settles, sweeps, shows) skip or wait past.
+    let runs = all.iter().flat_map(|&b| [(b, false), (b, true)]);
+    for ((entry, va, code), fallen) in runs {
         let module = disc.read_entry(entry as usize).expect("module");
         let action = action_of(entry);
         let profile = cam::module_profile(entry).expect("directed");
@@ -442,6 +446,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         });
         {
             seed(&mut cpu, &module, action, code);
+            if fallen {
+                let a = ACTOR + (VICTIM + 1) * STRIDE;
+                cpu.mem.wr16(a + 0x14C, 0);
+                cpu.mem.wr32(a + 4, 0);
+            }
             let mut st = ModuleCamState {
                 lead_roster: 1,
                 opens_pass: true,
@@ -463,6 +472,18 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             let mut bad = 0usize;
             let mut finished = false;
             let mut path = Vec::new();
+            // PROT 0922's seat writes (`World::apply_puera_writes`, through
+            // `BattleArmDrivers`) on a world seated from the table: the
+            // monster row and the creature, synced off retail before each
+            // pass and compared after it.
+            let mut puera = (entry == 922).then(|| {
+                let mut w = legaia_engine_core::world::World::new();
+                w.load_party(legaia_save::Party::zeroed(3));
+                w.enter_battle(3, MONSTERS as u8);
+                w.casting.summon_actor_slot = Some(CREATURE as u8);
+                w
+            });
+            let mut puera_compared = std::collections::BTreeSet::new();
             for pass in 0..20_000u32 {
                 // Every seat idle and far along its clip, its display pair on its
                 // ground pair as the draw pass leaves it.
@@ -611,6 +632,25 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 } else {
                     Vec::new()
                 };
+                // The seats as this pass finds them.
+                let puera_seats = [3u32, 4, CREATURE];
+                if let Some(w) = puera.as_mut() {
+                    for &s in &puera_seats {
+                        let a = ACTOR + s * STRIDE;
+                        let pos = trio(&mut cpu.mem, a + 0x34);
+                        let act = &mut w.actors[s as usize];
+                        act.active = true;
+                        act.battle.hp = cpu.mem.rd16(a + 0x14C);
+                        [
+                            act.move_state.world_x,
+                            act.move_state.world_y,
+                            act.move_state.world_z,
+                        ] = pos;
+                        act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
+                        act.battle.render_flag = cpu.mem.rd8(a + 0x21C);
+                        act.battle.render_color = cpu.mem.rd32(a + 4);
+                    }
+                }
                 let stop = cpu.call(va, &[]);
                 if stop != Stop::Returned {
                     failures.push(format!("PROT {entry:04} pass {pass} arm {phase}: {stop:?}"));
@@ -648,6 +688,42 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     arm.jump.unwrap_or(phase.wrapping_add(1))
                 };
                 let mut diffs = std::mem::take(&mut diffs_early);
+                // The arms whose seat writes `apply_puera_writes` carries; the
+                // creature's arm-3 seat and arm-4 slide are the seat-arm
+                // tables' (`module_seat_arm`), run per engine tick.
+                if let Some(w) = puera
+                    .as_mut()
+                    .filter(|_| matches!(phase, 0 | 11 | 12 | 18 | 19 | 24))
+                {
+                    use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+                    w.puera_writes(phase, !held, countdown_before, MONSTERS as u8);
+                    for &s in &puera_seats {
+                        let a = ACTOR + s * STRIDE;
+                        let retail_seat = (
+                            trio(&mut cpu.mem, a + 0x34),
+                            cpu.mem.rd16(a + 0x46) & 0xFFF,
+                            cpu.mem.rd8(a + 0x21C),
+                            cpu.mem.rd32(a + 4),
+                        );
+                        let act = &w.actors[s as usize];
+                        let port_seat = (
+                            [
+                                act.move_state.world_x,
+                                act.move_state.world_y,
+                                act.move_state.world_z,
+                            ],
+                            act.battle.facing_angle & 0xFFF,
+                            act.battle.render_flag,
+                            act.battle.render_color,
+                        );
+                        if retail_seat != port_seat {
+                            diffs.push(format!(
+                                "seat {s} retail {retail_seat:x?} port {port_seat:x?}"
+                            ));
+                        }
+                        puera_compared.insert((phase, s == CREATURE, held));
+                    }
+                }
                 // PROT 0922's creature writes, which the host carries out off
                 // the director's state: the staged clip `+0x1DA`, the rate
                 // `+0x21D` and the node cursor `+0x68` (arms 5, 7..10, 18).
@@ -789,7 +865,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     bad += 1;
                     if bad <= 12 {
                         failures.push(format!(
-                            "PROT {entry:04} target {code} pass {pass} arm {phase:#x}: {}",
+                            "PROT {entry:04} target {code} fallen {fallen} pass {pass} arm {phase:#x}: {}",
                             diffs.join("; ")
                         ));
                     }
@@ -797,6 +873,19 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 if !busy {
                     finished = true;
                     break;
+                }
+            }
+            // `apply_puera_writes` compared on every arm it carries, passed,
+            // and on the counting passes of the arms that write while held.
+            let want = [0u8, 11, 12, 18, 19, 24]
+                .map(|p| (p, false))
+                .into_iter()
+                .chain([(11, true), (12, true), (19, true)]);
+            for (p, h) in want {
+                if entry == 922 && !puera_compared.contains(&(p, true, h)) {
+                    failures.push(format!(
+                        "PROT 0922: arm {p} (held {h}) seat writes not compared"
+                    ));
                 }
             }
             if entry == 922 && (crystal_landings == 0 || staged_writes < 5) {
@@ -813,13 +902,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 eprintln!("PROT {entry:04}: retail rolls the camera up to {max_roll}");
             }
             eprintln!(
-                "PROT {entry:04} target {code}: {bad} differing passes, arms {:x?}{}",
+                "PROT {entry:04} target {code} fallen {fallen}: {bad} differing passes, arms {:x?}{}",
                 path,
                 if finished { " Done" } else { "" }
             );
             if !finished {
                 failures.push(format!(
-                    "PROT {entry:04} target {code}: no finish, stuck at arm {:#x}",
+                    "PROT {entry:04} target {code} fallen {fallen}: no finish, stuck at arm {:#x}",
                     cpu.mem.rd8(CTX + 0x279)
                 ));
             }

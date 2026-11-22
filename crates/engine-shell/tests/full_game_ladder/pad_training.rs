@@ -122,7 +122,16 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
             .with(std::cell::Cell::get)
             .saturating_sub(s.frames)
     };
-    while outings < GROW_OUTINGS && miracle_short(session) && frames_left(session) > reserve {
+    // The reserve also bounds each outing, not only the start of one: an
+    // outing is up to [`OUTING_LEGS`] legs, and `nilboa`'s legs between
+    // (95, 104) and the landmark at (10, 9) run 6700 frames each, so two
+    // outings begun with the reserve in hand spent the whole stretch
+    // (dealt stream 13, `nivora_late -> zora_castle`). The outing walks
+    // against a deadline `reserve` short of the stretch's, and running into
+    // it ends the growing, not the stretch.
+    let deadline = PAD_DEADLINE.with(std::cell::Cell::get);
+    PAD_DEADLINE.with(|d| d.set(deadline.saturating_sub(reserve)));
+    while outings < GROW_OUTINGS && miracle_short(session) && frames_left(session) > 0 {
         // Mended before each outing, as a player does between fights: the
         // bag first, then the casters' MP, all of it, and the bag's MP
         // restoratives when that runs out. At Koru's door the bag held no
@@ -149,7 +158,20 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
             break;
         }
     }
+    // Give the reserve back to whatever the deadline now reads: the fights
+    // on the way lent the deadline their own time (`fight_turn`).
+    PAD_DEADLINE.with(|d| d.set(d.get().saturating_add(deadline.min(reserve))));
     drop(growing);
+    let left = match left {
+        Err(e) if e.contains("pad frame budget") && wiped(session).is_none() => {
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!("    [grow] ended at the reserve: {e}");
+            }
+            let at = scene_name(session);
+            Ok((at != here).then_some(at))
+        }
+        other => other,
+    };
     if matches!(&left, Ok(None)) && walking(session) {
         pad_field_heal(session, 900);
     }
@@ -909,6 +931,10 @@ fn pad_train_from(
 /// rolls ([`pad_hunt_group_heal`]).
 const HEAL_HUNT_OUTINGS: usize = 8;
 
+/// Frames of walking the heal hunt may spend, apart from the stretch's own
+/// budget (a segment's worth, as each of [`HEAL_HUNT_OUTINGS`] is short).
+const HEAL_HUNT_FRAMES: u64 = PAD_SEGMENT_FRAMES;
+
 thread_local! {
     /// Scenes the continuous run has already hunted a group heal in.
     pub(super) static HEAL_HUNTED: std::cell::RefCell<BTreeSet<String>> =
@@ -984,6 +1010,18 @@ pub(super) fn pad_hunt_group_heal(session: &mut NativeSession) -> Result<Option<
         }
     }
     HEAL_HUNTED.with(|h| h.borrow_mut().insert(here.clone()));
+    // The hunt is the hand's own errand, as training is: it has its own
+    // time ([`HEAL_HUNT_FRAMES`]), the stretch gets back the walking budget
+    // it had when the hunt began, and only a wipe is the stretch's. A
+    // party low on MP that learned the heal on its first deroa outing then
+    // spent the rest of the rogue_tower stretch's budget walking the hunt's
+    // legs, and the stretch stalled in the hunt (default stream, 28/35).
+    let walk_left = PAD_DEADLINE
+        .with(std::cell::Cell::get)
+        .saturating_sub(session.frames);
+    let battle_left = PAD_BATTLE_LEFT.with(std::cell::Cell::get);
+    PAD_DEADLINE.with(|d| d.set(session.frames + HEAL_HUNT_FRAMES));
+    PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
     let mut left = Ok(None);
     let mut outings = 0;
     for _ in 0..HEAL_HUNT_OUTINGS {
@@ -1000,6 +1038,18 @@ pub(super) fn pad_hunt_group_heal(session: &mut NativeSession) -> Result<Option<
             break;
         }
     }
+    let left = match left {
+        Err(e) if !e.contains("party wiped") && wiped(session).is_none() => {
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!("    [heal-hunt] ended: {e}");
+            }
+            let at = scene_name(session);
+            Ok((at != here).then_some(at))
+        }
+        other => other,
+    };
+    PAD_DEADLINE.with(|d| d.set(session.frames + walk_left));
+    PAD_BATTLE_LEFT.with(|l| l.set(battle_left));
     if matches!(&left, Ok(None)) && walking(session) {
         pad_field_heal(session, 900);
     }

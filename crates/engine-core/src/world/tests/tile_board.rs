@@ -44,7 +44,10 @@ fn tile_board_step_cues_clips_and_facing() {
     assert_eq!(w.locomotion.player_clip, 3, "leader 0: 3 + 0 * 7");
     // Column + 1 walks X+: retail octant 6, the engine's quarter turn.
     assert_eq!(w.actors[0].move_state.render_26, 0x400);
-    while w.board.target.is_some() {
+    // The walk lands, a game frame later binds the idle clip (state 3), and
+    // the game frame after that runs the arrival pass.
+    while w.board.target.is_some() || w.board.sm == legaia_engine_minigames::tile_board::sm::ARRIVE
+    {
         w.set_pad(0);
         let _ = w.tick();
     }
@@ -173,11 +176,15 @@ fn plain_start_cell(w: &mut World) {
     }
 }
 
-/// Tick with no input until the walk-in (state 2 after the fade-in) lands.
+/// Tick with no input until the walk-in (state 2 after the fade-in) lands
+/// and its arrival pass has run.
 fn finish_walk_in(w: &mut World) {
     w.set_pad(0);
     let mut n = 0;
-    while w.board.target.is_some() {
+    // The walk lands, a game frame later binds the idle clip (state 3), and
+    // the game frame after that runs the arrival pass.
+    while w.board.target.is_some() || w.board.sm == legaia_engine_minigames::tile_board::sm::ARRIVE
+    {
         let _ = w.tick();
         n += 1;
         assert!(n < 400, "the walk-in reaches the start cell");

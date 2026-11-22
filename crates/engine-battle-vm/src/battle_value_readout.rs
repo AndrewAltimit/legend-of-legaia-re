@@ -732,8 +732,8 @@ pub struct ComboCluster {
 
 /// Right-aligned run of digit cells, `pitch` apart, the last cell's right
 /// edge at `right_x`.
-fn right_aligned_cells(value: u16, right_x: i32, y: i32, size: u32, pitch: i32) -> Vec<ValueCell> {
-    let digits = decimal_digits(value);
+fn right_aligned_cells(value: u32, right_x: i32, y: i32, size: u32, pitch: i32) -> Vec<ValueCell> {
+    let digits = cluster_digits(value);
     let n = digits.len() as i32;
     let left = right_x - (n - 1) * pitch - size as i32;
     digits
@@ -752,19 +752,43 @@ fn right_aligned_cells(value: u16, right_x: i32, y: i32, size: u32, pitch: i32) 
         .collect()
 }
 
+/// The decimal digits of a cluster value, most significant first, with no
+/// fixed width: the cluster's runs count their digits with a `* 10` loop over
+/// the whole word (`0x801E8A20..0x801E8A44` for the label's shift, the digit
+/// loops at `0x801E8D6C` and `0x801E9068`), not the five-digit split of
+/// [`decimal_digits`], so a string's total past `65535` draws in full.
+fn cluster_digits(mut value: u32) -> Vec<u8> {
+    let mut digits = Vec::with_capacity(10);
+    loop {
+        digits.push((value % 10) as u8);
+        value /= 10;
+        if value == 0 {
+            break;
+        }
+    }
+    digits.reverse();
+    digits
+}
+
 /// Lay the combo cluster out at its rest seats, shifted right by `slide`
 /// (`0` once settled, [`COMBO_SLIDE_IN_X`] on the first frame).
 ///
 /// `hits` is the landed-hit count (only drawn for [`ComboStyle::HitTotal`]);
-/// `total` the running damage the value row shows. Cells past `u16::MAX`
-/// saturate rather than wrap.
+/// `total` the running damage the value row shows, every digit of it.
+///
+/// Retail draws the cluster off the anchor widget's `(x, y)` (record 80,
+/// resting at [`COMBO_ANCHOR_REST_X`], [`COMBO_VALUE_Y`]): the word at
+/// `x + 0x50 - 0x10 * digits` (`DAMAGE` eight further left), `HIT` at
+/// `(x + 0x68, y - 0x10)`, the value's 16-px cells ending at `x + 0x88`, the
+/// count's 24-px cells ending at `(x + 0x60, y - 0x1A)`.
+///
+/// PORT: FUN_801E805C (`0x801E89D8..0x801E91B8`, the cluster's draw)
 pub fn combo_cluster(style: ComboStyle, hits: u16, total: u32, slide: i32) -> ComboCluster {
-    let total = total.min(u32::from(u16::MAX)) as u16;
     // The value row's label hugs the value: it moves one cell left per digit
     // past two (`shiny_refactor_gimard_levelup`'s `DAMAGE 233` sits its label
     // at `x = 192`, sixteen left of the two-digit seat), so the label's seat
     // constants name the two-digit layout.
-    let label_shift = -(decimal_digits(total).len() as i32 - 2) * COMBO_VALUE_CELL as i32;
+    let label_shift = -(cluster_digits(total).len() as i32 - 2) * COMBO_VALUE_CELL as i32;
     let mut out = ComboCluster::default();
     match style {
         ComboStyle::HitTotal => {
@@ -783,7 +807,7 @@ pub fn combo_cluster(style: ComboStyle, hits: u16, total: u32, slide: i32) -> Co
             // The count is the full-size 24-px cell, one gap apart like the
             // floating numeral's run.
             out.cells.extend(right_aligned_cells(
-                hits,
+                u32::from(hits),
                 COMBO_COUNT_RIGHT_X + slide,
                 COMBO_COUNT_Y,
                 u32::from(DIGIT_CELL),
@@ -842,7 +866,7 @@ pub fn multi_row_cluster(values: &[u32], slide: i32) -> ComboCluster {
         let wide = value >= 10_000;
         let cell = if wide { 12 } else { COMBO_VALUE_CELL };
         let mut cells = right_aligned_cells(
-            value,
+            u32::from(value),
             x + MULTI_ROW_RIGHT,
             MULTI_ROW_VALUE_Y + 2,
             cell,

@@ -48,6 +48,7 @@ impl PondSession {
             credit_stage: 0,
             tick_entry: PondPhase::Idle,
             exit_requested: false,
+            exit_fade: None,
             lure_gate_armed: true,
             catch_banner: 0,
             break_banner: 0,
@@ -146,6 +147,34 @@ impl PondSession {
     #[doc(hidden)]
     pub fn seat_repeat_countdown(&mut self, countdown: i32) {
         self.reel_repeat_in = countdown;
+    }
+
+    /// Seat the session on the line-break screen (state `0x28`) with its
+    /// banner timer (`DAT_801D9164`) at `banner`, as a harness standing the
+    /// pond on a retail state does.
+    #[doc(hidden)]
+    pub fn seat_line_break(&mut self, banner: i32) {
+        self.phase = PondPhase::Snapped;
+        self.break_banner = banner;
+    }
+
+    /// Seat the exit fade (state `200`) at counter `counter`
+    /// (`DAT_801D90C0`), as a harness standing the pond on a retail state.
+    #[doc(hidden)]
+    pub fn seat_exit_fade(&mut self, counter: i32) {
+        self.exit_fade = Some(counter);
+    }
+
+    /// The exit fade's counter (`DAT_801D90C0`), `None` before the exit.
+    #[doc(hidden)]
+    pub fn exit_fade_counter(&self) -> Option<i32> {
+        self.exit_fade
+    }
+
+    /// The line-break banner timer (`DAT_801D9164`).
+    #[doc(hidden)]
+    pub fn line_break_banner(&self) -> i32 {
+        self.break_banner
     }
 
     /// The band check's strike countdown (`DAT_801D90EC`).
@@ -667,6 +696,11 @@ impl PondSession {
     /// ([`CAST_POWER_STEP`]).
     pub fn tick(&mut self, input: PondInput, frame_step: i32, cast_step: i32) {
         self.vsync_step = frame_step.max(1);
+        // State `200` owns the frame once the exit started.
+        if self.exit_fade.is_some() {
+            self.exit_fade_step(frame_step.max(1));
+            return;
+        }
         // The hub menu owns the frame while it is up: retail's states
         // `0x64..=0x78` run instead of the pond's (`crate::fishing_hub`).
         if self.hub.is_some() {
@@ -920,7 +954,7 @@ impl PondSession {
                 // PORT: FUN_801cf3bc (case 0x96: the no-lure screen's exit edge)
                 // `_DAT_8007B874 & 0xF0` moves to state `200`, the exit fade.
                 if input.face_edge {
-                    self.exit_requested = true;
+                    self.start_exit_fade();
                 }
             }
             PondPhase::Snapped => {
@@ -985,10 +1019,56 @@ impl PondSession {
         self.lure_gate_armed = false;
     }
 
-    /// Whether the no-lure screen took its exit edge since the last call
-    /// (state `200`): the host leaves the venue as its own quit does.
+    /// Whether the venue's exit fade (state `200`) ran out since the last
+    /// call: the host leaves the venue as its own quit does.
     pub fn take_exit_request(&mut self) -> bool {
         std::mem::take(&mut self.exit_requested)
+    }
+
+    /// Enter state `200`, the venue's exit: the hub's row 4
+    /// (`0x801D06A8..0x801D06B0`) or the no-lure screen's edge
+    /// (`0x801D00E4..0x801D00EC`). The fade counter `DAT_801D90C0` is
+    /// overlay data nothing else writes, `0` as the venue loads.
+    pub fn start_exit_fade(&mut self) {
+        self.exit_fade.get_or_insert(0);
+    }
+
+    /// One game frame of state `200` (`0x801D0138..0x801D019C`): the counter
+    /// gains the frame step and the grey level is eight times it; once that
+    /// reaches `0x100` the level holds at `0xFF` and, the XA drive word
+    /// `0x8007BC20` reading idle, the venue leaves. The port's venue sounds
+    /// no XA, so the word is always idle; the hub's row 4 also clears it on
+    /// the way in (`0x801D069C`).
+    ///
+    /// PORT: FUN_801cf3bc (case 0xc8: the exit fade, 0x801D0138..0x801D019C)
+    fn exit_fade_step(&mut self, frame_step: i32) {
+        let c = self.exit_fade.get_or_insert(0);
+        *c += frame_step;
+        if *c * 8 >= 0x100 {
+            self.exit_requested = true;
+        }
+    }
+
+    /// The exit fade's grey level this frame (`FUN_80024EE4(0, 2, grey)`, a
+    /// subtractive wash), `None` before the exit.
+    pub fn exit_fade_level(&self) -> Option<u8> {
+        self.exit_fade.map(|c| {
+            if c * 8 >= 0x100 {
+                0xFF
+            } else {
+                (c * 8).max(0) as u8
+            }
+        })
+    }
+
+    /// State `200` re-runs the lure gate every frame (`jal 0x801D712C` at
+    /// `0x801D00F0`): the equipped lure re-points at one the bag holds; when
+    /// none is left the no-lure line stays drawn under the fade
+    /// ([`crate::fishing_hub::FishingHubText::no_lure`]).
+    ///
+    /// PORT: FUN_801cf3bc (case 0xc8: the lure gate and its line, 0x801D00F0..0x801D0134)
+    pub fn exit_fade_lure_gate(&mut self, count_of: impl FnMut(u32) -> i32) -> bool {
+        super::select_owned_rod(&mut self.lure, count_of)
     }
 
     /// Back to the cast loop (state `10`): the working set of the cast goes,

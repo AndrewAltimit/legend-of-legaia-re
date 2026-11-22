@@ -103,6 +103,7 @@ fn the_board_install_matches_retail() {
     let mut arrivals = [0usize; 3];
     let mut walks = [0usize; 4];
     let mut prompts = [0usize; 3];
+    let mut walked = 0usize;
     // The two cue producers state 4 calls: the push (`FUN_80035B50`, the
     // step) and the overwrite (`FUN_80035BD0`, the bonk).
     let cues = Rc::new(RefCell::new(Vec::<u32>::new()));
@@ -457,7 +458,75 @@ fn the_board_install_matches_retail() {
                 _ => 2,
             }] += 1;
         }
+
+        // The walker's state 2 (`0x801EFA88`) toward a committed target from
+        // a seat around it, one game frame at step 2 against two vsync ticks
+        // of `World::tile_board_walk_step` (the port walks the board on the
+        // vsync, `TILE / 8` a tick): the position each frame, and the facing
+        // the first tick writes off the frame's own delta (each axis clamped
+        // to `+-0x20`, the octant of the signs, `+0x26 = octant << 9`). On
+        // the frame retail finds no delta left it binds the idle clip and
+        // steps to the arrival `3`, as the port does on that game frame (its
+        // second tick of the frame).
+        {
+            use legaia_engine_core::world::field_test_drivers::FieldTestDrivers;
+            let target = (g.below(0x800) as i32, g.below(0x800) as i32);
+            let start = (
+                target.0 + g.below(0x140) as i32 - 0xA0,
+                target.1 + g.below(0x140) as i32 - 0xA0,
+            );
+            let table = cpu.mem.rd32(TABLE_PTR);
+            let lead = cpu.mem.rd32(table);
+            cpu.mem.wr16(lead + 0x14, start.0 as u16);
+            cpu.mem.wr16(lead + 0x18, start.1 as u16);
+            cpu.mem.wr32(WALK_IN, target.0 as u32);
+            cpu.mem.wr32(WALK_IN + 4, target.1 as u32);
+            cpu.mem.wr16(ACTOR + 0x54, 2);
+            cpu.mem.wr8(FRAME_STEP, 2);
+            w.board.target = Some(target);
+            w.board.sm = sm::WALK;
+            let slot = 0usize;
+            w.actors[slot].move_state.world_x = start.0 as i16;
+            w.actors[slot].move_state.world_z = start.1 as i16;
+            let mut frame = 0;
+            loop {
+                let before = (
+                    cpu.mem.rd16(lead + 0x14) as i16,
+                    cpu.mem.rd16(lead + 0x18) as i16,
+                );
+                assert_eq!(cpu.call(WALK_SM, &[ACTOR]), Stop::Returned, "{ctx}");
+                let c = format!("{ctx} walk-in from {start:?} to {target:?} frame {frame}");
+                let state = cpu.mem.rd16(ACTOR + 0x54);
+                let pos = (
+                    cpu.mem.rd16(lead + 0x14) as i16,
+                    cpu.mem.rd16(lead + 0x18) as i16,
+                );
+                w.tile_board_walk(slot, false);
+                let facing = w.actors[slot].move_state.render_26;
+                w.tile_board_walk(slot, true);
+                if state == 3 {
+                    assert_eq!(pos, before, "{c}: the arrival frame holds");
+                    assert_eq!((i32::from(pos.0), i32::from(pos.1)), target, "{c}: arrived");
+                    assert_eq!(
+                        (w.board.target, w.board.sm),
+                        (None, sm::ARRIVE),
+                        "{c}: the port binds on the same game frame"
+                    );
+                    walked += 1;
+                    break;
+                }
+                assert_eq!(state, 2, "{c}");
+                assert_eq!(w.board.sm, sm::WALK, "{c}: the port still walks");
+                let ms = &w.actors[slot].move_state;
+                assert_eq!((ms.world_x, ms.world_z), pos, "{c}: the position");
+                let retail_facing = ((cpu.mem.rd16(lead + 0x26) + 0x800) & 0xFFF) as i16;
+                assert_eq!(facing, retail_facing, "{c}: the facing");
+                frame += 1;
+                assert!(frame < 64, "{c}: no arrival");
+            }
+        }
     }
+    assert!(walked > 150, "walks in {walked}");
     assert!(arrivals.iter().all(|&n| n > 20), "arrivals {arrivals:?}");
     assert!(walks.iter().all(|&n| n > 20), "walks {walks:?}");
     assert!(prompts.iter().all(|&n| n > 20), "prompts {prompts:?}");

@@ -146,25 +146,31 @@ impl World {
     /// PROT 0956's `0x71` arm 3 walks them (`0x801F7C2C..0x801F7DA4`,
     /// [`legaia_engine_cast::cast_module_camera::ModuleCamState::target_unsettled`]):
     /// a party seat idle, or on clip `8` once down; a monster seat idle, or
-    /// faded out (`+0x04` zero) once dead.
-    pub(in crate::world::battle::cast_band) fn capture_target_settled(
-        &self,
-        caster_slot: u8,
-    ) -> bool {
+    /// faded out (`+0x04` zero) once dead. A code below `8` names one seat
+    /// (`sltiu s1,s7,8` at `0x801F72F0`), `8` the `ctx[+0]` party seats and
+    /// any other the `ctx[+1]` monster seats from seat `3`
+    /// (`0x801F7D2C..0x801F7D3C`): the summon seat and any host-side extra
+    /// past the seated row are not walked.
+    ///
+    /// PORT: overlay_cast_water_hazard_0956_801f7298 (PROT 0956; the settle walk 0x801F7C2C..0x801F7DA4)
+    pub(in crate::world) fn capture_target_settled(&self, caster_slot: u8) -> bool {
         let map = self.cast_seat_map();
-        let pc = usize::from(self.party.party_count);
+        let ctx = self.cast_module_ctx();
         let monster = |slot: usize| match self.actors.get(slot) {
             Some(a) if a.battle.hp == 0 => a.battle.render_color == 0 || !a.active,
             _ => self.chain_seat_settled(slot, false),
         };
         let code = self.cast_view(caster_slot).target_code;
+        let first = legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT;
         match code {
             0..=2 => map
                 .engine(code)
                 .is_none_or(|e| self.chain_seat_settled(usize::from(e), false)),
             3..=7 => map.engine(code).is_none_or(|e| monster(usize::from(e))),
-            8 => (0..pc).all(|s| self.chain_seat_settled(s, false)),
-            _ => (pc..self.actors.len()).all(monster),
+            8 => (0..usize::from(ctx.party_count)).all(|s| self.chain_seat_settled(s, false)),
+            _ => (first..first + ctx.monster_count)
+                .filter_map(|r| map.engine(r))
+                .all(|e| monster(usize::from(e))),
         }
     }
 

@@ -146,6 +146,7 @@
   </figure>
   <p>Two library states pin both sides. A Somersault capture shows the cluster gliding in beside the third hit&rsquo;s <code>15</code>, twelve frames into its sixteen. A Muscle Dome capture holds three swings&rsquo; <code>430</code> in the Skeleton&rsquo;s bank at full HP, the total word at zero and no cluster up as the Hyper Art commits. The port counts a melee hit hidden and opens (or restarts) the cluster on the hit event that applies the bank; a cast hit opens it as it lands.</p>
   <p>A cast can hold the flag down the same way. Megaton Press, Plasma Strike, the summon pre-hits, Swordie&rsquo;s slashes, and the four split hits of Hyper Lightning and Spore Gas each store zero into the flag on every hit but their last, so their numerals go up bare and the cluster slides in afterwards already reading the full count. The hold is read a frame late, so the port raises it as such a cast is armed rather than on its first hit, whose numeral would otherwise open the cluster early.</p>
+  <p>The cluster counts its total&rsquo;s digits over the whole 32-bit word, so a long string past <code>65535</code> reads in full; the word slides one cell left per digit, and a count of one wears <code>DAMAGE</code> instead of <code>HIT</code> / <code>TOTAL</code>.</p>
 </section>
 
 <section class="doc-section" id="value-rows" data-doc="-">

@@ -386,6 +386,15 @@ walk SM off op `0x49` sub-5. The play-window's `LEGAIA_TILE_BOARD_DEMO=1`
 synthesizes a retail-shaped install near the player, since no scene provides
 one.
 
+The port runs the board on the vsync: the walk moves `TILE / 8` a tick, which
+at the field's frame step `2` is retail's `+-0x20` a game frame, and the
+retail kernel differential holds state 2's position and facing to the walker
+frame by frame at that step. The arrival keeps retail's latency on the game-frame
+grid: state 2 finds the delta spent on the game frame after the one that closed
+on the centre, binds the idle clip and steps to `3` (`TileBoardState::walk_spent`
+carries the closing frame across the vsyncs between), and the arrival pass runs
+on the game frame after that, falling into state 4.
+
 ## Evidence
 
 - Install: field-VM op `0x49` in `ghidra/scripts/funcs/overlay_0897_801de840.txt`

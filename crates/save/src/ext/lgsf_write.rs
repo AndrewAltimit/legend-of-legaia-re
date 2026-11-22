@@ -234,6 +234,20 @@ impl SaveFile {
             out.extend_from_slice(&tally.escapes.to_le_bytes());
         }
 
+        // Optional LGXH block: an armed escape countdown.
+        if let Some(c) = self.ext_v2.escape_clock.filter(|c| c.duration != 0) {
+            out.extend_from_slice(&SAVE_FILE_EXTH_MAGIC);
+            out.extend_from_slice(&16u32.to_le_bytes());
+            for w in [
+                c.remaining as u32,
+                c.duration as u32,
+                c.threshold as u32,
+                c.flags,
+            ] {
+                out.extend_from_slice(&w.to_le_bytes());
+            }
+        }
+
         out
     }
 }

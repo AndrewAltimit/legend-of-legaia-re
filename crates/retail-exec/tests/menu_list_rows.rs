@@ -1414,6 +1414,134 @@ fn the_armament_candidate_lists_build_the_rows_retail_builds() {
     assert!(sorted > 1000, "{sorted}");
 }
 
+/// The equip screen's four armament candidate lists as the **session**
+/// builds them (`EquipSession::items_for_slot` with the disc restrictions
+/// installed, the host path) against `FUN_80030628`'s armament arms over the
+/// disc's own item and equipment tables (`0x80074368`, `0x80074F68`) and the
+/// overlay favour term `FUN_801DD0C0` live from PROT 0899: random bags,
+/// characters and worn bytes. Filter (class `1`, `+7` category, `+6` mask
+/// against `0x8007B48C[char]`), walk order and sort compare row by row as
+/// item ids.
+#[test]
+fn the_equip_session_lists_the_armament_rows_retail_lists() {
+    differential!(scus(WINDOW_BUILD));
+    use legaia_engine_menus::equip_session::{
+        EquipSession, REMOVE_ROW_ID, engine_equip_from_record,
+    };
+    use legaia_engine_menus::equipment::{DiscEquipInfo, equip_modifier_table_from_disc};
+    use legaia_engine_menus::item_bag::ItemBag;
+    use legaia_engine_menus::menu_item_category::parse_category_table;
+    use legaia_game_tables::equip_stats::EquipStatTable;
+    let (Some(mut cpu), Some(disc), Some(scus)) =
+        (scus_cpu(), crate::common::disc(), crate::common::scus())
+    else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const CATEGORY: u32 = 0x8007_B484;
+    const WEAPON_SLOT: u32 = 0x8007_B42C;
+    let overlay = disc.read_entry_footprint(899).expect("PROT 0899");
+    cpu.mem.load(0x801C_E818, &overlay);
+    let favour = parse_category_table(&overlay).expect("category table");
+    let stats = EquipStatTable::from_scus(&scus).expect("equipment");
+    let table = equip_modifier_table_from_disc(&stats);
+    let info = DiscEquipInfo::from_disc(&stats);
+    cpu.stub(BAG_WINDOW, 0);
+    grant_lists(&mut cpu);
+    cpu.mem.wr32(GRANT, 1);
+    // Content row -> the engine slot showing the same category.
+    let slot_of = |category: u16| match category {
+        0 => 2u8, // body
+        1 => 1,   // head
+        2 => 0,   // weapon
+        _ => 4,   // footwear
+    };
+    let equipment_ids: Vec<u8> = (1..=255u8).filter(|&id| info.is_equipment(id)).collect();
+    let mut rng = Rng(0x4152_4D45);
+    let (mut sorted, mut refused) = (0, 0);
+    for case in 0..4000 {
+        let who = rng.below(3);
+        let mut slots = vec![(0u8, 0u8); 256];
+        for _ in 0..rng.below(48) {
+            let at = rng.below(256) as usize;
+            let id = if rng.below(4) == 0 {
+                1 + rng.below(255) as u8
+            } else {
+                equipment_ids[rng.below(equipment_ids.len() as u32) as usize]
+            };
+            slots[at] = (id, 1 + rng.below(3) as u8);
+        }
+        let mut bytes = [0u8; 8];
+        for b in bytes.iter_mut() {
+            *b = match rng.below(3) {
+                0 => 0,
+                _ => equipment_ids[rng.below(equipment_ids.len() as u32) as usize],
+            };
+        }
+        let session = EquipSession::new(
+            legaia_engine_battle::battle_stats::StatRecord {
+                equip: engine_equip_from_record(bytes, who as u8),
+                ..Default::default()
+            },
+            ItemBag::from_slots(&slots),
+            table.clone(),
+            Default::default(),
+            Vec::new(),
+        )
+        .with_weapon_category(favour.clone())
+        .with_restrictions(info.clone(), who as u8);
+        let (start, end) = session.inventory().window_bounds();
+        cpu.mem.wr16(GP + 0x2D2, start as u16);
+        cpu.mem.wr16(GP + 0x2D4, end as u16);
+        for (k, (id, n)) in slots.iter().enumerate() {
+            cpu.mem.wr8(BAG + 2 * k as u32, *id);
+            cpu.mem.wr8(BAG + 2 * k as u32 + 1, *n);
+        }
+        cpu.mem.wr32(GP + 0x874, who);
+        for k in 0..8 {
+            cpu.mem.wr8(equipment(who) + k, bytes[k as usize]);
+        }
+        let row = rng.below(4);
+        let content = 0x15 + row as u8;
+        let category = cpu.mem.rd16(CATEGORY + 2 * row);
+        let _ = cpu.mem.rd16(WEAPON_SLOT + 2 * who);
+        cpu.mem.wr8(NODE + 0x1C, content);
+        for k in 0..0x120 {
+            cpu.mem.wr16(LIST_BUF + 0x28 + 2 * k, 0xDEAD);
+        }
+        assert_eq!(
+            cpu.call(WINDOW_BUILD, &[NODE]),
+            Stop::Returned,
+            "case {case}"
+        );
+        let mut got = Vec::new();
+        for k in 0..0x120 {
+            let w = cpu.mem.rd16(LIST_BUF + 0x28 + 2 * k);
+            if w == 0xDEAD {
+                break;
+            }
+            got.push(match w & 0xF000 {
+                0x4000 => REMOVE_ROW_ID,
+                0x7000 => (w & 0x3FF) as u8,
+                _ => slots[usize::from(w & 0x3FF)].0,
+            });
+        }
+        let slot = slot_of(category);
+        let want: Vec<u8> = session.items_for_slot(slot).iter().map(|i| i.id).collect();
+        assert_eq!(
+            got, want,
+            "case {case}: char {who} content {content:#x} slot {slot}"
+        );
+        sorted += usize::from(want.len() > 3);
+        refused += usize::from(
+            slots
+                .iter()
+                .any(|&(id, _)| id != 0 && info.is_equipment(id) && !want.contains(&id)),
+        );
+    }
+    assert!(sorted > 1000 && refused > 1000, "{sorted} {refused}");
+}
+
 /// `FUN_80030628`'s spell list (content ids `5` / `0x20`): in the field
 /// (`gp+0x85C` = 0, `0x80031118..0x80031260`) against the Magic screen's
 /// `SpellMenuSession::current_spell_rows`, in battle (`gp+0x85C` = 1,
@@ -1638,4 +1766,462 @@ fn the_list_kernel_confirms_and_cancels_as_the_items_screen_does() {
         }] += 1;
     }
     assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
+}
+
+const ICON_DRAW: u32 = 0x8002_C488;
+const CELL_DRAW: u32 = 0x8003_C11C;
+const GLYPH_PITCH: u32 = 0x8007_3F20;
+const BLINK: u32 = 0x8008_4570;
+
+/// A hook's log.
+type Calls<T> = Rc<RefCell<Vec<T>>>;
+
+/// One `FUN_80036888` string draw: pointer, pen, ink and glyph pitch byte.
+type StringCall = (u32, i32, i32, u8, u8);
+
+/// [`ItemRowTables`] over the item and equipment tables as the executable
+/// holds them.
+struct ScusRowTables {
+    items: Vec<[u8; 4]>,
+    equip_flags: Vec<u8>,
+}
+
+impl ScusRowTables {
+    fn read(cpu: &mut Cpu) -> Self {
+        let items = (0..256u32)
+            .map(|id| {
+                let r = ITEMS + id * 12;
+                [0, 1, 2, 3].map(|k| cpu.mem.rd8(r + k))
+            })
+            .collect();
+        let equip_flags = (0..256u32)
+            .map(|s| cpu.mem.rd8(EQUIP + s * 8 + 7))
+            .collect();
+        Self { items, equip_flags }
+    }
+}
+
+impl legaia_engine_menus::menu_list_rows::ItemRowTables for ScusRowTables {
+    fn kind(&self, id: u8) -> u8 {
+        self.items[usize::from(id)][0]
+    }
+    fn subtype(&self, id: u8) -> u8 {
+        self.items[usize::from(id)][1]
+    }
+    fn price(&self, id: u8) -> u16 {
+        let r = self.items[usize::from(id)];
+        u16::from_le_bytes([r[2], r[3]])
+    }
+    fn effect_flags(&self, _: u8) -> u8 {
+        0
+    }
+    fn effect_marker(&self, _: u8) -> u8 {
+        0
+    }
+    fn equip_flags(&self, subtype: u8) -> u8 {
+        self.equip_flags[usize::from(subtype)]
+    }
+}
+
+/// The list kernel `FUN_80032A44`'s per-row arms (`0x80033050..0x80033778`)
+/// against `list_row_draws`: random pages of rows of every class nibble, dim
+/// and alt bits, a random bag (ids and counts) over the executable's item
+/// and equipment tables, the kernel in every list mode but the pad-driven
+/// one, from a random staged ink. The pictograms (`FUN_8002C488`), the
+/// strings (`FUN_80036888`, with the ink and glyph pitch they draw under)
+/// and the number cells (`FUN_8003C11C`, against `decimal_field_cells`) are
+/// compared whole, row by row.
+#[test]
+fn the_list_kernel_draws_each_row_class_as_the_port_lays_it() {
+    differential!(scus(LIST_DRAW));
+    use legaia_engine_menus::menu_list_rows::{RowNameSource, list_row_draws};
+    use legaia_engine_ui::menu::decimal_field::decimal_field_cells;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const LIST: u32 = 0x8013_1000;
+    const FAKE: u32 = 0x8140_0000;
+    cpu.stub_outside = Some((LIST_DRAW, 0x8003_37B0));
+    cpu.hook(ROW_NAME, |r, _| r.r[V0] = FAKE + (r.r[A0] & 0xFFFF));
+    let strings: Calls<StringCall> = Rc::default();
+    let icons: Calls<(i32, i32, u16)> = Rc::default();
+    let cells: Calls<(i32, i32, u16, u16)> = Rc::default();
+    let s = strings.clone();
+    cpu.hook(DRAW_STRING, move |r, m| {
+        let y = m.rd32(r.r[psx_retail_exec::SP] + 0x10) as i32;
+        s.borrow_mut().push((
+            r.r[A0],
+            r.r[A3] as i32,
+            y,
+            m.rd32(GP + 0x13C) as u8,
+            m.rd8(GLYPH_PITCH),
+        ));
+    });
+    let i = icons.clone();
+    cpu.hook(ICON_DRAW, move |r, _| {
+        i.borrow_mut()
+            .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2] as u16));
+    });
+    let c = cells.clone();
+    cpu.hook(CELL_DRAW, move |r, m| {
+        c.borrow_mut().push((
+            m.rd16(r.r[A0]) as i16 as i32,
+            m.rd16(r.r[A0] + 2) as i16 as i32,
+            m.rd16(r.r[A1]),
+            r.r[A2] as u16,
+        ));
+    });
+    let tables = ScusRowTables::read(&mut cpu);
+    let pitch = cpu.mem.rd8(GLYPH_PITCH);
+    let (wx, wy, w) = (40i32, 30i32, 200i32);
+    let mut rng = Rng(0x524F_5753);
+    let mut seen = [0usize; 16];
+    for case in 0..3000 {
+        let bag: Vec<(u8, u8)> = (0..256)
+            .map(|_| {
+                let count = match rng.below(4) {
+                    0 => 0,
+                    1 => rng.below(10) as u8,
+                    2 => [10u8, 40, 99, 100, 200, 255][rng.below(6) as usize],
+                    _ => rng.below(256) as u8,
+                };
+                (rng.below(256) as u8, count)
+            })
+            .collect();
+        for (k, (id, n)) in bag.iter().enumerate() {
+            cpu.mem.wr8(BAG + 2 * k as u32, *id);
+            cpu.mem.wr8(BAG + 2 * k as u32 + 1, *n);
+        }
+        let count = 1 + rng.below(30) as u16;
+        let visible = 1 + rng.below(10) as u16;
+        let top = rng.below(u32::from(count)) as u16;
+        let h = 14 * i32::from(visible) + 4 + rng.below(6) as i32;
+        let rows: Vec<u16> = (0..count)
+            .map(|_| {
+                let class = (rng.below(12) as u16) << 12;
+                let bits = [0u16, 0x800, 0x400, 0xC00][rng.below(4) as usize];
+                class | bits | rng.below(256) as u16
+            })
+            .collect();
+        let mode = [0u32, 2, 4, 1][rng.below(4) as usize];
+        let ink_in = rng.below(8) as u8;
+        cpu.mem.wr32(GP + 0x87C, mode);
+        cpu.mem.wr32(GP + 0x13C, u32::from(ink_in));
+        cpu.mem.wr32(GP + 0x15C, 0);
+        cpu.mem.wr32(BLINK, 0);
+        cpu.mem.wr32(NODE + 0x18, LIST);
+        // Content `0x24` is outside the navigable table: mode 1 draws only.
+        cpu.mem.wr8(NODE + 0x1C, 0x24);
+        for (o, v) in [(0xA, wx), (0xC, wy), (0xE, w), (0x10, h)] {
+            cpu.mem.wr16(NODE + o, v as u16);
+        }
+        cpu.mem.wr16(LIST, top);
+        cpu.mem.wr16(LIST + 2, visible);
+        cpu.mem.wr16(LIST + 4, count);
+        cpu.mem.wr16(LIST + 6, top);
+        for (k, r) in rows.iter().enumerate() {
+            cpu.mem.wr16(LIST + 0x28 + 2 * k as u32, *r);
+        }
+        strings.borrow_mut().clear();
+        icons.borrow_mut().clear();
+        cells.borrow_mut().clear();
+        assert_eq!(cpu.call(LIST_DRAW, &[NODE]), Stop::Returned, "case {case}");
+
+        let page = &rows[usize::from(top)..usize::from((top + visible).min(count))];
+        let draws = list_row_draws(page, mode == 4, &bag, &tables, ink_in);
+        let (mut want_s, mut want_i, mut want_c) = (Vec::new(), Vec::new(), Vec::new());
+        let y0 = wy + ((h - 14 * i32::from(visible)) >> 1) + 5;
+        for (k, (entry, d)) in page.iter().zip(&draws).enumerate() {
+            let y = y0 + 14 * k as i32;
+            let Some(d) = d else { continue };
+            seen[usize::from(entry >> 12)] += 1;
+            if let Some((dx, ico)) = d.pictogram {
+                want_i.push((wx + dx, y, ico));
+            }
+            if let Some((dx, src)) = d.name {
+                let ptr = match src {
+                    RowNameSource::Item(id) if dx == 0x18 => {
+                        cpu.mem.rd32(ITEMS + u32::from(id) * 12 + 4)
+                    }
+                    _ => FAKE + u32::from(*entry),
+                };
+                want_s.push((ptr, wx + dx, y, d.ink, if d.wide { 0x10 } else { pitch }));
+            }
+            if let Some((dx, value, n)) = d.number {
+                for (cx, digit) in decimal_field_cells(value, n, false) {
+                    want_c.push((
+                        wx + dx + cx,
+                        y,
+                        u16::from(digit) * 8,
+                        u16::from(d.ink) + 0x7F86,
+                    ));
+                }
+            }
+        }
+        let ctx = format!("case {case}: mode {mode} ink {ink_in} rows {page:04x?}");
+        // The header's pictograms stand at `WY - 2`, over every row.
+        let got_i: Vec<_> = icons
+            .borrow()
+            .iter()
+            .copied()
+            .filter(|c| c.1 != wy - 2)
+            .collect();
+        assert_eq!(got_i, want_i, "{ctx}: the pictograms");
+        assert_eq!(*strings.borrow(), want_s, "{ctx}: the strings");
+        assert_eq!(*cells.borrow(), want_c, "{ctx}: the number cells");
+        assert_eq!(cpu.mem.rd32(GP + 0x13C), 7, "{ctx}: the ink left");
+    }
+    assert!(seen.iter().take(11).skip(1).all(|&n| n > 300), "{seen:?}");
+}
+
+/// The kernel's header and page triangles (`0x80032E18..0x8003304C`) against
+/// `page_header_draws` and `list_page_arrow_draws_at`: random node rects,
+/// page sizes, counts and page-aligned tops, the kernel in list mode 1 on a
+/// navigable content id (the triangles' gate `s4`) or in another mode, the
+/// frame word's blink bits random. Every pictogram outside the rows is
+/// compared with the port's draws, mapped back to the ICO ids through a
+/// synthetic font's sprite cells.
+#[test]
+fn the_list_kernel_header_and_page_triangles_draw_where_the_port_draws_them() {
+    differential!(scus(LIST_DRAW));
+    use legaia_engine_ui::{list_page_arrow_draws_at, shop_screen::page_header_draws};
+    use legaia_font::sprite_cell_ids as ids;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    const LIST: u32 = 0x8013_1000;
+    const NAV_IDS: u32 = 0x8007_3E1C;
+    cpu.stub_outside = Some((LIST_DRAW, 0x8003_37B0));
+    let icons: Calls<(i32, i32, u16)> = Rc::default();
+    let i = icons.clone();
+    cpu.hook(ICON_DRAW, move |r, _| {
+        i.borrow_mut()
+            .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2] as u16));
+    });
+    // Retail ICO id <-> the port's sprite cell id.
+    let pairs: Vec<(u16, u16)> = [
+        (0x76, ids::PAGE_TAG),
+        (0x79, ids::PAGE_SLASH),
+        (0x27, ids::PAGE_PREV),
+        (0x28, ids::PAGE_NEXT),
+    ]
+    .into_iter()
+    .chain((0..10).map(|d| (0x7A + d, ids::PAGE_DIGIT + d)))
+    .collect();
+    let font = legaia_font::synthetic_for_tests().with_sprite_cells(
+        &pairs
+            .iter()
+            .map(|&(_, id)| legaia_font::SpriteCellSrc {
+                id,
+                w: 8,
+                h: 8,
+                rgba: vec![0xFF; 8 * 8 * 4],
+            })
+            .collect::<Vec<_>>(),
+    );
+    let ico_of = |src: (u32, u32, u32, u32)| -> u16 {
+        pairs
+            .iter()
+            .find(|&&(_, id)| {
+                font.sprite_cell(id)
+                    .is_some_and(|c| (c.atlas_x, c.atlas_y) == (src.0, src.1))
+            })
+            .expect("a known cell")
+            .0
+    };
+    let content = cpu.mem.rd8(NAV_IDS);
+    let mut rng = Rng(0x5041_4745);
+    let mut seen = [0usize; 3];
+    for case in 0..4000 {
+        let (wx, wy) = (20 + rng.below(80) as i32, 20 + rng.below(40) as i32);
+        let w = 0x60 + rng.below(0x60) as i32;
+        let visible = 1 + rng.below(12) as i32;
+        let h = 14 * visible + 4 + rng.below(8) as i32;
+        let count = 1 + rng.below(60) as i32;
+        let pages = (count + visible - 1) / visible;
+        let page = 1 + rng.below(pages as u32) as i32;
+        let top = (page - 1) * visible;
+        let mode = [1u32, 1, 1, 0, 2][rng.below(5) as usize];
+        let blink = [0u32, 0x08, 0x10, 0x18, 0x3A_8105, 0x3A_8125][rng.below(6) as usize];
+        cpu.mem.wr32(GP + 0x87C, mode);
+        cpu.mem.wr32(GP + 0x86C, 0);
+        cpu.mem.wr32(0x8007_B874, 0);
+        cpu.mem.wr32(BLINK, blink);
+        cpu.mem.wr32(NODE + 0x18, LIST);
+        cpu.mem.wr8(NODE + 0x1C, content);
+        for (o, v) in [(0xA, wx), (0xC, wy), (0xE, w), (0x10, h)] {
+            cpu.mem.wr16(NODE + o, v as u16);
+        }
+        cpu.mem.wr16(LIST, top as u16);
+        cpu.mem.wr16(LIST + 2, visible as u16);
+        cpu.mem.wr16(LIST + 4, count as u16);
+        cpu.mem.wr16(LIST + 6, top as u16);
+        // Class-0 rows draw nothing, so every pictogram is the header's.
+        for k in 0..count as u32 {
+            cpu.mem.wr16(LIST + 0x28 + 2 * k, 0);
+        }
+        icons.borrow_mut().clear();
+        assert_eq!(cpu.call(LIST_DRAW, &[NODE]), Stop::Returned, "case {case}");
+        let gate = mode == 1 && blink & 0x18 != 0;
+        let mut want: Vec<(i32, i32, u16)> =
+            page_header_draws(&font, (wx, wy, w), page as usize, pages as usize)
+                .into_iter()
+                .chain(list_page_arrow_draws_at(
+                    &font,
+                    (page as u16, pages as u16),
+                    gate,
+                    (wx, wy, w, h),
+                ))
+                .map(|d| (d.dst.0, d.dst.1, ico_of(d.src)))
+                .collect();
+        let mut got = icons.borrow().clone();
+        want.sort_unstable();
+        got.sort_unstable();
+        let ctx = format!(
+            "case {case}: node ({wx}, {wy}, {w}, {h}) visible {visible} count {count} page {page}/{pages} mode {mode} blink {blink:#x}"
+        );
+        assert_eq!(got, want, "{ctx}");
+        seen[0] += usize::from(gate && page > 1);
+        seen[1] += usize::from(gate && page < pages);
+        seen[2] += usize::from(!gate && pages > 1);
+    }
+    assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
+}
+
+/// A Ra-Seru bearer with **no** learned spell opens the battle Magic
+/// window (content id `5`, `gp+0x85C = 1`). `FUN_80030628` hands a zero
+/// row count to the real allocator `FUN_80030104`, which builds no list:
+/// it copies the window's message (`gp+0x188`) into a fresh `0x80`-byte
+/// buffer at `+0x18` and marks `+0x14 = 0x80` (`0x80030130..0x800301D4`).
+/// The per-frame walker `FUN_80031D00` then sends that node to the caption
+/// arm `FUN_80035CB8` (`+0x14 != 0`, `0x8003239C..0x800323BC`), never to
+/// the list kernel, so no string byte is read as a count or a row. In the
+/// battle mode the caption takes a press under the confirm **or** cancel
+/// mask (`0x800846D0 | 0x800846D4`) as a cancel: cue `0x37`, list mode `3`,
+/// which `0x46` turns back to the ring. Against `BattleSpellSession` over
+/// an empty learned list: Cross and Circle both back out, anything else
+/// holds the empty window.
+#[test]
+fn an_empty_battle_magic_window_cancels_on_either_press() {
+    differential!(scus(WINDOW_BUILD), scus(0x8003_1D00));
+    use legaia_engine_battle::battle_magic::{BattleSpellInput, BattleSpellSession, SpellPhase};
+    use legaia_engine_battle::target_picker::SlotState;
+    let (Some(mut cpu), Some(exe)) = (scus_cpu(), crate::common::scus()) else {
+        return;
+    };
+    let catalog = legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&exe)
+        .expect("Seru magic table");
+    const BUF: u32 = 0x8013_8000;
+    const HEAD: u32 = 0x8013_9000;
+    const RASERU_SLOT: u32 = 0x8007_B424;
+    const PRESSED: u32 = 0x8007_B874;
+    const HELD: u32 = 0x8007_B850;
+    const MODE: u32 = 0x8007_B83C;
+    const CONFIRM_MASK: u32 = 0x8008_46D0;
+    const CANCEL_MASK: u32 = 0x8008_46D4;
+    const RESULT: u32 = GP + 0x87C;
+    const CUES: u32 = 0x8007_B6D8;
+    cpu.hook(MALLOC, |r, _| r.r[V0] = BUF);
+    cpu.stub(FREE, 0);
+    cpu.hook(TEXT_WIDTH, |r, _| r.r[V0] = 0x40);
+    let kernel = Rc::new(RefCell::new(0u32));
+    let k = kernel.clone();
+    cpu.hook(0x8003_2A44, move |_, _| *k.borrow_mut() += 1);
+    for stub in [0x8003_CC98, 0x8002_C69C, 0x8003_1AE4, 0x8003_19A8] {
+        cpu.stub(stub, 0);
+    }
+    let message = cpu.mem.rd32(GP + 0x188);
+    let mut rng = Rng(0x4E4F_4D47);
+    let mut seen = [0u32; 3];
+    for case in 0..600 {
+        let who = rng.below(3);
+        cpu.mem.wr32(GP + 0x874, who);
+        cpu.mem.wr32(GP + 0x85C, 1);
+        let record = 0x8008_4140 + 0x414 * who;
+        cpu.mem.wr8(record + 0x704, 0);
+        let raseru_slot = rng.below(4) as u16;
+        cpu.mem.wr16(RASERU_SLOT + 2 * who, raseru_slot);
+        cpu.mem.wr8(
+            record + 0x75E + u32::from(raseru_slot),
+            1 + rng.below(0xFF) as u8,
+        );
+        cpu.mem.load(NODE, &[0u8; 0x34]);
+        cpu.mem.wr8(NODE + 0x1C, 5);
+        for k in 0..0x80 {
+            cpu.mem.wr8(BUF + k, rng.next() as u8);
+        }
+        assert_eq!(
+            cpu.call(WINDOW_BUILD, &[NODE]),
+            Stop::Returned,
+            "case {case}"
+        );
+        assert_eq!(
+            cpu.mem.rd32(NODE + 0x18),
+            BUF,
+            "case {case}: the text buffer"
+        );
+        assert_eq!(
+            cpu.mem.rd16(NODE + 0x14),
+            0x80,
+            "case {case}: marked as text"
+        );
+        let mut k = 0;
+        loop {
+            let b = cpu.mem.rd8(message + k);
+            assert_eq!(cpu.mem.rd8(BUF + k), b, "case {case}: the message copy");
+            if b == 0 {
+                break;
+            }
+            k += 1;
+        }
+
+        // One walker pass over a list holding only that node.
+        cpu.mem.wr32(GP + 0x148, HEAD);
+        cpu.mem.wr32(HEAD, NODE);
+        cpu.mem.wr32(NODE, HEAD);
+        cpu.mem.wr16(MODE, 0x15);
+        cpu.mem.wr32(CONFIRM_MASK, 0x4000);
+        cpu.mem.wr32(CANCEL_MASK, 0x2000);
+        let press = [0x4000u32, 0x2000, 0, 0x1000, 0x8000][rng.below(5) as usize];
+        cpu.mem.wr32(PRESSED, press);
+        cpu.mem.wr32(HELD, 0);
+        cpu.mem.wr32(RESULT, 1);
+        cpu.mem.wr16(GP + 0x158, 0);
+        cpu.mem.wr16(CUES, 0);
+        *kernel.borrow_mut() = 0;
+        assert_eq!(cpu.call(0x8003_1D00, &[]), Stop::Returned, "case {case}");
+        assert_eq!(
+            *kernel.borrow(),
+            0,
+            "case {case}: the list kernel never runs"
+        );
+        let cancelled = cpu.mem.rd32(RESULT) == 3;
+        if cancelled {
+            assert_eq!(cpu.mem.rd16(CUES), 0x37, "case {case}: the cancel cue");
+        } else {
+            assert_eq!(cpu.mem.rd32(RESULT), 1, "case {case}: the window holds");
+        }
+
+        let mut session = BattleSpellSession::new(0, 0, &[], &catalog, 99, 0);
+        session.input(
+            BattleSpellInput {
+                cross: press == 0x4000,
+                circle: press == 0x2000,
+                up: press == 0x1000,
+                left: press == 0x8000,
+                ..BattleSpellInput::default()
+            },
+            &catalog,
+            [SlotState::alive(true, true); 3],
+            [SlotState::dead(false); 5],
+        );
+        let aborted = matches!(session.phase, SpellPhase::Aborted);
+        assert_eq!(aborted, cancelled, "case {case}: press {press:#x}");
+        seen[match press {
+            0x4000 => 0,
+            0x2000 => 1,
+            _ => 2,
+        }] += 1;
+    }
+    assert!(seen.iter().all(|&n| n > 50), "{seen:?}");
 }

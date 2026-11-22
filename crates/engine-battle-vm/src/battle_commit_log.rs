@@ -182,6 +182,10 @@ pub struct CommitLogRow {
     /// Horizontal offset of the whole row from its resting seats while the
     /// log is launching ([`LogLaunch::x_offset`]); `0` at rest.
     pub slide_x: i16,
+    /// Vertical offset of each element (`[name, command, target]`) from its
+    /// resting seat while the Begin confirm's exit glides it toward its seat
+    /// A ([`commit_exit_seats`]); `[0; 3]` otherwise.
+    pub slide_y: [i16; 3],
 }
 
 /// How much wider a badged target column is: the 20-pixel element badge and
@@ -339,6 +343,52 @@ pub fn commit_log_layout(commits: &[LogCommit]) -> Vec<[LogElement; 3]> {
         .collect()
 }
 
+/// How far the Begin confirm's exit (step `0x24`) sends the log left: one
+/// display width (`addiu v0,v0,-0x140` at `0x801D4AF8`).
+pub const EXIT_DX: i16 = -0x140;
+
+/// The seat each log element glides to as the Begin confirm leaves the
+/// screen - step `0x24`, whose shared tail re-spawns row 0 (records
+/// `0x2B..0x2D`) and the rows after it (`0x2E + k` for `k < 3 * ctx[+0x1F]`,
+/// `0x801D56A0..0x801D56E4`) in mode `1`, so every row glides from its rest
+/// seat (B) to its seat A over the one sixteen-vsync step.
+///
+/// Seat A is one display width left of rest for every element
+/// (`0x801D4AE0..0x801D4B08`). Its row is what the landings left there: the
+/// step rewrites the latest row's (the block `ctx[+0x1F]`, the member count
+/// at the confirm, names) onto its rest row (`0x801D4B34..0x801D4B98`), and
+/// every later landing rewrites the rows above it onto theirs - except a
+/// Spirit landing on the second row, whose glide starts the first row from
+/// the lower row `0xAA` (`0x801D4A34..0x801D4A64`). So the first of two rows
+/// behind a Spirit second commit glides down onto `0xAA`, and so does the
+/// first of three when the third commit (whose Attack and Magic / Item arms
+/// write only the second and third rows, `0x801D4544..0x801D459C`,
+/// `0x801D48A8..0x801D4900`) is not a Spirit, which rewrites it onto its rest
+/// row (`0x801D4A6C..0x801D4AC8`). Every other row slides straight left.
+///
+/// PORT: FUN_801D388C (case `0x24`, `0x801D4AE0..0x801D4B98`, and its tail `0x801D56A0..0x801D56E4`)
+pub fn commit_exit_seats(layout: &[[LogElement; 3]]) -> Vec<[(i16, i16); 3]> {
+    let n = layout.len();
+    let spirit =
+        |row: Option<&[LogElement; 3]>| row.is_some_and(|r| r[1].source == RECORD_CHIP_SPIRIT);
+    let first_lowered = spirit(layout.get(1)) && (n == 2 || (n == 3 && !spirit(layout.get(2))));
+    layout
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            std::array::from_fn(|k| {
+                let el = row[k];
+                let y = if i == 0 && first_lowered {
+                    ROW_Y_LOWER as i16
+                } else {
+                    el.y
+                };
+                (el.x.wrapping_add(EXIT_DX), y)
+            })
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // The launch: the log sliding off, and back on, as the member leaves the ring
 // ---------------------------------------------------------------------------
@@ -476,6 +526,15 @@ impl LogLaunch {
         (i32::from(start) + span * i32::from(self.elapsed) / i32::from(self.total.max(1))) as i16
     }
 
+    /// The part of a `delta` from seat B toward seat A this glide has
+    /// covered - `FUN_801D9BBC`'s linear step, the whole of it once settled.
+    pub fn covered(&self, delta: i16) -> i16 {
+        if self.settled() {
+            return delta;
+        }
+        (i32::from(delta) * i32::from(self.elapsed) / i32::from(self.total.max(1))) as i16
+    }
+
     /// Is the log off screen for good - an outbound launch that has landed?
     pub const fn gone(&self) -> bool {
         !self.inbound && self.settled()
@@ -507,6 +566,36 @@ mod tests {
         assert_eq!(name.source, RECORD_ACTING_PLAQUE);
         assert_eq!(cmd.source, RECORD_CHIP_ATTACK);
         assert_eq!(tgt.source, RECORD_TARGET_PLAQUE);
+    }
+
+    #[test]
+    fn the_begin_exit_sends_every_row_off_the_left_edge() {
+        let one = commit_log_layout(&[attack(27, 55)]);
+        assert_eq!(
+            commit_exit_seats(&one)[0],
+            [(-304, 170), (59 - 320, 170), (123 - 320, 170)]
+        );
+        let spirit = LogCommit {
+            name_width: 20,
+            command_record: RECORD_CHIP_SPIRIT,
+            command_width: CHIP_WIDTH,
+            target: LogTarget::None,
+        };
+        let two = commit_log_layout(&[attack(27, 55), spirit]);
+        let seats = commit_exit_seats(&two);
+        assert_eq!(
+            seats[0][0],
+            (16 - 320, ROW_Y_LOWER as i16),
+            "row 0 drops onto 0xAA"
+        );
+        assert_eq!(seats[1][0].1, 170);
+        let plain = commit_log_layout(&[attack(27, 55), attack(24, 40)]);
+        assert_eq!(commit_exit_seats(&plain)[0][0].1, 146);
+        let three = commit_log_layout(&[attack(27, 55), spirit, attack(30, 40)]);
+        let ys: Vec<i16> = commit_exit_seats(&three).iter().map(|r| r[0].1).collect();
+        assert_eq!(ys, [170, 170, 194]);
+        let g = LogLaunch::new(false);
+        assert_eq!(g.covered(-160), 0);
     }
 
     #[test]

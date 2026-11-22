@@ -11,6 +11,7 @@
 mod common;
 
 mod action_sm;
+mod action_sm_bands;
 mod action_tag;
 mod actor_bind;
 mod actor_cull;
@@ -397,6 +398,7 @@ mod stat_aggregator;
 mod status_clut_restore;
 mod status_icon;
 mod status_page;
+mod status_readout;
 mod str_player;
 mod streak_ribbon;
 mod stream_slot;

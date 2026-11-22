@@ -222,6 +222,25 @@ linked first. So where two windows overlap, the **lower id is on top**: a
 closing item list (15) covers the party panel (51) sliding in under it, and
 the closing command window (13) covers the root list (50).
 
+**The typewriter kind has no producer.** The walker's kind-`1` arm
+(`0x800321F0..0x800322DC`) is a typewriter: it draws nothing while the total
+`+0x14` is zero or the slide word `+0x20` is non-zero, and otherwise the
+reveal counter `+0x1E` steps once a frame and is walked over the
+record string's length-prefixed segments, each segment drawn on its own row
+`0xE` px below the last and the segment the counter stops in drawn partly;
+when the counter reaches the total at `+0x14` the node turns to kind `0x11`,
+which a press under the record's masks turns to `0xD`
+(`0x80032340`). A static sweep finds nothing that registers a kind-`1` node.
+The `FUN_8003541C` call sites in `SCUS_942.54` and the mapped overlays pass
+the kind `0`, `0xC` or `0xD` as an immediate or a zeroed register, or (in
+`FUN_801D8DE8`) a record's default kind `0` / `13`, an id offset `3..6` or
+one of the literals `6` / `7` / `9` / `0x1E`. The menu window table's content
+ids are the list ids above, and field 0897's six `FUN_80032434` calls read
+kind `0` configs (`0x801F2B98`). The port therefore draws no kind-`1` node:
+`menu_list_rows::text_actor_arm` names the arm and nothing builds one. A
+node the game builds at run time could still reach it, and a capture of a
+`gp+0x148` list holding one would reopen the question.
+
 ### Window-script runner (`FUN_801D6628`)
 
 A sub-screen opens and closes windows by handing `FUN_801D6628` a script of
@@ -1182,6 +1201,12 @@ when the row's `0x800` bit is set and to 1 when `0x400` is set - **unless the
 list is parked** (mode 4), which keeps every row white. So a list goes from
 all-white to its per-row inks the moment the hand enters it; a page that reads
 all-grey is a page whose rows are each individually disabled.
+The `0x4000` verb and `0x8000` landmark arms stage no ink at all: they draw in
+whatever the row above left (or the ink the caller staged, on a page's first
+row), so a verb row under a disabled row draws grey. `0x2000` / `0x5000`,
+`0x6000`, `0x7000`, `0x9000` and the shop arms stage 7, 0 when dim; `0xA000`
+then 5; and the kernel leaves 7 on its way out. A count draws in the row's ink
+through the CLUT `ink + 0x7F86`, the same place walk as `FUN_80034B78`.
 
 **Hand + page arrows** (`80032f5c..8003304c`): hand
 `FUN_8002B994(0, browsing, WX - 6, row_y)`, suppressed when parked and, in
@@ -1197,7 +1222,9 @@ wrap, page flip) and `engine-menus::menu_list_rows` - the allocator
 `FUN_8002FF8C`), content-builder cases (below) and the live-window upsert
 (`LiveWindowSet`, `FUN_80032434`). The description dispatcher is
 `engine-ui::menu::window_painters::description_source`. Row and header draws
-are in `engine-ui::menu::screens::pause_lists`.
+are in `engine-ui::menu::screens::pause_lists` (the triangles off the node rect:
+`list_page_arrow_draws_at`); the per-row class arms are
+`menu_list_rows::list_row_draws`.
 
 ### Use-list row build (content id 3, `FUN_80030628`)
 
@@ -2214,8 +2241,10 @@ except a header row above the cursor.
 **Interaction**: Up / Down move the cursor, skipping valueless rows; Cross
 opens the popup seeded with the current value; Cross inside writes the popup
 cursor **directly into the config word** (committing "Events" to Off also
-zeroes the live rumble state `0x8007B92C / 0x8007B930`); Circle backs out.
-There is no revert. The popup's x / w `(170, 128)` are static; y / h are
+zeroes the live rumble state `0x8007B92C / 0x8007B930`, on every such
+commit, an Off over an Off included); Circle backs out. The picker tests the
+confirm mask before the cancel mask, so Cross with Circle on one frame opens
+the popup. There is no revert. The popup's x / w `(170, 128)` are static; y / h are
 stamped per open: `y = window-48 y + 0x16 + sum of advances above the cursor
 row`, `h = choices * 13 - 4`, flipped up by `choices * 13 + 0x1C` when the
 bottom would pass y = `0xB0`. `FUN_801D2B44` lists the choices at a 13-px

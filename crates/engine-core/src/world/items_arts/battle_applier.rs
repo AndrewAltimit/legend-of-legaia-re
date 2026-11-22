@@ -17,6 +17,8 @@ use legaia_engine_menus::items::ItemOutcome;
 pub const POINT_CARD_ITEM: u8 = 0xFE;
 /// The selector that discharge runs.
 const CLASS_POINT_CARD: u8 = 0x0E;
+/// The monster seats a class-1 group arm walks on the monster side.
+const RETAIL_MONSTER_SEATS: u8 = 4;
 
 /// The revive's HP before the arm's overrides: 40% of the maximum plus
 /// `rand % (max >> 3)`. The divide has no guard in the routine, so a maximum
@@ -103,12 +105,15 @@ impl World {
                 self.casting.pending_cast = None;
             }
             // Class 1 walks a whole side, the monster rows when the target
-            // byte is the monster group `9` (`0x80040908..0x80040928`).
+            // byte is the monster group `9` (`0x80040908..0x80040928`): seats
+            // `3..7`, the four monster seats (`li s1,0x3; li s7,0x7`), never
+            // the summon seat `7` the pointer table stops short of.
             if class == 1 {
                 let seats = if target
                     == legaia_engine_battle_vm::battle_target_group::TARGET_GROUP_ENEMIES
                 {
-                    self.party.party_count..8
+                    let first = self.party.party_count;
+                    first..first.saturating_add(RETAIL_MONSTER_SEATS).min(8)
                 } else {
                     0..self.party.party_count
                 };

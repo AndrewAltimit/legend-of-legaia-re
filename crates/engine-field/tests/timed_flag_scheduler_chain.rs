@@ -97,6 +97,7 @@ fn timer_from_schedule(cd: u32, ef: u32) -> EscapeTimer {
         remaining: cd as i32,
         warn_threshold: ef as i32,
         armed: true,
+        duration: cd as i32,
     }
 }
 
@@ -170,6 +171,7 @@ fn hud_decomposition_matches_the_remaining_count() {
         remaining: 2400,
         warn_threshold: 910,
         armed: true,
+        duration: 1,
     };
     assert_eq!(timer.hud_fields(), (0, 40, 0));
 }

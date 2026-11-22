@@ -249,6 +249,62 @@ fn armament_lists_take_retails_leading_rows_and_bag_order() {
     assert!(rows[1].equipped && !rows[2].equipped);
 }
 
+/// The armament rows filter as retail's `0x80031574..0x800315C8` does
+/// (`crate::menu_list_rows::armament_candidate_accepts`): a helmet row takes
+/// only head-category pieces the character's bit admits, never a weapon or
+/// body piece the mask also admits; the engine-only Hand Guard slot, which
+/// has no retail row and no category, offers nothing but Remove.
+#[test]
+fn armament_rows_test_category_and_mask_and_hand_guard_takes_nothing() {
+    use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
+    let piece = |category, mask| DiscEquipEntry {
+        mask,
+        category,
+        is_ra_seru: false,
+        passive_index: None,
+    };
+    let info = DiscEquipInfo::from_entries([
+        (0x40, piece(Disc::Head, 7)),
+        (0x41, piece(Disc::Head, 2)),
+        (0x42, piece(Disc::Weapon, 7)),
+        (0x43, piece(Disc::Body, 7)),
+        (0x44, piece(Disc::Footwear, 1)),
+    ]);
+    let inv = crate::item_bag::ItemBag::from_slots(&[
+        (0x40, 1),
+        (0x41, 1),
+        (0x42, 1),
+        (0x43, 1),
+        (0x44, 1),
+    ]);
+    let session = |who| {
+        EquipSession::new_with_restrictions(
+            fresh_record(),
+            inv.clone(),
+            EquipmentTable::new(),
+            StatusModifiers::default(),
+            Vec::new(),
+            info.clone(),
+            who,
+        )
+    };
+    let ids = |s: &EquipSession, slot: EquipSlot| -> Vec<u8> {
+        s.items_for_slot(slot.as_index())
+            .iter()
+            .map(|i| i.id)
+            .collect()
+    };
+    let (vahn, noa) = (session(0), session(1));
+    assert_eq!(ids(&vahn, EquipSlot::Helmet), [REMOVE_ROW_ID, 0x40]);
+    assert_eq!(ids(&noa, EquipSlot::Helmet), [REMOVE_ROW_ID, 0x40, 0x41]);
+    assert_eq!(ids(&vahn, EquipSlot::Weapon), [REMOVE_ROW_ID, 0x42]);
+    assert_eq!(ids(&vahn, EquipSlot::BodyArmor), [REMOVE_ROW_ID, 0x43]);
+    assert_eq!(ids(&vahn, EquipSlot::Boot), [REMOVE_ROW_ID, 0x44]);
+    assert_eq!(ids(&noa, EquipSlot::Boot), [REMOVE_ROW_ID]);
+    assert_eq!(ids(&vahn, EquipSlot::HandGuard), [REMOVE_ROW_ID]);
+}
+
 #[test]
 fn restrictions_gate_item_list_by_character_mask() {
     use crate::equipment::{DiscEquipEntry, DiscEquipInfo};

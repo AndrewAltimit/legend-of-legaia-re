@@ -178,6 +178,10 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     // Turn to face the target (or the group's centroid). Retail runs this on
     // the retargeted byte, before it picks the next state.
     face_cast_target(host, ctx);
+    // `jal 0x801d5854` with `a1 = 6` at `0x801E43B4..0x801E43BC`, right
+    // after the `0x29` store: the caster's case-6 framing is armed on the
+    // cast's first pass.
+    host.pose(slot, Pose::Idle);
     // Stage frame timer for pre-cast wait; the hit-loop word starts clear
     // (`0x801E43CC`).
     ctx.frame_timer = 0x14;
@@ -216,7 +220,14 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     // Compute MP cost with the character ability-bit modifier (Half 0x20 takes
     // priority over Quarter 0x10; see battle_formulas + the state-0x28 dump).
     let mp_cost = host.spell_mp_cost(spell_id);
-    let bits = host.character_ability_bits(slot);
+    // The ability bits are a party member's record word, read only for a
+    // party caster (`sltiu v0,v0,0x3; beq v0,zero,0x801E4584` at
+    // `0x801E4520..0x801E4524`): a monster pays the record price.
+    let bits = if slot < party_count {
+        host.character_ability_bits(slot)
+    } else {
+        0
+    };
     let modifier = crate::battle_formulas::MpCostModifier::from_ability_flags(bits);
     let cost = crate::battle_formulas::mp_cost_after_ability_bits(mp_cost as u16, modifier);
     // `lhu v0,0x150(s3); subu v0,v0,s0; sh v0,0x150(s3)` at
@@ -562,6 +573,8 @@ pub(super) fn magic_capture_fade<H: BattleActionHost + ?Sized>(
     if !host.previous_action_cleared(1) {
         return stay(ctx);
     }
+    // `sb zero,0x279(v0)` at `0x801E5048`, beside the `0x70` store.
+    ctx.summon_staging_b = 0;
     transition(ctx, ActionState::MagicCapturePhase2)
 }
 

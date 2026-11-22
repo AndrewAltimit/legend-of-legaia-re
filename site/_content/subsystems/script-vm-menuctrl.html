@@ -141,6 +141,7 @@
   </ul>
   <p>A placed object&rsquo;s Y is written once, when it is spawned (at scene init or by the window sweep&rsquo;s re-plan), as its rung plus its own offset; its actor template sets neither height-arm bit that would make the per-frame driver re-sample the floor. When a scene&rsquo;s system script lifts rungs after spawn, the objects on those rungs stay where they were placed.</p>
   <p>The exception is an object whose bind script raises the floor-follow class bit (<code>31 11</code>): the actor tick re-samples the floor under it every frame it is in view, through the live rungs, so it rides a new ladder like the ground does. Mt. Rikuroa&rsquo;s summit is the case: the system script installs a ladder that lifts the cave mouth out of <code>rikuroa2</code> 664 units above the header&rsquo;s floor, and the cliff carrying it, the player and the two chests beside it all stand on that raised floor.</p>
+  <p>A battle does not stop the floor. The return re-runs the scene loader, which re-seats the ladder from the scene file and retires every running oscillator, and then reinstalls the scene's system script from its first opcode - which arms the oscillators again. A retail capture across a fight in the Fire Path shows the three oscillators retired and three fresh ones running, the rungs back at their rest heights and swinging again once the field returns.</p>
 </section>
 
 <section class="doc-section" id="nibble-45" data-doc="-">

@@ -115,10 +115,16 @@ pub const SUMMON_CAST_EFFECT_ID: u8 = 0x12;
 /// Retail's per-slot predicate for the `0x34` hide loop and the `0x36`
 /// restore loop (`0x801E4B30..0x801E4B6C` / `0x801E4CDC..0x801E4D28`): a party
 /// seat is always touched, a monster seat only while it is alive
-/// (`lhu +0x14C; bne` / `sltiu s0,3`).
+/// (`lhu +0x14C; bne` / `sltiu s0,3`; the engine seats compactly, so its
+/// party block is `slot < party_count`, see [`crate::battle_slot`]).
 fn summon_hide_applies(slot: u8, party_count: u8, liveness: u16) -> bool {
     slot < party_count || liveness != 0
 }
+
+/// The seats the hide and restore loops walk: `0..7` (`sltiu v0,s0,0x7` at
+/// `0x801E4B64` / `0x801E4D20`). Seat `7` is the creature the stager seats
+/// there at `0x34`'s first tick, which the loops leave drawn.
+pub const SUMMON_HIDE_SLOTS: u8 = 7;
 
 /// `FUN_801DC0A0(caster, 0x12)` - the summon close-up the `0x33` / `0x34`
 /// passes call every frame. Besides arming its camera (the host's), case
@@ -206,6 +212,9 @@ pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
     ctx.summon_frame_idx = frame_idx;
     ctx.menu_open = 1;
     ctx.summon_staging_a = 1;
+    // `lhu t2,0x20(sp)` / `sh t2,0x6(s7)` at `0x801E4A08..0x801E4A10`: the
+    // target byte the pass loaded at the SM's entry goes to `ctx[+0x6DC]`.
+    ctx.damage_target = i16::from(host.actor(slot).map_or(0, |a| a.active_target));
     if let Some(actor) = host.actor_mut(slot) {
         actor.queued_anim = 9;
         actor.flag_bits.set(ActorFlags::WINDUP_DONE);
@@ -365,7 +374,7 @@ pub(super) fn summon_actor_freeze<H: BattleActionHost + ?Sized>(
         ctx.frame_timer = word;
     }
     let party_count = host.party_count();
-    for s in 0..host.slot_count() {
+    for s in 0..SUMMON_HIDE_SLOTS {
         let Some(a) = host.actor_mut(s) else {
             continue;
         };
@@ -460,7 +469,7 @@ pub(super) fn summon_return<H: BattleActionHost + ?Sized>(
     // (`0x801E4CDC..0x801E4D28`; the `+0x8 = 0x81000000` render-word
     // restore rides the marker clear in the port).
     let party_count = host.party_count();
-    for s in 0..host.slot_count() {
+    for s in 0..SUMMON_HIDE_SLOTS {
         let Some(a) = host.actor_mut(s) else {
             continue;
         };
@@ -471,6 +480,7 @@ pub(super) fn summon_return<H: BattleActionHost + ?Sized>(
     // `jal 0x801E70BC` in the same body: the cast's spell XP is checked
     // against its level here, on the way out of the band.
     host.summon_magic_level_check();
+    host.cut_timed_message_hold();
     transition(ctx, ActionState::SummonVerifyAlive)
 }
 
@@ -482,32 +492,84 @@ pub const SUMMON_EXIT_FRAME_HEIGHT: i16 = 0x800;
 /// summon band (`li v0,0x600` / `sh v0,0x6d0(v1)` at `0x801E45F8..0x801E4604`).
 pub const SUMMON_ROUTE_FRAME_HEIGHT: i16 = 0x600;
 
+/// State `0x37`'s settle test (`0x801E4D70..0x801E4E60`), keyed on the
+/// acting actor's target byte `+0x1DD` (`sp+0x20`, loaded at the SM's entry).
+/// It reads the same three things off a seat as the capture band's `0x71`
+/// test ([`super::capture_finalize_settled`]), over other seats:
+///
+/// * **`target < 7`** (`sltiu v0,s0,0x7` at `0x801E4D70`): that seat alone.
+///   It has settled once its clip `+0x1D9` reads `0` (`0x801E4D98`), its
+///   prim word `+0x04` reads `0` (`0x801E4DA8`) or its HP `+0x14C` reads `0`
+///   (`0x801E4DB8`); a live, drawn seat still playing a clip holds.
+/// * **`target >= 7`** (`0x801E4DC8..0x801E4E5C`): the monster seats
+///   `3 .. 3 + ctx[+0x01]` (in the engine's compact seating, the
+///   `monsters` seats after the party). A live one holds while it plays a clip
+///   (`0x801E4E20`), a dead one while its prim word is non-zero - its defeat
+///   fade has not run out (`0x801E4E38`). The party-wide code `8` takes this
+///   arm too, so a heal on the party waits on the monsters.
+///
+/// `monsters` is `ctx[+0x01]`, the seated monster count.
+pub fn summon_verify_settled<H: BattleActionHost + ?Sized>(
+    host: &H,
+    target: u8,
+    monsters: u8,
+) -> bool {
+    if target < 7 {
+        return host
+            .capture_settle_view(target)
+            .is_none_or(|s| s.clip == 0 || s.prim_zero || !s.alive);
+    }
+    let first = host.party_count();
+    (0..monsters).all(|m| {
+        host.capture_settle_view(first + m)
+            .is_none_or(|s| if s.alive { s.clip == 0 } else { s.prim_zero })
+    })
+}
+
+/// State `0x37` - the summon band's settle wait (`0x801E4D50..0x801E4EB4`).
+///
+/// Every pass stores framing style `1` (`sb v1,0xd(v0)` at `0x801E4D5C`) and
+/// re-arms the caster's case-6 framing (`jal 0x801D5854` at `0x801E4D68`),
+/// then holds until [`summon_verify_settled`] passes: a summon does not hand
+/// over to the Done band while its target is still in a reaction, or while a
+/// monster it killed is still fading. The wait has no bound in retail; the
+/// port bounds it at [`super::CAPTURE_SETTLE_PASS_LIMIT`] passes, as the
+/// capture band's twin wait is bounded, so an engine clip that never reports
+/// idle cannot hold the action for good.
+///
+/// The exit (`0x801E4E60..0x801E4EB4`) drops the close-up latch `ctx[+0x243]`
+/// and the staging byte `ctx[+0x278]`, re-seeds the ambient base one step
+/// above the floor, and sets the framing depth back to the near `0x800`
+/// (`0x801E4E6C..0x801E4E70`): the Done band after a summon frames the
+/// caster there (`shiny_refactor_gimard_levelup` reads `ctx[+0x6D0] = 0x800`
+/// in `0x51`). Its two stores to seat `7` - the creature's prim word cleared
+/// and its `+0x21C` raised - are the host's ([`BattleActionHost::summon_band_exit`]).
+///
+/// The depth store sits behind the pass's case-6 call, so this pass still
+/// frames on the route depth; the camera first reads `0x800` at `0x50`'s call,
+/// since `0x38` calls no framing case. The host takes the depth on `0x38`'s pass.
+///
+/// PORT: FUN_801E295C (`0x801E4D50..0x801E4EB4`)
 pub(super) fn summon_verify_alive<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
+    ctx.camera_variant = 1;
     host.pose(slot, Pose::Idle);
-    // Ensure all actors are still alive (liveness != 0 AND current_anim != 0).
-    // The state machine doesn't gate on this; it just records state.
-    // The exit (`0x801E4E60..0x801E4EA4`) drops the close-up latch
-    // `ctx[+0x243]` and re-seeds the ambient base one step above the
-    // floor, so the battle ambient climbs back from dark.
+    let target = host.actor(slot).map_or(8, |a| a.active_target);
+    let monsters = host.seated_monster_count();
+    if !summon_verify_settled(host, target, monsters)
+        && ctx.capture_settle_passes < super::CAPTURE_SETTLE_PASS_LIMIT
+    {
+        ctx.capture_settle_passes += 1;
+        return stay(ctx);
+    }
+    ctx.capture_settle_passes = 0;
     ctx.gauge_rearm_latch = 0;
     ctx.summon_staging_a = 0;
     host.summon_band_exit();
     ctx.ambient_base = crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT;
-    // Every pass stores style `1` before its case-6 call (`sb v1,0xd(v0)` at
-    // `0x801E4D5C`), and the exit sets the framing depth back to the near
-    // `0x800` (`0x801E4E6C..0x801E4E70`): the Done band after a summon frames
-    // the caster there (`shiny_refactor_gimard_levelup` reads
-    // `ctx[+0x6D0] = 0x800` in `0x51`).
-    //
-    // The store sits behind the pass's case-6 call (`jal 0x801D5854` at
-    // `0x801E4D68`, the depth at `0x801E4E70`), so this pass still frames on
-    // the route depth; the camera first reads `0x800` at `0x50`'s call, since
-    // `0x38` calls no framing case. The host takes the depth on `0x38`'s pass.
-    ctx.camera_variant = 1;
     ctx.camera_frame_height = SUMMON_EXIT_FRAME_HEIGHT;
     transition(ctx, ActionState::SummonDone)
 }

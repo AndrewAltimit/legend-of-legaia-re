@@ -16,6 +16,14 @@ pub trait FieldTestDrivers {
     fn effect_target_rgb(&self) -> [i16; 3];
     /// Seed that latch, as a previous `34 0x` left it.
     fn seed_effect_target_rgb(&mut self, rgb: [i16; 3]);
+    /// One tick of the tile board walker's state 2 on actor `slot`
+    /// (`World::tile_board_walk_step`, `FUN_801EF2B0` `0x801EFA88`) toward
+    /// the committed target, `game_frame` whether the tick is a game frame;
+    /// a no-op with none.
+    fn tile_board_walk(&mut self, slot: usize, game_frame: bool);
+    /// Seed the kind-0 warp's timer `_DAT_8007B6B0` and post-warp pad hold
+    /// `_DAT_8007B6B4`, the two encounter holds the warp owns.
+    fn seed_warp_holds(&mut self, timer: i32, hold: i32);
 }
 
 impl FieldTestDrivers for World {
@@ -24,5 +32,14 @@ impl FieldTestDrivers for World {
     }
     fn seed_effect_target_rgb(&mut self, rgb: [i16; 3]) {
         self.presentation.effect_target_rgb = rgb;
+    }
+    fn tile_board_walk(&mut self, slot: usize, game_frame: bool) {
+        if let Some((tx, tz)) = self.board.target {
+            self.tile_board_walk_step(slot, tx, tz, game_frame);
+        }
+    }
+    fn seed_warp_holds(&mut self, timer: i32, hold: i32) {
+        self.locomotion.warp.timer = timer;
+        self.locomotion.warp.hold = hold;
     }
 }

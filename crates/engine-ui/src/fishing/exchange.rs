@@ -118,6 +118,53 @@ pub fn exchange_screen_draws_for(
     out
 }
 
+/// The exchange's quantity picker and confirm over the list, from the
+/// layout `legaia_engine_fishing::fishing::PrizeExchange::dialog_draw` puts
+/// in retail's 320x240 space: text at its pen (`FUN_80036888`), the decimal
+/// fields `(value, places, x, y)` through the menu numerals
+/// (`FUN_80034B78`), separator glyph `6` (`/`, `FUN_8003C1F8`) and the
+/// cursor icon as the `>` every host draws for icon `0x4E`.
+pub fn exchange_dialog_draws_for(
+    font: &legaia_font::Font,
+    texts: &[(&[u8], i32, i32)],
+    numbers: &[(i64, i32, i32, i32)],
+    slash: Option<(i32, i32)>,
+    cursors: &[(i32, i32)],
+    ink: [f32; 4],
+) -> Vec<TextDraw> {
+    let mut out = crate::text_lines::text_line_draws_for(
+        font,
+        texts.iter().map(|&(t, x, y)| (t, x, y, false)),
+        ink,
+        ink,
+    );
+    for &(value, places, x, y) in numbers {
+        out.extend(crate::menu::decimal_field::decimal_field_draws(
+            font,
+            value,
+            (x, y),
+            places,
+            false,
+            ink,
+        ));
+    }
+    if let Some(pen) = slash {
+        out.extend(crate::menu::window_painters::separator_glyph_draws(
+            font,
+            crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
+            pen,
+            ink,
+        ));
+    }
+    out.extend(crate::text_lines::text_line_draws_for(
+        font,
+        cursors.iter().map(|&(x, y)| (&b">"[..], x, y, false)),
+        ink,
+        ink,
+    ));
+    out
+}
+
 fn push_layout(
     out: &mut Vec<TextDraw>,
     layout: &legaia_font::Layout,

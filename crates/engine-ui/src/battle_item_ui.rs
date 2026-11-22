@@ -104,13 +104,15 @@ pub const ROW_TEXT_SEAT: (i32, i32) = (LIST_WX + 0xC, HAND_SEAT.1);
 /// The per-row count's three-cell number field, `WX + 0x6C` off the list
 /// kernel's pen `WX = 174` (`gaza2` item window capture).
 pub const COUNT_CELLS_X: i32 = 282;
-/// The list header's `(x, y, w)` for [`crate::shop_screen::page_header_draws`]
-/// (`battle_item_window_gaza2_retail`: tag at x 249, y 35; digits at 279, 293, 299).
-pub const LIST_HEADER_RECT: (i32, i32, i32) = (174, 37, 131);
-/// The next-page triangle's seat (same capture).
-pub const PAGE_NEXT_SEAT: (i32, i32) = (308, 94);
-/// The previous-page triangle's seat: the kernel's `WX - 0xC` off the same list.
-pub const PAGE_PREV_SEAT: (i32, i32) = (162, 94);
+/// The list kernel's node rect `(WX, WY, w, h)` for the battle item and magic
+/// lists, read off the live window node in the `battle_item_window_gaza2_retail`
+/// state (`0x8009EF94 + 0xA..0x10`). The `PAGE` header stands at `WY - 2` and
+/// the page triangles at `(WX + w + 4, WY + h/2 - 3)` / `(WX - 0xC, ..)`.
+pub const LIST_NODE: (i32, i32, i32, i32) = (LIST_WX, 36, 131, 120);
+/// The list header's `(x, y, w)` for [`crate::shop_screen::page_header_draws`]:
+/// [`LIST_NODE`]'s origin and width (the capture's tag ink at `(249, 35)`,
+/// digits at x `279`, `293`, `299`).
+pub const LIST_HEADER_RECT: (i32, i32, i32) = (LIST_NODE.0, LIST_NODE.1, LIST_NODE.2);
 /// Description line pen: placement record `0x17` (the description box)
 /// rests at `(16, 132)`, and the record walker hands the spawner
 /// `y - 2` (`0x801D9368`), the plate records' `pen = (x, y - 2)` law. Its
@@ -350,23 +352,12 @@ fn list_header_draws(
 ) {
     let (x, y, w) = LIST_HEADER_RECT;
     let mut draws = crate::shop_screen::page_header_draws(font, (x, y, w), page, pages);
-    if page_arrows {
-        let mut tri = |id: u16, at: (i32, i32)| {
-            if let Some(c) = font.sprite_cell(id) {
-                draws.push(TextDraw {
-                    dst: (at.0, at.1, c.w, c.h),
-                    src: (c.atlas_x, c.atlas_y, c.w, c.h),
-                    color: [1.0, 1.0, 1.0, 1.0],
-                });
-            }
-        };
-        if page < pages {
-            tri(legaia_font::sprite_cell_ids::PAGE_NEXT, PAGE_NEXT_SEAT);
-        }
-        if page > 1 {
-            tri(legaia_font::sprite_cell_ids::PAGE_PREV, PAGE_PREV_SEAT);
-        }
-    }
+    draws.extend(crate::list_page_arrow_draws_at(
+        font,
+        (page as u16, pages as u16),
+        page_arrows,
+        LIST_NODE,
+    ));
     to_stage(&mut draws, stage_origin, scale);
     out.append(&mut draws);
 }

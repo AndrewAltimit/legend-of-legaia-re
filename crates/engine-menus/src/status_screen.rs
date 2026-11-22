@@ -343,6 +343,19 @@ impl StatusScreenSession {
         next as u8
     }
 
+    /// The session opened on party position `cursor`, clamped to the list:
+    /// retail's picker cursor `DAT_801E46C4` outlives the screen (its step 0
+    /// stores it back masked, `0x801DA2DC..0x801DA338`).
+    ///
+    /// REF: FUN_801DA2A0 (step 0)
+    pub fn with_cursor(mut self, cursor: u8) -> Self {
+        let last = self.snapshots.len().saturating_sub(1) as u8;
+        self.phase = StatusPhase::Browsing {
+            cursor: cursor.min(last),
+        };
+        self
+    }
+
     /// The session opened on `page` (a folded page, `0..=3`).
     pub fn with_page(mut self, page: u8) -> Self {
         self.page = page % STATUS_PAGES;

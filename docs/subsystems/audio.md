@@ -2623,8 +2623,17 @@ the pause menu's lists, which no such step resets, keep their row.
 builds no list node: it allocates a text buffer, copies the window's message into
 it and marks the window's `+0x14` as `0x80` (`0x80030130..0x800301D4`). The
 kernel's count test (`0x80032AD8..0x80032AE0`) jumps a zero count straight to the
-confirm read; which window kind reaches it with no node, and whether a Ra-Seru
-bearer with no spell opens one in battle, is not traced here.
+confirm read, but no window with a zero count reaches it: the walker
+`FUN_80031D00` hands a node whose `+0x14` is set to the caption arm
+`FUN_80035CB8` instead (`0x8003239C..0x800323BC`). So a Ra-Seru bearer with no
+spell opens the battle Magic window as a text panel, and in the battle mode
+the caption takes a press under the confirm **or** cancel mask as a cancel:
+cue `0x37`, list mode `3`, back to the ring - Cross cannot confirm a row
+there, and no string byte is ever read as a count. The field's caster picker
+refuses such a caster before any list opens. The port's empty
+`BattleSpellSession` backs out on either press with the list-cancel cue; the
+retail-exec test `menu_list_rows::an_empty_battle_magic_window_cancels_on_either_press`
+runs the builder, the allocator and one walker pass against it.
 
 The dispatcher's de-dup word `0x8007B724` is `gp+0x40C`, the sustained cue the
 drainer last keyed ([the repeat rule](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)).

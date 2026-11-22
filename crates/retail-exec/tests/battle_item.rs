@@ -286,6 +286,14 @@ fn every_battle_item_writes_what_retail_writes() {
                 ],
             );
             assert_eq!(stop, Stop::Returned, "item {id:#04x} {seats:?}");
+            // No arm pushes a number onto the popup ring (`ctx[+0x262]`
+            // cursor, `+0x273` count): a heal shows none, a no-effect use
+            // (a leaf on a full seat) no `0` either.
+            assert_eq!(
+                (cpu.mem.rd8(CTX + 0x262), cpu.mem.rd8(CTX + 0x273)),
+                (0, 0),
+                "item {id:#04x} pushed a popup"
+            );
             let typed = rng.below(2) == 0;
             seed_port(&mut w, &seats, caster, typed, seed);
             if e.flags & 0x20 != 0 {
@@ -564,4 +572,89 @@ fn the_point_card_strikes_its_target_and_not_the_party() {
         assert_eq!(w.actors[m].battle.hp, 900, "member {m}");
     }
     assert_eq!(w.minigames.point_card, 0);
+}
+
+/// A monster's heal, cure or revive through the action SM's applier call: the
+/// record's `(class, tier)` on one seat, or class 1 over a whole side - the monster
+/// seats `3..7` when the target byte is the group code `9`
+/// (`0x80040908..0x80040928`), the party's otherwise.
+#[test]
+fn a_monster_heal_writes_what_retail_writes() {
+    differential!(scus(APPLIER));
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
+    let (Some(mut cpu), Some(scus)) = (scus_cpu(), scus()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let state = Rc::new(Cell::new(0u32));
+    let stream = state.clone();
+    cpu.hook(RAND, move |r, _| {
+        let next = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+        stream.set(next);
+        r.r[V0] = (next >> 16) & 0x7FFF;
+    });
+    cpu.stub(CUE_GROUP, 0);
+    cpu.stub(CLUT_RESTORE, 0);
+    let mut w = World::new();
+    w.set_item_effects(ItemEffectTable::from_scus(&scus).expect("item effects"));
+    w.set_item_catalog(ItemCatalog::vanilla());
+    let mut rng = Rng(0x4D48_4541);
+    let mut group = 0;
+    for round in 0..3000 {
+        let seats: [Seat; 5] = std::array::from_fn(|_| gen_seat(&mut rng));
+        let caster = 3 + rng.below(2) as u8;
+        // The monster spell records' applier pairs, and the revive's full
+        // tier (state `0x50`'s call).
+        let (class, tier) = [
+            (0u8, 0u8),
+            (0, 1),
+            (0, 2),
+            (1, 0),
+            (1, 1),
+            (3, 0),
+            (4, 0),
+            (4, 1),
+            (8, 0),
+        ][rng.below(9) as usize];
+        let target = match rng.below(4) {
+            0 | 1 if class == 1 => 9,
+            _ => rng.below(5) as u8,
+        };
+        group += u32::from(target == 9);
+        let seed = rng.next();
+        seed_retail(&mut cpu, &seats, caster);
+        state.set(seed);
+        let stop = cpu.call(
+            APPLIER,
+            &[
+                u32::from(class),
+                u32::from(tier),
+                u32::from(target),
+                u32::from(caster),
+            ],
+        );
+        assert_eq!(stop, Stop::Returned, "round {round}");
+        seed_port(&mut w, &seats, caster, false, seed);
+        for s in 3..5u8 {
+            w.actors[usize::from(s)].battle_monster_id = Some(0x40 + u16::from(s));
+        }
+        w.actors[usize::from(caster)].battle.action_category = ActionCategory::Magic.as_byte();
+        w.fold_battle_item_action(class, tier, target);
+        for s in 0..5u8 {
+            let mut r = read_retail(&mut cpu, s);
+            r.render = 0;
+            let p = read_port(&w, s);
+            assert_eq!(
+                r,
+                p,
+                "class {class} tier {tier} target {target} caster {caster} round {round} seat {s}\n before {:?}",
+                seats[usize::from(s)]
+            );
+        }
+        // Nothing past the four monster seats: the summon seat keeps its
+        // readout.
+        assert_eq!(cpu.mem.rd32(actor(7) + 0x10), 0, "round {round}");
+    }
+    assert!(group > 300, "{group} group heals");
 }

@@ -116,6 +116,15 @@ pub(super) fn attack_face<H: BattleActionHost + ?Sized>(
         }
         next
     };
+    // Both approach arms leave through `j 0x801e35c4` with
+    // `ori v0,v0,0x1` in its delay slot (`0x801E32D4..0x801E32DC`), the
+    // store at `0x801E35C8`: the staged clip's bit `+0x1DC & 1` is raised.
+    // The in-range exit to `0x1E` (`0x801E3228`) does not.
+    if next != ActionState::AttackChain
+        && let Some(actor) = host.actor_mut(actor_slot)
+    {
+        actor.flag_bits.set(ActorFlags::WINDUP_DONE);
+    }
     transition(ctx, next)
 }
 
@@ -300,7 +309,12 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
         .actor(slot)
         .map(|a| a.flag_bits.has(ActorFlags::ADVANCE_DONE))
         .unwrap_or(false);
-    if in_flight {
+    // A counterattack latch the head kept - the attacker's `+0x1DC` was not
+    // clear yet, its approach clip's commit still owed - holds the stage the
+    // same way (`lw v0,0x6970; bne v0,zero,0x801e37c0` at
+    // `0x801E3720..0x801E372C`): the monster stages no swing until the head
+    // has run the swap on a later pass.
+    if in_flight || ctx.counter_pending != 0 {
         // Retail's in-flight branch (`0x801E3718`) lands on the drift block
         // at `0x801E37C0`, which the stage path also falls into - so the
         // drift runs on every frame of the loop, staged or holding, and so

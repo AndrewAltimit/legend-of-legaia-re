@@ -40,6 +40,45 @@ use crate::pause_screens::{
     root_menu_confirm_route,
 };
 
+/// A pause-menu screen that opens on the shared party cursor
+/// `DAT_801E46C4` (low 12 bits, a present-party position), for
+/// [`party_cursor_on_entry`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartyCursorScreen {
+    /// Items single-target apply, sub-screen `0x0A` (`FUN_801D8308`).
+    ItemTarget,
+    /// Items all-party apply, sub-screen `0x09` (`FUN_801D7FF8`).
+    ItemAllParty,
+    /// Magic group cast, sub-screen `0x10` (`FUN_801D9280`).
+    SpellGroup,
+    /// Magic single-target pick, sub-screen `0x11` (`FUN_801D9594`).
+    SpellTarget,
+    /// The Magic caster picker, sub-screen `0x0E`: the root's row-1 arm
+    /// stages its own cursor `DAT_801E46C8` from the shared one.
+    SpellCaster,
+    /// Equip character picker, sub-screen `0x12` (`FUN_801D98F0`).
+    EquipCharacter,
+    /// The Status screen, sub-screen `0x15` (`FUN_801DA2A0`).
+    Status,
+}
+
+/// The party position a screen opens on, given the shared cursor's: every
+/// screen keeps it but the two Magic target screens, whose step 0 overwrites
+/// it (`0x2000` at `0x801D9300`, `0` at `0x801D9610`). The item screens'
+/// step 0 masks it (`0x801D8384`, and `| 0x2000` at `0x801D807C`), as do
+/// the Equip picker and Status (`0x801DA338`).
+///
+/// PORT: FUN_801D8308 (step 0, `0x801D8370..0x801D8384`)
+/// PORT: FUN_801D7FF8 (step 0, `0x801D8068..0x801D807C`)
+/// PORT: FUN_801D9280 (step 0, `0x801D92F8..0x801D9300`)
+/// PORT: FUN_801D9594 (step 0, `0x801D9608..0x801D9610`)
+pub fn party_cursor_on_entry(screen: PartyCursorScreen, cursor: u8) -> u8 {
+    match screen {
+        PartyCursorScreen::SpellGroup | PartyCursorScreen::SpellTarget => 0,
+        _ => cursor,
+    }
+}
+
 /// System flag the menu-open state raises when the casino coin bank is
 /// non-zero, and the money / play-time box's coin row tests
 /// (`FUN_801DC6B4` state 0: `jal 0x8003CE08` with `a0 = 8` at `0x801DC7FC`

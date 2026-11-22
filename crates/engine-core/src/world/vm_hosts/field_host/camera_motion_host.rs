@@ -32,7 +32,22 @@ impl<'a> FieldCameraMotionHost for FieldHostImpl<'a> {
                     n.resume();
                 }
             }
-            3 => cut.narration = None,
+            // The kill frees the parent as the retirement does
+            // (`0x801E344C..0x801E3468`). Inside a record's slice the channel
+            // set is out of the world, and the clear lands when the next
+            // slice takes it (`World::release_crawl_parents`).
+            3 => {
+                if let Some(mut n) = cut.narration.take() {
+                    n.force_finish();
+                    cut.crawl_released.extend(n.take_released_parent());
+                }
+                if !self.world.field_vm.in_spawned_record_slice {
+                    World::release_crawl_parents(
+                        &mut self.world.cutscene.crawl_released,
+                        &mut self.world.field_vm.channels,
+                    );
+                }
+            }
             _ => {}
         }
     }

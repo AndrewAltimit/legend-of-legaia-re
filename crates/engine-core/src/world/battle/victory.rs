@@ -284,6 +284,9 @@ impl World {
         let Some(mut seq) = self.battle.victory else {
             return;
         };
+        if seq.cause == BattleEndCause::PartyWipe {
+            self.try_party_wipe_bark();
+        }
         match seq.phase {
             VictoryPhase::Loading { frames_left } => {
                 // `FUN_801D5854(seat, 8)` every load frame (`0x8004EE0C..`).
@@ -340,6 +343,27 @@ impl World {
             }
         }
         self.battle.victory = Some(seq);
+    }
+
+    /// The annihilated arm's boss bark, tried on every sequencer pass while
+    /// its latch is clear (`0x8004F9FC..0x8004FAE8`): the pass whose drive
+    /// word `0x8007BC20` reads below `2` - no battle CD-XA clip still
+    /// reading ([`crate::world::AudioState::battle_xa_busy_frames`]) - sets
+    /// the latch and fires the bark the battle's first monster names
+    /// ([`party_wipe_bark`], whose `0xA9` pick draws `rand()` on that pass).
+    /// A formation with no bark sets the latch all the same.
+    ///
+    /// PORT: FUN_8004E568 (`0x8004F9FC..0x8004FAE8`, the wipe bark's gate)
+    fn try_party_wipe_bark(&mut self) {
+        if !self.battle.wipe_bark_pending || self.audio.battle_xa_busy_frames != 0 {
+            return;
+        }
+        self.battle.wipe_bark_pending = false;
+        let first_monster = self.formation_slot0_monster_id().unwrap_or(0);
+        let mut rng = || self.next_rand() as i32;
+        if let Some(cue) = party_wipe_bark(first_monster, &mut rng) {
+            self.dispatch_battle_cue(cue);
+        }
     }
 
     /// The per-frame camera / pose request the sequencer makes for its pose
@@ -456,12 +480,9 @@ impl World {
                     cam.set_action_yaw_base(WIPE_YAW_BASE);
                 }
                 self.stage_wipe_taunt(seq.pose_actor);
-                // The boss bark (`0x8004F9FC..0x8004FAE8`), once.
-                let first_monster = self.formation_slot0_monster_id().unwrap_or(0);
-                let mut rng = || self.next_rand() as i32;
-                if let Some(cue) = party_wipe_bark(first_monster, &mut rng) {
-                    self.dispatch_battle_cue(cue);
-                }
+                // The boss bark's latch `gp+0xA3C` cleared (`0x8004F9C8`);
+                // the sequencer's passes fire it (`Self::try_party_wipe_bark`).
+                self.battle.wipe_bark_pending = true;
             }
             BattleEndCause::Escaped => {}
         }

@@ -216,6 +216,8 @@ impl WorldSaveState for World {
                 // pre-block file.
                 record_tally: (!self.party.record_tally.is_zero())
                     .then_some(self.party.record_tally),
+                // An armed escape countdown; `None` while disarmed.
+                escape_clock: self.escape_clock_save_words(),
             },
         }
     }
@@ -251,7 +253,7 @@ impl WorldSaveState for World {
         }
         self.load_story_flags(&sf);
         self.party.money = sf.ext.money;
-        LoadFullTail::load_full_tail(self, sf);
+        self.load_full_tail(sf);
         // A save from a build whose shop equip-now row misfiled a piece
         // (body armour on a weapon byte, a weapon on the body byte) loads
         // with the piece put back. A retail record never matches.
@@ -333,6 +335,12 @@ impl LoadFullTail for World {
                     .and_then(legaia_save::card::read_retail_record_tally_from_window)
             })
             .unwrap_or_default();
+        // The escape countdown, restarted from its duration as retail's card
+        // load does. A retail block's lift reads it off the block; an `LGSF`
+        // names it in `LGXH` or not at all - its window is the block it was
+        // first lifted from, whose clock may since have ended, so the
+        // window's words are not a fallback here.
+        self.install_loaded_escape_clock(sf.ext_v2.escape_clock);
         // The expansion pack's progress, or a dormant block for a pack that
         // is not active; a save without one resets the pack's progress.
         self.expansion_load_block(sf.ext_v2.expansion.as_deref());

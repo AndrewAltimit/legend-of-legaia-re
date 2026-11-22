@@ -249,15 +249,13 @@ pub fn battle_hud_draws_for(
                     (right, cells): (i32, i32),
                     y: i32,
                     c: [f32; 4]| {
-        let s = value.to_string();
-        let left = i32::from(crate::battle_chrome::figure_left(
-            right as i16,
-            cells as u16,
-            s.len() as u16,
-        ));
-        for (i, ch) in s.bytes().enumerate() {
-            let cell_x = left + i as i32 * DIGIT_W;
-            let d = u32::from(ch - b'0');
+        // The record's own place walk, from the field's left edge.
+        let field_left = right - cells * DIGIT_W;
+        let value = i32::try_from(value).unwrap_or(i32::MAX);
+        for (dx, digit) in crate::battle_chrome::number_record_cells(value, cells as i16) {
+            let cell_x = field_left + i32::from(dx);
+            let d = u32::from(digit);
+            let ch = b'0' + digit.min(9);
             match battle.and_then(|b| crate::hud_numeral_cell(&b, d, c)) {
                 Some((src, color)) => sprites.push(SpriteDraw {
                     dst: (
@@ -1130,7 +1128,10 @@ pub fn battle_hud_draws_for(
                 if content.is_empty() {
                     continue;
                 }
-                let (x, y) = (i32::from(el.x) + i32::from(row.slide_x), i32::from(el.y));
+                let (x, y) = (
+                    i32::from(el.x) + i32::from(row.slide_x),
+                    i32::from(el.y) + i32::from(row.slide_y[k]),
+                );
                 plate_run(
                     &mut text,
                     &mut sprites,

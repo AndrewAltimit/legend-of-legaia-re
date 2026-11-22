@@ -183,6 +183,16 @@ pub struct CutsceneNarration {
     paused: bool,
     /// `+0x10 & 8` - the block has finished (or was force-finished).
     complete: bool,
+    /// `+0x94` - the context the crawl op halt-acquired, named by the op's
+    /// target byte (the own-context form's [`OWN_CONTEXT_CRAWL`]). The roller
+    /// clears that context's `0x400` as it retires its last page; `None` for
+    /// a roller with no parent (`beq a0,zero` at `0x800376FC`).
+    ///
+    /// [`OWN_CONTEXT_CRAWL`]: legaia_scene_formats::cutscene_text::OWN_CONTEXT_CRAWL
+    parent: Option<u8>,
+    /// The parent the retirement released, until the host takes it
+    /// ([`Self::take_released_parent`]) and clears that context's halt.
+    released: Option<u8>,
 }
 
 impl CutsceneNarration {
@@ -209,6 +219,43 @@ impl CutsceneNarration {
             slots: Vec::new(),
             paused: false,
             complete,
+            parent: None,
+            released: None,
+        }
+    }
+
+    /// Link the roller to the context its op halt-acquired (`sw s5,0x94(v0)`
+    /// at `0x801E1F80`), named by the op's target byte. A block of no pages
+    /// is over before it starts and releases the parent at once: retail's
+    /// first pass finds `+0x6A >= 0` pages retired (`0x800376E8`).
+    pub fn with_parent(mut self, parent: u8) -> Self {
+        if self.complete {
+            self.released = Some(parent);
+        } else {
+            self.parent = Some(parent);
+        }
+        self
+    }
+
+    /// The context the roller still holds (`+0x94`), until it retires.
+    pub fn parent(&self) -> Option<u8> {
+        self.parent
+    }
+
+    /// The parent a retirement or a kill released since the last call: the
+    /// context whose halt bit `0x400` the host now clears (`and v0,v0,-0x401`
+    /// at `0x8003770C`, `0x801E3464`).
+    pub fn take_released_parent(&mut self) -> Option<u8> {
+        self.released.take()
+    }
+
+    /// The block is over: mark it complete and release the parent.
+    ///
+    /// PORT: FUN_80037174 (0x800376D8..0x80037728)
+    fn retire(&mut self) {
+        self.complete = true;
+        if let Some(p) = self.parent.take() {
+            self.released = Some(p);
         }
     }
 
@@ -366,7 +413,7 @@ impl CutsceneNarration {
             }
         }
         if self.retired >= self.pages.len() {
-            self.complete = true;
+            self.retire();
         }
     }
 
@@ -418,17 +465,20 @@ impl CutsceneNarration {
         self.line_step();
         self.accum = 0;
         if self.retired >= self.pages.len() {
-            self.complete = true;
+            self.retire();
         }
         !self.complete
     }
 
     /// Force-finish the block (the config op's `w3 == 3` kill): the roller
-    /// reports complete and draws nothing.
+    /// reports complete and draws nothing. The kill releases the parent as
+    /// the retirement does (`0x801E344C..0x801E3468`).
+    ///
+    /// PORT: FUN_801DE840 (0x801E3440..0x801E347C)
     pub fn force_finish(&mut self) {
         self.retired = self.pages.len();
         self.next_page = self.pages.len();
-        self.complete = true;
+        self.retire();
     }
 }
 
@@ -610,6 +660,24 @@ mod tests {
             assert!(guard < 64, "skip converges");
         }
         assert!(n.is_complete());
+    }
+
+    #[test]
+    fn retiring_and_killing_release_the_parent_once() {
+        let mut n = CutsceneNarration::new(pages(1)).with_parent(0x06);
+        assert_eq!(n.parent(), Some(0x06));
+        while n.tick(1) {}
+        assert_eq!(n.parent(), None);
+        assert_eq!(n.take_released_parent(), Some(0x06));
+        assert_eq!(n.take_released_parent(), None);
+        let mut k = CutsceneNarration::new(pages(3)).with_parent(0xF8);
+        k.tick(10);
+        assert_eq!(k.take_released_parent(), None, "held while scrolling");
+        k.force_finish();
+        assert_eq!(k.take_released_parent(), Some(0xF8));
+        let mut orphan = CutsceneNarration::new(pages(1));
+        while orphan.tick(1) {}
+        assert_eq!(orphan.take_released_parent(), None);
     }
 
     #[test]

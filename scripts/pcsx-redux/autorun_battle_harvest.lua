@@ -103,8 +103,21 @@
 --                    libsnd sequence, its play flags, tick wait, read cursor)
 --                    and the sounding voice records split by owner: what a
 --                    fight does to the music between the step and the return
+--   LEGAIA_OSC_LOG   1 = write osc.csv, one row per vsync: the game mode, the
+--                    list-0 node counts of the three handlers the MAN loader's
+--                    sweeps retire (camera mover 0x801DC0BC, floor-ladder
+--                    oscillator 0x801DA930, register ramp 0x80037018; live =
+--                    `+0x10 & 8` clear) and the sixteen floor-ladder rungs
+--                    0x1F80035C; and log each entry of the MAN loader
+--                    FUN_8003AEB0, its sweeps' end 0x8003B444 and the
+--                    system-script install FUN_8003AB2C with the same counts
+--                    (breakpoints: run without --fast). LEGAIA_OSC_SHOTS=N
+--                    adds a field screenshot every N vsyncs
+--                    (shot_<vsync>.raw + .meta). LEGAIA_OSC_AFTER=N ends the
+--                    run N field vsyncs after the first battle's return.
 --
--- No breakpoints are armed, so --fast (dynarec) runs are fine.
+-- No breakpoints are armed (unless LEGAIA_OSC_LOG), so --fast (dynarec)
+-- runs are fine.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -362,6 +375,78 @@ local function log_audio(vsync, mode)
         src(0x8007052C), src(0x8007056C), music, cue)
 end
 
+local OSC = {
+    on = probe.getenv_num("LEGAIA_OSC_LOG", 0) == 1,
+    shots = probe.getenv_num("LEGAIA_OSC_SHOTS", 0),
+    after = probe.getenv_num("LEGAIA_OSC_AFTER", 0),
+    vsync = 0,
+    returned_at = nil,
+}
+function OSC.counts()
+    local live = { [0x801DC0BC] = 0, [0x801DA930] = 0, [0x80037018] = 0 }
+    local dead = { [0x801DC0BC] = 0, [0x801DA930] = 0, [0x80037018] = 0 }
+    local head = probe.read_u32(0x8007C34C)
+    local n = ok_ptr(head) and probe.read_u32(head) or 0
+    local guard = 0
+    while ok_ptr(n) and guard < 512 do
+        local h = probe.read_u32(n + 0xC) or 0
+        if live[h] ~= nil then
+            if bit.band(probe.read_u32(n + 0x10) or 0, 8) == 0 then live[h] = live[h] + 1
+            else dead[h] = dead[h] + 1 end
+        end
+        n = probe.read_u32(n) or 0
+        guard = guard + 1
+    end
+    return string.format("%d,%d,%d,%d,%d,%d", live[0x801DC0BC], dead[0x801DC0BC],
+        live[0x801DA930], dead[0x801DA930], live[0x80037018], dead[0x80037018])
+end
+function OSC.rungs()
+    local r = {}
+    for i = 0, 7 do
+        local w = probe.read_scratch_u32(0x1F80035C + 4 * i)
+        for _, v in ipairs({ bit.band(w, 0xFFFF), bit.rshift(w, 16) }) do
+            if v >= 0x8000 then v = v - 0x10000 end
+            r[#r + 1] = tostring(v)
+        end
+    end
+    return table.concat(r, ",")
+end
+function OSC.arm()
+    local bp = require("probe.bp")
+    for _, t in ipairs({ { 0x8003AEB0, "man_load" }, { 0x8003B444, "sweeps_done" },
+            { 0x8003AB2C, "system_install" }, { 0x8003BAE0, "system_install_done" } }) do
+        bp.arm(t[1], "Exec", 4, t[2], function()
+            logf("osc %s vsync=%d mode=0x%02x a0=%d entry=%d counts=%s rungs=%s", t[2], OSC.vsync,
+                probe.read_u8(GAME_MODE_VA) or 0, tonumber(PCSX.getRegisters().GPR.n.a0),
+                probe.read_u32(0x8007B8B8) or -1, OSC.counts(), OSC.rungs())
+        end)
+    end
+    OSC.csv = probe.csv_open(probe.out_path("osc.csv"),
+        "v,mode,cam_live,cam_dead,ladder_live,ladder_dead,ramp_live,ramp_dead,r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15")
+end
+function OSC.tick(ctx, vsync, mode)
+    OSC.vsync = vsync
+    OSC.csv:row("%d,%d,%s,%s", vsync, mode, OSC.counts(), OSC.rungs())
+    if mode == 0x03 and battles > 0 and OSC.returned_at == nil then
+        OSC.returned_at = vsync
+        logf("osc field return vsync=%d", vsync)
+    end
+    if mode == 0x03 and OSC.shots > 0 and vsync % OSC.shots == 0 then
+        local ok, ss = pcall(function() return PCSX.GPU.takeScreenShot() end)
+        if ok and ss then
+            local bpp = (tonumber(ss.bpp) or 0) > 16 and 24 or 16
+            local h = io.open(probe.out_path(string.format("shot_%06d.raw", vsync)), "wb")
+            h:write(tostring(ss.data)); h:close()
+            local m = io.open(probe.out_path(string.format("shot_%06d.meta", vsync)), "w")
+            m:write(string.format("width=%d\nheight=%d\nbpp=%d\n", tonumber(ss.width), tonumber(ss.height), bpp))
+            m:close()
+        end
+    end
+    if OSC.after > 0 and OSC.returned_at ~= nil and vsync - OSC.returned_at >= OSC.after then
+        ctx.request_quit = true
+    end
+end
+
 probe.run({
     sstate         = SSTATE_PATH,
     capture_frames = FRAMES,
@@ -369,12 +454,14 @@ probe.run({
     on_arm = function(ctx)
         logf("sstate=%s frames=%d hold=%d per_key=%d max=%d",
             SSTATE_PATH, FRAMES, HOLD, PER_KEY, MAX_CAPS)
+        if OSC.on then OSC.arm() end
         return {}
     end,
 
     on_capture = function(ctx, vsync)
         release_if_due(vsync)
         local mode = probe.read_u8(GAME_MODE_VA) or 0
+        if OSC.on then OSC.tick(ctx, vsync, mode) end
         if probe.getenv_num("LEGAIA_AUDIO_LOG", 0) == 1 then
             audio_log = audio_log or probe.csv_open(probe.out_path("audio.csv"),
                 "v,mode,word,req,flags,f_open,f_seq,f_flags,f_wait,f_cursor,f_vol,b_open,b_seq,b_flags,b_wait,b_cursor,b_vol,music,cue")
@@ -423,8 +510,11 @@ probe.run({
         if mode ~= 0x03 and held2 ~= nil then probe.pad.release(held2); held2 = nil end
         if mode == 0x03 and #WANT > 0 then
             if want_i > #WANT then
-                logf("vsync=%d last formation done", vsync)
-                ctx.request_quit = true
+                if OSC.returned_at == nil or not (OSC.on and OSC.after > 0) then
+                    logf("vsync=%d last formation done", vsync)
+                end
+                -- An oscillator log runs on to its own end, the player still.
+                if not (OSC.on and OSC.after > 0) then ctx.request_quit = true end
                 return
             end
             if want_armed ~= want_i then
@@ -606,7 +696,9 @@ probe.run({
         if flow == 0x28 then
             if rounds > SPIRIT_ROUNDS then
                 -- The last formation's fight has nothing left to give.
-                if #WANT > 0 and want_i > #WANT then ctx.request_quit = true end
+                if #WANT > 0 and want_i > #WANT and not (OSC.on and OSC.after > 0) then
+                    ctx.request_quit = true
+                end
                 -- A seat whose gauge refuses one arm parks a Left-only drive.
                 local arms = { BTN.LEFT, BTN.RIGHT, BTN.UP, BTN.CROSS }
                 ring_i = ring_i % #arms + 1
