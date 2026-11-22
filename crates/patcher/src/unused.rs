@@ -41,6 +41,29 @@
 /// make it appear; nothing else needs patching.
 pub const UNUSED_ENEMY_IDS: &[u8] = &[78, 176, 177, 178];
 
+/// Unused monster ids that must **not** join the `--unused-enemies` pool:
+/// the four copies of Cort, ids 183..=186 (`0xB7..=0xBA`).
+///
+/// Their `0x14000`-byte archive slots are byte-identical to Cort's in-use
+/// first form, id 180 (`0xB4`), and no formation on the disc seats them (the
+/// `cort_forms_unseated_real` census). So they are unused content in the same
+/// sense as the Evil Bat clones, but injecting one would crash the game.
+///
+/// Cort's ten action entries carry no physical swing candidate. The monster
+/// action picker `FUN_801E9FD4` (PROT 0898) rolls `rand() % (1 + non-zero spell
+/// slots)` (`0x801EA108..0x801EA144`); a roll of `0` takes the physical arm,
+/// which counts the entries with an id in `0x0C..=0x1F` and a cost other than
+/// `0xFF` into `sp[0x10]` (`0x801EA270..0x801EA2B4`) and then takes `rand()`
+/// modulo that count (`div` at `0x801EA30C`), so an empty list reaches
+/// `break 0x1c00`, the divide-by-zero trap, at `0x801EA318`. Only id `0xB4` itself is exempt: it
+/// forces the magic arm (`li v0,0xb4` / `li s6,0x1` at `0x801EA18C..0x801EA198`).
+/// A copy carries a different id, so with one magic slot it takes the trapping
+/// arm on about half its turns.
+///
+/// Listed so the exclusion is a recorded decision rather than an oversight;
+/// `unused_cort_copies_stay_out_of_the_inject_pool` pins it.
+pub const UNSAFE_UNUSED_ENEMY_IDS: &[u8] = &[183, 184, 185, 186];
+
 /// Unused item ids the `--unused-items` toggle adds to the valid item pool (so
 /// the `random` drop / chest / steal fills can hand them out).
 ///
@@ -77,6 +100,14 @@ mod tests {
     #[test]
     fn unused_enemy_ids_are_comm_and_the_three_evil_bat_clones() {
         assert_eq!(UNUSED_ENEMY_IDS, &[78, 176, 177, 178]);
+    }
+
+    #[test]
+    fn unused_cort_copies_stay_out_of_the_inject_pool() {
+        assert_eq!(UNSAFE_UNUSED_ENEMY_IDS, &[0xB7, 0xB8, 0xB9, 0xBA]);
+        for id in UNSAFE_UNUSED_ENEMY_IDS {
+            assert!(!UNUSED_ENEMY_IDS.contains(id), "id {id} is injectable");
+        }
     }
 
     #[test]

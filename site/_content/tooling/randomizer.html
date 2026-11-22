@@ -777,6 +777,9 @@
   <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
     <p>The battle loader streams a monster's slot by id on demand with no per-scene preload list, so a formation byte alone makes a cut monster spawn. The unnamed accessory's name string is written into preserved rodata padding of <code>SCUS_942.54</code> and only <code>0xFD</code>'s name pointer is repointed; the region is chosen by its flanking rodata surviving file&rarr;RAM byte-for-byte, since the data segment's trailing zero-fill is scratch the game overwrites every frame. The accessory's documented effect (only Seru-class random encounters) is never exercised in retail, so treat it as experimental.</p>
   </div></details>
+  <details class="disclosure"><summary>The unused Cort copies stay out</summary><div class="disclosure-body">
+    <p>Monster ids 183-186 are unused too: four byte-for-byte copies of Cort's first form (id 180) that no formation seats. The toggle leaves them out on purpose. Cort's record has no physical attack, and the battle AI's action picker divides by the number of physical attacks whenever it rolls one. The real Cort is exempted by its id, so a copy would hit the divide-by-zero trap and crash on about half its turns.</p>
+  </div></details>
 </section>
 
 <section class="doc-section" id="texture-replacement">

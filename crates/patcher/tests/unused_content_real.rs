@@ -9,7 +9,11 @@
 //!   Good" (`0x6B`) is named (so already in the valid pool) while the unnamed
 //!   accessory (`0xFD`) has no name (so excluded - the toggle is what adds it);
 //! - turning the toggle on actually injects an unused enemy into the
-//!   random-encounter result, and leaving it off injects none.
+//!   random-encounter result, and leaving it off injects none;
+//! - the Cort copies ([`legaia_patcher::unused::UNSAFE_UNUSED_ENEMY_IDS`]) are
+//!   byte-identical to Cort's id 180, carry no physical swing candidate, are
+//!   seated by no formation in either MAN carrier, and the toggle never places
+//!   them.
 //!
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
@@ -20,7 +24,7 @@ use legaia_patcher::apply;
 use legaia_patcher::encounter::SceneEncounters;
 use legaia_patcher::item_name::{SERU_BELL_ID, SERU_BELL_NAME};
 use legaia_patcher::items::valid_item_pool;
-use legaia_patcher::unused::{self, UNUSED_ENEMY_IDS, UNUSED_ITEM_IDS};
+use legaia_patcher::unused::{self, UNSAFE_UNUSED_ENEMY_IDS, UNUSED_ENEMY_IDS, UNUSED_ITEM_IDS};
 use legaia_randomizer::drops::DropMode;
 use psx_iso::iso9660::find_file_in_image;
 use psx_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
@@ -36,6 +40,8 @@ const EVIL_BAT_INUSE_ID: u16 = 140;
 const EVIL_BAT_CLONE_IDS: &[u8] = &[176, 177, 178];
 /// "Comm" - a standalone unused enemy (not a clone).
 const COMM_ID: u16 = 78;
+/// Cort's in-use first form, the record the unsafe copies duplicate.
+const CORT_INUSE_ID: u16 = 180;
 
 #[test]
 fn unused_enemy_ids_are_valid_unused_records() {
@@ -83,6 +89,38 @@ fn unused_enemy_ids_are_valid_unused_records() {
         reference,
         "Comm (id {COMM_ID}) is its own enemy, not an Evil Bat clone"
     );
+}
+
+#[test]
+fn unsafe_unused_ids_are_cort_copies_with_no_swing() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let patcher = DiscPatcher::open(disc).expect("open disc");
+    let archive = patcher
+        .read_entry(MONSTER_ARCHIVE_ENTRY)
+        .expect("read monster archive");
+    let slot = |id: u16| -> &[u8] {
+        let start = (id as usize - 1) * SLOT_STRIDE;
+        &archive[start..start + SLOT_STRIDE]
+    };
+    let cort = legaia_actor_formats::monster_archive::record(&archive, CORT_INUSE_ID)
+        .expect("decode record")
+        .expect("record present");
+    assert!(cort.name.contains("Cort"), "id 180 is {:?}", cort.name);
+    // The picker's trapping arm needs an empty swing list: no castable entry.
+    assert!(
+        !cort.spells.iter().any(|s| s.is_castable()),
+        "Cort's record carries a swing candidate"
+    );
+    for &id in UNSAFE_UNUSED_ENEMY_IDS {
+        assert_eq!(
+            slot(u16::from(id)),
+            slot(CORT_INUSE_ID),
+            "id {id} must be a byte copy of Cort (id {CORT_INUSE_ID})"
+        );
+    }
 }
 
 #[test]
@@ -138,20 +176,24 @@ fn unused_items_split_named_vs_unnamed() {
 /// Counts **both** MAN carriers. The randomizer places into the v12-family
 /// dungeons' streaming-chunk MANs too, so a bundle-only count reads lower than
 /// the report and the comparison below would fail on a correct patch.
-fn unused_spawns_on_disc(patcher: &DiscPatcher) -> usize {
+fn spawns_on_disc(patcher: &DiscPatcher, ids: &[u8]) -> usize {
     let mut n = 0;
     for idx in 0..patcher.entry_count() {
         let Ok(entry) = patcher.read_entry(idx) else {
             continue;
         };
         if let Some(scene) = SceneEncounters::locate(&entry, idx) {
-            n += scene.count_ids_in(UNUSED_ENEMY_IDS);
+            n += scene.count_ids_in(ids);
         }
         for scene in SceneEncounters::locate_streaming_mans(&entry, idx) {
-            n += scene.count_ids_in(UNUSED_ENEMY_IDS);
+            n += scene.count_ids_in(ids);
         }
     }
     n
+}
+
+fn unused_spawns_on_disc(patcher: &DiscPatcher) -> usize {
+    spawns_on_disc(patcher, UNUSED_ENEMY_IDS)
 }
 
 #[test]
@@ -168,6 +210,11 @@ fn unused_enemy_toggle_injects_only_when_enabled() {
         unused_spawns_on_disc(&base),
         0,
         "vanilla scenes must reference no unused enemy"
+    );
+    assert_eq!(
+        spawns_on_disc(&base, UNSAFE_UNUSED_ENEMY_IDS),
+        0,
+        "vanilla scenes must seat no Cort copy"
     );
 
     // Toggle OFF: a random encounter pass draws only from each scene's own pool,
@@ -188,6 +235,11 @@ fn unused_enemy_toggle_injects_only_when_enabled() {
         report.unused_placed > 0,
         "the toggle must inject at least one unused enemy (got {})",
         report.unused_placed
+    );
+    assert_eq!(
+        spawns_on_disc(&on, UNSAFE_UNUSED_ENEMY_IDS),
+        0,
+        "the toggle must never place a Cort copy"
     );
     // Re-decode off the patched image: the placements are real disc bytes, and
     // the report count matches the written-back scenes.
