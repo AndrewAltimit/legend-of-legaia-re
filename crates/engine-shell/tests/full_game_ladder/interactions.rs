@@ -567,8 +567,16 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
         }
         // Another body stops the lean short of the probe's reach: `koin4`'s
         // baker P1[3], with a customer at the counter a tile to the south.
-        // A player steps along the counter and leans in again.
-        if session.host.world.npcs.solid {
+        // A player steps along the counter and leans in again. A probe that
+        // lands on another NPC is the same case whatever `npcs.solid` says:
+        // that body stands between.
+        let probe_on_other = |s: &NativeSession| {
+            s.host
+                .world
+                .field_interact_probe_slot()
+                .filter(|&o| o != slot)
+        };
+        if session.host.world.npcs.solid || probe_on_other(session).is_some() {
             for (dx, dz) in [(0, -56), (0, 56), (-56, 0), (56, 0)] {
                 if facing(session) || !walking(session) {
                     break;
@@ -582,6 +590,45 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
                 if let Some(scene) = pad_lean(session, npc, 24, facing) {
                     return Run::Entered(scene);
                 }
+            }
+        }
+        // The steps above are taken about the NPC, and a body standing
+        // square between the player and it is still between after each:
+        // `koin1b` P1[9], whose probe lands on P1[18] from every one of them.
+        // A player walks round the one in the way, a tile to either side of
+        // it across the line to the NPC, and leans in from there.
+        if !facing(session)
+            && walking(session)
+            && let Some(other) = probe_on_other(session)
+            && let Some(&(ox, oz)) = session.host.world.npcs.positions.get(&other)
+        {
+            let (px, pz) = player_xz(session);
+            let across_x = (ox - px).abs() < (oz - pz).abs();
+            for side in [-1i16, 1] {
+                if facing(session) || !walking(session) {
+                    break;
+                }
+                let (sx, sz) = if across_x {
+                    (side * 160, 0)
+                } else {
+                    (0, side * 160)
+                };
+                let round =
+                    move |_: &NativeSession| Some((ox.saturating_add(sx), oz.saturating_add(sz)));
+                if let Some(scene) = pad_lean(session, round, 32, facing) {
+                    return Run::Entered(scene);
+                }
+                if let Some(scene) = pad_lean(session, npc, 48, facing) {
+                    return Run::Entered(scene);
+                }
+            }
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!(
+                    "      [talk-round] P1[{slot}] round P1[{other}] at {:?}: player {:?} probe {:?}",
+                    (ox, oz),
+                    player_xz(session),
+                    session.host.world.field_interact_probe_slot()
+                );
             }
         }
         if !facing(session) {
