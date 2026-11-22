@@ -4232,3 +4232,39 @@ entry = "0x801D388C"
 range = "0x801D4E3C..0x801D4E3C"
 verdict = "unreachable"
 reason = "Cases 9 / 0x2C: a second read of the staged string's first byte actor[+0x1DF], reached only past the first read's beq at 0x801D4DEC (non-zero) with only ctx stores between, so it is never zero here."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EA420..0x801EA428"
+verdict = "unreachable"
+reason = "Divide trap on the magic arm's rand() % s1, s1 the record's spell slots +0x21..+0x23 holding an id >= 2: the arm is entered only with the rolled slot s6 non-zero, and a slot below 2 zeroes s6 first (0x801EA15C..0x801EA17C), so the rolled slot is itself counted; the one bypass, record 0xB4 forcing s6 = 1 (0x801EA18C..0x801EA198), carries a castable spell (monster_pick::every_shipped_monster_but_cort_has_a_swing)."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB0A0..0x801EB0A8"
+verdict = "unreachable"
+reason = "Divide trap on the 0x62..0x64 arm's rand() % (0x66 - id): the switch (table 0x801CF1CC, case 0x801EB068) sends only ids 0x62..0x64 here, so the divisor is 2..4."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB380..0x801EB388"
+verdict = "unreachable"
+reason = "Divide trap on the interrupt arm's rand() % s2: s2 is seeded 5 in the switch's delay slot (0x801EA9E0) and the entries for 0x2A / 0x7F / 0x85 and 0x29 step it down once or twice (0x801EB2EC / 0x801EB2F0), so it is 3..5."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB604..0x801EB60C"
+verdict = "unreachable"
+reason = "Divide trap on the 0x9C..0x9E arm's rand() % (id - 0x99): the switch sends only ids 0x9C..0x9E to 0x801EB5D0, so the divisor is 3..5."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB690..0x801EB698"
+verdict = "unreachable"
+reason = "Divide trap on the 0x99..0x9B arm's rand() % (0x9D - id): the switch sends only ids 0x99..0x9B to 0x801EB658, so the divisor is 2..4."
+
+[[arm]]
+entry = "0x801E9FD4"
+range = "0x801EB76C..0x801EB774"
+verdict = "unreachable"
+reason = "Divide trap on the 0x9F..0xA1 arm's rand() % (0xA3 - id): the switch sends only ids 0x9F..0xA1 to 0x801EB734, so the divisor is 2..4."

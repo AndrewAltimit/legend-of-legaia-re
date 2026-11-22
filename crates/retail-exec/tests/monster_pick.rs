@@ -395,3 +395,35 @@ fn no_shipped_monster_names_a_spell_past_the_table() {
         }
     }
 }
+
+/// The census the picker's divide traps rest on. The physical arm divides
+/// its pick by the record's swing-candidate count (tag `0x0C..=0x1F`, cost
+/// not `0xFF`; `rand() % sp[0x10]` at `0x801EA30C`): every shipped record has
+/// one but Cort's `0xB4` and `0xB7..=0xBA`, which the census pins. Record
+/// `0xB4`'s id forces the spell slot `1` past the slot test
+/// (`0x801EA18C..0x801EA198`), so it takes the magic arm, whose count
+/// (`0x801EA41C`) its castable spell keeps above zero.
+#[test]
+fn every_shipped_monster_but_cort_has_a_swing() {
+    not_a_differential!("a census of the PROT 0867 records' action lists; runs no routine");
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let entry = disc.read_entry(867).expect("PROT 0867");
+    let records = legaia_actor_formats::monster_archive::records(&entry).expect("archive");
+    let mut empty = Vec::new();
+    for r in &records {
+        if !r.spells.iter().any(|s| s.is_castable()) {
+            empty.push((r.id, r.name.clone()));
+        }
+    }
+    let cort = records.iter().find(|r| r.id == 0xB4).expect("record 0xB4");
+    assert!(
+        cort.ai_bytes[1..4].iter().any(|&id| id >= 2),
+        "0xB4 spells {:?}",
+        &cort.ai_bytes[1..4]
+    );
+    let ids: Vec<u16> = empty.iter().map(|e| e.0).collect();
+    assert_eq!(ids, [0xB4, 0xB7, 0xB8, 0xB9, 0xBA], "{empty:?}");
+}
