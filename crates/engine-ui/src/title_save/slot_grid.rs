@@ -113,6 +113,7 @@ pub fn slot_grid_quad_x(col: u32, row: u32, slot: u32, t: u16) -> i32 {
 /// cell quad at the `+8 / -8` content inset, the portrait inside the
 /// frame, and the full-vs-dim modulation by the caller's mode - this
 /// builder emits the same per-cell draws).
+/// REF: FUN_8002C488 (the indexed sprite cell the loop stamps the hand with)
 pub fn slot_preview_grid_draws_at(
     rects: &SaveMenuAtlasRects,
     cells: &[SlotGridCell],
