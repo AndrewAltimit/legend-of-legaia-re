@@ -27,6 +27,14 @@ pub enum ImpactSeat {
     /// the row-hit loops that skip a Stoned seat ahead of the hit and its
     /// tint (`lhu 0x16e` / `andi 4` / `bnez` to the loop's step).
     LiveUnstonedMonsters,
+    /// [`Self::Victim`] unless it stood in Stone as the tick opened: the
+    /// hits that skip a Stoned victim with their tint (PROT 0908's arms 8
+    /// and 11, `andi 4` at `0x801F76B8` / `0x801F7C00`).
+    UnstonedVictim,
+    /// The monster seats other than the victim that stood shown
+    /// (`+0x21C == 0`), living and out of Stone as the tick opened: PROT
+    /// 0908's arm-11 splash loop (`0x801F7DB0..0x801F7DEC`).
+    ShownOtherMonsters,
     /// `actor_table[0..ctx[+0]]`: the party row.
     Party,
     /// The party row's seats with HP `+0x14C` and no Stone (`+0x16E & 4`):
@@ -116,12 +124,12 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
     // PROT 0908 Zenoir. Arm 7's pass lights the creature (`0x801F761C`, the
     // delay slot of the arm's exit); arm 8's opener strikes the victim
     // (`0x801F77DC..0x801F7800`); arm 11's finisher strikes the victim
-    // (`0x801F7D58..0x801F7D6C`) and its splash every other live monster
-    // (`0x801F7F60..0x801F7F7C`).
+    // (`0x801F7D58..0x801F7D6C`) and its splash every other shown monster
+    // (`0x801F7F60..0x801F7F7C`); each skips a Stoned seat.
     latch(908, 7, ImpactEdge::Pass, ImpactSeat::Creature, 1),
-    tint(908, 8, ImpactSeat::Victim, RED, 1),
-    tint(908, 11, ImpactSeat::Victim, RED, 1),
-    tint(908, 11, ImpactSeat::LiveMonsters, RED, 1),
+    tint(908, 8, ImpactSeat::UnstonedVictim, RED, 1),
+    tint(908, 11, ImpactSeat::UnstonedVictim, RED, 1),
+    tint(908, 11, ImpactSeat::ShownOtherMonsters, RED, 1),
     // PROT 0909 Viguro. Arm 11 marks the live row (`0x801F7248..0x801F7268`,
     // beside `+0x21C = 4`), the sweep strikes it (`0x801F76DC..0x801F76F8`),
     // skipping a Stoned seat (`andi 4` at `0x801F75E0`).

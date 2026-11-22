@@ -62,6 +62,7 @@ impl World {
             live_victim
         };
         let seat_slot = self.casting.summon_actor_slot.unwrap_or(ticks::SUMMON_SEAT);
+        let impact_open: ImpactOpen = self.impact_open(victim_slot);
 
         // The kernels index a retail-shaped seat row (`seat_map`): these
         // three are the same actors' seats in it.
@@ -1882,6 +1883,20 @@ impl World {
                             out
                         }
                     };
+                    // PROT 0907's and 0908's side-band arm steps over arm 3's
+                    // band-word poll when the word is already out (`lh 0x6D8`
+                    // / `addiu 2`: 0907 `0x801F71B0..0x801F71C8`, 0908
+                    // `0x801F6DF0..0x801F6E04`); the tick bodies advance one.
+                    if matches!(entry, 907 | 908)
+                        && (phase_in, ctx.phase) == (2, 3)
+                        && self
+                            .casting
+                            .band_word_live
+                            .unwrap_or(self.battle_ctx.frame_timer)
+                            == 0
+                    {
+                        ctx.phase = 4;
+                    }
                     self.write_cast_seat_row(&seats);
                     caster = seats.get(r_caster).copied().unwrap_or(caster);
                     victim = seats.get(r_victim).copied().unwrap_or(victim);
@@ -2580,6 +2595,7 @@ impl World {
             victim_slot,
             seat_slot,
             party_hittable,
+            impact_open,
         );
         self.apply_cast_kill_results(
             entry,
