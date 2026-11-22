@@ -417,8 +417,6 @@ fn the_somersault_entry_passes_the_drill_and_commits_the_last_lesson() {
     // ends the entry: `0x50 -> 0x5A`, the drill check.
     world.tick_battle_arts_input();
     assert_eq!(world.battle.flow, BattleFlowState::TargetSelect);
-    arts_press(&mut world, PadButton::Cross);
-    assert_eq!(world.battle.flow, BattleFlowState::TargetSelect);
     assert_eq!(
         queued(&world),
         vec![marker(msg::SELECT_TARGET), marker(msg::TARGET_EXPLAIN)],
@@ -436,7 +434,8 @@ fn the_somersault_entry_passes_the_drill_and_commits_the_last_lesson() {
         "the hook sees the gauge's swing bytes"
     );
     world.battle.tutorial_boxes.clear();
-    // Any press on the review picks the lone target and commits.
+    // The entry ends on the target cursor (retail's `0x5A`): the confirm
+    // commits on the lone target.
     arts_press(&mut world, PadButton::Cross);
     assert!(world.battle.arts_input.is_none(), "the art commits");
     assert_eq!(queued(&world), vec![marker(msg::NOW_BEGIN)]);
