@@ -273,6 +273,8 @@ const PUERA: u32 = 0x801F_6A3C;
 /// The part spawn `FUN_80021B04`, the pool the walk hands PROT 0922's parts
 /// from, and arm 18's 23 crystal handles (`0x801F9F90 + 0x58`).
 const SPAWN_PART: u32 = 0x8002_1B04;
+/// The Battles vibration option word: non-zero turns the pad's rumble off.
+const VIBRATION_OFF: u32 = 0x8008_45C8;
 /// The part pool's wrapper round [`SPAWN_PART`], on the same arguments.
 const SPAWN_POOLED: u32 = 0x8005_0ED4;
 const PARTS: u32 = 0x8016_0000;
@@ -530,8 +532,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             let a = |i: usize| r.r[A0 + i] as i16;
             r.r[V0] = u32::from(bearing_12bit_approx(a(0), a(1), a(2), a(3)));
         });
+        // The fallen-seat runs also play with the Battles vibration row off
+        // (`0x800845C8 != 0`), which every rumble store tests first.
+        let vibration_off = fallen;
         {
             seed(&mut cpu, &module, action, code, layout);
+            cpu.mem.wr32(VIBRATION_OFF, u32::from(vibration_off));
             if fallen {
                 let s = if layout.victim + 1 < 3 + layout.monsters {
                     layout.victim + 1
@@ -965,8 +971,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 });
                 let rates =
                     (words[2] != RUMBLE_SENTINEL).then(|| (words[2] as i32, words[3] as i32));
+                // `World::module_rumble` with the row off stores nothing.
                 let due: Vec<_> =
-                    module_rumble_due(entry, SINGLE_BODY, phase, !held, countdown_before).collect();
+                    module_rumble_due(entry, SINGLE_BODY, phase, !held, countdown_before)
+                        .filter(|_| !vibration_off)
+                        .collect();
                 let mut landed = false;
                 for &(h, y) in &crystals {
                     let (y, l) = puera_crystal_fall(y, SPEED_SCALAR << 7);
@@ -996,8 +1005,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     _ => false,
                 };
                 // Arm 20's landing store: `FF / FF / 0x10 / 0x10`, hold `0`.
+                // With the vibration row off it stores nothing
+                // (`World::apply_puera_writes`).
                 let rumble_ok = if crystals.is_empty() {
                     rumble_ok
+                } else if landed && vibration_off {
+                    stored.is_none() && rates.is_none()
                 } else if landed {
                     stored
                         == Some(BattleRumbleWrite {
@@ -1094,7 +1107,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             }
             // Every carried rumble write of the module was compared.
             let carried = MODULE_RUMBLE.iter().filter(|m| m.entry == entry).count();
-            if carried > 0 && rumbles == 0 {
+            if carried > 0 && rumbles == 0 && !vibration_off {
                 failures.push(format!("PROT {entry:04}: no rumble write compared"));
             }
             if max_roll != 0 {
