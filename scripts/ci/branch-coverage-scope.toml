@@ -2682,3 +2682,179 @@ entry = "0x8003A1E4"
 range = "0x8003A27C..0x8003A27C"
 verdict = "unreachable"
 reason = "the record lookup's fall to the fallback record 0x80073EE8 when P0 + index runs past the record table; the MAN installer passes indices 1..P1-1 and every `4C D2 b1` on the disc names a partition-1 record (index b1 - P0; scene-formats `every_placement_spawn_names_a_partition_one_record`)"
+
+# lane A (w53)
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D3F8C..0x801D3FA4"
+verdict = "cannot-drive"
+reason = "PROT 0976: the match-phase gates (DAT_801DBF78 0 = teardown sets the retire bit and returns, 1 = paused returns); the duel harness pins the phase at 2, and the port's pause and teardown are the cabinet's states (baka_cabinet::fight_on_hold, BakaFight::seat_retired), which the combat-tick differential does not run."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4020..0x801D4028"
+verdict = "cannot-drive"
+reason = "PROT 0976: with DAT_801DBED4 up the player's tick hides the actor and returns; the word is raised only by the cabinet tally's secret branch and dropped by the spin arm 0x35 (FUN_801CF388), neither of which the duel harness runs."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D404C..0x801D404C"
+verdict = "unported"
+reason = "PROT 0976: the actor hide bit (+0x10 |= 2 while block +0x9C is clear); +0x9C is the cabinet's (the round setup raises both at 0x801CFFF0, 0x801D027C clears the player's, 0x801D0360 raises it again) and the port's duel scene draws both seats from the round setup on. PORT GAP: a film of the round setup would show the frames the player is hidden."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D40F0..0x801D4100"
+verdict = "unreachable"
+reason = "PROT 0976: debug trace gated on DAT_801DBF94, which only the developer menu (cabinet state 0xC8) writes; the cabinet enters 0xC8 only with _DAT_8007B868 non-zero, a word the boot zeroes and nothing sets (minigame-baka-fighter.md, the dev-kit screens)."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4188..0x801D4190"
+verdict = "unreachable"
+reason = "PROT 0976: debug trace gated on DAT_801DBF94 (developer menu only, behind _DAT_8007B868, which nothing sets)."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D41F0..0x801D4200"
+verdict = "unreachable"
+reason = "PROT 0976: the CPU picker FUN_801D487C returns an unsigned value mod 3 (multu by 0xAAAAAAAB at 0x801D49C0..0x801D49DC), so the result is 0..2 and the negative and above-2 arms of the 0x80 / 0x20 / 0x40 map are never taken."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4230..0x801D42D8"
+verdict = "unreachable"
+reason = "PROT 0976: the dev mirror remap: _DAT_8007B868 (only cleared, docs/subsystems/minigame-baka-fighter.md), _DAT_8007B9B0 (its one static store is sw zero at 0x8001D448, docs/reference/builds.md) and DAT_801DBF94 == 2 (developer menu only)."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D436C..0x801D4390"
+verdict = "unreachable"
+reason = "PROT 0976: the hit-frame debug trace and its rounding fix-ups, gated on DAT_801DBF94 (developer menu only, behind _DAT_8007B868, which nothing sets)."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4424..0x801D4424"
+verdict = "unreachable"
+reason = "PROT 0976: a second read of the special latch DAT_801DBF50, reached only past the first read's beq at 0x801D43B0 (latch clear) with no store to it between, so it is always clear here."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4624..0x801D4624"
+verdict = "unreachable"
+reason = "PROT 0976: the rounding fix-up for a negative afterimage step speed * DAT_1F80037D; every clip speed in the disc's action tables is non-negative (asserted by baka_fight::whole_rounds_play_out_as_retail_plays_them) and the divisor is 4 or 8."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D47B0..0x801D47C8"
+verdict = "unreachable"
+reason = "PROT 0976: the rounding fix-up for a negative clip rate (no shipped speed is negative, asserted by baka_fight::whole_rounds_play_out_as_retail_plays_them) and the mot-speed debug trace gated on DAT_801DBF94 (developer menu only)."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3180..0x801D3180"
+verdict = "unreachable"
+reason = "PROT 0972: printf gated on the overlay print flag _DAT_8007B9B0, whose one static store is sw zero at 0x8001D448 (docs/reference/builds.md)."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D32E0..0x801D32F4"
+verdict = "unreachable"
+reason = "PROT 0972: the debug bite-cadence override behind _DAT_8007B9B0 and held pad bit 0x2 (minigame-fishing.md); the flag's one static store is sw zero at 0x8001D448."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D33B0..0x801D33B0"
+verdict = "unreachable"
+reason = "PROT 0972: the water class's debug print behind _DAT_8007B9B0 (only ever stored zero, 0x8001D448)."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D33E8..0x801D33E8"
+verdict = "unreachable"
+reason = "PROT 0972: the water class's debug print behind _DAT_8007B9B0 (only ever stored zero, 0x8001D448)."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3420..0x801D3420"
+verdict = "unreachable"
+reason = "PROT 0972: the water class's debug print behind _DAT_8007B9B0 (only ever stored zero, 0x8001D448)."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D34DC..0x801D34DC"
+verdict = "unreachable"
+reason = "PROT 0972: the debug strike override behind _DAT_8007B9B0 (only ever stored zero, 0x8001D448)."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D3C48..0x801D3C64"
+verdict = "unported"
+reason = "Case 0xB with an empty arts queue frees the entry screen's sprite handles ctx[+0x1074..] of kinds 5..13 (FUN_800319A8) and clears their slots; the engine keeps no handle table, its arts screen is drawn from the session's state."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D40A0..0x801D40A0"
+verdict = "cannot-drive"
+reason = "PROT 0976: the combat tick outside the cabinet's duel state 0x64 (round setup, banners, the win and loss screens) steps the clip and returns; ported as combat_tick's !live arm, but the duel differential runs only the duel state and a knockdown's hold, where the cabinet stays at 0x64."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4138..0x801D4138"
+verdict = "unreachable"
+reason = "PROT 0976: the idle reset's knockdown test; a seat with its finisher latch +0x2C up has already left at 0x801D4090 (bne to the clip step and return at 0x801D40A8), so the latch reads clear here."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4480..0x801D4480"
+verdict = "unreachable"
+reason = "PROT 0976: the commit gate's own-knockdown test; a downed seat has already left at 0x801D4090, so the latch reads clear here."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4490..0x801D4490"
+verdict = "cannot-drive"
+reason = "PROT 0976: the commit refused against a downed foe needs a commit inside a knockdown's hold: the standing seat is locked by the deciding exchange until its clip ends and the idle reset clears +0x20, and the opponent commits only in answer to the player. The differential runs forty frames into each hold; a run of whole holds (0xB4 frames) landed no press after that reset either."
+
+[[arm]]
+entry = "0x801D3F44"
+image = "4a1513786780f838"
+range = "0x801D4830..0x801D4830"
+verdict = "unreachable"
+reason = "PROT 0976: the tail's own-knockdown test before clearing DAT_801DBEC4; a downed seat has already left at 0x801D4090, so the latch reads clear here."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D334C..0x801D3364"
+verdict = "unreachable"
+reason = "PROT 0972: the divide traps on the strike draw's rand() % s0; s0 is one of the record ladder's constants 0xC8 / 0x15E / 0x190 / 0x1F4 / 0x3E8 / 0x7D0 (0x801D3290..0x801D32D0) or the debug 0x20, never 0 or -1."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D372C..0x801D3744"
+verdict = "unreachable"
+reason = "PROT 0972: the divide traps on the hook's size draw rand() % s4; s4 is the water class's weight, 10 (li s4,0xa at 0x801D3304, ahead of the class) or 100 / 300 / 500 (li s4 at 0x801D33B4 / 0x801D33EC / 0x801D3424), never 0 or -1."
