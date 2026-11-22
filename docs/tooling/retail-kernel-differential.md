@@ -1220,7 +1220,7 @@ The monster install `FUN_80054CB0` (`monster_install`) also holds the seat's sho
 line, where the port had printed the plaque's name with its twin letter and badge. The save screen's
 header tab (`save_slide`, mode `1`) and the zone census (`camera_follow::the_zone_divisions_census`)
 match; the census finds the composer's zero-span divisions only on four scenes' single-tile regions,
-where retail traps and the port reads `0`.
+and those tiles lie off the walkable floor, so retail's trap never fires.
 
 PROT 0898's streak ribbon `FUN_801E1D98` (`streak_ribbon`), its corner builder answering with generated
 bottom quads, found the chain loop a `do`-`while`: the first segment above the bottom quad is drawn

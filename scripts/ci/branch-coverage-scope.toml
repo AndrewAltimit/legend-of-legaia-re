@@ -4280,36 +4280,36 @@ reason = "PROT 0972: the off-screen break latch on the lure's projected x (< -0x
 entry = "0x801DAB90"
 image = "acff536552d5c829"
 range = "0x801DB054..0x801DB054"
-verdict = "unported"
-reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; retail traps when a dividing zone meets a box with no span, which the every-tile census (`camera_follow::the_zone_divisions_census`) finds only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`; the port reads the quotient as `0` by decision (`camera_zone::div`)"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; the every-tile census (`camera_follow::the_zone_divisions_census`) finds a dividing zone over a box with no span only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`, and every sub-cell of those tiles is off the walkable floor (`the_flat_camera_boxes_lie_off_the_walkable_floor`), so the player never latches them"
 
 [[arm]]
 entry = "0x801DAB90"
 image = "acff536552d5c829"
 range = "0x801DB0B4..0x801DB0B4"
-verdict = "unported"
-reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; retail traps when a dividing zone meets a box with no span, which the every-tile census (`camera_follow::the_zone_divisions_census`) finds only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`; the port reads the quotient as `0` by decision (`camera_zone::div`)"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; the every-tile census (`camera_follow::the_zone_divisions_census`) finds a dividing zone over a box with no span only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`, and every sub-cell of those tiles is off the walkable floor (`the_flat_camera_boxes_lie_off_the_walkable_floor`), so the player never latches them"
 
 [[arm]]
 entry = "0x801DAB90"
 image = "acff536552d5c829"
 range = "0x801DB154..0x801DB154"
-verdict = "unported"
-reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; retail traps when a dividing zone meets a box with no span, which the every-tile census (`camera_follow::the_zone_divisions_census`) finds only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`; the port reads the quotient as `0` by decision (`camera_zone::div`)"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; the every-tile census (`camera_follow::the_zone_divisions_census`) finds a dividing zone over a box with no span only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`, and every sub-cell of those tiles is off the walkable floor (`the_flat_camera_boxes_lie_off_the_walkable_floor`), so the player never latches them"
 
 [[arm]]
 entry = "0x801DAB90"
 image = "acff536552d5c829"
 range = "0x801DB1C4..0x801DB1C4"
-verdict = "unported"
-reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; retail traps when a dividing zone meets a box with no span, which the every-tile census (`camera_follow::the_zone_divisions_census`) finds only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`; the port reads the quotient as `0` by decision (`camera_zone::div`)"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; the every-tile census (`camera_follow::the_zone_divisions_census`) finds a dividing zone over a box with no span only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`, and every sub-cell of those tiles is off the walkable floor (`the_flat_camera_boxes_lie_off_the_walkable_floor`), so the player never latches them"
 
 [[arm]]
 entry = "0x801DAB90"
 image = "acff536552d5c829"
 range = "0x801DB278..0x801DB278"
-verdict = "unported"
-reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; retail traps when a dividing zone meets a box with no span, which the every-tile census (`camera_follow::the_zone_divisions_census`) finds only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`; the port reads the quotient as `0` by decision (`camera_zone::div`)"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; the every-tile census (`camera_follow::the_zone_divisions_census`) finds a dividing zone over a box with no span only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`, and every sub-cell of those tiles is off the walkable floor (`the_flat_camera_boxes_lie_off_the_walkable_floor`), so the player never latches them"
 
 [[arm]]
 entry = "0x801DAB90"

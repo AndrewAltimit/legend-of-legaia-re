@@ -497,8 +497,10 @@ fn the_composer_and_the_snap_match_retail() {
 /// `FUN_801DBA20` selects for the tile. Over every tile of every field scene:
 /// no depth-sweeping zone meets a box whose z bounds run backwards, and a
 /// box with no span meets a dividing zone only on the single-tile regions of
-/// four scenes, where retail's guard traps (`break 7`) and the port reads the
-/// quotient as `0` (`camera_zone::div`).
+/// four scenes, whose tiles lie off the walkable floor
+/// (`engine-scene-host`'s `the_flat_camera_boxes_lie_off_the_walkable_floor`),
+/// so retail's guard (`break 7`) never fires; the port reads such a quotient
+/// as `0` (`camera_zone::div`).
 #[test]
 fn the_zone_divisions_census() {
     not_a_differential!(
