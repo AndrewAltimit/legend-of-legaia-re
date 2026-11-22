@@ -36,12 +36,14 @@ use std::rc::Rc;
 
 const INSTALL: u32 = 0x8003_AEB0;
 const ALLOC: u32 = 0x8001_7888;
+/// The placement spawner the pre-run loop calls per partition-1 record.
+const SPAWNER: u32 = 0x8003_A1E4;
 const ALLOC_NODE: u32 = 0x8002_0DE0;
 const TEXT_WIDTH: u32 = 0x8003_5F04;
 const BANNER_DESCRIPTOR: u32 = 0x8007_431C;
 /// Everything else the installer calls: spawners, the overlay's scene
 /// hooks, the stat rebuild, the floor sampler.
-const STUBS: [u32; 27] = [
+const STUBS: [u32; 26] = [
     0x8002_71A8,
     0x801D_E37C,
     0x8003_A110,
@@ -55,7 +57,6 @@ const STUBS: [u32; 27] = [
     0x801E_565C,
     0x8001_80EC,
     0x801D_E3E0,
-    0x8003_A1E4,
     0x8003_A55C,
     0x8003_A9D4,
     0x801D_596C,
@@ -80,6 +81,8 @@ const FIELD_ENTRY: u32 = 0x8007_B8B8;
 const GAME_MODE: u32 = 0x8007_B83C;
 const STANDING: u32 = 0x8007_BD60;
 const CLOCK_ARMED: u32 = 0x8008_45B8;
+/// The card-load flag `_DAT_8007B8C0` the save screen's load arm raises.
+const CARD_LOAD: u32 = 0x8007_B8C0;
 const CLOCK: u32 = 0x8008_45A0;
 const PLAYER_PTR: u32 = 0x8007_C364;
 const LISTS: [u32; 3] = [0x8007_C34C, 0x8007_C350, 0x8007_C354];
@@ -129,6 +132,14 @@ fn the_man_installer_is_retails() {
         cpu.stub(s, 0);
     }
     cpu.stub(ALLOC, BLOCK);
+    let placed = Rc::new(RefCell::new(Vec::new()));
+    {
+        let placed = placed.clone();
+        cpu.hook(SPAWNER, move |r, _| {
+            placed.borrow_mut().push(r.r[A0]);
+            r.r[V0] = 0;
+        });
+    }
     let spawned = Rc::new(RefCell::new(Vec::new()));
     let s = spawned.clone();
     cpu.hook(ALLOC_NODE, move |r, m| {
@@ -155,7 +166,8 @@ fn the_man_installer_is_retails() {
 
     let mut rng = Rng(0x4D41_4E49);
     let (mut banners, mut game_overs, mut returns, mut failures) = (0, 0, 0, Vec::new());
-    let (mut retired, mut stamped, mut detached) = (0, 0, 0);
+    let (mut retired, mut stamped, mut detached, mut restarts) = (0, 0, 0, 0);
+    let mut prerun = 0;
     for case in 0..4000 {
         let bank: [u8; 4] = std::array::from_fn(|_| rng.next() as u8 & rng.next() as u8);
         let header = rng.next() as u8;
@@ -183,6 +195,17 @@ fn the_man_installer_is_retails() {
         let mut man = vec![0u8; 0x2B];
         man[0] = rng.next() as u8;
         man[1] = header;
+        // Partition 1: placements the loader pre-runs through the spawner
+        // `FUN_8003A1E4` when its argument (a MAN was dispatched) is non-zero
+        // (`0x8003B89C..0x8003B8EC`), all on one dummy record.
+        let n1 = rng.below(5) as usize;
+        if n1 > 0 {
+            man[0x24] = n1 as u8;
+            man[0x28] = 5;
+            man.extend(std::iter::repeat_n(0u8, 3 * n1));
+            man.extend([0u8; 5]);
+        }
+        let man_arg = rng.below(2);
         for body in [vec![1u8], vec![1], name_body, vec![1], fog, vec![]] {
             man.extend([body.len() as u8, 0, 0]);
             man.extend(&body);
@@ -222,12 +245,17 @@ fn the_man_installer_is_retails() {
         cpu.mem.wr16(GAME_MODE, 2);
         cpu.mem.wr8(STANDING, if survived { 0x80 } else { 0 });
         cpu.mem.wr32(CLOCK_ARMED, u32::from(armed) * 0x1000);
+        // A card load's entry: the loader restarts an armed clock from its
+        // duration (`0x8003B964..0x8003B99C`). Never a battle return.
+        let card_load = entry != 2 && rng.below(3) == 0;
+        cpu.mem.wr16(CARD_LOAD, u16::from(card_load));
         cpu.mem.wr32(CLOCK, clock as u32);
         cpu.mem.load(PLAYER, &[0u8; 0x100]);
         spawned.borrow_mut().clear();
+        placed.borrow_mut().clear();
         *width.borrow_mut() = (text_width, Vec::new());
         assert_eq!(
-            cpu.call(INSTALL, &[0, 0x8017_4000]),
+            cpu.call(INSTALL, &[man_arg, 0x8017_4000]),
             Stop::Returned,
             "case {case}"
         );
@@ -250,7 +278,12 @@ fn the_man_installer_is_retails() {
             remaining: clock,
             warn_threshold: 0,
             armed,
+            duration: i32::from(armed) * 0x1000,
         };
+        if card_load {
+            timer.card_load_restart();
+            restarts += usize::from(armed);
+        }
         let mut game_over = false;
         if entry == 2 {
             game_over = apply_battle_return_flags(&mut Bank(&mut w), survived).game_over;
@@ -306,6 +339,20 @@ fn the_man_installer_is_retails() {
             "case {case}: the fog-region table"
         );
         detached += usize::from(fog_count == 0);
+        // The pre-run loop: records 1..N1, as `actor_placements` lists them;
+        // a battle return skips it with the rest of the respawn
+        // (`j 0x8003B9A8` at `0x8003B650`).
+        let want: Vec<u32> = if man_arg != 0 && entry != 2 {
+            man_file
+                .actor_placements(&man)
+                .iter()
+                .map(|p| p.index as u32)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        assert_eq!(*placed.borrow(), want, "case {case}: the placement pre-run");
+        prerun += usize::from(want.len() > 1);
         let seated = man_load_place_name_banner(&mut w, &name);
 
         let ctx = format!(
@@ -384,7 +431,7 @@ fn the_man_installer_is_retails() {
         "{banners} {game_overs} {returns}"
     );
     assert!(
-        retired > 1000 && stamped > 1000 && detached > 500,
-        "{retired} {stamped} {detached}"
+        retired > 1000 && stamped > 1000 && detached > 500 && restarts > 200 && prerun > 300,
+        "{retired} {stamped} {detached} {restarts} {prerun}"
     );
 }

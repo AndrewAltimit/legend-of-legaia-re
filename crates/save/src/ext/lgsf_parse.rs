@@ -322,6 +322,28 @@ impl SaveFile {
             cursor = end;
         }
 
+        // Optional LGXH escape-clock block.
+        if cursor + 8 <= buf.len() && buf[cursor..cursor + 4] == SAVE_FILE_EXTH_MAGIC {
+            cursor += 4;
+            let size = u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let end = cursor
+                .checked_add(size)
+                .filter(|&e| e <= buf.len() && size >= 16)
+                .ok_or_else(|| anyhow::anyhow!("LGSF: LGXH escape-clock block truncated"))?;
+            let w = |k: usize| {
+                u32::from_le_bytes(buf[cursor + 4 * k..cursor + 4 * k + 4].try_into().unwrap())
+            };
+            let clock = crate::card::RetailEscapeClock {
+                remaining: w(0) as i32,
+                duration: w(1) as i32,
+                threshold: w(2) as i32,
+                flags: w(3),
+            };
+            ext_v2.escape_clock = (clock.duration != 0).then_some(clock);
+            cursor = end;
+        }
+
         // Optional LGX5 resume trailer: present only when the writer had a
         // scene / location to record. Absent = empty, never an error, so a
         // pre-trailer v4 file and a trailer-less v4 file read the same.
@@ -557,5 +579,6 @@ pub(super) fn parse_ext_v2(buf: &[u8]) -> Result<SaveExtV2> {
         expansion: None,
         run_rules: None,
         record_tally: None,
+        escape_clock: None,
     })
 }

@@ -79,6 +79,11 @@ pub struct EscapeTimer {
     pub warn_threshold: i32,
     /// Whether the timer is still armed (`_DAT_800845B8 != 0`).
     pub armed: bool,
+    /// The armed duration `_DAT_800845B8` itself: the installer writes it
+    /// beside the counter, expiry zeroes it (`sw zero,0x478` at
+    /// `0x801D2F5C`), and a card load restarts the counter from it
+    /// ([`Self::card_load_restart`]).
+    pub duration: i32,
 }
 
 impl EscapeTimer {
@@ -100,6 +105,7 @@ impl EscapeTimer {
         self.remaining -= clock_delta;
         if self.remaining < 1 {
             self.armed = false;
+            self.duration = 0;
             events.expiry_flag = Some(((flag_word >> 16) & 0xFFF) as u16);
         }
         if self.remaining < self.warn_threshold {
@@ -131,6 +137,23 @@ impl EscapeTimer {
         if self.armed {
             self.remaining -= FIELD_RETURN_PENALTY;
         }
+    }
+
+    /// The card-load arm of the MAN loader: on the field entry a card load
+    /// raises `_DAT_8007B8C0` for, an armed clock restarts from its full
+    /// duration (`lw a0,0x478` / `beq a0,zero` / `lh -0x4740` / `beq` /
+    /// `sw a0,0x460` at `0x8003B96C..0x8003B98C`). Returns whether the clock
+    /// is armed, which is also when the loader respawns its HUD actor
+    /// (`jal 0x801D596C` at `0x8003B998`).
+    ///
+    /// PORT: FUN_8003AEB0 (`0x8003B964..0x8003B99C`)
+    pub fn card_load_restart(&mut self) -> bool {
+        if self.duration == 0 {
+            return false;
+        }
+        self.remaining = self.duration;
+        self.armed = true;
+        true
     }
 
     /// Decompose the remaining count into the MM:SS.ff fields the HUD draws.
@@ -295,6 +318,7 @@ mod tests {
             remaining: 21600,
             warn_threshold: 3600,
             armed: true,
+            duration: 1,
         };
         t.field_return_penalty();
         assert_eq!(t.remaining, 21600 - 0x4B0);
@@ -303,6 +327,7 @@ mod tests {
             remaining: 500,
             warn_threshold: 0,
             armed: false,
+            duration: 0,
         };
         idle.field_return_penalty();
         assert_eq!(idle.remaining, 500);
@@ -312,6 +337,7 @@ mod tests {
             remaining: 600,
             warn_threshold: 0,
             armed: true,
+            duration: 1,
         };
         short.field_return_penalty();
         assert_eq!(short.remaining, 600 - 0x4B0);
@@ -327,6 +353,7 @@ mod tests {
             remaining: 5,
             warn_threshold: 100,
             armed: true,
+            duration: 1,
         };
         // flag word: low half 0x0C7 (warning), high half 0x123 (expiry).
         let ev = t.tick(10, 0x0123_00C7, false);
@@ -342,6 +369,7 @@ mod tests {
             remaining: 200,
             warn_threshold: 100,
             armed: true,
+            duration: 1,
         };
         // drop to 150 -> above 0, below... no, 150 > 100 -> no warning yet.
         let ev = t.tick(50, 0x0123_00C7, false);
@@ -362,6 +390,7 @@ mod tests {
             remaining: 5,
             warn_threshold: 100,
             armed: true,
+            duration: 1,
         };
         let ev = t.tick(10, 0x0123_00C7, true);
         assert_eq!(t.remaining, 5); // untouched
@@ -375,6 +404,7 @@ mod tests {
             remaining: 60 * 90 + 30, // 1m30s + 30 frames
             warn_threshold: 0,
             armed: true,
+            duration: 1,
         };
         let (m, s, hundredths) = t.hud_fields();
         assert_eq!(m, 1);
@@ -388,6 +418,7 @@ mod tests {
             remaining: 2,
             warn_threshold: 0,
             armed: true,
+            duration: 1,
         };
         let mut hud = EscapeTimerHud::default();
         t.tick(1, 0, false);

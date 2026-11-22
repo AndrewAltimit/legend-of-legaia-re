@@ -228,6 +228,11 @@ pub const SAVE_FILE_EXTF_MAGIC: [u8; 4] = *b"LGXF";
 /// battles`, `u32 escapes`. Emitted only when the save carries a non-zero
 /// tally, so a save with neither is byte-identical to a pre-block file.
 pub const SAVE_FILE_EXTG_MAGIC: [u8; 4] = *b"LGXG";
+/// Optional escape-clock block ([`SaveExtV2::escape_clock`]): `i32
+/// remaining`, `i32 duration`, `i32 threshold`, `u32 flags`. Emitted only
+/// when the clock is armed, so a save made without one is byte-identical to
+/// a pre-block file.
+pub const SAVE_FILE_EXTH_MAGIC: [u8; 4] = *b"LGXH";
 /// Byte offset of the engine-ext blob inside a retail SC block: the first
 /// byte past the `0x1A18`-byte live-state copy retail composes and loads.
 pub const RETAIL_ENGINE_EXT_OFFSET: usize = crate::card::RETAIL_LIVE_STATE_SIZE;
@@ -407,6 +412,11 @@ pub struct SaveExtV2 {
     /// carries them in the optional `LGXG` block. `None` = the save names
     /// none (both zero).
     pub record_tally: Option<crate::card::RetailRecordTally>,
+    /// The field-VM `4C D3` escape countdown, when the save was made while
+    /// it was armed ([`crate::card::RetailEscapeClock`]). A retail block
+    /// carries its four words in the window; an `LGSF` file carries them in
+    /// the optional `LGXH` block. `None` = disarmed.
+    pub escape_clock: Option<crate::card::RetailEscapeClock>,
 }
 
 /// Where a save was written: the scene to resume into and the name the

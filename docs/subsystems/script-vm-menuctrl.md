@@ -646,7 +646,14 @@ field - from a battle, a minigame or an FMV resume, the `_DAT_8007B8B8 == 2`
 arm (`0x8003B62C..0x8003B648`); a cold entry through a door pays nothing - and
 a card load restores it to the full duration (`0x8003B96C..0x8003B98C`). Port:
 `EscapeTimer::field_return_penalty`, called on the battle and minigame returns
-and on the FMV resume arm (`SceneHost::apply_pending_fmv_handoff`).
+and on the FMV resume arm (`SceneHost::apply_pending_fmv_handoff`). The save
+carries the four words (an `LGSF` file in its `LGXH` block, a card block at its
+own offsets), and a load seats them through `World::install_loaded_escape_clock`,
+which restarts an armed clock from its duration and respawns its HUD
+(`EscapeTimer::card_load_restart`). Expiry zeroes the duration word
+(`0x801D2F5C`), so a clock that ran out does not come back on a load.
+`chitei2` carries a save point (op `49 01`), so a save inside its countdown is
+reachable.
 
 ### 0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear
 

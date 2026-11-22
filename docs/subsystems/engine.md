@@ -952,6 +952,7 @@ The shell loop closes: title -> save-select -> field / encounter -> battle -> sa
 | `LGXD` trailer (optional) | One expansion pack's progress, an opaque `LXP1` block ([expansion-pack-quests](../formats/expansion-pack-quests.md#saves)). |
 | `LGXF` trailer (optional) | The run's rules, Boss Rush and ironman run id, versioned JSON ([run-rules](run-rules.md#saves-and-replays)). |
 | `LGXG` trailer (optional) | The records screen's battle and escape tallies (`u32 battles`, `u32 escapes`, [save-screen](save-screen.md#the-records-tallies)). |
+| `LGXH` trailer (optional) | An armed field-VM `4C D3` escape countdown (`i32 remaining`, `i32 duration`, `i32 threshold`, `u32 flags`, [script-vm-menuctrl](script-vm-menuctrl.md#4c-d3-the-timed-flag-scheduler)); a card block carries the same four words at `+0x460..+0x484`. |
 
 Each optional trailer is emitted only when it has something to carry, so a save without one is the same bytes as before the trailer existed. The writer emits the highest version any populated field requires; readers accept every earlier one. The retail-card bridge carries the same engine-only state in the SC block's unread tail (`LGXE`, [save-screen](save-screen.md#the-engine-ext-blob-in-the-unread-tail)).
 

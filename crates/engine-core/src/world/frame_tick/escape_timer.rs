@@ -21,12 +21,55 @@ impl World {
     /// the retail-frame sub-clock instead, so there is no latch to seed.
     ///
     /// REF: FUN_801DE840 case 0xD sub 3 (the installer)
+    /// The escape clock a save carries, as the save block's four words
+    /// (`None` = disarmed), for [`Self::install_loaded_escape_clock`].
+    pub fn escape_clock_save_words(&self) -> Option<legaia_save::card::RetailEscapeClock> {
+        let t = &self.battle.escape_timer;
+        (t.duration != 0).then_some(legaia_save::card::RetailEscapeClock {
+            remaining: t.remaining,
+            duration: t.duration,
+            threshold: t.warn_threshold,
+            flags: self.battle.escape_timer_flag_word,
+        })
+    }
+
+    /// Seat a loaded save's escape clock. Retail's card load restores the
+    /// four words with the window, and the MAN load that follows takes the
+    /// card-load arm: an armed clock restarts from its full duration and its
+    /// HUD actor is spawned again (`0x8003B964..0x8003B99C`,
+    /// [`legaia_engine_field::escape_timer::EscapeTimer::card_load_restart`]).
+    /// A save with none leaves the clock disarmed.
+    ///
+    /// REF: FUN_8003AEB0
+    pub fn install_loaded_escape_clock(
+        &mut self,
+        clock: Option<legaia_save::card::RetailEscapeClock>,
+    ) {
+        let c = clock.unwrap_or_default();
+        self.battle.escape_timer_flag_word = c.flags;
+        self.battle.escape_timer = legaia_engine_field::escape_timer::EscapeTimer {
+            remaining: c.remaining,
+            warn_threshold: c.threshold,
+            armed: c.duration != 0,
+            duration: c.duration,
+        };
+        self.battle.escape_timer_hud = None;
+        self.battle.escape_timer_actor = None;
+        if self.battle.escape_timer.card_load_restart() {
+            use legaia_engine_field::escape_timer::{CountdownSpawn, countdown_actor_spawn};
+            if let CountdownSpawn::Spawn(actor) = countdown_actor_spawn(c.duration, false) {
+                self.battle.escape_timer_actor = Some(actor);
+            }
+        }
+    }
+
     pub fn schedule_timed_flags(&mut self, ab: u32, cd: u32, ef: u32) {
         self.battle.escape_timer_flag_word = ab;
         self.battle.escape_timer = legaia_engine_field::escape_timer::EscapeTimer {
             remaining: cd as i32,
             warn_threshold: ef as i32,
             armed: cd != 0,
+            duration: cd as i32,
         };
         self.battle.escape_timer_hud = None;
         // The op ends on the actor's install / remove `FUN_801D596C`: a zero

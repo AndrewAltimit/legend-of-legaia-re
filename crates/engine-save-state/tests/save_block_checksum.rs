@@ -181,6 +181,17 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
             || (legaia_save::card::RETAIL_BATTLE_COUNT_OFFSET
                 ..legaia_save::card::RETAIL_ESCAPE_COUNT_OFFSET + 4)
                 .contains(&i)
+            // The escape countdown's four words (`0x800845A0`, `0x800845B8`,
+            // `0x800845BC`, `0x800845C0`) - the duration at least, zeroed
+            // for a disarmed clock.
+            || [
+                legaia_save::card::RETAIL_ESCAPE_CLOCK_REMAINING_OFFSET,
+                legaia_save::card::RETAIL_ESCAPE_CLOCK_DURATION_OFFSET,
+                legaia_save::card::RETAIL_ESCAPE_CLOCK_THRESHOLD_OFFSET,
+                legaia_save::card::RETAIL_ESCAPE_CLOCK_FLAGS_OFFSET,
+            ]
+            .iter()
+            .any(|&o| (o..o + 4).contains(&i))
             // The play-time counter (`0x80084570`, 60 ticks a second).
             || (legaia_save::card::RETAIL_PLAY_COUNTER_OFFSET
                 ..legaia_save::card::RETAIL_PLAY_COUNTER_OFFSET + 4)
