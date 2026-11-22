@@ -144,3 +144,144 @@ fn the_arts_entry_seats_its_chips_as_retail() {
     }
     assert!(swapped > 1000 && plain > 1000 && wide > 1000);
 }
+
+/// The same cases run on into the shared tail's second switch
+/// (`0x801D4DC8..0x801D5074`): with a command string staged on the actor
+/// (`+0x1DF`, the auto string `FUN_801DA34C` loads), the tail seats one pennant
+/// record `0x20 + k` per command the gauge `+0x154` affords and cuts the
+/// string at the first it does not, then re-seats the pennant cursor
+/// `ctx[+0x6D8]` and the pool `ctx[+0x6DC]` at the full gauge. Against
+/// `ArtsCommandInputSession::with_preseed` (the cut) and `ArtsInputFrame`'s
+/// pennant law (`pennant_anchor_x`, `pennant_w`, `PENNANT_RECORD_Y`).
+#[test]
+fn a_staged_string_seats_its_pennants_as_retail() {
+    use legaia_engine_battle::arts_command_input::ArtsCommandInputSession;
+    use legaia_engine_ui::arts_input::PENNANT_RECORD_Y;
+    differential!(prot(898, BUILD));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.stub(MEASURE, 0x40);
+    // The tail's leaves: the glide spawner hands back a scratch record, the
+    // commit-log row copy and the HUD handle resets are stubbed.
+    const SCRATCH: u32 = 0x8017_0000;
+    let spawned = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let log = spawned.clone();
+    cpu.hook(0x801D_8DE8, move |r, _| {
+        log.borrow_mut()
+            .push((r.r[psx_retail_exec::A0], r.r[psx_retail_exec::A1]));
+        r.r[psx_retail_exec::V0] = SCRATCH;
+    });
+    for leaf in [0x801D_5778u32, 0x801D_99BC, 0x801D_9AE8] {
+        cpu.stub(leaf, 0);
+    }
+    cpu.mem.wr32(CTX_PTR, CTX);
+    for s in 0..8 {
+        cpu.mem.wr32(ACTORS + 4 * s, ACTOR + 0x400 * s);
+    }
+    let seat_cmds: Vec<u8> = cpu.mem.read(SEAT_COMMANDS, 4);
+    let table = cpu.mem.read(PLACEMENTS, 0x18 * 0x60);
+    let mut rng = Rng(0x5045_4E4E);
+    let (mut cut, mut whole, mut long) = (0u32, 0u32, 0u32);
+    for n in 0..20_000 {
+        cpu.mem.load(PLACEMENTS, &table);
+        cpu.mem.load(CTX, &[0u8; 0x900]);
+        spawned.borrow_mut().clear();
+        let case = if rng.below(2) == 0 { 9 } else { 0x2C };
+        let acting = rng.below(3) as u8;
+        let char_id = 1 + rng.below(4) as u8;
+        cpu.mem.wr8(SEATS + u32::from(acting), char_id);
+        cpu.mem.wr8(CTX + 0x13, acting);
+        let row = COST_ROWS + 0x400 * u32::from(acting);
+        cpu.mem.wr32(COST_TABLE + 4 * u32::from(acting), row);
+        let mut costs = [0u8; 4];
+        for (seat, &cmd) in seat_cmds.iter().enumerate() {
+            let cell = row + 0x100 + 0x80 * seat as u32;
+            cpu.mem.wr32(row + 4 * u32::from(cmd), cell);
+            costs[seat] = [30, 30, 36, 42, 48, 20 + rng.below(40) as u8][rng.below(6) as usize];
+            cpu.mem.wr8(cell + 0x74, costs[seat]);
+        }
+        let actor = ACTOR + 0x400 * u32::from(acting);
+        cpu.mem.load(actor, &[0u8; 0x400]);
+        let pool = [0u16, 29, 30, 60, 100, 0xCF, rng.below(0x120) as u16][rng.below(7) as usize];
+        cpu.mem.wr16(actor + 0x154, pool);
+        let len = rng.below(9) as usize;
+        let string: Vec<u8> = (0..len).map(|_| 1 + rng.below(4) as u8).collect();
+        for (i, b) in string.iter().enumerate() {
+            cpu.mem.wr8(actor + 0x1DF + i as u32, b + 0x0B);
+        }
+        assert_eq!(cpu.call(BUILD, &[case, 0]), Stop::Returned, "n {n}");
+
+        // The port: Left, Right, Down, Up against retail's Left, Up, Down, Right.
+        let port_costs = [costs[0], costs[3], costs[2], costs[1]].map(u16::from);
+        let s = ArtsCommandInputSession::new(acting, acting, pool, port_costs, 0)
+            .with_preseed(string.clone());
+        let kept = s.bar_commands().len();
+        let mut chip_costs = [0u16; 4];
+        for (seat, d) in SEAT_DIRS.iter().enumerate() {
+            chip_costs[d.command_index()] = u16::from(costs[seat]);
+        }
+        let frame = ArtsInputFrame {
+            buffer: s.bar_commands(),
+            spent: s.bar_spent(),
+            chip_costs,
+            chip_icons: [0; 4],
+            pool,
+            pool_max: pool,
+            plate_value: 0,
+            list_page: None,
+            list_pages: 0,
+            phase: ArtsInputScreen::Entering,
+            glides: &[],
+            chip_slide: None,
+            dpad: true,
+        };
+        let at = format!("n {n} case {case:#x} pool {pool} costs {costs:?} string {string:?}");
+        let got: Vec<u8> = (0..9).map(|i| cpu.mem.rd8(actor + 0x1DF + i)).collect();
+        let mut want = vec![0u8; 9];
+        for (i, b) in string.iter().enumerate() {
+            want[i] = b + 0x0B;
+        }
+        if kept < len {
+            want[kept] = 0;
+        }
+        assert_eq!(got, want, "the cut string: {at}");
+        for k in 0..kept {
+            let r = PLACEMENTS + 0x18 * (0x20 + k as u32);
+            let x = cpu.mem.rd16(r + 2) as i16 as i32;
+            let w = cpu.mem.rd16(r + 6) as i16 as i32;
+            assert_eq!(x, frame.pennant_anchor_x(k), "pennant {k} seat A x: {at}");
+            assert_eq!(
+                cpu.mem.rd16(r + 0xA) as i16 as i32,
+                frame.pennant_anchor_x(k),
+                "pennant {k} seat B x: {at}"
+            );
+            assert_eq!(w, frame.pennant_w(k), "pennant {k} width: {at}");
+            assert_eq!(cpu.mem.rd16(r + 0xC) as i32, PENNANT_RECORD_Y, "{at}");
+        }
+        let pennants: Vec<u32> = spawned
+            .borrow()
+            .iter()
+            .filter(|(rec, _)| (0x20..0x29).contains(rec))
+            .map(|&(rec, _)| rec)
+            .collect();
+        assert_eq!(
+            pennants,
+            (0..kept as u32).map(|k| 0x20 + k).collect::<Vec<_>>(),
+            "{at}"
+        );
+        // Drawing the staged string charges nothing.
+        assert_eq!(cpu.mem.rd16(CTX + 0x6D8), 0x10, "{at}");
+        assert_eq!(cpu.mem.rd16(CTX + 0x6DC), pool, "{at}");
+        cut += u32::from(kept < len);
+        whole += u32::from(kept == len && len > 0);
+        long += u32::from(kept >= 4);
+    }
+    assert!(
+        cut > 1000 && whole > 1000 && long > 100,
+        "{cut} {whole} {long}"
+    );
+}

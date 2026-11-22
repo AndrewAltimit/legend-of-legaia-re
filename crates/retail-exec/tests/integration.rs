@@ -399,6 +399,7 @@ mod status_clut_restore;
 mod status_icon;
 mod status_page;
 mod status_readout;
+mod step_script_tail;
 mod str_player;
 mod streak_ribbon;
 mod stream_slot;

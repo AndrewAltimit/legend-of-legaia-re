@@ -4220,3 +4220,15 @@ image = "df488fd3098b7996"
 range = "0x801F9774..0x801F9774"
 verdict = "unreachable"
 reason = "PROT 0957: `bgez` on maximum HP `+0x14E` plus 3 (`lhu` at `0x801F9768`), `3..0x10002` and never negative, so the quarter's rounding fix-up never runs."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D4BE4..0x801D4BE4"
+verdict = "unreachable"
+reason = "The tail's kind dispatch past kinds 1 and 2 tests for 3; every step record PTR_DAT_801F4D34[0..0x32] carries a kind byte of 0..=3 (asserted by step_script_tail), so a kind above 3 never falls through."
+
+[[arm]]
+entry = "0x801D388C"
+range = "0x801D4E3C..0x801D4E3C"
+verdict = "unreachable"
+reason = "Cases 9 / 0x2C: a second read of the staged string's first byte actor[+0x1DF], reached only past the first read's beq at 0x801D4DEC (non-zero) with only ctx stores between, so it is never zero here."
