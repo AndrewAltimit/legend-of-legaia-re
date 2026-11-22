@@ -36,7 +36,11 @@ const ANGLER: u32 = 0x8014_2000;
 const FISH: u32 = 0x8014_3000;
 const RING_ACTOR: u32 = 0x8014_4000;
 const MODEL: u32 = 0x8014_5000;
-const SCENE: u32 = 0x8015_0000;
+const SCENE: u32 = 0x8018_0000;
+/// The `.MAP` window the lure tick reads: the walk grid, the cell words and
+/// the region block.
+const MAP_LEN: usize = 0x12000;
+const REGION_BLOCK: usize = 0x10000;
 const SPAWN_TABLE: u32 = 0x8016_0000;
 const PACKETS: u32 = 0x8017_0000;
 
@@ -120,8 +124,6 @@ fn rig(rand: Rc<Cell<u32>>, cue: Rc<Cell<u32>>) -> Option<Cpu> {
         0x8004_2310,
         0x8005_FB84,
         0x8006_53C8,
-        0x8001_80EC,
-        0x801D_7030,
         // The rod actor's matrix, model and draw calls.
         0x8003_D1A4,
         0x8003_D344,
@@ -177,6 +179,36 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
         .unwrap();
     let species = fs::parse(&overlay).expect("species");
+    // The venue scene's `.MAP` (walk grid `+0x4000`, cells `+0x8000`, region
+    // block `+0x10000`): half the casts fish it, so the lure's wall drift and
+    // the water class run on the bytes both sides read.
+    let venue_map = {
+        use legaia_engine_scene::vfs::Vfs;
+        let vfs = legaia_engine_scene::vfs::DiscVfs::open(
+            std::env::var_os("LEGAIA_DISC_BIN").expect("disc"),
+        )
+        .expect("disc");
+        let names = vfs
+            .read("cdname.txt")
+            .or_else(|_| vfs.read("data/cdname.txt"))
+            .expect("CDNAME.TXT");
+        let index = legaia_engine_scene::scene::ProtIndex::from_bytes(
+            vfs.read("prot.dat").expect("PROT.DAT"),
+            Some(std::str::from_utf8(&names).expect("text")),
+        )
+        .expect("index");
+        let scene = legaia_engine_scene::scene::Scene::load(
+            &index,
+            legaia_engine_minigame_scenes::fishing_scene::FISHING_VENUE_SCENE,
+        )
+        .expect("venue scene");
+        let idx = scene.field_map_index(&index).expect("map");
+        let mut map = index.entry_bytes_extended(idx).expect("map bytes");
+        map.truncate(MAP_LEN);
+        map.resize(MAP_LEN, 0);
+        map
+    };
+    let (mut on_water, mut drifted) = (0u32, 0u32);
     let templates = fs::parse_cadence_templates(&overlay).expect("templates");
     // Distinct species ids, so the lookup shows.
     let n = species.len() as u32;
@@ -199,12 +231,39 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         let (lure, rod, venue) = (rng.below(3), rng.below(3) as i32, rng.below(2));
         let casts = rng.below(120) as i32;
         let fs = 1 + rng.below(3) as i32;
-        let facing = rng.below(0x1000) as i16;
-        let anchor = (
-            rng.below(0x2000) as i16,
-            rng.below(0x100) as i16 - 0x40,
-            rng.below(0x2000) as i16,
-        );
+        let real = rng.below(2) == 0;
+        let (facing, anchor) = if real {
+            let lead =
+                legaia_engine_minigame_scenes::fishing_venue::party_placements(venue as usize)[0];
+            let (x, y, z) = legaia_engine_minigame_scenes::fishing_venue::lead_anchor(
+                venue as usize,
+                Some(&venue_map),
+            );
+            let jitter = |r: &mut Rng| r.below(0x200) as i16 - 0x100;
+            (
+                lead.facing.wrapping_add(jitter(&mut rng)),
+                (
+                    x.wrapping_add(jitter(&mut rng)),
+                    y,
+                    z.wrapping_add(jitter(&mut rng)),
+                ),
+            )
+        } else {
+            (
+                rng.below(0x1000) as i16,
+                (
+                    rng.below(0x2000) as i16,
+                    rng.below(0x100) as i16 - 0x40,
+                    rng.below(0x2000) as i16,
+                ),
+            )
+        };
+        let map = if real {
+            venue_map.clone()
+        } else {
+            vec![0u8; MAP_LEN]
+        };
+        cpu.mem.load(SCENE, &map);
         let mut port = PondSession::new(
             species.clone(),
             spawn.clone(),
@@ -217,9 +276,10 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             0,
             seed,
         );
+        let region_block = real.then(|| map[REGION_BLOCK..].to_vec());
         port.attach_venue(legaia_engine_fishing::fishing::PondVenue {
-            map: Vec::new(),
-            region_block: None,
+            map,
+            region_block,
             anchor_x: anchor.0,
             anchor_z: anchor.2,
             anchor_y: anchor.1,
@@ -382,6 +442,12 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
                 }
             };
             want("phase", phase.map_or(-1, |p| p as i64), port.phase() as i64);
+            let probe = port.lure_probe();
+            on_water += u32::from(
+                probe.water
+                    && probe.weight != legaia_engine_fishing::fishing_actors::WATER_TILE_DEFAULT.1,
+            );
+            drifted += u32::from(probe.drift != 0);
             want("draws", i64::from(rand.get()), i64::from(port.rng_state()));
             // A recast zeroes the port's record for the shore's readout;
             // retail leaves the word to the next cast's seed.
@@ -531,7 +597,12 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     eprintln!(
-        "ends landed/snapped/recast/open {ends:?}, frames waiting/hooked/flight {frames_in:?}"
+        "ends landed/snapped/recast/open {ends:?}, frames waiting/hooked/flight {frames_in:?}, \
+         classed water {on_water} drift {drifted}"
+    );
+    assert!(
+        on_water > 0 && drifted > 0,
+        "water {on_water} drift {drifted}"
     );
     // A strike wants a held reel against a credit that mostly comes from a
     // recognised gesture (`0x801D31F4`), which a random pad seldom makes:

@@ -916,6 +916,14 @@ impl PondSession {
                 may_leave = true;
                 self.drive_rod(input, true, fs);
                 self.step_lure(Some(self.last_swim), fs);
+                // The walk-grid drift runs with a fish on too; the water class
+                // beside it feeds only the strike roll, which a hooked frame
+                // draws and drops.
+                if let (Some(lure), Some(venue)) =
+                    (self.lure_actor.as_mut(), self.venue_map.as_ref())
+                {
+                    self.lure_probe.drift = lure.drift(&venue.map, self.casts, fs);
+                }
                 if let Some(lure) = self.lure_actor.as_mut() {
                     lure.pull_step(reel_edge, fs);
                     lure.sink_step(self.line_record, self.lure, fs);

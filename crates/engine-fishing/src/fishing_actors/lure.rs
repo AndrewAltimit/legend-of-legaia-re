@@ -313,6 +313,28 @@ impl LureActor {
         (self.x_fixed >> 8) as i16
     }
 
+    /// The walk-grid drift alone: a lure over a [`walk_grid_overhead`] cell
+    /// moves its `x` accumulator by `frame_step << 11`, the sign the cast
+    /// count's low bit (`0x801D2DCC..0x801D2E58`). The state-2 arm runs it on
+    /// every frame, a fish on or not. Returns the drift in world units.
+    ///
+    /// PORT: FUN_801d26cc (`0x801D2DCC..0x801D2E58`)
+    pub fn drift(&mut self, map: &[u8], cast_counter: i32, frame_step: i32) -> i32 {
+        let fs = frame_step.max(1);
+        // `walk_grid_overhead` indexes from the grid's own base, so it takes
+        // the `+0x4000` block rather than the whole map.
+        let walk = map
+            .get(legaia_engine_field::field_regions::MAP_WALK_GRID_OFFSET..)
+            .unwrap_or(&[]);
+        if !walk_grid_overhead(walk, i32::from(self.tracked.0), i32::from(self.tracked.2)) {
+            return 0;
+        }
+        let push = fs << LURE_DRIFT_SHIFT;
+        let signed = if cast_counter & 1 != 0 { push } else { -push };
+        self.x_fixed = self.x_fixed.saturating_add(signed);
+        signed >> 8
+    }
+
     /// Probe the venue map under the lure and apply this frame's drift.
     ///
     /// `map` is the scene's `.MAP` buffer (`*_DAT_1F8003EC`), `region` its
@@ -335,24 +357,13 @@ impl LureActor {
         cast_counter: i32,
         frame_step: i32,
     ) -> LureProbe {
-        let fs = frame_step.max(1);
         let x = self.tracked.0;
         let z = self.tracked.2;
         let mut out = LureProbe {
             weight: WATER_TILE_DEFAULT.1,
+            drift: self.drift(map, cast_counter, frame_step),
             ..Default::default()
         };
-        // `walk_grid_overhead` indexes from the grid's own base, so it takes
-        // the `+0x4000` block rather than the whole map.
-        let walk = map
-            .get(legaia_engine_field::field_regions::MAP_WALK_GRID_OFFSET..)
-            .unwrap_or(&[]);
-        if walk_grid_overhead(walk, x as i32, z as i32) {
-            let push = fs << LURE_DRIFT_SHIFT;
-            let signed = if cast_counter & 1 != 0 { push } else { -push };
-            self.x_fixed = self.x_fixed.saturating_add(signed);
-            out.drift = signed >> 8;
-        }
         let tile_x = (x as i32) >> LURE_TILE_SHIFT;
         let tile_z = (z as i32) >> LURE_TILE_SHIFT;
         let grid = legaia_engine_field::minigame_floor::FloorGrid::new(map);
