@@ -819,9 +819,11 @@ impl BakaDuelScene {
                     let h = legaia_engine_minigames::baka_fighter::ClipHeader::from_record_words(
                         r.a, r.b, r.flag,
                     );
-                    let step = h.selector_step(i32::from(r.flag >> 8));
-                    let span = (i32::from(r.frame_count) * 16).max(1);
-                    (clock.wrapping_mul(step).rem_euclid(span) >> 4) as usize
+                    legaia_engine_minigames::baka_fighter::lineup_idle_frame(
+                        &h,
+                        i32::from(r.flag >> 8),
+                        clock,
+                    )
                 })
                 .unwrap_or(0);
             let [x, y, z] = *spot;

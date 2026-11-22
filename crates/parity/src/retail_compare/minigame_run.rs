@@ -106,6 +106,14 @@ const BAKA_SELECT_GAP: u64 = 150;
 const WARP_TICK: u64 = 20;
 /// Ticks the entry may take to reach the captured phase.
 const ENTRY_DEADLINE: u64 = 900;
+/// The displayed frame is the one built a game frame (two vsyncs) before the
+/// RAM's, so the replay takes its frame where the lineup stands that much
+/// short of the cursors the RAM holds.
+const BAKA_DISPLAY_LAG_VSYNCS: i32 = 2;
+/// Ticks past the select's settle the replay may wait for its lineup to
+/// reach retail's idle frames: two full cycles of the three clips' joint
+/// period (`lcm(17, 15)` frames of two vsyncs).
+const BAKA_LINEUP_DEADLINE: u64 = 2 * 2 * 17 * 15;
 /// Ticks a dance played hands-off may take to reach the captured song frame:
 /// the song's `0x64FC` timer at `30` a game frame of three vsyncs, past the
 /// count-in.
@@ -155,6 +163,36 @@ pub struct RetailMinigame {
     pub slot_cursor: u32,
     /// The Baka Fighter's player-select cursor, when its overlay is resident.
     pub baka_cursor: u32,
+    /// The player select's three lineup fighters as `(idle frame, actor
+    /// step)` by roster (Vahn, Noa, Gala): each actor's clip cursor `+0x68`
+    /// over sixteen and its step `+0x6A` ([`baka_lineup`]).
+    pub baka_lineup: Option<[(usize, i32); 3]>,
+}
+
+/// Where the select's state spawns each lineup fighter: the position records
+/// at `0x801DBC04` (Vahn `(0, -1000)`, Noa `(350, -600)`, Gala `(-350,
+/// -600)`), with clip `1 + 9 * column` at `+0x5C`.
+const BAKA_LINEUP_SEATS: [(i16, i16); 3] = [(0, -1000), (350, -600), (-350, -600)];
+
+/// The lineup actors' clip cursors: found by the seat (`+0x14` / `+0x18`) and
+/// the idle clip (`+0x5C`) the state wrote, in the actor pool. The cursors are
+/// the select's only clock - nothing else counts the lineup's age - so the
+/// replay places its frame by them.
+fn baka_lineup(ram: &[u8]) -> Option<[(usize, i32); 3]> {
+    const POOL: std::ops::Range<u32> = 0x8008_0000..0x8009_0000;
+    let mut out = [None; 3];
+    for a in POOL.step_by(4) {
+        let h = |off: u32| game_anchors::u16_at(ram, a + off) as i16;
+        for (r, &(x, z)) in BAKA_LINEUP_SEATS.iter().enumerate() {
+            if out[r].is_none() && h(0x14) == x && h(0x18) == z && h(0x5C) == 1 + 9 * r as i16 {
+                out[r] = Some((
+                    usize::from(game_anchors::u16_at(ram, a + 0x68)) >> 4,
+                    i32::from(h(0x6A)),
+                ));
+            }
+        }
+    }
+    Some([out[0]?, out[1]?, out[2]?])
 }
 
 /// The fishing prize exchange's words a capture on one of its screens holds.
@@ -369,6 +407,10 @@ impl RetailMinigame {
             } else {
                 0
             },
+            baka_lineup: (minigame == Some(MinigameSubId::BakaFighter)
+                && phase.map(|p| p.0) == Some(BAKA_SELECT))
+            .then(|| baka_lineup(ram))
+            .flatten(),
             slot_cursor: if minigame == Some(MinigameSubId::SlotMachine) {
                 game_anchors::u32_at(ram, SLOT_CURSOR)
             } else {
@@ -716,6 +758,10 @@ struct EngineMinigame {
     slot_cursor: Option<u32>,
     /// After a Baka Fighter drive: the cabinet state and the select cursor.
     baka: Option<(u32, i32)>,
+    /// Ticks past the drive's settle the select's lineup took to reach
+    /// retail's idle frames (`baka_lineup`); the image takes its frame there
+    /// too.
+    baka_lineup_ticks: u64,
 }
 
 fn run_engine_minigame(
@@ -763,6 +809,7 @@ fn run_engine_minigame(
     let mut exchange = None;
     let mut slot_cursor = None;
     let mut baka = None;
+    let mut baka_lineup_ticks = 0u64;
     if let (Some((_, presses, settle)), Some(at)) = (mg.drive(), reached) {
         // The drive's presses, from the first-press tick past the warp; the
         // hub, the exchange and the cash-out picker read the raw pad edge.
@@ -777,6 +824,37 @@ fn run_engine_minigame(
             session.tick()?;
         }
         session.host.world.input.set_pad(0);
+        // The player select's lineup clips are the frame's clock: tick on
+        // until the replay's three fighters stand on retail's idle frames
+        // (`baka_lineup`), and take the frame there.
+        if let Some(lineup) = mg.baka_lineup {
+            for _ in 0..BAKA_LINEUP_DEADLINE {
+                let on_frame = session
+                    .host
+                    .world
+                    .minigames
+                    .baka_fighter
+                    .as_ref()
+                    .and_then(|f| {
+                        let (_, clock) = f.select_lineup()?;
+                        Some(lineup.iter().enumerate().all(|(r, &(frame, step))| {
+                            f.roster_idle_header(r).is_some_and(|h| {
+                                legaia_engine_minigames::baka_fighter::lineup_idle_frame(
+                                    &h,
+                                    step,
+                                    clock + BAKA_DISPLAY_LAG_VSYNCS,
+                                ) == frame
+                            })
+                        }))
+                    })
+                    .unwrap_or(true);
+                if on_frame {
+                    break;
+                }
+                session.tick()?;
+                baka_lineup_ticks += 1;
+            }
+        }
         let m = &session.host.world.minigames;
         baka = m
             .baka_fighter
@@ -838,6 +916,7 @@ fn run_engine_minigame(
         exchange,
         slot_cursor,
         baka,
+        baka_lineup_ticks,
     })
 }
 
@@ -966,7 +1045,10 @@ pub(super) fn run_minigame(
                 drive
                     .as_ref()
                     .map_or(engine.reached.unwrap_or(0) + 1, |(_, p, settle)| {
-                        FISHING_DRIVE_FIRST + p.last().map_or(0, |l| l.0) + settle
+                        FISHING_DRIVE_FIRST
+                            + p.last().map_or(0, |l| l.0)
+                            + settle
+                            + engine.baka_lineup_ticks
                     }),
             ),
             _ => ("O", FRAME_TICKS_PAST_WARP),
@@ -1078,6 +1160,7 @@ mod tests {
             fishing_exchange: None,
             slot_cursor: 0,
             baka_cursor: 0,
+            baka_lineup: None,
         }
     }
 
@@ -1107,6 +1190,7 @@ mod tests {
             fishing_exchange: None,
             slot_cursor: 0,
             baka_cursor: 0,
+            baka_lineup: None,
         };
         assert!(baka.unseeded_reason().unwrap().contains("Baka Fighter"));
     }
@@ -1127,6 +1211,7 @@ mod tests {
             fishing_exchange: None,
             slot_cursor: 0,
             baka_cursor: 0,
+            baka_lineup: None,
         };
         assert_eq!(mg(6, 3).unseeded_reason(), None);
         // The play loop: seeded on a floor the pad never reached, not on one
@@ -1205,6 +1290,7 @@ mod tests {
             fishing_exchange: Some(words),
             slot_cursor: 0,
             baka_cursor: 0,
+            baka_lineup: None,
         };
         for state in [0x78, 0x79, 0x7A] {
             assert_eq!(fish(state).unseeded_reason(), None, "{state:#X}");

@@ -4411,7 +4411,14 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   attract card, then Right to the capture's cursor `DAT_801DBF70` once the
   lineup takes the pad. The lineup's one `rand()` lands in a focus id no
   fighter carries, so the screen does not depend on it. The `minigame` channel
-  adds the state and the cursor.
+  adds the state and the cursor. The lineup's idle clips are the frame's
+  clock - nothing else counts the lineup's age - so the seed reads each
+  fighter's clip cursor `+0x68` and step `+0x6A` (found by its seat and idle
+  clip, `baka_lineup`) and the replay takes its frame where its own lineup
+  (`baka_fighter::lineup_idle_frame`) stands a game frame short of them, the
+  displayed frame's lag. The two select states read `.974` to `1.000` and
+  `.980` to `.998`: the fixed settle had caught the fighters mid-idle at
+  other poses.
 - **The slot machine's cash-out picker and rules pages** (`0x32`, `0x35`,
   `0x36`) on a machine never played (balance still the bank's): Triangle opens
   the picker, Down to its cursor `DAT_801D4110`; row 2's Cross fades into the

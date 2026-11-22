@@ -1716,3 +1716,20 @@ fn the_all_clear_runs_on_retail_s_drive_word_and_fighter_load() {
         "{instant:?}"
     );
 }
+
+/// The player select's lineup against the two retail select states: the
+/// idle clips (17, 15 and 17 frames, double-stepped from the actor step `4`)
+/// stand on frames `(0, 8, 0)` 136 vsyncs after the lineup spawned and on
+/// `(14, 13, 14)` 130 vsyncs later - the clip cursors `+0x68` the states hold
+/// (`0` / `128` / `0`, then `224` / `208` / `224`), over sixteen.
+#[test]
+fn the_lineup_idle_frames_follow_the_select_clock() {
+    let clip = |frames| ClipHeader {
+        frames,
+        double_step: true,
+        n: 1,
+    };
+    let at = |clock| [17, 15, 17].map(|f| lineup_idle_frame(&clip(f), 4, clock));
+    assert_eq!(at(136), [0, 8, 0]);
+    assert_eq!(at(266), [14, 13, 14]);
+}
