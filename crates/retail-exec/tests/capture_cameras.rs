@@ -252,6 +252,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let (mut passes, mut casts) = (0u32, 0u32);
     let mut outcomes = std::collections::BTreeSet::new();
     let mut unsettled_holds = 0usize;
+    let (mut results, mut heal_capped) = (0usize, false);
     let all = bodies();
     for body in &all {
         let module = disc.read_entry(body.entry as usize).expect("module");
@@ -314,6 +315,16 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             };
             for i in 0..5 {
                 cpu.mem.wr8(FORMATION + i, monster);
+            }
+            // Death Game's heal reads each seat's maximum `+0x14E` and caps
+            // the quarter at the missing HP: a seat at full, one short and
+            // one wounded.
+            if death_game {
+                for a in [ca, va_] {
+                    let hp = cpu.mem.rd16(a + 0x14C);
+                    let short = [0, 1, hp / 8, hp][(round + (a == va_) as usize) % 4];
+                    cpu.mem.wr16(a + 0x14E, hp + short);
+                }
             }
             // Curse All takes the party as a group.
             // Water Hazard sweeps the party or the monster row as well as a
@@ -550,6 +561,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     unsettled_holds += usize::from(phase == 3 && st.target_unsettled);
                 }
                 let arm = (body.director)(&mut st, phase, seats);
+                // The two seats as the pass opens, for Death Game's result.
+                let before = [ca, va_].map(|a| crate::cast_view::read_actor(&mut cpu.mem, a));
                 shots.borrow_mut().clear();
                 let stop = cpu.call(body.va, &[]);
                 let c = format!("{c0} pass {pass} arm {phase}");
@@ -606,8 +619,57 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                             arm.next
                         ));
                     }
+                    // The picked card's result (`0x801F922C..0x801F9794`)
+                    // on the seats it lands on, against the kernel the host
+                    // runs (`death_game_outcome`).
                     if let Some(o) = st.death_game.outcome {
                         outcomes.insert(format!("{o:?}"));
+                        let [mut pc, mut pv] = before;
+                        let max = [ca, va_].map(|a| cpu.mem.rd16(a + 0x14E));
+                        t::death_game_outcome(o, &mut pc, &mut pv, max);
+                        // The arm's seat writes beside the kernel's: the
+                        // caster quieted, the victim shown.
+                        for (v, w) in [(&mut pc, &arm.caster_write), (&mut pv, &arm.victim_write)] {
+                            if let Some(x) = w.stage {
+                                v.staged_anim = x;
+                            }
+                            if let Some(x) = w.rate {
+                                v.anim_rate = x;
+                            }
+                            if let Some(x) = w.render_flag {
+                                v.render_flag = x;
+                            }
+                            if let Some(x) = w.colour {
+                                v.present_04 = x;
+                            }
+                        }
+                        for (who, a, port) in [("caster", ca, pc), ("victim", va_, pv)] {
+                            let got = crate::cast_view::read_actor(&mut cpu.mem, a);
+                            let key = |x: &t::CastActorState| {
+                                (
+                                    x.hp,
+                                    x.hp_bar_delta,
+                                    x.staged_anim,
+                                    x.restage,
+                                    x.anim_rate,
+                                    x.render_flag,
+                                    x.present_04,
+                                )
+                            };
+                            if key(&got) != key(&port) {
+                                failures.push(format!(
+                                    "{c}: {o:?} {who} retail {:?} port {:?}",
+                                    key(&got),
+                                    key(&port)
+                                ));
+                            }
+                        }
+                        results += 1;
+                        heal_capped |= o == cam::DeathGameOutcome::BothHeal
+                            && before
+                                .iter()
+                                .zip(max)
+                                .any(|(b, m)| u32::from(m - b.hp) < (u32::from(m) + 3) >> 2);
                     }
                 }
                 if water_hazard && phase == 3 && !arm.hold && after == phase {
@@ -643,6 +705,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     eprintln!("{} bodies, {casts} casts, {passes} passes", all.len());
     eprintln!("Death Game outcomes {outcomes:?}");
     assert_eq!(outcomes.len(), 4, "Death Game outcomes {outcomes:?}");
+    assert!(
+        results >= 4 && heal_capped,
+        "Death Game results compared {results}, a heal capped by the missing HP {heal_capped}"
+    );
     assert!(
         unsettled_holds > 10,
         "Water Hazard's settle held {unsettled_holds} passes"
@@ -842,4 +908,117 @@ fn water_hazard_waits_for_the_seats_it_names_as_retail_does() {
         passed > 3000 && held > 3000 && extras > 2000 && codes.len() >= 4,
         "{passed} {held} {extras} {codes:?}"
     );
+}
+
+/// Every formation id each battle MAN on the disc can seat: the bundle MAN
+/// and every type-3 streaming chunk, each formation's `count` ids.
+fn formation_ids_disc_wide(disc: &legaia_disc_patch::disc::DiscPatcher) -> Vec<u8> {
+    use legaia_scene_formats::{man_section, scene_asset_table};
+    let ids_of = |man: &[u8], out: &mut Vec<u8>| {
+        let Ok(file) = man_section::parse(man) else {
+            return;
+        };
+        let Some(body) = file.encounter_section_body(man) else {
+            return;
+        };
+        let Ok(sec) = man_section::parse_encounter_section(body) else {
+            return;
+        };
+        let base = file.encounter_section().body_offset() + sec.formation_range.0;
+        for f in 0..usize::from(sec.formation_count) {
+            let rec = base + f * usize::from(sec.formation_stride);
+            let Some(&count) = man.get(rec + 3) else {
+                return;
+            };
+            let n = usize::from(count.min(4));
+            out.extend(man.get(rec + 4..rec + 4 + n).unwrap_or(&[]));
+        }
+    };
+    let mut out = Vec::new();
+    for idx in 0..disc.entry_count() {
+        let Ok(entry) = disc.read_entry(idx) else {
+            continue;
+        };
+        if let Some(table) = scene_asset_table::detect(&entry)
+            && let Some(man) = table.used().iter().find(|d| d.type_byte == 3)
+            && man.size != 0
+            && man.data_offset != 0
+            && let Some(body) = entry.get(man.data_offset as usize..)
+            && let Ok(decoded) = psx_lzs::decompress(body, man.size as usize)
+        {
+            ids_of(&decoded, &mut out);
+        }
+        if let Ok(report) = legaia_container_formats::parse_streaming(&entry, 4096) {
+            for chunk in report.chunks.iter().filter(|c| c.type_byte == 3) {
+                let start = chunk.header_offset + 4;
+                if let Some(man) = entry.get(start..start + chunk.size as usize) {
+                    ids_of(man, &mut out);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Terror Scream's arm 0 (`0x801F7758..0x801F78F0`) and arm 1 fork on the
+/// caster's monster id: `0x7D..=0x7F` play cue `0x190`, `0x83..=0x85` `0x191`,
+/// `0x28..=0x2A` `0x197`, and only `0x7F`, `0x28..=0x2A` and `0x83..=0x85`
+/// frame a shot; `0x7D` and `0x7E` play the cue and leave the camera where it
+/// is, and any other id does neither. The camera director frames the near
+/// shot for every id but `0x7F`, which is retail's only while the caster is
+/// in a framed band. This holds that it always is.
+///
+/// Action `0x70` reaches a monster two ways, both in the AI picker
+/// `FUN_801E9FD4` (PROT 0898): the record's magic window `+0x20..+0x27`
+/// (`lbu v0,0x21(v0)` at `0x801EA538`, stored at `0x801EA544`), and the
+/// monster-id switch, whose only `0x70` (`li v0,0x70` at `0x801EB3FC`, the one
+/// immediate `0x70` stored to `+0x1DF` on the disc) closes the arm
+/// `0x801EB2EC..0x801EB408` that the jump table `0x801CF1CC` (index id - 4,
+/// bound `0xB3` at `0x801EA9D8`) enters for `0x28`, `0x29` (two `addiu s2`
+/// later), `0x2A`, `0x7F` and `0x85`. Gold Face `0x7D` and Lava Face `0x7E`
+/// sit in formations (Lava Face in random ones) but take the switch's common
+/// tail, and no record's window holds `0x70`; Medusa `0x83` and Nurga `0x84`
+/// do not cast it either.
+#[test]
+fn terror_scream_casters_all_sit_in_a_framed_band() {
+    not_a_differential!(
+        "censuses PROT 0898's AI jump table, the PROT 0867 records' magic window and every \
+         formation on the disc against Terror Scream's framed caster bands; runs no routine"
+    );
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const TABLE: u32 = 0x801C_F1CC;
+    const TERROR_ARM: std::ops::RangeInclusive<u32> = 0x801E_B2EC..=0x801E_B2F4;
+    let overlay = disc.read_entry(898).expect("PROT 0898");
+    let word = |va: u32| {
+        let o = (va - OVERLAY_BASE) as usize;
+        u32::from_le_bytes(overlay[o..o + 4].try_into().unwrap())
+    };
+    // The one immediate `0x70` the picker stores to `+0x1DF`.
+    assert_eq!(word(0x801E_B3FC), 0x2402_0070, "li v0,0x70");
+    assert_eq!(word(0x801E_B400), 0xA282_01DF, "sb v0,0x1df(s4)");
+    let switch_casters: Vec<u8> = (0..0xB3u32)
+        .filter(|i| TERROR_ARM.contains(&word(TABLE + 4 * i)))
+        .map(|i| (i + 4) as u8)
+        .collect();
+    assert_eq!(switch_casters, [0x28, 0x29, 0x2A, 0x7F, 0x85]);
+    let archive = disc.read_entry(867).expect("PROT 0867");
+    let records = legaia_actor_formats::monster_archive::records(&archive).expect("records");
+    let window_casters: Vec<u16> = records
+        .iter()
+        .filter(|r| r.ai_bytes.contains(&0x70))
+        .map(|r| r.id)
+        .collect();
+    assert!(window_casters.is_empty(), "{window_casters:#x?}");
+    let framed = |id: u8| matches!(id, 0x28..=0x2A | 0x7F | 0x83..=0x85);
+    assert!(switch_casters.iter().all(|&id| framed(id)));
+    // The two cue-only ids are seated, so it is the AI, not the formations,
+    // that keeps them off the cast.
+    let seated = formation_ids_disc_wide(disc);
+    assert!(seated.len() > 500, "{} seated ids", seated.len());
+    for id in [0x7Du8, 0x7E, 0x28, 0x7F, 0x85] {
+        assert!(seated.contains(&id), "{id:#x} in no formation");
+    }
 }

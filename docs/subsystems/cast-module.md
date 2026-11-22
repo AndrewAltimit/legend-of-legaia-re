@@ -3558,6 +3558,18 @@ at its spray's last point: the loop leaves the third record's `rand()` pair at
 Palma's sweep rolls the camera (by up to `0x80`), which the battle camera has
 no channel for.
 
+Palma's arm 3 lifts the monster row and frames on the first seat's height. Below
+`T = scalar * 160` each pass raises every monster with HP by `2 p` (`+0x36 -= 2 p`
+behind a `+0x14C` test, `0x801F7108..0x801F7138`), then stores TR y as
+`0x200 - 4 * actor_table[3].y` (`0x801F714C..0x801F7170`). With the first
+monster seat down, nothing lifts it and the camera holds at `0x200` while the
+sweep runs. The director had TR y climb `8 p` a pass whatever stood there; it
+now holds while `ModuleCamState::lead_monster_down` is set (`feed_seru_cam`).
+The summon-camera differential runs every director on three seatings: the walk's
+own row, and retail's stage seats with the caster on a wing and the victim across
+a three- and a four-monster row, each also with a fallen seat. Only Palma's arm 3
+then disagreed, on the four-monster row with seat 3 fallen. Grade `disassembly`.
+
 A **pre-hit** is the module's own non-lethal hit ahead of the fold: the
 summon branch of `FUN_801DD0AC` rolled per target, clamped to `HP - 1`, with
 the reaction staged in the `OR` form (`World::apply_summon_pre_hits`,
@@ -4790,6 +4802,20 @@ Its opening frames by the caster's own monster id: Terror Face (`0x7F`) stages c
 `7` on the far framing and a slow pitch drift, `0x28..=0x2A` clip `9` and
 `0x83..=0x85` clip `8` on the near framing and a yaw drift. Arms 1 and 2 each cut
 to a seat and seat the same four ring records on it, the caster and then the victim.
+
+The cue and the framing fork on different bands. Arm 0 plays cue `0x190` for
+`0x7D..=0x7F` (`0x801F7758..0x801F77B8`), but its shot fork (`0x801F78B8..0x801F78F0`)
+and arm 1's drift fork (`0x801F7A30..0x801F7A60`) frame only `0x7F`, `0x28..=0x2A`
+and `0x83..=0x85`: Gold Face `0x7D` and Lava Face `0x7E` would hear the cue under an
+unmoved camera, where the director frames the near shot. No retail cast reaches that.
+The AI picker `FUN_801E9FD4` queues `0x70` from one arm of its monster-id switch
+(`li v0,0x70` at `0x801EB3FC`, the disc's only immediate `0x70` stored to `+0x1DF`),
+which the jump table `0x801CF1CC` enters for `0x28`, `0x29`, `0x2A`, `0x7F` and `0x85`,
+and no monster record's magic window `+0x20..+0x27` holds `0x70`. Gold Face sits in a
+scripted formation and Lava Face in random ones, but both take the switch's common
+tail; Medusa `0x83` and Nurga `0x84` never cast it either. The
+`capture_cameras` differential holds the census
+(`terror_scream_casters_all_sit_in_a_framed_band`). Grade `disassembly` + disc data.
 
 ### PROT 0955 (White Shield, Power Charge, Melt Spray)
 

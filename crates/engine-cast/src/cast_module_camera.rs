@@ -160,6 +160,12 @@ pub struct ModuleCamState {
     /// living monsters (PROT 0931's arm 26, `0x801F80C8..0x801F812C`; PROT 0933's
     /// arm `0xC`, `0x801F7C70..0x801F7DA4`). The host keeps it current.
     pub row_tr_y: i16,
+    /// Whether the first monster seat (`actor_table[3]`) has no HP. PROT
+    /// 0928's arm 3 lifts only the living monsters and takes its TR y off that
+    /// seat's height (`lw -0x6C84` / `lh 0x36` at `0x801F7154..0x801F715C`),
+    /// so with it down the camera holds where a lift would climb. The host
+    /// keeps it current.
+    pub lead_monster_down: bool,
     /// The creature's live seat, as the host last moved it (its walk-in).
     /// Fed in by the host each tick; `None` before it is seated.
     pub creature_live: Option<ModuleSeat>,

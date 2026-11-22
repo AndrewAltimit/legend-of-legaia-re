@@ -73,6 +73,13 @@ impl World {
             }
             target_group_aim(code, &slots)
         };
+        // The first monster seat's HP: PROT 0928's arm 3 lifts only the living
+        // row and frames on that seat's height.
+        st.lead_monster_down = self
+            .battle_seat_map()
+            .engine(3)
+            .and_then(|e| self.actors.get(usize::from(e)))
+            .is_none_or(|a| a.battle.hp == 0);
         if entry == 910 {
             let s = &self.casting.module_swordie;
             st.module_words = [s.hits as i32, s.progress[3] as i32];

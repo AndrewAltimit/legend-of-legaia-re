@@ -285,14 +285,84 @@ fn action_of(entry: u32) -> u8 {
     }
 }
 
-fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8) {
+/// Where the seats stand for one run: the caster's party seat, the monster
+/// count, and each seat's ground pair. The first is the walk's own row; the
+/// others are retail's stage seats (`legaia_engine_battle::battle_seats`,
+/// mirrored in z to this walk's sides) with the caster on a wing and the
+/// victim across the row, so a creature's turn and a camera's drift run
+/// both ways.
+#[derive(Clone, Copy, Debug)]
+struct Layout {
+    caster: u32,
+    monsters: u32,
+    /// The victim seat a seat-target body is cast at.
+    victim: u32,
+    retail_seats: bool,
+}
+
+const LAYOUTS: [Layout; 3] = [
+    Layout {
+        caster: CASTER,
+        monsters: MONSTERS,
+        victim: VICTIM,
+        retail_seats: false,
+    },
+    Layout {
+        caster: 2,
+        monsters: 4,
+        victim: 6,
+        retail_seats: true,
+    },
+    Layout {
+        caster: 1,
+        monsters: 3,
+        victim: 3,
+        retail_seats: true,
+    },
+];
+
+impl Layout {
+    fn ground(&self, s: u32) -> (i16, i16) {
+        use legaia_engine_battle::battle_seats::{monster_seat, party_seat};
+        if !self.retail_seats {
+            return match s {
+                0..=2 => (-0x200 + 0x200 * s as i16, 0x600),
+                7 => (0, 0),
+                _ => (-0x180 + 0x300 * (s as i16 - 3), -0x600),
+            };
+        }
+        match s {
+            0..=2 => {
+                let p = party_seat(3, s as usize);
+                (p.x, -p.z)
+            }
+            7 => (0, 0),
+            _ => {
+                let m = monster_seat(self.monsters as u8, (s - 3) as usize, false);
+                (m.x, -m.z)
+            }
+        }
+    }
+
+    /// The target code a body cast on `code` takes here: a monster seat is
+    /// this layout's victim, a party seat or a group stays.
+    fn code(&self, code: u8) -> u8 {
+        if (3..8).contains(&code) {
+            self.victim as u8
+        } else {
+            code
+        }
+    }
+}
+
+fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8, layout: Layout) {
     cpu.mem.load(BASE, module);
     for b in 0..0x1100 {
         cpu.mem.wr8(CTX + b, 0);
     }
     cpu.mem.wr8(CTX, 3);
-    cpu.mem.wr8(CTX + 1, MONSTERS as u8);
-    cpu.mem.wr8(CTX + 0x13, CASTER as u8);
+    cpu.mem.wr8(CTX + 1, layout.monsters as u8);
+    cpu.mem.wr8(CTX + 0x13, layout.caster as u8);
     cpu.mem.wr16(CTX + 0x6D0, 0x600);
     for s in 0..8u32 {
         let a = ACTOR + s * STRIDE;
@@ -300,12 +370,8 @@ fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8) {
         for o in (0..STRIDE).step_by(4) {
             cpu.mem.wr32(a + o, 0);
         }
-        let live = s < 3 || (3..3 + MONSTERS).contains(&s) || s == CREATURE;
-        let (x, z) = match s {
-            0..=2 => (-0x200 + 0x200 * s as i16, 0x600),
-            7 => (0, 0),
-            _ => (-0x180 + 0x300 * (s as i16 - 3), -0x600),
-        };
+        let live = s < 3 || (3..3 + layout.monsters).contains(&s) || s == CREATURE;
+        let (x, z) = layout.ground(s);
         for (o, v) in [(0x34u32, x), (0x38, z), (0x3C, x), (0x40, z)] {
             cpu.mem.wr16(a + o, v as u16);
         }
@@ -327,7 +393,7 @@ fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8) {
     }
     // The cast's target code, which the creature's installer `FUN_801F19EC`
     // copies onto the creature seat (`0x801F1D98..0x801F1DB8`).
-    cpu.mem.wr8(ACTOR + CASTER * STRIDE + 0x1DD, code);
+    cpu.mem.wr8(ACTOR + layout.caster * STRIDE + 0x1DD, code);
     cpu.mem.wr8(ACTOR + CREATURE * STRIDE + 0x1DD, code);
     for i in 0..5 {
         cpu.mem.wr32(RECORDS + i * 4, MONSTER_RECORD);
@@ -336,7 +402,7 @@ fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8) {
     cpu.mem.wr8(STEP, 1);
     for i in 0..5 {
         cpu.mem
-            .wr8(FORMATION + i, if i < MONSTERS { 0x10 } else { 0 });
+            .wr8(FORMATION + i, if i < layout.monsters { 0x10 } else { 0 });
     }
     for i in 0..3 {
         cpu.mem.wr8(ROSTER + i, 1 + i as u8);
@@ -384,8 +450,14 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     // Each module runs twice: on the full row, then with the second monster
     // seat fallen and faded (`+0x14C = 0`, `+0x04 = 0`), which the row walks
     // (settles, sweeps, shows) skip or wait past.
-    let runs = all.iter().flat_map(|&b| [(b, false), (b, true)]);
-    for ((entry, va, code), fallen) in runs {
+    // Each runs on every layout.
+    let runs = all.iter().flat_map(|&b| {
+        LAYOUTS
+            .iter()
+            .flat_map(move |&l| [(b, false, l), (b, true, l)])
+    });
+    for ((entry, va, code), fallen, layout) in runs {
+        let code = layout.code(code);
         let module = disc.read_entry(entry as usize).expect("module");
         let action = action_of(entry);
         let profile = cam::module_profile(entry).expect("directed");
@@ -445,9 +517,14 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             r.r[V0] = u32::from(bearing_12bit_approx(a(0), a(1), a(2), a(3)));
         });
         {
-            seed(&mut cpu, &module, action, code);
+            seed(&mut cpu, &module, action, code, layout);
             if fallen {
-                let a = ACTOR + (VICTIM + 1) * STRIDE;
+                let s = if layout.victim + 1 < 3 + layout.monsters {
+                    layout.victim + 1
+                } else {
+                    3
+                };
+                let a = ACTOR + s * STRIDE;
                 cpu.mem.wr16(a + 0x14C, 0);
                 cpu.mem.wr32(a + 4, 0);
             }
@@ -463,8 +540,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 creature_in_range: Some(true),
                 ..ModuleCamState::default()
             };
-            let caster_seat = seat_at(&mut cpu.mem, CASTER, false);
-            let victim = if code < 8 { u32::from(code) } else { VICTIM };
+            let caster_seat = seat_at(&mut cpu.mem, layout.caster, false);
+            let victim = if code < 8 {
+                u32::from(code)
+            } else {
+                layout.victim
+            };
             let mut max_roll = 0;
             let mut rumbles = 0u32;
             let mut crystal_landings = 0usize;
@@ -479,7 +560,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             let mut puera = (entry == 922).then(|| {
                 let mut w = legaia_engine_core::world::World::new();
                 w.load_party(legaia_save::Party::zeroed(3));
-                w.enter_battle(3, MONSTERS as u8);
+                w.enter_battle(3, layout.monsters as u8);
                 w.casting.summon_actor_slot = Some(CREATURE as u8);
                 w
             });
@@ -533,7 +614,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     cpu.mem.wr32(ACTOR + CREATURE * STRIDE + 4, 0);
                 }
                 let t0 = Target::read(&mut cpu.mem);
-                let live_code = cpu.mem.rd8(ACTOR + CASTER * STRIDE + 0x1DD);
+                let live_code = cpu.mem.rd8(ACTOR + layout.caster * STRIDE + 0x1DD);
                 let seats = ModuleCamSeats {
                     // The engine carries no module's party re-seat (PROT
                     // 0930's): the caster stands where the cast found it.
@@ -579,7 +660,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 };
                 // `keep_row_tr_y`: `-4 * +0x3E` averaged over the living row.
                 let mut row = Vec::new();
-                for s in 3..3 + MONSTERS {
+                for s in 3..3 + layout.monsters {
                     let a = ACTOR + s * STRIDE;
                     if cpu.mem.rd16(a + 0x14C) != 0 {
                         row.push(-4 * i32::from(cpu.mem.rd16(a + 0x3E) as i16));
@@ -588,6 +669,8 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 if !row.is_empty() {
                     st.row_tr_y = (row.iter().sum::<i32>() / row.len() as i32) as i16;
                 }
+                // `feed_seru_cam`: the first monster seat's HP.
+                st.lead_monster_down = cpu.mem.rd16(ACTOR + 3 * STRIDE + 0x14C) == 0;
                 st.sideband_busy = cpu.mem.rd8(CTX + 0x276) != 0;
                 let c = CREATURE;
                 st.creature_live = st.creature.map(|_| seat_at(&mut cpu.mem, c, false));
@@ -696,7 +779,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     .filter(|_| matches!(phase, 0 | 11 | 12 | 18 | 19 | 24))
                 {
                     use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
-                    w.puera_writes(phase, !held, countdown_before, MONSTERS as u8);
+                    w.puera_writes(phase, !held, countdown_before, layout.monsters as u8);
                     for &s in &puera_seats {
                         let a = ACTOR + s * STRIDE;
                         let retail_seat = (
@@ -865,7 +948,9 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     bad += 1;
                     if bad <= 12 {
                         failures.push(format!(
-                            "PROT {entry:04} target {code} fallen {fallen} pass {pass} arm {phase:#x}: {}",
+                            "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: {}",
+                            layout.caster,
+                            layout.monsters,
                             diffs.join("; ")
                         ));
                     }
@@ -902,13 +987,17 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 eprintln!("PROT {entry:04}: retail rolls the camera up to {max_roll}");
             }
             eprintln!(
-                "PROT {entry:04} target {code} fallen {fallen}: {bad} differing passes, arms {:x?}{}",
+                "PROT {entry:04} target {code} fallen {fallen} caster {} of {}: {bad} differing passes, arms {:x?}{}",
+                layout.caster,
+                layout.monsters,
                 path,
                 if finished { " Done" } else { "" }
             );
             if !finished {
                 failures.push(format!(
-                    "PROT {entry:04} target {code} fallen {fallen}: no finish, stuck at arm {:#x}",
+                    "PROT {entry:04} target {code} fallen {fallen} caster {} of {}: no finish, stuck at arm {:#x}",
+                    layout.caster,
+                    layout.monsters,
                     cpu.mem.rd8(CTX + 0x279)
                 ));
             }
