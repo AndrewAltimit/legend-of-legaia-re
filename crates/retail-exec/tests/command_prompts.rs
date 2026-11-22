@@ -1513,7 +1513,9 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
             1 => 3 + live[rng.below(live.len() as u32) as usize],
             _ => [8, 9][rng.below(2) as usize],
         };
-        let verdict = [2u32, 3][rng.below(2) as usize];
+        // `0` / `1`: the list kernel still has the window (no press, or a
+        // cursor step), and the state waits (`0x801D1860`).
+        let verdict = [2u32, 3, 2, 3, 0, 1][rng.below(6) as usize];
 
         // Retail.
         cpu.mem.wr32(CTX_PTR, CTX);
@@ -1592,10 +1594,10 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
         w.party.inventory.insert(id, 1);
         w.battle.item_menu = Some(w.build_battle_item_session());
         w.set_pad(0);
-        w.set_pad(if verdict == 2 {
-            PadButton::Cross.mask()
-        } else {
-            PadButton::Circle.mask()
+        w.set_pad(match verdict {
+            2 => PadButton::Cross.mask(),
+            3 => PadButton::Circle.mask(),
+            _ => 0,
         });
         w.tick_battle_item_menu();
         let label = format!(
@@ -1605,6 +1607,7 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
         let state = w.battle.item_menu.as_ref().map(|m| m.state);
         match (after, state) {
             (0x28, None) => {}
+            (0x3C, Some(InventoryUseState::Browsing { .. })) => {}
             (0x5B | 0x64, Some(InventoryUseState::TargetSelect { cursor, .. })) => {
                 let m = w.battle.item_menu.as_ref().unwrap();
                 let t = &m.targets[cursor];
@@ -1619,7 +1622,7 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
         }
         *seen.entry(after).or_default() += 1;
     }
-    for s in [0x28u8, 0x5B, 0x5D, 0x64, 0x66] {
+    for s in [0x28u8, 0x3C, 0x5B, 0x5D, 0x64, 0x66] {
         assert!(seen.get(&s).copied().unwrap_or(0) > 20, "{s:#x}: {seen:?}");
     }
 }
