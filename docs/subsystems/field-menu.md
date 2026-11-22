@@ -1590,8 +1590,15 @@ Specifics:
   `3` is the class-0 frame, byte for byte record `0x44`, so the notice is the
   blue marble in the gold border over its content rect, not the reading box's
   gradient (record `0x61`). A retail state holds it
-  (`field_kor_incense_notice_retail`). The painter's marker sprite
-  (`FUN_8002B994(1, 1, x + w - 0x10, y - 2)`, an animated kind) is not drawn.
+  (`field_kor_incense_notice_retail`). The painter ends on
+  `FUN_8002B994(1, 1, x + w - 0x10, y - 2)` (`0x801F1BA4..0x801F1BC4`):
+  kind `1` is the dialogue pager's two-frame page mark, animated through the
+  primitive's global per-kind frame and timer, so the notice steps the same
+  `CursorSprites` the pager does (`World::incense_notice_mark`) and the panel
+  draws `ATLAS_RECT_ADVANCE_ICON[frame]` at `(0x10E, 0x1E)`. The retail state
+  holds kind `1`'s last position at exactly that pair (`0x80073D30`). The
+  art-learned painter `FUN_801E733C` draws the same mark at
+  `(x + w - 0x10, y + h - 0x0E)` (`World::art_notice_mark`).
 
 - **Row ink** follows the kernel's [row-ink rule](#the-kind-4-list-kernel-scus-fun_80032a44):
   each `PauseItemRow` keeps its slot's dim / alt-ink bits from both builds

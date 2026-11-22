@@ -284,6 +284,7 @@ impl World {
         self.field_vm.submode_screen.picker_result = 0;
         self.apply_submode_actions();
         self.paint_coin_entry_panel();
+        self.step_art_notice_mark(frame_delta);
         self.apply_soft_reset_effects(&reset_fx);
         if retired {
             self.field_vm.submode_screen.open = false;

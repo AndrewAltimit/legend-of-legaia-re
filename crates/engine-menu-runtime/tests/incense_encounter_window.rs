@@ -185,11 +185,17 @@ fn the_window_running_out_shows_the_wear_off_notice_until_confirmed() {
         "the player is locked under the notice"
     );
 
-    // No confirm: it stays up.
-    for _ in 0..5 {
+    // No confirm: it stays up, and the painter's page mark
+    // (`FUN_8002B994(1, 1, x + w - 0x10, y - 2)`) flips its two frames.
+    let mut marks = Vec::new();
+    for _ in 0..40 {
         let _ = w.tick();
+        let (pos, frame) = w.incense_notice_mark().expect("the mark draws");
+        assert_eq!(pos, (0x10E, 0x1E));
+        marks.push(frame);
     }
     assert!(w.incense_notice_shown());
+    assert!(marks.contains(&0) && marks.contains(&1), "{marks:?}");
 
     // Cross (raw) - the handler reads the packed confirm mask.
     w.set_pad(PadButton::Cross.mask());

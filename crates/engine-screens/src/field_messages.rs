@@ -170,6 +170,15 @@ pub fn field_message_frame(
                 origin,
                 scale,
             ));
+            if let Some((pos, frame)) = world.incense_notice_mark() {
+                out.sprites.push(ui::notice_mark_sprite(
+                    legaia_engine_menus::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON
+                        [usize::from(frame) & 1],
+                    pos,
+                    origin,
+                    scale,
+                ));
+            }
         }
         if let Some(line) = host.incense_notice_line() {
             out.stage_texts.extend(ui::incense_notice_text_draws_for(
@@ -192,6 +201,15 @@ pub fn field_message_frame(
                 origin,
                 scale,
             ));
+            if let Some((pos, frame)) = world.art_notice_mark() {
+                out.sprites.push(ui::notice_mark_sprite(
+                    legaia_engine_menus::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON
+                        [usize::from(frame) & 1],
+                    pos,
+                    origin,
+                    scale,
+                ));
+            }
         }
         if let Some(lines) = host.art_notice_lines() {
             for (line, pen) in lines.iter().zip(art_notice_pens()) {
@@ -315,7 +333,17 @@ mod tests {
         );
         assert!(!want.is_empty());
         let got: Vec<_> = f.sprites.iter().map(|s| s.dst).collect();
-        let want: Vec<_> = want.iter().map(|s| s.dst).collect();
+        let mut want: Vec<_> = want.iter().map(|s| s.dst).collect();
+        // The painter's page mark at `(x + w - 0x10, y - 2)`, on top.
+        want.push(
+            ui::notice_mark_sprite(
+                legaia_engine_menus::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON[0],
+                (0x10E, 0x1E),
+                origin,
+                scale,
+            )
+            .dst,
+        );
         assert_eq!(got, want);
         assert!(f.stage_texts.is_empty());
     }
