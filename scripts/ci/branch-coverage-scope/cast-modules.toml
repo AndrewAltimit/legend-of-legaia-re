@@ -755,3 +755,80 @@ image = "ec1607d58a828022"
 range = "0x801F7E54..0x801F7E54"
 verdict = "unreachable"
 reason = "PROT 0944: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F7AB0..0x801F7AB0"
+verdict = "unreachable"
+reason = "PROT 0935: `beqz` on the battle's party count `ctx+0`; a battle always seats the lead, so the party loop is never skipped."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F7BF8..0x801F7BF8"
+verdict = "unreachable"
+reason = "PROT 0935: the monster loop's first test `3 < 3 + ctx+1`; Earthquake is cast by a formation monster, so the monster count is at least one and the loop is never skipped."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F7E50..0x801F7E50"
+verdict = "unreachable"
+reason = "PROT 0935: `beqz` on the battle's party count `ctx+0`; a battle always seats the lead, so the party loop is never skipped."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F7EE0..0x801F7EE0"
+verdict = "unreachable"
+reason = "PROT 0935: the monster loop's first test `3 < 3 + ctx+1`; Earthquake is cast by a formation monster, so the monster count is at least one and the loop is never skipped."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F6D08..0x801F6D08"
+verdict = "unported"
+reason = "PROT 0915: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6F2C..0x801F6F2C"
+verdict = "unported"
+reason = "PROT 0916: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9e9d52ef03115e27"
+range = "0x801F6CEC..0x801F6CEC"
+verdict = "unported"
+reason = "PROT 0920: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6CBC..0x801F6CBC"
+verdict = "unported"
+reason = "PROT 0923: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F6D94..0x801F6D94"
+verdict = "unported"
+reason = "PROT 0928: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6E1C..0x801F6E1C"
+verdict = "unported"
+reason = "PROT 0929: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "24d82884a97bcd51"
+range = "0x801F6D54..0x801F6D54"
+verdict = "unported"
+reason = "PROT 0931: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
