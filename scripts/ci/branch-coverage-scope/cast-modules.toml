@@ -594,3 +594,164 @@ image = "84d086d30fca1bb6"
 range = "0x801F8190..0x801F8190"
 verdict = "unreachable"
 reason = "PROT 0954: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F8184`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F74FC..0x801F74FC"
+verdict = "unreachable"
+reason = "PROT 0944: the phase is a `lbu` of `ctx+0x279` stepped only by the shared `+1` at `0x801F7D44..0x801F7D54` from arms `0..3`; arm 4 stores none, so the phase never passes `4` and `sltiu 5` always holds."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7530..0x801F7530"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`), and as a party-group spell its target code is the party code `8`, which the differential drives. This test of `caster[+0x1DD]` against the single-seat (`sltiu 7`) or party (`8`) legs only branches the other way on a code no cast of `0x53` stores."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7630..0x801F7630"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the battle's party count `ctx+0` or monster count `ctx+1`; a battle always seats the lead, and the caster is a monster, so neither count is zero and the loop is never skipped."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F765C..0x801F765C"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F76AC..0x801F76AC"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the battle's party count `ctx+0` or monster count `ctx+1`; a battle always seats the lead, and the caster is a monster, so neither count is zero and the loop is never skipped."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F787C..0x801F787C"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`), and as a party-group spell its target code is the party code `8`, which the differential drives. This test of `caster[+0x1DD]` against the single-seat (`sltiu 7`) or party (`8`) legs only branches the other way on a code no cast of `0x53` stores."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F78A4..0x801F78A4"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`), and as a party-group spell its target code is the party code `8`, which the differential drives. This test of `caster[+0x1DD]` against the single-seat (`sltiu 7`) or party (`8`) legs only branches the other way on a code no cast of `0x53` stores."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F78C4..0x801F78C4"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the battle's party count `ctx+0` or monster count `ctx+1`; a battle always seats the lead, and the caster is a monster, so neither count is zero and the loop is never skipped."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F78F4..0x801F78F4"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7948..0x801F7948"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`). This is the monster-row leg (target code past `8`), which no cast of `0x53` reaches: its code is the party code `8`."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F797C..0x801F797C"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`). This is the monster-row leg (target code past `8`), which no cast of `0x53` reaches: its code is the party code `8`."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F79A8..0x801F79A8"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`). This is the monster-row leg (target code past `8`), which no cast of `0x53` reaches: its code is the party code `8`."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F79B4..0x801F79B4"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`), and as a party-group spell its target code is the party code `8`, which the differential drives. This test of `caster[+0x1DD]` against the single-seat (`sltiu 7`) or party (`8`) legs only branches the other way on a code no cast of `0x53` stores."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7B28..0x801F7B28"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`), and as a party-group spell its target code is the party code `8`, which the differential drives. This test of `caster[+0x1DD]` against the single-seat (`sltiu 7`) or party (`8`) legs only branches the other way on a code no cast of `0x53` stores."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7B4C..0x801F7B4C"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`), and as a party-group spell its target code is the party code `8`, which the differential drives. This test of `caster[+0x1DD]` against the single-seat (`sltiu 7`) or party (`8`) legs only branches the other way on a code no cast of `0x53` stores."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7B64..0x801F7B64"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the battle's party count `ctx+0` or monster count `ctx+1`; a battle always seats the lead, and the caster is a monster, so neither count is zero and the loop is never skipped."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7BE0..0x801F7BE0"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`). This is the monster-row leg (target code past `8`), which no cast of `0x53` reaches: its code is the party code `8`."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7C14..0x801F7C14"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`). This is the monster-row leg (target code past `8`), which no cast of `0x53` reaches: its code is the party code `8`."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7C44..0x801F7C44"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`). This is the monster-row leg (target code past `8`), which no cast of `0x53` reaches: its code is the party code `8`."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7C74..0x801F7C74"
+verdict = "unreachable"
+reason = "PROT 0944: Curse All `0x53` has no retail caster: no monster record's magic slots name it and the AI picker's special-cast switch never queues it (disc-gated in `crates/engine-cast/tests/cast_arm_retail_gating.rs`), and as a party-group spell its target code is the party code `8`, which the differential drives. This test of `caster[+0x1DD]` against the single-seat (`sltiu 7`) or party (`8`) legs only branches the other way on a code no cast of `0x53` stores."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7DA8..0x801F7DA8"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the battle's party count `ctx+0` or monster count `ctx+1`; a battle always seats the lead, and the caster is a monster, so neither count is zero and the loop is never skipped."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7E24..0x801F7E24"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the battle's party count `ctx+0` or monster count `ctx+1`; a battle always seats the lead, and the caster is a monster, so neither count is zero and the loop is never skipped."
+
+[[arm]]
+entry = "0x801F7470"
+image = "ec1607d58a828022"
+range = "0x801F7E54..0x801F7E54"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
