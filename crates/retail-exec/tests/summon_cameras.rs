@@ -56,6 +56,15 @@ const RAND: u32 = 0x8005_6798;
 const BUILDER: u32 = 0x801D_829C;
 const BEARING: u32 = 0x8001_9B28;
 const AIM: u32 = 0x801D_CEAC;
+/// The cast damage wrapper the summon modules roll their own hits through.
+const WRAPPER: u32 = 0x801D_D0AC;
+const GROUP_LIST: u32 = 0x801F_6978;
+
+/// The `k`th roll on `seat`: small, middling and past a monster's HP in
+/// turn, so the floors, the `HP - 1` clamps and the kills all run.
+fn scripted_roll(seat: usize, k: u32) -> u32 {
+    [0x10, 0x5A, 0x7D, 0x180][(seat + k as usize) % 4]
+}
 const OUT_CENTRE: u32 = 0x8011_0000;
 const OUT_EXTENT: u32 = 0x8011_0100;
 const SCALAR: u32 = 0x1F80_037D;
@@ -477,9 +486,30 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
         cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
         for target in jal_targets(&module) {
-            if ![AIM, BUILDER, BEARING, RAND].contains(&target) {
+            if ![AIM, BUILDER, BEARING, RAND, WRAPPER].contains(&target) {
                 cpu.stub(target, 0);
             }
+        }
+        // The damage wrapper `FUN_801DD0AC(_, 7, seat)` answers each call on
+        // a seat with the next of that seat's scripted rolls, and the
+        // shadow's module rolls take the same (`summon_roll_override`), so
+        // each module's own HP arithmetic is compared on equal rolls.
+        {
+            let calls = Rc::new(RefCell::new([0u32; 8]));
+            cpu.hook(WRAPPER, move |r, _| {
+                let seat = (r.r[A2] & 7) as usize;
+                let mut c = calls.borrow_mut();
+                r.r[V0] = scripted_roll(seat, c[seat]);
+                c[seat] += 1;
+            });
+            let calls = RefCell::new([0u32; 8]);
+            legaia_engine_core::world::summon_roll_override::set(Some(Box::new(move |seat| {
+                let seat = usize::from(seat & 7);
+                let mut c = calls.borrow_mut();
+                let v = scripted_roll(seat, c[seat]);
+                c[seat] += 1;
+                v
+            })));
         }
         // PROT 0922 keeps the handles of the parts it spawns and moves them
         // (arm 19's crystal re-seat, arm 20's fall): each spawn gets a part.
@@ -557,6 +587,20 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             let stoned = fallen.then_some(2 + layout.monsters);
             if let Some(s) = stoned {
                 cpu.mem.wr16(ACTOR + s * STRIDE + 0x16E, 4);
+            }
+            // The cast's group list `0x801F6978` (four seats, `0xFF` past
+            // the last), as the band fills it at the cast: the living
+            // monsters. Mule's wave divides a roll by three only for a seat
+            // on it (`0x801F7EA8..0x801F7ED0`).
+            let living: Vec<u8> = (3..7u32)
+                .filter(|&s| cpu.mem.rd16(ACTOR + s * STRIDE + 0x14C) != 0)
+                .map(|s| s as u8)
+                .collect();
+            for i in 0..4u32 {
+                cpu.mem.wr8(
+                    GROUP_LIST + i,
+                    living.get(i as usize).copied().unwrap_or(0xFF),
+                );
             }
             // Each monster's reaction run `+0x1EF..+0x1F2`, which a hit arm
             // stages from: the flinch, its fallback, the knockdown and the
@@ -970,21 +1014,32 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             cpu.mem.rd32(a + 4),
                             cpu.mem.rd8(a + 0x21C),
                             cpu.mem.rd16(a + 0x16E),
+                            cpu.mem.rd16(a + 0x14C),
                         );
                         let b = &w.actors[s].battle;
                         // The summon band's shown word is the engine's resting
                         // `0` under a lowered flag (`apply_mushura_writes`,
                         // `apply_palma_writes`): retail's `0x20080200` there.
                         let shown = |c: u32, f: u8| if f == 0 && c == 0x2008_0200 { 0 } else { c };
-                        let got = (shown(got.0, got.1), got.1, got.2);
+                        // The hit arm's own hit is the band's fold, which
+                        // lands after the module's pass (`summon_stager_tick`'s
+                        // strike) and which the shadow does not run: that
+                        // pass's HP is not compared.
+                        let got = if profile.hit_arm == Some(phase) {
+                            (got.0, got.1, got.2, w.actors[s].battle.hp)
+                        } else {
+                            got
+                        };
+                        let got = (shown(got.0, got.1), got.1, got.2, got.3);
                         let port = (
                             shown(b.render_color, b.render_flag),
                             b.render_flag,
                             w.raw_status_word(s as u8),
+                            b.hp,
                         );
                         if got != port {
                             shadow_failures.push(format!(
-                                "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} tint/flag/status retail {got:x?} port {port:x?}",
+                                "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} tint/flag/status/hp retail {got:x?} port {port:x?}",
                                 layout.caster, layout.monsters
                             ));
                         }
@@ -1260,6 +1315,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     // does not.
     for l in &shadow_leaves {
         eprintln!("{l}");
+    }
+    legaia_engine_core::world::summon_roll_override::set(None);
+    if let Ok(path) = std::env::var("W54_SHADOW_DUMP") {
+        let _ = std::fs::write(&path, shadow_failures.join("\n"));
     }
     assert!(
         shadow_passes >= 200_000,
