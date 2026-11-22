@@ -2,16 +2,20 @@
 
 /// The "PLAYER SELECT" banner at the pen state `0x0A` parks it on.
 ///
-/// The banner is an effect actor (`FUN_801D6E04(0xC, 0x801DBA6C)`), so its
-/// level is the actor's own; the port draws it at the descriptor's colour
-/// (`0x80`) for as long as the cursor screen runs - an inference, since the
-/// effect script's fade is not ported.
+/// The banner is an effect actor (`FUN_801D6E04(0xC, 0x801DBA6C)`), drawn
+/// by the sprite-actor hook `FUN_801D67F0`, whose level is the actor's
+/// `+0x78 / 16` held to `0..=0xFF` (`0x801D6800..0x801D6840`). Both retail
+/// captures of the select screen hold `+0x78 = 0x1000` on the banner, so it
+/// draws at `0xFF`, the descriptor's full colour (*capture*:
+/// `minigame_baka_fighter_retail_select`, `_select_right`). The effect
+/// script's fade-in before it settles is not ported.
+// REF: FUN_801d67f0 (the banner's level)
 pub(super) fn player_select_banner() -> SheetCell {
     SheetCell {
         widget: WIDGET_PLAYER_SELECT,
         x: PLAYER_SELECT_PEN.0,
         y: PLAYER_SELECT_PEN.1,
-        brightness: 0x80,
+        brightness: 0xFF,
     }
 }
 
@@ -26,7 +30,7 @@ pub struct SheetCell {
     /// Screen centre.
     pub x: i32,
     pub y: i32,
-    /// Colour scale (`0x80` = the descriptor's own RGB).
+    /// Colour scale over 256 (`0x80` = half the descriptor's RGB).
     pub brightness: i32,
 }
 

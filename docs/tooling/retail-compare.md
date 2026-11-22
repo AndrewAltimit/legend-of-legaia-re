@@ -4369,6 +4369,11 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   the capture's cursor `0x801D90A8`, Cross and Right to its quantity
   `0x801D90B0`, Cross and Up to its confirm row `0x801D90B4`. The `minigame`
   channel adds the screen and those words.
+- **The Baka Fighter's player select** (cabinet state `0x0B`): Start on the
+  attract card, then Right to the capture's cursor `DAT_801DBF70` once the
+  lineup takes the pad. The lineup's one `rand()` lands in a focus id no
+  fighter carries, so the screen does not depend on it. The `minigame` channel
+  adds the state and the cursor.
 - **The slot machine's cash-out picker and rules pages** (`0x32`, `0x35`,
   `0x36`) on a machine never played (balance still the bank's): Triangle opens
   the picker, Down to its cursor `DAT_801D4110`; row 2's Cross fades into the
