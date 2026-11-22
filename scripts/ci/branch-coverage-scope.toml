@@ -3995,13 +3995,6 @@ reason = "PROT 0957 Death Game's phase dispatch default, phases `0xE..0xFE`: the
 [[arm]]
 entry = "0x801F798C"
 image = "df488fd3098b7996"
-range = "0x801F7B2C..0x801F7B2C"
-verdict = "unreachable"
-reason = "PROT 0957: `bgez` on the framing depth `ctx[+0x6D0]` (`lh` at `0x801F7B24`), whose writers store `0x800` or the size clamp `0x0C00..0x1400` (`FUN_801F0348`; docs/subsystems/battle-action-helpers.md), so it is never negative and the `/ 4` rounding fix-up never runs."
-
-[[arm]]
-entry = "0x801F798C"
-image = "df488fd3098b7996"
 range = "0x801F7BF0..0x801F7BF0"
 verdict = "unreachable"
 reason = "PROT 0957: `bgez` on `rand()`'s result (`jal 0x80056798` at `0x801F7BE4`), `0..0x7FFF` and never negative, so the fix-up that rounds its signed divide toward zero never runs."

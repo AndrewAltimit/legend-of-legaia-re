@@ -343,6 +343,14 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         };
         for round in 0..rounds {
             let (caster, victim) = seed(&mut cpu, &mut rng, &module, body, 0);
+            // State `0x6F` drains the framing depth by `16 * step` a vsync
+            // while it waits on the module's seek (`0x801E5008..0x801E5014`,
+            // no clamp), so a long enough seek hands the module a depth below
+            // zero: every fifth round of a body starts on one.
+            if round % 5 == 4 {
+                cpu.mem
+                    .wr16(CTX + 0x6D0, (-1 - rng.below(0x800) as i32) as u16);
+            }
             let (ca, va_) = (ACTOR + caster * STRIDE, ACTOR + victim * STRIDE);
             // The caster's formation id, which a body can fork on: Terror
             // Scream's owners (Terror Face `0x7F`, the `0x28` row).
