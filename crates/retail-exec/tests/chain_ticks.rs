@@ -458,8 +458,12 @@ fn run_body(
         if body.prot_entry == 964 {
             st.module_words[0] = i32::from(selector);
         }
+        // The director sees the module's countdown word as retail's pass
+        // opens on it, where the module has one; a director with none
+        // reads a spent word, and the walk paces it on retail's phase.
+        let countdown_word = cam::capture_countdown_va(action).map(|va| cpu.mem.rd32(va) as i32);
         let dir = director.map(|d| {
-            st.countdown.0 = 0;
+            st.countdown.0 = countdown_word.unwrap_or(0);
             st.victim_on_gate_clip = rec0[vi * STRIDE + 0x1D9] == rec0[vi * STRIDE + 0x1F2];
             let seats = ModuleCamSeats {
                 caster: seat_of(&rec0, CASTER),
@@ -536,9 +540,12 @@ fn run_body(
         // charge records, the per-pass pairs), each against a part spawn
         // retail's pass made with the same record, point, angles and scale.
         // An arm that seats on the point its pass's whole drain leaves
-        // (`spawns_at_pass_end`, PROT 0947's trail) reads the countdown this
-        // walk zeroes ahead of the director; it is not compared.
-        if let Some(d) = dir.as_ref().filter(|d| !d.spawns_at_pass_end) {
+        // (`spawns_at_pass_end`, PROT 0947's trail) is compared where the
+        // director drained retail's own countdown word.
+        if let Some(d) = dir
+            .as_ref()
+            .filter(|d| !d.spawns_at_pass_end || countdown_word.is_some())
+        {
             let mut left = spawns.borrow().clone();
             for sp in d.charge_spawns.iter().chain(&d.pass_spawns).flatten() {
                 let (

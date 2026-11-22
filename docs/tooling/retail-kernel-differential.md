@@ -928,8 +928,11 @@ them it found PROT 0964's far records on the wrong trios: they take the arm's ow
 `sp+0x20` / `sp+0x10`, which hold the cut's yaw `0x800 - facing` on a cutting pass and the prologue's zeros on
 `k = 4`'s, where the director gave them the caster's facing. It also found Chaos Breath's cloud a unit off: the arm
 takes a sixth of the whole product through the `0x2AAAAAAB` multiply-high and corrects the sign after the shift.
-An arm whose records follow its pass's whole drain (PROT 0947's trail) is left out of the chain walk, which zeroes
-the countdown ahead of its director.
+The chain walk hands each director the module's countdown word as retail's pass opens on it, so an arm whose
+records follow its pass's whole drain (PROT 0947's trail) is compared too; PROT 0947's trail agrees. The summon walk
+makes the same comparison over each director's anchored spawns, resolved on the seats the host resolves them on,
+and runs half its casts with the Battles vibration row `0x800845C8` off: every module's rumble store, the Puera
+landing and Ozma's spray agree that nothing is written then.
 
 The capture-camera walk also starts every fifth round on a framing depth below zero: state `0x6F` drains
 `ctx[+0x6D0]` by `16 * step` a vsync with no floor while it waits on the module's seek, so a negative depth reaches
