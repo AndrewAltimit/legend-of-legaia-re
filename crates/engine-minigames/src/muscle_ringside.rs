@@ -521,6 +521,10 @@ pub struct ReentryFrame {
 ///
 /// PORT: FUN_801cf870 (arms `0x0A`..`0x0C` and `0x14`..`0x16` on the
 /// latch-`1` path: `0x801CFC98..0x801CFF48`, `0x801CFF4C..0x801D0084`)
+/// REF: FUN_801d00f8, FUN_801d050c, FUN_801cf074, FUN_801d02f0, FUN_801d1184,
+/// FUN_801cea6c, FUN_8003de7c, FUN_8003eae4, FUN_801d1510 (the emitters, the
+/// tally and its arming leaf the arms call, the init that seeds them, the
+/// drive waits and seek, the fight hand-off)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReentryHub {
     arm: ReentryArm,
