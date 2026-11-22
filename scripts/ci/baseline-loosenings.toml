@@ -1845,3 +1845,10 @@ reason = "Play-page gzip is the wave's ported behaviour compiled in: the fishing
 changes = [
   ["counts/bundle/play_gzip_bytes", 5224990, 5233490],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Play-page gzip is the wave's ported behaviour compiled in: the Muscle Dome's re-entered hub (INTERVAL held for its roll), the fishing hook's battle-theme swap and motor copy, the arts target cursor's retail presses and cancel holds and the pennant retreat slide, the attack cursor's step hold, the save screen's card check, slide-out and block scan, the field notices' page mark, the Baka floor culls and glow, the Theeder fan's link-slot depth test, seat facing and sweep phase, and the summon modules' row stores, Stone skips and side-band arm skips (+7.1 KB). No asset or dependency added; the tool bundle and every native and browser count stayed under their baselines."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 5233490, 5240566],
+]
