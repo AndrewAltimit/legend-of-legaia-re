@@ -279,7 +279,7 @@ python3 scripts/ci/check-port-tags.py --addr 80019b28  # drill-down
 python3 scripts/ci/check-port-tags.py --backfill-refs  # insert missing REF blocks
 ```
 
-- **Modes.** `--staged` checks only lines being added in the staging area; `--scan-all` audits every line of every engine-crate file; `--strict` turns warnings into a nonzero exit.
+- **Modes.** `--staged` checks only lines being added in the staging area; `--scan-all` audits every line of every engine-crate file; `--strict` turns warnings into a nonzero exit. CI runs `--scan-all --strict` as a gate.
 - **Scope rule.** Only files that already carry a `// PORT:` tag are checked. Files with no port tag are reference-only and skipped.
 - **Settled addresses.** A citation never warns when its address already has a home: a `// PORT:` tag in any file under `crates/` (the same set the catalog credits as ported), or a row in `port-catalog-ignore.toml`. Such a mention is a cross-reference by construction, so the checker's question - "is this a port nobody tagged?" - is closed for it. Whether the tag sits on the right item is the [reachability](#reachability-the-live-axis) check's and [`check-port-provenance.py`](port-provenance.md)'s concern. What remains is a citation of a dumped routine that nothing ports and nothing ignores.
 - **Dump filter.** Only addresses with a dump under `ghidra/scripts/funcs/` count. That corpus is gitignored, so a checkout without it (CI) drops the filter and treats every code-range citation as a candidate; `--ignore-dumps` reproduces that locally. A `FUN_` name on an interior address (an instruction inside another routine) is what this mode catches, and the fix is to cite the containing routine. `PTR_FUN_<addr>` is a data table and never counts.

@@ -4374,7 +4374,7 @@ reason = "Case 0x24 dispatches on ctx[+0x1F], the member count at the Begin conf
 entry = "0x801E9FD4"
 range = "0x801EA23C..0x801EA23C"
 verdict = "unreachable"
-reason = "The physical arm's empty action list (record +0x4A == 0): only Cort's 0xB4 and 0xB7..0xBA carry no swing candidate (monster_pick::every_shipped_monster_but_cort_has_a_swing); 0xB4's id forces the magic arm (0x801EA18C..0x801EA198) and no formation seats 0xB7..0xBA (patcher cort_forms_unseated_real; the arena init's PROT 0977 table names none and FUN_8005567C's debug id _DAT_8007B7FC has no writer)."
+reason = "The physical arm's action-list walk skipped when the record's list length (+0x4A) is 0: every shipped monster record carries 6..10 entries (asset census; Cort 0xB4 and its copies 0xB7..0xBA carry 10, none castable, so they reach the divide trap at 0x801EA310 instead, and 0xB4's id forces the magic arm at 0x801EA18C..0x801EA198 first)."
 
 [[arm]]
 entry = "0x801E9FD4"
