@@ -423,6 +423,8 @@ The duel state only *reads* the hold timer `DAT_801DBF88` against `0xB5` (`0x801
 
 Port: the cabinet advances the word on those frames (`CabinetInput::round_clock`), and `BakaFight` holds `RoundOver` until the cabinet has left the duel state.
 
+The hold is not a freeze. The pool walk keeps calling both combat ticks and the round SM, so the rumble levels run out at the SM's prologue (step 1 above, ahead of its duel-state gate), a downed fighter steps its knockdown at the rate its last clip left (the down arm `0x801D4088..0x801D40BC` steps the selector without rewriting `+0x6A`), and the standing fighter returns to idle at its clip's end and commits nothing (`0x801D4488..0x801D4490` refuse a commit while either seat is down). Port: `BakaFight` runs both combat ticks and the rumble decay through a knockdown's hold. A double KO leaves no seat down, so retail's fighters can still trade blows into its hold; the port keeps that hold still.
+
 <a id="exchange-resolution-fun_801d3a14"></a>
 ### Exchange resolver (`FUN_801D3A14`)
 
@@ -494,6 +496,8 @@ Effects of one application:
 **The special's HP delta is zero by construction.** Its action record's `+0x18` power is 0 for all 17 fighters, so the raw total for a type-4 win on a fresh combo is the bare combo term `(0 - 1) * 0x40 = -0x40`. The HP write is `hp > 0`-gated and the special only ever runs as the auto-finisher against a foe already at 0 HP, so the negative never lands. The special's whole payoff is the round win. The port applies exactly 0 damage for any special-won exchange (`engine-minigames::baka_fighter::apply_damage`).
 
 **Critical roll (`FUN_801D6660`).** For the rolled fighter: only while its own HP is above 0 and below `0x280`, `rand() % 100 <` its roster record's `+0x34` chance sets its critical-pending flag - a comeback mechanic.
+
+**The pending critical flashes.** Every frame the combat tick rewrites its fighter's colour word `+0x74` and depth-cue level `+0x78` (`0x801D3FCC..0x801D4010`): with the critical-pending flag `+0xA0` up and the cabinet's frame counter `DAT_801DC130` odd, `0x0080E0E0` at level `0x1000`, else the neutral `0x00808080` at `0`. The mesh pass cues every packet all the way to the word's far colour, so a fighter holding a comeback critical blinks a brighter yellow on alternate frames until the critical lands or is cleared. Port: `baka_fighter::crit_flash_colour`, latched per seat by `BakaFight` (the player's before the round SM, the opponent's after it, as the pool walk orders them) and cued onto the fighter mesh by `BakaDuelScene::tint_fighter`.
 
 **Confirmed**: inputs and structure; the constants (`0x20`, `0x40`, `<< 7`, the HP thresholds) are read straight from the dump.
 

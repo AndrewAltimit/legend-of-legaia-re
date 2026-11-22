@@ -92,7 +92,7 @@ impl BakaFight {
     /// its streak (`0x801D411C..0x801D415C`).
     ///
     /// PORT: FUN_801d3f44
-    fn combat_tick(&mut self, slot: usize, frame_step: i32) {
+    pub(super) fn combat_tick(&mut self, slot: usize, frame_step: i32) {
         let other = slot ^ 1;
         let pad = std::mem::take(&mut self.pad_attack[slot]);
         let live = self.cabinet.state() == crate::baka_cabinet::ST_DUEL;
@@ -205,6 +205,20 @@ impl BakaFight {
         self.f[slot].clock.cursor = m.cursor;
     }
 
+    /// The round SM's prologue: both rumble levels fall by `frame step << 4`,
+    /// floored at `0`, on every call while the match phase is live - ahead of
+    /// the duel-state gate, so a decided round's hold runs them out too.
+    ///
+    /// PORT: FUN_801d3468 (`0x801D34B0..0x801D352C`)
+    pub(super) fn decay_rumble(&mut self, frame_step: i32) {
+        for r in &mut self.rumble {
+            if *r > 0 {
+                *r -= frame_step << 4;
+            }
+            *r = (*r).max(0);
+        }
+    }
+
     /// The round SM's body in the duel state: the booking arms and what they
     /// leave. The types stand after a booking, so an attack with a second
     /// strike lands again on the same exchange, until a clip ends or someone
@@ -212,12 +226,7 @@ impl BakaFight {
     ///
     /// PORT: FUN_801d3468
     fn round_sm(&mut self, frame_step: i32) {
-        for r in &mut self.rumble {
-            if *r > 0 {
-                *r -= frame_step << 4;
-            }
-            *r = (*r).max(0);
-        }
+        self.decay_rumble(frame_step);
         if self.cabinet.state() != crate::baka_cabinet::ST_DUEL {
             return;
         }

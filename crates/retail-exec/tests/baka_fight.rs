@@ -31,6 +31,11 @@ const LATCH: u32 = 0x801D_BF50;
 const PLAYER_COMMIT: u32 = 0x801D_C124;
 const RUMBLE: [u32; 2] = [0x801D_BEA0, 0x801D_BEA4];
 const PAD_EDGE: u32 = 0x8007_B874;
+const FRAMES: u32 = 0x801D_C130;
+const CABINET_STATE: u32 = 0x801D_BF44;
+/// Frames run on past a knockdown into the round's hold: the downed seat's
+/// clip, the standing seat's refused commits, the rumble running out.
+const TAIL: u32 = 40;
 
 fn seat(cpu: &mut Cpu, slot: u32, roster: u32, clips: &ClipHeaders) {
     let a = ACTOR[slot as usize];
@@ -91,6 +96,7 @@ struct Row {
     latch: bool,
     answer: i32,
     rumble: [i32; 2],
+    colour: [(u32, u16); 2],
     rand: u32,
 }
 
@@ -113,6 +119,7 @@ fn retail_row(cpu: &mut Cpu, rand: u32) -> Row {
         latch: cpu.mem.rd32(LATCH) != 0,
         answer: cpu.mem.rd32(PLAYER_COMMIT) as i32,
         rumble: RUMBLE.map(|a| cpu.mem.rd32(a) as i32),
+        colour: ACTOR.map(|a| (cpu.mem.rd32(a + 0x74), cpu.mem.rd16(a + 0x78))),
         rand,
     }
 }
@@ -140,6 +147,7 @@ fn port_row(f: &BakaFight, rand: u32) -> Row {
         latch: f.rate_divisor() != 8,
         answer: f.player_commit(),
         rumble: f.rumble(),
+        colour: [f.fighter_colour(0), f.fighter_colour(1)],
         rand,
     }
 }
@@ -156,6 +164,13 @@ fn whole_rounds_play_out_as_retail_plays_them() {
     let opponents = bo::parse(&overlay).expect("roster");
     let actions = bo::parse_actions(&overlay).expect("actions");
     let clips = roster_clip_headers(|i| d.read_entry(i).ok());
+    // The combat tick's clip rate `speed * divisor >> 3` rounds a negative
+    // product toward zero (`0x801D4624`, `0x801D47B0`); no shipped speed is
+    // negative, which the scope rows on those fix-ups rest on.
+    assert!(
+        actions.iter().all(|a| a.speed.iter().all(|&s| s >= 0)),
+        "a clip speed below zero"
+    );
 
     let state = Rc::new(Cell::new(0u32));
     let stream = state.clone();
@@ -186,6 +201,7 @@ fn whole_rounds_play_out_as_retail_plays_them() {
 
     let mut rng = Rng(0x4241_4B41);
     let (mut rounds, mut finishers, mut chains, mut crits, mut ko_draws) = (0, 0, 0, 0, 0);
+    let mut flashes = 0;
     for scenario in 0..1500 {
         let player = rng.below(3) as usize;
         let opponent = 3 + rng.below(bo::OPPONENT_COUNT as u32 - 3) as usize;
@@ -210,19 +226,13 @@ fn whole_rounds_play_out_as_retail_plays_them() {
             .with_roster_clip_headers(clips.clone());
 
         let mut last_hits = [0, 0];
+        let mut after = 0;
         for frame in 0..2500 {
             let edge: u16 = if rng.below(density) == 0 {
                 [0x80, 0x20, 0x40][rng.below(3) as usize]
             } else {
                 0
             };
-            cpu.mem.wr32(PAD_EDGE, u32::from(edge));
-            for (entry, arg) in [(COMBAT, ACTOR[0]), (ROUND_SM, SM_ACTOR), (COMBAT, ACTOR[1])] {
-                let stop = cpu.call(entry, &[arg]);
-                assert_eq!(stop, Stop::Returned, "frame {frame} entry {entry:#x}");
-            }
-            let retail = retail_row(&mut cpu, state.get());
-
             // HARNESS: the retail side runs the combat tick and the round SM
             // once a call on the step pinned at `1` (`0x1F800393` above), not
             // the frame driver's pacer, so the port runs its rules on the same
@@ -230,6 +240,18 @@ fn whole_rounds_play_out_as_retail_plays_them() {
             let outcome = f.frame_on_step(edge, 0, 0, 1);
             assert!(!outcome.exit);
             let port = port_row(&f, f.rng_state());
+
+            // HARNESS: the cabinet SM that counts `DAT_801DC130` does not run
+            // here; the combat ticks read the port cabinet's count for the
+            // frame.
+            cpu.mem.wr32(FRAMES, f.cabinet().frame_counter() as u32);
+            cpu.mem.wr32(CABINET_STATE, f.cabinet().state());
+            cpu.mem.wr32(PAD_EDGE, u32::from(edge));
+            for (entry, arg) in [(COMBAT, ACTOR[0]), (ROUND_SM, SM_ACTOR), (COMBAT, ACTOR[1])] {
+                let stop = cpu.call(entry, &[arg]);
+                assert_eq!(stop, Stop::Returned, "frame {frame} entry {entry:#x}");
+            }
+            let retail = retail_row(&mut cpu, state.get());
             assert_eq!(
                 retail, port,
                 "scenario {scenario} player {player} opponent {opponent} density {density} frame {frame} edge {edge:#x}"
@@ -238,6 +260,7 @@ fn whole_rounds_play_out_as_retail_plays_them() {
                 u32::from(retail.combo[0] > 1 || retail.combo[1] > 1 && last_hits != retail.combo);
             last_hits = retail.combo;
             crits += u32::from(cpu.mem.rd32(BLOCK + 0xA0) != 0);
+            flashes += u32::from(retail.colour.iter().any(|c| c.1 != 0));
             if retail.down[0] || retail.down[1] {
                 finishers += 1;
             }
@@ -245,8 +268,15 @@ fn whole_rounds_play_out_as_retail_plays_them() {
                 ko_draws += 1;
             }
             if !matches!(f.phase(), MatchPhase::Fighting) {
-                rounds += 1;
-                break;
+                if after == 0 {
+                    rounds += 1;
+                }
+                after += 1;
+                // A double KO's hold is not run on: no seat is down, so both
+                // still commit and the round SM books on into it.
+                if after > TAIL || !(retail.down[0] || retail.down[1]) {
+                    break;
+                }
             }
         }
     }
@@ -254,6 +284,7 @@ fn whole_rounds_play_out_as_retail_plays_them() {
     assert!(finishers > 1000, "{finishers}");
     assert!(chains > 0, "{chains}");
     assert!(crits > 0, "{crits}");
+    assert!(flashes > 0, "the comeback critical never flashed");
     eprintln!(
         "rounds {rounds} finishers {finishers} chains {chains} crits {crits} double KO frames {ko_draws}"
     );

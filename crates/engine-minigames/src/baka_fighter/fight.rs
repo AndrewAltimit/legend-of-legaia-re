@@ -98,6 +98,9 @@ pub struct BakaFight {
     /// The round-result banner sub-state `DAT_801DBF84`: non-zero once this
     /// round's result banners are up, so they rise once per round.
     pub(super) result_latch: bool,
+    /// Each seat's colour word `+0x74` and depth-cue level `+0x78`, as its
+    /// combat tick last wrote them ([`crit_flash_colour`]).
+    pub(super) fighter_colour: [(u32, u16); 2],
     /// `DAT_801DBF24` - the player has not been hit this round. Raised at the
     /// round's setup, cleared by the two exchange arms that damage slot 0;
     /// a win with it still up is the PERFECT!! banner.
@@ -238,6 +241,27 @@ impl CameoActor {
     }
 }
 
+/// The colour word a fighter draws under: the neutral `0x808080`.
+pub const FIGHTER_COLOUR_WORD: u32 = 0x0080_8080;
+/// The comeback critical's flash word: the far colour `(0xE0, 0xE0, 0x80)`.
+pub const CRIT_FLASH_COLOUR_WORD: u32 = 0x0080_E0E0;
+/// The flash's depth-cue level: all the way to the far colour.
+pub const CRIT_FLASH_LEVEL: u16 = 0x1000;
+
+/// The colour word `+0x74` and depth-cue level `+0x78` the combat tick
+/// writes on its fighter every frame: a seat with a comeback critical pending
+/// (block `+0xA0`) flashes on the cabinet's odd frames (`DAT_801DC130 & 1`),
+/// cued all the way to `0x80E0E0`, and draws at the neutral word otherwise.
+///
+/// PORT: FUN_801d3f44 (`0x801D3FCC..0x801D4010`)
+pub fn crit_flash_colour(crit_pending: bool, cabinet_frames: i32) -> (u32, u16) {
+    if crit_pending && cabinet_frames & 1 != 0 {
+        (CRIT_FLASH_COLOUR_WORD, CRIT_FLASH_LEVEL)
+    } else {
+        (FIGHTER_COLOUR_WORD, 0)
+    }
+}
+
 impl BakaFight {
     /// Start a best-of-3 match: `player_cfg` in slot 0 (pad-driven),
     /// `opponent_cfg` in slot 1 (CPU picker).
@@ -259,6 +283,7 @@ impl BakaFight {
             chrome: crate::baka_fighter_chrome::BakaChrome::default(),
             chrome_frame: crate::baka_fighter_chrome::ChromeFrame::default(),
             result_latch: false,
+            fighter_colour: [(FIGHTER_COLOUR_WORD, 0); 2],
             player_untouched: true,
             cabinet: {
                 let mut c = crate::baka_cabinet::BakaCabinet::new();
@@ -462,6 +487,12 @@ impl BakaFight {
     /// The all-clear fighter, while it is on stage.
     pub fn clear_fighter(&self) -> Option<crate::baka_fighter_chrome::ClearFighter> {
         self.clear_fighter
+    }
+
+    /// Seat `slot`'s colour word `+0x74` and depth-cue level `+0x78`: the
+    /// comeback critical's flash ([`crit_flash_colour`]).
+    pub fn fighter_colour(&self, slot: usize) -> (u32, u16) {
+        self.fighter_colour[slot & 1]
     }
 
     /// Whether the all-clear has retired duel seat `slot`: the opponent's

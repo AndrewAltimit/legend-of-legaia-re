@@ -406,6 +406,11 @@ impl BakaCabinet {
         self.high_score = score;
     }
 
+    /// The cabinet's own frame counter `DAT_801DC130`, one a tick.
+    pub fn frame_counter(&self) -> i32 {
+        self.frames
+    }
+
     /// Kick the screen shake (`DAT_801DBEC0`); the epilogue decays it.
     pub fn shake_screen(&mut self, amplitude: i32) {
         self.shake = amplitude;
