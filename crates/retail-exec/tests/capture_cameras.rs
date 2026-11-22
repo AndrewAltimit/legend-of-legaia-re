@@ -89,6 +89,70 @@ fn bodies() -> Vec<Body> {
     out
 }
 
+/// A world in battle seated as `cpu`'s actor records are, with `body`'s cast
+/// armed on the band: the engine's own walk of the cast, every layer of its
+/// seat writes included.
+fn shadow_world(
+    cpu: &mut Cpu,
+    body: &Body,
+    caster: u32,
+    victim: u32,
+    monster: u8,
+) -> Option<legaia_engine_core::world::World> {
+    use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    let mut w = legaia_engine_core::world::World::default();
+    while w.actors.len() < 12 {
+        w.actors.push(Default::default());
+    }
+    w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+    w.party.party_count = 3;
+    for s in 0..8u32 {
+        let a = ACTOR + s * STRIDE;
+        let act = &mut w.actors[s as usize];
+        act.active = true;
+        act.battle.hp = cpu.mem.rd16(a + 0x14C);
+        act.battle.max_hp = cpu.mem.rd16(a + 0x14E).max(act.battle.hp);
+        act.battle.liveness = u16::from(act.battle.hp > 0);
+        act.battle.render_color = cpu.mem.rd32(a + 4);
+        act.battle.render_flag = cpu.mem.rd8(a + 0x21C);
+        act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
+        act.battle.active_target = cpu.mem.rd8(a + 0x1DD);
+        act.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(8);
+        act.move_state.world_x = cpu.mem.rd16(a + 0x34) as i16;
+        act.move_state.world_y = cpu.mem.rd16(a + 0x36) as i16;
+        act.move_state.world_z = cpu.mem.rd16(a + 0x38) as i16;
+        if s >= 3 {
+            act.battle_monster_id = Some(u16::from(if s == caster { monster.max(1) } else { 1 }));
+        }
+    }
+    w.battle_ctx.active_actor = caster as u8;
+    let mut entries = vec![SpellEntry::default(); 0x100];
+    entries[usize::from(body.action)].class = CAPTURE_CLASS;
+    entries[usize::from(body.action)].sub_class = body.entry.checked_sub(935)? as u8;
+    w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+        spell_names: Some(SpellNameTable::from_entries(entries)),
+        ..Default::default()
+    });
+    if w.cast_module_for(body.action) != Some(body.entry) {
+        return None;
+    }
+    w.drive_arm_capture_cast_module(body.action);
+    // The cast the band folds as its sweep arms strike: the seats the
+    // module's sweeps walk, the party row for a monster's cast.
+    // A party caster's fold would land the band's own damage roll on its
+    // victim, not retail's; it is left out.
+    let targets = (0..3).collect();
+    w.casting.pending_cast =
+        (caster >= 3).then_some(legaia_engine_battle_loop::cast_band::PendingCast {
+            caster: caster as u8,
+            spell_id: body.action,
+            targets,
+            on_flight: false,
+        });
+    let _ = victim;
+    Some(w)
+}
+
 /// The bodies whose seat hides and shows are compared: Terror Scream and Death
 /// Game, whose hides and shows are all the director's. The other bodies split
 /// theirs between the director, their tick kernel and the host's band paths,
@@ -278,6 +342,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut buffs = 0usize;
     let mut seat_passes = 0usize;
     let mut steals = 0usize;
+    let (mut shadow_passes, mut shadow_diverged) = (0usize, 0usize);
+    let mut shadow_failures: Vec<String> = Vec::new();
     let all = bodies();
     for body in &all {
         let module = disc.read_entry(body.entry as usize).expect("module");
@@ -363,9 +429,13 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 0x76 => [0u8, 0x9D, 0x9E][round % 3],
                 _ => 0,
             };
-            for i in 0..5 {
+            // The formation cells `0x8007BD0C[seat - 3]`. A seat-7 caster's
+            // cell is `0x8007BD10`, the first party roster byte, which the
+            // hide walks read as "seat 0 is seated": never zero.
+            for i in 0..4 {
                 cpu.mem.wr8(FORMATION + i, monster);
             }
+            cpu.mem.wr8(ROSTER, monster.max(1));
             // Death Game's heal reads each seat's maximum `+0x14E` and caps
             // the quarter at the missing HP: a seat at full, one short and
             // one wounded.
@@ -406,11 +476,26 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // A fallen party seat and a fallen monster on odd rounds, which
             // the hide and show walks skip (`lhu 0x14c`, `beq` at
             // `0x801F7B90`, `0x801F7824`, `0x801F7F48`).
-            if seat_writes_compared(body) && round % 2 == 1 {
+            // Every other body takes the same on one round in four, the
+            // monster faded out (`+0x04 = 0`) as its defeat leaves it: a show
+            // whose colour store sits in a `beq` delay slot relights it.
+            let fell = if seat_writes_compared(body) {
+                round % 2 == 1
+            } else {
+                round % 4 == 1
+            };
+            if fell {
                 let p = (0..3u32).find(|&s| s != victim).expect("a party seat");
-                let m = (3..7u32).find(|&s| s != caster).expect("a monster seat");
+                let m = (3..7u32)
+                    .find(|&s| s != caster && s != victim)
+                    .expect("a monster seat");
                 for s in [p, m] {
                     cpu.mem.wr16(ACTOR + s * STRIDE + 0x14C, 0);
+                }
+                // The fallen member lies on its down clip, as the settle
+                // waits read it.
+                if !seat_writes_compared(body) {
+                    cpu.mem.wr8(ACTOR + p * STRIDE + 0x1D9, 8);
                 }
             }
             // Melt Spray's five stats on the victim, both halves, the floor's
@@ -448,10 +533,17 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             }
             // The tint word the group aim counts a monster seat up by
             // (`FUN_800513F0`'s seating, `0x80051874`).
-            if water_hazard {
-                for s in 3..8 {
-                    cpu.mem.wr32(ACTOR + s * STRIDE + 4, 0x1004_0100);
-                }
+            // Every other seat rests on retail's neutral word
+            // `0x20080200` (a shake or a fade eases from it, Slime Divide's
+            // arm 1 among them).
+            for s in 0..8 {
+                let faded = fell && s >= 3 && cpu.mem.rd16(ACTOR + s * STRIDE + 0x14C) == 0;
+                let word = match () {
+                    _ if faded && !seat_writes_compared(body) => 0,
+                    _ if water_hazard && s >= 3 => 0x1004_0100,
+                    _ => 0x2008_0200,
+                };
+                cpu.mem.wr32(ACTOR + s * STRIDE + 4, word);
             }
             // Plasma Strike's arm 5 waits for its strike clip `0x0D` past
             // a cursor, and arm 6 for the clip's loops to run out.
@@ -468,6 +560,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             if blazing {
                 cpu.mem.wr8(va_ + 0x1F1, KNOCKDOWN);
             }
+            let mut shadow = shadow_world(&mut cpu, body, caster, victim, monster);
+            let mut shadow_live = shadow.is_some();
+            let mut shadow_after: Vec<u32> = Vec::new();
             let mut arm_24_passes = 0usize;
             let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
             let mut arm3_passes = 0usize;
@@ -684,6 +779,33 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     unsettled_holds += usize::from(phase == 3 && st.target_unsettled);
                 }
                 let arm = (body.director)(&mut st, phase, seats);
+                // The band's own pass on the shadow world, while it walks
+                // the phase retail walks.
+                let shadow_phase = shadow.as_ref().map(|w| w.casting.module_phase);
+                if shadow_live && shadow_phase != Some(phase) {
+                    shadow_live = false;
+                    shadow_diverged += 1;
+                }
+                if shadow_live && let Some(w) = shadow.as_mut() {
+                    // The seats' HP as retail's pass opens on it: the band's
+                    // damage rolls are not the stubbed wrapper's, and a seat
+                    // write keyed on HP should read retail's.
+                    // A colour word or clip this harness stages between
+                    // passes (a defeat fade, a settle) is the battle's, not
+                    // the module's: it reaches the shadow as it reached
+                    // retail.
+                    for s in 0..8u32 {
+                        let a = ACTOR + s * STRIDE;
+                        let act = &mut w.actors[s as usize];
+                        act.battle.hp = cpu.mem.rd16(a + 0x14C);
+                        let word = cpu.mem.rd32(a + 4);
+                        if shadow_after.get(s as usize).is_some_and(|&was| was != word) {
+                            act.battle.render_color = word;
+                        }
+                    }
+                    w.clock.display_frames += 1;
+                    w.run_cast_module_code(body.action, phase);
+                }
                 let ctx_before = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
                 // The two seats as the pass opens, for Death Game's result.
                 let before = [ca, va_].map(|a| crate::cast_view::read_actor(&mut cpu.mem, a));
@@ -777,6 +899,41 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     }
                     buffs += 1;
                 }
+                // Every seat's tint and render flag as the band left them
+                // against retail's, while the two walk one phase.
+                // Death Game's wheel stops on the pad, which reaches retail's
+                // pass and not the shadow's: the shadow follows it to the
+                // spin (arm 9).
+                if body.action == 0x76 && phase >= 9 {
+                    shadow_live = false;
+                }
+                if shadow_live && let Some(w) = shadow.as_ref() {
+                    for s in 0..8usize {
+                        // PROT 0964's and 0966's creature stands in seat 7
+                        // through `FUN_801F19EC`, which the image here runs
+                        // stubbed.
+                        if s == 7 && matches!(body.entry, 964 | 966) {
+                            continue;
+                        }
+                        let a = ACTOR + s as u32 * STRIDE;
+                        let got = (cpu.mem.rd32(a + 4), cpu.mem.rd8(a + 0x21C));
+                        let port = (
+                            w.actors[s].battle.render_color,
+                            w.actors[s].battle.render_flag,
+                        );
+                        if got != port {
+                            shadow_failures.push(format!(
+                                "{c}: band seat {s} tint/flag retail {got:x?} port {port:x?} hp retail {} port {}",
+                                cpu.mem.rd16(a + 0x14C),
+                                w.actors[s].battle.hp
+                            ));
+                        }
+                    }
+                    shadow_passes += 1;
+                }
+                shadow_after = (0..8u32)
+                    .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
+                    .collect();
                 // Terror Scream's turn steal on the pass that leaves arm 3,
                 // against `terror_scream_tick`.
                 if body.action == 0x70 && phase == 3 && after != phase {
@@ -1001,6 +1158,20 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     eprintln!("buff passes compared {buffs}, seat-write passes {seat_passes}");
     assert!(seat_passes > 100, "seat-write passes {seat_passes}");
     assert!(steals >= 12, "Terror Scream steals compared {steals}");
+    eprintln!(
+        "band shadow: {shadow_passes} passes compared, {shadow_diverged} casts left retail's phase walk, {} mismatches",
+        shadow_failures.len()
+    );
+    assert!(
+        shadow_passes >= 150_000,
+        "band shadow passes {shadow_passes}"
+    );
+    assert!(
+        shadow_failures.is_empty(),
+        "{} band seat mismatches:\n{}",
+        shadow_failures.len(),
+        shadow_failures[..shadow_failures.len().min(40)].join("\n")
+    );
     assert!(buffs >= 12, "buff passes compared {buffs}");
     assert!(
         results >= 4 && heal_capped,
@@ -1011,7 +1182,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         "Water Hazard's settle held {unsettled_holds} passes"
     );
     let n = failures.len();
-    failures.truncate(400);
+    failures.truncate(4000);
     assert!(n == 0, "{n} mismatches:\n{}", failures.join("\n"));
 }
 
