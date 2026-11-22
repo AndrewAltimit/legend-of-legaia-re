@@ -939,6 +939,33 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         v.restage = r.restage;
                         w.drive_write_cast_view(s as u8, &v);
                     }
+                    // The walk stubs the range poll `FUN_8004E2F0(7, victim)`
+                    // in range, where its creature never walks; the shadow's
+                    // PROT 0908 arm 8 reads range off the creature's pair, so
+                    // it stands on the victim's for that arm.
+                    if (entry, phase) == (908, 8) {
+                        let (x, z) = {
+                            let v = &w.actors[victim as usize].move_state;
+                            (v.world_x, v.world_z)
+                        };
+                        let c = &mut w.actors[CREATURE as usize].move_state;
+                        c.world_x = x;
+                        c.world_z = z;
+                    }
+                    // PROT 0907's verdict as retail's arm 0 drew it (its
+                    // fork word `0x801F8534` and resist word `0x801F853C`):
+                    // the shadow's own draw reads its zeroed party's levels.
+                    if entry == 907 && pass > 0 {
+                        use legaia_engine_cast::seru_magic_ticks::NightoOutcome as O;
+                        let fork = cpu.mem.rd32(0x801F_8534) != 0;
+                        let resisted = cpu.mem.rd32(0x801F_853C) != 0;
+                        w.casting.module_nighto_outcome = Some(match (fork, resisted) {
+                            (false, false) => O::Kill,
+                            (false, true) => O::KillResisted,
+                            (true, false) => O::Confuse,
+                            (true, true) => O::ConfuseResisted,
+                        });
+                    }
                     // The band's word `ctx[+0x6D8]` the paced arms poll
                     // (PROT 0907's arm 3), as the SM leaves it this pass.
                     w.battle_ctx.frame_timer = cpu.mem.rd16(CTX + 0x6D8) as i16 as _;
