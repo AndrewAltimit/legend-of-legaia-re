@@ -310,6 +310,19 @@ impl World {
                 / 100)
                 .min(9999);
         }
+        // A retail-compare seed of the hit the capture had already landed
+        // (`BattleState::forced_melee_hits`, a row-aimed cast's value
+        // window): the roll still drew, the amount is retail's.
+        if let Some(i) = self
+            .battle
+            .forced_melee_hits
+            .iter()
+            .position(|&(slot, _)| slot == target)
+            && let Some((_, known)) = self.battle.forced_melee_hits.remove(i)
+            && known != 0
+        {
+            roll = u32::from(known);
+        }
         if legaia_engine_effects::summon::module_trains_spell_xp(spell_id) {
             let group =
                 self.tables.spell_catalog.get(spell_id).is_some_and(|d| {

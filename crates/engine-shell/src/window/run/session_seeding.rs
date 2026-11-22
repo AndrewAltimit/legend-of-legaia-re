@@ -431,6 +431,15 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
     }) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
         world.battle.inflight_seed = Some(seed);
+        // A replayed cast's landed hits (`LEGAIA_BATTLE_MELEE_HITS`, a
+        // row-aimed cast's value window): its rolls take retail's amounts,
+        // as the headless seed's do. A harness seat.
+        if let Ok(v) = std::env::var("LEGAIA_BATTLE_MELEE_HITS") {
+            legaia_engine_capture::melee_hits::seed_melee_hits(
+                world,
+                &legaia_engine_capture::melee_hits::melee_hits_from_env(&v),
+            );
+        }
     }
     apply_monster_cast_env(world);
     // `LEGAIA_SEAT_CUE_CLUT=<x>`: the parked palette column the retail state's

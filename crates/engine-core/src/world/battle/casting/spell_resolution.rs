@@ -318,6 +318,23 @@ impl World {
             {
                 *amount = known;
             }
+            // The same seed on a party Seru cast (a row-aimed cast's value
+            // window, retail-compare only): the struck seat's push, wherever
+            // it sits in the ring - the module's push order is not the
+            // fold's target order (Theeder: `3 / 5 / 4`).
+            if is_party_summon_cast
+                && let legaia_engine_battle::spells::SpellOutcome::Damage { amount, .. } =
+                    &mut outcome
+                && let Some(i) = self
+                    .battle
+                    .forced_melee_hits
+                    .iter()
+                    .position(|&(slot, _)| slot == t)
+                && let Some((_, known)) = self.battle.forced_melee_hits.remove(i)
+                && known != 0
+            {
+                *amount = known;
+            }
             let damaged = matches!(
                 outcome,
                 legaia_engine_battle::spells::SpellOutcome::Damage { .. }

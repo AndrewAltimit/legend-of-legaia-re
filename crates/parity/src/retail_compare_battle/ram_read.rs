@@ -979,12 +979,15 @@ pub(super) fn action_hit_sequence(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
     (0..count)
         .filter_map(|i| {
             let e = i % u32::from(RING_LEN);
+            let seat = game_anchors::u16_at(ram, ctx + RING_SEAT + e * 2);
             let value = if i + u32::from(RING_LEN) < count {
                 0
             } else {
-                game_anchors::u16_at(ram, ctx + RING_VALUE + e * 4) as i16
+                value_window_amount(ram, ctx, seat).map_or_else(
+                    || game_anchors::u16_at(ram, ctx + RING_VALUE + e * 4) as i16,
+                    |v| v as i16,
+                )
             };
-            let seat = game_anchors::u16_at(ram, ctx + RING_SEAT + e * 2);
             (seat < 8).then_some((seat as u8, value.max(0) as u16))
         })
         .collect()
@@ -1021,6 +1024,34 @@ pub(super) fn clip_own_pushes(ram: &[u8], ctx: u32) -> u8 {
         .count() as u8
 }
 
+/// The row-aimed cast's seat list `0x801F6978` (four bytes, `0` ends it),
+/// which the action seed `FUN_801E6D84` fills for spells `0x82` / `0x86` /
+/// `0x8D` and the every-enemy target (`docs/subsystems/battle-hud.md`).
+const VALUE_ROWS: u32 = 0x801F_6978;
+/// The value window `0x801F6980`: one halfword per row, to which the
+/// finisher adds each hit on that row's seat (`0x801DE3C4..0x801DE43C`).
+const VALUE_WINDOW: u32 = 0x801F_6980;
+
+/// A row-aimed cast's amounts, read off the value window where the ring
+/// holds none. Such a cast pushes each struck seat on the damage-number ring
+/// with a `0` amount (PROT 0904's rising frame: seats `3 / 5 / 4`, amounts
+/// `0`) and adds the hit to its row's halfword instead, so the window is
+/// where the landed amount lives. `Some(amount)` for `seat` when every ring
+/// push this action reads `0` and the window lists `seat` with a non-zero
+/// value; `None` otherwise, which leaves the ring's own reading.
+fn value_window_amount(ram: &[u8], ctx: u32, seat: u16) -> Option<u16> {
+    let count = u32::from(game_anchors::u8_at(ram, ctx + RING_PUSHES).min(RING_LEN));
+    if count == 0 || (0..count).any(|i| game_anchors::u16_at(ram, ctx + RING_VALUE + i * 4) != 0) {
+        return None;
+    }
+    (0..4u32)
+        .map(|r| (r, game_anchors::u8_at(ram, VALUE_ROWS + r)))
+        .take_while(|&(_, s)| s != 0)
+        .find(|&(_, s)| u16::from(s) == seat)
+        .map(|(r, _)| game_anchors::u16_at(ram, VALUE_WINDOW + r * 2))
+        .filter(|&v| v != 0 && (v as i16) > 0)
+}
+
 pub(super) fn action_hits(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
     let state = game_anchors::u8_at(ram, ctx + 7);
     let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
@@ -1033,8 +1064,11 @@ pub(super) fn action_hits(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
     }
     let mut pushed = [0u32; 8];
     for i in 0..u32::from(count) {
-        let value = game_anchors::u16_at(ram, ctx + RING_VALUE + i * 4) as i16;
         let seat = game_anchors::u16_at(ram, ctx + RING_SEAT + i * 2);
+        let value = value_window_amount(ram, ctx, seat).map_or_else(
+            || game_anchors::u16_at(ram, ctx + RING_VALUE + i * 4) as i16,
+            |v| v as i16,
+        );
         if value > 0 && seat < 8 {
             pushed[seat as usize] += value as u32;
         }

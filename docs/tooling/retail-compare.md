@@ -2878,6 +2878,21 @@ lands the total completes (`BattleState::forced_melee_total`). The rolls
 still draw, so the stream advances as retail's did. `noa_levelup_fight_pre`
 reads `camera` `.970` to `1.000` and `image` `.790` to `.996`.
 
+A party **row-aimed** cast (Theeder's `0x82`, and `0x86` / `0x8D` / any
+every-enemy cast) pushes each struck seat on the ring with a `0` amount and
+adds the hit to its row's halfword in the value window `0x801F6980` instead
+(rows listed at `0x801F6978`, [battle-hud](../subsystems/battle-hud.md)). Where
+every push of the action reads `0`, `action_hit_sequence` and `action_hits`
+take each listed seat's amount off the window, so the bars are seeded ahead of
+the hits and the replay's cast lands retail's amounts: the seed rides an
+in-flight cast too (`SeedPlan::Cast`, seeded with `LEGAIA_BATTLE_INFLIGHT` on
+both sides), and the module's own roll (`World::summon_module_roll`) or the
+fold takes the struck seat's push wherever it sits, the module's push order
+(`3 / 5 / 4`) not being the fold's. `theeder_summon_value_rows_rising` read
+rows `279 / 274 / 280` against retail's `270 / 270 / 283` and `enemy_hp` `.75`;
+seeded, the rows match and `enemy_hp` is `1.0`. A harness seat: the rolls
+still draw.
+
 An unknown amount ahead of a known one leaves the known tail its room, and
 the last unknown hit ahead of a tail the ring still holds whole takes what
 the total leaves after it, so that tail lands its own captured amounts.

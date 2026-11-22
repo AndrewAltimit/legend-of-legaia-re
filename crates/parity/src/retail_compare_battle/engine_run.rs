@@ -728,6 +728,15 @@ pub fn run_engine_battle(
             if !seeded && entry_sweep_reached(&session.host.world, 0xFF) {
                 session.host.world.battle.inflight_seed = seed;
                 session.host.world.battle.summon_seat_seed = battle.summon_seat_seed();
+                // A replayed cast's landed hits take retail's amounts
+                // (`RetailBattle::melee_hit_seeds`, a row-aimed cast's
+                // value window); the image child seeds them with the cast.
+                if seed.is_some() {
+                    legaia_engine_capture::melee_hits::seed_melee_hits(
+                        &mut session.host.world,
+                        &battle.melee_hit_seeds(),
+                    );
+                }
                 seeded = true;
             }
             let w = &session.host.world;

@@ -3616,3 +3616,37 @@ fn the_arrival_walk_cursor_is_the_walks_last_advance_once_more() {
     put16(&mut ram, actor + 0x17A + 2 * 2, 8);
     assert_eq!(ram_read::arrival_walk_cursor(&ram, 3), None);
 }
+
+/// A row-aimed cast's pushes carry bare seats; the amounts are the value
+/// window's. PROT 0904's rising frame: the ring pushed seats `3 / 5 / 4` at
+/// `0`, the rows list `3 / 4 / 5` and the window `270 / 270 / 283`, so the
+/// sequence reads the window in push order and the landed hits sum per
+/// seat. A ring that holds any amount of its own keeps it.
+#[test]
+fn a_row_aimed_casts_amounts_come_off_the_value_window() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x36);
+    put8(&mut ram, ctx + 0x273, 3);
+    for (i, seat) in [3u16, 5, 4].into_iter().enumerate() {
+        put16(&mut ram, ctx + 0x318 + i as u32 * 2, seat);
+    }
+    for (r, seat) in [3u8, 4, 5].into_iter().enumerate() {
+        put8(&mut ram, 0x801F_6978 + r as u32, seat);
+    }
+    for (r, v) in [270u16, 270, 283].into_iter().enumerate() {
+        put16(&mut ram, 0x801F_6980 + r as u32 * 2, v);
+    }
+    assert_eq!(
+        action_hit_sequence(&ram, ctx),
+        vec![(3, 270), (5, 283), (4, 270)]
+    );
+    assert_eq!(action_hits(&ram, ctx), vec![(3, 270), (4, 270), (5, 283)]);
+    put32(&mut ram, ctx + 0x83C, 16);
+    assert_eq!(
+        action_hit_sequence(&ram, ctx),
+        vec![(3, 16), (5, 0), (4, 0)],
+        "the ring's own amount wins"
+    );
+}
