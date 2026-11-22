@@ -299,7 +299,14 @@ impl World {
     /// the cast's fold ([`Self::fold_cast`]'s waiver or the fold itself).
     /// `None` for a monster's cast, which rolls elsewhere.
     pub fn summon_module_roll(&mut self, caster: u8, target: u8, spell_id: u8) -> Option<u32> {
-        let mut roll = u32::from(self.player_summon_predamage(caster, target, spell_id)?);
+        #[cfg(feature = "test-drivers")]
+        let scripted = summon_roll_override::take(target);
+        #[cfg(not(feature = "test-drivers"))]
+        let scripted = None;
+        let mut roll = match scripted {
+            Some(r) => r,
+            None => u32::from(self.player_summon_predamage(caster, target, spell_id)?),
+        };
         if !self.expansion_casting_pack(caster, spell_id)
             && self
                 .seru
@@ -482,5 +489,30 @@ pub(in crate::world) fn seru_module_heal(
             Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
         }
         _ => None,
+    }
+}
+
+/// The differentials that run a summon image beside the band with the
+/// damage wrapper `FUN_801DD0AC` stubbed: each roll a module makes on seat
+/// `target` takes the value the stub returned retail for the same call, so
+/// the module's own HP arithmetic (its quartering, floors and `HP - 1`
+/// clamps) is compared on equal rolls.
+#[cfg(feature = "test-drivers")]
+pub mod summon_roll_override {
+    use std::cell::RefCell;
+
+    type Roll = Box<dyn FnMut(u8) -> u32>;
+    thread_local! {
+        static ROLL: RefCell<Option<Roll>> = const { RefCell::new(None) };
+    }
+
+    /// Route every summon module roll on this thread through `f(seat)`, or
+    /// back to the kernel with `None`.
+    pub fn set(f: Option<Roll>) {
+        ROLL.with(|r| *r.borrow_mut() = f);
+    }
+
+    pub(crate) fn take(target: u8) -> Option<u32> {
+        ROLL.with(|r| r.borrow_mut().as_mut().map(|f| f(target)))
     }
 }

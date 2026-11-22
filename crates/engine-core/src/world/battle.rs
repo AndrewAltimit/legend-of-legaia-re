@@ -16,6 +16,8 @@ mod capture;
 mod cast_band;
 mod casting;
 pub(in crate::world) use casting::seru_module_heal;
+#[cfg(feature = "test-drivers")]
+pub use casting::summon_roll_override;
 pub(in crate::world) mod clip_ladder;
 mod command_flow;
 mod commit_log_launch;

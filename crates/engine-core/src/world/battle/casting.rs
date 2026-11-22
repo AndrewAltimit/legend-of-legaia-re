@@ -6,6 +6,8 @@ mod element_affinity;
 mod outcome_fold;
 mod power_and_xp;
 pub(in crate::world) use power_and_xp::seru_module_heal;
+#[cfg(feature = "test-drivers")]
+pub use power_and_xp::summon_roll_override;
 mod predamage;
 mod spell_resolution;
 
