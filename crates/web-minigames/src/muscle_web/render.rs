@@ -252,6 +252,7 @@ impl LegaiaMinigames {
             list_pages: view.list_pages,
             phase: legaia_engine_ui::arts_input::ArtsInputScreen::Entering,
             glides: &glides,
+            retreat: None,
             chip_slide: None,
             dpad: true,
         };
@@ -287,6 +288,7 @@ impl LegaiaMinigames {
             list_pages: view.list_pages,
             phase: ArtsInputScreen::Entering,
             glides: &[],
+            retreat: None,
             chip_slide: Some((
                 elapsed.min(u32::from(CHIP_SLIDE_FRAMES)) as u8,
                 CHIP_SLIDE_FRAMES,

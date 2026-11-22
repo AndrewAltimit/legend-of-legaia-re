@@ -221,18 +221,43 @@ pub struct ArtsCommandInputSession {
     /// a frame. One step per [`Self::input`] call, which every host makes
     /// once a frame while the entry is up.
     pub pennant_glides: Vec<(usize, u8)>,
-    /// The committed pennants' retreat, elapsed frames, while it runs: the
-    /// entry's restart (case `0x26`) and the review's return to the entry
-    /// (case `0xF`) re-spawn every committed pennant in mode `1` under the
-    /// glide flag `0` (`0x801D52E4..0x801D5340`), so they slide back over
-    /// [`CHIP_SLIDE_FRAMES`] without gating the pass.
-    pub pennant_retreat: Option<u8>,
+    /// The committed pennants' retreat, while it runs: the entry's restart
+    /// (case `0x26`) and the review's return to the entry (case `0xF`)
+    /// re-spawn every committed pennant in mode `1` under the glide flag `0`
+    /// (`0x801D52E4..0x801D5340`), so they slide off the bottom over
+    /// [`CHIP_SLIDE_FRAMES`] without gating the pass
+    /// ([`PennantRetreat`]).
+    pub pennant_retreat: Option<PennantRetreat>,
     /// The direction chips' slide-in, elapsed frames, while it runs: the
     /// entry screen's step `9` opens the four chip records in mode `0`
     /// (spawn on seat A, glide to seat B) over `ctx[+0x1C]` frames, and the
     /// review's return to the entry (step `0xF`) does the same.
     pub chip_slide: Option<u8>,
     pub phase: ArtsInputPhase,
+}
+
+/// The committed pennants sliding off the bar after a restart or a review
+/// cancel wiped them: the commands and costs they had (the queue is already
+/// clear) and the frames the slide has run.
+///
+/// Case `0xF`'s tail (`0x801D52E4..0x801D5334`, case `0x26` falls into it)
+/// rewrites each pennant record `0x20 + k`'s seat A to its own seat B's `x`
+/// and `y = 0xE8` (`li s1,0xe8` / `sh s1,0x4(v0)` / `sh v1,0x2(v0)`) and
+/// re-spawns it in mode `1`: on the bar seat, gliding straight down to seat
+/// A over `ctx[+0x1C] = 0x10` frames, where it rests below the 228-line
+/// display. A PCSX-Redux run from `arts_bar_ideal_noa_fangs` (Up, then
+/// Circle once the pennant had landed) logged the pennant's handle from
+/// `(16, 190)` to `(16, 230)` in steps of `40 * elapsed / 16` and its glide
+/// record `0x10` long under flag `0`; the frame shot at the end shows no
+/// pennant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PennantRetreat {
+    /// Frames run, `0..CHIP_SLIDE_FRAMES`.
+    pub elapsed: u8,
+    /// The wiped commands, as [`ArtsCommandInputSession::buffer`] held them.
+    pub commands: Vec<u8>,
+    /// Their costs, as [`ArtsCommandInputSession::spent`] held them.
+    pub spent: Vec<u16>,
 }
 
 /// Frames the direction chips slide in over: the glide count `ctx[+0x1C]`,
@@ -653,10 +678,12 @@ impl ArtsCommandInputSession {
             g.1 = g.1.saturating_add(1);
             g.1 < PENNANT_GLIDE_FRAMES
         });
-        self.pennant_retreat = self
-            .pennant_retreat
-            .map(|e| e.saturating_add(1))
-            .filter(|&e| e < CHIP_SLIDE_FRAMES);
+        if let Some(r) = self.pennant_retreat.as_mut() {
+            r.elapsed = r.elapsed.saturating_add(1);
+            if r.elapsed >= CHIP_SLIDE_FRAMES {
+                self.pennant_retreat = None;
+            }
+        }
         self.chip_slide = self
             .chip_slide
             .map(|e| e.saturating_add(1))
@@ -675,13 +702,21 @@ impl ArtsCommandInputSession {
         !self.pennant_glides.is_empty() || self.pennant_retreat.is_some()
     }
 
-    /// The committed pennants slide back off the bar (cases `0x26` / `0xF`
-    /// with a non-zero count, `0x801D52E4..0x801D5334`).
-    fn retreat_pennants(&mut self, committed: usize) {
+    /// The committed pennants slide off the bar (cases `0x26` / `0xF` with a
+    /// non-zero count, `0x801D52E4..0x801D5334`), before the queue is wiped.
+    fn retreat_pennants(&mut self) {
         self.pennant_glides.clear();
-        if committed != 0 {
-            self.pennant_retreat = Some(0);
-        }
+        let commands = self.committed_string().to_vec();
+        let spent = if self.replay {
+            self.preseed_spent.clone()
+        } else {
+            self.spent.clone()
+        };
+        self.pennant_retreat = (!commands.is_empty()).then_some(PennantRetreat {
+            elapsed: 0,
+            commands,
+            spent,
+        });
     }
 
     /// Advance one frame. `party` / `monsters` describe slot occupancy for
@@ -815,7 +850,7 @@ impl ArtsCommandInputSession {
                     if self.buffer.is_empty() {
                         self.phase = ArtsInputPhase::Aborted;
                     } else {
-                        self.retreat_pennants(self.buffer.len());
+                        self.retreat_pennants();
                         self.buffer.clear();
                         self.spent.clear();
                         self.pool = self.pool_max;
@@ -833,8 +868,7 @@ impl ArtsCommandInputSession {
                     // the sixteen queue bytes and, for an entry opened from
                     // the arts input, returns to it (`0x50`, case `0xF`).
                     // The wipe takes a replayed preseed with it.
-                    let committed = self.committed_string().len();
-                    self.retreat_pennants(committed);
+                    self.retreat_pennants();
                     self.clear_preseed();
                     self.replay = false;
                     self.buffer.clear();
@@ -1028,6 +1062,9 @@ pub struct ArtsInputView<'a> {
     /// Committed pennants still gliding in, `(slot, elapsed)` over
     /// [`PENNANT_GLIDE_FRAMES`] ([`ArtsCommandInputSession::pennant_glides`]).
     pub pennant_glides: &'a [(usize, u8)],
+    /// The wiped pennants sliding off the bar
+    /// ([`ArtsCommandInputSession::pennant_retreat`]).
+    pub pennant_retreat: Option<&'a PennantRetreat>,
     /// The chips' slide-in, elapsed frames over [`CHIP_SLIDE_FRAMES`]
     /// ([`ArtsCommandInputSession::chip_slide`]).
     pub chip_slide: Option<u8>,

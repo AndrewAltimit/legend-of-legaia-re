@@ -1605,6 +1605,15 @@ fn each_surface_keys_the_battle_cue_sites() {
     if let DomeMenu::Input(e) = &mut s.menu {
         e.pool = 100;
     }
+    // Not while the pennant still glides in: the same image's `beq s4,zero`
+    // (`0x801D20E4`) skips the cancel until the glide table is empty.
+    assert_eq!(
+        s.select_input(pad(|p| p.cancel = true)),
+        DomeMenuEvent::Idle
+    );
+    while matches!(&s.menu, DomeMenu::Input(e) if e.cancel_held()) {
+        s.select_input(pad(|_| {}));
+    }
     assert_eq!(
         s.select_input(pad(|p| p.cancel = true)),
         DomeMenuEvent::Back

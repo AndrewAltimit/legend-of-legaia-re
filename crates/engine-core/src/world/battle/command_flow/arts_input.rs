@@ -99,6 +99,7 @@ impl World {
             phase: (&s.phase).into(),
             status: self.raw_status_word(s.actor),
             pennant_glides: &s.pennant_glides,
+            pennant_retreat: s.pennant_retreat.as_ref(),
             chip_slide: s.chip_slide,
         })
     }
@@ -175,6 +176,7 @@ impl World {
             phase: ArtsInputScreen::Review,
             status: 0,
             pennant_glides: &[],
+            pennant_retreat: None,
             chip_slide: None,
         })
     }
