@@ -4280,3 +4280,10 @@ entry = "0x801E9FD4"
 range = "0x801EA610..0x801EA610"
 verdict = "unreachable"
 reason = "The heal-patient scan's entry test 0 < ctx[+1]: a monster is picking, so the seated monster count is at least 1 and the scan is always entered."
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3B00..0x801D3B1C"
+verdict = "cannot-drive"
+reason = "PROT 0972: the off-screen break latch on the lure's projected x (< -0x20 or > 0x160, from FUN_8003D368); the port takes that latch from the host's line projection (PondSession's line_frame_retail), which the lure-tick differential does not run, so its rig projects every point on screen."
