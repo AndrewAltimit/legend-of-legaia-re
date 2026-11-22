@@ -288,36 +288,8 @@ verdict = "unreachable"
 reason = "PROT 0972 fishing lure tick: the divide trap on `rand() % (rod + 1)`; the rod word 0x80084454 is the bag's rod index, so the unsigned divisor is never 0"
 
 [[arm]]
-entry = "0x801D26CC"
-image = "914784a36560ef74"
-range = "0x801D3614..0x801D3614"
-verdict = "unported"
-reason = "PROT 0972 fishing lure tick: the hook's sound swap behind the latch 0x801D92A4 (seeded -1 at 0x801CF358, cleared at 0x801CF804 / 0x801CFDAC): it stops the source at 0x8007056C, reinstalls category 5 from the staging buffer _DAT_8007B85C + 0x32000 through FUN_8001E54C and restarts it; the port keeps the departure scene's music and has no such swap (PORT GAP)"
-
-[[arm]]
-entry = "0x801CF3BC"
-image = "d34a946ed9c68fe0"
-range = "0x801CF7E8..0x801CF7E8"
-verdict = "unported"
-reason = "PROT 0972 fishing session: the swap back of the hook's sound install when the latch 0x801D92A4 is up (0x801CF7F0..0x801CF828, FUN_8001E54C over _DAT_8007B85C); the port has no hook swap to undo (see the lure tick's 0x801D3614)"
-
-[[arm]]
-entry = "0x801CF3BC"
-image = "d34a946ed9c68fe0"
-range = "0x801CFD8C..0x801CFD8C"
-verdict = "unported"
-reason = "PROT 0972 fishing session: the second swap-back site for the hook's sound install (0x801CFD94..0x801CFDD4), as 0x801CF7E8"
-
-[[arm]]
 entry = "0x801CF3BC"
 image = "d34a946ed9c68fe0"
 range = "0x801CF46C..0x801CF46C"
 verdict = "unreachable"
 reason = "PROT 0972 fishing session: the jump table's bound test on the state 0x801D926C, an overlay word only 0972 stores; its 33 stores are the constants 0 / 1 / 0xA / 0x14 / 0x19 / 0x1E / 0x20 / 0x28 / 0x32 / 0x64 / 0x66 / 0x78 / 0x79 / 0x7A / 0x96 / 0xC8 and six +1 steps inside the arms of states 0xA, 0xB, 0xC, 0x14, 0x20 and 0x21, so it never reaches 0xC9"
-
-[[arm]]
-entry = "0x801CF3BC"
-image = "d34a946ed9c68fe0"
-range = "0x801CF400..0x801CF400"
-verdict = "unported"
-reason = "PROT 0972 fishing session head: with the Dual Shock Events option 0x800845A8 clear it copies the venue's motor words 0x801D90E0 / 0x801D90E4 into the pad's 0x8007B92C / 0x8007B930 every frame; the port's fishing drives no vibration (PORT GAP)"

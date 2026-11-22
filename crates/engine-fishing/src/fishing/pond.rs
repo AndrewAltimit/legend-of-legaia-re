@@ -213,6 +213,17 @@ impl PondSession {
         self.strength
     }
 
+    /// The hooked fish's surge `DAT_801D90F4` as the last game tick left it.
+    pub fn surge(&self) -> i32 {
+        self.surge
+    }
+
+    /// Seat the surge, as a test stands in for a fight.
+    #[doc(hidden)]
+    pub fn seat_surge(&mut self, surge: i32) {
+        self.surge = surge;
+    }
+
     /// The hooked fish object's render scale (actor `+0x72`, mirrored into
     /// `DAT_801D9108`): `strength + 0x400`, stored as a halfword. `0` before
     /// the first hook. The landed fish's body draws at it, lifted and on the

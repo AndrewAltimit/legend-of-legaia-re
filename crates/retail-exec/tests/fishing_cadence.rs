@@ -1170,3 +1170,65 @@ fn the_catch_waits_for_the_rod_and_the_close_up_as_retail_does() {
     }
     assert!(shown.iter().all(|&n| n > 500), "{shown:?}");
 }
+
+/// The session's motor copy: the head moves the venue's rumble pair
+/// `DAT_801D90E0` / `DAT_801D90E4` into the motor words `_DAT_8007B92C` /
+/// `_DAT_8007B930` when the Events vibration row `_DAT_800845A8` is On (and
+/// zeroes them when it is Off), and
+/// the tail refills the pair from the surge `DAT_801D90F4` as `surge / 8` /
+/// `surge / 4`, rounded toward zero - the values the port's head copy
+/// (`World::fishing_motor_copy`) puts on the motors the next frame. Run on a
+/// state with no arm of its own, so only the head and the tail act.
+#[test]
+fn the_session_drives_the_motors_off_the_surge() {
+    differential!(prot(972, SESSION));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    const PAIR: [u32; 2] = [0x801D_90E0, 0x801D_90E4];
+    const MOTORS: [u32; 2] = [0x8007_B92C, 0x8007_B930];
+    const SURGE: u32 = 0x801D_90F4;
+    const EVENTS_OFF: u32 = 0x8008_45A8;
+    cpu.stub_outside = Some((SESSION, SESSION_END));
+    let mut rng = crate::common::Rng(0x4D4F_544F);
+    let (mut copied, mut held) = (0, 0);
+    for case in 0..2000 {
+        cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+        cpu.mem.wr32(SESSION_STATE, 5);
+        let pair = [rng.next(), rng.next()];
+        let motors = [rng.next(), rng.next()];
+        let surge = match case % 3 {
+            0 => rng.below(0x800) as i32,
+            1 => -(rng.below(0x800) as i32),
+            _ => rng.next() as i32,
+        };
+        let off = rng.below(2);
+        for i in 0..2 {
+            cpu.mem.wr32(PAIR[i], pair[i]);
+            cpu.mem.wr32(MOTORS[i], motors[i]);
+        }
+        cpu.mem.wr32(SURGE, surge as u32);
+        cpu.mem.wr32(EVENTS_OFF, off);
+        assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "case {case}");
+        // The head zeroes both words, then copies the pair on an On row.
+        let _ = motors;
+        let want_motors = if off == 0 { pair } else { [0, 0] };
+        assert_eq!(
+            MOTORS.map(|a| cpu.mem.rd32(a)),
+            want_motors,
+            "case {case}: the head's copy"
+        );
+        assert_eq!(
+            PAIR.map(|a| cpu.mem.rd32(a) as i32),
+            [surge / 8, surge / 4],
+            "case {case}: the tail's refill from surge {surge}"
+        );
+        copied += usize::from(off == 0);
+        held += usize::from(off != 0);
+    }
+    assert!(copied > 500 && held > 500);
+}
