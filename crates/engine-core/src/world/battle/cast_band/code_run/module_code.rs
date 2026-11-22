@@ -265,6 +265,14 @@ impl World {
                         _ => self.chain_seat_settled(s, false),
                     });
                 // PROT 0916's arm `0x14` settle poll on the latched victim.
+                // Retail's waits on a dead victim's word alone (`lw 4(s3)` /
+                // `bnez` at `0x801F8870`), and that word eases to zero only
+                // under the defeat fade `+0x21C = 2`, which the commit's
+                // monster-death arm sets as the knockdown clip ends
+                // (`0x8004B66C`). The port keeps its down-clip and clipless
+                // exits beside the faded one: a victim whose knockdown never
+                // commits never fades, so the word-only gate would trade
+                // retail's later exit for a hold that never lets go.
                 st.victim_settled = self.chain_seat_settled(usize::from(latched), true);
                 // The applier stage `ctx[+0x276]` a side-band wait arm polls:
                 // up while the engine's stand-in for its reads runs, or while
