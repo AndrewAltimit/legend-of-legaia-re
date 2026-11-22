@@ -516,8 +516,8 @@ impl SaveScreenFlow {
                 if let Some((p, blocks)) = self.blocks.as_ref()
                     && *p == port
                 {
-                    let saves = blocks.iter().filter(|b| b.present).count();
-                    session.set_card_scan(saves.min(usize::from(u8::MAX)) as u8);
+                    let saves: Vec<bool> = blocks.iter().map(|b| b.present).collect();
+                    session.set_card_scan(crate::save_select::card_walk_frames(&saves));
                 }
             }
             _ => {}
@@ -848,6 +848,10 @@ pub struct SaveOverlayModel<'a> {
     pub slide_t: u16,
     pub info_t: u16,
     pub now_checking: bool,
+    /// The "Now checking" dialog's slide timer
+    /// (`SaveSelectSession::now_checking_t`): it slides in over the check
+    /// and back out once the grid opens.
+    pub now_checking_t: u16,
     /// The card-operation messagebox of [`SelectPhase::Committing`]: the
     /// write / read beat, then the result line (second line empty).
     pub banner: Option<SaveBanner>,
@@ -891,23 +895,18 @@ impl SaveScreenFlow {
         let checking = matches!(phase, SelectPhase::NowChecking { .. });
         let preview = (layout.preview || (checking && session.card_answered())).then(|| {
             let (blocks, cell) = self.preview(session);
-            let stamped_through = if checking {
-                let stamped = session
+            // Cells the block walk has not flagged yet draw `USED`.
+            let flagged = if checking {
+                let saves: Vec<bool> = blocks.iter().map(|b| b.present).collect();
+                session
                     .card_scan_elapsed()
-                    .map_or(0, crate::save_select::card_scan_stamped);
-                blocks
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, b)| b.present)
-                    .nth(usize::from(stamped).wrapping_sub(1))
-                    .filter(|_| stamped > 0)
-                    .map(|(i, _)| i)
+                    .map_or(0, |e| crate::save_select::card_walk_stamped(&saves, e))
             } else {
-                Some(usize::MAX)
+                usize::MAX
             };
             let cells = (0..SLOT_GRID_CELLS as usize)
                 .map(|i| {
-                    if stamped_through.is_none_or(|t| i > t) {
+                    if i >= flagged {
                         return SaveOverlayCell {
                             foreign: true,
                             ..Default::default()
@@ -983,7 +982,8 @@ impl SaveScreenFlow {
             pill_cursor,
             slide_t: session.slide_anim_t(),
             info_t: session.info_panel_slide_anim_t(),
-            now_checking: layout.now_checking,
+            now_checking: layout.now_checking || session.now_checking_t() > 0,
+            now_checking_t: session.now_checking_t(),
             banner,
             preview,
             confirm,
@@ -1163,7 +1163,7 @@ mod tests {
     #[test]
     fn the_card_check_answers_then_scans_under_the_dialog() {
         use crate::save_select::{
-            CARD_ANSWER_FRAMES, DEFAULT_NOW_CHECKING_FRAMES, card_scan_frames,
+            CARD_ANSWER_FRAMES, DEFAULT_NOW_CHECKING_FRAMES, card_walk_frames,
         };
         let saves = [0u8, 1, 2, 3, 4, 10, 14];
         let mut s = SaveSelectSession::for_rack(SaveSelectMode::Load, &card_rack(&[false, true]));
@@ -1221,11 +1221,23 @@ mod tests {
             frame(&mut flow, &mut s, 0);
             n += 1;
         }
-        assert_eq!(n, card_scan_frames(saves.len() as u8) + 1);
+        let present: Vec<bool> = (0..15).map(|i| saves.contains(&i)).collect();
+        // The film's card: 0x09 at 369, the grid at 434.
+        assert_eq!(card_walk_frames(&present), 65);
+        assert_eq!(n, card_walk_frames(&present) + 1);
         let m = flow.overlay_model(&s).unwrap();
         let p = m.preview.as_ref().unwrap();
-        assert!(!m.now_checking && p.info.is_some());
+        assert!(p.info.is_some());
         assert!(p.cells.iter().all(|c| !c.foreign));
+        // The dialog slides back out on its own timer (`DAT_801EF160`, a
+        // `0x100` step a frame): still up as the grid opens, gone sixteen
+        // frames later.
+        assert!(m.now_checking && m.now_checking_t < 0x1000);
+        for _ in 0..16 {
+            frame(&mut flow, &mut s, 0);
+        }
+        let m = flow.overlay_model(&s).unwrap();
+        assert!(!m.now_checking && m.now_checking_t == 0);
         // A second check in the same screen holds the plain 0x78 grace.
         frame(&mut flow, &mut s, PadButton::Circle.mask());
         assert!(matches!(s.phase(), SelectPhase::Browsing { .. }));

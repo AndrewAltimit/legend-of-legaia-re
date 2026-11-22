@@ -586,8 +586,23 @@ landed, no block count, no fault and the request cleared
 (`FUN_801E08D8`) and the grid's slide (`FUN_801E06C0` reads it at
 `0x801E0740`), so the grid fans in from the right and an empty panel rises
 under the dialog while the check still runs, and every cell draws the `USED`
-frame: the class array is the scan's to fill. The scan then stamps the saves
-in cell order and the free cells it walks past.
+frame: the class array is the scan's to fill.
+
+The scan walks the cells from 0, one a pass (`0x801DE958..0x801DEA58`, the
+cursor `state[+0x20C]`). A cell holding no save is flagged scanned
+(`0x801F2A68 + i`) and passed on the next pass; a save issues its header read,
+is flagged in the same pass, and holds the walk until the read answers
+(`state[+0x1D8]` / `[+0x1DC]`, then `scan_done` steps). The scan ends once
+every save is read, so the cells past the last save are never walked; the
+grid's entry flags them all (`0x801DE940..0x801DE94C`). So the free cells
+blank a frame apart as the walk passes them, and each save costs its read.
+
+The dialog has its own slide timer, `0x801EF160` (mode `0` of the slide-in
+primitive). It steps by the frame step `<< 8` toward its flag `0x801EF15C`,
+up while the check runs and down once it ends, clamped `0..=0x1000`, and the
+dialog draws while it is non-zero (`0x801DD6B8..0x801DD76C`). So the dialog
+slides back out to the right over sixteen frames as the grid opens, while
+the pill composite's timer `0x801EF194` stays landed.
 
 A PCSX-Redux film of the `SLOT 2` commit (`save_select_idle`, `DOWN` at vsync
 30, `CROSS` at 90, the seven-save endgame card in port 2, card words logged
@@ -596,14 +611,15 @@ every vsync) times it: `0x15` from vsync 93 with grace `270`; the answer at
 at 369; one save stamped every 8 vsyncs (cell 0 at 374, cell 14 at 426); the
 grid at 434. `load_slot2_now_checking` and `load_slot2_grid` are frames 37
 and 235 of that check. Two of those numbers are the emulated card's latency,
-not code: the answer's 78 frames and the scan's 8 a save.
+not code: the answer's 78 frames and the 8 a save read holds the walk.
 
 **Port.** `SaveSelectSession` runs the check: `begin_card_check` seeds the
 grace (`DEFAULT_NOW_CHECKING_FRAMES = 0x10E`, `CARD_CHECK_GRACE` once the
 session has probed), `SaveScreenFlow::before_tick` hands it the lifted card's
 save count (`set_card_scan`), `card_answered` raises the preview and the fade
-(`CARD_ANSWER_FRAMES`, `CARD_TEXT_RATE`) and the scan runs
-`card_scan_frames(saves)` under the dialog, stamping by `card_scan_stamped`.
+(`CARD_ANSWER_FRAMES`, `CARD_TEXT_RATE`) and the scan runs the walk under
+the dialog (`card_walk_frames`, flagging by `card_walk_stamped`).
+`SaveSelectSession::now_checking_t` is the dialog's own timer.
 `SaveScreenFlow::overlay_model` draws the unstamped cells as `USED` with no
 info or caption, and `save_select_overlay_draws` links the preview under the
 dialog's box and darkening, slid by `slot_preview_grid_draws_at`. A host

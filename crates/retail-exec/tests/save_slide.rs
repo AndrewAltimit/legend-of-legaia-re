@@ -326,6 +326,7 @@ fn the_card_pills_slide_where_the_port_draws_them() {
             slide_t: t as u16,
             info_t: 0,
             now_checking: false,
+            now_checking_t: 0,
             banner: None,
             preview: None,
             confirm: None,

@@ -21,9 +21,9 @@ pub struct SaveSelectSession {
     /// Frames since the current card check began (`0x801EF124`, the card
     /// screen's frame count since the commit).
     pub(super) check_elapsed: u16,
-    /// The Legend of Legaia saves on the card under check, once the host has
-    /// read it ([`Self::set_card_scan`]): the block scan's length.
-    pub(super) card_scan_saves: Option<u8>,
+    /// The block scan's length over the card under check, once the host has
+    /// read it ([`Self::set_card_scan`], [`card_walk_frames`]).
+    pub(super) card_scan_saves: Option<u16>,
     /// Frames the block scan has run, once the grace is out.
     pub(super) scan_elapsed: Option<u16>,
     /// 12-bit fixed-point slide-in animation timer (0..=4096). Holds
@@ -47,6 +47,14 @@ pub struct SaveSelectSession {
     /// through SlotPreview / ConfirmOverwrite / ConfirmDelete. Holds at 0
     /// while Browsing / Done and until the card answers.
     pub(super) info_panel_slide_anim_t: u16,
+    /// The "Now checking" dialog's own slide timer, retail's `DAT_801ef160`
+    /// (mode `0` of `FUN_801E1C1C`): stepped up `SLIDE_ANIM_RATE` a tick
+    /// while the card check runs and back down once it ends, clamped
+    /// `0..=0x1000`; the dialog draws while it is non-zero
+    /// (`0x801DD6B8..0x801DD76C`). So the dialog slides back out to the
+    /// right when the grid opens, where the pill composite's timer above
+    /// stays landed.
+    pub(super) now_checking_t: u16,
     /// Opt-in retail two-stage flow: the slot list is the console's two
     /// **memory-card slots** rather than the save blocks themselves, so
     /// Save mode must cross the same `NowChecking` card-read beat Load
@@ -154,6 +162,7 @@ impl SaveSelectSession {
             scan_elapsed: None,
             slide_anim_t: 0,
             info_panel_slide_anim_t: 0,
+            now_checking_t: 0,
             card_slots_mode: false,
             card_events: [false; CARD_STATUS_EVENTS],
             card_poll_counter: 0,
@@ -234,6 +243,12 @@ impl SaveSelectSession {
         self.info_panel_slide_anim_t
     }
 
+    /// The "Now checking" dialog's slide timer (12-bit fixed point): the
+    /// dialog is on screen while it is non-zero.
+    pub fn now_checking_t(&self) -> u16 {
+        self.now_checking_t
+    }
+
     /// Override the "Now checking" dialog duration (frames @ 60 Hz).
     /// Tests use this to bypass the 2-second beat.
     pub fn set_now_checking_frames(&mut self, frames: u16) {
@@ -244,9 +259,10 @@ impl SaveSelectSession {
     /// The host has read the card under check: it holds `saves` Legend of
     /// Legaia saves. From here the card has answered (the grid and the
     /// card-text fade come up under the dialog) and the beat ends with
-    /// retail's block scan ([`card_scan_frames`]) once the grace is out.
-    pub fn set_card_scan(&mut self, saves: u8) {
-        self.card_scan_saves = Some(saves);
+    /// retail's block scan, `walk_frames` long ([`card_walk_frames`]), once
+    /// the grace is out.
+    pub fn set_card_scan(&mut self, walk_frames: u16) {
+        self.card_scan_saves = Some(walk_frames);
     }
 
     /// Whether the card under check has answered: the host read it and the
@@ -358,6 +374,15 @@ impl SaveSelectSession {
     ///   `DAT_801ef1a0` only starts incrementing once `DAT_801ef160`
     ///   (NowChecking) has retracted.
     pub(super) fn advance_slide_anim(&mut self) {
+        // The dialog's flag `0x801EF15C` is up for the card check alone; its
+        // timer steps toward the flag either way (`0x801DD6E8..0x801DD76C`).
+        self.now_checking_t = if matches!(self.phase, SelectPhase::NowChecking { .. }) {
+            self.now_checking_t
+                .saturating_add(SLIDE_ANIM_RATE)
+                .min(SLIDE_ANIM_FULL)
+        } else {
+            self.now_checking_t.saturating_sub(SLIDE_ANIM_RATE)
+        };
         match self.phase {
             SelectPhase::Browsing { .. } | SelectPhase::Done(_) => {
                 self.slide_anim_t = 0;
@@ -528,7 +553,7 @@ impl SaveSelectSession {
     /// it holds while the grace card-op staging seeded is non-zero
     /// ([`Self::begin_card_check`]), then - once the host has read the card
     /// ([`Self::set_card_scan`]) - runs retail's block scan (`0x09` /
-    /// `0x0A`, [`card_scan_frames`]) before the grid opens. Beside that,
+    /// `0x0A`, [`card_walk_frames`]) before the grid opens. Beside that,
     /// `FUN_801E3294`'s state 1 polls the card every frame through
     /// `FUN_801E3900`; that poll is [`card_status_poll`], and it runs on
     /// every frame of this phase.
@@ -577,10 +602,10 @@ impl SaveSelectSession {
             // The grace is out (`0x15` hands to `0x09`): a card the host has
             // read runs retail's block scan under the dialog before the grid
             // opens (`0x0A` -> `0x0B`).
-            if let Some(saves) = self.card_scan_saves.filter(|_| !self.beat_overridden) {
+            if let Some(walk) = self.card_scan_saves.filter(|_| !self.beat_overridden) {
                 let elapsed = self.scan_elapsed.map_or(0, |e| e.saturating_add(1));
                 self.scan_elapsed = Some(elapsed);
-                if elapsed < card_scan_frames(saves) {
+                if elapsed < walk {
                     return;
                 }
             }

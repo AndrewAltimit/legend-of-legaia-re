@@ -59,6 +59,8 @@ pub struct SaveSelectOverlayView<'a> {
     /// The info-panel timer: the confirm messagebox rides it too.
     pub info_t: u16,
     pub now_checking: bool,
+    /// The "Now checking" dialog's own slide timer (retail `DAT_801ef160`).
+    pub now_checking_t: u16,
     /// A card-operation messagebox over the preview: the write / read beat
     /// and the result line after a confirmed Save or Load (two lines; an
     /// empty second line centres the first). Drawn on the "Now checking"
@@ -339,7 +341,7 @@ pub fn save_select_overlay_draws(
     if view.now_checking {
         darken_under(
             &mut out,
-            darken_level_small(view.slide_t),
+            darken_level_small(view.now_checking_t),
             rects,
             stage_origin,
             stage_scale,
@@ -347,7 +349,7 @@ pub fn save_select_overlay_draws(
         let x = slide(
             NOW_CHECKING_SLIDE_START_X,
             NOW_CHECKING_SLIDE_TARGET_X,
-            view.slide_t,
+            view.now_checking_t,
         );
         let offset = (x - NOW_CHECKING_SLIDE_TARGET_X, 0);
         if let Some(rects) = rects {
@@ -499,6 +501,7 @@ mod tests {
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
+            now_checking_t: 0,
             banner: None,
             preview: None,
             confirm: None,
@@ -564,6 +567,7 @@ mod tests {
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
+            now_checking_t: 0,
             banner: None,
             preview: Some(SaveSelectPreviewView {
                 cells: &cells,
@@ -639,6 +643,7 @@ mod tests {
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
+            now_checking_t: 0,
             banner: None,
             preview: Some(SaveSelectPreviewView {
                 cells: &cells,
@@ -711,6 +716,7 @@ mod tests {
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
+            now_checking_t: 0,
             banner: Some(banner(0x800)),
             preview: Some(SaveSelectPreviewView {
                 cells: &cells,
@@ -768,6 +774,7 @@ mod tests {
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
+            now_checking_t: 0,
             banner: None,
             preview: Some(SaveSelectPreviewView {
                 cells: &cells,

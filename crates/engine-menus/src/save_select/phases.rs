@@ -413,28 +413,58 @@ pub const DEFAULT_NOW_CHECKING_FRAMES: u16 = CARD_CHECK_GRACE + CARD_CHECK_FIRST
 /// (`load_slot2_*`'s source run) answers on the 78th frame of `0x15`. The
 /// card-text fade and the grid wait on that answer.
 pub const CARD_ANSWER_FRAMES: u16 = 78;
-/// Frames the block scan (`0x0A`) spends per save, after the one frame of
-/// scan setup (`0x09`): the same film reads its seven saves one every eight
-/// frames and opens the grid (`0x0B`) eight frames after the last.
+/// Frames the block scan (`0x0A`) holds on each save: the walk issues the
+/// save's header read and waits for it to answer before stepping on
+/// (`0x801DE958..0x801DEA58`, `state[+0x1D8]` / `[+0x1DC]`). Measured, not
+/// traced: the SLOT 2 film reads its seven saves one every eight frames and
+/// opens the grid (`0x0B`) eight frames after the last one is flagged.
 pub const CARD_SCAN_FRAMES_PER_SAVE: u16 = 8;
 /// The card-text fade's rate: the dispatcher tail adds the frame step `<< 6`
 /// to `0x801EF1A0` (`0x801DFE44..0x801DFE54`).
 pub const CARD_TEXT_RATE: u16 = 0x40;
 
-/// The scan's length for a card holding `saves` Legend of Legaia saves: the
-/// setup frame, then [`CARD_SCAN_FRAMES_PER_SAVE`] per save and one more
-/// period before the grid opens.
-pub fn card_scan_frames(saves: u8) -> u16 {
-    1 + CARD_SCAN_FRAMES_PER_SAVE * (u16::from(saves) + 1)
+/// What one cell of the block walk costs: a save holds the walk for its read
+/// ([`CARD_SCAN_FRAMES_PER_SAVE`]); any other cell is flagged and passed on
+/// the next frame.
+fn walk_cost(save: bool) -> u16 {
+    if save { CARD_SCAN_FRAMES_PER_SAVE } else { 1 }
 }
 
-/// How many of a card's saves the scan has stamped `scan_elapsed` frames
-/// into it (cell order): the `k`-th save lands four frames into its period.
-pub fn card_scan_stamped(scan_elapsed: u16) -> u16 {
-    if scan_elapsed < 1 + 4 {
-        return 0;
+/// The scan's length over a card whose cells hold a Legend of Legaia save
+/// where `saves[i]` is set: the setup frame (`0x09`), then the walk from cell
+/// 0 up to and including the last save. The scan ends once every save has
+/// been read (`scan_done == scan_total`), so the cells past the last save are
+/// never walked; with no save it ends on its first pass.
+pub fn card_walk_frames(saves: &[bool]) -> u16 {
+    match saves.iter().rposition(|&s| s) {
+        Some(last) => 1 + saves[..=last].iter().map(|&s| walk_cost(s)).sum::<u16>(),
+        None => 2,
     }
-    (scan_elapsed - 1 - 4) / CARD_SCAN_FRAMES_PER_SAVE + 1
+}
+
+/// How many cells, from cell 0, the walk has flagged `scan_elapsed` frames
+/// into the scan: the walk flags a cell on the pass it reaches it (a save's
+/// in the pass that issues its read, `0x801DEA10..0x801DEA1C`), so cell `i`
+/// lands one setup frame plus the costs of the cells before it in. Until
+/// then a cell draws the `USED` frame; the grid's entry flags the rest
+/// (`0x801DE940..0x801DE94C`).
+pub fn card_walk_stamped(saves: &[bool], scan_elapsed: u16) -> usize {
+    let mut at = 1u16;
+    for (i, &s) in saves.iter().enumerate() {
+        if at > scan_elapsed {
+            return i;
+        }
+        at = at.saturating_add(walk_cost(s));
+    }
+    saves.len()
+}
+
+/// The longest scan a card holding `saves` saves can run: every save behind
+/// every free cell. A bound for a caller that waits the scan out without
+/// knowing the card's layout.
+pub fn card_scan_frames(saves: u8) -> u16 {
+    let saves = u16::from(saves).min(15);
+    1 + CARD_SCAN_FRAMES_PER_SAVE * saves + (15 - saves)
 }
 
 /// Slide-in animation timer rate, in 12-bit fixed-point units per tick.
