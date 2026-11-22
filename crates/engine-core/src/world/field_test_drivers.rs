@@ -7,6 +7,10 @@
 //! names, and only when the `test-drivers` feature is on, which only test
 //! crates' `[dev-dependencies]` enable (the battle side is
 //! [`super::test_drivers::BattleTestDrivers`]).
+//!
+//! Closed to new methods: a new driver is a `#[cfg(feature = "test-drivers")]`
+//! `impl World` block in the module of the arm it drives, so tests for different
+//! arms never edit this file.
 
 use super::World;
 

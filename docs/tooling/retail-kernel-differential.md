@@ -84,6 +84,12 @@ shatter renderer's `RTPT`).
    `differential!(prot(ENTRY, VA))`, naming every routine it compares
    ([below](#declaring-what-a-test-runs)). A test with no declaration fails
    the coverage gate.
+5. When the test needs a `World` step that is not public, expose it beside the
+   arm it drives: a `#[cfg(feature = "test-drivers")] impl World { pub fn ... }`
+   block in that arm's own module, not a new method on the shared
+   `world::arm_drivers` / `world::field_test_drivers` / `world::test_drivers`
+   traits. Those traits are closed to new methods, so tests for different arms
+   never edit the same file.
 
 ## Declaring what a test runs
 
