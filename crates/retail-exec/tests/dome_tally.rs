@@ -6,6 +6,7 @@ use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_minigames::other_game_overlay::{
     ScoreTallyRamp, VoiceAttrCue, arena_voice_cue, cue_volume, step_scale,
 };
+use legaia_engine_ui::muscle_dome_hud::HUB_SCORE_TALLY_LABELS;
 use psx_retail_exec::{A0, A1, A2, A3, Cpu, SP, Stop, V0};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -119,7 +120,9 @@ fn the_tally_cue_keys_what_retail_keys() {
 /// Whole rolls, frame by frame, at frame steps of one to three, with the
 /// bypass flag flipped mid-roll, against `ScoreTallyRamp::tick`. The screen's
 /// six value draws are compared too: `FUN_801D1308(x, y, value, brightness)`,
-/// which the routine makes in two passes.
+/// which the routine makes in two passes, and its twelve label draws
+/// `FUN_801D08EC(x, y, record, brightness, scale)` against
+/// `HUB_SCORE_TALLY_LABELS` at the same per-row brightness.
 #[test]
 fn a_tally_rolls_as_retail_rolls_it() {
     differential!(prot(977, TICK));
@@ -132,7 +135,17 @@ fn a_tally_rolls_as_retail_rolls_it() {
     cpu.hook(VALUE_DRAW, move |r, _| {
         sink.borrow_mut().push((r.r[A2] as i32, r.r[A3] as i32));
     });
-    cpu.stub(LABEL_DRAW, 0);
+    let labels = Rc::new(RefCell::new(Vec::<(i32, i32, u32, i32, i32)>::new()));
+    let sink = labels.clone();
+    cpu.hook(LABEL_DRAW, move |r, m| {
+        sink.borrow_mut().push((
+            r.r[A0] as i32,
+            r.r[A1] as i32,
+            r.r[A2],
+            r.r[A3] as i32,
+            m.rd32(r.r[SP] + 0x10) as i32,
+        ));
+    });
     let mut rng = Rng(0x5441_4C59);
     let (mut finished, mut cued) = (0, 0);
     for roll in 0..3000 {
@@ -169,6 +182,7 @@ fn a_tally_rolls_as_retail_rolls_it() {
             cpu.mem.wr32(BOOST, u32::from(boost));
             cues.borrow_mut().clear();
             draws.borrow_mut().clear();
+            labels.borrow_mut().clear();
             assert_eq!(cpu.call(TICK, &[fade as u32]), Stop::Returned);
             let step = port.tick(dt, boost, volume);
             tally += step.tally_gain;
@@ -202,6 +216,25 @@ fn a_tally_rolls_as_retail_rolls_it() {
                 draws.borrow().as_slice(),
                 shown.as_slice(),
                 "roll {roll} frame {frame}: the six value draws"
+            );
+            let bright = port.row_brightness(fade);
+            let want: Vec<(i32, i32, u32, i32, i32)> = HUB_SCORE_TALLY_LABELS
+                .iter()
+                .enumerate()
+                .map(|(i, d)| {
+                    (
+                        i32::from(d.x),
+                        i32::from(d.y),
+                        d.sel as u32,
+                        bright[i % 6],
+                        d.scale,
+                    )
+                })
+                .collect();
+            assert_eq!(
+                labels.borrow().as_slice(),
+                want.as_slice(),
+                "roll {roll} frame {frame}: the twelve label draws"
             );
             cued += u32::from(!step.cues.is_empty());
             if !step.rolling {

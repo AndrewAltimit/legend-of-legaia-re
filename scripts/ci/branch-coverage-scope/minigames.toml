@@ -1,0 +1,8 @@
+# Minigame overlays: the Muscle Dome arena (PROT 0977), the slot machine (0975), the fishing venue (0972), the dance hall (0980).
+
+[[arm]]
+entry = "0x801CF074"
+image = "3847fbc3b843fa2e"
+range = "0x801CF2A4..0x801CF814"
+verdict = "unreachable"
+reason = "PROT 0977 dome tally: the 24 `bgez` round-toward-zero arms of `lane_fade * (fade << 4) / 128`; the lane fades are zeroed at 0x801CEB24..0x801CEB3C and only grow by the frame step or reseed to 0x10, and both callers pass a non-negative fade (0x80 at 0x801CFDC0, 0x801D1A84 at 0x801CFEB4 after 0x801CFE24 / 0x801CFE3C zero it once it goes negative), so the product is never negative"
