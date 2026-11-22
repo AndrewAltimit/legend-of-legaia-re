@@ -46,6 +46,12 @@ const PLAYER: u32 = 0x8010_0000;
 const SPAWNED: u32 = 0x8010_1000;
 const HEAP: u32 = 0x8012_0000;
 const BUFFER: u32 = 0x8016_0000;
+/// `_DAT_8007B750`, the sound flag word; bit 2 is op 0x35 sub-op 6's.
+const SOUND_FLAGS: u32 = 0x8007_B750;
+/// `_DAT_8007B7C8`, the scene object list the status word's bit `0x20`
+/// spawns, and the stand-in list (its count word first).
+const OBJECT_LIST_PTR: u32 = 0x8007_B7C8;
+const OBJECT_LIST: u32 = 0x8013_0000;
 
 #[derive(Debug, Default)]
 struct Seen {
@@ -56,6 +62,18 @@ struct Seen {
     player_spawns: Vec<u32>,
     sweeps: usize,
     resolver_calls: u32,
+    /// `FUN_80062004(source, channel, ticks)`: the field-BGM ramp.
+    ramps: Vec<u32>,
+    /// Voices keyed off (`FUN_800653C8`).
+    voice_offs: Vec<u32>,
+    /// Field-BGM source closes after the ramp (`FUN_800266E0` at `0x801D7164`).
+    closes: usize,
+    /// The streamed-pack reads (`FUN_8002541C`) by descriptor flag.
+    packs: Vec<u32>,
+    /// The scene object spawns (`FUN_80024CFC`).
+    objects: Vec<u32>,
+    /// The MAN decoder's first argument.
+    man_a0: Vec<u32>,
 }
 
 #[test]
@@ -70,12 +88,15 @@ fn the_field_initialiser_seats_what_the_port_seats() {
     cpu.stub_outside = Some((FIELD_INIT, FIELD_INIT_END));
     cpu.step_budget = 4_000_000;
     let seen: Rc<RefCell<Seen>> = Rc::default();
+    let read_cost: Rc<RefCell<u32>> = Rc::default();
     let anchor: Rc<RefCell<([i16; 2], i16, u32)>> = Rc::default();
     {
         // The MAN decoder: the camera anchor into the caller's pair, and the
         // scene's TMD count back.
         let anchor = anchor.clone();
+        let seen = seen.clone();
         cpu.hook(MAN_DECODE, move |r, m| {
+            seen.borrow_mut().man_a0.push(r.r[A0]);
             let (xz, tmds, bgm_id) = *anchor.borrow();
             // The scene's BGM id is the decoder's to set; the initialiser
             // clears the word ahead of the call.
@@ -103,8 +124,12 @@ fn the_field_initialiser_seats_what_the_port_seats() {
     }
     {
         let seen = seen.clone();
-        cpu.hook(STREAM_LOAD, move |r, _| {
+        let cost = read_cost.clone();
+        cpu.hook(STREAM_LOAD, move |r, m| {
             seen.borrow_mut().streams.push(r.r[A0]);
+            // A read takes its vsyncs off the clock the floor tests.
+            let t = m.rd32(HOLD_CLOCK);
+            m.wr32(HOLD_CLOCK, t + *cost.borrow());
             r.r[V0] = 0;
         });
     }
@@ -141,6 +166,40 @@ fn the_field_initialiser_seats_what_the_port_seats() {
         let seen = seen.clone();
         cpu.hook(0x801D_7518, move |_, _| seen.borrow_mut().sweeps += 1);
     }
+    // The audio and loader calls the environment words gate.
+    {
+        let seen1 = seen.clone();
+        cpu.hook(0x8006_2004, move |r, _| {
+            seen1.borrow_mut().ramps.push(r.r[A2])
+        });
+        let seen2 = seen.clone();
+        cpu.hook(0x8006_53C8, move |r, _| {
+            seen2.borrow_mut().voice_offs.push(r.r[A0])
+        });
+        let seen3 = seen.clone();
+        // The ramp's close (`0x801D7164`); the two-part arm closes the
+        // source on its own (`0x801D71C8`).
+        cpu.hook(0x8002_66E0, move |r, _| {
+            seen3.borrow_mut().closes += usize::from(r.r[31] == 0x801D_716C);
+        });
+        let seen4 = seen.clone();
+        cpu.hook(0x8002_541C, move |r, _| {
+            seen4.borrow_mut().packs.push(r.r[A0]);
+            r.r[V0] = 0;
+        });
+        let seen5 = seen.clone();
+        cpu.hook(0x8002_4CFC, move |r, _| {
+            seen5.borrow_mut().objects.push(r.r[A0])
+        });
+    }
+    // The descriptor walker's status word (`FUN_80020224`): bit `4` hands the
+    // MAN decoder its first argument, bit `0x20` spawns the scene objects,
+    // the high byte names a streamed pack.
+    let status = Rc::new(RefCell::new(0u32));
+    {
+        let status = status.clone();
+        cpu.hook(0x8002_0224, move |r, _| r.r[V0] = *status.borrow());
+    }
     // The vsync callback's clock, which a cold entry waits on.
     cpu.hook(0x8005_FB84, |_, m| {
         let t = m.rd32(HOLD_CLOCK);
@@ -150,6 +209,7 @@ fn the_field_initialiser_seats_what_the_port_seats() {
     let mut rng = Rng(0x4649_4E49);
     let (mut cold, mut warp, mut other, mut recentred, mut two_part, mut latched) =
         (0, 0, 0, 0, 0, 0);
+    let (mut ramps, mut kept, mut battle_ramps) = (0, 0, 0);
     for round in 0..3_000 {
         let raw_mode = [0u32, 0, 2, 2, 1, 3][rng.below(6) as usize];
         let coord = |rng: &mut Rng| match rng.below(4) {
@@ -188,6 +248,23 @@ fn the_field_initialiser_seats_what_the_port_seats() {
         };
         let was_latched = rng.below(4) == 0;
         let (dev, dev2) = (rng.below(4) == 0, rng.below(2) == 0);
+        // The environment words: sound-flag bit 2 (op 0x35 sub-op 6), the
+        // field-BGM source word, the scene record's BGM halfword, the
+        // walker's status, the objects to spawn, the MAN reload word, the
+        // streaming buffer's carried sectors and the stale buffer.
+        let keep_music = rng.below(2) == 0;
+        let source_up = rng.below(4) != 0;
+        let record_bgm = rng.below(4) != 0;
+        let st = [0u32, 4, 0x20, 0x24][rng.below(4) as usize]
+            | [0u32, 0x14, 0x0A][rng.below(3) as usize] << 8;
+        let objects = rng.below(4);
+        *status.borrow_mut() = st;
+        let bank_latched = rng.below(2) == 0;
+        *read_cost.borrow_mut() = [0, 8, 0x30, 0x80][rng.below(4) as usize];
+        // The battle source: its loaded index (`_DAT_8007B880`, negative
+        // with none) and the scene record's battle-track halfword.
+        let battle_source = rng.below(3) != 0;
+        let record_battle = rng.below(4) != 0;
 
         *anchor.borrow_mut() = (xz, tmds, bgm_id);
         *seen.borrow_mut() = Seen::default();
@@ -212,8 +289,27 @@ fn the_field_initialiser_seats_what_the_port_seats() {
         cpu.mem.wr16(STAGED_BASE, staged_base);
         cpu.mem.wr32(SEQ_BASE, old_base);
         cpu.mem.wr32(TWO_PART_LATCH, u32::from(was_latched));
-        cpu.mem.wr32(SFX_LATCH, 1);
+        cpu.mem.wr32(SFX_LATCH, u32::from(bank_latched));
         cpu.mem.wr32(HOLD_CLOCK, 0x100);
+        cpu.mem.wr32(SOUND_FLAGS, if keep_music { 4 } else { 0 });
+        cpu.mem.wr32(0x8007_BB10, u32::from(source_up));
+        cpu.mem.wr16(0x8007_0534, u16::from(record_bgm) * 0x7D3);
+        cpu.mem.wr16(0x8007_0536, 0);
+        cpu.mem.wr32(
+            0x8007_B880,
+            if battle_source {
+                rng.below(0x40)
+            } else {
+                u32::MAX
+            },
+        );
+        cpu.mem.wr16(0x8007_0574, u16::from(record_battle));
+        cpu.mem.wr16(0x8007_0576, 1);
+        cpu.mem.wr32(OBJECT_LIST_PTR, OBJECT_LIST);
+        cpu.mem.wr32(OBJECT_LIST, objects);
+        cpu.mem.wr16(0x8007_B8C0, rng.below(2) as u16);
+        cpu.mem.wr32(0x8007_B6FC, rng.below(2) * rng.below(8));
+        cpu.mem.wr32(0x8007_BAF0, rng.below(2) * HEAP);
         let stop = cpu.call(FIELD_INIT, &[]);
         assert_eq!(stop, Stop::Returned, "round {round}");
         let ctx = format!(
@@ -321,6 +417,93 @@ fn the_field_initialiser_seats_what_the_port_seats() {
             }
         }
 
+        // The field-BGM ramp, its close and the voice teardown against
+        // `World::release_field_init_voices`. The engine's field entry is
+        // always cold, so the warp gate is retail's alone; the ramp and the
+        // close also need a source up and a scene track, which the engine's
+        // close finds or not on its own.
+        let mut w = legaia_engine_core::world::World::new();
+        if keep_music {
+            w.raise_keep_audio_across_field_init();
+        }
+        w.release_field_init_voices();
+        let port_close = w.pending_field_events.iter().any(|e| {
+            matches!(e, legaia_engine_field::field_events::FieldEvent::Bgm { sub_op, .. }
+                if *sub_op == legaia_engine_core::world::BGM_SUB_OP_ENGINE_FIELD_CLOSE)
+        });
+        let port_mutes = w.take_sfx_voice_mutes();
+        let cold_entry = raw_mode == 0;
+        let ramped = cold_entry && source_up && record_bgm && !keep_music;
+        // A battle return (`_DAT_8007B8B8 == 2`) ramps the battle source
+        // instead, over `0xB4` (`0x801D6B30..0x801D6B80`), which
+        // `World::restore_field_bgm` closes.
+        let battle_ramp = raw_mode == 2 && battle_source && record_battle;
+        let want: Vec<u32> = [(ramped, 0x78), (battle_ramp, 0xB4)]
+            .into_iter()
+            .filter_map(|(on, t)| on.then_some(t))
+            .collect();
+        assert_eq!(s.ramps, want, "{ctx}: ramp");
+        battle_ramps += u32::from(battle_ramp);
+        assert_eq!(s.closes, usize::from(ramped), "{ctx}: close");
+        if cold_entry {
+            assert_eq!(port_close, !keep_music, "{ctx}: the port's close");
+            assert_eq!(
+                s.voice_offs,
+                port_mutes.iter().map(|&v| u32::from(v)).collect::<Vec<_>>(),
+                "{ctx}: voices"
+            );
+        } else {
+            assert!(s.voice_offs.is_empty(), "{ctx}: a warp keeps its voices");
+        }
+        assert_eq!(cpu.mem.rd32(SOUND_FLAGS) & 4, 0, "{ctx}: bit 2 is spent");
+        assert!(
+            !w.keeps_audio_across_field_init(),
+            "{ctx}: the port spends it"
+        );
+        // The floor: an ordinary entry holds until the clock the init zeroed
+        // reads `FIELD_INIT_FLOOR_VSYNCS`, however fast its reads ran.
+        if cold_entry && !dev {
+            let floor = u32::from(legaia_engine_system::mode_entry_init::FIELD_INIT_FLOOR_VSYNCS);
+            assert!(cpu.mem.rd32(HOLD_CLOCK) >= floor, "{ctx}: the floor");
+        }
+        // The walker's status: the pack read, the objects, the MAN decode.
+        assert_eq!(
+            s.packs,
+            if st >> 8 != 0 { vec![st >> 8] } else { vec![] },
+            "{ctx}: pack read"
+        );
+        let want_objects = if cold_entry && st & 0x20 != 0 {
+            objects
+        } else {
+            0
+        };
+        assert_eq!(
+            s.objects,
+            (0..want_objects).collect::<Vec<_>>(),
+            "{ctx}: scene objects"
+        );
+        assert_eq!(s.man_a0, [u32::from(st & 4 != 0)], "{ctx}: MAN decode");
+        // The field SFX bank (`0x801D6FF4..0x801D7048`): loaded raw `0x36E`
+        // into slot 6 while the latch is clear, against
+        // `SfxBankResidency::field_init`.
+        let mut bank = legaia_engine_mode::sfx_residency::SfxBankResidency::default();
+        bank.field_bank_latch = bank_latched;
+        bank.field_init();
+        let loaded = s.streams.contains(&0x36E);
+        assert_eq!(loaded, bank.slot_open(6), "{ctx}: field bank");
+        if loaded {
+            let field = legaia_engine_mode::sfx_residency::SharedRegionBank::FIELD;
+            assert_eq!(
+                (bank.shared, field.prot_entry + 2),
+                (Some(field), 0x36E),
+                "{ctx}"
+            );
+        }
+        assert_eq!(cpu.mem.rd32(SFX_LATCH), 1, "{ctx}: the latch");
+        assert!(bank.field_bank_latch, "{ctx}");
+        ramps += u32::from(ramped);
+        kept += u32::from(keep_music);
+
         // The primitive buffer.
         assert_eq!(
             s.prim_bytes,
@@ -340,7 +523,10 @@ fn the_field_initialiser_seats_what_the_port_seats() {
             && other > 500
             && recentred > 400
             && two_part > 100
-            && latched > 300,
-        "{cold} {warp} {other} {recentred} {two_part} {latched}"
+            && latched > 300
+            && ramps > 100
+            && kept > 1000
+            && battle_ramps > 100,
+        "{cold} {warp} {other} {recentred} {two_part} {latched} {ramps} {kept} {battle_ramps}"
     );
 }

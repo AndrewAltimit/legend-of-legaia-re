@@ -1386,7 +1386,11 @@ overlay loaders `FUN_8003EBE4` / `FUN_8003EC70` and the read sync `FUN_8005EA84`
 A large routine whose port is a slice of it runs whole with `Cpu::stub_outside` and its few live
 callees hooked. The field initialiser `FUN_801D6704` (`field_init`) matches `field_spawn`,
 `field_bgm_plan` and `field_prim_buffer_bytes` over every entry mode, and showed the two-part
-one-shot `_DAT_8007B9B8` gating the BGM wait barrier as well as the read. The boot init
+one-shot `_DAT_8007B9B8` gating the BGM wait barrier as well as the read. Its environment words
+vary too: sound-flag bit 2, the field and battle BGM sources, the descriptor walker's status (pack
+read, scene objects, MAN decode argument), the field SFX bank latch and the read time the `0x7E`
+floor absorbs, against `World::release_field_init_voices`, `SfxBankResidency::field_init` and
+`FIELD_INIT_FLOOR_VSYNCS`. The boot init
 `FUN_8001D424` matches the initmap sanitiser, the duel arena initialiser `FUN_801CF00C` its record
 of seeds (`duel_init`), the battle loader `FUN_800520F0` the stage overlay it names, the mode-entry
 prologue `FUN_80016230` its verdicts (`mode_transition`), and the part tick `FUN_80021DF4` the
