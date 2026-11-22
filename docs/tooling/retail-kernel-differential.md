@@ -278,6 +278,11 @@ kill that absorbs then showed the port puffing one clip early: the arm reads
 fallen monster puffs when its death entry ends and leaves it on idle, sixty
 vsyncs after the knockdown's end, where the port had tested the action
 channel alone ([the film](cast-sequence-oracle.md#the-seru-absorb-puff)).
+The same film, run four hundred vsyncs past the end-of-action gate that raises
+the end signal, shows no ring cue on either side after it and the win pose's
+camera agreeing once the pose's `rand()` pick is seated, so on this fight the
+walk gates have nothing observable to stop. No film yet shows a hit or effect
+walk the gate cuts.
 
 The item applier `FUN_800402F4`, run on a monster's casts, showed a class-1 group
 heal on the monster side walks the four monster seats `3..7` and stops short of
