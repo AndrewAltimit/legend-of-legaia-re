@@ -4358,6 +4358,15 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   departure scene the mode-24 init backed up (`_DAT_8007BAC4`). State `0xB`, the
   fade in front of it, still shows what stood before: `minigame_fishing_retail_ready`
   is parked there on the rod and water of an earlier cast, and stays unseeded.
+- **The fishing prize exchange's screens** (state word `0x78..=0x7A` with the hub
+  menu's cursor `0x801D912C` on row `3`): the list, the quantity picker and the
+  confirm are pad history with no `rand()` in it. The seed replays the pad from
+  the idle shore, on the headless session and as the image child's
+  `--pad-script`: Triangle opens the hub, Down to row 3, Cross; Up from the
+  list's entry row (`5`) to the capture's cursor `0x801D90A8`; Cross and Right
+  to its quantity `0x801D90B0`; Cross and Up to its confirm row `0x801D90B4`.
+  The `minigame` channel adds the screen, the cursor, the quantity and the
+  confirm row.
 - **The dance's count-in** (`DAT_801D5334` in `3..=5`), sampled at the capture's
   own banner counter `DAT_801D5158` or `GO!` accumulator `DAT_801D515C`.
 - **The dance's play loop on a floor the pad never reached** (`DAT_801D5334 = 0xA`
@@ -4420,7 +4429,7 @@ measured channels.
 | `inventory` | fraction of non-empty bag slots equal, slot for slot, plus gold |
 | `enemies` / `enemy_hp` / `battle_party` / `phase` | battle states only ([above](#battle-states)) |
 | `menu` | menu states only: 1 when the engine's pause menu holds retail's sub-screen ([above](#menu-states)) |
-| `minigame` | minigame states only: fraction of the session's words equal - the slot machine's state word and balance and the coin bank ([above](#minigame-states)) |
+| `minigame` | minigame states only: fraction of the session's words equal - the slot machine's state word and balance, the coin bank, and on a fishing exchange screen its screen, cursor, quantity and confirm row ([above](#minigame-states)) |
 | `card_panel` | card-screen states only: fraction of the info panel's pixels within tolerance ([above](#card-screens)) |
 | `image` | fraction of `8 x 8` blocks within tolerance ([below](#the-image-channel)) |
 

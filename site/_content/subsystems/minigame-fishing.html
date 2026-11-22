@@ -427,7 +427,9 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
     <li><strong>The list cursor wraps.</strong> Up from the top visible row lands on the bottom row, and down from the bottom row returns to the top visible one.</li>
     <li>A row shows white (available) when affordable, the item count is not 99, and a one-time row is not latched.</li>
     <li>&ldquo;Trade how many?&rdquo; caps the quantity at <code>min(points / price, limit - owned)</code>.</li>
+    <li><strong>Each pond shows its own page</strong>, and the list remembers its cursor for the rest of the visit. The first time it opens, the cursor sits on the bottom row.</li>
   </ul>
+  <p>The list, the quantity picker and the confirm each sit on their own panel in the game&rsquo;s blue marble frame, the later screen over the earlier one, with the pointing hand as the cursor. The port draws all three at the game&rsquo;s own positions, and a retail capture of each screen scores the port&rsquo;s frame within a pixel or two.</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Buma</th><th class="num">Points</th><th>Vidna</th><th class="num">Points</th></tr></thead>
@@ -464,7 +466,7 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
   <ul class="bullets">
     <li><strong>Controls differ by choice.</strong> In the port Circle casts and locks the meter, Cross reels (reel A) and Square reels harder (reel B).</li>
     <li>The door warp and both play hosts&rsquo; launchers (<code>L</code> in <code>play-window</code>, the Fish button on the play page) enter the same session; leaving banks points, best catch, tackle, cast count and prize bits back into the world&rsquo;s saved words.</li>
-    <li>The prize counter opens from the hub&rsquo;s prize row (or <code>P</code> in the native window): Up / Down move, Cross or L1 trades one, Circle or L2 closes, and Left / Right switch the venue page (a port affordance).</li>
+    <li>The prize counter opens from the hub&rsquo;s prize row (or <code>P</code> in the native window): Up / Down move, Cross or L1 opens &ldquo;Trade how many?&rdquo;, Left / Right set the amount, Cross asks &ldquo;Are you sure?&rdquo; and Yes trades; Circle or L2 backs out a screen. On the list, Left / Right switch the venue page (a port affordance). The native window&rsquo;s arrows, Enter and Backspace and the play page&rsquo;s panel buttons walk the same three screens.</li>
     <li>The shore party, the venue camera, the scrolling sky strip, the rod model and the fishing line are drawn from the retail rules on every host; the details are under <a href="#internals">Internals</a>.</li>
   </ul>
   <p class="dg-note">Kernels: <code>CastPower</code>, <code>TensionGauge</code>, <code>FishAi</code>, <code>ReelCadence</code>, <code>BandCheck</code>, <code>band4_gate</code>, <code>FishingRecord</code>, <code>PrizeExchange</code>; draws in <code>engine-ui::fishing</code>.</p>
@@ -568,7 +570,8 @@ power % = power * 100 &gt;&gt; 12</code></pre>
 <section class="doc-section" id="no-lure" data-doc="the-no-lure-screen">
   <h2>Running out of lures</h2>
   <p>Every time the angler comes back to the shore, the game checks the tackle: if the equipped lure is gone it switches to one the bag still holds. Only a broken line spends a lure, so the check only bites after the last one snaps. With nothing left it shows the &ldquo;lost the lure&rdquo; line, and any face button leaves the venue.</p>
-  <p>The port runs the same check on the native window, the play page and the minigames page. The line is drawn as a hub line; the panel behind it is not drawn yet.</p>
+  <p>The port runs the same check on the native window, the play page and the minigames page. The play hosts draw the line on its panel.</p>
+  <p>Leaving the venue waits for the CD&rsquo;s XA voice stream to fall idle. Nothing in the venue starts one, the Leave row clears the flag itself, and loading the venue stops any stream still playing, so in practice the wait never holds the screen.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="-">
