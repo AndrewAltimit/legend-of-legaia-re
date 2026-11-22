@@ -4,6 +4,7 @@
     scripts/ci/cost-ratchet.py --check                # the gate: measured vs the baseline
     scripts/ci/cost-ratchet.py --measure --runs 10    # the spread between runs, nothing compared
     scripts/ci/cost-ratchet.py --write-baseline       # after a real change, with its ledger entry
+    scripts/ci/cost-ratchet.py --check --lane         # a worktree with no site/wasm: native counts only
 
 What it reads, each over a tick-locked run, so every run walks the same frames:
 
@@ -80,6 +81,10 @@ def read_browser(site: Path) -> tuple[dict[str, float], str]:
             ["node", "scripts/ci/frame-hash-web.mjs", "--site", str(site), "--gl", "egl", "--counts", str(out)],
             cwd=REPO, capture_output=True, text=True, timeout=1800,
         )
+        # frame-hash-web exits 0 with a `[skip]` line and writes no counts when the
+        # page bundle is not built: the same skip the bundle reader reports.
+        if not p.returncode and not out.exists() and "[skip]" in p.stdout:
+            return {}, f"no page bundle under {site}/wasm"
         if p.returncode or not out.exists():
             raise RuntimeError(f"frame-hash-web --counts failed ({p.returncode}):\n{p.stdout[-800:]}\n{p.stderr[-800:]}")
         rows = json.loads(out.read_text())
@@ -136,7 +141,7 @@ def measure(a: argparse.Namespace, exe: Path | None) -> tuple[dict[str, float], 
     return counts, skipped
 
 
-def check(baseline: dict, counts: dict[str, float]) -> int:
+def check(baseline: dict, counts: dict[str, float], lane: bool = False) -> int:
     tol = baseline["tolerance"]
     flat = flatten(baseline["counts"])
     over, under = [], []
@@ -168,6 +173,10 @@ def check(baseline: dict, counts: dict[str, float]) -> int:
         print("A real rise raises scripts/ci/cost-baseline.json with --write-baseline and a "
               "scripts/ci/baseline-loosenings.toml entry saying why.")
         return 1
+    if lane:
+        print(f"[cost-ratchet] OK (lane, native only): {len(flat) - len(missing)} counts within the "
+              f"baseline, {len(missing)} bundle/browser counts not measured")
+        return 0
     print(f"[cost-ratchet] OK: {len(flat) - len(missing)} counts within the baseline")
     return 0
 
@@ -205,7 +214,16 @@ def main() -> int:
     ap.add_argument("--exe", help="a bench-alloc legaia-engine, instead of building one")
     ap.add_argument("--json", help="with --measure: every run's counts")
     ap.add_argument("--skip-part", action="append", default=[], choices=["bundle", "browser", "native"])
+    ap.add_argument("--lane", action="store_true",
+                    help="a worktree with no site/wasm: measure the native counts only (bundle and "
+                         "browser left out); never writes a baseline")
     a = ap.parse_args()
+    if a.lane:
+        if a.write_baseline:
+            ap.error("--lane measures part of the baseline and cannot write it")
+        if "native" in a.skip_part:
+            ap.error("--lane is the native counts; --skip-part native leaves nothing")
+        a.skip_part = sorted(set(a.skip_part) | {"bundle", "browser"})
     exe = Path(a.exe).resolve() if a.exe else None
     if not exe and "native" not in a.skip_part and (REPO / "extracted/PROT.DAT").exists() and os.environ.get("DISPLAY"):
         built = build_exe()
@@ -245,7 +263,11 @@ def main() -> int:
     if not BASELINE.exists():
         print("[no baseline] scripts/ci/cost-baseline.json")
         return 1
-    return check(json.loads(BASELINE.read_text()), runs[0])
+    if a.lane and not any(k.startswith("native/") for k in runs[0]):
+        # A lane run that measured nothing has checked nothing: say so, not OK.
+        print("[cost-ratchet] lane: no native counts were measured (see the [skip] line)")
+        return 0
+    return check(json.loads(BASELINE.read_text()), runs[0], lane=a.lane)
 
 
 if __name__ == "__main__":
