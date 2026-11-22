@@ -75,6 +75,11 @@ thread_local! {
     /// failures: before it, a wipe draws on [`BOSS_DOOR_WIPE_ATTEMPTS`];
     /// after it, the walk on has an allowance of its own.
     pub(super) static BOSS_WON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Set for a stretch whose milestone is a door with a fight committed
+    /// behind it (`cort_chamber`): the walk to that door runs from the random
+    /// encounters on the way ([`worth_fighting`]), as [`SAVING_FOR_BOSS`]
+    /// does for a scene with a staged fight of its own.
+    pub(super) static BOSS_LEAD_IN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The flags the order-checked anchors up to [`LEVEL_LOOKAHEAD`]
     /// milestones ahead carry between them: a chest whose flag is among
     /// them is one the retail run had opened by then, and the beats pass
@@ -123,7 +128,13 @@ pub(super) fn worth_fighting(w: &legaia_engine_core::world::World) -> bool {
     // On the way to a boss the party's HP and the bag are the boss's: a
     // walk there runs from what it meets. Training is the exception - its
     // outings are for the fights.
-    if SAVING_FOR_BOSS.with(std::cell::Cell::get) && !TRAINING.with(std::cell::Cell::get) {
+    // So does the walk to a door the boss waits behind: `jouind`'s Puera
+    // triples (F19, three 2000-HP casters) wiped a party at seven tenths on
+    // the way to Cort's door and left a member at 1 HP from full, and each
+    // such wipe reloaded the stretch before Cort was met.
+    if (SAVING_FOR_BOSS.with(std::cell::Cell::get) || BOSS_LEAD_IN.with(std::cell::Cell::get))
+        && !TRAINING.with(std::cell::Cell::get)
+    {
         return false;
     }
     // Against a running escape clock (`4C D3`: the Floating Castle's six
@@ -644,6 +655,7 @@ fn part_c_continuous_run() {
         // attempts it had used.
         let (mut attempt, mut prepare, mut walk_fails) = retries.remove(&i).unwrap_or((0, None, 0));
         let boss_door = boss_doors.contains(&i);
+        BOSS_LEAD_IN.with(|b| b.set(boss_doors.contains(&(i + 1))));
         if attempt == 0 {
             RACE_LOST.with(|l| l.set(false));
         }
@@ -881,6 +893,7 @@ fn part_c_continuous_run() {
     }
 
     PLAYS_ON.with(|p| p.set(false));
+    BOSS_LEAD_IN.with(|b| b.set(false));
     STORY_WAYPOINTS.with(|w| w.borrow_mut().clear());
     STRETCH_FRAMES.with(|f| f.set(PAD_SEGMENT_FRAMES));
     TARGET_LEVELS.with(|t| t.borrow_mut().clear());

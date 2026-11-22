@@ -962,6 +962,27 @@ leaves the rest of the run's allowance alone. The split only moves the
 limits: the re-deal on each reload is still salted by the stretch's total
 attempt count, so a run that never reaches a limit plays the same frames.
 
+Most of what re-deals at that door is the walk to it, not the boss. The
+stretch that ends at `cort_chamber` starts from the `jouind` save with the
+party as it arrived, and `jouind`'s Puera triples (F19, three 2000-HP
+casters) wiped a party at seven tenths of its HP and left a member at 1 HP
+from full; each wipe reloaded the stretch before Cort was met. A stretch
+whose milestone is a boss door (`BOSS_LEAD_IN`) therefore runs from the
+random encounters on the way, as a scene with a staged fight of its own
+does (`SAVING_FOR_BOSS`), and the party meets the door with what the walk
+left it, which `pad_ready` then tops up.
+
+Running is not free: the escape roll is retail's (`FUN_801E791C`, party
+`1.5 x SPD` against the foes' `SPD`, both raised by missing HP), and one
+deal met a Puera triple with a string of failed runs that wiped a full
+party it never struck back at. The policy was
+chosen by measurement, resuming the stretch from each seed's own
+`bio_castle` save on three deals apiece and playing it to the credits:
+fighting as before, running, and healing to full at the stretch's start
+and fighting. Running cost the fewest reloads and the smallest worst case.
+Fighting lost to Cort himself the most often; healing first lost the most
+often on the walk.
+
 ### A later start
 
 `LEGAIA_FGL_CONTINUOUS_FROM` seeds the run once from a later milestone's
