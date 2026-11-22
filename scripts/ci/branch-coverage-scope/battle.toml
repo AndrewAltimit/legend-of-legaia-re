@@ -179,3 +179,15 @@ entry = "0x8004E568"
 range = "0x8004FB70..0x8004FB70"
 verdict = "unreachable"
 reason = "The wipe arm's member loop skip on an empty party: ctx[0] is the party's seat count, one to three in any battle."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D1A9C..0x801D1A9C"
+verdict = "unreachable"
+reason = "The magic window's confirm (verdict 2) clears the cast's level byte ctx[+0x24] when the caster's learned count (record +0x704) is 0; the list kernel confirms only a row it drew, and with no learned spell there is none, so a confirm always finds the count non-zero."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D1AF4..0x801D1AF4"
+verdict = "unreachable"
+reason = "The confirm's search of the caster's 32 learned-spell slots (record +0x705..) for the picked id _DAT_8007BB88: the id is the row the list kernel drew from those same slots, so the search finds it before the bound and the loop never runs out."
