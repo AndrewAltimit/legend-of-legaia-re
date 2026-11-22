@@ -375,8 +375,10 @@ fn the_man_installer_is_retails() {
         detached += usize::from(fog_count == 0);
         // The ladder: the scene entry seats the negated header words, and a
         // battle return re-seats them over a ladder its oscillators moved.
+        // The resident copy holds an install the return's fresh decode wiped.
         let lut = man_file.header.depth_lut.map(i16::wrapping_neg);
-        w.terrain.floor_height_lut_static = lut;
+        w.terrain.floor_height_lut_header = lut;
+        w.terrain.floor_height_lut_static = std::array::from_fn(|_| rng.next() as i16);
         w.terrain.floor_height_lut = std::array::from_fn(|_| rng.next() as i16);
         if entry == 2 {
             w.battle_return_man_sweeps();
@@ -389,6 +391,12 @@ fn the_man_installer_is_retails() {
             retail_lut, w.terrain.floor_height_lut,
             "case {case}: the ladder"
         );
+        if entry == 2 {
+            assert_eq!(
+                w.terrain.floor_height_lut_static, lut,
+                "case {case}: the MAN-header copy is the shipped ladder"
+            );
+        }
         // The pre-run loop: records 1..N1, as `actor_placements` lists them;
         // a battle return skips it with the rest of the respawn
         // (`j 0x8003B9A8` at `0x8003B650`).

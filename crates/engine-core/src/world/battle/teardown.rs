@@ -354,7 +354,12 @@ impl World {
     /// - the live floor ladder re-seated from the MAN header
     ///   (`0x8003AF58..0x8003AF74`, sixteen negated words), so an oscillator
     ///   the script re-arms seeds its rest height off the header rung and not
-    ///   off wherever the last one left it;
+    ///   off wherever the last one left it. The header is the **shipped**
+    ///   one: the return decodes the MAN afresh into its buffer
+    ///   (`FUN_8001F05C`'s MAN arm, ahead of the loader), so a `4C 9E`
+    ///   install, which also rewrites the resident header, is gone with it
+    ///   and the MAN-header copy the camera composer reads is the shipped
+    ///   ladder again until the system script installs anew;
     /// - the inlined `FUN_8003CF40` sweeps that run on every MAN load, the
     ///   battle return included (`0x8003B374..0x8003B43C`, ahead of the
     ///   `_DAT_8007B8B8 == 2` branch at `0x8003B510`): the floor-ladder
@@ -367,11 +372,17 @@ impl World {
     /// header's values and the three retired at the sweeps' end, three fresh
     /// ones live once the system install has run, and the rungs moving again
     /// on the field. Without the sweeps the engine kept the old oscillators
-    /// beside the re-installed ones, one more set per fight.
+    /// beside the re-installed ones, one more set per fight. Captures on
+    /// `jou` and `jouinb` (`captures/w53-E/jou_return`, `jouinb_return`),
+    /// whose system scripts install a ladder off the shipped one, log the
+    /// MAN decode on the return, the resident header back at the shipped
+    /// words when the loader runs, the rungs at those words through the
+    /// fade, and the install back on the field's first vsyncs.
     ///
     /// PORT: FUN_8003AEB0 (`0x8003AF58..0x8003AF74`, `0x8003B3AC..0x8003B43C` on the back-from-battle entry)
     pub fn battle_return_man_sweeps(&mut self) {
-        self.terrain.floor_height_lut = self.terrain.floor_height_lut_static;
+        self.terrain.floor_height_lut = self.terrain.floor_height_lut_header;
+        self.terrain.floor_height_lut_static = self.terrain.floor_height_lut_header;
         self.terrain.floor_tier_bobs.clear();
         self.camera.register_ramps.clear();
     }

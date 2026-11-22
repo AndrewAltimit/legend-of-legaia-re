@@ -40,6 +40,7 @@ impl FloorSampler {
             // assumes the negated (PSX Y-down) copy (`FUN_8003AEB0`).
             world.terrain.floor_height_lut = lut.map(|v| v.wrapping_neg());
             world.terrain.floor_height_lut_static = world.terrain.floor_height_lut;
+            world.terrain.floor_height_lut_header = world.terrain.floor_height_lut;
         }
         Self { world }
     }

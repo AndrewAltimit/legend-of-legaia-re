@@ -1641,6 +1641,25 @@ then the host's entry-script reload (`SceneHost`'s post-battle return); before
 it the engine kept the old oscillators beside the re-armed ones, one more set
 per fight, and seeded the new set's rest heights off the old swing.
 
+The header the loader re-seats from is the **shipped** one. The return
+decodes the MAN afresh into its buffer (the asset dispatcher `FUN_8001F05C`'s
+MAN arm runs ahead of `FUN_8003AEB0`), so a `4C 9E` install, which also
+rewrites the resident header copy, does not survive a fight. Captures across
+fights on `jou` and `jouinb` (`captures/w53-E/jou_return`, `jouinb_return`),
+whose system scripts install a ladder off the one their MAN ships, log the
+decode, the resident header back at the shipped words when the loader runs,
+the rungs at those words through the fade, and the install back on the
+field's first vsyncs, when the re-installed system script reaches its
+`4C 9E`. The port keeps the shipped words beside the resident copy
+(`FieldTerrain::floor_height_lut_header`) and re-seats both the live rungs and
+the MAN-header copy from them.
+
+Only `P1[0]` comes back. An oscillator armed by any other record - a story
+cutscene such as `jou` `P2[2]`, `taiku` `P2[18]` / `P2[29]`, `uru` `P2[29]` /
+`P2[31]` / `P2[33]` or `concnow` `P2[20]` - is retired with the rest and
+stays retired until that record runs again. The disc-wide census of the nibble-9 sites by record is
+`engine-scene/tests/floor_ladder_op_census_disc.rs`.
+
 ## Which sub-ops act on the resolved actor
 
 A cross-context `CC <id> ..` reaches its arm with the target already in `s5`:

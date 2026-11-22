@@ -111,7 +111,11 @@
 --                    0x1F80035C; and log each entry of the MAN loader
 --                    FUN_8003AEB0, its sweeps' end 0x8003B444 and the
 --                    system-script install FUN_8003AB2C with the same counts
---                    (breakpoints: run without --fast). LEGAIA_OSC_SHOTS=N
+--                    (breakpoints: run without --fast); each line also
+--                    carries the MAN buffer _DAT_8007B898 and its header
+--                    ladder (+2, sixteen raw shorts), and the asset
+--                    dispatcher's MAN arm (FUN_8001F05C, a1 >> 24 == 3) logs
+--                    "osc man_decode" when a MAN is decoded afresh. LEGAIA_OSC_SHOTS=N
 --                    adds a field screenshot every N vsyncs
 --                    (shot_<vsync>.raw + .meta). LEGAIA_OSC_AFTER=N ends the
 --                    run N field vsyncs after the first battle's return.
@@ -411,14 +415,38 @@ function OSC.rungs()
     end
     return table.concat(r, ",")
 end
+-- The MAN-header copy of the ladder (`*(_DAT_8007B898) + 2`, sixteen raw
+-- shorts): what the loader re-seats the live rungs from (negated), and what
+-- `4C 9E` also writes.
+function OSC.header()
+    local man = probe.read_u32(0x8007B898) or 0
+    if not ok_ptr(man) then return string.format("man=0x%08x hdr=-", man) end
+    local r = {}
+    for i = 0, 15 do
+        local v = probe.read_u16(man + 2 + 2 * i) or 0
+        if v >= 0x8000 then v = v - 0x10000 end
+        r[#r + 1] = tostring(v)
+    end
+    return string.format("man=0x%08x hdr=%s", man, table.concat(r, ","))
+end
 function OSC.arm()
     local bp = require("probe.bp")
+    -- The asset dispatcher's MAN arm (`a1 >> 24 == 3`): a MAN decoded from
+    -- the scene table, i.e. a fresh header.
+    bp.arm(0x8001F05C, "Exec", 4, "asset_dispatch", function()
+        local g = PCSX.getRegisters().GPR.n
+        local a1 = tonumber(g.a1) or 0
+        if bit.rshift(a1, 24) == 3 then
+            logf("osc man_decode vsync=%d mode=0x%02x src=0x%08x %s", OSC.vsync,
+                probe.read_u8(GAME_MODE_VA) or 0, tonumber(g.a0) or 0, OSC.header())
+        end
+    end)
     for _, t in ipairs({ { 0x8003AEB0, "man_load" }, { 0x8003B444, "sweeps_done" },
             { 0x8003AB2C, "system_install" }, { 0x8003BAE0, "system_install_done" } }) do
         bp.arm(t[1], "Exec", 4, t[2], function()
-            logf("osc %s vsync=%d mode=0x%02x a0=%d entry=%d counts=%s rungs=%s", t[2], OSC.vsync,
+            logf("osc %s vsync=%d mode=0x%02x a0=%d entry=%d counts=%s rungs=%s %s", t[2], OSC.vsync,
                 probe.read_u8(GAME_MODE_VA) or 0, tonumber(PCSX.getRegisters().GPR.n.a0),
-                probe.read_u32(0x8007B8B8) or -1, OSC.counts(), OSC.rungs())
+                probe.read_u32(0x8007B8B8) or -1, OSC.counts(), OSC.rungs(), OSC.header())
         end)
     end
     OSC.csv = probe.csv_open(probe.out_path("osc.csv"),
@@ -427,9 +455,13 @@ end
 function OSC.tick(ctx, vsync, mode)
     OSC.vsync = vsync
     OSC.csv:row("%d,%d,%s,%s", vsync, mode, OSC.counts(), OSC.rungs())
+    if vsync == 1 then logf("osc start counts=%s rungs=%s %s", OSC.counts(), OSC.rungs(), OSC.header()) end
     if mode == 0x03 and battles > 0 and OSC.returned_at == nil then
         OSC.returned_at = vsync
-        logf("osc field return vsync=%d", vsync)
+        logf("osc field return vsync=%d counts=%s rungs=%s %s", vsync, OSC.counts(), OSC.rungs(), OSC.header())
+    end
+    if OSC.returned_at ~= nil and vsync - OSC.returned_at == 120 then
+        logf("osc field return+120 vsync=%d counts=%s rungs=%s %s", vsync, OSC.counts(), OSC.rungs(), OSC.header())
     end
     if mode == 0x03 and OSC.shots > 0 and vsync % OSC.shots == 0 then
         local ok, ss = pcall(function() return PCSX.GPU.takeScreenShot() end)

@@ -334,6 +334,7 @@ fn the_floor_keeps_moving_after_a_battle_with_one_set_of_oscillators() {
     let header: [i16; 16] = std::array::from_fn(|i| -(i as i16) * 0x20);
     world.terrain.floor_height_lut = header;
     world.terrain.floor_height_lut_static = header;
+    world.terrain.floor_height_lut_header = header;
     let script = vec![0x4C, 0x90, 0x04, 0x50, 0x00, 0x16, 0x00, 0x00, 0x80, 0x21];
     world.load_field_script(script.clone());
     for _ in 0..40 {
@@ -372,5 +373,43 @@ fn the_floor_keeps_moving_after_a_battle_with_one_set_of_oscillators() {
     assert_eq!(
         lo, header[4],
         "it swings off the header's rest height, not the old swing's: {lo}..{hi}"
+    );
+}
+
+/// The return decodes the MAN afresh, so the ladder a `4C 9E` install laid
+/// over the shipped one does not survive a fight: the loader re-seats the
+/// shipped words into the live rungs and the MAN-header copy alike, and only
+/// the system script's re-run installs again. `jou` and `jouinb` show it
+/// (`captures/w53-E/jou_return`, `jouinb_return`): the resident header back
+/// at the shipped ramp when `FUN_8003AEB0` runs, the rungs there through the
+/// fade, the install back on the field's first vsyncs.
+#[test]
+fn a_battle_return_re_seats_the_shipped_ladder_not_the_install() {
+    let mut world = field_world();
+    let header: [i16; 16] = std::array::from_fn(|i| -(i as i16) * 0x20);
+    world.terrain.floor_height_lut = header;
+    world.terrain.floor_height_lut_static = header;
+    world.terrain.floor_height_lut_header = header;
+    // `4C 9E` with sixteen words `i * 0x40`, then halt.
+    let mut script = vec![0x4C, 0x9E];
+    for i in 0..16u16 {
+        script.extend_from_slice(&(i * 0x40).to_le_bytes());
+    }
+    script.push(0x21);
+    world.load_field_script(script);
+    for _ in 0..4 {
+        let _ = world.tick();
+    }
+    let installed: [i16; 16] = std::array::from_fn(|i| -(i as i16) * 0x40);
+    assert_eq!(world.terrain.floor_height_lut, installed, "the install ran");
+    assert_eq!(world.terrain.floor_height_lut_static, installed);
+
+    world.mode = SceneMode::Battle;
+    world.finish_battle();
+    assert_eq!(world.mode, SceneMode::Field);
+    assert_eq!(world.terrain.floor_height_lut, header, "the live rungs");
+    assert_eq!(
+        world.terrain.floor_height_lut_static, header,
+        "the MAN-header copy the camera composer reads"
     );
 }
