@@ -891,6 +891,25 @@ Lightning and Spore Gas on varied rolls (`chain_ticks`). All agree. Terror Screa
 tests the Item category alone, where the port ran Kiss of Death's idiom, which also needs the initiative key.
 Kemaro's arm 17 runs on every formation byte (`kemaro_spear`), so its per-species jump table takes every case.
 
+<a id="the-band-shadow"></a>
+**The band shadow.** Each capture cast also runs on an engine `World` seated off the same actor records
+(`World::drive_arm_capture_cast_module`), stepped through `World::run_cast_module_code` while the band walks
+retail's phase, so every layer that writes a seat (director, tick body, band, impact table) is in the comparison.
+Retail's HP as each pass opens and the colour words the harness stages between passes (a defeat fade, a settle)
+reach the shadow as they reach retail, and every seat `0..7`'s `+0x04` and `+0x21C` must agree. Seats rest on
+`0x20080200`, and on one round in four a party member lies fallen on clip `8` and a monster is faded to `0`. It
+found the seven-seat walk the band did not keep, the roster-byte and HP-less walks, Guilty Cross's and Mystic
+Circle's hides, Void Accessories' show a pass early, the hit tints of Chaos Breath, Mystic Circle and Element
+Strike's Wind loop, and party-row tints that missed a seat the hit felled
+([the seat walks](../subsystems/cast-module.md#the-seat-walks)). Two things stay outside it, each named in the
+test: the creature seat of PROT 0964 and 0966, which a stubbed `FUN_801F19EC` seats, and Death Game past its spin,
+whose pad reaches retail alone. A cast whose band leaves retail's phase walk stops being compared at that pass;
+most of those are a band holding an arm one pass longer on a clip settle the harness does not stage.
+
+The capture-camera walk also starts every fifth round on a framing depth below zero: state `0x6F` drains
+`ctx[+0x6D0]` by `16 * step` a vsync with no floor while it waits on the module's seek, so a negative depth reaches
+a module (Death Game's `/ 4` fix-up at `0x801F7B2C` takes it).
+
 That line-up and the `0xFF` arm's restore now run off the module image against their port (`dead_end_crisis`): all
 eight records whole, the module's saved words and the context. The `cort_evolved_final_crisis_mid_cast` capture
 reads the stood seats and the saved poses. PROT 0927's stager arm 7, which jitters its caller's `+0x84` and rotation

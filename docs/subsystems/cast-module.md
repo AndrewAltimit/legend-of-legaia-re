@@ -1410,7 +1410,10 @@ while `+0x16C` is non-zero clears it and bumps the turn cursor `ctx[+0x1A]`.
 Terror Scream's arm 3 (`0x801F7E18..0x801F7E4C`) tests the Item category
 alone: it refunds on `+0x1DE == 1`, then clears `+0x1DE` and `+0x16C` and bumps
 the cursor whatever the key held, so a victim that has already acted still
-gets its item back and still advances the cursor. The port had read both as
+advances the cursor. It cannot get a used item back twice: the item band's
+exit, state `0x40`, clears the acting member's `+0x1DE` as it stores `0x50`
+(`sb zero,0x1de(s3)` at `0x801E4274`), so only an item committed and not yet
+used (the item window took the copy out of the bag at commit) is refunded. The port had read both as
 Kiss of Death's; the capture-camera differential now runs arm 3 on every
 category and key, with the refund call `FUN_800421D4` logged. Grade
 `disassembly`. Kiss of Death
@@ -6481,6 +6484,36 @@ table's length. The Glare split's clone is seated right after the engine's
 seated monsters (`World::apply_glare_divide_split`), bounded by the same five
 monster seats; at the raw retail index a lone member's clone would land past
 the enemy row the target picker walks.
+
+### The seat walks
+
+A module's hide and show loops are not one walk. Most run seats `0..7`
+behind `sltiu 7` and an HP test (PROT 0955's `0x801F7114`, PROT 0956's
+`0x801F74A0`), so they never reach seat `7`, the fifth monster's: it keeps
+whatever it had through the cast. Others walk the party by `ctx[+0x00]` and the
+monster row by count, `3 .. 3 + ctx[+0x01]`, and those reach a fifth monster
+(Guilty Cross arm 0 at `0x801F6C44`, Curse All arms 0 and 4, Glare arm 1). Some
+party walks test the roster byte `0x8007BD10 + seat` instead of HP, so a fallen
+member is hidden and shown with the row (Guilty Cross arm 0, Curse All arms 0,
+2 and 4), and Glare's arm 1 tests no HP on either row, so a fallen monster
+takes its hide. The flags on `CaptureCamArm` name the shape: `others_live_only`,
+`others_reach_seat_7` and `others_reach_fallen_monsters`, with the default
+the seven-seat walk.
+
+Guilty Cross's arm 5 show is a seven-seat walk while its arm 0 hide is a count
+walk, so a fifth monster stays hidden from arm 0 to the band's finalize
+(state `0x71`'s seat sweep). That is retail's, and the port keeps it.
+
+The party sweeps that tint each struck seat store the word after the hit, past
+an HP and Stone skip that runs ahead of it, so a seat the hit fells is still
+tinted (Element Strike's three loops: `0x3FF` at `0x801F860C`, `0xFFC00` at
+`0x801F7DF8`, `0x3FF00000` at `0x801F759C`; Genocidal Cannon's arm 14 at
+`0x801F7D14`). The band reads both conditions as the tick opens.
+
+The capture-camera differential checks all of it: each cast runs on an engine
+`World` beside the module image, and every seat's word and flag must agree on
+every pass while the two walk one phase
+([retail-kernel differential](../tooling/retail-kernel-differential.md#the-band-shadow)).
 
 ### A fade takes its spawning frame's step
 
