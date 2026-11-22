@@ -70,15 +70,26 @@ pub const fn theeder_sweep_phase(ctx_6d8: u16) -> u16 {
 }
 
 /// Whether the engine's tick carries one of retail's arm 12 passes. Retail's
-/// frame step is 4 through this arm, so its word moves `0x100` a pass where the
+/// frame step is 4 through the arm, so its word moves `0x100` a pass where the
 /// engine's moves `0x40` a tick, and only every fourth tick samples what retail's
-/// cone test sees. A test on the word's small values would hit a victim the first
-/// swing of retail's ray steps over. `ctx_6d8` is the word after this tick's
-/// ramp: retail ramps (`0x801F7ADC..0x801F7AF0`) and then tests the ray it
-/// builds from the ramped word.
+/// cone test sees. Retail's passes land on `0x40 + 0x100 * k`: the first pass
+/// of the arm tests the word one vsync's ramp in, and the rest follow `0x100`
+/// apart. `theeder_summon_mid_cast`, frame-stepped, strikes seat 3 (dead
+/// ahead), then seat 5 eight vsyncs later and seat 4 twenty-eight after that
+/// (vsyncs `783 / 791 / 819`). Against the arm's ray (`theeder_ray_tip`) and
+/// the captured seats, only a first test between `0x10` and `0xA0` lands all
+/// three on those gaps; tests on `0x100 * k` struck seat 5 first and seat 3 at
+/// the `0x800` crossing, eight passes late. `ctx_6d8` is the word after this
+/// tick's ramp: retail ramps (`0x801F7ADC..0x801F7AF0`) and then tests the ray
+/// it builds from the ramped word.
 pub const fn theeder_pass_tested(ctx_6d8: u16) -> bool {
-    ctx_6d8 >= 0x100 && ctx_6d8 & 0xFF == 0
+    ctx_6d8 & 0xFF == THEEDER_FIRST_PASS_PHASE
 }
+
+/// Where retail's first arm-12 pass stands the sweep word: one vsync's ramp
+/// (`(1 * 8) << 3`), the passes after it `0x100` apart
+/// ([`theeder_pass_tested`]).
+pub const THEEDER_FIRST_PASS_PHASE: u16 = 0x40;
 
 /// The render flag PROT 0904 raises the summon seat to in arm 4.
 pub const THEEDER_RISE_RENDER_FLAG: u8 = 4;

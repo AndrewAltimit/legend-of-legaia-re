@@ -2031,9 +2031,14 @@ the root) reaches only the monsters in that arc. The port runs both ramps at
 64 ticks (`theeder_ramp_per_tick`), builds the ray with `theeder_ray_tip`,
 tests the cone against it on the ticks that carry a retail pass
 (`theeder_pass_tested`), and gives the module a profile whose outcome arm is
-the sweep, so the band holds `0x36` until the phase has run its turn. Retail's first
-test is at phase `0x100`, where the ray is already `0x62` off the facing, so a victim dead
-ahead takes its hit at the centre crossing `0x800`, 32 vsyncs into the arm. A hit in
+the sweep, so the band holds `0x36` until the phase has run its turn. Retail's passes
+stand the word on `0x40 + 0x100 * k`: its first pass tests one vsync's ramp in, so a
+victim dead ahead is struck on the arm's first pass. `theeder_summon_mid_cast`'s three
+hits (below) fix that phase: seat 3 dead ahead, seat 5 eight vsyncs (two passes) later on
+the swing's positive lobe, seat 4 twenty-eight vsyncs after that on its negative one. Only a
+first test between `0x10` and `0xA0` lands all three on those gaps against the arm's ray;
+tests on `0x100 * k` struck seat 5 first and seat 3 at the `0x800` crossing, eight passes
+late, and the knocked-back row stood `100..300` units off retail's. A hit in
 the sweep arm stages the victim's knockdown id `+0x1F1` when its get-up id
 `+0x1F2` is non-zero (`0x801F7DF0..0x801F7E08`) and the flinch id `+0x1EF` /
 `+0x1F0` only otherwise (`0x801F7E0C..0x801F7E24`); the playing-clip test at

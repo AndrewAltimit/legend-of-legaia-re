@@ -1618,10 +1618,10 @@ impl World {
                     // PROT 0904's ring sweep: advance the ray, then resolve
                     // the cone once for this tick (both borrow `self`, which
                     // the seat row below does not allow).
-                    // Retail tests once a pass, four vsyncs of `0x40` apart: from
-                    // `0x100` on, so the ray's first swing past the victim
-                    // misses and the hit waits for the centre crossing at
-                    // `0x800`, 32 vsyncs in. The pass ramps the word first
+                    // Retail tests once a pass, four vsyncs of `0x40` apart, on
+                    // `0x40 + 0x100 * k` (`theeder_pass_tested`), so a victim
+                    // dead ahead is struck on the arm's first pass and the
+                    // others as the swing reaches them. The pass ramps the word first
                     // (`0x801F7ADC..0x801F7AF0`) and builds its ray from the
                     // ramped word, so the test is on the word this tick's ramp
                     // reaches: read before it, the `0x800` crossing struck a
