@@ -33,8 +33,10 @@ const GOLD: u32 = 0x8008_459C;
 
 fn jal_targets(module: &[u8]) -> Vec<u32> {
     let mut out: Vec<u32> = module
-        .chunks_exact(4)
-        .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_le_bytes(*w))
         .filter(|w| w >> 26 == 3)
         .map(|w| 0x8000_0000 | ((w & 0x03FF_FFFF) << 2))
         .collect();
@@ -106,7 +108,7 @@ fn fatal_decisions_outcomes_land_as_retail_lands_them() {
             let va = ACTOR + victim * STRIDE;
             cpu.mem.wr8(ACTOR + caster * STRIDE + 0x1DD, victim as u8);
             let pick = |rng: &mut Rng, k: usize| {
-                if (round + k) % 3 == 0 {
+                if (round + k).is_multiple_of(3) {
                     edge[(round + k) % 4]
                 } else {
                     1 + rng.below(999) as u16
