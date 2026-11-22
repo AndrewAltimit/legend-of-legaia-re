@@ -796,7 +796,22 @@ fn a_missing_actor_steps_where_retail_steps() {
     cpu.mem
         .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
     cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
-    cpu.hook(RESOLVE_ACTOR, |r, _| r.r[2] = 0);
+    // `miss_on`: which resolver call of the instruction misses (`u32::MAX`
+    // every one); the others answer the stepping context.
+    let calls = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    let miss_on = std::rc::Rc::new(std::cell::Cell::new(u32::MAX));
+    {
+        let (c, m) = (calls.clone(), miss_on.clone());
+        cpu.hook(RESOLVE_ACTOR, move |r, _| {
+            let n = c.get();
+            c.set(n + 1);
+            r.r[2] = if m.get() == u32::MAX || m.get() == n {
+                0
+            } else {
+                CTX
+            };
+        });
+    }
     cpu.hook(READ_U16, |r, m| r.r[2] = m.rd16(r.r[4]) as i16 as u32);
     cpu.hook(PACKET_LENGTH, |r, m| {
         let bytes = m.read(r.r[4], 0x400);
@@ -809,10 +824,26 @@ fn a_missing_actor_steps_where_retail_steps() {
     let clean = cpu.mem.clone();
     let mut ran = 0u32;
     let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
-    for (script, pc, label) in corpus().into_iter().chain(synthetic()) {
+    // `43` sub 2 resolves three talkers and skips on any miss
+    // (`0x801DF5E0..0x801DF5F0`): the second and the third missing alone
+    // take the same skip as the first, which is what the port's miss
+    // answers.
+    let runs = corpus()
+        .into_iter()
+        .chain(synthetic())
+        .flat_map(|(script, pc, label)| {
+            let talkers = label.starts_with("43 02");
+            [u32::MAX, 1, 2]
+                .into_iter()
+                .filter(move |&k| k == u32::MAX || talkers)
+                .map(move |k| (script.clone(), pc, label.clone(), k))
+        });
+    for (script, pc, label, k) in runs {
         if script[pc] & 0x80 != 0 {
             continue;
         }
+        miss_on.set(k);
+        calls.set(0);
         cpu.mem = clean.clone();
         cpu.regs.r[GP] = gp;
         cpu.mem.load(SCRIPT, &script);

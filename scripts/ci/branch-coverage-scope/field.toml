@@ -1,0 +1,7 @@
+# Field tier: FUN_801DE840 (PROT 0897).
+
+[[arm]]
+entry = "0x801DE840"
+range = "0x801E0724..0x801E0724"
+verdict = "unreachable"
+reason = "Op 0x3E's scripted-battle install skips under the dev word _DAT_8007B868; the word's one store on the disc (0x8001E008, FUN_8001DCF8) clears bit 1 of it, so it stays zero in retail and the skip is never taken."
