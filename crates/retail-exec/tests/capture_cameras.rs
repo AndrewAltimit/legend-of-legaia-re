@@ -351,6 +351,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let (mut shadow_passes, mut shadow_diverged) = (0usize, 0usize);
     let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
+    let spawn_log = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3], u16)>::new()));
+    let (mut spawns_matched, mut spawn_failures) = (0usize, Vec::<String>::new());
     let all = bodies();
     for body in &all {
         let module = disc.read_entry(body.entry as usize).expect("module");
@@ -375,6 +377,20 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         // Death Game keeps its card handles (`0x801FA2B8`) and walks them
         // through the shuffle and the pick: each spawn gets a part.
         let death_game = body.action == 0x76;
+        // Every other body's part spawns, logged as `(record, point, angles,
+        // scale)`, for the director's literal-anchored records.
+        if !death_game {
+            for spawn in [SPAWN_PART, SPAWN_SEATED] {
+                let log = spawn_log.clone();
+                cpu.hook(spawn, move |r, m| {
+                    let trio = |m: &mut Memory, a: u32| [0u32, 2, 4].map(|o| m.rd16(a + o) as i16);
+                    let p = trio(m, r.r[A0]);
+                    let a = trio(m, r.r[A1]);
+                    log.borrow_mut().push((r.r[A2], p, a, r.r[A3] as u16));
+                    r.r[V0] = 0;
+                });
+            }
+        }
         if death_game {
             let next = Rc::new(std::cell::Cell::new(PARTS));
             for spawn in [SPAWN_PART, SPAWN_SEATED] {
@@ -842,11 +858,37 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     })
                     .collect();
                 shots.borrow_mut().clear();
+                spawn_log.borrow_mut().clear();
                 let stop = cpu.call(body.va, &[]);
                 let c = format!("{c0} pass {pass} arm {phase}");
                 if stop != Stop::Returned {
                     failures.push(format!("{c}: {stop:?}"));
                     break;
+                }
+                // The records the director seats at points it works out,
+                // each against a spawn retail's pass made with the same
+                // record, point, angles and scale.
+                if !death_game {
+                    let mut left = spawn_log.borrow().clone();
+                    for sp in arm.charge_spawns.iter().chain(&arm.pass_spawns).flatten() {
+                        let (
+                            cam::SpawnRecord::Module(r),
+                            cam::SpawnAnchor::LiteralScaled { pos, rot, scale },
+                        ) = (sp.record, sp.anchor)
+                        else {
+                            continue;
+                        };
+                        match left.iter().position(|&x| x == (r, pos, rot, scale)) {
+                            Some(i) => {
+                                left.remove(i);
+                                spawns_matched += 1;
+                            }
+                            None => spawn_failures.push(format!(
+                                "{c}: spawn {r:#x} at {pos:?} {rot:?} x{scale:#x}: retail {:x?}",
+                                left.iter().filter(|x| x.0 == r).collect::<Vec<_>>()
+                            )),
+                        }
+                    }
                 }
                 passes += 1;
                 let busy = cpu.regs.r[V0] != 0;
@@ -1204,6 +1246,20 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     eprintln!(
         "band shadow: {shadow_passes} passes compared, {shadow_diverged} casts left retail's phase walk, {} mismatches",
         shadow_failures.len()
+    );
+    eprintln!(
+        "director spawns: {spawns_matched} matched, {} mismatches",
+        spawn_failures.len()
+    );
+    assert!(
+        spawns_matched >= 400,
+        "director spawns matched {spawns_matched}"
+    );
+    assert!(
+        spawn_failures.is_empty(),
+        "{} director spawn mismatches:\n{}",
+        spawn_failures.len(),
+        spawn_failures[..spawn_failures.len().min(40)].join("\n")
     );
     eprintln!("band shadow: {status_marks} seat passes with a status bit set compared");
     assert!(status_marks >= 1000, "status marks compared {status_marks}");
