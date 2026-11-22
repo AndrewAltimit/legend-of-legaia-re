@@ -7,7 +7,6 @@ use legaia_engine_ui::SAVE_SELECT_SLOT_PITCH_Y;
 use legaia_engine_ui::SAVE_SELECT_SLOT1_POS;
 use legaia_engine_ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE;
 use legaia_engine_ui::SAVE_SELECT_TITLE_COLOR;
-use legaia_engine_ui::SAVE_SELECT_TITLE_POS;
 use legaia_engine_ui::SLOT_GRID_ORIGIN;
 use legaia_engine_ui::SLOT_GRID_PITCH_X;
 use legaia_engine_ui::SLOT_GRID_PITCH_Y;
@@ -118,7 +117,7 @@ fn save_select_title_uses_retail_pinned_pos_and_color() {
     // `synthetic_for_tests` widths are not retail's, but the layout
     // pen advances by `widths[c] + INTER_GLYPH_PAD` regardless of
     // backing font - the property under test is that the FIRST
-    // glyph is placed at SAVE_SELECT_TITLE_POS in stage pixels and
+    // glyph is placed at the centred title pos in stage pixels and
     // every title glyph carries SAVE_SELECT_TITLE_COLOR. That's
     // what makes the engine port byte-equal to retail's 4-sprite
     // emit at stage (35,13)/(42,13)/(48,13)/(55,13).
@@ -136,13 +135,15 @@ fn save_select_title_uses_retail_pinned_pos_and_color() {
         stage_scale,
         false,
     );
-    // First glyph dst must equal SAVE_SELECT_TITLE_POS (1:1 stage).
+    // First glyph dst must equal the centred title pos (1:1 stage).
     assert!(!draws.is_empty(), "title must emit at least one glyph");
     let first = &draws[0];
+    // The word centres on the tab (`FUN_801E3EE0`), so the pin is the
+    // retail font's; the synthetic font centres by its own widths.
     assert_eq!(
         (first.dst.0, first.dst.1),
-        SAVE_SELECT_TITLE_POS,
-        "first title glyph must start at retail-pinned stage pos"
+        legaia_engine_ui::save_select_title_pos(&font, "Load"),
+        "first title glyph must start at the centred stage pos"
     );
     // First four draws are the title glyphs; assert all share the
     // retail tint (no white / gold sneaking in).

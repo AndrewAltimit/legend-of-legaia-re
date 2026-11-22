@@ -223,3 +223,131 @@ fn the_header_tab_sits_where_the_port_draws_it() {
         assert_eq!(got, want, "op {op} title screen {title_screen}: {calls:?}");
     }
 }
+
+/// Mode `2`, the card pills, as the dispatcher calls it (`0x801DFD5C..`:
+/// from `(0xA0, 0x60)` to `(0x30, 0x28)` on the pill timer `_DAT_801EF194`):
+/// the raw `POLY_FT4` packets it writes into the primitive pool
+/// `*0x1F8003A0` and links through `FUN_8003D2C4`, both pills from the
+/// atlas records at `0x801E5048 + 0x48 / 0x54` at `t = 0`, the committed
+/// card's pill alone (`_DAT_8007B834`) once the timer runs. Against the pill
+/// sprites `save_select_overlay_draws` emits for the same timer: each sits
+/// one texel inside its quad, the tight crop of the tile's content. At rest
+/// retail draws each pill twice, additive then subtractive; the port once.
+#[test]
+fn the_card_pills_slide_where_the_port_draws_them() {
+    differential!(prot(899, SLIDE));
+    use legaia_engine_ui::{SaveSelectOverlayView, save_select_overlay_draws};
+    use legaia_ui_formats::title_pak::{
+        OVERLAY_SAVE_MENU_BAND_SLOT1 as SLOT1, OVERLAY_SAVE_MENU_BAND_SLOT2 as SLOT2,
+    };
+    const POOL_PTR: u32 = 0x1F80_03A0;
+    const OT_PTR: u32 = 0x1F80_03F4;
+    const POOL: u32 = 0x8015_0000;
+    const OT: u32 = 0x8016_0000;
+    const PILL_T: u32 = 0x801E_F194;
+    const PORT: u32 = 0x8007_B834;
+    const FADE: u32 = 0x801E_F120;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &disc().expect("disc").read_entry(899).expect("PROT 0899"),
+    );
+    cpu.stub_outside = Some((SLIDE, SLIDE_END));
+    let linked = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let l = linked.clone();
+    cpu.hook(0x8003_D2C4, move |r, _| l.borrow_mut().push(r.r[A1]));
+    let tile = (0, 0, 8, 8);
+    let rects = SaveMenuAtlasRects {
+        panel_tl: tile,
+        panel_tr: tile,
+        panel_bl: tile,
+        panel_br: tile,
+        panel_top: tile,
+        panel_bot: tile,
+        panel_left: tile,
+        panel_right: tile,
+        panel_interior: tile,
+        slot1: SLOT1,
+        slot2: SLOT2,
+        cursor: (200, 200, 16, 16),
+        ..SaveMenuAtlasRects::default()
+    };
+    let font = legaia_font::Font::placeholder();
+    let mut rng = Rng(0x5049_4C4C);
+    let mut slid = 0;
+    for case in 0..2000 {
+        let t = match rng.below(4) {
+            0 => 0,
+            1 => 0x1000,
+            _ => rng.below(0x1001),
+        };
+        let card = rng.below(2);
+        cpu.mem.wr32(PILL_T, t);
+        cpu.mem.wr32(PORT, card);
+        cpu.mem.wr32(FADE, rng.below(0x1001));
+        cpu.mem.wr32(POOL_PTR, POOL);
+        cpu.mem.wr32(OT_PTR, OT);
+        cpu.mem.wr32(STACK_TOP + 0x10, 0x30);
+        cpu.mem.wr32(STACK_TOP + 0x14, 0x28);
+        linked.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(SLIDE, &[2, t, 0xA0, 0x60]),
+            Stop::Returned,
+            "case {case}"
+        );
+        // Each linked packet: its first corner and its texel origin.
+        let mut retail: Vec<(i32, i32, u32, u32, i32, i32)> = linked
+            .borrow()
+            .iter()
+            .map(|&p| {
+                let b = cpu.mem.read(p, 0x28);
+                let h = |o: usize| i32::from(i16::from_le_bytes([b[o], b[o + 1]]));
+                let (x0, y0) = (h(8), h(0xA));
+                (
+                    x0 + 1,
+                    y0 + 1,
+                    u32::from(b[0xC]) + 1,
+                    u32::from(b[0xD]) + 1,
+                    h(0x10) - x0,
+                    h(0x1A) - y0,
+                )
+            })
+            .collect();
+        let pills: Vec<u8> = if t == 0 { vec![0, 1] } else { vec![card as u8] };
+        let view = SaveSelectOverlayView {
+            title: "Load",
+            rows: &[],
+            cursor: 0,
+            single_pill: t != 0,
+            pills: &pills,
+            pill_cursor: None,
+            slide_t: t as u16,
+            info_t: 0,
+            now_checking: false,
+            banner: None,
+            preview: None,
+            confirm: None,
+            location_tab: None,
+        };
+        let draws = save_select_overlay_draws(&font, Some(&rects), &view, (0, 0), 1);
+        let mut port: Vec<(i32, i32, u32, u32, i32, i32)> = draws
+            .sprites
+            .iter()
+            .filter(|s| s.src == SLOT1 || s.src == SLOT2)
+            .map(|s| (s.dst.0, s.dst.1, s.src.0, s.src.1, 48, 16))
+            .collect();
+        // At rest retail draws each pill twice, an additive pass on the
+        // record's CLUT (tpage `0x2F`) and a subtractive one on CLUT `+2`
+        // (`0x4F`); the port draws the tile once.
+        if t == 0 {
+            port = port.iter().flat_map(|&p| [p, p]).collect();
+        }
+        retail.sort();
+        port.sort();
+        assert_eq!(retail, port, "case {case}: t {t:#x} card {card}");
+        slid += usize::from(t != 0 && t != 0x1000);
+    }
+    assert!(slid > 500, "{slid}");
+}

@@ -256,8 +256,9 @@ pub const SAVE_SELECT_SLOT1_POS: (i32, i32) = (137, 97);
 /// texel in on both axes (same tile as the Browsing pills), so the
 /// engine's tight atlas crop anchors at `(25, 41)` - quad + (1, 1) -
 /// the same inset that puts the Browsing crop at
-/// [`SAVE_SELECT_SLOT1_POS`]. Pairs with
-/// [`SAVE_SELECT_CURSOR_POS_LOAD_ACTIVE`].
+/// [`SAVE_SELECT_SLOT1_POS`]. SLOT 2's committed pill parks here too: the
+/// mode draws its one quad at the slid point whichever card it is. Pairs
+/// with [`SAVE_SELECT_CURSOR_POS_LOAD_ACTIVE`].
 pub const SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE: (i32, i32) = (25, 41);
 /// Vertical pitch between consecutive slot pill sprite tops in
 /// framebuffer pixels. Retail quads at y=96 / y=112 (visible rows
