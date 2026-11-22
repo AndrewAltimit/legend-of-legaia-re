@@ -452,6 +452,9 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     let mut failures = Vec::new();
     let mut sideband_held = 0usize;
     let (mut spawns_matched, mut spawn_failures) = (0usize, Vec::<String>::new());
+    let (mut shadow_passes, mut shadow_left) = (0usize, 0usize);
+    let mut shadow_failures = Vec::<String>::new();
+    let mut shadow_leaves = Vec::<String>::new();
     let all: Vec<(u32, u32, u8)> = BODIES.iter().chain(&PACED).copied().collect();
     // Each module runs twice: on the full row, then with the second monster
     // seat fallen and faded (`+0x14C = 0`, `+0x04 = 0`), which the row walks
@@ -548,6 +551,17 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 cpu.mem.wr16(a + 0x14C, 0);
                 cpu.mem.wr32(a + 4, 0);
             }
+            // State `0x34`'s hide loop, which runs before the module's first
+            // pass (`0x801E4B30..0x801E4B6C`, `battle_action::summon`): every
+            // party seat and every living monster of seats `0..7`, word `0`
+            // and the hidden marker.
+            for s in 0..7u32 {
+                let a = ACTOR + s * STRIDE;
+                if s < 3 || cpu.mem.rd16(a + 0x14C) != 0 {
+                    cpu.mem.wr32(a + 4, 0);
+                    cpu.mem.wr8(a + 0x21C, 0xFF);
+                }
+            }
             let mut st = ModuleCamState {
                 lead_roster: 1,
                 opens_pass: true,
@@ -586,6 +600,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             });
             let mut puera_compared = std::collections::BTreeSet::new();
             let mut sideband_passes = 0u32;
+            // The band shadow: a world seated off the same records, the
+            // band's module half (`World::drive_summon_module_pass`) run on
+            // retail's phase beside each pass, every seat compared after it.
+            let mut shadow = summon_shadow(&mut cpu, layout, action);
+            let mut shadow_after: Vec<u32> = Vec::new();
             for pass in 0..20_000u32 {
                 // Every seat idle and far along its clip, its display pair on its
                 // ground pair as the draw pass leaves it.
@@ -664,20 +683,25 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 st.live_pitch_tr = Some((t0.angles[0], t0.tr));
                 st.target_code = Some(live_code);
                 let any_up = (3..7u32).any(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4) != 0);
-                let mut group = |code: u8| {
-                    (code == 8 || any_up).then(|| {
-                        assert_eq!(
-                            cpu.call(AIM, &[u32::from(code), OUT_CENTRE, OUT_EXTENT]),
-                            Stop::Returned
-                        );
-                        GroupAim {
-                            centroid_x: cpu.mem.rd16(OUT_CENTRE) as i16,
-                            centroid_z: cpu.mem.rd16(OUT_CENTRE + 4) as i16,
-                            extent: cpu.mem.rd16(OUT_EXTENT + 4) as i16,
+                st.row_aim = group_aim(&mut cpu, 9, any_up);
+                // PROT 0920's arm 8 shows every living monster before its aim
+                // (`0x801F752C..0x801F755C`, then `jal 0x801DCEAC`): the aim
+                // is measured on the row as that pass shows it, its words put
+                // back after.
+                let shown_first = (entry, phase) == (920, 8);
+                let words: Vec<u32> = (3..7u32)
+                    .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
+                    .collect();
+                if shown_first {
+                    for s in 3..7u32 {
+                        if cpu.mem.rd16(ACTOR + s * STRIDE + 0x14C) != 0 {
+                            cpu.mem.wr32(ACTOR + s * STRIDE + 4, 0x2008_0200);
                         }
-                    })
-                };
-                st.row_aim = group(9);
+                    }
+                }
+                let any_up = any_up
+                    || (shown_first
+                        && (3..7u32).any(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4) != 0));
                 st.target_aim = if live_code < 8 {
                     let s = seat_at(&mut cpu.mem, u32::from(live_code), false);
                     Some(GroupAim {
@@ -686,8 +710,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         extent: MIN_GROUP_EXTENT,
                     })
                 } else {
-                    group(live_code)
+                    group_aim(&mut cpu, live_code, any_up)
                 };
+                if shown_first {
+                    for (s, w) in (3..7u32).zip(&words) {
+                        cpu.mem.wr32(ACTOR + s * STRIDE + 4, *w);
+                    }
+                }
                 // `keep_row_tr_y`: `-4 * +0x3E` averaged over the living row.
                 let mut row = Vec::new();
                 for s in 3..3 + layout.monsters {
@@ -781,6 +810,40 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // The creature's live seat, which the host feeds every tick
                 // its seat is up (`module_cam.creature_live`).
                 let creature_live = seat_at(&mut cpu.mem, CREATURE, false);
+                let shadow_phase = shadow.as_ref().map(|w| w.casting.module_phase);
+                if shadow.is_some() && shadow_phase != Some(phase) {
+                    shadow = None;
+                    shadow_left += 1;
+                    shadow_leaves.push(format!(
+                        "PROT {entry:04} target {code} fallen {fallen} caster {}: retail arm {phase:#x} band {shadow_phase:x?} at pass {pass}",
+                        layout.caster
+                    ));
+                }
+                if let Some(w) = shadow.as_mut() {
+                    for s in 0..8u32 {
+                        let a = ACTOR + s * STRIDE;
+                        let act = &mut w.actors[s as usize];
+                        act.battle.hp = cpu.mem.rd16(a + 0x14C);
+                        let word = cpu.mem.rd32(a + 4);
+                        if shadow_after.get(s as usize).is_some_and(|&was| was != word) {
+                            act.battle.render_color = word;
+                        }
+                        if s == CREATURE {
+                            act.battle.current_anim = cpu.mem.rd8(a + 0x1D9);
+                            let p = trio(&mut cpu.mem, a + 0x34);
+                            act.move_state.world_x = p[0];
+                            act.move_state.world_y = p[1];
+                            act.move_state.world_z = p[2];
+                            act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
+                        }
+                    }
+                    w.rng_state = stream.get();
+                    // The side-band stage the walk stands up, as a turn's
+                    // side-band read raises it.
+                    w.casting.module_cam.sideband_busy = cpu.mem.rd8(CTX + 0x276) != 0;
+                    w.clock.display_frames += 1;
+                    w.drive_summon_module_pass(layout.caster as u8, action, true);
+                }
                 spawn_log.borrow_mut().clear();
                 let stop = cpu.call(va, &[]);
                 if stop != Stop::Returned {
@@ -874,6 +937,51 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         }
                     }
                 }
+                if let Some(w) = shadow.as_ref() {
+                    for s in 0..7usize {
+                        let a = ACTOR + s as u32 * STRIDE;
+                        let got = (
+                            cpu.mem.rd32(a + 4),
+                            cpu.mem.rd8(a + 0x21C),
+                            cpu.mem.rd16(a + 0x16E),
+                        );
+                        let b = &w.actors[s].battle;
+                        // The summon band's shown word is the engine's resting
+                        // `0` under a lowered flag (`apply_mushura_writes`,
+                        // `apply_palma_writes`): retail's `0x20080200` there.
+                        let shown = |c: u32, f: u8| if f == 0 && c == 0x2008_0200 { 0 } else { c };
+                        let got = (shown(got.0, got.1), got.1, got.2);
+                        let port = (
+                            shown(b.render_color, b.render_flag),
+                            b.render_flag,
+                            w.raw_status_word(s as u8),
+                        );
+                        if got != port {
+                            shadow_failures.push(format!(
+                                "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} tint/flag/status retail {got:x?} port {port:x?}",
+                                layout.caster, layout.monsters
+                            ));
+                        }
+                    }
+                    shadow_passes += 1;
+                    if std::env::var("W54_DBG").is_ok()
+                        && entry == 923
+                        && (1890..1910).contains(&pass)
+                        && layout.caster == 0
+                        && !fallen
+                    {
+                        eprintln!(
+                            "DBG pass {pass} arm {phase:#x} retail {:#x}/{} port {:#x}/{}",
+                            cpu.mem.rd32(ACTOR + 3 * STRIDE + 4),
+                            cpu.mem.rd8(ACTOR + 3 * STRIDE + 0x21C),
+                            w.actors[3].battle.render_color,
+                            w.actors[3].battle.render_flag
+                        );
+                    }
+                }
+                shadow_after = (0..8u32)
+                    .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
+                    .collect();
                 let mut port = t0;
                 port.apply(&arm);
                 let busy = cpu.regs.r[V0] != 0;
@@ -1132,6 +1240,14 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     }
     assert!(sideband_held > 100, "{sideband_held} side-band passes held");
     eprintln!(
+        "summon shadow: {shadow_passes} passes compared, {shadow_left} casts left retail's phase walk, {} mismatches",
+        shadow_failures.len()
+    );
+    if let Ok(path) = std::env::var("W54_SHADOW_DUMP") {
+        let _ = std::fs::write(&path, shadow_failures.join("\n"));
+        let _ = std::fs::write(format!("{path}.leaves"), shadow_leaves.join("\n"));
+    }
+    eprintln!(
         "director spawns: {spawns_matched} matched, {} mismatches",
         spawn_failures.len()
     );
@@ -1148,6 +1264,63 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     let n = failures.len();
     failures.truncate(600);
     assert!(n == 0, "{n} mismatches:\n{}", failures.join("\n"));
+}
+
+/// `FUN_801DCEAC(code, ..)` run live, when the party is asked for or any
+/// monster's word is up (a row hidden whole has no aim).
+fn group_aim(cpu: &mut Cpu, code: u8, any_up: bool) -> Option<GroupAim> {
+    (code == 8 || any_up).then(|| {
+        assert_eq!(
+            cpu.call(AIM, &[u32::from(code), OUT_CENTRE, OUT_EXTENT]),
+            Stop::Returned
+        );
+        GroupAim {
+            centroid_x: cpu.mem.rd16(OUT_CENTRE) as i16,
+            centroid_z: cpu.mem.rd16(OUT_CENTRE + 4) as i16,
+            extent: cpu.mem.rd16(OUT_EXTENT + 4) as i16,
+        }
+    })
+}
+
+/// A world in battle seated as `cpu`'s actor records are, the creature on
+/// seat 7, with `action`'s summon armed (`World::arm_summon_stager`).
+fn summon_shadow(
+    cpu: &mut Cpu,
+    layout: Layout,
+    action: u8,
+) -> Option<legaia_engine_core::world::World> {
+    let mut w = legaia_engine_core::world::World::new();
+    w.load_party(legaia_save::Party::zeroed(3));
+    w.enter_battle(3, layout.monsters as u8);
+    while w.actors.len() < 12 {
+        w.actors.push(Default::default());
+    }
+    for s in 0..8u32 {
+        let a = ACTOR + s * STRIDE;
+        let p = trio(&mut cpu.mem, a + 0x34);
+        let act = &mut w.actors[s as usize];
+        act.active = s < 3 + layout.monsters || s == CREATURE;
+        act.battle.hp = cpu.mem.rd16(a + 0x14C);
+        act.battle.max_hp = cpu.mem.rd16(a + 0x14E).max(act.battle.hp);
+        act.battle.liveness = u16::from(act.battle.hp > 0);
+        act.battle.render_color = cpu.mem.rd32(a + 4);
+        act.battle.render_flag = cpu.mem.rd8(a + 0x21C);
+        act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
+        act.battle.active_target = cpu.mem.rd8(a + 0x1DD);
+        act.battle.anim_rate =
+            legaia_engine_battle_vm::battle_anim_rate::AnimRate(cpu.mem.rd8(a + 0x21D));
+        act.move_state.world_x = p[0];
+        act.move_state.world_y = p[1];
+        act.move_state.world_z = p[2];
+        if (3..3 + layout.monsters).contains(&s) {
+            act.battle_monster_id = Some(1);
+        }
+    }
+    w.battle_ctx.active_actor = layout.caster as u8;
+    w.casting.summon_actor_slot = Some(CREATURE as u8);
+    w.cast_module_for(action)?;
+    w.arm_summon_stager(layout.caster as u8, action);
+    Some(w)
 }
 
 /// A part of the camera the port is known to leave out.
