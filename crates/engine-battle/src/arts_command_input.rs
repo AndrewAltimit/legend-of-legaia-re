@@ -221,6 +221,12 @@ pub struct ArtsCommandInputSession {
     /// a frame. One step per [`Self::input`] call, which every host makes
     /// once a frame while the entry is up.
     pub pennant_glides: Vec<(usize, u8)>,
+    /// The committed pennants' retreat, elapsed frames, while it runs: the
+    /// entry's restart (case `0x26`) and the review's return to the entry
+    /// (case `0xF`) re-spawn every committed pennant in mode `1` under the
+    /// glide flag `0` (`0x801D52E4..0x801D5340`), so they slide back over
+    /// [`CHIP_SLIDE_FRAMES`] without gating the pass.
+    pub pennant_retreat: Option<u8>,
     /// The direction chips' slide-in, elapsed frames, while it runs: the
     /// entry screen's step `9` opens the four chip records in mode `0`
     /// (spawn on seat A, glide to seat B) over `ctx[+0x1C]` frames, and the
@@ -516,6 +522,7 @@ impl ArtsCommandInputSession {
             preseed_spent: Vec::new(),
             replay: false,
             pennant_glides: Vec::new(),
+            pennant_retreat: None,
             chip_slide: Some(0),
             phase: ArtsInputPhase::Entering,
         }
@@ -646,10 +653,35 @@ impl ArtsCommandInputSession {
             g.1 = g.1.saturating_add(1);
             g.1 < PENNANT_GLIDE_FRAMES
         });
+        self.pennant_retreat = self
+            .pennant_retreat
+            .map(|e| e.saturating_add(1))
+            .filter(|&e| e < CHIP_SLIDE_FRAMES);
         self.chip_slide = self
             .chip_slide
             .map(|e| e.saturating_add(1))
             .filter(|&e| e < CHIP_SLIDE_FRAMES);
+    }
+
+    /// Whether a pennant glide the stepper does not gate on is still in
+    /// flight. Their records carry the glide flag `0`, so `FUN_801D9BBC`
+    /// returns `0` over them and the pass runs, but the pre-dispatch scan of
+    /// the glide table (`0x801D0C64..0x801D0C80`) finds them live and leaves
+    /// `s4 = 0`, and the entry's and the review's cancels sit behind
+    /// `beq s4,zero` (`0x801D20E4`, `0x801D2304`).
+    ///
+    /// PORT: FUN_801D0748 (`0x801D0C64..0x801D0C80`, `0x801D20E4`, `0x801D2304`)
+    pub fn cancel_held(&self) -> bool {
+        !self.pennant_glides.is_empty() || self.pennant_retreat.is_some()
+    }
+
+    /// The committed pennants slide back off the bar (cases `0x26` / `0xF`
+    /// with a non-zero count, `0x801D52E4..0x801D5334`).
+    fn retreat_pennants(&mut self, committed: usize) {
+        self.pennant_glides.clear();
+        if committed != 0 {
+            self.pennant_retreat = Some(0);
+        }
     }
 
     /// Advance one frame. `party` / `monsters` describe slot occupancy for
@@ -753,7 +785,15 @@ impl ArtsCommandInputSession {
                     // empty buffer, and `801d20a0 and v0,s2,v0` /
                     // `801d20ac sb v0,0x0(s3)` writes state `0x5A`.
                     self.phase = ArtsInputPhase::Review;
-                } else if ev.circle {
+                } else if ev.circle && !self.cancel_held() {
+                    // While a committed pennant still glides the cancel is
+                    // not read at all: the pennant's record carries the glide
+                    // flag `0` (case `0xB`, `0x801D3D3C..0x801D3D48`), so the
+                    // stepper does not gate the pass, but the pre-dispatch
+                    // scan `0x801D0C64..0x801D0C80` finds it live and leaves
+                    // `s4 = 0`, and `beq s4,zero` at `0x801D20E4` skips the
+                    // mask test.
+                    //
                     // Retail's cancel mask `_DAT_800846D4`
                     // (`801d20ec lw v0,0x46d4(v0)` / `801d20f4 and v0,s2,v0`)
                     // forks on the same committed count at
@@ -775,9 +815,9 @@ impl ArtsCommandInputSession {
                     if self.buffer.is_empty() {
                         self.phase = ArtsInputPhase::Aborted;
                     } else {
+                        self.retreat_pennants(self.buffer.len());
                         self.buffer.clear();
                         self.spent.clear();
-                        self.pennant_glides.clear();
                         self.pool = self.pool_max;
                         self.phase = ArtsInputPhase::Entering;
                     }
@@ -786,16 +826,19 @@ impl ArtsCommandInputSession {
                 }
             }
             ArtsInputPhase::Review => {
-                if ev.circle {
+                // The review's cancel sits behind the same live-glide scan
+                // (`beq s4,zero` at `0x801D2304`).
+                if ev.circle && !self.cancel_held() {
                     // Retail's `0x5A` cancel (`0x801D2304..0x801D23DC`) wipes
                     // the sixteen queue bytes and, for an entry opened from
                     // the arts input, returns to it (`0x50`, case `0xF`).
                     // The wipe takes a replayed preseed with it.
+                    let committed = self.committed_string().len();
+                    self.retreat_pennants(committed);
                     self.clear_preseed();
                     self.replay = false;
                     self.buffer.clear();
                     self.spent.clear();
-                    self.pennant_glides.clear();
                     self.pool = self.pool_max;
                     self.phase = ArtsInputPhase::Entering;
                     // Step `0xF` re-opens the chips in mode `0`.

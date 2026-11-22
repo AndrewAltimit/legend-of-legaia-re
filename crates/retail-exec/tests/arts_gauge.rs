@@ -29,10 +29,43 @@ const COMMANDS: [(u32, Command); 4] = [
 ];
 const CONFIRM: u32 = 0x0040;
 const CANCEL: u32 = 0x0020;
+const SPAWN: u32 = 0x801D_8DE8;
+const FRAME_STEP: u32 = 0x1F80_0393;
+const PENNANT_HANDLES: u32 = 0x8017_0000;
 
 fn frame(cpu: &mut Cpu, pad: u32) {
     cpu.mem.wr32(PAD, pad);
     assert_eq!(cpu.call(STATE_MACHINE, &[]), Stop::Returned, "pad {pad:#x}");
+}
+
+/// Lets the glide stepper `FUN_801D9BBC` run for real over the glide table
+/// `ctx[+0x11B4]` and has the element spawner register what retail's
+/// `FUN_801DB7B0` would for a spawn under the glide flag `ctx[+0x1B] = 0`:
+/// a committed pennant (case `0xB`, `0x801D3D3C..0x801D3D48`, over the count
+/// `ctx[+0x1C] = 0x18`) and the pennants' retreat (cases `0x26` / `0xF`,
+/// `0x801D52E4..0x801D5340`). A flag-0 record does not gate the pass, but
+/// while one glides the entry's and the review's cancels are not read (`s4`,
+/// the `0x801D0C64` scan, at `0x801D20E4` / `0x801D2304`). The other spawns
+/// (flag `1`) are the chips' and the window's, which the stepper's gate and
+/// the port's own pad hold cover elsewhere.
+fn register_pennant_glides(cpu: &mut Cpu) {
+    cpu.mem.wr8(FRAME_STEP, 1);
+    cpu.hook(SPAWN, |_, m| {
+        let ctx = m.rd32(CTX_PTR);
+        if m.rd8(ctx + 0x1B) != 0 {
+            return;
+        }
+        // The spawner takes the first free handle (`0x801D91D4..0x801D9260`).
+        let Some(slot) = (0..0x28).find(|&k| m.rd32(ctx + 0x1074 + 4 * k) == 0) else {
+            return;
+        };
+        let rec = ctx + 0x11B4 + 0xC * slot;
+        m.load(rec, &[0u8; 0xC]);
+        let total = m.rd8(ctx + 0x1C);
+        m.wr8(rec, total);
+        m.wr8(rec + 2, slot as u8);
+        m.wr32(ctx + 0x1074 + 4 * slot, PENNANT_HANDLES + 0x10 * slot);
+    });
 }
 
 #[test]
@@ -50,22 +83,21 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
     for stub in [
         0x8004_FCC8u32, // the blip
         0x801D_3444,    // the frame's HUD pass
-        0x801D_9BBC,    // the window glide: settled
         0x801D_B8F4,    // the chip draw
         0x801D_BDDC,    // the Rot marks
         0x801D_8A88,
         0x801D_A6B4,
         0x801D_3748,
-        0x801D_8DE8,
         0x801D_5854, // the camera
         0x801D_5718,
         0x8003_5F04,
     ] {
         cpu.stub(stub, 0);
     }
+    register_pennant_glides(&mut cpu);
     let mut rng = Rng(0x4152_5453);
     let dead = SlotState::default();
-    let (mut ends, mut refused, mut restarts) = (0, 0, 0);
+    let (mut ends, mut refused, mut restarts, mut held) = (0, 0, 0, 0);
     for round in 0..3000 {
         let costs: [u8; 4] =
             std::array::from_fn(|_| [0x1E, 0x1E, 0x2A, 0x36][rng.below(4) as usize]);
@@ -84,9 +116,7 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
         ][rng.below(11) as usize];
         let status: u16 = [0, 0, 0, 8, 0x10, 0x20, 0x38][rng.below(7) as usize];
         cpu.mem.wr32(CTX_PTR, CTX);
-        for b in 0..0x900 {
-            cpu.mem.wr8(CTX + b, 0);
-        }
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
         for b in 0..0x400 {
             cpu.mem.wr8(ACTOR + b, 0);
         }
@@ -118,6 +148,14 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
                 8 => COMMANDS[rng.below(4) as usize].0 | COMMANDS[rng.below(4) as usize].0,
                 _ => 0,
             };
+            // Now and then the player waits for the pennants to land.
+            if rng.below(4) == 0 {
+                for _ in 0..rng.below(30) {
+                    frame(&mut cpu, 0);
+                    s.input(ArtsCommandPad::default(), [dead; 3], [dead; 5]);
+                }
+            }
+            let gliding = !s.pennant_glides.is_empty();
             let before_count = cpu.mem.rd8(CTX + 0x19);
             frame(&mut cpu, press);
             // Retail's automatic end is read on the frame after the press.
@@ -174,13 +212,17 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
                 refused += 1;
             }
             if press == CANCEL && before_count != 0 {
-                restarts += 1;
+                if gliding {
+                    held += 1;
+                } else {
+                    restarts += 1;
+                }
             }
         }
     }
     assert!(
-        ends > 300 && refused > 100 && restarts > 50,
-        "{ends} {refused} {restarts}"
+        ends > 300 && refused > 100 && restarts > 30 && held > 50,
+        "{ends} {refused} {restarts} {held}"
     );
 }
 
@@ -205,19 +247,18 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
     for stub in [
         0x8004_FCC8u32, // the blip
         0x801D_3444,    // the frame's HUD pass
-        0x801D_9BBC,    // the window glide: settled
         0x801D_B8F4,    // the chip draw
         0x801D_BDDC,    // the Rot marks
         0x801D_8A88,
         0x801D_A6B4,
         0x801D_3748,
-        0x801D_8DE8,
         0x801D_5854, // the camera
         0x801D_5718,
         0x8003_5F04,
     ] {
         cpu.stub(stub, 0);
     }
+    register_pennant_glides(&mut cpu);
     let mut rng = Rng(0x5245_504C);
     const STAGED: u32 = 0x8007_BD04;
     const SELECT_ATTACK: u32 = 0x8008_46C4;
@@ -248,9 +289,7 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
         ][rng.below(11) as usize];
         let status: u16 = [0, 0, 0, 8, 0x10, 0x20, 0x38][rng.below(7) as usize];
         cpu.mem.wr32(CTX_PTR, CTX);
-        for b in 0..0x900 {
-            cpu.mem.wr8(CTX + b, 0);
-        }
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
         for b in 0..0x400 {
             cpu.mem.wr8(ACTOR + b, 0);
         }
@@ -339,8 +378,9 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
                 && shown_before
                 && s.preseed.is_empty()
                 && !s.replay;
+            // A slot the wipe freed may hold a pennant's handle since.
             let live: Vec<bool> = (0..40)
-                .map(|k| cpu.mem.rd32(CTX + 0x1074 + 4 * k) != 0)
+                .map(|k| cpu.mem.rd32(CTX + 0x1074 + 4 * k) == HANDLES + 0x10 * k)
                 .collect();
             let windows_left = kinds
                 .iter()
