@@ -2536,3 +2536,177 @@ fn an_unlisted_flow_byte_dispatches_nothing_as_retail() {
         assert_eq!(w.battle.flow, BattleFlowState::Idle, "{label}");
     }
 }
+
+/// The attack target cursor's cancel after a step (`0x5A`,
+/// `0x801D21D4..0x801D2304`): a step that moved runs the window opener's
+/// case `0xD` for real, which clears the glide flag before its tail
+/// re-spawns records `0x29` / `0x2A`; their glide does not gate the pass,
+/// but the pre-dispatch scan finds it live and the cancel waits it out.
+/// Pass by pass with the glide stepper running for real, against
+/// `BattleCommandSession`'s `Targeting` arm: on which pass after the step
+/// the cancel is first taken.
+#[test]
+fn the_attack_cursors_cancel_waits_out_a_steps_glide() {
+    differential!(prot(898, STATE_MACHINE), prot(898, RING_STEP));
+    use legaia_engine_battle::target_picker::{
+        CursorRow, PickerState, TargetKind, TargetPickerSession,
+    };
+    use legaia_engine_battle_vm::battle_action::{
+        PoolActor, bearing_12bit_approx, build_attack_target_queue,
+    };
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(898).expect("PROT 0898"));
+    cpu.stub_outside = Some((OVERLAY_BASE, OVERLAY_END));
+    for leaf in [
+        0x801D_3444u32,
+        0x801D_B8F4,
+        0x801D_B8B4,
+        0x801D_A34C,
+        0x801D_8A88,
+        0x801D_A6B4,
+        0x801D_BB8C,
+        0x801D_5854,
+        0x801D_5718,
+    ] {
+        cpu.stub(leaf, 0);
+    }
+    cpu.watched.insert(RING_STEP);
+    crate::common::register_flag0_glides(&mut cpu);
+    let mut rng = Rng(0x484F_4C44);
+    let (mut held, mut free) = (0u32, 0u32);
+    for round in 0..600 {
+        let count = 1 + rng.below(4) as usize;
+        let span = 0x800;
+        let mut pos = || {
+            (
+                (rng.below(span * 2) as i32 - span as i32) as i16,
+                (rng.below(span * 2) as i32 - span as i32) as i16,
+            )
+        };
+        let me = pos();
+        let seats: Vec<(i16, i16)> = (0..count).map(|_| pos()).collect();
+        let cur = rng.below(count as u32) as u8;
+        let mut pool = [PoolActor::default(); 8];
+        pool[0] = PoolActor {
+            alive: true,
+            x: me.0,
+            z: me.1,
+            target_slot: 3 + cur,
+            status: 0,
+        };
+        for (k, p) in seats.iter().enumerate() {
+            pool[3 + k] = PoolActor {
+                alive: true,
+                x: p.0,
+                z: p.1,
+                target_slot: 0,
+                status: 0,
+            };
+        }
+        let q = build_attack_target_queue(&pool, 0, bearing_12bit_approx);
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        cpu.mem.wr8(CTX + 0x1B, 1);
+        cpu.mem.wr8(CTX + 0x1C, 0x10);
+        for i in 0..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        cpu.mem.wr8(CTX, 1);
+        cpu.mem.wr8(CTX + 0x06, 0x5A);
+        cpu.mem.wr8(CTX + 0x13, 0);
+        cpu.mem.wr8(CTX + 0x266, 1);
+        for (k, b) in [
+            q.count,
+            q.wrap_slot,
+            q.ordered[0],
+            q.ordered[1],
+            q.ordered[2],
+        ]
+        .iter()
+        .enumerate()
+        {
+            cpu.mem.wr8(CTX + 0x244 + k as u32, *b);
+        }
+        cpu.mem.wr8(ACTOR + 0x1DD, 3 + cur);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(SELECT_ATTACK, 0);
+        cpu.mem.wr32(CROSS_ENTRY, 0);
+        cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
+        cpu.mem.wr32(CANCEL_MASK, CANCEL);
+        cpu.mem.wr8(BATTLE_ID, 0);
+
+        let party_rows = [
+            SlotState::alive(true, true).with_seat(me.0, me.1),
+            SlotState::dead(false),
+            SlotState::dead(false),
+        ];
+        let mut monsters = [SlotState::dead(false); 5];
+        for (k, p) in seats.iter().enumerate() {
+            monsters[k] = SlotState::alive(true, true).with_seat(p.0, p.1);
+        }
+        let mut picker = TargetPickerSession::new(TargetKind::SingleEnemy, 0, party_rows, monsters);
+        assert!(picker.seat_cursor(CursorRow::Enemy, cur), "round {round}");
+        let mut session = BattleCommandSession::new(0, 0);
+        session.phase = CommandPhase::Targeting {
+            command: BattleCommand::Attack,
+            picker,
+        };
+        let step = if rng.below(2) == 0 { RIGHT } else { LEFT };
+        let input = |pad: u32| BattleCommandInput {
+            left: pad & LEFT != 0,
+            right: pad & RIGHT != 0,
+            circle: pad & CANCEL != 0,
+            select_attack: SelectAttackOpt::Select,
+            ..Default::default()
+        };
+        // The step.
+        cpu.mem.wr32(PAD, step);
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        session.input(input(step), party_rows, monsters);
+        let moved = cpu.mem.rd8(ACTOR + 0x1DD) != 3 + cur;
+        let label = format!("round {round}: foes {count} cur {cur} step {step:#x}");
+        let port_moved = matches!(
+            &session.phase,
+            CommandPhase::Targeting { picker, .. }
+                if !matches!(picker.state(), PickerState::Cursor { slot, .. } if slot == cur)
+        );
+        assert_eq!(moved, port_moved, "moved: {label}");
+        // Then the cancel, pass after pass.
+        let mut retail_at = None;
+        let mut port_at = None;
+        for pass in 1..=24u32 {
+            cpu.mem.wr32(PAD, CANCEL);
+            if retail_at.is_none() {
+                assert_eq!(cpu.call(STATE_MACHINE, &[]), Stop::Returned, "{label}");
+                if cpu.mem.rd8(CTX + 0x06) != 0x5A {
+                    retail_at = Some(pass);
+                }
+            }
+            if port_at.is_none() {
+                session.input(input(CANCEL), party_rows, monsters);
+                if !matches!(session.phase, CommandPhase::Targeting { .. }) {
+                    port_at = Some(pass);
+                }
+            }
+        }
+        assert_eq!(retail_at, port_at, "first cancel taken: {label}");
+        // The hold is retail's: a step that moved leaves the cancel unread
+        // for the glide's sixteen passes.
+        assert_eq!(retail_at, Some(if moved { 16 } else { 1 }), "{label}");
+        if moved {
+            held += 1;
+        } else {
+            free += 1;
+        }
+    }
+    assert!(held > 100 && free > 10, "held {held} free {free}");
+}

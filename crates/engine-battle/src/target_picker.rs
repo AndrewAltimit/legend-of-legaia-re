@@ -184,7 +184,19 @@ pub struct TargetPickerSession {
     monsters: [SlotState; 5],
     state: PickerState,
     events: Vec<PickerEvent>,
+    /// Frames the `0x5A` cursor's cancel stays unread after a step that
+    /// moved ([`STEP_CANCEL_HOLD_FRAMES`]).
+    pub cancel_hold: u8,
 }
+
+/// Frames a `0x5A` cursor step holds the cancel: a step that moved calls
+/// `FUN_801D388C(0xD)` (`0x801D2218` / `0x801D2264`), which clears the glide
+/// flag `ctx[+0x1B]` (`0x801D3DE8`) before its tail re-spawns records
+/// `0x29` / `0x2A` over `ctx[+0x1C] = 0x10` frames. They glide without gating
+/// the pass, but the pre-dispatch scan finds them live (`s4 = 0`,
+/// `0x801D0C64..0x801D0C80`) and the cursor's cancel sits behind
+/// `beq s4,zero` at `0x801D2304`.
+pub const STEP_CANCEL_HOLD_FRAMES: u8 = 0x10;
 
 impl TargetPickerSession {
     /// Construct a new picker for `kind`. `actor_slot` is the party-row
@@ -204,6 +216,7 @@ impl TargetPickerSession {
             monsters,
             state: PickerState::Done(PickerOutcome::NoCandidates),
             events: Vec::new(),
+            cancel_hold: 0,
         };
         s.init_cursor();
         s

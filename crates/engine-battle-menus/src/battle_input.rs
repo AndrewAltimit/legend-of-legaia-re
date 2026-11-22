@@ -682,6 +682,9 @@ impl BattleCommandSession {
                     cross,
                     circle,
                 };
+                // A step that moved holds the cancel for
+                // `STEP_CANCEL_HOLD_FRAMES` (case `0xD`'s flag-0 glides).
+                picker.cancel_hold = picker.cancel_hold.saturating_sub(1);
                 let at = picker.state();
                 if ev.right {
                     picker.input(press(true, false, false, false));
@@ -689,12 +692,16 @@ impl BattleCommandSession {
                 if picker.state() == at && ev.left {
                     picker.input(press(false, true, false, false));
                 }
+                if picker.state() != at {
+                    picker.cancel_hold =
+                        legaia_engine_battle::target_picker::STEP_CANCEL_HOLD_FRAMES;
+                }
                 if picker.state() == at {
                     let vertical_commit =
                         !ev.cross_entry && (ev.up || ev.down) && !(ev.left || ev.right);
                     if vertical_commit || ev.cross {
                         picker.input(press(false, false, true, false));
-                    } else if ev.circle {
+                    } else if ev.circle && picker.cancel_hold == 0 {
                         // The cancel goes back where the Attack arm came from
                         // (`0x801D2364..0x801D23D4`): the ring under the
                         // `Automatic` option word, the `Auto | Command` prompt

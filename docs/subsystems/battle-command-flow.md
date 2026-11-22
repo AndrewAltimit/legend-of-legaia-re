@@ -426,6 +426,15 @@ entry's review sent here. Port: the `Targeting` arm of
 `battle_input::BattleCommandSession::input`, the review's cancel in the arts
 entry's own session.
 
+A step that moved runs the window opener's case `0xD`, which clears the
+glide flag `ctx[+0x1B]` (`0x801D3DE8`) before its tail re-spawns records
+`0x29` / `0x2A` over `ctx[+0x1C] = 0x10` frames. Those glides do not gate the
+pass, but the scan ahead of the dispatch finds them live and the cancel sits
+behind `beq s4,zero` at `0x801D2304`, so for sixteen passes after a step the
+cursor reads its steps and its commit but not the cancel. Port:
+`TargetPickerSession::cancel_hold` (`STEP_CANCEL_HOLD_FRAMES`), against a
+differential that runs the step's case `0xD` and the glide stepper for real.
+
 The ring's four arms sit on the same four masks, and every one of them commits
 through the same idiom - **advance to the next member that still owes a
 command, or raise the [commit confirm](#the-commit-confirm-screen-0x6e)**:
