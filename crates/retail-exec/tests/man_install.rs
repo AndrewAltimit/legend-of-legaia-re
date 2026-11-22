@@ -195,6 +195,11 @@ fn the_man_installer_is_retails() {
         let mut man = vec![0u8; 0x2B];
         man[0] = rng.next() as u8;
         man[1] = header;
+        // The floor ladder the loader seats into scratchpad 0x1F80035C,
+        // negated (`0x8003AF58..0x8003AF74`), on every entry.
+        for b in &mut man[2..0x22] {
+            *b = rng.next() as u8;
+        }
         // Partition 1: placements the loader pre-runs through the spawner
         // `FUN_8003A1E4` when its argument (a MAN was dispatched) is non-zero
         // (`0x8003B89C..0x8003B8EC`), all on one dummy record.
@@ -339,6 +344,22 @@ fn the_man_installer_is_retails() {
             "case {case}: the fog-region table"
         );
         detached += usize::from(fog_count == 0);
+        // The ladder: the scene entry seats the negated header words, and a
+        // battle return re-seats them over a ladder its oscillators moved.
+        let lut = man_file.header.depth_lut.map(i16::wrapping_neg);
+        w.terrain.floor_height_lut_static = lut;
+        w.terrain.floor_height_lut = std::array::from_fn(|_| rng.next() as i16);
+        if entry == 2 {
+            w.battle_return_man_sweeps();
+        } else {
+            w.terrain.floor_height_lut = lut;
+        }
+        let retail_lut: [i16; 16] =
+            std::array::from_fn(|i| cpu.mem.rd16(0x1F80_035C + 2 * i as u32) as i16);
+        assert_eq!(
+            retail_lut, w.terrain.floor_height_lut,
+            "case {case}: the ladder"
+        );
         // The pre-run loop: records 1..N1, as `actor_placements` lists them;
         // a battle return skips it with the rest of the respawn
         // (`j 0x8003B9A8` at `0x8003B650`).

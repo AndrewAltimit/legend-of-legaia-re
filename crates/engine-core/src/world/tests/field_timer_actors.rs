@@ -321,3 +321,56 @@ fn op_43_0d_spawns_a_screen_frame_and_43_0e_retires_it() {
     field_step_routed(&mut host, &mut ctx, &[0x43, 0x0E], 0);
     assert!(world.presentation.screen_frames.is_empty());
 }
+
+/// The back-from-battle return as `tunnelc`'s capture shows it
+/// (`captures/w52-G/tunnelc_return`): the MAN loader re-seats the ladder
+/// from the header and retires the running oscillators, and the scene system
+/// script's re-install (the host reloads `P1[0]`) arms fresh ones. So after a
+/// fight the floor moves again, off the header's rest height, with one set of
+/// oscillators - not the old set beside the new one.
+#[test]
+fn the_floor_keeps_moving_after_a_battle_with_one_set_of_oscillators() {
+    let mut world = field_world();
+    let header: [i16; 16] = std::array::from_fn(|i| -(i as i16) * 0x20);
+    world.terrain.floor_height_lut = header;
+    world.terrain.floor_height_lut_static = header;
+    let script = vec![0x4C, 0x90, 0x04, 0x50, 0x00, 0x16, 0x00, 0x00, 0x80, 0x21];
+    world.load_field_script(script.clone());
+    for _ in 0..40 {
+        let _ = world.tick();
+    }
+    assert_eq!(world.terrain.floor_tier_bobs.len(), 1);
+    assert_ne!(
+        world.terrain.floor_height_lut[4], header[4],
+        "mid-swing at the fight"
+    );
+
+    // The fight ends; the host re-runs the entry script on the return.
+    world.mode = SceneMode::Battle;
+    world.finish_battle();
+    assert_eq!(world.mode, SceneMode::Field);
+    assert!(
+        world.terrain.floor_tier_bobs.is_empty(),
+        "the sweep retires them"
+    );
+    assert_eq!(
+        world.terrain.floor_height_lut, header,
+        "the ladder re-seated"
+    );
+    world.load_field_script(script);
+    let mut seen = Vec::new();
+    for _ in 0..96 {
+        let _ = world.tick();
+        seen.push(world.terrain.floor_height_lut[4]);
+    }
+    assert_eq!(world.terrain.floor_tier_bobs.len(), 1, "one set, not two");
+    let (lo, hi) = (*seen.iter().min().unwrap(), *seen.iter().max().unwrap());
+    assert!(
+        lo < hi,
+        "the floor keeps moving after the battle: {lo}..{hi}"
+    );
+    assert_eq!(
+        lo, header[4],
+        "it swings off the header's rest height, not the old swing's: {lo}..{hi}"
+    );
+}
