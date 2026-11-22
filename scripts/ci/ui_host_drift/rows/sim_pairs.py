@@ -998,23 +998,22 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["hud_frame_rows"],
     },
     {
-        "what": "fishing prize one-time latch, native vs play page - "
-        "`is_available` folds three independent refusals together (price, "
-        "owned cap, one-time latch), so a host that reads it as the latch "
-        "labels every unaffordable one-time prize on a fresh save as already "
-        "taken. Each host answered the latch its own way - one re-tested "
-        "availability with the other two gates forced open, one shifted the "
-        "purchased mask by hand, and the play page never asked at all and "
-        "exposed only the folded bool. Both sites must read "
-        "`PrizeExchange::is_latched`. The native window's exchange screen is "
-        "the shared `engine-screens` composition (`fishing_exchange_draws`, "
-        "which the page's screen draws through too), so that is its site",
+        "what": "fishing prize row availability, native vs play page - "
+        "retail's list draws an unavailable row in ink 0 (`FUN_801d0c3c`), "
+        "and unavailable folds three refusals together (price, owned cap, "
+        "one-time latch). Each host once answered it its own way - one "
+        "re-tested availability with gates forced open, one shifted the "
+        "purchased mask by hand - so both sites must read "
+        "`PrizeExchange::is_available`. The native window's exchange screen "
+        "is the shared `engine-screens` composition (`fishing_venue_screen`, "
+        "which the page's screen draws through too), so that is its site; "
+        "the page's prize read-out also carries `is_latched` on its own",
         "sites": {
-            "native": ("crates/engine-screens/src/fishing.rs", "fishing_exchange_draws"),
+            "native": ("crates/engine-screens/src/fishing.rs", "fishing_venue_screen"),
             "web": (WEB_PLAY_FISHING, "play_fishing_prizes_json"),
         },
         "mode": "symbols_all",
-        "symbols": ["is_latched"],
+        "symbols": ["is_available"],
     },
     {
         "what": "camera-occlusion fade focus + arming, native vs play page - "

@@ -143,35 +143,10 @@ impl crate::world::World {
         outcome
     }
 
-    /// The exchange dialogs' layout over the list (empty on the list alone),
-    /// with the picked row's bag count; hosts draw it through
-    /// `legaia_engine_screens::fishing_exchange_draws`.
-    pub fn fishing_exchange_dialog_draw(
-        &self,
-    ) -> Option<(
-        &legaia_engine_fishing::fishing::PrizeExchange,
-        legaia_engine_fishing::fishing::PrizeDialogDraw,
-    )> {
-        let ex = self.minigames.fishing_exchange.as_ref()?;
-        let dlg = &self.minigames.fishing_exchange_dialog;
-        let owned = ex.rows.get(dlg.row).map_or(0, |r| {
-            u32::from(self.party.inventory.get(&r.item_id).copied().unwrap_or(0))
-        });
-        Some((
-            ex,
-            ex.dialog_draw(
-                dlg,
-                self.minigames.fishing_points,
-                owned,
-                self.minigames.fishing_prizes_purchased,
-            ),
-        ))
-    }
-
     /// The hub's draw lines on the world: the session's layout with the
     /// tackle rows named off the SCUS item table and counted off the bag.
     /// Empty while no hub is up (or no hub text decoded). The one layout
-    /// both world hosts hand to `legaia_engine_ui::fishing::hub`.
+    /// both world hosts draw through `legaia_engine_screens::fishing::fishing_venue_screen`.
     pub fn fishing_hub_lines(&self) -> Vec<HubLine> {
         self.fishing_hub_layers()
             .into_iter()

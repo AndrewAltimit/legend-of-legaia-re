@@ -24,7 +24,7 @@ The port runs the whole game as one session type, `PondSession`, on all three ho
 | Parsers | `legaia_minigame_formats::fishing_species`, `fishing_exchange`, `fishing_sprites`, `fishing_captions` |
 | Rules port | crate [`engine-fishing`](../../crates/engine-fishing/README.md) (`legaia_engine_fishing::fishing*`) |
 | World / scene port | `engine-minigame-scenes`: `fishing_venue`, `fishing_scene`, `fishing_rod`, `MinigameState`; `engine-core`: `fishing_venue::tick_fishing_venue_on_host`, `fishing_hub`, `fishing_exchange_input`, `World::tick_fishing` |
-| Draw port | `engine-ui`: `fishing`, `fishing::sprite`, `fishing::hub`, `fishing::exchange`, `fishing::line`, `fishing::rod` |
+| Draw port | `engine-ui`: `fishing`, `fishing::sprite`, `fishing::exchange`, `fishing::line`, `fishing::rod` |
 
 Dump files are `ghidra/scripts/funcs/overlay_fishing_<addr>.txt` for every `FUN_801cxxxx` / `FUN_801dxxxx` named on this page.
 
@@ -212,7 +212,7 @@ Rows 2 and 3 copy the persistent lure index `_DAT_80084450` into `0x801D90DC` be
 
 Rows are named by the `0xC2 id` item-name escape over lure ids `0x9D..0x9F` and rod ids `0xA0..0xA2`, at `x = 0x89` from `y = 0x50` on a 16 px pitch, lure counts at `x = 0xF1`, the equipped lure (when held) and the equipped rod in ink `7` and every other row in ink `0` (grey; `0x801D1120..0x801D1334`), the counts as four-place fields through `FUN_80034B78` in the row's ink, rods only when owned, cursor at `x = 0x78`.
 
-Port: `fishing_hub` - `FishingHubText` reads the text off the user's disc; `FishingHub` runs the screens over the ported picker (`FishingMenu`), help layout (`help_panel_layout`) and tackle kernel (`RodLureSelect`); `PondSession::hub_step` opens it from the idle phase. The native window and the browser play page reach it through `World::tick_fishing_hub` / `World::fishing_hub_lines` and draw it with `engine-ui::fishing::hub`; the minigames page steps the same kernel and draws its `fishing_hub_json` lines.
+Port: `fishing_hub` - `FishingHubText` reads the text off the user's disc; `FishingHub` runs the screens over the ported picker (`FishingMenu`), help layout (`help_panel_layout`) and tackle kernel (`RodLureSelect`); `PondSession::hub_step` opens it from the idle phase. The native window and the browser play page reach it through `World::tick_fishing_hub` / `World::fishing_hub_lines` and draw it with `engine-screens::fishing::fishing_venue_screen`; the minigames page steps the same kernel and draws its `fishing_hub_json` lines.
 The overlay's strings end at the first `0` that is not an escape operand: `FUN_80036888` steps over the byte after `0xCE` / `0xCF`, so the help pages' `0xCE 0x00` (the Cross button) is a glyph mid-line, not the line's end, and `FishingHubText` reads it that way. The play hosts draw the button glyphs; `hub_text_lossy` drops them for a host without the dialog font.
 
 ## Reel input

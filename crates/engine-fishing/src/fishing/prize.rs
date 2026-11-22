@@ -454,8 +454,8 @@ impl PrizeExchange {
     /// at `(0x93, 0x98)` / `(0x93, 0xA8)`, the cursor icon at
     /// `(0x83, 0x98 + 16 * row)` and the panel `(0xA6, 0x80, 0x75, 0x30)`.
     ///
-    /// PORT: FUN_801d092c (the picker's draw, 0x801D0B18..0x801D0C14)
-    /// PORT: FUN_801d06c8 (the confirm's draw, 0x801D072C..0x801D07C4)
+    /// The flattened view the retail-exec differential compares;
+    /// the hosts draw [`Self::dialog_layers`].
     pub fn dialog_draw(
         &self,
         dlg: &PrizeDialog,
@@ -478,6 +478,9 @@ impl PrizeExchange {
     /// picker's layer, then (on the confirm) the confirm's, each with its
     /// own panel. The session calls the confirm first and the picker after
     /// it, so the ordering table draws the picker under the confirm.
+    ///
+    /// PORT: FUN_801d092c (the picker's draw, 0x801D0B18..0x801D0C14)
+    /// PORT: FUN_801d06c8 (the confirm's draw, 0x801D072C..0x801D07C4)
     pub fn dialog_layers(
         &self,
         dlg: &PrizeDialog,
