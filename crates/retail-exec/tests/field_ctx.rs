@@ -602,6 +602,8 @@ struct Seeded {
     captured: Option<usize>,
     /// The system flag bank `0x80085758` (`FUN_8003CE64`'s, MSB first).
     system: std::rc::Rc<Vec<u8>>,
+    /// The options screen's event-vibration word `_DAT_800845A8` is set.
+    vibration_off: bool,
 }
 impl FieldFlagsHost for Seeded {
     fn global_flags(&self) -> u32 {
@@ -640,7 +642,11 @@ impl FieldCameraMotionHost for Seeded {
         false
     }
 }
-impl FieldScreenHost for Seeded {}
+impl FieldScreenHost for Seeded {
+    fn event_vibration_off(&self) -> bool {
+        self.vibration_off
+    }
+}
 impl FieldAudioHost for Seeded {
     fn bgm_ready(&mut self, sub_op: u8) -> bool {
         sub_op != 0xA
@@ -755,7 +761,7 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
     let mut ran = 0u32;
     let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
     for (script, pc, label) in &corpus {
-        for variant in 0..8u32 {
+        for variant in 0..9u32 {
             cpu.mem = clean.clone();
             cpu.regs.r[GP] = gp;
             cpu.mem.load(SCRIPT, script);
@@ -770,6 +776,7 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                 light: false,
                 captured: None,
                 system: system.clone(),
+                vibration_off: false,
             };
             if rng.below(4) == 0 {
                 // A pad that matches a compass entry.
@@ -804,6 +811,24 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                 7 => {
                     cpu.mem.wr32(CTX + 0x94, 0);
                     cpu.mem.wr32(PLAYER, CTX);
+                }
+                // The globals the corpus leaves clear, which gate host
+                // effects only (the heading store under `_DAT_8007B6A8`, the
+                // rumble option `_DAT_800845A8`, `_DAT_8007B6AC`'s arm, the
+                // pad-octant store under the idle sentinel `_DAT_8007B6B0 ==
+                // -1000`) and so leave the next PC and the modelled fields as
+                // the port's step leaves them.
+                8 => {
+                    host.vibration_off = true;
+                    // A player context that is not this one: the player arms
+                    // (`0x801E0FB0..`) write it, which the port leaves to its
+                    // host.
+                    cpu.mem.load(0x8014_0000, &[0u8; 0x100]);
+                    cpu.mem.wr32(PLAYER, 0x8014_0000);
+                    cpu.mem.wr8(0x8007_B6A8, 1);
+                    cpu.mem.wr32(0x8008_45A8, 1);
+                    cpu.mem.wr32(0x8007_B6AC, 1);
+                    cpu.mem.wr32(0x8007_B6B0, (-1000i32) as u32);
                 }
                 _ => {}
             }
@@ -977,6 +1002,7 @@ fn an_attached_light_is_found_where_retail_finds_it() {
                 light: mine.is_some(),
                 captured: None,
                 system: std::rc::Rc::new(Vec::new()),
+                vibration_off: false,
             };
             let mut ctx = FieldCtx::default();
             let port = match step(&mut host, &mut ctx, &script, pc) {
