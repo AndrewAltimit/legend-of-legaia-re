@@ -4281,3 +4281,69 @@ image = "914784a36560ef74"
 range = "0x801D3B00..0x801D3B1C"
 verdict = "cannot-drive"
 reason = "PROT 0972: the off-screen break latch on the lure's projected x (< -0x20 or > 0x160, from FUN_8003D368); the port takes that latch from the host's line projection (PondSession's line_frame_retail), which the lure-tick differential does not run, so its rig projects every point on screen."
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB054..0x801DB054"
+verdict = "unported"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; retail traps when a dividing zone meets a box with no span, which the every-tile census (`camera_follow::the_zone_divisions_census`) finds only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`; the port reads the quotient as `0` by decision (`camera_zone::div`)"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB0B4..0x801DB0B4"
+verdict = "unported"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; retail traps when a dividing zone meets a box with no span, which the every-tile census (`camera_follow::the_zone_divisions_census`) finds only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`; the port reads the quotient as `0` by decision (`camera_zone::div`)"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB154..0x801DB154"
+verdict = "unported"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; retail traps when a dividing zone meets a box with no span, which the every-tile census (`camera_follow::the_zone_divisions_census`) finds only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`; the port reads the quotient as `0` by decision (`camera_zone::div`)"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB1C4..0x801DB1C4"
+verdict = "unported"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; retail traps when a dividing zone meets a box with no span, which the every-tile census (`camera_follow::the_zone_divisions_census`) finds only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`; the port reads the quotient as `0` by decision (`camera_zone::div`)"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB278..0x801DB278"
+verdict = "unported"
+reason = "PROT 0897: the compiler's zero-divisor guard (`break 7`) on a region-box span; retail traps when a dividing zone meets a box with no span, which the every-tile census (`camera_follow::the_zone_divisions_census`) finds only on single-tile regions in `tunnela`, `tunnelb`, `nilboa` and `nilboa2`; the port reads the quotient as `0` by decision (`camera_zone::div`)"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB244..0x801DB244"
+verdict = "unreachable"
+reason = "PROT 0897: the toward-zero rounding of `span * (n - 1) / 4` for a negative span; over every tile of every field scene no depth-sweeping zone (`b609` nibble `2..=5`) latches a box whose z bounds run backwards (`camera_follow::the_zone_divisions_census`)"
+
+[[arm]]
+entry = "0x80054CB0"
+range = "0x80054CE8..0x80054CE8"
+verdict = "unreachable"
+reason = "the copy loop's skip on `(strlen & 0xFF) + 1 == 0`; the masked length plus one is at least `1`"
+
+[[arm]]
+entry = "0x80054CB0"
+range = "0x80054F1C..0x80054F1C"
+verdict = "unreachable"
+reason = "the abbreviation's exit on a one-byte line; it runs only when the line measures `0x40` or wider (0x80054EFC), and no single glyph of the font is that wide"
+
+[[arm]]
+entry = "0x80054CB0"
+range = "0x80054F98..0x80054F98"
+verdict = "unreachable"
+reason = "the abbreviation's copy guard on the byte at the last space; that byte is the space itself, never `0`"
+
+[[arm]]
+entry = "0x80054CB0"
+range = "0x80055004..0x80055004"
+verdict = "unreachable"
+reason = "the twin-letter walk's guard on `seat - 1 < 0`; seat `0` already left at `beqz s5` (0x80054FF8)"

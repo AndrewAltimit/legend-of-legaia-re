@@ -132,3 +132,94 @@ fn the_slid_elements_land_where_the_port_puts_them() {
         }
     }
 }
+
+/// Mode `1`, the header tab, as the dispatcher calls it (`0x801DFD40..`:
+/// `t = 0` from `(0x30, 6)`) with the centring text drawer `FUN_801E3EE0`
+/// and the width measure `FUN_80035F04` run live and the raw string emitter
+/// `FUN_80036888` recorded: the tab's panel and its word (`Save` / `Load` off
+/// the op flag `0x801F0200`), and, off the title screen (`_DAT_8007BB00`
+/// clear), the location box and its place name. Against
+/// `SAVE_SELECT_PANEL_POS` / `SIZE`, `save_select_title_pos` and the location
+/// tab's rect and text origin.
+#[test]
+fn the_header_tab_sits_where_the_port_draws_it() {
+    differential!(prot(899, SLIDE));
+    use legaia_engine_ui::{
+        SAVE_SELECT_LOCATION_TAB_RECT, SAVE_SELECT_LOCATION_TAB_TEXT, SAVE_SELECT_PANEL_POS,
+        SAVE_SELECT_PANEL_SIZE, save_select_title_pos,
+    };
+    use psx_retail_exec::A3;
+    const EMIT: u32 = 0x8003_6888;
+    const OP_FLAG: u32 = 0x801F_0200;
+    const TITLE_SCREEN: u32 = 0x8007_BB00;
+    const PLACE_PTR: u32 = 0x8007_B44C;
+    const PLACE: u32 = 0x8014_0000;
+    let (Some(mut cpu), Some(d), Some(scus)) = (scus_cpu(), disc(), crate::common::scus()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(899).expect("PROT 0899"));
+    let tim = d
+        .read_prot_bytes(
+            legaia_font::FONT_TIM_PROT_DAT_OFFSET,
+            legaia_font::FONT_TIM_LEN,
+        )
+        .expect("font TIM");
+    let font = legaia_font::Font::from_disc_tim_and_scus(&tim, &scus).expect("font");
+    let log = Rc::new(RefCell::new(Vec::<(u32, i32, i32)>::new()));
+    let l = log.clone();
+    cpu.hook(PANEL, move |r, _| {
+        let a = |k: usize| r.r[A0 + k] as i32;
+        l.borrow_mut().push((0, a(0) - a(2) / 2 - 10, a(1) - 2));
+        l.borrow_mut().push((1, a(2) + 16, a(3) + 16));
+    });
+    let l = log.clone();
+    cpu.hook(EMIT, move |r, m| {
+        let y = m.rd32(r.r[psx_retail_exec::SP] + 0x10) as i32;
+        l.borrow_mut().push((2 + r.r[A0], r.r[A3] as i32, y));
+    });
+    cpu.hook(ICON, |_, _| {});
+    // The debug print, which goes to the BIOS, and BIOS A(0x2B) `memset`,
+    // the measure's scratch line clear.
+    cpu.stub(0x8005_67A8, 0);
+    cpu.hook(0x8005_6788, |r, m| {
+        for i in 0..r.r[psx_retail_exec::A2] {
+            m.wr8(r.r[A0] + i, r.r[psx_retail_exec::A1] as u8);
+        }
+    });
+    cpu.mem.load(PLACE, b"Rim Elm\0");
+    cpu.mem.wr32(PLACE_PTR, PLACE);
+    for (op, title_screen) in [(0u32, 0u32), (1, 0), (0, 1), (1, 1)] {
+        cpu.mem.wr32(OP_FLAG, op);
+        cpu.mem.wr32(TITLE_SCREEN, title_screen);
+        cpu.mem.wr32(STACK_TOP + 0x10, 0);
+        cpu.mem.wr32(STACK_TOP + 0x14, 0);
+        log.borrow_mut().clear();
+        cpu.calls.clear();
+        let stop = cpu.call(SLIDE, &[1, 0, 0x30, 6]);
+        assert_eq!(stop, Stop::Returned, "{:x?}", cpu.calls);
+        let calls = log.borrow().clone();
+        let word = if op == 0 { "Save" } else { "Load" };
+        let word_at = 0x801C_EF0C + 8 * op;
+        let mut want = vec![
+            (0, SAVE_SELECT_PANEL_POS.0, SAVE_SELECT_PANEL_POS.1),
+            (1, SAVE_SELECT_PANEL_SIZE.0, SAVE_SELECT_PANEL_SIZE.1),
+        ];
+        let title = save_select_title_pos(&font, word);
+        let mut got = calls.clone();
+        // The word, drawn first, then the tab.
+        let word_call = got.remove(0);
+        assert_eq!(
+            word_call,
+            (2 + word_at, title.0, title.1),
+            "{word}: the word"
+        );
+        if title_screen == 0 {
+            let (x, y, w, h) = SAVE_SELECT_LOCATION_TAB_RECT;
+            let (tx, ty) = SAVE_SELECT_LOCATION_TAB_TEXT;
+            want.extend([(2 + PLACE, tx, ty), (0, x, y), (1, w, h)]);
+        }
+        assert_eq!(got, want, "op {op} title screen {title_screen}: {calls:?}");
+    }
+}

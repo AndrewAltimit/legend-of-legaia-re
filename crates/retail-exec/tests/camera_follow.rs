@@ -485,3 +485,71 @@ fn the_composer_and_the_snap_match_retail() {
         "{modes:?}"
     );
 }
+
+/// The composer's divisions by the latched region box (`FUN_801DAB90`):
+/// the yaw sweep of zone modes `1` / `2` divides by `(x1 - x0) << 6`
+/// (`0x801DB050`, `0x801DB0B0`), the pitch sweep of a `b608` nibble `1` / `2`
+/// and the depth sweep of a `b609` nibble `1..=5` by `(z1 - z0) << 7`
+/// (`0x801DB150`, `0x801DB1C0`, `0x801DB274`), and the depth sweep's
+/// reference row rounds `span * (n - 1) / 4` toward zero (`0x801DB244`). The
+/// box is the `.MAP` type-0/1 region the player stands in, latched as
+/// `FUN_800180EC` stores it, or the full-map fill; the zone is the one
+/// `FUN_801DBA20` selects for the tile. Over every tile of every field scene:
+/// no depth-sweeping zone meets a box whose z bounds run backwards, and a
+/// box with no span meets a dividing zone only on the single-tile regions of
+/// four scenes, where retail's guard traps (`break 7`) and the port reads the
+/// quotient as `0` (`camera_zone::div`).
+#[test]
+fn the_zone_divisions_census() {
+    not_a_differential!(
+        "a census of the disc's MAN zone records against the .MAP region boxes each tile latches; runs no routine"
+    );
+    use legaia_engine_field::field_regions::{RegionTable, refresh_region_attributes, zone_query};
+    if disc().is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let index = crate::walk_on::index();
+    let (mut scenes, mut dividing) = (0, 0usize);
+    let (mut flat, mut reversed) = (std::collections::BTreeSet::new(), Vec::new());
+    for name in index.cdname_scene_names() {
+        let Ok(scene) = legaia_engine_scene::scene::Scene::load(&index, &name) else {
+            continue;
+        };
+        let Ok(Some(zones)) = scene.field_zone_table(&index) else {
+            continue;
+        };
+        let block = scene.field_map_region_block(&index).ok().flatten();
+        let table = block.as_deref().and_then(RegionTable::parse);
+        scenes += 1;
+        for tz in 0..0x80 {
+            for tx in 0..0x80 {
+                let (_, attrs) = refresh_region_attributes(table.as_ref(), tx, tz, false);
+                let Some(rec) =
+                    zone_query(&zones, table.as_ref(), &attrs, tx, tz).and_then(|q| q.record)
+                else {
+                    continue;
+                };
+                if matches!(rec[5] >> 4, 3..=6) {
+                    continue;
+                }
+                let x_div = matches!(rec[5] >> 4, 1 | 2);
+                let z_div = matches!(rec[6] >> 4, 1 | 2) || (1..6).contains(&(rec[7] >> 4));
+                dividing += usize::from(x_div || z_div);
+                // `compose`'s own reading of the box.
+                let [x0, z0, x1, z1] = attrs.box_bytes.map(i32::from);
+                if (x_div && x1 == x0) || (z_div && z1 == z0) {
+                    flat.insert(name.clone());
+                }
+                if (2..6).contains(&(rec[7] >> 4)) && z1 < z0 {
+                    reversed.push(format!("{name} tile ({tx},{tz})"));
+                }
+            }
+        }
+    }
+    eprintln!("{scenes} scenes, {dividing} dividing tiles, flat boxes in {flat:?}");
+    assert!(scenes > 80 && dividing > 10_000, "{scenes} {dividing}");
+    assert!(reversed.is_empty(), "{reversed:?}");
+    let flat: Vec<&str> = flat.iter().map(String::as_str).collect();
+    assert_eq!(flat, ["nilboa", "nilboa2", "tunnela", "tunnelb"]);
+}

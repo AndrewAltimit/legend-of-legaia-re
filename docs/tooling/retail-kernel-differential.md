@@ -1210,6 +1210,13 @@ nothing carries, found the World running an op with no answering context on the 
 yet. Retail's resolver answers zero for both, the dispatcher hands back the pc it was given and the
 pre-run ends there; the World's channel stepper now does the same.
 
+The monster install `FUN_80054CB0` (`monster_install`) also holds the seat's short name line
+(`ctx + 0x292`) to `battle_name_line` over generated names: the value window's row plates print that
+line, where the port had printed the plaque's name with its twin letter and badge. The save screen's
+header tab (`save_slide`, mode `1`) and the zone census (`camera_follow::the_zone_divisions_census`)
+match; the census finds the composer's zero-span divisions only on four scenes' single-tile regions,
+where retail traps and the port reads `0`.
+
 PROT 0898's streak ribbon `FUN_801E1D98` (`streak_ribbon`), its corner builder answering with generated
 bottom quads, found the chain loop a `do`-`while`: the first segment above the bottom quad is drawn
 whatever the baseline, where the port tested first, so a bottom billboard at or above the screen top
