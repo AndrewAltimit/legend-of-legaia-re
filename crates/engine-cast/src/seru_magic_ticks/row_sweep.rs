@@ -185,9 +185,11 @@ pub(super) fn stage_reaction_or(victim: &mut CastActorState) {
 /// land before their killing one: the roll is clamped to `HP - 1`
 /// (`sltu` against `+0x14C - 1`, [`apply_hit_cap_hp_minus_one`]), `+0x10`
 /// accumulates it, and the reaction is staged in the `OR` form. PROT 0915
-/// arm 7 (`0x801F7004..`), PROT 0928 arm `0xF` (`0x801F80C4..0x801F81EC`),
-/// PROT 0932 arm `0x12` and PROT 0933 arm `0xC` each run it, over their
-/// latched victim or their living monster row. Returns the damage applied.
+/// arm 7 (`0x801F7004..`) runs it over its latched victim. PROT 0928 arm
+/// `0xF` and PROT 0932 arm `0x12` clamp alike but stage the flinch with no
+/// knockdown fork (`0x801F818C`, `0x801F7C18`), and PROT 0933 arm `0xC`
+/// stages nothing (`World::apply_summon_pre_hits`). Returns the damage
+/// applied.
 pub fn summon_pre_hit(victim: &mut CastActorState, dmg: u32) -> u32 {
     let applied = super::apply_hit_cap_hp_minus_one(victim, dmg);
     stage_reaction_or(victim);

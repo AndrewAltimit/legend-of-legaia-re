@@ -531,6 +531,20 @@ impl World {
                     u32::from(dmg),
                 );
                 legaia_engine_cast::seru_magic_ticks::stage_reaction_alt_only(&mut v);
+            } else if matches!(entry, 928 | 932) {
+                // PROT 0928's and 0932's stage the flinch `+0x1EF`, else
+                // `+0x1F0`, with no knockdown fork, and OR the restage bits
+                // (`ori 5` at `0x801F81B8`, `ori 1` at `0x801F7C44`).
+                legaia_engine_cast::seru_magic_ticks::apply_hit_cap_hp_minus_one(
+                    &mut v,
+                    u32::from(dmg),
+                );
+                v.staged_anim = if v.reaction_alt != 0 {
+                    v.reaction_alt
+                } else {
+                    v.reaction_alt2
+                };
+                v.restage |= if entry == 928 { 0x05 } else { 0x01 };
             } else {
                 legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
             }
