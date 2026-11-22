@@ -46,11 +46,24 @@ fn panel_cpu(entry: usize) -> Option<(Cpu, Vec<u8>, Rc<RefCell<Panel>>)> {
 }
 
 /// The NUL-terminated bytes at `va`.
+/// The string the glyph renderer `FUN_80036888` prints from `va`: it ends at
+/// a `0` that is not the operand of a `0xCE` / `0xCF` escape, which the
+/// renderer reads and steps past (`0x8003694C..0x80036950`).
 fn c_string(cpu: &mut Cpu, va: u32) -> Vec<u8> {
-    (0..)
-        .map(|i| cpu.mem.rd8(va + i))
-        .take_while(|&b| b != 0)
-        .collect()
+    let mut out = Vec::new();
+    let mut i = 0;
+    loop {
+        let b = cpu.mem.rd8(va + i);
+        if b == 0 {
+            return out;
+        }
+        out.push(b);
+        i += 1;
+        if b == 0xCE || b == 0xCF {
+            out.push(cpu.mem.rd8(va + i));
+            i += 1;
+        }
+    }
 }
 
 #[test]
