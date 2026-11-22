@@ -132,7 +132,14 @@ fn gen_monster(rng: &mut Rng) -> Monster {
 
 fn gen_pick(rng: &mut Rng) -> Pick {
     let count = 1 + rng.below(4) as usize;
-    let monsters: Vec<Monster> = (0..count).map(|_| gen_monster(rng)).collect();
+    let mut monsters: Vec<Monster> = (0..count).map(|_| gen_monster(rng)).collect();
+    let caster = rng.below(count as u32) as u8;
+    // A fallen ally beside the caster, which the heal-patient scan passes by.
+    for (i, m) in monsters.iter_mut().enumerate() {
+        if i != usize::from(caster) && rng.below(5) == 0 {
+            m.hp = 0;
+        }
+    }
     Pick {
         party: 1 + rng.below(3) as u8,
         party_hp: [
@@ -155,7 +162,7 @@ fn gen_pick(rng: &mut Rng) -> Pick {
             [0, 0, 4, 0x400, 0x1000][rng.below(5) as usize],
             [0, 0, 4, 0x400, 0x1000][rng.below(5) as usize],
         ],
-        caster: rng.below(count as u32) as u8,
+        caster,
         monsters,
         round: rng.below(6) as u8,
         no_flee: rng.below(2) == 0,
@@ -298,7 +305,7 @@ fn seed_port(w: &mut World, p: &Pick) {
         a.battle.agl = m.gauge;
         a.battle.agl_base = m.gauge.max(1);
         a.battle.spirit_gauge = m.spirit;
-        a.battle.liveness = 1;
+        a.battle.liveness = u16::from(m.hp != 0);
         a.battle_monster_id = Some(key);
         seat_status(w, seat as u8, m.status, p.seed >> (8 + i) & 1 != 0);
     }
