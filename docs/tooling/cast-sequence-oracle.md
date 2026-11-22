@@ -2888,14 +2888,20 @@ carries Seru `2`, so a roll can land; the third fight's does. Retail puffs on th
 idle in state `0x20` and again sixty vsyncs later in the Done band, and sounds
 `0x1B` (ring id `0x01A`) once.
 
-A `--physical` film from that fight's strike state, run through a private
-library (`LEGAIA_FILM_LIBRARY`), put the port's cue sixty ticks early: the port
+A `--physical` film from that fight's strike state put the port's cue sixty ticks early: the port
 tested the action channel, which a dead monster's reaction leaves on `0`, so
 it puffed when the knockdown ended. Reading the reaction channel's entry first,
 as `+0x1D9` holds it, moves the cue onto retail's tick (cue score `.857` to
-`.952`, image `.829` to `.830`). The one cue left is a `0x007` the engine
-sounds on Vahn's third strike against the dead monster, which retail leaves
-silent.
+`.952`, image `.829` to `.830`). The one cue left was a `0x007` the engine
+sounded on Vahn's third strike against the dead monster, which retail leaves
+silent: that strike's power byte limb-misses the monster's class, and retail's
+kernel tests the miss on the seat `+0x1DD` names whether it lives or not, so the
+skip strobe steps the cue cursor over the impact cue. The port found no living
+target and returned before the miss ([the limb miss](../subsystems/battle-formulas.md#the-limb-vs-height-miss));
+with the miss tested on the fallen seat the film reads cue `1.000` and image
+`.997`. The state is `battle_rikuroa_party_vahn_seru_absorb_strike`, its film
+`rikuroa_vahn_seru_absorb` in the arts set, its recording under
+`captures/film-retail/`.
 
 Run on past the end of the action (`--tail 700`), the same film showed the
 fallen monster's body gone and the close-up begun sixty vsyncs early. The
