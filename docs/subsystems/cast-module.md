@@ -1997,6 +1997,14 @@ cleared again on arm 13's once the retract reports done (`0x801F7FC4`). The
 director carries the four (`theeder_direct`); arms 7 and 13 are the body's to
 pace, so their two land on the next arm's first pass, a tick after retail's.
 
+Each seat arm 12 strikes turns to face the creature: after staging the
+reaction (`+0x1DA`, `+0x1DC |= 1`) it stores
+`+0x46 = FUN_80019B28(victim +0x38, +0x34, slot 7 +0x38, +0x34)`
+(`0x801F7E58..0x801F7E7C`; slot 7 is the actor table's `+0x1C`, read at
+`0x801F6A2C`). The reaction's knockback runs along that facing, so every
+victim is thrown straight away from the creature (the rising frame's Gilium
+face `1420 / 1268 / 1632`). Port: `World::face_theeder_victims`.
+
 Arm 11's exit lights the monster row again: every live seat `3..7` takes the
 neutral word `+0x04 = 0x20080200` behind its HP test
 (`0x801F7934..0x801F7978`), its render flag left at the band's `0xFF`. The

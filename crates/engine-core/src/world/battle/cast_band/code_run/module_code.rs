@@ -1732,6 +1732,7 @@ impl World {
                             let mut fx = self.casting.module_theeder;
                             let attack_in = ctx.phase == ticks_a::THEEDER_ATTACK_ARM;
                             let mut struck = false;
+                            let mut faced: Vec<u8> = Vec::new();
                             let tick = ticks_a::theeder_tick(
                                 &mut ctx,
                                 &mut seats,
@@ -1743,6 +1744,7 @@ impl World {
                                         return None;
                                     }
                                     struck = true;
+                                    faced.push(seat);
                                     if !party_cast {
                                         return Some(0);
                                     }
@@ -1762,6 +1764,12 @@ impl World {
                                     },
                                 );
                             }
+                            // Each arm-12 hit turns its victim to face the
+                            // creature (`0x801F7E58..0x801F7E7C`: `+0x46 =
+                            // FUN_80019B28(victim +0x38/+0x34, slot 7's)`), so
+                            // the reaction's knockback carries the body
+                            // straight away from it.
+                            self.face_theeder_victims(&faced, map, seat_slot);
                             // Each arm-12 hit sets the effect pool's sprite
                             // scale to `0x800` (`0x801F7DC8..0x801F7DD4`),
                             // which sizes the sparks its impact selector `2`

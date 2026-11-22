@@ -58,6 +58,45 @@ impl World {
         }
     }
 
+    /// PROT 0904 arm 12's facing store on every seat it strikes: the victim
+    /// turns to face the creature, `+0x46 = FUN_80019B28(victim +0x38,
+    /// victim +0x34, slot 7 +0x38, slot 7 +0x34)` (`0x801F7E58..0x801F7E7C`,
+    /// slot 7 read off the actor table `0x801C9370 + 0x1C` at
+    /// `0x801F6A2C`). The reaction's knockback runs along the facing, so it
+    /// carries the body straight away from the creature: unturned, the
+    /// rising frame's Gilium stood `300..350` units off retail's, each on
+    /// the facing battle setup gave it. `seats` are retail pool seats.
+    ///
+    /// PORT: FUN_801F69D8 (PROT 0904 arm 12, the victim's facing store)
+    pub(in crate::world::battle::cast_band) fn face_theeder_victims(
+        &mut self,
+        seats: &[u8],
+        map: legaia_engine_battle_loop::cast_seat_map::CastSeatMap,
+        summon_slot: u8,
+    ) {
+        let Some((cx, cz)) = self
+            .actors
+            .get(summon_slot as usize)
+            .map(|a| (a.move_state.world_x, a.move_state.world_z))
+        else {
+            return;
+        };
+        for &seat in seats {
+            let Some(a) = map
+                .engine(seat)
+                .and_then(|e| self.actors.get_mut(usize::from(e)))
+            else {
+                continue;
+            };
+            a.battle.facing_angle = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                a.move_state.world_z,
+                a.move_state.world_x,
+                cz,
+                cx,
+            );
+        }
+    }
+
     /// The summon seat's live `(x, z)` and facing, as PROT 0904 reads slot 7.
     pub(in crate::world::battle::cast_band) fn theeder_geom(
         &self,
@@ -168,5 +207,37 @@ impl World {
                 d <= half_width || d >= FULL_TURN - half_width
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::World;
+    use crate::world::types::Actor;
+
+    /// Each struck seat turns to face the creature, as arm 12's
+    /// `FUN_80019B28` store leaves it: the rising frame's Gilium at
+    /// `(-1317, 602)` from a creature on `(699, -768)`, retail's `1420`
+    /// within the atan table's step; an unstruck seat keeps its facing.
+    #[test]
+    fn a_struck_seat_faces_the_creature() {
+        let mut world = World::default();
+        world.party.party_count = 1;
+        for _ in 0..8 {
+            world.actors.push(Actor::default());
+        }
+        let map = world.cast_seat_map();
+        let creature = 7;
+        world.actors[creature].move_state.world_x = 699;
+        world.actors[creature].move_state.world_z = -768;
+        let victim = usize::from(map.engine(3).unwrap());
+        let other = usize::from(map.engine(4).unwrap());
+        world.actors[victim].move_state.world_x = -1317;
+        world.actors[victim].move_state.world_z = 602;
+        world.actors[other].battle.facing_angle = 2048;
+        world.face_theeder_victims(&[3], map, creature as u8);
+        let f = world.actors[victim].battle.facing_angle;
+        assert!((i32::from(f) - 1413).abs() <= 2, "{f}");
+        assert_eq!(world.actors[other].battle.facing_angle, 2048);
     }
 }
