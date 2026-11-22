@@ -140,10 +140,12 @@ fn the_placement_spawner_reads_the_record_the_port_reads() {
 }
 
 /// The spawner run whole, the way the scene init `FUN_8003AEB0` runs it,
-/// over every scene on the disc: each placement in order (`a1` the
-/// partition-0 count, so `+0x50` is the flat id), the spawn `FUN_80024C88`
-/// linking a fresh actor onto the list the context resolver `FUN_8003C83C`
-/// walks, the clip bind `FUN_800204F8` and `rand()` hooked, and the field VM
+/// over every scene on the disc and over generated scenes whose prologues aim
+/// cross-context ops at earlier placements, later ones and ids nothing
+/// carries: each placement in order (`a1` the partition-0 count, so `+0x50`
+/// is the flat id), the real spawn `FUN_80024C88` / `FUN_80020DE0` taking its
+/// node off the pool `FUN_800203EC` seeds onto the list the context resolver
+/// `FUN_8003C83C` walks, the clip bind `FUN_800204F8` and `rand()` hooked, and the field VM
 /// `FUN_801DE840` (PROT 0897) the real one, pre-running each `0x24` / `0x25`
 /// prologue on a fresh game's flags under the spawn bracket the scene init
 /// raises. Once the scene's placements are all in, each actor's seat
@@ -161,14 +163,16 @@ fn every_placement_spawns_where_the_port_seats_it() {
     const FIELD_VM: u32 = 0x801D_E840;
     const CLIP_BIND: u32 = 0x8002_04F8;
     const RAND: u32 = 0x8005_6798;
-    const ACTORS: u32 = 0x8017_0000;
     const CLIP: u32 = 0x8016_F000;
-    // The actor list `FUN_8003C83C` walks (`*_DAT_8007C354`, linked through
-    // `+0x00`, matched on `+0x50`): a scene's placements spawn onto it in
-    // order, so a prologue's cross-context op finds the placements before it
-    // and not those after.
-    const LIST: u32 = 0x8007_C354;
-    const SENTINEL: u32 = 0x8016_FFF0;
+    // The three actor lists (`_DAT_8007C34C` / `C350` / `C354`), each a
+    // header whose `+0x0C` is the tail link; the spawn `FUN_80020DE0` takes
+    // a node off the pool `FUN_800203EC` seeds and appends it to the list it
+    // is handed, and the context resolver `FUN_8003C83C` walks `C354`. A
+    // scene's placements spawn in order, so a prologue's cross-context op
+    // finds the placements before it and not those after.
+    const LISTS: [u32; 3] = [0x8007_C34C, 0x8007_C350, 0x8007_C354];
+    const HEADERS: u32 = 0x8016_FF80;
+    const POOL_INIT: u32 = 0x8002_03EC;
     differential!(scus(SPAWNER), prot(897, FIELD_VM));
     let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -182,7 +186,6 @@ fn every_placement_spawns_where_the_port_seats_it() {
     cpu.mem.wr32(MAN_PTR, MAN);
     cpu.mem.wr16(SCENE_BASE, SCENE_BANK_BASE);
     cpu.mem.wr16(PLAYER_BASE, PLAYER_BANK_BASE);
-    cpu.mem.wr32(LIST, SENTINEL);
     // The spawn bracket the scene init raises around its spawn loops
     // (`sh 1,8(*_DAT_801C6EA4)` at `0x8003B73C`), which lifts the
     // dispatcher's halted-target refusal (`0x801DE928`).
@@ -198,23 +201,9 @@ fn every_placement_spawns_where_the_port_seats_it() {
     // And the libgpu image transfer `FUN_80058490` a prologue's VRAM op
     // queues, which waits on the GPU.
     cpu.stub(0x8005_8490, 0);
-    let spawned = Rc::new(RefCell::new(0u32));
-    {
-        let spawned = spawned.clone();
-        cpu.hook(SPAWN, move |r, m| {
-            let actor = ACTORS + *spawned.borrow() * 0x100;
-            *spawned.borrow_mut() += 1;
-            m.load(actor, &[0u8; 0x100]);
-            let first = m.rd32(SENTINEL);
-            m.wr32(actor, first);
-            m.wr32(SENTINEL, actor);
-            for k in 0..3 {
-                let v = m.rd16(r.r[A0] + k * 2);
-                m.wr16(actor + 0x14 + k * 2, v);
-            }
-            r.r[V0] = actor;
-        });
-    }
+    // And the move VM `FUN_80023070`, whose program the scene's move table
+    // (not loaded here) supplies: `izumi` P1[1]'s prologue starts one.
+    cpu.stub(0x8002_3070, 0);
     cpu.hook(CLIP_BIND, move |r, m| {
         m.wr32(r.r[A0] + 0x4C, CLIP);
         m.wr16(CLIP + 2, 8);
@@ -230,18 +219,28 @@ fn every_placement_spawns_where_the_port_seats_it() {
     let mut failures = Vec::new();
     // Each scene twice: on a fresh game's flags, then on a random bank, so
     // the prologues' story arms past their fresh-game branches run too.
-    let scenes: Vec<(String, bool)> = index
-        .cdname_scene_names()
-        .into_iter()
-        .flat_map(|n| [(n.clone(), false), (n, true)])
-        .collect();
-    for (name, random_flags) in scenes {
+    let mut scenes: Vec<(String, Vec<u8>, bool)> = Vec::new();
+    for name in index.cdname_scene_names() {
         let Ok(scene) = legaia_engine_scene::scene::Scene::load(&index, &name) else {
             continue;
         };
         let Ok(Some(man)) = scene.field_man_payload(&index) else {
             continue;
         };
+        scenes.push((name.clone(), man.clone(), false));
+        scenes.push((name, man, true));
+    }
+    // Then generated scenes whose prologues aim cross-context ops at the
+    // placements before them, the ones after, and ids no context answers.
+    let mut made = Rng(0x5843_5458);
+    for k in 0..400 {
+        scenes.push((
+            format!("generated {k}"),
+            cross_context_man(&mut made),
+            false,
+        ));
+    }
+    for (name, man, random_flags) in scenes {
         let Ok(file) = man_section::parse(&man) else {
             continue;
         };
@@ -258,16 +257,36 @@ fn every_placement_spawns_where_the_port_seats_it() {
         cpu.mem.load(0x8000_0000, &ram);
         cpu.mem.load(MAN, &man);
         cpu.mem.load(0x8008_5758, &bank);
-        cpu.mem.wr32(SENTINEL, 0);
-        *spawned.borrow_mut() = 0;
+        assert_eq!(cpu.call(POOL_INIT, &[]), Stop::Returned);
+        for (k, l) in LISTS.iter().enumerate() {
+            let h = HEADERS + 0x10 * k as u32;
+            cpu.mem.load(h, &[0u8; 0x10]);
+            cpu.mem.wr32(h + 0xC, h);
+            cpu.mem.wr32(*l, h);
+        }
         let mut actors = Vec::new();
         for p in file.actor_placements(&man) {
-            let own = ACTORS + *spawned.borrow() * 0x100;
             let stop = cpu.call(SPAWNER, &[p.index as u32, n0]);
             if stop != Stop::Returned {
                 failures.push(format!("{name} #{}: {stop:?}", p.index));
                 continue;
             }
+            // The placement's node: the one on the context list carrying
+            // its id and record.
+            let mut node = cpu.mem.rd32(HEADERS + 0x20);
+            let mut own = None;
+            while node != 0 {
+                if u32::from(cpu.mem.rd16(node + 0x50)) == n0 + p.index as u32
+                    && cpu.mem.rd32(node + 0x90) == MAN + p.record_offset as u32
+                {
+                    own = Some(node);
+                }
+                node = cpu.mem.rd32(node);
+            }
+            let Some(own) = own else {
+                failures.push(format!("{name} #{}: no node on the list", p.index));
+                continue;
+            };
             actors.push((p, own));
         }
         let mut world = World::default();
@@ -361,4 +380,56 @@ fn every_placement_spawns_where_the_port_seats_it() {
         n("scenes") > 80 && n("placements") > 2000 && n("reseated") > 500 && n("turned") > 500,
         "{seen:?}"
     );
+}
+
+/// A MAN with no partition 0 and `2..8` placements, each record a header on
+/// its own tile and a `0x25` prologue of moves, compass turns and context
+/// flag sets ending on `0x21`. Each op is own-context or aimed (`op | 0x80`,
+/// then the id) at an earlier placement, a later one or an id no context
+/// carries.
+fn cross_context_man(rng: &mut crate::common::Rng) -> Vec<u8> {
+    let n1 = 2 + rng.below(7) as usize;
+    let mut data = Vec::new();
+    let mut offsets = Vec::new();
+    for i in 0..n1 {
+        offsets.push(data.len() as u32);
+        data.extend([0, 0, 0, rng.below(0x40) as u8, rng.below(0x40) as u8]);
+        if i == 0 {
+            data.push(0x21);
+            continue;
+        }
+        data.push(0x25);
+        for _ in 0..rng.below(5) {
+            let target = match rng.below(4) {
+                0 => None,
+                1 => Some(1 + rng.below(i as u32) as u8),
+                2 => Some((i + 1 + rng.below((n1 - i) as u32) as usize) as u8),
+                _ => Some(0x60 + rng.below(0x10) as u8),
+            };
+            let (op, args): (u8, Vec<u8>) = match rng.below(3) {
+                0 => (0x23, vec![rng.below(0x40) as u8, rng.below(0x40) as u8]),
+                1 => (0x38, vec![rng.below(8) as u8, 0]),
+                // A context flag bit, the retire bit `3` left out.
+                _ => (0x31, vec![[0, 1, 2, 5, 6, 7][rng.below(6) as usize]]),
+            };
+            match target {
+                Some(t) => data.extend([op | 0x80, t]),
+                None => data.push(op),
+            }
+            data.extend(args);
+        }
+        data.push(0x21);
+    }
+    let mut man = vec![0u8; 0x2B];
+    man[0x24..0x26].copy_from_slice(&(n1 as i16).to_le_bytes());
+    for o in &offsets {
+        man.extend(&o.to_le_bytes()[..3]);
+    }
+    man[0x28..0x2B].copy_from_slice(&(data.len() as u32).to_le_bytes()[..3]);
+    man.extend(&data);
+    for _ in 0..5 {
+        man.extend([1, 0, 0, 0]);
+    }
+    man.extend([0u8; 16]);
+    man
 }

@@ -3140,12 +3140,6 @@ reason = "the pre-run's below-`0x20` test on the record's first op; the loop is 
 
 [[arm]]
 entry = "0x8003A1E4"
-range = "0x8003A4D4..0x8003A4D4"
-verdict = "unreachable"
-reason = "the pre-run's stall exit (the field VM handing back the pc it was given); `model_select::every_placement_spawns_where_the_port_seats_it` pre-runs every placement of every scene on a fresh and a random flag bank under the scene init's spawn bracket, and no prologue op stalls"
-
-[[arm]]
-entry = "0x8003A1E4"
 range = "0x8003A4F4..0x8003A4F4"
 verdict = "unreachable"
 reason = "the pre-run's exit on a below-`0x20` byte; over every placement of every scene, on a fresh and a random flag bank (`model_select::every_placement_spawns_where_the_port_seats_it`), each prologue path ends on its `0x21` before any text lead"

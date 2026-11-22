@@ -1200,7 +1200,15 @@ a random one. Its seats, headings, retire bits and stopping pcs match the World'
 (`World::pre_run_field_channel_prologues`). The rig has to stand up what the scene init stands up
 around the loop: the actor list the context resolver `FUN_8003C83C` walks, holding the placements
 already spawned, and the spawn bracket `*(_DAT_801C6EA4) + 8` (`0x8003B73C`), without which every
-cross-context op on a halted actor stalls the pre-run.
+cross-context op on a halted actor stalls the pre-run. The spawn itself runs for real, off the node
+pool `FUN_800203EC` seeds: ops that free and append nodes relink the actor lists, and a stand-in
+list broke the resolver's walk.
+
+Generated scenes, whose prologues aim cross-context ops at earlier placements, later ones and ids
+nothing carries, found the World running an op with no answering context on the poker's own actor
+(a move or turn landing on the wrong placement) and running an op aimed at a placement not spawned
+yet. Retail's resolver answers zero for both, the dispatcher hands back the pc it was given and the
+pre-run ends there; the World's channel stepper now does the same.
 
 PROT 0898's streak ribbon `FUN_801E1D98` (`streak_ribbon`), its corner builder answering with generated
 bottom quads, found the chain loop a `do`-`while`: the first segment above the bottom quad is drawn

@@ -735,6 +735,8 @@ switch (*pbVar43 & 0x7f) {
 
 The halt test reads the **caller** for its exemption (`lhu v1,0x50(s1)` at `0x801DE938`, `s1` the context the dispatcher was entered with), so the scene's system script lands a seat or flag op on an actor mid-walk while any other record waits. `conc2`'s entry script parks the plaza's light shaft (partition-0 record 11) with `A3 0B 7F 7F` while the shaft's bind-prologue compass walk (`37 02 01`) still holds `0x400`; retail RAM holds it at `(16192, 16320)`, parked and then walked its two steps. Port: `legaia_engine_vm::field::step_from_caller`.
 
+A target with no context is not skipped: the op waits on its own pc. At scene load that includes every placement spawned after the poker and every `.MAP` object (the object sweep `FUN_8003A55C` runs after the placement loop), so a spawn prologue that pokes one ends its pre-run there. Port: the placement channel stepper in `World::pre_run_field_channel_prologues`.
+
 The high bit (0x80) of an opcode means "this instruction targets a different script context" - `*(pbVar43+1)` is the script ID, resolved through `func_0x8003C83C` to a context pointer. The original (caller's) context is preserved; the dispatch operates on the resolved one.
 
 `func_0x8003C83C` itself special-cases two IDs:
