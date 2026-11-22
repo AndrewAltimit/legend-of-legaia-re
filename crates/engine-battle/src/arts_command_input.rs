@@ -136,8 +136,11 @@ pub struct ArtsCommandPad {
 pub enum ArtsInputPhase {
     /// Accepting directional presses (retail `0x50`).
     Entering,
-    /// The committed bar review (retail `0x5A`) - any press but the cancel
-    /// opens the target picker.
+    /// Retail's target cursor `0x5A` before its first press, the committed
+    /// bar up: Left / Right step the cursor (and raise the picker), Up /
+    /// Down under the directional entry and the confirm commit on the
+    /// member's current target, the cancel returns to the entry
+    /// ([`ArtsCommandInputSession::input`]).
     Review,
     /// Picking the art's target (retail's `0x5A` target cursor, with the
     /// committed bar still up).
@@ -233,6 +236,21 @@ pub struct ArtsCommandInputSession {
     /// (spawn on seat A, glide to seat B) over `ctx[+0x1C]` frames, and the
     /// review's return to the entry (step `0xF`) does the same.
     pub chip_slide: Option<u8>,
+    /// The enemy row the member targets now (`+0x1DD`, a monster seat), where
+    /// the `0x5A` cursor stands before its first step. The host seats it
+    /// each frame; `None` leaves the picker on its first live row.
+    pub target_seat: Option<u8>,
+    /// The cross-button entry option: Up / Down commit the `0x5A` cursor
+    /// only under the directional entry (`0x801D226C..0x801D228C`). The host
+    /// sets it each frame.
+    pub cross_entry: bool,
+    /// Frames run of the records a cursor step re-spawns: a step that moved
+    /// calls `FUN_801D388C(0xD)` (`0x801D2218` / `0x801D2264`), which clears
+    /// the glide flag `ctx[+0x1B]` (`0x801D3DE8`) before its tail spawns
+    /// records `0x29` / `0x2A` in mode `0` over `ctx[+0x1C] = 0x10` frames, so
+    /// they glide without gating the pass but hold the cursor's cancel
+    /// behind the live-glide scan, as a pennant's glide does.
+    pub cursor_glide: Option<u8>,
     pub phase: ArtsInputPhase,
 }
 
@@ -549,6 +567,9 @@ impl ArtsCommandInputSession {
             pennant_glides: Vec::new(),
             pennant_retreat: None,
             chip_slide: Some(0),
+            target_seat: None,
+            cross_entry: false,
+            cursor_glide: None,
             phase: ArtsInputPhase::Entering,
         }
     }
@@ -678,6 +699,10 @@ impl ArtsCommandInputSession {
             g.1 = g.1.saturating_add(1);
             g.1 < PENNANT_GLIDE_FRAMES
         });
+        self.cursor_glide = self
+            .cursor_glide
+            .map(|e| e.saturating_add(1))
+            .filter(|&e| e < CHIP_SLIDE_FRAMES);
         if let Some(r) = self.pennant_retreat.as_mut() {
             r.elapsed = r.elapsed.saturating_add(1);
             if r.elapsed >= CHIP_SLIDE_FRAMES {
@@ -699,7 +724,9 @@ impl ArtsCommandInputSession {
     ///
     /// PORT: FUN_801D0748 (`0x801D0C64..0x801D0C80`, `0x801D20E4`, `0x801D2304`)
     pub fn cancel_held(&self) -> bool {
-        !self.pennant_glides.is_empty() || self.pennant_retreat.is_some()
+        !self.pennant_glides.is_empty()
+            || self.pennant_retreat.is_some()
+            || self.cursor_glide.is_some()
     }
 
     /// The committed pennants slide off the bar (cases `0x26` / `0xF` with a
@@ -717,6 +744,66 @@ impl ArtsCommandInputSession {
             commands,
             spent,
         });
+    }
+
+    /// One pass of retail's target cursor `0x5A` on the raised picker: Right,
+    /// then Left, each stepping the ring and ending the pass only when the
+    /// cursor moved (`0x801D21D4..0x801D2264`); then Up or Down, which commit
+    /// under the directional entry with no side direction held
+    /// (`0x801D226C..0x801D228C`); then the confirm mask; then the cancel,
+    /// which returns to the entry ([`Self::cancel_to_entry`]) behind the
+    /// live-glide scan (`0x801D2304`).
+    ///
+    /// PORT: FUN_801D0748 (`0x801D21CC..0x801D2304`, the arts target cursor)
+    fn cursor_input(&mut self, ev: ArtsCommandPad) {
+        let ArtsInputPhase::Targeting { mut picker } =
+            std::mem::replace(&mut self.phase, ArtsInputPhase::Aborted)
+        else {
+            return;
+        };
+        let press = |right: bool, left: bool, cross: bool| PickerInput {
+            up: false,
+            down: false,
+            left,
+            right,
+            cross,
+            circle: false,
+        };
+        let at = picker.state();
+        if ev.right {
+            picker.input(press(true, false, false));
+        }
+        if picker.state() == at && ev.left {
+            picker.input(press(false, true, false));
+        }
+        if picker.state() != at {
+            self.cursor_glide = Some(0);
+        }
+        if picker.state() == at {
+            let vertical = !self.cross_entry && (ev.up || ev.down) && !(ev.left || ev.right);
+            if vertical || ev.cross {
+                picker.input(press(false, false, true));
+            } else if ev.circle {
+                if self.cancel_held() {
+                    self.phase = ArtsInputPhase::Targeting { picker };
+                } else {
+                    self.cancel_to_entry();
+                }
+                return;
+            }
+        }
+        self.phase = match picker.outcome() {
+            Some(PickerOutcome::Single { slot, row }) => ArtsInputPhase::Confirmed {
+                target_row: row,
+                target_slot: slot,
+            },
+            Some(PickerOutcome::Sweep { row }) => ArtsInputPhase::Confirmed {
+                target_row: row,
+                target_slot: 0,
+            },
+            Some(PickerOutcome::NoCandidates) => ArtsInputPhase::Aborted,
+            _ => ArtsInputPhase::Targeting { picker },
+        };
     }
 
     /// Retail's `0x5A` cancel (`0x801D2304..0x801D23DC`): wipe the sixteen
@@ -878,58 +965,30 @@ impl ArtsCommandInputSession {
                 }
             }
             ArtsInputPhase::Review => {
-                // The review's cancel sits behind the same live-glide scan
-                // (`beq s4,zero` at `0x801D2304`).
-                if ev.circle && !self.cancel_held() {
-                    self.cancel_to_entry();
-                } else if ev.cross || ev.up || ev.down || ev.left || ev.right {
-                    // Any other press opens the target picker; the commit it
-                    // resolves to walks the ring on, and the last member's
-                    // commit raises the party's Begin | Reselect.
-                    let picker = TargetPickerSession::new(
-                        TargetKind::SingleEnemy,
-                        self.party_slot,
-                        party,
-                        monsters,
-                    );
-                    self.phase = match picker.outcome() {
-                        Some(PickerOutcome::Single { slot, row }) => ArtsInputPhase::Confirmed {
-                            target_row: row,
-                            target_slot: slot,
-                        },
-                        Some(PickerOutcome::Sweep { row }) => ArtsInputPhase::Confirmed {
-                            target_row: row,
-                            target_slot: 0,
-                        },
-                        Some(PickerOutcome::NoCandidates) => ArtsInputPhase::Aborted,
-                        _ => ArtsInputPhase::Targeting { picker },
-                    };
-                } else {
-                    self.phase = ArtsInputPhase::Review;
-                }
-            }
-            ArtsInputPhase::Targeting { mut picker } => {
-                // Retail's target cursor is the same state `0x5A` as the
-                // review, so its cancel is the review's: one press wipes the
-                // string and returns to the entry (`0x801D2304..0x801D23DC`,
-                // case `0xF`), behind the same live-glide scan. The picker's
-                // own step back to the review has no retail counterpart.
-                if ev.circle {
-                    if !self.cancel_held() {
+                // Retail's `0x5A` (`0x801D21CC..0x801D23EC`): one state for
+                // the review and the cursor. The picker is raised on the
+                // first press, standing on the member's current target, and
+                // the press is the cursor's.
+                let moves = ev.left || ev.right || ev.up || ev.down || ev.cross;
+                if !moves {
+                    // A bare cancel is the cursor's last test, and needs no
+                    // target to read.
+                    if ev.circle && !self.cancel_held() {
                         self.cancel_to_entry();
                     } else {
-                        self.phase = ArtsInputPhase::Targeting { picker };
+                        self.phase = ArtsInputPhase::Review;
                     }
                     return;
                 }
-                picker.input(PickerInput {
-                    up: ev.up,
-                    down: ev.down,
-                    left: ev.left,
-                    right: ev.right,
-                    cross: ev.cross,
-                    circle: ev.circle,
-                });
+                let mut picker = TargetPickerSession::new(
+                    TargetKind::SingleEnemy,
+                    self.party_slot,
+                    party,
+                    monsters,
+                );
+                if let Some(seat) = self.target_seat {
+                    picker.seat_cursor(CursorRow::Enemy, seat);
+                }
                 self.phase = match picker.outcome() {
                     Some(PickerOutcome::Single { slot, row }) => ArtsInputPhase::Confirmed {
                         target_row: row,
@@ -939,10 +998,16 @@ impl ArtsCommandInputSession {
                         target_row: row,
                         target_slot: 0,
                     },
-                    Some(PickerOutcome::Cancelled) => ArtsInputPhase::Review,
                     Some(PickerOutcome::NoCandidates) => ArtsInputPhase::Aborted,
-                    None => ArtsInputPhase::Targeting { picker },
+                    _ => ArtsInputPhase::Targeting { picker },
                 };
+                if matches!(self.phase, ArtsInputPhase::Targeting { .. }) {
+                    self.cursor_input(ev);
+                }
+            }
+            ArtsInputPhase::Targeting { picker } => {
+                self.phase = ArtsInputPhase::Targeting { picker };
+                self.cursor_input(ev);
             }
             other => self.phase = other,
         }

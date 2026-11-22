@@ -491,16 +491,18 @@ impl World {
             session.phase,
             legaia_engine_battle::arts_command_input::ArtsInputPhase::Entering
         );
-        let was_targeting = matches!(
-            session.phase,
-            legaia_engine_battle::arts_command_input::ArtsInputPhase::Targeting { .. }
-        );
         let phase_before = session.phase.clone();
         // A direction the entry takes sounds the commit cue whatever the
         // gauge makes of it (`0x801D1F80..0x801D1F98`). The Triangle list
         // toggle is read ahead of the arrows here.
         let direction =
             (ev.left || ev.up || ev.down || ev.right) && !(ev.triangle && session.list_pages > 0);
+        // The `0x5A` cursor stands on the member's current target before its
+        // first step ([`World::attack_cursor_seat`]), and its Up / Down commit
+        // only under the directional entry.
+        session.target_seat = self.attack_cursor_seat(session.actor);
+        session.cross_entry = self.toggles.battle_command
+            == legaia_engine_system::option_values::BattleCommandOpt::CrossButton;
         session.input(ev, party, monsters);
         // `FUN_801D0748` runs the arts-list driver `FUN_801D3444` after the
         // frame's input: the Triangle list window slides by the frame step.
@@ -514,14 +516,6 @@ impl World {
             direction,
         ) {
             self.push_battle_ui_cue(cue);
-        }
-        // The `0x5A` cursor the entry's confirm opened starts on the
-        // member's current target ([`World::seat_attack_cursor`]).
-        if !was_targeting
-            && let legaia_engine_battle::arts_command_input::ArtsInputPhase::Targeting { picker } =
-                &mut session.phase
-        {
-            self.seat_attack_cursor(session.actor, picker);
         }
 
         // Sparring tutorial: the entry's own two flow states. Leaving the

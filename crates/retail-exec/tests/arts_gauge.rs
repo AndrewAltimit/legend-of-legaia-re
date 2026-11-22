@@ -8,7 +8,7 @@ use legaia_art::queue::Command;
 use legaia_engine_battle::arts_command_input::{
     ArtsCommandInputSession, ArtsCommandPad, ArtsInputPhase, rot_blocks,
 };
-use legaia_engine_battle::target_picker::SlotState;
+use legaia_engine_battle::target_picker::{PickerState, SlotState};
 use psx_retail_exec::{Cpu, Stop};
 
 const STATE_MACHINE: u32 = 0x801D_0748;
@@ -31,6 +31,9 @@ const CONFIRM: u32 = 0x0040;
 const CANCEL: u32 = 0x0020;
 const LEFT_PAD: u32 = 0x8000;
 const RIGHT_PAD: u32 = 0x2000;
+const UP_PAD: u32 = 0x1000;
+const DOWN_PAD: u32 = 0x4000;
+const CROSS_ENTRY: u32 = 0x8008_46C8;
 const SPAWN: u32 = 0x801D_8DE8;
 const FRAME_STEP: u32 = 0x1F80_0393;
 const PENNANT_HANDLES: u32 = 0x8017_0000;
@@ -52,9 +55,12 @@ fn frame(cpu: &mut Cpu, pad: u32) {
 /// the port's own pad hold cover elsewhere.
 fn register_pennant_glides(cpu: &mut Cpu) {
     cpu.mem.wr8(FRAME_STEP, 1);
-    cpu.hook(SPAWN, |_, m| {
+    cpu.hook(SPAWN, |r, m| {
         let ctx = m.rd32(CTX_PTR);
-        if m.rd8(ctx + 0x1B) != 0 {
+        // A mode with bit 1 set spawns on its seat with no glide record
+        // (`andi v0,s5,0x2` / `bne` at `0x801D93A8..0x801D93B0`): case
+        // `0xD`'s re-spawns on a cursor step.
+        if m.rd8(ctx + 0x1B) != 0 || r.r[psx_retail_exec::A1] & 2 != 0 {
             return;
         }
         // The spawner takes the first free handle (`0x801D91D4..0x801D9260`).
@@ -101,6 +107,7 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
     let mut rng = Rng(0x4152_5453);
     let dead = SlotState::default();
     let (mut ends, mut refused, mut restarts, mut held, mut backed) = (0, 0, 0, 0, 0);
+    let (mut stepped, mut committed) = (0u32, 0u32);
     for round in 0..3000 {
         let costs: [u8; 4] =
             std::array::from_fn(|_| [0x1E, 0x1E, 0x2A, 0x36][rng.below(4) as usize]);
@@ -120,6 +127,10 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
         let status: u16 = [0, 0, 0, 8, 0x10, 0x20, 0x38][rng.below(7) as usize];
         cpu.mem.wr32(CTX_PTR, CTX);
         cpu.mem.load(CTX, &[0u8; 0x1400]);
+        // The round reset's glide flag and count (`FUN_801D88CC`,
+        // `0x801D88FC..0x801D8914`: `ctx[+0x1B] = 1`, `ctx[+0x1C] = 0x10`).
+        cpu.mem.wr8(CTX + 0x1B, 1);
+        cpu.mem.wr8(CTX + 0x1C, 0x10);
         for b in 0..0x400 {
             cpu.mem.wr8(ACTOR + b, 0);
         }
@@ -210,41 +221,122 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
             if retail_state == 0x5A {
                 ends += 1;
                 // The target cursor the entry ends on (`0x5A`,
-                // `0x801D21CC..0x801D23EC`): Left / Right step the ring and
-                // stay, the cancel goes back to the entry through case `0xF`
+                // `0x801D21CC..0x801D23EC`): Right, then Left step the ring
+                // (`FUN_801D8D00`, run for real over the queue `ctx[+0x244]`)
+                // and stay; Up or Down commit under the directional entry
+                // and the confirm commits, on the cursor's seat `+0x1DD`;
+                // the cancel goes back to the entry through case `0xF`
                 // (`0x801D23C8..0x801D23DC`, with `ctx[+0x266 + seat]` clear
                 // and the option word not `1`), wiping the string. The port
-                // runs the same presses on one standing monster.
-                let foe = [
-                    SlotState::alive(true, true).with_seat(0x100, 0x100),
-                    dead,
-                    dead,
-                    dead,
-                    dead,
-                ];
+                // runs the same presses from the member's current target.
+                use legaia_engine_battle_vm::battle_action::{
+                    PoolActor, bearing_12bit_approx, build_attack_target_queue,
+                };
+                let count = 1 + rng.below(4) as usize;
+                let seats: Vec<(i16, i16)> = (0..count)
+                    .map(|_| {
+                        (
+                            rng.below(0x1000) as i16 - 0x800,
+                            rng.below(0x1000) as i16 - 0x800,
+                        )
+                    })
+                    .collect();
+                let me = (
+                    rng.below(0x1000) as i16 - 0x800,
+                    rng.below(0x1000) as i16 - 0x800,
+                );
+                let cur = rng.below(count as u32) as u8;
+                let mut pool = [PoolActor::default(); 8];
+                pool[0] = PoolActor {
+                    alive: true,
+                    x: me.0,
+                    z: me.1,
+                    target_slot: 3 + cur,
+                    status: 0,
+                };
+                for (k, p) in seats.iter().enumerate() {
+                    pool[3 + k] = PoolActor {
+                        alive: true,
+                        x: p.0,
+                        z: p.1,
+                        target_slot: 0,
+                        status: 0,
+                    };
+                }
+                let q = build_attack_target_queue(&pool, 0, bearing_12bit_approx);
+                for (k, b) in [
+                    q.count,
+                    q.wrap_slot,
+                    q.ordered[0],
+                    q.ordered[1],
+                    q.ordered[2],
+                ]
+                .iter()
+                .enumerate()
+                {
+                    cpu.mem.wr8(CTX + 0x244 + k as u32, *b);
+                }
+                cpu.mem.wr8(ACTOR + 0x1DD, 3 + cur);
+                let cross_entry = rng.below(2) == 1;
+                cpu.mem.wr32(CROSS_ENTRY, u32::from(cross_entry));
+                s.cross_entry = cross_entry;
+                s.target_seat = Some(cur);
+                let mut foe = [dead; 5];
+                for (k, p) in seats.iter().enumerate() {
+                    foe[k] = SlotState::alive(true, true).with_seat(p.0, p.1);
+                }
+                let mut me_row = [dead; 3];
+                me_row[0] = SlotState::alive(true, true).with_seat(me.0, me.1);
+                let mut hist: Vec<u32> = Vec::new();
                 for sub in 0..4 {
-                    let press = [LEFT_PAD, RIGHT_PAD, CANCEL, 0][rng.below(4) as usize];
+                    let press = [LEFT_PAD, RIGHT_PAD, CANCEL, 0, UP_PAD, DOWN_PAD, CONFIRM]
+                        [rng.below(7) as usize];
                     frame(&mut cpu, press);
                     let ev = ArtsCommandPad {
                         left: press == LEFT_PAD,
                         right: press == RIGHT_PAD,
+                        up: press == UP_PAD,
+                        down: press == DOWN_PAD,
+                        cross: press == CONFIRM,
                         circle: press == CANCEL,
                         ..ArtsCommandPad::default()
                     };
-                    s.input(ev, [dead; 3], foe);
-                    let retail = (cpu.mem.rd8(CTX + 0x06), cpu.mem.rd8(CTX + 0x19));
-                    let port = (
-                        match s.phase {
-                            ArtsInputPhase::Entering => 0x50,
-                            ArtsInputPhase::Review | ArtsInputPhase::Targeting { .. } => 0x5A,
-                            _ => 0xFF,
-                        },
-                        s.committed_string().len() as u8,
+                    s.input(ev, me_row, foe);
+                    let state = cpu.mem.rd8(CTX + 0x06);
+                    let target = cpu.mem.rd8(ACTOR + 0x1DD);
+                    let table = cpu.mem.read(CTX + 0x11B4, 0x28 * 0xC);
+                    let live: Vec<(usize, u8, u8, u8)> = (0..0x28)
+                        .filter(|&k| table[0xC * k] != 0)
+                        .map(|k| (k, table[0xC * k], table[0xC * k + 1], table[0xC * k + 3]))
+                        .collect();
+                    let label = format!(
+                        "cursor {sub} press {press:#x} cross-entry {cross_entry} foes {count} cur {cur} glides {live:?} held {} hist {hist:x?}: {context}",
+                        s.cancel_held()
                     );
-                    assert_eq!(retail, port, "cursor {sub} press {press:#x}: {context}");
-                    if retail.0 == 0x50 {
-                        backed += 1;
-                        break;
+                    hist.push(press);
+                    match &s.phase {
+                        ArtsInputPhase::Entering => {
+                            assert_eq!((state, cpu.mem.rd8(CTX + 0x19)), (0x50, 0), "{label}");
+                            backed += 1;
+                            break;
+                        }
+                        ArtsInputPhase::Review => {
+                            assert_eq!((state, target), (0x5A, 3 + cur), "{label}");
+                        }
+                        ArtsInputPhase::Targeting { picker } => {
+                            let PickerState::Cursor { slot, .. } = picker.state() else {
+                                panic!("{label}");
+                            };
+                            assert_eq!((state, target), (0x5A, 3 + slot), "{label}");
+                            stepped += u32::from(slot != cur);
+                        }
+                        ArtsInputPhase::Confirmed { target_slot, .. } => {
+                            assert!(matches!(state, 0x28 | 0x6E), "{label}: retail {state:#x}");
+                            assert_eq!(target, 3 + target_slot, "{label}");
+                            committed += 1;
+                            break;
+                        }
+                        other => panic!("port {other:?} retail {state:#x}: {label}"),
                     }
                 }
                 break;
@@ -262,8 +354,12 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
         }
     }
     assert!(
-        ends > 300 && refused > 100 && restarts > 30 && held > 50 && backed > 50,
+        ends > 300 && refused > 100 && restarts > 30 && held > 50 && backed > 10,
         "{ends} {refused} {restarts} {held} {backed}"
+    );
+    assert!(
+        stepped > 30 && committed > 50,
+        "stepped {stepped} committed {committed}"
     );
 }
 
@@ -331,6 +427,10 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
         let status: u16 = [0, 0, 0, 8, 0x10, 0x20, 0x38][rng.below(7) as usize];
         cpu.mem.wr32(CTX_PTR, CTX);
         cpu.mem.load(CTX, &[0u8; 0x1400]);
+        // The round reset's glide flag and count (`FUN_801D88CC`,
+        // `0x801D88FC..0x801D8914`: `ctx[+0x1B] = 1`, `ctx[+0x1C] = 0x10`).
+        cpu.mem.wr8(CTX + 0x1B, 1);
+        cpu.mem.wr8(CTX + 0x1C, 0x10);
         for b in 0..0x400 {
             cpu.mem.wr8(ACTOR + b, 0);
         }

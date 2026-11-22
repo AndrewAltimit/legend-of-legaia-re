@@ -591,6 +591,14 @@ impl World {
     /// picker's first-live-slot opening, which is `FUN_801DB8B4`'s pick.
     ///
     /// REF: FUN_801D0748 (0x801D1574..0x801D15AC), FUN_801D8A88
+    /// The enemy row an attack cursor opens on: the member's current target
+    /// `+0x1DD` while it names a monster seat ([`Self::seat_attack_cursor`]).
+    pub(in crate::world) fn attack_cursor_seat(&self, actor: u8) -> Option<u8> {
+        let n = self.party.party_count.clamp(1, 3);
+        let t = self.actors.get(usize::from(actor))?.battle.active_target;
+        (t >= n && t < n + 5).then(|| t - n)
+    }
+
     pub(in crate::world) fn seat_attack_cursor(
         &self,
         actor: u8,
@@ -600,16 +608,8 @@ impl World {
         if picker.kind() != TargetKind::SingleEnemy {
             return;
         }
-        let n = self.party.party_count.clamp(1, 3);
-        let Some(t) = self
-            .actors
-            .get(usize::from(actor))
-            .map(|a| a.battle.active_target)
-        else {
-            return;
-        };
-        if t >= n && t < n + 5 {
-            picker.seat_cursor(CursorRow::Enemy, t - n);
+        if let Some(seat) = self.attack_cursor_seat(actor) {
+            picker.seat_cursor(CursorRow::Enemy, seat);
         }
     }
 
