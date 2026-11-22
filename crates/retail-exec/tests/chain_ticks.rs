@@ -819,13 +819,24 @@ fn the_chain_bodies_walk_as_retail_does() {
     for body in t::chain_bodies() {
         // PROT 0961 rolls its sweep in the evolved Cort's formation only; PROT
         // 0964 forks on the last Element Change roll.
-        let formation = if body.prot_entry == 961 { 0xB5 } else { 0x2A };
+        // PROT 0935 also runs with Van Saryu (`0x89`) first in the formation,
+        // whose records stand higher and whose quake window starts sooner
+        // (`0x801F6D80`, `0x801F7068`).
+        let formations: &[u8] = match body.prot_entry {
+            961 => &[0xB5],
+            935 => &[0x2A, 0x89],
+            _ => &[0x2A],
+        };
         let selectors: &[u8] = if body.prot_entry == 964 {
             &[0, 1, 2]
         } else {
             &[0]
         };
-        for &action in body.action_ids {
+        for (&action, &formation) in body
+            .action_ids
+            .iter()
+            .flat_map(|a| formations.iter().map(move |f| (a, f)))
+        {
             for &sel in selectors {
                 for (seed, field) in fields(body.prot_entry) {
                     let run = run_body(body, action, formation, sel, seed, field).expect("disc");
