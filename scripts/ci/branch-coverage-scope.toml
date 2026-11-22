@@ -2805,12 +2805,6 @@ verdict = "unreachable"
 reason = "PROT 0972: the debug strike override behind _DAT_8007B9B0 (only ever stored zero, 0x8001D448)."
 
 [[arm]]
-entry = "0x801D388C"
-range = "0x801D3C48..0x801D3C64"
-verdict = "unported"
-reason = "Case 0xB with an empty arts queue frees the entry screen's sprite handles ctx[+0x1074..] of kinds 5..13 (FUN_800319A8) and clears their slots; the engine keeps no handle table, its arts screen is drawn from the session's state."
-
-[[arm]]
 entry = "0x801D3F44"
 image = "4a1513786780f838"
 range = "0x801D40A0..0x801D40A0"
