@@ -131,6 +131,12 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
     // it ends the growing, not the stretch.
     let deadline = PAD_DEADLINE.with(std::cell::Cell::get);
     PAD_DEADLINE.with(|d| d.set(deadline.saturating_sub(reserve)));
+    // The fights the growing takes draw on an allowance of their own (never
+    // less than the stretch had left), and the stretch's is put back after:
+    // drawn from it, they could leave the race behind the door with none, its
+    // frames then coming off the walking budget the reserve was kept for.
+    let battle_left = PAD_BATTLE_LEFT.with(std::cell::Cell::get);
+    PAD_BATTLE_LEFT.with(|l| l.set(battle_left.max(PAD_BATTLE_ALLOWANCE)));
     while outings < GROW_OUTINGS && miracle_short(session) && frames_left(session) > 0 {
         // Mended before each outing, as a player does between fights: the
         // bag first, then the casters' MP, all of it, and the bag's MP
@@ -161,6 +167,7 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
     // Give the reserve back to whatever the deadline now reads: the fights
     // on the way lent the deadline their own time (`fight_turn`).
     PAD_DEADLINE.with(|d| d.set(d.get().saturating_add(deadline.min(reserve))));
+    PAD_BATTLE_LEFT.with(|l| l.set(battle_left));
     drop(growing);
     let left = match left {
         Err(e) if e.contains("pad frame budget") && wiped(session).is_none() => {
@@ -226,6 +233,9 @@ fn charge_affordable(session: &NativeSession) -> bool {
 pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<String>, String> {
     /// Outings before the hand goes in with what it has.
     const CHARGE_OUTINGS: usize = 6;
+    /// Frames of walking the charge may spend, apart from the stretch's own
+    /// budget (a segment's worth, as for the heal hunt).
+    const CHARGE_FRAMES: u64 = PAD_SEGMENT_FRAMES;
     if !RACE_LOST.with(std::cell::Cell::get)
         || !at_lost_door()
         || session.host.world.party.party_count < 3
@@ -250,6 +260,21 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
     }
     let charging = Charging;
     CHARGING.with(|c| c.set(true));
+    // The charge is the hand's own errand, as the heal hunt is: it walks on
+    // its own time ([`CHARGE_FRAMES`]) and its own battle allowance, the
+    // stretch gets back what it had when the charge began, and a walk that
+    // stalls or runs out of time ends the charge, not the stretch. Six
+    // outings of up to [`OUTING_LEGS`] legs each, begun on a reload's fresh
+    // stretch budget, can spend all of it before the hand reaches the door,
+    // and the stretch then stalls with its reloads unused.
+    let walk_left = PAD_DEADLINE
+        .with(std::cell::Cell::get)
+        .saturating_sub(session.frames);
+    let battle_left = PAD_BATTLE_LEFT.with(std::cell::Cell::get);
+    // Never shorter than what the stretch had left, so the charge ends no
+    // sooner than it did on the stretch's time.
+    PAD_DEADLINE.with(|d| d.set(session.frames + CHARGE_FRAMES.max(walk_left)));
+    PAD_BATTLE_LEFT.with(|l| l.set(battle_left.max(PAD_BATTLE_ALLOWANCE)));
     let mut left = Ok(None);
     for _ in 0..CHARGE_OUTINGS {
         if typists_charged(session) || !charge_affordable(session) {
@@ -263,6 +288,18 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
         }
     }
     drop(charging);
+    let left = match left {
+        Err(e) if !e.contains("party wiped") && wiped(session).is_none() => {
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!("    [charge] ended: {e}");
+            }
+            let at = scene_name(session);
+            Ok((at != here).then_some(at))
+        }
+        other => other,
+    };
+    PAD_DEADLINE.with(|d| d.set(session.frames + walk_left));
+    PAD_BATTLE_LEFT.with(|l| l.set(battle_left));
     // The last fight may have been fled: the boss is met healed.
     if matches!(&left, Ok(None)) && walking(session) {
         pad_field_heal(session, 900);
@@ -289,6 +326,9 @@ const OUTING_LEGS: usize = 160;
 /// one that rolls encounters, and the hops [`pad_errand_from_rest`] walks
 /// back to that bed.
 pub(super) const ROAD_HOPS: usize = 4;
+/// Frames [`pad_errand_from_rest`]'s walk back to its bed may spend, apart
+/// from the stretch's own budget: [`ROAD_HOPS`] hops at most.
+const ERRAND_WALK_FRAMES: u64 = PAD_SEGMENT_FRAMES / 2;
 
 thread_local! {
     /// Set while the hand fights for an errand's gold from the last bed that
@@ -367,7 +407,19 @@ pub(super) fn pad_errand_from_rest(
             errand_counter_reserve(w)
         );
     }
-    if let Some(s) = hop_along(session, graph, &way)? {
+    // The walk back is the errand's, and walks on its own time: the stretch
+    // gets back the walking budget it had before it (the training after it
+    // starts the stretch's over in any case, [`pad_train`]). On the
+    // stretch's time, a walk back that runs it out ends the errand with the
+    // budget spent (`pad_errand` swallows the error), and the stretch then
+    // stalls at its next step.
+    let walk_left = PAD_DEADLINE
+        .with(std::cell::Cell::get)
+        .saturating_sub(session.frames);
+    PAD_DEADLINE.with(|d| d.set(session.frames + ERRAND_WALK_FRAMES.max(walk_left)));
+    let walked = hop_along(session, graph, &way);
+    PAD_DEADLINE.with(|d| d.set(session.frames + walk_left));
+    if let Some(s) = walked? {
         return Ok(Some(s));
     }
     let out = graph.route(&bed, &field).and_then(|r| r.get(1).cloned());
