@@ -3119,3 +3119,45 @@ image = "5a2d3981829b20ae"
 range = "0x801D20C4..0x801D20C4"
 verdict = "unported"
 reason = "PROT 0976: the epilogue skips the floor grid `FUN_801CEB84` while the camera pitch `0x8007B790` is below `-0x4F`; the port's duel scene draws the floor every frame (`baka_duel_scene`), and the harness moves no camera pitch"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A424..0x8003A424"
+verdict = "cannot-drive"
+reason = "the compiler's zero-divisor guard (`break 7`) on the spawn clip phase `rand() % frames`; the frame count is the bound clip's `+2` halfword, and the rig hooks the clip bind `FUN_800204F8` with a non-zero count, since it loads no scene clip table"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A434..0x8003A43C"
+verdict = "unreachable"
+reason = "the compiler's `-1` / `0x80000000` divide guard on `rand() % frames`; the frame count is read `lhu`, so it is never `-1`"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A4A0..0x8003A4A0"
+verdict = "unreachable"
+reason = "the pre-run's below-`0x20` test on the record's first op; the loop is entered only when that op is `0x24` or `0x25` (`addiu -0x24` / `sltiu 2` at 0x8003A480), whose low seven bits are above `0x20`"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A4D4..0x8003A4D4"
+verdict = "unreachable"
+reason = "the pre-run's stall exit (the field VM handing back the pc it was given); `model_select::every_placement_spawns_where_the_port_seats_it` pre-runs every placement of every scene on a fresh and a random flag bank under the scene init's spawn bracket, and no prologue op stalls"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A4F4..0x8003A4F4"
+verdict = "unreachable"
+reason = "the pre-run's exit on a below-`0x20` byte; over every placement of every scene, on a fresh and a random flag bank (`model_select::every_placement_spawns_where_the_port_seats_it`), each prologue path ends on its `0x21` before any text lead"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A508..0x8003A508"
+verdict = "unreachable"
+reason = "the signed rounding of `(x - 0x40) / 0x80` for the tile byte `+0x8C`; the seat is a grid byte's `(b & 0x7F) * 0x80 + 0x40` (or `+ 0x80`), from the header or the prologue's grid-encoded moves, so `x - 0x40` is not negative, and the every-placement census on a fresh and a random flag bank (`model_select`) finds no seat below it"
+
+[[arm]]
+entry = "0x8003A1E4"
+range = "0x8003A524..0x8003A524"
+verdict = "unreachable"
+reason = "the signed rounding of `(z - 0x40) / 0x80` for the tile byte `+0x8D`; the seat is a grid byte's `(b & 0x7F) * 0x80 + 0x40` (or `+ 0x80`), so `z - 0x40` is not negative, and the every-placement census on a fresh and a random flag bank (`model_select`) finds no seat below it"

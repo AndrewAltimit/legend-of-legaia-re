@@ -25,7 +25,7 @@ flowchart TD
     RUN["Runner slice, once per frame per context"] --> FETCH["Fetch byte at buffer + pc"]
     FETCH --> EXT{"Bit 0x80 set?"}
     EXT -- "yes" --> RES["Resolve target id byte<br/>FUN_8003C83C"]
-    RES -- "no such actor" --> SKIP["Return pc + 1"]
+    RES -- "no such actor" --> SKIP["Return the entry PC<br/>(UNFIND INDICATION)"]
     RES -- "target halted,<br/>caller not the system script" --> WAIT["Return the entry PC<br/>same op re-runs next frame"]
     RES -- "ok" --> DEC
     EXT -- "no" --> DEC{"Decode byte & 0x7F"}
@@ -714,7 +714,7 @@ if (*pbVar43 & 0x80) {
         ctx_ptr = func_0x8003C83C(pbVar43[1]); // resolve by ID
         if (ctx_ptr == 0) {
             // print "UNFIND INDICATION %d" if dev flag set
-            return pc_offset + 1;
+            return pc_offset;                   // unchanged (0x801DE8D8 / 0x801E3624)
         }
     }
     // Halt-flag check (with op 0x32 carve-out). The refusal exempts a

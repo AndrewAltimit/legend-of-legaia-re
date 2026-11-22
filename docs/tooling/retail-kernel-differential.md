@@ -1180,6 +1180,14 @@ case `0xB` (`clut_walk`), the placement spawner's model-bank select (`model_sele
 entry step (`field_load_entry`), the sustained-cue teardown (in `sfx_drain`) and the battle XA
 seek-ahead (`battle_voice`) all match.
 
+The placement spawner also runs whole (`model_select`): every placement of every scene in spawn
+order, with the real field VM pre-running each `0x24` / `0x25` prologue, on a fresh flag bank and on
+a random one. Its seats, headings, retire bits and stopping pcs match the World's own pre-run
+(`World::pre_run_field_channel_prologues`). The rig has to stand up what the scene init stands up
+around the loop: the actor list the context resolver `FUN_8003C83C` walks, holding the placements
+already spawned, and the spawn bracket `*(_DAT_801C6EA4) + 8` (`0x8003B73C`), without which every
+cross-context op on a halted actor stalls the pre-run.
+
 PROT 0898's streak ribbon `FUN_801E1D98` (`streak_ribbon`), its corner builder answering with generated
 bottom quads, found the chain loop a `do`-`while`: the first segment above the bottom quad is drawn
 whatever the baseline, where the port tested first, so a bottom billboard at or above the screen top
