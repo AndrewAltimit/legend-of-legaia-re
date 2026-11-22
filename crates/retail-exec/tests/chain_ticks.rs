@@ -28,7 +28,7 @@ use legaia_engine_cast::cast_module_camera::{
 use legaia_engine_cast::cast_module_ticks::{
     self as t, CastActorState, CasterClipRule, ChainActor, ChainBody, ChainClip, ChainRestage,
 };
-use psx_retail_exec::{A0, A2, Stop, V0};
+use psx_retail_exec::{A0, A1, A2, A3, Stop, V0};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -222,6 +222,8 @@ struct Run {
     hits: usize,
     /// Passes whose split hits were compared.
     split_checked: usize,
+    /// Director spawns matched against retail's.
+    spawns_checked: usize,
 }
 
 /// Who a walk casts at and which seats stand: `target` a seat or a group code
@@ -252,6 +254,7 @@ fn run_body(
     let stream = Rc::new(std::cell::Cell::new(seed as u32));
     let hits = Rc::new(RefCell::new(Vec::<usize>::new()));
     let rolls = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let spawns = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3], u16)>::new()));
     for target in jal_targets(&module) {
         if target == RAND {
             let stream = stream.clone();
@@ -290,6 +293,19 @@ fn run_body(
             });
         } else if target == AIM {
             // The group aim runs live: a group framing needs it whole.
+        } else if target == SPAWN_PART || target == SPAWN_POOLED {
+            // The part spawn and its pool wrapper, logged as `(record, point,
+            // angles, scale)`.
+            let spawns = spawns.clone();
+            cpu.hook(target, move |r, m| {
+                let trio = |m: &mut psx_retail_exec::Memory, a: u32| {
+                    [0u32, 2, 4].map(|o| m.rd16(a + o) as i16)
+                };
+                let p = trio(m, r.r[A0]);
+                let a = trio(m, r.r[A1]);
+                spawns.borrow_mut().push((r.r[A2], p, a, r.r[A3] as u16));
+                r.r[V0] = 0;
+            });
         } else {
             cpu.stub(target, 0);
         }
@@ -299,6 +315,9 @@ fn run_body(
     if body.prot_entry == 948 {
         cpu.stub(CROSS_BEAM_PACKETS, 0);
     }
+    // The SCUS sine and cosine table pointers the arms' placements read.
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
     let mut rng = Rng(seed);
     for b in 0..CTX_LEN as u32 {
         cpu.mem.wr8(CTX + b, 0);
@@ -394,6 +413,7 @@ fn run_body(
         known: 0,
         hits: 0,
         split_checked: 0,
+        spawns_checked: 0,
     };
     let mut held = 0;
     for _ in 0..40_000 {
@@ -421,6 +441,23 @@ fn run_body(
         }
         // The director runs on every pass, held or not, as the host's does.
         let yaw0 = st.yaw_base;
+        // The caster's display trio `+0x3C..+0x40`, as the host feeds it
+        // (`feed_capture_cam`).
+        st.caster_body = Some({
+            let h = |k: usize| {
+                i16::from_le_bytes([rec0[CASTER * STRIDE + k], rec0[CASTER * STRIDE + k + 1]])
+            };
+            ModuleSeat {
+                x: h(0x3C),
+                y: h(0x3E),
+                z: h(0x40),
+                facing: h(0x46) as u16 & 0xFFF,
+            }
+        });
+        // PROT 0964's last Element Change roll, which the host keeps.
+        if body.prot_entry == 964 {
+            st.module_words[0] = i32::from(selector);
+        }
         let dir = director.map(|d| {
             st.countdown.0 = 0;
             st.victim_on_gate_clip = rec0[vi * STRIDE + 0x1D9] == rec0[vi * STRIDE + 0x1F2];
@@ -438,6 +475,7 @@ fn run_body(
             d(&mut st, phase, seats)
         });
         hits.borrow_mut().clear();
+        spawns.borrow_mut().clear();
         let stop = cpu.call(body.body, &[]);
         let c0 = format!(
             "PROT {:04} {action:#04x} {field:?} arm {phase:#x}",
@@ -494,6 +532,34 @@ fn run_body(
         }
         held = 0;
         out.path.push(phase);
+        // The records the director seats at points it works out (the
+        // charge records, the per-pass pairs), each against a part spawn
+        // retail's pass made with the same record, point, angles and scale.
+        // An arm that seats on the point its pass's whole drain leaves
+        // (`spawns_at_pass_end`, PROT 0947's trail) reads the countdown this
+        // walk zeroes ahead of the director; it is not compared.
+        if let Some(d) = dir.as_ref().filter(|d| !d.spawns_at_pass_end) {
+            let mut left = spawns.borrow().clone();
+            for sp in d.charge_spawns.iter().chain(&d.pass_spawns).flatten() {
+                let (
+                    cam::SpawnRecord::Module(r),
+                    cam::SpawnAnchor::LiteralScaled { pos, rot, scale },
+                ) = (sp.record, sp.anchor)
+                else {
+                    continue;
+                };
+                match left.iter().position(|&x| x == (r, pos, rot, scale)) {
+                    Some(i) => {
+                        left.remove(i);
+                        out.spawns_checked += 1;
+                    }
+                    None => out.gaps.push(format!(
+                        "{c0}: spawn {r:#x} at {pos:?} {rot:?} x{scale:#x}: retail {:x?}",
+                        left.iter().filter(|x| x.0 == r).collect::<Vec<_>>()
+                    )),
+                }
+            }
+        }
         let mut struck: Vec<usize> = hits.borrow().clone();
         out.hits += struck.len();
 
@@ -742,6 +808,7 @@ fn the_chain_bodies_walk_as_retail_does() {
     let mut failures = Vec::new();
     let (mut casts, mut arms, mut hits, mut known) = (0, 0, 0, 0);
     let mut split = 0usize;
+    let mut spawns_checked = 0usize;
     for body in t::chain_bodies() {
         // PROT 0961 rolls its sweep in the evolved Cort's formation only; PROT
         // 0964 forks on the last Element Change roll.
@@ -760,6 +827,7 @@ fn the_chain_bodies_walk_as_retail_does() {
                     hits += run.hits;
                     known += run.known;
                     split += run.split_checked;
+                    spawns_checked += run.spawns_checked;
                     let terminal = run.path.last().and_then(|&p| body.arm(p));
                     if !terminal.is_some_and(|a| a.exit == t::ChainExit::Finish) {
                         failures.push(format!(
@@ -775,6 +843,11 @@ fn the_chain_bodies_walk_as_retail_does() {
     eprintln!("{casts} casts, {arms} arms left, {hits} wrapper hits, {known} known gaps hit");
     assert!(hits > 20, "{hits} hits");
     assert!(split >= 4, "{split} split-hit passes compared");
+    eprintln!("{spawns_checked} director spawns matched");
+    assert!(
+        spawns_checked >= 900,
+        "{spawns_checked} director spawns matched"
+    );
     failures.dedup();
     let n = failures.len();
     failures.truncate(200);
@@ -1004,6 +1077,8 @@ fn the_summon_tick_bodies_walk_their_phases_as_retail_does() {
 /// The part spawn `FUN_80021B04` and the pool the walk hands its objects
 /// from.
 const SPAWN_PART: u32 = 0x8002_1B04;
+/// The part pool's wrapper round [`SPAWN_PART`], on the same arguments.
+const SPAWN_POOLED: u32 = 0x8005_0ED4;
 const PARTS: u32 = 0x8016_0000;
 const WATER_CRYSTALS: u32 = 0x801F_6A10;
 const SPIKEFISH: u32 = 0x801F_6A00;

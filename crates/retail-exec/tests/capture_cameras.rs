@@ -927,7 +927,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     shadow_live = false;
                 }
                 if shadow_live && let Some(w) = shadow.as_ref() {
-                    for s in 0..8usize {
+                    for (s, left) in status_left.iter_mut().enumerate() {
                         // PROT 0964's and 0966's creature stands in seat 7
                         // through `FUN_801F19EC`, which the image here runs
                         // stubbed.
@@ -957,12 +957,12 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         // victim, for the rest of the cast.
                         let status = (cpu.mem.rd16(a + 0x16E), w.raw_status_word(s as u8));
                         if cpu.mem.rd16(a + 0x14C) != w.actors[s].battle.hp {
-                            status_left[s] = true;
+                            *left = true;
                         }
-                        if !status_left[s] && status.0 != 0 {
+                        if !*left && status.0 != 0 {
                             status_marks += 1;
                         }
-                        if !status_left[s] && status.0 != status.1 {
+                        if !*left && status.0 != status.1 {
                             shadow_failures.push(format!(
                                 "{c}: band seat {s} status retail {:#06x} port {:#06x} hp retail {} port {}",
                                 status.0,

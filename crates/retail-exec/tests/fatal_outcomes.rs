@@ -808,12 +808,12 @@ fn fatal_decisions_phase_chain_runs_as_retail_runs_it() {
         if p.react {
             want_seats[victim as usize].react = 1;
         }
-        for s in 0..(3 + monsters) as usize {
+        for (s, want) in want_seats.iter().enumerate() {
             let got = seat_words(&mut cpu.mem, ACTOR + s as u32 * STRIDE);
             check(
                 "seat",
-                got == want_seats[s],
-                format!("{s}: retail {got:x?}\n    port {:x?}", want_seats[s]),
+                got == *want,
+                format!("{s}: retail {got:x?}\n    port {want:x?}"),
             );
         }
         if !bad.is_empty() {
