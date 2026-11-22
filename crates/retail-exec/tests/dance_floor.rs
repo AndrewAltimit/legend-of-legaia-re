@@ -694,6 +694,211 @@ fn whole_songs_run_as_retail_runs_them() {
     assert!(graded.iter().all(|&n| n > 0), "won / lost {graded:?}");
 }
 
+/// The count-in, states `3..=7` of `FUN_801CF470` from the READY banner to
+/// the beat clock's first frame, one state-machine call a game frame at the
+/// hall's step of three, against `CountIn` (one animator run every three
+/// vsyncs): the state, the `GO!` accumulator `DAT_801D515C`, the cue latch,
+/// the two cues on the cue slot, the `GO!` brightness the emitter is handed,
+/// and the lead-in count `DAT_801D513C`.
+#[test]
+fn the_count_in_runs_as_retail_runs_it() {
+    use legaia_engine_minigames::dance::{CountIn, CountInStage};
+    differential!(prot(980, SM));
+    const SM: u32 = 0x801C_F470;
+    const SM_ACTOR: u32 = ACTORS + 0x800;
+    const GO_ACC: u32 = 0x801D_515C;
+    const LATCH: u32 = 0x801D_5134;
+    const LEAD: u32 = 0x801D_513C;
+    const BANNER: u32 = 0x801D_5158;
+    const CUE_SLOT: u32 = 0x8007_B6D8;
+    let Some((mut cpu, state, _, _)) = hall() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    for va in [
+        0x801D_231C,
+        0x801D_32F8,
+        0x801D_414C,
+        0x8002_4EE4,
+        0x8001_FC00,
+        0x8001_E54C,
+        0x8003_DE7C,
+        0x8002_6478,
+        0x8005_67A8,
+    ] {
+        cpu.stub(va, 0);
+    }
+    let go = Rc::new(Cell::new(None::<i32>));
+    {
+        let go = go.clone();
+        // The hub emitter: the banner halves in state 3, `GO!` (widget
+        // `0x0C`) in states 4 / 5.
+        cpu.hook(0x801D_2F38, move |r, _| {
+            if r.r[psx_retail_exec::A2] == 0xC {
+                go.set(Some(r.r[psx_retail_exec::A3] as i32));
+            }
+        });
+    }
+    cpu.mem.wr32(0x8007_B888, BANK);
+    cpu.mem.wr32(0x8007_B85C, 0x8010_0000);
+    for mode in [DanceMode::Qualifier, DanceMode::Finals, DanceMode::FreePlay] {
+        state.set(0x0BAD_5EED);
+        for a in [GO_ACC, LATCH, LEAD, BANNER] {
+            cpu.mem.wr32(a, 0);
+        }
+        cpu.mem.wr32(STATE, 3);
+        cpu.mem.wr32(MODE, mode as u32);
+        cpu.mem.wr8(0x1F80_0393, 3);
+        let mut port = CountIn::new();
+        let mut cues = 0;
+        for frame in 0..200 {
+            cpu.mem.wr16(CUE_SLOT, 0);
+            cpu.mem.wr32(PAD_EDGE, 0);
+            go.set(None);
+            assert_eq!(cpu.call(SM, &[SM_ACTOR]), Stop::Returned, "frame {frame}");
+            let step = port.step();
+            assert!(step.ran);
+            port.step();
+            port.step();
+            let ctx = format!("{mode:?} frame {frame}");
+            let now = cpu.mem.rd32(STATE);
+            let stage = match now {
+                3 => CountInStage::Ready,
+                4 => CountInStage::GoIn,
+                5 => CountInStage::GoOut,
+                6 => CountInStage::Done,
+                7 | 10 => CountInStage::LeadIn,
+                other => panic!("{ctx}: state {other}"),
+            };
+            assert_eq!(stage, port.stage(), "{ctx}: the state");
+            assert_eq!(
+                (cpu.mem.rd32(GO_ACC) as i32, go.get()),
+                (
+                    port.view()
+                        .go
+                        .map_or(cpu.mem.rd32(GO_ACC) as i32, |g| g / 2),
+                    step.go
+                ),
+                "{ctx}: GO!"
+            );
+            let slot = cpu.mem.rd16(CUE_SLOT);
+            assert_eq!((slot != 0).then_some(slot), step.cue, "{ctx}: the cue");
+            cues += usize::from(step.cue.is_some());
+            if stage == CountInStage::LeadIn {
+                assert_eq!(cpu.mem.rd32(LEAD) as i32, port.lead(), "{ctx}: the lead-in");
+            }
+            if now == 10 {
+                assert!(
+                    step.done || port.lead() <= 1,
+                    "{ctx}: the beat clock starts"
+                );
+                break;
+            }
+            assert!(frame < 199, "{ctx}: the count-in never ends");
+        }
+        assert_eq!(cues, 2, "{mode:?}: the intro and the start cue");
+    }
+}
+
+/// The dev counter `_DAT_8007B6D0` raised over a song, which only the two
+/// debug menus do (PROT 0897's pad ring at `0x801EA00C` / `0x801EA030`, PROT
+/// 0971's store at `0x801CED54`). Retail-only: the port holds the word at
+/// zero (`DanceGame::rival_hud_visible`), so this pins what that decision
+/// leaves out. With it up the head skips the best-score raise and the camera
+/// keyframe track (`0x801CF4F8..0x801CF500`) and the tail skips the song-end
+/// test (`0x801D00B0..0x801D00B8`), so the song never hands over; with it
+/// clear the same run does.
+#[test]
+fn the_dev_counter_freezes_the_dance_head_and_holds_the_song_open() {
+    differential!(prot(980, SM));
+    const SM: u32 = 0x801C_F470;
+    const SM_ACTOR: u32 = ACTORS + 0x800;
+    const DEV: u32 = 0x8007_B6D0;
+    let Some((mut cpu, state, overlay, _)) = hall() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    for va in [
+        0x801D_231C,
+        0x801D_2F38,
+        0x801D_32F8,
+        0x801D_414C,
+        0x8002_4EE4,
+        0x8001_FC00,
+        0x8001_E54C,
+        0x8003_DE7C,
+        0x8002_6478,
+        0x8005_67A8,
+    ] {
+        cpu.stub(va, 0);
+    }
+    cpu.mem.wr32(0x8007_B888, BANK);
+    cpu.mem.wr32(0x8007_B85C, 0x8010_0000);
+    cpu.stub(0x8003_CE34, 0);
+    let clean = cpu.mem.clone();
+    let gp = cpu.regs.r[GP];
+    let mut ended = [None; 2];
+    let mut wrapped = false;
+    for (k, dev) in [0u32, 1].into_iter().enumerate() {
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        state.set(0x1234_5678);
+        cpu.mem.wr32(STATE, 10);
+        cpu.mem.wr32(MODE, DanceMode::Qualifier as u32);
+        // The clear run starts near the end of the key table, so the key
+        // wraps back to 1 (`0x801CF550..0x801CF580`) within the song; the
+        // port's track is seated alike and held against it.
+        cpu.mem.wr32(CAMERA_TIMER, 5);
+        cpu.mem.wr32(CAMERA_KEY, 11);
+        let mut track = DanceCameraTrack::from_overlay(&overlay).expect("the camera track");
+        track.seat_counters(11, 5);
+        for (i, e) in dance_camera_ease_table().iter().enumerate() {
+            cpu.mem.wr16(CAMERA_EASE + 2 * i as u32, *e as u16);
+        }
+        cpu.mem.wr32(BEST, 10);
+        cpu.mem.wr32(SCORE, 500);
+        cpu.mem.wr8(0x1F80_0393, 3);
+        cpu.mem.wr32(DEV, dev);
+        let camera = |cpu: &mut Cpu| {
+            (
+                cpu.mem.read(0x8007_B790, 6),
+                cpu.mem.read(0x8008_40B8, 12),
+                cpu.mem.rd32(CAMERA_KEY),
+            )
+        };
+        let start = camera(&mut cpu);
+        for frame in 0..12_000 {
+            cpu.mem.wr32(PAD_EDGE, 0);
+            assert_eq!(cpu.call(SM, &[SM_ACTOR]), Stop::Returned, "frame {frame}");
+            if dev == 0 {
+                let pose = track.tick(DanceMode::Qualifier, 3).expect("a pose");
+                let got = DanceCameraPose {
+                    angles: std::array::from_fn(|i| {
+                        cpu.mem.rd16(0x8007_B790 + 2 * i as u32) as i16
+                    }),
+                    eye: std::array::from_fn(|i| cpu.mem.rd32(0x8008_40B8 + 4 * i as u32) as i32),
+                };
+                assert_eq!(got, pose, "frame {frame}: the camera");
+                wrapped |= cpu.mem.rd32(CAMERA_KEY) == 1;
+            } else {
+                assert_eq!(camera(&mut cpu), start, "frame {frame}: the camera holds");
+                assert_eq!(cpu.mem.rd32(BEST), 10, "frame {frame}: no best raise");
+            }
+            if cpu.mem.rd32(STATE) != 10 {
+                ended[k] = Some(frame);
+                break;
+            }
+        }
+        if dev == 0 {
+            assert_eq!(cpu.mem.rd32(BEST), 500, "the clear run raises the best");
+            assert_ne!(camera(&mut cpu), start, "the clear run moves the camera");
+        }
+    }
+    assert!(ended[0].is_some(), "the clear run hands the song over");
+    assert_eq!(ended[1], None, "the raised counter holds the song open");
+    assert!(wrapped, "the key wrapped");
+}
+
 /// The state machine `FUN_801CF470`'s opening states, each body entered from
 /// the head with every call out of the routine stubbed: state 1 maps the
 /// calling script's story flags onto the floor mode (against

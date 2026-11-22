@@ -128,6 +128,14 @@ impl DanceCameraTrack {
         })
     }
 
+    /// Seat the key and segment timer, as the differential seeds a run
+    /// partway through its track.
+    #[doc(hidden)]
+    pub fn seat_counters(&mut self, key: i32, timer: i32) {
+        self.key = key;
+        self.timer = timer;
+    }
+
     /// The current key (`DAT_801D5338`) and segment timer (`DAT_801D533C`).
     pub fn counters(&self) -> (i32, i32) {
         (self.key, self.timer)

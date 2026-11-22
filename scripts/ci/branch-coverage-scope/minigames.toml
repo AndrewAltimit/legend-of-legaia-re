@@ -174,3 +174,31 @@ image = "65390fcfb4913705"
 range = "0x801D6970..0x801D6B34"
 verdict = "cannot-drive"
 reason = "PROT 0972 plate fish draw: the part loop (FUN_8001BE80 pose per part, the tie part's angles, the tie vertex's projection into 0x801E9154 at part 0, FUN_80043390's draw); it runs only when the clip's part count matches the model's (0x801D6970), so it needs a real species TMD block at +0x44 and clip at +0x4C relocated as FUN_80020DE0 / FUN_800204F8 build them; the port poses the body in float (fishing_catch::pose_into) and the tie projection (plate_line) has no integer differential yet"
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801CF500..0x801CF500"
+verdict = "unported"
+reason = "PROT 0980 dance tick head: the dev counter _DAT_8007B6D0 skips the best-score raise and the camera keyframe track; only the two debug menus write it (PROT 0897 0x801EA00C / 0x801EA030, PROT 0971 0x801CED54) and the port holds it at zero (DanceGame::rival_hud_visible); retail's effect is pinned by dance_floor::the_dev_counter_freezes_the_dance_head_and_holds_the_song_open"
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801D00B8..0x801D00B8"
+verdict = "unported"
+reason = "PROT 0980 dance tick tail: the same dev counter _DAT_8007B6D0 skips the song-end test, so the song never hands over; held at zero in the port, retail pinned by dance_floor::the_dev_counter_freezes_the_dance_head_and_holds_the_song_open"
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801CFADC..0x801CFAF4"
+verdict = "unreachable"
+reason = "PROT 0980 dance state 3's song pick on the mode word 0x801D514C: the below-0 and above-3 fall-throughs; every store to the word writes 0..3 (state 1's flag map 0x801CF908..0x801CF94C, the entry's 0 / 1, the debug picker's mod-4 wrap at 0x801CF8C8)"
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801CFC78..0x801CFC78"
+verdict = "unported"
+reason = "PROT 0980 dance state 5's wait on the drive (FUN_8003DE7C(1)) before it opens the song stream; the port's reads are synchronous, so CountIn hands over on the GO! fade alone"
