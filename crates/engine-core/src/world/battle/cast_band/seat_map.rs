@@ -131,3 +131,24 @@ impl World {
             .collect()
     }
 }
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`Self::cast_view`], for the differentials that hold a world's seats
+    /// beside a module image's actor records.
+    pub fn drive_cast_view(
+        &self,
+        slot: u8,
+    ) -> legaia_engine_cast::cast_module_ticks::CastActorState {
+        self.cast_view(slot)
+    }
+
+    /// [`Self::write_cast_view`], the same differentials' seating of a view.
+    pub fn drive_write_cast_view(
+        &mut self,
+        slot: u8,
+        v: &legaia_engine_cast::cast_module_ticks::CastActorState,
+    ) {
+        self.write_cast_view(slot, v);
+    }
+}

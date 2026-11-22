@@ -551,6 +551,24 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 cpu.mem.wr16(a + 0x14C, 0);
                 cpu.mem.wr32(a + 4, 0);
             }
+            // The fallen runs also stand the last monster seat in Stone
+            // (`+0x16E = 4`), which the modules' hit, tint and settle loops
+            // skip (`andi 4` ahead of each hit).
+            let stoned = fallen.then_some(2 + layout.monsters);
+            if let Some(s) = stoned {
+                cpu.mem.wr16(ACTOR + s * STRIDE + 0x16E, 4);
+            }
+            // Each monster's reaction run `+0x1EF..+0x1F2`, which a hit arm
+            // stages from: the flinch, its fallback, the knockdown and the
+            // knockdown gate (set on every other seat).
+            for s in 3..7u32 {
+                let a = ACTOR + s * STRIDE;
+                cpu.mem
+                    .wr8(a + 0x1EF, if s == 4 { 0 } else { 0x10 + s as u8 });
+                cpu.mem.wr8(a + 0x1F0, 0x20 + s as u8);
+                cpu.mem.wr8(a + 0x1F1, 0x30 + s as u8);
+                cpu.mem.wr8(a + 0x1F2, (s & 1) as u8);
+            }
             // State `0x34`'s hide loop, which runs before the module's first
             // pass (`0x801E4B30..0x801E4B6C`, `battle_action::summon`): every
             // party seat and every living monster of seats `0..7`, word `0`
@@ -604,6 +622,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // band's module half (`World::drive_summon_module_pass`) run on
             // retail's phase beside each pass, every seat compared after it.
             let mut shadow = summon_shadow(&mut cpu, layout, action);
+            if let (Some(w), Some(s)) = (shadow.as_mut(), stoned) {
+                w.battle.status_effects.apply(
+                    s as u8,
+                    legaia_engine_battle_vm::status_effects::StatusKind::Stone,
+                );
+            }
             let mut shadow_after: Vec<u32> = Vec::new();
             for pass in 0..20_000u32 {
                 // Every seat idle and far along its clip, its display pair on its
@@ -966,20 +990,6 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         }
                     }
                     shadow_passes += 1;
-                    if std::env::var("W54_DBG").is_ok()
-                        && entry == 923
-                        && (1890..1910).contains(&pass)
-                        && layout.caster == 0
-                        && !fallen
-                    {
-                        eprintln!(
-                            "DBG pass {pass} arm {phase:#x} retail {:#x}/{} port {:#x}/{}",
-                            cpu.mem.rd32(ACTOR + 3 * STRIDE + 4),
-                            cpu.mem.rd8(ACTOR + 3 * STRIDE + 0x21C),
-                            w.actors[3].battle.render_color,
-                            w.actors[3].battle.render_flag
-                        );
-                    }
                 }
                 shadow_after = (0..8u32)
                     .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
@@ -1332,6 +1342,18 @@ fn summon_shadow(
     }
     w.battle_ctx.active_actor = layout.caster as u8;
     w.casting.summon_actor_slot = Some(CREATURE as u8);
+    // The reaction run and the stage bytes, as the records hold them.
+    for s in 3..(3 + layout.monsters).min(7) {
+        let r = crate::cast_view::read_actor(&mut cpu.mem, ACTOR + s * STRIDE);
+        let mut v = w.drive_cast_view(s as u8);
+        v.reaction_alt = r.reaction_alt;
+        v.reaction_alt2 = r.reaction_alt2;
+        v.knockdown_anim = r.knockdown_anim;
+        v.reaction_gate = r.reaction_gate;
+        v.staged_anim = r.staged_anim;
+        v.restage = r.restage;
+        w.drive_write_cast_view(s as u8, &v);
+    }
     w.cast_module_for(action)?;
     w.arm_summon_stager(layout.caster as u8, action);
     // PROT 0916's verdict: the walk's director runs the damage path (its
