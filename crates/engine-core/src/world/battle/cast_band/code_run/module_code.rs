@@ -1883,19 +1883,23 @@ impl World {
                             out
                         }
                     };
-                    // PROT 0907's and 0908's side-band arm steps over arm 3's
-                    // band-word poll when the word is already out (`lh 0x6D8`
-                    // / `addiu 2`: 0907 `0x801F71B0..0x801F71C8`, 0908
-                    // `0x801F6DF0..0x801F6E04`); the tick bodies advance one.
-                    if matches!(entry, 907 | 908)
-                        && (phase_in, ctx.phase) == (2, 3)
+                    // The side-band arm of PROT 0904, 0906, 0907 and 0908 steps
+                    // over the band-word poll after it when the word is already
+                    // out (`lh 0x6D8` / `addiu 2`: 0904 `0x801F6C64..0x801F6C7C`,
+                    // 0906 `0x801F6CC4..0x801F6CDC`, 0907 `0x801F71B0..
+                    // 0x801F71C8`, 0908 `0x801F6DF0..0x801F6E04`); the tick
+                    // bodies advance one.
+                    let sideband = legaia_engine_cast::cast_module_camera::sideband_wait_arm(entry);
+                    if matches!(entry, 904 | 906 | 907 | 908)
+                        && let Some(arm) = sideband
+                        && (phase_in, ctx.phase) == (arm, arm + 1)
                         && self
                             .casting
                             .band_word_live
                             .unwrap_or(self.battle_ctx.frame_timer)
                             == 0
                     {
-                        ctx.phase = 4;
+                        ctx.phase = arm + 2;
                     }
                     self.write_cast_seat_row(&seats);
                     caster = seats.get(r_caster).copied().unwrap_or(caster);

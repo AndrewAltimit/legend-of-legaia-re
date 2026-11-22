@@ -1535,3 +1535,61 @@ fn sign12(a: i32) -> i32 {
     let a = a & 0xFFF;
     if a >= 0x800 { a - 0x1000 } else { a }
 }
+
+/// The side-band arm of PROT 0904 (arm 1) and PROT 0906 (arm 2), whose tick
+/// bodies own their phase: each image's arm run once with the band word
+/// `ctx[+0x6D8]` out and once with it standing, beside a shadow world's
+/// module pass on the same arm, and the phase each leaves compared.
+#[test]
+fn the_side_band_arm_steps_over_the_band_word_poll_as_retail_does() {
+    use legaia_engine_cast::seru_magic_ticks::{GIZAM_TICK, THEEDER_TICK};
+    differential!(prot(904, THEEDER_TICK), prot(906, GIZAM_TICK));
+    let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = disc.read_entry(898).expect("PROT 0898");
+    let layout = LAYOUTS[0];
+    let mut compared = 0;
+    for (entry, va, arm) in [(904u32, THEEDER_TICK, 1u8), (906, GIZAM_TICK, 2)] {
+        for word in [0u16, 0x40] {
+            let module = disc.read_entry(entry as usize).expect("module");
+            let action = action_of(entry);
+            let mut cpu = scus_cpu().expect("SCUS");
+            cpu.mem.load(OVERLAY_BASE, &overlay);
+            cpu.mem.wr32(CTX_PTR, CTX);
+            cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+            cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+            for target in jal_targets(&module) {
+                if ![BEARING, RAND].contains(&target) {
+                    cpu.stub(target, 0);
+                }
+            }
+            cpu.hook(RAND, |r, _| r.r[V0] = 0);
+            cpu.hook(BEARING, |r, _| {
+                let a = |i: usize| r.r[A0 + i] as i16;
+                r.r[V0] = u32::from(bearing_12bit_approx(a(0), a(1), a(2), a(3)));
+            });
+            seed(&mut cpu, &module, action, layout.code(9), layout);
+            let Some(mut w) = summon_shadow(&mut cpu, layout, action) else {
+                panic!("PROT {entry:04}: no shadow");
+            };
+            cpu.mem.wr8(CTX + 0x279, arm);
+            cpu.mem.wr8(CTX + 0x276, 0);
+            cpu.mem.wr16(CTX + 0x6D8, word);
+            w.casting.module_phase = arm;
+            w.battle_ctx.frame_timer = word as i16 as _;
+            w.casting.band_word_live = None;
+            w.casting.module_cam.sideband_busy = false;
+            w.drive_summon_module_pass(layout.caster as u8, action, true);
+            assert_eq!(cpu.call(va, &[]), Stop::Returned, "PROT {entry:04}");
+            let retail = cpu.mem.rd8(CTX + 0x279);
+            assert_eq!(
+                w.casting.module_phase, retail,
+                "PROT {entry:04} arm {arm} band word {word:#x}: port phase vs retail"
+            );
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, 4);
+}
