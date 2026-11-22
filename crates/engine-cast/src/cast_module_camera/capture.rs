@@ -215,6 +215,16 @@ pub struct CaptureCamArm {
     /// 0940 `0x3C`'s arm 1: `beq a0,s0` on the party row, `beq a0,v0` on
     /// the monster row).
     pub others_skip_pair: bool,
+    /// [`Self::others_write`] walks the monster row by its count
+    /// (`3 .. 3 + ctx[+0x01]`), so it reaches a fifth monster at seat `7`.
+    /// Without it the walk is retail's seven-seat one (`sltiu 7`, PROT 0955
+    /// `0x801F7114`, PROT 0956 `0x801F74A0`), which leaves seat `7` as it
+    /// was.
+    pub others_reach_seat_7: bool,
+    /// [`Self::others_write`]'s monster walk has no HP test, so a fallen
+    /// monster takes the write too (PROT 0940 `0x3C`'s arm 1,
+    /// `0x801F6D34..0x801F6D7C`).
+    pub others_reach_fallen_monsters: bool,
     /// The `MoveImage` (`FUN_80058490`) the arm issues on this pass.
     pub vram_move: Option<super::ModuleVramMove>,
     /// PROT 0935's arms 4 and 5: the pass's rock pair at a point off the
@@ -710,11 +720,19 @@ pub fn guilty_cross_camera(
     };
     if phase == 0 {
         st.countdown.0 = SPEED_SCALAR << 7;
+        // Every seated party member and every monster with HP hidden, then
+        // the caster shown (`0x801F6BD0..0x801F6CC0`).
         return CaptureCamArm {
             shot: Some(behind_caster(0x20)),
             drift: None,
             hold: false,
             next: None,
+            others_write: super::v_windhash::HIDDEN,
+            // The monster walk runs by count (`lbu 0x1` at `0x801F6C44`);
+            // arm 5's show is the seven-seat walk, so a fifth monster stays
+            // hidden to the band's finalize.
+            others_reach_seat_7: true,
+            caster_write: super::v_windhash::SHOWN,
             ..Default::default()
         };
     }
@@ -766,11 +784,13 @@ pub fn guilty_cross_camera(
                 // `sh zero,0x176(s5)`), so the clip runs on to its end and parks.
                 arm.caster_write = CaptureSeatWrite {
                     colour: Some(0),
+                    render_flag: Some(0xFF),
                     loop_release: true,
                     ..Default::default()
                 };
                 arm.victim_write = CaptureSeatWrite {
                     colour: Some(GUILTY_CROSS_NEUTRAL),
+                    render_flag: Some(0),
                     ..Default::default()
                 };
             }
@@ -778,9 +798,11 @@ pub fn guilty_cross_camera(
             4 => {
                 st.countdown.add(0xC0);
                 shot = Some(behind_caster(1));
-                // The cut back shows the caster again (`0x801F7320`).
+                // The cut back shows the caster again (`0x801F7320`,
+                // `0x801F7324`).
                 arm.caster_write = CaptureSeatWrite {
                     colour: Some(GUILTY_CROSS_NEUTRAL),
+                    render_flag: Some(0),
                     ..Default::default()
                 };
             }
@@ -1168,6 +1190,8 @@ pub fn mystic_circle_camera(
                 facing: Some(onto),
                 ..Default::default()
             },
+            // Every party seat hidden, dead or not (`0x801F6BBC..0x801F6BF0`).
+            party_write: super::v_windhash::HIDDEN,
             ..Default::default()
         };
     }
@@ -1205,12 +1229,21 @@ pub fn mystic_circle_camera(
             _ => {}
         }
     }
+    // Arm 1 hides the party again on every pass, ahead of its gate
+    // (`0x801F6C00..0x801F6C58`); arm 2's exit shows it on the neutral word
+    // (`0x801F6ED4..0x801F6F30`).
+    let party_write = match phase {
+        1 => super::v_windhash::HIDDEN,
+        2 if !hold => super::v_windhash::SHOWN,
+        _ => CaptureSeatWrite::default(),
+    };
     CaptureCamArm {
         shot,
         drift,
         hold,
         next: None,
         caster_write,
+        party_write,
         ..Default::default()
     }
 }
@@ -1648,6 +1681,10 @@ pub fn glare_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 arm.others_write = super::v_windhash::HIDDEN;
                 arm.others_every_pass = true;
                 arm.others_skip_pair = true;
+                // The monster walk runs by count (`lbu 0x1` at `0x801F6D0C`)
+                // and, like the party walk, tests no HP.
+                arm.others_reach_seat_7 = true;
+                arm.others_reach_fallen_monsters = true;
                 arm.caster_write = CaptureSeatWrite {
                     rate: (seats.caster_monster == 0xA9).then_some(4),
                     stage: Some(0),
