@@ -138,31 +138,15 @@ pub fn venue_hand_draw_for(
 }
 
 /// One venue panel: the box emitter `FUN_8002C69C(x, y, w, h)` in the
-/// style `FUN_801D74B0` stages, `0x44`. Widget record `0x44` is
-/// byte-identical to record `3`, the class-0 frame (the blue marble fill in
-/// the gold border, `battle-hud.md`), so the panel is
-/// [`crate::battle_hud_chrome::class0_frame_draws_at`] on content pen
-/// `(x, y)`: the emitter inflates its rect by 8 on every side
-/// (`(x - 8, y - 8, w + 16, h + 16)`, the footprint
-/// [`crate::dialog_window_footprint`] names), which is that frame around a
-/// `w x (h + 8)` content box.
+/// style `FUN_801D74B0` stages, `0x44`
+/// ([`crate::battle_hud_chrome::class0_box_draws_for`]).
 pub fn venue_panel_draws_for(
     rects: &SaveMenuAtlasRects,
     rect: (i32, i32, i32, i32),
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    let (x, y, w, h) = rect;
-    if w == 0 && h == 0 {
-        return Vec::new();
-    }
-    crate::battle_hud_chrome::class0_frame_draws_at(
-        rects,
-        (x, y),
-        (w, h + 8),
-        stage_origin,
-        stage_scale,
-    )
+    crate::battle_hud_chrome::class0_box_draws_for(rects, rect, stage_origin, stage_scale)
 }
 
 /// Crop stage-pixel text draws against a panel's footprint `(x, y, w, h)`

@@ -341,6 +341,36 @@ pub fn class0_frame_draws_at(
     out
 }
 
+/// One `FUN_8002C69C(x, y, w, h)` box in a class-0 style: widget records
+/// `0`, `3` and `0x44` are byte-identical (class `0`, tile-set `0`, palette
+/// `2`, fill texel `(0x80, 0)`), the blue marble in the gold border. The
+/// emitter inflates its rect by 8 on every side (`(x - 8, y - 8, w + 16,
+/// h + 16)`, the footprint [`crate::dialog_window_footprint`] names), which
+/// is [`class0_frame_draws_at`] on content pen `(x, y)` around a
+/// `w x (h + 8)` content box. A zero-by-zero rect draws nothing
+/// (`0x8002C6D4`).
+///
+/// The styles a caller stages before its box name the record: the window
+/// walker `FUN_80031D00` stages the window's `+0x1D` byte, which
+/// `FUN_80032434` copies from the config's `+0x06` halfword
+/// (`0x80032490` / `0x80032604`), `3` on every field-overlay panel window
+/// past the four pause-menu records (`0x801F2B98`); the fishing panels, the
+/// slot machine and the tile-board prompt stage `0x44`; the world-map
+/// labels `0`. The dialog reading box stages `0x61` (class `6`, the
+/// translucent gradient, [`crate::dialog_window_chrome_draws_for`]).
+pub fn class0_box_draws_for(
+    rects: &SaveMenuAtlasRects,
+    rect: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (x, y, w, h) = rect;
+    if w == 0 && h == 0 {
+        return Vec::new();
+    }
+    class0_frame_draws_at(rects, (x, y), (w, h + 8), stage_origin, stage_scale)
+}
+
 /// A class-0 frame in an explicit skin: the row-shaded fill
 /// ([`class0_fill_rows_at`]) under the tile-set's border. The blue skin's
 /// [`class0_frame_draws_at`] is this with the save screen's pre-shaded

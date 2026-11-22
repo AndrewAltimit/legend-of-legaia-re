@@ -836,6 +836,12 @@ engine verdict:
   ([place-names](../formats/place-names.md)). With the line and the frame
   `kor3_field_route_walk` reads `.988` and `kor4_field_route_walk` `.984`.
 
+  The Incense wear-off notice goes the same way: a field state whose armed
+  entry context `_DAT_8007B450` is the field overlay's notice record
+  `0x801F2278` hands the child `LEGAIA_SEAT_INCENSE_NOTICE=1`, which raises
+  the notice at seeding (the walk tick that raised it ran before the
+  capture). Its window is style `3`, the class-0 frame too.
+
   The mode-4 VRAM scrollers get the same treatment: their rotation count
   is time since the entry, so the state's live scroller rects (`+0x5A = 4`,
   rect `+0xD0..+0xD6`, `retail_scroll_rects`) go to the child with the

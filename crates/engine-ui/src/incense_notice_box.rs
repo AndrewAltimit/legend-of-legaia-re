@@ -16,14 +16,30 @@
 
 use crate::*;
 
-/// The notice frame's chrome at `frame` (stage pixels).
+/// The notice frame's chrome at `frame` (stage pixels): the window's drawn
+/// footprint, its content rect grown by 8 on every side.
+///
+/// The notice is field-overlay window record 16 (and the art-learned notice
+/// record 9), whose config stages style `3` (`+0x06`, copied to the live
+/// window's `+0x1D` and staged by the window walker before its box), the
+/// class-0 frame ([`crate::battle_hud_chrome::class0_box_draws_for`] over
+/// the content rect) - not the reading box's gradient, and not a box grown
+/// a second time past the footprint *(capture: `field_kor_incense_notice_retail`)*.
+///
+/// REF: FUN_80031D00 (the walker's style stage), FUN_80032434 (the config copy)
 pub fn incense_notice_sprites_for(
     rects: &SaveMenuAtlasRects,
     frame: (i32, i32, i32, i32),
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    dialog_window_chrome_draws_for(rects, frame, stage_origin, stage_scale)
+    let (x, y, w, h) = frame;
+    crate::battle_hud_chrome::class0_box_draws_for(
+        rects,
+        (x + 8, y + 8, w - 16, h - 16),
+        stage_origin,
+        stage_scale,
+    )
 }
 
 /// The notice line at `pen`, in stage pixels (the host scales it with
