@@ -1266,7 +1266,8 @@ impl BakaDuelScene {
 /// without them laid the far rows - fully cued to black - over the walls'
 /// base in the player select, where retail leaves them out.
 ///
-/// PORT: FUN_801CEB84 (pass 1's depth bracket and pass 2's screen reject)
+/// PORT: FUN_801D02C0 (pass 1's depth bracket and pass 2's screen reject, on the duel camera)
+/// REF: FUN_801CEB84 (the same emitter relocated into PROT 0976)
 pub fn floor_cell_mask(
     camera: &legaia_engine_minigames::baka_duel::DuelCamera,
     width: i16,
