@@ -131,59 +131,7 @@ impl World {
         let Some(mut st) = self.casting.summon_stager.take() else {
             return false;
         };
-        // Retail re-enters the paged module every frame from this seam; the
-        // band's PORT rows are the code that runs there.
-        let module_arm = self.casting.module_phase;
-        self.orb_land_deferred_seat();
-        // The creature's live seat and walk state, as a directed module's
-        // walk arm reads them.
-        let seat_live = self
-            .casting
-            .summon_actor_slot
-            .filter(|&s| self.actors.get(s as usize).is_some_and(|a| a.active))
-            .and_then(|s| self.actors.get(s as usize))
-            .map(|a| legaia_engine_cast::cast_module_camera::ModuleSeat {
-                x: a.move_state.world_x,
-                y: a.move_state.world_y,
-                z: a.move_state.world_z,
-                facing: a.battle.facing_angle & 0xFFF,
-            });
-        self.casting.module_cam.creature_live = seat_live;
-        self.casting.module_cam.creature_body = self
-            .casting
-            .summon_actor_slot
-            .and_then(|s| self.live_body_pair(usize::from(s)));
-        self.casting.module_cam.victim_untargetable =
-            self.casting.module_cam.victim_slot.is_some_and(|v| {
-                self.cast_view(v).flags & legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE
-                    != 0
-            });
-        self.casting.module_cam.creature_arrived = st.walked;
-        self.feed_module_creature(st.caster);
-        let placed_before = self.casting.module_cam.creature.is_some();
-        self.draw_ozma_spray(st.spell_id, module_arm);
-        let run = self.run_cast_module_code(st.spell_id, module_arm);
-        // PROT 0920's rain routine, which the draw tick calls after the
-        // module's pass while the module's budget word is set.
-        self.step_module_rain();
-        if let Some(r) = run.as_ref() {
-            // A body-paced director's first tick in an arm drifts after the
-            // passed arm's shot is armed (below).
-            let drift = r.capture_drift.filter(|_| !r.capture_drift_after_shot);
-            self.apply_module_creature_writes(r.prot_entry, r.phase, drift);
-            self.apply_module_seat_motion(r.prot_entry, r.phase);
-        }
-        // The module seats its creature itself (Gimard's arm 3); put the
-        // engine's creature where it did.
-        if !placed_before
-            && let Some(c) = self.casting.module_cam.creature
-            && let Some(slot) = self.casting.summon_actor_slot
-            && let Some(a) = self.actors.get_mut(slot as usize)
-        {
-            a.move_state.world_x = c.x;
-            a.move_state.world_z = c.z;
-            a.battle.facing_angle = c.facing;
-        }
+        let run = self.summon_module_pass(st.caster, st.spell_id, st.walked);
         // A module whose arms are paced by their own countdown
         // (`legaia_engine_cast::cast_module_camera`) owns the band's length the way retail's
         // does: `0x36` holds on the module's return, and the outcome lands on
@@ -475,6 +423,71 @@ impl World {
         busy
     }
 
+    /// The module half of one stager tick: the creature's feeds, the
+    /// module's pass, PROT 0920's rain, the creature and seat writes the
+    /// pass carries, and the creature placed where the module seated it.
+    fn summon_module_pass(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+        walked: bool,
+    ) -> Option<CastModuleCodeRun> {
+        // Retail re-enters the paged module every frame from this seam; the
+        // band's PORT rows are the code that runs there.
+        let module_arm = self.casting.module_phase;
+        self.orb_land_deferred_seat();
+        // The creature's live seat and walk state, as a directed module's
+        // walk arm reads them.
+        let seat_live = self
+            .casting
+            .summon_actor_slot
+            .filter(|&s| self.actors.get(s as usize).is_some_and(|a| a.active))
+            .and_then(|s| self.actors.get(s as usize))
+            .map(|a| legaia_engine_cast::cast_module_camera::ModuleSeat {
+                x: a.move_state.world_x,
+                y: a.move_state.world_y,
+                z: a.move_state.world_z,
+                facing: a.battle.facing_angle & 0xFFF,
+            });
+        self.casting.module_cam.creature_live = seat_live;
+        self.casting.module_cam.creature_body = self
+            .casting
+            .summon_actor_slot
+            .and_then(|s| self.live_body_pair(usize::from(s)));
+        self.casting.module_cam.victim_untargetable =
+            self.casting.module_cam.victim_slot.is_some_and(|v| {
+                self.cast_view(v).flags & legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE
+                    != 0
+            });
+        self.casting.module_cam.creature_arrived = walked;
+        self.feed_module_creature(caster);
+        let placed_before = self.casting.module_cam.creature.is_some();
+        self.draw_ozma_spray(spell_id, module_arm);
+        let run = self.run_cast_module_code(spell_id, module_arm);
+        // PROT 0920's rain routine, which the draw tick calls after the
+        // module's pass while the module's budget word is set.
+        self.step_module_rain();
+        if let Some(r) = run.as_ref() {
+            // A body-paced director's first tick in an arm drifts after the
+            // passed arm's shot is armed (below).
+            let drift = r.capture_drift.filter(|_| !r.capture_drift_after_shot);
+            self.apply_module_creature_writes(r.prot_entry, r.phase, drift);
+            self.apply_module_seat_motion(r.prot_entry, r.phase);
+        }
+        // The module seats its creature itself (Gimard's arm 3); put the
+        // engine's creature where it did.
+        if !placed_before
+            && let Some(c) = self.casting.module_cam.creature
+            && let Some(slot) = self.casting.summon_actor_slot
+            && let Some(a) = self.actors.get_mut(slot as usize)
+        {
+            a.move_state.world_x = c.x;
+            a.move_state.world_z = c.z;
+            a.battle.facing_angle = c.facing;
+        }
+        run
+    }
+
     /// Stage the walk clip (id `1`, the looping approach - the capture's
     /// `+0x1D9 == 1`) and glide the creature one step toward `goal`.
     /// Returns `true` on arrival.
@@ -594,5 +607,20 @@ impl World {
             a.battle.queued_anim = 0;
             a.battle.current_anim = 0;
         }
+    }
+}
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`Self::summon_module_pass`] on its own, for the differential that
+    /// walks a summon module's image and runs the band's module half beside
+    /// it on retail's phase.
+    pub fn drive_summon_module_pass(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+        walked: bool,
+    ) -> Option<CastModuleCodeRun> {
+        self.summon_module_pass(caster, spell_id, walked)
     }
 }
