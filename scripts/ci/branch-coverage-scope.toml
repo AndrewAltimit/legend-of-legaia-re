@@ -4436,3 +4436,99 @@ entry = "0x80054CB0"
 range = "0x800550BC..0x800550BC"
 verdict = "unported"
 reason = "the twin-letter walk's gate on the action-state byte `ctx[+0x7]`: the battle init installs with it at `0`, so the earlier twin takes ` A`; only the summon's seat-`4` install (`0x801F1D1C`) runs with it set, and the port gives the summon actor no instance letter (`monster_install::twins_are_lettered_as_retail_letters_them`)"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033870..0x80033870"
+verdict = "unreachable"
+reason = "the slot-class fold's last test: the class is the two-bit field `(b7 & 0x60) >> 5`, and `2`, `1` and `0` have left by here, so it is `3`"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x800338F4..0x800338F4"
+verdict = "unreachable"
+reason = "the template walk's first-byte test for the `0xC1` op: none of the eight SCUS-resident slot templates (`0x80073E2C`) opens with it, and the walk finds the op further in"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033A0C..0x80033A0C"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033B48..0x80033B48"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033C78..0x80033C78"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033DB4..0x80033DB4"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033EE4..0x80033EE4"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80034014..0x80034014"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80034144..0x80034144"
+verdict = "unreachable"
+reason = "the numeral loop's end-of-table test: the nine-digit place table at `0x80073DCC` (`4 * 10^k`, `10^k` pairs) holds no zero entry"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033A8C..0x80033A8C"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033BC8..0x80033BC8"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033CF8..0x80033CF8"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033E34..0x80033E34"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80033F64..0x80033F64"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x80034094..0x80034094"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
+
+[[arm]]
+entry = "0x800337B0"
+range = "0x800341C4..0x800341C4"
+verdict = "unreachable"
+reason = "the numeral loop's three-cell window test for a zero after a drawn digit: a drawn digit sits in the window, so a later place is inside it too, and a bonus byte never reaches a fourth digit"
