@@ -892,6 +892,11 @@ White Shield, Power Charge, Power Up and the surge on the pass that leaves their
 Lightning and Spore Gas on varied rolls (`chain_ticks`). All agree. Terror Scream's turn steal did not: its arm 3
 tests the Item category alone, where the port ran Kiss of Death's idiom, which also needs the initiative key.
 Kemaro's arm 17 runs on every formation byte (`kemaro_spear`), so its per-species jump table takes every case.
+Fatal Decision's whole body also runs pass by pass against `fatal_decision_tick` (`fatal_outcomes`): every arm's
+shot, records, cues, message raises, wheel words, icon offsets and seat stores, the steal against
+`steal_party_draw`, and the Numb and Stone refund. It found arm 0 zeroing the wheel tick's remainder `0x801F9014`
+beside the angle, and arm 2 showing the victim before it hides the caster, so a cast on the caster's own seat
+leaves it hidden.
 
 <a id="the-band-shadow"></a>
 **The band shadow.** Each capture cast also runs on an engine `World` seated off the same actor records
@@ -907,6 +912,24 @@ Strike's Wind loop, and party-row tints that missed a seat the hit felled
 test: the creature seat of PROT 0964 and 0966, which a stubbed `FUN_801F19EC` seats, and Death Game past its spin,
 whose pad reaches retail alone. A cast whose band leaves retail's phase walk stops being compared at that pass;
 most of those are a band holding an arm one pass longer on a clip settle the harness does not stage.
+
+The shadow also compares each seat's status word `+0x16E` against `World::raw_status_word`. For the rolled bits to
+be comparable the shadow draws from retail's `rand()` stream as each pass opens, carries every seat's AGL `+0x168`,
+gives Glare its one victim, and runs the band's after-pass seam that folds Glare's roll on the pass its arm 2 counts
+out (`World::drive_fold_glare_on_its_arm`). A seat the band's own damage roll leaves on other HP than retail's stubbed
+wrapper stops being compared for the cast: PROT 0956's arm 2 marks only a living victim. All of Glare's Stone,
+Paralyzing Wave's Numb, Kiss of Death's bits and Curse All's mark agree.
+
+**The spawned records.** The capture and chain walks log every `FUN_80021B04` / `FUN_80050ED4` call a pass makes,
+as record, point, angle trio and scale, and every literal-anchored record a director seats (its charge records and
+per-pass spawns) must match one of them. The chain walk had run without the SCUS sine and cosine table pointers
+(`0x8007B81C` / `0x8007B7F8`), so every placement off a heading read zeros and its rounding fix-ups never ran. With
+them it found PROT 0964's far records on the wrong trios: they take the arm's own focus and angle trios
+`sp+0x20` / `sp+0x10`, which hold the cut's yaw `0x800 - facing` on a cutting pass and the prologue's zeros on
+`k = 4`'s, where the director gave them the caster's facing. It also found Chaos Breath's cloud a unit off: the arm
+takes a sixth of the whole product through the `0x2AAAAAAB` multiply-high and corrects the sign after the shift.
+An arm whose records follow its pass's whole drain (PROT 0947's trail) is left out of the chain walk, which zeroes
+the countdown ahead of its director.
 
 The capture-camera walk also starts every fifth round on a framing depth below zero: state `0x6F` drains
 `ctx[+0x6D0]` by `16 * step` a vsync with no floor while it waits on the module's seek, so a negative depth reaches
