@@ -948,6 +948,18 @@ a flinch, Aluru's arms `0x11..0x13` relighting a felled victim, Nighto's and Zen
 over arm 3 when the band word is out, Zenoir's hits tinting a Stoned victim and its splash lighting hidden seats,
 and Vera's fade arm stepping to 11 where it stores `0xFF`.
 
+The walk leaves seat 3 off the group list on its fallen runs, on both sides, which drives Mule's undivided roll
+for a seat the list does not hold. Theeder's and Gizam's side-band arms, which their tick bodies pace and the walk
+does not, run in a test of their own (`the_side_band_arm_steps_over_the_band_word_poll_as_retail_does`): each arm
+once with the band word `ctx[+0x6D8]` out and once with it standing, beside a shadow world's module pass. It found
+Theeder's arm 1 stepping to 2 where retail stores 3.
+
+One arm stays apart from retail by choice. Aluru's arm `0x14` holds on a dead victim until its word is zero
+(`0x801F8870`), a word that eases out only under the defeat fade the commit's monster-death arm arms at the
+knockdown's end (`0x8004B66C`); the port's settle poll also lets the arm go on the down clip, so the cast leaves
+at the knockdown's start where retail waits out the fade, and a victim whose knockdown never commits cannot hold
+it for good.
+
 **The spawned records.** The capture and chain walks log every `FUN_80021B04` / `FUN_80050ED4` call a pass makes,
 as record, point, angle trio and scale, and every literal-anchored record a director seats (its charge records and
 per-pass spawns) must match one of them. The chain walk had run without the SCUS sine and cosine table pointers
