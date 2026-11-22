@@ -1256,7 +1256,19 @@ impl World {
         &mut self,
         phase_in: u8,
         passed: bool,
+        monster_count: u8,
     ) {
+        // Arm `0x11`'s pass lowers every living monster's marker
+        // (`sb zero,0x21C` at `0x801F83FC`, in the loop
+        // `0x801F83C8..0x801F8418`) and leaves its colour word to the tint
+        // pass: the row the band hid stands again for the closing arms.
+        if (phase_in, passed) == (0x11, true) {
+            for (e, _) in self.ra_seru_row(monster_count) {
+                if let Some(a) = self.actors.get_mut(e) {
+                    a.battle.render_flag = 0;
+                }
+            }
+        }
         let d = legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as i16;
         let Some(a) = self
             .casting

@@ -129,8 +129,16 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
     tint(914, 13, ImpactSeat::LiveMonsters, RED, 1),
     // PROT 0916 Aluru: arm 18's victim (`0x801F8684`, beside its rate `2`).
     latch(916, 18, ImpactEdge::Pass, ImpactSeat::Victim, 2),
-    // PROT 0923 Gilium: the finale's row strike (`0x801F8A08..0x801F8A24`).
-    tint(923, 20, ImpactSeat::LiveMonsters, BLUE, 1),
+    // PROT 0923 Gilium: the finale's row strike (`0x801F8A08..0x801F8A24`),
+    // in arm `0x15`'s pass (the dispatch sends `0x15` to `0x801F87AC`; arm
+    // `0x14`'s code ends at `0x801F87A4`), beside its hit.
+    tint(
+        923,
+        crate::cast_module_camera::GILIUM_HIT_ARM,
+        ImpactSeat::LiveMonsters,
+        BLUE,
+        1,
+    ),
     // PROT 0932 Meta: the row strike (`0x801F7C5C..0x801F7C78`).
     tint(932, 18, ImpactSeat::LiveMonsters, RED, 1),
     // PROT 0934 Ozma. Arms 17 and 18 hold the creature's sparks every pass

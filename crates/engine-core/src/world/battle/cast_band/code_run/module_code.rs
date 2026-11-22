@@ -2720,7 +2720,7 @@ impl World {
                 );
             }
             if entry == 923 {
-                self.apply_gilium_writes(phase_in, ctx.phase != phase_in);
+                self.apply_gilium_writes(phase_in, ctx.phase != phase_in, ctx.monster_count);
             }
             self.apply_summon_pre_hits(
                 entry,
