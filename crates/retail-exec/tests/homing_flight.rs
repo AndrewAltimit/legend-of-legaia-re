@@ -15,7 +15,9 @@
 //! selector.
 
 use crate::common::{Rng, disc, scus_cpu};
-use legaia_engine_battle_vm::battle_cast_census::{CensusSlot, cast_census};
+use legaia_engine_battle_vm::battle_cast_census::{
+    CensusSlot, EffectChildVictim, cast_census, effect_child_hit,
+};
 use legaia_engine_effects::action_effect_script::{HomingSlot, HomingSlots, MoveFxStreak};
 use psx_retail_exec::{A0, A1, A2, Stop, V0};
 use std::cell::RefCell;
@@ -61,7 +63,9 @@ struct Seen {
     spawns: Vec<Spawn>,
     ribbons: Vec<(u8, [i16; 3])>,
     hits: Vec<u8>,
+    damage: Vec<i32>,
     next_handle: u32,
+    roll: u32,
 }
 
 fn slot_of(addr: u32) -> u8 {
@@ -74,6 +78,21 @@ fn pos_at(m: &mut psx_retail_exec::Memory, addr: u32) -> [i16; 3] {
         m.rd16(addr + 2) as i16,
         m.rd16(addr + 4) as i16,
     ]
+}
+
+/// The fields the hit arm reads and writes on a victim.
+fn victim_at(m: &mut psx_retail_exec::Memory, a: u32) -> EffectChildVictim {
+    EffectChildVictim {
+        hp: m.rd16(a + 0x14C),
+        hp_bar_delta: m.rd32(a + 0x10) as i32,
+        flags: m.rd16(a + 0x16E),
+        staged_anim: m.rd8(a + 0x1DA),
+        restage: m.rd8(a + 0x1DC),
+        reaction_alt: m.rd8(a + 0x1EF),
+        reaction_alt2: m.rd8(a + 0x1F0),
+        knockdown_anim: m.rd8(a + 0x1F1),
+        reaction_gate: m.rd8(a + 0x1F2),
+    }
 }
 
 fn i16s(p: [i32; 3]) -> [i16; 3] {
@@ -132,8 +151,14 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
         });
         let s = seen.clone();
         cpu.hook(CAST_HIT, move |r, _| {
-            s.borrow_mut().hits.push(r.r[A2] as u8);
-            r.r[V0] = 0;
+            // The damage wrapper's result: nothing, a scratch, or more than
+            // a seat holds.
+            let mut s = s.borrow_mut();
+            s.roll = s.roll.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            let dmg = [0, 1, 7, 40, 120, 999][(s.roll >> 16) as usize % 6];
+            s.hits.push(r.r[A2] as u8);
+            s.damage.push(dmg);
+            r.r[V0] = dmg as u32;
         });
     }
     cpu.stub(SFX, 0);
@@ -152,14 +177,24 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
     let mut failures: Vec<String> = Vec::new();
     let (mut flown, mut landed_counting, mut hit, mut trailed, mut tracked, mut flashed) =
         (0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
-    let (mut sole, mut idle) = (0u32, 0u32);
+    let (mut sole, mut idle, mut staged) = (0u32, 0u32, 0u32);
     'scenario: for scenario in 0..3000 {
-        let mut rec = shipped[rng.below(shipped.len() as u32) as usize].clone();
-        match rng.below(6) {
+        let pick = rng.below(shipped.len() as u32) as usize;
+        let mut rec = shipped[pick].clone();
+        match rng.below(7) {
             0 => rec[0x08] = 1 + rng.below(0x60) as u8,
             1 => rec[0x06..0x08].copy_from_slice(&(rng.below(0x200) as u16).to_le_bytes()),
             2 => rec[0x02..0x04].copy_from_slice(&(rng.below(0x900) as u16).to_le_bytes()),
             3 => rec[0x09] ^= 1,
+            // No streak list: the landing list `+0x16` runs instead
+            // (`s5 = 3`, `0x801E0D00..0x801E0D10`), its bytes the shipped
+            // lists' kinds - a prototype, a 2D-pool byte, a skip, the flash.
+            6 => {
+                rec[0x12..0x16].fill(0);
+                for b in &mut rec[0x16..0x1A] {
+                    *b = [0x15, 0x1E, 0x28, 0x8D, 0x9D, 0xFF, 0x64, 0][rng.below(8) as usize];
+                }
+            }
             4 => {
                 let list = [0x12, 0x16][rng.below(2) as usize];
                 rec[list + rng.below(4) as usize] = 100 + rng.below(28) as u8;
@@ -171,6 +206,11 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
             rec[0x0A] = 1 + rng.below(2) as u8;
         }
         cpu.mem.load(RECORD, &rec);
+        // The table runs on: a list with no zero byte reads the next
+        // record's first byte as its fifth (`0x801E0F48..0x801E0F5C`) and
+        // stops on the four-byte bound (`0x801E0E04`).
+        cpu.mem
+            .load(RECORD + STRIDE as u32, &shipped[(pick + 1) % shipped.len()]);
 
         // The actors: seven seats spread over the floor.
         let mut seats = [[0i16; 3]; 8];
@@ -198,7 +238,21 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
                 1 + rng.below(100) as u16
             };
             cpu.mem.wr16(a + 0x14C, hp);
-            cpu.mem.wr16(a + 0x16E, 0);
+            // The hit arm's reaction bytes and the Stone bit that skips its
+            // face-toward store.
+            cpu.mem
+                .wr16(a + 0x16E, [0u16, 0, 0, 4][rng.below(4) as usize]);
+            cpu.mem.wr32(a + 0x10, 0);
+            for (o, v) in [
+                (0x1DA, rng.below(0x20)),
+                (0x1DC, rng.below(4) * 2),
+                (0x1EF, [0, 0, 0x11][rng.below(3) as usize]),
+                (0x1F0, 0x12 + rng.below(4)),
+                (0x1F1, 0x18 + rng.below(4)),
+                (0x1F2, u32::from(rng.below(4) == 0)),
+            ] {
+                cpu.mem.wr8(a + o, v as u8);
+            }
         }
         // The census reads the seats as the pass finds them: the landing's
         // shiver and the hit arm write the victims between passes.
@@ -279,12 +333,16 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
                 cpu.mem.load(h + 0x14, &[0xA5; 8]);
             }
             let streaking = cpu.mem.rd8(CTX + 0x24E) == 1 && cpu.mem.rd16(CTX + 0x6C6) != 0;
-            let next_handle = seen.borrow().next_handle;
+            let (next_handle, roll) = (seen.borrow().next_handle, seen.borrow().roll);
             *seen.borrow_mut() = Seen {
                 next_handle,
+                roll,
                 ..Seen::default()
             };
             let slots_now = census_slots(&mut cpu);
+            let victims_before: Vec<EffectChildVictim> =
+                (0..8).map(|s| victim_at(&mut cpu.mem, actor(s))).collect();
+            let cursor_before = cpu.mem.rd8(CTX + 0x262);
             assert_eq!(cpu.call(TICK, &[]), Stop::Returned, "{scenario}/{pass}");
 
             // The port, as `World::tick_homing_slots_pass` drives it.
@@ -341,6 +399,7 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
 
             let seen_now = std::mem::take(&mut *seen.borrow_mut());
             seen.borrow_mut().next_handle = seen_now.next_handle;
+            seen.borrow_mut().roll = seen_now.roll;
             let want: Vec<Spawn> = spawns
                 .iter()
                 .map(|s| (s.effect, s.slot, i16s(s.at), s.heading, s.flash))
@@ -406,6 +465,29 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
             if seen_now.hits != hits {
                 why.push(format!("hits retail {:?} port {hits:?}", seen_now.hits));
             }
+            // Each hit's victim as `effect_child_hit` leaves it, from the
+            // seat as the pass found it and the damage the wrapper gave.
+            let mut want = victims_before.clone();
+            let mut cursor = cursor_before;
+            for (&v, &dmg) in seen_now.hits.iter().zip(&seen_now.damage) {
+                effect_child_hit(&mut want[usize::from(v)], dmg, &mut cursor);
+            }
+            for &v in &seen_now.hits {
+                let got = victim_at(&mut cpu.mem, actor(u32::from(v)));
+                if got != want[usize::from(v)] {
+                    why.push(format!(
+                        "victim {v}: retail {got:x?} port {:x?}",
+                        want[usize::from(v)]
+                    ));
+                }
+                staged += 1;
+            }
+            if !seen_now.hits.is_empty() && cpu.mem.rd8(CTX + 0x262) != cursor {
+                why.push(format!(
+                    "readout cursor retail {} port {cursor}",
+                    cpu.mem.rd8(CTX + 0x262)
+                ));
+            }
             hit += hits.len() as u32;
 
             for (i, &h) in handles.iter().enumerate() {
@@ -463,5 +545,8 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
     );
     assert!(flown > 1000 && landed_counting > 100 && hit > 1000);
     assert!(trailed > 100 && tracked > 100 && flashed > 10);
-    assert!(sole > 100 && idle > 100, "sole {sole} idle {idle}");
+    assert!(
+        sole > 100 && idle > 100 && staged > 1000,
+        "sole {sole} idle {idle} staged {staged}"
+    );
 }
