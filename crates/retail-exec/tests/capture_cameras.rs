@@ -121,6 +121,8 @@ fn shadow_world(
         act.move_state.world_x = cpu.mem.rd16(a + 0x34) as i16;
         act.move_state.world_y = cpu.mem.rd16(a + 0x36) as i16;
         act.move_state.world_z = cpu.mem.rd16(a + 0x38) as i16;
+        // The AGL `+0x168` Glare's inline roll reads on both seats.
+        w.battle.accuracy[s as usize] = cpu.mem.rd16(a + 0x168);
         if s >= 3 {
             act.battle_monster_id = Some(u16::from(if s == caster { monster.max(1) } else { 1 }));
         }
@@ -141,7 +143,12 @@ fn shadow_world(
     // module's sweeps walk, the party row for a monster's cast.
     // A party caster's fold would land the band's own damage roll on its
     // victim, not retail's; it is left out.
-    let targets = (0..3).collect();
+    // Glare rolls its one victim (`caster[+0x1DD]`, `0x801F6F90`).
+    let targets = if body.action == 0x3C {
+        vec![victim as u8]
+    } else {
+        (0..3).collect()
+    };
     w.casting.pending_cast =
         (caster >= 3).then_some(legaia_engine_battle_loop::cast_band::PendingCast {
             caster: caster as u8,
@@ -149,7 +156,6 @@ fn shadow_world(
             targets,
             on_flight: false,
         });
-    let _ = victim;
     Some(w)
 }
 
@@ -343,6 +349,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut seat_passes = 0usize;
     let mut steals = 0usize;
     let (mut shadow_passes, mut shadow_diverged) = (0usize, 0usize);
+    let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
     let all = bodies();
     for body in &all {
@@ -563,6 +570,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             let mut shadow = shadow_world(&mut cpu, body, caster, victim, monster);
             let mut shadow_live = shadow.is_some();
             let mut shadow_after: Vec<u32> = Vec::new();
+            // The seats whose status the shadow stops comparing for the cast,
+            // once its damage left them on other HP than retail's.
+            let mut status_left = [false; 8];
             let mut arm_24_passes = 0usize;
             let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
             let mut arm3_passes = 0usize;
@@ -804,7 +814,16 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         }
                     }
                     w.clock.display_frames += 1;
-                    w.run_cast_module_code(body.action, phase);
+                    // Retail's `rand()` stream as this pass opens on it, so a
+                    // rolled status lands on the seat retail's roll lands.
+                    w.rng_state = stream.get();
+                    // The band's after-pass seam (`World::caster_stages`):
+                    // Glare's roll on the pass that counts its arm 2 out.
+                    if let Some(run) = w.run_cast_module_code(body.action, phase)
+                        && run.phase != phase
+                    {
+                        w.drive_fold_glare_on_its_arm(run.prot_entry, body.action, run.phase);
+                    }
                 }
                 let ctx_before = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
                 // The two seats as the pass opens, for Death Game's result.
@@ -924,6 +943,30 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         if got != port {
                             shadow_failures.push(format!(
                                 "{c}: band seat {s} tint/flag retail {got:x?} port {port:x?} hp retail {} port {}",
+                                cpu.mem.rd16(a + 0x14C),
+                                w.actors[s].battle.hp
+                            ));
+                        }
+                        // The status word `+0x16E` a body's arms OR into
+                        // (Curse All's mark, Glare's roll, Paralyzing Wave's
+                        // and Kiss of Death's bits), against the packed word
+                        // the engine's consumers read. A seat the band's own
+                        // damage roll left on other HP than retail's stubbed
+                        // wrapper did is not compared: a mark that tests the
+                        // victim's life (PROT 0956's arm 2) reads a different
+                        // victim, for the rest of the cast.
+                        let status = (cpu.mem.rd16(a + 0x16E), w.raw_status_word(s as u8));
+                        if cpu.mem.rd16(a + 0x14C) != w.actors[s].battle.hp {
+                            status_left[s] = true;
+                        }
+                        if !status_left[s] && status.0 != 0 {
+                            status_marks += 1;
+                        }
+                        if !status_left[s] && status.0 != status.1 {
+                            shadow_failures.push(format!(
+                                "{c}: band seat {s} status retail {:#06x} port {:#06x} hp retail {} port {}",
+                                status.0,
+                                status.1,
                                 cpu.mem.rd16(a + 0x14C),
                                 w.actors[s].battle.hp
                             ));
@@ -1162,6 +1205,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         "band shadow: {shadow_passes} passes compared, {shadow_diverged} casts left retail's phase walk, {} mismatches",
         shadow_failures.len()
     );
+    eprintln!("band shadow: {status_marks} seat passes with a status bit set compared");
+    assert!(status_marks >= 1000, "status marks compared {status_marks}");
     assert!(
         shadow_passes >= 150_000,
         "band shadow passes {shadow_passes}"

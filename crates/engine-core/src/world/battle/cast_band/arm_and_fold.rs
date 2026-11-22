@@ -550,3 +550,13 @@ impl World {
         }
     }
 }
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`Self::fold_glare_on_its_arm`], which the capture band calls after a
+    /// module pass that left its arm; for the differential that walks a cast
+    /// through [`Self::run_cast_module_code`] beside the module image.
+    pub fn drive_fold_glare_on_its_arm(&mut self, entry: u32, spell_id: u8, arm: u8) {
+        self.fold_glare_on_its_arm(entry, spell_id, arm);
+    }
+}
