@@ -183,6 +183,7 @@ class RustFn:
         "path",
         "name",
         "impl_type",
+        "impl_trait",
         "def_pos",
         "body_start",
         "body_end",
@@ -289,6 +290,18 @@ def _innermost_impl(spans: list[tuple], pos: int) -> str | None:
     for start, end, ty, *_ in spans:
         if start <= pos < end and (best is None or start > best[0]):
             best = (start, ty)
+    return best[1] if best else None
+
+
+def _innermost_impl_trait(
+    spans: list[tuple[int, int, str, str | None]], pos: int
+) -> str | None:
+    """The trait an `impl Trait for Ty { }` names, for the innermost `impl`
+    enclosing `pos`; `None` inside an inherent `impl` or outside any."""
+    best: tuple[int, str | None] | None = None
+    for start, end, _ty, tr in spans:
+        if start <= pos < end and (best is None or start > best[0]):
+            best = (start, tr)
     return best[1] if best else None
 
 
@@ -427,6 +440,7 @@ class RustSource:
                     path=self.path,
                     name=m.group(1),
                     impl_type=impl_ty or trait_ty,
+                    impl_trait=_innermost_impl_trait(self.impl_spans, m.start()),
                     is_trait_default=is_trait_default,
                     def_pos=m.start(),
                     body_start=body_start,

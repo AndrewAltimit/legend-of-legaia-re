@@ -27,6 +27,35 @@ fn main() {
     let v = wired_fn();
     let _ = v + USED_CONST + wired_item() + TWIN_CONST;
     let _ = crate::blanket::QUAL_CONST;
+    let mut h = Host;
+    TailLoad::tail_load(&mut h);
+    let _: Spare = Default::default();
+}
+""",
+    # `Trait::method(self, ..)`: the qualifier names an in-tree trait, so the
+    # call reaches its implementors - in the strict graph only the one whose
+    # type the calling file names. A std trait (`Default::default()`) reaches
+    # no in-tree `impl Default`.
+    "trait_call.rs": """\
+pub trait TailLoad {
+    fn tail_load(&mut self);
+}
+pub struct Host;
+pub struct Other;
+pub struct Spare;
+impl TailLoad for Host {
+    /// PORT: FUN_8001ee10
+    fn tail_load(&mut self) {}
+}
+impl TailLoad for Other {
+    /// PORT: FUN_8001ee20
+    fn tail_load(&mut self) {}
+}
+impl Default for Spare {
+    /// PORT: FUN_8001ee30
+    fn default() -> Self {
+        Spare
+    }
 }
 """,
     # A `///` block long enough that any lookahead bound would demote it, with
@@ -229,6 +258,26 @@ def run_selftest() -> int:
         and not a["not_wired_tag"],
         f"got {a['kind']} live={a.get('live')} strict={a.get('live_strict')} "
         f"not_wired={a['not_wired_tag']}",
+    )
+
+    a = one("8001ee10")
+    check(
+        "Trait::name(self) reaches the impl the caller names, strict-live",
+        a["kind"] == "fn" and a["live"] and a["live_strict"],
+        f"got {a['kind']}/{a['symbol']} live={a.get('live')} "
+        f"strict={a.get('live_strict')}",
+    )
+    a = one("8001ee20")
+    check(
+        "Trait::name(self) reaches an unnamed impl on the permissive graph only",
+        a["live"] and not a["live_strict"],
+        f"live={a.get('live')} strict={a.get('live_strict')}",
+    )
+    a = one("8001ee30")
+    check(
+        "a std-trait qualified call reaches no in-tree impl",
+        not a["live"] and not a["live_strict"],
+        f"live={a.get('live')} strict={a.get('live_strict')}",
     )
 
     check(

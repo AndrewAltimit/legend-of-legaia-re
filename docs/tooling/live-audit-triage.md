@@ -460,8 +460,8 @@ hook, which `asset field-op-census --only '<op>'` answers for the field VM.
 
 ## Analysis defects this triage found
 
-Five shapes of audit false result. The first four are fixed in
-`scripts/ci/port-catalog.py`; each can recur with a new trait or a new tag
+Six shapes of audit false result. The first five are fixed in
+`scripts/ci/port_catalog/`; each can recur with a new trait or a new tag
 placement. The `FALSE INERT` rows in the tables below are the regression set:
 a change to the reachability pass that flips one back to inert has reintroduced
 a defect.
@@ -517,6 +517,21 @@ one member is wired: the audit then reports the live members as stale-tagged.
 The fix belongs in the source. A mixed module carries no module-level marker;
 its inert members take per-function tags. A module tag with *no* marker is a
 live module tag - the only thing that can be stale is a marker that exists.
+
+### A `Trait::method(self, ..)` call reaches no implementor
+
+A call spelt through its trait, `LoadFullTail::load_full_tail(self, sf)`,
+resolved its qualifier against `impl LoadFullTail` blocks and trait default
+bodies only. The body that runs sits in `impl LoadFullTail for World`, filed
+under `World`, so the call contributed no edge and the escape-clock chain below
+it read inert and opened a `disclosure_gap` row; the same call in method syntax resolved
+fine. The BGM scene switch calls `BgmDirector::start(self, ..)` the same way,
+which left the director's playback methods dead on the strict graph. **Fix:** a
+method of `impl Trait for X` is also filed under `(Trait, name)` when `Trait`
+is defined in the tree. The strict graph gates those implementors on the
+receiver like any `.name(..)` edge. A std trait (`Default::default()`) reaches
+no in-tree `impl Default`: that would be the `Vec::new` over-reach the
+free-function fallback refuses. `--selftest` carries all three cases.
 
 ### An import alias erases every `Alias::assoc_fn` edge under it
 
