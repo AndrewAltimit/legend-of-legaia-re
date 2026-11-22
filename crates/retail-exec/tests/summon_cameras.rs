@@ -905,6 +905,15 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
                         }
                     }
+                    // The monsters' staged reaction `+0x1DA` / `+0x1DC`, as
+                    // this pass finds them.
+                    for s in 3..(3 + layout.monsters).min(7) {
+                        let r = crate::cast_view::read_actor(&mut cpu.mem, ACTOR + s * STRIDE);
+                        let mut v = w.drive_cast_view(s as u8);
+                        v.staged_anim = r.staged_anim;
+                        v.restage = r.restage;
+                        w.drive_write_cast_view(s as u8, &v);
+                    }
                     w.rng_state = stream.get();
                     // The side-band stage the walk stands up, as a turn's
                     // side-band read raises it.
@@ -1037,6 +1046,18 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             w.raw_status_word(s as u8),
                             b.hp,
                         );
+                        if s >= 3 && profile.hit_arm != Some(phase) {
+                            let r = crate::cast_view::read_actor(&mut cpu.mem, a);
+                            let v = w.drive_cast_view(s as u8);
+                            let rs = r.staged_anim;
+                            let ps = v.staged_anim;
+                            if rs != ps {
+                                shadow_failures.push(format!(
+                                    "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} staged retail ({rs:x}) port ({ps:x})",
+                                    layout.caster, layout.monsters
+                                ));
+                            }
+                        }
                         if got != port {
                             shadow_failures.push(format!(
                                 "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} tint/flag/status/hp retail {got:x?} port {port:x?}",
@@ -1401,17 +1422,13 @@ fn summon_shadow(
     }
     w.battle_ctx.active_actor = layout.caster as u8;
     w.casting.summon_actor_slot = Some(CREATURE as u8);
-    // The reaction run and the stage bytes, as the records hold them.
+    // The reaction run `+0x1EF..+0x1F2`, as the records hold it: a seat
+    // with no clips reads it off its action bytes `+0x1DF..`.
     for s in 3..(3 + layout.monsters).min(7) {
-        let r = crate::cast_view::read_actor(&mut cpu.mem, ACTOR + s * STRIDE);
-        let mut v = w.drive_cast_view(s as u8);
-        v.reaction_alt = r.reaction_alt;
-        v.reaction_alt2 = r.reaction_alt2;
-        v.knockdown_anim = r.knockdown_anim;
-        v.reaction_gate = r.reaction_gate;
-        v.staged_anim = r.staged_anim;
-        v.restage = r.restage;
-        w.drive_write_cast_view(s as u8, &v);
+        let a = ACTOR + s * STRIDE;
+        for o in 0x1EFu32..=0x1F2 {
+            w.actors[s as usize].battle.params[(o - 0x1DF) as usize] = cpu.mem.rd8(a + o);
+        }
     }
     w.cast_module_for(action)?;
     w.arm_summon_stager(layout.caster as u8, action);
