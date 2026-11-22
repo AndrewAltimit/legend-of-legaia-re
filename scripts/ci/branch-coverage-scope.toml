@@ -4430,3 +4430,9 @@ image = "393baed662b4213e"
 range = "0x801E2140..0x801E21F8"
 verdict = "unreachable"
 reason = "PROT 0898: the second segment half's divide traps on the same jitter span: s4 = s5 >> 2 (at least 0x10) and s0 = (s5 >> 1) + 1 (0x801E2190..0x801E2194), never 0 or -1."
+
+[[arm]]
+entry = "0x80054CB0"
+range = "0x800550BC..0x800550BC"
+verdict = "unported"
+reason = "the twin-letter walk's gate on the action-state byte `ctx[+0x7]`: the battle init installs with it at `0`, so the earlier twin takes ` A`; only the summon's seat-`4` install (`0x801F1D1C`) runs with it set, and the port gives the summon actor no instance letter (`monster_install::twins_are_lettered_as_retail_letters_them`)"

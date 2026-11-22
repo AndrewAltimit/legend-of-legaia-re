@@ -1015,6 +1015,19 @@ space. The twin letters (`Gimard A`) go to the plaque's `+0x1BC` copy only, so a
 carries no instance letter, no level mark and no element badge. Port:
 `monster_catalog::battle_name_line`, which `battle_multi_readout_plates` prints;
 `monster_install::the_seat_name_line_is_retails` holds it to retail.
+
+The twin letters come from the install's tail (`0x80054FF8..0x80055144`). A seat
+past `0` walks back to the nearest earlier seat whose formation cell
+(`0x8007BD0C`) holds the same monster id. If that seat's `+0x1BC` is still bare
+(the same length as this one), this seat takes ` B` and, while the action-state
+byte `ctx[+0x7]` reads `0`, that seat ` A`; if it already carries a letter, this
+seat takes the next one. The battle init installs with `ctx[+0x7]` at `0` (a
+retail three-Gilium state reads `A`, `B`, `C`); the summon's seat-`4` install
+(`0x801F1D1C`) runs mid-action. Port: `engine-battle-hud`'s `monster_name`,
+which letters the seated monsters sharing a catalog name in slot order;
+`monster_install::twins_are_lettered_as_retail_letters_them` holds it to retail
+over generated formations at battle init. Retail keys on the monster id and the
+port on the name, which part only for two ids sharing one name.
 `FUN_801E805C` draws a row's digits as `16` px cells under its value record and the
 `DAMAGE` word once, over the last row. A hit that keeps the flag down counts without
 opening: PROT 0915's rolls store `0` there and its arm `0xC`'s pass raises it
