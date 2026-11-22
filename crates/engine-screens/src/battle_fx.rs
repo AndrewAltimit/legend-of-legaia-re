@@ -118,13 +118,59 @@ fn death_game_prims(world: &World) -> impl Iterator<Item = ScreenPrim> {
 /// battle camera) - the weapon trail's projection. Empty when no beam is
 /// live, which `World::theeder_draw` decides (battle only).
 pub fn theeder_prims(world: &World) -> Vec<ScreenPrim> {
+    theeder_prims_by_link(world, false)
+}
+
+/// The battle view depth of ordering-table entry `ot`: a battle leaf links
+/// at its corners' mean `SZ` over sixteen (`AVSZ3` / `AVSZ4` under the
+/// battle shift `2`, `docs/subsystems/renderer-port.md`), and in the battle
+/// units the port draws `SZ` is the clip `w`, so the entry's near edge is
+/// `w = ot * 16`, mapped through the shared projection's depth
+/// (`psx_camera::psx_projection`: `z/w = a + b/w`).
+pub fn battle_link_depth(ot: u32) -> f32 {
+    use legaia_engine_camera::projection::{PSX_NEAR, SCENE_FAR};
+    let w = (ot.max(1) * 16) as f32;
+    let a = SCENE_FAR / (SCENE_FAR - PSX_NEAR);
+    let b = -PSX_NEAR * SCENE_FAR / (SCENE_FAR - PSX_NEAR);
+    (a + b / w).clamp(0.0, 1.0)
+}
+
+/// [`theeder_prims`], with every packet retail links at a fixed entry - the
+/// fan and beam core at `ot + 0x1000`, the charge beam's near half at
+/// `ot + 8` - depth-tested at that entry when `by_link` (the PSX-mode battle
+/// frame). Retail's walk draws the fan after the far backdrop and before
+/// every body nearer than entry `0x400`, so the summon creature and the
+/// backdrop shell's near panels cover it: in the rising frame's ordering
+/// table the retract fan's pairs sit at entry `0x400`, the creature's
+/// panels at `0x23C..=0x2B5` and the shell's near panels down to `0x26`,
+/// and none of the fan's additive blue survives into either framebuffer.
+/// Off (and for the port's depth-averaged stand-in entry), they composite
+/// over the 3D frame.
+pub fn theeder_prims_by_link(world: &World, by_link: bool) -> Vec<ScreenPrim> {
+    use legaia_engine_ui::cast_theeder::{THEEDER_CHARGE_NEAR_OT, THEEDER_FAN_OT};
+    use legaia_render_kernels::screen_prim::CornerDepth;
     let Some(packet) = world.theeder_draw() else {
         return Vec::new();
     };
     let vp = battle_fx_vp(world);
-    legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
-        legaia_render_kernels::battle_trail::project_battle_point(&vp, BATTLE_WORLD_SCALE, p)
-    })
+    let mut prims =
+        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
+            legaia_render_kernels::battle_trail::project_battle_point(&vp, BATTLE_WORLD_SCALE, p)
+        });
+    if by_link {
+        for prim in &mut prims {
+            let ot = prim.ot_index();
+            if ot != THEEDER_FAN_OT && ot != THEEDER_CHARGE_NEAR_OT {
+                continue;
+            }
+            let depth = Some(CornerDepth::new([battle_link_depth(ot); 4]));
+            match prim {
+                ScreenPrim::Flat(q) => q.depth = depth,
+                ScreenPrim::Textured(q) => q.depth = depth,
+            }
+        }
+    }
+    prims
 }
 
 #[cfg(test)]
@@ -137,6 +183,19 @@ mod tests {
         assert!(battle_fx_prims(&world).is_empty());
         assert!(battle_fx_prims_by_link(&world, true).is_empty());
         assert!(theeder_prims(&world).is_empty());
+        assert!(theeder_prims_by_link(&world, true).is_empty());
+    }
+
+    #[test]
+    fn a_link_depth_is_the_projection_depth_of_its_entrys_near_edge() {
+        let vp = legaia_engine_camera::psx_camera::psx_projection(
+            legaia_engine_camera::projection::GTE_H,
+            BATTLE_FX_ASPECT,
+        );
+        let clip =
+            glam::Mat4::from_cols_array(&vp) * glam::Vec4::new(0.0, 0.0, 0x400 as f32 * 16.0, 1.0);
+        assert!((battle_link_depth(0x400) - clip.z / clip.w).abs() < 1e-6);
+        assert!(battle_link_depth(2) < battle_link_depth(0x400));
     }
 
     #[test]

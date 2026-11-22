@@ -497,7 +497,10 @@ impl PlayWindowApp {
             drop_shadows: self.field_drop_shadow_prims(),
             move_strips: move_strip_prims,
             field_lights: self.field_light_screen_prims(),
-            theeder: legaia_engine_screens::battle_fx::theeder_prims(&self.session.host.world),
+            theeder: legaia_engine_screens::battle_fx::theeder_prims_by_link(
+                &self.session.host.world,
+                self.win.renderer.as_ref().is_some_and(|r| r.psx_mode()),
+            ),
             // The floating value readout needs the struck actor's projected
             // screen position, which only a host holding the camera has.
             value_readout: self.battle_value_readout_prims(fx_cam),
