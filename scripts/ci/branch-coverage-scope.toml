@@ -3161,3 +3161,52 @@ entry = "0x8003A1E4"
 range = "0x8003A524..0x8003A524"
 verdict = "unreachable"
 reason = "the signed rounding of `(z - 0x40) / 0x80` for the tile byte `+0x8D`; the seat is a grid byte's `(b & 0x7F) * 0x80 + 0x40` (or `+ 0x80`), so `z - 0x40` is not negative, and the every-placement census on a fresh and a random flag bank (`model_select`) finds no seat below it"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB064..0x801DB06C"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `-1` / `0x80000000` divide guard on the composer's ease; the divisor `s2` is a value shifted left by 6 (`sll s2,..,6` just above), so it is never `-1`"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB0C4..0x801DB0CC"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `-1` / `0x80000000` divide guard on the composer's ease; the divisor `s2` is a value shifted left by 6 (`sll s2,..,6` just above), so it is never `-1`"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB164..0x801DB16C"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `-1` / `0x80000000` divide guard on the composer's ease; the divisor `s2` is a value shifted left by 7 (`sll s2,..,7` just above), so it is never `-1`"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB1D4..0x801DB1DC"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `-1` / `0x80000000` divide guard on the composer's ease; the divisor `s2` is a value shifted left by 7 (`sll s2,..,7` just above), so it is never `-1`"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB288..0x801DB290"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's `-1` / `0x80000000` divide guard on the composer's ease; the divisor `s2` is a value shifted left by 7 (`sll s2,..,7` just above), so it is never `-1`"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB348..0x801DB360"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's divide guards (`break 7` / `break 6`) on a division by the constant `4` (`addiu s2,zero,4` at 0x801DB33C)"
+
+[[arm]]
+entry = "0x801DAB90"
+image = "acff536552d5c829"
+range = "0x801DB398..0x801DB3B0"
+verdict = "unreachable"
+reason = "PROT 0897: the compiler's divide guards (`break 7` / `break 6`) on a division by the constant `8` (`addiu s2,zero,8` at 0x801DB38C)"
