@@ -500,6 +500,8 @@ Effects of one application:
 
 **The pending critical flashes.** Every frame the combat tick rewrites its fighter's colour word `+0x74` and depth-cue level `+0x78` (`0x801D3FCC..0x801D4010`): with the critical-pending flag `+0xA0` up and the cabinet's frame counter `DAT_801DC130` odd, `0x0080E0E0` at level `0x1000`, else the neutral `0x00808080` at `0`. The mesh pass cues every packet all the way to the word's far colour, so a fighter holding a comeback critical blinks a brighter yellow on alternate frames until the critical lands or is cleared. Port: `baka_fighter::crit_flash_colour`, latched per seat by `BakaFight` (the player's before the round SM, the opponent's after it, as the pool walk orders them) and cued onto the fighter mesh by `BakaDuelScene::tint_fighter`.
 
+A PCSX-Redux capture of two comeback criticals (`autorun_baka_flash_xa.lua` from `minigame_baka_fighter_retail_fight`, pad only) reads the player's word vsync by vsync: neutral on the frame the flag rises (the roll runs after the player's tick), then `0x0080E0E0` at level `0x1000` on every odd counter and neutral on every even one, and yellow still on the frame the critical lands and clears the flag, which the player's tick wrote before the round SM ran. The counter steps once a cabinet frame, not once a vsync (it stands still on a vsync the frame spans), and starts near zero at the overlay's load (`60` on `minigame_baka_fighter_retail_attract`), as the port's does. Grade `capture` for the player's seat; the opponent's flag never rose in the capture.
+
 **Confirmed**: inputs and structure; the constants (`0x20`, `0x40`, `<< 7`, the HP thresholds) are read straight from the dump.
 
 <a id="player-input--actions"></a>
@@ -859,7 +861,9 @@ The banner runs on the cabinet's clock, like the title card. Its four `jal` site
 
 State `DAT_801DC134` walks `0 -> 1` (`XA33` channel `0x0A`), `1 -> 2` (channel `0x0B`, seeding the timer `DAT_801DC138 = 0x20`), then waits for the all-clear's second fade `DAT_801DBEB4` to reach `0x11` before decaying the timer by `DAT_1F800393`. Running out fires channel `0x0D` on the final stage (`DAT_801DC110 == 0x0E`) or `0x0C` otherwise. The CD-XA in-flight word `_DAT_8007BC20` freezes the walk but not the two draws, which always run at half level: widget `0x1A` at `(0xA0, 0x60)` and `0x1D` / `0x1C` at `(0xA0, 0xA0)`.
 
-The routine re-reads that word after each line it starts (`0x801D2234`, `0x801D2274`), and the clip starter `FUN_8003D53C` raises it as it cues a clip (`sw s1,0x908(gp)` at `0x8003D65C`). So each line holds the walk until it has played out: `0x0A` sounds whole, then `0x0B`, and the countdown starts only after `0x0B` ends. The beat `0xFB` waits on the same word (`0x801D1A70..0x801D1A7C`): with its fade at full black and a line still playing, it parks the timer at `0xFF` and re-tests each frame before retiring the player. **Confirmed** (disassembly). The port models the word from the lines its pacer has cued (`CabinetInput::xa_in_flight`, `BakaPacer::xa_in_flight`); a cabinet driven with no pacer leaves it clear.
+The routine re-reads that word after each line it starts (`0x801D2234`, `0x801D2274`), and the clip starter `FUN_8003D53C` raises it as it cues a clip (`sw s1,0x908(gp)` at `0x8003D65C`). So each line holds the walk until it has played out: `0x0A` sounds whole, then `0x0B`, and the countdown starts only after `0x0B` ends. The beat `0xFB` waits on the same word (`0x801D1A70..0x801D1A7C`): with its fade at full black and a line still playing, it parks the timer at `0xFF` and re-tests each frame before retiring the player. **Confirmed** (disassembly, and the capture below).
+
+The same capture times it. From the vsync that enters `0xFA` and cues `0x0A` (`dur 70`), the word reads `1` through the seek and `2` while the line streams, and drops `88` vsyncs on; `0x0B` (`dur 77`) is cued on the next vsync (`+89`); `0xFB` leaves for `0xFC` at `+186`, two vsyncs after the word drops again; `0x0C` is cued at `+259`. The pacer's model of the word (`dur` plus `XA_READ_TAIL_VSYNCS`) reads the same: `the_all_clear_runs_on_retail_s_drive_word_and_fighter_load` holds a `BakaFight` to all four marks. The port models the word from the lines its pacer has cued (`CabinetInput::xa_in_flight`, `BakaPacer::xa_in_flight`); a cabinet driven with no pacer leaves it clear.
 
 `DAT_801DC134` is read and written nowhere else in the overlay, so the walk runs once per overlay load. **Confirmed** (disassembly).
 
@@ -890,7 +894,16 @@ falling to `0x50` on `0xFD` and rising to `0xFF` on `0xFE`. So the fighter is on
 ever seen darkened, behind the announcer's art, and only on `0xFD` / `0xFE`.
 
 A run that met both secret opponents reads `0xE` there and ends on the bare arena.
-**Confirmed** (disassembly; no retail capture reaches this beat).
+**Confirmed** (disassembly).
+
+The load on the `0xFB -> 0xFC` edge is synchronous, inside the frame that moves to
+`0xFC`, so the next frame opens late. A PCSX-Redux capture across the all-clear
+(`autorun_baka_flash_xa.lua` from `minigame_baka_fighter_retail_fight`, the stage
+counter and the opponent's HP poked so the duel reaches it) has the cabinet's frame
+counter `DAT_801DC130` stand still `34` vsyncs after that frame, on a step-`2`
+cadence: `32` past its span (`CLEAR_FIGHTER_LOAD_VSYNCS`). Port: `BakaFight` holds
+the cabinet that long under retail's load holds, as it does the opponent install.
+Without the hold the closing line `0x0C` came `35` vsyncs early. Grade `capture`.
 
 Port: `baka_fighter_chrome::clear_fighter_tick`, spawned by `BakaFight` off
 `CabinetFrame::spawn_clear_fighter`, posed by `BakaDuelScene::pose_clear_fighter`

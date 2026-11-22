@@ -126,6 +126,16 @@ impl BakaFight {
                 return BakaFrameOutcome::default();
             }
         }
+        // The all-clear fighter's load, run inside the frame that left
+        // `0xFB` ([`super::CLEAR_FIGHTER_LOAD_VSYNCS`]): no frame opens until
+        // it is read.
+        if self.clear_load_wait > 0 {
+            self.clear_load_wait -= 1;
+            self.held_edge |= edge;
+            self.pacer.skip(1);
+            self.chrome_frame.xa = None;
+            return BakaFrameOutcome::default();
+        }
         // A game tick once the frame before has spanned its vsyncs
         // ([`super::pacing`]): its step, or longer when its cost ran past
         // it. A press between two ticks is held for the next, as the pad
@@ -147,8 +157,15 @@ impl BakaFight {
             }
             None => (edge | std::mem::take(&mut self.held_edge), held),
         };
+        let ran = self.cabinet.state();
         let out = self.frame_tick(edge, held, pot, step);
         self.end_frame();
+        if self.install_load_hold
+            && ran == crate::baka_cabinet::ST_CLEAR_B
+            && self.cabinet.state() == crate::baka_cabinet::ST_CLEAR_C
+        {
+            self.clear_load_wait = super::CLEAR_FIGHTER_LOAD_VSYNCS;
+        }
         out
     }
 

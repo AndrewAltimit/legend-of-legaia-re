@@ -154,6 +154,9 @@ pub struct BakaFight {
     /// Vsyncs the install's load still holds the cabinet; `0` when no load is
     /// in flight.
     pub(super) install_wait: i32,
+    /// Vsyncs the all-clear fighter's load still holds the cabinet
+    /// ([`super::CLEAR_FIGHTER_LOAD_VSYNCS`]); `0` when none is in flight.
+    pub(super) clear_load_wait: i32,
     /// Both fighters' strike data. With it installed an exchange is booked
     /// only on the tick the winner's strike lands (retail's `+0x0C == 1`
     /// gate); without it (a fight built from bare configs) the exchange
@@ -302,6 +305,7 @@ impl BakaFight {
             held_edge: 0,
             install_load_hold: false,
             install_wait: 0,
+            clear_load_wait: 0,
             strike: None,
             rate_divisor: STRIKE_RATE_DIVISOR,
             afterimages: Vec::new(),
@@ -444,6 +448,7 @@ impl BakaFight {
         self.install_load_hold = on;
         if !on {
             self.install_wait = 0;
+            self.clear_load_wait = 0;
         }
     }
 
