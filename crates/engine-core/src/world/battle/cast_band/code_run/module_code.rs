@@ -265,7 +265,9 @@ impl World {
                 // PROT 0917's arm 1 rises to TR y `0x800` first
                 // (`iRam800840bc` under `0x800`), PROT 0919's drifts while its
                 // word runs. An arm that would pass makes none of its exit's
-                // stores, and keeps its drain and its drift.
+                // stores, and keeps its drain, its drift and its nudge: PROT
+                // 0920's arm 1 pushes TR z out by `p` every pass ahead of
+                // its poll, which the director hands over as a nudge.
                 // The drive's wait holds the same way: the seek arm until the
                 // drive takes the seek, the poll arm until the seek is done.
                 let polling = (st.sideband_busy
@@ -282,6 +284,7 @@ impl World {
                         st.countdown = ahead.countdown;
                         legaia_engine_cast::cast_module_camera::ArmDirection {
                             drift: d.drift,
+                            nudge: d.nudge,
                             ..legaia_engine_cast::cast_module_camera::ArmDirection::HOLD
                         }
                     }

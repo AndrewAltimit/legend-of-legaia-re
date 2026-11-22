@@ -446,6 +446,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     };
     let overlay = disc.read_entry(898).expect("PROT 0898");
     let mut failures = Vec::new();
+    let mut sideband_held = 0usize;
     let all: Vec<(u32, u32, u8)> = BODIES.iter().chain(&PACED).copied().collect();
     // Each module runs twice: on the full row, then with the second monster
     // seat fallen and faded (`+0x14C = 0`, `+0x04 = 0`), which the row walks
@@ -565,6 +566,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 w
             });
             let mut puera_compared = std::collections::BTreeSet::new();
+            let mut sideband_passes = 0u32;
             for pass in 0..20_000u32 {
                 // Every seat idle and far along its clip, its display pair on its
                 // ground pair as the draw pass leaves it.
@@ -602,6 +604,15 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     }
                 }
                 let phase = cpu.mem.rd8(CTX + 0x279);
+                // The side-band applier's stage `ctx[+0x276]` stands up for the
+                // first passes of the arm that waits on it
+                // (`cam::sideband_wait_arm`), as a turn's side-band read does.
+                if Some(phase) == cam::sideband_wait_arm(entry) {
+                    sideband_passes += 1;
+                    let up = sideband_passes <= 3;
+                    cpu.mem.wr8(CTX + 0x276, if up { 8 } else { 0 });
+                    sideband_held += usize::from(up);
+                }
                 // PROT 0931's arm `0x16` waits for its creature's cursor to stand
                 // on `0x120` exactly (`0x801F7C80`).
                 if (entry, phase) == (931, 0x16) {
@@ -753,7 +764,27 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     let point = |r: u32| (r % 0x101) as i16 - 0x80;
                     st.ozma_spray_point = Some((point(spray[4]), point(spray[5])));
                 }
-                let arm = (profile.direct)(&mut st, phase, seats);
+                // The host's side-band poll (`World::module_code_run`): on the
+                // wait arm with the stage up, an arm that would pass keeps its
+                // drain and its drift and holds.
+                let polling = st.sideband_busy && cam::sideband_wait_arm(entry) == Some(phase);
+                let arm = if polling {
+                    let mut ahead = st;
+                    let d = (profile.direct)(&mut ahead, phase, seats);
+                    if d.hold {
+                        st = ahead;
+                        d
+                    } else {
+                        st.countdown = ahead.countdown;
+                        ArmDirection {
+                            drift: d.drift,
+                            nudge: d.nudge,
+                            ..ArmDirection::HOLD
+                        }
+                    }
+                } else {
+                    (profile.direct)(&mut st, phase, seats)
+                };
                 let mut port = t0;
                 port.apply(&arm);
                 let busy = cpu.regs.r[V0] != 0;
@@ -1003,6 +1034,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             }
         }
     }
+    assert!(sideband_held > 100, "{sideband_held} side-band passes held");
     let n = failures.len();
     failures.truncate(600);
     assert!(n == 0, "{n} mismatches:\n{}", failures.join("\n"));
