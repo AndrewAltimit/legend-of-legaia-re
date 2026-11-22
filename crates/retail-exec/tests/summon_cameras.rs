@@ -1543,7 +1543,7 @@ fn sign12(a: i32) -> i32 {
 #[test]
 fn the_side_band_arm_steps_over_the_band_word_poll_as_retail_does() {
     use legaia_engine_cast::seru_magic_ticks::{GIZAM_TICK, THEEDER_TICK};
-    differential!(prot(904, THEEDER_TICK), prot(906, GIZAM_TICK));
+    differential!(prot(904, 0x801F_69D8), prot(906, 0x801F_69F4));
     let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
