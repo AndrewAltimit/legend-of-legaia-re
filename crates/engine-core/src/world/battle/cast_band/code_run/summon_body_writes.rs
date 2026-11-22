@@ -170,7 +170,7 @@ impl World {
     /// | `0xFF` (`0x801F88BC`) | every | a dead victim hidden |
     ///
     /// The word the `0xC8` state reads is the neutral `0x20080200` arm 7
-    /// stored.
+    /// stored; arms `0x11..0x13` store no word.
     ///
     /// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the part kills of arm 15, the arm-14 root speed and the seat tints of arms 4, 7, 15, 0x11..0x13)
     fn apply_aluru_seat_writes(&mut self, phase_in: u8, passed: bool, victim: u8, seat_slot: u8) {
@@ -316,9 +316,12 @@ impl World {
         if let Some(a) = self.actors.get_mut(usize::from(victim))
             && (blast || (spread && a.battle.current_anim == 0))
         {
+            // Rate and state only (`sb 0x21D` / `sb 0x21C` at `0x801F7E8C`,
+            // `0x801F81D4..0x801F81DC`): the word stays what arm 7 stored or
+            // the defeat fade has eased it to, so a victim the hit felled
+            // fades out under the arm rather than standing back up.
             a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(1);
             a.battle.render_flag = TINT_FLAT;
-            a.battle.render_color = NEUTRAL_WORD;
             if blast && let Some(f) = creature_facing {
                 a.battle.facing_angle = f.wrapping_add(0x800) & 0xFFF;
             }
