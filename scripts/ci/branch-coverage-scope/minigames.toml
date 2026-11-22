@@ -55,3 +55,59 @@ image = "ddcd76fa7b1f2b11"
 range = "0x801D28B8..0x801D28D0"
 verdict = "unreachable"
 reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (600 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 600 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D5724..0x801D573C"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D57CC..0x801D57E4"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D5874..0x801D588C"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D591C..0x801D5934"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D59C4..0x801D59DC"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D5A6C..0x801D5A84"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D5B14..0x801D5B2C"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D5BBC..0x801D5BD4"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"

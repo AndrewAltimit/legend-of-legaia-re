@@ -112,6 +112,20 @@ fn the_plate_fish_matrix_is_retails() {
             }
         }
     }
+    // A zero render scale skips the draw whole (`beqz` on `+0x72` at
+    // `0x801D67F8`); the port's matrix for it is zero, which collapses the
+    // body onto its origin.
+    for round in 0..64 {
+        let rot: [i16; 3] = std::array::from_fn(|_| rng.below(0x1000) as i16);
+        cpu.mem.wr16(ACTOR + 0x24, rot[0] as u16);
+        cpu.mem.wr16(ACTOR + 0x26, rot[1] as u16);
+        cpu.mem.wr16(ACTOR + 0x28, rot[2] as u16);
+        cpu.mem.wr16(ACTOR + 0x72, 0);
+        *seen.borrow_mut() = None;
+        assert_eq!(cpu.call(DRAW, &[ACTOR]), Stop::Returned, "zero {round}");
+        assert!(seen.borrow().is_none(), "a zero scale draws nothing");
+        assert_eq!(camera_locked_linear(rot, 0), [[0.0; 3]; 3]);
+    }
     eprintln!("worst {worst}, saturated {saturated}");
     assert!(saturated > 1000, "saturated elements {saturated}");
 }
