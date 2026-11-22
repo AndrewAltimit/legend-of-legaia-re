@@ -110,6 +110,72 @@ fn the_feature_roll_rolls_what_retail_rolls() {
     assert!(entered > 100, "{entered}");
 }
 
+/// The draws the BIOS `rand()` hands out from `seed`, as the rig's hook
+/// steps them.
+fn draws(seed: u32, n: usize) -> Vec<u32> {
+    let mut s = seed;
+    (0..n)
+        .map(|_| {
+            s = s.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+            (s >> 16) & 0x7FFF
+        })
+        .collect()
+}
+
+/// A spin whose mode-1 and mode-2 rolls both come up zero in one call: the
+/// mode-2 arm tests the mode word again before it writes (`0x801D2714`,
+/// `0x801D289C`), so the first feature stands. Seeds are searched until the
+/// two draws land on zero, for the low and the high net-take brackets with
+/// and without the spin-up widen.
+#[test]
+fn a_double_feature_hit_keeps_the_first_mode() {
+    differential!(prot(975, 0x801D_258C));
+    let state = Rc::new(Cell::new(0));
+    let Some((mut cpu, _)) = rig(&state) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut found = 0;
+    for (net, press) in [(500, false), (500, true), (3000, false), (3000, true)] {
+        let (d1, d2) = if net < 1000 { (700, 500) } else { (175, 125) };
+        let mut hits = 0;
+        for seed in 0u32.. {
+            let r = draws(seed, 6);
+            let (widen, at) = if press { (r[2] % 100 + 200, 3) } else { (0, 2) };
+            if !r[at].is_multiple_of(d1 + widen) || !r[at + 1].is_multiple_of(d2 + widen) {
+                continue;
+            }
+            cpu.mem.wr32(NET_TAKE, net as u32);
+            cpu.mem.wr32(MODE, 0);
+            cpu.mem.wr32(SPIN_UP, u32::from(press));
+            state.set(seed);
+            assert_eq!(cpu.call(0x801D_258C, &[]), Stop::Returned);
+            let retail = (
+                cpu.mem.rd32(JITTER) as i32,
+                cpu.mem.rd32(NORMAL_TARGET) as u8,
+                cpu.mem.rd32(MODE) as u8,
+                state.get(),
+            );
+            let mut bios = BiosRand::new(seed);
+            let roll = feature_roll(&mut bios, net, 0, press);
+            let port = (
+                roll.jitter,
+                roll.normal_target,
+                roll.entered_mode.unwrap_or(0),
+                bios.state(),
+            );
+            assert_eq!(retail, port, "seed {seed:#x} net {net} press {press}");
+            assert_eq!(retail.2, 1, "the first feature stands");
+            hits += 1;
+            if hits == 3 {
+                break;
+            }
+        }
+        found += hits;
+    }
+    assert_eq!(found, 12);
+}
+
 fn gen_strips(rng: &mut Rng, band: u8, kinds: u32) -> [[u8; 20]; 3] {
     let mut strips = [[0u8; 20]; 3];
     for reel in &mut strips {

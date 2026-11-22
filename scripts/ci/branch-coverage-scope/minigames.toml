@@ -6,3 +6,52 @@ image = "3847fbc3b843fa2e"
 range = "0x801CF2A4..0x801CF814"
 verdict = "unreachable"
 reason = "PROT 0977 dome tally: the 24 `bgez` round-toward-zero arms of `lane_fade * (fade << 4) / 128`; the lane fades are zeroed at 0x801CEB24..0x801CEB3C and only grow by the frame step or reseed to 0x10, and both callers pass a non-negative fade (0x80 at 0x801CFDC0, 0x801D1A84 at 0x801CFEB4 after 0x801CFE24 / 0x801CFE3C zero it once it goes negative), so the product is never negative"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D2690..0x801D26A8"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (700 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 700 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D26D8..0x801D26F0"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (500 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 500 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D2750..0x801D2768"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (350 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 350 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D279C..0x801D27B4"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (250 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 250 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D2814..0x801D282C"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (175 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 175 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D2860..0x801D2878"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (125 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 125 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D28B8..0x801D28D0"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (600 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 600 and never 0 or -1"
