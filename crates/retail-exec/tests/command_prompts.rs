@@ -45,6 +45,7 @@ const WINDOW: u32 = 0x801D_388C;
 const CUE: u32 = 0x8004_FCC8;
 const FIRST_ABLE: u32 = 0x801D_BA04;
 const NEXT_ABLE: u32 = 0x801D_B81C;
+const PARTY_CHAR_IDS: u32 = 0x8007_BD10;
 const CROSS_OUT: u32 = 0x801D_BC30;
 const ROT_MARK: u32 = 0x801D_BD04;
 const CURSE_MARK: u32 = 0x801D_BEC4;
@@ -185,6 +186,48 @@ fn retail_cpu() -> Option<(Cpu, Log, Log, Log)> {
         cpu.hook(leaf, move |r, _| m2.borrow_mut().push(tag << 16 | r.r[A0]));
     }
     Some((cpu, windows, cues, marks))
+}
+
+/// Seeds what `FUN_801DB81C` reads for the party - each member's HP
+/// `+0x14C` and the char ids `0x8007BD10` (`1..=3`, never the companion's
+/// `4`) - and lets it run, so a commit walks on to the next standing member's
+/// ring (`0x28`) or, with none after the actor, raises the confirm (`0x6E`).
+fn seed_next_able(cpu: &mut Cpu, standing: &[bool]) {
+    cpu.unhook(NEXT_ABLE);
+    for (i, &up) in standing.iter().enumerate() {
+        cpu.mem
+            .wr16(ACTOR + STRIDE * i as u32 + 0x14C, u16::from(up) * 100);
+        cpu.mem.wr8(PARTY_CHAR_IDS + i as u32, i as u8 + 1);
+    }
+}
+
+/// The port's surface after `seat` commits mid-flow (`state`): the ring of
+/// the next member `World::next_member_owing_command` finds, as `0x28`, or
+/// the commit confirm `0x6E`.
+fn port_next_surface(party: u8, seat: u8, standing: &[bool], state: u8) -> u8 {
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
+    use legaia_engine_core::world::World;
+    use legaia_engine_core::world::test_drivers::BattleTestDrivers;
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Battle,
+        ..World::default()
+    };
+    w.battle.player_driven = true;
+    w.party.party_count = party;
+    for (i, &up) in standing.iter().enumerate().take(usize::from(party)) {
+        let a = &mut w.actors[i];
+        a.active = true;
+        a.battle.max_hp = 200;
+        a.battle.hp = u16::from(up) * 100;
+        a.battle.liveness = u16::from(up);
+    }
+    w.battle.flow = legaia_engine_battle_menus::battle_flow::BattleFlowState::from_raw(state);
+    w.commit_party_command(seat, PendingPartyAction::StandBy);
+    match w.battle.command.as_ref().map(|c| (c.actor, &c.phase)) {
+        Some((a, CommandPhase::Menu { .. })) if a > seat => 0x28,
+        Some((_, CommandPhase::CommitConfirm { .. })) => 0x6E,
+        other => panic!("port surface {other:?} after seat {seat} of {party} commits"),
+    }
 }
 
 #[test]
@@ -434,6 +477,8 @@ fn the_attack_target_cursor_steps_and_commits_as_retail() {
         let count = 1 + rng.below(4) as usize;
         let cross_entry = rng.below(2) == 1;
         let automatic = rng.below(2) == 1;
+        let standing: [bool; 3] =
+            std::array::from_fn(|i| i == usize::from(seat) || rng.below(3) != 0);
         let mut alive = [false; 4];
         for a in alive.iter_mut().take(count) {
             *a = rng.below(4) != 0;
@@ -524,7 +569,7 @@ fn the_attack_target_cursor_steps_and_commits_as_retail() {
         cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
         cpu.mem.wr32(CANCEL_MASK, CANCEL);
         cpu.mem.wr8(BATTLE_ID, 0);
-        cpu.stub(NEXT_ABLE, u32::from(party));
+        seed_next_able(&mut cpu, &standing[..usize::from(party)]);
         windows.borrow_mut().clear();
         cues.borrow_mut().clear();
         assert_eq!(
@@ -601,7 +646,9 @@ fn the_attack_target_cursor_steps_and_commits_as_retail() {
                 0x28 | 0x6E,
             ) => {
                 assert_eq!(target, 3 + target_slot, "commit target: {label}");
-                "commit"
+                let next = port_next_surface(party, seat, &standing[..usize::from(party)], 0x5A);
+                assert_eq!(after, next, "next surface: {label}");
+                if after == 0x28 { "walk on" } else { "commit" }
             }
             (CommandPhase::Menu { .. }, 0x28) => "cancel to ring",
             (CommandPhase::AttackMode { .. }, 0x78) => "cancel to prompt",
@@ -613,6 +660,7 @@ fn the_attack_target_cursor_steps_and_commits_as_retail() {
         "stay",
         "step",
         "commit",
+        "walk on",
         "cancel to ring",
         "cancel to prompt",
     ] {
@@ -744,7 +792,7 @@ fn the_spell_target_cursors_go_where_retail_goes() {
         cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
         cpu.mem.wr32(CANCEL_MASK, CANCEL);
         cpu.mem.wr8(BATTLE_ID, 0);
-        cpu.stub(NEXT_ABLE, u32::from(party));
+        seed_next_able(&mut cpu, &member_alive[..usize::from(party)]);
         windows.borrow_mut().clear();
         cues.borrow_mut().clear();
         assert_eq!(
@@ -842,7 +890,10 @@ fn the_spell_target_cursors_go_where_retail_goes() {
                     (_, CursorRow::Ally) => *target_slot,
                 };
                 assert_eq!(target, want, "commit target: {label}");
-                "commit"
+                let next =
+                    port_next_surface(party, seat, &member_alive[..usize::from(party)], state);
+                assert_eq!(after, next, "next surface: {label}");
+                if after == 0x28 { "walk on" } else { "commit" }
             }
             (SpellPhase::Select { .. }, 0x46) => "cancel",
             (phase, after) => panic!("port {phase:?} retail {after:#x}: {label}"),
@@ -862,6 +913,10 @@ fn the_spell_target_cursors_go_where_retail_goes() {
         (0x5E, "cancel"),
         (0x67, "commit"),
         (0x67, "cancel"),
+        (0x5C, "walk on"),
+        (0x65, "walk on"),
+        (0x5E, "walk on"),
+        (0x67, "walk on"),
     ] {
         assert!(
             seen.get(&key).copied().unwrap_or(0) > 20,
@@ -1233,7 +1288,11 @@ fn the_item_target_cursors_go_where_retail_goes() {
         cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
         cpu.mem.wr32(CANCEL_MASK, CANCEL);
         cpu.mem.wr8(BATTLE_ID, 0);
-        cpu.stub(NEXT_ABLE, u32::from(party));
+        // The commit's next member is `FUN_801DB81C` run for real over the
+        // party's HP (`+0x14C`), status (`+0x16E`) and char ids: a member
+        // after the actor still standing walks the ring on (`0x28`), none
+        // raises the commit confirm (`0x6E`).
+        seed_next_able(&mut cpu, &member_hp.map(|hp| hp != 0));
         assert_eq!(
             cpu.call(STATE_MACHINE, &[]),
             Stop::Returned,
@@ -1298,6 +1357,10 @@ fn the_item_target_cursors_go_where_retail_goes() {
             _ => InventoryUseState::AllPartyConfirm { item_cursor: 0 },
         };
         w.battle.item_menu = Some(menu);
+        // The flow byte stands on the cursor's state, as retail's does: a
+        // commit walking on opens the next member's ring, not a round's
+        // prompt.
+        w.battle.flow = legaia_engine_battle_menus::battle_flow::BattleFlowState::from_raw(state);
         let mask = [
             (LEFT, PadButton::Left),
             (RIGHT, PadButton::Right),
@@ -1340,6 +1403,18 @@ fn the_item_target_cursors_go_where_retail_goes() {
                 else {
                     panic!("no item committed: {label}");
                 };
+                // Where the commit walks on: the next standing member's ring
+                // or, with none, the commit confirm.
+                let next = w.battle.command.as_ref().map(|c| (c.actor, &c.phase));
+                match (after, next) {
+                    (0x28, Some((a, CommandPhase::Menu { .. }))) if a > seat => {
+                        *seen.entry((state, "walk on")).or_default() += 1;
+                    }
+                    (0x6E, Some((_, CommandPhase::CommitConfirm { .. }))) => {}
+                    (after, next) => {
+                        panic!("next surface port {next:?} retail {after:#x}: {label}")
+                    }
+                }
                 if state == 0x5B || state == 0x64 {
                     let slot = usize::from(used_slots[0]);
                     let want = if enemy_side { slot - pc + 3 } else { slot };
@@ -1366,6 +1441,10 @@ fn the_item_target_cursors_go_where_retail_goes() {
         (0x5D, "cancel"),
         (0x66, "commit"),
         (0x66, "cancel"),
+        (0x5B, "walk on"),
+        (0x64, "walk on"),
+        (0x5D, "walk on"),
+        (0x66, "walk on"),
     ] {
         assert!(
             seen.get(&key).copied().unwrap_or(0) > 20,
@@ -1950,6 +2029,7 @@ fn the_reselect_refunds_the_landing_members_item_as_retail() {
     let refunds = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
     let r2 = refunds.clone();
     cpu.hook(REFUND, move |r, _| r2.borrow_mut().push((r.r[A0], r.r[5])));
+    let strip = strip_log(&mut cpu);
     let mut rng = Rng(0x5245_5345);
     let mut seen = std::collections::HashMap::<&str, u32>::new();
     for round in 0..3000 {
@@ -1994,8 +2074,10 @@ fn the_reselect_refunds_the_landing_members_item_as_retail() {
         cpu.mem.wr32(CROSS_ENTRY, 0);
         cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
         cpu.mem.wr32(CANCEL_MASK, CANCEL);
-        cpu.mem.wr8(BATTLE_ID, 0);
+        let koru = rng.below(4) == 0;
+        cpu.mem.wr8(BATTLE_ID, if koru { TIMED_FIGHT } else { 0 });
         refunds.borrow_mut().clear();
+        strip.borrow_mut().clear();
         assert_eq!(
             cpu.call(STATE_MACHINE, &[]),
             Stop::Returned,
@@ -2033,9 +2115,15 @@ fn the_reselect_refunds_the_landing_members_item_as_retail() {
         if after == 0x1E {
             assert_eq!(w.battle.flow, BattleFlowState::TurnPrompt, "{label}");
             assert!(refunds.borrow().is_empty(), "{label}");
-            *seen.entry("prompt").or_default() += 1;
+            // Koru's strip comes back with the prompt (`0x801D30E4..
+            // 0x801D317C`); the port draws it on every surface but `Idle`.
+            assert_strip_registered(&strip.borrow(), koru, &label);
+            *seen
+                .entry(if koru { "koru prompt" } else { "prompt" })
+                .or_default() += 1;
             continue;
         }
+        assert!(strip.borrow().is_empty(), "{label}");
         assert_eq!(after, 0x28, "{label}");
         assert_eq!(w.battle.flow, BattleFlowState::CategoryMenu, "{label}");
         assert_eq!(
@@ -2060,7 +2148,294 @@ fn the_reselect_refunds_the_landing_members_item_as_retail() {
             }
         }
     }
-    for key in ["prompt", "refund", "no refund"] {
-        assert!(seen.get(key).copied().unwrap_or(0) > 50, "{key}: {seen:?}");
+    for key in ["prompt", "koru prompt", "refund", "no refund"] {
+        assert!(seen.get(key).copied().unwrap_or(0) > 20, "{key}: {seen:?}");
     }
+}
+
+/// Koru's fight id (`*0x8007BD0C == 0xB6`), the timed fight's strip gate.
+const TIMED_FIGHT: u8 = legaia_engine_battle_menus::timed_fight::TIMED_FIGHT_MONSTER_ID;
+/// The strip's number registrar `FUN_8003563C(1, &value, 1, x, ..)`.
+const NUMBER_RECORD: u32 = 0x8003_563C;
+
+/// Logs the value pointer each `FUN_8003563C` call registers.
+fn strip_log(cpu: &mut Cpu) -> Log {
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let l2 = log.clone();
+    cpu.hook(NUMBER_RECORD, move |r, _| l2.borrow_mut().push(r.r[5]));
+    log
+}
+
+/// The strip's two numbers, `Turns Left` at `0x801F6958` and `HP Left` at
+/// `0x801F6959`, registered iff the fight is Koru's.
+fn assert_strip_registered(log: &[u32], koru: bool, label: &str) {
+    let want: &[u32] = if koru {
+        &[0x801F_6958, 0x801F_6959]
+    } else {
+        &[]
+    };
+    assert_eq!(log, want, "strip: {label}");
+}
+
+/// The ring's cancel (`0x28`, `0x801D11B4..0x801D12B8`) with the window
+/// opener run for real: with members behind the cursor (`ctx[+0x1F]`) case
+/// `0x10` steps it back (`FUN_801D32BC(1)`) and the dispatcher refunds the
+/// landing member's item (`FUN_800421D4(+0x1DF, 1)` at `0x801D12AC`); with
+/// none, case `2` reopens the round prompt and, in Koru's fight, re-registers
+/// the timed strip (`0x801D11E8..0x801D1274`). Against
+/// `World::step_back_battle_command`.
+#[test]
+fn the_ring_cancel_steps_back_and_refunds_as_retail() {
+    differential!(prot(898, STATE_MACHINE));
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
+    use legaia_engine_battle_menus::battle_flow::BattleFlowState;
+    use legaia_engine_core::world::World;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(898).expect("PROT 0898"));
+    cpu.stub_outside = Some((OVERLAY_BASE, OVERLAY_END));
+    for leaf in [
+        0x801D_3444u32,
+        0x801D_B8F4,
+        0x801D_B8B4,
+        0x801D_A34C,
+        0x801D_8A88,
+        0x801D_A6B4,
+        0x801D_BB8C,
+        0x801D_8DE8,
+        0x801D_99BC,
+        0x801D_9AE8,
+        0x801D_5854,
+        0x801D_B318,
+        0x801D_57E8,
+        0x801D_5718,
+        0x801D_BC30,
+        0x801D_BD04,
+        0x801D_BEC4,
+        0x801D_BDDC,
+    ] {
+        cpu.stub(leaf, 0);
+    }
+    cpu.stub(GLIDE, 0);
+    const REFUND: u32 = 0x8004_21D4;
+    let refunds = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+    let r2 = refunds.clone();
+    cpu.hook(REFUND, move |r, _| r2.borrow_mut().push((r.r[A0], r.r[5])));
+    let strip = strip_log(&mut cpu);
+    let selectable = |hp: u16, status: u16| hp != 0 && status & 0xF84 == 0;
+    let mut rng = Rng(0x5249_4E47);
+    let mut seen = std::collections::HashMap::<&str, u32>::new();
+    for round in 0..3000 {
+        let party = 1 + rng.below(3) as u8;
+        let mut hp = [0u16; 3];
+        let mut status = [0u16; 3];
+        let mut item = [None::<u8>; 3];
+        for s in 0..usize::from(party) {
+            hp[s] = if rng.below(4) == 0 {
+                0
+            } else {
+                1 + rng.below(500) as u16
+            };
+            status[s] = [0u16, 0, 0, 0x4, 0x80, 0x1][rng.below(6) as usize];
+            item[s] = (rng.below(2) == 0).then(|| 1 + rng.below(0x60) as u8);
+        }
+        // The cursor stands on a member the forward walk stops on; the step
+        // counter is how many it walked past to get there.
+        let able: Vec<u8> = (0..party)
+            .filter(|&s| selectable(hp[usize::from(s)], status[usize::from(s)]))
+            .collect();
+        if able.is_empty() {
+            continue;
+        }
+        let seat = able[rng.below(able.len() as u32) as usize];
+        let walked = able.iter().filter(|&&s| s < seat).count() as u8;
+        let koru = rng.below(4) == 0;
+
+        // Retail.
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        cpu.mem.wr8(CTX, party);
+        cpu.mem.wr8(CTX + 0x06, 0x28);
+        cpu.mem.wr8(CTX + 0x13, seat);
+        cpu.mem.wr8(CTX + 0x1F, walked);
+        for s in 0..u32::from(party) {
+            let a = ACTOR + STRIDE * s;
+            cpu.mem.wr16(a + 0x14C, hp[s as usize]);
+            cpu.mem.wr16(a + 0x16E, status[s as usize]);
+            match item[s as usize] {
+                Some(id) => {
+                    cpu.mem.wr8(a + 0x1DE, 1);
+                    cpu.mem.wr8(a + 0x1DF, id);
+                }
+                None => cpu.mem.wr8(a + 0x1DE, 2),
+            }
+        }
+        cpu.mem.wr32(PAD, CANCEL);
+        cpu.mem.wr32(PAD_HELD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, 0);
+        cpu.mem.wr32(CONFIRM_MASK, CONFIRM);
+        cpu.mem.wr32(CANCEL_MASK, CANCEL);
+        cpu.mem.wr8(BATTLE_ID, if koru { TIMED_FIGHT } else { 0 });
+        refunds.borrow_mut().clear();
+        strip.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let after = cpu.mem.rd8(CTX + 0x06);
+        let landed = cpu.mem.rd8(CTX + 0x13);
+
+        // The port.
+        let mut w = World::new();
+        w.load_party(legaia_save::Party::zeroed(usize::from(party)));
+        w.enter_battle(party, 2);
+        w.party.party_count = party;
+        w.battle.player_driven = true;
+        w.party.inventory.clear();
+        for s in 0..usize::from(party) {
+            let a = &mut w.actors[s].battle;
+            a.liveness = u16::from(hp[s] != 0);
+            a.set_hp_synced(hp[s]);
+            seat_status(&mut w, s as u8, status[s], false);
+            if (s as u8) < seat {
+                w.battle.round_flow.pending[s] = Some(match item[s] {
+                    Some(id) => PendingPartyAction::Item {
+                        item_id: id,
+                        used_slots: vec![],
+                    },
+                    None => PendingPartyAction::Attack { target: party },
+                });
+            }
+        }
+        w.battle.set_battle_flow(BattleFlowState::CategoryMenu);
+        w.drive_step_back_battle_command(seat);
+        let label = format!(
+            "round {round}: party {party} hp {hp:?} status {status:x?} items {item:?} seat {seat} \
+             walked {walked} koru {koru} -> {after:#x} landed {landed} refunds {:?}",
+            refunds.borrow()
+        );
+        if after == 0x1E {
+            assert_eq!(w.battle.flow, BattleFlowState::TurnPrompt, "{label}");
+            assert!(refunds.borrow().is_empty(), "{label}");
+            assert_strip_registered(&strip.borrow(), koru, &label);
+            *seen
+                .entry(if koru { "koru prompt" } else { "prompt" })
+                .or_default() += 1;
+            continue;
+        }
+        assert!(strip.borrow().is_empty(), "{label}");
+        assert_eq!(after, 0x28, "{label}");
+        assert_eq!(w.battle.flow, BattleFlowState::CategoryMenu, "{label}");
+        assert_eq!(
+            w.battle.round_flow.cursor, landed,
+            "{label}: the landing member"
+        );
+        let slot = usize::from(landed);
+        match item[slot] {
+            Some(id) => {
+                assert_eq!(*refunds.borrow(), [(u32::from(id), 1)], "{label}");
+                assert_eq!(
+                    w.party.inventory.get(&id).copied(),
+                    Some(1),
+                    "{label}: the bag"
+                );
+                assert!(w.battle.round_flow.pending[slot].is_none(), "{label}");
+                *seen.entry("refund").or_default() += 1;
+            }
+            None => {
+                assert!(refunds.borrow().is_empty(), "{label}");
+                *seen.entry("no refund").or_default() += 1;
+            }
+        }
+    }
+    for key in ["prompt", "koru prompt", "refund", "no refund"] {
+        assert!(seen.get(key).copied().unwrap_or(0) > 20, "{key}: {seen:?}");
+    }
+}
+
+/// The round start `0x14` in Koru's fight (`0x801D0F0C..0x801D1028`): the
+/// strip's two numbers are stored once, `4 - ctx[+0x28A]` turns and the
+/// first monster seat's `hp * 100 / max_hp`, and registered as text records
+/// pointing at them; any other fight stores nothing. Against
+/// `timed_fight_turns_left` / `hp_left_percent`.
+#[test]
+fn the_timed_fight_strip_stores_what_retail_stores() {
+    differential!(prot(898, STATE_MACHINE));
+    use legaia_engine_battle_menus::timed_fight::{hp_left_percent, timed_fight_turns_left};
+    let Some((mut cpu, _, _, _)) = retail_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    for leaf in [
+        0x801D_88CCu32,
+        0x801D_A780,
+        0x801E_752C,
+        0x801D_5854,
+        0x801D_8DE8,
+    ] {
+        cpu.stub(leaf, 0);
+    }
+    let strip = strip_log(&mut cpu);
+    const TURNS: u32 = 0x801F_6958;
+    let mut rng = Rng(0x4B4F_5255);
+    let mut koru_rounds = 0;
+    for round in 0..2000 {
+        let koru = rng.below(2) == 0;
+        let first = if koru {
+            TIMED_FIGHT
+        } else {
+            rng.below(0xB5) as u8
+        };
+        let turn = rng.below(5) as u8;
+        let max_hp = 1 + rng.below(0x2000) as u16;
+        let hp = [0, max_hp, rng.below(u32::from(max_hp) + 1) as u16][rng.below(3) as usize];
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        for i in 0..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+        }
+        let monster = ACTOR + STRIDE * 3;
+        cpu.mem.wr16(monster + 0x14C, hp);
+        cpu.mem.wr16(monster + 0x14E, max_hp);
+        cpu.mem.wr8(CTX, 3);
+        cpu.mem.wr8(CTX + 0x06, 0x14);
+        cpu.mem.wr8(CTX + 0x28A, turn);
+        cpu.mem.wr8(BATTLE_ID, first);
+        cpu.mem.wr16(TURNS, 0xA5A5);
+        cpu.mem.wr32(PAD, 0);
+        cpu.mem.wr32(CROSS_ENTRY, 0);
+        strip.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(STATE_MACHINE, &[]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let label = format!("round {round}: first {first:#x} turn {turn} hp {hp}/{max_hp}");
+        assert_eq!(cpu.mem.rd8(CTX + 0x06), 0x1E, "{label}");
+        assert_strip_registered(&strip.borrow(), koru, &label);
+        if koru {
+            let retail = (
+                u32::from(cpu.mem.rd8(TURNS)),
+                u32::from(cpu.mem.rd8(TURNS + 1)),
+            );
+            let port = (
+                timed_fight_turns_left(u32::from(turn)),
+                hp_left_percent(hp, max_hp),
+            );
+            assert_eq!(retail, port, "{label}");
+            koru_rounds += 1;
+        } else {
+            assert_eq!(cpu.mem.rd16(TURNS), 0xA5A5, "{label}: nothing stored");
+        }
+    }
+    assert!(koru_rounds > 500, "{koru_rounds}");
 }
