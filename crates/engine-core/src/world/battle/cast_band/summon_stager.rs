@@ -38,6 +38,25 @@ impl World {
         // module phase `ctx+0x279` before the first tick.
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
+        // The group list the prologue fills for a whole-row cast: every
+        // monster seat `3..7` with HP but the caster's (`0x801E66E8..
+        // 0x801E6770`, behind the row code `9` with no lone survivor
+        // latched, `0x801E6604..0x801E6620`).
+        let map = self.cast_seat_map();
+        let caster_retail = map.retail(caster);
+        let row_cast = self.cast_view(caster).target_code == 9;
+        self.casting.module_group_seats = if row_cast {
+            (3..7u8)
+                .filter(|&r| r != caster_retail)
+                .filter(|&r| {
+                    map.engine(r)
+                        .and_then(|e| self.actors.get(usize::from(e)))
+                        .is_some_and(|a| a.battle.hp != 0)
+                })
+                .fold(0, |m, r| m | 1 << (r - 3))
+        } else {
+            0
+        };
         self.casting.module_handover_waits = false;
         // The hit bookkeeping is one cast's: which arm has opened its fold,
         // and whether the module's own sites land the hits so the fold owes

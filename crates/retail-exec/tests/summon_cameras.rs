@@ -592,8 +592,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // the last), as the band fills it at the cast: the living
             // monsters. Mule's wave divides a roll by three only for a seat
             // on it (`0x801F7EA8..0x801F7ED0`).
+            // The fallen runs leave seat 3 off it, as for a monster that
+            // stood back up after the list was filled.
             let living: Vec<u8> = (3..7u32)
                 .filter(|&s| cpu.mem.rd16(ACTOR + s * STRIDE + 0x14C) != 0)
+                .filter(|&s| !(fallen && s == 3))
                 .map(|s| s as u8)
                 .collect();
             for i in 0..4u32 {
@@ -667,6 +670,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // band's module half (`World::drive_summon_module_pass`) run on
             // retail's phase beside each pass, every seat compared after it.
             let mut shadow = summon_shadow(&mut cpu, layout, action);
+            if let Some(w) = shadow.as_mut()
+                && fallen
+            {
+                w.casting.module_group_seats &= !1;
+            }
             if let (Some(w), Some(s)) = (shadow.as_mut(), stoned) {
                 w.battle.status_effects.apply(
                     s as u8,

@@ -984,6 +984,10 @@ impl World {
     /// REF: FUN_801DD0AC (each wave roll, through [`Self::summon_module_roll`])
     /// REF: FUN_801F44A0 (the popup push, `World::battle.hit_fx`)
     fn mule_wave_hit(&mut self, slot: usize, front: i32, shield: bool, caster: u8, spell_id: u8) {
+        fn map_bit(w: &World, slot: u8) -> u8 {
+            let r = w.cast_seat_map().retail(slot);
+            if (3..7).contains(&r) { 1 << (r - 3) } else { 0 }
+        }
         use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
         let s = slot as u8;
         let v = self.cast_view(s);
@@ -1008,7 +1012,11 @@ impl World {
         let Some(roll) = self.summon_module_roll(caster, s, spell_id) else {
             return;
         };
-        let mut hit = roll / 3;
+        // A whole-row cast (`+0x1DD == 9`) divides only for a seat on the
+        // group list (`0x801F7EA8..0x801F7ED0`); any other divides always.
+        let group = self.cast_view(caster).target_code == 9;
+        let listed = map_bit(self, s) & self.casting.module_group_seats != 0;
+        let mut hit = if group && !listed { roll } else { roll / 3 };
         if hit == 0 {
             hit = self.next_rand() % 16 + 16;
         }

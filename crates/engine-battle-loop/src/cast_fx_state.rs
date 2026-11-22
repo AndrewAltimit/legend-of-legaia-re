@@ -125,6 +125,12 @@ pub struct CastFxState {
     /// The capture body took a branch with no damage site (PROT 0953's
     /// charge): the band's fold owes the cast nothing.
     pub module_skips_fold: bool,
+    /// The cast's group list `0x801F6978` as a seat mask (bit `k` for
+    /// monster seat `3 + k`): the action SM's prologue fills it for a
+    /// whole-row cast with the monsters living as the cast opens, the
+    /// caster's own seat excepted (`0x801E66B4..0x801E6770`). PROT 0929's
+    /// wave divides a roll by three only for a seat on it.
+    pub module_group_seats: u8,
     /// Spell XP the module's own hits have earned ahead of the fold: each
     /// wrapper roll runs the finisher's accrual tail (`0x801DE440`). Banked
     /// once, with the level check, when the cast folds or its fold is waived.
@@ -654,6 +660,7 @@ impl CastFxState {
             module_voice_gated: false,
             module_ctx_278: 0,
             module_skips_fold: false,
+            module_group_seats: 0,
             module_hit_xp: 0,
             pending_level_check: None,
             spore_gas_beat: Default::default(),
