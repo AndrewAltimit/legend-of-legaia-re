@@ -6,6 +6,13 @@
 
 use super::*;
 
+/// The tint state PROT 0931's arm 29 puts each living monster in on a fight
+/// that is not scripted (`li v0,0xC8` / `sb v0,0x21C` at `0x801F8660`).
+const JEDO_DISSOLVE_FLAG: u8 = 0xC8;
+/// The spell XP PROT 0931's arm 29 adds per living monster (`addiu v1,v1,3`
+/// at `0x801F86C0`).
+const JEDO_KILL_XP: u32 = 3;
+
 /// The PROT entry of Jedo's module (`summon_jedo`).
 const JEDO_ENTRY: u32 = 931;
 
@@ -97,6 +104,7 @@ impl World {
         passed: bool,
         caster_slot: u8,
         victim_slot: u8,
+        spell_id: u8,
     ) {
         use legaia_engine_cast::cast_module_camera as cam;
         use legaia_engine_cast::seru_magic_ticks as sm;
@@ -130,8 +138,18 @@ impl World {
                 self.credit_monster_defeated(caster_slot);
             }
             JEDO_ENTRY if self.battle_ctx.scripted_fight == 0 && phase_in == cam::JEDO_HIT_ARM => {
-                for _ in self.living_monster_slots() {
+                // Per living monster (`0x801F85F8..0x801F86D0`): the credit,
+                // the dissolve state `+0x21C = 0xC8` over the neutral word
+                // arm 23 stored (`0x801F8660..0x801F8664`), and three of the
+                // spell's XP into the caster's record outside a special
+                // battle (`lw 0x5D0` / `addiu 3` / `sw` at `0x801F86B8..
+                // 0x801F86C4`, behind `0x8007BAC0 == 0`).
+                for slot in self.living_monster_slots() {
                     self.credit_monster_defeated(caster_slot);
+                    if let Some(a) = self.actors.get_mut(slot) {
+                        a.battle.render_flag = JEDO_DISSOLVE_FLAG;
+                    }
+                    self.accrue_summon_spell_xp(caster_slot, spell_id, JEDO_KILL_XP);
                 }
             }
             _ => {}
@@ -266,12 +284,13 @@ impl World {
                 a.battle.render_flag = HIDDEN;
             }
         }
-        // Arm `0xFF` hides the victim (`sb s0,0x21C(s3)`, `sw zero,0x4(s3)` at
-        // `0x801F88BC`, `s0` the phase byte). A live victim's way back is not read
-        // yet, so the port hides only the seat the kill path emptied.
+        // Arm `0xFF` hides the victim, living or not, on every pass
+        // (`sb s0,0x21C(s3)`, `sw zero,0x4(s3)` at `0x801F88BC`, `s0` the
+        // phase byte `0xFF`). A living victim's way back is the band's: state
+        // `0x36`'s restore lowers the marker over the cleared word
+        // (`battle_action::summon`), the engine's resting neutral.
         if phase_in == cam::ALURU_DONE_ARM
             && let Some(a) = self.actors.get_mut(usize::from(victim))
-            && a.battle.hp == 0
         {
             a.battle.render_flag = HIDDEN;
             a.battle.render_color = 0;
@@ -382,10 +401,17 @@ impl World {
                     }
                 }
                 if passed {
+                    // `sh zero,0x14C` / `sb 2,0x21C` / `sw zero,0x4`
+                    // (`0x801F8814..0x801F882C`): each living monster's HP
+                    // zeroed, into the defeat fade on a cleared word.
                     for slot in self.living_monster_slots() {
                         let mut v = self.cast_view(slot as u8);
                         v.hp = 0;
                         self.write_cast_view(slot as u8, &v);
+                        if let Some(a) = self.actors.get_mut(slot) {
+                            a.battle.render_flag = 2;
+                            a.battle.render_color = 0;
+                        }
                     }
                 }
             }

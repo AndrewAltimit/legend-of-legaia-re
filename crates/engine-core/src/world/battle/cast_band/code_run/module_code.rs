@@ -2578,6 +2578,7 @@ impl World {
             ctx.phase != phase_in,
             caster_slot,
             victim_slot,
+            spell_id,
         );
         if let Some(scale) =
             legaia_engine_cast::cast_module_ticks::effect_sprite_scale_store(entry, phase_in)
