@@ -272,7 +272,12 @@ poll given, showed two arms with no port: the Seru-absorb puff behind a
 natural end (effect `0x14` at a downed seat committed to idle while a Seru is
 staged, and cue `0x1B` once an action), and the walk gates on
 `DAT_8007BD71`, which stop the hit and effect-script walks once the battle-end
-signal is up while the cue walk runs on.
+signal is up while the cue walk runs on. A cast-sequence film across a `rikuroa`
+kill that absorbs then showed the port puffing one clip early: the arm reads
+`+0x1D9`, which is the reaction channel's entry while a reaction plays, so the
+fallen monster puffs when its death entry ends and leaves it on idle, sixty
+vsyncs after the knockdown's end, where the port had tested the action
+channel alone ([the film](cast-sequence-oracle.md#the-seru-absorb-puff)).
 
 The item applier `FUN_800402F4`, run on a monster's casts, showed a class-1 group
 heal on the monster side walks the four monster seats `3..7` and stops short of

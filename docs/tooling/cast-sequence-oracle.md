@@ -2874,6 +2874,37 @@ Magic's `XA22`. A capture child (a film, the retail comparison's image child, th
 PCSX-Redux's `4` (`CastFxState::capture_seek_recorded`), the hold the films' recordings measure and
 the corpus's seeds stand on.
 
+## The Seru-absorb puff
+
+The anim node tick's absorb arm (`FUN_80047430` `0x80047B5C..0x80047BC0`)
+needs a kill that stages a Seru, and no library strike state holds one: every
+party there already knows its targets' Seru. A harvest run made one
+(`autorun_battle_harvest.lua` from `rikuroa_field_card_walk`, a synthetic
+formation of monster `26` over row 0 through `LEGAIA_WANT_FORCE`, monster HP
+cut to `1`, Vahn's `343` chain, `LEGAIA_PARTY_KEY_BATTLE` so each fight keeps
+its own strike state, and `LEGAIA_ABSORB_LOG`, which logs the arm's effect
+spawn and cue). Vahn knows spells `0x81` and `0x83` only and monster `26`
+carries Seru `2`, so a roll can land; the third fight's does. Retail puffs on the fallen monster twice, as its death entry ends on
+idle in state `0x20` and again sixty vsyncs later in the Done band, and sounds
+`0x1B` (ring id `0x01A`) once.
+
+A `--physical` film from that fight's strike state, run through a private
+library (`LEGAIA_FILM_LIBRARY`), put the port's cue sixty ticks early: the port
+tested the action channel, which a dead monster's reaction leaves on `0`, so
+it puffed when the knockdown ended. Reading the reaction channel's entry first,
+as `+0x1D9` holds it, moves the cue onto retail's tick (cue score `.857` to
+`.952`, image `.829` to `.830`). The one cue left is a `0x007` the engine
+sounds on Vahn's third strike against the dead monster, which retail leaves
+silent.
+
+## Puera's yellow ease
+
+The `s94` film (Puera's Dream Illusion from `party_basic_attack_vs_gobu_gobu`)
+reads `.972` with cues `1.000`. Its worst arm is `12`, the white flash Puera
+sinks into, at `.721`; with the arm-11 pass's yellow tint taken out the arm
+reads `.712`, so the ease is retail's, and the creature's mean colour tracks
+retail's through arms 11 and 12 within a few levels.
+
 ## See also
 
 - [Retail comparison corpus](retail-compare.md) - the per-state breadth sibling and its image metric

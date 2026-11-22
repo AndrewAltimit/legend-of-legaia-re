@@ -95,6 +95,8 @@
 --                    LEGAIA_PARTY_HOLDS (default "6,30,60") into the loop,
 --                    key p<char>_a<art tokens>_h<hold>. LEGAIA_SPIRIT_ROUNDS
 --                    still applies first (0 = attack from round one).
+--                    LEGAIA_PARTY_KEY_BATTLE=1 adds the battle count to the
+--                    key, so LEGAIA_PER_KEY counts per fight.
 --   LEGAIA_MONSTER_TOUGH 1 = at each round prompt write every monster's HP back
 --                    to its maximum, so the fight outlasts the arts lists; say
 --                    so in the state's description
@@ -103,6 +105,11 @@
 --                    libsnd sequence, its play flags, tick wait, read cursor)
 --                    and the sounding voice records split by owner: what a
 --                    fight does to the music between the step and the return
+--   LEGAIA_ABSORB_LOG 1 = log the anim node tick's Seru-absorb puff
+--                    (FUN_80047430: the effect 0x14 spawn at 0x80047B98, the
+--                    cue 0x1B at 0x80047BBC) with the node, its HP and clip,
+--                    the staged Seru ctx[+0x269] and the cue latch
+--                    (breakpoints: run without --fast)
 --   LEGAIA_OSC_LOG   1 = write osc.csv, one row per vsync: the game mode, the
 --                    list-0 node counts of the three handlers the MAN loader's
 --                    sweeps retire (camera mover 0x801DC0BC, floor-ladder
@@ -172,6 +179,9 @@ end
 P.TRACE = probe.getenv_num("LEGAIA_PARTY_TRACE", 0) == 1
 P.trace = {}
 P.MONSTER_TOUGH = probe.getenv_num("LEGAIA_MONSTER_TOUGH", 0) == 1
+-- 1 = key each party capture by the battle count too (`_b<n>`), so
+-- LEGAIA_PER_KEY counts per fight rather than per art.
+P.KEY_BATTLE = probe.getenv_num("LEGAIA_PARTY_KEY_BATTLE", 0) == 1
 local SCENE_SETTLE = probe.getenv_num("LEGAIA_SCENE_SETTLE", 150)
 local LOADED_DEFINE = 0x80084540
 local PLAYER_PTR = 0x8007c364
@@ -379,6 +389,27 @@ local function log_audio(vsync, mode)
         src(0x8007052C), src(0x8007056C), music, cue)
 end
 
+-- The Seru-absorb puff behind a natural end (FUN_80047430
+-- 0x80047B5C..0x80047BC0): the effect 0x14 spawn at 0x80047B98, the cue
+-- 0x1B at 0x80047BBC, each with the node, its HP and the staged Seru.
+local ABSORB = { on = probe.getenv_num("LEGAIA_ABSORB_LOG", 0) == 1, vsync = function() return 0 end }
+function ABSORB.arm()
+    local bp = require("probe.bp")
+    for _, t in ipairs({ { 0x80047B98, "puff" }, { 0x80047BBC, "puff_cue" } }) do
+        bp.arm(t[1], "Exec", 4, t[2], function()
+            local g = PCSX.getRegisters().GPR.n
+            local node = tonumber(g.s2) or 0
+            local ctx = probe.read_u32(0x8007BD24) or 0
+            logf("absorb %s vsync=%d node=0x%08x hp=%d anim=%d seru=%d acting=%d st7=%d pos=%d,%d,%d latch=%d",
+                t[2], ABSORB.vsync(), node, probe.read_u16(node + 0x14C) or -1,
+                probe.read_u8(node + 0x1D9) or -1, probe.read_u8(ctx + 0x269) or -1,
+                probe.read_u8(ctx + 0x13) or -1, probe.read_u8(ctx + 0x07) or -1,
+                probe.read_u16(node + 0x34) or 0, probe.read_u16(node + 0x36) or 0,
+                probe.read_u16(node + 0x38) or 0, probe.read_u32(0x801F698C) or -1)
+        end)
+    end
+end
+
 local OSC = {
     on = probe.getenv_num("LEGAIA_OSC_LOG", 0) == 1,
     shots = probe.getenv_num("LEGAIA_OSC_SHOTS", 0),
@@ -386,6 +417,7 @@ local OSC = {
     vsync = 0,
     returned_at = nil,
 }
+ABSORB.vsync = function() return OSC.vsync end
 function OSC.counts()
     local live = { [0x801DC0BC] = 0, [0x801DA930] = 0, [0x80037018] = 0 }
     local dead = { [0x801DC0BC] = 0, [0x801DA930] = 0, [0x80037018] = 0 }
@@ -487,12 +519,14 @@ probe.run({
         logf("sstate=%s frames=%d hold=%d per_key=%d max=%d",
             SSTATE_PATH, FRAMES, HOLD, PER_KEY, MAX_CAPS)
         if OSC.on then OSC.arm() end
+        if ABSORB.on then ABSORB.arm() end
         return {}
     end,
 
     on_capture = function(ctx, vsync)
         release_if_due(vsync)
         local mode = probe.read_u8(GAME_MODE_VA) or 0
+        OSC.vsync = vsync
         if OSC.on then OSC.tick(ctx, vsync, mode) end
         if probe.getenv_num("LEGAIA_AUDIO_LOG", 0) == 1 then
             audio_log = audio_log or probe.csv_open(probe.out_path("audio.csv"),
@@ -634,6 +668,7 @@ probe.run({
                     local el = vsync - P.since
                     for _, h in ipairs(P.HOLDS) do
                         local key = string.format("p%d_a%s_h%d", char, P.art[seat] or "x", h)
+                        if P.KEY_BATTLE then key = string.format("%s_b%d", key, battles) end
                         if el >= h and (per_key[key] or 0) < PER_KEY and caps < MAX_CAPS then
                             local name = string.format("%s_%s_%s_v%d", PREFIX, key, scene_name(), vsync)
                             if save_checkpoint(name, vsync) then

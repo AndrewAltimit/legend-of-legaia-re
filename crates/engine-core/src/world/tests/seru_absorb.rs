@@ -213,3 +213,24 @@ fn the_catch_rate_setting_replaces_the_records_chance() {
     assert_eq!(staged(100, None), 1);
     assert_eq!(staged(100, Some(0)), 0);
 }
+
+/// The natural-end puff reads `+0x1D9`, which is the reaction channel's
+/// entry while one plays: a dead monster on its death entry does not puff
+/// when the knockdown before it ends, only once the death entry's own end
+/// leaves it on idle (`captures/w53-E/films/rikuroa_absorb_b3`: retail
+/// puffs and sounds `0x1B` on the death entry's end, sixty vsyncs after the
+/// knockdown's).
+#[test]
+fn the_absorb_puff_waits_for_the_death_entry_to_end() {
+    let mut world = absorb_world(100, true);
+    world.battle_ctx.absorbed_seru = 1;
+    world.actors[1].battle.hp = 0;
+    world.actors[1].battle.current_anim = 0;
+    world.actors[1].battle_reaction_entry = Some(4);
+    assert_eq!(world.absorb_puff_plan(1), None, "on the death entry");
+    world.actors[1].battle_reaction_entry = None;
+    assert!(
+        world.absorb_puff_plan(1).is_some_and(|(_, cue)| cue),
+        "idle at zero HP with the Seru staged puffs and sounds"
+    );
+}
