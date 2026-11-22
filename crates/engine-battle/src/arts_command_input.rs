@@ -719,11 +719,28 @@ impl ArtsCommandInputSession {
         });
     }
 
+    /// Retail's `0x5A` cancel (`0x801D2304..0x801D23DC`): wipe the sixteen
+    /// queue bytes and, for an entry opened from the arts input, return to
+    /// it (`0x50`, case `0xF`), the committed pennants sliding off. The wipe
+    /// takes a replayed preseed with it; step `0xF` re-opens the chips in
+    /// mode `0`.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D2304..0x801D23DC`, the target cursor's cancel)
+    fn cancel_to_entry(&mut self) {
+        self.retreat_pennants();
+        self.clear_preseed();
+        self.replay = false;
+        self.buffer.clear();
+        self.spent.clear();
+        self.pool = self.pool_max;
+        self.phase = ArtsInputPhase::Entering;
+        self.chip_slide = Some(0);
+    }
+
     /// Advance one frame. `party` / `monsters` describe slot occupancy for
     /// the Begin target picker. A no-op once the session has resolved.
     pub fn input(&mut self, ev: ArtsCommandPad, party: [SlotState; 3], monsters: [SlotState; 5]) {
         self.step_glides();
-        let was_review = matches!(self.phase, ArtsInputPhase::Review);
         // Triangle cycles the learned-arts list in the entry phases
         // (closed -> page 0 -> .. -> last page -> closed); inert with no
         // pages, matching retail's no-learned-art case.
@@ -864,21 +881,7 @@ impl ArtsCommandInputSession {
                 // The review's cancel sits behind the same live-glide scan
                 // (`beq s4,zero` at `0x801D2304`).
                 if ev.circle && !self.cancel_held() {
-                    // Retail's `0x5A` cancel (`0x801D2304..0x801D23DC`) wipes
-                    // the sixteen queue bytes and, for an entry opened from
-                    // the arts input, returns to it (`0x50`, case `0xF`).
-                    // The wipe takes a replayed preseed with it.
-                    self.retreat_pennants();
-                    self.clear_preseed();
-                    self.replay = false;
-                    self.buffer.clear();
-                    self.spent.clear();
-                    self.pool = self.pool_max;
-                    self.phase = ArtsInputPhase::Entering;
-                    // Step `0xF` re-opens the chips in mode `0`.
-                    if was_review {
-                        self.chip_slide = Some(0);
-                    }
+                    self.cancel_to_entry();
                 } else if ev.cross || ev.up || ev.down || ev.left || ev.right {
                     // Any other press opens the target picker; the commit it
                     // resolves to walks the ring on, and the last member's
@@ -906,6 +909,19 @@ impl ArtsCommandInputSession {
                 }
             }
             ArtsInputPhase::Targeting { mut picker } => {
+                // Retail's target cursor is the same state `0x5A` as the
+                // review, so its cancel is the review's: one press wipes the
+                // string and returns to the entry (`0x801D2304..0x801D23DC`,
+                // case `0xF`), behind the same live-glide scan. The picker's
+                // own step back to the review has no retail counterpart.
+                if ev.circle {
+                    if !self.cancel_held() {
+                        self.cancel_to_entry();
+                    } else {
+                        self.phase = ArtsInputPhase::Targeting { picker };
+                    }
+                    return;
+                }
                 picker.input(PickerInput {
                     up: ev.up,
                     down: ev.down,

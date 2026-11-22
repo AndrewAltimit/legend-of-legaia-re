@@ -29,6 +29,8 @@ const COMMANDS: [(u32, Command); 4] = [
 ];
 const CONFIRM: u32 = 0x0040;
 const CANCEL: u32 = 0x0020;
+const LEFT_PAD: u32 = 0x8000;
+const RIGHT_PAD: u32 = 0x2000;
 const SPAWN: u32 = 0x801D_8DE8;
 const FRAME_STEP: u32 = 0x1F80_0393;
 const PENNANT_HANDLES: u32 = 0x8017_0000;
@@ -91,13 +93,14 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
         0x801D_5854, // the camera
         0x801D_5718,
         0x8003_5F04,
+        0x801D_BB8C, // the review's re-entry leaf
     ] {
         cpu.stub(stub, 0);
     }
     register_pennant_glides(&mut cpu);
     let mut rng = Rng(0x4152_5453);
     let dead = SlotState::default();
-    let (mut ends, mut refused, mut restarts, mut held) = (0, 0, 0, 0);
+    let (mut ends, mut refused, mut restarts, mut held, mut backed) = (0, 0, 0, 0, 0);
     for round in 0..3000 {
         let costs: [u8; 4] =
             std::array::from_fn(|_| [0x1E, 0x1E, 0x2A, 0x36][rng.below(4) as usize]);
@@ -206,6 +209,44 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
             assert_eq!(buffer, port_buffer, "buffer: {context}");
             if retail_state == 0x5A {
                 ends += 1;
+                // The target cursor the entry ends on (`0x5A`,
+                // `0x801D21CC..0x801D23EC`): Left / Right step the ring and
+                // stay, the cancel goes back to the entry through case `0xF`
+                // (`0x801D23C8..0x801D23DC`, with `ctx[+0x266 + seat]` clear
+                // and the option word not `1`), wiping the string. The port
+                // runs the same presses on one standing monster.
+                let foe = [
+                    SlotState::alive(true, true).with_seat(0x100, 0x100),
+                    dead,
+                    dead,
+                    dead,
+                    dead,
+                ];
+                for sub in 0..4 {
+                    let press = [LEFT_PAD, RIGHT_PAD, CANCEL, 0][rng.below(4) as usize];
+                    frame(&mut cpu, press);
+                    let ev = ArtsCommandPad {
+                        left: press == LEFT_PAD,
+                        right: press == RIGHT_PAD,
+                        circle: press == CANCEL,
+                        ..ArtsCommandPad::default()
+                    };
+                    s.input(ev, [dead; 3], foe);
+                    let retail = (cpu.mem.rd8(CTX + 0x06), cpu.mem.rd8(CTX + 0x19));
+                    let port = (
+                        match s.phase {
+                            ArtsInputPhase::Entering => 0x50,
+                            ArtsInputPhase::Review | ArtsInputPhase::Targeting { .. } => 0x5A,
+                            _ => 0xFF,
+                        },
+                        s.committed_string().len() as u8,
+                    );
+                    assert_eq!(retail, port, "cursor {sub} press {press:#x}: {context}");
+                    if retail.0 == 0x50 {
+                        backed += 1;
+                        break;
+                    }
+                }
                 break;
             }
             if retail_count == before_count && press & 0xF000 != 0 {
@@ -221,8 +262,8 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
         }
     }
     assert!(
-        ends > 300 && refused > 100 && restarts > 30 && held > 50,
-        "{ends} {refused} {restarts} {held}"
+        ends > 300 && refused > 100 && restarts > 30 && held > 50 && backed > 50,
+        "{ends} {refused} {restarts} {held} {backed}"
     );
 }
 
