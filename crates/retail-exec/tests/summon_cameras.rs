@@ -273,6 +273,8 @@ const PUERA: u32 = 0x801F_6A3C;
 /// The part spawn `FUN_80021B04`, the pool the walk hands PROT 0922's parts
 /// from, and arm 18's 23 crystal handles (`0x801F9F90 + 0x58`).
 const SPAWN_PART: u32 = 0x8002_1B04;
+/// The part pool's wrapper round [`SPAWN_PART`], on the same arguments.
+const SPAWN_POOLED: u32 = 0x8005_0ED4;
 const PARTS: u32 = 0x8016_0000;
 const PUERA_CRYSTALS: u32 = 0x801F_9FE8;
 
@@ -447,6 +449,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     let overlay = disc.read_entry(898).expect("PROT 0898");
     let mut failures = Vec::new();
     let mut sideband_held = 0usize;
+    let (mut spawns_matched, mut spawn_failures) = (0usize, Vec::<String>::new());
     let all: Vec<(u32, u32, u8)> = BODIES.iter().chain(&PACED).copied().collect();
     // Each module runs twice: on the full row, then with the second monster
     // seat fallen and faded (`+0x14C = 0`, `+0x04 = 0`), which the row walks
@@ -475,15 +478,25 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         }
         // PROT 0922 keeps the handles of the parts it spawns and moves them
         // (arm 19's crystal re-seat, arm 20's fall): each spawn gets a part.
-        if entry == 922 {
-            let next = Rc::new(std::cell::Cell::new(PARTS));
-            cpu.hook(SPAWN_PART, move |r, m| {
-                let at = next.get();
-                next.set(at + 0x80);
-                for o in (0..0x80).step_by(4) {
-                    m.wr32(at + o, 0);
+        // Every part spawn and its pool wrapper is logged as `(record,
+        // point, angles)` for the director's spawns.
+        let spawn_log = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3])>::new()));
+        let next = Rc::new(std::cell::Cell::new(PARTS));
+        for spawn in [SPAWN_PART, SPAWN_POOLED] {
+            let next = next.clone();
+            let log = spawn_log.clone();
+            cpu.hook(spawn, move |r, m| {
+                log.borrow_mut()
+                    .push((r.r[A2], trio(m, r.r[A0]), trio(m, r.r[A1])));
+                r.r[V0] = 0;
+                if entry == 922 {
+                    let at = next.get();
+                    next.set(at + 0x80);
+                    for o in (0..0x80).step_by(4) {
+                        m.wr32(at + o, 0);
+                    }
+                    r.r[V0] = at;
                 }
-                r.r[V0] = at;
             });
         }
         {
@@ -745,6 +758,24 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         act.battle.render_color = cpu.mem.rd32(a + 4);
                     }
                 }
+                // The seats the host resolves a spawn's anchor on
+                // (`World::module_anchor_context`), as this pass opens.
+                let anchor_seats = cam::AnchorSeats {
+                    caster: Some(caster_seat),
+                    caster_body: Some(seat_at(&mut cpu.mem, layout.caster, true)),
+                    victim_body: Some(seat_at(&mut cpu.mem, victim, true)),
+                    creature_body: Some(seat_at(&mut cpu.mem, CREATURE, true)),
+                    party: std::array::from_fn(|n| {
+                        (cpu.mem.rd16(ACTOR + n as u32 * STRIDE + 0x14C) != 0)
+                            .then(|| seat_at(&mut cpu.mem, n as u32, false))
+                    }),
+                    depth: cpu.mem.rd16(CTX + 0x6D0) as i16,
+                };
+                let anchor_victim = seat_at(&mut cpu.mem, victim, false);
+                // The creature's live seat, which the host feeds every tick
+                // its seat is up (`module_cam.creature_live`).
+                let creature_live = seat_at(&mut cpu.mem, CREATURE, false);
+                spawn_log.borrow_mut().clear();
                 let stop = cpu.call(va, &[]);
                 if stop != Stop::Returned {
                     failures.push(format!("PROT {entry:04} pass {pass} arm {phase}: {stop:?}"));
@@ -785,6 +816,58 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 } else {
                     (profile.direct)(&mut st, phase, seats)
                 };
+                // The records the director reports this pass, each on the
+                // point its anchor resolves to, against one of retail's
+                // spawn calls with the same record, point and angles.
+                // PROT 0934's spray points are the host's draws.
+                {
+                    let mut left = spawn_log.borrow().clone();
+                    for sp in arm.spawns {
+                        let record = match sp.record {
+                            cam::SpawnRecord::Module(r) => r,
+                            cam::SpawnRecord::BattleProto(p) => cpu.mem.rd32(p),
+                        };
+                        if entry == 934 && matches!(record, 0x801F_A320 | 0x801F_A36C | 0x801F_A3B8)
+                        {
+                            continue;
+                        }
+                        let point = match sp.anchor {
+                            cam::SpawnAnchor::ArmPoint => arm.arm_point,
+                            a => cam::spawn_anchor_point_with(
+                                a,
+                                st.creature.or(st.creature_live).or(Some(creature_live)),
+                                Some(anchor_victim),
+                                arm.shot,
+                                anchor_seats,
+                            ),
+                        };
+                        let Some((pos, rot)) = point else {
+                            spawn_failures.push(format!(
+                                "PROT {entry:04} pass {pass} arm {phase:#x}: spawn {record:#x} anchor {:?} unresolved",
+                                sp.anchor
+                            ));
+                            continue;
+                        };
+                        // Angles compare as the 12-bit turns the record
+                        // reads: a director's shot holds its yaw masked
+                        // where retail's stack holds the raw halfword.
+                        let turn = |a: [i16; 3]| a.map(|v| v & 0xFFF);
+                        match left
+                            .iter()
+                            .position(|&x| (x.0, x.1, turn(x.2)) == (record, pos, turn(rot)))
+                        {
+                            Some(i) => {
+                                left.remove(i);
+                                spawns_matched += 1;
+                            }
+                            None => spawn_failures.push(format!(
+                                "PROT {entry:04} target {code} fallen {fallen} pass {pass} arm {phase:#x}: spawn {record:#x} {:?} at {pos:?} {rot:?}: retail {:x?}",
+                                sp.anchor,
+                                left.iter().filter(|x| x.0 == record).collect::<Vec<_>>()
+                            )),
+                        }
+                    }
+                }
                 let mut port = t0;
                 port.apply(&arm);
                 let busy = cpu.regs.r[V0] != 0;
@@ -1035,6 +1118,20 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         }
     }
     assert!(sideband_held > 100, "{sideband_held} side-band passes held");
+    eprintln!(
+        "director spawns: {spawns_matched} matched, {} mismatches",
+        spawn_failures.len()
+    );
+    assert!(
+        spawns_matched >= 800,
+        "director spawns matched {spawns_matched}"
+    );
+    assert!(
+        spawn_failures.is_empty(),
+        "{} director spawn mismatches:\n{}",
+        spawn_failures.len(),
+        spawn_failures[..spawn_failures.len().min(40)].join("\n")
+    );
     let n = failures.len();
     failures.truncate(600);
     assert!(n == 0, "{n} mismatches:\n{}", failures.join("\n"));
