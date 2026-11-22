@@ -607,6 +607,13 @@ pub(super) fn apply_debug_seat_env(session: &mut NativeSession) {
     if std::env::var("LEGAIA_SEAT_SAVE_ALLOWED").is_ok_and(|v| v.trim() == "1") {
         session.host.world.party.scene_save_allowed = true;
     }
+    // `LEGAIA_SEAT_INCENSE_NOTICE=1` (the retail-compare image channel): a
+    // retail state holding the Incense wear-off notice (its record armed in
+    // `_DAT_8007B450`) raises it; the walk tick that raised it in retail ran
+    // before the capture.
+    if std::env::var("LEGAIA_SEAT_INCENSE_NOTICE").is_ok_and(|v| v.trim() == "1") {
+        session.host.world.raise_incense_notice();
+    }
     if let Ok(seat) = std::env::var("LEGAIA_SEAT") {
         let xz: Vec<i16> = seat
             .split(',')

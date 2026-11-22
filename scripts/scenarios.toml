@@ -7319,6 +7319,15 @@ topics = ["menu", "items", "retail-compare"]
 staging_source = "kor_field_route_walk"
 
 [[scenarios]]
+label = "field_kor_incense_notice_retail"
+backup_fingerprint = "80f10ad41ce57a872eb62e36d7b11a586d44d7225b87689a53a36385f880710c"
+description = "The Incense wear-off notice over kor (window record 16, painter FUN_801F1B64, field-overlay record 0x801F2278 armed in _DAT_8007B450, Incense window _DAT_8007B600 run to 0), waiting for its confirm, mode 0x03. Pad only past menu_incense_kor_retail (inherits its source's caveats): autorun_screen_walk.lua Cross on Yes, Circle out to the field, then Up / Down 70 vsyncs each until the window drained (two runs, the second from the first's last save); saved with the notice up."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor"
+topics = ["field", "items", "incense", "notice", "retail-compare"]
+
+[[scenarios]]
 label = "menu_door_wind_map03_retail"
 backup_fingerprint = "dfc686f835c2ec533bac8fbfdc54b0a2800ac1ddd64847b99c9e1a0cea6069c7"
 description = "Door of Wind destination list over map03, sub-screen 0x0C. RETAIL disc, pad only past the source: map03_field_door_hop (autorun_screen_walk.lua --turbo); inherits the door hop's tile pokes."
