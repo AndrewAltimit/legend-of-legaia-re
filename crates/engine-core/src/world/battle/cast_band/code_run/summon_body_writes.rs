@@ -800,8 +800,20 @@ impl World {
             _ => return,
         };
         let pc = usize::from(self.party.party_count);
-        for a in self.actors.iter_mut().skip(pc) {
+        // The hit arm's loop skips a Stoned seat whole (`andi 4` at
+        // `0x801F8744`, `bnez` to the step at `0x801F889C`).
+        let stoned: Vec<bool> = (0..self.actors.len())
+            .map(|s| {
+                self.raw_status_word(s as u8)
+                    & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                    != 0
+            })
+            .collect();
+        for (s, a) in self.actors.iter_mut().enumerate().skip(pc) {
             if a.battle_monster_id.is_none() || a.battle.hp == 0 {
+                continue;
+            }
+            if (phase_in, passed) == (18, true) && stoned[s] {
                 continue;
             }
             a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
@@ -1231,6 +1243,13 @@ impl World {
                     if !living(self, s) {
                         continue;
                     }
+                    // The second loop, the hit's (`0x801F89BC..0x801F8B3C`),
+                    // skips a Stoned seat (`andi 4` at `0x801F89DC`): such a
+                    // seat gets its parked pose back from the first loop and
+                    // nothing else.
+                    let stoned = self.raw_status_word(s as u8)
+                        & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                        != 0;
                     let saved = self
                         .casting
                         .module_saved_poses
@@ -1238,13 +1257,16 @@ impl World {
                         .find(|p| p.0 == s)
                         .copied();
                     let a = &mut self.actors[s];
-                    // The rate arm 0xF parked at `0` (`0x801F8AD8`).
-                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
                     if let Some((_, pos, facing)) = saved {
                         let m = &mut a.move_state;
                         [m.world_x, m.world_y, m.world_z] = pos;
                         a.battle.facing_angle = facing;
                     }
+                    if stoned {
+                        continue;
+                    }
+                    // The rate arm 0xF parked at `0` (`0x801F8AD8`).
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
                     if let Some(c) = creature {
                         let m = &a.move_state;
                         let h = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(

@@ -390,7 +390,15 @@ impl World {
         match phase {
             0xC => self.ra_seru_row_word(monster_count, 0, 7),
             0xD => {
+                // The hit loop skips a Stoned seat whole (`andi 4` at
+                // `0x801F7704`, `bnez` to the step at `0x801F7858`).
                 for (e, _) in self.ra_seru_row(monster_count) {
+                    let stoned = self.raw_status_word(e as u8)
+                        & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                        != 0;
+                    if stoned {
+                        continue;
+                    }
                     if let Some(a) = self.actors.get_mut(e) {
                         a.battle.render_flag = 0;
                         let b = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(

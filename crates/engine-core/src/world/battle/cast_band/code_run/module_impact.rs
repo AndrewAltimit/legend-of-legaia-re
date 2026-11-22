@@ -34,11 +34,17 @@ impl World {
                 ImpactSeat::LiveParty => (0..party)
                     .filter(|&s| party_hittable[usize::from(s)])
                     .collect(),
-                ImpactSeat::LiveMonsters => (party..party + 4)
+                ImpactSeat::LiveMonsters | ImpactSeat::LiveUnstonedMonsters => (party..party + 4)
                     .filter(|&s| {
                         self.actors.get(usize::from(s)).is_some_and(|a| {
                             a.active && a.battle_monster_id.is_some() && a.battle.hp != 0
                         })
+                    })
+                    .filter(|&s| {
+                        m.seat != ImpactSeat::LiveUnstonedMonsters
+                            || self.raw_status_word(s)
+                                & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                                == 0
                     })
                     .collect(),
             };
