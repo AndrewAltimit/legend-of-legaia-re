@@ -174,6 +174,13 @@ pub fn element_strike_camera(
     let at_caster = [c.x, c.y, c.z];
     let far = [c.x.wrapping_neg(), 0, c.z.wrapping_neg()];
     let rot = [0, c.facing as i16, 0];
+    // The records seated at the negated point take the arm's own stack
+    // trios, the focus `sp+0x20` and the angles `sp+0x10`
+    // (`addiu a0,sp,0x20` / `addiu a1,sp,0x10`, `0x801F84C4..0x801F84C8`;
+    // `0x801F705C..0x801F7060`): on a pass that cuts they hold the cut, the
+    // yaw `0x800 - facing` as the halfword the arm stored; on one that does
+    // not they hold the prologue's zeros.
+    let shot_rot = [0, 0x800_i16.wrapping_sub(c.facing as i16), 0];
     let cut = |pitch: i16, y: i16, z: i16| ModuleShot {
         angles: [pitch, yaw_from(0x800, c.facing), 0],
         tr: [0, y, z],
@@ -198,8 +205,10 @@ pub fn element_strike_camera(
             // crystal's middle, where the rays fan out from.
             let body = st.caster_body.unwrap_or(c);
             arm.pass_spawns[0] = Some(seat(OPEN_BODY, [body.x, body.y, body.z], rot));
-            arm.pass_spawns[1] = Some(seat(OPEN_FAR, far, rot));
-            arm.pass_spawns[2] = Some(seat(OPEN_ELEMENT[roll], far, rot));
+            // The two glows on the cut's trios (`move a0,s0` /
+            // `addiu a1,sp,0x10` at `0x801F6C9C..0x801F6CA0`).
+            arm.pass_spawns[1] = Some(seat(OPEN_FAR, far, shot_rot));
+            arm.pass_spawns[2] = Some(seat(OPEN_ELEMENT[roll], far, shot_rot));
             arm.element_stream = true;
             return arm;
         }
@@ -262,7 +271,7 @@ pub fn element_strike_camera(
                 *slot = r.map(|r| seat(r, at_caster, rot));
             }
             if let Some(r) = records.k1[2] {
-                arm.pass_spawns[2] = Some(seat(r, far, rot));
+                arm.pass_spawns[2] = Some(seat(r, far, shot_rot));
             }
         }
         2 => st.countdown.add(1 << 5),
@@ -278,8 +287,9 @@ pub fn element_strike_camera(
             for (slot, &r) in arm.pass_spawns.iter_mut().zip(records.k4) {
                 *slot = Some(seat(r, at_caster, rot));
             }
+            // No cut on this pass: the stack trios are still zero.
             if let Some(r) = records.k4_far {
-                arm.charge_spawns[0] = Some(seat(r, far, rot));
+                arm.charge_spawns[0] = Some(seat(r, [0; 3], [0; 3]));
             }
             if std::ptr::eq(records, &THUNDER) {
                 for i in 0..8u16 {
