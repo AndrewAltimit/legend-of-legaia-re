@@ -161,7 +161,7 @@
   </figure>
   <ul>
     <li><strong>The story state is the engine's from the first frame.</strong> The next anchor's flags still steer the beats pass - they are route knowledge - but nothing of an anchor's party or bag reaches the session.</li>
-    <li><strong>It keeps its own saves.</strong> At each milestone reached it takes <code>World::save_full</code>; after a party wipe it reloads that save, with the same guard retry and reload allowance the pad tier has.</li>
+    <li><strong>It keeps its own saves.</strong> At each milestone reached it takes <code>World::save_full</code>; after a party wipe it reloads that save, with the same guard retry the pad tier has and twice its reload allowance.</li>
     <li><strong>It stops at the first milestone it cannot reach</strong> and prints the stall.</li>
   </ul>
   <h3>What only a continuous run exercises</h3>
@@ -194,7 +194,7 @@
         <li><strong>A rest that stops resting.</strong> A keeper restores on one branch of its story only; a rest that lifts nobody is remembered as dry, and a bed that stops working leaves the bag in its place.</li>
         <li><strong>A counter the story has closed.</strong> <code>dolk2</code>'s dealers sell nothing while the festival flag <code>0x27D</code> is up; the hand finds and plays the record that lowers it, then returns.</li>
         <li><strong>Budget.</strong> A stretch has the pad segment's walking budget plus a share per waypoint, and four times its battle allowance, since this hand fights.</li>
-        <li><strong>A milestone reached with a fight committed.</strong> A save between a record's <code>3E FF</code> and the fight it commits (Cort's arrival in <code>jouine</code>) would skip the boss on reload, so the run keeps its earlier save and walks into such a door ready.</li>
+        <li><strong>A milestone reached with a fight committed.</strong> A save between a record's <code>3E FF</code> and the fight it commits (Cort's arrival in <code>jouine</code>) would skip the boss on reload, so the run keeps its earlier save and walks into such a door ready. The stretch after that door counts its reloads apart: wipes before the boss falls draw on an allowance of their own, a failure on the walk after the win on a fresh one, and the headline prints the boss-door reloads beside the total, so a change that moves how often Cort wins shows in that one count.</li>
         <li><strong>Nivora's solo duels.</strong> Gala, Noa and Vahn each fight a Delilas sibling alone out of one bag of heals, and Che's duel (Gala's) is the one the bag runs out on. Before it Gala swaps her least wanted worn accessories for better ones the bag holds (the upkeep only ever fills empty slots), keeping any element guard, and puts the old ones back after the duels; in the fight she drinks the Elixir that covers the most missing ramps first: one Wonder Elixir for the defence, attack and speed ramps instead of three turns of single Elixirs.</li>
         <li><strong>A later start.</strong> <code>LEGAIA_FGL_CONTINUOUS_FROM</code> seeds the run once from a later anchor; its stalls read against the anchor's position before its flags.</li>
       </ul>

@@ -202,8 +202,9 @@ pass toward each milestone in turn, never re-seeding:
   nothing of an anchor's party or bag reaches the session.
 - At each milestone reached it takes the engine's own save
   (`World::save_full`). After a party wipe it reloads that save, as a
-  player would, with the same guard retry and reload allowance the pad
-  tier has. A walk that stalls with nothing holding the player (no
+  player would, with the same guard retry the pad tier has and twice its
+  reload allowance (a boss-door stretch counts its own; see
+  [a milestone reached with a fight committed](#a-milestone-reached-with-a-fight-committed)). A walk that stalls with nothing holding the player (no
   script, the stall's next cell open) reloads it too, at most twice a
   stretch, on another hand of the stream: a corridor that wedged one deal
   of the dice is a reload for a player, not the end of the game. Every
@@ -945,6 +946,21 @@ member on that stream, the guard against Cort's element byte `7` worn or
 not) leaves every member standing, and the bag heals between casts. That
 is the hand's first sight of the fight, not an engine fault the trace
 shows.
+
+The stretch that starts at such a milestone is a **boss-door stretch**, and
+it counts its reloads apart. A wipe before the boss falls draws on the
+stretch's own allowance (`BOSS_DOOR_WIPE_ATTEMPTS`, never below the shared
+one); once a fight that forbids running ends with the party standing
+(`BOSS_WON`), a failure on the walk after it draws on a fresh allowance of
+its own. The headline prints the boss-door reloads beside the total
+(`N reload(s) of its own saves (M at boss doors)`), and under
+`LEGAIA_FGL_TRACE` each one prints a `[boss door]` line with the attempts
+lost to the boss and after it. Cort is the fight whose win depends most on
+the deal - any change to monster targeting, the seat hides or status procs
+moves how many goes it takes - so a change there reads in that count and
+leaves the rest of the run's allowance alone. The split only moves the
+limits: the re-deal on each reload is still salted by the stretch's total
+attempt count, so a run that never reaches a limit plays the same frames.
 
 ### A later start
 

@@ -815,7 +815,16 @@ pub(super) fn drain_battle(session: &mut NativeSession) -> Option<Run> {
     }
     PAD_DEADLINE.with(|d| d.set(d.get().saturating_add(lent)));
     let start = session.frames;
+    // A fight that forbids running and ends with the party standing is a
+    // boss beaten ([`super::continuous::BOSS_WON`]).
+    let boss = session.host.world.battle.no_escape;
     let r = fight_battle(session);
+    if boss
+        && super::segment::wiped(session).is_none()
+        && session.host.world.mode != SceneMode::Battle
+    {
+        super::continuous::BOSS_WON.with(|b| b.set(true));
+    }
     let used = session.frames.saturating_sub(start).min(lent);
     PAD_DEADLINE.with(|d| d.set(d.get().saturating_sub(lent - used)));
     PAD_BATTLE_LEFT.with(|l| l.set(l.get().saturating_sub(used)));
