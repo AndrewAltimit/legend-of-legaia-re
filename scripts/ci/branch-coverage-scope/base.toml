@@ -4,6 +4,11 @@
 # what stays below 100% there is the worklist: arms a port claims that no test
 # exercises. See docs/tooling/retail-kernel-differential.md#branch-coverage.
 #
+# The report reads every *.toml in this directory. Rows are split across
+# files by area so that branches adding rows in parallel touch different
+# files; add a row to the file for its area (or start one), and keep each
+# (entry, image, range) in one file only: `--check-scope` flags duplicates.
+#
 # One [[arm]] per contiguous range of the routine:
 #   entry   = the routine's entry VA (as its PORT tags name it)
 #   range   = "0x801D2BE8..0x801D2D24", inclusive; a single branch is "A..A"
