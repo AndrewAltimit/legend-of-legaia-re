@@ -2858,3 +2858,264 @@ image = "914784a36560ef74"
 range = "0x801D372C..0x801D3744"
 verdict = "unreachable"
 reason = "PROT 0972: the divide traps on the hook's size draw rand() % s4; s4 is the water class's weight, 10 (li s4,0xa at 0x801D3304, ahead of the class) or 100 / 300 / 500 (li s4 at 0x801D33B4 / 0x801D33EC / 0x801D3424), never 0 or -1."
+
+# lane B (w53)
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF4B4..0x801CF4B4"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF4C4..0x801CF4C4"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF4F0..0x801CF4F0"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF524..0x801CF524"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF540..0x801CF540"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF56C..0x801CF56C"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF5B4..0x801CF5B4"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF5D8..0x801CF5D8"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF5F4..0x801CF5F4"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF628..0x801CF628"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF644..0x801CF644"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF668..0x801CF668"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF684..0x801CF684"
+verdict = "unreachable"
+reason = "PROT 0976: a default arm of the state word's compare tree (`j 0x801D1F7C` for a value between two cases); the state word `DAT_801DBF44` is stored only with the case constants or a case's own `+1` (every `sw` to `-0x40BC(0x801E)` in the overlay), so no value lands in the gap"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF5EC..0x801CF5EC"
+verdict = "unreachable"
+reason = "PROT 0976: the compare that enters the two-row pause menu `0xBE`; no store in the overlay writes `0xBE` to the state word (the duel's pause edge stores `0xBF`, and no case is `0xBD` to step into it), so its taken arm never runs"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D131C..0x801D1458"
+verdict = "unreachable"
+reason = "PROT 0976: the body of state `0xBE`, the two-row pause menu, which nothing enters (the duel's pause edge stores `0xBF`; no `0xBE` store and no `0xBD` case in the overlay)"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF878..0x801CF878"
+verdict = "unported"
+reason = "PROT 0976: the null test on the fade actor handle `DAT_801DBF40` that `FUN_801D657C` returns; the live direction retires or keeps that actor (`+0x10 |= 8`, or no second spawn), a presentation the port leaves to the host (the cabinet surfaces no actor handles), and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CFEDC..0x801CFEDC"
+verdict = "unported"
+reason = "PROT 0976: the null test on the fade actor handle `DAT_801DBF40` that `FUN_801D657C` returns; the live direction retires or keeps that actor (`+0x10 |= 8`, or no second spawn), a presentation the port leaves to the host (the cabinet surfaces no actor handles), and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D0F0C..0x801D0F0C"
+verdict = "unported"
+reason = "PROT 0976: the null test on the fade actor handle `DAT_801DBF40` that `FUN_801D657C` returns; the live direction retires or keeps that actor (`+0x10 |= 8`, or no second spawn), a presentation the port leaves to the host (the cabinet surfaces no actor handles), and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D10D4..0x801D10D4"
+verdict = "unported"
+reason = "PROT 0976: the null test on the fade actor handle `DAT_801DBF40` that `FUN_801D657C` returns; the live direction retires or keeps that actor (`+0x10 |= 8`, or no second spawn), a presentation the port leaves to the host (the cabinet surfaces no actor handles), and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D12C4..0x801D12C4"
+verdict = "unported"
+reason = "PROT 0976: the null test on the fade actor handle `DAT_801DBF40` that `FUN_801D657C` returns; the live direction retires or keeps that actor (`+0x10 |= 8`, or no second spawn), a presentation the port leaves to the host (the cabinet surfaces no actor handles), and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF9AC..0x801CF9AC"
+verdict = "unported"
+reason = "PROT 0976: the signed `/ 4` rounding (`bgez` / `addiu 3` / `sra 2`) of a spawned actor's `+0x6A` as the arm seats it; the actor records are presentation the port leaves to the host, and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CFC64..0x801CFC64"
+verdict = "unported"
+reason = "PROT 0976: the signed `/ 4` rounding (`bgez` / `addiu 3` / `sra 2`) of a spawned actor's `+0x6A` as the arm seats it; the actor records are presentation the port leaves to the host, and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CFE38..0x801CFE38"
+verdict = "unported"
+reason = "PROT 0976: the signed `/ 4` rounding (`bgez` / `addiu 3` / `sra 2`) of a spawned actor's `+0x6A` as the arm seats it; the actor records are presentation the port leaves to the host, and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D1E08..0x801D1E08"
+verdict = "unported"
+reason = "PROT 0976: the signed `/ 4` rounding (`bgez` / `addiu 3` / `sra 2`) of a spawned actor's `+0x6A` as the arm seats it; the actor records are presentation the port leaves to the host, and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D04B4..0x801D04B4"
+verdict = "unported"
+reason = "PROT 0976: state `0x37` waits on the scene-ready bit `0x1F800394 & 0x80` the streamed round assets raise; the port loads the arena synchronously and takes the bit as up"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D0518..0x801D0518"
+verdict = "unreachable"
+reason = "PROT 0976: the clamp of `timer * 8` to `0x100` in state `0x38`; the arm runs only with the timer below `0x20` (`slti` / `beqz` at 0x801D0508), so the product is at most `0xF8`"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D0560..0x801D0560"
+verdict = "unreachable"
+reason = "PROT 0976: state `0x38` re-reads its timer `DAT_801DC128` after the widget call `FUN_801D5ED0`, having just found it below `0x20`; every store to the word is in the cabinet body (none in the widget emitter), so the re-read cannot differ"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D0670..0x801D0670"
+verdict = "unported"
+reason = "PROT 0976: the round-over arm calls the round score `FUN_801D2A28` when the result sub-state `DAT_801DBF84` is `3` (player won); the port makes that call from the fight's `end_round` on the player's round win, and `baka_fight` runs `FUN_801D2A28` itself"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D07B4..0x801D07E0"
+verdict = "unreachable"
+reason = "PROT 0976: the debug shortcut that arms a secret rung from the held pad when the developer print flag `_DAT_8007B9B0` is set; nothing in SCUS_942.54 or the overlay stores that word, so retail ships with it clear"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D0A7C..0x801D0A7C"
+verdict = "unported"
+reason = "PROT 0976: the tally's nudge of the player actor `DAT_801DBFA0` (`+0x18 += 0x3C` when `+0x5A == 1`); actor records are presentation the port leaves to the host, and the harness stubs the spawn"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D114C..0x801D114C"
+verdict = "unreachable"
+reason = "PROT 0976: state `0x6D` skips its timer step while the timer is zero, but the arm seeds the timer to `1` when it finds it zero (0x801D10A4..0x801D10B0) before this test and the timer only grows"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D11B0..0x801D11B0"
+verdict = "unreachable"
+reason = "PROT 0976: the `0xF0` clamp on state `0x96`'s timer as it reads it for the wipe; the duel arm enters `0x96` the first frame the round timer reaches `0xB5` (0x801D0620), the arm adds `2 * step` (step at most 4) and leaves zeroing it at `0xF1`, so the read never exceeds `0xF0`"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D18D4..0x801D18D4"
+verdict = "unreachable"
+reason = "PROT 0976: the default arm of the developer menu's debug-mode switch on `DAT_801DBF94`, which its only editor wraps unsigned `% 3`, so it is always 0, 1 or 2; the menu itself needs the developer gate `_DAT_8007B868`, which retail never sets"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D1D14..0x801D1D14"
+verdict = "unreachable"
+reason = "PROT 0976: the keyframe editor `0x190` past its third row (`DAT_801DBF04 >= 3`); the editor is reached only through the developer menu, behind the gate `_DAT_8007B868` that retail never sets, and the row word is moved only by the editor helpers the harness stubs"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D203C..0x801D203C"
+verdict = "unreachable"
+reason = "PROT 0976: the shake decay overshooting zero from above; the step is `a * dt / 6 + 1` with the frame step `dt` at most 4 (the step law's `1..4`, the cabinet's floors `1` / `4`), so for every amplitude `a >= 1` the step is at most `a` and the result is never negative"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D2068..0x801D2068"
+verdict = "unreachable"
+reason = "PROT 0976: the shake decay overshooting zero from below; the step is `|a| * dt / 6 + 1` with the frame step `dt` at most 4, so the result never passes zero"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801D20C4..0x801D20C4"
+verdict = "unported"
+reason = "PROT 0976: the epilogue skips the floor grid `FUN_801CEB84` while the camera pitch `0x8007B790` is below `-0x4F`; the port's duel scene draws the floor every frame (`baka_duel_scene`), and the harness moves no camera pitch"

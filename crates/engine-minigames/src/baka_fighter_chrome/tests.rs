@@ -432,9 +432,13 @@ fn banner_flags_track_the_parted_pose() {
 fn countdown_walks_its_four_states() {
     let mut st = Countdown::default();
     let f = countdown_frame(&mut st, 1, false, 0, 0, 0);
+    // The first line raises the drive word, so the second waits for it.
+    assert_eq!(st.state, 1);
+    assert_eq!(f.xa.unwrap().chan, 0x0A);
+    assert!(countdown_frame(&mut st, 1, true, 0, 0, 0).xa.is_none());
+    assert_eq!(st.state, 1);
+    let f = countdown_frame(&mut st, 1, false, 0, 0, 0);
     assert_eq!(st.state, 2);
-    // Both lines cannot fire on the same frame - the second wins the slot,
-    // exactly as retail's single call does.
     assert_eq!(f.xa.unwrap().chan, 0x0B);
     assert_eq!(st.timer, COUNTDOWN_TIMER);
     // Below the fade gate nothing decays.

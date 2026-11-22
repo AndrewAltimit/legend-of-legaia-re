@@ -204,6 +204,13 @@ impl BakaPacer {
         self.xa_load.is_some_and(|(a, b)| (a..b).contains(&at))
     }
 
+    /// Whether a cued line is still in flight: the model of the CD-XA word
+    /// `_DAT_8007BC20`, which the clip starter raises as it cues the line and
+    /// the drive's callback drops once the head passes the clip's end.
+    pub fn xa_in_flight(&self) -> bool {
+        self.xa_load.is_some()
+    }
+
     /// A line cued on the frame that starts the pacer's clock now, of `dur`
     /// vsyncs (`FUN_8003D53C`'s third argument). A new line replaces the one
     /// the drive was streaming, as the clip player re-seeks.

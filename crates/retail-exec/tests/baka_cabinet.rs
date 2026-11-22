@@ -13,11 +13,20 @@
 //! the banner arms move runs beside the port as the fight host runs it
 //! (`DuelCamera`), the cabinet's own arm moving retail's. The scene-ready
 //! bit `0x1F800394 & 0x80` the round-ready state waits on stands up.
+//!
+//! Beside the words, the harness drives what the duel and the drive leave for
+//! the machine: the screen shake `DAT_801DBEC0` the hit arms nudge by `0x20`
+//! either way, the CD-XA word `_DAT_8007BC20` the all-clear beat waits on, the
+//! duel's motor levels the frame opens by copying (or not, under the Events
+//! vibration row), draw rounds that run the round index to its clamp, and
+//! runs rich enough to arm both secret rungs. The all-clear fighter's spawn
+//! `FUN_80020DE0` is compared with the port's `spawn_clear_fighter`.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_minigames::baka_cabinet::{
-    BakaCabinet, CabinetInput, ST_DUEL, ST_EXIT, ST_ROUND_BANNER_A, ST_ROUND_BANNER_B,
-    ST_ROUND_BANNER_C, ST_ROUND_SETUP, SecretOpponent,
+    BakaCabinet, CabinetInput, ST_CLEAR_A, ST_CLEAR_B, ST_CLEAR_E, ST_DUEL, ST_EXIT,
+    ST_ROUND_BANNER_A, ST_ROUND_BANNER_B, ST_ROUND_BANNER_C, ST_ROUND_SETUP, SecretOpponent,
+    cabinet_rumble,
 };
 use legaia_engine_minigames::baka_duel::DuelCamera;
 use psx_retail_exec::Stop;
@@ -44,6 +53,17 @@ const SECRET: u32 = 0x801D_BF06;
 /// The duel's pause gate the combat ticks leave (`DAT_801DBEC4`).
 const PAUSE_GATE: u32 = 0x801D_BEC4;
 const TALLY_DRAIN: u32 = 0x801D_239C;
+const SHAKE: u32 = 0x801D_BEC0;
+const XA_IN_FLIGHT: u32 = 0x8007_BC20;
+/// The Events vibration row, the duel's two motor levels and the two motor
+/// words the frame leaves (`0x801CF3CC..0x801CF3F4`).
+const EVENTS_VIBRATION_OFF: u32 = 0x8008_45A8;
+const LEVELS: u32 = 0x801D_BEA0;
+const MOTORS: u32 = 0x8007_B92C;
+/// The actor spawn the all-clear beat `0xFB` calls for the clear fighter, and
+/// a scratch record it hands back.
+const SPAWN: u32 = 0x8002_0DE0;
+const SPAWNED: u32 = 0x8013_0000;
 
 fn word(cpu: &mut psx_retail_exec::Cpu, a: u32) -> i32 {
     if a == SECRET {
@@ -71,10 +91,26 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             r.r[psx_retail_exec::V0] = u32::from(draining.get())
         });
     }
-    let mut rng = Rng(0x4341_4249);
+    // The clear fighter's spawn: counted, and handed a scratch record on the
+    // beat that calls it, so its field stores land somewhere harmless.
+    let spawns = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    {
+        let spawns = spawns.clone();
+        cpu.hook(SPAWN, move |r, _| {
+            spawns.set(spawns.get() + 1);
+            r.r[psx_retail_exec::V0] = SPAWNED;
+        });
+    }
+    // The duel's and the drive's perturbations draw from their own stream, so
+    // the pad stream the sessions' routes hang on stays the one it was.
+    let mut aux = Rng(0x5348_414B);
+    let mut clear_spawn_seen = [false; 2];
     let mut seen = std::collections::BTreeSet::new();
     let mut frames_run = 0usize;
     for session in 0..120 {
+        // Each session draws its own pad stream, so one session's route
+        // does not move every later one's.
+        let mut rng = Rng(0x4341_4249 ^ (session as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
         cpu.mem.load(OVERLAY_BASE, &overlay);
         for o in (0..0x100).step_by(4) {
             cpu.mem.wr32(ACTOR + o, 0);
@@ -97,6 +133,16 @@ fn the_cabinet_runs_sessions_as_retail_does() {
         // two states.
         let dev = session % 4 == 3;
         cpu.mem.wr32(DEV_MENU, u32::from(dev));
+        // Runs whose tally publishes a score past both secret gates, runs
+        // that pass only the first, and runs whose rounds mostly end with no
+        // winner (a double knockout). The first two run the whole ladder.
+        let rich = session % 5 == 1 && !dev;
+        let middling = session % 5 == 3 && !dev;
+        // And runs that publish no score, so the secret gates find the
+        // stage with the score short of them.
+        let poor = session % 5 == 0 && !dev;
+        let draws = session % 7 == 2 && !dev;
+        let mut xa_busy = false;
         let mut cam = DuelCamera::default();
         let step = 1 + rng.below(3) as i32;
         cpu.mem.wr8(FRAME_STEP, step as u8);
@@ -135,7 +181,10 @@ fn the_cabinet_runs_sessions_as_retail_does() {
                     decided = true;
                     // The player takes most rounds, so runs climb the ladder
                     // to the secret rungs and the all-clear.
-                    wins[usize::from(rng.below(6) == 0)] += 1;
+                    if !(draws && aux.below(4) != 0) {
+                        let odds = if rich || middling || poor { 40 } else { 6 };
+                        wins[usize::from(rng.below(odds) == 0)] += 1;
+                    }
                 }
             } else if state == ST_ROUND_SETUP {
                 duel_frames = 0;
@@ -154,8 +203,19 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             draining.set(tally_draining);
             // The tally drain's running score, which the secret rungs' gate
             // reads: published into both, as the fight host does.
-            if state == legaia_engine_minigames::baka_cabinet::ST_TALLY && rng.below(8) == 0 {
-                let score = port.high_score() + rng.below(0x8000) as i32 * 8;
+            if state == legaia_engine_minigames::baka_cabinet::ST_TALLY
+                && rng.below(8) == 0
+                && !poor
+            {
+                let noise = rng.below(0x8000) as i32 * 8;
+                let score = if rich {
+                    port.high_score() + 0x8_0000
+                } else if middling {
+                    // Past the first gate (`0x3D090`), short of the second.
+                    0x5_0000
+                } else {
+                    port.high_score() + noise
+                };
                 port.set_high_score(score);
                 cpu.mem.wr32(0x801D_BEE4, score as u32);
             }
@@ -179,6 +239,23 @@ fn the_cabinet_runs_sessions_as_retail_does() {
                 ST_ROUND_BANNER_C => cam.spin(step),
                 _ => false,
             };
+            // The hit arms' screen shake, either way.
+            if aux.below(16) == 0 {
+                let amp = (aux.below(17) as i32 - 8) * 0x20;
+                port.shake_screen(amp);
+                cpu.mem.wr32(SHAKE, amp as u32);
+            }
+            // The drive word: a line in flight now and then, held a while.
+            if aux.below(if xa_busy { 6 } else { 4 }) == 0 {
+                xa_busy = !xa_busy;
+            }
+            cpu.mem.wr32(XA_IN_FLIGHT, u32::from(xa_busy));
+            // The duel's motor levels and the Events vibration row.
+            let vibration_off = aux.below(3) == 0;
+            let levels = [aux.below(0x100) as i32, aux.below(0x100) as i32];
+            cpu.mem.wr32(EVENTS_VIBRATION_OFF, u32::from(vibration_off));
+            cpu.mem.wr32(LEVELS, levels[0] as u32);
+            cpu.mem.wr32(LEVELS + 4, levels[1] as u32);
             // The combat ticks' pause gate, up most frames.
             let pause_ready = rng.below(3) != 0;
             cpu.mem.wr32(PAUSE_GATE, u32::from(pause_ready));
@@ -194,6 +271,7 @@ fn the_cabinet_runs_sessions_as_retail_does() {
                 rung_prize,
                 round_clock: decided,
                 camera_hold,
+                xa_in_flight: xa_busy,
                 pause_ready,
                 tally_draining,
                 dev_menu_enabled: dev,
@@ -206,6 +284,7 @@ fn the_cabinet_runs_sessions_as_retail_does() {
                 cam.round_setup();
             }
             let timer_before = cpu.mem.rd32(ROUND_TIMER) as i32;
+            spawns.set(0);
             assert_eq!(
                 cpu.call(CABINET, &[ACTOR]),
                 Stop::Returned,
@@ -225,6 +304,23 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             for (a, v) in port.retail_words() {
                 assert_eq!(word(&mut cpu, a), v, "{a:#010x}, {at}");
             }
+            assert_eq!(
+                [cpu.mem.rd32(MOTORS) as i32, cpu.mem.rd32(MOTORS + 4) as i32],
+                cabinet_rumble(vibration_off, levels),
+                "motors, {at}"
+            );
+            if state == ST_CLEAR_B {
+                assert_eq!(
+                    spawns.get() != 0,
+                    f.spawn_clear_fighter,
+                    "clear fighter, {at}"
+                );
+                if f.state != ST_CLEAR_B {
+                    clear_spawn_seen[usize::from(f.spawn_clear_fighter)] = true;
+                }
+            } else if (ST_CLEAR_A..=ST_CLEAR_E).contains(&state) {
+                assert_eq!(spawns.get(), 0, "{at}");
+            }
             let cue = cpu.mem.rd16(CUE);
             assert_eq!(cue, f.cues.last().map_or(0, |&c| u16::from(c)), "cue, {at}");
             frames_run += 1;
@@ -233,7 +329,11 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             }
         }
     }
-    eprintln!("states seen {seen:x?}, frames {frames_run}");
+    eprintln!("states seen {seen:x?}, frames {frames_run}, clear fighter {clear_spawn_seen:?}");
+    assert_eq!(
+        clear_spawn_seen, [true; 2],
+        "the all-clear with and without its fighter"
+    );
     for want in [0x6D, 0xFA, 0xFE, 0x96, 0xC8, 0x191] {
         assert!(
             seen.contains(&want),

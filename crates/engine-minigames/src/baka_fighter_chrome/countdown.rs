@@ -33,8 +33,8 @@ pub struct Countdown {
 
 /// PORT: FUN_801D21FC - the all-clear announcer.
 ///
-/// `frame_step` is the per-frame tick (`DAT_1F800393`), `loading` the scene
-/// load flag `_DAT_8007BC20`, `banner_level` / `title_level` the all-clear
+/// `frame_step` is the per-frame tick (`DAT_1F800393`), `loading` the CD-XA
+/// in-flight word `_DAT_8007BC20` as the frame finds it, `banner_level` / `title_level` the all-clear
 /// sequence's two fades (`DAT_801DBEB4` / `DAT_801DBEB0`), and
 /// `round_counter` the displayed stage counter `DAT_801DC110`.
 ///
@@ -44,6 +44,13 @@ pub struct Countdown {
 /// [`COUNTDOWN_FADE_GATE`], then decays the timer by `frame_step` and, on
 /// running out, fires channel `0x0D` on the final stage (`round_counter ==
 /// 0x0E`) or `0x0C` otherwise and settles in state `3`.
+///
+/// The routine re-reads the word after each line it starts (`0x801D2234`,
+/// `0x801D2274`), and the clip starter `FUN_8003D53C` raises it itself
+/// (`sw s1,0x908(gp)` at `0x8003D65C`), so a frame that starts a line goes
+/// no further: the second line waits for the first to finish playing.
+///
+/// REF: FUN_8003D53C
 ///
 /// Every frame - loading or not - it draws the two banner widgets at half
 /// their level: `0x1A` at `(0xA0, 0x60)` and, at `(0xA0, 0xA0)`, `0x1D` on
@@ -59,27 +66,28 @@ pub fn countdown_frame(
     let mut out = ChromeFrame::default();
     let final_round = round_counter == COUNTDOWN_FINAL_ROUND;
 
+    let mut loading = loading;
     if st.state == 0 {
         st.state = 1;
         out.xa = Some(COUNTDOWN_ARM_XA);
+        loading = true;
     }
-    if !loading {
-        if st.state == 1 {
-            st.state = 2;
-            st.timer = COUNTDOWN_TIMER;
-            out.xa = Some(COUNTDOWN_LOADED_XA);
-        }
-        if st.state == 2 && banner_level >= COUNTDOWN_FADE_GATE {
-            st.timer -= frame_step;
-            if st.timer < 0 {
-                st.timer = 0;
-                st.state = 3;
-                out.xa = Some(if final_round {
-                    COUNTDOWN_FINAL_XA
-                } else {
-                    COUNTDOWN_ROUND_XA
-                });
-            }
+    if !loading && st.state == 1 {
+        st.state = 2;
+        st.timer = COUNTDOWN_TIMER;
+        out.xa = Some(COUNTDOWN_LOADED_XA);
+        loading = true;
+    }
+    if !loading && st.state == 2 && banner_level >= COUNTDOWN_FADE_GATE {
+        st.timer -= frame_step;
+        if st.timer < 0 {
+            st.timer = 0;
+            st.state = 3;
+            out.xa = Some(if final_round {
+                COUNTDOWN_FINAL_XA
+            } else {
+                COUNTDOWN_ROUND_XA
+            });
         }
     }
 

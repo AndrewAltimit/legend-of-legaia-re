@@ -341,14 +341,19 @@ impl BakaCabinet {
             }
             ST_CLEAR_B => {
                 self.state_timer += step * 4;
+                // An XA clip still in flight holds the beat at full black
+                // (`0x801D1A70..0x801D1A7C`): the timer parks at `0xFF` and
+                // the arm re-tests next frame.
                 if self.state_timer >= 0x100 {
                     self.state_timer = 0xFF;
-                    self.state = ST_CLEAR_C;
-                    // `0x801D1AB4..0x801D1AC0`: a run whose displayed stage
-                    // reads `0xE` (the score gate inserted both secret
-                    // opponents) ends on no fighter.
-                    f.spawn_clear_fighter =
-                        self.stage_display != crate::baka_fighter_chrome::CLEAR_FINAL_STAGE;
+                    if !input.xa_in_flight {
+                        self.state = ST_CLEAR_C;
+                        // `0x801D1AB4..0x801D1AC0`: a run whose displayed stage
+                        // reads `0xE` (the score gate inserted both secret
+                        // opponents) ends on no fighter.
+                        f.spawn_clear_fighter =
+                            self.stage_display != crate::baka_fighter_chrome::CLEAR_FINAL_STAGE;
+                    }
                 }
                 f.clear_fade = Some(self.state_timer.clamp(0, 0xFF) as u8);
             }
@@ -418,7 +423,7 @@ impl BakaCabinet {
             let cd = crate::baka_fighter_chrome::countdown_frame(
                 &mut self.clear_announcer,
                 step,
-                false,
+                input.xa_in_flight,
                 self.clear_fade_out,
                 self.clear_fade_in,
                 self.stage_display,

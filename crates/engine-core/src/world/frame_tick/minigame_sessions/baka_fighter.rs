@@ -134,7 +134,10 @@ impl World {
                 f.set_install_load_hold(install_load_hold);
                 f.set_cd_timing(cd_timing);
                 f.set_retail_pad(!self.toggles.immediate_pad);
-                let [pulse, level] = if vibration_off { [0; 2] } else { f.rumble() };
+                let [pulse, level] = legaia_engine_minigames::baka_cabinet::cabinet_rumble(
+                    vibration_off,
+                    f.rumble(),
+                );
                 self.rumble.motors = legaia_engine_system::rumble::RumbleMotors { pulse, level };
                 f.frame(edge, held, pot)
             }
