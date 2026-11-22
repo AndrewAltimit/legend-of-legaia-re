@@ -1403,11 +1403,17 @@ UDF `190`, LDF `183`, SPD `110` and INT `126` (both halves) through arms 1..3 an
 `109`, `171`, `164`, `99` and `113` from the pass arm 3 leaves, a tenth each, where a
 fifth would have left ATK at `96`. Grade `disassembly` + `capture`.
 
-**The turn steal.** The other two 0955 bodies share one idiom
-(`0x801F8CF4..0x801F8D54` in Kiss of Death's miss arm,
-`0x801F7E18..0x801F7E4C` in Terror Scream's arm 3): refund the victim's queued
-item when `+0x1DE == 1` and `+0x16C != 0`, clear `+0x1DE`, clear the
-initiative key `+0x16C` and bump the turn cursor `ctx[+0x1A]`. Kiss of Death
+**The turn steal.** The other two 0955 bodies steal the victim's turn.
+Kiss of Death's miss arm (`0x801F8CF4..0x801F8D54`) refunds the victim's
+queued item when `+0x1DE == 1` and `+0x16C != 0`, clears `+0x1DE`, and only
+while `+0x16C` is non-zero clears it and bumps the turn cursor `ctx[+0x1A]`.
+Terror Scream's arm 3 (`0x801F7E18..0x801F7E4C`) tests the Item category
+alone: it refunds on `+0x1DE == 1`, then clears `+0x1DE` and `+0x16C` and bumps
+the cursor whatever the key held, so a victim that has already acted still
+gets its item back and still advances the cursor. The port had read both as
+Kiss of Death's; the capture-camera differential now runs arm 3 on every
+category and key, with the refund call `FUN_800421D4` logged. Grade
+`disassembly`. Kiss of Death
 reaches it only on the odd half of a `FUN_80056798() & 1` coin flip and sets
 `+0x16E` bit `0x400` beside it; its even half clears `+0x16E & 0x0F80`,
 applies exactly one point of damage and stages the victim's reaction.

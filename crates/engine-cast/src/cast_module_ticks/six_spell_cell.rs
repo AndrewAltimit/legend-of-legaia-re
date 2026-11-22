@@ -259,8 +259,9 @@ pub fn melt_spray_tick(
 /// `s3`, victim `s2 = actor_table[caster[+0x1DD]]`.
 ///
 /// Arm `3` (`0x801F7D98`) is the whole spell, and it writes **no** stat and
-/// **no** status bit: it runs the [`steal_turn`] idiom unconditionally on the
-/// victim (`0x801F7E18..0x801F7E4C`). Arm `4` polls the victim for a settled
+/// **no** status bit: it steals the victim's turn
+/// ([`steal_turn_unguarded`], `0x801F7E18..0x801F7E4C`), with no test of the
+/// initiative key. Arm `4` polls the victim for a settled
 /// pose and jumps the phase to `0xFF`; the `0xFF` arm clears `ctx[+0x0D]`,
 /// restores the seven combat seats and reports done.
 ///
@@ -281,7 +282,7 @@ pub fn terror_scream_tick(
     let mut refund = None;
     let step = run_tick_latched(ctx, |c| match c.phase {
         3 => {
-            refund = steal_turn(c, victim);
+            refund = steal_turn_unguarded(c, victim);
             CastArmStep::Advance
         }
         4 => {

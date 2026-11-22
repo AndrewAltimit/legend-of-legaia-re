@@ -48,9 +48,9 @@ pub(super) fn run_tick_latched(
 /// refunds.
 pub const ACTION_CATEGORY_ITEM: u8 = 1;
 
-/// The band's **turn-steal** idiom, shared by PROT 0955's Kiss of Death miss
-/// arm (`0x801F8CF4..0x801F8D54`) and its Terror Scream arm 3
-/// (`0x801F7E18..0x801F7E4C`).
+/// The band's **turn-steal** idiom, PROT 0955's Kiss of Death miss arm
+/// (`0x801F8CF4..0x801F8D54`) and PROT 0956's `0x75` arm 2. Terror Scream's
+/// arm 3 tests neither key: [`steal_turn_unguarded`].
 ///
 /// ```text
 /// if victim[+0x1DE] == 1 && victim[+0x16C] != 0 { FUN_800421D4(victim[+0x1DF], 1) }
@@ -75,6 +75,24 @@ pub fn steal_turn(ctx: &mut CastModuleCtx, victim: &mut CastActorState) -> Optio
         ctx.turn_cursor = ctx.turn_cursor.wrapping_add(1);
         victim.init_key = 0;
     }
+    refund
+}
+
+/// PROT 0955 Terror Scream arm 3's turn steal (`0x801F7E18..0x801F7E4C`),
+/// which tests the Item category alone:
+///
+/// ```text
+/// if victim[+0x1DE] == 1 { FUN_800421D4(victim[+0x1DF], 1) }
+/// victim[+0x1DE] = 0 ; victim[+0x16C] = 0 ; ctx[+0x1A] += 1
+/// ```
+///
+/// A victim whose initiative key is already spent still gets its item back
+/// and still advances the turn cursor, where [`steal_turn`] leaves both.
+pub fn steal_turn_unguarded(ctx: &mut CastModuleCtx, victim: &mut CastActorState) -> Option<u8> {
+    let refund = (victim.action_category == ACTION_CATEGORY_ITEM).then_some(victim.queued_action);
+    victim.action_category = 0;
+    victim.init_key = 0;
+    ctx.turn_cursor = ctx.turn_cursor.wrapping_add(1);
     refund
 }
 

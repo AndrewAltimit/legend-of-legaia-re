@@ -89,6 +89,14 @@ fn bodies() -> Vec<Body> {
     out
 }
 
+/// The bodies whose seat hides and shows are compared: Terror Scream and Death
+/// Game, whose hides and shows are all the director's. The other bodies split
+/// theirs between the director, their tick kernel and the host's band paths,
+/// which this walk does not run.
+fn seat_writes_compared(body: &Body) -> bool {
+    matches!(body.action, 0x70 | 0x76)
+}
+
 /// The bodies whose arms raise the caster's stat block: White Shield, Power
 /// Charge (PROT 0955), Power Up (PROT 0942) and the surge (PROT 0945).
 fn is_buff(body: &Body) -> bool {
@@ -268,6 +276,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let (mut results, mut heal_capped) = (0usize, false);
     let mut debuffs = 0usize;
     let mut buffs = 0usize;
+    let mut seat_passes = 0usize;
+    let mut steals = 0usize;
     let all = bodies();
     for body in &all {
         let module = disc.read_entry(body.entry as usize).expect("module");
@@ -278,6 +288,16 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             if ![AIM, RANGE, BUILDER, BEARING, RAND].contains(&target) {
                 cpu.stub(target, 0);
             }
+        }
+        // Terror Scream's refund goes through the bag's find-or-insert
+        // `FUN_800421D4`, logged rather than run.
+        let refunds = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+        if body.action == 0x70 {
+            let refunds = refunds.clone();
+            cpu.hook(BAG_INSERT, move |r, _| {
+                refunds.borrow_mut().push((r.r[A0], r.r[A1]));
+                r.r[V0] = 0;
+            });
         }
         // Death Game keeps its card handles (`0x801FA2B8`) and walks them
         // through the shuffle and the pick: each spawn gets a part.
@@ -364,6 +384,25 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         _ => rng.below(1000) as u16,
                     };
                     cpu.mem.wr16(ca + o, v);
+                }
+            }
+            // Terror Scream's victim with every queued category and with its
+            // initiative key spent or not (`0x801F7E18..0x801F7E4C`).
+            if body.action == 0x70 {
+                cpu.mem.wr8(va_ + 0x1DE, (round % 3) as u8);
+                cpu.mem.wr8(va_ + 0x1DF, 0x10 + round as u8);
+                cpu.mem
+                    .wr16(va_ + 0x16C, if (round / 3) % 2 == 0 { 0x40 } else { 0 });
+                cpu.mem.wr8(CTX + 0x1A, round as u8);
+            }
+            // A fallen party seat and a fallen monster on odd rounds, which
+            // the hide and show walks skip (`lhu 0x14c`, `beq` at
+            // `0x801F7B90`, `0x801F7824`, `0x801F7F48`).
+            if seat_writes_compared(body) && round % 2 == 1 {
+                let p = (0..3u32).find(|&s| s != victim).expect("a party seat");
+                let m = (3..7u32).find(|&s| s != caster).expect("a monster seat");
+                for s in [p, m] {
+                    cpu.mem.wr16(ACTOR + s * STRIDE + 0x14C, 0);
                 }
             }
             // Melt Spray's five stats on the victim, both halves, the floor's
@@ -637,8 +676,22 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     unsettled_holds += usize::from(phase == 3 && st.target_unsettled);
                 }
                 let arm = (body.director)(&mut st, phase, seats);
+                let ctx_before = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
                 // The two seats as the pass opens, for Death Game's result.
                 let before = [ca, va_].map(|a| crate::cast_view::read_actor(&mut cpu.mem, a));
+                // Every seat's tint and render flag as the pass opens, with
+                // what decides which seats a hide or show reaches: HP, Stone.
+                let shown: Vec<(u32, u8, u16, u16)> = (0..8u32)
+                    .map(|s| {
+                        let a = ACTOR + s * STRIDE;
+                        (
+                            cpu.mem.rd32(a + 4),
+                            cpu.mem.rd8(a + 0x21C),
+                            cpu.mem.rd16(a + 0x14C),
+                            cpu.mem.rd16(a + 0x16E),
+                        )
+                    })
+                    .collect();
                 shots.borrow_mut().clear();
                 let stop = cpu.call(body.va, &[]);
                 let c = format!("{c0} pass {pass} arm {phase}");
@@ -715,6 +768,89 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         ));
                     }
                     buffs += 1;
+                }
+                // Terror Scream's turn steal on the pass that leaves arm 3,
+                // against `terror_scream_tick`.
+                if body.action == 0x70 && phase == 3 && after != phase {
+                    let mut pv = before[1];
+                    let mut pctx = ctx_before;
+                    pctx.phase = phase;
+                    let (_, refund) = t::terror_scream_tick(&mut pctx, &mut pv);
+                    let got = crate::cast_view::read_actor(&mut cpu.mem, va_);
+                    let key = |v: &t::CastActorState, cursor: u8, refund: Option<u8>| {
+                        (v.action_category, v.init_key, cursor, refund)
+                    };
+                    let called = refunds.borrow_mut().drain(..).collect::<Vec<_>>();
+                    let retail_refund = match called.as_slice() {
+                        [] => None,
+                        [(item, 1)] => Some(*item as u8),
+                        other => {
+                            failures.push(format!("{c}: refund calls {other:?}"));
+                            None
+                        }
+                    };
+                    let g = key(&got, cpu.mem.rd8(CTX + 0x1A), retail_refund);
+                    let w = key(&pv, pctx.turn_cursor, refund);
+                    if g != w {
+                        failures.push(format!("{c}: turn steal retail {g:?} port {w:?}"));
+                    }
+                    steals += 1;
+                }
+                // The seat hides and shows (`World::module_code_run`'s order:
+                // the others, the caster, the victim, the party), on the tint
+                // `+0x04` and the render flag `+0x21C`.
+                if seat_writes_compared(body) {
+                    let mut want: Vec<(u32, u8)> =
+                        shown.iter().map(|&(c, f, _, _)| (c, f)).collect();
+                    let put = |w: &cam::CaptureSeatWrite, v: &mut (u32, u8)| {
+                        if let Some(c) = w.colour {
+                            v.0 = c;
+                        }
+                        if let Some(f) = w.render_flag {
+                            v.1 = f;
+                        }
+                    };
+                    // The modules walk seats `0..7` (`sltiu 7`); seat 7 is the
+                    // creature's, empty on a monster's cast, which the host's
+                    // HP test skips.
+                    if (!arm.hold || arm.others_every_pass) && !arm.others_write.is_empty() {
+                        for s in 0..7u32 {
+                            let skip = arm.others_skip_pair && (s == caster || s == victim);
+                            let live = shown[s as usize].2 > 0;
+                            let reach = if s < 3 {
+                                !arm.others_live_only || live
+                            } else {
+                                live
+                            };
+                            if !skip && reach {
+                                put(&arm.others_write, &mut want[s as usize]);
+                            }
+                        }
+                    }
+                    put(&arm.caster_write, &mut want[caster as usize]);
+                    put(&arm.victim_write, &mut want[victim as usize]);
+                    if !arm.party_write.is_empty() {
+                        for s in 0..3u32 {
+                            let (_, _, hp, st) = shown[s as usize];
+                            if (!arm.party_live_only || hp > 0)
+                                && !(arm.party_skip_stoned && st & 4 != 0)
+                                && !(arm.party_skip_victim && s == victim)
+                            {
+                                put(&arm.party_write, &mut want[s as usize]);
+                            }
+                        }
+                    }
+                    for s in 0..8u32 {
+                        let a = ACTOR + s * STRIDE;
+                        let got = (cpu.mem.rd32(a + 4), cpu.mem.rd8(a + 0x21C));
+                        if got != want[s as usize] {
+                            failures.push(format!(
+                                "{c}: seat {s} tint/flag retail {got:x?} port {:x?}",
+                                want[s as usize]
+                            ));
+                        }
+                    }
+                    seat_passes += 1;
                 }
                 // Melt Spray's debuff, on the pass arm 3's countdown runs out
                 // (`0x801F82E0`, then `0x801F8314..0x801F8598`), against the
@@ -854,7 +990,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     eprintln!("Death Game outcomes {outcomes:?}");
     assert_eq!(outcomes.len(), 4, "Death Game outcomes {outcomes:?}");
     assert!(debuffs >= 4, "Melt Spray debuffs compared {debuffs}");
-    eprintln!("buff passes compared {buffs}");
+    eprintln!("buff passes compared {buffs}, seat-write passes {seat_passes}");
+    assert!(seat_passes > 100, "seat-write passes {seat_passes}");
+    assert!(steals >= 12, "Terror Scream steals compared {steals}");
     assert!(buffs >= 12, "buff passes compared {buffs}");
     assert!(
         results >= 4 && heal_capped,
@@ -924,6 +1062,8 @@ const EVIL_SERU_MAGIC: u32 = 0x801F_6A74;
 /// The part spawn `FUN_80021B04` and the pool the walk hands parts from.
 const SPAWN_PART: u32 = 0x8002_1B04;
 const PARTS: u32 = 0x8016_0000;
+/// The bag's find-or-insert `FUN_800421D4`, which a turn steal refunds through.
+const BAG_INSERT: u32 = 0x8004_21D4;
 /// The monster-record pointer table and the records the buff bodies read.
 const RECORDS: u32 = 0x801C_9348;
 const MONSTER_RECORDS: u32 = 0x8017_0000;
