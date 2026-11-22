@@ -920,6 +920,22 @@ out (`World::drive_fold_glare_on_its_arm`). A seat the band's own damage roll le
 wrapper stops being compared for the cast: PROT 0956's arm 2 marks only a living victim. All of Glare's Stone,
 Paralyzing Wave's Numb, Kiss of Death's bits and Curse All's mark agree.
 
+<a id="the-summon-band-shadow"></a>
+**The summon band shadow.** The summon walk (`summon_cameras`) runs the same shadow beside each summon image: a
+`World` seated off the records, its summon stager armed, runs the band's module half
+(`World::drive_summon_module_pass`: the creature feeds, the module's pass, the creature and seat writes) on retail's
+phase, and every seated seat's `+0x04`, `+0x21C` and `+0x16E` must agree after each pass. The summon band's shown
+word is the engine's resting `0` under a lowered marker, where retail writes `0x20080200`. Every run opens on state
+`0x34`'s hide loop (`0x801E4B30..0x801E4B6C`, every party seat and living monster hidden), which the module's first
+pass finds; the fallen runs also stand the last monster in Stone, so each module's Stone skip is driven. It found
+Gilium's arm `0x11` leaving the row hidden and its row strike an arm early, Slippery's arm 8 framing the victim of a
+row the band had hidden and its hit tint relighting dead and Stoned seats, Jedo's kill arms missing the dissolve
+state, the defeat fade and the spell XP, Aluru's last arm hiding only a dead victim, Ultimate Rave's row loop (it
+tests `actor_table[3 + i]` and stores through `actor_table[i]`), and the row hits of Viguro, Gola Gola, Gilium,
+Palma and Mule that lit a Stoned seat ([the seat walks](../subsystems/cast-module.md#the-seat-walks)). HP stays
+outside it, since the walk stubs the damage wrapper while the shadow rolls its own; the three paced bodies (PROT
+0905, 0907, 0908) leave the walk on an arm their tick ports pace and stop being compared there.
+
 **The spawned records.** The capture and chain walks log every `FUN_80021B04` / `FUN_80050ED4` call a pass makes,
 as record, point, angle trio and scale, and every literal-anchored record a director seats (its charge records and
 per-pass spawns) must match one of them. The chain walk had run without the SCUS sine and cosine table pointers
