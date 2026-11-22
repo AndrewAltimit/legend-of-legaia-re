@@ -1419,6 +1419,14 @@ impl RetailBattle {
                 ram,
                 legaia_engine_cast::cast_module_camera::GIMARD_COUNTDOWN_VA,
             ) as i32,
+            theeder_settle: game_anchors::u32_at(
+                ram,
+                legaia_engine_cast::cast_module_camera::THEEDER_SETTLE_VA,
+            ) as i32,
+            theeder_trail: game_anchors::u32_at(
+                ram,
+                legaia_engine_cast::cast_module_camera::THEEDER_TRAIL_COUNT_VA,
+            ) as u8,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             prior_framing: prior_framing(ram, ctx),
             cam_tween: retail_cam_tween(ram, ctx),

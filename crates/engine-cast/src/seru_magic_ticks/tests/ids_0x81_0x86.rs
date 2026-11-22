@@ -390,6 +390,22 @@ fn theeder_seat_stands_half_a_unit_short_of_the_victim_facing_it() {
     assert_eq!((x, z), (3000 - 2048, 0));
 }
 
+/// The seat is invertible: the victim stood half a unit along the seat's
+/// facing from it, which is how a capture past the sweep - its victim
+/// knocked back - still names where the victim stood on arm 4.
+#[test]
+fn theeder_seat_inverts_to_the_victim() {
+    for (victim, caster) in [((-1005, 367), (-59, -212)), ((1200, -40), (-300, 500))] {
+        let (x, z, f) = theeder_seat_placement(victim, caster);
+        let (s, c) = legaia_engine_system::trig::trig12(f);
+        let back = (x.wrapping_add(s / 2), z.wrapping_add(c / 2));
+        assert!(
+            (back.0 - victim.0).abs() <= 1 && (back.1 - victim.1).abs() <= 1,
+            "{back:?} {victim:?}"
+        );
+    }
+}
+
 #[test]
 fn theeder_ray_swings_about_the_facing() {
     let mouth = theeder_mouth(0, 0, 0);

@@ -2067,7 +2067,11 @@ the trail is empty, and arm 14 drains it and then polls the monster row
 (alive and on idle, or dead with the node's `+0x74` colour gone) before it
 stores `0xFF`. Port: `cast_module_camera::theeder_direct` (the countdown
 gates, the settle word and the camera arms 0, 3, 6, 8, 9, 11, 12 and `0xFF`'s
-case 8) beside the tick body (arm 7's wait and arm 14's poll). Clip 1 parks
+case 8) beside the tick body (arm 7's wait and arm 14's poll). Arm 4 writes
+its seat into slot 7 (`0x801F6EEC..0x801F6F8C`) and every later shot frames
+slot 7, so the port keeps one seat: the body's pin is the director's creature
+(`ModuleCamState::creature`), and the director's own placement stands only
+where nothing has seated slot 7. Clip 1 parks
 on frame 17, so arm 7 holds about 140 vsyncs
 ([the loop counter](#the-creatures-loop-counter-0x21b)).
 

@@ -55,6 +55,14 @@ pub struct PhaseGate {
     /// value) - so the engine frame is the first one whose own countdown
     /// has drained as far.
     pub module_countdown: Option<i32>,
+    /// For a capture inside PROT 0904's retract arm (`13`): retail's trail
+    /// count `0x801F91FC`, which `FUN_801F8B84` drops by one a pass from the
+    /// sweep's `0xF` while the arm holds. The arm alone places the frame at
+    /// its first pass, the beam still drawn and the value rows high
+    /// (`theeder_summon_value_rows_rising`: count `8`), so the engine frame
+    /// is the first one whose own trail (`TheederTrail::n`) has run down as
+    /// far.
+    pub trail_count: Option<u8>,
     /// For a capture in the summon close-up `0x33` / `0x34`: retail's
     /// close-up accumulator `ctx[+0x87C]` at the gated instant. Not a
     /// predicate - the flash's age or [`Self::cam_accum`] places the frame -
@@ -119,6 +127,9 @@ impl PhaseGate {
         if let Some(k) = self.accum_align {
             s.push_str(&format!(",k{k}"));
         }
+        if let Some(r) = self.trail_count {
+            s.push_str(&format!(",r{r}"));
+        }
         if self.camera_pass {
             s.push_str(",p");
         }
@@ -149,6 +160,14 @@ impl PhaseGate {
         if camera_pass {
             parts.pop();
         }
+        let trail_count = match parts.last() {
+            Some(t) if t.starts_with('r') => {
+                let r = t[1..].parse().ok()?;
+                parts.pop();
+                Some(r)
+            }
+            _ => None,
+        };
         let accum_align = match parts.last() {
             Some(t) if t.starts_with('k') => {
                 let k = t[1..].parse().ok()?;
@@ -229,6 +248,7 @@ impl PhaseGate {
             walk_yaw,
             done_hold,
             module_countdown,
+            trail_count,
             accum_align,
             camera_pass,
             stream_wait,
@@ -389,6 +409,13 @@ impl PhaseGate {
         if let Some(c) = self.module_countdown
             && self.module_phase == Some(world.casting.module_phase)
             && world.casting.module_cam.countdown.0 > c
+        {
+            return false;
+        }
+        // The same for the retract arm's trail count.
+        if let Some(r) = self.trail_count
+            && self.module_phase == Some(world.casting.module_phase)
+            && world.casting.module_theeder.trail.n > usize::from(r)
         {
             return false;
         }

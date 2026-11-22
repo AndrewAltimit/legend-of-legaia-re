@@ -1705,11 +1705,28 @@ impl World {
                             // No later arm writes the seat's position, so it
                             // stays pinned there for the rest of the cast.
                             if ctx.phase == ticks_a::THEEDER_RISE_ARM {
-                                self.casting.module_theeder.seat =
-                                    self.theeder_seat_for(caster_slot, victim_slot);
+                                // A replayed capture hands the seat its
+                                // creature already held
+                                // (`BattleState::summon_seat_seed`); arm 4
+                                // re-seats on every pass, so it stands for
+                                // the whole arm.
+                                self.casting.module_theeder.seat = self
+                                    .battle
+                                    .summon_seat_seed
+                                    .or_else(|| self.theeder_seat_for(caster_slot, victim_slot));
                             }
                             if let Some(seat) = self.casting.module_theeder.seat {
                                 self.pin_theeder_seat(seat_slot, seat);
+                                // The camera arms frame slot 7 as arm 4 left
+                                // it: one seat, which the director reads.
+                                let (x, z, facing) = seat;
+                                self.casting.module_cam.creature =
+                                    Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+                                        x,
+                                        y: 0,
+                                        z,
+                                        facing,
+                                    });
                             }
                             let geom = self.theeder_geom(seat_slot);
                             let mut fx = self.casting.module_theeder;

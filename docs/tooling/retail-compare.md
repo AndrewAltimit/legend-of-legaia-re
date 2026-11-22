@@ -4130,6 +4130,31 @@ mesh where the engine draws the unpatched member; with the capture's
 `resident_disc` found, the engine assembles the same swapped mesh from the
 patched player files and that part of the distance is gone.
 
+**A seat the cast already placed.** PROT 0904 (Theeder) seats its creature
+once, on arm 4, half a unit short of the victim along the caster's line, and
+its sweep then knocks the victims back. A capture past the sweep
+(`theeder_summon_value_rows_rising` / `_parked`) holds the victim where the
+beam left it, and the position ring (24 passes) does not reach back to the
+hit, so a replay seeded on the captured ground seated the creature `380`
+units off retail's and framed that. The creature's seat is the history the
+capture keeps: slot 7's `+0x34` / `+0x38` and facing `+0x46`. The seed hands
+it over whole (`BattleState::summon_seat_seed`, `LEGAIA_SEAT_SUMMON_SEAT`;
+the arm-4 seat also reads the caster's ground at that pass, which has moved
+on too), and puts the victim back where the seat names it, half a unit along
+the seat's facing (`RetailBattle::inflight_ground`), so the replayed knockback
+starts where retail's did. Both apply only in `0x35` / `0x36`, where the
+module phase byte is the module's.
+
+The gate places the frame inside the arm by the module's own clocks: arm 13
+(the retract) by the trail count `0x801F91FC` (`PhaseGate::trail_count`, the
+`r<n>` suffix) and arm 14 by the settle word `0x801F9204`
+(`PhaseGate::module_countdown`, as PROT 0903's arms). Together they took
+`theeder_summon_value_rows_rising` from `.403` to `.648` and `_parked` from
+`.614` to `.876`, the camera to retail's exactly. What is left is the
+creature's pose, the damage digits (the replay's own rolls) and, on the rising
+frame, the retract fan: retail's ordering table holds it, yet neither
+framebuffer shows it.
+
 A replayed cast is one frame of a cast that runs for hundreds of vsyncs, and
 on most summons that frame is the white flash. The
 [cast-sequence oracle](cast-sequence-oracle.md) scores the whole cast frame by

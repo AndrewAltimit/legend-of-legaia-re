@@ -1205,6 +1205,9 @@ pub(super) fn battle_image(
             .iter()
             .map(|c| c.map_or_else(|| "-".to_string(), |c| c.to_string()))
             .collect();
+        if let Some((x, z, f)) = battle.summon_seat_seed() {
+            env.push(("LEGAIA_SEAT_SUMMON_SEAT", format!("{x}:{z}:{f}")));
+        }
         env.push((
             "LEGAIA_BATTLE_INFLIGHT",
             format!(

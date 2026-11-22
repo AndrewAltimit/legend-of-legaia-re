@@ -26,10 +26,80 @@ impl RetailBattle {
                     caster: self.active_actor,
                     spell_id: self.queued_action,
                     target: self.target_code,
-                    ground: self.engine_ground(),
+                    ground: self.inflight_ground(),
                     idle: self.inflight_idle,
                 },
             )
+    }
+
+    /// [`Self::engine_ground`] with the cast's own history put back where
+    /// the capture still holds it.
+    ///
+    /// PROT 0904 (Theeder) seats its creature on arm 4, half a unit short of
+    /// the victim along the caster's line, facing the victim
+    /// (`legaia_engine_cast::seru_magic_ticks::theeder_seat_placement`), and
+    /// no later arm moves it. The sweep then knocks the victims back, so a
+    /// capture past the sweep holds the victim where the beam left it, and a
+    /// replay seeded there seats the creature, and every shot that frames it,
+    /// off retail's (`theeder_summon_value_rows_parked`: the creature at
+    /// `(699, -768)`, the replay's at `(362, -484)`). The position ring is
+    /// too short to reach back to the hit; the creature's seat is not: the
+    /// victim stood half a unit along the seat's facing from it. That point
+    /// replaces the ground of the monster standing nearest it.
+    pub fn inflight_ground(
+        &self,
+    ) -> [Option<[i16; 2]>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
+        let mut out = self.engine_ground();
+        if let Some((slot, at)) = self.theeder_victim_ground()
+            && let Some(o) = out.get_mut(slot)
+        {
+            *o = Some(at);
+        }
+        out
+    }
+
+    /// The summon seat the capture's creature holds, for a Theeder cast past
+    /// arm 4 (`BattleState::summon_seat_seed`): pool slot 7's live pair and
+    /// facing. The arm-4 seat reads the caster's ground at that pass too,
+    /// which the capture no longer holds, so the seat itself is seeded.
+    pub fn summon_seat_seed(&self) -> Option<(i16, i16, u16)> {
+        const SEAT_SLOT: usize = 7;
+        self.theeder_victim_ground()?;
+        let [x, z] = self.ground.get(SEAT_SLOT).copied().flatten()?;
+        Some((x, z, self.facing.get(SEAT_SLOT).copied().flatten()?))
+    }
+
+    /// The Theeder victim's arm-4 ground, read back through the creature's
+    /// seat (pool slot 7's `+0x34` / `+0x38` and facing `+0x46`), as
+    /// `(engine slot, [x, z])`. `None` outside a Theeder cast past arm 4.
+    fn theeder_victim_ground(&self) -> Option<(usize, [i16; 2])> {
+        const THEEDER: u8 = 0x82;
+        const SEAT_SLOT: usize = 7;
+        // The module phase `ctx[+0x279]` is the module's only in `0x35` /
+        // `0x36` (as [`Self::phase_gate`] reads it); ahead of the band it
+        // holds whatever the last cast left there.
+        if self.queued_action != THEEDER
+            || !(0x35..=0x36).contains(&self.action_state)
+            || self.module_phase <= legaia_engine_cast::seru_magic_ticks::THEEDER_RISE_ARM
+        {
+            return None;
+        }
+        let [sx, sz] = self.ground.get(SEAT_SLOT).copied().flatten()?;
+        let facing = self.facing.get(SEAT_SLOT).copied().flatten()?;
+        let (s, c) = legaia_engine_system::trig::trig12(facing);
+        let at = [sx.wrapping_add(s / 2), sz.wrapping_add(c / 2)];
+        let dist = |g: [i16; 2]| {
+            let (dx, dz) = (
+                i32::from(g[0]) - i32::from(at[0]),
+                i32::from(g[1]) - i32::from(at[1]),
+            );
+            dx * dx + dz * dz
+        };
+        let m = (0..usize::from(self.monster_count))
+            .filter_map(|m| Some((m, self.ground.get(3 + m).copied().flatten()?)))
+            .min_by_key(|&(_, g)| dist(g))?
+            .0;
+        Some((usize::from(self.party_count) + m, at))
     }
 
     /// [`Self::ground`] re-keyed to engine battle slots: the party keeps its
@@ -741,9 +811,21 @@ impl RetailBattle {
             _ => None,
         };
         // PROT 0903's countdown-paced arms: how far into the arm the frame is.
-        let module_countdown = (entry == GIMARD_MODULE
-            && module_phase.is_some_and(|p| (1..GIMARD_WALK_ARM).contains(&p)))
-        .then_some(self.gimard_countdown);
+        use legaia_engine_cast::cast_module_camera::{THEEDER_RETRACT_ARM, THEEDER_SETTLE_ARM};
+        const THEEDER_MODULE: u32 = 904;
+        let module_countdown = if entry == GIMARD_MODULE
+            && module_phase.is_some_and(|p| (1..GIMARD_WALK_ARM).contains(&p))
+        {
+            Some(self.gimard_countdown)
+        } else if entry == THEEDER_MODULE && module_phase == Some(THEEDER_SETTLE_ARM) {
+            // PROT 0904's arm 14 drains the settle word arm 13 armed.
+            Some(self.theeder_settle)
+        } else {
+            None
+        };
+        // Its arm 13 holds on the retract's trail count.
+        let trail_count = (entry == THEEDER_MODULE && module_phase == Some(THEEDER_RETRACT_ARM))
+            .then_some(self.theeder_trail);
         // The close-up's accumulator is a clock of its own - a second one
         // beside the flash's age, and a pass-quantised one in retail - so
         // it is aligned once the gate holds.
@@ -772,6 +854,7 @@ impl RetailBattle {
             walk_yaw,
             done_hold,
             module_countdown,
+            trail_count,
             accum_align,
             // The summon head's RAM is a pass in (`PhaseGate::steer`).
             camera_pass: self.action_state == SUMMON_INVOKE_STATE,

@@ -394,6 +394,13 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
     // (`BattleState::creature_seat_restage`), which the replay's fresh fight
     // has not played. A harness seat.
     world.battle.creature_seat_restage = std::env::var_os("LEGAIA_SEAT_CREATURE_RESTAGE").is_some();
+    // `LEGAIA_SEAT_SUMMON_SEAT=x:z:facing`: the summon seat the capture's
+    // creature held (`BattleState::summon_seat_seed`). A harness seat.
+    world.battle.summon_seat_seed = std::env::var("LEGAIA_SEAT_SUMMON_SEAT").ok().and_then(|s| {
+        let mut it = s.split(':').map(str::parse::<i32>);
+        let (x, z, f) = (it.next()?.ok()?, it.next()?.ok()?, it.next()?.ok()?);
+        Some((x as i16, z as i16, (f & 0xFFF) as u16))
+    });
     // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z[:facing],...[;cursor,...]]`:
     // dispatch that cast the moment the first command prompt opens - the
     // retail comparison corpus's replay of a capture taken mid-cast

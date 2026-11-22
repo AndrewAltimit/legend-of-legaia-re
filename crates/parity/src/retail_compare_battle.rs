@@ -551,6 +551,12 @@ pub struct RetailBattle {
     /// ([`legaia_engine_cast::cast_module_camera::GIMARD_COUNTDOWN_VA`]) - only
     /// meaningful while that module is resident.
     pub gimard_countdown: i32,
+    /// PROT 0904's settle word
+    /// ([`legaia_engine_cast::cast_module_camera::THEEDER_SETTLE_VA`]) and
+    /// trail count (`THEEDER_TRAIL_COUNT_VA`) - only meaningful while that
+    /// module is resident.
+    pub theeder_settle: i32,
+    pub theeder_trail: u8,
     /// `ctx[+0xD]` - the acting action's framing style.
     pub cam_style: u8,
     /// The earlier actor whose framing a capture parked ahead of the seed pass

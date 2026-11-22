@@ -546,6 +546,13 @@ pub struct BattleState {
     /// strikes raise it in their `0xFF` arm (`0x801F888C..0x801F8898`), so
     /// every Rogue strike of a battle but the first opens so.
     pub creature_seat_restage: bool,
+    /// The summon seat a mid-cast capture holds: pool slot 7's `+0x34` /
+    /// `+0x38` and facing `+0x46`. PROT 0904 seats its creature once, on arm
+    /// 4, from the victim's and the caster's ground at that pass, and a
+    /// capture past the sweep holds both moved on, so a replay seeded on the
+    /// captured ground seats it elsewhere. The arm-4 seat takes this instead
+    /// when it is set. A harness seat (`LEGAIA_SEAT_SUMMON_SEAT`).
+    pub summon_seat_seed: Option<(i16, i16, u16)>,
     /// The same seed's target: the party seat the capture's caster had
     /// aimed its cast at (`+0x1DD`), or the caster itself. A single-target
     /// cast replayed off [`Self::forced_monster_cast`] lands on it when it is
@@ -1794,6 +1801,7 @@ impl BattleState {
             forced_monster_cast: None,
             seed_mp_unpaid: false,
             creature_seat_restage: false,
+            summon_seat_seed: None,
             forced_monster_target: None,
             forced_monster_group: None,
             cue_clut_seed: None,

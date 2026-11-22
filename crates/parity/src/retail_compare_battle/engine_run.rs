@@ -727,6 +727,7 @@ pub fn run_engine_battle(
         for t in 0..OPENING_TICKS {
             if !seeded && entry_sweep_reached(&session.host.world, 0xFF) {
                 session.host.world.battle.inflight_seed = seed;
+                session.host.world.battle.summon_seat_seed = battle.summon_seat_seed();
                 seeded = true;
             }
             let w = &session.host.world;
