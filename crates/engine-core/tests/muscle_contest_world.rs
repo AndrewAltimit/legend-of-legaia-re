@@ -435,7 +435,12 @@ fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
             }
         }
         let timers = &w.minigames.muscle_hub;
-        if timers.interval.is_some() && !saw_interval {
+        // Up once arm `0x0A` has run its first tick (the still has risen).
+        let interval = timers
+            .reentry
+            .as_ref()
+            .is_some_and(|h| h.frame().heading.is_some() && h.frame().backdrop > 0);
+        if interval && !saw_interval {
             // The INTERVAL arm fills the whole cue ring on its first frame.
             assert_eq!(
                 armed,
@@ -448,10 +453,11 @@ fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
                 "the staggered tally cues"
             );
         }
-        saw_interval |= timers.interval.is_some();
+        saw_interval |= interval;
         saw_card |= timers
-            .backdrop
-            .is_some_and(|b| b.card_brightness().is_some());
+            .reentry
+            .as_ref()
+            .is_some_and(|h| h.frame().round_card.is_some());
         if handed_off_at.is_none() && w.minigames.pending_warp.is_some() {
             assert!(saw_interval && saw_card, "the hub played out first");
             handed_off_at = Some(frame);

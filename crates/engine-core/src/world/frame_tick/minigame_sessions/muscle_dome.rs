@@ -781,22 +781,28 @@ mod menu_cue_tests {
 #[cfg(test)]
 mod hub_skip_tests {
     use crate::world::World;
-    use legaia_engine_minigames::muscle_dome::{HubScreen, HubScreenStage};
-    use legaia_engine_minigames::muscle_ringside::HubTimers;
+    use legaia_engine_minigames::muscle_ringside::{HubTimers, ReentryArm, ReentryHub};
     use legaia_engine_system::input::PadButton;
 
     /// The INTERVAL screen past its fade-in, as the hub hands it a tick.
     fn interval_world() -> World {
         let mut w = World::new();
+        let rows = legaia_engine_minigames::other_game_overlay::LegScoreRows {
+            round_lane: 900,
+            turns_lane: 700,
+            outcome_lane: 500,
+            score_cell: 300,
+        };
         w.minigames.muscle_hub = HubTimers {
-            interval: Some(HubScreen::interval(4000)),
+            reentry: Some(ReentryHub::new(rows, 0, 0, None)),
             ..Default::default()
         };
         while w
             .minigames
             .muscle_hub
-            .interval
-            .is_some_and(|i| i.stage() == HubScreenStage::FadeIn)
+            .reentry
+            .as_ref()
+            .is_some_and(|h| h.arm() == ReentryArm::HeadingIn)
         {
             w.input.set_pad(0);
             w.tick_muscle_hub();
@@ -810,7 +816,15 @@ mod hub_skip_tests {
         w.tick_muscle_hub();
         w.input.set_pad(0);
         w.tick_muscle_hub();
-        w.minigames.muscle_hub.tally_boost
+        boosted(&w)
+    }
+
+    fn boosted(w: &World) -> bool {
+        w.minigames
+            .muscle_hub
+            .reentry
+            .as_ref()
+            .is_some_and(ReentryHub::boost)
     }
 
     /// The hub's skip mask `0xF4` is written in the packed layout
@@ -838,6 +852,6 @@ mod hub_skip_tests {
             w.input.set_pad(PadButton::Cross.mask());
             w.tick_muscle_hub();
         }
-        assert!(w.minigames.muscle_hub.tally_boost);
+        assert!(boosted(&w));
     }
 }

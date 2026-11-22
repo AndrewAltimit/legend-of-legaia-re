@@ -242,6 +242,10 @@ impl HubScreen {
     /// Its "hold" is the tally roll, which is data-dependent (the four lanes
     /// step one row per tick after a [`HUB_TALLY_ROLL_LEAD_TICKS`] lead-in),
     /// so the hold length is the caller's: pass the roll length in ticks.
+    /// Retail's hold is the roll itself (the heading leaves only once the
+    /// tally stops); the play hosts run those arms whole through
+    /// `crate::muscle_ringside::ReentryHub`, and this envelope stays for the
+    /// standalone minigames page.
     pub const fn interval(roll_ticks: i32) -> Self {
         Self::new(HUB_FADE_STEP_FAST, roll_ticks, HUB_FADE_STEP_SLOW, 0, false)
     }

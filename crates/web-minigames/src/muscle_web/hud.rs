@@ -606,7 +606,7 @@ impl LegaiaMinigames {
     /// scaler's bypass: while it is up each lane moves its whole remainder in
     /// one step, so one press rolls the rest of the tally out. The heading's
     /// fade-in arm (`0x0A`) carries no pad test. The play hosts hold the
-    /// latch on `HubTimers::tally_boost`; this page replays the roll from a
+    /// latch on `ReentryHub::boost`; this page replays the roll from a
     /// vsync count, so it holds the game tick the latch rose on and every replay
     /// ([`Self::muscle_hub_quads_json`] screen 4,
     /// [`Self::muscle_interval_still_json`], `muscle_tally_voice`) boosts the

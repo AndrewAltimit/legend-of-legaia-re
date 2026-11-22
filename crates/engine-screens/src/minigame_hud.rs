@@ -240,46 +240,37 @@ pub fn muscle_hub_quads(
                 banner.brightness(),
             ));
         }
-    } else if let Some(interval) = timers.interval {
-        let bright = interval.brightness();
-        quads.extend(hud::hub_screen_quads(
-            &mut table,
-            hud::HUB_INTERVAL_HEADING,
-            bright,
-        ));
-        // The six rows are the roll's own, not the settled totals: three
-        // recovery lanes counting down, the HP they count into, the score
-        // lane counting down and the coin tally counting up. With no roll
-        // armed the screen draws the settled values, which is where the roll
-        // ends anyway.
-        let (values, row_bright) = match timers.tally.as_ref() {
-            Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
-            None => {
-                let (rows, tally) = world
-                    .minigames
-                    .muscle_contest
-                    .as_ref()
-                    .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
-                ([0, 0, 0, rows.hp_restore(), 0, tally], [bright; 6])
-            }
-        };
-        quads.extend(hud::score_tally_quads(&mut table, values, row_bright));
-    }
-    // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
-    if !in_dome
-        && timers.interval.is_none()
-        && let Some(card) = timers.backdrop.and_then(|b| b.card_brightness())
-    {
-        let round = world
-            .minigames
-            .muscle_contest
-            .as_ref()
-            .map_or(1, |c| c.round() as i32 + 1);
-        quads.extend(hud::hub_screen_quads(
-            &mut table,
-            &hud::round_banner_draws(round),
-            card,
-        ));
+    } else if let Some(hub) = timers.reentry.as_ref() {
+        // The hub re-entered after a leg draws what its arm emitted: the
+        // INTERVAL heading, the score tally at the fade the arm handed it
+        // (its rows are the roll's own: three recovery lanes counting down,
+        // the HP they count into, the score lane counting down and the coin
+        // tally counting up), or the ROUND card. Retail emits the tally
+        // before the heading, and the shared ordering-table slot paints the
+        // last emitted first.
+        let f = hub.frame();
+        if let Some(level) = f.heading {
+            quads.extend(hud::hub_screen_quads(
+                &mut table,
+                hud::HUB_INTERVAL_HEADING,
+                level,
+            ));
+        }
+        if let Some(fade) = f.tally_fade {
+            let ramp = hub.ramp();
+            quads.extend(hud::score_tally_quads(
+                &mut table,
+                ramp.row_values(hub.tally()),
+                ramp.row_brightness(fade),
+            ));
+        }
+        if let Some(card) = f.round_card {
+            quads.extend(hud::hub_screen_quads(
+                &mut table,
+                &hud::round_banner_draws(hub.round() + 1),
+                card,
+            ));
+        }
     }
     MuscleHubQuads {
         quads,
@@ -363,15 +354,17 @@ pub fn muscle_hub_sprites(
         in_dome,
     } = muscle_hub_quads(world, table);
     let mut out = Vec::new();
-    if !in_dome && let Some(b) = world.minigames.muscle_hub.backdrop.filter(|b| b.visible()) {
-        for q in rb::ringside_still_quads(b.level()) {
+    let still = world.minigames.muscle_hub.reentry.as_ref().and_then(|h| {
+        let level = h.frame().backdrop;
+        h.still_variant().filter(|_| level > 0).map(|v| (v, level))
+    });
+    if !in_dome && let Some((variant, level)) = still {
+        for q in rb::ringside_still_quads(level) {
             let Some(d) = rb::StillDraw::from_quad(&q) else {
                 continue;
             };
             out.push(HubSprite {
-                source: HubSpriteSource::Still {
-                    variant: b.variant(),
-                },
+                source: HubSpriteSource::Still { variant },
                 dst: d.dst,
                 src: d.src,
                 color: [d.level; 3],

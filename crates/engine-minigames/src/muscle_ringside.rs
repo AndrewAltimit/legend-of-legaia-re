@@ -34,12 +34,13 @@
 //! | `0x15` | held | the ROUND card's fade-in + hold (skippable) |
 //! | `0x16` | `-= 2 dt`, clamp `0` (`0x801D002C..0x801D0040`) | the card has drained |
 //!
-//! [`HubBackdrop`] carries that envelope. The INTERVAL arms (`0x0A..0x0C`)
-//! are the host's [`HubScreen::interval`], so the backdrop takes that
-//! screen's stage as an input rather than running a second clock; the
-//! return and card arms (`0x14..0x16`) are its own, with the card's envelope
-//! [`HubScreen::opponent_card`] - the same arms `0x15` / `0x16` that kernel
-//! was measured from, whose draw is `FUN_801D02F0`, the ROUND banner.
+//! [`ReentryHub`] runs those six arms whole, with the INTERVAL heading, the
+//! score tally and the ROUND card they draw over the still, and is what the
+//! play hosts step ([`HubTimers::reentry`]). The heading holds until the
+//! tally has stopped rolling, so the screen lasts as long as the roll.
+//! [`HubBackdrop`] is the older envelope the standalone minigames page still
+//! replays: it takes [`HubScreen::interval`]'s stage as its INTERVAL input,
+//! whose hold is a fixed roll length rather than the roll itself.
 //!
 //! The other half of the fork is the first visit (latch zero), where the same
 //! emitter tiles a brick wall under the intro, title and course cards;
@@ -584,6 +585,336 @@ impl FirstVisitHub {
     }
 }
 
+/// Which arm of `FUN_801CF870` a [`ReentryHub`] is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReentryArm {
+    /// Arm `0x0A`: the INTERVAL heading and the still fade in.
+    HeadingIn,
+    /// Arm `0x0B`: the score tally rolls under the full heading while the
+    /// still dims to half.
+    Roll,
+    /// Arm `0x0C`: the heading and the tally drain.
+    HeadingOut,
+    /// Arm `0x14`: the still climbs back to full.
+    Return,
+    /// Arm `0x15`: the ROUND card fades in and holds.
+    RoundIn,
+    /// Arm `0x16`: the ROUND card and the still drain; at zero the next
+    /// leg's fight starts.
+    RoundOut,
+    /// Past arm `0x16` (`FUN_801D1510`, the fight).
+    Done,
+}
+
+/// What a [`ReentryHub`] draws this frame: each screen's level, or `None`
+/// for a screen its arm does not draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReentryFrame {
+    /// `*(0x801D1A7C)`, the ringside still's level; the backdrop emitter
+    /// `FUN_801D00F8` runs only while it is non-zero (`beqz a0` at
+    /// `0x801D00A4`).
+    pub backdrop: i32,
+    /// The INTERVAL heading (record `0x10`, `FUN_801D050C` at `0x801CFED0`)
+    /// at `*(0x801D1A84)`.
+    pub heading: Option<i32>,
+    /// The fade argument the arm handed the score tally `FUN_801CF074`,
+    /// which draws the six rows and their labels at it: `0x80` in arm
+    /// `0x0B`, the draining heading in arm `0x0C`, `None` in the arms that
+    /// do not call it.
+    pub tally_fade: Option<i32>,
+    /// The ROUND card `FUN_801D02F0` at `*(0x801D1A84)`.
+    pub round_card: Option<i32>,
+}
+
+/// The contest hub **re-entered after a leg**: arms `0x0A..0x0C` and
+/// `0x14..0x16` of `FUN_801CF870` with the re-entry latch `_DAT_801D1AE0`
+/// set, which the arena init `FUN_801CEA6C` raises when the arena word is
+/// already non-zero (`0x801CEC04`) and pairs with arm `0x0A` when the course
+/// has rounds left (`0x801CEE2C`).
+///
+/// The INTERVAL heading fades in over the still; on the frame it reaches
+/// full, `FUN_801D1184` arms the tally's four lanes and the score tally
+/// rolls under the held heading, while the still dims to half once lane `0`
+/// has lit. The heading starts to drain only when the roll has stopped
+/// **and** the still is at half (`0x801CFDC4..0x801CFDF0`), so the screen
+/// lasts as long as the roll does. The still then climbs back to full, the
+/// ROUND card plays over it, and the card's drain hands the next leg its
+/// fight.
+///
+/// Arm `0x0C`'s exit also waits on the CD-XA in-flight flag
+/// `_DAT_8007BC20`, the drive's sync `FUN_8003DE7C(1)` and the loader state
+/// `_DAT_8007B648 == 0x80`. The port's reads and loads are synchronous, so
+/// only the first is modelled, as [`FirstVisitHub`] models it. The exit
+/// adds the tally's HP total to the fighter (`0x801CFE7C..0x801CFEA8`); the
+/// port's contest hands that restore back at the leg's end
+/// (`World::report_muscle_leg`), and [`Self::take_restore`] reports the
+/// frame retail applies it on.
+///
+/// PORT: FUN_801cf870 (arms `0x0A`..`0x0C` and `0x14`..`0x16` on the
+/// latch-`1` path: `0x801CFC98..0x801CFF48`, `0x801CFF4C..0x801D0084`)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReentryHub {
+    arm: ReentryArm,
+    /// The arm the last tick ran, whose emitter calls this frame's draw is.
+    drawn: ReentryArm,
+    /// The fade the last tick handed the tally, if it called it.
+    drawn_tally: Option<i32>,
+    /// `0x801D1A7C`.
+    backdrop: i32,
+    /// `0x801D1A84` - the heading level, then the ROUND card's.
+    heading: i32,
+    /// `0x801D1A8C` - the ROUND card's hold.
+    card_hold: i32,
+    /// The leg's four lanes, armed into [`Self::ramp`] at arm `0x0A`'s exit.
+    rows: crate::other_game_overlay::LegScoreRows,
+    /// The tally lanes (`0x801D1AB8..0x801D1AD4`, `0x801D1AE4`).
+    ramp: crate::other_game_overlay::ScoreTallyRamp,
+    /// The coin tally the score lane counts into (`_DAT_80084440`).
+    tally: i32,
+    /// `DAT_801D1AB4`, the tally's fast-forward latch.
+    boost: bool,
+    /// The leg's 0-based round index, the ROUND line's channel
+    /// (`DAT_801D1A94`).
+    round: i32,
+    /// `_DAT_8007BC20` as modelled: frames left on an in-flight XA line.
+    xa_busy: i32,
+    xa: Option<HubXaCue>,
+    ring: bool,
+    restore: Option<i32>,
+    seek: bool,
+    /// The ringside still this hub shows (extraction index), if any.
+    still: Option<u32>,
+}
+
+impl ReentryHub {
+    /// A hub re-entered after a leg whose lanes are `rows`, the coin tally
+    /// standing at `tally` before the leg's score lane rolls into it, the leg
+    /// now staged at 0-based round `round`, showing `still`. Every counter
+    /// starts at zero, as the init leaves them (`0x801CEB1C..0x801CEB54`,
+    /// `0x801CECC4..0x801CECD8`).
+    pub fn new(
+        rows: crate::other_game_overlay::LegScoreRows,
+        tally: i32,
+        round: i32,
+        still: Option<u32>,
+    ) -> Self {
+        Self {
+            arm: ReentryArm::HeadingIn,
+            drawn: ReentryArm::HeadingIn,
+            drawn_tally: None,
+            backdrop: 0,
+            heading: 0,
+            card_hold: 0,
+            rows,
+            ramp: crate::other_game_overlay::ScoreTallyRamp::default(),
+            tally,
+            boost: false,
+            round,
+            xa_busy: 0,
+            xa: None,
+            ring: false,
+            restore: None,
+            seek: false,
+            still,
+        }
+    }
+
+    /// Advance one hub tick. `dt` is the frame-skip factor
+    /// (`_DAT_1F800393`), `pad` the edge word the arms test against
+    /// [`HUB_SKIP_PAD_MASK`], `volume_word` the voice volume each tally cue
+    /// halves. Returns the tally's voice cues this tick.
+    pub fn tick(
+        &mut self,
+        dt: u8,
+        pad: u16,
+        volume_word: u32,
+    ) -> Vec<crate::other_game_overlay::VoiceAttrCue> {
+        let step = i32::from(dt.max(1));
+        let skip = pad & HUB_SKIP_PAD_MASK != 0;
+        self.drawn = self.arm;
+        self.drawn_tally = None;
+        self.xa_busy = (self.xa_busy - step).max(0);
+        let xa_idle = self.xa_busy == 0;
+        let mut cues = Vec::new();
+        let mut roll = |hub: &mut Self, fade: i32| {
+            let s = hub.ramp.tick(dt.max(1), hub.boost, volume_word);
+            hub.tally += s.tally_gain;
+            cues.extend(s.cues);
+            hub.drawn_tally = Some(fade);
+            s.rolling
+        };
+        match self.arm {
+            ReentryArm::HeadingIn => {
+                // The ring of four staggered cues, on the arm's first frame
+                // (`0x801CFCA4..0x801CFCEC`).
+                self.ring |= self.backdrop == 0;
+                self.backdrop = (self.backdrop + step * HUB_FADE_STEP_FAST).min(HUB_FADE_FULL);
+                self.heading += step * HUB_FADE_STEP_FAST;
+                if self.heading > HUB_FADE_FULL {
+                    self.heading = HUB_FADE_FULL;
+                    // `jal 0x801D1184` at `0x801CFD40`.
+                    self.ramp.pending = [
+                        self.rows.round_lane,
+                        self.rows.turns_lane,
+                        self.rows.outcome_lane,
+                        self.rows.score_cell,
+                    ];
+                    self.arm = ReentryArm::Roll;
+                }
+            }
+            ReentryArm::Roll => {
+                // The latch reads the pad ahead of the roll, so a press
+                // speeds up this frame's step (`0x801CFD60..0x801CFD7C`).
+                self.boost |= skip;
+                if self.ramp.fade[0] == crate::other_game_overlay::LANE_FADE_FULL {
+                    self.backdrop =
+                        (self.backdrop - step * HUB_FADE_STEP_SLOW).max(HUB_BACKDROP_HALF);
+                }
+                let rolling = roll(self, HUB_FADE_FULL);
+                if !rolling && self.backdrop == HUB_BACKDROP_HALF {
+                    self.arm = ReentryArm::HeadingOut;
+                }
+            }
+            ReentryArm::HeadingOut => {
+                self.heading -= step * HUB_FADE_STEP_FAST;
+                if self.heading < 0 {
+                    self.heading = 0;
+                    if xa_idle {
+                        // `jal 0x8003EAE4(0x1F, 0)` and the HP add.
+                        self.seek = true;
+                        self.restore = Some(self.ramp.hp_accum);
+                        self.arm = ReentryArm::Return;
+                    }
+                }
+                let fade = self.heading;
+                roll(self, fade);
+            }
+            ReentryArm::Return => {
+                self.backdrop += step * HUB_FADE_STEP_FAST;
+                if self.backdrop > HUB_FADE_FULL {
+                    self.backdrop = HUB_FADE_FULL;
+                    self.arm = ReentryArm::RoundIn;
+                }
+            }
+            ReentryArm::RoundIn => {
+                if self.heading == 0 {
+                    let cue = round_card_xa(self.round);
+                    self.xa = Some(cue);
+                    self.xa_busy = i32::from(cue.duration_sectors);
+                }
+                self.heading += step * HUB_FADE_STEP_SLOW;
+                if self.heading > HUB_FADE_FULL {
+                    self.heading = HUB_FADE_FULL;
+                    self.card_hold += step;
+                    if self.card_hold >= HUB_OPPONENT_CARD_HOLD_TICKS || skip {
+                        self.arm = ReentryArm::RoundOut;
+                    }
+                }
+            }
+            ReentryArm::RoundOut => {
+                self.heading -= step * HUB_FADE_STEP_SLOW;
+                self.backdrop = (self.backdrop - step * HUB_FADE_STEP_SLOW).max(0);
+                if self.heading < 0 {
+                    self.heading = 0;
+                    if xa_idle {
+                        self.arm = ReentryArm::Done;
+                    }
+                }
+            }
+            ReentryArm::Done => {}
+        }
+        cues
+    }
+
+    /// The screens the last tick drew, per that arm's own emitter calls.
+    pub fn frame(&self) -> ReentryFrame {
+        use ReentryArm as A;
+        let arm = self.drawn;
+        ReentryFrame {
+            backdrop: self.backdrop,
+            heading: matches!(arm, A::HeadingIn | A::Roll | A::HeadingOut).then_some(self.heading),
+            tally_fade: self.drawn_tally,
+            round_card: matches!(arm, A::RoundIn | A::RoundOut).then_some(self.heading),
+        }
+    }
+
+    /// Which arm the hub is in.
+    pub fn arm(&self) -> ReentryArm {
+        self.arm
+    }
+
+    /// Whether the next leg's fight has been handed its start.
+    pub fn done(&self) -> bool {
+        self.arm == ReentryArm::Done
+    }
+
+    /// The tally lanes as the last tick left them (the rows the tally draws).
+    pub fn ramp(&self) -> &crate::other_game_overlay::ScoreTallyRamp {
+        &self.ramp
+    }
+
+    /// The coin tally as the score lane has counted it so far.
+    pub fn tally(&self) -> i32 {
+        self.tally
+    }
+
+    /// The fast-forward latch `DAT_801D1AB4`.
+    pub fn boost(&self) -> bool {
+        self.boost
+    }
+
+    /// The ringside still this hub shows, if any.
+    pub fn still(&self) -> Option<u32> {
+        self.still
+    }
+
+    /// `0` (`int.tim`) or `1` (`int2.tim`), as [`HubBackdrop::variant`].
+    pub fn still_variant(&self) -> Option<u32> {
+        self.still
+            .map(|s| s.saturating_sub(legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT))
+    }
+
+    /// The leg's 0-based round index.
+    pub fn round(&self) -> i32 {
+        self.round
+    }
+
+    /// Take the CD-XA line the last tick started (the ROUND card's).
+    pub fn take_xa(&mut self) -> Option<HubXaCue> {
+        self.xa.take()
+    }
+
+    /// Whether the last tick wrote the four-cue ring (arm `0x0A`'s first
+    /// frame), taken once.
+    pub fn take_ring(&mut self) -> bool {
+        std::mem::take(&mut self.ring)
+    }
+
+    /// The HP total arm `0x0C`'s exit adds to the fighter, on that tick.
+    pub fn take_restore(&mut self) -> Option<i32> {
+        self.restore.take()
+    }
+
+    /// Whether arm `0x0C`'s exit parked the drive on the ROUND line
+    /// (`FUN_8003EAE4(0x1F, 0)`), taken once.
+    pub fn take_seek(&mut self) -> bool {
+        std::mem::take(&mut self.seek)
+    }
+
+    /// The hub's counters as retail holds them, for the differential:
+    /// `0x801D1A7C`, `0x801D1A84` and `0x801D1A8C`.
+    #[doc(hidden)]
+    pub fn words(&self) -> [i32; 3] {
+        [self.backdrop, self.heading, self.card_hold]
+    }
+
+    /// Seat the frames left on an in-flight announcer line.
+    #[doc(hidden)]
+    pub fn seat_xa_busy(&mut self, frames: i32) {
+        self.xa_busy = frames;
+    }
+}
+
 /// Whether a leg that is opening should raise the ROUND card itself.
 ///
 /// Retail shows the card once per leg, in the hub, before the fight: arms
@@ -616,23 +947,16 @@ pub struct HubTimers {
     /// A leg-open ROUND card `(displayed round, envelope)` no hub screen has
     /// introduced - retail arms `0x15` / `0x16`.
     pub round_banner: Option<(i32, crate::muscle_dome::HubScreen)>,
-    /// The round a re-entered hub's backdrop last drew its ROUND card for
+    /// The round a re-entered hub last drew its ROUND card for
     /// ([`leg_open_raises_round_card`]).
     pub card_round: Option<i32>,
-    /// The INTERVAL + score-tally screen's envelope.
-    pub interval: Option<crate::muscle_dome::HubScreen>,
-    /// The score tally's roll-up and the coin tally it counts from.
-    pub tally: Option<(crate::other_game_overlay::ScoreTallyRamp, i32)>,
-    /// The tally's fast-forward latch, retail's `DAT_801D1AB4`. The tally arm
-    /// (`0x0B`) raises it on any newly pressed bit of [`HUB_SKIP_PAD_MASK`]
-    /// (`lw 0x8007B874` / `andi 0xf4` / `sw 1` at `0x801CFD60..0x801CFD7C`)
-    /// and nothing lowers it until the hub is entered again: its only clear
-    /// is the arena init `FUN_801CEA6C`'s `sw zero` at `0x801CEB1C`. While it is up
-    /// the step scaler hands each lane its whole remainder, so one press
-    /// rolls the rest of the tally out at once.
-    pub tally_boost: bool,
-    /// The re-entered hub's backdrop.
-    pub backdrop: Option<HubBackdrop>,
+    /// The hub re-entered after a leg: the INTERVAL heading, the score
+    /// tally, the ringside still and the ROUND card, arms `0x0A..0x0C` and
+    /// `0x14..0x16`. Its tally's fast-forward latch is retail's
+    /// `DAT_801D1AB4` ([`ReentryHub::boost`]): arm `0x0B` raises it on any
+    /// newly pressed bit of [`HUB_SKIP_PAD_MASK`] and only the next arena
+    /// init lowers it, so one press rolls the rest of the tally out at once.
+    pub reentry: Option<ReentryHub>,
     /// Last frame's "a leg is open".
     pub prev_leg_open: bool,
     /// Last frame's "a contest is open".
@@ -802,13 +1126,10 @@ impl HubTimers {
         out
     }
 
-    /// Whether any hub arm owns the frame: the first visit, a ROUND card,
-    /// the INTERVAL screen or a re-entered hub's backdrop.
+    /// Whether any hub arm owns the frame: the first visit, a ROUND card or
+    /// a hub re-entered after a leg.
     fn screen_up(&self) -> bool {
-        self.first_visit.is_some()
-            || self.round_banner.is_some()
-            || self.interval.is_some()
-            || self.backdrop.is_some()
+        self.first_visit.is_some() || self.round_banner.is_some() || self.reentry.is_some()
     }
 
     /// The leg and contest edges, read every vsync: they arm the screens
@@ -834,45 +1155,19 @@ impl HubTimers {
                 // The card's arm `0x15` starts its line on its first tick.
                 out.xa = Some(round_card_xa(round - 1));
             }
-            self.interval = None;
-            self.backdrop = None;
+            self.reentry = None;
         }
         if !leg_open && self.prev_leg_open && self.prev_contest_open {
             // The leg boundary the arena hub sees; whether it shows the tally
-            // screen is the shared rule's call.
+            // screen is the shared rule's call. The arena init `FUN_801CEA6C`
+            // runs on every return to the hub and seeds arm `0x0A`
+            // (`0x801CEE2C`) with every counter and the tally's latch zero.
             let raises =
                 crate::muscle_dome::leg_boundary_raises_interval(world.contest.map(|c| c.state()));
-            // The tally's four lanes step one row per tick after the shared
-            // lead-in, and the last cue lands on the staggered countdown, so
-            // the roll cannot be shorter than that stagger.
-            let roll = crate::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS
-                + *crate::muscle_dome::HUB_TALLY_CUE_STAGGER
-                    .last()
-                    .unwrap_or(&0) as i32;
-            self.interval = raises.then(|| crate::muscle_dome::HubScreen::interval(roll));
-            if raises {
-                // Arm `0x0A`'s first frame (`DAT_801D1A7C == 0`) fills the
-                // whole ring: ids and countdowns, slot by slot.
-                out.ring_cues = (0u8..)
-                    .zip(crate::muscle_dome::HUB_TALLY_CUES)
-                    .zip(crate::muscle_dome::HUB_TALLY_CUE_STAGGER)
-                    .map(|((slot, id), delay)| (slot, id, i16::from(delay)))
-                    .collect();
-            }
-            self.tally = if raises {
-                world.contest.map(|c| c.tally_roll())
-            } else {
-                None
-            };
-            // The arena init `FUN_801CEA6C` runs on every return to the hub
-            // and lowers the latch (`0x801CEB1C`).
-            self.tally_boost = false;
-            // A hub re-entered after a leg draws the still that leg's end
-            // left resident as its backdrop (retail's `_DAT_801D1AE0` arm).
-            self.backdrop = world
-                .ringside_still
-                .filter(|_| raises)
-                .map(HubBackdrop::reentry);
+            self.reentry = world.contest.filter(|_| raises).map(|c| {
+                let (_, tally) = c.tally_roll();
+                ReentryHub::new(c.rows(), tally, c.round() as i32, world.ringside_still)
+            });
             self.first_visit = None;
             self.round_banner = None;
         }
@@ -904,46 +1199,25 @@ impl HubTimers {
                 self.round_banner = None;
             }
         }
-        // The backdrop rides the INTERVAL screen's arms, then runs its own
-        // return + ROUND-card arms once the screen has gone.
-        if let Some(backdrop) = self.backdrop.as_mut() {
-            let lane0_full = self
-                .tally
-                .as_ref()
-                .is_some_and(|(ramp, _)| ramp.fade[0] >= crate::other_game_overlay::LANE_FADE_FULL);
-            backdrop.tick(dt, pad, self.interval.map(|i| i.stage()), lane0_full);
-            if backdrop.card_brightness().is_some() {
-                // A re-entered hub's ROUND card is arm `0x15` too: its first
-                // tick starts the round's line (`0x801CFF4C..0x801CFF70`).
-                if self.card_round.is_none() && out.xa.is_none() {
-                    out.xa = Some(round_card_xa(round - 1));
-                }
+        if let Some(hub) = self.reentry.as_mut() {
+            out.voice_cues.extend(hub.tick(dt, pad, volume_word));
+            if hub.take_ring() {
+                // Arm `0x0A`'s first frame (`DAT_801D1A7C == 0`) fills the
+                // whole ring: ids and countdowns, slot by slot.
+                out.ring_cues = (0u8..)
+                    .zip(crate::muscle_dome::HUB_TALLY_CUES)
+                    .zip(crate::muscle_dome::HUB_TALLY_CUE_STAGGER)
+                    .map(|((slot, id), delay)| (slot, id, i16::from(delay)))
+                    .collect();
+            }
+            if let Some(xa) = hub.take_xa() {
+                out.xa = Some(xa);
+            }
+            if matches!(hub.arm(), ReentryArm::RoundIn | ReentryArm::RoundOut) {
                 self.card_round = Some(round);
             }
-            if backdrop.done() {
-                self.backdrop = None;
-            }
-        }
-        if let Some(interval) = self.interval.as_mut() {
-            interval.tick(dt, pad);
-            // Arm `0x0B` tests the pad ahead of the roll (`0x801CFD60`, then
-            // `jal 0x801CF074` at `0x801CFDBC`), so a press speeds up the
-            // same frame's step. Arm `0x0A`, the heading's fade-in, has no
-            // such test.
-            if interval.stage() != HubScreenStage::FadeIn && pad & HUB_SKIP_PAD_MASK != 0 {
-                self.tally_boost = true;
-            }
-            if let Some((ramp, tally)) = self.tally.as_mut() {
-                // The lanes' fades take the step; each drain moves one
-                // scaled share of its remainder a tick, so the roll's rows
-                // come at retail's thirty a second.
-                let step = ramp.tick(dt, self.tally_boost, volume_word);
-                *tally += step.tally_gain;
-                out.voice_cues.extend(step.cues.iter().copied());
-            }
-            if interval.done() {
-                self.interval = None;
-                self.tally = None;
+            if hub.done() {
+                self.reentry = None;
             }
         }
     }
@@ -1174,7 +1448,7 @@ mod tests {
     /// `0x0A` carries no pad test, and the latch outlives the press.
     #[test]
     fn a_press_during_the_tally_latches_the_fast_roll() {
-        use crate::other_game_overlay::{LegScoreRows, ScoreTallyRamp};
+        use crate::other_game_overlay::LegScoreRows;
         let rows = LegScoreRows {
             round_lane: 900,
             turns_lane: 700,
@@ -1191,20 +1465,18 @@ mod tests {
         // is the frame's press mask.
         let roll = |pad_at: &dyn Fn(usize) -> u16| {
             let mut t = HubTimers {
-                interval: Some(HubScreen::interval(4000)),
-                tally: Some((ScoreTallyRamp::arm(rows), 0)),
+                reentry: Some(ReentryHub::new(rows, 0, 0, None)),
                 ..Default::default()
             };
             let mut latched_in_fade = false;
             for frame in 0..4000 {
-                let fading = t
-                    .interval
-                    .is_some_and(|i| i.stage() == HubScreenStage::FadeIn);
+                let hub = t.reentry.as_ref().expect("the hub runs");
+                let fading = hub.arm() == ReentryArm::HeadingIn;
                 t.tick(world, pad_at(frame), 200);
-                latched_in_fade |= fading && t.tally_boost;
-                let pending = t.tally.as_ref().map(|(r, _)| r.pending);
-                if pending == Some([0; 4]) {
-                    return (frame, t.tally_boost, latched_in_fade);
+                let hub = t.reentry.as_ref().expect("the hub runs");
+                latched_in_fade |= fading && hub.boost();
+                if hub.arm() == ReentryArm::HeadingOut {
+                    return (frame, hub.boost(), latched_in_fade);
                 }
             }
             panic!("the tally never drained");
@@ -1225,6 +1497,49 @@ mod tests {
         // Arm `0x0A` does not read the pad.
         let (_, _, in_fade) = roll(&|f| if f == 0 { 0x40 } else { 0 });
         assert!(!in_fade, "the fade-in arm carries no pad test");
+    }
+
+    /// The INTERVAL heading holds at full until the tally has stopped rolling
+    /// and the still has dimmed to half (`0x801CFDC4..0x801CFDF0`), so a
+    /// long roll keeps the screen up and an empty one ends it early; the
+    /// rows are not drawn until the heading is full (arm `0x0A` does not call
+    /// the tally).
+    #[test]
+    fn the_interval_screen_lasts_as_long_as_its_roll() {
+        use crate::other_game_overlay::LegScoreRows;
+        let run = |rows: LegScoreRows| {
+            let mut hub = ReentryHub::new(rows, 0, 2, None);
+            let mut ticks = 0;
+            let mut out_at = None;
+            while !hub.done() {
+                hub.tick(2, 0, 200);
+                ticks += 1;
+                let f = hub.frame();
+                if hub.arm() == ReentryArm::HeadingIn {
+                    assert_eq!(f.tally_fade, None, "no rows under the fading heading");
+                }
+                if f.tally_fade.is_some() && out_at.is_none() && f.heading != Some(HUB_FADE_FULL) {
+                    out_at = Some(ticks);
+                    assert!(
+                        hub.ramp().settled(),
+                        "the heading drains only after the roll"
+                    );
+                }
+                assert!(ticks < 10_000);
+            }
+            out_at.expect("the heading drains")
+        };
+        let short = run(LegScoreRows::default());
+        let long = run(LegScoreRows {
+            round_lane: 160,
+            turns_lane: 80,
+            outcome_lane: 120,
+            score_cell: 2000,
+        });
+        assert!(
+            long > short + 60,
+            "the roll sets the screen's length: {long} vs {short}"
+        );
     }
 
     /// The replay helpers a host that counts a screen's vsyncs reads
@@ -1320,14 +1635,15 @@ mod tests {
         let drain_vsyncs = || {
             let mut t = HubTimers {
                 cadence: HubCadence::idle(),
-                interval: Some(HubScreen::interval(4000)),
-                tally: Some((ScoreTallyRamp::arm(rows), 0)),
+                reentry: Some(ReentryHub::new(rows, 0, 0, None)),
                 ..Default::default()
             };
             (1..4000)
                 .find(|_| {
                     t.tick(idle, 0, 200);
-                    t.tally.as_ref().is_some_and(|(r, _)| r.settled())
+                    t.reentry
+                        .as_ref()
+                        .is_some_and(|h| h.arm() == ReentryArm::Roll && h.ramp().settled())
                 })
                 .expect("the tally drains")
         };
@@ -1347,22 +1663,23 @@ mod tests {
         // A press on the vsync between two ticks is held for the next one.
         let mut t = HubTimers {
             cadence: HubCadence::idle(),
-            interval: Some(HubScreen::interval(4000)),
-            tally: Some((ScoreTallyRamp::arm(rows), 0)),
+            reentry: Some(ReentryHub::new(rows, 0, 0, None)),
             ..Default::default()
         };
+        let boost = |t: &HubTimers| t.reentry.as_ref().is_some_and(ReentryHub::boost);
         while t
-            .interval
-            .is_some_and(|i| i.stage() == HubScreenStage::FadeIn)
+            .reentry
+            .as_ref()
+            .is_some_and(|h| h.arm() == ReentryArm::HeadingIn)
         {
             t.tick(idle, 0, 200);
         }
         // The fade-in ends on a tick: the next vsync is the one between.
         assert_eq!(t.cadence.phase, 0);
         t.tick(idle, 0x40, 200);
-        assert!(!t.tally_boost, "no tick ran on the press's vsync");
+        assert!(!boost(&t), "no tick ran on the press's vsync");
         t.tick(idle, 0, 200);
-        assert!(t.tally_boost, "the next tick reads the held press");
+        assert!(boost(&t), "the next tick reads the held press");
     }
 
     /// A course run through three fights shows the first visit (the
@@ -1400,7 +1717,9 @@ mod tests {
             visits += usize::from(visit && !was_visit);
             was_visit = visit;
             let card = t.round_banner.is_some()
-                || t.backdrop.is_some_and(|b| b.card_brightness().is_some());
+                || t.reentry
+                    .as_ref()
+                    .is_some_and(|h| h.frame().round_card.is_some());
             cards += usize::from(card && !was_card);
             was_card = card;
             lines.extend(frame.xa);
