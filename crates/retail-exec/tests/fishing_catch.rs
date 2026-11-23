@@ -149,7 +149,6 @@ fn the_plate_fish_matrix_is_retails() {
 /// integer chain, on the clip frame nearest it.
 #[test]
 fn the_plate_line_ties_where_retails_draw_projects_it() {
-    differential!(prot(972, DRAW));
     use legaia_engine_fishing::fishing_actors::{
         CatchFish, CatchFishPlace, VenueCamera, plate_fish_y,
     };
@@ -160,6 +159,8 @@ fn the_plate_line_ties_where_retails_draw_projects_it() {
     ) else {
         return;
     };
+    // Declared past the skip: without the library state nothing runs.
+    differential!(prot(972, DRAW));
     assert!(
         crate::common::resident_is_retail(&state, DRAW, Some((972, fs::FISHING_OVERLAY_BASE_VA))),
         "the state's fishing overlay is the disc's"
