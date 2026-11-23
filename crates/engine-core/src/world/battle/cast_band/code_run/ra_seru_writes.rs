@@ -52,6 +52,34 @@ impl World {
             .collect()
     }
 
+    /// A row hit's turn: each living monster of the row, and with
+    /// `skip_stone` only one out of Stone (`+0x16E & 4`), faces away from the
+    /// point `(x, z)` - `FUN_80019B28(z, x, seat[+0x38], seat[+0x34]) + 0x800`
+    /// into `+0x46`, the store the summon hit loops make beside each roll.
+    /// The seats are the row as the pass opens, ahead of the band's fold, so a
+    /// monster the hit fells turns as well.
+    pub(super) fn turn_row_away_from(
+        &mut self,
+        monster_count: u8,
+        (x, z): (i16, i16),
+        skip_stone: bool,
+    ) {
+        for (e, _) in self.ra_seru_row(monster_count) {
+            if skip_stone && self.battle.actor_is_petrified(e as u8) {
+                continue;
+            }
+            if let Some(a) = self.actors.get_mut(e) {
+                let b = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                    z,
+                    x,
+                    a.move_state.world_z,
+                    a.move_state.world_x,
+                );
+                a.battle.facing_angle = b.wrapping_add(0x800) & 0xFFF;
+            }
+        }
+    }
+
     /// The row store `+0x04` / `+0x21C` on every living monster.
     fn ra_seru_row_word(&mut self, monster_count: u8, word: u32, flag: u8) {
         for (e, _) in self.ra_seru_row(monster_count) {
@@ -227,7 +255,8 @@ impl World {
     /// already seats):
     ///
     /// - every struck monster tinted magenta, `+0x04 = 0x3FF003FF`, `+0x0C =
-    ///   0x1000` (`0x801F7910..0x801F7928`), no `+0x21F` store;
+    ///   0x1000` (`0x801F7910..0x801F7928`), no `+0x21F` store, and turned
+    ///   away from the camera's focus point (`0x801F793C..0x801F7968`);
     /// - three records seated on the camera focus (`x = -*(0x80089118)`, `z =
     ///   -*(0x80089120)` over the zeroed stack `y`) on the creature's angle
     ///   trio (`a1 = creature + 0x44`) at scale `0x1000`
@@ -265,6 +294,10 @@ impl World {
             .battle_cam_pose()
             .focus
             .map(|v| v.round() as i32 as i16);
+        // Each struck monster also turns from the camera's focus point
+        // (`FUN_80019B28(-*(0x80089120), -*(0x80089118), ..) + 0x800` at
+        // `0x801F793C..0x801F7968`, the same negated focus the rings stand on).
+        self.turn_row_away_from(4, (focus[0], focus[2]), true);
         let spawns = RINGS.map(|record| ModuleSpawn {
             record: SpawnRecord::Module(record),
             anchor: SpawnAnchor::LiteralScaled {
@@ -444,7 +477,7 @@ impl World {
     /// | `0x10`, `0x11` (`0x801F7A20`, `0x801F7A3C`) | pass; every | creature rate `4` |
     /// | `0x12` (`0x801F7C54`, `0x801F7C84`) | pass | row flag `0xFF`, rate `2` |
     /// | `0x13` (`0x801F7CC8`) | every | row rate `0` |
-    /// | `0x15` (`0x801F7FE0`, `0x801F7FEC`) | pass | row flag `0`, rate `2` |
+    /// | `0x15` (`0x801F7FE0`, `0x801F7FEC`, `0x801F7FF4..0x801F8014`) | pass | row flag `0`, rate `2`, facing away from `(0, 0x200)` |
     /// | `0x16` (`0x801F8318`) | pass | row restored, scale `0x1000` |
     ///
     /// Not carried: the render node's distance-fade radius `+0x58` the
@@ -496,6 +529,10 @@ impl World {
                         a.battle.anim_rate = AnimRate(2);
                     }
                 }
+                // Each struck monster turns from `(0, 0x200)`
+                // (`FUN_80019B28(0x200, 0, ..)` at `0x801F7FF4..0x801F8014`);
+                // the loop skips only a seat with no HP.
+                self.turn_row_away_from(monster_count, (0, 0x200), false);
             }
             (0x16, true) => self.ra_seru_row_restore(monster_count, true),
             _ => {}
@@ -852,7 +889,8 @@ impl World {
     /// arm's word falling to the threshold `0x801FA408`, which arm `0x17`
     /// leaves at `0x60` and each hit lowers by `0x20`, hits every living,
     /// targetable monster: the summon roll `FUN_801DD0AC(0x10, 7, seat)`
-    /// quartered, plus `0x40 + rand() % 0x40`, its popup pushed, the HP write
+    /// quartered (on a whole-row cast, only for a seat on the group list
+    /// `0x801F6978`), plus `0x40 + rand() % 0x40`, its popup pushed, the HP write
     /// clamped to `HP - 1`, the flinch `+0x1EF` (else `+0x1F0`) staged with
     /// the restage bits `5`, and per monster a fade over `0x10` frames. The
     /// fourth hit, at threshold `0`, is the band's fold on the arm's pass.
@@ -897,7 +935,16 @@ impl World {
             };
             // The readout flag kept down (`0x801F8E30`).
             self.battle.combo_cluster_held = true;
-            let hit = (roll >> 2) + 0x40 + self.next_rand() % 0x40;
+            // A whole-row cast (`+0x1DD == 9`) quarters the roll only for a
+            // seat on the group list: the `srl 2` sits inside the list walk's
+            // match (`0x801F8E6C..0x801F8E90`). Any other cast quarters always
+            // (`0x801F8EAC..0x801F8EB8`).
+            let group = self.cast_view(caster).target_code == 9;
+            let r = self.cast_seat_map().retail(s);
+            let listed =
+                (3..7).contains(&r) && self.casting.module_group_seats & (1 << (r - 3)) != 0;
+            let part = if group && !listed { roll } else { roll >> 2 };
+            let hit = part + 0x40 + self.next_rand() % 0x40;
             self.battle
                 .hit_fx
                 .push(legaia_engine_battle::battle_events::BattleHitFx {
@@ -1105,7 +1152,7 @@ impl World {
     /// | 7 (`0x801F7470`) | pass | the row shown |
     /// | 8 (`0x801F75F4`) | pass | the creature hidden |
     /// | 9 (`0x801F76C8..0x801F77E4`) | every pass | the row rising, `+0x36 -= step / 4`, its plane pair closing on the origin by as much, its scale falling by `4 * step` |
-    /// | `0xA` (`0x801F7C6C..0x801F7D10`) | pass | the row at full scale on the floor of its half seat, turned from `(0, 0x400)` |
+    /// | `0xA` (`0x801F7C6C..0x801F7D10`) | pass | the row out of Stone at full scale on the floor of its half seat, turned from `(0, 0x400)` |
     /// | `0xB` (`0x801F7F6C`) | pass | the row put back |
     pub(in crate::world::battle::cast_band) fn apply_iota_writes(
         &mut self,
@@ -1168,7 +1215,13 @@ impl World {
                 }
             }
             (0xA, true) => {
+                // The hit loop skips a Stoned seat whole (`andi 4` at
+                // `0x801F7BD4`, `bnez` to the step at `0x801F7D90`): it keeps
+                // the scale, height and stand arm 9 left it on.
                 for (e, i) in self.ra_seru_row(monster_count) {
+                    if self.battle.actor_is_petrified(e as u8) {
+                        continue;
+                    }
                     let s =
                         legaia_engine_battle::battle_seats::monster_seat(monster_count, i, true);
                     if let Some(a) = self.actors.get_mut(e) {

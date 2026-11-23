@@ -166,7 +166,7 @@ impl World {
     /// | 15 (`0x801F7B24..0x801F7B7C`) | pass | the arm-14 records ended; creature `+0x04 = 0`, `+0x21C = 0xFF` |
     /// | `0x11` (`0x801F7E8C`, `0x801F7E94`, `0x801F7CF4..0x801F7D08`) | pass | victim rate `1`, `+0x21C = 0xC8`, facing the creature's `+ 0x800` |
     /// | `0x12`, `0x13` (`0x801F81C0..0x801F81DC`) | every, while the victim's clip is `0` | the same rate and tint |
-    /// | `0x12` on the damage path (`0x801F8680..0x801F868C`) | pass | victim rate `2`, impact `2`, `+0x21C = 0` |
+    /// | `0x12` on the damage path (`0x801F8644..0x801F868C`) | pass | victim rate `2`, impact `2`, `+0x21C = 0`; out of Stone, turned onto the creature |
     /// | `0xFF` (`0x801F88BC`) | every | a dead victim hidden |
     ///
     /// The word the `0xC8` state reads is the neutral `0x20080200` arm 7
@@ -301,14 +301,29 @@ impl World {
             .map(|a| a.battle.facing_angle);
         // The damage path's way out of arm `0x12`, beside its roll
         // (`0x801F8680..0x801F868C`): rate `2`, impact `2`, the tint state off.
-        if phase_in == cam::ALURU_HIT_ARM
-            && passed
-            && self.casting.module_cam.kill != Some(true)
-            && let Some(a) = self.actors.get_mut(usize::from(victim))
-        {
-            a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
-            a.battle.impact_state = 2;
-            a.battle.render_flag = 0;
+        // A victim out of Stone also turns onto the creature, with no half
+        // turn: `FUN_80019B28(victim[+0x38], victim[+0x34], creature[+0x38],
+        // creature[+0x34])` into `+0x46` (`0x801F8644..0x801F867C`).
+        if phase_in == cam::ALURU_HIT_ARM && passed && self.casting.module_cam.kill != Some(true) {
+            let stoned = self.battle.actor_is_petrified(victim);
+            let creature = self
+                .actors
+                .get(usize::from(seat_slot))
+                .map(|c| (c.move_state.world_x, c.move_state.world_z));
+            if let Some(a) = self.actors.get_mut(usize::from(victim)) {
+                a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
+                a.battle.impact_state = 2;
+                a.battle.render_flag = 0;
+                if !stoned && let Some((cx, cz)) = creature {
+                    a.battle.facing_angle =
+                        legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                            a.move_state.world_z,
+                            a.move_state.world_x,
+                            cz,
+                            cx,
+                        ) & 0xFFF;
+                }
+            }
             return;
         }
         let blast = phase_in == cam::ALURU_BLAST_ARM && passed;
@@ -846,11 +861,22 @@ impl World {
                     );
                 }
                 // The hit arm doubles each struck monster's rate back
-                // (`+0x21D <<= 1`, `0x801F888C..0x801F8898`).
+                // (`+0x21D <<= 1`, `0x801F888C..0x801F8898`) and turns it
+                // from the origin: the pair the turn reads, `sp+0x30` /
+                // `sp+0x34`, is the prologue's zeros on this arm's pass
+                // (`0x801F6A58..0x801F6A60`; `FUN_80019B28` + `0x800` at
+                // `0x801F87D4..0x801F87FC`).
                 (18, true) => {
                     a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
                         a.battle.anim_rate.get().wrapping_shl(1),
                     );
+                    let b = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                        0,
+                        0,
+                        a.move_state.world_z,
+                        a.move_state.world_x,
+                    );
+                    a.battle.facing_angle = b.wrapping_add(0x800) & 0xFFF;
                 }
                 (16, true) => {
                     a.battle.render_scale = Some(scale.wrapping_shl(1));
@@ -1341,6 +1367,12 @@ impl World {
                     a.battle.render_flag = 0;
                 }
             }
+        }
+        // Arm `0x15`'s row hit turns each monster it strikes from the origin
+        // (`FUN_80019B28(0, 0, ..) + 0x800` at `0x801F896C..0x801F8990`); the
+        // loop skips a seat with no HP or in Stone (`0x801F88DC..0x801F88F8`).
+        if (phase_in, passed) == (0x15, true) {
+            self.turn_row_away_from(monster_count, (0, 0), true);
         }
         let d = legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as i16;
         let Some(a) = self

@@ -1910,6 +1910,34 @@ impl World {
                         ctx.phase = arm + 2;
                     }
                     self.write_cast_seat_row(&seats);
+                    // PROT 0908's splash turns each seat it strikes from the
+                    // creature (`FUN_80019B28(creature[+0x38],
+                    // creature[+0x34], seat[+0x38], seat[+0x34]) + 0x800` at
+                    // `0x801F7FB4..0x801F7FDC`); the victim's finisher makes
+                    // no turn.
+                    if entry == 908 && phase_in == ticks_a::ZENOIR_FINISH_ARM {
+                        let creature = self
+                            .casting
+                            .summon_actor_slot
+                            .and_then(|c| self.actors.get(usize::from(c)))
+                            .map(|c| (c.move_state.world_x, c.move_state.world_z));
+                        for h in hits.iter().filter(|h| h.seat != who.victim) {
+                            if let (Some((cx, cz)), Some(a)) = (
+                                creature,
+                                map.engine(h.seat)
+                                    .and_then(|t| self.actors.get_mut(usize::from(t))),
+                            ) {
+                                let b =
+                                    legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                                        cz,
+                                        cx,
+                                        a.move_state.world_z,
+                                        a.move_state.world_x,
+                                    );
+                                a.battle.facing_angle = b.wrapping_add(0x800) & 0xFFF;
+                            }
+                        }
+                    }
                     caster = seats.get(r_caster).copied().unwrap_or(caster);
                     victim = seats.get(r_victim).copied().unwrap_or(victim);
                     seat = seats.get(r_seat).copied().unwrap_or(seat);

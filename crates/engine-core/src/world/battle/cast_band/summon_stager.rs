@@ -385,29 +385,11 @@ impl World {
                 };
                 st.walked = walked;
                 let strike = match directed_hit {
-                    Some(hit) => module_phase > hit || !module_busy || ray_struck,
+                    Some(hit) => directed_strike_due(hit, module_phase, module_busy, ray_struck),
                     None => walked,
                 };
                 if strike {
-                    // The fold's own finisher raises the readout flag the
-                    // module's pre-hits kept down. PROT 0915 has no fold: its
-                    // rolls store `0` there and arm `0xC`'s pass raises it
-                    // (`li v0,0x78` at `0x801F7DA0`).
-                    // PROT 0910's party slashes run past the fold and keep the
-                    // flag down until the fourth (`0x801F88DC`).
-                    // PROT 0904's sweep clears it on every ray hit
-                    // (`sb zero,-0x49B4(v0)` at `0x801F7D58`) and raises it
-                    // as arm 12 leaves (`0x801F7F00`), below.
-                    let entry = self.cast_module_for(st.spell_id);
-                    let module_holds_flag = entry == Some(904)
-                        || (matches!(entry, Some(927 | 910)) && st.caster < self.party.party_count);
-                    if !module_holds_flag {
-                        self.battle.combo_cluster_held = false;
-                    }
-                    self.fold_pending_cast();
-                    if run.as_ref().is_some_and(|r| r.prot_entry == 904) {
-                        self.show_theeder_fold_targets();
-                    }
+                    self.summon_strike(st.caster, st.spell_id, run.as_ref());
                     st.phase = SummonPhase::Linger;
                     st.frames = 0;
                 }
@@ -440,6 +422,42 @@ impl World {
             self.casting.summon_stager = Some(st);
         }
         busy
+    }
+
+    /// The stager's strike: the band's fold of the cast's outcome, on the
+    /// tick the module's pass leaves its hit arm (or the creature's walk
+    /// arrives, for a module with no directed hit). The readout flag the
+    /// module's pre-hits kept down goes up with it, but on the modules that
+    /// hold it themselves.
+    fn summon_strike(&mut self, caster: u8, spell_id: u8, run: Option<&CastModuleCodeRun>) {
+        // The fold's own finisher raises the readout flag the
+        // module's pre-hits kept down. PROT 0915 has no fold: its
+        // rolls store `0` there and arm `0xC`'s pass raises it
+        // (`li v0,0x78` at `0x801F7DA0`).
+        // PROT 0910's party slashes run past the fold and keep the
+        // flag down until the fourth (`0x801F88DC`).
+        // PROT 0904's sweep clears it on every ray hit
+        // (`sb zero,-0x49B4(v0)` at `0x801F7D58`) and raises it
+        // as arm 12 leaves (`0x801F7F00`), below.
+        let entry = self.cast_module_for(spell_id);
+        let module_holds_flag = entry == Some(904)
+            || (matches!(entry, Some(927 | 910)) && caster < self.party.party_count);
+        if !module_holds_flag {
+            self.battle.combo_cluster_held = false;
+        }
+        // A hit loop that skips a Stoned monster leaves it out of the fold:
+        // no roll, no reaction clip.
+        if entry.is_some_and(|e| {
+            legaia_engine_cast::cast_module_camera::STONE_SKIPPING_HITS.contains(&e)
+        }) && let Some(mut pc) = self.casting.pending_cast.take()
+        {
+            pc.targets.retain(|&t| !self.battle.actor_is_petrified(t));
+            self.casting.pending_cast = Some(pc);
+        }
+        self.fold_pending_cast();
+        if run.is_some_and(|r| r.prot_entry == 904) {
+            self.show_theeder_fold_targets();
+        }
     }
 
     /// The module half of one stager tick: the creature's feeds, the
@@ -629,8 +647,43 @@ impl World {
     }
 }
 
+/// Whether a directed module's strike is due: its phase has left the hit
+/// arm, the module has let go, or PROT 0904's ray has struck a seat.
+fn directed_strike_due(hit: u8, phase: u8, busy: bool, ray_struck: bool) -> bool {
+    phase > hit || !busy || ray_struck
+}
+
 #[cfg(feature = "test-drivers")]
 impl World {
+    /// The stager's strike on a summon shadow's pass, for the differential
+    /// that runs the band's module half beside a summon image: once `run`'s
+    /// pass leaves the directed hit arm, the band's fold lands as
+    /// [`Self::summon_stager_tick`] lands it. Returns whether it struck.
+    pub fn drive_summon_strike(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+        run: Option<&CastModuleCodeRun>,
+    ) -> bool {
+        let Some(r) = run else {
+            return false;
+        };
+        let Some(hit) = legaia_engine_cast::cast_module_camera::module_profile(r.prot_entry)
+            .filter(|p| p.paces_band())
+            .and_then(|p| p.hit_arm)
+        else {
+            return false;
+        };
+        let ray_struck = r.prot_entry == 904 && !r.aoe_hits.is_empty();
+        if self.casting.pending_cast.is_none()
+            || !directed_strike_due(hit, r.phase, r.tick_ported && r.busy, ray_struck)
+        {
+            return false;
+        }
+        self.summon_strike(caster, spell_id, run);
+        true
+    }
+
     /// [`Self::summon_module_pass`] on its own, for the differential that
     /// walks a summon module's image and runs the band's module half beside
     /// it on retail's phase.

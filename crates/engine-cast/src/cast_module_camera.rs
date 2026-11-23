@@ -1500,6 +1500,25 @@ pub struct ModuleProfile {
     pub director_body: bool,
 }
 
+/// The summon modules whose hit arm skips a monster in Stone whole: the loop
+/// tests `+0x16E & 4` ahead of its `FUN_801DD0AC` and steps past the seat, so
+/// a Stoned monster takes no roll, no reaction, no tint and no turn. The band's
+/// fold of these casts leaves such a seat out. The other summon hits roll a
+/// Stoned seat, whose roll the finisher zeroes (`0x801DE2DC..0x801DE2F8`), and
+/// stage its reaction all the same.
+///
+/// | PROT | Hit arm | The test |
+/// |---|---|---|
+/// | 0914 Gola Gola | `0xD` | `0x801F76FC..0x801F7708` |
+/// | 0920 Slippery | 9 | `0x801F7828..0x801F7834` |
+/// | 0921 Iota | `0xA` | `0x801F7BCC..0x801F7BD8` |
+/// | 0922 Puera | `0x17` | `0x801F8E00..0x801F8E0C` |
+/// | 0923 Gilium | `0x15` | `0x801F88EC..0x801F88F8` |
+/// | 0928 Palma | `0x13` | `0x801F89D4..0x801F89E0` |
+/// | 0929 Mule | 18 | `0x801F873C..0x801F8748` |
+/// | 0934 Ozma | `0x18` | `0x801F8DE8..0x801F8DF4` |
+pub const STONE_SKIPPING_HITS: [u32; 8] = [914, 920, 921, 922, 923, 928, 929, 934];
+
 /// The directed profile of a player-Seru module, by owning PROT entry.
 /// `None` for a module whose camera arms are not ported: its phase chain then
 /// runs ungated, as before.
