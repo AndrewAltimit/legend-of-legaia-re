@@ -1024,3 +1024,14 @@ impl World {
         self.arm_capture_cast_module(spell_id);
     }
 }
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`Self::settle_capture_approach`] for `spell_id`'s capture body: the
+    /// approach leg's arrival pushes, for the differential that walks a
+    /// body's walk-in arms beside the module image with `FUN_80050BB8` live.
+    pub fn drive_settle_capture_approach(&mut self, spell_id: u8, caster: u8, victim: u8) -> bool {
+        self.casting.capture_spell = Some(spell_id);
+        self.settle_capture_approach(caster, victim)
+    }
+}

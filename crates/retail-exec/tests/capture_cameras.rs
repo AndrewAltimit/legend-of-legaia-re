@@ -1927,3 +1927,172 @@ fn terror_scream_casters_all_sit_in_a_framed_band() {
         assert!(seated.contains(&id), "{id:#x} in no formation");
     }
 }
+
+/// `FUN_80050BB8`, the pairwise separation the walk-in's arrival runs
+/// thirty-two times.
+const SEPARATION: u32 = 0x8005_0BB8;
+
+/// The walk-in arms of every body whose walk the host's approach leg stands
+/// in for (`cam::capture_approach_follows`), against that leg: while the range
+/// poll `FUN_8004E2F0` answers "out of reach" the arm holds with the caster on
+/// the walk clip (`+0x1DA = 1`, e.g. `0x801F72C8` in PROT 0952) as the leg
+/// holds the module with the caster on `CAPTURE_WALK_ENTRY`; on the pass it
+/// answers "in reach" the arm runs `FUN_80050BB8(caster, victim)` thirty-two
+/// times, live here, and leaves the arm, and the caster's live pair stands
+/// where the leg's arrival pushes put it (`World::settle_capture_approach`).
+#[test]
+fn the_walk_in_arrives_and_stands_off_as_the_hosts_leg_does() {
+    differential!(
+        prot(950, ROLLING_FLARE),
+        prot(951, CHAOS_FLARE),
+        prot(951, SCYTHE_WIND),
+        prot(952, ASTRAL_SLASH),
+        prot(952, BLOODY_HORNS),
+        prot(955, MELT_SPRAY),
+        prot(962, BLADE_BREATH),
+        prot(962, THUNDER_NEEDLE),
+        prot(962, GIGATON_PRESS)
+    );
+    let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5741_4C4B);
+    let mut failures = Vec::new();
+    let (mut holds, mut arrivals, mut pushed) = (0usize, 0usize, 0usize);
+    let mut walked = std::collections::BTreeSet::new();
+    for body in bodies() {
+        if !cam::capture_approach_follows(body.entry, Some(body.va)) {
+            continue;
+        }
+        walked.insert((body.entry, body.va));
+        let module = disc.read_entry(body.entry as usize).expect("module");
+        for round in 0..24usize {
+            let mut cpu = scus_cpu().expect("SCUS");
+            cpu.mem
+                .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+            cpu.mem.wr32(CTX_PTR, CTX);
+            cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+            cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+            cpu.hook(BEARING, |r, _| {
+                let a = |i: usize| r.r[A0 + i] as i16;
+                r.r[V0] = u32::from(bearing_12bit_approx(a(0), a(1), a(2), a(3)));
+            });
+            for target in jal_targets(&module) {
+                if ![AIM, RANGE, BUILDER, BEARING, SEPARATION].contains(&target) {
+                    cpu.stub(target, 0);
+                }
+            }
+            // The polls left to answer "out of reach", and what each pass's
+            // polls answered.
+            let out = Rc::new(std::cell::Cell::new((round % 4) as u32));
+            let answered = Rc::new(RefCell::new(Vec::<bool>::new()));
+            {
+                let (out, answered) = (out.clone(), answered.clone());
+                cpu.hook(RANGE, move |r, _| {
+                    let far = out.get() > 0;
+                    out.set(out.get().saturating_sub(1));
+                    answered.borrow_mut().push(far);
+                    r.r[V0] = u32::from(far);
+                });
+            }
+            let (caster, victim) = seed(&mut cpu, &mut rng, &module, &body, 0);
+            let (ca, va_) = (ACTOR + caster * STRIDE, ACTOR + victim * STRIDE);
+            // Most rounds stand the caster's body pair on the victim's, inside
+            // the two radii's sixth, so the pushes run.
+            if round % 3 != 2 {
+                for o in [0x3Cu32, 0x40] {
+                    let near = cpu.mem.rd16(va_ + o).wrapping_add(rng.below(0x30) as u16);
+                    cpu.mem.wr16(ca + o, near.wrapping_sub(0x18));
+                }
+            }
+            let mut held_at = None;
+            for pass in 0..12 {
+                let phase = cpu.mem.rd8(CTX + 0x279);
+                let c = format!(
+                    "PROT {:04} body {:#x} round {round} pass {pass} arm {phase}",
+                    body.entry, body.va
+                );
+                // The leg's arrival, off the seats as this pass opens on them.
+                let port = shadow_world(&mut cpu, &body, caster, victim, 1).map(|mut w| {
+                    for s in 0..8u32 {
+                        let a = ACTOR + s * STRIDE;
+                        let node = cpu.mem.rd32(a + 0x22C);
+                        let act = &mut w.actors[s as usize];
+                        act.battle.seat =
+                            Some((cpu.mem.rd16(a + 0x3C) as i16, cpu.mem.rd16(a + 0x40) as i16));
+                        act.battle.render_radius = Some(cpu.mem.rd16(node + 0x58) as i16);
+                    }
+                    let settled =
+                        w.drive_settle_capture_approach(body.action, caster as u8, victim as u8);
+                    let m = &w.actors[caster as usize].move_state;
+                    (settled, m.world_x, m.world_z)
+                });
+                let pair = (cpu.mem.rd16(ca + 0x34), cpu.mem.rd16(ca + 0x38));
+                answered.borrow_mut().clear();
+                // The walk clip the first out-of-reach pass stages stays on
+                // the caster through the arm's holds.
+                if pass == 0 {
+                    cpu.mem.wr8(ca + 0x1DA, 0);
+                }
+                let stop = cpu.call(body.va, &[]);
+                if !matches!(stop, Stop::Returned) {
+                    failures.push(format!("{c}: {stop:?}"));
+                    break;
+                }
+                let after = cpu.mem.rd8(CTX + 0x279);
+                let polls = answered.borrow().clone();
+                let Some(&far) = polls.last() else {
+                    // An arm ahead of the walk, or one past it.
+                    if held_at.is_some() || arrivals > 0 && after > 1 {
+                        break;
+                    }
+                    continue;
+                };
+                if far {
+                    holds += 1;
+                    if cpu.mem.rd8(ca + 0x1DA) != 1 {
+                        failures.push(format!(
+                            "{c}: out of reach, caster stage {:#x}, the leg's walk clip",
+                            cpu.mem.rd8(ca + 0x1DA)
+                        ));
+                    }
+                    if held_at.is_some_and(|h| h != after) {
+                        failures.push(format!("{c}: out of reach, retail moved to {after}"));
+                    }
+                    held_at = Some(after);
+                    continue;
+                }
+                arrivals += 1;
+                if held_at.is_some_and(|h| after <= h) {
+                    failures.push(format!("{c}: in reach, retail held on {after}"));
+                }
+                let got = (
+                    cpu.mem.rd16(ca + 0x34) as i16,
+                    cpu.mem.rd16(ca + 0x38) as i16,
+                );
+                pushed += usize::from(got != (pair.0 as i16, pair.1 as i16));
+                match port {
+                    Some((true, x, z)) if (x, z) == got => {}
+                    other => failures.push(format!(
+                        "{c}: arrival pair retail {got:?} from {:?} port {other:?}",
+                        (pair.0 as i16, pair.1 as i16)
+                    )),
+                }
+                break;
+            }
+        }
+    }
+    eprintln!(
+        "walk-in: {} bodies, {holds} out-of-reach holds, {arrivals} arrivals ({pushed} pushed)",
+        walked.len()
+    );
+    assert!(
+        failures.is_empty(),
+        "{} mismatches:\n{}",
+        failures.len(),
+        failures[..failures.len().min(40)].join("\n")
+    );
+    assert!(walked.len() >= 9, "approach bodies walked {}", walked.len());
+    assert!(holds >= 100 && arrivals >= 150 && pushed >= 60);
+}
