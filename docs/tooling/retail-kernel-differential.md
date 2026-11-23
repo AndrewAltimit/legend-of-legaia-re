@@ -1038,7 +1038,31 @@ the port's half agrees. The shadow is where the host's half is checked.
 The images the walk does not run (PROT 0903, 0904, 0906, 0909..0913, 0918,
 0919) have ported tick bodies, which their own tick differentials compare; of
 their host's half only Theeder's and Gizam's side-band arm runs beside retail
-(above).
+(above), and the tick-body walk below walks both bodies whole.
+
+### The tick-body walk
+
+`cast_theeder`'s walk runs a tick body from arm 0 to its end beside the band's module half
+(`World::drive_summon_module_pass`) on retail's phase, like the summon walk, and adds what that walk holds still. Each
+layout runs twice more mirrored (the sides swapped, so the creature faces the other half-turn and every sine and
+cosine rounding fix-up runs both ways), and every layout runs once on the row as a group and once on one seat with a
+monster fallen and one Stoned, the band's timer running into the side-band arm, the creature's clip held off its park,
+each struck monster playing its reaction for 250 passes and a kill fading slowly, so every wait on them holds. After
+each pass the port's phase, the shot it builds (`FUN_801D829C`'s arguments against the run's `camera_shot`), every
+seat's colour word, render flag, status word and HP, and each monster's staged reaction and facing must match.
+
+Over PROT 0904 (Theeder) and 0906 (Gizam) it found Theeder's strike word `0x3FF00000` (`lui 0x3ff0` at `0x801F7DA8`,
+the full blue flash) stored as `0x03FF0000`, Gizam's Venom bit on every seat its sweep reaches (`0x801F749C`) never
+set, since the band feeds that body no roll, and Gizam's struck seats left unturned. Two places pace apart on
+purpose and are walked through: Theeder's trail retracts once per `THEEDER_TRAIL_PASS_TICKS` engine ticks where the
+walk's pass is one vsync (the port is ticked on through arm 13 and the extra ticks are held to that cadence), and
+its arm-12 cone is tested on the port's step-4 ticks, so which pass strikes a seat is not compared, only that each
+seat the port strikes retail strikes and that both store the same. Over the summon and Seru bodies whose strikes
+turn their seats (PROT 0905, 0908, 0916, 0920, 0921, 0923, 0927, 0930, 0932, 0934) it compares every pass's facing
+([the cast-module page's table](../subsystems/cast-module.md#a-strike-turns-the-seat-it-hits)), on runs the summon
+walk's fold does not make, and found Zenoir's arm 6 turning neither its creature nor its victim and PROT 0920's arm
+10 ending on its countdown where retail waits for the row. The walk's builder lands no shot on the focus globals and
+the shadow has no battle camera, so Slippery's focus-facing is compared at the origin only.
 
 One arm stays apart from retail by choice. Aluru's arm `0x14` holds on a dead victim until its word is zero
 (`0x801F8870`), a word that eases out only under the defeat fade the commit's monster-death arm arms at the

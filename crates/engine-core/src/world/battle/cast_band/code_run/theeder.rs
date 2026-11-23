@@ -97,13 +97,14 @@ impl World {
         }
     }
 
-    /// PROT 0906 arm 13's facing store on every seat its sweep reaches
+    /// A sweep's facing store on every seat it reaches
     /// ([`legaia_engine_cast::seru_magic_ticks::struck_seat_facing`]): each
     /// turns to face the creature, so its reaction's knockback runs away from
-    /// it. `seats` are retail pool seats.
+    /// it - PROT 0906 arm 13 (`0x801F7460..0x801F7488`) and PROT 0908 arm
+    /// 11's splash (`0x801F7FB4..0x801F7FDC`). `seats` are retail pool seats.
     ///
-    /// REF: FUN_801F69F4 (PROT 0906 arm 13, the struck seat's facing store)
-    pub(in crate::world::battle::cast_band) fn face_gizam_victims(
+    /// REF: FUN_801F69F4 (PROT 0906 arm 13, the struck seat's facing store), FUN_801F69D8 (PROT 0908 arm 11, the splash's facing store)
+    pub(in crate::world::battle::cast_band) fn face_struck_seats(
         &mut self,
         seats: &[u8],
         map: legaia_engine_battle_loop::cast_seat_map::CastSeatMap,
@@ -128,6 +129,41 @@ impl World {
                 (a.move_state.world_x, a.move_state.world_z),
             );
         }
+    }
+
+    /// PROT 0908 arm 6's turn, on each pass the creature plays its clip
+    /// (`+0x1D9 != 0`, `0x801F7328..0x801F7370`): the creature faces the
+    /// victim, `+0x46 = FUN_80019B28(victim +0x38, +0x34, slot 7 +0x38,
+    /// +0x34) + 0x800`, and the victim faces it back, that `+ 0x800`.
+    /// `victim` is a retail pool seat.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0908 arm 6, the creature and victim facing pair)
+    pub(in crate::world::battle::cast_band) fn face_zenoir_pair(
+        &mut self,
+        map: legaia_engine_battle_loop::cast_seat_map::CastSeatMap,
+        victim: u8,
+        summon_slot: u8,
+    ) {
+        let Some(v) = map.engine(victim).map(usize::from) else {
+            return;
+        };
+        let s = usize::from(summon_slot);
+        let (Some(va), Some(ca)) = (self.actors.get(v), self.actors.get(s)) else {
+            return;
+        };
+        if self.battle_current_anim(s) == 0 {
+            return;
+        }
+        let h = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+            va.move_state.world_z,
+            va.move_state.world_x,
+            ca.move_state.world_z,
+            ca.move_state.world_x,
+        )
+        .wrapping_add(0x800)
+            & 0xFFF;
+        self.actors[s].battle.facing_angle = h;
+        self.actors[v].battle.facing_angle = h.wrapping_add(0x800) & 0xFFF;
     }
 
     /// The summon seat's live `(x, z)` and facing, as PROT 0904 reads slot 7.

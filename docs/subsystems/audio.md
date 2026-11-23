@@ -4490,7 +4490,7 @@ on the tick the ray first strikes a seat, while the module's ray hits stay prese
 summon band still hid it; a hidden body does not tick (`0x800474D4`), its knockdown never ended, the ray
 skips a reacting seat, and arm 14's row poll held the cast past the recording with the score still ducked:
 the `+2.32` dB the row read was retail's score coming back up `17` s in. PROT 0904's one damage site stores
-the hit's presentation beside the HP write (`+0x04 = 0x3FF0000`, render flag `0`, `+0x21F = 2`,
+the hit's presentation beside the HP write (`+0x04 = 0x3FF00000`, render flag `0`, `+0x21F = 2`,
 `0x801F7D9C` / `0x801F7DB4`); the fold now carries those stores to every monster it sets reacting
 (`World::show_theeder_fold_targets`), and the cast ends on retail's second. The row's correlation fell
 because the score's window is the cast's own seconds, and the cast now ends: the per-second readings over

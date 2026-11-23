@@ -609,7 +609,7 @@ mod walk {
         cpu.mem.wr8(CTX, 3);
         cpu.mem.wr8(CTX + 1, layout.monsters as u8);
         cpu.mem.wr8(CTX + 0x13, layout.caster as u8);
-        cpu.mem.wr16(CTX + 0x6D0, 0x600);
+        cpu.mem.wr16(CTX + 0x6D0, 0xC00);
         for s in 0..8u32 {
             let a = ACTOR + s * STRIDE;
             cpu.mem.wr32(ACTORS + s * 4, a);
@@ -950,6 +950,19 @@ mod walk {
                             v.restage = rv.restage;
                             w.drive_write_cast_view(s as u8, &v);
                         }
+                        // The range poll `FUN_8004E2F0(7, victim)` the rig
+                        // stubs in range, where the creature never walks:
+                        // PROT 0908's arm 8 reads the port's range off the
+                        // creature's pair, so it stands on the victim's
+                        // there (as the summon walk does).
+                        if (entry, phase) == (908, 8) {
+                            let victim = if code < 8 { code } else { layout.victim as u8 };
+                            let v = &w.actors[usize::from(victim)].move_state;
+                            let (x, z) = (v.world_x, v.world_z);
+                            let c = &mut w.actors[CREATURE as usize].move_state;
+                            c.world_x = x;
+                            c.world_z = z;
+                        }
                         w.battle_ctx.frame_timer = r.cpu.mem.rd16(CTX + 0x6D8) as i16 as _;
                         w.casting.band_word_live = None;
                         w.rng_state = r.stream.get();
@@ -999,7 +1012,9 @@ mod walk {
                                 s
                             })
                         };
-                        if turn(retail_shot) != turn(port_shot) {
+                        // The arm-8 shot frames the creature the walk stood
+                        // on the victim (above).
+                        if turn(retail_shot) != turn(port_shot) && (entry, phase) != (908, 8) {
                             failures.push(format!(
                                 "{what} pass {pass} arm {phase:#x}: shot retail {retail_shot:?} port {port_shot:?}"
                             ));
@@ -1025,7 +1040,10 @@ mod walk {
                             r.cpu.mem.wr8(CTX + 0x279, 6);
                             after = 6;
                         }
-                        let terminal = !busy && after == 0xFF;
+                        // A body that is done returns `0`; some store no
+                        // `0xFF` first (PROT 0921's arm `0xB`), where the
+                        // port's phase stands at `0xFF`.
+                        let terminal = !busy && (after == 0xFF || w.casting.module_phase == 0xFF);
                         if !terminal && w.casting.module_phase != after {
                             failures.push(format!(
                                 "{what} pass {pass} arm {phase:#x}: retail leaves for {after:#x}, port {:#x}",
@@ -1236,43 +1254,78 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
     assert!(n == 0, "{n} mismatches:\n{}", out.failures.join("\n"));
 }
 
-/// The same walk over two summon hit arms that turn each seat they strike:
-/// PROT 0920 (Slippery) arm 9 faces it to the camera's focus point
-/// (`0x801F7938..0x801F7968`) and PROT 0923 (Gilium) arm `0x15` to the
-/// stage's origin (`0x801F896C..0x801F8990`). The walk's builder does not
-/// land a shot on the focus globals and the shadow's world has no battle
-/// camera, so both sides face Slippery's struck seats to the origin: the
-/// store's form is compared, not the framed point. PROT 0920's arm 10 also
-/// waits for the row, which the slow fades and long reactions hold.
+/// The same walk over the summon and Seru bodies whose strikes turn the
+/// seats they hit, each monster's facing compared after every pass: PROT
+/// 0905 (Vera), 0908 (Zenoir: arm 6 turns the creature and victim to each
+/// other, arm 11's splash faces each seat to the creature), 0916 (Aluru: the
+/// damage path faces the victim to the creature), 0920 (Slippery: arm 9
+/// faces each seat to the camera's focus point), 0921 (Iota: arm `0xA`
+/// faces the row from `(0, 0x400)`, a Stoned seat skipped), 0923 (Gilium:
+/// arm `0x15` faces each to the stage's origin), 0927 (Juggernaut), 0930
+/// (Horn), 0932 (Meta: arm `0x15` faces each out from `(0, 0x200)`) and 0934
+/// (Ozma). The walk's builder does not land a shot on the
+/// focus globals and the shadow's world has no battle camera, so both sides
+/// face Slippery's struck seats to the origin: that store's form is compared,
+/// not the framed point. PROT 0920's arm 10 also waits for the row, which
+/// the slow fades and long reactions hold.
 #[test]
-fn the_slippery_and_gilium_strikes_turn_their_seats_as_retail_does() {
-    differential!(prot(920, 0x801F_69D8), prot(923, 0x801F_69D8));
+fn the_summon_strikes_turn_their_seats_as_retail_does() {
+    differential!(
+        prot(905, 0x801F_69D8),
+        prot(908, 0x801F_69D8),
+        prot(916, 0x801F_69F8),
+        prot(920, 0x801F_69D8),
+        prot(921, 0x801F_6A08),
+        prot(923, 0x801F_69D8),
+        prot(927, 0x801F_6A84),
+        prot(930, 0x801F_6A74),
+        prot(932, 0x801F_6A34),
+        prot(934, 0x801F_6A40)
+    );
+    use legaia_engine_cast::cast_module_camera::sideband_wait_arm;
     use walk::{Body, walk_bodies};
     if disc().is_none() || scus_cpu().is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     }
-    let mut out = walk_bodies(&[
-        Body {
-            entry: 920,
-            va: 0x801F_69D8,
-            action: 0x92,
-            side: 1,
-            code: 9,
+    // `(entry, tick body, the cast's target code)`, as the summon walk casts
+    // them.
+    let bodies: Vec<Body> = [
+        (905u32, 0x801F_69D8u32, 2u8),
+        (908, 0x801F_69D8, 3),
+        (916, 0x801F_69F8, 3),
+        (920, 0x801F_69D8, 9),
+        (921, 0x801F_6A08, 9),
+        (923, 0x801F_69D8, 9),
+        (927, 0x801F_6A84, 9),
+        (930, 0x801F_6A74, 8),
+        (932, 0x801F_6A34, 9),
+        (934, 0x801F_6A40, 9),
+    ]
+    .into_iter()
+    .map(|(entry, va, code)| Body {
+        entry,
+        va,
+        action: if entry < 914 {
+            (0x81 + entry - 903) as u8
+        } else {
+            (0x8C + entry - 914) as u8
         },
-        Body {
-            entry: 923,
-            va: 0x801F_69D8,
-            action: 0x95,
-            side: 1,
-            code: 9,
-        },
-    ]);
+        side: sideband_wait_arm(entry).unwrap_or(0xF0),
+        code,
+    })
+    .collect();
+    let mut out = walk_bodies(&bodies);
     eprintln!(
         "{} passes compared, hits {:?}, struck facings {:?}, {} shots matched",
         out.compared, out.hits, out.faced, out.shots_matched
     );
-    assert!(out.faced.iter().all(|&n| n > 0), "{:?}", out.faced);
+    // Each turning body turned a seat on a pass that was compared.
+    for (b, &n) in bodies.iter().zip(&out.faced) {
+        if matches!(b.entry, 908 | 916 | 920 | 921 | 923 | 932) {
+            assert!(n > 0, "PROT {:04}: no struck facing compared", b.entry);
+        }
+    }
     let n = out.failures.len();
     out.failures.truncate(60);
     assert!(n == 0, "{n} mismatches:\n{}", out.failures.join("\n"));
