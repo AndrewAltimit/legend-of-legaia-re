@@ -947,6 +947,25 @@ pub const fn spore_gas_rot(hit: u8, roll: u32) -> Option<u8> {
     }
 }
 
+/// The two bits of the victim's character record `+0x6BC` word
+/// (`0x80084140 + (id - 1) * 0x414`) that turn PROT 0939's Rot roll away:
+/// `0x01000000` and `0x10000000`, each its own `bne` past the draw
+/// (`0x801F71E8..0x801F71FC` on hit 1, `0x801F7264..0x801F7278` on hit 2,
+/// `0x801F72FC..0x801F7310` on hit 3).
+pub const SPORE_GAS_ROT_GUARDS: u32 = 0x1100_0000;
+
+/// PROT 0939 hit `hit`'s Rot roll for a victim whose record word is
+/// `ability`: the limb it lands ([`spore_gas_rot`]), drawing `rand()` only
+/// on hits 1..3 past both guards ([`SPORE_GAS_ROT_GUARDS`]). A limb newly set
+/// clears the head byte of both Auto command strings (record `+0x76F` /
+/// `+0x77F`, `0x801F7348..0x801F73A0`); the caller makes that store.
+pub fn spore_gas_rot_roll(hit: u8, ability: u32, draw: impl FnOnce() -> u32) -> Option<u8> {
+    if !(1..4).contains(&hit) || ability & SPORE_GAS_ROT_GUARDS != 0 {
+        return None;
+    }
+    spore_gas_rot(hit, draw())
+}
+
 /// PROT 0942's `0xAA` tick body, `0x801F69F4..0x801F7D34`.
 ///
 /// `sltiu 7` through the table at `0x801F69D8`: arms `0..=6`, every one but

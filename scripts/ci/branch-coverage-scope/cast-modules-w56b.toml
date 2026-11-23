@@ -1,0 +1,29 @@
+# Non-summon cast-module images (PROT 0935..0970) and the dance: arms out of scope, by image.
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ea133e1d0a56dd22"
+range = "0x801F6AB4..0x801F6AB4"
+verdict = "unreachable"
+reason = "PROT 0939: the phase byte `ctx[+0x279]` is `0` at install and only this body writes it, `+1` per arm from `0` to `5` and `0xFF` off arm 5 (`0x801F7460`), so the fall-through past the `0xFF` test (a phase in `6..0xFE`) never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ea133e1d0a56dd22"
+range = "0x801F6AC8..0x801F6AC8"
+verdict = "unreachable"
+reason = "PROT 0939: the group-code arm on the caster's `+0x1DD == 8`. Spore Gas (`0x4F`) carries target shape `0x44` (one opponent, spell record `+2` at `0x800754C8 + 0x4F * 0xC`), which the monster picker turns into one party seat (`rand() % party_count`, `0x801EA8CC..0x801EA918`), never the party code `8`."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ea133e1d0a56dd22"
+range = "0x801F7180..0x801F7180"
+verdict = "unreachable"
+reason = "PROT 0939: the hit count `0x801F7AF8` is bumped (`addiu v1,a3,1` / `sw` at `0x801F7080..0x801F7084`) before the dispatch reads it, so it is at least `1` there and the fall-through on a count of `0` never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ea133e1d0a56dd22"
+range = "0x801F7198..0x801F7198"
+verdict = "unreachable"
+reason = "PROT 0939: the hit count is bumped only under `slti v0,a3,4` (`0x801F7040`, `beq` out at `0x801F704C`), so it is at most `4` at the dispatch and the fall-through on a count above `4` never runs."

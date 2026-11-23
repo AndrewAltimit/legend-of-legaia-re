@@ -1932,8 +1932,11 @@ player-summon state machines of their own.
 land `33`, `49`, `65` and `81` passes in (`SporeGasBeat`). Each rolls `FUN_801DD4B0(0x60)`,
 keeps a third, stages `+0x1EF`, `+0x1EF`, `+0x1F0`, `+0x1F1` in turn, and hits 1 to 3 roll
 Rot's left, right and low limb on `rand & 1`, `rand % 3 != 0` and `rand & 3 != 0` behind
-the record's two immunity bits (`+0x6BC & 0x11000000`). A victim that dies takes the
-knockdown and ends the count. Its caster stage sits on arm 1 (`0x801F6C54`).
+the record's two immunity bits (`+0x6BC & 0x11000000`). A limb newly rotted clears the
+head byte of both Auto command strings (record `+0x76F` / `+0x77F`,
+`0x801F7348..0x801F73A0`), as the melee arm's Rot does. A victim already down or Stoned
+takes nothing, though the hit still counts. A victim that dies takes the knockdown and
+ends the count. Its caster stage sits on arm 1 (`0x801F6C54`).
 
 **Water Column, Water Crystals and Rolling Flare's `0x5A`** gate on the same countdown shape
 with no chain descriptor (`capture_countdown::WATER_COLUMN`, `WATER_CRYSTALS`, `ROLLING_FLARE`).

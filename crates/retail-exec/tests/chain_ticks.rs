@@ -237,7 +237,21 @@ struct Field {
     stoned: u8,
     /// Seats standing on less HP than a hit's roll, which the hit kills.
     low: u8,
+    /// Seats standing on more HP than every hit's roll together, which no
+    /// hit downs.
+    high: u8,
+    /// Seats whose status word already carries all three Rot limbs
+    /// (`+0x16E & 0x38`).
+    rotted: u8,
+    /// The `+0x6BC` word of every party seat's character record
+    /// (`0x80084140 + (id - 1) * 0x414`), whose Rot guards PROT 0939 reads.
+    ability: u32,
 }
+
+/// PROT 0939's hit count, `0x801F7AF8`.
+const SPORE_GAS_COUNT: u32 = 0x801F_7AF8;
+/// The readout flag PROT 0939's hits 1..3 store `0` into (`0x801F70FC`).
+const CLUSTER_FLAG: u32 = 0x8007_B64C;
 
 fn run_body(
     body: &ChainBody,
@@ -256,14 +270,17 @@ fn run_body(
     let stream = Rc::new(std::cell::Cell::new(seed as u32));
     let hits = Rc::new(RefCell::new(Vec::<usize>::new()));
     let rolls = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let draws = Rc::new(RefCell::new(Vec::<u32>::new()));
     let spawns = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3], u16)>::new()));
     for target in jal_targets(&module) {
         if target == RAND {
             let stream = stream.clone();
+            let draws = draws.clone();
             cpu.hook(RAND, move |r, _| {
                 let n = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
                 stream.set(n);
                 r.r[V0] = (n >> 16) & 0x7FFF;
+                draws.borrow_mut().push(r.r[V0]);
             });
         } else if target == BEARING {
             cpu.hook(BEARING, |r, _| {
@@ -340,12 +357,18 @@ fn run_body(
             0
         } else if field.low & (1 << s) != 0 {
             (ROLL - 4) as u16
+        } else if field.high & (1 << s) != 0 {
+            3000
         } else {
             100 + rng.below(400) as u16
         };
         cpu.mem.wr16(a + 0x14C, hp);
         if field.stoned & (1 << s) != 0 {
             cpu.mem.wr16(a + 0x16E, 4);
+        }
+        if field.rotted & (1 << s) != 0 {
+            let w = cpu.mem.rd16(a + 0x16E);
+            cpu.mem.wr16(a + 0x16E, w | 0x38);
         }
         cpu.mem.wr16(a + 0x172, 1000);
         cpu.mem.wr8(a + 0x1DA, rng.below(0x10) as u8);
@@ -377,6 +400,11 @@ fn run_body(
     }
     for i in 0..3 {
         cpu.mem.wr8(ROSTER + i, 1 + i as u8);
+        // The record's Rot guards, and a head on both Auto strings.
+        let r = CHAR_RECORDS + i * CHAR_STRIDE;
+        cpu.mem.wr32(r + 0x6BC, field.ability);
+        cpu.mem.wr8(r + 0x76F, 0x11 + i as u8);
+        cpu.mem.wr8(r + 0x77F, 0x21 + i as u8);
     }
     cpu.mem.wr32(ELEMENT_ROLL, u32::from(selector));
     // One vsync a pass at the speed scalar, the clock the directors keep.
@@ -449,6 +477,14 @@ fn run_body(
                 _ => {}
             }
         }
+        // PROT 0939's arm 5 waits out the victim's clip: a standing victim's
+        // still playing (`0x801F7440`), a fallen one's not yet the fallen
+        // clip `8` (`0x801F7458`), for the same field-keyed passes.
+        if body.prot_entry == 939 && phase == 5 && quake_passes < quake_hold {
+            let va = ACTOR + victim.min(7) as u32 * STRIDE as u32;
+            let fallen = cpu.mem.rd16(va + 0x14C) == 0;
+            cpu.mem.wr8(va + 0x1D9, if fallen { 0 } else { 1 });
+        }
         let (ctx0, rec0) = (cpu.mem.read(CTX, CTX_LEN), cpu.mem.read(ACTOR, 8 * STRIDE));
         let vi = usize::from(rec0[CASTER * STRIDE + 0x1DD].min(7));
         // The group aim, as the host measures it each pass; a row the body
@@ -508,6 +544,15 @@ fn run_body(
         });
         hits.borrow_mut().clear();
         spawns.borrow_mut().clear();
+        draws.borrow_mut().clear();
+        let spore_count = cpu.mem.rd32(SPORE_GAS_COUNT);
+        let heads0: Vec<[u8; 2]> = (0..3u32)
+            .map(|i| {
+                let r = CHAR_RECORDS + i * CHAR_STRIDE;
+                [cpu.mem.rd8(r + 0x76F), cpu.mem.rd8(r + 0x77F)]
+            })
+            .collect();
+        cpu.mem.wr8(CLUSTER_FLAG, 1);
         let stop = cpu.call(body.body, &[]);
         let c0 = format!(
             "PROT {:04} {action:#04x} {field:?} arm {phase:#x}",
@@ -548,6 +593,47 @@ fn run_body(
                     "PROT {:04} {action:#04x} {field:?} arm {phase:#x}: split hits retail {got:?} port {:?}",
                     body.prot_entry,
                     (hp, bar)
+                ));
+            }
+            out.split_checked += 1;
+        }
+        // PROT 0939's hit pass past the landing: the Rot roll behind the
+        // record's guards, the Auto heads a newly rotted limb clears, and the
+        // readout flag hits 1..3 shut.
+        if body.prot_entry == 939 && phase == 4 && cpu.mem.rd32(SPORE_GAS_COUNT) != spore_count {
+            let hit = (spore_count + 1) as u8;
+            let a = ACTOR + (vi * STRIDE) as u32;
+            let old = u16::from_le_bytes([rec0[vi * STRIDE + 0x16E], rec0[vi * STRIDE + 0x16F]]);
+            let hp0 = u16::from_le_bytes([rec0[vi * STRIDE + 0x14C], rec0[vi * STRIDE + 0x14D]]);
+            let landed = hp0 != 0 && old & 4 == 0;
+            let r = CHAR_RECORDS + vi as u32 * CHAR_STRIDE;
+            let ability = cpu.mem.rd32(r + 0x6BC);
+            let mut used = 0usize;
+            let limb = if landed {
+                t::spore_gas_rot_roll(hit, ability, || {
+                    used += 1;
+                    draws.borrow().first().copied().unwrap_or(0)
+                })
+            } else {
+                None
+            };
+            let want = old | limb.map_or(0, |l| 0x08 << l);
+            let heads = if want != old { [0, 0] } else { heads0[vi] };
+            let got = (
+                draws.borrow().len(),
+                cpu.mem.rd16(a + 0x16E),
+                [cpu.mem.rd8(r + 0x76F), cpu.mem.rd8(r + 0x77F)],
+                cpu.mem.rd8(CLUSTER_FLAG) == 0,
+            );
+            let port = (
+                used,
+                want,
+                heads,
+                landed && hit < t::SPORE_GAS_HITS.holds_cluster_below,
+            );
+            if got != port {
+                out.gaps.push(format!(
+                    "{c0}: hit {hit} (draws, status, Auto heads, flag shut) retail {got:x?} port {port:x?}"
                 ));
             }
             out.split_checked += 1;
@@ -801,7 +887,7 @@ fn fields(entry: u32) -> Vec<(u64, Field)> {
         target,
         dead,
         stoned,
-        low: 0,
+        ..Field::default()
     };
     let mut out = vec![
         (0x4348_4149, Field::default()),
@@ -817,6 +903,33 @@ fn fields(entry: u32) -> Vec<(u64, Field)> {
             },
         ),
     ];
+    // PROT 0939's four hits on a victim already down (`0x801F7094`), Stoned
+    // (`0x801F70A8`), on HP no hit downs (the counts 3 and 4, `0x801F7190` /
+    // `0x801F7198`, and arm 5's wait on a standing victim's clip), with every
+    // limb already rotted (`0x801F7348`), and behind each Rot guard
+    // (`0x801F71F0` / `0x801F71FC` and their hit-2 and hit-3 twins).
+    if entry == 939 {
+        let high = |seed, rotted, ability| {
+            (
+                seed,
+                Field {
+                    high: 0b100,
+                    rotted,
+                    ability,
+                    ..f(Some(2), 0, 0)
+                },
+            )
+        };
+        out.push((0x444F_574E, f(Some(2), 0b100, 0)));
+        out.push((0x5354_4F4E, f(Some(2), 0, 0b100)));
+        out.push(high(0x4849_4748, 0, 0));
+        out.push(high(0x4849_4749, 0, 0));
+        out.push(high(0x524F_5454, 0b100, 0));
+        out.push(high(0x524F_5455, 0b100, 0));
+        out.push(high(0x524F_5456, 0b100, 0));
+        out.push(high(0x4755_4131, 0, 0x0100_0000));
+        out.push(high(0x4755_4132, 0, 0x1000_0000));
+    }
     if [935, 936, 942, 960, 961, 963, 964].contains(&entry) {
         out.push((0x4752_5031, f(Some(8), 0b010, 0b100)));
         out.push((0x4752_5032, f(Some(8), 0, 0)));
