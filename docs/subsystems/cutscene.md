@@ -1180,7 +1180,7 @@ rows in `card_held_box`): the record waits as retail's does. Pinned by
 `dream`, `jouine`, `noaru`, `uru`, `urudre2`) set a press of `120` to `300` frames and hold
 their records for it.
 
-Three rules follow from the card being the pager's box:
+Four rules follow from the card being the pager's box:
 
 - **Any context parks on it.** The runner parks every engaged context on its text, so a helper
   record's card holds that record exactly as the modal timeline's does. `uru` `P2[36]`, Tieg's
@@ -1188,13 +1188,18 @@ Three rules follow from the card being the pager's box:
   set `180` frames each, and the box after them is Gala's waking line.
 - **A typed page waits for the press.** State `0x19` holds every page end, the last one
   included, so a card's record resumes on the automatic press, not when the typing ends.
+- **A card's lines load into the box the record left up.** A `0x24` box just before a card
+  (`dream` P2[2] and P2[4]) hands the card its rows, as it would any next line, and is not drawn
+  on under it.
 - **The press closes the card** unless the page ends on a `0x24` continuation (`map01`'s card,
   whose rows the blank card scrolls out), and an ordinary line that loads into the box replaces
   it. The engine draws a card as an overlay and the play hosts give the field a neutral pad while
   one is up (`BootSession::claim_tick`), so a card left drawn past its box leaves the next box
   waiting for a press no button delivers. That is the softlock a helper's cards used to cause on
   Gala's line. Pinned by `engine-session/tests/uru_tieg_fire_droplet_disc.rs`, which drives the
-  record through `claim_tick` as both hosts do.
+  record through `claim_tick` as both hosts do, and for every other helper record with a card
+  (`concend` P2[0], `dream` P2[1..4], `jouine` P2[16], `noaru` P2[31], `urudre2` P2[9]) by
+  `engine-session/tests/helper_card_records_disc.rs`.
 
 The parser is [`legaia_scene_formats::cutscene_text`](../../crates/scene-formats/src/cutscene_text.rs)
 (`parse_narration` / `narration_pages`), which distinguishes `NarrationKind::Crawl`

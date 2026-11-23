@@ -452,9 +452,14 @@ impl World {
                             if auto > 0
                                 && let Some(line) = first_line
                             {
+                                // A card's lines load into the box the record
+                                // left up, as any line does: a `0x24` box before
+                                // the card (`dream` P2[2] and P2[4]) gives its
+                                // rows to the card, and is not drawn on under it.
+                                let held = tl.card_held_box.take().or_else(|| tl.held_box.take());
                                 let mut panel =
                                     legaia_engine_field::inline_dialogue::HeldBox::next_line_panel(
-                                        tl.card_held_box.take(),
+                                        held,
                                         &tl.bytecode,
                                         line,
                                     );
