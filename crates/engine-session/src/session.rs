@@ -554,6 +554,27 @@ mod tests {
         }
     }
 
+    /// The world's half of the neutral-pad rule is one predicate: a title
+    /// card up holds the field's pad on the hosts' claim and answers
+    /// `world_holds_field_pad`, which the full-game ladder's hand gates its
+    /// presses on - so the two cannot drift.
+    #[test]
+    fn a_title_card_holds_the_field_pad_for_hosts_and_headless_hands_alike() {
+        let ready = TickClaims {
+            pause_menu_ready: true,
+            ..TickClaims::default()
+        };
+        let mut s = headless_session();
+        s.host.world.mode = SceneMode::Field;
+        assert!(!s.world_holds_field_pad());
+        assert_eq!(s.claim_tick(ready, 0), TickOwner::Field(false));
+        s.host.world.cutscene.card = Some(vec!["card".into()]);
+        assert!(s.world_holds_field_pad());
+        assert_eq!(s.claim_tick(ready, 0), TickOwner::Field(true));
+        s.host.world.cutscene.card = None;
+        assert!(!s.world_holds_field_pad());
+    }
+
     /// The one tick order both play hosts share: a host screen first, the
     /// naming prompt before any pause press, a press refused while an
     /// overlay screen owns the pad, a suspending overlay taking the tick and

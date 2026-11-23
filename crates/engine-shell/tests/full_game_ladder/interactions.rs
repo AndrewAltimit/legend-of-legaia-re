@@ -142,7 +142,7 @@ fn talk_in_entry_box(session: &mut NativeSession, slot: u8) -> Option<Run> {
             if session.host.world.field_tile_is_wall(at.0, at.1) {
                 continue;
             }
-            session.host.world.set_pad(0);
+            session.host_pad(0);
             restore_player_xz(session, at);
         }
         let r = talk_from_box(session, slot, t);
@@ -200,7 +200,7 @@ pub(super) fn interact_at(
     let (bx, bz) = player_xz(session);
     let mut last = Run::Released;
     for (sx, sz, extra) in interact_seats(session, (nx, nz), walked) {
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         session.host.world.seat_player_at_tile(sx as u8, sz as u8);
         // The one compass sector whose probe point lands in the NPC's box.
         let mut facing = (0..8u8).find(|&d| {
@@ -218,7 +218,7 @@ pub(super) fn interact_at(
             let pad = pad_for_step(session, (nx - px).signum(), (nz - pz).signum());
             for _ in 0..24 {
                 let at = player_xz(session);
-                session.host.world.set_pad(pad);
+                session.host_pad(pad);
                 if session.tick().is_err() {
                     break;
                 }
@@ -230,7 +230,7 @@ pub(super) fn interact_at(
                     break;
                 }
             }
-            session.host.world.set_pad(0);
+            session.host_pad(0);
             let _ = session.tick();
             facing = (0..8u8).find(|&d| {
                 session.host.world.face_player_sector(d);
@@ -266,7 +266,7 @@ pub(super) fn interact_at(
                 break;
             }
             let pad = script_pad(session, f);
-            session.host.world.set_pad(pad);
+            session.host_pad(pad);
             match session.tick() {
                 Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
                 Ok(_) => {}
@@ -408,7 +408,7 @@ pub(super) fn page_talk(session: &mut NativeSession) -> Option<Run> {
             return None;
         }
         let pad = script_pad(session, f);
-        session.host.world.set_pad(pad);
+        session.host_pad(pad);
         match session.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Some(Run::Entered(name)),
             Ok(_) => {}
@@ -660,7 +660,7 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
         // (P1[4]), whose talk then never opened.
         for pad in [0, PadButton::Cross.mask()] {
             for _ in 0..press_ticks(session) {
-                session.host.world.set_pad(pad);
+                session.host_pad(pad);
                 match session.tick() {
                     Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
                     Ok(_) => {}
@@ -772,7 +772,7 @@ pub(super) fn press_edge(session: &mut NativeSession, mask: u16) -> Result<Optio
     let release = if n > 1 { n } else { 0 };
     for (pad, ticks) in [(0, release), (mask, n)] {
         for _ in 0..ticks {
-            session.host.world.set_pad(pad);
+            session.host_pad(pad);
             match session.tick() {
                 Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Some(name)),
                 Ok(_) => {}

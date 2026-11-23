@@ -9,6 +9,37 @@ use legaia_engine_save_state::WorldSaveState;
 // Session + seeding
 // ---------------------------------------------------------------------------
 
+/// The hand's pad, fed the way both play hosts feed the field's.
+///
+/// The window and the browser page hand the field a neutral pad while the
+/// world holds it (`BootSession::claim_tick`: a narration crawl, a title
+/// card). A hand that wrote the world's pad directly played straight through
+/// such a surface where a player could not: the Uru Mais softlock (#653), a
+/// card left up over the box the player had to turn, never showed here.
+/// Every press the hand makes goes through [`HostPad::host_pad`].
+///
+/// `LEGAIA_FGL_RAW_PAD=1` restores the direct write, for bisecting a stall
+/// this routing exposes.
+pub(super) trait HostPad {
+    fn host_pad(&mut self, pad: u16);
+}
+
+impl HostPad for NativeSession {
+    fn host_pad(&mut self, pad: u16) {
+        let pad = if self.world_holds_field_pad() && !raw_pad() {
+            0
+        } else {
+            pad
+        };
+        self.host.world.set_pad(pad);
+    }
+}
+
+fn raw_pad() -> bool {
+    static RAW: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *RAW.get_or_init(|| std::env::var_os("LEGAIA_FGL_RAW_PAD").is_some())
+}
+
 pub(super) fn open_session(extracted: &Path) -> NativeSession {
     let cfg = BootConfig {
         scene: "town01".into(),
@@ -294,7 +325,7 @@ pub(super) fn fight_committed(session: &mut NativeSession, r: Run) -> Run {
             // count below reaches its four idle ticks): idle is not counted
             // until it has had the time to spawn.
             for _ in 0..AFTER_BATTLE_SETTLE_TICKS {
-                session.host.world.set_pad(0);
+                session.host_pad(0);
                 match session.tick() {
                     Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
                     Ok(_) => {}
@@ -303,7 +334,7 @@ pub(super) fn fight_committed(session: &mut NativeSession, r: Run) -> Run {
             }
             return run_while_moving(session, DEEP_EXIT_TICKS);
         }
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         match session.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
             Ok(_) => {}

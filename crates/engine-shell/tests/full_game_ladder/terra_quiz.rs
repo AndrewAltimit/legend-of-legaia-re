@@ -56,7 +56,7 @@ fn play_out(session: &mut NativeSession, answer: usize) {
         if idle > 200 {
             return;
         }
-        session.host.world.set_pad(pad);
+        session.host_pad(pad);
         session.tick().expect("tick");
     }
     panic!("the conversation never handed control back");
@@ -67,18 +67,18 @@ fn play_out(session: &mut NativeSession, answer: usize) {
 fn walk_on(session: &mut NativeSession, from: (u8, u8), step: (i16, i16), answer: usize) {
     session.host.world.seat_player_at_tile(from.0, from.1);
     for _ in 0..8 {
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         session.tick().expect("tick");
     }
     let pad = pad_for_step(session, step.0, step.1);
     for _ in 0..50 {
-        session.host.world.set_pad(pad);
+        session.host_pad(pad);
         session.tick().expect("tick");
         if !released(session) {
             break;
         }
     }
-    session.host.world.set_pad(0);
+    session.host_pad(0);
     assert!(!released(session), "the walk-on at {from:?} fired");
     play_out(session, answer);
 }
@@ -98,7 +98,7 @@ fn terra_walks_ahead_to_each_quiz_stop() {
     session.host.world.party.active_party = vec![1];
     session.host.world.party.party_leader_slot = Some(1);
     for _ in 0..700 {
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         session.tick().expect("tick");
     }
 
@@ -111,9 +111,9 @@ fn terra_walks_ahead_to_each_quiz_stop() {
     w.face_player_sector(5);
     assert_eq!(w.field_interact_probe_slot(), Some(TERRA));
     assert!(!w.npc_clip_cursor_bound(TERRA));
-    w.set_pad(PadButton::Cross.mask());
+    session.host_pad(PadButton::Cross.mask());
     session.tick().expect("tick");
-    session.host.world.set_pad(0);
+    session.host_pad(0);
     play_out(&mut session, 0);
     assert!(
         session.host.world.npc_clip_cursor_bound(TERRA),

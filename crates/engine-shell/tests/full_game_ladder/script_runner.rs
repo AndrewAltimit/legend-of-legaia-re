@@ -994,7 +994,7 @@ pub(super) fn run(session: &mut NativeSession, budget: usize, stop_on_release: b
         };
         // The naming prompt (the opening's op-0x49) takes this pad's edge
         // inside `NativeSession::tick`, as it does in both play hosts.
-        session.host.world.set_pad(pad);
+        session.host_pad(pad);
         let before = player_xz(session);
         let site = std::env::var_os("LEGAIA_FGL_POS_TRACE").map(|_| park_site(session));
         let roll_before = encounter_roll_state(session);
@@ -1025,14 +1025,14 @@ pub(super) fn run(session: &mut NativeSession, budget: usize, stop_on_release: b
         if f >= 2 && released(session) {
             idle += 1;
             if stop_on_release && idle >= exit_idle_ticks(session) {
-                session.host.world.set_pad(0);
+                session.host_pad(0);
                 return Run::Released;
             }
         } else {
             idle = 0;
         }
     }
-    session.host.world.set_pad(0);
+    session.host_pad(0);
     if released(session) {
         Run::Released
     } else {
@@ -1111,10 +1111,10 @@ pub(super) fn close_scripted_menu(session: &mut NativeSession) -> bool {
         let Some(pad) = scripted_menu_pad(session, g) else {
             break;
         };
-        session.host.world.set_pad(pad);
+        session.host_pad(pad);
         let _ = session.tick();
     }
-    session.host.world.set_pad(0);
+    session.host_pad(0);
     true
 }
 

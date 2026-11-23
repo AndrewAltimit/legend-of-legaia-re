@@ -837,7 +837,7 @@ fn jouine_cort_commit_refuses_the_menu_and_a_host_save() {
         } else {
             0
         };
-        session.host.world.set_pad(pad);
+        session.host_pad(pad);
         let _ = session.tick();
         assert!(
             !(held && session.field_menu.is_some()),
@@ -868,7 +868,7 @@ fn jouinb_rapids_ride_until_the_player_jumps_off() {
             .enter_scene_live("jouinb", &live_opts(false))
             .expect("enter jouinb");
         for _ in 0..60 {
-            session.host.world.set_pad(0);
+            session.host_pad(0);
             let _ = session.tick();
         }
         let (mf, man, _) = scene_man_and_triggers(&session).expect("jouinb MAN");
@@ -913,7 +913,7 @@ fn jouinb_rapids_ride_until_the_player_jumps_off() {
             } else {
                 hold
             };
-            session.host.world.set_pad(pad);
+            session.host_pad(pad);
             let _ = session.tick();
             let now = player_xz(&session);
             if now != last {

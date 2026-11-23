@@ -212,10 +212,10 @@ pub(super) fn ride_out(session: &mut NativeSession) -> bool {
                 break;
             }
             let p = pad_for_step(session, bx - side.0, bz - side.1);
-            session.host.world.set_pad(p);
+            session.host_pad(p);
             let _ = session.tick();
         }
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         RIDING.with(|r| r.set(true));
         let _ = run_while_moving(session, DEEP_EXIT_TICKS);
         RIDING.with(|r| r.set(false));

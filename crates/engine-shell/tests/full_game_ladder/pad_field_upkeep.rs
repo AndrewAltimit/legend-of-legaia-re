@@ -70,7 +70,7 @@ pub(super) fn open_pause_menu(session: &mut NativeSession) {
         if session.field_menu.is_some() {
             break;
         }
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         let _ = session.tick();
     }
     for _ in 0..120 {
@@ -94,7 +94,7 @@ pub(super) fn wait_out_pad_hold(session: &mut NativeSession) {
         if session.host.world.field_warp_words().1 == 0 {
             break;
         }
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         if session.tick().is_err() {
             break;
         }
@@ -110,14 +110,14 @@ pub(super) fn tap_pad(session: &mut NativeSession, mask: u16) {
         if session.field_menu_settled() {
             break;
         }
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         if session.tick().is_err() {
             break;
         }
     }
-    session.host.world.set_pad(mask);
+    session.host_pad(mask);
     let _ = session.tick();
-    session.host.world.set_pad(0);
+    session.host_pad(0);
     let _ = session.tick();
 }
 
