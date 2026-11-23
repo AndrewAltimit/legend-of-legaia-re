@@ -1788,6 +1788,15 @@ tail; `LEGAIA_FIELD_CD_TIMING=pcsx-redux` in play): the wait takes `346` vsyncs 
 saved under a line seats the drive's remaining read from the stop watch's sectors
 (`RetailObs::xa_drive_left`).
 
+A second voiced beat holds the ratio where it is. `garmel_zeto_defeat_pre_line` stands in
+record 14 (Zeto's defeat) 171 vsyncs before its first line, and a walk film with Cross every
+20 vsyncs runs the line on both sides: retail's step-`4` frames start at vsync `171` and run 66
+frames of five to six vsyncs (mean `5.74`) at the clamp, the engine's (`LEGAIA_RC_WALK_COST=1`)
+start at `174` and run 66 frames of mean `5.83`. Before the line both price the frame near `350`
+hblanks. The engine's frames under the line cost `1376..1460`, a work of about `450` at the
+battle's ratio; the same works at `3.7` would run frames of mean `6.76`. So the Zeto beat's
+shortfall lies elsewhere than the ratio: a field-specific ratio fitted on it would break this beat.
+
 The legs a record runs on an actor are on the same grid. The walk kernel `FUN_8003774C` spends
 the frame step (`lbu s2,0x393` at `0x80037864`) once a game frame against a compass walk's or a
 turn's budget, and an actor's tick `FUN_8003BC08` runs it after the script runner

@@ -2413,6 +2413,15 @@ description = "Second-kingdom run, immediately after the boss fight resolves. Sc
 topics = ["chapter-2", "garmel", "zeto", "boss", "capture-bracket", "pcsx-redux"]
 
 [[scenarios]]
+label = "garmel_zeto_defeat_pre_line"
+backup_fingerprint = "d72b632e28cb6b927d7885569452cf9aca03ad7055cd14b9914342732452bf4d"
+description = "garmel record 14, Zeto's defeat after the boss fight, 171 vsyncs before its first voice line (the one-shot of 0x16B vsyncs). RETAIL disc, pad only, no pokes: chapter2_garmel_post_zeto played forward 300 vsyncs on PCSX-Redux (recompiler) by autorun_field_walk_film.lua with Cross held two vsyncs every 20 from vsync 40 (LEGAIA_SAVE_AT=300). Played on with Cross every 20 vsyncs from vsync 20, the line runs at step 4 on frames of five to six vsyncs, at the frame time clamp, against two-vsync frames of about 350 hblanks before it."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "garmel"
+topics = ["field", "garmel", "zeto", "voice line", "CD-XA", "CD stop watch", "frame cost"]
+
+[[scenarios]]
 label = "flute_lippian_midcast"
 slot = 255
 backup_fingerprint = "da0da66d0ee4ca2fbab82120c36ecfcf850d7dfabab983aa5f109ce04e220765"
