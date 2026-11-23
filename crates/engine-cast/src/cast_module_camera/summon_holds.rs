@@ -37,11 +37,16 @@
 //! `1`: the engine ticks once per vsync, so `scalar * step` drains
 //! [`SPEED_SCALAR`] a tick and a bare `step` drains `1`.
 //!
-//! ## Waits the engine has nothing to wait on
+//! ## The stream waits
 //!
 //! Every module's first arms also wait on the band's own stream: the
-//! `ctx[+0x276]` load flag and `FUN_8003F2B8(1)`. The engine's creature is
-//! resident at once, so those arms pass on their first tick.
+//! `ctx[+0x276]` load flag ([`super::sideband_wait_arm`]) and the drive poll
+//! `FUN_8003F2B8(1)` behind the module's seek `FUN_8003EAE4(0, slot)`. No
+//! director here holds on either: the host does, on its side-band stand-in and
+//! on its drive model (`legaia_engine_battle_vm::battle_cast_cue::module_drive_arms`
+//! reads each image's seek and poll arms, `World::module_drive_holds` holds
+//! the poll arm while the seek is in flight), and hands the director the
+//! pass it lets through.
 //!
 //! ## Measured against retail
 //!

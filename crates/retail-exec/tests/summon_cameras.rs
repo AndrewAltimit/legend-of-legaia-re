@@ -59,6 +59,10 @@ const AIM: u32 = 0x801D_CEAC;
 /// The cast damage wrapper the summon modules roll their own hits through.
 const WRAPPER: u32 = 0x801D_D0AC;
 const GROUP_LIST: u32 = 0x801F_6978;
+/// `FUN_8003F2B8`, the drive poll `CdSync(1)` each module's poll arm makes.
+const DRIVE_POLL: u32 = 0x8003_F2B8;
+/// The passes the walk holds each module's drive poll busy for.
+const DRIVE_BUSY_PASSES: u32 = 3;
 
 /// The `k`th roll on `seat`: small, middling and past a monster's HP in
 /// turn, so the floors, the `HP - 1` clamps and the kills all run.
@@ -466,6 +470,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     let (mut spawns_matched, mut spawn_failures) = (0usize, Vec::<String>::new());
     let (mut shadow_passes, mut shadow_left) = (0usize, 0usize);
     let mut fold_passes = 0usize;
+    let mut drive_polls_held = 0usize;
     let mut shadow_failures = Vec::<String>::new();
     let mut shadow_leaves = Vec::<String>::new();
     let all: Vec<(u32, u32, u8)> = BODIES.iter().chain(&PACED).copied().collect();
@@ -490,9 +495,18 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
         cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
         for target in jal_targets(&module) {
-            if ![AIM, BUILDER, BEARING, RAND, WRAPPER].contains(&target) {
+            if ![AIM, BUILDER, BEARING, RAND, WRAPPER, DRIVE_POLL].contains(&target) {
                 cpu.stub(target, 0);
             }
+        }
+        // The drive poll answers busy for the first passes of the module's
+        // poll arm (`legaia_engine_battle_vm::battle_cast_cue::module_drive_arms`),
+        // as a seek still in flight does, and idle after.
+        let drive = legaia_engine_battle_vm::battle_cast_cue::module_drive_arms(&module);
+        let drive_busy = Rc::new(std::cell::Cell::new(0u32));
+        {
+            let busy = drive_busy.clone();
+            cpu.hook(DRIVE_POLL, move |r, _| r.r[V0] = busy.get());
         }
         // The damage wrapper `FUN_801DD0AC(_, 7, seat)` answers each call on
         // a seat with the next of that seat's scripted rolls, and the
@@ -686,6 +700,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             });
             let mut puera_compared = std::collections::BTreeSet::new();
             let mut sideband_passes = 0u32;
+            let mut poll_passes = 0u32;
             // The band shadow: a world seated off the same records, the
             // band's module half (`World::drive_summon_module_pass`) run on
             // retail's phase beside each pass, every seat compared after it.
@@ -739,6 +754,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     }
                 }
                 let phase = cpu.mem.rd8(CTX + 0x279);
+                // The drive poll's busy passes.
+                let polls_busy = drive.is_some_and(|d| d.poll_arm == phase) && {
+                    poll_passes += 1;
+                    poll_passes <= DRIVE_BUSY_PASSES
+                };
+                drive_busy.set(u32::from(polls_busy));
+                drive_polls_held += usize::from(polls_busy);
                 // The side-band applier's stage `ctx[+0x276]` stands up for the
                 // first passes of the arm that waits on it
                 // (`cam::sideband_wait_arm`), as a turn's side-band read does.
@@ -1008,6 +1030,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     // The side-band stage the walk stands up, as a turn's
                     // side-band read raises it.
                     w.casting.module_cam.sideband_busy = cpu.mem.rd8(CTX + 0x276) != 0;
+                    // The drive as the poll finds it: its seek issued, in
+                    // flight for the busy passes (`World::module_drive_holds`).
+                    w.casting.drive_arms = drive.map(|d| (d, true));
+                    w.casting.drive.busy = if polls_busy { 0x100 } else { 0 };
                     w.clock.display_frames += 1;
                     // PROT 0920's hit turns its row from the camera's focus
                     // globals (`0x801F793C..0x801F7968`): the shadow's camera
@@ -1051,7 +1077,8 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // The host's side-band poll (`World::module_code_run`): on the
                 // wait arm with the stage up, an arm that would pass keeps its
                 // drain and its drift and holds.
-                let polling = st.sideband_busy && cam::sideband_wait_arm(entry) == Some(phase);
+                let polling = (st.sideband_busy && cam::sideband_wait_arm(entry) == Some(phase))
+                    || polls_busy;
                 let arm = if polling {
                     let mut ahead = st;
                     let d = (profile.direct)(&mut ahead, phase, seats);
@@ -1481,6 +1508,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     // Every directed hit's fold ran on its pass, but PROT 0927's, which its
     // stager sweeps spend outside the walk.
     assert!(fold_passes >= 120, "summon shadow folds {fold_passes}");
+    // Every module's drive poll held busy on both sides, and no shadow left
+    // retail's phase walk over it.
+    assert!(
+        drive_polls_held >= 300,
+        "{drive_polls_held} drive poll passes held"
+    );
+    assert_eq!(shadow_left, 0, "casts left retail's phase walk");
     assert!(
         shadow_failures.is_empty(),
         "{} summon shadow mismatches:\n{}",
