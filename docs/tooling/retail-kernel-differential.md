@@ -1142,7 +1142,14 @@ pull made only while its word ran, where retail pulls on every pass ahead of the
 the rolls leave standing and the row off the floor, with the side-band stage raised again once arm 1's TR y climb
 is through and the creature's word held up on arm `0xF`'s first spent passes. It found Barra's arm `0xF` ending
 the cast before the creature had faded (retail waits on its word, `0x801F816C..0x801F8174`) and arm `0xC`'s
-stores zeroing the focus, which retail leaves on arm `0xB`'s cut, twice the victim's drop. Four parts stay out (`camera_gaps` in the test): PROT 0928's
+stores zeroing the focus, which retail leaves on arm `0xB`'s cut, twice the victim's drop. Every body also runs
+on a solo party: `ctx+0 = 1`, the roster bytes `0x8007BD10` of seats 1 and 2 cleared (the group aim
+`FUN_801DCEAC` reads a party seat live on its byte), and the shadow seated on one party slot with the monsters
+straight after it, its target codes and scripted rolls mapped between the two seat spaces. That drives the loops
+over the party after the lead (`ctx+0 - 1`, PROT 0919's `0x801F8408`, PROT 0930's `0x801F7C18`). Beside the walk,
+PROT 0925's arm 8 runs once on a scripted fight, which takes the round tail in place of the flee
+(`0x801F73F0`), over party rows with a member down and item turns with and without a turn left, against
+`spikefish_round_tail`. Four parts stay out (`camera_gaps` in the test): PROT 0928's
 roll, PROT 0925's arm 8 exit, PROT 0908's arm 8 (the creature stood on the victim) and PROT 0934's shake TR y,
 which the engine reads per four vsyncs where this walk's pass is one.
 
