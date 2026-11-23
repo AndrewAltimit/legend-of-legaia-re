@@ -695,4 +695,22 @@ impl World {
     ) -> Option<CastModuleCodeRun> {
         self.summon_module_pass(caster, spell_id, walked)
     }
+
+    /// One battle frame's call into the module, as the host's stager makes
+    /// it ([`Self::module_pass`] over [`Self::drive_summon_module_pass`]):
+    /// `delta` one-vsync ticks on the frame cadence, stopping on the tick an
+    /// arm hands over. Returns each tick's run, in order.
+    pub fn drive_summon_module_frame(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+        walked: bool,
+    ) -> Vec<Option<CastModuleCodeRun>> {
+        let mut runs = Vec::new();
+        self.module_pass(|w| {
+            runs.push(w.summon_module_pass(caster, spell_id, walked));
+            true
+        });
+        runs
+    }
 }

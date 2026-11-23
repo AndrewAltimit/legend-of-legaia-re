@@ -88,7 +88,13 @@ pub fn gilium_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats)
                 cut([0, 0x800], [0, 0x600, 0x1000], [0; 3], 1)
             }
             1 => {
-                let (_, drained) = counted_if_positive(st, GILIUM_DRAIN);
+                // The arm leaves whatever the word: a drain that leaves it
+                // positive owes the rest of its pass too, which the gate only
+                // drains on the tick it opens.
+                let (word_left, drained) = counted_if_positive(st, GILIUM_DRAIN);
+                if word_left {
+                    st.countdown.drain_rest(GILIUM_DRAIN);
+                }
                 pass(drained.then_some(z(-4)), ArmDirection::PASS)
             }
             2 => pass(gated(st, z(-4), 0x200)?, ArmDirection::PASS),

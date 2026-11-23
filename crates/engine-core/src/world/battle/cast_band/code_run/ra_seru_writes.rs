@@ -1240,14 +1240,40 @@ impl World {
                     }
                 }
                 let quarter = (STEP / 4) as i16;
+                // The plane pull runs once a pass by the pass's whole
+                // `scalar * delta / 4` (`0x801F76D4..0x801F77E4`): a positive
+                // coordinate steps down, then a negative one steps up, so a
+                // coordinate under one step stands still. Run per one-vsync
+                // tick it walked to zero where retail's pass leaves it.
+                let delta = if self.toggles.battle_sm_frame_cadence {
+                    i32::from(self.module_frame_step())
+                } else {
+                    1
+                };
+                let plane_step = ((STEP * delta) / 4) as i16;
+                let plane = passed || self.module_tick_closes_pass();
+                let pull = |v: i16| {
+                    let v = if v > 0 { v - plane_step } else { v };
+                    if v < 0 { v + plane_step } else { v }
+                };
+                // A tick that hands over sinks and shrinks for the ticks of
+                // its pass still owed too.
+                let ticks = 1 + if passed {
+                    i32::from(self.casting.module_cam.countdown.1)
+                } else {
+                    0
+                };
+                let quarter = quarter * ticks as i16;
                 for (e, _) in self.ra_seru_row(monster_count) {
                     if let Some(a) = self.actors.get_mut(e) {
                         let m = &mut a.move_state;
                         m.world_y -= quarter;
-                        m.world_x -= m.world_x.signum() * quarter.min(m.world_x.abs());
-                        m.world_z -= m.world_z.signum() * quarter.min(m.world_z.abs());
+                        if plane {
+                            m.world_x = pull(m.world_x);
+                            m.world_z = pull(m.world_z);
+                        }
                         let scale = i32::from(a.battle.render_scale.unwrap_or(0x1000));
-                        a.battle.render_scale = Some((scale - 4 * STEP).max(0) as u16);
+                        a.battle.render_scale = Some((scale - 4 * STEP * ticks).max(0) as u16);
                     }
                 }
             }

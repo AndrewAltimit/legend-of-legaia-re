@@ -165,6 +165,9 @@ fn mules_wave_is_retails() {
         w.casting.module_phase = 16;
         w.casting.module_mule_front = -0x100;
         w.casting.module_cam.countdown.0 = 0x100;
+        // Retail's pass runs at step 1 (`0x1F800393`), one stager tick a
+        // pass: the port's battle frame is one vsync to match.
+        w.set_battle_frame_step(1);
         w.rng_state = c.seed;
         let mut port = Vec::new();
         for _ in 0..retail.len() {

@@ -302,6 +302,12 @@ pub struct ModuleCamState {
     /// word holds the arm ([`Self::twice_drained_pass`]).
     pub pass_aim: i32,
     pub pass_held: bool,
+    /// The module word as the pass's opening tick found it, latched by the
+    /// host ([`Self::latch_pass_word`], read through [`Self::pass_word`]).
+    pub pass_word_in: i32,
+    /// [`Self::tr_y`] as the pass's opening tick found it, latched with
+    /// [`Self::pass_word_in`] ([`Self::pass_tr_y`]).
+    pub pass_tr_y_in: i32,
     /// The host's answer to a victim-settle poll (PROT 0916's arm `0x14`):
     /// a dead victim's playing clip back to `0`, a living one's tint word
     /// `+0x04` cleared.
@@ -447,6 +453,40 @@ pub struct ModuleFollow {
 }
 
 impl ModuleCamState {
+    /// Latch the module word for [`Self::pass_word`]: the host calls it on
+    /// every tick it feeds [`Self::opens_pass`], ahead of the director.
+    pub fn latch_pass_word(&mut self) {
+        if self.opens_pass || self.frame_step <= 1 {
+            self.pass_word_in = self.countdown.0;
+            self.pass_tr_y_in = self.tr_y;
+        }
+    }
+
+    /// The module word as retail's pass tests it: an arm whose gate reads
+    /// the word once, ahead of its drain (`if (word > 0) { word -= drain;
+    /// <push>; busy }`), takes the branch for the whole pass on the word
+    /// the pass opened on, where the port's later one-vsync ticks of the
+    /// same pass would find it already spent and run the other branch -
+    /// pushing nothing, or leaving the arm a pass early. At a step of one
+    /// every tick is a pass.
+    pub fn pass_word(&self) -> i32 {
+        if self.frame_step <= 1 {
+            self.countdown.0
+        } else {
+            self.pass_word_in
+        }
+    }
+
+    /// [`Self::tr_y`] as retail's pass tests it, the way [`Self::pass_word`]
+    /// reads the word (PROT 0917's climb arm).
+    pub fn pass_tr_y(&self) -> i32 {
+        if self.frame_step <= 1 {
+            self.tr_y
+        } else {
+            self.pass_tr_y_in
+        }
+    }
+
     /// One pass of an arm that drains its word twice (Scythe Wind's arm 5
     /// `0x801F8044..0x801F80E4`, Bloody Horns' arm 6 `0x801F7A18..0x801F7AB0`,
     /// Rolling Flare's arm 4 `0x801F8088..0x801F80E4`): retail's pass takes
@@ -1820,11 +1860,30 @@ pub fn polled_countdown(
     phase: u8,
     seats: ModuleCamSeats,
 ) -> ModuleCountdown {
+    // A would-pass drains the rest of its pass (`ModuleCountdown::drain_rest`)
+    // as the tick that hands over; held on the poll, the pass goes on and
+    // its later ticks drain their own share. The word keeps this tick's
+    // drain alone: at a frame step of 2, PROT 0920's side-band arm 1 drained
+    // `3 p` a pass where retail drains `2 p`, and arm 2 then ran out a pass
+    // early and pushed nothing on retail's last push.
+    let one_tick;
+    let (before, ahead) = if before.countdown.1 > 0 {
+        let mut b = *before;
+        b.countdown.1 = 0;
+        let mut a = b;
+        direct(&mut a, phase, seats);
+        one_tick = (b, a);
+        (&one_tick.0, &one_tick.1)
+    } else {
+        (before, ahead)
+    };
     if ahead.countdown.0 <= 0 {
         return ahead.countdown;
     }
     let mut kept = ahead.countdown;
-    kept.0 = if before.countdown.0 > 0 {
+    // The gate drains on the word the pass opened on (`pass_word`): a later
+    // tick of a pass that opened positive drains though the word is spent.
+    kept.0 = if before.pass_word() > 0 {
         const PROBE: i32 = 1 << 28;
         let mut probe = *before;
         probe.countdown.0 = PROBE;
@@ -1877,7 +1936,7 @@ pub fn polled_hold(
     d: ArmDirection,
     before: &ModuleCamState,
 ) -> ArmDirection {
-    let spent = WORD_GATED_PUSH.contains(&(entry, phase)) && before.countdown.0 <= 0;
+    let spent = WORD_GATED_PUSH.contains(&(entry, phase)) && before.pass_word() <= 0;
     ArmDirection {
         drift: d.drift.filter(|_| !spent),
         nudge: d.nudge.filter(|_| !spent),

@@ -74,8 +74,8 @@ pub fn ultimate_rave_direct(
     seats: ModuleCamSeats,
 ) -> ArmDirection {
     const D1: i32 = DELTA_PER_TICK;
-    let word_ran = st.countdown.0 > 0;
-    let word_in = st.countdown.0;
+    let word_in = st.pass_word();
+    let word_ran = word_in > 0;
     let hold = hold_step(ULTIMATE_RAVE, st, phase);
     let c = st.creature_live.or(st.creature).unwrap_or_default();
     let f = c.facing;
@@ -99,6 +99,8 @@ pub fn ultimate_rave_direct(
             st.creature = Some(ModuleSeat { z: 0x4000, ..c });
             sweep_shot(st.countdown.0, -0x4000)
         }
+        // The sweep aims on the word its pass opened on, ahead of the
+        // pass's one drain: every tick of a multi-vsync pass aims there.
         4 if hold => sweep_shot(word_in, c.z.wrapping_neg()),
         4 => caption(
             sweep_shot(word_in, c.z.wrapping_neg()),

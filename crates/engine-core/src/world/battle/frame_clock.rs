@@ -1801,7 +1801,10 @@ impl World {
     /// `0x801F6E90..0x801F6F2C`) is followed by the next arm a frame later,
     /// never a vsync later. The band holds on the ticks between; the arms
     /// keep their one-vsync drains, so an arm's span is unchanged.
-    pub(in crate::world) fn module_pass(&mut self, tick: fn(&mut World) -> bool) -> bool {
+    pub(in crate::world) fn module_pass(
+        &mut self,
+        mut tick: impl FnMut(&mut World) -> bool,
+    ) -> bool {
         let cadence = self.toggles.battle_sm_frame_cadence;
         let delta = if cadence {
             // The frame this pass opens ([`Self::module_frame_step`]).

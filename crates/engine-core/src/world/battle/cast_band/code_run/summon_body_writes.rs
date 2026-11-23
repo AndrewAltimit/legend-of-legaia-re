@@ -946,6 +946,21 @@ impl World {
                 // wrapper hits do. The hit arm 18's own kernel call raises it
                 // again, so the hold ends there.
                 self.battle.combo_cluster_held = true;
+                // Retail walks the front and the row once a pass, by the
+                // pass's whole `step * scalar`, and strikes once after it: a
+                // tick that hands over walks the ticks of its pass still owed
+                // too, and only the tick that ends the pass strikes. Struck
+                // on every one-vsync tick, a frame step of 2 rolled the wave's
+                // damage twice a pass.
+                let strikes = passed || self.module_tick_closes_pass();
+                let delta = if self.toggles.battle_sm_frame_cadence {
+                    i32::from(self.module_frame_step())
+                } else {
+                    1
+                };
+                // The ticks ahead of the pass's last do nothing: the pass's
+                // last runs the whole pass, front, lifts and rolls.
+                let t = if strikes { t * delta } else { 0 };
                 self.casting.module_mule_front += t / 2;
                 let front = self.casting.module_mule_front;
                 let shield = self.battle.mystic_shield_up();
@@ -954,7 +969,7 @@ impl World {
                 let row: Vec<usize> = (0..monsters)
                     .filter_map(|i| map.engine(3 + i as u8).map(usize::from))
                     .collect();
-                for &e in &row {
+                for &e in row.iter().filter(|_| strikes) {
                     self.mule_wave_hit(e, front, shield, caster, spell_id);
                     let Some(a) = self.actors.get_mut(e) else {
                         continue;

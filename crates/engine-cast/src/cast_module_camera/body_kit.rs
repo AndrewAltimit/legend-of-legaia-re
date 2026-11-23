@@ -30,7 +30,7 @@ pub fn counted(st: &mut ModuleCamState, drain: i32) -> bool {
 /// drain; if (cd > 0) busy; }`): an arm entered on a spent word runs its
 /// exit at once. Returns `(hold, drained)`.
 pub fn counted_if_positive(st: &mut ModuleCamState, drain: i32) -> (bool, bool) {
-    if st.countdown.0 > 0 {
+    if st.pass_word() > 0 {
         (st.countdown.holds_after_drain(drain, 0), true)
     } else {
         (false, false)

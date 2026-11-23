@@ -320,7 +320,7 @@ pub fn puera_drift(phase: u8) -> Option<CaptureDrift> {
 ///
 /// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; camera arms 0, 6, 9, 10, 12, 16, 19, 22 and 23, the drifts of arms 1, 2, 13..17, 20 and 24, the TR y stores of arms 14 and 15, the spawn calls of arms 2, 5, 11, 12, 13, 17, 18, 20 and 22 and the captions of arms 6, 9 and 24)
 pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
-    let before = st.countdown.0;
+    let pass_word = st.pass_word();
     let held = hold_step(PUERA, st, phase);
     match phase {
         // `li v1,8; sb v1,0x21d(s1)`, `lbu; addiu 1; sb 0x1da` bare
@@ -373,14 +373,14 @@ pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
         puera_pass(phase)
     };
     if phase == 12 && held {
-        let w = (SPEED_SCALAR << 6) - before;
+        let w = (SPEED_SCALAR << 6) - pass_word;
         base.shot = Some(cut(
             [0, 0x800],
             [0, (8 * w + 0x1200) as i16, (2 * w + 0x800) as i16],
             3,
         ));
     }
-    let base = match puera_drift(phase).filter(|_| before > 0) {
+    let base = match puera_drift(phase).filter(|_| pass_word > 0) {
         Some(d) => base.drifted(d),
         None => base,
     };

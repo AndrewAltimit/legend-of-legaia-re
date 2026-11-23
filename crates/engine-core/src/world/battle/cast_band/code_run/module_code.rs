@@ -256,6 +256,7 @@ impl World {
                 // it on the tick that opens the frame.
                 st.frame_step = self.module_frame_step();
                 st.opens_pass = self.module_tick_opens_pass();
+                st.latch_pass_word();
                 // A settle gate's row (`summon_holds::Gate::Settle`): every
                 // monster seat idle, or faded out once dead.
                 let pc = usize::from(self.party.party_count);

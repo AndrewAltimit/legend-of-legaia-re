@@ -450,8 +450,10 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 1,
             )
         }
+        // The climb tests TR y once a pass, ahead of its `+= p` (`slti
+        // 0x800`): a pass that opens under the line climbs on all its ticks.
         1 => {
-            if st.tr_y < 0x800 {
+            if st.pass_tr_y() < 0x800 {
                 st.tr_y += P;
                 return ArmDirection::HOLD.nudged(ModuleNudge {
                     pitch: -(P >> 1) as i16,
@@ -616,7 +618,9 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         }
         0xF => {
             let full = S << 7;
-            let ease = ((full - st.countdown.0.max(0)) * (depth / 2)) / full;
+            // The ease reads the word ahead of the pass's drain: every tick
+            // of a multi-vsync pass on the word its pass opened on.
+            let ease = ((full - st.pass_word().max(0)) * (depth / 2)) / full;
             // The cut frames the victim's display pair `+0x3C` / `+0x40`
             // (`lhu v0,0x3c(s3)` / `lhu v1,0x40(s3)` at `0x801F8068` /
             // `0x801F8078`), which its knockdown clip carries off the live

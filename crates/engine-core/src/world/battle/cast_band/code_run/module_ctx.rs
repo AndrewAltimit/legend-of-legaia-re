@@ -357,6 +357,7 @@ impl World {
         st.victim_body = self.module_body_seat(latched);
         st.frame_step = self.module_frame_step();
         st.opens_pass = self.module_tick_opens_pass();
+        st.latch_pass_word();
         st.body_pass_now = true;
         let d = direct(&mut st, phase, seats);
         self.store_module_cam(st);

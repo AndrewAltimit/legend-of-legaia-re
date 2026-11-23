@@ -94,8 +94,8 @@ const SPOON_EYE_SPAWNS: [ModuleSpawn; 20] = {
 ///
 /// PORT: overlay_summon_spoon_0919_801f69d8 (PROT 0919; the camera arms, captions and the spawns of arms 2 and 7)
 pub fn spoon_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
-    let word_ran = st.countdown.0 > 0;
-    let word_before = st.countdown.0;
+    let word_ran = st.pass_word() > 0;
+    let word_before = st.pass_word();
     let hold = hold_step(SPOON, st, phase);
     let c = st.creature_live.or(st.creature).unwrap_or_default();
     let z = |n: i32| Some(drift(0, 0, 0, 0, n));
