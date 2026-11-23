@@ -746,6 +746,9 @@ pub(super) struct PlayWindowApp {
     // `World::minigames.fishing_venue`.
     /// The duel overlay's parsed HUD widget table, for resolving chrome
     /// glyph draws (`parse_baka_hud`).
+    /// The Baka Fighter match's decided outcome has been logged
+    /// ([`PlayWindowApp::tick_baka_chrome`]).
+    pub(super) baka_decided_logged: bool,
     pub(super) baka_hud_widgets:
         Option<Vec<legaia_minigame_formats::baka_opponents::BakaHudWidget>>,
     /// This frame's resolved chrome draws (the duel's own `BakaChrome`

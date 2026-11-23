@@ -130,6 +130,7 @@ impl PlayWindowApp {
             dev_menu_records: false,
             fishing_banners: Default::default(),
             fishing_banner_draws: Vec::new(),
+            baka_decided_logged: false,
             baka_hud_widgets: None,
             baka_chrome_frame: Vec::new(),
             baka_surface: Default::default(),
