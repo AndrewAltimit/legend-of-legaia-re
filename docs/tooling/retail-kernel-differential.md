@@ -999,27 +999,55 @@ byte `0x8007BD71` seeded `0xFF` so the poll does not answer out of reach), with
 the creature stood on each monster seat in turn, since the walk plays none of the
 root motion that walks it; its chase hits agree.
 
-The shadow also compares each seated monster's ground trio and animation rate
-`+0x21D`. Retail's rate on a seat with no HP stays out (the loops test its colour
-word, which a faded seat and the engine's resting shown word both read as `0`),
-as does the spirit gauge (retail's stubbed wrapper never runs the finisher that
-fills it).
+The shadow also compares each seated seat's ground trio, animation rate `+0x21D` and
+render node scale `+0x72`, on dead seats too. It found Terra's arm `0x14` turning and
+slowing a felled seat whose fade had run out: retail tests the colour word
+(`lw v0,4(v1)` / `beqz`), and the engine's resting shown word is `0` under a lowered
+marker, so the port now reads a seat as drawn on its word, or, alive, on its marker. One
+scale stays out: PROT 0921's exit (arm `0xB`) restores each seat's trio, facing, body
+radius `+0x58` and size byte `+0x1F` (`0x801F7F40..0x801F7F98`) but no scale, so a
+Stoned seat, which arm 9 shrank and arm `0xA`'s hit loop skips, keeps the shrunken scale
+in retail, where the port's restore stands it back at unity. The spirit gauge and spell
+XP stay out: retail's stubbed wrapper never runs the finisher (`FUN_801DDB30`) that
+fills them, and the per-hit call pattern that drives them is what the scripted rolls
+already pin through HP.
 
-**The creature's seat 7.** The walk leaves the creature seat as the installer
-`FUN_801F19EC` does (colour word `-1`, tint state `0`, rate `2`), and the shadow
-seats its own through the host's call (`World::seat_summon_actor`), its ground
-and facing then synced off the walk each pass. Seat 7's colour word, tint
-state, status, HP, staged clip and rate are then compared as a monster seat's,
-but on the modules whose creature writes another half of the host carries (the
-creature's presentation, its seat-arm tables, the anim tick:
-`CREATURE_WRITES_ELSEWHERE` in the test, and `CREATURE_RATE_ELSEWHERE` for the
-rate alone). It found Palma's arm 3
+**The creature's seat 7.** The walk runs the installer `FUN_801F19EC`'s creature
+stores when a seat arm calls it (the walk stubbed it, so retail's creature never moved
+onto the caster): the caster's ground trio and facing, colour word `-1`, mode word,
+target, clip, rate `2`, tint state, impact selector, shatter word and the committed-id
+ring, the node aside. The shadow seats its own creature when the host does: on a module
+with a seat arm (`ModuleProfile::seat_arm`) once the band's pass reaches it
+(`module_seat_arm::seat_due`), with the seat pass's held stores landed behind the
+installer's resets, and on every other module before its first pass. A side that seats
+on another pass is a mismatch of its own. From the seat on, seat 7's colour word, tint
+state, status, HP, staged clip, ground trio, rate and scale are compared on every summon
+module, but for four arm ranges (`CREATURE_GAPS` in the test): PROT 0905's arm `0xA`
+rise, which lands through the camera nudge on the next tick's seam; PROT 0908's arm 8,
+where the walk stands the creature on the victim; and PROT 0922's arm 7 and PROT 0927's
+arms 12 to 18, whose rate stores wait on the clip cursor `+0x68` a clip-less seat does
+not carry.
+
+It found Palma's arm 3
 never lifting the row (`+0x36 -= 2 p` a pass while its sweep word is under
 `160 * scalar`, then set down, `0x801F70E8..0x801F7144`, `0x801F6FC0..0x801F6FF8`),
 Juggernaut's arms 27 and 28 storing no rate on the live row (`2`, and `0` on arm
 27 for a monster on its get-up entry), Ultimate Rave's arms 8 and `0xA` storing
 none on the victim, and Jedo's arm 30 slowing the row on every fight where retail
-does it only on a scripted one (`bnez` at `0x801F86F4`).
+does it only on a scripted one (`bnez` at `0x801F86F4`). Over the creature it found
+Palma's defeat fade six arms late (arm `0xB`'s exit at `0x801F7CA4`, and the word
+zeroed on arm `0xC`'s at `0x801F7D70`, not arms `0x11` / `0x12`); Jedo's creature seated
+in the open where retail hides it on the dim word `0x401004` until arm 6's pass, then
+slows it to rate `3` on arm 7 and `2` on arm 10 and hides it on arm 26; the seat-arm
+colour words of Iota and Ultimate Rave (`0`, the fade-in), Zenoir (`0x20080200`), Vera
+(`0x3FFFFFFF` at blend `0x1000`, rate `8`) and Aluru (`0x3FFFFFFF`, hidden); Horn's and
+Terra's seat arms storing no blend word, and Terra's arm 4 its `0x1000`; Vera's arm 9
+fade; Nighto's arm 7 staging clip `1` on every pass, not on its exit; Gola Gola's exit
+stepping the clip back with the bump; Meta's exit staging idle clip `1`; Puera's wake run
+off the phase the pass left on (a whole arm early) and its clip steps doubled with the
+director's; Juggernaut and Spikefish seating on arm 2's entry where retail seats on its
+pass, behind the stream poll; and Mushura's arms 7 and 8 taking their quarter term every
+fourth tick where retail takes it on each battle frame's closing tick.
 
 <a id="the-drive-poll"></a>
 **The drive poll.** Each image's poll arm (`FUN_8003F2B8(1)` behind its seek
@@ -1034,8 +1062,15 @@ poll busy on its first calls, not its first passes, so those arms are held past
 their countdown too. Held there, the host had kept the drain the director's
 would-pass reports, which includes the exit's re-arm, and held the arm for a
 second countdown once the poll let go; it now keeps the gate's drain alone
-(`cast_module_camera::polled_countdown`), and PROT 0920's arm 2 makes no TR z push
-on a held pass once its word is spent (`polled_hold`).
+(`cast_module_camera::polled_countdown`). Arms 1 and 2 of PROT 0919 to 0924 make
+their TR z push behind a `blez` on the module word that branches straight to the poll,
+so a held pass whose word is spent pushes nothing (`polled_hold`'s table). A scan of
+every summon image's poll sites, each `jal 0x8003F2B8` and each `lbu 0x276`, for a
+branch that lands on the poll finds no other camera store a gate skips. The walk raises
+the side-band stage again for the first passes the wait arm opens on its word spent, so
+the held spent pass runs on every wait arm. The same scan found PROT 0924's arm 1
+waiting on the side-band stage (`0x801F6C6C..0x801F6C74`), which the port had left
+out.
 PROT 0927's arm 2
 branches busy to the arm's tail (`0x801F6D8C` to `0x801F6F74`), where the
 passing pass falls too, so every pass of the arm hides the party and shows the
@@ -1056,12 +1091,12 @@ the port's half agrees. The shadow is where the host's half is checked.
 | PROT 0922's seat writes | `World::apply_puera_writes` | trio, facing, `+0x21C`, `+0x04` of the row and the creature, every arm it carries |
 | The pre-hits, Mule's wave, Ozma's ladder | `World::apply_summon_pre_hits`, `mule_wave_hit`, `ozma_hit_ladder` | HP and the staged reaction `+0x1DA` |
 | The fold | `World::summon_strike` | HP, `+0x1DA`, `+0x10`, `+0x0C`, `+0x21F`, facing |
-| The row's ground trio and animation rate | the seat-write tables | compared, the rate on living seats only |
+| The row's ground trio and animation rate | the seat-write tables | compared, dead seats included |
 | The hit tints | `cast_module_impact::MODULE_IMPACTS` | `+0x04` on each seat |
 | The side-band and drive polls | `module_code`'s polling hold, `World::module_drive_holds` | the hold, against retail's phase walk |
 | Mushura's chase | `World::mushura_chase` | everything above, its reach poll live |
-| The creature's placement, walk and clips | `World::apply_module_creature_writes`, `summon_walk_to_victim`, `module_seat_arm` | seat 7's word, tint state, staged clip and rate compared on the modules the module half writes; ground and facing synced |
-| Scales of the row | the seat-write tables | not compared |
+| The creature's placement, walk and clips | `World::apply_module_creature_writes`, `summon_walk_to_victim`, `module_seat_arm` | seat 7's seat pass, word, tint state, staged clip, ground trio, rate and scale on every module; ground and facing synced ahead of each pass |
+| Scales of the row | the seat-write tables | the node scale `+0x72` of every seat, the creature's included |
 | The part-driven stager calls | PROT 0927's sweeps, `run_juggernaut_stager_calls` | not compared: the walk runs no part |
 | The spell XP, spirit gauge and readout | `World::summon_module_roll`, the fold's tail | not compared: retail's wrapper is stubbed, so its finisher does not run |
 
@@ -1091,8 +1126,20 @@ seat the port strikes retail strikes and that both store the same. Over the summ
 turn their seats (PROT 0905, 0908, 0916, 0920, 0921, 0923, 0927, 0930, 0932, 0934) it compares every pass's facing
 ([the cast-module page's table](../subsystems/cast-module.md#a-strike-turns-the-seat-it-hits)), on runs the summon
 walk's fold does not make, and found Zenoir's arm 6 turning neither its creature nor its victim and PROT 0920's arm
-10 ending on its countdown where retail waits for the row. The walk's builder lands no shot on the focus globals and
-the shadow has no battle camera, so Slippery's focus-facing is compared at the origin only.
+10 ending on its countdown where retail waits for the row.
+
+The walk's builder lands each shot on the camera globals at once, as the summon walk's does, and the shadow's
+battle camera stands on the globals as each pass opens, so the directors read retail's live yaw, pitch, TR and
+focus (`World::feed_seru_cam`). After every pass it compares where the camera is headed: the band's run (its shot,
+drift, TR z store and nudge) on the globals the pass opened on, against the globals retail's pass leaves. That
+puts the summon directors' camera beside the host's module half, not the director alone, and lets the walk drive
+PROT 0917 (Barra, whose arm 1 climbs the TR y global arm 0's shot stored) and PROT 0922 (Puera, whose parts the
+walk hands out as it spawns them) through to Done. It found Spoon's arm 8 yaw read off the word after the pass's
+drain, where retail reads it as the pass opens (`0x801F84E0`, the drain at `0x801F8520`), and Gilium's arm `0x16`
+pull made only while its word ran, where retail pulls on every pass ahead of the word's test
+(`0x801F8A74..0x801F8AA0`), through the row wait. Four parts stay out (`camera_gaps` in the test): PROT 0928's
+roll, PROT 0925's arm 8 exit, PROT 0908's arm 8 (the creature stood on the victim) and PROT 0934's shake TR y,
+which the engine reads per four vsyncs where this walk's pass is one.
 
 One arm stays apart from retail by choice. Aluru's arm `0x14` holds on a dead victim until its word is zero
 (`0x801F8870`), a word that eases out only under the defeat fade the commit's monster-death arm arms at the

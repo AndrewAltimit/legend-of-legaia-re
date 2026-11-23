@@ -190,8 +190,12 @@ pub fn gilium_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats)
                 gated(st, drift(-1, 0, 0, 0, -4), 0x400)?,
                 ArmDirection::PASS,
             ),
+            // The pull runs on every pass ahead of the word's test (TR z
+            // `-= step << 3`, pitch `-= step` at `0x801F8A74..0x801F8AA0`),
+            // through the drain and the row wait after it.
             0x16 => {
-                let d = gated(st, drift(-1, 0, 0, 0, -8), 0)?;
+                let d = Some(drift(-1, 0, 0, 0, -8));
+                gated(st, CaptureDrift::default(), 0).map_err(|_| held(d))?;
                 if !st.row_settled {
                     return Err(held(d));
                 }
