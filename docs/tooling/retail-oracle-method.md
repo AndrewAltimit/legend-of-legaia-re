@@ -325,7 +325,7 @@ own differential. Name in the test whatever the walk stubs or does not stage,
 so the comparison claims no more than it runs.
 
 **Expect the yield to move.** Arm tests find defects quickly while most ported
-directions are undriven. Past roughly the high eighties per cent of them, new
+directions are undriven. Once most of them are driven, new
 arm tests mostly end as scope entries, while shadows and captures keep finding
 defects, since what is left lies in composition and timing rather than in any
 one routine. A falling defect rate on one instrument is a signal to move to the

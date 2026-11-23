@@ -423,8 +423,7 @@ Measurement is corrected this way as much as the game is. The Sol Tower stair wa
 ### Where the yield moves
 
 Each instrument pays most while it is young, and the loops shift their weight as it ages. Arm by arm, branch
-coverage turns up defects quickly while most ported directions are undriven. Past roughly the high eighties per
-cent of ported-arm directions, a new arm test mostly ends as a scope row (an arm read, and shown unreachable or
+coverage turns up defects quickly while most ported directions are undriven. Once most of them are driven, a new arm test mostly ends as a scope row (an arm read, and shown unreachable or
 deliberately unported) rather than as a defect. The shadow walks and the captures keep finding defects past that
 point, because what is left is mostly not inside a routine. It is in the engine's composition, which a shadow sees,
 and in timing and pacing, which only retail running sees.
