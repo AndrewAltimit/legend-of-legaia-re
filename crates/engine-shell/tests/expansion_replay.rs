@@ -164,6 +164,9 @@ fn battle_world(rng_seed: u32) -> World {
         },
         ..World::default()
     };
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut w.toggles);
     w.mode = SceneMode::Field;
     w.actors[0].active = true;
     w.actors[0].battle.hp = 900;
@@ -293,6 +296,9 @@ fn with_no_pack_the_expansion_layer_is_inert() {
 
 fn field_world(rng_seed: u32) -> World {
     let mut w = World::new();
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut w.toggles);
     w.mode = SceneMode::Field;
     w.minigames.casino_coins = 1000;
     w.party.money = 500;
@@ -406,6 +412,9 @@ fn map_trace(replay: &ReplayFile, extracted: &Path) -> Vec<String> {
     let mut shelf = PackShelf::new();
     shelf.add(sample_pack()).unwrap();
     let mut host = SceneHost::open_extracted(extracted).expect("open the scene host");
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut host.world.toggles);
     host.enter_field_scene("town01", 0).expect("enter town01");
     run(&mut host, replay, &shelf, |h| {
         h.tick().expect("tick");

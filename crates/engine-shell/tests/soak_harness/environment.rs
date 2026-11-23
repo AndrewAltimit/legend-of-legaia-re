@@ -127,6 +127,9 @@ pub(super) fn open_session_armed(src: &Source, arm: Arming) -> NativeSession {
         }
         Source::Disc(p) => NativeSession::open_disc(p, &cfg).expect("open NativeSession (disc)"),
     };
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut session.host.world.toggles);
     if arm.host {
         arm_host_play_defaults(&mut session);
     }

@@ -183,6 +183,9 @@ fn booted(scene: &str) -> Option<NativeSession> {
         enable_audio: false,
     };
     let mut session = NativeSession::open(&extracted, &cfg).ok()?;
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut session.host.world.toggles);
     session.begin_new_game();
     // A kingdom map is not a field scene: it has its own live entry
     // (`enter_world_map_live`), which is what installs the world-map
