@@ -908,3 +908,66 @@ fn clip(action_id: u8) -> legaia_actor_formats::monster_archive::MonsterAnimatio
         frames: vec![vec![Default::default()]; 2],
     }
 }
+
+/// The yaw counter `ctx[+0x6DA]` the sequencer steps on every pass of a win
+/// (`0x8004E728..0x8004E758`), in the action SM's place: `DAT_1F800393 >> 1`,
+/// or `1` when that is zero. Pass after pass of the results hold at frame
+/// steps `1..=4`, against `results_yaw_pass_increment`, the rate the port's
+/// battle camera steps the counter at while the sequence runs.
+#[test]
+fn the_results_sequencer_steps_the_yaw_counter_as_retail() {
+    differential!(scus(SPOILS));
+    use legaia_engine_battle_vm::battle_cam_script::results_yaw_pass_increment;
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.stub(RAND, 0);
+    for stub in [
+        0x8003_CE08u32,
+        0x8003_CBF8,
+        0x8003_CA38,
+        0x8005_6758,
+        0x8003_563C,
+        0x8004_FCC8,
+        0x801D_5854,
+        0x801D_8DE8,
+        0x8004_21D4,
+        0x8002_4E80,
+        0x8002_5358,
+        0x8001_7B94,
+    ] {
+        cpu.stub(stub, 0);
+    }
+    let mut rng = Rng(0x5941_5743);
+    let (mut ran, mut halved) = (0u32, 0u32);
+    for round in 0..200 {
+        let w = gen_win(&mut rng, |_, _| 0);
+        seed_retail(&mut cpu, &w);
+        cpu.mem.wr8(0x1F80_0393, 1);
+        // The results frame, which seats the counter outright.
+        assert_eq!(cpu.call(SPOILS, &[]), Stop::Returned, "round {round}");
+        for pass in 0..40 {
+            let step = 1 + rng.below(4) as u8;
+            cpu.mem.wr8(0x1F80_0393, step);
+            let before = cpu.mem.rd16(CTX + 0x6DA);
+            assert_eq!(
+                cpu.call(SPOILS, &[]),
+                Stop::Returned,
+                "round {round} pass {pass}"
+            );
+            let after = cpu.mem.rd16(CTX + 0x6DA);
+            assert_eq!(
+                after.wrapping_sub(before),
+                results_yaw_pass_increment(step),
+                "round {round} pass {pass} step {step}"
+            );
+            ran += 1;
+            halved += u32::from(step >= 2);
+        }
+    }
+    assert!(ran == 8000 && halved > 4000, "{ran} {halved}");
+}

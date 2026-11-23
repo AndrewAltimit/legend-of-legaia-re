@@ -247,6 +247,8 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // battle tick frames anything (`BattleCamera::start_entry_sweep`).
         entry_sweep: true,
         open_held: world.battle.battle_open_held(),
+        // The battle-end fold below raises it while the sequencer runs.
+        results_sequencer: false,
     };
     battle_end_cam_inputs(world, inputs, actor_at)
 }
@@ -439,6 +441,16 @@ fn battle_end_cam_inputs(
         a.world = d;
     }
     inputs.attack = None;
+    // The sequencer, not the action SM, steps the yaw counter now: the
+    // battle tick runs the SM only while the signal reads `0xFF` and the
+    // sequencer while it reads `0xFE` (`0x80047040`, `0x800470D0..0x800470E8`).
+    // The sequencer steps it at `0x8004E728` only past its three early
+    // exits: a stage module running (`gp+0x332`, `0x8004E5B8`), the
+    // side-band stream request still up at the load hold's head
+    // (`ctx[+0x26B]`, `0x8004E5C8`), and the escape arm (`ctx[+0x07] ==
+    // 0x67`, `0x8004E644`, returned above).
+    // PORT: FUN_8004E568 (0x8004E5B8..0x8004E644, the gates ahead of the yaw step)
+    inputs.results_sequencer = world.battle_stage_id() == 0 && !seq.side_band_request_up();
     inputs.acting_body = display.map(|d| [d[0], d[2]]);
     inputs.action = script::ActionFraming {
         party_slot: party,

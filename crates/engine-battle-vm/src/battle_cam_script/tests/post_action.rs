@@ -456,6 +456,7 @@ fn a_real_turn_films_its_done_tail_and_holds_it_for_the_next_actor() {
                     spell_cam: None,
                     entry_sweep: false,
                     open_held: false,
+                    results_sequencer: false,
                 };
                 drive(&mut slot, true, inputs, frames, None);
                 let far = slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu);

@@ -1700,12 +1700,16 @@ impl BattleDrive {
                         // that pass's prologue drift. On retail's cadence the
                         // pin lands ahead of a tick whose pass adds the drift
                         // again, so it stands one pass short there.
+                        // Which increment that pass adds is whoever owns the
+                        // counter: the action SM, or the results sequencer
+                        // once the battle-end signal is up (`0x8004E728`).
                         let drift = if pass_next {
-                            i32::from(
-                                legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(
-                                    step,
-                                ),
-                            )
+                            use legaia_engine_battle_vm::battle_cam_script as bcs;
+                            i32::from(if cam.results_sequencer() {
+                                bcs::results_yaw_pass_increment(step)
+                            } else {
+                                bcs::action_yaw_pass_increment(step)
+                            })
                         } else {
                             0
                         };
