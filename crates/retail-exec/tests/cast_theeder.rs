@@ -368,3 +368,676 @@ fn the_retract_matches_the_module() {
         assert_eq!(retail_packets(&mut cpu), want, "case {case}: n {n}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// The tick bodies walked: PROT 0904's `0x801F69D8` and PROT 0906's
+// `0x801F69F4`, arm 0 to Done, beside the band's module half.
+// ---------------------------------------------------------------------------
+
+mod walk {
+    use crate::common::{disc, scus_cpu};
+    use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
+    use legaia_engine_cast::cast_module_camera::SPEED_SCALAR;
+    use legaia_engine_core::world::World;
+    use psx_retail_exec::{A0, A2, Cpu, Memory, Stop, V0};
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
+    pub(super) const BASE: u32 = 0x801F_69D8;
+    const OVERLAY_BASE: u32 = 0x801C_E818;
+    const CTX_PTR: u32 = 0x8007_BD24;
+    const ACTORS: u32 = 0x801C_9370;
+    const RECORDS: u32 = 0x801C_9348;
+    pub(super) const CTX: u32 = 0x8012_0000;
+    pub(super) const ACTOR: u32 = 0x8013_0000;
+    pub(super) const STRIDE: u32 = 0x400;
+    const NODES: u32 = 0x8014_0000;
+    const MONSTER_RECORD: u32 = 0x8015_0000;
+    const RAND: u32 = 0x8005_6798;
+    const BUILDER: u32 = 0x801D_829C;
+    const BEARING: u32 = 0x8001_9B28;
+    const AIM: u32 = 0x801D_CEAC;
+    const WRAPPER: u32 = 0x801D_D0AC;
+    const SCALAR: u32 = 0x1F80_037D;
+    const STEP: u32 = 0x1F80_0393;
+    const FORMATION: u32 = 0x8007_BD0C;
+    const ROSTER: u32 = 0x8007_BD10;
+    const POOL_PTR: u32 = 0x1F80_03A0;
+    const OT_PTR: u32 = 0x1F80_03F4;
+    const POOL: u32 = 0x8017_0000;
+    const OT: u32 = 0x8018_0000;
+    pub(super) const CREATURE: u32 = 7;
+
+    /// Where the seats stand: the caster's party seat, the monster count and
+    /// the victim a seat-target cast is aimed at.
+    #[derive(Clone, Copy, Debug)]
+    pub(super) struct Layout {
+        pub caster: u32,
+        pub monsters: u32,
+        pub victim: u32,
+        pub retail_seats: bool,
+    }
+
+    pub(super) const LAYOUTS: [Layout; 3] = [
+        Layout {
+            caster: 0,
+            monsters: 2,
+            victim: 3,
+            retail_seats: false,
+        },
+        Layout {
+            caster: 2,
+            monsters: 4,
+            victim: 6,
+            retail_seats: true,
+        },
+        Layout {
+            caster: 1,
+            monsters: 3,
+            victim: 3,
+            retail_seats: true,
+        },
+    ];
+
+    impl Layout {
+        fn ground(&self, s: u32) -> (i16, i16) {
+            use legaia_engine_battle::battle_seats::{monster_seat, party_seat};
+            if !self.retail_seats {
+                return match s {
+                    0..=2 => (-0x200 + 0x200 * s as i16, 0x600),
+                    7 => (0, 0),
+                    _ => (-0x180 + 0x300 * (s as i16 - 3), -0x600),
+                };
+            }
+            match s {
+                0..=2 => {
+                    let p = party_seat(3, s as usize);
+                    (p.x, -p.z)
+                }
+                7 => (0, 0),
+                _ => {
+                    let m = monster_seat(self.monsters as u8, (s - 3) as usize, false);
+                    (m.x, -m.z)
+                }
+            }
+        }
+    }
+
+    pub(super) fn trio(m: &mut Memory, a: u32) -> [i16; 3] {
+        [m.rd16(a) as i16, m.rd16(a + 2) as i16, m.rd16(a + 4) as i16]
+    }
+
+    fn jal_targets(module: &[u8]) -> Vec<u32> {
+        let mut out: Vec<u32> = module
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|w| u32::from_le_bytes(*w))
+            .filter(|w| w >> 26 == 3)
+            .map(|w| ((w & 0x03FF_FFFF) << 2) | 0x8000_0000)
+            .filter(|&t| !(BASE..BASE + 0x8000).contains(&t))
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// The `k`th roll on `seat`: small, middling and past a monster's HP.
+    pub(super) fn scripted_roll(seat: usize, k: u32) -> u32 {
+        [0x10, 0x5A, 0x7D, 0x180][(seat + k as usize) % 4]
+    }
+
+    /// A rig for one module image on one layout: the battle overlay, the
+    /// image, every call out stubbed but the bearing, `rand()` (an LCG), the
+    /// target-group aim and the damage wrapper (scripted rolls), and the
+    /// tween builder (logged).
+    pub(super) struct Rig {
+        pub cpu: Cpu,
+        pub shots: Rc<RefCell<Vec<[i16; 10]>>>,
+        pub stream: Rc<Cell<u32>>,
+        pub struck: Rc<RefCell<Vec<u8>>>,
+    }
+
+    pub(super) fn rig(entry: u32, action: u8, code: u8, layout: Layout) -> Option<Rig> {
+        let d = disc()?;
+        let mut cpu = scus_cpu()?;
+        let overlay = d.read_entry(898).expect("PROT 0898");
+        let module = d.read_entry(entry as usize).expect("module");
+        cpu.mem.load(OVERLAY_BASE, &overlay);
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+        cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+        cpu.mem.wr32(POOL_PTR, POOL);
+        cpu.mem.wr32(OT_PTR, OT);
+        for target in jal_targets(&module) {
+            if ![AIM, BUILDER, BEARING, RAND, WRAPPER].contains(&target) {
+                cpu.stub(target, 0);
+            }
+        }
+        let struck = Rc::new(RefCell::new(Vec::new()));
+        {
+            let calls = Rc::new(RefCell::new([0u32; 8]));
+            let struck = struck.clone();
+            cpu.hook(WRAPPER, move |r, _| {
+                let seat = (r.r[A2] & 7) as usize;
+                let mut c = calls.borrow_mut();
+                r.r[V0] = scripted_roll(seat, c[seat]);
+                c[seat] += 1;
+                struck.borrow_mut().push(seat as u8);
+            });
+            let calls = RefCell::new([0u32; 8]);
+            legaia_engine_core::world::summon_roll_override::set(Some(Box::new(move |seat| {
+                let seat = usize::from(seat & 7);
+                let mut c = calls.borrow_mut();
+                let v = scripted_roll(seat, c[seat]);
+                c[seat] += 1;
+                v
+            })));
+        }
+        let shots = Rc::new(RefCell::new(Vec::new()));
+        {
+            let shots = shots.clone();
+            cpu.hook(BUILDER, move |r, m| {
+                let mut s = [0i16; 10];
+                for (k, base) in [r.r[A0], r.r[A0 + 1], r.r[A0 + 2]].into_iter().enumerate() {
+                    s[3 * k..3 * k + 3].copy_from_slice(&trio(m, base));
+                }
+                s[9] = r.r[A0 + 3] as i16;
+                shots.borrow_mut().push(s);
+            });
+        }
+        let stream = Rc::new(Cell::new(1u32));
+        {
+            let stream = stream.clone();
+            cpu.hook(RAND, move |r, _| {
+                let n = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+                stream.set(n);
+                r.r[V0] = (n >> 16) & 0x7FFF;
+            });
+        }
+        cpu.hook(BEARING, |r, _| {
+            let a = |i: usize| r.r[A0 + i] as i16;
+            r.r[V0] = u32::from(bearing_12bit_approx(a(0), a(1), a(2), a(3)));
+        });
+        cpu.mem.load(BASE, &module);
+        seed(&mut cpu, action, code, layout);
+        Some(Rig {
+            cpu,
+            shots,
+            stream,
+            struck,
+        })
+    }
+
+    fn seed(cpu: &mut Cpu, action: u8, code: u8, layout: Layout) {
+        for b in 0..0x1100 {
+            cpu.mem.wr8(CTX + b, 0);
+        }
+        cpu.mem.wr8(CTX, 3);
+        cpu.mem.wr8(CTX + 1, layout.monsters as u8);
+        cpu.mem.wr8(CTX + 0x13, layout.caster as u8);
+        cpu.mem.wr16(CTX + 0x6D0, 0x600);
+        for s in 0..8u32 {
+            let a = ACTOR + s * STRIDE;
+            cpu.mem.wr32(ACTORS + s * 4, a);
+            for o in (0..STRIDE).step_by(4) {
+                cpu.mem.wr32(a + o, 0);
+            }
+            let live = s < 3 || (3..3 + layout.monsters).contains(&s) || s == CREATURE;
+            let (x, z) = layout.ground(s);
+            for (o, v) in [(0x34u32, x), (0x38, z), (0x3C, x), (0x40, z)] {
+                cpu.mem.wr16(a + o, v as u16);
+            }
+            cpu.mem.wr16(a + 0x46, if s < 3 { 0x800 } else { 0 });
+            cpu.mem.wr16(a + 0x14C, if live { 300 } else { 0 });
+            let up = live && (3..7).contains(&s);
+            cpu.mem.wr32(a + 4, if up { 0x1004_0100 } else { 0 });
+            cpu.mem.wr16(a + 0x168, 100);
+            cpu.mem.wr16(a + 0x16A, 100);
+            cpu.mem.wr8(a + 0x1DF, action);
+            cpu.mem.wr8(a + 0x21D, 8);
+            let node = NODES + s * 0x100;
+            cpu.mem.wr32(a + 0x22C, node);
+            cpu.mem.wr16(node + 0x58, 0x100);
+            cpu.mem.wr16(node + 0x72, 0x1000);
+        }
+        cpu.mem.wr8(ACTOR + layout.caster * STRIDE + 0x1DD, code);
+        cpu.mem.wr8(ACTOR + CREATURE * STRIDE + 0x1DD, code);
+        for i in 0..5 {
+            cpu.mem.wr32(RECORDS + i * 4, MONSTER_RECORD);
+        }
+        cpu.mem.wr8(SCALAR, SPEED_SCALAR as u8);
+        cpu.mem.wr8(STEP, 1);
+        for i in 0..5 {
+            cpu.mem
+                .wr8(FORMATION + i, if i < layout.monsters { 0x10 } else { 0 });
+        }
+        for i in 0..3 {
+            cpu.mem.wr8(ROSTER + i, 1 + i as u8);
+        }
+        // Each monster's reaction run `+0x1EF..+0x1F2`.
+        for s in 3..7u32 {
+            let a = ACTOR + s * STRIDE;
+            cpu.mem
+                .wr8(a + 0x1EF, if s == 4 { 0 } else { 0x10 + s as u8 });
+            cpu.mem.wr8(a + 0x1F0, 0x20 + s as u8);
+            cpu.mem.wr8(a + 0x1F1, 0x30 + s as u8);
+            cpu.mem.wr8(a + 0x1F2, (s & 1) as u8);
+        }
+        // State `0x34`'s hide loop ahead of the module's first pass.
+        for s in 0..7u32 {
+            let a = ACTOR + s * STRIDE;
+            if s < 3 || cpu.mem.rd16(a + 0x14C) != 0 {
+                cpu.mem.wr32(a + 4, 0);
+                cpu.mem.wr8(a + 0x21C, 0xFF);
+            }
+        }
+    }
+
+    /// The band's world seated off the rig's records.
+    pub(super) fn shadow(cpu: &mut Cpu, layout: Layout, action: u8) -> Option<World> {
+        let mut w = World::new();
+        w.load_party(legaia_save::Party::zeroed(3));
+        w.enter_battle(3, layout.monsters as u8);
+        while w.actors.len() < 12 {
+            w.actors.push(Default::default());
+        }
+        for s in 0..8u32 {
+            let a = ACTOR + s * STRIDE;
+            let p = trio(&mut cpu.mem, a + 0x34);
+            let act = &mut w.actors[s as usize];
+            act.active = s < 3 + layout.monsters || s == CREATURE;
+            act.battle.hp = cpu.mem.rd16(a + 0x14C);
+            act.battle.max_hp = cpu.mem.rd16(a + 0x14E).max(act.battle.hp);
+            act.battle.liveness = u16::from(act.battle.hp > 0);
+            act.battle.render_color = cpu.mem.rd32(a + 4);
+            act.battle.render_flag = cpu.mem.rd8(a + 0x21C);
+            act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
+            act.battle.active_target = cpu.mem.rd8(a + 0x1DD);
+            act.battle.anim_rate =
+                legaia_engine_battle_vm::battle_anim_rate::AnimRate(cpu.mem.rd8(a + 0x21D));
+            act.move_state.world_x = p[0];
+            act.move_state.world_y = p[1];
+            act.move_state.world_z = p[2];
+            if (3..3 + layout.monsters).contains(&s) {
+                act.battle_monster_id = Some(1);
+            }
+        }
+        w.battle_ctx.active_actor = layout.caster as u8;
+        w.casting.summon_actor_slot = Some(CREATURE as u8);
+        for s in 3..(3 + layout.monsters).min(7) {
+            let a = ACTOR + s * STRIDE;
+            for o in 0x1EFu32..=0x1F2 {
+                w.actors[s as usize].battle.params[(o - 0x1DF) as usize] = cpu.mem.rd8(a + o);
+            }
+        }
+        w.cast_module_for(action)?;
+        w.arm_summon_stager(layout.caster as u8, action);
+        w.casting.module_cam.kill = Some(false);
+        Some(w)
+    }
+
+    /// Ready every seat for the next pass as the walk's draw pass leaves it:
+    /// idle clips (the creature playing what its arms staged), a parked
+    /// clip's loop count off its sentinel, the cursor far along, the display
+    /// pair on the live pair.
+    pub(super) fn idle(cpu: &mut Cpu) {
+        for s in 0..8u32 {
+            let a = ACTOR + s * STRIDE;
+            if (3..7).contains(&s)
+                && cpu.mem.rd16(a + 0x14C) != 0
+                && cpu.mem.rd32(a + 4) == 0
+                && cpu.mem.rd8(a + 0x21C) < 0x0B
+            {
+                cpu.mem.wr32(a + 4, 0x1004_0100);
+            }
+            if s == CREATURE && cpu.mem.rd8(a + 0x21B) == 0xFF {
+                cpu.mem.wr8(a + 0x21B, 0);
+            }
+            let staged = cpu.mem.rd8(a + 0x1DA);
+            cpu.mem
+                .wr8(a + 0x1D9, if s == CREATURE { staged } else { 0 });
+            cpu.mem.wr16(NODES + s * 0x100 + 0x68, 0x7FFF);
+            // The draw tick's tint pass refreshes the node's colour word
+            // `+0x74` off the seat's `+0x04`, which PROT 0904's row poll reads.
+            let word = cpu.mem.rd32(a + 4);
+            cpu.mem.wr32(NODES + s * 0x100 + 0x74, word);
+            for o in [0u32, 2, 4] {
+                let v = cpu.mem.rd16(a + 0x34 + o);
+                cpu.mem.wr16(a + 0x3C + o, v);
+            }
+        }
+    }
+
+    /// A felled monster fades out: the tint pass eases its word to zero
+    /// outside the module, which the walk stands in for once the word has
+    /// stood six passes after the kill (as the summon walk does).
+    pub(super) fn fade(cpu: &mut Cpu, dead: &mut [usize; 4]) {
+        for s in 3..7u32 {
+            let a = ACTOR + s * STRIDE;
+            let down = cpu.mem.rd16(a + 0x14C) == 0 && cpu.mem.rd32(a + 4) != 0;
+            let k = (s - 3) as usize;
+            dead[k] = if down { dead[k] + 1 } else { 0 };
+            if dead[k] == 7 {
+                cpu.mem.wr32(a + 4, 0);
+            }
+        }
+    }
+
+    pub(super) fn run(cpu: &mut Cpu, va: u32) -> bool {
+        assert_eq!(cpu.call(va, &[]), Stop::Returned);
+        cpu.regs.r[V0] != 0
+    }
+}
+
+/// PROT 0904's and PROT 0906's tick bodies walked arm 0 to Done on every
+/// layout, on the full row and with a monster fallen and one stoned, beside
+/// the band's module half (`World::drive_summon_module_pass`: the director
+/// `theeder_direct` / `gizam_direct` and the tick port `theeder_tick` /
+/// `gizam_tick`) stepped on retail's phase. After each pass the port's phase
+/// must stand where retail's does, and every seated seat's colour word,
+/// render flag, status word and HP, and each monster's staged reaction, must
+/// match - but on the hit arm, whose HP and reaction are the band's fold.
+///
+/// Two places pace apart on purpose, each walked through rather than
+/// compared: PROT 0904's arm 13 retracts its trail once per
+/// `THEEDER_TRAIL_PASS_TICKS` engine ticks, the frame step the port's trail
+/// is measured at, where this walk's pass is one vsync (the port is ticked on
+/// until it leaves the arm, and the extra ticks are held to the cadence); and
+/// PROT 0906's phase 5 names no arm, its release the spawned record's
+/// stager arm 2 (`ctx[+0x279] += 1`), which the walk stores on the pass the
+/// port's director lets its clock out.
+#[test]
+fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
+    differential!(prot(904, 0x801F_69D8), prot(906, 0x801F_69F4));
+    use legaia_engine_cast::cast_module_camera as cam;
+    use legaia_engine_cast::seru_magic_ticks::THEEDER_TRAIL_PASS_TICKS;
+    use walk::*;
+    if disc().is_none() || scus_cpu().is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let mut failures = Vec::new();
+    let mut compared = 0usize;
+    let mut retail_strikes = std::collections::BTreeSet::new();
+    let mut shots_matched = 0usize;
+    let mut port_strikes = std::collections::BTreeSet::new();
+    let mut hits = [0usize; 2];
+    for (entry, va, action, side) in [
+        (904u32, 0x801F_69D8u32, 0x82u8, 1u8),
+        (906, 0x801F_69F4, 0x84, 2),
+    ] {
+        let profile = cam::module_profile(entry).expect("directed");
+        for layout in LAYOUTS {
+            for fallen in [false, true] {
+                let what = format!(
+                    "PROT {entry:04} caster {} of {} fallen {fallen}",
+                    layout.caster, layout.monsters
+                );
+                let mut r = walk::rig(entry, action, 9, layout).expect("rig");
+                // The fallen run: the seat after the victim down and faded,
+                // the last monster seat in Stone.
+                let stoned = fallen.then_some(2 + layout.monsters);
+                if fallen {
+                    let s = if layout.victim + 1 < 3 + layout.monsters {
+                        layout.victim + 1
+                    } else {
+                        3
+                    };
+                    let a = ACTOR + s * STRIDE;
+                    r.cpu.mem.wr16(a + 0x14C, 0);
+                    r.cpu.mem.wr32(a + 4, 0);
+                    r.cpu.mem.wr8(a + 0x21C, 0);
+                    r.cpu.mem.wr16(ACTOR + stoned.unwrap() * STRIDE + 0x16E, 4);
+                }
+                let mut w = walk::shadow(&mut r.cpu, layout, action).expect("shadow");
+                if let Some(s) = stoned {
+                    w.battle.status_effects.apply(
+                        s as u8,
+                        legaia_engine_battle_vm::status_effects::StatusKind::Stone,
+                    );
+                }
+                let mut path = Vec::new();
+                let mut done = false;
+                let mut side_passes = 0;
+                let mut dead = [0usize; 4];
+                let mut words_after: Vec<u32> = Vec::new();
+                let (mut retract_passes, mut retract_ticks) = (0u32, 0u32);
+                for pass in 0..20_000u32 {
+                    idle(&mut r.cpu);
+                    fade(&mut r.cpu, &mut dead);
+                    let phase = r.cpu.mem.rd8(CTX + 0x279);
+                    if phase == side {
+                        side_passes += 1;
+                        r.cpu
+                            .mem
+                            .wr8(CTX + 0x276, if side_passes <= 3 { 8 } else { 0 });
+                    }
+                    if w.casting.module_phase != phase {
+                        failures.push(format!(
+                            "{what} pass {pass}: retail arm {phase:#x} port {:#x}",
+                            w.casting.module_phase
+                        ));
+                        break;
+                    }
+                    for s in 0..8u32 {
+                        let a = ACTOR + s * STRIDE;
+                        let act = &mut w.actors[s as usize];
+                        act.battle.hp = r.cpu.mem.rd16(a + 0x14C);
+                        let word = r.cpu.mem.rd32(a + 4);
+                        if words_after.get(s as usize).is_some_and(|&was| was != word) {
+                            act.battle.render_color = word;
+                        }
+                        if s == CREATURE {
+                            act.battle.current_anim = r.cpu.mem.rd8(a + 0x1D9);
+                            let p = trio(&mut r.cpu.mem, a + 0x34);
+                            act.move_state.world_x = p[0];
+                            act.move_state.world_y = p[1];
+                            act.move_state.world_z = p[2];
+                            act.battle.facing_angle = r.cpu.mem.rd16(a + 0x46);
+                        }
+                    }
+                    for s in 3..(3 + layout.monsters).min(7) {
+                        let rv = crate::cast_view::read_actor(&mut r.cpu.mem, ACTOR + s * STRIDE);
+                        let mut v = w.drive_cast_view(s as u8);
+                        v.staged_anim = rv.staged_anim;
+                        v.restage = rv.restage;
+                        w.drive_write_cast_view(s as u8, &v);
+                    }
+                    w.battle_ctx.frame_timer = r.cpu.mem.rd16(CTX + 0x6D8) as i16 as _;
+                    w.casting.band_word_live = None;
+                    w.rng_state = r.stream.get();
+                    w.casting.module_cam.sideband_busy = r.cpu.mem.rd8(CTX + 0x276) != 0;
+                    w.clock.display_frames += 1;
+                    let words_before: Vec<u32> =
+                        (0..8).map(|s| w.actors[s].battle.render_color).collect();
+                    let port_run = w.drive_summon_module_pass(layout.caster as u8, action, true);
+                    r.struck.borrow_mut().clear();
+                    r.shots.borrow_mut().clear();
+                    let busy = run(&mut r.cpu, va);
+                    let mut after = r.cpu.mem.rd8(CTX + 0x279);
+                    if path.last() != Some(&after) {
+                        path.push(after);
+                    }
+                    let hit_pass = profile.hit_arm == Some(phase);
+                    // The shot the pass builds (`FUN_801D829C`), against the
+                    // one the band's run arms.
+                    let retail_shot = r.shots.borrow().last().copied();
+                    let port_shot = port_run.as_ref().and_then(|p| p.camera_shot).map(|s| {
+                        let mut o = [0i16; 10];
+                        o[..3].copy_from_slice(&s.angles);
+                        o[3..6].copy_from_slice(&s.tr);
+                        o[6..9].copy_from_slice(&s.focus);
+                        o[9] = s.frames as i16;
+                        o
+                    });
+                    let turn = |s: Option<[i16; 10]>| {
+                        s.map(|mut s| {
+                            for a in &mut s[..3] {
+                                *a &= 0xFFF;
+                            }
+                            s
+                        })
+                    };
+                    if turn(retail_shot) != turn(port_shot) {
+                        failures.push(format!(
+                            "{what} pass {pass} arm {phase:#x}: shot retail {retail_shot:?} port {port_shot:?}"
+                        ));
+                    } else if retail_shot.is_some() {
+                        shots_matched += 1;
+                    }
+                    if hit_pass && !r.struck.borrow().is_empty() {
+                        hits[usize::from(entry == 906)] += 1;
+                    }
+                    // PROT 0904's retract, on the port's cadence.
+                    if entry == 904 && phase == 13 {
+                        retract_passes += 1;
+                        retract_ticks += 1;
+                        while after != 13 && w.casting.module_phase == 13 && retract_ticks < 200 {
+                            w.clock.display_frames += 1;
+                            w.drive_summon_module_pass(layout.caster as u8, action, true);
+                            retract_ticks += 1;
+                        }
+                    }
+                    // PROT 0906's phase hole, released on the port's clock.
+                    if entry == 906 && after == 5 && w.casting.module_phase == 6 {
+                        r.cpu.mem.wr8(CTX + 0x279, 6);
+                        after = 6;
+                    }
+                    words_after = (0..8u32)
+                        .map(|s| r.cpu.mem.rd32(ACTOR + s * STRIDE + 4))
+                        .collect();
+                    let terminal = !busy && after == 0xFF;
+                    if !terminal && w.casting.module_phase != after {
+                        failures.push(format!(
+                            "{what} pass {pass} arm {phase:#x}: retail leaves for {after:#x}, port {:#x}",
+                            w.casting.module_phase
+                        ));
+                        break;
+                    }
+                    // The sweep's strikes: the port tests its cone on its
+                    // step-4 ticks (`theeder_pass_tested`), this walk's
+                    // retail on every pass, so which pass strikes a seat is
+                    // not compared - what a strike stores is, on both sides.
+                    let sweeping = entry == 904 && phase == 12;
+                    if sweeping {
+                        for s in 3..(3 + layout.monsters).min(7) {
+                            let a = ACTOR + s * STRIDE;
+                            let b = &w.actors[s as usize].battle;
+                            if r.struck.borrow().contains(&(s as u8)) {
+                                retail_strikes.insert((
+                                    r.cpu.mem.rd32(a + 4),
+                                    r.cpu.mem.rd8(a + 0x21C),
+                                    r.cpu.mem.rd8(a + 0x21F),
+                                ));
+                            }
+                            if b.render_color != words_before[s as usize] && b.render_flag == 0 {
+                                port_strikes.insert((
+                                    b.render_color,
+                                    b.render_flag,
+                                    b.impact_state,
+                                ));
+                            }
+                        }
+                    }
+                    if entry == 904 && phase == 12 && after != 12 {
+                        // The sweep's seats, re-seated off retail's for the
+                        // arms after it.
+                        for s in 3..(3 + layout.monsters).min(7) {
+                            let a = ACTOR + s * STRIDE;
+                            let rv = crate::cast_view::read_actor(&mut r.cpu.mem, a);
+                            let act = &mut w.actors[s as usize];
+                            act.battle.render_color = rv.present_04;
+                            act.battle.render_flag = rv.render_flag;
+                            act.battle.impact_state = rv.render_21f;
+                            let mut v = w.drive_cast_view(s as u8);
+                            v.staged_anim = rv.staged_anim;
+                            v.restage = rv.restage;
+                            w.drive_write_cast_view(s as u8, &v);
+                        }
+                    }
+                    for s in 0..(3 + layout.monsters).min(7) {
+                        if sweeping && s >= 3 {
+                            continue;
+                        }
+                        let a = ACTOR + s * STRIDE;
+                        let b = &w.actors[s as usize].battle;
+                        let shown = |c: u32, f: u8| if f == 0 && c == 0x2008_0200 { 0 } else { c };
+                        let rhp = r.cpu.mem.rd16(a + 0x14C);
+                        let got = (
+                            shown(r.cpu.mem.rd32(a + 4), r.cpu.mem.rd8(a + 0x21C)),
+                            r.cpu.mem.rd8(a + 0x21C),
+                            r.cpu.mem.rd16(a + 0x16E),
+                            if hit_pass { b.hp } else { rhp },
+                        );
+                        let port = (
+                            shown(b.render_color, b.render_flag),
+                            b.render_flag,
+                            w.raw_status_word(s as u8),
+                            b.hp,
+                        );
+                        if got != port {
+                            failures.push(format!(
+                                "{what} pass {pass} arm {phase:#x}: seat {s} tint/flag/status/hp retail {got:x?} port {port:x?}"
+                            ));
+                        }
+                        // The facing a strike turns a monster to.
+                        let (rf, pf) = (r.cpu.mem.rd16(a + 0x46) & 0xFFF, b.facing_angle & 0xFFF);
+                        if s >= 3 && rf != pf {
+                            failures.push(format!(
+                                "{what} pass {pass} arm {phase:#x}: seat {s} facing retail {rf:#x} port {pf:#x}"
+                            ));
+                        }
+                        if s >= 3 && !hit_pass {
+                            let rs = crate::cast_view::read_actor(&mut r.cpu.mem, a).staged_anim;
+                            let ps = w.drive_cast_view(s as u8).staged_anim;
+                            if rs != ps {
+                                failures.push(format!(
+                                    "{what} pass {pass} arm {phase:#x}: seat {s} staged retail {rs:#x} port {ps:#x}"
+                                ));
+                            }
+                        }
+                    }
+                    compared += 1;
+                    if !busy {
+                        done = true;
+                        break;
+                    }
+                }
+                eprintln!(
+                    "{what}: arms {path:x?} done {done}; retract {retract_passes} passes / {retract_ticks} ticks"
+                );
+                if !done {
+                    failures.push(format!(
+                        "{what}: no finish, stuck at arm {:#x}",
+                        r.cpu.mem.rd8(CTX + 0x279)
+                    ));
+                }
+                if entry == 904 {
+                    // One count drop a pass on retail, one each
+                    // `THEEDER_TRAIL_PASS_TICKS` ticks on the port.
+                    let want = retract_passes * u32::from(THEEDER_TRAIL_PASS_TICKS);
+                    if retract_passes == 0
+                        || retract_ticks.abs_diff(want) > u32::from(THEEDER_TRAIL_PASS_TICKS)
+                    {
+                        failures.push(format!(
+                            "{what}: retract {retract_passes} passes, port {retract_ticks} ticks"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    legaia_engine_core::world::summon_roll_override::set(None);
+    eprintln!("{compared} passes compared, hits {hits:?}, {shots_matched} shots matched");
+    // What PROT 0904's strike stores: the colour word, flag and selector.
+    assert!(!retail_strikes.is_empty());
+    assert_eq!(
+        retail_strikes, port_strikes,
+        "PROT 0904 strike stores, retail vs port"
+    );
+    assert!(hits.iter().all(|&n| n > 0), "{hits:?}");
+    let n = failures.len();
+    failures.truncate(60);
+    assert!(n == 0, "{n} mismatches:\n{}", failures.join("\n"));
+}

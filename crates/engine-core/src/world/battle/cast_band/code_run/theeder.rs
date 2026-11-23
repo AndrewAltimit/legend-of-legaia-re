@@ -97,6 +97,39 @@ impl World {
         }
     }
 
+    /// PROT 0906 arm 13's facing store on every seat its sweep reaches
+    /// ([`legaia_engine_cast::seru_magic_ticks::gizam_victim_facing`]): each
+    /// turns to face the creature, so its reaction's knockback runs away from
+    /// it. `seats` are retail pool seats.
+    ///
+    /// REF: FUN_801F69F4 (PROT 0906 arm 13, the struck seat's facing store)
+    pub(in crate::world::battle::cast_band) fn face_gizam_victims(
+        &mut self,
+        seats: &[u8],
+        map: legaia_engine_battle_loop::cast_seat_map::CastSeatMap,
+        summon_slot: u8,
+    ) {
+        let Some(creature) = self
+            .actors
+            .get(summon_slot as usize)
+            .map(|a| (a.move_state.world_x, a.move_state.world_z))
+        else {
+            return;
+        };
+        for &seat in seats {
+            let Some(a) = map
+                .engine(seat)
+                .and_then(|e| self.actors.get_mut(usize::from(e)))
+            else {
+                continue;
+            };
+            a.battle.facing_angle = legaia_engine_cast::seru_magic_ticks::gizam_victim_facing(
+                creature,
+                (a.move_state.world_x, a.move_state.world_z),
+            );
+        }
+    }
+
     /// The summon seat's live `(x, z)` and facing, as PROT 0904 reads slot 7.
     pub(in crate::world::battle::cast_band) fn theeder_geom(
         &self,

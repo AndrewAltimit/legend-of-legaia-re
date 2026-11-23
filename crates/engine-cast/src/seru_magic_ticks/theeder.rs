@@ -462,8 +462,9 @@ impl TheederFx {
 }
 
 /// The `+0x04` mesh-tint word PROT 0904's ring sweep stamps on every seat it
-/// hits.
-pub const THEEDER_HIT_PRESENT_WORD: u32 = 0x03FF_0000;
+/// hits (`lui v0,0x3ff0; sw v0,4(v1)` at `0x801F7DA8..0x801F7DAC`): the blue
+/// channel full, the strike's blue flash.
+pub const THEEDER_HIT_PRESENT_WORD: u32 = 0x3FF0_0000;
 
 /// The neutral colour word arm 11's exit stores on every live monster seat
 /// (`lui a1,0x2008; ori a1,a1,0x200` at `0x801F7934` / `0x801F7940`).

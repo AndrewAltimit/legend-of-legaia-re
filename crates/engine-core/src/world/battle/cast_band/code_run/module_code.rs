@@ -1814,7 +1814,29 @@ impl World {
                             let (step, _) = ticks_a::vera_tick(&mut ctx, &mut seats, who, restore);
                             (step, Vec::new())
                         }
-                        906 => ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None),
+                        906 => {
+                            // Arm 13's sweep turns every live, targetable
+                            // seat it reaches to face the creature
+                            // (`0x801F7460..0x801F7488`), the seats the
+                            // body's own test passes: alive and not Stone,
+                            // read before the arm.
+                            let swept: Vec<u8> = if ctx.phase == ticks_a::GIZAM_SWEEP_ARM {
+                                (ticks::FIRST_MONSTER_SEAT..ticks_a::MONSTER_ROW_END)
+                                    .filter(|&r| {
+                                        seats.get(usize::from(r)).is_some_and(|v| {
+                                            v.hp != 0 && v.flags & ticks::FLAG_NON_TARGETABLE == 0
+                                        })
+                                    })
+                                    .collect()
+                            } else {
+                                Vec::new()
+                            };
+                            let out = ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None);
+                            if !swept.is_empty() && ctx.phase != ticks_a::GIZAM_SWEEP_ARM {
+                                self.face_gizam_victims(&swept, map, seat_slot);
+                            }
+                            out
+                        }
                         907 => (
                             ticks_a::nighto_tick(
                                 &mut ctx,
