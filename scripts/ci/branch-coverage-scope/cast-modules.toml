@@ -832,3 +832,59 @@ image = "24d82884a97bcd51"
 range = "0x801F6D54..0x801F6D54"
 verdict = "unported"
 reason = "PROT 0931: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9b032d4b97b81f6a"
+range = "0x801F6AB0..0x801F6AB0"
+verdict = "unreachable"
+reason = "PROT 0904 (Theeder): the chain's `beqz` on the phase byte (`lbu 0x279`) below 2 once `beq v1,t3` (`t3 = 1`, 0x801F6AA0) has taken phase 1; an unsigned byte under 2 that is not 1 is 0, so the fall to the epilogue never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9b032d4b97b81f6a"
+range = "0x801F6B24..0x801F6B24"
+verdict = "unreachable"
+reason = "PROT 0904 (Theeder): the chain's last test, `beq` on `0xFF`, falls to the epilogue only for a phase in `15..=0xFE`. No store makes one: the image steps the phase by one (the shared tail 0x801F7FE8, arm 12's 0x801F7F14), by two at most in arm 1 (0x801F6C7C), and arm 14 stores `0xFF` (0x801F80DC); its stager 0x801F8EAC writes no phase."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9b032d4b97b81f6a"
+range = "0x801F6CA0..0x801F6CA0"
+verdict = "unported"
+reason = "PROT 0904: arm 3's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bnez v0` to the busy return). The engine's creature is resident at once, so the director reads it as ready (`theeder_direct`); only PROT 0910 and 0913 model the drive (`cast_module_camera::stream_poll_arm`)."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9b032d4b97b81f6a"
+range = "0x801F8044..0x801F8044"
+verdict = "unreachable"
+reason = "PROT 0904: arm 14's row poll skips its loop when `3 < 3 + ctx[+0x01]` fails, a monster count of zero; `ctx[+1]` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "ecd3bd0c3f87e124"
+range = "0x801F6AD4..0x801F6AD4"
+verdict = "unreachable"
+reason = "PROT 0906 (Gizam): the chain's `beqz` on the phase byte (`lbu 0x279`) below 2 once `beq v1,t0` (`t0 = 1`, 0x801F6AC4) has taken phase 1; an unsigned byte under 2 that is not 1 is 0, so the fall to the epilogue never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "ecd3bd0c3f87e124"
+range = "0x801F6B48..0x801F6B48"
+verdict = "unreachable"
+reason = "PROT 0906 (Gizam): the chain's last test, `beq` on `0xFF`, falls to the epilogue only for a phase in `15..=0xFE`. No store makes one: the tick steps the phase by one (0x801F70B4, 0x801F71A4, 0x801F7280, 0x801F75E8), by two at most in arm 2 (0x801F6CDC), sets 4 in arm 3 (0x801F6CF4) and `0xFF` in arm 14 (0x801F76DC); the stager's only store is arm 2's `+1` on phase 5 (0x801F7858)."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "ecd3bd0c3f87e124"
+range = "0x801F6D00..0x801F6D00"
+verdict = "unported"
+reason = "PROT 0906: arm 3's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bnez v0` to the busy return). The engine's creature is resident at once, so the director reads it as ready (`gizam_direct`); only PROT 0910 and 0913 model the drive (`cast_module_camera::stream_poll_arm`)."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "ecd3bd0c3f87e124"
+range = "0x801F7658..0x801F7658"
+verdict = "unreachable"
+reason = "PROT 0906: arm 14's row poll skips its loop when `3 < 3 + ctx[+0x01]` fails, a monster count of zero; `ctx[+1]` is the formation's seat count, at least one in any battle."

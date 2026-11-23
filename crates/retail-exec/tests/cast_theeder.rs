@@ -398,6 +398,10 @@ mod walk {
     const BEARING: u32 = 0x8001_9B28;
     const AIM: u32 = 0x801D_CEAC;
     const WRAPPER: u32 = 0x801D_D0AC;
+    /// The camera framing `FUN_801F0348`, run live: it stores `ctx[+0x6D0]`
+    /// off the victim's record size class, the depth PROT 0906's
+    /// single-seat exit shot reads.
+    const FRAMING: u32 = 0x801F_0348;
     const SCALAR: u32 = 0x1F80_037D;
     const STEP: u32 = 0x1F80_0393;
     const FORMATION: u32 = 0x8007_BD0C;
@@ -416,31 +420,56 @@ mod walk {
         pub monsters: u32,
         pub victim: u32,
         pub retail_seats: bool,
+        /// The sides swapped (z negated, the party facing `0`), so the
+        /// creature faces the other half-turn.
+        pub mirror: bool,
     }
 
-    pub(super) const LAYOUTS: [Layout; 3] = [
+    pub(super) const LAYOUTS: [Layout; 5] = [
         Layout {
             caster: 0,
             monsters: 2,
             victim: 3,
             retail_seats: false,
+            mirror: false,
         },
         Layout {
             caster: 2,
             monsters: 4,
             victim: 6,
             retail_seats: true,
+            mirror: false,
         },
         Layout {
             caster: 1,
             monsters: 3,
             victim: 3,
             retail_seats: true,
+            mirror: false,
+        },
+        Layout {
+            caster: 0,
+            monsters: 4,
+            victim: 6,
+            retail_seats: true,
+            mirror: true,
+        },
+        Layout {
+            caster: 2,
+            monsters: 3,
+            victim: 3,
+            retail_seats: true,
+            mirror: true,
         },
     ];
 
     impl Layout {
         fn ground(&self, s: u32) -> (i16, i16) {
+            let (x, z) = self.ground_unmirrored(s);
+            (x, if self.mirror { z.wrapping_neg() } else { z })
+        }
+
+        fn ground_unmirrored(&self, s: u32) -> (i16, i16) {
             use legaia_engine_battle::battle_seats::{monster_seat, party_seat};
             if !self.retail_seats {
                 return match s {
@@ -510,7 +539,7 @@ mod walk {
         cpu.mem.wr32(POOL_PTR, POOL);
         cpu.mem.wr32(OT_PTR, OT);
         for target in jal_targets(&module) {
-            if ![AIM, BUILDER, BEARING, RAND, WRAPPER].contains(&target) {
+            if ![AIM, BUILDER, BEARING, RAND, WRAPPER, FRAMING].contains(&target) {
                 cpu.stub(target, 0);
             }
         }
@@ -588,7 +617,10 @@ mod walk {
             for (o, v) in [(0x34u32, x), (0x38, z), (0x3C, x), (0x40, z)] {
                 cpu.mem.wr16(a + o, v as u16);
             }
-            cpu.mem.wr16(a + 0x46, if s < 3 { 0x800 } else { 0 });
+            let party_facing = if layout.mirror { 0 } else { 0x800 };
+            let row_facing = if layout.mirror { 0x800 } else { 0 };
+            cpu.mem
+                .wr16(a + 0x46, if s < 3 { party_facing } else { row_facing });
             cpu.mem.wr16(a + 0x14C, if live { 300 } else { 0 });
             let up = live && (3..7).contains(&s);
             cpu.mem.wr32(a + 4, if up { 0x1004_0100 } else { 0 });
@@ -681,7 +713,11 @@ mod walk {
     /// idle clips (the creature playing what its arms staged), a parked
     /// clip's loop count off its sentinel, the cursor far along, the display
     /// pair on the live pair.
-    pub(super) fn idle(cpu: &mut Cpu) {
+    ///
+    /// `playing[s]` is the clip a non-creature seat plays this pass (`0`
+    /// idle), and `hold_loops` keeps the creature's loop count on its `0xFF`
+    /// sentinel, a clip that has not reached its park yet.
+    pub(super) fn idle(cpu: &mut Cpu, playing: &[u8; 8], hold_loops: bool) {
         for s in 0..8u32 {
             let a = ACTOR + s * STRIDE;
             if (3..7).contains(&s)
@@ -691,12 +727,20 @@ mod walk {
             {
                 cpu.mem.wr32(a + 4, 0x1004_0100);
             }
-            if s == CREATURE && cpu.mem.rd8(a + 0x21B) == 0xFF {
+            if s == CREATURE && hold_loops {
+                cpu.mem.wr8(a + 0x21B, 0xFF);
+            } else if s == CREATURE && cpu.mem.rd8(a + 0x21B) == 0xFF {
                 cpu.mem.wr8(a + 0x21B, 0);
             }
             let staged = cpu.mem.rd8(a + 0x1DA);
-            cpu.mem
-                .wr8(a + 0x1D9, if s == CREATURE { staged } else { 0 });
+            cpu.mem.wr8(
+                a + 0x1D9,
+                if s == CREATURE {
+                    staged
+                } else {
+                    playing[s as usize]
+                },
+            );
             cpu.mem.wr16(NODES + s * 0x100 + 0x68, 0x7FFF);
             // The draw tick's tint pass refreshes the node's colour word
             // `+0x74` off the seat's `+0x04`, which PROT 0904's row poll reads.
@@ -712,13 +756,13 @@ mod walk {
     /// A felled monster fades out: the tint pass eases its word to zero
     /// outside the module, which the walk stands in for once the word has
     /// stood six passes after the kill (as the summon walk does).
-    pub(super) fn fade(cpu: &mut Cpu, dead: &mut [usize; 4]) {
+    pub(super) fn fade(cpu: &mut Cpu, dead: &mut [usize; 4], after: usize) {
         for s in 3..7u32 {
             let a = ACTOR + s * STRIDE;
             let down = cpu.mem.rd16(a + 0x14C) == 0 && cpu.mem.rd32(a + 4) != 0;
             let k = (s - 3) as usize;
             dead[k] = if down { dead[k] + 1 } else { 0 };
-            if dead[k] == 7 {
+            if dead[k] == after {
                 cpu.mem.wr32(a + 4, 0);
             }
         }
@@ -731,13 +775,20 @@ mod walk {
 }
 
 /// PROT 0904's and PROT 0906's tick bodies walked arm 0 to Done on every
-/// layout, on the full row and with a monster fallen and one stoned, beside
-/// the band's module half (`World::drive_summon_module_pass`: the director
-/// `theeder_direct` / `gizam_direct` and the tick port `theeder_tick` /
-/// `gizam_tick`) stepped on retail's phase. After each pass the port's phase
-/// must stand where retail's does, and every seated seat's colour word,
-/// render flag, status word and HP, and each monster's staged reaction, must
-/// match - but on the hit arm, whose HP and reaction are the band's fold.
+/// layout (two of them with the sides swapped, so the creature faces the
+/// other half-turn), beside the band's module half
+/// (`World::drive_summon_module_pass`: the director `theeder_direct` /
+/// `gizam_direct` and the tick port `theeder_tick` / `gizam_tick`) stepped on
+/// retail's phase. Each layout runs twice: on the monster row as a group,
+/// idle and fading a kill in a few passes; and on one seat with a monster
+/// fallen and one stoned, the band's timer running into the side-band arm,
+/// the creature's attack clip off its park for arm 7's first passes, each
+/// struck monster playing its reaction for 250 passes and a kill fading
+/// slowly, so every wait on them holds. After each pass the port's phase
+/// must stand where retail's does, the shot it builds must be retail's, and
+/// every seated seat's colour word, render flag, status word and HP, and
+/// each monster's staged reaction and facing, must match - but on the hit
+/// arm, whose HP and reaction are the band's fold.
 ///
 /// Two places pace apart on purpose, each walked through rather than
 /// compared: PROT 0904's arm 13 retracts its trail once per
@@ -761,6 +812,7 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
     let mut compared = 0usize;
     let mut retail_strikes = std::collections::BTreeSet::new();
     let mut shots_matched = 0usize;
+    let mut cadence_misses = 0usize;
     let mut port_strikes = std::collections::BTreeSet::new();
     let mut hits = [0usize; 2];
     for (entry, va, action, side) in [
@@ -769,12 +821,16 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
     ] {
         let profile = cam::module_profile(entry).expect("directed");
         for layout in LAYOUTS {
+            // The fallen run also casts on one seat, with the band's timer
+            // still running into the side-band arm.
             for fallen in [false, true] {
+                let code = if fallen { layout.victim as u8 } else { 9 };
                 let what = format!(
-                    "PROT {entry:04} caster {} of {} fallen {fallen}",
+                    "PROT {entry:04} caster {} of {} fallen {fallen} target {code}",
                     layout.caster, layout.monsters
                 );
-                let mut r = walk::rig(entry, action, 9, layout).expect("rig");
+                let mut r = walk::rig(entry, action, code, layout).expect("rig");
+                let mut band_timer: u16 = if fallen { 12 } else { 0 };
                 // The fallen run: the seat after the victim down and faded,
                 // the last monster seat in Stone.
                 let stoned = fallen.then_some(2 + layout.monsters);
@@ -801,12 +857,37 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
                 let mut done = false;
                 let mut side_passes = 0;
                 let mut dead = [0usize; 4];
-                let mut words_after: Vec<u32> = Vec::new();
+                let mut react = [(0u16, 0u8); 8];
+                let mut swept = (
+                    std::collections::BTreeSet::new(),
+                    std::collections::BTreeSet::new(),
+                );
+                let mut loop_passes = 0u32;
                 let (mut retract_passes, mut retract_ticks) = (0u32, 0u32);
                 for pass in 0..20_000u32 {
-                    idle(&mut r.cpu);
-                    fade(&mut r.cpu, &mut dead);
                     let phase = r.cpu.mem.rd8(CTX + 0x279);
+                    // The fallen run's clip states: a struck monster's
+                    // reaction, the creature's unparked attack clip.
+                    let playing: [u8; 8] =
+                        std::array::from_fn(|s| if react[s].0 > 0 { react[s].1 } else { 0 });
+                    for x in &mut react {
+                        x.0 = x.0.saturating_sub(1);
+                    }
+                    if fallen && phase == 7 {
+                        loop_passes += 1;
+                    }
+                    fade(&mut r.cpu, &mut dead, if fallen { 150 } else { 7 });
+                    idle(
+                        &mut r.cpu,
+                        &playing,
+                        fallen && phase == 7 && loop_passes <= 3,
+                    );
+                    // The band's frame timer `ctx[+0x6D8]`, counting down
+                    // under the side-band arm and the poll after it.
+                    if phase <= side + 1 {
+                        r.cpu.mem.wr16(CTX + 0x6D8, band_timer);
+                        band_timer = band_timer.saturating_sub(1);
+                    }
                     if phase == side {
                         side_passes += 1;
                         r.cpu
@@ -824,12 +905,16 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
                         let a = ACTOR + s * STRIDE;
                         let act = &mut w.actors[s as usize];
                         act.battle.hp = r.cpu.mem.rd16(a + 0x14C);
-                        let word = r.cpu.mem.rd32(a + 4);
-                        if words_after.get(s as usize).is_some_and(|&was| was != word) {
-                            act.battle.render_color = word;
+                        // The colour word as the walk's tint pass leaves
+                        // it: a pass compares what it writes over it.
+                        act.battle.render_color = r.cpu.mem.rd32(a + 4);
+                        if (3..7).contains(&s) {
+                            act.battle.current_anim = r.cpu.mem.rd8(a + 0x1D9);
+                            act.battle_reaction_entry = None;
                         }
                         if s == CREATURE {
                             act.battle.current_anim = r.cpu.mem.rd8(a + 0x1D9);
+                            act.battle.hit_count_bound = r.cpu.mem.rd8(a + 0x21B);
                             let p = trio(&mut r.cpu.mem, a + 0x34);
                             act.move_state.world_x = p[0];
                             act.move_state.world_y = p[1];
@@ -854,7 +939,20 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
                     let port_run = w.drive_summon_module_pass(layout.caster as u8, action, true);
                     r.struck.borrow_mut().clear();
                     r.shots.borrow_mut().clear();
+                    let staged_before: Vec<(u8, u8)> = (0..8u32)
+                        .map(|s| {
+                            let a = ACTOR + s * STRIDE;
+                            (r.cpu.mem.rd8(a + 0x1DA), r.cpu.mem.rd8(a + 0x1DC))
+                        })
+                        .collect();
                     let busy = run(&mut r.cpu, va);
+                    for s in 3..7u32 {
+                        let a = ACTOR + s * STRIDE;
+                        let now = (r.cpu.mem.rd8(a + 0x1DA), r.cpu.mem.rd8(a + 0x1DC));
+                        if fallen && now != staged_before[s as usize] && now.0 != 0 {
+                            react[s as usize] = (250, now.0);
+                        }
+                    }
                     let mut after = r.cpu.mem.rd8(CTX + 0x279);
                     if path.last() != Some(&after) {
                         path.push(after);
@@ -904,9 +1002,6 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
                         r.cpu.mem.wr8(CTX + 0x279, 6);
                         after = 6;
                     }
-                    words_after = (0..8u32)
-                        .map(|s| r.cpu.mem.rd32(ACTOR + s * STRIDE + 4))
-                        .collect();
                     let terminal = !busy && after == 0xFF;
                     if !terminal && w.casting.module_phase != after {
                         failures.push(format!(
@@ -925,6 +1020,7 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
                             let a = ACTOR + s * STRIDE;
                             let b = &w.actors[s as usize].battle;
                             if r.struck.borrow().contains(&(s as u8)) {
+                                swept.0.insert(s as u8);
                                 retail_strikes.insert((
                                     r.cpu.mem.rd32(a + 4),
                                     r.cpu.mem.rd8(a + 0x21C),
@@ -932,6 +1028,7 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
                                 ));
                             }
                             if b.render_color != words_before[s as usize] && b.render_flag == 0 {
+                                swept.1.insert(s as u8);
                                 port_strikes.insert((
                                     b.render_color,
                                     b.render_flag,
@@ -941,6 +1038,17 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
                         }
                     }
                     if entry == 904 && phase == 12 && after != 12 {
+                        // The port's tested words (`0x40 + 0x100 * k`) are
+                        // among this walk's (`0x40 * k`) and the cone is the
+                        // same, so every seat the port struck retail struck;
+                        // retail may strike more.
+                        if !swept.1.is_subset(&swept.0) {
+                            failures.push(format!(
+                                "{what}: the sweep struck retail {:?} port {:?}",
+                                swept.0, swept.1
+                            ));
+                        }
+                        cadence_misses += swept.0.difference(&swept.1).count();
                         // The sweep's seats, re-seated off retail's for the
                         // arms after it.
                         for s in 3..(3 + layout.monsters).min(7) {
@@ -950,6 +1058,7 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
                             act.battle.render_color = rv.present_04;
                             act.battle.render_flag = rv.render_flag;
                             act.battle.impact_state = rv.render_21f;
+                            act.battle.facing_angle = r.cpu.mem.rd16(a + 0x46);
                             let mut v = w.drive_cast_view(s as u8);
                             v.staged_anim = rv.staged_anim;
                             v.restage = rv.restage;
@@ -1029,7 +1138,9 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
         }
     }
     legaia_engine_core::world::summon_roll_override::set(None);
-    eprintln!("{compared} passes compared, hits {hits:?}, {shots_matched} shots matched");
+    eprintln!(
+        "{compared} passes compared, hits {hits:?}, {shots_matched} shots matched, {cadence_misses} PROT 0904 strikes off the port's tested words"
+    );
     // What PROT 0904's strike stores: the colour word, flag and selector.
     assert!(!retail_strikes.is_empty());
     assert_eq!(
