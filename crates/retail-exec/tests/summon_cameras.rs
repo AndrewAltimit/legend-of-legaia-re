@@ -381,6 +381,17 @@ impl Layout {
     }
 }
 
+thread_local! {
+    /// The battle frame step the walk runs at, in vsyncs: retail's
+    /// `0x1F800393`, the director's `frame_step` and the shadow's frame
+    /// clock. A console's CD timing runs battle at steps above `1`.
+    static WALK_STEP: std::cell::Cell<u8> = const { std::cell::Cell::new(1) };
+}
+
+fn walk_step() -> u8 {
+    WALK_STEP.with(|s| s.get())
+}
+
 fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8, layout: Layout) {
     cpu.mem.load(BASE, module);
     for b in 0..0x1100 {
@@ -442,7 +453,7 @@ fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8, layout: Layout) {
     // poll `FUN_8004E2F0` answers out of reach on anything else
     // (`0x8004E2F4..0x8004E310`).
     cpu.mem.wr8(BATTLE_OUTCOME, 0xFF);
-    cpu.mem.wr8(STEP, 1);
+    cpu.mem.wr8(STEP, walk_step());
     for i in 0..5 {
         cpu.mem
             .wr8(FORMATION + i, if i < layout.monsters { 0x10 } else { 0 });
@@ -503,12 +514,34 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     // seat fallen and faded (`+0x14C = 0`, `+0x04 = 0`), which the row walks
     // (settles, sweeps, shows) skip or wait past.
     // Each runs on every layout.
-    let runs = all.iter().flat_map(|&b| {
-        LAYOUTS
-            .iter()
-            .flat_map(move |&l| [(b, false, l), (b, true, l)])
+    // And at frame steps 1, 2 and 3 (`WALK_STEP`).
+    let runs = WALK_STEPS.iter().flat_map(|&step| {
+        all.iter().flat_map(move |&b| {
+            LAYOUTS
+                .iter()
+                .flat_map(move |&l| [(b, false, l, step), (b, true, l, step)])
+        })
     });
-    for ((entry, va, code), fallen, layout) in runs {
+    // Each mismatch carries the step its run had.
+    let mut marks = [0usize; 3];
+    let tag =
+        |f: &mut Vec<String>, s: &mut Vec<String>, sp: &mut Vec<String>, m: &mut [usize; 3]| {
+            let step = walk_step();
+            for (v, k) in [(f, 0), (s, 1), (sp, 2)] {
+                for x in &mut v[m[k]..] {
+                    x.push_str(&format!(" [step {step}]"));
+                }
+                m[k] = v.len();
+            }
+        };
+    for ((entry, va, code), fallen, layout, step) in runs {
+        tag(
+            &mut failures,
+            &mut shadow_failures,
+            &mut spawn_failures,
+            &mut marks,
+        );
+        WALK_STEP.with(|s| s.set(step));
         let code = layout.code(code);
         let module = disc.read_entry(entry as usize).expect("module");
         let action = action_of(entry);
@@ -744,7 +777,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             let mut st = ModuleCamState {
                 lead_roster: 1,
                 opens_pass: true,
-                frame_step: 1,
+                frame_step: walk_step(),
                 victim_settled: true,
                 caster_in_reach: true,
                 party_settled: true,
@@ -1067,7 +1100,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 let mut fold_pass = false;
                 if shadow.is_some() && shadow_phase != Some(phase) {
                     shadow = None;
-                    shadow_left += 1;
+                    shadow_left += usize::from(!step_gap(entry, Some(phase), walk_step()));
                     shadow_leaves.push(format!(
                         "PROT {entry:04} target {code} fallen {fallen} caster {}: retail arm {phase:#x} band {shadow_phase:x?} at pass {pass}",
                         layout.caster
@@ -1162,7 +1195,8 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     // flight for the busy passes (`World::module_drive_holds`).
                     w.casting.drive_arms = drive.map(|d| (d, true));
                     w.casting.drive.busy = if polls_busy { 0x100 } else { 0 };
-                    w.clock.display_frames += 1;
+                    // One battle frame of `walk_step` vsyncs a pass.
+                    w.clock.display_frames += u64::from(walk_step());
                     // PROT 0920's hit turns its row from the camera's focus
                     // globals (`0x801F793C..0x801F7968`): the shadow's camera
                     // stands on the focus this pass opens on.
@@ -1174,7 +1208,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             focus: t0.focus.map(|v| -v),
                         }
                     });
-                    let run = w.drive_summon_module_pass(layout.caster as u8, action, true);
+                    let run = w
+                        .drive_summon_module_frame(layout.caster as u8, action, true)
+                        .pop()
+                        .flatten();
                     w.battle.stage_camera = None;
                     // The band's fold, on the tick the pass leaves the hit
                     // arm (`summon_stager_tick`'s strike): retail's module
@@ -1236,28 +1273,64 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // drain and its drift and holds.
                 let polling = (st.sideband_busy && cam::sideband_wait_arm(entry) == Some(phase))
                     || polls_busy;
-                let arm = if polling {
-                    let mut ahead = st;
-                    let d = (profile.direct)(&mut ahead, phase, seats);
-                    if d.hold {
-                        st = ahead;
-                        d
-                    } else {
-                        let hold = cam::polled_hold(entry, phase, d, &st);
-                        st.countdown =
-                            cam::polled_countdown(profile.direct, &st, &ahead, phase, seats);
-                        hold
+                // A pass is `walk_step` one-vsync director ticks, as the host
+                // runs it (`World::module_pass`): the first opens the frame,
+                // each carries the ticks still owed after it, and the tick an
+                // arm hands over on ends the pass.
+                let step = walk_step();
+                let mut ticks: Vec<cam::ArmDirection> = Vec::new();
+                let mut tick_before: Vec<i32> = Vec::new();
+                // The camera as the ticks so far leave it, which the host
+                // feeds each tick (`feed_seru_cam`).
+                let mut port = t0;
+                for i in 0..step {
+                    if i > 0 {
+                        st.live_yaw = Some(port.angles[1] as u16);
+                        st.live_pitch_tr = Some((port.angles[0], port.tr));
+                        // A seek the last tick wrote is on the node now.
+                        if let Some(seek) = st.creature_seek {
+                            st.creature_frame = Some(seek);
+                        }
                     }
-                } else {
-                    (profile.direct)(&mut st, phase, seats)
-                };
+                    st.opens_pass = i == 0;
+                    st.latch_pass_word();
+                    tick_before.push(st.countdown.0);
+                    st.countdown.1 = step - 1 - i;
+                    let tick = if polling {
+                        let mut ahead = st;
+                        let d = (profile.direct)(&mut ahead, phase, seats);
+                        if d.hold {
+                            st = ahead;
+                            d
+                        } else {
+                            let hold = cam::polled_hold(entry, phase, d, &st);
+                            st.countdown =
+                                cam::polled_countdown(profile.direct, &st, &ahead, phase, seats);
+                            hold
+                        }
+                    } else {
+                        (profile.direct)(&mut st, phase, seats)
+                    };
+                    ticks.push(tick);
+                    port.apply(&tick);
+                    if !tick.hold {
+                        break;
+                    }
+                }
+                st.opens_pass = true;
+                st.countdown.1 = 0;
+                let owed = step as usize - ticks.len();
+                let arm = *ticks.last().expect("a tick");
                 // The records the director reports this pass, each on the
                 // point its anchor resolves to, against one of retail's
                 // spawn calls with the same record, point and angles.
                 // PROT 0934's spray points are the host's draws.
                 {
                     let mut left = spawn_log.borrow().clone();
-                    for sp in arm.spawns {
+                    let pass_spawns = ticks
+                        .iter()
+                        .flat_map(|t| t.spawns.iter().map(move |sp| (sp, t.arm_point, t.shot)));
+                    for (sp, arm_point, arm_shot) in pass_spawns {
                         let record = match sp.record {
                             cam::SpawnRecord::Module(r) => r,
                             cam::SpawnRecord::BattleProto(p) => cpu.mem.rd32(p),
@@ -1267,12 +1340,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             continue;
                         }
                         let point = match sp.anchor {
-                            cam::SpawnAnchor::ArmPoint => arm.arm_point,
+                            cam::SpawnAnchor::ArmPoint => arm_point,
                             a => cam::spawn_anchor_point_with(
                                 a,
                                 st.creature.or(st.creature_live).or(Some(creature_live)),
                                 Some(anchor_victim),
-                                arm.shot,
+                                arm_shot,
                                 anchor_seats,
                             ),
                         };
@@ -1444,8 +1517,22 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 shadow_after = (0..8u32)
                     .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
                     .collect();
-                let mut port = t0;
-                port.apply(&arm);
+                // The ticks of the pass the handing-over tick leaves owed:
+                // its drift and nudge, as retail's one `delta`-scaled pass
+                // makes them (`World::drift_rest_of_pass`). A drift ahead of
+                // the tick's shot owes none: the shot is built after the
+                // pass's whole drift (`World::summon_stager_tick`), and one
+                // after it is the next pass's.
+                let owed_drift = (arm.shot.is_none() && !arm.drift_after_shot)
+                    .then_some(arm.drift)
+                    .flatten();
+                for _ in 0..owed {
+                    port.apply(&cam::ArmDirection {
+                        drift: owed_drift,
+                        nudge: arm.nudge,
+                        ..cam::ArmDirection::HOLD
+                    });
+                }
                 let busy = cpu.regs.r[V0] != 0;
                 let after = cpu.mem.rd8(CTX + 0x279);
                 let retail = Target::read(&mut cpu.mem);
@@ -1469,7 +1556,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     .filter(|_| matches!(phase, 0 | 11 | 12 | 18 | 19 | 24))
                 {
                     use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
-                    w.puera_writes(phase, !held, countdown_before, layout.monsters as u8);
+                    // Once a tick, as the host's pass runs them.
+                    let n = tick_before.len();
+                    for (i, &before) in tick_before.iter().enumerate() {
+                        let passed = i + 1 == n && !held;
+                        w.puera_writes(phase, passed, before, layout.monsters as u8);
+                    }
                     for &s in &puera_seats {
                         let a = ACTOR + s * STRIDE;
                         let retail_seat = (
@@ -1700,6 +1792,22 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             }
         }
     }
+    tag(
+        &mut failures,
+        &mut shadow_failures,
+        &mut spawn_failures,
+        &mut marks,
+    );
+    WALK_STEP.with(|s| s.set(1));
+    // The step-above-1 rows still open ([`STEP_GAPS`]).
+    let gapped = failures.len() + shadow_failures.len() + spawn_failures.len();
+    failures.retain(|m| !step_gapped(m));
+    shadow_failures.retain(|m| !step_gapped(m));
+    spawn_failures.retain(|m| !step_gapped(m));
+    eprintln!(
+        "summon walk: {} step-gap lines left out",
+        gapped - failures.len() - shadow_failures.len() - spawn_failures.len()
+    );
     assert!(sideband_held > 100, "{sideband_held} side-band passes held");
     eprintln!(
         "summon shadow: {shadow_passes} passes compared ({fold_passes} folds), {shadow_left} casts left retail's phase walk, {} mismatches",
@@ -1714,6 +1822,20 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     legaia_engine_core::world::summon_roll_override::set(None);
     if let Ok(path) = std::env::var("W54_SHADOW_DUMP") {
         let _ = std::fs::write(&path, shadow_failures.join("\n"));
+    }
+    if let Ok(path) = std::env::var("W54_CAMERA_DUMP") {
+        let all: Vec<&String> = failures
+            .iter()
+            .chain(&spawn_failures)
+            .chain(&shadow_leaves)
+            .collect();
+        let _ = std::fs::write(
+            &path,
+            all.iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
     }
     assert!(
         shadow_passes >= 200_000,
@@ -1829,6 +1951,62 @@ fn creature_gap(entry: u32, arm: u8, part: CreatureGap) -> bool {
 
 /// A world in battle seated as `cpu`'s actor records are, the creature on
 /// seat 7, with `action`'s summon armed (`World::arm_summon_stager`).
+/// The frame steps every walk runs at.
+const WALK_STEPS: [u8; 3] = [1, 2, 3];
+
+/// The arms whose camera, pace or seats still differ from retail's at a
+/// frame step above 1, as `(entry, first arm, last arm)`: candidate engine
+/// defects a console's battle CD timing shows, not yet settled. Both walks
+/// (this one and `cast_theeder`'s tick bodies) leave them out at steps 2
+/// and 3 only; at step 1 every arm is compared.
+pub(crate) const STEP_GAPS: [(u32, u8, u8); 19] = [
+    (908, 7, 7),
+    (914, 0xD, 0xD),
+    (915, 7, 9),
+    (916, 6, 6),
+    (916, 0x14, 0x14),
+    (917, 6, 6),
+    (917, 0xD, 0xF),
+    (922, 4, 4),
+    (922, 8, 8),
+    (922, 0xC, 0xF),
+    (922, 0x14, 0x14),
+    (923, 4, 4),
+    (923, 0xF, 0xF),
+    (927, 0x13, 0x13),
+    (928, 0xC8, 0xC8),
+    (929, 0x13, 0x13),
+    (931, 0x1E, 0x1E),
+    (932, 6, 6),
+    (933, 0x13, 0x14),
+];
+
+/// Whether `(entry, arm)` at `step` is a [`STEP_GAPS`] row (`arm` `None`:
+/// any of the entry's rows, for a message naming no arm).
+pub(crate) fn step_gap(entry: u32, arm: Option<u8>, step: u8) -> bool {
+    step > 1
+        && STEP_GAPS
+            .iter()
+            .any(|&(e, lo, hi)| e == entry && arm.is_none_or(|a| (lo..=hi).contains(&a)))
+}
+
+/// [`step_gap`] read off a walk's mismatch line: `PROT NNNN`, `arm 0x..`
+/// and `step N` (or `[step N]`) in it.
+pub(crate) fn step_gapped(msg: &str) -> bool {
+    let num = |key: &str, radix: u32| -> Option<u32> {
+        let i = msg.find(key)? + key.len();
+        let digits: String = msg[i..].chars().take_while(|c| c.is_digit(radix)).collect();
+        u32::from_str_radix(&digits, radix).ok()
+    };
+    let (Some(entry), Some(step)) = (
+        num("PROT ", 10),
+        num("[step ", 10).or_else(|| num(" step ", 10)),
+    ) else {
+        return false;
+    };
+    step_gap(entry, num("arm 0x", 16).map(|a| a as u8), step as u8)
+}
+
 fn summon_shadow(
     cpu: &mut Cpu,
     layout: Layout,
@@ -1874,9 +2052,9 @@ fn summon_shadow(
     // walk's synced each pass) reaches the module half's clip gates
     // (`World::feed_module_creature`) as the host's seated creature's does.
     w.actors[CREATURE as usize].battle_action_clips = Some(std::sync::Arc::new(vec![None; 8]));
-    // The walk's battle frame is one vsync (step `1`), so every shadow tick
-    // opens a pass, as each of retail's calls does.
-    w.battle.frame_clock.step = 1;
+    // The walk's battle frame (`walk_step`): every shadow tick opens a
+    // pass, as each of retail's calls does.
+    w.battle.frame_clock.step = walk_step();
     w.battle.frame_clock.span_extra = 0;
     // The reaction run `+0x1EF..+0x1F2`, as the records hold it: a seat
     // with no clips reads it off its action bytes `+0x1DF..`.

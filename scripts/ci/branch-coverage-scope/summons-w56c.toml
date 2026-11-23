@@ -52,9 +52,9 @@ reason = "PROT 0917: `sltiu 8` on the caster's target code `+0x1DD`; Barra's spe
 [[arm]]
 entry = "0x801F69FC"
 image = "a949b76d721e2b2f"
-range = "0x801F8B80..0x801F8B98"
-verdict = "cannot-drive"
-reason = "PROT 0929's tail backdrop follow on a negative pitch: the follow runs from arm 9's pass (0x801F747C), and of the arms after it only arm 18 lowers the pitch, `p / 8` a pass from arm 16's cut at 0x80 for the `ceil(1024 / p)` passes its word `scalar << 7` lasts. At a frame step dividing 128 (1, 2, 4) that is exactly 0x80; at step 3 it is 0x81, and the pitch reads 0xFFF. The walks run step 1; driving it needs a step-3 pass on both sides."
+range = "0x801F8B98..0x801F8B98"
+verdict = "unreachable"
+reason = "PROT 0929's backdrop follow on a negative pitch: `bgez` on `pitch - 0x1000` (0x801F8B84), the pitch masked to 12 bits (`andi 0xfff` at 0x801F8B78), so the word is always negative and the branch never taken. Its sibling 0x801F8B80 is driven both ways at a frame step of 3."
 
 [[arm]]
 entry = "0x801F6A00"

@@ -521,6 +521,16 @@ mod walk {
         },
     ];
 
+    thread_local! {
+        /// The battle frame step the walk runs at, in vsyncs: retail's
+        /// `0x1F800393` and the shadow's frame clock.
+        pub(super) static WALK_STEP: std::cell::Cell<u8> = const { std::cell::Cell::new(1) };
+    }
+
+    pub(super) fn walk_step() -> u8 {
+        WALK_STEP.with(|s| s.get())
+    }
+
     /// A solo party: the lead alone, the loops over the party after the
     /// lead (`ctx+0 - 1`) skipped.
     pub(super) const SOLO_LAYOUT: Layout = Layout {
@@ -590,6 +600,36 @@ mod walk {
     /// The band's pass on a camera target, in its order
     /// (`World::summon_stager_tick`): the drift, the shot (landed at once),
     /// the TR z store, a drift that belongs after the shot, the nudge.
+    /// [`port_camera_target`] over each tick of one battle frame, then the
+    /// `owed` ticks a handing tick leaves (`World::drift_rest_of_pass`,
+    /// `nudge_rest_of_pass`): its drift unless a shot follows it, and its
+    /// nudge.
+    pub(super) fn port_frame_target<'a>(
+        mut t: ([i32; 3], [i32; 3], [i32; 3]),
+        runs: impl Iterator<Item = &'a legaia_engine_battle_loop::cast_band::CastModuleCodeRun>,
+        owed: usize,
+    ) -> ([i32; 3], [i32; 3], [i32; 3]) {
+        let mut last = None;
+        for r in runs {
+            t = port_camera_target(t, r);
+            last = Some(r);
+        }
+        let Some(last) = last.filter(|_| owed > 0) else {
+            return t;
+        };
+        let rest = legaia_engine_battle_loop::cast_band::CastModuleCodeRun {
+            capture_drift: last
+                .capture_drift
+                .filter(|_| last.camera_shot.is_none() && !last.capture_drift_after_shot),
+            camera_nudge: last.camera_nudge,
+            ..Default::default()
+        };
+        for _ in 0..owed {
+            t = port_camera_target(t, &rest);
+        }
+        t
+    }
+
     pub(super) fn port_camera_target(
         t: ([i32; 3], [i32; 3], [i32; 3]),
         run: &legaia_engine_battle_loop::cast_band::CastModuleCodeRun,
@@ -875,7 +915,7 @@ mod walk {
             cpu.mem.wr32(RECORDS + i * 4, MONSTER_RECORD);
         }
         cpu.mem.wr8(SCALAR, SPEED_SCALAR as u8);
-        cpu.mem.wr8(STEP, 1);
+        cpu.mem.wr8(STEP, walk_step());
         for i in 0..5 {
             cpu.mem
                 .wr8(FORMATION + i, if i < layout.monsters { 0x10 } else { 0 });
@@ -910,6 +950,10 @@ mod walk {
         let mut w = World::new();
         w.load_party(legaia_save::Party::zeroed(layout.party as usize));
         w.enter_battle(layout.party as u8, layout.monsters as u8);
+        // The walk's battle frame (`walk_step`), opening on the first pass.
+        w.clock.display_frames = 0;
+        w.set_battle_frame_step(walk_step());
+        w.battle.frame_clock.span_extra = 0;
         while w.actors.len() < 12 {
             w.actors.push(Default::default());
         }
@@ -1087,7 +1131,17 @@ mod walk {
             let profile = cam::module_profile(entry).expect("directed");
             let extra: &[Layout] = if entry == 917 { &BARRA_LAYOUTS } else { &[] };
             // Every body also runs on a solo party (`SOLO_LAYOUT`).
-            for &layout in LAYOUTS.iter().chain(extra).chain([&SOLO_LAYOUT]) {
+            // At frame steps 1, 2 and 3 (`WALK_STEP`): a console's CD timing
+            // runs battle at steps above 1.
+            let runs = [1u8, 2, 3].into_iter().flat_map(|step| {
+                LAYOUTS
+                    .iter()
+                    .chain(extra)
+                    .chain([&SOLO_LAYOUT])
+                    .map(move |&l| (step, l))
+            });
+            for (step, layout) in runs {
+                WALK_STEP.with(|s| s.set(step));
                 // The fallen run also casts on one seat, with the band's timer
                 // still running into the side-band arm.
                 for fallen in [false, true] {
@@ -1100,7 +1154,7 @@ mod walk {
                         code0
                     };
                     let what = format!(
-                        "PROT {entry:04} caster {} of {} fallen {fallen} target {code}",
+                        "PROT {entry:04} caster {} of {} fallen {fallen} target {code} step {step}",
                         layout.caster, layout.monsters
                     );
                     let mut r = rig(entry, action, code, layout).expect("rig");
@@ -1299,7 +1353,7 @@ mod walk {
                         r.drive_busy.set(u32::from(polls_busy));
                         w.casting.drive_arms = r.drive.map(|d| (d, true));
                         w.casting.drive.busy = if polls_busy { 0x100 } else { 0 };
-                        w.clock.display_frames += 1;
+                        w.clock.display_frames += u64::from(walk_step());
                         let words_before: Vec<u32> = (0..8u32)
                             .map(|s| w.actors[layout.eng(s)].battle.render_color)
                             .collect();
@@ -1331,8 +1385,12 @@ mod walk {
                             }
                         });
                         let cam_before = camera_target(&mut r.cpu.mem);
-                        let port_run =
-                            w.drive_summon_module_pass(layout.caster as u8, action, true);
+                        let port_runs =
+                            w.drive_summon_module_frame(layout.caster as u8, action, true);
+                        let port_run = port_runs.last().cloned().flatten();
+                        // The one-vsync ticks of the pass the handing tick
+                        // left owed (`World::module_pass`).
+                        let owed = usize::from(walk_step()).saturating_sub(port_runs.len());
                         w.battle.stage_camera = None;
                         r.struck.borrow_mut().clear();
                         r.shots.borrow_mut().clear();
@@ -1392,8 +1450,9 @@ mod walk {
                         // band's run (its shot, drift, TR z store and nudge)
                         // on the globals the pass opened on, against the
                         // globals retail's pass leaves.
-                        if let Some(run) = port_run.as_ref() {
-                            let mut port_t = port_camera_target(cam_before, run);
+                        if port_run.is_some() {
+                            let mut port_t =
+                                port_frame_target(cam_before, port_runs.iter().flatten(), owed);
                             let mut retail_t = camera_target(&mut r.cpu.mem);
                             for (part, _why) in camera_gaps(entry, phase) {
                                 match part {
@@ -1420,8 +1479,8 @@ mod walk {
                             retract_ticks += 1;
                             while after != 13 && w.casting.module_phase == 13 && retract_ticks < 200
                             {
-                                w.clock.display_frames += 1;
-                                w.drive_summon_module_pass(layout.caster as u8, action, true);
+                                w.clock.display_frames += u64::from(walk_step());
+                                w.drive_summon_module_frame(layout.caster as u8, action, true);
                                 retract_ticks += 1;
                             }
                         }
@@ -1734,6 +1793,9 @@ fn the_summon_strikes_turn_their_seats_as_retail_does() {
     if let Ok(path) = std::env::var("WALK_DUMP") {
         let _ = std::fs::write(&path, out.failures.join("\n"));
     }
+    // The step-above-1 rows still open (`summon_cameras::STEP_GAPS`).
+    out.failures
+        .retain(|m| !super::summon_cameras::step_gapped(m));
     eprintln!(
         "{} passes compared, hits {:?}, struck facings {:?}, {} shots matched, {} camera targets",
         out.compared, out.hits, out.faced, out.shots_matched, out.cameras

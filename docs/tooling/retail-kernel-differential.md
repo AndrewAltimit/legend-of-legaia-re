@@ -1153,6 +1153,41 @@ PROT 0925's arm 8 runs once on a scripted fight, which takes the round tail in p
 roll, PROT 0925's arm 8 exit, PROT 0908's arm 8 (the creature stood on the victim) and PROT 0934's shake TR y,
 which the engine reads per four vsyncs where this walk's pass is one.
 
+### Both walks at frame steps above 1
+
+A console's battle CD timing runs battle frames of 2 vsyncs and more, so both walks run every body at frame steps
+1, 2 and 3: retail's step byte `0x1F800393`, the director's `frame_step` and the shadow's battle frame clock. The
+shadow's pass is the host's (`World::drive_summon_module_frame`, `World::module_pass` over `delta` one-vsync ticks,
+stopping on the tick an arm hands over). The summon walk runs its director the same way, feeding the live yaw,
+pitch, TR and the creature's cursor between ticks, and lands the owed ticks' drift and nudge after a handing tick
+as the host does (`World::drift_rest_of_pass`). At step 1 every tick is a pass, so the step-1 runs are unchanged.
+
+What only shows above step 1 are places where a port written in one-vsync ticks does per tick what retail does once
+a pass. The walks found these, each fixed from the disassembly:
+
+- A gate that tests its word once, ahead of its drain (`if (word > 0) { word -= drain; <push>; busy }`), takes
+  its branch for the whole pass on the word the pass opened on. Run per tick, a later tick of the pass found the
+  word spent and pushed nothing, or left the arm a pass early. The host latches that word
+  (`ModuleCamState::latch_pass_word`) and those gates read it (`pass_word`): Slippery's arms 1 to 3 and last arm,
+  Iota's drained arms, Gilium's `counted_if_positive`, Puera's drifts, Spoon's and Ultimate Rave's pushes, and the
+  poll hold's spent test. Barra's arm 1 climb tests its TR y the same way (`pass_tr_y`).
+- A shot aimed on the word ahead of the pass's drain aims on that same word on every tick: Ultimate Rave's arm 4
+  sweep, Barra's arm `0xF` ease, Puera's arm 12 and Spoon's arm 8.
+- A store retail makes by the whole `scalar * delta` in one pass is owed for the rest of the pass by the tick that
+  hands over: Mule's arm 3 and 4 anchor and count, Zenoir's arm 9, `0xA`, `0xB` and `0xC` lift, Jedo's arm 5 and
+  6 creature advance, Iota's arm 1 drain and arm 9 sink and shrink, and Gilium's arm 1 drain.
+- A poll that holds an arm about to pass kept that tick's rest-of-pass drain (`polled_countdown`), so Slippery's
+  side-band arm 1 drained `3 p` a pass where retail drains `2 p`.
+- Mule's arm 16 wave struck on every tick, two damage rolls a pass at step 2. It now walks the front, lifts and
+  rolls the row and strikes once, on the tick that ends the pass.
+- Iota's arm 9 pulls each plane coordinate once a pass, a positive one down a step and then a negative one up a
+  step, so a coordinate under one step stands still where the per-tick pull walked it to zero.
+
+The arms still apart above step 1 are listed in `STEP_GAPS` (`summon_cameras`), left out of both walks at steps 2
+and 3 only. They include Barra's arms 6 and `0xD..0xF` at step 3, Zenoir's arm 7 tween, Jedo's arm `0x1E` TR y
+and Puera's arms 4, 8, `0xC..0xF` and `0x14`. With the step-3 runs, Mule's backdrop follow on a negative pitch
+(`0x801F8B80`) is driven both ways.
+
 One arm stays apart from retail by choice. Aluru's arm `0x14` holds on a dead victim until its word is zero
 (`0x801F8870`), a word that eases out only under the defeat fade the commit's monster-death arm arms at the
 knockdown's end (`0x8004B66C`); the port's settle poll also lets the arm go on the down clip, so the cast leaves
