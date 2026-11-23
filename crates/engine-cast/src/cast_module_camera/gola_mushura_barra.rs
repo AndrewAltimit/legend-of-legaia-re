@@ -415,7 +415,7 @@ const BARRA_PULL: i32 = P << 7;
 /// | 0xC | word, TR z `+= 3 p` a pass | TR `(0x1000, 0x1000, 0x42D3)`, yaw `0x8C4`, pitch `0xFE0`; clip `3`, cut in; word `= 0` |
 /// | 0xD | the victim's fall (`+0x36 += 16 p` from `-0x2000`); word `+= p / 8` a pass | clip `4` after clip `3`; the hit |
 /// | 0xE | word `+= p / 8` until `0x56`, on from arm 0xD's | word `= scalar << 7` |
-/// | 0xF | word, then the victim settled | every pass a cut on the victim's display pair at a third of the depth, TR z easing from half the depth; on its pass the victim back on arm 4's saved seat, the focus and yaw stored onto it; the caption cleared; `0xFF` |
+/// | 0xF | word, the creature's word out, then the victim settled | every pass a cut on the victim's display pair at a third of the depth, TR z easing from half the depth; on its pass the victim back on arm 4's saved seat, the focus and yaw stored onto it; the caption cleared; `0xFF` |
 ///
 /// PORT: FUN_801F6A30, overlay_summon_barra_0917_801f6a30 (PROT 0917; the whole phase chain's gates, camera writes and stores, captions, creature seat and clips - the seat swaps and the victim and creature arcs are the engine's `World::apply_barra_writes`; part spawns and the epilogue's ctx bytes not carried)
 pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
@@ -589,7 +589,17 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             st.creature_restage = true;
             // The victim and the creature hang at `+0x36 = -0x2000`.
             st.ramp = -0x2000;
-            store(0xFE0, 0x8C4, [0x1000, 0x1000, 0x42D3])
+            // The stores leave the focus globals alone (none of
+            // `0x80089118..` at `0x801F7B40..0x801F7B60`): the focus stays on
+            // arm 0xB's cut, `z = -2 v.z`, the victim's doubled drop.
+            let focus = st
+                .live_focus
+                .map_or([0, 0, -2 * i32::from(v.z)], |f| [-f[0], -f[1], -f[2]]);
+            let mut d = store(0xFE0, 0x8C4, [0x1000, 0x1000, 0x42D3]);
+            if let Some(shot) = d.shot.as_mut() {
+                shot.focus = focus.map(|c| c as i16);
+            }
+            d
         }
         BARRA_HIT_ARM => {
             // Every pass (`0x801F7C48..0x801F7C5C`): with clip 3 playing,
@@ -614,6 +624,12 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             let body = st.victim_body.unwrap_or(v);
             let shot = cut([0, 0x80], [0, depth / 3, depth / 2 + ease], on(body), 1);
             if st.countdown.0 > 0 && st.countdown.holds_after_drain(P, 0) {
+                return ArmDirection { hold: true, ..shot };
+            }
+            // The creature's word, eased out by arm 0xE's defeat fade
+            // (`lw v0,0x4(s4)` / `bne` at `0x801F816C..0x801F8174`): the cast
+            // waits for the creature to have faded.
+            if st.creature_word_up {
                 return ArmDirection { hold: true, ..shot };
             }
             if !st.victim_settled {

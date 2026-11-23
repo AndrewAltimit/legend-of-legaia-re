@@ -442,6 +442,9 @@ mod walk {
         /// The sides swapped (z negated, the party facing `0`), so the
         /// creature faces the other half-turn.
         pub mirror: bool,
+        /// The monsters' height `+0x36` / `+0x3E`: a body that stands off
+        /// the floor (PROT 0917's drop is the victim's height).
+        pub height: i16,
     }
 
     pub(super) const LAYOUTS: [Layout; 5] = [
@@ -451,6 +454,7 @@ mod walk {
             victim: 3,
             retail_seats: false,
             mirror: false,
+            height: 0,
         },
         Layout {
             caster: 2,
@@ -458,6 +462,7 @@ mod walk {
             victim: 6,
             retail_seats: true,
             mirror: false,
+            height: 0,
         },
         Layout {
             caster: 1,
@@ -465,6 +470,7 @@ mod walk {
             victim: 3,
             retail_seats: true,
             mirror: false,
+            height: 0,
         },
         Layout {
             caster: 0,
@@ -472,6 +478,7 @@ mod walk {
             victim: 6,
             retail_seats: true,
             mirror: true,
+            height: 0,
         },
         Layout {
             caster: 2,
@@ -479,6 +486,29 @@ mod walk {
             victim: 3,
             retail_seats: true,
             mirror: true,
+            height: 0,
+        },
+    ];
+
+    /// The layouts PROT 0917 also runs on: a victim on seat 4 and on seat 5,
+    /// which the scripted rolls leave standing (so its hit stages a flinch,
+    /// off `+0x1F2` and `+0x1EF`), each row off the floor.
+    pub(super) const BARRA_LAYOUTS: [Layout; 2] = [
+        Layout {
+            caster: 1,
+            monsters: 4,
+            victim: 4,
+            retail_seats: true,
+            mirror: true,
+            height: -0x60,
+        },
+        Layout {
+            caster: 0,
+            monsters: 4,
+            victim: 5,
+            retail_seats: true,
+            mirror: false,
+            height: 0x48,
         },
     ];
 
@@ -775,6 +805,10 @@ mod walk {
             for (o, v) in [(0x34u32, x), (0x38, z), (0x3C, x), (0x40, z)] {
                 cpu.mem.wr16(a + o, v as u16);
             }
+            if (3..7).contains(&s) {
+                cpu.mem.wr16(a + 0x36, layout.height as u16);
+                cpu.mem.wr16(a + 0x3E, layout.height as u16);
+            }
             let party_facing = if layout.mirror { 0 } else { 0x800 };
             let row_facing = if layout.mirror { 0x800 } else { 0 };
             cpu.mem
@@ -998,7 +1032,8 @@ mod walk {
         ) in bodies.iter().enumerate()
         {
             let profile = cam::module_profile(entry).expect("directed");
-            for layout in LAYOUTS {
+            let extra: &[Layout] = if entry == 917 { &BARRA_LAYOUTS } else { &[] };
+            for &layout in LAYOUTS.iter().chain(extra) {
                 // The fallen run also casts on one seat, with the band's timer
                 // still running into the side-band arm.
                 for fallen in [false, true] {
@@ -1068,6 +1103,7 @@ mod walk {
                     );
                     let mut loop_passes = 0u32;
                     let mut creature_fade_passes = 0u32;
+                    let mut climbed_passes = 0u32;
                     let (mut retract_passes, mut retract_ticks) = (0u32, 0u32);
                     for pass in 0..20_000u32 {
                         let phase = r.cpu.mem.rd8(CTX + 0x279);
@@ -1092,7 +1128,10 @@ mod walk {
                         // `+0x04` to zero are stubbed: PROT 0917's arm `0xF`
                         // waits on it (`0x801F816C..0x801F8174`), held a few
                         // passes with the word still up, then let through.
-                        if (entry, phase) == (917, 0xF) {
+                        // The word is read once the module word `0x801F934C`
+                        // is spent, so it is held up for the first passes
+                        // that find the word spent.
+                        if (entry, phase) == (917, 0xF) && r.cpu.mem.rd32(0x801F_934C) as i32 <= 0 {
                             creature_fade_passes += 1;
                             if creature_fade_passes > 3 {
                                 r.cpu.mem.wr32(ACTOR + CREATURE * STRIDE + 4, 0);
@@ -1105,11 +1144,20 @@ mod walk {
                             r.cpu.mem.wr16(CTX + 0x6D8, band_timer);
                             band_timer = band_timer.saturating_sub(1);
                         }
+                        // PROT 0917's arm 1 reads the stage only once its TR y
+                        // climb is through (`slti 0x800` ahead of the read at
+                        // `0x801F6D4C`): the stage stands up again for the
+                        // first passes that find the climb done.
                         if phase == side {
                             side_passes += 1;
+                            let climbed =
+                                entry == 917 && r.cpu.mem.rd32(TR + 4) as i32 >= 0x800 && {
+                                    climbed_passes += 1;
+                                    climbed_passes <= 3
+                                };
                             r.cpu
                                 .mem
-                                .wr8(CTX + 0x276, if side_passes <= 3 { 8 } else { 0 });
+                                .wr8(CTX + 0x276, if side_passes <= 3 || climbed { 8 } else { 0 });
                         }
                         if w.casting.module_phase != phase {
                             failures.push(format!(
