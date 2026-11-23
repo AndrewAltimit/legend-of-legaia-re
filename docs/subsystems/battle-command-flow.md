@@ -820,6 +820,8 @@ The cursor opens on the member's current target `+0x1DD` (`World::seat_attack_cu
 
 The ring's Attack confirm (`0x801D1574..0x801D15AC`) keeps `+0x1DD` when it names a monster slot (`+0x1DD - 3 < 5`, pool slots `3..=7`) and re-picks anything else through `FUN_801DB8B4`. The round boundary `FUN_801D88CC` re-picks only a target that is dead or past slot 6. Nothing else writes the byte before the `0x5A` cursor opens, and the ring builder takes it as the cursor's start. So a member who struck a monster last round opens on that monster while it stands, and a bare confirm strikes it again.
 
+The magic window's one-enemy cursor `0x5C` opens the same way: raising it keeps a monster-slot `+0x1DD` (`0x801D1C84..0x801D1C94`) and re-picks anything else through `FUN_801DB8B4` (`0x801D1C9C..0x801D1CBC`) before the ring builder runs, so the spell cursor starts on the member's own target too (`tick_battle_spell_menu` seats its picker through `seat_attack_cursor`). The window's cancel (`0x801D1B78..0x801D1BE8`) puts `ctx[+0xC]` back into a `+0x1DD` that is not a monster seat; the port keeps the byte as it stood.
+
 The ring covers pool slots `3..=6` only. `FUN_801D8A88` counts live monsters over `3..7` (`sltiu s0,0x7`) into `ctx[+0x244]`, and its angle and pick loops run four entries from the slot-3 pointer. A fifth monster - the seat a Divide clone takes, pool slot `7`, `ctx[+1] < 5` - has no ring entry. It can still be the target in two cases:
 
 - **It is the default.** `FUN_801DB8B4` scans `3..=6` and falls through to `7` once all four are down.
