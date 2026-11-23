@@ -1567,6 +1567,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
         sides.into_iter().map(|d| (d, false)).collect()
     };
     let mut pad_reached = false;
+    let mut far = false;
     for ((dx, dz), try_pad) in attempts {
         let (sx, sz) = (tx + dx, tz + dz);
         if !(0..128).contains(&sx) || !(0..128).contains(&sz) {
@@ -1574,6 +1575,10 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
         }
         if !try_pad && pad_hand() && (pad_reached || shortcuts_refused() || !walking(session)) {
             break;
+        }
+        if try_pad && !prop_seat_in_walk_reach(session, (sx, sz)) {
+            far = true;
+            continue;
         }
         session.host_pad(0);
         let by_pad = try_pad
@@ -1595,7 +1600,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
         pad_reached |= by_pad;
         if !by_pad {
             session.host.world.seat_player_at_tile(sx as u8, sz as u8);
-            shortcut("touch_seat");
+            shortcut(if far { "touch_far" } else { "touch_seat" });
         }
         let mut started = false;
         for _ in 0..40 {

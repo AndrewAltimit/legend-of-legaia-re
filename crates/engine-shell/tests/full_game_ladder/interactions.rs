@@ -219,11 +219,17 @@ pub(super) fn interact_at(
         seats.iter().map(|&s| (s, false)).collect()
     };
     let mut pad_reached = false;
+    // A seat left out for its distance ([`prop_seat_in_walk_reach`]).
+    let mut far = false;
     for ((sx, sz, extra), try_pad) in attempts {
         if !try_pad && pad_hand() && (pad_reached || shortcuts_refused() || !walking(session)) {
             break;
         }
         session.host_pad(0);
+        if try_pad && !prop_seat_in_walk_reach(session, (sx, sz)) {
+            far = true;
+            continue;
+        }
         let by_pad = if try_pad {
             match pad_reach(session, (sx, sz), (nx, nz), hits) {
                 Reach::Entered(s) => return Run::Entered(s),
@@ -250,7 +256,7 @@ pub(super) fn interact_at(
         let mut facing = by_pad.then_some(0u8);
         if !by_pad {
             session.host.world.seat_player_at_tile(sx as u8, sz as u8);
-            shortcut("examine_seat");
+            shortcut(if far { "examine_far" } else { "examine_seat" });
             // The one compass sector whose probe point lands in the NPC's box.
             facing = (0..8u8).find(|&d| {
                 session.host.world.face_player_sector(d);
@@ -372,6 +378,31 @@ pub(super) fn interact_at(
         restore_player_xz(session, (bx, bz));
     }
     last
+}
+
+/// Cells of planned path the pad hand walks to a prop's seat in a scene
+/// that rolls encounters (sixteen tiles).
+const PROP_WALK_REACH: usize = 64;
+
+/// Whether the pad hand walks to seat `seat`: always where no encounter
+/// rolls, and within [`PROP_WALK_REACH`] of planned path where one does.
+/// The beats pass plays props the retail player left alone - `dolk`'s
+/// Lightning Gate rooms raise flags no anchor carries - and the way to them
+/// across a castle whose every region rolls wiped a lone member on twelve
+/// reloads running; a seat further off is placed, and counted
+/// (`examine_far` / `touch_far`), like the walk to a bed ([`pad_rest`]).
+pub(super) fn prop_seat_in_walk_reach(session: &NativeSession, seat: (i16, i16)) -> bool {
+    if !session.host.world.scene_can_roll_encounters() {
+        return true;
+    }
+    let (px, pz) = player_xz(session);
+    plan_path(
+        session,
+        cell_of(px, pz),
+        seat,
+        &pad_avoid(session, Some(seat)),
+    )
+    .is_some_and(|p| p.len() <= PROP_WALK_REACH)
 }
 
 /// How a pad approach to an interaction seat ended ([`pad_reach`]).
