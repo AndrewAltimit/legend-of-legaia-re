@@ -1797,14 +1797,14 @@ vsyncs before its first line, Cross every 20 vsyncs) `3.36` (62 frames, `433`). 
 prices a voiced field frame at `3.34` (`FIELD_XA_POLL_COST_RATIO_MILLI`,
 `field_xa_loaded_frame_cost`). Filmed on both sides (`LEGAIA_RC_WALK_COST=1`):
 
-| Beat | Retail step-`4` frames | Engine at `3.1` | Engine at `3.34` |
+| Beat | Retail step-`4` frames | Engine at `3.34` | Engine at the battle's `3.1` |
 |---|---|---|---|
-| `garmel` `P2[12]`, Zeto's appearance | 90, mean `6.12` vsyncs | 103, `5.38` | 92, `5.98` |
+| `garmel` `P2[12]`, Zeto's appearance | 90, mean `6.12` vsyncs | 92, `5.98` | 103, `5.38` |
 | record 14, Zeto's defeat | 66, mean `5.74` | 66, `5.83` | 66, `5.83` |
 
-The defeat beat held at `3.1` because the engine prices its frames' work at about `460`
-against retail's `433`; the appearance's work it prices at about `400` against `444`, so the
-remaining frames there are the work model's, not the ratio's.
+The defeat beat reads the same at either ratio because the engine prices its frames' work at
+about `460` against retail's `433`; the appearance's it prices at about `400` against `444`,
+so the frames that remain there are the work model's, not the ratio's.
 
 The legs a record runs on an actor are on the same grid. The walk kernel `FUN_8003774C` spends
 the frame step (`lbu s2,0x393` at `0x80037864`) once a game frame against a compass walk's or a
