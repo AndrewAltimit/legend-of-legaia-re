@@ -150,8 +150,9 @@ fn the_xa_arm_waits_for_the_pair_too() {
 
 /// The XA arm plays: `FUN_8003D53C(arg >> 3, arg & 7, sel)` lands on the
 /// field XA queue both hosts drain. `sel == 0` is the seek-ahead
-/// `FUN_80019794`, which reads nothing and so queues nothing, and a parked
-/// arm queues nothing either.
+/// `FUN_80019794`, which reads nothing and so queues nothing (and holds the
+/// op while it steps - `the_seek_ahead_holds_the_script_four_passes`), and
+/// a parked arm queues nothing either.
 #[test]
 fn the_xa_arm_queues_the_clip_it_starts() {
     let (mut w, pc) = run_op36(0x0135, (0x10 << 3) | 7, SoundStreamRequest::IDLE_PAIR, 0);
@@ -167,7 +168,7 @@ fn the_xa_arm_queues_the_clip_it_starts() {
     assert!(w.field_xa_busy(), "the drive is busy for the read span");
 
     let (mut w, pc) = run_op36(0x0000, 0x10 << 3, SoundStreamRequest::IDLE_PAIR, 0);
-    assert_eq!(pc, 5);
+    assert_eq!(pc, 0, "the seek-ahead holds while its starter steps");
     assert!(
         w.drain_field_xa_cues().is_empty(),
         "the seek-ahead plays nothing"
@@ -182,6 +183,36 @@ fn the_xa_arm_queues_the_clip_it_starts() {
     assert!(
         w.drain_field_xa_cues().is_empty(),
         "a parked arm starts nothing"
+    );
+}
+
+/// The seek-ahead `FUN_80019794` answers `1` on its four stepping passes
+/// (stages `0..=3`) and `0` from stage `4`, so op `0x36` with `sel == 0`
+/// holds its script four frames and runs on with the fifth; a second seek
+/// with no clip start between runs straight through, and a clip start
+/// (`0x8003D5C0`) or a field entry restarts the starter.
+#[test]
+fn the_seek_ahead_holds_the_script_four_passes() {
+    let mut w = World::new();
+    w.mode = SceneMode::Field;
+    w.audio.sound_stream = SoundStreamRequest::IDLE_PAIR;
+    let seek = [0x36, 0x00, 0x00, 0x80, 0x00];
+    let mut script = seek.to_vec();
+    script.extend_from_slice(&seek);
+    script.extend_from_slice(&[0x36, 0x35, 0x01, 0x87, 0x00]);
+    script.extend_from_slice(&seek);
+    script.push(0x00);
+    w.load_field_script(script);
+    let mut pcs = Vec::new();
+    for _ in 0..13 {
+        let _ = w.step_field();
+        pcs.push(w.field_pc);
+    }
+    assert_eq!(pcs, [0, 0, 0, 0, 5, 10, 15, 15, 15, 15, 15, 20, 20]);
+    w.reset_field_xa_seek();
+    assert!(
+        w.field_xa_seek_ahead(),
+        "a field entry restarts the starter"
     );
 }
 

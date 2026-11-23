@@ -20,7 +20,9 @@
 //! stream start: its body `FUN_8003EAE4` issues `CdlSetloc` + `CdlSeekL`
 //! (`li a0,0x15` at `0x8003EB68`) and never a read, so it only parks the drive
 //! head on the file the next one-shot will read. The engine has no drive, so
-//! that leg has nothing to do.
+//! the seek itself has nothing to do; what it keeps is the starter's own
+//! stepping, which holds op `0x36`'s script four passes
+//! ([`World::field_xa_seek_ahead`]).
 //!
 //! REF: FUN_8003D53C (the starter), FUN_8003EAE4 (the seek-ahead)
 
@@ -184,6 +186,8 @@ impl World {
         if dur == 0 {
             return;
         }
+        // The starter zeroes the seek-ahead's state word (`0x8003D5C0`).
+        self.audio.field_xa_seek_stage = 0;
         self.audio.field_xa_busy_frames = dur;
         self.audio
             .field_xa_cues
@@ -192,6 +196,36 @@ impl World {
                 channel: u32::from(channel),
                 duration_sectors: u32::from(dur),
             });
+    }
+
+    /// One pass of the seek-ahead starter `FUN_80019794` as op `0x36` with
+    /// `sel == 0` calls it: `true` while it is still stepping, which holds
+    /// the script at the op. Stages `0` (arm the busy byte), `1` (no read in
+    /// flight, `FUN_8003DE7C(1)`), `2` (issue the seek, `FUN_8003EAE4`) and
+    /// `3` (the seek settled, `FUN_8003F2B8(1)`) each answer `1` and step on;
+    /// stage `4` answers `0` and stays, so a second seek with no clip start
+    /// between runs straight through. The engine has no drive, so both waits
+    /// are met on arrival and the hold is the starter's own four passes; a
+    /// real seek's settle time, and a read in flight at the op, add to it on
+    /// hardware.
+    ///
+    /// PORT: FUN_80019794
+    /// PORT: FUN_801DE840 (`0x801E0430..0x801E0444`, the hold)
+    pub fn field_xa_seek_ahead(&mut self) -> bool {
+        if self.audio.field_xa_seek_stage >= 4 {
+            return false;
+        }
+        self.audio.field_xa_seek_stage += 1;
+        true
+    }
+
+    /// Field entry: the mode-init core reset clears the busy byte
+    /// `0x8007B648` (`0x80025D18`), and the seek-ahead starter restarts from
+    /// stage `0` the next time it reads the byte clear (`0x800197A8..0x800197BC`).
+    ///
+    /// REF: FUN_80025CB4
+    pub fn reset_field_xa_seek(&mut self) {
+        self.audio.field_xa_seek_stage = 0;
     }
 
     /// Take this tick's field CD-XA clip requests, oldest first. Both hosts
@@ -224,6 +258,15 @@ impl World {
     /// One vsync of the modelled drive (run by `World::tick`).
     pub(in crate::world) fn tick_field_xa_busy(&mut self) {
         self.audio.field_xa_busy_frames = self.audio.field_xa_busy_frames.saturating_sub(1);
+    }
+}
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// Seat the seek-ahead starter's stage (`0x8007B9C8`) as a differential
+    /// seeds it on retail's side.
+    pub fn drive_field_xa_seek_stage(&mut self, stage: u8) {
+        self.audio.field_xa_seek_stage = stage;
     }
 }
 

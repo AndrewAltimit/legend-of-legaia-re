@@ -3287,8 +3287,9 @@ one channel one-shot (`FUN_8003D53C(op>>3, op&7, dur)`); a zero operand seeks
 ahead to the clip (`FUN_80019794(op>>3)`) and plays nothing. The engine queues
 the first shape on the field XA queue both hosts drain in their field SFX
 routing (`World::push_field_xa_cue`, `engine-core::world::field_xa`), the same
-queue the scripted-scene programs' voice state feeds; the seek has no engine
-counterpart.
+queue the scripted-scene programs' voice state feeds. The seek reads nothing in
+the engine, but its starter's stepping still holds the script
+([script-vm](script-vm.md#the-seek-ahead-holds-the-script)).
 
 ## What a normal attack sounds like
 

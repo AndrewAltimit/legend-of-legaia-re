@@ -1397,3 +1397,180 @@ fn a_party_record_compare_skips_as_retail_skips() {
     assert!(report.is_empty(), "{}", report.join("\n"));
     assert!(taken > 1000 && ran - taken > 1000, "{ran} {taken}");
 }
+
+/// Ops `4C D4` / `4C D5` (`0x801E2C4C..0x801E2D5C`): `StoreImage` a 16x1 run
+/// at the operands' `(x, y)`, set the mask bit on its non-zero words or clear
+/// it on every word but `0x8000`, and `LoadImage` it back. Retail's two libgpu
+/// calls are answered from a model VRAM row; the port runs the real `World`
+/// step and drains its queue into a `psx_tim::Vram` holding the same row.
+/// Compared: the run retail loads back against the port's row. The rows mix
+/// `0x0000`, `0x8000`, words with the bit and words without it.
+#[test]
+fn a_clut_run_takes_the_mask_bit_as_retail_takes_it() {
+    differential!(prot(897, VM));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const STORE_IMAGE: u32 = 0x8005_842C;
+    const LOAD_IMAGE: u32 = 0x8005_83C8;
+    const ROW: u32 = 0x8016_0000;
+    const LOADED: u32 = 0x8016_0100;
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
+    cpu.hook(READ_U16, |r, m| r.r[2] = m.rd16(r.r[4]) as i16 as u32);
+    // The rect is `{x, y, w, h}`; the model row stands at `ROW`.
+    cpu.hook(STORE_IMAGE, |r, m| {
+        let (w, h) = (m.rd16(r.r[4] + 4), m.rd16(r.r[4] + 6));
+        assert_eq!((w, h), (16, 1));
+        for i in 0..16 {
+            let w = m.rd16(ROW + 2 * i);
+            m.wr16(r.r[5] + 2 * i, w);
+        }
+    });
+    cpu.hook(LOAD_IMAGE, |r, m| {
+        let (w, h) = (m.rd16(r.r[4] + 4), m.rd16(r.r[4] + 6));
+        assert_eq!((w, h), (16, 1));
+        let (x, y) = (m.rd16(r.r[4]), m.rd16(r.r[4] + 2));
+        m.wr32(LOADED + 0x20, u32::from(x) | u32::from(y) << 16);
+        for i in 0..16 {
+            let w = m.rd16(r.r[5] + 2 * i);
+            m.wr16(LOADED + 2 * i, w);
+        }
+    });
+    cpu.mem.wr8(0x1F80_0393, 1);
+    cpu.mem.wr32(CTX + 0x94, SCRIPT);
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = crate::common::Rng(0x5354_5042);
+    let (mut ran, mut set, mut kept) = (0u32, 0u32, 0u32);
+    for _ in 0..400u32 {
+        let sub = if rng.below(2) == 0 { 0xD4u8 } else { 0xD5 };
+        let x = rng.below(1024 - 16) as u16;
+        let y = rng.below(512) as u16;
+        let row: Vec<u16> = (0..16)
+            .map(|_| match rng.below(4) {
+                0 => 0,
+                1 => 0x8000,
+                _ => rng.next() as u16,
+            })
+            .collect();
+        let [xl, xh] = x.to_le_bytes();
+        let [yl, yh] = y.to_le_bytes();
+        let script = [0x4C, sub, xl, xh, yl, yh];
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        for (i, w) in row.iter().enumerate() {
+            cpu.mem.wr16(ROW + 2 * i as u32, *w);
+        }
+        cpu.mem.load(SCRIPT, &script);
+        assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
+        assert_eq!(cpu.regs.r[2], 6, "{script:02x?}");
+        assert_eq!(
+            cpu.mem.rd32(LOADED + 0x20),
+            u32::from(x) | u32::from(y) << 16
+        );
+        let retail: Vec<u16> = (0..16).map(|i| cpu.mem.rd16(LOADED + 2 * i)).collect();
+
+        let mut vram = psx_tim::Vram::new();
+        let bytes: Vec<u8> = row.iter().flat_map(|w| w.to_le_bytes()).collect();
+        vram.write_block(x, y, 16, 1, &bytes);
+        let mut w = legaia_engine_core::world::World::new();
+        w.field_bytecode = script.to_vec();
+        w.field_pc = 0;
+        assert!(matches!(
+            w.step_field(),
+            Some(StepResult::Advance { next_pc: 6 })
+        ));
+        w.apply_script_vram_moves(&mut vram);
+        let port: Vec<u16> = (0..16)
+            .map(|i| vram.pixel(usize::from(x) + i, usize::from(y)))
+            .collect();
+        assert_eq!(port, retail, "{script:02x?} row {row:04x?}");
+        ran += 1;
+        set += u32::from(sub == 0xD4);
+        kept += row
+            .iter()
+            .zip(&retail)
+            .filter(|(a, b)| a == b && (**a == 0 || **a == 0x8000))
+            .count() as u32;
+    }
+    assert!(
+        ran == 400 && set > 100 && set < 300 && kept > 500,
+        "{ran} {set} {kept}"
+    );
+}
+
+/// Op `0x36` with `sel == 0` (`0x801E0430..0x801E0444`): the seek-ahead
+/// `FUN_80019794` runs for real in the executable, its drive calls answered
+/// idle (no read in flight, `FUN_8003DE7C(1) == 0`; the seek settled,
+/// `FUN_8003F2B8(1) == 0`), and the op re-run pass after pass as a context's
+/// runner re-runs a held op. Each run seats the starter's stage word
+/// `0x8007B9C8` at `0..=4` with the busy byte `0x8007B648` armed (`0x80`), or
+/// clear as a field entry leaves it, which restarts the starter. Compared:
+/// the PC each pass returns against the real `World` step's, pass by pass.
+#[test]
+fn a_seek_ahead_holds_the_script_as_retail_holds_it() {
+    differential!(prot(897, VM), scus(0x8001_9794));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const SEEK: u32 = 0x8001_9794;
+    const STAGE: u32 = 0x8007_B9C8;
+    const BUSY: u32 = 0x8007_B648;
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.watched.insert(SEEK);
+    cpu.hook(READ_U16, |r, m| r.r[2] = m.rd16(r.r[4]) as i16 as u32);
+    cpu.hook(0x8003_DE7C, |r, _| r.r[2] = 0);
+    cpu.hook(0x8003_EAE4, |r, _| r.r[2] = 0);
+    cpu.hook(0x8003_F2B8, |r, _| r.r[2] = 0);
+    cpu.mem.wr8(0x1F80_0393, 1);
+    cpu.mem.wr32(CTX + 0x94, SCRIPT);
+    // The request / acknowledge pair settled, so the arm is not parked on it.
+    cpu.mem.wr32(0x8007_BABC, 8);
+    cpu.mem.wr32(0x8007_BAA0, 8);
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = crate::common::Rng(0x5345_454B);
+    let (mut held, mut ran) = (0u32, 0u32);
+    for case in 0..40u32 {
+        let stage = case % 5;
+        let entry = case % 2 == 1;
+        let clip = rng.below(0x20) as u16;
+        let [al, ah] = (clip << 3).to_le_bytes();
+        let script = [0x36, 0x00, 0x00, al, ah, 0x00];
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        cpu.mem.load(SCRIPT, &script);
+        cpu.mem.wr32(STAGE, stage);
+        cpu.mem.wr8(BUSY, if entry { 0 } else { 0x80 });
+
+        let mut w = legaia_engine_core::world::World::new();
+        w.field_bytecode = script.to_vec();
+        w.field_pc = 0;
+        w.drive_field_xa_seek_stage(stage as u8);
+        if entry {
+            w.reset_field_xa_seek();
+        }
+        for pass in 0..7 {
+            assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
+            let retail = cpu.regs.r[2] & 0xFFFF;
+            w.field_pc = 0;
+            let port = match w.step_field() {
+                Some(StepResult::Advance { next_pc }) => next_pc,
+                Some(StepResult::Halt { final_pc }) => final_pc,
+                other => panic!("case {case} pass {pass}: {other:?}"),
+            };
+            assert_eq!(
+                port as u32, retail,
+                "stage {stage} entry {entry} pass {pass}: retail {retail:#x} port {port:#x}"
+            );
+            held += u32::from(retail == 0);
+            ran += 1;
+        }
+    }
+    assert!(ran == 280 && held > 40, "{ran} {held}");
+}
