@@ -1852,3 +1852,13 @@ reason = "Play-page gzip is the wave's ported behaviour compiled in: the Muscle 
 changes = [
   ["counts/bundle/play_gzip_bytes", 5233490, 5240566],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The arts entry now ends on retail's target cursor (0x801D21CC..0x801D23DC, arts-entry differential): the first Cross commits instead of opening a picker, so the pad driver reaches each age-gated capture frame 12-24 ticks sooner and these four frames land on a slightly different pose. Every non-image channel stays 1.000 and noa_finisher_hold now ends on retail's target. Bisected to the engine commit; measured alone and in the full blessing run. Open: on flying_knee_mid a dark body behind Gala draws partly see-through where retail draws it solid."
+changes = [
+  ["states/battle_jou_noa_finisher_hold_retail/image", 0.996, 0.993],
+  ["states/battle_jou_party_gala_chain_mid/image", 0.995, 0.993],
+  ["states/battle_ropeway_party_gala_flying_knee_late/image", 0.877, 0.874],
+  ["states/battle_ropeway_party_gala_flying_knee_mid/image", 0.993, 0.99],
+]
