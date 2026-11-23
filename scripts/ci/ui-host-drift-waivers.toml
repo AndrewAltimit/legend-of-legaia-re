@@ -770,7 +770,7 @@ reason = "The step itself is one pair of shared calls on both hosts (`legaia_eng
 [[frame_content]]
 native = "tick_minigame_extras"
 web = "tick_minigame_ui"
-native_only = ["carry_walked_in_cells", "chrome_frame", "entry_bytes", "frame", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "parse_sprite_table", "restore_dance_ambient", "set_assets", "stage_dance_ambient", "stage_dance_hud_vram", "step_dance_ambient", "still_sheet_rgba", "venue_stager_bytes", "walk_heightfield"]
+native_only = ["carry_walked_in_cells", "chrome_frame", "entry_bytes", "frame", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "parse_sprite_table", "restore_dance_ambient", "set_assets", "stage_dance_ambient", "stage_dance_hud_vram", "step_dance_ambient", "still_sheet_rgba", "venue_stager_bytes", "walk_heightfield", "winner"]
 web_only = ["apply", "course", "last_result", "of_mode", "opponent_roster", "phase", "prot_dat_raw_bytes", "round", "with_system_ui"]
 reason = """
 Everything the step does to the world or the audio director is a session step
@@ -806,6 +806,9 @@ ringside still, which the page loads in its `play_mg_muscle_hub_*` exports.
 `chrome_frame` / `glyph_u`: the window resolves each Baka chrome glyph draw's
 stamped cell rect here and carries it beside the draw; the browser hosts
 consume the same chrome frame in their draw exports.
+`winner` is the window's log line on the tick a Baka match is decided
+(`baka: match decided - WON`), which the native minigame ladder reads; a log,
+no world state, and the page has no harness reading it.
 
 Web-only, the page's own read-outs. `course` / `round` are its staged-opponent
 read for the dome mesh (`enter_muscle_ui`), `opponent_roster` the Baka one,
