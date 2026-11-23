@@ -154,13 +154,13 @@
     },
     "theeder_summon_mid_cast": {
       "cast_core_corr": 0.9902,
-      "cast_core_level": 0.3293,
+      "cast_core_level": 0.1498,
       "cast_core_steps_corr": 0.9919,
-      "cast_core_steps_level": 0.1325,
+      "cast_core_steps_level": 0.4619,
       "cast_corr": 0.9535,
-      "cast_level": 0.3355,
-      "cast_steps_corr": 0.9639,
-      "cast_steps_level": 0.1936
+      "cast_level": 0.4695,
+      "cast_steps_corr": 0.9623,
+      "cast_steps_level": 0.4615
     },
     "title_screen_new_game": {
       "core_corr": 1.0,
