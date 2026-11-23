@@ -733,9 +733,15 @@ impl World {
                 let seats: Vec<usize> = (0..monster_count)
                     .filter_map(|i| map.engine(3 + i).map(usize::from))
                     .collect();
+                // Retail tests the seat's colour word (`lw v0,4(v1)` / `beqz`).
+                // The engine's resting shown word is `0` under a lowered
+                // marker, so a seat reads as drawn on its word or, alive, on
+                // its marker: a felled seat whose fade has run out (word `0`)
+                // is not turned or slowed.
                 for e in seats {
                     if let Some(a) = self.actors.get_mut(e)
-                        && (a.battle.render_color != 0 || a.battle.render_flag != FLAG_PARKED)
+                        && (a.battle.render_color != 0
+                            || (a.battle.hp != 0 && a.battle.render_flag != FLAG_PARKED))
                     {
                         a.battle.facing_angle =
                             a.battle.facing_angle.wrapping_add((0x20 * D) as u16) & 0xFFF;

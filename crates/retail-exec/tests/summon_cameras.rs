@@ -779,6 +779,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             });
             let mut puera_compared = std::collections::BTreeSet::new();
             let mut sideband_passes = 0u32;
+            let mut spent_side_passes = 0u32;
             busy_calls.set(0);
             // The band shadow: a world seated off the same records, the
             // band's module half (`World::drive_summon_module_pass`) run on
@@ -847,9 +848,15 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // The side-band applier's stage `ctx[+0x276]` stands up for the
                 // first passes of the arm that waits on it
                 // (`cam::sideband_wait_arm`), as a turn's side-band read does.
+                // It stands up again for the first passes the arm opens on
+                // its module word spent, where the arms that push behind the
+                // word's gate push nothing (`cam::polled_hold`).
                 if Some(phase) == cam::sideband_wait_arm(entry) {
                     sideband_passes += 1;
-                    let up = sideband_passes <= 3;
+                    if st.countdown.0 <= 0 {
+                        spent_side_passes += 1;
+                    }
+                    let up = sideband_passes <= 3 || (1..=3).contains(&spent_side_passes);
                     cpu.mem.wr8(CTX + 0x276, if up { 8 } else { 0 });
                     sideband_held += usize::from(up);
                 }
@@ -1378,20 +1385,17 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             ));
                         }
                     }
-                    // The row's ground trio and animation rate. The rate of a
-                    // seat with no HP stays out: retail tests its colour word,
-                    // which a faded seat and the engine's resting shown word
-                    // both read as `0`. The creature's seat 7 is compared
-                    // too, but for the arms of [`CREATURE_GAPS`].
+                    // The row's ground trio, animation rate and render scale,
+                    // on dead seats too. The creature's seat 7 is compared as
+                    // well, but for the arms of [`CREATURE_GAPS`].
                     let rows =
                         (3..(3 + layout.monsters).min(7)).chain(creature.then_some(CREATURE));
                     for s in rows {
                         let a = ACTOR + s * STRIDE;
                         let act = &w.actors[s as usize];
-                        let dead = cpu.mem.rd16(a + 0x14C) == 0;
                         let gap = |part| s == CREATURE && creature_gap(entry, phase, part);
                         let trio_out = gap(CreatureGap::Trio);
-                        let rate_out = dead || gap(CreatureGap::Rate);
+                        let rate_out = gap(CreatureGap::Rate);
                         let got = (
                             (!trio_out).then(|| trio(&mut cpu.mem, a + 0x34)),
                             (!rate_out).then(|| cpu.mem.rd8(a + 0x21D)),
@@ -1404,6 +1408,19 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             ]),
                             (!rate_out).then(|| act.battle.anim_rate.get()),
                         );
+                        // The render node's scale `+0x72`, against the seat's
+                        // `render_scale` (unity when unset). PROT 0921's exit
+                        // on a Stoned seat stays out ([`ROW_SCALE_GAP`]).
+                        let stoned_exit =
+                            (entry, phase) == ROW_SCALE_GAP && cpu.mem.rd16(a + 0x16E) & 4 != 0;
+                        let rs = cpu.mem.rd16(NODES + s * 0x100 + 0x72);
+                        let ps = act.battle.render_scale.unwrap_or(0x1000);
+                        if rs != ps && !stoned_exit {
+                            shadow_failures.push(format!(
+                                "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} scale retail {rs:#x} port {ps:#x}",
+                                layout.caster, layout.monsters
+                            ));
+                        }
                         if got != port {
                             shadow_failures.push(format!(
                                 "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} trio/rate retail {got:x?} port {port:x?}",
@@ -1791,6 +1808,15 @@ const CREATURE_GAPS: [(u32, std::ops::RangeInclusive<u8>, CreatureGap, &str); 4]
          0x240 / 0x2D0 (0x801F70F0, 0x801F724C), which the shadow's seat does not carry",
     ),
 ];
+
+/// PROT 0921's exit arm `0xB`, whose row restore stands each seat back on
+/// its saved trio, facing, body radius `+0x58` and size byte `+0x1F`
+/// (`0x801F7F40..0x801F7F98`) and stores no scale `+0x72`. A Stoned seat,
+/// which arm 9 shrank and arm `0xA`'s hit loop skips (`andi 4` at
+/// `0x801F7BD4`), keeps the shrunken scale in retail; the port's restore
+/// stands it back at unity. Left out until it is settled whether retail
+/// re-scales a Stoned body elsewhere.
+const ROW_SCALE_GAP: (u32, u8) = (921, 0xB);
 
 /// Whether `part` of seat 7 is out of the comparison on PROT `entry`'s `arm`.
 fn creature_gap(entry: u32, arm: u8, part: CreatureGap) -> bool {

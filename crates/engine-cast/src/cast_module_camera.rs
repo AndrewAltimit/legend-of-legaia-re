@@ -1812,20 +1812,46 @@ pub fn polled_countdown(
     kept
 }
 
+/// The poll arms whose TR z push sits behind a `blez` on the module word
+/// that branches straight to the poll: the side-band arm 1 and the drive arm
+/// 2 of PROT 0919 to 0924 (PROT 0920's `blez` at `0x801F6C18` to the side-band
+/// read at `0x801F6C58`, and at `0x801F6CA0` to `jal 0x8003F2B8` at
+/// `0x801F6CE4`; 0919 `0x801F6C9C` / `0x801F6D24`, 0921 `0x801F6C90` /
+/// `0x801F6D1C`, 0922 `0x801F6C7C` / `0x801F6D08`, 0923 `0x801F6BF4` /
+/// `0x801F6C78`, 0924 `0x801F6C28` / `0x801F6CAC`). A scan of every summon
+/// image's poll sites (each `jal 0x8003F2B8` and each `lbu 0x276`) for a
+/// branch landing on the poll finds no other camera store a gate skips:
+/// PROT 0929's arm 1 gates its focus push on its own anchor halfword
+/// (`beq` at `0x801F6D5C`), which its director already reads, and PROT
+/// 0903's and 0905's gates skip module words only.
+const WORD_GATED_PUSH: [(u32, u8); 12] = [
+    (919, 1),
+    (919, 2),
+    (920, 1),
+    (920, 2),
+    (921, 1),
+    (921, 2),
+    (922, 1),
+    (922, 2),
+    (923, 1),
+    (923, 2),
+    (924, 1),
+    (924, 2),
+];
+
 /// The hold a poll makes of a would-pass `d`: the arm keeps the drift and
 /// nudge the director reports for the pass, since most arms make theirs ahead
 /// of the poll (PROT 0914's arm 2 pushes TR z out on every pass its
-/// side-band poll holds, its word spent or not). PROT 0920's arm 2 makes its
-/// push only while its word is positive (`blez` at `0x801F6CA0` straight to
-/// the poll at `0x801F6CE4`), so once the word is spent a held pass pushes
-/// nothing.
+/// side-band poll holds, its word spent or not). The arms of
+/// [`WORD_GATED_PUSH`] make their push only while the module word is
+/// positive, so once the word is spent a held pass pushes nothing.
 pub fn polled_hold(
     entry: u32,
     phase: u8,
     d: ArmDirection,
     before: &ModuleCamState,
 ) -> ArmDirection {
-    let spent = (entry, phase) == (920, 2) && before.countdown.0 <= 0;
+    let spent = WORD_GATED_PUSH.contains(&(entry, phase)) && before.countdown.0 <= 0;
     ArmDirection {
         drift: d.drift.filter(|_| !spent),
         nudge: d.nudge.filter(|_| !spent),
@@ -1882,10 +1908,13 @@ pub const fn creature_poll_arm(prot_entry: u32) -> Option<u8> {
 /// PROT 0923's sits on arm 1 behind that arm's drain (`lbu v0,0x276(v0)` /
 /// `bne v0,zero` at `0x801F6C38..0x801F6C40`, then its seek
 /// `FUN_8003EAE4(0, 0xD)`): `gilium_summon_mid_cast` stands there with the
-/// word drained `56` past the `0x200` arm 0 stored.
+/// word drained `56` past the `0x200` arm 0 stored. PROT 0924's arm 1
+/// (the arm at `0x801F6C1C`) tests the byte behind its push (`lbu
+/// v0,0x276(v0)` / `bne v0,zero` at `0x801F6C6C..0x801F6C74`), then seeks
+/// `FUN_8003EAE4(0, 0x11)`.
 pub const fn sideband_wait_arm(prot_entry: u32) -> Option<u8> {
     match prot_entry {
-        904 | 909..=913 | 916 | 917 | 919..=923 | 925 | 927..=929 | 933 => Some(1),
+        904 | 909..=913 | 916 | 917 | 919..=925 | 927..=929 | 933 => Some(1),
         903 | 905..=908 | 914 | 915 | 918 | 930..=932 | 934 => Some(2),
         _ => None,
     }
