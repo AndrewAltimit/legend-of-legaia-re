@@ -67,7 +67,7 @@ pub const SLIPPERY_LAST_ARM: u8 = 10;
 ///   exit `+= scalar << 7`
 ///   (the damage arm);
 /// * `10` - TR z `+= 4 p` while the countdown runs, `+= p >> 3` after it;
-///   once it is spent the arm stores phase `0xFF`;
+///   once it is spent and the row has settled the arm stores phase `0xFF`;
 /// * `0xFF` - holds (retail returns `0`: the module is done).
 ///
 /// The creature's clips are staged here: arm 2's exit stores `+0x1DA` bare, so
@@ -81,10 +81,11 @@ pub const SLIPPERY_LAST_ARM: u8 = 10;
 /// the monster row) frames the group's centre through `FUN_801DCEAC` with its
 /// extent doubled into TR z.
 ///
-/// Not carried: arm 10's wait for every monster to be idle (`+0x1D9 == 0`,
-/// `0x801F7A90..0x801F7B18`) - the arm gates on the countdown alone.
+/// Arm 10 also waits for the monster row to settle (`+0x1D9 == 0` on a
+/// living seat, the colour word out on a dead one, `0x801F7A90..0x801F7B18`,
+/// [`ModuleCamState::row_settled`]).
 ///
-/// PORT: FUN_801F69D8 (PROT 0920; the whole phase chain's gates, camera writes and captions - parts, fades and the arm 10 idle wait not carried)
+/// PORT: FUN_801F69D8 (PROT 0920; the whole phase chain's gates, camera writes, captions and arm 10's row wait - parts and fades not carried)
 pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let c = seats.caster;
     let p = MODULE_DRAIN_PER_TICK;
@@ -230,7 +231,11 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
             } else {
                 nudge(0, 0, (p * DELTA_PER_TICK) >> 3, 0)
             };
-            if st.countdown.0 > 0 {
+            // The row poll (`0x801F7A90..0x801F7B18`) after the drain: every
+            // monster seat `3 .. 3 + ctx[+1]` alive and idle (`+0x1D9 == 0`)
+            // or dead with its colour word out, else the arm holds
+            // (`beqz s3` at `0x801F7B1C`) whatever the countdown.
+            if st.countdown.0 > 0 || !st.row_settled {
                 return ArmDirection::HOLD.nudged(drift);
             }
             ArmDirection {

@@ -12,6 +12,10 @@
 //! packets over the finished scene at fixed entries (disclosed in
 //! `cast_theeder`), where retail links the depth-averaged ones at their
 //! ends' mean depth.
+//!
+//! The file also walks tick bodies whole ([`walk`]): PROT 0904's and 0906's
+//! from arm 0 to Done beside the band's module half, and the same walk over
+//! the PROT 0920 and 0923 strikes that turn the seats they hit.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_cast::seru_magic_ticks::TheederTrail;
@@ -772,6 +776,399 @@ mod walk {
         assert_eq!(cpu.call(va, &[]), Stop::Returned);
         cpu.regs.r[V0] != 0
     }
+    /// One tick body the walk runs: its owning entry, its entry VA, the
+    /// cast's action id, its side-band wait arm and the cast's target code.
+    #[derive(Clone, Copy)]
+    pub(super) struct Body {
+        pub entry: u32,
+        pub va: u32,
+        pub action: u8,
+        pub side: u8,
+        pub code: u8,
+    }
+
+    /// What a walk compared, and every mismatch it found.
+    #[derive(Default)]
+    pub(super) struct Walked {
+        pub failures: Vec<String>,
+        pub compared: usize,
+        pub shots_matched: usize,
+        pub cadence_misses: usize,
+        pub retail_strikes: std::collections::BTreeSet<(u32, u8, u8)>,
+        pub port_strikes: std::collections::BTreeSet<(u32, u8, u8)>,
+        /// Per body: the hit-arm passes that struck a seat.
+        pub hits: Vec<usize>,
+        /// Per body: the seat passes whose facing a strike had turned, matched.
+        pub faced: Vec<usize>,
+    }
+
+    /// Walk each body arm 0 to Done on every layout, beside the band's
+    /// module half (see the test below for what is compared).
+    pub(super) fn walk_bodies(bodies: &[Body]) -> Walked {
+        use legaia_engine_cast::cast_module_camera as cam;
+        use legaia_engine_cast::seru_magic_ticks::THEEDER_TRAIL_PASS_TICKS;
+        let mut out = Walked {
+            hits: vec![0; bodies.len()],
+            faced: vec![0; bodies.len()],
+            ..Walked::default()
+        };
+        let Walked {
+            failures,
+            compared,
+            shots_matched,
+            cadence_misses,
+            retail_strikes,
+            port_strikes,
+            hits,
+            faced,
+        } = &mut out;
+        for (
+            k,
+            &Body {
+                entry,
+                va,
+                action,
+                side,
+                code: code0,
+            },
+        ) in bodies.iter().enumerate()
+        {
+            let profile = cam::module_profile(entry).expect("directed");
+            for layout in LAYOUTS {
+                // The fallen run also casts on one seat, with the band's timer
+                // still running into the side-band arm.
+                for fallen in [false, true] {
+                    let code = if fallen && (3..8).contains(&code0) || fallen && code0 == 9 {
+                        layout.victim as u8
+                    } else {
+                        code0
+                    };
+                    let what = format!(
+                        "PROT {entry:04} caster {} of {} fallen {fallen} target {code}",
+                        layout.caster, layout.monsters
+                    );
+                    let mut r = rig(entry, action, code, layout).expect("rig");
+                    let mut band_timer: u16 = if fallen { 12 } else { 0 };
+                    // The fallen run: the seat after the victim down and faded,
+                    // the last monster seat in Stone.
+                    let stoned = fallen.then_some(2 + layout.monsters);
+                    if fallen {
+                        let s = if layout.victim + 1 < 3 + layout.monsters {
+                            layout.victim + 1
+                        } else {
+                            3
+                        };
+                        let a = ACTOR + s * STRIDE;
+                        r.cpu.mem.wr16(a + 0x14C, 0);
+                        r.cpu.mem.wr32(a + 4, 0);
+                        r.cpu.mem.wr8(a + 0x21C, 0);
+                        r.cpu.mem.wr16(ACTOR + stoned.unwrap() * STRIDE + 0x16E, 4);
+                    }
+                    let mut w = shadow(&mut r.cpu, layout, action).expect("shadow");
+                    let seeded_facing = if layout.mirror { 0x800 } else { 0 };
+                    if let Some(s) = stoned {
+                        w.battle.status_effects.apply(
+                            s as u8,
+                            legaia_engine_battle_vm::status_effects::StatusKind::Stone,
+                        );
+                    }
+                    let mut path = Vec::new();
+                    let mut done = false;
+                    let mut side_passes = 0;
+                    let mut dead = [0usize; 4];
+                    let mut react = [(0u16, 0u8); 8];
+                    let mut swept = (
+                        std::collections::BTreeSet::new(),
+                        std::collections::BTreeSet::new(),
+                    );
+                    let mut loop_passes = 0u32;
+                    let (mut retract_passes, mut retract_ticks) = (0u32, 0u32);
+                    for pass in 0..20_000u32 {
+                        let phase = r.cpu.mem.rd8(CTX + 0x279);
+                        // The fallen run's clip states: a struck monster's
+                        // reaction, the creature's unparked attack clip.
+                        let playing: [u8; 8] =
+                            std::array::from_fn(|s| if react[s].0 > 0 { react[s].1 } else { 0 });
+                        for x in &mut react {
+                            x.0 = x.0.saturating_sub(1);
+                        }
+                        if fallen && phase == 7 {
+                            loop_passes += 1;
+                        }
+                        fade(&mut r.cpu, &mut dead, if fallen { 150 } else { 7 });
+                        idle(
+                            &mut r.cpu,
+                            &playing,
+                            fallen && phase == 7 && loop_passes <= 3,
+                        );
+                        // The band's frame timer `ctx[+0x6D8]`, counting down
+                        // under the side-band arm and the poll after it (a
+                        // summon module keeps its own countdown there).
+                        if matches!(entry, 904 | 906) && phase <= side + 1 {
+                            r.cpu.mem.wr16(CTX + 0x6D8, band_timer);
+                            band_timer = band_timer.saturating_sub(1);
+                        }
+                        if phase == side {
+                            side_passes += 1;
+                            r.cpu
+                                .mem
+                                .wr8(CTX + 0x276, if side_passes <= 3 { 8 } else { 0 });
+                        }
+                        if w.casting.module_phase != phase {
+                            failures.push(format!(
+                                "{what} pass {pass}: retail arm {phase:#x} port {:#x}",
+                                w.casting.module_phase
+                            ));
+                            break;
+                        }
+                        for s in 0..8u32 {
+                            let a = ACTOR + s * STRIDE;
+                            let act = &mut w.actors[s as usize];
+                            act.battle.hp = r.cpu.mem.rd16(a + 0x14C);
+                            // The colour word as the walk's tint pass leaves
+                            // it: a pass compares what it writes over it.
+                            act.battle.render_color = r.cpu.mem.rd32(a + 4);
+                            if (3..7).contains(&s) {
+                                act.battle.current_anim = r.cpu.mem.rd8(a + 0x1D9);
+                                act.battle_reaction_entry = None;
+                            }
+                            if s == CREATURE {
+                                act.battle.current_anim = r.cpu.mem.rd8(a + 0x1D9);
+                                act.battle.hit_count_bound = r.cpu.mem.rd8(a + 0x21B);
+                                let p = trio(&mut r.cpu.mem, a + 0x34);
+                                act.move_state.world_x = p[0];
+                                act.move_state.world_y = p[1];
+                                act.move_state.world_z = p[2];
+                                act.battle.facing_angle = r.cpu.mem.rd16(a + 0x46);
+                            }
+                        }
+                        for s in 3..(3 + layout.monsters).min(7) {
+                            let rv =
+                                crate::cast_view::read_actor(&mut r.cpu.mem, ACTOR + s * STRIDE);
+                            let mut v = w.drive_cast_view(s as u8);
+                            v.staged_anim = rv.staged_anim;
+                            v.restage = rv.restage;
+                            w.drive_write_cast_view(s as u8, &v);
+                        }
+                        w.battle_ctx.frame_timer = r.cpu.mem.rd16(CTX + 0x6D8) as i16 as _;
+                        w.casting.band_word_live = None;
+                        w.rng_state = r.stream.get();
+                        w.casting.module_cam.sideband_busy = r.cpu.mem.rd8(CTX + 0x276) != 0;
+                        w.clock.display_frames += 1;
+                        let words_before: Vec<u32> =
+                            (0..8).map(|s| w.actors[s].battle.render_color).collect();
+                        let port_run =
+                            w.drive_summon_module_pass(layout.caster as u8, action, true);
+                        r.struck.borrow_mut().clear();
+                        r.shots.borrow_mut().clear();
+                        let staged_before: Vec<(u8, u8)> = (0..8u32)
+                            .map(|s| {
+                                let a = ACTOR + s * STRIDE;
+                                (r.cpu.mem.rd8(a + 0x1DA), r.cpu.mem.rd8(a + 0x1DC))
+                            })
+                            .collect();
+                        let busy = run(&mut r.cpu, va);
+                        for s in 3..7u32 {
+                            let a = ACTOR + s * STRIDE;
+                            let now = (r.cpu.mem.rd8(a + 0x1DA), r.cpu.mem.rd8(a + 0x1DC));
+                            if fallen && now != staged_before[s as usize] && now.0 != 0 {
+                                react[s as usize] = (250, now.0);
+                            }
+                        }
+                        let mut after = r.cpu.mem.rd8(CTX + 0x279);
+                        if path.last() != Some(&after) {
+                            path.push(after);
+                        }
+                        let hit_pass = profile.hit_arm == Some(phase);
+                        // The shot the pass builds (`FUN_801D829C`), against the
+                        // one the band's run arms.
+                        let retail_shot = r.shots.borrow().last().copied();
+                        let port_shot = port_run.as_ref().and_then(|p| p.camera_shot).map(|s| {
+                            let mut o = [0i16; 10];
+                            o[..3].copy_from_slice(&s.angles);
+                            o[3..6].copy_from_slice(&s.tr);
+                            o[6..9].copy_from_slice(&s.focus);
+                            o[9] = s.frames as i16;
+                            o
+                        });
+                        let turn = |s: Option<[i16; 10]>| {
+                            s.map(|mut s| {
+                                for a in &mut s[..3] {
+                                    *a &= 0xFFF;
+                                }
+                                s
+                            })
+                        };
+                        if turn(retail_shot) != turn(port_shot) {
+                            failures.push(format!(
+                                "{what} pass {pass} arm {phase:#x}: shot retail {retail_shot:?} port {port_shot:?}"
+                            ));
+                        } else if retail_shot.is_some() {
+                            *shots_matched += 1;
+                        }
+                        if hit_pass && !r.struck.borrow().is_empty() {
+                            hits[k] += 1;
+                        }
+                        // PROT 0904's retract, on the port's cadence.
+                        if entry == 904 && phase == 13 {
+                            retract_passes += 1;
+                            retract_ticks += 1;
+                            while after != 13 && w.casting.module_phase == 13 && retract_ticks < 200
+                            {
+                                w.clock.display_frames += 1;
+                                w.drive_summon_module_pass(layout.caster as u8, action, true);
+                                retract_ticks += 1;
+                            }
+                        }
+                        // PROT 0906's phase hole, released on the port's clock.
+                        if entry == 906 && after == 5 && w.casting.module_phase == 6 {
+                            r.cpu.mem.wr8(CTX + 0x279, 6);
+                            after = 6;
+                        }
+                        let terminal = !busy && after == 0xFF;
+                        if !terminal && w.casting.module_phase != after {
+                            failures.push(format!(
+                                "{what} pass {pass} arm {phase:#x}: retail leaves for {after:#x}, port {:#x}",
+                                w.casting.module_phase
+                            ));
+                            break;
+                        }
+                        // The sweep's strikes: the port tests its cone on its
+                        // step-4 ticks (`theeder_pass_tested`), this walk's
+                        // retail on every pass, so which pass strikes a seat is
+                        // not compared - what a strike stores is, on both sides.
+                        let sweeping = entry == 904 && phase == 12;
+                        if sweeping {
+                            for s in 3..(3 + layout.monsters).min(7) {
+                                let a = ACTOR + s * STRIDE;
+                                let b = &w.actors[s as usize].battle;
+                                if r.struck.borrow().contains(&(s as u8)) {
+                                    swept.0.insert(s as u8);
+                                    retail_strikes.insert((
+                                        r.cpu.mem.rd32(a + 4),
+                                        r.cpu.mem.rd8(a + 0x21C),
+                                        r.cpu.mem.rd8(a + 0x21F),
+                                    ));
+                                }
+                                if b.render_color != words_before[s as usize] && b.render_flag == 0
+                                {
+                                    swept.1.insert(s as u8);
+                                    port_strikes.insert((
+                                        b.render_color,
+                                        b.render_flag,
+                                        b.impact_state,
+                                    ));
+                                }
+                            }
+                        }
+                        if entry == 904 && phase == 12 && after != 12 {
+                            // The port's tested words (`0x40 + 0x100 * k`) are
+                            // among this walk's (`0x40 * k`) and the cone is the
+                            // same, so every seat the port struck retail struck;
+                            // retail may strike more.
+                            if !swept.1.is_subset(&swept.0) {
+                                failures.push(format!(
+                                    "{what}: the sweep struck retail {:?} port {:?}",
+                                    swept.0, swept.1
+                                ));
+                            }
+                            *cadence_misses += swept.0.difference(&swept.1).count();
+                            // The sweep's seats, re-seated off retail's for the
+                            // arms after it.
+                            for s in 3..(3 + layout.monsters).min(7) {
+                                let a = ACTOR + s * STRIDE;
+                                let rv = crate::cast_view::read_actor(&mut r.cpu.mem, a);
+                                let act = &mut w.actors[s as usize];
+                                act.battle.render_color = rv.present_04;
+                                act.battle.render_flag = rv.render_flag;
+                                act.battle.impact_state = rv.render_21f;
+                                act.battle.facing_angle = r.cpu.mem.rd16(a + 0x46);
+                                let mut v = w.drive_cast_view(s as u8);
+                                v.staged_anim = rv.staged_anim;
+                                v.restage = rv.restage;
+                                w.drive_write_cast_view(s as u8, &v);
+                            }
+                        }
+                        for s in 0..(3 + layout.monsters).min(7) {
+                            if sweeping && s >= 3 {
+                                continue;
+                            }
+                            let a = ACTOR + s * STRIDE;
+                            let b = &w.actors[s as usize].battle;
+                            let shown =
+                                |c: u32, f: u8| if f == 0 && c == 0x2008_0200 { 0 } else { c };
+                            let rhp = r.cpu.mem.rd16(a + 0x14C);
+                            let got = (
+                                shown(r.cpu.mem.rd32(a + 4), r.cpu.mem.rd8(a + 0x21C)),
+                                r.cpu.mem.rd8(a + 0x21C),
+                                r.cpu.mem.rd16(a + 0x16E),
+                                if hit_pass { b.hp } else { rhp },
+                            );
+                            let port = (
+                                shown(b.render_color, b.render_flag),
+                                b.render_flag,
+                                w.raw_status_word(s as u8),
+                                b.hp,
+                            );
+                            if got != port {
+                                failures.push(format!(
+                                    "{what} pass {pass} arm {phase:#x}: seat {s} tint/flag/status/hp retail {got:x?} port {port:x?}"
+                                ));
+                            }
+                            // The facing a strike turns a monster to.
+                            let (rf, pf) =
+                                (r.cpu.mem.rd16(a + 0x46) & 0xFFF, b.facing_angle & 0xFFF);
+                            if s >= 3 && rf != pf {
+                                failures.push(format!(
+                                    "{what} pass {pass} arm {phase:#x}: seat {s} facing retail {rf:#x} port {pf:#x}"
+                                ));
+                            } else if s >= 3 && rf != seeded_facing {
+                                faced[k] += 1;
+                            }
+                            if s >= 3 && !hit_pass {
+                                let rs =
+                                    crate::cast_view::read_actor(&mut r.cpu.mem, a).staged_anim;
+                                let ps = w.drive_cast_view(s as u8).staged_anim;
+                                if rs != ps {
+                                    failures.push(format!(
+                                        "{what} pass {pass} arm {phase:#x}: seat {s} staged retail {rs:#x} port {ps:#x}"
+                                    ));
+                                }
+                            }
+                        }
+                        *compared += 1;
+                        if !busy {
+                            done = true;
+                            break;
+                        }
+                    }
+                    eprintln!(
+                        "{what}: arms {path:x?} done {done}; retract {retract_passes} passes / {retract_ticks} ticks"
+                    );
+                    if !done {
+                        failures.push(format!(
+                            "{what}: no finish, stuck at arm {:#x}",
+                            r.cpu.mem.rd8(CTX + 0x279)
+                        ));
+                    }
+                    if entry == 904 {
+                        // One count drop a pass on retail, one each
+                        // `THEEDER_TRAIL_PASS_TICKS` ticks on the port.
+                        let want = retract_passes * u32::from(THEEDER_TRAIL_PASS_TICKS);
+                        if retract_passes == 0
+                            || retract_ticks.abs_diff(want) > u32::from(THEEDER_TRAIL_PASS_TICKS)
+                        {
+                            failures.push(format!(
+                                "{what}: retract {retract_passes} passes, port {retract_ticks} ticks"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        legaia_engine_core::world::summon_roll_override::set(None);
+        out
+    }
 }
 
 /// PROT 0904's and PROT 0906's tick bodies walked arm 0 to Done on every
@@ -801,354 +1198,82 @@ mod walk {
 #[test]
 fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
     differential!(prot(904, 0x801F_69D8), prot(906, 0x801F_69F4));
-    use legaia_engine_cast::cast_module_camera as cam;
-    use legaia_engine_cast::seru_magic_ticks::THEEDER_TRAIL_PASS_TICKS;
-    use walk::*;
+    use walk::{Body, walk_bodies};
     if disc().is_none() || scus_cpu().is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     }
-    let mut failures = Vec::new();
-    let mut compared = 0usize;
-    let mut retail_strikes = std::collections::BTreeSet::new();
-    let mut shots_matched = 0usize;
-    let mut cadence_misses = 0usize;
-    let mut port_strikes = std::collections::BTreeSet::new();
-    let mut hits = [0usize; 2];
-    for (entry, va, action, side) in [
-        (904u32, 0x801F_69D8u32, 0x82u8, 1u8),
-        (906, 0x801F_69F4, 0x84, 2),
-    ] {
-        let profile = cam::module_profile(entry).expect("directed");
-        for layout in LAYOUTS {
-            // The fallen run also casts on one seat, with the band's timer
-            // still running into the side-band arm.
-            for fallen in [false, true] {
-                let code = if fallen { layout.victim as u8 } else { 9 };
-                let what = format!(
-                    "PROT {entry:04} caster {} of {} fallen {fallen} target {code}",
-                    layout.caster, layout.monsters
-                );
-                let mut r = walk::rig(entry, action, code, layout).expect("rig");
-                let mut band_timer: u16 = if fallen { 12 } else { 0 };
-                // The fallen run: the seat after the victim down and faded,
-                // the last monster seat in Stone.
-                let stoned = fallen.then_some(2 + layout.monsters);
-                if fallen {
-                    let s = if layout.victim + 1 < 3 + layout.monsters {
-                        layout.victim + 1
-                    } else {
-                        3
-                    };
-                    let a = ACTOR + s * STRIDE;
-                    r.cpu.mem.wr16(a + 0x14C, 0);
-                    r.cpu.mem.wr32(a + 4, 0);
-                    r.cpu.mem.wr8(a + 0x21C, 0);
-                    r.cpu.mem.wr16(ACTOR + stoned.unwrap() * STRIDE + 0x16E, 4);
-                }
-                let mut w = walk::shadow(&mut r.cpu, layout, action).expect("shadow");
-                if let Some(s) = stoned {
-                    w.battle.status_effects.apply(
-                        s as u8,
-                        legaia_engine_battle_vm::status_effects::StatusKind::Stone,
-                    );
-                }
-                let mut path = Vec::new();
-                let mut done = false;
-                let mut side_passes = 0;
-                let mut dead = [0usize; 4];
-                let mut react = [(0u16, 0u8); 8];
-                let mut swept = (
-                    std::collections::BTreeSet::new(),
-                    std::collections::BTreeSet::new(),
-                );
-                let mut loop_passes = 0u32;
-                let (mut retract_passes, mut retract_ticks) = (0u32, 0u32);
-                for pass in 0..20_000u32 {
-                    let phase = r.cpu.mem.rd8(CTX + 0x279);
-                    // The fallen run's clip states: a struck monster's
-                    // reaction, the creature's unparked attack clip.
-                    let playing: [u8; 8] =
-                        std::array::from_fn(|s| if react[s].0 > 0 { react[s].1 } else { 0 });
-                    for x in &mut react {
-                        x.0 = x.0.saturating_sub(1);
-                    }
-                    if fallen && phase == 7 {
-                        loop_passes += 1;
-                    }
-                    fade(&mut r.cpu, &mut dead, if fallen { 150 } else { 7 });
-                    idle(
-                        &mut r.cpu,
-                        &playing,
-                        fallen && phase == 7 && loop_passes <= 3,
-                    );
-                    // The band's frame timer `ctx[+0x6D8]`, counting down
-                    // under the side-band arm and the poll after it.
-                    if phase <= side + 1 {
-                        r.cpu.mem.wr16(CTX + 0x6D8, band_timer);
-                        band_timer = band_timer.saturating_sub(1);
-                    }
-                    if phase == side {
-                        side_passes += 1;
-                        r.cpu
-                            .mem
-                            .wr8(CTX + 0x276, if side_passes <= 3 { 8 } else { 0 });
-                    }
-                    if w.casting.module_phase != phase {
-                        failures.push(format!(
-                            "{what} pass {pass}: retail arm {phase:#x} port {:#x}",
-                            w.casting.module_phase
-                        ));
-                        break;
-                    }
-                    for s in 0..8u32 {
-                        let a = ACTOR + s * STRIDE;
-                        let act = &mut w.actors[s as usize];
-                        act.battle.hp = r.cpu.mem.rd16(a + 0x14C);
-                        // The colour word as the walk's tint pass leaves
-                        // it: a pass compares what it writes over it.
-                        act.battle.render_color = r.cpu.mem.rd32(a + 4);
-                        if (3..7).contains(&s) {
-                            act.battle.current_anim = r.cpu.mem.rd8(a + 0x1D9);
-                            act.battle_reaction_entry = None;
-                        }
-                        if s == CREATURE {
-                            act.battle.current_anim = r.cpu.mem.rd8(a + 0x1D9);
-                            act.battle.hit_count_bound = r.cpu.mem.rd8(a + 0x21B);
-                            let p = trio(&mut r.cpu.mem, a + 0x34);
-                            act.move_state.world_x = p[0];
-                            act.move_state.world_y = p[1];
-                            act.move_state.world_z = p[2];
-                            act.battle.facing_angle = r.cpu.mem.rd16(a + 0x46);
-                        }
-                    }
-                    for s in 3..(3 + layout.monsters).min(7) {
-                        let rv = crate::cast_view::read_actor(&mut r.cpu.mem, ACTOR + s * STRIDE);
-                        let mut v = w.drive_cast_view(s as u8);
-                        v.staged_anim = rv.staged_anim;
-                        v.restage = rv.restage;
-                        w.drive_write_cast_view(s as u8, &v);
-                    }
-                    w.battle_ctx.frame_timer = r.cpu.mem.rd16(CTX + 0x6D8) as i16 as _;
-                    w.casting.band_word_live = None;
-                    w.rng_state = r.stream.get();
-                    w.casting.module_cam.sideband_busy = r.cpu.mem.rd8(CTX + 0x276) != 0;
-                    w.clock.display_frames += 1;
-                    let words_before: Vec<u32> =
-                        (0..8).map(|s| w.actors[s].battle.render_color).collect();
-                    let port_run = w.drive_summon_module_pass(layout.caster as u8, action, true);
-                    r.struck.borrow_mut().clear();
-                    r.shots.borrow_mut().clear();
-                    let staged_before: Vec<(u8, u8)> = (0..8u32)
-                        .map(|s| {
-                            let a = ACTOR + s * STRIDE;
-                            (r.cpu.mem.rd8(a + 0x1DA), r.cpu.mem.rd8(a + 0x1DC))
-                        })
-                        .collect();
-                    let busy = run(&mut r.cpu, va);
-                    for s in 3..7u32 {
-                        let a = ACTOR + s * STRIDE;
-                        let now = (r.cpu.mem.rd8(a + 0x1DA), r.cpu.mem.rd8(a + 0x1DC));
-                        if fallen && now != staged_before[s as usize] && now.0 != 0 {
-                            react[s as usize] = (250, now.0);
-                        }
-                    }
-                    let mut after = r.cpu.mem.rd8(CTX + 0x279);
-                    if path.last() != Some(&after) {
-                        path.push(after);
-                    }
-                    let hit_pass = profile.hit_arm == Some(phase);
-                    // The shot the pass builds (`FUN_801D829C`), against the
-                    // one the band's run arms.
-                    let retail_shot = r.shots.borrow().last().copied();
-                    let port_shot = port_run.as_ref().and_then(|p| p.camera_shot).map(|s| {
-                        let mut o = [0i16; 10];
-                        o[..3].copy_from_slice(&s.angles);
-                        o[3..6].copy_from_slice(&s.tr);
-                        o[6..9].copy_from_slice(&s.focus);
-                        o[9] = s.frames as i16;
-                        o
-                    });
-                    let turn = |s: Option<[i16; 10]>| {
-                        s.map(|mut s| {
-                            for a in &mut s[..3] {
-                                *a &= 0xFFF;
-                            }
-                            s
-                        })
-                    };
-                    if turn(retail_shot) != turn(port_shot) {
-                        failures.push(format!(
-                            "{what} pass {pass} arm {phase:#x}: shot retail {retail_shot:?} port {port_shot:?}"
-                        ));
-                    } else if retail_shot.is_some() {
-                        shots_matched += 1;
-                    }
-                    if hit_pass && !r.struck.borrow().is_empty() {
-                        hits[usize::from(entry == 906)] += 1;
-                    }
-                    // PROT 0904's retract, on the port's cadence.
-                    if entry == 904 && phase == 13 {
-                        retract_passes += 1;
-                        retract_ticks += 1;
-                        while after != 13 && w.casting.module_phase == 13 && retract_ticks < 200 {
-                            w.clock.display_frames += 1;
-                            w.drive_summon_module_pass(layout.caster as u8, action, true);
-                            retract_ticks += 1;
-                        }
-                    }
-                    // PROT 0906's phase hole, released on the port's clock.
-                    if entry == 906 && after == 5 && w.casting.module_phase == 6 {
-                        r.cpu.mem.wr8(CTX + 0x279, 6);
-                        after = 6;
-                    }
-                    let terminal = !busy && after == 0xFF;
-                    if !terminal && w.casting.module_phase != after {
-                        failures.push(format!(
-                            "{what} pass {pass} arm {phase:#x}: retail leaves for {after:#x}, port {:#x}",
-                            w.casting.module_phase
-                        ));
-                        break;
-                    }
-                    // The sweep's strikes: the port tests its cone on its
-                    // step-4 ticks (`theeder_pass_tested`), this walk's
-                    // retail on every pass, so which pass strikes a seat is
-                    // not compared - what a strike stores is, on both sides.
-                    let sweeping = entry == 904 && phase == 12;
-                    if sweeping {
-                        for s in 3..(3 + layout.monsters).min(7) {
-                            let a = ACTOR + s * STRIDE;
-                            let b = &w.actors[s as usize].battle;
-                            if r.struck.borrow().contains(&(s as u8)) {
-                                swept.0.insert(s as u8);
-                                retail_strikes.insert((
-                                    r.cpu.mem.rd32(a + 4),
-                                    r.cpu.mem.rd8(a + 0x21C),
-                                    r.cpu.mem.rd8(a + 0x21F),
-                                ));
-                            }
-                            if b.render_color != words_before[s as usize] && b.render_flag == 0 {
-                                swept.1.insert(s as u8);
-                                port_strikes.insert((
-                                    b.render_color,
-                                    b.render_flag,
-                                    b.impact_state,
-                                ));
-                            }
-                        }
-                    }
-                    if entry == 904 && phase == 12 && after != 12 {
-                        // The port's tested words (`0x40 + 0x100 * k`) are
-                        // among this walk's (`0x40 * k`) and the cone is the
-                        // same, so every seat the port struck retail struck;
-                        // retail may strike more.
-                        if !swept.1.is_subset(&swept.0) {
-                            failures.push(format!(
-                                "{what}: the sweep struck retail {:?} port {:?}",
-                                swept.0, swept.1
-                            ));
-                        }
-                        cadence_misses += swept.0.difference(&swept.1).count();
-                        // The sweep's seats, re-seated off retail's for the
-                        // arms after it.
-                        for s in 3..(3 + layout.monsters).min(7) {
-                            let a = ACTOR + s * STRIDE;
-                            let rv = crate::cast_view::read_actor(&mut r.cpu.mem, a);
-                            let act = &mut w.actors[s as usize];
-                            act.battle.render_color = rv.present_04;
-                            act.battle.render_flag = rv.render_flag;
-                            act.battle.impact_state = rv.render_21f;
-                            act.battle.facing_angle = r.cpu.mem.rd16(a + 0x46);
-                            let mut v = w.drive_cast_view(s as u8);
-                            v.staged_anim = rv.staged_anim;
-                            v.restage = rv.restage;
-                            w.drive_write_cast_view(s as u8, &v);
-                        }
-                    }
-                    for s in 0..(3 + layout.monsters).min(7) {
-                        if sweeping && s >= 3 {
-                            continue;
-                        }
-                        let a = ACTOR + s * STRIDE;
-                        let b = &w.actors[s as usize].battle;
-                        let shown = |c: u32, f: u8| if f == 0 && c == 0x2008_0200 { 0 } else { c };
-                        let rhp = r.cpu.mem.rd16(a + 0x14C);
-                        let got = (
-                            shown(r.cpu.mem.rd32(a + 4), r.cpu.mem.rd8(a + 0x21C)),
-                            r.cpu.mem.rd8(a + 0x21C),
-                            r.cpu.mem.rd16(a + 0x16E),
-                            if hit_pass { b.hp } else { rhp },
-                        );
-                        let port = (
-                            shown(b.render_color, b.render_flag),
-                            b.render_flag,
-                            w.raw_status_word(s as u8),
-                            b.hp,
-                        );
-                        if got != port {
-                            failures.push(format!(
-                                "{what} pass {pass} arm {phase:#x}: seat {s} tint/flag/status/hp retail {got:x?} port {port:x?}"
-                            ));
-                        }
-                        // The facing a strike turns a monster to.
-                        let (rf, pf) = (r.cpu.mem.rd16(a + 0x46) & 0xFFF, b.facing_angle & 0xFFF);
-                        if s >= 3 && rf != pf {
-                            failures.push(format!(
-                                "{what} pass {pass} arm {phase:#x}: seat {s} facing retail {rf:#x} port {pf:#x}"
-                            ));
-                        }
-                        if s >= 3 && !hit_pass {
-                            let rs = crate::cast_view::read_actor(&mut r.cpu.mem, a).staged_anim;
-                            let ps = w.drive_cast_view(s as u8).staged_anim;
-                            if rs != ps {
-                                failures.push(format!(
-                                    "{what} pass {pass} arm {phase:#x}: seat {s} staged retail {rs:#x} port {ps:#x}"
-                                ));
-                            }
-                        }
-                    }
-                    compared += 1;
-                    if !busy {
-                        done = true;
-                        break;
-                    }
-                }
-                eprintln!(
-                    "{what}: arms {path:x?} done {done}; retract {retract_passes} passes / {retract_ticks} ticks"
-                );
-                if !done {
-                    failures.push(format!(
-                        "{what}: no finish, stuck at arm {:#x}",
-                        r.cpu.mem.rd8(CTX + 0x279)
-                    ));
-                }
-                if entry == 904 {
-                    // One count drop a pass on retail, one each
-                    // `THEEDER_TRAIL_PASS_TICKS` ticks on the port.
-                    let want = retract_passes * u32::from(THEEDER_TRAIL_PASS_TICKS);
-                    if retract_passes == 0
-                        || retract_ticks.abs_diff(want) > u32::from(THEEDER_TRAIL_PASS_TICKS)
-                    {
-                        failures.push(format!(
-                            "{what}: retract {retract_passes} passes, port {retract_ticks} ticks"
-                        ));
-                    }
-                }
-            }
-        }
-    }
-    legaia_engine_core::world::summon_roll_override::set(None);
+    let mut out = walk_bodies(&[
+        Body {
+            entry: 904,
+            va: 0x801F_69D8,
+            action: 0x82,
+            side: 1,
+            code: 9,
+        },
+        Body {
+            entry: 906,
+            va: 0x801F_69F4,
+            action: 0x84,
+            side: 2,
+            code: 9,
+        },
+    ]);
     eprintln!(
-        "{compared} passes compared, hits {hits:?}, {shots_matched} shots matched, {cadence_misses} PROT 0904 strikes off the port's tested words"
+        "{} passes compared, hits {:?}, struck facings {:?}, {} shots matched, {} PROT 0904 strikes off the port's tested words",
+        out.compared, out.hits, out.faced, out.shots_matched, out.cadence_misses
     );
     // What PROT 0904's strike stores: the colour word, flag and selector.
-    assert!(!retail_strikes.is_empty());
+    assert!(!out.retail_strikes.is_empty());
     assert_eq!(
-        retail_strikes, port_strikes,
+        out.retail_strikes, out.port_strikes,
         "PROT 0904 strike stores, retail vs port"
     );
-    assert!(hits.iter().all(|&n| n > 0), "{hits:?}");
-    let n = failures.len();
-    failures.truncate(60);
-    assert!(n == 0, "{n} mismatches:\n{}", failures.join("\n"));
+    assert!(out.hits.iter().all(|&n| n > 0), "{:?}", out.hits);
+    assert!(out.faced[1] > 0, "{:?}", out.faced);
+    let n = out.failures.len();
+    out.failures.truncate(60);
+    assert!(n == 0, "{n} mismatches:\n{}", out.failures.join("\n"));
+}
+
+/// The same walk over two summon hit arms that turn each seat they strike:
+/// PROT 0920 (Slippery) arm 9 faces it to the camera's focus point
+/// (`0x801F7938..0x801F7968`) and PROT 0923 (Gilium) arm `0x15` to the
+/// stage's origin (`0x801F896C..0x801F8990`). The walk's builder does not
+/// land a shot on the focus globals and the shadow's world has no battle
+/// camera, so both sides face Slippery's struck seats to the origin: the
+/// store's form is compared, not the framed point. PROT 0920's arm 10 also
+/// waits for the row, which the slow fades and long reactions hold.
+#[test]
+fn the_slippery_and_gilium_strikes_turn_their_seats_as_retail_does() {
+    differential!(prot(920, 0x801F_69D8), prot(923, 0x801F_69D8));
+    use walk::{Body, walk_bodies};
+    if disc().is_none() || scus_cpu().is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let mut out = walk_bodies(&[
+        Body {
+            entry: 920,
+            va: 0x801F_69D8,
+            action: 0x92,
+            side: 1,
+            code: 9,
+        },
+        Body {
+            entry: 923,
+            va: 0x801F_69D8,
+            action: 0x95,
+            side: 1,
+            code: 9,
+        },
+    ]);
+    eprintln!(
+        "{} passes compared, hits {:?}, struck facings {:?}, {} shots matched",
+        out.compared, out.hits, out.faced, out.shots_matched
+    );
+    assert!(out.faced.iter().all(|&n| n > 0), "{:?}", out.faced);
+    let n = out.failures.len();
+    out.failures.truncate(60);
+    assert!(n == 0, "{n} mismatches:\n{}", out.failures.join("\n"));
 }

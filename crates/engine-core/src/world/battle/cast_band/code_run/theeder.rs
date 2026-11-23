@@ -98,7 +98,7 @@ impl World {
     }
 
     /// PROT 0906 arm 13's facing store on every seat its sweep reaches
-    /// ([`legaia_engine_cast::seru_magic_ticks::gizam_victim_facing`]): each
+    /// ([`legaia_engine_cast::seru_magic_ticks::struck_seat_facing`]): each
     /// turns to face the creature, so its reaction's knockback runs away from
     /// it. `seats` are retail pool seats.
     ///
@@ -123,7 +123,7 @@ impl World {
             else {
                 continue;
             };
-            a.battle.facing_angle = legaia_engine_cast::seru_magic_ticks::gizam_victim_facing(
+            a.battle.facing_angle = legaia_engine_cast::seru_magic_ticks::struck_seat_facing(
                 creature,
                 (a.move_state.world_x, a.move_state.world_z),
             );
