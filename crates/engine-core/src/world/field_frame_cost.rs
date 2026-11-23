@@ -592,7 +592,7 @@ impl World {
     /// REF: FUN_8003D53C, FUN_8003D764
     pub(in crate::world) fn field_xa_polled_cost(&self, cost: i32) -> i32 {
         use legaia_engine_battle_loop::frame_clock::{CdTiming, xa_loaded_frame_cost};
-        if !self.toggles.field_frame_span_law || !self.field_xa_busy() {
+        if !self.toggles.field_frame_span_law || !self.field_xa_reading() {
             return cost;
         }
         let work = cost.clamp(0, i32::from(u16::MAX)) as u16;

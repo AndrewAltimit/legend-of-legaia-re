@@ -231,8 +231,11 @@ pub struct RetailObs {
     /// stop watch last polled (`gp+0x970`, stored at `0x8003D9DC`) to the
     /// clip's end (`gp+0x974`) at the drive's double speed, plus the vsync
     /// the stop `FUN_8003EE00` takes to clear the word. `None` for a seek's
-    /// `1`.
+    /// `1` ([`Self::xa_seek_parked`]).
     pub xa_drive_left: Option<u16>,
+    /// The drive word reads `1`: a seek-ahead parked the head and no clip
+    /// has started since.
+    pub xa_seek_parked: bool,
     /// The frame pacer's history at the capture: the sixteen frame times of
     /// `DAT_80084098` and the write cursor `gp+0x440`
     /// ([`crate::retail_compare_battle::frame_cost_ring`]). `None` where the
@@ -495,6 +498,7 @@ impl RetailObs {
                 }
                 _ => None,
             },
+            xa_seek_parked: game_anchors::u32_at(ram, 0x8007_BC20) == 1,
             camera_staging: (matches!(class, StateClass::Field | StateClass::WorldMap)
                 && player.is_some())
             .then(|| super::walk_rewind::follow_staging_pose(ram, &camera)),

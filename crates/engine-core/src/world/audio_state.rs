@@ -172,6 +172,11 @@ pub struct AudioState {
     /// busy byte `0x8007B648`, which the starter's entry test turns into a
     /// restart). See [`crate::world::World::field_xa_seek_ahead`].
     pub(crate) field_xa_seek_stage: u8,
+    /// The drive word `0x8007BC20` at `1`: the seek-ahead's `FUN_8003EAE4`
+    /// stores it (`0x8003EB78`) and nothing clears it until a clip start
+    /// (`0x8003D5D8`) or a mode init (`0x8001DD9C`). It installs no
+    /// callback, so no poll runs behind it.
+    pub(crate) field_xa_seek_parked: bool,
     /// The static `SCUS_942.54` XA cue duration table (`DAT_800788B8`) the
     /// voice legs read (`legaia_game_tables::xa_cue_table`); installed at boot,
     /// `None` on a disc-free build (a voice cue then requests no span and
@@ -452,6 +457,7 @@ impl AudioState {
             field_xa_prestage: Vec::new(),
             field_xa_busy_frames: 0,
             field_xa_seek_stage: 0,
+            field_xa_seek_parked: false,
             xa_cue_durations: None,
             arts_voice_tables: None,
             arts_voice_last_channel: 0,

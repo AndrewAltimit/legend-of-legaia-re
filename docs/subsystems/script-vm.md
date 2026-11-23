@@ -1111,9 +1111,13 @@ passes at frame step `2`: the four stepping passes and one more where stage 3's
 settle wait answered `1`. The engine holds four, so the beat's voice line
 (`36 16 02 39 00` at `+0x43F`) lands two vsyncs early where it landed ten early
 before. The film's `cues` column tags the stage (`seek<n>`) and a one-shot's
-start (`xa`). The seek also raises the drive word `0x8007BC20` to `1` until the
-one-shot, which raises it to `2` for the clip's read: `554` vsyncs for that
-line's `0x216`.
+start (`xa`). The seek also raises the drive word `0x8007BC20` to `1` (`FUN_8003EAE4`,
+`0x8003EB78`) until the one-shot zeroes it and raises it to `2` for the clip's
+read (`0x8003D5D8`, `0x8003D65C`): `554` vsyncs for that line's `0x216`. A mode
+init clears it as well (`0x8001DD9C`). The engine holds the `1` from the seek
+stage until a clip start or a field entry (`World::field_xa_busy`), so a
+`36 FF FF` between a seek and its line waits as retail's does; no poll runs
+behind it.
 
 #### The stream gates on op 0x36
 
