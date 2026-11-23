@@ -70,7 +70,8 @@ impl World {
     /// | 21 (`0x801F772C..0x801F77A4`) | each live monster shown |
     /// | 26 (`0x801F7CEC`) | creature `+0x42 = 0` |
     /// | 27 (`0x801F805C..0x801F8170`) | each live monster back on its saved pose; creature hidden; caster shown |
-    /// | 28 (`0x801F81D8..0x801F828C`, every pass) | each live monster back on its saved pose |
+    /// | 27 (`0x801F7F40..0x801F7FC8`, every pass) | each live monster's rate `2`, `0` on its get-up entry |
+    /// | 28 (`0x801F81D8..0x801F828C`, every pass) | each live monster back on its saved pose, rate `2` |
     ///
     /// Arm 0 also halves each monster's render scale (`+0x72 = 0x800`) and
     /// arm 27 puts it back to `0x1000`; not carried: the body radius `+0x58`
@@ -146,6 +147,24 @@ impl World {
         }
         if phase == 28 {
             self.juggernaut_restore_monsters(&monster_slots);
+        }
+        // Arms 27 and 28 store each live monster's rate on every pass: `2`
+        // (`0x801F7F8C`, `0x801F8234`), and on arm 27 `0` for a monster whose
+        // playing clip is its get-up entry `+0x1F2` (`lbu 0x1d9` / `lbu
+        // 0x1f2` / `bne`, `sb zero,0x21d` at `0x801F7F98..0x801F7FAC`).
+        if matches!(phase, 27 | 28) {
+            for &(_, e) in &monster_slots {
+                let on_get_up = phase == 27
+                    && self.battle_current_anim(e) == self.cast_view(e as u8).reaction_gate;
+                if let Some(a) = self.actors.get_mut(e) {
+                    a.battle.anim_rate =
+                        legaia_engine_battle_vm::battle_anim_rate::AnimRate(if on_get_up {
+                            0
+                        } else {
+                            2
+                        });
+                }
+            }
         }
         // Arm 2's drive poll branches busy to the arm's tail
         // (`bnez v0,0x801F6F74` at `0x801F6D8C`), where the passing pass

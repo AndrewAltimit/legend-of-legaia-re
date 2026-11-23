@@ -1143,6 +1143,27 @@ impl World {
             .collect();
         let living = |w: &Self, s: usize| w.actors.get(s).is_some_and(|a| a.battle.hp != 0);
         let stand = |x: i16| ((i32::from(x).abs() >> 2) - 0x400) as i16;
+        // Arm 3 lifts every living monster `2 p` a pass while its sweep word
+        // is under `160 * scalar` (`+0x36 -= 2 p`, `0x801F70E8..0x801F7144`,
+        // behind a `+0x14C` test), the lift the director's TR y follows off
+        // the first seat; from there to its exit each pass stands the row
+        // back on the floor (`sh zero,0x36` at `0x801F6FC0..0x801F6FF8`).
+        if phase_in == 3 {
+            use legaia_engine_cast::cast_module_camera::{MODULE_DRAIN_PER_TICK, SPEED_SCALAR};
+            let lift = (2 * MODULE_DRAIN_PER_TICK) as i16;
+            let floored = passed || self.casting.module_cam.countdown.0 >= 160 * SPEED_SCALAR;
+            for &s in &seats {
+                if living(self, s)
+                    && let Some(a) = self.actors.get_mut(s)
+                {
+                    a.move_state.world_y = if floored {
+                        0
+                    } else {
+                        a.move_state.world_y.wrapping_sub(lift)
+                    };
+                }
+            }
+        }
         // Arms `0xB` and `0xC` tip the creature nose-up every pass, held or
         // not: pitch `+0x44 += (scalar * step) >> 1` (`0x801F7C54..0x801F7C60`,
         // `0x801F7D00..0x801F7D0C`); no later arm sets it back.

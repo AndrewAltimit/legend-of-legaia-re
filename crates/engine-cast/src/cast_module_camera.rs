@@ -1766,6 +1766,64 @@ impl ModuleProfile {
     }
 }
 
+/// The countdown an arm keeps on a pass its poll holds after its own gate let
+/// go: the side-band wait or the drive poll returns busy ahead of the arm's
+/// exit, so the exit's re-arm is never stored and the word keeps the gate's
+/// drain alone. PROT 0923's arm 2 drains its word (`0x801F6C6C..0x801F6CAC`),
+/// polls the drive (`0x801F6CB4..0x801F6CBC`, `bnez` to the busy return) and
+/// only then adds `0x200` (`0x801F6CE8`): held on the poll, it arrives at its
+/// next pass with the word at or under zero and passes as soon as the drive
+/// is idle, one countdown in all.
+///
+/// `before` is the state the pass opened on and `ahead` the director's
+/// would-pass from it. A would-pass that leaves the word positive has
+/// re-armed it; the drain is then read off a pass of the arm on a word too
+/// large to open (`direct` on `before` with the word raised), and a word the
+/// gate had already spent stays where it stood.
+pub fn polled_countdown(
+    direct: ModuleDirector,
+    before: &ModuleCamState,
+    ahead: &ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> ModuleCountdown {
+    if ahead.countdown.0 <= 0 {
+        return ahead.countdown;
+    }
+    let mut kept = ahead.countdown;
+    kept.0 = if before.countdown.0 > 0 {
+        const PROBE: i32 = 1 << 28;
+        let mut probe = *before;
+        probe.countdown.0 = PROBE;
+        let _ = direct(&mut probe, phase, seats);
+        before.countdown.0 - (PROBE - probe.countdown.0)
+    } else {
+        before.countdown.0
+    };
+    kept
+}
+
+/// The hold a poll makes of a would-pass `d`: the arm keeps the drift and
+/// nudge the director reports for the pass, since most arms make theirs ahead
+/// of the poll (PROT 0914's arm 2 pushes TR z out on every pass its
+/// side-band poll holds, its word spent or not). PROT 0920's arm 2 makes its
+/// push only while its word is positive (`blez` at `0x801F6CA0` straight to
+/// the poll at `0x801F6CE4`), so once the word is spent a held pass pushes
+/// nothing.
+pub fn polled_hold(
+    entry: u32,
+    phase: u8,
+    d: ArmDirection,
+    before: &ModuleCamState,
+) -> ArmDirection {
+    let spent = (entry, phase) == (920, 2) && before.countdown.0 <= 0;
+    ArmDirection {
+        drift: d.drift.filter(|_| !spent),
+        nudge: d.nudge.filter(|_| !spent),
+        ..ArmDirection::HOLD
+    }
+}
+
 /// The arm of a summon module's tick body that holds on the creature
 /// stream's CD read, `FUN_8003F2B8(1)` non-zero branching to the busy
 /// return: PROT 0910's and 0913's arm 2 (`jal 0x8003F2B8` at `0x801F6CDC` /

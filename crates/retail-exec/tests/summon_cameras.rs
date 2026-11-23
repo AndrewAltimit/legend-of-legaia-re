@@ -61,10 +61,14 @@ const AIM: u32 = 0x801D_CEAC;
 /// The cast damage wrapper the summon modules roll their own hits through.
 const WRAPPER: u32 = 0x801D_D0AC;
 const GROUP_LIST: u32 = 0x801F_6978;
+/// `FUN_8004E2F0`, the range poll.
+const RANGE: u32 = 0x8004_E2F0;
+/// The battle's outcome byte the range poll gates on.
+const BATTLE_OUTCOME: u32 = 0x8007_BD71;
 /// `FUN_8003F2B8`, the drive poll `CdSync(1)` each module's poll arm makes.
 const DRIVE_POLL: u32 = 0x8003_F2B8;
-/// The passes the walk holds each module's drive poll busy for.
-const DRIVE_BUSY_PASSES: u32 = 3;
+/// The calls of each module's drive poll the walk answers busy.
+const DRIVE_BUSY_CALLS: u32 = 3;
 
 /// The `k`th roll on `seat`: small, middling and past a monster's HP in
 /// turn, so the floors, the `HP - 1` clamps and the kills all run.
@@ -421,6 +425,10 @@ fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8, layout: Layout) {
         cpu.mem.wr32(RECORDS + i * 4, MONSTER_RECORD);
     }
     cpu.mem.wr8(SCALAR, SPEED_SCALAR as u8);
+    // The battle's outcome byte reads `0xFF` while the fight runs; the range
+    // poll `FUN_8004E2F0` answers out of reach on anything else
+    // (`0x8004E2F4..0x8004E310`).
+    cpu.mem.wr8(BATTLE_OUTCOME, 0xFF);
     cpu.mem.wr8(STEP, 1);
     for i in 0..5 {
         cpu.mem
@@ -473,6 +481,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     let (mut shadow_passes, mut shadow_left) = (0usize, 0usize);
     let mut fold_passes = 0usize;
     let mut drive_polls_held = 0usize;
+    let mut chase_hits = 0usize;
     let mut shadow_failures = Vec::<String>::new();
     let mut shadow_leaves = Vec::<String>::new();
     let all: Vec<(u32, u32, u8)> = BODIES.iter().chain(&PACED).copied().collect();
@@ -497,22 +506,31 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
         cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
         for target in jal_targets(&module) {
-            if ![AIM, BUILDER, BEARING, RAND, WRAPPER, DRIVE_POLL].contains(&target) {
+            // PROT 0915's chase reads the range poll live: its creature
+            // stands on the row in turn (below).
+            let live_reach = entry == 915 && target == RANGE;
+            if ![AIM, BUILDER, BEARING, RAND, WRAPPER, DRIVE_POLL].contains(&target) && !live_reach
+            {
                 cpu.stub(target, 0);
             }
         }
-        // The drive poll answers busy for the first passes of the module's
+        // The drive poll answers busy on its first calls from the module's
         // poll arm (`legaia_engine_battle_vm::battle_cast_cue::module_drive_arms`),
-        // as a seek still in flight does, and idle after. An arm that drains
-        // its own countdown ahead of the poll (PROT 0923, `bgtz a1` at
-        // `0x801F6CAC`, and the arm 2 of 0920, 0921, 0922 and 0924)
-        // makes no call on those passes: its busy return needs a seek that
-        // outlasts the countdown, which the walk does not stage.
+        // as a seek still in flight does, and idle after. The calls are
+        // counted, not the passes: an arm that drains its own countdown ahead
+        // of the poll (PROT 0923, `bgtz a1` at `0x801F6CAC`, and the arm 2 of
+        // 0920, 0921, 0922 and 0924) first calls it once that countdown is
+        // out, so its busy passes are a seek outlasting the countdown.
         let drive = legaia_engine_battle_vm::battle_cast_cue::module_drive_arms(&module);
         let drive_busy = Rc::new(std::cell::Cell::new(0u32));
+        let busy_calls = Rc::new(std::cell::Cell::new(0u32));
         {
             let busy = drive_busy.clone();
-            cpu.hook(DRIVE_POLL, move |r, _| r.r[V0] = busy.get());
+            let calls = busy_calls.clone();
+            cpu.hook(DRIVE_POLL, move |r, _| {
+                r.r[V0] = busy.get();
+                calls.set(calls.get() + busy.get());
+            });
         }
         // The damage wrapper `FUN_801DD0AC(_, 7, seat)` answers each call on
         // a seat with the next of that seat's scripted rolls, and the
@@ -706,7 +724,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             });
             let mut puera_compared = std::collections::BTreeSet::new();
             let mut sideband_passes = 0u32;
-            let mut poll_passes = 0u32;
+            busy_calls.set(0);
             // The band shadow: a world seated off the same records, the
             // band's module half (`World::drive_summon_module_pass`) run on
             // retail's phase beside each pass, every seat compared after it.
@@ -761,12 +779,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 }
                 let phase = cpu.mem.rd8(CTX + 0x279);
                 // The drive poll's busy passes.
-                let polls_busy = drive.is_some_and(|d| d.poll_arm == phase) && {
-                    poll_passes += 1;
-                    poll_passes <= DRIVE_BUSY_PASSES
-                };
+                let polls_busy = drive.is_some_and(|d| d.poll_arm == phase)
+                    && busy_calls.get() < DRIVE_BUSY_CALLS;
                 drive_busy.set(u32::from(polls_busy));
-                drive_polls_held += usize::from(polls_busy);
+                let calls_before = busy_calls.get();
                 // The side-band applier's stage `ctx[+0x276]` stands up for the
                 // first passes of the arm that waits on it
                 // (`cam::sideband_wait_arm`), as a turn's side-band read does.
@@ -775,6 +791,18 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     let up = sideband_passes <= 3;
                     cpu.mem.wr8(CTX + 0x276, if up { 8 } else { 0 });
                     sideband_held += usize::from(up);
+                }
+                // PROT 0915's arm `0xC` chases the row on the creature's own
+                // root motion, which the walk does not play: the creature
+                // stands on a monster seat in turn, a few passes on each, so
+                // the arm's live reach poll finds the row in and out of reach.
+                if (entry, phase) == (915, 0xC) {
+                    let s = 3 + (pass / 4) % layout.monsters;
+                    let (x, z) = layout.ground(s);
+                    let c = ACTOR + CREATURE * STRIDE;
+                    for (o, v) in [(0x34u32, x), (0x38, z), (0x3C, x), (0x40, z)] {
+                        cpu.mem.wr16(c + o, v as u16);
+                    }
                 }
                 // PROT 0931's arm `0x16` waits for its creature's cursor to stand
                 // on `0x120` exactly (`0x801F7C80`).
@@ -978,8 +1006,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         if shadow_after.get(s as usize).is_some_and(|&was| was != word) {
                             act.battle.render_color = word;
                         }
+                        // Every seat stands idle as the walk leaves it
+                        // (`+0x1D9`), which Mushura's chase tests.
+                        act.battle.current_anim = cpu.mem.rd8(a + 0x1D9);
                         if s == CREATURE {
-                            act.battle.current_anim = cpu.mem.rd8(a + 0x1D9);
                             let p = trio(&mut cpu.mem, a + 0x34);
                             act.move_state.world_x = p[0];
                             act.move_state.world_y = p[1];
@@ -1000,6 +1030,19 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         w.drive_write_cast_view(s as u8, &v);
                         w.actors[s as usize].battle.facing_angle =
                             cpu.mem.rd16(ACTOR + s * STRIDE + 0x46);
+                        // The ground trio and the animation rate, as this pass
+                        // finds them.
+                        let a = ACTOR + s * STRIDE;
+                        let p = trio(&mut cpu.mem, a + 0x34);
+                        let act = &mut w.actors[s as usize];
+                        [
+                            act.move_state.world_x,
+                            act.move_state.world_y,
+                            act.move_state.world_z,
+                        ] = p;
+                        act.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+                            cpu.mem.rd8(a + 0x21D),
+                        );
                     }
                     // The walk stubs the range poll `FUN_8004E2F0(7, victim)`
                     // in range, where its creature never walks; the shadow's
@@ -1061,11 +1104,21 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     fold_passes += usize::from(fold_pass);
                 }
                 spawn_log.borrow_mut().clear();
+                let hp_before: Vec<u16> = (3..7u32)
+                    .map(|s| cpu.mem.rd16(ACTOR + s * STRIDE + 0x14C))
+                    .collect();
                 let stop = cpu.call(va, &[]);
+                if (entry, phase) == (915, 0xC) {
+                    chase_hits += (3..7u32)
+                        .zip(&hp_before)
+                        .filter(|&(s, &h)| cpu.mem.rd16(ACTOR + s * STRIDE + 0x14C) != h)
+                        .count();
+                }
                 if stop != Stop::Returned {
                     failures.push(format!("PROT {entry:04} pass {pass} arm {phase}: {stop:?}"));
                     break;
                 }
+                drive_polls_held += (busy_calls.get() - calls_before) as usize;
                 // PROT 0915's chase runs ahead of the director
                 // (`World::mushura_chase_ahead`): the director reads the
                 // creature as this pass's turn left it.
@@ -1092,12 +1145,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         st = ahead;
                         d
                     } else {
-                        st.countdown = ahead.countdown;
-                        ArmDirection {
-                            drift: d.drift,
-                            nudge: d.nudge,
-                            ..ArmDirection::HOLD
-                        }
+                        let hold = cam::polled_hold(entry, phase, d, &st);
+                        st.countdown =
+                            cam::polled_countdown(profile.direct, &st, &ahead, phase, seats);
+                        hold
                     }
                 } else {
                     (profile.direct)(&mut st, phase, seats)
@@ -1177,19 +1228,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             w.raw_status_word(s as u8),
                             b.hp,
                         );
-                        // PROT 0915's arm `0xC` hits each monster its
-                        // creature reaches (`jal 0x8004E2F0` at
-                        // `0x801F7844`), which the walk stubs in reach for
-                        // every seat where the shadow's chase measures reach
-                        // off the seats: that arm's HP and stages are not
-                        // compared.
-                        let chase = (entry, phase) == (915, 0xC);
-                        let got = if chase {
-                            (got.0, got.1, got.2, w.actors[s].battle.hp)
-                        } else {
-                            got
-                        };
-                        if s >= 3 && !chase {
+                        if s >= 3 {
                             let r = crate::cast_view::read_actor(&mut cpu.mem, a);
                             let v = w.drive_cast_view(s as u8);
                             let rs = r.staged_anim;
@@ -1227,6 +1266,36 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         if got != port {
                             shadow_failures.push(format!(
                                 "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} tint/flag/status/hp retail {got:x?} port {port:x?}",
+                                layout.caster, layout.monsters
+                            ));
+                        }
+                    }
+                    // The row's ground trio and animation rate. The rate of a
+                    // seat with no HP stays out: retail tests its colour word,
+                    // which a faded seat and the engine's resting shown word
+                    // both read as `0`. Left out as well: the creature (seat
+                    // 7), which the host seats and the walk stands as retail
+                    // leaves it, and the spirit gauge, which retail's stubbed
+                    // wrapper (its finisher unrun) never fills.
+                    for s in 3..(3 + layout.monsters).min(7) {
+                        let a = ACTOR + s * STRIDE;
+                        let act = &w.actors[s as usize];
+                        let dead = cpu.mem.rd16(a + 0x14C) == 0;
+                        let got = (
+                            trio(&mut cpu.mem, a + 0x34),
+                            (!dead).then(|| cpu.mem.rd8(a + 0x21D)),
+                        );
+                        let port = (
+                            [
+                                act.move_state.world_x,
+                                act.move_state.world_y,
+                                act.move_state.world_z,
+                            ],
+                            (!dead).then(|| act.battle.anim_rate.get()),
+                        );
+                        if got != port {
+                            shadow_failures.push(format!(
+                                "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} trio/rate retail {got:x?} port {port:x?}",
                                 layout.caster, layout.monsters
                             ));
                         }
@@ -1518,9 +1587,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     // retail's phase walk over it.
     assert!(
         drive_polls_held >= 300,
-        "{drive_polls_held} drive poll passes held"
+        "{drive_polls_held} busy drive polls"
     );
     assert_eq!(shadow_left, 0, "casts left retail's phase walk");
+    // PROT 0915's chase struck the row through its live reach poll.
+    assert!(chase_hits >= 50, "PROT 0915 chase: {chase_hits} hits");
     assert!(
         shadow_failures.is_empty(),
         "{} summon shadow mismatches:\n{}",
@@ -1589,6 +1660,8 @@ fn summon_shadow(
         act.battle.active_target = cpu.mem.rd8(a + 0x1DD);
         act.battle.anim_rate =
             legaia_engine_battle_vm::battle_anim_rate::AnimRate(cpu.mem.rd8(a + 0x21D));
+        // The render node's body radius `+0x58`, as the walk seats it.
+        act.battle.render_radius = Some(cpu.mem.rd16(NODES + s * 0x100 + 0x58) as i16);
         act.move_state.world_x = p[0];
         act.move_state.world_y = p[1];
         act.move_state.world_z = p[2];
@@ -1598,6 +1671,10 @@ fn summon_shadow(
     }
     w.battle_ctx.active_actor = layout.caster as u8;
     w.casting.summon_actor_slot = Some(CREATURE as u8);
+    // The walk's battle frame is one vsync (step `1`), so every shadow tick
+    // opens a pass, as each of retail's calls does.
+    w.battle.frame_clock.step = 1;
+    w.battle.frame_clock.span_extra = 0;
     // The reaction run `+0x1EF..+0x1F2`, as the records hold it: a seat
     // with no clips reads it off its action bytes `+0x1DF..`.
     for s in 3..(3 + layout.monsters).min(7) {

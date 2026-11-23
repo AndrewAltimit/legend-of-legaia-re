@@ -384,11 +384,22 @@ impl World {
                     a.move_state.world_y = 0x400;
                 }
             }
-            // Arm 30 lets the row's last frames run out under the shatter
-            // (`0x801F8768..0x801F8784`).
-            (30, _) => {
-                for (e, _) in self.ra_seru_row(monster_count) {
-                    if let Some(a) = self.actors.get_mut(e) {
+            // Arm 30 on a scripted fight (`ctx[+0x287]`, `bnez` at
+            // `0x801F86F4`) lets the row's last frames run out
+            // (`0x801F8758..0x801F8784`): every seat `3..7` whose colour word
+            // is up takes rate `2` (`lw v0,4(v1)` / `beqz`, no HP test). Any
+            // other fight takes the shatter branch, which stores no rate
+            // (`World::apply_cast_kill_results`).
+            (30, _) if self.battle_ctx.scripted_fight != 0 => {
+                let map = self.cast_seat_map();
+                for seat in 3..7u8 {
+                    if let Some(a) = map
+                        .engine(seat)
+                        .and_then(|e| self.actors.get_mut(usize::from(e)))
+                        // The engine's shown word is its resting `0` under a
+                        // lowered marker, where retail's is `0x20080200`.
+                        && (a.battle.render_color != 0 || a.battle.render_flag == 0)
+                    {
                         a.battle.anim_rate = AnimRate(2);
                     }
                 }
@@ -1367,6 +1378,20 @@ impl World {
         {
             a.battle.render_color = 0;
             a.battle.render_flag = 0;
+        }
+        // The victim's rate beside the creature's: arm 8's pass freezes it
+        // (`sb zero,0x21d(s3)` at `0x801F7468`) and arm `0xA`'s runs it at
+        // `8` again (`0x801F7630..0x801F7634`), `s3` the seat the caster's
+        // `+0x1DD` names.
+        let victim_rate = match (phase, passed) {
+            (8, true) => Some(0),
+            (0xA, true) => Some(8),
+            _ => None,
+        };
+        if let Some(rate) = victim_rate
+            && let Some(a) = self.actors.get_mut(usize::from(victim))
+        {
+            a.battle.anim_rate = AnimRate(rate);
         }
         if phase == 0xB
             && let Some(a) = self.actors.get_mut(usize::from(creature))
