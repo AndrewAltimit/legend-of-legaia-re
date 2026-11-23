@@ -4170,6 +4170,16 @@ creature's pose, the damage digits (the replay's own rolls) and, on the rising
 frame, the retract fan: retail's ordering table holds it, yet neither
 framebuffer shows it.
 
+Both are Mednafen states, and the engine's arm steps for the cast are
+PCSX-Redux's (`cast_module_frame_step`: `4` on arms 5 to 14, where the voice
+clip's stop watch takes two thirds of PCSX-Redux's CPU) against the `2` and `3`
+mednafen ran. The frame step is not what holds the two frames: replayed on a
+console's CD response time (`LEGAIA_BATTLE_CD_TIMING=console`, whose arm table
+reads `2` there), `rising` stays `.787` and `parked` reads `.913` for `.916`. On
+the rising frame the engine's value window stands a stage ahead of retail's:
+its DAMAGE word is up and its first row parked where retail's first value is
+still rising.
+
 A replayed cast is one frame of a cast that runs for hundreds of vsyncs, and
 on most summons that frame is the white flash. The
 [cast-sequence oracle](cast-sequence-oracle.md) scores the whole cast frame by

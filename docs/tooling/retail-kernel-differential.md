@@ -285,7 +285,10 @@ bearing `FUN_80019B28` run live. It showed the Mystic Shield's tail turning the
 defender onto the attacker on a hit that lands: every arm of the routine falls
 into `0x801EEB60`, whose test is the shield word and the attacker's clip alone,
 so a block breaker that overturns the shield still turns the struck monster.
-The port turned it on the blocked path only.
+The port turned it on the blocked path only. The same tail stores a root speed
+of `-4` into the first entry of monster record 0's clip table (`0x801EEBA4..
+0x801EEBB4`), the idle of the monster on seat 3 whoever was struck, which the
+round compares too.
 
 The anim node tick `FUN_80047430`, driven through World seams with the range
 poll given, showed two arms with no port: the Seru-absorb puff behind a
@@ -991,9 +994,22 @@ Slippery (from the camera focus), Gilium and Mule (from the origin), Meta (from
 creature), Iota's arm `0xA` re-seating a Stoned monster, and Ozma's ladder
 quartering the roll of a seat off the group list, which it quarters only for a
 listed seat on a whole-row cast (`0x801F8E6C..0x801F8E90`). PROT 0915's arm `0xC`
-is the one hit arm whose HP and stages stay out: its chase hits each monster
-its creature reaches (`jal 0x8004E2F0` at `0x801F7844`), which the walk stubs in
-reach for every seat where the shadow measures reach off the seats.
+runs its reach poll live (`jal 0x8004E2F0` at `0x801F7844`, the battle outcome
+byte `0x8007BD71` seeded `0xFF` so the poll does not answer out of reach), with
+the creature stood on each monster seat in turn, since the walk plays none of the
+root motion that walks it; its chase hits agree.
+
+The shadow also compares each seated monster's ground trio and animation rate
+`+0x21D`. Retail's rate on a seat with no HP stays out (the loops test its colour
+word, which a faded seat and the engine's resting shown word both read as `0`),
+as do the creature (seat 7, which the host seats) and the spirit gauge (retail's
+stubbed wrapper never runs the finisher that fills it). It found Palma's arm 3
+never lifting the row (`+0x36 -= 2 p` a pass while its sweep word is under
+`160 * scalar`, then set down, `0x801F70E8..0x801F7144`, `0x801F6FC0..0x801F6FF8`),
+Juggernaut's arms 27 and 28 storing no rate on the live row (`2`, and `0` on arm
+27 for a monster on its get-up entry), Ultimate Rave's arms 8 and `0xA` storing
+none on the victim, and Jedo's arm 30 slowing the row on every fight where retail
+does it only on a scripted one (`bnez` at `0x801F86F4`).
 
 <a id="the-drive-poll"></a>
 **The drive poll.** Each image's poll arm (`FUN_8003F2B8(1)` behind its seek
@@ -1003,10 +1019,13 @@ flight for them, so the host's hold (`World::module_drive_holds`) runs against
 retail's busy return. Every module holds as retail does. Arm 2 of PROT 0920
 to 0924 drains its own countdown ahead of the poll (PROT 0923's `bgtz a1` at
 `0x801F6CAC`), so the poll's first call comes once that countdown is out, and
-its busy return needs a seek that outlasts the countdown: the walk stages none.
-Held there, the host would keep the drain the director's would-pass reports,
-which includes the exit's re-arm, and hold the arm for a second countdown. No
-play path reaches it while the seek issued at arm 1 ends inside arm 2's count.
+its busy return needs a seek that outlasts the countdown. The walk answers the
+poll busy on its first calls, not its first passes, so those arms are held past
+their countdown too. Held there, the host had kept the drain the director's
+would-pass reports, which includes the exit's re-arm, and held the arm for a
+second countdown once the poll let go; it now keeps the gate's drain alone
+(`cast_module_camera::polled_countdown`), and PROT 0920's arm 2 makes no TR z push
+on a held pass once its word is spent (`polled_hold`).
 PROT 0927's arm 2
 branches busy to the arm's tail (`0x801F6D8C` to `0x801F6F74`), where the
 passing pass falls too, so every pass of the arm hides the party and shows the
@@ -1027,13 +1046,14 @@ the port's half agrees. The shadow is where the host's half is checked.
 | PROT 0922's seat writes | `World::apply_puera_writes` | trio, facing, `+0x21C`, `+0x04` of the row and the creature, every arm it carries |
 | The pre-hits, Mule's wave, Ozma's ladder | `World::apply_summon_pre_hits`, `mule_wave_hit`, `ozma_hit_ladder` | HP and the staged reaction `+0x1DA` |
 | The fold | `World::summon_strike` | HP, `+0x1DA`, `+0x10`, `+0x0C`, `+0x21F`, facing |
+| The row's ground trio and animation rate | the seat-write tables | compared, the rate on living seats only |
 | The hit tints | `cast_module_impact::MODULE_IMPACTS` | `+0x04` on each seat |
 | The side-band and drive polls | `module_code`'s polling hold, `World::module_drive_holds` | the hold, against retail's phase walk |
-| Mushura's chase | `World::mushura_chase` | tint and status only (the walk stubs its reach poll) |
+| Mushura's chase | `World::mushura_chase` | everything above, its reach poll live |
 | The creature's placement, walk and clips | `World::apply_module_creature_writes`, `summon_walk_to_victim`, `module_seat_arm` | not compared: seat 7 sits outside the seat loop, and the walk feeds the director retail's creature |
-| Positions, rates and scales of the row | the seat-write tables | not compared, but PROT 0922's |
+| Scales of the row | the seat-write tables | not compared |
 | The part-driven stager calls | PROT 0927's sweeps, `run_juggernaut_stager_calls` | not compared: the walk runs no part |
-| The spell XP, spirit gauge and readout | `World::summon_module_roll`, the fold's tail | not compared |
+| The spell XP, spirit gauge and readout | `World::summon_module_roll`, the fold's tail | not compared: retail's wrapper is stubbed, so its finisher does not run |
 
 The images the walk does not run (PROT 0903, 0904, 0906, 0909..0913, 0918,
 0919) have ported tick bodies, which their own tick differentials compare; of
