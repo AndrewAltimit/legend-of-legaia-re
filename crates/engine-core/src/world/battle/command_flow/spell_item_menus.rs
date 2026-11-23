@@ -127,6 +127,22 @@ impl World {
         }
         let phase_before = menu.phase.clone();
         menu.input(ev, &self.tables.spell_catalog, party, monsters);
+        // The one-enemy sub-cursor `0x5C` the commit raises opens on the
+        // caster's own target when it is a monster seat (`+0x1DD - 3 < 5`,
+        // `0x801D1C84..0x801D1C94`) and on `FUN_801DB8B4`'s first living
+        // monster otherwise (`0x801D1C9C..0x801D1CBC`); the ring builder
+        // `FUN_801D8A88` then starts the cursor there. The rule is the Attack
+        // cursor's ([`World::seat_attack_cursor`]).
+        //
+        // PORT: FUN_801D0748 (`0x801D1C84..0x801D1CBC`)
+        {
+            use legaia_engine_battle::battle_magic::SpellPhase;
+            if !matches!(phase_before, SpellPhase::Targeting { .. })
+                && let SpellPhase::Targeting { picker, .. } = &mut menu.phase
+            {
+                self.seat_attack_cursor(menu.actor, picker);
+            }
+        }
         // The kernel's confirm writes over the step it queued this frame
         // (`lh a0,0x15a(gp)` at `0x80032D14` / `0x80032D2C`), so the press
         // decides when both land together.

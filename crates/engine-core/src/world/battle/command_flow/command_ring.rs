@@ -679,3 +679,20 @@ impl World {
         }
     }
 }
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`World::seat_attack_cursor`] on `actor` holding `active_target`, as
+    /// a differential seeds retail's `+0x1DD`.
+    pub fn drive_seat_attack_cursor(
+        &mut self,
+        actor: u8,
+        active_target: u8,
+        picker: &mut legaia_engine_battle::target_picker::TargetPickerSession,
+    ) {
+        if let Some(a) = self.actors.get_mut(usize::from(actor)) {
+            a.battle.active_target = active_target;
+        }
+        self.seat_attack_cursor(actor, picker);
+    }
+}
