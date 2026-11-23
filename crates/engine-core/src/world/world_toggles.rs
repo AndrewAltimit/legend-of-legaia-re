@@ -228,16 +228,16 @@ pub struct WorldToggles {
     /// alone (`LEGAIA_CENSUS_RETAIL_CULLS=1` in the native session).
     pub battle_census_retail_culls: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
-    /// CD-XA voice clip plays: PCSX-Redux's by default, where the clip player's
-    /// stop watch polls the drive on two thirds of the CPU and a voiced arm's
-    /// frames reach step `4`, or, opt-in, a console's, where the same polls
-    /// take a sixteenth of it (`docs/subsystems/battle-stage-camera.md`, "The
-    /// CD stop watch"). The console's stays opt-in because the recordings the
-    /// films and stills score against are PCSX-Redux's and the full-game ladder
-    /// re-deals under it; the enemy casts whose cues moved under it moved on the
-    /// `rand()` deal, not on a cue test. The native session takes it from
-    /// `LEGAIA_BATTLE_CD_TIMING=console` (`pcsx-redux` names the default), and
-    /// the cast-sequence films from `--console-cd`.
+    /// CD-XA voice clip plays: PCSX-Redux's, where the clip player's stop
+    /// watch polls the drive on two thirds of the CPU and a voiced arm's
+    /// frames reach step `4`, or a console's, where the same polls take a
+    /// sixteenth of it (`docs/subsystems/battle-stage-camera.md`, "The CD stop
+    /// watch"). PCSX-Redux's here, so every harness, film and comparison child
+    /// prices a battle frame the way the recordings it scores against ran; the
+    /// play hosts seat [`PLAY_BATTLE_CD_TIMING`], a console's, through
+    /// [`play_cd_timing`]. The native session takes
+    /// `LEGAIA_BATTLE_CD_TIMING=console` / `=pcsx-redux` over either, and the
+    /// cast-sequence films `--console-cd`.
     pub battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming,
     /// On by default: run each battle frame for the span retail's
     /// `VSync(n)` gives its cost (`frame_clock::frame_span`), a clip-loaded
@@ -587,6 +587,44 @@ pub const DEFAULT_BATTLE_SM_FRAME_CADENCE: bool = true;
 pub const PLAY_FIELD_CD_TIMING: legaia_engine_battle_loop::frame_clock::CdTiming =
     legaia_engine_battle_loop::frame_clock::CdTiming::Console;
 
+/// The battle CD timing a play host seats ([`WorldToggles::battle_cd_timing`]):
+/// a console's, so a voiced arm, an item's or Spirit's line and an arts shout
+/// run at a console's pace rather than PCSX-Redux's slower one.
+pub const PLAY_BATTLE_CD_TIMING: legaia_engine_battle_loop::frame_clock::CdTiming =
+    legaia_engine_battle_loop::frame_clock::CdTiming::Console;
+
+/// The CD timing a player's session runs on, field and battle
+/// ([`play_cd_timing`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlayCdTiming {
+    /// [`WorldToggles::field_cd_timing`].
+    pub field: legaia_engine_battle_loop::frame_clock::CdTiming,
+    /// [`WorldToggles::battle_cd_timing`].
+    pub battle: legaia_engine_battle_loop::frame_clock::CdTiming,
+}
+
+impl PlayCdTiming {
+    /// Seat both timings on `toggles`.
+    pub fn apply(self, toggles: &mut WorldToggles) {
+        toggles.field_cd_timing = self.field;
+        toggles.battle_cd_timing = self.battle;
+    }
+}
+
+/// The CD timing a player's session runs on: [`PLAY_FIELD_CD_TIMING`] and
+/// [`PLAY_BATTLE_CD_TIMING`], a console's both. Both play hosts start from
+/// it (the native window through `legaia_engine_session::native::play_cd_timing`,
+/// which takes the environment's overrides; the play page through
+/// `apply_page_toggles`, which takes its PCSX-Redux pacing boxes), and so does
+/// any harness that plays what a player plays. The engine's own default,
+/// which every comparison child keeps, is PCSX-Redux's.
+pub const fn play_cd_timing() -> PlayCdTiming {
+    PlayCdTiming {
+        field: PLAY_FIELD_CD_TIMING,
+        battle: PLAY_BATTLE_CD_TIMING,
+    }
+}
+
 /// [`WorldToggles::exp_rate_permille`] at retail: every reward as authored.
 pub const EXP_RATE_RETAIL: u16 = 1000;
 
@@ -920,6 +958,29 @@ impl Default for WorldToggles {
 #[cfg(test)]
 mod fidelity_tests {
     use super::WorldToggles;
+
+    /// The engine's default is the recordings' machine, which every harness
+    /// keeps; the players' is a console's, field and battle, and seating it
+    /// writes both and nothing else.
+    #[test]
+    fn players_run_a_consoles_cd_timing_and_harnesses_pcsx_redux() {
+        use legaia_engine_battle_loop::frame_clock::CdTiming;
+        let base = WorldToggles::new();
+        assert_eq!(base.field_cd_timing, CdTiming::PcsxRedux);
+        assert_eq!(base.battle_cd_timing, CdTiming::PcsxRedux);
+        let play = super::play_cd_timing();
+        assert_eq!(
+            (play.field, play.battle),
+            (CdTiming::Console, CdTiming::Console)
+        );
+        let mut t = WorldToggles::new();
+        play.apply(&mut t);
+        assert_eq!(t.field_cd_timing, CdTiming::Console);
+        assert_eq!(t.battle_cd_timing, CdTiming::Console);
+        t.field_cd_timing = base.field_cd_timing;
+        t.battle_cd_timing = base.battle_cd_timing;
+        assert_eq!(t.retail_deviations(), base.retail_deviations());
+    }
 
     #[test]
     fn pinned_toggles_report_no_deviation() {

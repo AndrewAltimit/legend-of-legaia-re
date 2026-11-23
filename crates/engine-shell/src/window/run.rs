@@ -220,11 +220,11 @@ fn apply_launch_toggles(
         retail,
     };
     switches.apply(&mut session.host.world.toggles);
-    // A voiced cutscene plays at a console's CD pace, as on the play page;
-    // `LEGAIA_FIELD_CD_TIMING=pcsx-redux` keeps PCSX-Redux's, which every
-    // comparison child sets (`WorldToggles::field_cd_timing`).
-    session.host.world.toggles.field_cd_timing =
-        legaia_engine_session::native::play_field_cd_timing();
+    // A voiced cutscene and a voiced battle frame play at a console's CD
+    // pace, as on the play page; `LEGAIA_FIELD_CD_TIMING=pcsx-redux` /
+    // `LEGAIA_BATTLE_CD_TIMING=pcsx-redux` keep PCSX-Redux's, which every
+    // comparison child sets (`legaia_engine_core::world::play_cd_timing`).
+    legaia_engine_session::native::play_cd_timing().apply(&mut session.host.world.toggles);
     // `LEGAIA_DIAG_IMMEDIATE_PAD=1`: the pad reaches the game on the tick it
     // is pressed even under `--retail` (`WorldToggles::immediate_pad`), for a
     // harness whose press script is authored in one-tick edges.

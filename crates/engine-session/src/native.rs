@@ -150,12 +150,31 @@ pub fn env_field_cd_timing() -> Option<legaia_engine_core::world::CdTiming> {
     }
 }
 
-/// The field CD timing a play host runs: a console's
-/// ([`legaia_engine_core::world::PLAY_FIELD_CD_TIMING`]) unless
-/// `LEGAIA_FIELD_CD_TIMING` names one. A comparison child sets
-/// `pcsx-redux`, the recordings' timing.
-pub fn play_field_cd_timing() -> legaia_engine_core::world::CdTiming {
-    env_field_cd_timing().unwrap_or(legaia_engine_core::world::PLAY_FIELD_CD_TIMING)
+/// `LEGAIA_BATTLE_CD_TIMING`: which machine's CD response time a voiced
+/// battle frame reads (`WorldToggles::battle_cd_timing`) - `pcsx-redux` or
+/// `console`, no opinion when unset or anything else.
+pub fn env_battle_cd_timing() -> Option<legaia_engine_core::world::CdTiming> {
+    match std::env::var("LEGAIA_BATTLE_CD_TIMING")
+        .as_deref()
+        .map(str::trim)
+    {
+        Ok("console") => Some(legaia_engine_core::world::CdTiming::Console),
+        Ok("pcsx-redux") => Some(legaia_engine_core::world::CdTiming::PcsxRedux),
+        _ => None,
+    }
+}
+
+/// The CD timing a native player's session runs on, field and battle:
+/// [`legaia_engine_core::world::play_cd_timing`], a console's both, with
+/// `LEGAIA_FIELD_CD_TIMING` / `LEGAIA_BATTLE_CD_TIMING` over each. A
+/// comparison child sets both to `pcsx-redux`, the recordings' timing. Seat
+/// it with `PlayCdTiming::apply`.
+pub fn play_cd_timing() -> legaia_engine_core::world::PlayCdTiming {
+    let base = legaia_engine_core::world::play_cd_timing();
+    legaia_engine_core::world::PlayCdTiming {
+        field: env_field_cd_timing().unwrap_or(base.field),
+        battle: env_battle_cd_timing().unwrap_or(base.battle),
+    }
 }
 
 /// `LEGAIA_ARTS_SAVED_LIST`: set at all.
@@ -290,15 +309,8 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     // Which machine's CD response time the battle frame step reads
     // (`WorldToggles::battle_cd_timing`): `console` opts in to a console's,
     // `pcsx-redux` names the default.
-    match std::env::var("LEGAIA_BATTLE_CD_TIMING")
-        .as_deref()
-        .map(str::trim)
-    {
-        Ok("console") => toggles.battle_cd_timing = legaia_engine_core::world::CdTiming::Console,
-        Ok("pcsx-redux") => {
-            toggles.battle_cd_timing = legaia_engine_core::world::CdTiming::PcsxRedux
-        }
-        _ => {}
+    if let Some(t) = env_battle_cd_timing() {
+        toggles.battle_cd_timing = t;
     }
     if let Some(t) = env_field_cd_timing() {
         toggles.field_cd_timing = t;
