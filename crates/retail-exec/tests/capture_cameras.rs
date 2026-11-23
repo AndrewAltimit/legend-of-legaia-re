@@ -895,12 +895,19 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 let victim_settle = match body.action {
                     0x6E => Some(5),
                     0x6F => Some(4),
-                    // Scythe Wind's arm 5 (`0x801F80E8..0x801F8128`).
+                    // Scythe Wind's arm 5 (`0x801F80E8..0x801F8128`), and
+                    // Gigaton Press's arm 4 (`0x801F7440..0x801F7454`, a clip of
+                    // `0` or `8` whatever the HP).
                     0x5B if body.va == SCYTHE_WIND => Some(5),
+                    _ if (body.entry, body.va) == (962, GIGATON_PRESS) => Some(4),
                     _ => None,
                 };
                 if let Some(arm_at) = victim_settle {
-                    settle_passes = if phase == arm_at && st.countdown.0 <= SPEED_SCALAR {
+                    // Gigaton Press polls on every pass of its arm, its shake
+                    // word drained beside the poll rather than gating it.
+                    let gated = body.entry != 962;
+                    settle_passes = if phase == arm_at && (!gated || st.countdown.0 <= SPEED_SCALAR)
+                    {
                         settle_passes + 1
                     } else {
                         0
