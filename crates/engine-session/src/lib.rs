@@ -55,7 +55,7 @@ pub use audio_director::AudioDirector;
 pub use front_end::{AttractLane, FrontEnd, FrontEndScreen, FrontEndStep, NoMovieLane};
 pub use session::{
     BootConfig, BootSession, MENU_BUTTONS, NewGameHost, PauseMenuPress, TickClaims, TickOwner,
-    start_new_game_on,
+    start_new_game_on, world_holds_field_pad,
 };
 pub use title_continue::{CardPorts, ContinueLoad, ContinueScreen, ContinueStep};
 

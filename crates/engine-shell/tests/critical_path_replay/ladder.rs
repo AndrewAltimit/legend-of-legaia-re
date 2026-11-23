@@ -112,7 +112,7 @@ pub(super) fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     let entry_pc0 = host.world.field_pc;
     let mut entry_script_ran = false;
     for _ in 0..4 {
-        host.world.set_pad(0);
+        host_pad(host, 0);
         let _ = host.tick();
         entry_script_ran |=
             !host.world.field_bytecode.is_empty() && host.world.field_pc != entry_pc0;

@@ -23,7 +23,8 @@
 //! remap is a quadrant off, or whose collision seals a doorway, passes the
 //! spine oracle unchanged.
 //!
-//! Here movement is produced **only** by [`World::set_pad`] +
+//! Here movement is produced **only** by the gated pad ([`host_pad`], over
+//! [`World::set_pad`]) +
 //! [`SceneHost::tick`]. Nothing is seated. If the player cannot walk out of
 //! Rim Elm, this test says so and names the tile they stopped on.
 //!
@@ -148,6 +149,21 @@ mod planner;
 mod route;
 mod rung4_diagnostics;
 mod walker;
+
+/// The hand's pad, gated the way both play hosts gate the field's: neutral
+/// while the narration crawl or a title card owns it
+/// (`legaia_engine_session::world_holds_field_pad`, `BootSession::claim_tick`).
+/// Every press this replay makes goes through it; writing the world's pad
+/// directly plays through a surface a player cannot, the shape of the Uru
+/// Mais softlock (#653).
+fn host_pad(host: &mut SceneHost, pad: u16) {
+    let pad = if legaia_engine_session::world_holds_field_pad(&host.world) {
+        0
+    } else {
+        pad
+    };
+    host.world.set_pad(pad);
+}
 
 use environment::*;
 use exits::*;

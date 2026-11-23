@@ -183,7 +183,14 @@ impl<S: AudioSink> BootSession<S> {
     /// softlock, where a card left up held the field's pad neutral under a
     /// box the player had to turn.
     pub fn world_holds_field_pad(&self) -> bool {
-        let world = &self.host.world;
-        world.cutscene_narration_active() || world.cutscene.card.is_some()
+        world_holds_field_pad(&self.host.world)
     }
+}
+
+/// [`BootSession::world_holds_field_pad`] over a bare world: the narration
+/// crawl or a title card owns the field's pad. For a driver that ticks a
+/// `SceneHost` without a session (`critical_path_replay`), so it gates its
+/// presses as both play hosts do.
+pub fn world_holds_field_pad(world: &legaia_engine_core::world::World) -> bool {
+    world.cutscene_narration_active() || world.cutscene.card.is_some()
 }
