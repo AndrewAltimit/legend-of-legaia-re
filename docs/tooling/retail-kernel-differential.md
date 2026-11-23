@@ -1137,7 +1137,11 @@ PROT 0917 (Barra, whose arm 1 climbs the TR y global arm 0's shot stored) and PR
 walk hands out as it spawns them) through to Done. It found Spoon's arm 8 yaw read off the word after the pass's
 drain, where retail reads it as the pass opens (`0x801F84E0`, the drain at `0x801F8520`), and Gilium's arm `0x16`
 pull made only while its word ran, where retail pulls on every pass ahead of the word's test
-(`0x801F8A74..0x801F8AA0`), through the row wait. Four parts stay out (`camera_gaps` in the test): PROT 0928's
+(`0x801F8A74..0x801F8AA0`), through the row wait. PROT 0917 runs on two more layouts, its victim on a seat
+the rolls leave standing and the row off the floor, with the side-band stage raised again once arm 1's TR y climb
+is through and the creature's word held up on arm `0xF`'s first spent passes. It found Barra's arm `0xF` ending
+the cast before the creature had faded (retail waits on its word, `0x801F816C..0x801F8174`) and arm `0xC`'s
+stores zeroing the focus, which retail leaves on arm `0xB`'s cut, twice the victim's drop. Four parts stay out (`camera_gaps` in the test): PROT 0928's
 roll, PROT 0925's arm 8 exit, PROT 0908's arm 8 (the creature stood on the victim) and PROT 0934's shake TR y,
 which the engine reads per four vsyncs where this walk's pass is one.
 

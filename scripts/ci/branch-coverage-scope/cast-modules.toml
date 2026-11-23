@@ -915,8 +915,8 @@ reason = "PROT 0919: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, th
 entry = "0x801F69D8"
 image = "a906a582cd44f8eb"
 range = "0x801F8408..0x801F8408"
-verdict = "unreachable"
-reason = "PROT 0919: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+verdict = "cannot-drive"
+reason = "PROT 0919: `beq` on the party count less one (`lbu ctx+0`, `addiu v0,v0,-1`), which skips the loop of `FUN_801D8DE8(0x4E + i, 0)` calls over the party after the lead; a solo party takes it. Driving it needs a one-member party in the walks, whose seats and shadow both assume retail's three party seats ahead of the row."
 
 [[arm]]
 entry = "0x801F69D8"
@@ -1615,8 +1615,8 @@ reason = "PROT 0930: `beqz` on the battle's party count `ctx+0` (`lbu` through `
 entry = "0x801F6A74"
 image = "f69a9ec23b1185ea"
 range = "0x801F7C18..0x801F7C18"
-verdict = "unreachable"
-reason = "PROT 0930: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+verdict = "cannot-drive"
+reason = "PROT 0930: `beq` on the party count less one (`lbu ctx+0`, `addiu v0,v0,-1`), which skips the loop of `FUN_801D8DE8(0x4E + i, 0)` calls over the party after the lead; a solo party takes it. Driving it needs a one-member party in the walks, whose seats and shadow both assume retail's three party seats ahead of the row."
 
 [[arm]]
 entry = "0x801F6A74"
