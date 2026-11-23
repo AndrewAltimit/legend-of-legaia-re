@@ -1036,7 +1036,8 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_PAD_PROPS=1` | Plays examines, touches and box talks on the pad ([shortcuts](#shortcuts)). |
 | `LEGAIA_FGL_NO_SHORTCUTS=1` | Refuses every fallback placement the pad hand would make ([shortcuts](#shortcuts)): the run is played on the pad alone. |
 | `LEGAIA_FGL_SKIP_OPENING=1` | Presses through the opening, so the first Cross takes the hosts' intro hand-off ([input conventions](#input-conventions-in-both-passes)). |
-| `LEGAIA_FGL_HOST_OPTIONS=1` | Pushes the play hosts' default options at session open (precise movement among them): a probe, not the measured configuration. |
+| `LEGAIA_FGL_RETAIL_DECODE=1` | Walks retail's quantised direction decode rather than the hosts' default precise movement ([shortcuts](#shortcuts)). |
+| `LEGAIA_FGL_LEAD_IN_HEAL=1` | Heals to full before the walk to a boss door from the restoratives beyond the boss's reserve, with no field cast. |
 | `LEGAIA_FGL_CONTINUOUS_UNTIL=<id>` | Ends part C once it reaches that milestone, and does not assert the baseline: with `LEGAIA_FGL_CONTINUOUS_RESUME` and a spread of `LEGAIA_FGL_RNG_SEED` values, how often one stretch clears. |
 
 ### The seed set
@@ -2196,10 +2197,20 @@ measured configuration. Walked, a prop answers by the side it is reached
 from and by the fights met on the way, so the run's story branches part
 from the placed run's: `stone`'s statues turn to face their examiner, and
 `dolk`'s Lightning Gate rooms, which retail's player left alone, are a long
-walk across a rolling castle. A run under it stopped in Uru Mais on every
-stream, on a talk whose branch read flags an earlier walked beat had left
-otherwise; bringing it to the full game is the next step for these
-shortcuts.
+walk across a rolling castle.
+
+A run under it stops in Uru Mais (`usha_research` -> `nivora`, the hop to
+`urudre1` closed) at the end of a chain of story gates, each read off the
+field scripts: `uru` P2[28], Gala's cutscene, spawns only once `0x379` is up
+(its C1 gate), which `doman` P1[15] raises; P1[15] stands past the door
+Dr. Usha's intercom (`doman` P1[18]) opens with the password `0x36E`, which
+the intercom gives only to a party that has `koin2` P1[19]'s `0x36D`. Walked,
+the run reached `koin2` in another phase of its residents, P1[19] was not
+standing (parked off the map), and nothing later raised `0x36D`. Placed, the
+same chain completes, and the stretch clears from the retail anchor either
+way: the engine takes the branch the scripts name, and the gap is the hand's
+order of beats. The `0x21B`..`0x21D` that first part the two runs in
+`town01` are `P1[32]`'s talk counter (a set per conversation), not a branch.
 
 `LEGAIA_FGL_NO_SHORTCUTS=1` refuses every fallback placement (and implies
 `LEGAIA_FGL_PAD_PROPS=1`): a stretch is then played on the pad alone, and a
@@ -2210,12 +2221,15 @@ The hand keeps some writes on purpose, each marked `Harness` in the code: the
 rand stream's deals, a reload from the engine's own save (the game-over hold,
 the title and the card screen are not played), a segment's seed from retail's
 save, the movie skip, and the shop screen, which the hand steps with the same
-`MenuRuntime` calls both hosts make. One difference from the hosts is not a
-shortcut and stays: both hosts push their options onto the world every tick,
-and those turn precise movement on, while the hand walks the world's default,
-retail's quantised decode, which its walker inverts.
-`LEGAIA_FGL_HOST_OPTIONS=1` pushes the hosts' default options once at session
-open, as a probe.
+`MenuRuntime` calls both hosts make.
+
+The ladder plays what players play. Each session it opens takes the hosts'
+default options (`BootSession::apply_option_knobs`, which both hosts push every
+tick; precise movement is on among them) and the players' CD timing
+(`legaia_engine_session::native::play_cd_timing`: console pacing in the field
+and in battle). `LEGAIA_FGL_RETAIL_DECODE=1` walks retail's quantised direction
+decode instead, and `LEGAIA_FGL_PIN_RETAIL=1` pins the options' retail values
+as well as the fidelity toggles.
 
 ## Diagnostics
 
