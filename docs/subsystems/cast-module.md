@@ -6529,6 +6529,21 @@ tinted (Element Strike's three loops: `0x3FF` at `0x801F860C`, `0xFFC00` at
 `0x801F7DF8`, `0x3FF00000` at `0x801F759C`; Genocidal Cannon's arm 14 at
 `0x801F7D14`). The band reads both conditions as the tick opens.
 
+The summon hit loops differ in the same two ways. Eight skip a Stoned monster
+whole, ahead of the wrapper, so it takes no roll, no reaction and no turn (PROT
+0914, 0920, 0921, 0922, 0923, 0928, 0929, 0934:
+`cast_module_camera::STONE_SKIPPING_HITS`); the others roll it, the finisher
+zeroes the roll, and its flinch is staged all the same. Several turn each seat they
+strike away from a point with `FUN_80019B28(z, x, seat[+0x38], seat[+0x34]) +
+0x800`, and the point is the module's: the caster (PROT 0914), the origin (PROT
+0923, and 0929 off a stack pair still holding the prologue's zeros), `(0,
+0x200)` (PROT 0932), `(0, 0x400)` (PROT 0921), `(0, 0x613)` (PROT 0933), the
+negated camera focus (PROT 0920) and the creature (PROT 0928, and PROT 0908's
+splash but not its victim). Aluru's damage path turns its victim onto the creature with no half
+turn, and only out of Stone (`0x801F8644..0x801F867C`). The fold-hit shadow
+checks every one ([retail-kernel
+differential](../tooling/retail-kernel-differential.md#the-fold-on-the-hit-arm)).
+
 The capture-camera differential checks all of it: each cast runs on an engine
 `World` beside the module image, and every seat's word and flag must agree on
 every pass while the two walk one phase
