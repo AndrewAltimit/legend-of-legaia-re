@@ -174,7 +174,7 @@ reads `.969` on its gate and `.976` two ticks (one pass) later, the body's pose
 closer to retail's, while `battle_ropeway_party_gala_flying_knee_mid` holds
 `.990` and falls to `.942` from three ticks, and `_late` falls from `.874` to
 `.818` from two. The frames hold no weapon-trail band, move-FX streak, ribbon
-or near-camera ghost: dropping each pass leaves all three scores unchanged. What remains on the garmel still is its hit-spark rays: they are the effect-script table parts `LEGAIA_SEAT_ACTION_FX_PARTS` seats (dropping the seat leaves a third of retail's ray pixels matched), drawn in retail's shape and three pixels right of retail's on the gate's frame, two ticks later and four ticks later alike, so the offset is not the parts' age on the lagged frame.
+or near-camera ghost: dropping each pass leaves all three scores unchanged. What remains on the garmel still is its hit-spark rays: they are the effect-script table parts `LEGAIA_SEAT_ACTION_FX_PARTS` seats (dropping the seat leaves a third of retail's ray pixels matched), drawn in retail's shape and three pixels right of retail's while Gala's body lands within a pixel. The ray burst (record `0x801F5DA4`) stands where its program put it, so the seat carries the RAM's position `(-183, -203, 139)` as the displayed frame's (`ray_burst_stood_through_lag`), and the parts draw at that world point on the camera the bodies draw on (`battle_draw_pose`). The offset follows the camera seat: four pixels without `LEGAIA_BATTLE_CAM_STAND_DISPLAYED`, six without `LEGAIA_BATTLE_CAM_ALIGN`.
 
 ## Reading the report
 
