@@ -267,10 +267,6 @@ pub struct BattleCamera {
     /// pass, a whole step at once, rather than a vsync at a time
     /// ([`BattleCamera::set_pass_granular`]).
     pub(super) pass_granular: bool,
-    /// Whether the battle-end results sequencer `FUN_8004E568` runs in the
-    /// action SM's place, and so steps the yaw counter `ctx[+0x6DA]`
-    /// ([`BattleCamera::set_results_sequencer`]).
-    pub(super) results_sequencer: bool,
     /// The acting actor the submenu close-up frames. Defaults to the
     /// measured solo-Vahn case; hosts that track the live battle actor call
     /// [`BattleCamera::set_actor`] so non-Vahn seats frame correctly.
@@ -598,11 +594,6 @@ pub struct BattleCamInputs {
     /// `FUN_801D388C(0, 0)` (or `0x0B`'s own case 9 on a back attack,
     /// `0x801D0E98`), so the camera stays on the sweep's close-in till then.
     pub open_held: bool,
-    /// The results sequencer `FUN_8004E568` runs this frame in the action
-    /// SM's place (a victory or a party wipe, not an escape): it steps the
-    /// yaw counter `ctx[+0x6DA]` by its own half-step rate
-    /// ([`results_yaw_pass_increment`]).
-    pub results_sequencer: bool,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -680,7 +671,6 @@ pub fn drive_on_stream(
     cam.observe_action_state(inputs.action_state);
     cam.observe_chain_exit_pass(inputs.chain_exit_pass);
     cam.observe_return_exit_pass(inputs.return_exit_pass);
-    cam.set_results_sequencer(inputs.results_sequencer);
     cam.observe_active_commits(inputs.active_commits);
     cam.observe_active_installs(inputs.active_installs);
     cam.observe_swing_reseed(inputs.swing_reseed);
