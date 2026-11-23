@@ -1862,3 +1862,22 @@ changes = [
   ["states/battle_ropeway_party_gala_flying_knee_late/image", 0.877, 0.874],
   ["states/battle_ropeway_party_gala_flying_knee_mid/image", 0.993, 0.99],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Both bundles carry the wave's ported behaviour: the helper-record card hold and its box hand-over, the op 0x36 seek-ahead stages and drive word, the voiced field frame's CD stop watch with its field CD timing switch, the results sequencer's yaw step, the Item and Magic windows' saved target, the fishing showcase restore and first-shore replay, the Theeder and Gizam strike writes, the struck-seat turns, the held poll's single countdown, the value rows' slide sides and the Mystic tail's root speed (play +2.8 KB, tool +32.6 KB gzip). No asset or dependency added. The four native per-frame counts rise by 0.1 each, inside their run-to-run spread."
+changes = [
+  ["counts/bundle/gzip_bytes", 7363299, 7395916],
+  ["counts/bundle/play_gzip_bytes", 5240566, 5243359],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4485.3, 4485.4],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1307.8, 1307.9],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1287.2, 1287.3],
+  ["counts/native/town01/retail/allocs_per_frame", 920.0, 920.1],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The cutscene timeline now holds op 0x36, including the 36 FF FF wait for the drive, where it used to step past it (field VM 0x801E0438; the Zeto voice line lands 2 vsyncs early instead of 10). Bisected: holding only the seek-ahead keeps .992; the drop comes from the 36 FF FF hold, which brings that wait to 75 vsyncs early from 219, so the rest of the cutscene's animation lands at another phase. The remaining gap is the voiced cutscene's CD-poll pacing, which the field's span law closes only part way (Zeto's frames read about 3.7 against battle's 3.1). Every non-image channel stays 1.000."
+changes = [
+  ["states/garmel_zeto_appears_taunt/image", 0.992, 0.988],
+]
