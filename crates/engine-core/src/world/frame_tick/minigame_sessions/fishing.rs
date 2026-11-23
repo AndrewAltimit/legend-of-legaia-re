@@ -283,9 +283,18 @@ impl World {
     fn fishing_hook_music(&mut self, events: &[legaia_engine_fishing::fishing::PondEvent]) {
         use legaia_engine_fishing::fishing::PondEvent;
         let hooked = events.iter().any(|e| matches!(e, PondEvent::Hooked(_)));
-        let back = events
-            .iter()
-            .any(|e| matches!(e, PondEvent::Landed(_) | PondEvent::Recast));
+        // Retail puts the venue's track back in two places, each behind the
+        // hook latch `0x801D92A4`: state `0x20`'s handler, the frame after
+        // the driver reaches the catch's showcase (`0x801CFD84..0x801CFDD4`),
+        // and state `0xA`'s, when the shore comes back with the latch still
+        // up (`0x801CF7E0..0x801CF82C`; a lost fish, a snapped line). A
+        // retail film of five catches drops the latch 272..290 vsyncs after
+        // the catch opens: the close-up's lift and the rod's recover swing,
+        // which the venue camera driver's showcase gate reads. Its state is
+        // the venue frame's, which runs after this tick, so the restore lands
+        // the frame after the step, as retail's handler does.
+        let back = events.iter().any(|e| matches!(e, PondEvent::Recast))
+            || self.minigames.fishing_venue.camera.showcase_opened();
         if hooked && !self.minigames.fishing_hook_music {
             self.minigames.fishing_hook_music = true;
             if let Some(track) = self.audio.last_battle_track.or(self.audio.battle_bgm) {
@@ -483,8 +492,10 @@ mod hook_audio_tests {
             .collect()
     }
 
-    /// The strike swaps the last fight's theme in once; the landing or the
-    /// shore puts the scene's track back once.
+    /// The strike swaps the last fight's theme in once; the landing alone
+    /// does not put the scene's track back (the showcase does, the tick after
+    /// the venue camera reaches it: `fishing_catch_body_disc`), and the shore
+    /// does, once.
     #[test]
     fn the_hook_plays_the_last_fights_theme_until_the_shore() {
         let mut w = pond_world();
@@ -496,6 +507,11 @@ mod hook_audio_tests {
         w.fishing_hook_music(&[PondEvent::Hooked(3)]);
         assert!(bgm_starts(&mut w).is_empty(), "the latch holds");
         w.fishing_hook_music(&[PondEvent::Landed(40)]);
+        assert!(
+            bgm_starts(&mut w).is_empty(),
+            "the catch keeps the hook theme"
+        );
+        w.fishing_hook_music(&[PondEvent::Recast]);
         assert_eq!(bgm_starts(&mut w), [2017]);
         w.fishing_hook_music(&[PondEvent::Recast]);
         assert!(bgm_starts(&mut w).is_empty(), "the latch is down");
