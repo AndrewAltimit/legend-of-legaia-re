@@ -690,6 +690,9 @@ fn part_c_continuous_run() {
                     pad_equip_guard(&mut session, element);
                 }
                 pad_equip_best(&mut session);
+                if BOSS_LEAD_IN.with(std::cell::Cell::get) {
+                    lead_in_heal(&mut session);
+                }
                 let mut trail = vec![scene_name(&session)];
                 traverse(&mut session, &graph, to, true, &mut trail)
                     .map_err(|e| format!("{e} [trail {}]", trail.join(">")))

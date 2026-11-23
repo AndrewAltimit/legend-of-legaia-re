@@ -4,6 +4,8 @@
 use super::*;
 
 thread_local! {
+    /// Set while [`lead_in_heal`] heals: restoratives only, no field cast.
+    static ITEMS_ONLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Set while [`pad_ready`] readies the party at a staged fight's door.
     static AT_BOSS_DOOR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -42,6 +44,24 @@ fn boss_bound() -> bool {
 // ---------------------------------------------------------------------------
 // Healing through the pause menu
 // ---------------------------------------------------------------------------
+
+/// The heal a walk to a boss door sets out with: up to full HP, from the
+/// restoratives the bag holds beyond the boss's reserve ([`HEAL_RESERVE`] a
+/// member, under [`continuous::SAVING_FOR_BOSS`]) and with no field cast,
+/// since [`pad_ready`]'s top-up at the door spends the reserve and the MP.
+/// The plain heal before the walk to Cort spent what the top-up then lacked
+/// (w55's sweep: walk-in reloads fell, Cort's doubled). On under
+/// `LEGAIA_FGL_LEAD_IN_HEAL=1`.
+pub(super) fn lead_in_heal(session: &mut NativeSession) -> usize {
+    if !std::env::var_os("LEGAIA_FGL_LEAD_IN_HEAL").is_some_and(|v| v != "0") {
+        return 0;
+    }
+    let _saving = continuous::SavingForBoss::arm(true);
+    let was = ITEMS_ONLY.with(|i| i.replace(true));
+    let used = pad_field_heal(session, 1000);
+    ITEMS_ONLY.with(|i| i.set(was));
+    used
+}
 
 /// Set Field Move to Run the way a player does: Start, the Options row, the
 /// Field Move row, Run, and out. `true` when the world now runs by default.
@@ -344,7 +364,8 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
     // 20000-HP race) with an empty bag, two members near death and a full
     // set of Spoons unspent.
     let mut spells = 0;
-    if plays_on && !mp {
+    let items_only = ITEMS_ONLY.with(std::cell::Cell::get);
+    if plays_on && !mp && !items_only {
         spells = pad_field_spell_heal(session, threshold, true);
         if gauge(session) >= threshold {
             return spells;
@@ -373,7 +394,7 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
             let near_death = gauge(session) < NEAR_DEATH_PERMILLE
                 || (!mp && race_ahead(session) && weakest_hp(session) < RACE_HIT_HP);
             return spells
-                + if mp || (boss_bound() && !near_death) {
+                + if mp || items_only || (boss_bound() && !near_death) {
                     0
                 } else {
                     pad_field_spell_heal(session, threshold, false)
