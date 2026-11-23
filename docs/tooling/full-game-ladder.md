@@ -35,6 +35,7 @@ flowchart LR
 - [How the pad tier walks](#how-the-pad-tier-walks)
 - [How fights are played](#how-fights-are-played)
 - [Input conventions in both passes](#input-conventions-in-both-passes)
+- [Shortcuts](#shortcuts)
 - [Diagnostics](#diagnostics)
 - [Solid NPCs](#solid-npcs)
 - [What it cannot measure](#what-it-cannot-measure)
@@ -1032,6 +1033,9 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, naming its scene in the resume trailer, so `legaia-engine`'s `--resume-save` lands there without `--scene`; the rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
+| `LEGAIA_FGL_NO_SHORTCUTS=1` | Refuses every fallback placement the pad hand would make ([shortcuts](#shortcuts)): the run is played on the pad alone. |
+| `LEGAIA_FGL_SKIP_OPENING=1` | Presses through the opening, so the first Cross takes the hosts' intro hand-off ([input conventions](#input-conventions-in-both-passes)). |
+| `LEGAIA_FGL_HOST_OPTIONS=1` | Pushes the play hosts' default options at session open (precise movement among them): a probe, not the measured configuration. |
 | `LEGAIA_FGL_CONTINUOUS_UNTIL=<id>` | Ends part C once it reaches that milestone, and does not assert the baseline: with `LEGAIA_FGL_CONTINUOUS_RESUME` and a spread of `LEGAIA_FGL_RNG_SEED` values, how often one stretch clears. |
 
 ### The seed set
@@ -1668,6 +1672,11 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   P2[42], Lord Saryu's audience, spans (104..107, 50) and (107, 50) is walled
   in): when the walk finds no path to its tile, or stalls at its edge, the
   band's other tiles are tried, nearest first;
+- an **examined** or **touched** prop is walked to, nearest seat first, and
+  leaned on until the retail probe lands on it (an examine) or its record
+  starts (a touch); the player walks on from where it stood. Only a prop no
+  seat of which the walk reaches is played the seated tier's way, and that
+  is counted ([the shortcuts](#shortcuts));
 - an **object door** or a **boss stager** is walked up to and leaned on. A
   stager's fight fires on the next field step, so the walk that step belongs
   to fights it instead of fleeing it;
@@ -2071,6 +2080,7 @@ A fight runs at least 60 000 ticks and goes on past that while a foe's HP is sti
 ## Input conventions in both passes
 
 - **Every press goes through the hosts' pad gate** (`HostPad::host_pad`, on `BootSession::world_holds_field_pad`). The play window and the browser page hand the field a neutral pad while a narration crawl or a title card is up (`BootSession::claim_tick`), and the hand does the same, so a surface that eats the pad on a real host stalls the ladder too. A hand that wrote the world's pad directly passed `uru` `P2[36]` while players could not: a card left up over Gala's waking box held the pad neutral under it ([cutscene.md](../subsystems/cutscene.md#inline-narration-format)). With that fix reverted, the gated run parks on the box (`dialogue at helper pc=0x0BF1`). `LEGAIA_FGL_RAW_PAD=1` restores the direct write for bisecting.
+- **The opening is watched, not skipped.** Once the opening chain arms its intro hand-off (`PROLOGUE_HANDOFF_FLAG`, retail `FUN_801D1344`), a Cross edge ends the opening on both play hosts, whatever holds the field's pad: `claim_tick` reads the raw edge ahead of the neutral-pad rule (`TickOwner::PrologueSkip`). The gate takes that hand-off as the hosts do, and the hand presses no Cross while it is armed, so the run plays the whole chain. The presses it used to make there were inert headless and would have ended the opening on the first one on a host. `LEGAIA_FGL_SKIP_OPENING=1` presses through, and the first press takes the skip.
 - **Scripted sequences** get Cross on a press-2-release-14 duty cycle - and nothing while no script holds the frame. A Cross then is a talk: a seat on `rayman`'s `tunnelb` door beside the gate guard opens his talk on the frame the walk-on band is due.
 - **The naming prompt's Yes/No confirm** gets Up first (it opens on No).
 - **A menu press waits out the field pad hold** (`_DAT_8007B6B4`): every map install seats `0x28` frames of it (`FUN_8003ADAC`), the field-back load after each fight included, and a conversation's release `0x10` (`FUN_80039B7C`). The player tick skips the pad controller and its menu accept while it drains, so a Start sent into it is lost; the heal and dress passes after a fight press only once it is out.
@@ -2145,6 +2155,48 @@ clips and matches the same arts a windowed one does. Beyond that:
   fighter takes the ring's up arm (Item, using the first item) for the Items
   lesson, its down arm for Spirit, and `Command` with the Somersault
   (`Up Down Up`) for the hyper-arts drill, where an Auto attack is refused.
+
+## Shortcuts
+
+A **shortcut** is a world write the pad hand makes that a player can make only
+through the pad: a placement beside a prop, a facing set by hand, a teleport
+back to where the player stood, an option set without its screen. Each is a
+place where a defect only the hosts can show hides, as the card over Gala's
+box did while the hand wrote the pad straight into the world. Each one is
+named and counted (`full_game_ladder/shortcuts.rs`), and part C prints the
+tally per stretch and for the run:
+
+```text
+[shortcuts] 2 use(s): examine_face=1 examine_seat=1
+```
+
+The tally is a ratchet: a change that adds a shortcut shows in it. Only the
+pad hand counts; the seated tier places the player by definition.
+
+| Name | What it stands for |
+|---|---|
+| `examine_seat`, `examine_face` | An examined prop with no seat the walk reaches: the player is placed on a seat and turned to it. |
+| `touch_seat` | A touched prop with no side the walk reaches: the player is placed beside it. |
+| `box_face` | A placed box talk (`talk_from_box`) whose facing was set by hand. |
+| `restore_xz` | The player put back where it stood after a placed interaction, or after a box lean that its pad step back did not return. |
+| `run_switch` | The Field Move switch, where the pause menu's Options screen did not take it. |
+| `door_object_seat`, `hop_seat` | The seated tier's door placements, should the pad hand ever reach them. |
+| `prologue_skip` | The opening skipped on the hosts' hand-off (`LEGAIA_FGL_SKIP_OPENING=1` only). |
+
+`LEGAIA_FGL_NO_SHORTCUTS=1` refuses every fallback placement: a stretch is
+then played on the pad alone, and a stall it shows is a candidate defect of
+the #653 class, to be reproduced through `claim_tick` and fixed in the engine.
+
+The hand keeps some writes on purpose, each marked `Harness` in the code: the
+rand stream's deals, a reload from the engine's own save (the game-over hold,
+the title and the card screen are not played), a segment's seed from retail's
+save, the movie skip, and the shop screen, which the hand steps with the same
+`MenuRuntime` calls both hosts make. One difference from the hosts is not a
+shortcut and stays: both hosts push their options onto the world every tick,
+and those turn precise movement on, while the hand walks the world's default,
+retail's quantised decode, which its walker inverts.
+`LEGAIA_FGL_HOST_OPTIONS=1` pushes the hosts' default options once at session
+open, as a probe.
 
 ## Diagnostics
 
