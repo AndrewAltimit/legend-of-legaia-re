@@ -1120,6 +1120,16 @@ impl World {
             None
         };
         let committed_reaction = committed_reaction.filter(|_| !block.mystic);
+        // The Mystic Shield's tail runs on a hit that lands too: the shield
+        // was up for this swing and a block breaker overturned it. Every arm
+        // of the routine falls into `0x801EEB60`, whose test is the shield
+        // word and the attacker's clip below `0x10` alone, so the defender
+        // turns onto the attacker (`0x801EEBB8..0x801EEBEC`), Stoned or not,
+        // whether or not a block pose then plays.
+        // PORT: FUN_801EC3E4 (`0x801EEB60..0x801EEBEC`, the Mystic tail on a landed hit)
+        if block.mystic {
+            self.turn_defender_to_attacker(target_i, attacker_i);
+        }
         // The grunt reads the pick ahead of the broken block's pose, and only
         // on the arm that lands the total (`0x801EEA7C..0x801EEB5C` sits
         // behind the apply at `0x801EE9F8`; the pose override follows at

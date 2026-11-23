@@ -4,7 +4,10 @@
 //! roll, the damage roll pair with its underdog rewrite and chip floor, the
 //! equipment fold, the guard ladder, the Spirit accrual, the kill compare and
 //! the Seru absorb roll, the status arms of the clip's `+0x7A` class, the
-//! reaction entry and the HP write.
+//! reaction entry and the HP write. The fold of the hit is compared on the
+//! seat as well: the impact tint, its blend and selector, the attacker's cue
+//! cursor, and the defender's facing off seeded ground and body pairs (the
+//! bearing `FUN_80019B28` runs live).
 
 use crate::common::{Rng, disc, scus_cpu, split_statuses};
 use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
@@ -346,6 +349,22 @@ fn gen_hit(rng: &mut Rng) -> Hit {
 
 /// The monster id seated on `slot`: `0xB3` on the first monster seat for the
 /// arm keyed on it.
+/// Seat `slot`'s live ground pair `+0x34` / `+0x38` and its body pair
+/// `+0x3C` / `+0x40`, drawn off the round's seed, so the defender's turn onto
+/// its attacker (`0x801EEB9C..0x801EEBEC`, `0x801EEC94..0x801EECBC`) reads a
+/// real bearing.
+fn seat_pairs(h: &Hit, slot: u8) -> ((i16, i16), (i16, i16)) {
+    let mut r = Rng(u64::from(h.seed) << 8 | u64::from(slot));
+    let p = |r: &mut Rng| (r.below(0x1000) as i32 - 0x800) as i16;
+    let ground = (p(&mut r), p(&mut r));
+    let body = if r.below(2) == 0 {
+        ground
+    } else {
+        (p(&mut r), p(&mut r))
+    };
+    (ground, body)
+}
+
 fn monster_id(h: &Hit, slot: u8) -> u16 {
     if h.b3 && slot == 3 {
         0xB3
@@ -460,6 +479,10 @@ fn seed_retail(cpu: &mut Cpu, h: &Hit) {
         cpu.mem.wr16(a + 0x172, h.hp[i]);
         cpu.mem.wr32(a + 0x22C, ANIM_NODE);
         cpu.mem.wr32(ANIM_NODE + 0x4C, ANIM_NODE);
+        let ((gx, gz), (bx, bz)) = seat_pairs(h, s);
+        for (o, v) in [(0x34u32, gx), (0x38, gz), (0x3C, bx), (0x40, bz)] {
+            cpu.mem.wr16(a + o, v as u16);
+        }
         for (k, e) in reaction_map(h, s).into_iter().enumerate() {
             cpu.mem.wr8(a + 0x1EF + k as u32, e);
         }
@@ -579,6 +602,15 @@ fn seed_port(w: &mut World, h: &Hit) {
         a.battle.spirit_gauge = h.spirit[i];
         a.battle.damage_accum = 0;
         a.battle.action_category = 0;
+        let ((gx, gz), body) = seat_pairs(h, s);
+        a.move_state.world_x = gx;
+        a.move_state.world_z = gz;
+        a.battle.seat = Some(body);
+        a.battle.facing_angle = 0;
+        a.battle.render_color = 0;
+        a.battle.render_blend = 0;
+        a.battle.impact_state = 0;
+        a.battle_anim_cue_cursor = 0;
         a.battle.current_anim = 0;
         a.battle.hp_display = None;
         a.battle.hp_bar_pending = 0;
@@ -680,6 +712,14 @@ struct Outcome {
     rumble: (i32, i32),
     grunts: usize,
     rng: u32,
+    /// The defender's facing `+0x46` and the hit's tint: the colour word
+    /// `+0x04`, its blend `+0x0C` and the impact selector `+0x21F`
+    /// (`0x801EE3D4..0x801EE43C`).
+    facing: u16,
+    tint: (u32, u32, u8),
+    /// The attacker's cue cursor `+0x1F6`, which a blocked hit steps over the
+    /// impact cue it does not sound (`0x801EE6D4..0x801EE6F8`).
+    cue_cursor: u8,
 }
 
 #[test]
@@ -703,11 +743,19 @@ fn a_melee_hit_lands_what_retail_lands() {
     let g = grunts.clone();
     cpu.hook(0x8003_D53C, move |_, _| g.set(g.get() + 1));
     cpu.stub(0x8004_FE5C, 0); // The Mystic Shield's sound.
-    cpu.stub(0x8001_9B28, 0); // The bearing; turning is compared elsewhere.
+    cpu.hook(0x8001_9B28, |r, _| {
+        let a = |i: usize| r.r[psx_retail_exec::A0 + i] as i16;
+        r.r[V0] = u32::from(
+            legaia_engine_battle_vm::battle_action::bearing_12bit_approx(a(0), a(1), a(2), a(3)),
+        );
+    });
 
     let scus = crate::common::scus().unwrap();
     let mut w = World::new();
     w.tables.element_affinity = element_affinity::parse(&overlay);
+    // The impact tint table `0x801F53D4` the hit's `+0x7A` class indexes.
+    w.tables.move_power =
+        legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(&overlay);
     w.set_accessory_passives(AccessoryPassives::from_disc(
         &AccessoryPassiveTable::from_scus(&scus).expect("passives"),
     ));
@@ -762,6 +810,13 @@ fn a_melee_hit_lands_what_retail_lands() {
             ),
             grunts: grunts.replace(0),
             rng: state.get(),
+            facing: cpu.mem.rd16(t + 0x46) & 0xFFF,
+            cue_cursor: cpu.mem.rd8(a + 0x1F6),
+            tint: (
+                cpu.mem.rd32(t + 4),
+                cpu.mem.rd32(t + 0xC),
+                cpu.mem.rd8(t + 0x21F),
+            ),
         };
 
         seed_port(&mut w, &h);
@@ -790,6 +845,14 @@ fn a_melee_hit_lands_what_retail_lands() {
             }
         };
         let ta = &w.actors[usize::from(h.target)];
+        let (facing, tint) = (
+            ta.battle.facing_angle & 0xFFF,
+            (
+                ta.battle.render_color,
+                ta.battle.render_blend,
+                ta.battle.impact_state,
+            ),
+        );
         let port = Outcome {
             accum: ta.battle.damage_accum,
             hp: ta.battle.hp,
@@ -821,6 +884,9 @@ fn a_melee_hit_lands_what_retail_lands() {
             rumble: (w.rumble.motors.pulse, w.rumble.motors.level),
             grunts: w.drain_battle_xa_cues().len(),
             rng: w.rng_state,
+            facing,
+            tint,
+            cue_cursor: w.actors[usize::from(h.attacker)].battle_anim_cue_cursor,
         };
         if dmg == 0 {
             blocked += 1;
