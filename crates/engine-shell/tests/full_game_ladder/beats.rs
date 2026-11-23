@@ -1801,11 +1801,44 @@ fn inside_box_tile(session: &NativeSession, t: (u8, u8)) -> bool {
 /// while the player's own tile stays `t`, until a facing's probe reaches it,
 /// then press Cross and page what opens. `None` when no facing reaches it
 /// from inside the box.
+///
+/// The pad hand ([`pad_props`]) leans and steps back on the pad alone first.
+/// A box whose answer needs a facing from a band a few units wide
+/// (`doman`'s intercom, z 10490..=10495) can defeat it: the hand then plays
+/// the seated way from where it started - teleported back, the facing set
+/// by hand - and counts it (`box_face`, `restore_xz`). Without that fallback
+/// the intercom kept its password, Dr. Usha's door stayed shut, and every
+/// stream stopped in Uru Mais with Gala's cutscene (`uru` P2[28], gated on
+/// the `0x379` P1[15] raises) never spawned.
 pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) -> Option<Run> {
+    if !pad_props() {
+        return talk_from_box_as(session, slot, t, false);
+    }
+    let start = player_xz(session);
+    let before = flags_of_world(session);
+    let r = talk_from_box_as(session, slot, t, true);
+    if shortcuts_refused() || !walking(session) {
+        return r;
+    }
+    match r {
+        Some(Run::Released) if flags_of_world(session) != before => r,
+        Some(Run::Released) | None => {
+            restore_player_xz(session, start);
+            talk_from_box_as(session, slot, t, false).or(r)
+        }
+        other => other,
+    }
+}
+
+fn talk_from_box_as(
+    session: &mut NativeSession,
+    slot: u8,
+    t: (u8, u8),
+    by_pad: bool,
+) -> Option<Run> {
     let inside = |s: &NativeSession| inside_box_tile(s, t);
     // The seated hand turns the player to each sector until the probe lands;
     // the pad hand reads the probe as the lean left it.
-    let by_pad = pad_props();
     let reaches = |s: &mut NativeSession| {
         if by_pad {
             return s.host.world.field_interact_probe_slot() == Some(slot);
