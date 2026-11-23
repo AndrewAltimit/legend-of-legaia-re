@@ -106,6 +106,15 @@ pub(super) fn open_session(extracted: &Path) -> NativeSession {
     // (`World::screen_edge`). The field keeps the tier's pipeline. A harness
     // seat.
     session.host.world.input.set_screen_immediate(true);
+    // Not a host's: both play hosts push their options onto the world every
+    // tick (`BootSession::apply_option_knobs`), whose defaults turn precise
+    // movement on; the hand walks the world default, retail's quantised
+    // decode, which its walker inverts. `LEGAIA_FGL_HOST_OPTIONS=1` pushes
+    // the hosts' default options once here instead: a probe.
+    if std::env::var_os("LEGAIA_FGL_HOST_OPTIONS").is_some_and(|v| v != "0") {
+        let opts = legaia_engine_menus::options::OptionsState::default();
+        session.apply_option_knobs(&opts, None);
+    }
     // `LEGAIA_BATTLE_MEMO_VERIFY=1`: every hit of the battle edge's memos is
     // rebuilt behind and compared.
     session.host.world.toggles.battle_memo_verify =
@@ -154,6 +163,8 @@ pub(super) fn seed(
     // The save's options words (Field Move among them) come in with it, as
     // a card load restores them: `jouind`'s timed switch pair is paced for
     // the anchor's player, who ran.
+    // Harness (seed): a segment starts from retail's save at its milestone;
+    // part C seeds only its New Game this way.
     session.host.world.load_full(sf.clone());
     if let Some((x, z)) = a.seat {
         session.host.set_entry_seat(x, z);

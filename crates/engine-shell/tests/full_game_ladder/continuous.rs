@@ -291,6 +291,9 @@ fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32), String> {
 /// A fresh session resumed from `cp`, as a card load of that save.
 fn reload(inp: &Inputs, cp: &Checkpoint, opts: &FieldLiveOpts) -> Result<NativeSession, String> {
     let mut session = open_session(&inp.extracted);
+    // Harness (reload): the game-over hold, the title and the card screen a
+    // player passes are not played; the save round trip is
+    // `native_new_game_save_continue`'s and the card tests'.
     session.host.world.load_full(cp.save.clone());
     let landing = session.resume_save(cp.save.clone(), &cp.scene, opts);
     if !landing.entered_scene() {
@@ -514,6 +517,7 @@ fn part_c_continuous_run() {
             stored_checkpoint(id).unwrap_or_else(|e| panic!("LEGAIA_FGL_CONTINUOUS_RESUME: {e}"));
         session = reload(&inp, &cp, &opts)
             .unwrap_or_else(|e| panic!("LEGAIA_FGL_CONTINUOUS_RESUME: {e}"));
+        // Harness (deal): the checkpoint's own stream, as the run left it.
         session.host.world.rng_state = rng;
         cp
     } else {
@@ -525,6 +529,7 @@ fn part_c_continuous_run() {
     // Another hand of the rand stream from the first frame (or from the
     // resumed checkpoint): how a score is checked for resting on one deal.
     if let Some(s) = rng_seed_override() {
+        // Harness (deal): the seed set's stream, no player state.
         session.host.world.rng_state = s;
     }
 
@@ -881,6 +886,8 @@ fn part_c_continuous_run() {
                 pad_field_move_run(&mut session);
             }
             if !(attempt == 1 && prepare.is_some()) {
+                // Harness (deal): the time a reload spends on screens the
+                // hand does not play, as another hand of the stream.
                 let w = &mut session.host.world;
                 w.rng_state = w
                     .rng_state

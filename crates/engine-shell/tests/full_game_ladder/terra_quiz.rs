@@ -95,6 +95,8 @@ fn terra_walks_ahead_to_each_quiz_stop() {
     session
         .enter_scene_live("cave01", &live_opts(false))
         .expect("enter cave01");
+    // Harness (fixture): a unit test of the quiz walk, not part of a ladder
+    // run; Terra's stretch is played on the pad by part C.
     session.host.world.party.active_party = vec![1];
     session.host.world.party.party_leader_slot = Some(1);
     for _ in 0..700 {

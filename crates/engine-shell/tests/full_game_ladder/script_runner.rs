@@ -1015,6 +1015,9 @@ pub(super) fn run(session: &mut NativeSession, budget: usize, stop_on_release: b
         }
         service_shop(session);
         if session.host.world.active_fmv().is_some() {
+            // Harness (movie): both hosts suspend the world under a movie and
+            // end it through the same finish and hand-off; the hand skips
+            // its frames, as a player's Start does.
             session.host.world.finish_cutscene();
             if let Some(FmvHandoffOutcome::Entered { scene, .. }) =
                 session.apply_pending_fmv_handoff()
