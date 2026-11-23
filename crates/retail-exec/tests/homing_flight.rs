@@ -249,11 +249,13 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
             }
             _ => {}
         }
-        // A tint-only selector half the time, a status selector otherwise.
-        rec[0x0A] = if rng.below(2) == 0 {
-            1 + rng.below(2) as u8
-        } else {
-            3 + rng.below(3) as u8
+        // No selector, a tint-only one, or a status one; `6` is past the
+        // ladder's last arm (`0x801E1620` tests `5` alone) and rolls nothing.
+        rec[0x0A] = match rng.below(8) {
+            0 => 0,
+            1..=3 => 1 + rng.below(2) as u8,
+            7 => 6,
+            _ => 3 + rng.below(3) as u8,
         };
         let ability = [0u32, 1 << 0x18, 1 << 0x1C, 1 << 0x10][rng.below(4) as usize];
         for s in 0..3u32 {
@@ -539,7 +541,7 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
             let mut heads = heads_before.clone();
             w.rng_state = lcg_seed;
             let mut port_draws = 0u32;
-            if rec[0x0A] >= 3 {
+            if (3..=5).contains(&rec[0x0A]) {
                 let id = move_of[usize::from(rec[0x0A] - 3)].1;
                 for &c in port.landed.iter().filter(|&&c| c != 0) {
                     let t = c - 1;

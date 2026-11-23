@@ -171,9 +171,37 @@ reason = "PROT 0972 plate fish draw: the second scale on the +0x42 parent matrix
 [[arm]]
 entry = "0x801D67BC"
 image = "65390fcfb4913705"
-range = "0x801D6970..0x801D6B34"
+range = "0x801D6978..0x801D6978"
 verdict = "cannot-drive"
-reason = "PROT 0972 plate fish draw: the part loop (FUN_8001BE80 pose per part, the tie part's angles, the tie vertex's projection into 0x801E9154 at part 0, FUN_80043390's draw); it runs only when the clip's part count matches the model's (0x801D6970), so it needs a real species TMD block at +0x44 and clip at +0x4C relocated as FUN_80020DE0 / FUN_800204F8 build them; the port poses the body in float (fishing_catch::pose_into) and the tie projection (plate_line) has no integer differential yet"
+reason = "PROT 0972 plate fish draw: the part loop's zero-part skip, after the clip's part count matched the model's (0x801D6970); the retail catch-plate state (fishing_catch::the_plate_line_ties_where_retails_draw_projects_it) holds species 5's model, whose object count is non-zero, so driving it needs a zero-object species block"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D69C4..0x801D69C4"
+verdict = "cannot-drive"
+reason = "PROT 0972 plate fish draw: the model block's turned part +0x9A, whose angles +0x94..+0x98 the loop applies (0x801D69CC..0x801D69FC); species 5's block in the catch-plate state names none of its parts, so it needs a state with another species on the plate"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D6A10..0x801D6A10"
+verdict = "cannot-drive"
+reason = "PROT 0972 plate fish draw: a zero Z angle on the clip key (+0xC); species 5's clip at the catch-plate state's frame carries a non-zero one on every part, so it needs another frame or species"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D6A98..0x801D6A98"
+verdict = "cannot-drive"
+reason = "PROT 0972 plate fish draw: a part whose +0xC word is set takes FUN_8001D184 (0x801D6AA0); every part of species 5's model in the catch-plate state holds zero there"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D6AB4..0x801D6B14"
+verdict = "cannot-drive"
+reason = "PROT 0972 plate fish draw: the actor flag +0x10 & 0x1000 around each part's draw (FUN_8001C604's swap at 0x801D6ABC, restored at 0x801D6B1C); the catch-plate state's result actor holds it clear"
 
 [[arm]]
 entry = "0x801CF470"
