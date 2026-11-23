@@ -746,6 +746,10 @@ fn a_sound_cue_or_bgm_barrier_waits_as_retail_waits() {
                 let _ = g.bgm_swap.tick(0x100, true, 0);
             }
         }
+        // The seek-ahead starter `FUN_80019794` is stubbed to `0` here,
+        // which is its settled stage `4`
+        // (`a_seek_ahead_holds_the_script_as_retail_holds_it` runs it).
+        w.drive_field_xa_seek_stage(4);
         w.field_bytecode = script.clone();
         w.field_pc = 0;
         let port = match w.step_field() {
