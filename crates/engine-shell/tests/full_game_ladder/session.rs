@@ -118,15 +118,18 @@ pub(super) fn open_session(extracted: &Path) -> NativeSession {
     // (`World::screen_edge`). The field keeps the tier's pipeline. A harness
     // seat.
     session.host.world.input.set_screen_immediate(true);
-    // Not a host's: both play hosts push their options onto the world every
-    // tick (`BootSession::apply_option_knobs`), whose defaults turn precise
-    // movement on; the hand walks the world default, retail's quantised
-    // decode, which its walker inverts. `LEGAIA_FGL_HOST_OPTIONS=1` pushes
-    // the hosts' default options once here instead: a probe.
-    if std::env::var_os("LEGAIA_FGL_HOST_OPTIONS").is_some_and(|v| v != "0") {
-        let opts = legaia_engine_menus::options::OptionsState::default();
-        session.apply_option_knobs(&opts, None);
+    // The options players play on: both play hosts push their options onto
+    // the world every tick (`BootSession::apply_option_knobs`), and their
+    // defaults turn precise movement on. The hand takes the same push here
+    // (and again in every session a reload opens). `LEGAIA_FGL_RETAIL_DECODE=1`
+    // keeps retail's quantised direction decode instead; `LEGAIA_FGL_PIN_RETAIL`
+    // pins the options' retail values too.
+    let mut opts = legaia_engine_menus::options::OptionsState::default();
+    if std::env::var_os("LEGAIA_FGL_PIN_RETAIL").is_some_and(|v| v != "0") {
+        opts.pin_retail();
     }
+    let retail_decode = std::env::var_os("LEGAIA_FGL_RETAIL_DECODE").is_some_and(|v| v != "0");
+    session.apply_option_knobs(&opts, retail_decode.then_some(false));
     // `LEGAIA_BATTLE_MEMO_VERIFY=1`: every hit of the battle edge's memos is
     // rebuilt behind and compared.
     session.host.world.toggles.battle_memo_verify =
