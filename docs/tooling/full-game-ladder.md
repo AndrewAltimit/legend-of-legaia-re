@@ -1673,11 +1673,14 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   P2[42], Lord Saryu's audience, spans (104..107, 50) and (107, 50) is walled
   in): when the walk finds no path to its tile, or stalls at its edge, the
   band's other tiles are tried, nearest first;
-- an **examined** or **touched** prop is walked to, nearest seat first, and
-  leaned on until the retail probe lands on it (an examine) or its record
-  starts (a touch); the player walks on from where it stood. Only a prop no
-  seat of which the walk reaches is played the seated tier's way, and that
-  is counted ([the shortcuts](#shortcuts));
+- an **examined** or **touched** prop is walked to and leaned on until the
+  retail probe lands on it (an examine) or its record starts (a touch); the
+  player walks on from where it stood. Its seats are tried in the seated
+  tier's order of sides, since a record can answer by where the player
+  stands: `stone`'s statues turn to face the side they are examined from,
+  and tried nearest side first the dial spun past the facings that open the
+  way to `tunnela`. Only a prop no seat of which the walk reaches is played
+  the seated tier's way, and that is counted ([the shortcuts](#shortcuts));
 - an **object door** or a **boss stager** is walked up to and leaned on. A
   stager's fight fires on the next field step, so the walk that step belongs
   to fights it instead of fleeing it;
@@ -2183,6 +2186,7 @@ pad hand counts; the seated tier places the player by definition.
 | `run_switch` | The Field Move switch, where the pause menu's Options screen did not take it. |
 | `door_object_seat`, `hop_seat` | The seated tier's door placements, should the pad hand ever reach them. |
 | `prologue_skip` | The opening skipped on the hosts' hand-off (`LEGAIA_FGL_SKIP_OPENING=1` only). |
+| `gate_order` | A press the pause menu or the naming prompt took while a card or a crawl held the field's pad, which the gate once dropped. |
 
 `LEGAIA_FGL_NO_SHORTCUTS=1` refuses every fallback placement: a stretch is
 then played on the pad alone, and a stall it shows is a candidate defect of
