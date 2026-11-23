@@ -691,6 +691,22 @@ description = "Rim Elm (town01) scripted Gimard fight captured mid-combo, just b
 phase = "battle"
 topics = ["battle", "reward", "exp", "gold", "drop", "spoils", "FUN_80026018", "monster record"]
 
+[[scenarios]]
+label = "rim_elm_gimard_victory_load_window"
+backup_fingerprint = "aa73a3ba75e4c19cefb6831fec7230195392ea299cb62ca42b16f4158d156e99"
+description = "RETAIL disc and SCUS, no RAM pokes, no pad: rim_elm_gimard_victory played forward 366 vsyncs on PCSX-Redux (recompiler) by autorun_victory_timeline.lua (LEGAIA_SAVE_AT=366). Gimard is down and the results sequencer is in its load window: the side-band request ctx[+0x26B] cleared at vsync 350, the cause word at 2, the results frame not yet run (ctx[+0x6CE] 0). Every pass frames the stand-off case 8 reads off the yaw counter ctx[+0x6DA], which the sequencer steps by max(1, step >> 1): 76 here, from 68 at the request's clear to 93 before the results frame stores 0x780 at vsync 402."
+phase = "battle"
+expected_game_mode = 0x15
+topics = ["battle", "victory", "results sequencer", "load window", "victory camera", "yaw counter"]
+
+[[scenarios]]
+label = "rim_elm_gimard_victory_load_window_late"
+backup_fingerprint = "6513802b189cc7e433a9cb65988b105f51912b5e0d215321d03459186938e0ba"
+description = "RETAIL disc and SCUS, no RAM pokes, no pad: rim_elm_gimard_victory played forward 392 vsyncs on PCSX-Redux (recompiler) by autorun_victory_timeline.lua (LEGAIA_SAVE_AT=392). Gimard is down and the results sequencer is in its load window: the side-band request ctx[+0x26B] cleared at vsync 350, the cause word at 4, the results frame not yet run (ctx[+0x6CE] 0). Every pass frames the stand-off case 8 reads off the yaw counter ctx[+0x6DA], which the sequencer steps by max(1, step >> 1): 89 here, from 68 at the request's clear to 93 before the results frame stores 0x780 at vsync 402."
+phase = "battle"
+expected_game_mode = 0x15
+topics = ["battle", "victory", "results sequencer", "load window", "victory camera", "yaw counter"]
+
 # ----------------------------------------------------------------------
 # Seru-capture (spell learn) before/after pair, captured during the Rim
 # Elm Gimard fight. `before` is the frame just prior to the capture; `after`
