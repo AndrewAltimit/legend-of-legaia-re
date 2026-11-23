@@ -668,6 +668,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
             let mut arm3_passes = 0usize;
             let mut settle_passes = 0usize;
+            let mut settle_world = legaia_engine_core::world::World::default();
             // Every strike-frame wait (PROT 0960's arm 5, PROT 0962's arm 3)
             // finds the caster's node cursor past its mark.
             cpu.mem.wr16(NODES + caster * 0x100 + 0x68, 0x7FFF);
@@ -900,6 +901,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     // `0` or `8` whatever the HP).
                     0x5B if body.va == SCYTHE_WIND => Some(5),
                     _ if (body.entry, body.va) == (962, GIGATON_PRESS) => Some(4),
+                    // Blade Breath's arm 4, the same poll (`0x801F7AE4` body).
+                    _ if (body.entry, body.va) == (962, BLADE_BREATH) => Some(4),
                     _ => None,
                 };
                 if let Some(arm_at) = victim_settle {
@@ -913,16 +916,34 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         0
                     };
                     if phase == arm_at {
-                        let dead = cpu.mem.rd16(va_ + 0x14C) == 0;
+                        // A victim the strike downed on every fourth round
+                        // (Kiss of Death's own hit downs its one-HP victims).
+                        if body.action != 0x6E && round % 4 == 3 && settle_passes == 1 {
+                            cpu.mem.wr16(va_ + 0x14C, 0);
+                        }
+                        let hp = cpu.mem.rd16(va_ + 0x14C);
+                        let dead = hp == 0;
                         let busy = settle_passes <= round % 3 + 1;
+                        // While busy a standing victim plays a reaction (or,
+                        // on odd rounds, the down clip `8`) and a fallen one a
+                        // knockdown (or, on odd rounds, idle `0`): the clips
+                        // the two rest rules read apart.
                         let clip = match (busy, dead) {
-                            (true, false) => 5,
-                            (true, true) => 0,
+                            (true, false) => [5, 8][round % 2],
+                            (true, true) => [3, 0][round % 2],
                             (false, false) => 0,
                             (false, true) => 8,
                         };
                         cpu.mem.wr8(va_ + 0x1D9, clip);
-                        st.victim_settled = if dead { clip == 8 } else { clip == 0 };
+                        // The host's own flag (`World::capture_victim_settled`)
+                        // off the same bytes.
+                        st.victim_settled = settle_world.drive_capture_victim_settled(
+                            body.entry,
+                            body.va,
+                            victim as u8,
+                            hp,
+                            clip,
+                        );
                         victim_settle_holds += usize::from(!st.victim_settled && settle_passes > 0);
                     } else {
                         st.victim_settled = true;

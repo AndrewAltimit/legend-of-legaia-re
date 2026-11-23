@@ -6065,7 +6065,12 @@ two; TR `(0, 0x400, 0x800)` for all three. From there:
   the caster on `-sin(16 w) / 8` off a word stepped by the frame step, waiting
   for cursor `0x100`; its pass grounds the caster, seats five records on it and
   lands the hit. Arm 4 shakes TR y by a word seeded `0x100`, its sign flipping
-  a pass and the word falling `s d / 2`, until the victim settles. Arm 3's
+  a pass and the word falling `s d / 2`, until the victim settles: its playing
+  clip `+0x1D9` on idle `0` or the down clip `8`, whatever its HP
+  (`0x801F7440..0x801F7454`, and Blade Breath's arm 4 the same). The host
+  feeds that rule (`capture_victim_settle`, `World::capture_victim_settled`),
+  where the other capture bodies take a standing victim on `0` and a fallen
+  one on `8`. Arm 3's
   pass also seats sixteen falling rocks after the five caster records and
   before the hit (`0x801F717C..0x801F7294`, `gigaton_press_debris`): point
   `i` on a ring of radius `0x400` round the victim's ground pair at angle

@@ -111,7 +111,7 @@ impl World {
         st.lead_roster = (self.party_roster_slot(0) + 1) as u8;
         // The victim's `+0x1D9` back on idle (or a downed seat on clip `8`),
         // the poll a body's settle arm makes (PROT 0962 `0xA2` arm 4).
-        st.victim_settled = self.chain_seat_settled(usize::from(victim_slot), false);
+        st.victim_settled = self.capture_victim_settled(victim_slot);
         let v = self.cast_view(victim_slot);
         st.victim_on_gate_clip = v.playing_anim == v.reaction_gate;
         st.victim_on_knockdown_clip = v.playing_anim == v.knockdown_anim;
@@ -153,6 +153,33 @@ impl World {
     /// past the seated row are not walked.
     ///
     /// PORT: overlay_cast_water_hazard_0956_801f7298 (PROT 0956; the settle walk 0x801F7C2C..0x801F7DA4)
+    /// The victim's settle as the cast's body polls it
+    /// ([`legaia_engine_cast::cast_module_camera::capture_victim_settle`]).
+    ///
+    /// PORT: overlay_cast_blade_breath_0962_801f6d54 (PROT 0962 `0xA4`; arm 4's poll on either rest clip, `0x801F7440..0x801F7454`)
+    pub(in crate::world) fn capture_victim_settled(&self, victim_slot: u8) -> bool {
+        let body = self.casting.capture_spell.and_then(|spell| {
+            let entry = self.cast_module_for(spell)?;
+            Some((
+                entry,
+                legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell),
+            ))
+        });
+        match body {
+            Some((entry, body)) => self.capture_victim_settled_for(entry, body, victim_slot),
+            None => self.chain_seat_settled(usize::from(victim_slot), false),
+        }
+    }
+
+    fn capture_victim_settled_for(&self, entry: u32, body: Option<u32>, victim_slot: u8) -> bool {
+        use legaia_engine_cast::cast_module_camera::{CaptureVictimSettle, capture_victim_settle};
+        let slot = usize::from(victim_slot);
+        match capture_victim_settle(entry, body) {
+            CaptureVictimSettle::EitherRestClip => self.chain_seat_on_rest_clip(slot),
+            CaptureVictimSettle::Rest => self.chain_seat_settled(slot, false),
+        }
+    }
+
     pub(in crate::world) fn capture_target_settled(&self, caster_slot: u8) -> bool {
         let map = self.cast_seat_map();
         let ctx = self.cast_module_ctx();
@@ -763,4 +790,33 @@ fn rescale_end_step(
         c.effect_script[OFF..OFF + 2].copy_from_slice(&new.to_le_bytes());
     }
     Some(old)
+}
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// The host's victim-settle feed ([`World::capture_victim_settled`]) for
+    /// capture body `body` of PROT `entry`, on a victim seat with clips
+    /// installed standing on HP `hp` and playing clip `clip` (no reaction
+    /// channel).
+    pub fn drive_capture_victim_settled(
+        &mut self,
+        entry: u32,
+        body: u32,
+        victim: u8,
+        hp: u16,
+        clip: u8,
+    ) -> bool {
+        let v = usize::from(victim);
+        while self.actors.len() <= v {
+            self.actors.push(Default::default());
+        }
+        let a = &mut self.actors[v];
+        a.battle.hp = hp;
+        a.battle.current_anim = clip;
+        a.battle_reaction = None;
+        a.battle_reaction_entry = None;
+        a.battle_pose = None;
+        a.battle_action_clips = Some(std::sync::Arc::new(Vec::new()));
+        self.capture_victim_settled_for(entry, Some(body), victim)
+    }
 }
