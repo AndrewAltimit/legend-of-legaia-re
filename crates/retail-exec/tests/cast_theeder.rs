@@ -406,6 +406,11 @@ mod walk {
     /// off the victim's record size class, the depth PROT 0906's
     /// single-seat exit shot reads.
     const FRAMING: u32 = 0x801F_0348;
+    /// The drive poll `CdSync(1)` each module's poll arm makes, answered busy
+    /// for the arm's first [`DRIVE_BUSY_PASSES`] passes, as the summon walk
+    /// answers it.
+    const DRIVE_POLL: u32 = 0x8003_F2B8;
+    const DRIVE_BUSY_PASSES: u32 = 3;
     const SCALAR: u32 = 0x1F80_037D;
     const STEP: u32 = 0x1F80_0393;
     const FORMATION: u32 = 0x8007_BD0C;
@@ -529,6 +534,11 @@ mod walk {
         pub shots: Rc<RefCell<Vec<[i16; 10]>>>,
         pub stream: Rc<Cell<u32>>,
         pub struck: Rc<RefCell<Vec<u8>>>,
+        /// What the drive poll `FUN_8003F2B8` answers: busy while non-zero.
+        pub drive_busy: Rc<Cell<u32>>,
+        /// The module's seek and poll arms
+        /// (`battle_cast_cue::module_drive_arms`).
+        pub drive: Option<legaia_engine_battle_vm::battle_cast_cue::ModuleDriveArms>,
     }
 
     pub(super) fn rig(entry: u32, action: u8, code: u8, layout: Layout) -> Option<Rig> {
@@ -543,9 +553,15 @@ mod walk {
         cpu.mem.wr32(POOL_PTR, POOL);
         cpu.mem.wr32(OT_PTR, OT);
         for target in jal_targets(&module) {
-            if ![AIM, BUILDER, BEARING, RAND, WRAPPER, FRAMING].contains(&target) {
+            if ![AIM, BUILDER, BEARING, RAND, WRAPPER, FRAMING, DRIVE_POLL].contains(&target) {
                 cpu.stub(target, 0);
             }
+        }
+        let drive = legaia_engine_battle_vm::battle_cast_cue::module_drive_arms(&module);
+        let drive_busy = Rc::new(Cell::new(0u32));
+        {
+            let busy = drive_busy.clone();
+            cpu.hook(DRIVE_POLL, move |r, _| r.r[V0] = busy.get());
         }
         let struck = Rc::new(RefCell::new(Vec::new()));
         {
@@ -599,6 +615,8 @@ mod walk {
             shots,
             stream,
             struck,
+            drive_busy,
+            drive,
         })
     }
 
@@ -849,6 +867,7 @@ mod walk {
                     );
                     let mut r = rig(entry, action, code, layout).expect("rig");
                     let mut band_timer: u16 = if fallen { 12 } else { 0 };
+                    let mut poll_passes = 0u32;
                     // The fallen run: the seat after the victim down and faded,
                     // the last monster seat in Stone.
                     let stoned = fallen.then_some(2 + layout.monsters);
@@ -967,6 +986,15 @@ mod walk {
                         w.casting.band_word_live = None;
                         w.rng_state = r.stream.get();
                         w.casting.module_cam.sideband_busy = r.cpu.mem.rd8(CTX + 0x276) != 0;
+                        // The drive as the poll finds it: its seek issued, in
+                        // flight for the busy passes (`World::module_drive_holds`).
+                        let polls_busy = r.drive.is_some_and(|d| d.poll_arm == phase) && {
+                            poll_passes += 1;
+                            poll_passes <= DRIVE_BUSY_PASSES
+                        };
+                        r.drive_busy.set(u32::from(polls_busy));
+                        w.casting.drive_arms = r.drive.map(|d| (d, true));
+                        w.casting.drive.busy = if polls_busy { 0x100 } else { 0 };
                         w.clock.display_frames += 1;
                         let words_before: Vec<u32> =
                             (0..8).map(|s| w.actors[s].battle.render_color).collect();
@@ -1191,7 +1219,7 @@ mod walk {
 
 /// PROT 0904's and PROT 0906's tick bodies walked arm 0 to Done on every
 /// layout (two of them with the sides swapped, so the creature faces the
-/// other half-turn), beside the band's module half
+/// other half-turn), the drive poll busy for its arm's first passes, beside the band's module half
 /// (`World::drive_summon_module_pass`: the director `theeder_direct` /
 /// `gizam_direct` and the tick port `theeder_tick` / `gizam_tick`) stepped on
 /// retail's phase. Each layout runs twice: on the monster row as a group,

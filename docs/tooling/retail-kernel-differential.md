@@ -1047,7 +1047,7 @@ their host's half only Theeder's and Gizam's side-band arm runs beside retail
 layout runs twice more mirrored (the sides swapped, so the creature faces the other half-turn and every sine and
 cosine rounding fix-up runs both ways), and every layout runs once on the row as a group and once on one seat with a
 monster fallen and one Stoned, the band's timer running into the side-band arm, the creature's clip held off its park,
-each struck monster playing its reaction for 250 passes and a kill fading slowly, so every wait on them holds. After
+each struck monster playing its reaction for 250 passes and a kill fading slowly, so every wait on them holds; each image's drive poll answers busy for its arm's first three passes, with the shadow's drive in flight, as in the summon walk. After
 each pass the port's phase, the shot it builds (`FUN_801D829C`'s arguments against the run's `camera_shot`), every
 seat's colour word, render flag, status word and HP, and each monster's staged reaction and facing must match.
 
