@@ -568,7 +568,10 @@ impl SceneHost {
     /// [`legaia_engine_core::world::World::step_world_frame_tail`] with no clip banks, and
     /// step [`legaia_engine_core::world::World::step_field_vram_effects`] over the scene's
     /// own VRAM image. `engine-session`'s `BootSession` runs exactly this on
-    /// every tick it does not hand to a play host.
+    /// every tick it does not hand to a play host. It runs no follow camera,
+    /// so no cull view is published and the field frame cost prices nothing:
+    /// a headless driver stays on the installed step where the session's
+    /// priced frames move (a voice line's stop watch takes them to `4`).
     ///
     /// The tail is not presentation-only. The VRAM step is where the ambient
     /// move-VM parts tick (`World::step_ambient_fx`), and a part staged by
