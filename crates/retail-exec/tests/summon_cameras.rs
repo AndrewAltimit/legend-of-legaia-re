@@ -18,7 +18,9 @@
 //!
 //! Every call out of the image returns `0` but the builder (logged and
 //! landed), `rand()` (a scripted stream), the bearing (`bearing_12bit_approx`,
-//! its own differential) and the group aim `FUN_801DCEAC` (run live). The
+//! its own differential), the group aim `FUN_801DCEAC` (run live), the damage
+//! wrapper (scripted rolls) and the drive poll `FUN_8003F2B8` (busy for the
+//! first passes of the module's poll arm). The
 //! battle frame's scalar is the band's and its step `1`, so one pass is one
 //! engine tick. Each pass opens with every seat but the creature idle, every
 //! node cursor far along, the creature playing what its arms staged and its
@@ -501,7 +503,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         }
         // The drive poll answers busy for the first passes of the module's
         // poll arm (`legaia_engine_battle_vm::battle_cast_cue::module_drive_arms`),
-        // as a seek still in flight does, and idle after.
+        // as a seek still in flight does, and idle after. An arm that drains
+        // its own countdown ahead of the poll (PROT 0923, `bgtz a1` at
+        // `0x801F6CAC`, and the arm 2 of 0920, 0921, 0922 and 0924)
+        // makes no call on those passes: its busy return needs a seek that
+        // outlasts the countdown, which the walk does not stage.
         let drive = legaia_engine_battle_vm::battle_cast_cue::module_drive_arms(&module);
         let drive_busy = Rc::new(std::cell::Cell::new(0u32));
         {
