@@ -1782,20 +1782,29 @@ The engine prices a field frame under a clip's read at its work over the polls' 
 `WorldToggles::field_cd_timing` names. Play runs a console's (`PLAY_FIELD_CD_TIMING`,
 `console_poll_cost`): `garmel` `P2[12]`'s wait takes `268` vsyncs and the beat from the seek to
 the `36 FF FF` after the wait `566`. The harnesses, films and comparison children run
-PCSX-Redux's, the recordings' (`xa_loaded_frame_cost`, with the drive word held for the read
-tail; `LEGAIA_FIELD_CD_TIMING=pcsx-redux` in play): the wait takes `346` vsyncs and the beat
-`590` against the recording's `621` (`422` before the timeline held op `0x36` on the drive word). A harness standing the engine on a state
+PCSX-Redux's, the recordings' (`field_xa_loaded_frame_cost`, below, with the drive word held
+for the read tail; `LEGAIA_FIELD_CD_TIMING=pcsx-redux` in play). A harness standing the engine on a state
 saved under a line seats the drive's remaining read from the stop watch's sectors
 (`RetailObs::xa_drive_left`).
 
-A second voiced beat holds the ratio where it is. `garmel_zeto_defeat_pre_line` stands in
-record 14 (Zeto's defeat) 171 vsyncs before its first line, and a walk film with Cross every
-20 vsyncs runs the line on both sides: retail's step-`4` frames start at vsync `171` and run 66
-frames of five to six vsyncs (mean `5.74`) at the clamp, the engine's (`LEGAIA_RC_WALK_COST=1`)
-start at `174` and run 66 frames of mean `5.83`. Before the line both price the frame near `350`
-hblanks. The engine's frames under the line cost `1376..1460`, a work of about `450` at the
-battle's ratio; the same works at `3.7` would run frames of mean `6.76`. So the Zeto beat's
-shortfall lies elsewhere than the ratio: a field-specific ratio fitted on it would break this beat.
+The field's polls take a larger share than the battle's `3.1` prices.
+[`autorun_field_cd_trace.lua`](../../scripts/pcsx-redux/autorun_field_cd_trace.lua) records
+each frame's CD interrupt time (breakpoint core), and
+[`field-cd-frames.py`](../../scripts/ci/field-cd-frames.py) prices the frame's work apart from it.
+Over `garmel` `P2[12]`'s line the frames' CPU time is `3.34` times their work (85 frames, work
+median `444` hblanks), and over record 14's (Zeto's defeat, `garmel_zeto_defeat_pre_line`, 171
+vsyncs before its first line, Cross every 20 vsyncs) `3.36` (62 frames, `433`). The engine
+prices a voiced field frame at `3.34` (`FIELD_XA_POLL_COST_RATIO_MILLI`,
+`field_xa_loaded_frame_cost`). Filmed on both sides (`LEGAIA_RC_WALK_COST=1`):
+
+| Beat | Retail step-`4` frames | Engine at `3.1` | Engine at `3.34` |
+|---|---|---|---|
+| `garmel` `P2[12]`, Zeto's appearance | 90, mean `6.12` vsyncs | 103, `5.38` | 92, `5.98` |
+| record 14, Zeto's defeat | 66, mean `5.74` | 66, `5.83` | 66, `5.83` |
+
+The defeat beat held at `3.1` because the engine prices its frames' work at about `460`
+against retail's `433`; the appearance's work it prices at about `400` against `444`, so the
+remaining frames there are the work model's, not the ratio's.
 
 The legs a record runs on an actor are on the same grid. The walk kernel `FUN_8003774C` spends
 the frame step (`lbu s2,0x393` at `0x80037864`) once a game frame against a compass walk's or a

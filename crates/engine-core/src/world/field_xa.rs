@@ -450,13 +450,19 @@ mod tests {
     /// `.065` of it; off the law, or with no clip reading, the work stands.
     #[test]
     fn a_voiced_field_frame_runs_under_the_stop_watch() {
-        use legaia_engine_battle_loop::frame_clock::{CdTiming, xa_loaded_frame_cost};
+        use legaia_engine_battle_loop::frame_clock::CdTiming;
         let mut w = World::default();
         assert_eq!(w.field_xa_polled_cost(400), 400, "no clip reading");
         w.push_field_xa_cue(0x07, 1, 0x216);
+        // The field's own ratio, `3.34` (`FIELD_XA_POLL_COST_RATIO_MILLI`):
+        // `garmel` `P2[12]`'s `440`-hblank frames span six vsyncs and more.
+        assert_eq!(w.field_xa_polled_cost(400), 1336);
         assert_eq!(
-            w.field_xa_polled_cost(400),
-            i32::from(xa_loaded_frame_cost(400))
+            legaia_engine_battle_loop::frame_clock::frame_span(
+                super::super::field_frame_cost::field_xa_loaded_frame_cost(440),
+                4
+            ),
+            6
         );
         w.toggles.field_cd_timing = CdTiming::Console;
         assert_eq!(w.field_xa_polled_cost(400), 427);
