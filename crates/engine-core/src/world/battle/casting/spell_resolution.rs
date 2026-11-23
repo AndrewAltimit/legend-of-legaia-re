@@ -202,7 +202,19 @@ impl World {
                 // per-spell magic-power byte + the FUN_801ddb30 finisher
                 // (per-caster summon power-percent, 9999 cap) - replacing
                 // the MP-scaled placeholder entirely.
-                if let Some(faithful) = self.player_summon_predamage(caster, t, def.id) {
+                // A summon differential's scripted wrapper roll stands in for
+                // the kernel's, as it does for the module's own rolls
+                // (`summon_roll_override`), so the fold's hit lands on retail's.
+                #[cfg(feature = "test-drivers")]
+                let scripted = (caster < self.party.party_count)
+                    .then(|| super::summon_roll_override::take(t))
+                    .flatten()
+                    .map(|r| r.min(u32::from(u16::MAX)) as u16);
+                #[cfg(not(feature = "test-drivers"))]
+                let scripted: Option<u16> = None;
+                if let Some(faithful) =
+                    scripted.or_else(|| self.player_summon_predamage(caster, t, def.id))
+                {
                     *amount = faithful;
                 } else {
                     // Fallback (creature unresolved): scale the placeholder

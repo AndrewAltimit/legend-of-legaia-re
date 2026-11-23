@@ -337,6 +337,7 @@ impl World {
                 // player casts (turn cycles via EndOfAction) or backs out.
                 self.battle_ctx.active_actor = session.actor;
                 self.stamp_commit_clip(session.actor, CAST_COMMIT_CLIP);
+                self.save_window_target(session.actor);
                 match self.build_battle_spell_session(session.actor) {
                     Some(menu) => {
                         self.input.reset_menu_repeat();
@@ -356,6 +357,7 @@ impl World {
                 // (the command menu reopens for the same actor).
                 self.battle_ctx.active_actor = session.actor;
                 self.stamp_commit_clip(session.actor, CAST_COMMIT_CLIP);
+                self.save_window_target(session.actor);
                 self.input.reset_menu_repeat();
                 self.battle.item_menu = Some(self.build_battle_item_session());
                 self.battle.sync_battle_flow(None);
@@ -677,5 +679,22 @@ impl World {
         if let Some(a) = self.actors.get_mut(actor as usize) {
             a.battle.queued_anim_b = clip;
         }
+    }
+}
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`World::seat_attack_cursor`] on `actor` holding `active_target`, as
+    /// a differential seeds retail's `+0x1DD`.
+    pub fn drive_seat_attack_cursor(
+        &mut self,
+        actor: u8,
+        active_target: u8,
+        picker: &mut legaia_engine_battle::target_picker::TargetPickerSession,
+    ) {
+        if let Some(a) = self.actors.get_mut(usize::from(actor)) {
+            a.battle.active_target = active_target;
+        }
+        self.seat_attack_cursor(actor, picker);
     }
 }

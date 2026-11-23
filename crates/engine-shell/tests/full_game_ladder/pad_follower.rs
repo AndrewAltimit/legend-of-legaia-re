@@ -669,7 +669,7 @@ pub(super) fn pad_walk(
                 if session.host.world.field_init_hold == 0 {
                     break;
                 }
-                session.host.world.set_pad(0);
+                session.host_pad(0);
                 if session.tick().is_err() {
                     break;
                 }
@@ -838,7 +838,7 @@ pub(super) fn pad_walk(
         if let Some((flag, on)) = wanted
             && !phase_ready(session, flag, on)
         {
-            session.host.world.set_pad(0);
+            session.host_pad(0);
             match session.tick() {
                 Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Walk::Entered(name)),
                 Ok(_) => {}
@@ -1095,7 +1095,7 @@ pub(super) fn pad_walk(
             }
         }
         pressed_at = Some((wx, wz));
-        session.host.world.set_pad(pad);
+        session.host_pad(pad);
         let jump_from = player_xz(session);
         let ticked = session.tick();
         note_caps(session);
@@ -1176,7 +1176,7 @@ pub(super) fn pad_walk(
             // re-crosses it forever.
             let r = match poll_chain_pads(session) {
                 Some(pads) if pad != 0 && !pads.contains(&pad) => {
-                    session.host.world.set_pad(pad);
+                    session.host_pad(pad);
                     match session.tick() {
                         Ok(SceneTickEvent::SceneEntered { name }) => Run::Entered(name),
                         Ok(_) => run_while_moving(session, DEEP_EXIT_TICKS),
@@ -1268,7 +1268,7 @@ pub(super) fn pad_walk(
                 && let Some(rec) = fired_record
             {
                 TURNBACK.with(|t| t.borrow_mut().insert((scene_name(session), rec)));
-                session.host.world.set_pad(0);
+                session.host_pad(0);
                 return Err(format!(
                     "no walkable path: band P2[{rec}] turned the walk to {goal:?} back at {:?}",
                     here(session)
@@ -1303,7 +1303,7 @@ pub(super) fn pad_walk(
         }
         let d = dist(here(session));
         if d <= within {
-            session.host.world.set_pad(0);
+            session.host_pad(0);
             return Ok(Walk::Arrived);
         }
         let (px, pz) = player_xz(session);
@@ -1313,7 +1313,7 @@ pub(super) fn pad_walk(
         } else {
             since += 1;
             if since >= PAD_STALL_FRAMES {
-                session.host.world.set_pad(0);
+                session.host_pad(0);
                 // The stall was a press for a ride that never came: that
                 // contact is no route for the walks after this one.
                 if let Some(w) = path.windows(2).take(3).find(|w| !adjacent(w[0], w[1])) {
@@ -1384,10 +1384,10 @@ pub(super) fn pad_walk(
                         for (name, p) in presses {
                             let start = player_xz(session);
                             for _ in 0..20 {
-                                session.host.world.set_pad(p);
+                                session.host_pad(p);
                                 let _ = session.tick();
                             }
-                            session.host.world.set_pad(0);
+                            session.host_pad(0);
                             let end = player_xz(session);
                             eprintln!(
                                 "      [press] {name}: {start:?} -> {end:?} az {}",
@@ -1404,10 +1404,10 @@ pub(super) fn pad_walk(
                                     (start.0 - x).signum(),
                                     (start.1 - z).signum(),
                                 );
-                                session.host.world.set_pad(back);
+                                session.host_pad(back);
                                 let _ = session.tick();
                             }
-                            session.host.world.set_pad(0);
+                            session.host_pad(0);
                         }
                     }
                     let w = &session.host.world;
@@ -1461,7 +1461,7 @@ pub(super) fn pad_walk(
             }
         }
     }
-    session.host.world.set_pad(0);
+    session.host_pad(0);
     Err(format!("pad walk to {goal:?} ran out of frames"))
 }
 
@@ -1545,13 +1545,13 @@ pub(super) fn pad_lean(
         let (px, pz) = player_xz(session);
         let axis = |d: i16| if d.abs() > 16 { d.signum() } else { 0 };
         let pad = pad_for_step(session, axis(ax - px), axis(az - pz));
-        session.host.world.set_pad(pad);
+        session.host_pad(pad);
         if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
-            session.host.world.set_pad(0);
+            session.host_pad(0);
             return Some(name);
         }
     }
-    session.host.world.set_pad(0);
+    session.host_pad(0);
     None
 }
 
@@ -1689,7 +1689,7 @@ pub(super) fn wait_out_menu_close(session: &mut NativeSession) {
         if session.host.world.mode != SceneMode::Menu || session.field_menu.is_some() {
             break;
         }
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         if session.tick().is_err() {
             break;
         }

@@ -278,3 +278,69 @@ fn the_plate_line_ties_where_the_retail_film_reads() {
         assert!((y - 92).abs() <= 3, "tie y {y} vs retail 92");
     }
 }
+
+/// The hook theme gives the venue's track back on the frame after the
+/// driver reaches the showcase (state `0x20`'s handler, `0x801CFD84..
+/// 0x801CFDD4`, which drops the latch `0x801D92A4`). A retail film of five
+/// catches (`minigame_fishing_retail_lure_cast`, the closed-loop catch pad,
+/// the latch and the battle source logged per vsync) drops it `272..290`
+/// vsyncs after the catch state `0x1E` opens, three vsyncs after `0x20`
+/// does: the close-up's lift and the rod's recover swing, not the landing.
+#[test]
+fn the_hook_theme_gives_way_as_the_showcase_opens() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let mut host = enter(&disc);
+    host.world.set_battle_bgm(Some(0x10));
+    let mut surface = FishingSurface::default();
+    frame(&mut host, &mut surface, 0);
+    let mut landed_at = None;
+    let mut restored_at = None;
+    for f in 0..200_000usize {
+        let music = host.world.minigames.fishing_hook_music;
+        match phase(&host) {
+            PondPhase::Idle if landed_at.is_none() => {
+                frame(&mut host, &mut surface, PadButton::Cross.mask());
+                for _ in 0..WINDUP_FRAMES + 112 {
+                    frame(&mut host, &mut surface, 0);
+                }
+                frame(&mut host, &mut surface, PadButton::Cross.mask());
+            }
+            PondPhase::Hooked => {
+                let t = host.world.minigames.fishing.as_ref().unwrap().tension();
+                let m = if t < 0x800 {
+                    PadButton::Cross.mask()
+                } else {
+                    0
+                };
+                frame(&mut host, &mut surface, m);
+            }
+            _ if landed_at.is_some() => frame(&mut host, &mut surface, 0),
+            _ => {
+                let m = if f % 65 < 25 {
+                    PadButton::Cross.mask()
+                } else {
+                    0
+                };
+                frame(&mut host, &mut surface, m);
+            }
+        }
+        if landed_at.is_none() && phase(&host) == PondPhase::Landed {
+            landed_at = Some(f);
+        }
+        if landed_at.is_some() && music && !host.world.minigames.fishing_hook_music {
+            restored_at = Some(f);
+            break;
+        }
+        if landed_at.is_some_and(|l| f > l + 2000) {
+            break;
+        }
+    }
+    let landed_at = landed_at.expect("a fish lands within the budget");
+    let restored_at = restored_at.expect("the venue's track comes back");
+    let after = restored_at - landed_at;
+    eprintln!("hook theme restored {after} vsyncs after the landing");
+    assert!((250..=320).contains(&after), "{after}");
+}

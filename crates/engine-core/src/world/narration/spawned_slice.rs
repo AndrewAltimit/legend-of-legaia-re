@@ -437,19 +437,29 @@ impl World {
                             // (`autorun_audio_timeline.lua` off
                             // `s1_newgame_field`: `map01`'s card holds its
                             // record 100 vsyncs, `opurud`'s blank page 20).
+                            // The runner parks ANY engaged context on its
+                            // text, so a helper's card holds its record as
+                            // the modal timeline's does: `uru` `P2[36]`,
+                            // which Tieg's talk spawns with `44 54`, carries
+                            // five cards ahead of the box the player turns.
+                            // REF: FUN_80039B7C
                             let auto = tl
                                 .bytecode
                                 .get(pc + 3..pc + 5)
                                 .map_or(0, |b| i16::from_le_bytes([b[0], b[1]]));
                             let first_line = (pc + 5..site_end.min(tl.bytecode.len()))
                                 .find(|&i| tl.bytecode[i] == 0x1F);
-                            if modal
-                                && auto > 0
+                            if auto > 0
                                 && let Some(line) = first_line
                             {
+                                // A card's lines load into the box the record
+                                // left up, as any line does: a `0x24` box before
+                                // the card (`dream` P2[2] and P2[4]) gives its
+                                // rows to the card, and is not drawn on under it.
+                                let held = tl.card_held_box.take().or_else(|| tl.held_box.take());
                                 let mut panel =
                                     legaia_engine_field::inline_dialogue::HeldBox::next_line_panel(
-                                        tl.card_held_box.take(),
+                                        held,
                                         &tl.bytecode,
                                         line,
                                     );
@@ -493,7 +503,10 @@ impl World {
                         // does, or a name renders as an empty string.
                         let _ = modal;
                         // The next line loads into the pager (state `4` ->
-                        // `5`), which takes over a held box's rows.
+                        // `5`), which takes over a held box's rows. A card
+                        // is that same box, so its pages give way to the
+                        // line; left up, the card would keep the field's pad
+                        // neutral under a box that waits for the player.
                         let mut panel =
                             legaia_engine_field::inline_dialogue::HeldBox::next_line_panel(
                                 tl.held_box.take(),
@@ -502,6 +515,7 @@ impl World {
                             );
                         panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
                         host.world.apply_dialog_window_format(&mut panel);
+                        host.world.cutscene.card = None;
                         tl.dialog = Some(panel);
                         host.world.field_vm.dialog_claims += 1;
                         tl.dialog_claim = host.world.field_vm.dialog_claims;
@@ -1622,6 +1636,15 @@ impl World {
                 // the warp tiles' P0[14..16] selects).
                 // REF: FUN_801DE840 (`0x801E0238`, `0x801E0284..0x801E0288`), FUN_800243F0
                 let bgm_wait = op == 0x35 && target.is_none();
+                // Op `0x36` holds the same way, on clocks rather than flags: the
+                // seek-ahead `FUN_80019794` while its starter steps
+                // (`0x801E0438`), `36 FF FF` while a field XA one-shot is still
+                // reading (`0x801E02F0..0x801E0308`), and the stream-pair
+                // gates. Stepping it by width ran a voice line's beat on with
+                // no hold (`garmel` P2[12], where retail holds the seek five
+                // passes before its one-shot).
+                // REF: FUN_801DE840 (op `0x36`), FUN_80019794
+                let sound_wait = op == 0x36 && target.is_none();
                 // NPC end-latch spin (`AD <id> 08`): the record re-tests the
                 // poked actor's `+0x62 & 0x100` every frame until its clip
                 // tick latches it - the clip's remaining length for a
@@ -1697,6 +1720,7 @@ impl World {
                     && !glide_wait
                     && !flag_wait
                     && !bgm_wait
+                    && !sound_wait
                     && (target.is_none() || is_flag_test_handshake)
                 {
                     // By the op's own width: the flag tests are two bytes

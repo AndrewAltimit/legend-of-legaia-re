@@ -1180,6 +1180,27 @@ rows in `card_held_box`): the record waits as retail's does. Pinned by
 `dream`, `jouine`, `noaru`, `uru`, `urudre2`) set a press of `120` to `300` frames and hold
 their records for it.
 
+Four rules follow from the card being the pager's box:
+
+- **Any context parks on it.** The runner parks every engaged context on its text, so a helper
+  record's card holds that record exactly as the modal timeline's does. `uru` `P2[36]`, Tieg's
+  parting words, is spawned by his talk (`44 54`) and runs as a helper context; its five cards
+  set `180` frames each, and the box after them is Gala's waking line.
+- **A typed page waits for the press.** State `0x19` holds every page end, the last one
+  included, so a card's record resumes on the automatic press, not when the typing ends.
+- **A card's lines load into the box the record left up.** A `0x24` box just before a card
+  (`dream` P2[2] and P2[4]) hands the card its rows, as it would any next line, and is not drawn
+  on under it.
+- **The press closes the card** unless the page ends on a `0x24` continuation (`map01`'s card,
+  whose rows the blank card scrolls out), and an ordinary line that loads into the box replaces
+  it. The engine draws a card as an overlay and the play hosts give the field a neutral pad while
+  one is up (`BootSession::claim_tick`), so a card left drawn past its box leaves the next box
+  waiting for a press no button delivers. That is the softlock a helper's cards used to cause on
+  Gala's line. Pinned by `engine-session/tests/uru_tieg_fire_droplet_disc.rs`, which drives the
+  record through `claim_tick` as both hosts do, and for every other helper record with a card
+  (`concend` P2[0], `dream` P2[1..4], `jouine` P2[16], `noaru` P2[31], `urudre2` P2[9]) by
+  `engine-session/tests/helper_card_records_disc.rs`.
+
 The parser is [`legaia_scene_formats::cutscene_text`](../../crates/scene-formats/src/cutscene_text.rs)
 (`parse_narration` / `narration_pages`), which distinguishes `NarrationKind::Crawl`
 (`op0 = 0x80`) from `NarrationKind::Card` (`op0 = 0x89`); the engine surfaces a card via
@@ -1742,6 +1763,30 @@ record's waits put it some thirty vsyncs behind retail by its last vignette. The
 counts the same display frames, and `World::clock.display_frames` counts elapsed display frames
 for consumers that advance in retail-frame time - the camera glide diffs it rather than counting
 ticks.
+
+A voice line breaks the "duration in 60 Hz frames" rule. The field's CD-XA one-shot
+`FUN_8003D53C` installs the same stop watch the battle's clips run
+([battle-stage-camera](battle-stage-camera.md#the-cd-stop-watch)): `FUN_8003D764` polls the
+head from the CD interrupt, back to back, until it passes the clip's end sector, so the frame's
+work runs in what the polls leave of the CPU and the frame outlasts the step it credits. On
+PCSX-Redux the polls take about two thirds of it. `garmel` `P2[12]` (Zeto's appearance, from
+`chapter2_garmel_pre_zeto`, on the recompiler and the interpreter alike) runs at step `2` and
+two vsyncs a frame up to the line at `+0x43F`, then at step `4` and six to seven vsyncs a frame,
+its ring entries at the clamp (`700`), until the drive word `0x8007BC20` clears `554` vsyncs
+after the start; its `270`-frame wait at `+0x544` takes `393` vsyncs. Before the line and in
+the opening chain, which has no voice, the waits fit the rule above. On a console the polls take
+about `.065` of the CPU, so the same beat would run near its frame count.
+
+The engine prices a field frame under a clip's read at its work over the polls' share
+(`World::field_xa_polled_cost`), behind `WorldToggles::field_frame_span_law`, on the machine
+`WorldToggles::field_cd_timing` names. Play runs a console's (`PLAY_FIELD_CD_TIMING`,
+`console_poll_cost`): `garmel` `P2[12]`'s wait takes `268` vsyncs and the beat from the seek to
+the `36 FF FF` after the wait `566`. The harnesses, films and comparison children run
+PCSX-Redux's, the recordings' (`xa_loaded_frame_cost`, with the drive word held for the read
+tail; `LEGAIA_FIELD_CD_TIMING=pcsx-redux` in play): the wait takes `346` vsyncs and the beat
+`590` against the recording's `621` (`422` before the timeline held op `0x36` on the drive word). A harness standing the engine on a state
+saved under a line seats the drive's remaining read from the stop watch's sectors
+(`RetailObs::xa_drive_left`).
 
 The legs a record runs on an actor are on the same grid. The walk kernel `FUN_8003774C` spends
 the frame step (`lbu s2,0x393` at `0x80037864`) once a game frame against a compass walk's or a

@@ -53,6 +53,20 @@ pub const GIZAM_HIDDEN_RENDER_FLAG: u8 = 0xFF;
 /// (`ori v0, v0, 0x1; sh v0, 0x16e(v1)` at `0x801F749C`).
 pub const GIZAM_STATUS_BIT: u16 = 0x0001;
 
+/// The facing a module's sweep turns each seat it strikes to, so the seat
+/// faces `point` and its reaction's knockback carries it straight away:
+/// `+0x46 = (FUN_80019B28(point z, point x, seat +0x38, seat +0x34) + 0x800)
+/// & 0xFFF`. PROT 0906's sweep faces the creature (`0x801F7460..0x801F7488`,
+/// the creature `actor_table[7]`); PROT 0923's faces the stage origin
+/// (`0x801F896C..0x801F8990`). `point` and `seat` are `(x, z)` ground pairs.
+///
+/// REF: FUN_801F69F4 (PROT 0906 arm 13, the struck seat's facing store)
+pub fn struck_seat_facing(point: (i16, i16), seat: (i16, i16)) -> u16 {
+    legaia_engine_battle_vm::battle_action::bearing_12bit_approx(point.1, point.0, seat.1, seat.0)
+        .wrapping_add(0x800)
+        & 0x0FFF
+}
+
 /// PROT 0906 (Gizam, spell id `0x84`) tick body - 3404 bytes, 851
 /// instructions.
 ///
@@ -102,7 +116,7 @@ pub const GIZAM_STATUS_BIT: u16 = 0x0001;
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F69F4 (PROT 0906; phase chain, arm 12's row tint, the monster-row sweep and arm 14's row poll; countdown and camera arms in gizam_direct)
+/// PORT: FUN_801F69F4 (PROT 0906; phase chain, arm 12's row tint, the monster-row sweep with its Venom bit and facing store (struck_seat_facing) and arm 14's row poll; countdown and camera arms in gizam_direct)
 pub fn gizam_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],
@@ -173,9 +187,14 @@ pub fn gizam_tick(
                 if let Some(roll) = rolls(seat) {
                     let applied = site.apply(v, roll);
                     stage_reaction_assign(v);
-                    v.flags |= GIZAM_STATUS_BIT;
                     hits.push(SweepHit { seat, applied });
                 }
+                // The Venom bit closes the seat's branch after the facing
+                // write (`ori v0,v0,0x1; sh v0,0x16e(v1)` at
+                // `0x801F749C..0x801F74A0`), on every live, targetable seat
+                // whatever its roll did: a host that folds the damage
+                // elsewhere still poisons the row.
+                v.flags |= GIZAM_STATUS_BIT;
                 // The hit's presentation, in the same live / targetable
                 // branch as the damage but not part of it: `+0x04 =`
                 // [`GIZAM_HIT_PRESENT_WORD`] (`lui v0,0x3ff0; sw v0,0x4(v1)`

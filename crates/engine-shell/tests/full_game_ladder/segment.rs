@@ -948,7 +948,7 @@ fn wait_on_overworld_clock(session: &mut NativeSession, ahead: &[String]) -> Res
     }
     for n in 0..OVERWORLD_CLOCK_FRAMES {
         pad_budget(session)?;
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         match session.tick() {
             Ok(SceneTickEvent::SceneEntered { .. }) => break,
             Ok(_) => {}
@@ -1374,7 +1374,7 @@ fn wait_out_story_timer(session: &mut NativeSession) -> Result<bool, String> {
         && scene_name(session) == here
     {
         pad_budget(session)?;
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         session.tick().map_err(|e| format!("{e:#}"))?;
     }
     // The clock's expiry may carry the party on (`taiku`: P2[20] to
@@ -1385,7 +1385,7 @@ fn wait_out_story_timer(session: &mut NativeSession) -> Result<bool, String> {
     let mut settle = 0;
     while settle < 6000 && !released(session) && !session.host.world.game_over {
         pad_budget(session)?;
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         session.tick().map_err(|e| format!("{e:#}"))?;
         settle += 1;
     }

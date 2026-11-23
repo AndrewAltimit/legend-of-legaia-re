@@ -1073,12 +1073,51 @@ at PC). Otherwise bit 15 of `sel` picks the arm:
 | `sel` | Arm |
 |---|---|
 | bit 15 clear, `sel & 0x7FFF != 0` | `func_0x8003D53C(arg >> 3, arg & 7, sel)` - start a CD-XA voice clip `(clip, channel)` out of the `0x801C6ED8` clip table. |
-| bit 15 clear, `sel & 0x7FFF == 0` | `func_0x80019794(arg >> 3)` - the clip-idle query; a non-zero answer halts at PC. |
+| bit 15 clear, `sel & 0x7FFF == 0` | `func_0x80019794(arg >> 3)` - the seek-ahead starter; a non-zero answer halts at PC ([below](#the-seek-ahead-holds-the-script)). |
 | bit 15 set, sub `0` | `func_0x80035B50(arg)` - enqueue SFX cue `arg` into the four-slot pending ring, parking its slot at `gp+0x15A`. |
 | bit 15 set, sub `1` | `_DAT_8007BABC = arg` - **guarded**, see below. |
 | bit 15 set, sub `2` | Gate only: halt unless `_DAT_8007BABC == _DAT_8007BAA0`. |
 | bit 15 set, sub `3` | `FUN_801D8450()` - the side-band stream **teardown**: `FUN_800653C8(0x17)` then `(0x16)`, `FUN_8001FF58(6)` (close VAB slot 6 - the field bank, or a side-band bank streamed over it), then `_DAT_8007BA88 = 0` and the field-bank latch `_DAT_8007BAFC = 0`, so the next field init reloads PROT 0876 ([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)). Ungated, and it *yields the frame* rather than falling through. |
 | bit 15 set, sub `4` | `func_0x80035BAC(arg)` - store `arg` as the parked slot's delay, scheduling the cue instead of firing it. Ungated. Port: `engine-system::scus_leaf_kernels::SfxCueDelays`. |
+
+#### The seek-ahead holds the script
+
+`FUN_80019794` is a five-stage starter on the state word `0x8007B9C8`, stepped
+once per call through the jump table at `0x800103E4`. Stage `0` arms the busy
+byte `0x8007B648` (`0x80`), `1` waits out a read in flight (`FUN_8003DE7C(1)`),
+`2` issues the seek (`FUN_8003EAE4`) and `3` waits for it to settle
+(`FUN_8003F2B8(1)`); each answers `1` and steps on, and stage `4` answers `0`
+and stays. On entry, a busy byte that is not `0x80` restarts it at stage `0`
+(`0x800197A8..0x800197BC`). So a seek holds its script at the op for at least
+four passes and runs on with the fifth, and a second seek with nothing between
+runs straight through. The one-shot starter zeroes the state word
+(`0x8003D5C0`), and a field entry clears the busy byte (`0x80025D18`, the
+mode-init core reset), so the next seek after a voice line or a scene change
+holds again. The shipped field scripts carry the seek at about forty sites,
+each ahead of the line it names.
+
+The port has no drive: `World::field_xa_seek_ahead` keeps the stage count with
+both waits met on arrival, so it holds the four passes and not a real seek's
+settle time, and it restarts on a clip start and at field entry but not on the
+busy byte's other writers (the side-band loader and two field-VM arms clear it
+too). `retail-exec`'s `a_seek_ahead_holds_the_script_as_retail_holds_it` runs
+the op against the executable's starter, pass by pass. A cutscene timeline holds
+the op too, as it holds op `0x35`: its release is a clock, not a flag a
+sub-context raises, so it is not stepped past by width.
+
+Measured on PCSX-Redux (`autorun_seek_ahead_hold.lua` from
+`chapter2_garmel_pre_zeto`), `garmel` `P2[12]`'s seek at `+0x3EE` holds five
+passes at frame step `2`: the four stepping passes and one more where stage 3's
+settle wait answered `1`. The engine holds four, so the beat's voice line
+(`36 16 02 39 00` at `+0x43F`) lands two vsyncs early where it landed ten early
+before. The film's `cues` column tags the stage (`seek<n>`) and a one-shot's
+start (`xa`). The seek also raises the drive word `0x8007BC20` to `1` (`FUN_8003EAE4`,
+`0x8003EB78`) until the one-shot zeroes it and raises it to `2` for the clip's
+read (`0x8003D5D8`, `0x8003D65C`): `554` vsyncs for that line's `0x216`. A mode
+init clears it as well (`0x8001DD9C`). The engine holds the `1` from the seek
+stage until a clip start or a field entry (`World::field_xa_busy`), so a
+`36 FF FF` between a seek and its line waits as retail's does; no poll runs
+behind it.
 
 #### The stream gates on op 0x36
 

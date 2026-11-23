@@ -172,7 +172,18 @@ impl<S: AudioSink> BootSession<S> {
     /// title card owns the pad (the timeline drives the scene), or an
     /// overlay screen is up.
     fn field_pad_neutral(&self, claims: TickClaims) -> bool {
+        claims.overlay_open || self.world_holds_field_pad()
+    }
+
+    /// The half of [`Self::claim_tick`]'s neutral-pad rule the world itself
+    /// decides: the narration crawl or a title card owns the pad. A headless
+    /// driver that feeds the world's pad directly (the full-game ladder's
+    /// hand) asks this before its `set_pad`, so a surface that eats the pad
+    /// on both play hosts eats it there too - the shape of the Uru Mais
+    /// softlock, where a card left up held the field's pad neutral under a
+    /// box the player had to turn.
+    pub fn world_holds_field_pad(&self) -> bool {
         let world = &self.host.world;
-        claims.overlay_open || world.cutscene_narration_active() || world.cutscene.card.is_some()
+        world.cutscene_narration_active() || world.cutscene.card.is_some()
     }
 }

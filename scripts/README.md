@@ -61,6 +61,7 @@ input is gitignored (the Ghidra dump corpus, `extracted/`) can only have teeth
 in the hook, and must self-skip everywhere else.
 
 - `install-hooks.sh` - point `core.hooksPath` at `git-hooks/` (run once per clone).
+- `worktree-with-data.sh` - add a git worktree on a new branch and link the main checkout's gitignored data into it (`extracted`, `saves`, `captures`, `ghidra/scripts/funcs`), so disc-gated tests and the preflight gate see the same inputs as the main checkout.
 - `install-tools.sh` - install the local toolchain (Ghidra container, capstone, emulators).
 - `check-doc-density.py` - doc legibility-density gate (long lines / over-budget table cells).
 - `check-crate-layering.py` (+ `crate-layering.toml`) - hard gate: each engine kernel crate's engine-layer dependencies equal its row in the table, kernel crates depend only on kernel crates, and no format / tool / patcher crate depends on an engine-layer crate. `--ranks` prints the derived stack. See [`engine.md`](../docs/subsystems/engine.md#the-layering-gate).

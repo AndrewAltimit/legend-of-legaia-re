@@ -191,3 +191,21 @@ entry = "0x801D0748"
 range = "0x801D1AF4..0x801D1AF4"
 verdict = "unreachable"
 reason = "The confirm's search of the caster's 32 learned-spell slots (record +0x705..) for the picked id _DAT_8007BB88: the id is the row the list kernel drew from those same slots, so the search finds it before the bound and the loop never runs out."
+
+[[arm]]
+entry = "0x801D0748"
+range = "0x801D0D5C..0x801D0D5C"
+verdict = "unreachable"
+reason = "The flow-byte dispatch leaf for 0x5C: the path here took v1 >= 0x5B (0x801D0C94), v1 != 0x65 (0x801D0D34), v1 < 0x66 (0x801D0D3C), v1 != 0x5D (0x801D0D44), v1 < 0x5E (0x801D0D4C) and v1 != 0x5B (0x801D0D54), so v1 is 0x5C and the compare with 0x5C never fails."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004F45C..0x8004F45C"
+verdict = "unreachable"
+reason = "The win arm's member loop at 0x8004F410 reads +0x14C off the same seat table (0x801C9370) the HP floor just walked (0x8004F1B8..0x8004F3D0), which stores 1 into every party seat that read 0 (0x8004F398), so the HP is never zero there."
+
+[[arm]]
+entry = "0x8004E568"
+range = "0x8004F750..0x8004F750"
+verdict = "unreachable"
+reason = "ctx[+0x6CE] was stored 1 at 0x8004F73C through the same gp+0xA0C pointer the lh at 0x8004F748 reloads, with only the gp+0xA54 clear between, so the compare with 1 never fails."

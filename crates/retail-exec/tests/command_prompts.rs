@@ -240,6 +240,10 @@ fn the_command_prompts_go_where_retail_goes() {
     let mut rng = Rng(0x5052_4F4D);
     let mut seen = std::collections::HashMap::<(u8, Outcome), u32>::new();
     let (mut moved_n, mut refused_n) = (0, 0);
+    let mut w_seat = legaia_engine_core::world::World::new();
+    w_seat.load_party(legaia_save::Party::zeroed(3));
+    w_seat.enter_battle(3, 4);
+    let (mut kept, mut repicked) = (0u32, 0u32);
     for round in 0..6000 {
         let state = [0x1E, 0x28, 0x28, 0x28, 0x32, 0x6E, 0x78][rng.below(7) as usize];
         let ring = state == 0x28;
@@ -299,6 +303,20 @@ fn the_command_prompts_go_where_retail_goes() {
         cpu.mem.wr32(CTX + 0x880, hl);
         cpu.mem
             .wr16(ACTOR + STRIDE * u32::from(seat) + 0x16E, status);
+        // The member's target `+0x1DD`, which the Attack confirm keeps on a
+        // monster seat and re-picks otherwise (`0x801D1574..0x801D15AC`),
+        // over the three standing monsters the port's rows carry.
+        for i in 3..8 {
+            cpu.mem.wr32(ACTORS + 4 * i, ACTOR + STRIDE * i);
+            cpu.mem.load(ACTOR + STRIDE * i, &[0u8; STRIDE as usize]);
+            cpu.mem.wr16(ACTOR + STRIDE * i + 0x14C, u16::from(i < 6));
+        }
+        let own = match rng.below(4) {
+            0 => rng.below(u32::from(party)) as u8,
+            1 => [8u8, 9][rng.below(2) as usize],
+            _ => 3 + rng.below(3) as u8,
+        };
+        cpu.mem.wr8(ACTOR + STRIDE * u32::from(seat) + 0x1DD, own);
         cpu.mem.wr32(PAD, pad);
         cpu.mem.wr32(PAD_HELD, 0);
         cpu.mem.wr32(SELECT_ATTACK, opt);
@@ -368,6 +386,35 @@ fn the_command_prompts_go_where_retail_goes() {
         ];
         session.input(ev, [alive; 3], monsters);
         let port = port_outcome(&before_phase, &session.phase);
+        if state == 0x28
+            && after == 0x5A
+            && let CommandPhase::Targeting { picker, .. } = &session.phase
+        {
+            let mut picker = picker.clone();
+            w_seat.party.party_count = party;
+            let port_own = if (3..8).contains(&own) {
+                party + own - 3
+            } else {
+                own
+            };
+            w_seat.drive_seat_attack_cursor(seat, port_own, &mut picker);
+            let retail_own = cpu.mem.rd8(ACTOR + STRIDE * u32::from(seat) + 0x1DD);
+            let legaia_engine_battle::target_picker::PickerState::Cursor { slot, .. } =
+                picker.state()
+            else {
+                panic!("round {round}: {:?}", picker.state());
+            };
+            assert_eq!(
+                retail_own,
+                3 + slot,
+                "round {round}: the Attack cursor's start, own {own} party {party}"
+            );
+            if retail_own == own {
+                kept += 1;
+            } else {
+                repicked += 1;
+            }
+        }
 
         let label = format!(
             "round {round}: state {state:#x} pad {pad:#x} cross-entry {cross_entry} hl {hl:#x} \
@@ -446,6 +493,10 @@ fn the_command_prompts_go_where_retail_goes() {
         );
     }
     assert!(moved_n > 200 && refused_n > 100, "{moved_n} {refused_n}");
+    assert!(
+        kept > 20 && repicked > 20,
+        "kept {kept} re-picked {repicked}"
+    );
 }
 
 /// The attack target cursor `0x5A` (`0x801D21CC..0x801D23EC`), with the ring
@@ -1484,6 +1535,7 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
     cpu.hook(0x801D_B8B4, move |r, _| r.r[psx_retail_exec::V0] = fl.get());
     let mut rng = Rng(0x4954_574E);
     let mut seen = std::collections::HashMap::<u8, u32>::new();
+    let mut restored = 0u32;
     for round in 0..8000 {
         let party = 1 + rng.below(3) as u8;
         let seat = rng.below(u32::from(party)) as u8;
@@ -1528,7 +1580,15 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
         cpu.mem.wr8(CTX, party);
         cpu.mem.wr8(CTX + 0x06, 0x3C);
         cpu.mem.wr8(CTX + 0x13, seat);
-        cpu.mem.wr8(CTX + 0x11 + 0xC, prev_pool);
+        // The target the window kept on opening (`ctx[+0x1D]`): the cancel
+        // puts it back over a `+0x1DD` that names no monster seat
+        // (`0x801D183C..0x801D185C`).
+        let saved_pool: u8 = if rng.below(2) == 0 {
+            prev_pool
+        } else {
+            3 + live[rng.below(live.len() as u32) as usize]
+        };
+        cpu.mem.wr8(CTX + 0x11 + 0xC, saved_pool);
         cpu.mem.wr8(actor + 0x1DD, prev_pool);
         cpu.mem.wr32(VERDICT, verdict);
         cpu.mem.wr32(SELECTION, 0);
@@ -1590,6 +1650,10 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
             p => p,
         };
         w.actors[usize::from(seat)].battle.active_target = prev_engine;
+        w.battle_ctx.window_saved_target = match saved_pool {
+            3..=7 => saved_pool - 3 + party,
+            p => p,
+        };
         w.battle_ctx.active_actor = seat;
         w.party.inventory.insert(id, 1);
         w.battle.item_menu = Some(w.build_battle_item_session());
@@ -1606,7 +1670,20 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
         );
         let state = w.battle.item_menu.as_ref().map(|m| m.state);
         match (after, state) {
-            (0x28, None) => {}
+            (0x28, None) => {
+                let left = w.actors[usize::from(seat)].battle.active_target;
+                let want = match target {
+                    3..=7 => target - 3 + party,
+                    t => t,
+                };
+                assert_eq!(
+                    left, want,
+                    "the cancel's target, saved {saved_pool}: {label}"
+                );
+                if target != prev_pool {
+                    restored += 1;
+                }
+            }
             (0x3C, Some(InventoryUseState::Browsing { .. })) => {}
             (0x5B | 0x64, Some(InventoryUseState::TargetSelect { cursor, .. })) => {
                 let m = w.battle.item_menu.as_ref().unwrap();
@@ -1625,6 +1702,7 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
     for s in [0x28u8, 0x3C, 0x5B, 0x5D, 0x64, 0x66] {
         assert!(seen.get(&s).copied().unwrap_or(0) > 20, "{s:#x}: {seen:?}");
     }
+    assert!(restored > 50, "the cancel restored {restored}");
 }
 
 /// The magic window `0x46` (`0x801D19F8..0x801D1D80`): the list kernel's
@@ -1637,7 +1715,10 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
 /// enemy, `0x5E` all enemies, `0x65` one ally on the caster's seat, `0x67`
 /// all allies. Against `BattleSpellSession`'s list step over the disc
 /// catalog (`seru_magic_catalog_from_scus`): Circle, Cross, or nothing on
-/// the highlighted row.
+/// the highlighted row. The one-enemy cursor opens on the caster's target
+/// `+0x1DD` when it is a monster seat and on `FUN_801DB8B4`'s first living
+/// monster otherwise (`0x801D1C84..0x801D1CBC`): seeded with party seats,
+/// monster seats and the group codes, against `World::seat_attack_cursor`.
 #[test]
 fn the_magic_window_prices_and_commits_as_retail() {
     differential!(prot(898, STATE_MACHINE));
@@ -1658,6 +1739,10 @@ fn the_magic_window_prices_and_commits_as_retail() {
     assert!(ids.len() > 20, "{} spells", ids.len());
     let mut rng = Rng(0x4D41_4749);
     let mut seen = std::collections::HashMap::<&str, u32>::new();
+    let mut w = legaia_engine_core::world::World::new();
+    w.load_party(legaia_save::Party::zeroed(3));
+    w.enter_battle(3, 4);
+    let (mut kept, mut repicked) = (0u32, 0u32);
     for round in 0..6000 {
         let party = 1 + rng.below(3) as u8;
         let seat = rng.below(u32::from(party)) as u8;
@@ -1699,7 +1784,25 @@ fn the_magic_window_prices_and_commits_as_retail() {
         cpu.mem.wr8(CTX + 0x13, seat);
         cpu.mem.wr8(CTX + 0x1D, 4);
         cpu.mem.wr16(actor + 0x150, mp);
-        cpu.mem.wr8(actor + 0x1DD, 3);
+        // The caster's target: a party seat, a standing monster's seat
+        // (a fallen one's is the ring builder's to skip), a group code.
+        let own = match rng.below(4) {
+            0 => rng.below(u32::from(party)) as u8,
+            1 => [8u8, 9][rng.below(2) as usize],
+            _ => 3 + rng.below(2) as u8,
+        };
+        cpu.mem.wr8(actor + 0x1DD, own);
+        // The target the window kept on opening (`ctx[+0x1D]`), which its
+        // cancel puts back over a `+0x1DD` that names no monster seat.
+        let saved = match rng.below(3) {
+            0 => rng.below(u32::from(party)) as u8,
+            _ => 3 + rng.below(5) as u8,
+        };
+        cpu.mem.wr8(CTX + 0x1D, saved);
+        // The two standing monsters the port's rows carry, for the re-pick.
+        for i in 3..5 {
+            cpu.mem.wr16(ACTOR + STRIDE * i + 0x14C, 1);
+        }
         for s in 0..3 {
             cpu.mem.wr8(CHAR_IDS + s, 0);
         }
@@ -1777,18 +1880,48 @@ fn the_magic_window_prices_and_commits_as_retail() {
                     "browse"
                 }
             }
-            (SpellPhase::Aborted, 0x28) => "cancel",
-            (SpellPhase::Targeting { picker, .. }, 0x5C) => {
-                assert!(
-                    matches!(
-                        picker.state(),
-                        PickerState::Cursor {
-                            row: CursorRow::Enemy,
-                            ..
-                        }
-                    ),
-                    "{label}"
+            (SpellPhase::Aborted, 0x28) => {
+                w.party.party_count = party;
+                let port_seat = |t: u8| {
+                    if (3..8).contains(&t) {
+                        party + t - 3
+                    } else {
+                        t
+                    }
+                };
+                let left = w.drive_restore_window_target(seat, port_seat(own), port_seat(saved));
+                assert_eq!(
+                    port_seat(target),
+                    left,
+                    "the cancel's target, own {own} saved {saved}: {label}"
                 );
+                if target != own {
+                    *seen.entry("cancel restored").or_default() += 1;
+                }
+                "cancel"
+            }
+            (SpellPhase::Targeting { picker, .. }, 0x5C) => {
+                let mut picker = picker.clone();
+                w.party.party_count = party;
+                let port_own = if (3..8).contains(&own) {
+                    party + own - 3
+                } else {
+                    own
+                };
+                w.drive_seat_attack_cursor(seat, port_own, &mut picker);
+                let PickerState::Cursor {
+                    row: CursorRow::Enemy,
+                    slot,
+                } = picker.state()
+                else {
+                    panic!("{label}");
+                };
+                assert_eq!(target, 3 + slot, "the cursor's start, own {own}: {label}");
+                if target == own {
+                    kept += 1;
+                } else {
+                    repicked += 1;
+                }
                 "one enemy"
             }
             (SpellPhase::Targeting { picker, .. }, 0x65) => {
@@ -1835,9 +1968,14 @@ fn the_magic_window_prices_and_commits_as_retail() {
         "one ally",
         "all enemies",
         "all allies",
+        "cancel restored",
     ] {
         assert!(seen.get(key).copied().unwrap_or(0) > 20, "{key}: {seen:?}");
     }
+    assert!(
+        kept > 20 && repicked > 20,
+        "kept {kept} re-picked {repicked}"
+    );
 }
 
 /// The battle open, flow `0x00 -> 0x0A -> 0x0B` and the round start `0x14`

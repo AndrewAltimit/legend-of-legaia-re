@@ -326,6 +326,8 @@ Each frame the arm also raises the actor's `+0x1DC` bit 2. The port takes the po
 
 #### The victory camera
 
+The sequencer, not the action SM, steps the yaw counter `ctx[+0x6DA]` from the signal on: by `max(1, DAT_1F800393 >> 1)` a pass, with no camera-option test (`0x8004E728..0x8004E758`), half the action SM's `4 * step / 3`. It skips the step on its three early exits: a stage module running (`gp+0x332`, `0x8004E5B8`), the side-band request still up at the load hold's head (`ctx[+0x26B]`, `0x8004E5C8`) and the escape arm (`0x8004E644`). The retail RAM of the wipe states reads the counter `1984` at the results frame and `2044` 126 vsyncs into the hold. The port raises `BattleCamInputs::results_sequencer` past the same exits.
+
 The sequencer frames its pose actor `ctx[+0x13]` on every frame it runs, in two ways:
 
 - **The load window** (the side-band hold at its head, `0x8004E5C0..0x8004E624`, and phases `0..=4`, `0x8004EE10..0x8004EE98`). It stores `ctx[+0xD] = 1`, forces a party seat's target `actor[+0x1DD]` into the monster band `3..=6` (`3` when it is not), turns that target to the pose actor's heading `+ 0x800`, and calls `FUN_801D5854(seat, 8)`. Every monster is down and a dead monster's node is gone (`noa_levelup_banner`: each dead seat's `+4` reads zero), so case 8 takes its stand-off arm (`0x801D6B9C`): `TR (0, 0x400, radius * 5 / 2)` with the radius `actor[+0x22C][+0x58]` (`0x280` for every party member in that state), pitch `0`, focus the pose actor's display X / Z, yaw `-target[+0x46] - ((ctx[+0x26D] << 9) - 0x100) + ctx[+0x6DA]`.

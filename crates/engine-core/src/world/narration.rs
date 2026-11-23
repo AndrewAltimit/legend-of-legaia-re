@@ -1285,15 +1285,33 @@ impl World {
             panel.tick_at_auto(self.clock.frame_step, &mut auto);
         }
         let pressed = panel.take_auto_press() || (confirm && live);
+        // State `0x19` holds every page end, the last one included: a typed
+        // card waits there for the press that dispatches its closing byte,
+        // and the automatic press is what lands it (`uru` `P2[36]`'s cards
+        // set 180 frames; `map01`'s, 1).
+        let mut closed = false;
         if pressed {
-            if panel.is_waiting_for_input() && !panel.is_done() {
+            if panel.is_done() {
+                closed = true;
+            } else if panel.is_waiting_for_input() {
                 panel.advance_page();
-            } else if !panel.is_done() {
+                closed = panel.is_done();
+            } else {
                 panel.confirm_while_typing();
             }
         }
-        if panel.is_done() {
+        if closed {
             let held = HeldBox::after_press(&panel, post_page_byte(&panel));
+            // The card is the pager's box: a `0x24` continuation keeps its
+            // rows up for the next line (`map01`'s card, which a blank card
+            // then scrolls out), and any other byte closes it on the press.
+            // A card left drawn past its box holds the field's pad neutral
+            // (`BootSession::claim_tick`), so the next box the player turns
+            // could never be turned: `uru` `P2[36]`'s last card over Gala's
+            // waking line.
+            if !held.until_next_line {
+                self.cutscene.card = None;
+            }
             tl.card_held_box = held.until_next_line.then_some(held);
             tl.pc = end;
         } else {
@@ -1699,6 +1717,16 @@ impl World {
             self.field_vm.halted_elsewhere = halted;
             let tl = &mut contexts[i];
             drop_one_frame_held_box(&mut tl.held_box);
+            // Parked on a card's page: the pager types it and presses for
+            // itself, as on the modal timeline.
+            // REF: FUN_80039B7C
+            if tl.card_pager.is_some() {
+                self.drive_card_pager(tl);
+                if tl.card_pager.is_some() {
+                    self.step_legs_under_box(tl);
+                    continue;
+                }
+            }
             // Parked on its text segment: the box, not the slice, advances
             // it; the park holds the frame cap like the modal timeline's.
             if tl.dialog.is_some() {

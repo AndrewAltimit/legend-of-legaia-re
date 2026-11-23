@@ -596,6 +596,21 @@ fn whole_songs_run_as_retail_runs_them() {
                 0
             };
             cpu.mem.wr32(PAD_EDGE, edge);
+            // The lesson's two holds on the floor, raised for a stretch of
+            // the song on the odd scenarios past the first four: the song
+            // hold `DAT_801D5138` stops the song timer (`0x801D0050`) and the
+            // load gate `DAT_801D5830` the row counter's wrap
+            // (`0x801D0090`) and every press (`0x801D1B8C`).
+            if scenario >= 4 && scenario % 2 == 1 {
+                let hold = (200..260).contains(&frame);
+                let gate = (400..440).contains(&frame) || (1200..1240).contains(&frame);
+                cpu.mem.wr32(0x801D_5138, u32::from(hold));
+                cpu.mem.wr32(0x801D_5830, u32::from(gate));
+                let mut hall = g.tutorial_hall(Default::default());
+                hall.song_hold = u32::from(hold);
+                hall.load_gate = u32::from(gate);
+                g.apply_tutorial_hall(&hall);
+            }
             assert_eq!(cpu.call(SM, &[SM_ACTOR]), Stop::Returned, "frame {frame}");
             // The head's best-score raise and camera keyframe track.
             g.raise_best_score();
@@ -1001,4 +1016,105 @@ fn the_opening_states_pick_the_floor_and_the_song_as_retail_does() {
             }
         }
     }
+}
+
+/// The results state `0x14` of `FUN_801CF470` (`0x801CFE58..0x801CFF64`),
+/// its body entered from the head with every call out of the routine
+/// stubbed, over every floor mode, the scores either side of each mode's
+/// bound and the fade accumulator `DAT_801D515C` either side of its `0x100`
+/// exit, at the hall's step of three: whether it clears the pass flag `0x50A`
+/// (`FUN_8003CE34`) against `DanceGame::results_clear_win_flag`, the three
+/// script-counter slots `0x801C6460` against `results_counter_slots`, and the
+/// accumulator and the exit call `FUN_801D414C` against the real `World`'s
+/// results step.
+#[test]
+fn the_results_state_grades_and_leaves_as_retail_does() {
+    use legaia_engine_minigames::dance::HALL_FRAME_STEP;
+    differential!(prot(980, SM));
+    const SM: u32 = 0x801C_F470;
+    const SM_END: u32 = 0x801D_0190;
+    const SCORES: u32 = 0x801D_53CC;
+    const FADE: u32 = 0x801D_515C;
+    const SLOTS: u32 = 0x801C_6460;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d.read_entry(980).expect("PROT 0980");
+    cpu.mem.load(OVERLAY_BASE, &overlay);
+    cpu.stub_outside = Some((SM, SM_END));
+    let cleared = Rc::new(Cell::new(None::<u32>));
+    {
+        let cleared = cleared.clone();
+        cpu.hook(0x8003_CE34, move |r, _| {
+            cleared.set(Some(r.r[psx_retail_exec::A0]))
+        });
+    }
+    let exited = Rc::new(Cell::new(false));
+    {
+        let exited = exited.clone();
+        cpu.hook(0x801D_414C, move |_, _| exited.set(true));
+    }
+    let mut rng = crate::common::Rng(0x5245_5355);
+    let actor = 0x8014_0000;
+    let (mut graded, mut left) = ([0u32; 2], 0u32);
+    for round in 0..2000 {
+        let mode = [
+            DanceMode::Qualifier,
+            DanceMode::Finals,
+            DanceMode::HowTo,
+            DanceMode::FreePlay,
+        ][rng.below(4) as usize];
+        let mut g = DanceGame::from_overlay_for_mode(&overlay, mode).expect("run");
+        let n = g.dancer_count();
+        let mut scores = [0u32; 3];
+        let human = rng.below(1000);
+        for (i, s) in scores.iter_mut().enumerate().take(n) {
+            *s = match (i, rng.below(3)) {
+                (0, _) => human,
+                (_, 0) => human,
+                (_, 1) => human + 1 + rng.below(3),
+                _ => rng.below(1000),
+            };
+        }
+        if mode == DanceMode::HowTo && rng.below(2) == 0 {
+            scores[0] = 0x12C + rng.below(2);
+        }
+        for (i, s) in scores.iter().enumerate().take(n) {
+            g.set_dancer_score(i, *s);
+        }
+        let acc = [0u32, 0x80, 0xF0, 0xF3, 0xF4, 0xFF][rng.below(6) as usize];
+
+        cpu.mem.wr32(STATE, 0x14);
+        cpu.mem.wr32(MODE, mode.value());
+        for (i, s) in scores.iter().enumerate() {
+            cpu.mem.wr32(SCORES + 4 * i as u32, *s);
+        }
+        cpu.mem.load(SLOTS, &[0xEE; 6]);
+        cpu.mem.wr32(FADE, acc);
+        cpu.mem.wr8(0x1F80_0393, HALL_FRAME_STEP as u8);
+        cleared.set(None);
+        exited.set(false);
+        assert_eq!(cpu.call(SM, &[actor]), Stop::Returned, "round {round}");
+        let at = format!("round {round}: mode {mode:?} scores {scores:?} acc {acc:#x}");
+
+        let clear = cleared.get().is_some();
+        if clear {
+            assert_eq!(cleared.get(), Some(0x50A), "{at}");
+        }
+        assert_eq!(clear, g.results_clear_win_flag(), "{at}: the pass flag");
+        let slots: [i16; 3] = std::array::from_fn(|i| cpu.mem.rd16(SLOTS + 2 * i as u32) as i16);
+        assert_eq!(slots, g.results_counter_slots(), "{at}: the counter slots");
+
+        let mut w = legaia_engine_core::world::World::new();
+        let (port_acc, port_exit) = w.drive_dance_results_step(acc);
+        assert_eq!(cpu.mem.rd32(FADE), port_acc, "{at}: the fade");
+        assert_eq!(exited.get(), port_exit, "{at}: the exit");
+        graded[usize::from(clear)] += 1;
+        left += u32::from(exited.get());
+    }
+    assert!(
+        graded.iter().all(|&n| n > 100) && left > 100,
+        "graded {graded:?} left {left}"
+    );
 }

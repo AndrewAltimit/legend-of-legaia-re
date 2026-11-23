@@ -4170,6 +4170,23 @@ creature's pose, the damage digits (the replay's own rolls) and, on the rising
 frame, the retract fan: retail's ordering table holds it, yet neither
 framebuffer shows it.
 
+Both are Mednafen states, and the engine's arm steps for the cast are
+PCSX-Redux's (`cast_module_frame_step`: `4` on arms 5 to 14, where the voice
+clip's stop watch takes two thirds of PCSX-Redux's CPU) against the `2` and `3`
+mednafen ran. The frame step is not what holds the two frames: replayed on a
+console's CD response time (`LEGAIA_BATTLE_CD_TIMING=console`, whose arm table
+reads `2` there), `rising` reads `.804` and `parked` `.913` against `.842` and `.916`.
+
+The displayed frame's trail count is two above the RAM's. The retract drops the
+count by one a pass, so the frame on screen, two passes older, drew two more
+fan entries; `display_phase_gate` adds `DISPLAY_LAG_PASSES`
+to `trail_count` as it adds the lag to the other clocks. Gated on the RAM's
+count, the rising frame's engine stood two passes on, its value rows landed and
+the `DAMAGE` word up where retail's first row (`x = 92`, gliding in from the
+left) was still `40` short of its rest (`.787` to `.838`). The rows' sides are
+the records' own: `0x5C` / `0x5D` spawn right of their rest and `0x5E` / `0x5F`
+left of it, which the port's one-sided glide missed (`.838` to `.842`).
+
 A replayed cast is one frame of a cast that runs for hundreds of vsyncs, and
 on most summons that frame is the white flash. The
 [cast-sequence oracle](cast-sequence-oracle.md) scores the whole cast frame by

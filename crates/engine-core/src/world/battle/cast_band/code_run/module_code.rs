@@ -283,7 +283,8 @@ impl World {
                 // PROT 0917's arm 1 rises to TR y `0x800` first
                 // (`iRam800840bc` under `0x800`), PROT 0919's drifts while its
                 // word runs. An arm that would pass makes none of its exit's
-                // stores, and keeps its drain, its drift and its nudge: PROT
+                // stores (its re-arm among them), and keeps its drain, its
+                // drift and its nudge: PROT
                 // 0920's arm 1 pushes TR z out by `p` every pass ahead of
                 // its poll, which the director hands over as a nudge.
                 // The drive's wait holds the same way: the seek arm until the
@@ -299,12 +300,15 @@ impl World {
                         st = ahead;
                         d
                     } else {
-                        st.countdown = ahead.countdown;
-                        legaia_engine_cast::cast_module_camera::ArmDirection {
-                            drift: d.drift,
-                            nudge: d.nudge,
-                            ..legaia_engine_cast::cast_module_camera::ArmDirection::HOLD
-                        }
+                        // The poll's busy return comes ahead of the exit's
+                        // re-arm: the word keeps the gate's drain alone.
+                        let hold = legaia_engine_cast::cast_module_camera::polled_hold(
+                            entry, ctx.phase, d, &st,
+                        );
+                        st.countdown = legaia_engine_cast::cast_module_camera::polled_countdown(
+                            direct, &st, &ahead, ctx.phase, seats,
+                        );
+                        hold
                     }
                 } else {
                     direct(&mut st, ctx.phase, seats)
@@ -1740,6 +1744,14 @@ impl World {
                             }
                             let geom = self.theeder_geom(seat_slot);
                             let mut fx = self.casting.module_theeder;
+                            // On retail's battle-frame cadence a pass is
+                            // `step` ticks back to back, and the trail moves
+                            // on the first of them.
+                            fx.trail.set_pass(
+                                self.toggles
+                                    .battle_sm_frame_cadence
+                                    .then_some(!self.casting.module_pass_repeat),
+                            );
                             let attack_in = ctx.phase == ticks_a::THEEDER_ATTACK_ARM;
                             let mut struck = false;
                             let mut faced: Vec<u8> = Vec::new();
@@ -1814,7 +1826,29 @@ impl World {
                             let (step, _) = ticks_a::vera_tick(&mut ctx, &mut seats, who, restore);
                             (step, Vec::new())
                         }
-                        906 => ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None),
+                        906 => {
+                            // Arm 13's sweep turns every live, targetable
+                            // seat it reaches to face the creature
+                            // (`0x801F7460..0x801F7488`), the seats the
+                            // body's own test passes: alive and not Stone,
+                            // read before the arm.
+                            let swept: Vec<u8> = if ctx.phase == ticks_a::GIZAM_SWEEP_ARM {
+                                (ticks::FIRST_MONSTER_SEAT..ticks_a::MONSTER_ROW_END)
+                                    .filter(|&r| {
+                                        seats.get(usize::from(r)).is_some_and(|v| {
+                                            v.hp != 0 && v.flags & ticks::FLAG_NON_TARGETABLE == 0
+                                        })
+                                    })
+                                    .collect()
+                            } else {
+                                Vec::new()
+                            };
+                            let out = ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None);
+                            if !swept.is_empty() && ctx.phase != ticks_a::GIZAM_SWEEP_ARM {
+                                self.face_struck_seats(&swept, map, seat_slot);
+                            }
+                            out
+                        }
                         907 => (
                             ticks_a::nighto_tick(
                                 &mut ctx,
@@ -1858,12 +1892,17 @@ impl World {
                                 Vec::new()
                             };
                             let mut rolled: Vec<(u8, u32)> = Vec::new();
+                            let posing = ctx.phase == ticks_a::ZENOIR_POSE_ARM;
+                            let mut splashed: Vec<u8> = Vec::new();
                             let out = ticks_a::zenoir_tick(
                                 &mut ctx,
                                 &mut seats,
                                 who,
                                 |r| reach.contains(&r),
                                 |r| {
+                                    if r != who.victim {
+                                        splashed.push(r);
+                                    }
                                     if !finishing {
                                         return None;
                                     }
@@ -1888,6 +1927,16 @@ impl World {
                                     },
                                 );
                             }
+                            if posing {
+                                self.face_zenoir_pair(map, who.victim, seat_slot);
+                            }
+                            // Arm 11's splash turns each seat it strikes
+                            // beside the victim to face the creature
+                            // (`0x801F7FB4..0x801F7FDC`); the victim's
+                            // finisher makes no turn. Every seat the loop
+                            // reaches turns, rolled or not (a monster's
+                            // cast of the id has no roll here).
+                            self.face_struck_seats(&splashed, map, seat_slot);
                             out
                         }
                     };

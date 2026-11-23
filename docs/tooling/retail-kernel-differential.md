@@ -117,6 +117,15 @@ can be read without compiling anything. A `const` in the test's own body shadows
 the file's, as in Rust; a name the file defines with two values and the test does
 not define itself fails the gate, since the scan cannot tell which one it means.
 
+An address an engine crate exports (`legaia_engine_cast::seru_magic_ticks::THEEDER_TICK`)
+is not an argument: write the literal. `--check` names any argument a `use`
+brings in, even where the file also defines a `const` of that name, since Rust
+resolves the import and the scan would read the file's value; and any `const`
+whose value is not a literal (an engine const, a cast, a sum). The scan does
+not follow imports into other crates by design: that means compiling, or
+re-parsing the engine's const expressions, and a declaration is meant to be
+read as typed. The run's guard still checks the literal against the bytes.
+
 **The run checks the declaration.** `Cpu::call` notes every entry it is asked
 to run in a thread-local ledger (`psx_retail_exec::ledger`), with the bytes at
 that entry. The macro plants a guard whose `Drop` runs when the test ends
@@ -268,6 +277,18 @@ attacker past seat 2, the grunt sounding on a hit that does not land the total
 or on a broken block's pose (retail's grunt sits behind the apply arm and
 reads the pick ahead of the pose override), and the Mystic Shield's rumble
 written only for a party attacker.
+
+Its third round compares what the hit leaves on the seats: the impact tint
+`+0x04`, its blend `+0x0C` and selector `+0x21F`, the attacker's cue cursor
+`+0x1F6`, and the defender's facing off seeded ground and body pairs, with the
+bearing `FUN_80019B28` run live. It showed the Mystic Shield's tail turning the
+defender onto the attacker on a hit that lands: every arm of the routine falls
+into `0x801EEB60`, whose test is the shield word and the attacker's clip alone,
+so a block breaker that overturns the shield still turns the struck monster.
+The port turned it on the blocked path only. The same tail stores a root speed
+of `-4` into the first entry of monster record 0's clip table (`0x801EEBA4..
+0x801EEBB4`), the idle of the monster on seat 3 whoever was struck, which the
+round compares too.
 
 The anim node tick `FUN_80047430`, driven through World seams with the range
 poll given, showed two arms with no port: the Seru-absorb puff behind a
@@ -937,7 +958,7 @@ Palma and Mule that lit a Stoned seat ([the seat walks](../subsystems/cast-modul
 The shadow also compares HP and each monster's staged reaction `+0x1DA`. The damage wrapper `FUN_801DD0AC`
 answers each seat's calls with a scripted run of rolls (small, middling, past HP) and the shadow's module rolls
 take the same (`summon_roll_override`, behind `test-drivers`), so every pre-hit's quartering, floor, `HP - 1`
-clamp and kill is compared; the hit arm's own pass is left out, since that hit is the band's fold. The walk seeds
+clamp and kill is compared; the hit arm's own pass runs the band's fold ([below](#the-fold-on-the-hit-arm)). The walk seeds
 the group list `0x801F6978` with the living row, fades a felled monster's word out six passes after the kill, and
 gates the settle arms on retail's rule (a dead seat once its word is zero, a living one once its clip is). The
 restage byte `+0x1DC` stays outside: the engine carries its commit bit as the reaction channel, which a seat with no
@@ -953,6 +974,125 @@ for a seat the list does not hold. Theeder's and Gizam's side-band arms, which t
 does not, run in a test of their own (`the_side_band_arm_steps_over_the_band_word_poll_as_retail_does`): each arm
 once with the band word `ctx[+0x6D8]` out and once with it standing, beside a shadow world's module pass. It found
 Theeder's arm 1 stepping to 2 where retail stores 3.
+
+<a id="the-fold-on-the-hit-arm"></a>
+**The fold on the hit arm.** The shadow arms the cast the Magic submenu arms (the
+spell record off the executable, on the targets its shape names) and runs the
+stager's strike (`World::drive_summon_strike`) on the pass that leaves each
+director's hit arm, the pass retail's module lands the same hit in. That pass
+compares HP, the staged reaction, the bar delta `+0x10`, `+0x0C`, `+0x21F` and
+each struck seat's facing as well. The scripted wrapper roll answers the fold
+too, and reads `0` for a Stoned defender on both sides: the wrapper returns
+`[sp+0x18] - [sp+0x1C]` (`0x801DD4A4`) and its finisher sets the first to the
+second for a defender in Stone (`0x801DE2DC..0x801DE2F8`). PROT 0927 arrives at
+its arm 26 with the fold spent, since its stager sweeps (the part calls the walk
+does not make) spend it. It found the fold staging a flinch on a Stoned monster
+for the eight summons whose hit loop skips Stone whole
+(`cast_module_camera::STONE_SKIPPING_HITS`), no turn on the struck row for
+Slippery (from the camera focus), Gilium and Mule (from the origin), Meta (from
+`(0, 0x200)`), Zenoir's splash (from the creature) and Aluru's victim (onto the
+creature), Iota's arm `0xA` re-seating a Stoned monster, and Ozma's ladder
+quartering the roll of a seat off the group list, which it quarters only for a
+listed seat on a whole-row cast (`0x801F8E6C..0x801F8E90`). PROT 0915's arm `0xC`
+runs its reach poll live (`jal 0x8004E2F0` at `0x801F7844`, the battle outcome
+byte `0x8007BD71` seeded `0xFF` so the poll does not answer out of reach), with
+the creature stood on each monster seat in turn, since the walk plays none of the
+root motion that walks it; its chase hits agree.
+
+The shadow also compares each seated monster's ground trio and animation rate
+`+0x21D`. Retail's rate on a seat with no HP stays out (the loops test its colour
+word, which a faded seat and the engine's resting shown word both read as `0`),
+as does the spirit gauge (retail's stubbed wrapper never runs the finisher that
+fills it).
+
+**The creature's seat 7.** The walk leaves the creature seat as the installer
+`FUN_801F19EC` does (colour word `-1`, tint state `0`, rate `2`), and the shadow
+seats its own through the host's call (`World::seat_summon_actor`), its ground
+and facing then synced off the walk each pass. Seat 7's colour word, tint
+state, status, HP, staged clip and rate are then compared as a monster seat's,
+but on the modules whose creature writes another half of the host carries (the
+creature's presentation, its seat-arm tables, the anim tick:
+`CREATURE_WRITES_ELSEWHERE` in the test, and `CREATURE_RATE_ELSEWHERE` for the
+rate alone). It found Palma's arm 3
+never lifting the row (`+0x36 -= 2 p` a pass while its sweep word is under
+`160 * scalar`, then set down, `0x801F70E8..0x801F7144`, `0x801F6FC0..0x801F6FF8`),
+Juggernaut's arms 27 and 28 storing no rate on the live row (`2`, and `0` on arm
+27 for a monster on its get-up entry), Ultimate Rave's arms 8 and `0xA` storing
+none on the victim, and Jedo's arm 30 slowing the row on every fight where retail
+does it only on a scripted one (`bnez` at `0x801F86F4`).
+
+<a id="the-drive-poll"></a>
+**The drive poll.** Each image's poll arm (`FUN_8003F2B8(1)` behind its seek
+`FUN_8003EAE4(0, slot)`, read off the bytes by `battle_cast_cue::module_drive_arms`)
+answers busy for its first three passes, and the shadow world stands its drive in
+flight for them, so the host's hold (`World::module_drive_holds`) runs against
+retail's busy return. Every module holds as retail does. Arm 2 of PROT 0920
+to 0924 drains its own countdown ahead of the poll (PROT 0923's `bgtz a1` at
+`0x801F6CAC`), so the poll's first call comes once that countdown is out, and
+its busy return needs a seek that outlasts the countdown. The walk answers the
+poll busy on its first calls, not its first passes, so those arms are held past
+their countdown too. Held there, the host had kept the drain the director's
+would-pass reports, which includes the exit's re-arm, and held the arm for a
+second countdown once the poll let go; it now keeps the gate's drain alone
+(`cast_module_camera::polled_countdown`), and PROT 0920's arm 2 makes no TR z push
+on a held pass once its word is spent (`polled_hold`).
+PROT 0927's arm 2
+branches busy to the arm's tail (`0x801F6D8C` to `0x801F6F74`), where the
+passing pass falls too, so every pass of the arm hides the party and shows the
+live row; the port had stored both on the passing pass only, which left the
+monsters hidden for as long as the drive sought.
+
+<a id="host-owned-summon-arms"></a>
+**What the host owns, and what the shadow checks of it.** A summon image's arms
+split between its director (`cast_module_camera`, compared pass by pass in the
+walk above) and the host: the band's stores the director hands over. Branch
+coverage of an image credits only the arms the walk drives retail down, so an
+arm whose effect is the host's shows as covered on retail's side whether or not
+the port's half agrees. The shadow is where the host's half is checked.
+
+| The host's half | Where it runs | What the shadow compares |
+|---|---|---|
+| The seat-write tables of the walked images | `World::apply_<module>_writes`, `apply_aluru_seat_writes` | `+0x04`, `+0x21C`, `+0x16E`, `+0x14C` on every seated seat; facing on the hit arm's pass |
+| PROT 0922's seat writes | `World::apply_puera_writes` | trio, facing, `+0x21C`, `+0x04` of the row and the creature, every arm it carries |
+| The pre-hits, Mule's wave, Ozma's ladder | `World::apply_summon_pre_hits`, `mule_wave_hit`, `ozma_hit_ladder` | HP and the staged reaction `+0x1DA` |
+| The fold | `World::summon_strike` | HP, `+0x1DA`, `+0x10`, `+0x0C`, `+0x21F`, facing |
+| The row's ground trio and animation rate | the seat-write tables | compared, the rate on living seats only |
+| The hit tints | `cast_module_impact::MODULE_IMPACTS` | `+0x04` on each seat |
+| The side-band and drive polls | `module_code`'s polling hold, `World::module_drive_holds` | the hold, against retail's phase walk |
+| Mushura's chase | `World::mushura_chase` | everything above, its reach poll live |
+| The creature's placement, walk and clips | `World::apply_module_creature_writes`, `summon_walk_to_victim`, `module_seat_arm` | seat 7's word, tint state, staged clip and rate compared on the modules the module half writes; ground and facing synced |
+| Scales of the row | the seat-write tables | not compared |
+| The part-driven stager calls | PROT 0927's sweeps, `run_juggernaut_stager_calls` | not compared: the walk runs no part |
+| The spell XP, spirit gauge and readout | `World::summon_module_roll`, the fold's tail | not compared: retail's wrapper is stubbed, so its finisher does not run |
+
+The images the walk does not run (PROT 0903, 0904, 0906, 0909..0913, 0918,
+0919) have ported tick bodies, which their own tick differentials compare; of
+their host's half only Theeder's and Gizam's side-band arm runs beside retail
+(above), and the tick-body walk below walks both bodies whole.
+
+### The tick-body walk
+
+`cast_theeder`'s walk runs a tick body from arm 0 to its end beside the band's module half
+(`World::drive_summon_module_pass`) on retail's phase, like the summon walk, and adds what that walk holds still. Each
+layout runs twice more mirrored (the sides swapped, so the creature faces the other half-turn and every sine and
+cosine rounding fix-up runs both ways), and every layout runs once on the row as a group and once on one seat with a
+monster fallen and one Stoned, the band's timer running into the side-band arm, the creature's clip held off its park,
+each struck monster playing its reaction for 250 passes and a kill fading slowly, so every wait on them holds; each image's drive poll answers busy for its arm's first three passes, with the shadow's drive in flight, as in the summon walk. After
+each pass the port's phase, the shot it builds (`FUN_801D829C`'s arguments against the run's `camera_shot`), every
+seat's colour word, render flag, status word and HP, and each monster's staged reaction and facing must match.
+
+Over PROT 0904 (Theeder) and 0906 (Gizam) it found Theeder's strike word `0x3FF00000` (`lui 0x3ff0` at `0x801F7DA8`,
+the full blue flash) stored as `0x03FF0000`, Gizam's Venom bit on every seat its sweep reaches (`0x801F749C`) never
+set, since the band feeds that body no roll, and Gizam's struck seats left unturned. Theeder's trail retracts once a pass on both
+sides: the World marks each battle frame's first tick (`TheederTrail::set_pass`), so the port leaves arm 13 on
+retail's pass, where a fixed count of four ticks a pass held the walk's one-vsync passes four times as long. One place
+paces apart on purpose and is walked through: Theeder's arm-12 cone is tested on the port's step-4 ticks, so which pass strikes a seat is not compared, only that each
+seat the port strikes retail strikes and that both store the same. Over the summon and Seru bodies whose strikes
+turn their seats (PROT 0905, 0908, 0916, 0920, 0921, 0923, 0927, 0930, 0932, 0934) it compares every pass's facing
+([the cast-module page's table](../subsystems/cast-module.md#a-strike-turns-the-seat-it-hits)), on runs the summon
+walk's fold does not make, and found Zenoir's arm 6 turning neither its creature nor its victim and PROT 0920's arm
+10 ending on its countdown where retail waits for the row. The walk's builder lands no shot on the focus globals and
+the shadow has no battle camera, so Slippery's focus-facing is compared at the origin only.
 
 One arm stays apart from retail by choice. Aluru's arm `0x14` holds on a dead victim until its word is zero
 (`0x801F8870`), a word that eases out only under the defeat fade the commit's monster-death arm arms at the

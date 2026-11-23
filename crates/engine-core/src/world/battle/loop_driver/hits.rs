@@ -924,7 +924,7 @@ impl World {
             let kill_check = apply.blocked;
             self.fire_melee_impact_cue(attacker, target, kill_check.then_some(block_entry));
             if block.mystic {
-                self.turn_defender_to_attacker(target_i, attacker_i);
+                self.mystic_tail(target_i, attacker_i);
             } else {
                 // `0x801EEC30..0x801EEC6C`: the defender commits its block entry.
                 self.commit_melee_reaction(target_i, attacker_i, block_entry);
@@ -1120,6 +1120,16 @@ impl World {
             None
         };
         let committed_reaction = committed_reaction.filter(|_| !block.mystic);
+        // The Mystic Shield's tail runs on a hit that lands too: the shield
+        // was up for this swing and a block breaker overturned it. Every arm
+        // of the routine falls into `0x801EEB60`, whose test is the shield
+        // word and the attacker's clip below `0x10` alone, so the defender
+        // turns onto the attacker (`0x801EEBB8..0x801EEBEC`), Stoned or not,
+        // whether or not a block pose then plays.
+        // PORT: FUN_801EC3E4 (`0x801EEB60..0x801EEBEC`, the Mystic tail on a landed hit)
+        if block.mystic {
+            self.mystic_tail(target_i, attacker_i);
+        }
         // The grunt reads the pick ahead of the broken block's pose, and only
         // on the arm that lands the total (`0x801EEA7C..0x801EEB5C` sits
         // behind the apply at `0x801EE9F8`; the pose override follows at
@@ -1254,8 +1264,41 @@ impl World {
         }
     }
 
+    /// The Mystic Shield's tail (`0x801EEB60..0x801EEBEC`), on every swing the
+    /// shield was up for, blocked or broken. It stores a root speed of `-4`
+    /// into the first entry of monster record 0's clip table - `lw v0,
+    /// 0x801C9348` / `lw v1,0x4c(v0)` / `sh -4,0xc(v1)` at
+    /// `0x801EEBA4..0x801EEBB4` - the idle of the monster on seat 3, whoever
+    /// was struck. The entry is archive RAM, so the store stands for the rest
+    /// of the fight: a negative speed steps every pass with no range test
+    /// (`bltz` at `0x80047D3C`), and that monster backs off along its facing
+    /// whenever it idles. Then it turns the defender onto the attacker.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EEB9C..0x801EEBEC`, the Mystic tail's root-speed store and turn)
+    fn mystic_tail(&mut self, target_i: usize, attacker_i: usize) {
+        const MYSTIC_IDLE_ROOT_SPEED: i16 = -4;
+        let off = legaia_actor_formats::monster_archive::ENTRY_ROOT_SPEED_OFFSET;
+        if let Some(e) = self.cast_seat_map().engine(3)
+            && let Some(a) = self.actors.get_mut(usize::from(e))
+        {
+            if let Some(clips) = a.battle_action_clips.as_mut()
+                && let Some(Some(idle)) = std::sync::Arc::make_mut(clips).get_mut(0)
+                && let Some(b) = idle.effect_script.get_mut(off..off + 2)
+            {
+                b.copy_from_slice(&MYSTIC_IDLE_ROOT_SPEED.to_le_bytes());
+            }
+            // The playing idle reads the entry each pass.
+            if a.battle.current_anim == 0
+                && let Some(p) = a.battle_animation.as_mut()
+            {
+                p.set_root_speed(MYSTIC_IDLE_ROOT_SPEED);
+            }
+        }
+        self.turn_defender_to_attacker(target_i, attacker_i);
+    }
+
     /// The bearing half of [`Self::commit_melee_reaction`], which the Mystic
-    /// Shield's tail runs on its own (`0x801EEBC0..0x801EEBEC`).
+    /// Shield's tail runs too ([`Self::mystic_tail`]).
     fn turn_defender_to_attacker(&mut self, target_i: usize, attacker_i: usize) {
         let (Some(t), Some(a)) = (self.actors.get(target_i), self.actors.get(attacker_i)) else {
             return;

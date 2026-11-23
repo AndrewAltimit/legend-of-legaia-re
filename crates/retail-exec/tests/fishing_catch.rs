@@ -136,3 +136,104 @@ fn the_plate_fish_matrix_is_retails() {
     eprintln!("worst {worst}, saturated {saturated}");
     assert!(saturated > 1000, "saturated elements {saturated}");
 }
+
+/// The result actor's draw on the retail catch-plate state
+/// (`minigame_fishing_retail_catch_plate`: the landed species-5 fish at
+/// render scale `0x52B` hanging on the plate's line): the real species model
+/// at `+0x44` and clip at `+0x4C`, as the result actor's tick seats them, run
+/// whole through the part loop (`0x801D6970..0x801D6B34`) - the per-part pose
+/// `FUN_8001BE80`, the tie part's angles, the tie vertex's projection into
+/// `DAT_801D9154` and the draw `FUN_80043390` - plain and depth-biased.
+/// Against `plate_line` over the same body, pose and showcase camera: the
+/// port poses in reals, so the tie lands within a pixel or two of retail's
+/// integer chain, on the clip frame nearest it.
+#[test]
+fn the_plate_line_ties_where_retails_draw_projects_it() {
+    use legaia_engine_fishing::fishing_actors::{
+        CatchFish, CatchFishPlace, VenueCamera, plate_fish_y,
+    };
+    use legaia_engine_minigame_scenes::fishing_catch::{CatchBodies, plate_line};
+    const TIE: u32 = 0x801D_9154;
+    let Some(state) = crate::common::library_state(
+        "1bb2252da0fb4b8314efb9ea48a90a395f73b1c66c090842a63b82e40eec278c",
+    ) else {
+        return;
+    };
+    // Declared past the skip: without the library state nothing runs.
+    differential!(prot(972, DRAW));
+    assert!(
+        crate::common::resident_is_retail(&state, DRAW, Some((972, fs::FISHING_OVERLAY_BASE_VA))),
+        "the state's fishing overlay is the disc's"
+    );
+    // The result actor: render scale `0x52B`, the spawn's `0x420` in `+0x52`.
+    let actors: Vec<u32> = (0..0x20_0000usize - 0x100)
+        .step_by(4)
+        .filter(|&o| {
+            let h = |k: usize| u16::from_le_bytes([state.ram[o + k], state.ram[o + k + 1]]);
+            h(0x72) == 0x52B && h(0x52) & 0x420 == 0x420 && state.ram[o + 0x47] == 0x80
+        })
+        .map(|o| 0x8000_0000 + o as u32)
+        .collect();
+    assert_eq!(actors.len(), 1, "{actors:x?}");
+    let actor = actors[0];
+    let held = state.u32_at(TIE);
+
+    // The port's body, pose and camera for the same fish.
+    let index = crate::walk_on::index();
+    let scene = legaia_engine_scene::scene::Scene::load(
+        &index,
+        legaia_engine_minigame_scenes::fishing_scene::FISHING_VENUE_SCENE,
+    )
+    .expect("the venue");
+    let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
+    let bodies = CatchBodies::load(&scene, anm.as_ref());
+    let overlay = crate::common::disc()
+        .expect("disc")
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    let poses = fs::parse_catch_poses(&overlay).expect("the showcase poses");
+    let pose = poses[5];
+    let fish = CatchFish {
+        species: 5,
+        scale: 0x52B,
+        place: CatchFishPlace::CameraLocked {
+            y: plate_fish_y(0x1000, pose.hang),
+            rot: pose.rot,
+        },
+    };
+    let mut cam = VenueCamera::default();
+    cam.showcase(1);
+    let view = legaia_engine_minigame_scenes::fishing_venue::venue_camera_globals_view(&cam);
+    let body = bodies.body(5).expect("species 5's body");
+    let ties: Vec<(i16, i16)> = (0..body.frames.len().max(1))
+        .map(|f| {
+            plate_line(body, &pose, &fish, f, &view)
+                .expect("a plate line")
+                .1
+        })
+        .collect();
+
+    for bias in [0u32, 0x0080_0000, 0x8000_0000] {
+        let mut cpu = state.cpu();
+        cpu.step_budget = 5_000_000;
+        let flags = cpu.mem.rd32(actor + 0x10);
+        cpu.mem.wr32(actor + 0x10, (flags & !0x8080_0000) | bias);
+        cpu.mem.wr32(TIE, 0);
+        assert_eq!(cpu.call(DRAW, &[actor]), Stop::Returned, "bias {bias:#x}");
+        let tie = cpu.mem.rd32(TIE);
+        assert_eq!(tie, held, "bias {bias:#x}: the tie the state holds");
+        // The depth bias is restored after the part loop.
+        assert_eq!(
+            cpu.mem.rd32(actor + 0x10) & 0x8080_0000,
+            bias,
+            "bias {bias:#x}"
+        );
+        let (x, y) = (tie as u16 as i16, (tie >> 16) as u16 as i16);
+        let near = ties
+            .iter()
+            .map(|&(px, py)| (px - x).abs().max((py - y).abs()))
+            .min()
+            .unwrap();
+        assert!(near <= 2, "retail tie ({x}, {y}) port ties {ties:?}");
+    }
+}

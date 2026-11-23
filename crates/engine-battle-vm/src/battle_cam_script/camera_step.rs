@@ -80,6 +80,7 @@ impl BattleCamera {
             yaw_frac: 0,
             frame_step: DEFAULT_CAMERA_FRAME_STEP,
             pass_granular: false,
+            results_sequencer: false,
             actor,
             formation,
             target: None,
@@ -1547,12 +1548,27 @@ impl BattleCamera {
         // is `4`, not `3`. Per vsync it spreads the pass's increment over its vsyncs, carrying the
         // remainder, so the counter keeps retail's rate on either cadence:
         // a vsync apiece at step `2`, four in three at step `3`.
-        if self.option != CAMERA_OPTION_FAR {
+        // Once the battle-end signal is up the action SM no longer runs; the
+        // results sequencer `FUN_8004E568` steps the same counter on every
+        // pass instead, by `DAT_1F800393 >> 1` or `1` when that is zero, and
+        // with no camera-option test (`0x8004E728..0x8004E758`). Cases 7 and
+        // 8 frame from it (`0x801D64C8`, `0x801D65E0`, `0x801D67D4`), so the
+        // load window's end-of-action shot of the posing seat drifts at that
+        // rate, half the action SM's at step `2`.
+        let results = self.results_sequencer;
+        if results || self.option != CAMERA_OPTION_FAR {
+            let inc_at = |step: u8| {
+                if results {
+                    results_yaw_pass_increment(step)
+                } else {
+                    action_yaw_pass_increment(step)
+                }
+            };
             let d = if self.pass_granular {
-                i32::from(action_yaw_pass_increment(vsyncs as u8))
+                i32::from(inc_at(vsyncs as u8))
             } else {
                 let step = u32::from(self.frame_step.max(1));
-                let inc = u32::from(action_yaw_pass_increment(self.frame_step.max(1)));
+                let inc = u32::from(inc_at(self.frame_step.max(1)));
                 self.yaw_frac += vsyncs as u32 * inc;
                 let d = self.yaw_frac / step;
                 self.yaw_frac %= step;
@@ -1579,6 +1595,18 @@ impl BattleCamera {
         self.clip_age = self.clip_age.wrapping_add(
             (vsyncs as u32).wrapping_mul(crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE),
         );
+    }
+
+    /// The results sequencer runs in the action SM's place this frame
+    /// ([`BattleCamInputs::results_sequencer`]).
+    pub fn set_results_sequencer(&mut self, on: bool) {
+        self.results_sequencer = on;
+    }
+
+    /// Whether the results sequencer, not the action SM, steps the yaw
+    /// counter on the next pass ([`Self::set_results_sequencer`]).
+    pub fn results_sequencer(&self) -> bool {
+        self.results_sequencer
     }
 
     /// Advance the per-pass counters on the camera step that runs the
@@ -2031,6 +2059,15 @@ impl BattleCamera {
             }
         }
     }
+}
+
+/// The results sequencer's step of the yaw counter `ctx[+0x6DA]` for a pass
+/// of `step` vsyncs: `step >> 1`, or `1` when that is zero
+/// (`srl v1,v0,1` / `beqz` at `0x8004E734..0x8004E738`).
+///
+/// PORT: FUN_8004E568 (`0x8004E728..0x8004E758`)
+pub fn results_yaw_pass_increment(step: u8) -> u16 {
+    u16::from(step >> 1).max(1)
 }
 
 /// The action SM's per-pass `ctx[+0x6DA]` increment at frame step `step`:

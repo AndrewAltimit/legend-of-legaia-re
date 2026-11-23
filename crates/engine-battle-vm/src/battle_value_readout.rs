@@ -840,6 +840,15 @@ pub fn combo_cluster(style: ComboStyle, hits: u16, total: u32, slide: i32) -> Co
 /// the record four below, at the same `x`.
 pub const MULTI_ROW_X: [i32; 4] = [244, 168, 92, 16];
 
+/// The side each value row glides in from, by the same index as
+/// [`MULTI_ROW_X`]: the records `0x5C..=0x5F` spawn at seat A
+/// (`0x80076C10 + id * 0x18`, `+0x02`) `x = 404`, `328`, `-68`, `-144`, so
+/// the two right rows come in from the right and the two left rows from the
+/// left, each `160` off its rest seat. A three-Gilium Theeder holds its first
+/// row `40` left of its rest on the displayed frame where the other two stand
+/// `40` right (`theeder_summon_value_rows_rising`).
+pub const MULTI_ROW_SLIDE_SIGN: [i32; 4] = [1, 1, -1, -1];
+
 /// The value widget's row: the records `0x5C..=0x5F` rest at `y = 170`, and a
 /// content box's pen stands two above its record.
 pub const MULTI_ROW_VALUE_Y: i32 = 168;
@@ -856,12 +865,13 @@ const MULTI_ROW_RIGHT: i32 = 0x3E;
 /// `16` left), or `12 x 14` px cells from five digits on (`0x32..=0x3D`,
 /// `2..=0xF`, stepping `12`). The label is the `DAMAGE` word at
 /// `widget + (0x0A, -0x0E)`, drawn on slot `0` alone (`0x801E8208..0x801E82AC`).
-/// `slide` is the record's glide off its rest seat.
+/// `slide` is the records' glide off their rest seats, toward each row's
+/// seat A ([`MULTI_ROW_SLIDE_SIGN`]).
 pub fn multi_row_cluster(values: &[u32], slide: i32) -> ComboCluster {
     let n = values.len().clamp(1, MULTI_ROW_X.len());
     let mut out = ComboCluster::default();
     for (k, &value) in values.iter().take(n).enumerate() {
-        let x = MULTI_ROW_X[n - 1 - k] + slide;
+        let x = MULTI_ROW_X[n - 1 - k] + slide * MULTI_ROW_SLIDE_SIGN[n - 1 - k];
         let value = value.min(u32::from(u16::MAX)) as u16;
         let wide = value >= 10_000;
         let cell = if wide { 12 } else { COMBO_VALUE_CELL };

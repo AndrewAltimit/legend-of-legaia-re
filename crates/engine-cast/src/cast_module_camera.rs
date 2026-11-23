@@ -1500,6 +1500,25 @@ pub struct ModuleProfile {
     pub director_body: bool,
 }
 
+/// The summon modules whose hit arm skips a monster in Stone whole: the loop
+/// tests `+0x16E & 4` ahead of its `FUN_801DD0AC` and steps past the seat, so
+/// a Stoned monster takes no roll, no reaction, no tint and no turn. The band's
+/// fold of these casts leaves such a seat out. The other summon hits roll a
+/// Stoned seat, whose roll the finisher zeroes (`0x801DE2DC..0x801DE2F8`), and
+/// stage its reaction all the same.
+///
+/// | PROT | Hit arm | The test |
+/// |---|---|---|
+/// | 0914 Gola Gola | `0xD` | `0x801F76FC..0x801F7708` |
+/// | 0920 Slippery | 9 | `0x801F7828..0x801F7834` |
+/// | 0921 Iota | `0xA` | `0x801F7BCC..0x801F7BD8` |
+/// | 0922 Puera | `0x17` | `0x801F8E00..0x801F8E0C` |
+/// | 0923 Gilium | `0x15` | `0x801F88EC..0x801F88F8` |
+/// | 0928 Palma | `0x13` | `0x801F89D4..0x801F89E0` |
+/// | 0929 Mule | 18 | `0x801F873C..0x801F8748` |
+/// | 0934 Ozma | `0x18` | `0x801F8DE8..0x801F8DF4` |
+pub const STONE_SKIPPING_HITS: [u32; 8] = [914, 920, 921, 922, 923, 928, 929, 934];
+
 /// The directed profile of a player-Seru module, by owning PROT entry.
 /// `None` for a module whose camera arms are not ported: its phase chain then
 /// runs ungated, as before.
@@ -1744,6 +1763,73 @@ impl ModuleProfile {
     /// ported and its holds hold `0x36`).
     pub const fn paces_band(&self) -> bool {
         self.hit_arm.is_some()
+    }
+}
+
+/// The countdown an arm keeps on a pass its poll holds after its own gate let
+/// go: the side-band wait or the drive poll returns busy ahead of the arm's
+/// exit, so the exit's re-arm is never stored and the word keeps the gate's
+/// drain alone. PROT 0923's arm 2 drains its word (`0x801F6C6C..0x801F6CAC`),
+/// polls the drive (`0x801F6CB4..0x801F6CBC`, `bnez` to the busy return) and
+/// only then adds `0x200` (`0x801F6CE8`): held on the poll, it arrives at its
+/// next pass with the word at or under zero and passes as soon as the drive
+/// is idle, one countdown in all.
+///
+/// `before` is the state the pass opened on and `ahead` the director's
+/// would-pass from it. A would-pass that leaves the word positive has
+/// re-armed it; the drain is then read off a pass of the arm on a word too
+/// large to open (`direct` on `before` with the word raised), and a word the
+/// gate had already spent stays where it stood.
+///
+/// An arm whose word is no gate keeps the would-pass word: a raised word that
+/// still passes says the arm opens on something else. The body-paced
+/// directors (PROT 0910..0913) count their arm clock up and pass on the body's
+/// own phase, so PROT 0913's seek arm, held on the drive, keeps the clock its
+/// pass re-armed; read as a drain it took the clock to `-0x0FFB_0001` and
+/// the cast's camera off retail's (`nova_summon_mid_cast`).
+pub fn polled_countdown(
+    direct: ModuleDirector,
+    before: &ModuleCamState,
+    ahead: &ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> ModuleCountdown {
+    if ahead.countdown.0 <= 0 {
+        return ahead.countdown;
+    }
+    let mut kept = ahead.countdown;
+    kept.0 = if before.countdown.0 > 0 {
+        const PROBE: i32 = 1 << 28;
+        let mut probe = *before;
+        probe.countdown.0 = PROBE;
+        if !direct(&mut probe, phase, seats).hold {
+            return ahead.countdown;
+        }
+        before.countdown.0 - (PROBE - probe.countdown.0)
+    } else {
+        before.countdown.0
+    };
+    kept
+}
+
+/// The hold a poll makes of a would-pass `d`: the arm keeps the drift and
+/// nudge the director reports for the pass, since most arms make theirs ahead
+/// of the poll (PROT 0914's arm 2 pushes TR z out on every pass its
+/// side-band poll holds, its word spent or not). PROT 0920's arm 2 makes its
+/// push only while its word is positive (`blez` at `0x801F6CA0` straight to
+/// the poll at `0x801F6CE4`), so once the word is spent a held pass pushes
+/// nothing.
+pub fn polled_hold(
+    entry: u32,
+    phase: u8,
+    d: ArmDirection,
+    before: &ModuleCamState,
+) -> ArmDirection {
+    let spent = (entry, phase) == (920, 2) && before.countdown.0 <= 0;
+    ArmDirection {
+        drift: d.drift.filter(|_| !spent),
+        nudge: d.nudge.filter(|_| !spent),
+        ..ArmDirection::HOLD
     }
 }
 

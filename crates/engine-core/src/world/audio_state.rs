@@ -40,6 +40,14 @@ pub const BGM_SUB_OP_ENGINE_FIELD_CLOSE: u8 = 0xFD;
 /// raises it; like [`BGM_SUB_OP_ENGINE_STOP`], not a retail op-`0x35` word.
 pub const BGM_SUB_OP_ENGINE_FADE: u8 = 0xFC;
 
+/// The `FieldEvent::Bgm` sub-op the **engine** raises to start a track again
+/// from its head when it may already be the one sounding: the host stops the
+/// slot first, so the director's same-track suppression (a sub-op `1` of the
+/// sounding id plays on) does not swallow it. The fishing overlay's first
+/// shore arrival raises it (`World::fishing_shore_replay`). Not a retail
+/// op-`0x35` word.
+pub const BGM_SUB_OP_ENGINE_RESTART: u8 = 0xFB;
+
 /// Audio-side state: BGM selection and resume, the SFX cue / delay slots, sound-bank handshakes and the battle SFX / XA / shout cue queues.
 #[derive(Debug)]
 pub struct AudioState {
@@ -157,6 +165,18 @@ pub struct AudioState {
     /// as [`Self::battle_xa_busy_frames`]; counted down once per
     /// `World::tick`.
     pub(crate) field_xa_busy_frames: u16,
+    /// The seek-ahead starter's state word `0x8007B9C8` (`FUN_80019794`,
+    /// stages `0..=4`): the field VM's op `0x36` seek holds its script while
+    /// the starter steps, and runs on once it reads `4`. A clip start zeroes
+    /// it (`0x8003D5C0`), as does a field entry (the mode-init clear of the
+    /// busy byte `0x8007B648`, which the starter's entry test turns into a
+    /// restart). See [`crate::world::World::field_xa_seek_ahead`].
+    pub(crate) field_xa_seek_stage: u8,
+    /// The drive word `0x8007BC20` at `1`: the seek-ahead's `FUN_8003EAE4`
+    /// stores it (`0x8003EB78`) and nothing clears it until a clip start
+    /// (`0x8003D5D8`) or a mode init (`0x8001DD9C`). It installs no
+    /// callback, so no poll runs behind it.
+    pub(crate) field_xa_seek_parked: bool,
     /// The static `SCUS_942.54` XA cue duration table (`DAT_800788B8`) the
     /// voice legs read (`legaia_game_tables::xa_cue_table`); installed at boot,
     /// `None` on a disc-free build (a voice cue then requests no span and
@@ -436,6 +456,8 @@ impl AudioState {
             field_xa_cues: Vec::new(),
             field_xa_prestage: Vec::new(),
             field_xa_busy_frames: 0,
+            field_xa_seek_stage: 0,
+            field_xa_seek_parked: false,
             xa_cue_durations: None,
             arts_voice_tables: None,
             arts_voice_last_channel: 0,

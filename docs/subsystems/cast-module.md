@@ -1963,6 +1963,38 @@ summon-band module and the stager decides that band's length.
 
 ## Module notes
 
+### A strike turns the seat it hits
+
+Most hit loops end a struck seat's branch with a facing store, `+0x46 =
+FUN_80019B28(..)`: the seat turns toward a point, and the reaction's knockback,
+which runs along the facing, carries the body straight away from it. A strike
+without its store throws the body along the facing battle setup gave it.
+
+| Module | Arm | Store | The seat faces | Port |
+|---|---|---|---|---|
+| 0904 Theeder | 12 | `0x801F7E58..0x801F7E7C` | the creature | `World::face_theeder_victims` |
+| 0906 Gizam | 13 | `0x801F7460..0x801F7488` | the creature | `World::face_struck_seats` |
+| 0908 Zenoir | 6 | `0x801F7328..0x801F7370` | the creature, which faces the victim back | `World::face_zenoir_pair` |
+| 0908 Zenoir | 11 (splash) | `0x801F7FB4..0x801F7FDC` | the creature | `World::face_struck_seats` |
+| 0916 Aluru | `0x12` (damage path) | `0x801F8644..0x801F867C` | the creature | `World::apply_aluru_seat_writes` |
+| 0920 Slippery | 9 | `0x801F7938..0x801F7968` | the camera's focus point | `World::slippery_hit_exit` |
+| 0921 Iota | `0xA` | `0x801F7CEC..0x801F7D10` | `(0, 0x400)` | `World::apply_iota_writes` |
+| 0923 Gilium | `0x15` | `0x801F896C..0x801F8990` | the stage origin | `World::turn_row_away_from` |
+| 0929 Mule | `0x12` | `0x801F87D4..0x801F87FC` | the stage origin | the Mule seat writes |
+| 0932 Meta | `0x15` | `0x801F7FF0..0x801F8014` | `(0, 0x200)` | `World::turn_row_away_from` |
+
+The loops that test Stone (`+0x16E & 4`) skip a Stoned seat's store with its
+hit; PROT 0921's skip also leaves the seat where arm 9 lifted it, off the floor
+and shrunk, until arm `0xB` puts the row back. PROT 0929's turn reads its point
+off the stack, `sp+0x30` / `sp+0x34`, which on the hit arm's pass hold the
+prologue's zeros (`0x801F6A58..0x801F6A60`): the arm that stores the negated
+camera focus there (`0x801F8548..0x801F856C`) leaves through the epilogue
+(`j 0x801F8B0C` at `0x801F85D8`), so the hit arm, entered at `0x801F85E0`,
+never sees it. The point form is `seru_magic_ticks::struck_seat_facing`. Grade
+`disassembly`; [the summon shadow's fold](../tooling/retail-kernel-differential.md#the-fold-on-the-hit-arm)
+and [the tick-body walk](../tooling/retail-kernel-differential.md#the-tick-body-walk)
+compare them.
+
 ### PROT 0904 (Theeder)
 
 The creature is seated once, in arm 4 (`0x801F6EEC..0x801F6F8C`, right after
@@ -2197,7 +2229,11 @@ stamps `+0x04 = 0x3FF00000`, `+0x0C = 0x1000` and `+0x21C = 0`
 (`0x801F7440..0x801F745C`) inside the live / targetable branch but outside
 the damage, so `gizam_tick` makes those stores even when the host folds the
 damage elsewhere; without them a killed foe enters its defeat fade from the
-full blue lane and arm 14's poll holds sixty ticks longer than retail's.
+full blue lane and arm 14's poll holds sixty ticks longer than retail's. The
+same branch turns the seat to face the creature (`0x801F7460..0x801F7488`,
+[struck seats' facing](#a-strike-turns-the-seat-it-hits)) and closes on
+`+0x16E |= 1` (`0x801F749C`): every seat the sweep reaches is left in Venom,
+whatever its roll did.
 Arm 13's pass also clears the caption after its exit shot (`FUN_800319A8(0)`
 at `0x801F75D4`). The director frames arms 0
 and 1 on the caster and arms 7..12 on the creature; arm 9 frames the
@@ -3071,8 +3107,11 @@ centre through `FUN_801DCEAC` with its extent doubled into TR z
 and the burst `0x801F83EC` on the camera focus, on the creature's angle trio
 (`0x801F7910..0x801F79E8`, `World::slippery_hit_exit`); its purple flash is the
 presentation decoder's. Without the rings arm 10 read `.830` frame by frame, `.900`
-with them. Not carried: the breath parts and fades, and arm `10`'s wait for
-every monster to be idle. Arm `6` builds the storm under the stage byte `2` that hides the backdrop:
+with them. Arm `9`'s hit loop also turns each struck seat to the camera's focus
+point ([struck seats' facing](#a-strike-turns-the-seat-it-hits)), and arm `10`
+holds, its countdown spent, until every monster is idle or faded
+(`0x801F7A90..0x801F7B1C`, `slippery_direct`). Not carried: the breath parts and
+fades. Arm `6` builds the storm under the stage byte `2` that hides the backdrop:
 every fourth pass one of the four cloud records `0x801F8244..0x801F8304`, `rand() % 4`,
 stands a quarter of the trig table behind the creature at `y = -0x280`, and the arm's exit
 halts them all (`World::slippery_storm_clouds`). The exit is the arm's opening test: the
@@ -6528,6 +6567,21 @@ an HP and Stone skip that runs ahead of it, so a seat the hit fells is still
 tinted (Element Strike's three loops: `0x3FF` at `0x801F860C`, `0xFFC00` at
 `0x801F7DF8`, `0x3FF00000` at `0x801F759C`; Genocidal Cannon's arm 14 at
 `0x801F7D14`). The band reads both conditions as the tick opens.
+
+The summon hit loops differ in the same two ways. Eight skip a Stoned monster
+whole, ahead of the wrapper, so it takes no roll, no reaction and no turn (PROT
+0914, 0920, 0921, 0922, 0923, 0928, 0929, 0934:
+`cast_module_camera::STONE_SKIPPING_HITS`); the others roll it, the finisher
+zeroes the roll, and its flinch is staged all the same. Several turn each seat they
+strike away from a point with `FUN_80019B28(z, x, seat[+0x38], seat[+0x34]) +
+0x800`, and the point is the module's: the caster (PROT 0914), the origin (PROT
+0923, and 0929 off a stack pair still holding the prologue's zeros), `(0,
+0x200)` (PROT 0932), `(0, 0x400)` (PROT 0921), `(0, 0x613)` (PROT 0933), the
+negated camera focus (PROT 0920) and the creature (PROT 0928, and PROT 0908's
+splash but not its victim). Aluru's damage path turns its victim onto the creature with no half
+turn, and only out of Stone (`0x801F8644..0x801F867C`). The fold-hit shadow
+checks every one ([retail-kernel
+differential](../tooling/retail-kernel-differential.md#the-fold-on-the-hit-arm)).
 
 The capture-camera differential checks all of it: each cast runs on an engine
 `World` beside the module image, and every seat's word and flag must agree on

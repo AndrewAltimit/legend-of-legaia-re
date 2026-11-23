@@ -868,6 +868,10 @@ div.play-vis-head { cursor: default; }
               <input type="checkbox" id="play-battle-frame-cadence"> Retail battle cadence
             </label>
             <label class="play-dev-menu"
+                   title="Pace voiced field cutscenes on PCSX-Redux's CD timing, which the retail captures were recorded on, instead of a console's (the native LEGAIA_FIELD_CD_TIMING=pcsx-redux). Off plays at hardware pacing. Lasts for this session only.">
+              <input type="checkbox" id="play-field-pcsx-cd-timing"> PCSX-Redux voice pacing
+            </label>
+            <label class="play-dev-menu"
                    title="The Arts command opens the port's saved-chain list instead of retail's per-press directional input (the native --arts-saved-list, the launcher's Saved-chain Arts list row). Not retail; Retail-faithful holds it off. Remembered for your next visit.">
               <input type="checkbox" id="play-arts-saved-list"> Saved-chain Arts list
             </label>
@@ -3639,6 +3643,7 @@ div.play-vis-head { cursor: default; }
   const fxOutlineEl = document.getElementById('play-fx-outline');
   const entryPulseEl = document.getElementById('play-entry-pulse');
   const cadenceEl = document.getElementById('play-battle-frame-cadence');
+  const fieldPcsxCdEl = document.getElementById('play-field-pcsx-cd-timing');
   const savedListEl = document.getElementById('play-arts-saved-list');
   const shinyEl = document.getElementById('play-shiny-seru');
   const fleeExpEl = document.getElementById('play-flee-exp');
@@ -3743,6 +3748,7 @@ div.play-vis-head { cursor: default; }
     rtCall('set_battle_fx_outline', !!fxOutlineEl.checked);
     rtCall('set_entry_pulse', !!entryPulseEl.checked);
     rtCall('set_battle_frame_cadence', !!cadenceEl.checked);
+    rtCall('set_field_pcsx_cd_timing', !!fieldPcsxCdEl.checked);
     rtCall('set_arts_saved_list', !!savedListEl.checked);
     syncTweakDefaults();
     rtCall('set_shiny_seru', !!shinyEl.checked);
@@ -3790,6 +3796,7 @@ div.play-vis-head { cursor: default; }
   fxOutlineEl.addEventListener('change', () => { rtCall('set_battle_fx_outline', !!fxOutlineEl.checked); canvas.focus(); });
   entryPulseEl.addEventListener('change', () => { rtCall('set_entry_pulse', !!entryPulseEl.checked); canvas.focus(); });
   cadenceEl.addEventListener('change', () => { rtCall('set_battle_frame_cadence', !!cadenceEl.checked); canvas.focus(); });
+  fieldPcsxCdEl.addEventListener('change', () => { rtCall('set_field_pcsx_cd_timing', !!fieldPcsxCdEl.checked); canvas.focus(); });
   savedListEl.addEventListener('change', () => { rtCall('set_arts_saved_list', !!savedListEl.checked); canvas.focus(); });
   shinyEl.addEventListener('change', () => { rtCall('set_shiny_seru', !!shinyEl.checked); canvas.focus(); });
   fleeExpEl.addEventListener('change', () => { rtCall('set_flee_exp', !!fleeExpEl.checked); canvas.focus(); });

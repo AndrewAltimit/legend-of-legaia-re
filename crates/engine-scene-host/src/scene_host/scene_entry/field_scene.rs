@@ -954,6 +954,8 @@ impl SceneHost {
         // Arcs, NPC heights and attached lights are field-overlay pool
         // actors: the pool is re-allocated with the overlay on every entry.
         self.world.reset_field_script_actors();
+        // The seek-ahead starter restarts on the first seek of the visit.
+        self.world.reset_field_xa_seek();
         match self
             .scene
             .as_ref()

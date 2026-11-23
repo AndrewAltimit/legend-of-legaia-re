@@ -146,3 +146,48 @@ fn a_scene_local_start_plays_the_retail_fallback_bank() {
         fallback.len()
     );
 }
+
+/// A director with the same-track suppression the real ones carry (the
+/// native and browser directors and `TraceBgmDirector`: a start of the id
+/// already sounding plays on).
+#[derive(Default)]
+struct SuppressingBgm {
+    sounding: Option<u16>,
+    loads: usize,
+}
+impl BgmDirector for SuppressingBgm {
+    fn start(&mut self, _id: u16, _bytes: &[u8]) {}
+    fn start_owned_vab(&mut self, id: u16, _bytes: &[u8]) {
+        if self.sounding == Some(id) {
+            return;
+        }
+        self.sounding = Some(id);
+        self.loads += 1;
+    }
+    fn stop(&mut self) {
+        self.sounding = None;
+    }
+}
+
+/// The engine's restart word (`BGM_SUB_OP_ENGINE_RESTART`) loads the track
+/// again from its head where a plain start of the sounding id plays on: the
+/// router stops the slot first. The fishing overlay's first shore arrival
+/// raises it (`0x801CF7E0..0x801CF830`).
+#[test]
+fn the_restart_word_reloads_the_sounding_track() {
+    let Some(mut host) = host() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    host.load_scene("town01").expect("load town01");
+    let mut d = SuppressingBgm::default();
+    for sub_op in [1, 1, legaia_engine_core::world::BGM_SUB_OP_ENGINE_RESTART] {
+        host.world.pending_field_events.push(FieldEvent::Bgm {
+            text_id: 2016,
+            sub_op,
+        });
+        host.route_bgm_events(&mut d).expect("route");
+    }
+    assert_eq!(d.sounding, Some(2016));
+    assert_eq!(d.loads, 2, "the repeat plays on; the restart reloads");
+}

@@ -796,6 +796,7 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
         .collect();
     corpus.extend(clip);
     let mut rng = Rng(0x5345_4544);
+    let reruns = std::rc::Rc::new(std::cell::Cell::new(0u32));
 
     let mut ran = 0u32;
     let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
@@ -879,11 +880,22 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                     // `4C C3`'s placement record (`FUN_8003D0BC`), its seat
                     // bytes with the half-tile bit 7 (`0x801E2754`,
                     // `0x801E2778`); the seat is the host's.
+                    // Half the time the placement's first opcode is `0x25`,
+                    // which `0x801E2808` runs inline through `FUN_8003CF7C`
+                    // (stubbed: the port's re-run is its host's,
+                    // `rerun_spawn_section`, gated on the same byte).
+                    let rerun = if rng.below(2) == 0 { 0x25 } else { 0x00 };
                     cpu.mem.load(
                         0x8016_0200,
-                        &[0x01, 0x00, 0x85, 0x83, 0x00, 0x00, 0x00, 0x00],
+                        &[0x01, 0x00, 0x85, 0x83, rerun, 0x00, 0x00, 0x00],
                     );
                     cpu.hook(0x8003_D0BC, |r, _| r.r[2] = 0x8016_0200);
+                    // The context's script base, so the rebased `+0x9E`
+                    // (`0x0204`, the header's end less a stubbed `0`
+                    // record base) lands on that byte.
+                    cpu.mem.wr32(CTX + 0x90, 0x8016_0000);
+                    let n = reruns.clone();
+                    cpu.hook(0x8003_CF7C, move |_, _| n.set(n.get() + 1));
                     // A confirm pressed this frame: `4C D0`'s prompt takes it
                     // (`0x801E2AE4..0x801E2B04`).
                     cpu.mem.wr32(0x8008_46D0, 0x40);
@@ -948,6 +960,7 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                 0x8003_CF04,
                 0x801D_65D8,
                 0x8003_D0BC,
+                0x8003_CF7C,
             ] {
                 cpu.unhook(va);
             }
@@ -1023,6 +1036,7 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
         .collect();
     assert!(report.is_empty(), "{ran} runs\n{}", report.join("\n"));
     assert!(ran > 10_000, "{ran}");
+    assert!(reruns.get() > 0, "no 4C C3 ran its placement's 0x25 inline");
 }
 
 /// `34 1x` and `34 2x` with the context's attached light present or absent:

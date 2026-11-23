@@ -995,7 +995,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             }
         };
         prev = pad;
-        session.host.world.set_pad(pad);
+        session.host_pad(pad);
         if let Err(e) = session.tick() {
             return Some(Run::Error(format!("{e:#}")));
         }

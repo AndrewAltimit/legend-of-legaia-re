@@ -36,13 +36,13 @@ pub(super) fn pad_hop(
             let from = player_xz(session);
             let mut trail = Vec::new();
             for f in 0..40 {
-                session.host.world.set_pad(mask);
+                session.host_pad(mask);
                 let _ = session.tick();
                 if f % 8 == 7 {
                     trail.push(player_xz(session));
                 }
             }
-            session.host.world.set_pad(0);
+            session.host_pad(0);
             let _ = run_while_moving(session, 600);
             eprintln!(
                 "      [probe] {} {spec} from {from:?}: {trail:?} now {:?} exempt {:?} walls {:?} npcs near {:?}",

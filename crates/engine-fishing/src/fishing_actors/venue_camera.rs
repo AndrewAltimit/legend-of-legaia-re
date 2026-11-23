@@ -418,6 +418,15 @@ pub struct VenueCameraDriver {
 }
 
 impl VenueCameraDriver {
+    /// Whether the catch has reached its showcase: the driver has left state
+    /// `0x1E` for `0x20` on the gate [`catch_showcase_due`] reads, and the
+    /// showcase is tilting (`0x21`) or held (`0x22`). State `0x20`'s handler
+    /// puts the venue's track back the frame after that step
+    /// (`0x801CFD84..0x801CFDD4`).
+    pub fn showcase_opened(&self) -> bool {
+        matches!(self.catch, Catch::Tilt | Catch::Held)
+    }
+
     /// Run one frame.
     pub fn frame(&mut self, f: VenueCameraFrame) {
         use crate::fishing::PondPhase as P;

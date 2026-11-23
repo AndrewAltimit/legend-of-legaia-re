@@ -926,3 +926,63 @@ fn ally_item_cursor_opens_on_the_caster_and_left_steps_the_seat_up() {
     );
     assert_eq!(press(&mut world, PadButton::Right), 1);
 }
+
+/// The one-enemy spell cursor opens on the caster's current target when it
+/// is a standing monster seat, as the Attack cursor does: retail's magic
+/// window keeps a monster-seat `+0x1DD` (`0x801D1C84..0x801D1C94`) and the
+/// ring builder starts the cursor there; anything else re-picks the first
+/// living monster.
+#[test]
+fn the_spell_target_cursor_opens_on_the_casters_target() {
+    use legaia_engine_battle::battle_magic::SpellPhase;
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_engine_battle::target_picker::{CursorRow, PickerState};
+    use legaia_engine_system::input::PadButton;
+
+    for (own, want) in [(3u8, 2u8), (2, 1), (0, 0), (8, 0)] {
+        let mut world = World {
+            party: legaia_engine_menus::party_state::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
+            ..World::default()
+        };
+        world.battle.player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.mp = 50;
+        world.actors[0].battle.liveness = 1;
+        for m in 1..4 {
+            world.actors[m].battle.max_hp = 300;
+            world.actors[m].battle.hp = 300;
+            world.actors[m].battle.liveness = 1;
+        }
+        world.actors[0].battle.active_target = own;
+        let mut party = legaia_save::Party::zeroed(1);
+        let mut list = party.members[0].spell_list();
+        list.count = 1;
+        list.ids[0] = 0x20;
+        party.members[0].set_spell_list(list);
+        world.party.roster = party;
+        world.battle_ctx.active_actor = 0;
+        world.battle.spell_menu = world.build_battle_spell_session(0);
+        world.set_pad(0);
+        world.settle_battle_pad_hold();
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_spell_menu();
+        let state = match world.battle.spell_menu.as_ref().map(|m| &m.phase) {
+            Some(SpellPhase::Targeting { picker, .. }) => picker.state(),
+            other => panic!("own {own}: expected the target cursor, got {other:?}"),
+        };
+        assert_eq!(
+            state,
+            PickerState::Cursor {
+                row: CursorRow::Enemy,
+                slot: want
+            },
+            "own {own}"
+        );
+    }
+}

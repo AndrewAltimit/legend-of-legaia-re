@@ -152,7 +152,7 @@ pub(super) fn doors_to(
 /// Seat one tile off `tile` and onto it, so the walk-on dispatch sees a
 /// genuine tile change.
 pub(super) fn step_onto(session: &mut NativeSession, tile: (u8, u8)) {
-    session.host.world.set_pad(0);
+    session.host_pad(0);
     // The approach tile must itself be inert: a kind-1 band there spawns its
     // own record, and a kind-0 teleport there arms a warp whose landing, a
     // few dozen frames later, carries the player off the tile under test

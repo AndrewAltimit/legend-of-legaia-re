@@ -10,16 +10,20 @@
 //! spawns (the prototype scene, the 2D pool and the screen flash, each with
 //! its slot, position and heading), the ribbons (`FUN_801E1D98`), the victims
 //! the landed arm tints and shivers, the handles a tracking flight drags, the
-//! hits and the census's child count `ctx[+0x24D]`. The impact selector's
-//! status rolls are `enemy_impact`'s; here every record carries a tint-only
-//! selector.
+//! hits and the census's child count `ctx[+0x24D]`. Half the records carry a
+//! status selector (`3` Venom, `4` Toxic, `5` Rot) whose roll the landing
+//! makes on the way to the hit (`0x801E1584..0x801E1788`): what it lands on
+//! each victim's status word, the draws it takes and the Auto strings a new
+//! Rot empties are compared with `World::apply_enemy_move_status`, as
+//! `enemy_impact` compares the arm entered on its own.
 
 use crate::common::{Rng, disc, scus_cpu};
+use legaia_engine_battle::battle_events::BattleHitFx;
 use legaia_engine_battle_vm::battle_cast_census::{
     CensusSlot, EffectChildVictim, cast_census, effect_child_hit,
 };
 use legaia_engine_effects::action_effect_script::{HomingSlot, HomingSlots, MoveFxStreak};
-use psx_retail_exec::{A0, A1, A2, Stop, V0};
+use psx_retail_exec::{A0, A1, A2, RA, Stop, V0};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -45,6 +49,9 @@ const RIBBON: u32 = 0x801E_1D98;
 const CUE: u32 = 0x8004_FCC8;
 const CAST_HIT: u32 = 0x801D_D0AC;
 const RAND: u32 = 0x8005_6798;
+const SEATS: u32 = 0x8007_BD10;
+const RECORDS: u32 = 0x8008_4708;
+const PARTY_STRIDE: u32 = 0x414;
 const MOVE_POWER_FILE: usize = 0x26744;
 const STRIDE: usize = 26;
 const S0: usize = 16;
@@ -164,7 +171,48 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
     cpu.stub(SFX, 0);
     cpu.stub(STREAK_QUAD, 0);
     cpu.stub(CUE, 0);
-    cpu.stub(RAND, 1);
+    // The status arm's draws (`0x801E1630`, `0x801E1660`, `0x801E16FC`) come
+    // off the LCG `World::next_rand` steps; every other caller reads `1`.
+    let lcg = Rc::new(std::cell::Cell::new((0u32, 0u32)));
+    {
+        let l = lcg.clone();
+        cpu.hook(RAND, move |r, _| {
+            if [0x801E_1638, 0x801E_1668, 0x801E_1704].contains(&r.r[RA]) {
+                let (state, draws) = l.get();
+                let next = state.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+                l.set((next, draws + 1));
+                r.r[V0] = (next >> 16) & 0x7FFF;
+            } else {
+                r.r[V0] = 1;
+            }
+        });
+    }
+    // The status arm's port, and the party records its Rot reads.
+    let mut w = legaia_engine_core::world::World::new();
+    w.load_party(legaia_save::Party::zeroed(3));
+    w.enter_battle(3, 4);
+    w.party.party_count = 3;
+    w.tables.move_power =
+        legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(&overlay);
+    assert!(w.actors.len() >= 7);
+    let move_of: Vec<(u8, u8)> = (3..=5u8)
+        .map(|sel| {
+            let id = (0..=255u8)
+                .find(|&id| {
+                    w.tables
+                        .move_power
+                        .as_ref()
+                        .and_then(|c| c.record_for_move_id(id))
+                        .is_some_and(|r| r.impact_effect() == sel)
+                })
+                .expect("a move with the selector");
+            (sel, id)
+        })
+        .collect();
+    for s in 0..3u32 {
+        cpu.mem.wr8(SEATS + s, s as u8 + 1);
+    }
+    let (mut venom, mut rotted) = (0u32, 0u32);
     cpu.mem.wr32(CTX_PTR, CTX);
     cpu.mem.wr32(CTX + 0x1014, RECORD);
     cpu.mem.wr32(SIN_PTR, SIN_LUT);
@@ -201,9 +249,20 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
             }
             _ => {}
         }
-        // A tint-only selector: the status rolls are `enemy_impact`'s.
-        if rec[0x0A] > 2 {
-            rec[0x0A] = 1 + rng.below(2) as u8;
+        // No selector, a tint-only one, or a status one; `6` is past the
+        // ladder's last arm (`0x801E1620` tests `5` alone) and rolls nothing.
+        rec[0x0A] = match rng.below(8) {
+            0 => 0,
+            1..=3 => 1 + rng.below(2) as u8,
+            7 => 6,
+            _ => 3 + rng.below(3) as u8,
+        };
+        let ability = [0u32, 1 << 0x18, 1 << 0x1C, 1 << 0x10][rng.below(4) as usize];
+        for s in 0..3u32 {
+            let r = RECORDS + s * PARTY_STRIDE;
+            cpu.mem.wr32(r + 0xF4, ability);
+            cpu.mem.wr8(r + 0x1A7, 0x41);
+            cpu.mem.wr8(r + 0x1B7, 0x42);
         }
         cpu.mem.load(RECORD, &rec);
         // The table runs on: a list with no zero byte reads the next
@@ -343,6 +402,14 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
             let victims_before: Vec<EffectChildVictim> =
                 (0..8).map(|s| victim_at(&mut cpu.mem, actor(s))).collect();
             let cursor_before = cpu.mem.rd8(CTX + 0x262);
+            let heads_before: Vec<(u8, u8)> = (0..3)
+                .map(|s| {
+                    let r = RECORDS + s * PARTY_STRIDE;
+                    (cpu.mem.rd8(r + 0x1A7), cpu.mem.rd8(r + 0x1B7))
+                })
+                .collect();
+            let lcg_seed = rng.next();
+            lcg.set((lcg_seed, 0));
             assert_eq!(cpu.call(TICK, &[]), Stop::Returned, "{scenario}/{pass}");
 
             // The port, as `World::tick_homing_slots_pass` drives it.
@@ -468,6 +535,79 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
             // Each hit's victim as `effect_child_hit` leaves it, from the
             // seat as the pass found it and the damage the wrapper gave.
             let mut want = victims_before.clone();
+            // The status arm, slot by slot in the order the pass lands them,
+            // on one rand stream: each landed victim's word gains what the
+            // port's roll lands (the arm only ORs bits in).
+            let mut heads = heads_before.clone();
+            w.rng_state = lcg_seed;
+            let mut port_draws = 0u32;
+            if (3..=5).contains(&rec[0x0A]) {
+                let id = move_of[usize::from(rec[0x0A] - 3)].1;
+                for &c in port.landed.iter().filter(|&&c| c != 0) {
+                    let t = c - 1;
+                    let before = want[usize::from(t)].flags;
+                    for s in 0..7u8 {
+                        w.battle.status_effects.drop_slot(s);
+                        w.actors[usize::from(s)].battle.field_flags = 0;
+                        w.actors[usize::from(s)].pending_status = None;
+                    }
+                    w.party.character_ability_bits[..3].fill(ability);
+                    for r in w.party.roster.members.iter_mut() {
+                        r.raw[0xF4..0xF8].copy_from_slice(&ability.to_le_bytes());
+                        r.raw[0x1A7] = 0x41;
+                        r.raw[0x1B7] = 0x42;
+                    }
+                    w.battle.hit_fx.clear();
+                    w.battle.hit_fx.push(BattleHitFx {
+                        target_slot: t,
+                        amount: 1,
+                        is_heal: false,
+                        is_crit: false,
+                    });
+                    let state = w.rng_state;
+                    w.apply_enemy_move_status(4, id, 0);
+                    port_draws += u32::from(w.rng_state != state);
+                    let landed = w.raw_status_word(t);
+                    // A Rot limb already rotted lands nothing new, and
+                    // empties no strings.
+                    if landed & !before != 0 {
+                        want[usize::from(t)].flags = before | landed;
+                        venom += u32::from(landed & 3 != 0);
+                        if t < 3 && landed & 0x38 != 0 {
+                            let r = &w.party.roster.members[usize::from(t)];
+                            heads[usize::from(t)] = (r.raw[0x1A7], r.raw[0x1B7]);
+                            rotted += 1;
+                        }
+                    }
+                }
+            }
+            let (retail_state, retail_draws) = lcg.get();
+            if (retail_state, retail_draws) != (w.rng_state, port_draws) {
+                why.push(format!(
+                    "status draws retail {retail_draws} ({retail_state:#x}) port {port_draws} ({:#x})",
+                    w.rng_state
+                ));
+            }
+            for s in 0..3u32 {
+                let r = RECORDS + s * PARTY_STRIDE;
+                let got = (cpu.mem.rd8(r + 0x1A7), cpu.mem.rd8(r + 0x1B7));
+                if got != heads[s as usize] {
+                    why.push(format!(
+                        "seat {s} Auto heads retail {got:x?} port {:x?}",
+                        heads[s as usize]
+                    ));
+                }
+            }
+            for &c in port.landed.iter().filter(|&&c| c != 0) {
+                let t = usize::from(c - 1);
+                let got = cpu.mem.rd16(actor(t as u32) + 0x16E);
+                if !seen_now.hits.contains(&(c - 1)) && got != want[t].flags {
+                    why.push(format!(
+                        "status {t}: retail {got:#x} port {:#x}",
+                        want[t].flags
+                    ));
+                }
+            }
             let mut cursor = cursor_before;
             for (&v, &dmg) in seen_now.hits.iter().zip(&seen_now.damage) {
                 effect_child_hit(&mut want[usize::from(v)], dmg, &mut cursor);
@@ -549,4 +689,5 @@ fn the_projectile_flies_lands_and_hits_as_retails_does() {
         sole > 100 && idle > 100 && staged > 1000,
         "sole {sole} idle {idle} staged {staged}"
     );
+    assert!(venom > 20 && rotted > 20, "venom {venom} rotted {rotted}");
 }

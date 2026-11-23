@@ -127,6 +127,22 @@ impl World {
         }
         let phase_before = menu.phase.clone();
         menu.input(ev, &self.tables.spell_catalog, party, monsters);
+        // The one-enemy sub-cursor `0x5C` the commit raises opens on the
+        // caster's own target when it is a monster seat (`+0x1DD - 3 < 5`,
+        // `0x801D1C84..0x801D1C94`) and on `FUN_801DB8B4`'s first living
+        // monster otherwise (`0x801D1C9C..0x801D1CBC`); the ring builder
+        // `FUN_801D8A88` then starts the cursor there. The rule is the Attack
+        // cursor's ([`World::seat_attack_cursor`]).
+        //
+        // PORT: FUN_801D0748 (`0x801D1C84..0x801D1CBC`)
+        {
+            use legaia_engine_battle::battle_magic::SpellPhase;
+            if !matches!(phase_before, SpellPhase::Targeting { .. })
+                && let SpellPhase::Targeting { picker, .. } = &mut menu.phase
+            {
+                self.seat_attack_cursor(menu.actor, picker);
+            }
+        }
         // The kernel's confirm writes over the step it queued this frame
         // (`lh a0,0x15a(gp)` at `0x80032D14` / `0x80032D2C`), so the press
         // decides when both land together.
@@ -163,6 +179,7 @@ impl World {
             }
             Some(SpellResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
+                self.restore_window_target(actor);
                 self.open_battle_command(actor);
             }
             None => {
@@ -190,6 +207,32 @@ impl World {
                     self.open_battle_command(actor);
                 }
             }
+        }
+    }
+
+    /// The ring's Item and Magic arms keep the member's target `+0x1DD` in
+    /// `ctx[+0x1D]` as they open their window.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D13AC..0x801D13C0`, `0x801D1484..0x801D1498`)
+    pub(in crate::world) fn save_window_target(&mut self, actor: u8) {
+        if let Some(a) = self.actors.get(usize::from(actor)) {
+            self.battle_ctx.window_saved_target = a.battle.active_target;
+        }
+    }
+
+    /// The Item and Magic windows' cancel back to the ring (result `3`)
+    /// puts the kept target back when `+0x1DD` no longer names a monster
+    /// seat (`+0x1DD - 3 >= 5`) - a one-ally cursor left a party seat
+    /// there - so the next cursor opens where the member last aimed.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D183C..0x801D185C`, `0x801D1BBC..0x801D1BDC`)
+    pub(in crate::world) fn restore_window_target(&mut self, actor: u8) {
+        let pc = self.party.party_count.clamp(1, 3);
+        let saved = self.battle_ctx.window_saved_target;
+        if let Some(a) = self.actors.get_mut(usize::from(actor))
+            && !(pc..pc + 5).contains(&a.battle.active_target)
+        {
+            a.battle.active_target = saved;
         }
     }
 
@@ -607,6 +650,7 @@ impl World {
             InventoryUseState::Aborted => {
                 // Backed out without using an item - reopen the command menu.
                 let actor = self.battle_ctx.active_actor;
+                self.restore_window_target(actor);
                 self.open_battle_command(actor);
             }
             _ => {
@@ -878,5 +922,21 @@ impl World {
             is_heal,
             is_crit: false,
         });
+    }
+}
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`World::restore_window_target`] on `actor` holding `active_target`
+    /// with `saved` kept at the window's opening: the target it leaves.
+    pub fn drive_restore_window_target(&mut self, actor: u8, active_target: u8, saved: u8) -> u8 {
+        self.battle_ctx.window_saved_target = saved;
+        if let Some(a) = self.actors.get_mut(usize::from(actor)) {
+            a.battle.active_target = active_target;
+        }
+        self.restore_window_target(actor);
+        self.actors
+            .get(usize::from(actor))
+            .map_or(0, |a| a.battle.active_target)
     }
 }

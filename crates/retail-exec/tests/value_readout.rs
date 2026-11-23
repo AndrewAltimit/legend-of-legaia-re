@@ -13,8 +13,8 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_battle_vm::battle_value_readout::{
-    CODE_COLOUR, DIGIT_CELL, GLYPH_CLUT, GLYPH_TPAGE, MULTI_ROW_VALUE_Y, MULTI_ROW_X, OT_TAG,
-    decimal_digits, label_quad, multi_row_cluster, readout_teardown,
+    CODE_COLOUR, DIGIT_CELL, GLYPH_CLUT, GLYPH_TPAGE, MULTI_ROW_SLIDE_SIGN, MULTI_ROW_VALUE_Y,
+    MULTI_ROW_X, OT_TAG, decimal_digits, label_quad, multi_row_cluster, readout_teardown,
 };
 use psx_retail_exec::{A0, A1, Stop};
 use std::cell::RefCell;
@@ -65,6 +65,21 @@ fn the_value_readout_tears_down_and_draws_as_retail() {
     cpu.mem
         .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
     let queue: [u8; 16] = cpu.mem.read(QUEUE, 16).try_into().unwrap();
+    // Each row's value record `0x5C + i` glides from its seat A to its seat B
+    // (`0x80076C10 + id * 0x18`, `+0x02` and `+0x0A`): seat B is the row's rest
+    // and seat A stands `160` off it on the side the port glides it from.
+    for i in 0..4u32 {
+        let rec = 0x8007_6C10 + (0x5C + i) * 0x18;
+        let (a, b) = (cpu.mem.rd16(rec + 2) as i16, cpu.mem.rd16(rec + 0xA) as i16);
+        let i = i as usize;
+        assert_eq!(i32::from(b), MULTI_ROW_X[i], "record {:#x} rest", 0x5C + i);
+        assert_eq!(
+            i32::from(a),
+            MULTI_ROW_X[i] + 160 * MULTI_ROW_SLIDE_SIGN[i],
+            "record {:#x} seat A",
+            0x5C + i
+        );
+    }
     cpu.mem.wr32(CTX_PTR, CTX);
     cpu.mem.wr32(OT_PTR, OT);
     let closed = Rc::new(RefCell::new(Vec::new()));
@@ -123,8 +138,10 @@ fn the_value_readout_tears_down_and_draws_as_retail() {
             cpu.mem
                 .wr8(CTX + 0x11B6 + 0xC * u32::from(id), 0x10 + s as u8);
             cpu.mem.wr32(CTX + 0x1074 + 4 * (0x10 + s), w);
-            cpu.mem
-                .wr16(w + 0xA, (MULTI_ROW_X[s as usize] + slide) as u16);
+            cpu.mem.wr16(
+                w + 0xA,
+                (MULTI_ROW_X[s as usize] + slide * MULTI_ROW_SLIDE_SIGN[s as usize]) as u16,
+            );
             cpu.mem.wr16(w + 0xC, MULTI_ROW_VALUE_Y as u16);
         }
         cpu.mem.wr8(CTX + 0x271, 0);

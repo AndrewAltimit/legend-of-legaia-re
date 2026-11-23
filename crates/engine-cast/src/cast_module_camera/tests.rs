@@ -137,7 +137,10 @@ fn slippery_director_walks_the_whole_chain_to_0xff() {
     let p = module_profile(920).expect("directed");
     assert!(p.paces_band() && p.director_body && p.owns_phase);
     assert_eq!(p.hit_arm, Some(SLIPPERY_DAMAGE_ARM));
-    let mut st = ModuleCamState::default();
+    let mut st = ModuleCamState {
+        row_settled: true,
+        ..ModuleCamState::default()
+    };
     let mut phase = 0u8;
     let mut dwell = std::collections::BTreeMap::<u8, u32>::new();
     for _ in 0..10_000 {
@@ -155,6 +158,13 @@ fn slippery_director_walks_the_whole_chain_to_0xff() {
     assert_eq!(got, [64, 128, 128, 256, 256, 32, 128, 128]);
     // Arm 0xFF holds: the director never walks past the done phase.
     assert!(slippery_direct(&mut st, 0xFF, seats()).hold);
+    // Arm 10 holds, its countdown spent, while a monster still plays a clip
+    // or a dead one has not faded (`0x801F7A90..0x801F7B1C`).
+    st.countdown.0 = 0;
+    st.row_settled = false;
+    assert!(slippery_direct(&mut st, 10, seats()).hold);
+    st.row_settled = true;
+    assert!(!slippery_direct(&mut st, 10, seats()).hold);
 }
 
 /// PROT 0920's arm 7 pans TR x by the scalar a pass and its exit cuts back
@@ -1831,4 +1841,42 @@ fn water_hazard_turns_onto_the_fed_centroid() {
     let a = i32::from(aimed.unwrap());
     assert!((a - 2364).abs() <= 4, "faces the party's centroid: {a}");
     assert_ne!(aimed, seat);
+}
+
+/// A held poll keeps a drain gate's drain alone, but an arm whose word is no
+/// gate (it passes with the word raised) keeps the word its pass re-armed.
+#[test]
+fn a_held_poll_reads_a_drain_only_off_a_gating_word() {
+    fn drain(st: &mut ModuleCamState, _: u8, _: ModuleCamSeats) -> ArmDirection {
+        st.countdown.0 -= 3;
+        if st.countdown.0 > 0 {
+            return ArmDirection::HOLD;
+        }
+        st.countdown.0 += 0x200;
+        ArmDirection::PASS
+    }
+    fn clock(st: &mut ModuleCamState, _: u8, _: ModuleCamSeats) -> ArmDirection {
+        st.countdown.0 = 0x2_0000;
+        ArmDirection::PASS
+    }
+    let before = ModuleCamState {
+        countdown: ModuleCountdown(2, 0),
+        ..ModuleCamState::default()
+    };
+    let mut ahead = before;
+    let _ = drain(&mut ahead, 2, ModuleCamSeats::default());
+    assert_eq!(
+        polled_countdown(drain, &before, &ahead, 2, ModuleCamSeats::default()).0,
+        -1
+    );
+    let before = ModuleCamState {
+        countdown: ModuleCountdown(0x2_FFFF, 0),
+        ..ModuleCamState::default()
+    };
+    let mut ahead = before;
+    let _ = clock(&mut ahead, 1, ModuleCamSeats::default());
+    assert_eq!(
+        polled_countdown(clock, &before, &ahead, 1, ModuleCamSeats::default()).0,
+        0x2_0000
+    );
 }

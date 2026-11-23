@@ -41,3 +41,21 @@ image = "f8d115a5ee81f25a"
 range = "0x801E263C..0x801E2654"
 verdict = "unreachable"
 reason = "Divide traps of 4C C0's clip-phase roll, rand() % the bound clip's frame count (the record ctx[+0x4C], +2): the arm runs only with a clip playing (ctx[+0x5C] > 0, 0x801E260C..0x801E2614), whose frame count is non-zero, and the count is loaded with lhu, so it is never -1."
+
+[[arm]]
+entry = "0x80019794"
+range = "0x800197D0..0x800197D0"
+verdict = "unreachable"
+reason = "The seek-ahead starter's stage bound: the state word 0x8007B9C8 is stored only 0 (0x800197BC, and the one-shot starter's 0x8003D5C0) and 1..4 (0x80019808, 0x8001982C, 0x80019848, 0x8001986C), so it is always under 5 and the default exit is never taken."
+
+[[arm]]
+entry = "0x80019794"
+range = "0x8001981C..0x8001981C"
+verdict = "unported"
+reason = "Stage 1 waits out a data read in flight (FUN_8003DE7C(1) non-zero holds the stage); the engine has no drive, so World::field_xa_seek_ahead meets the wait on arrival and the hold is the starter's four passes."
+
+[[arm]]
+entry = "0x80019794"
+range = "0x8001985C..0x8001985C"
+verdict = "unported"
+reason = "Stage 3 waits for the CdlSeekL to settle (FUN_8003F2B8(1) non-zero holds the stage); with no drive the engine's seek settles on arrival, so a real seek's settle time is not added to the hold."

@@ -836,7 +836,7 @@ pub(super) fn play_beats(
                 .get(&slot)
                 .copied();
             let (tx, tz) = tile_of(contact.0, contact.1);
-            session.host.world.set_pad(0);
+            session.host_pad(0);
             if pad_hand() {
                 // Walk up to the door and lean on it: the locomotion's own
                 // contact probe posts the touch.
@@ -906,13 +906,13 @@ pub(super) fn play_beats(
                 if session.host.world.props.active_walk_touch == Some(slot) {
                     break;
                 }
-                session.host.world.set_pad(dir.mask());
+                session.host_pad(dir.mask());
                 if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
                     entered = Some(name);
                     break;
                 }
             }
-            session.host.world.set_pad(0);
+            session.host_pad(0);
             let r = match entered {
                 Some(s) => Run::Entered(s),
                 None => run_while_moving(session, DEEP_EXIT_TICKS),
@@ -1050,7 +1050,7 @@ fn play_prop_beats(
             if turn > 0 {
                 // A statue still turning from the last touch takes no
                 // new one: let it settle first.
-                session.host.world.set_pad(0);
+                session.host_pad(0);
                 for _ in 0..DIAL_SETTLE_TICKS {
                     if session.tick().is_err() {
                         break;
@@ -1556,15 +1556,15 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
         if !(0..128).contains(&sx) || !(0..128).contains(&sz) {
             continue;
         }
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         session.host.world.seat_player_at_tile(sx as u8, sz as u8);
         let mut started = false;
         for _ in 0..40 {
             let pad = pad_for_step(session, -dx, -dz);
-            session.host.world.set_pad(pad);
+            session.host_pad(pad);
             match session.tick() {
                 Ok(SceneTickEvent::SceneEntered { name }) => {
-                    session.host.world.set_pad(0);
+                    session.host_pad(0);
                     return Run::Entered(name);
                 }
                 Ok(_) => {}
@@ -1575,7 +1575,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
                 break;
             }
         }
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         if started {
             let r = run_while_moving(session, DEEP_EXIT_TICKS);
             // A touch that left the player on its seat gives the seat back:
@@ -1784,12 +1784,12 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
         // retail-faithful mode a one-tick lean moved nobody, and `rayman`'s
         // gate guards (P1[44..47]) were never reached.
         for _ in 0..press_ticks(session) {
-            session.host.world.set_pad(pad);
+            session.host_pad(pad);
             if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
                 return Some(Run::Entered(name));
             }
         }
-        session.host.world.set_pad(0);
+        session.host_pad(0);
         if !inside(session) {
             restore_player_xz(session, back);
             found = reaches(session);
@@ -1799,12 +1799,12 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
             backoffs += 1;
             let away = pad_for_step(session, (px - nx).signum(), (pz - nz).signum());
             for _ in 0..press_ticks(session) {
-                session.host.world.set_pad(away | PadButton::R1.mask());
+                session.host_pad(away | PadButton::R1.mask());
                 if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
                     return Some(Run::Entered(name));
                 }
             }
-            session.host.world.set_pad(0);
+            session.host_pad(0);
             if !inside(session) {
                 restore_player_xz(session, back);
                 break;
@@ -1836,7 +1836,7 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
             break;
         }
         let pad = script_pad(session, f);
-        session.host.world.set_pad(pad);
+        session.host_pad(pad);
         if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
             return Some(Run::Entered(name));
         }

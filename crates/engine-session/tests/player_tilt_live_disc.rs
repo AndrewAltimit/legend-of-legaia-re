@@ -21,6 +21,17 @@
 //! alone runs neither, by design - the same shape as `garmel` P2[12], which
 //! `step_headless_frame_tail` documents.
 //!
+//! The two drivers agree on the record, not on the pacing: the field frame
+//! cost prices a frame off the cull view the follow camera publishes
+//! (`route_camera_events` -> `World::field_frame_features`), which the session
+//! tick runs and the headless driver does not, so only the session prices its
+//! frames. Off a voice line every priced frame here sits on the floor step
+//! `2` either way; under `rugi`'s line the clip's stop watch
+//! (`WorldToggles::field_frame_span_law`) takes the priced frames to step `4`.
+//! The comparison therefore runs both drivers unpriced
+//! (`WorldToggles::field_frame_cost` off), and the tilt itself is checked on
+//! the session's default pacing.
+//!
 //! Skip-pass (CLAUDE.md disc-gated convention): `LEGAIA_DISC_BIN` unset or the
 //! extracted disc missing.
 
@@ -39,13 +50,15 @@ fn extracted_dir() -> Option<PathBuf> {
 }
 
 /// The tilt trace, one `(pitch, roll)` per frame, of `rugi` `P2[72]` driven
-/// by `session_tick` (`true`) or by `SceneHost::tick` and its headless tail.
-fn tilt_trace(extracted: &std::path::Path, session_tick: bool) -> Vec<(u16, u16)> {
+/// by `session_tick` (`true`) or by `SceneHost::tick` and its headless tail,
+/// with the field frame cost `priced` or held on the floor step.
+fn tilt_trace(extracted: &std::path::Path, session_tick: bool, priced: bool) -> Vec<(u16, u16)> {
     let cfg = BootConfig {
         scene: "rugi".into(),
         enable_audio: false,
     };
     let mut session = NativeSession::open(extracted, &cfg).expect("open session");
+    session.host.world.toggles.field_frame_cost = priced;
     session
         .enter_field_live("rugi", &FieldLiveOpts::default())
         .expect("enter rugi");
@@ -86,7 +99,7 @@ fn rugi_tilts_the_player_and_rights_it() {
         eprintln!("[skip] extracted disc not found (set LEGAIA_EXTRACTED_DIR)");
         return;
     };
-    let trace = tilt_trace(&extracted, true);
+    let trace = tilt_trace(&extracted, true, true);
     let first = trace.iter().position(|&(pitch, _)| pitch != 0);
     // `900` is under the half turn, so the 12-bit word reads it directly.
     let peak = trace
@@ -103,7 +116,7 @@ fn rugi_tilts_the_player_and_rights_it() {
     assert_eq!(peak, 900, "the tween reaches its authored 900");
     assert_eq!(last, (0, 0), "the second tween rights the player");
     assert!(
-        tilt_trace(&extracted, false) == trace,
+        tilt_trace(&extracted, false, false) == tilt_trace(&extracted, true, false),
         "SceneHost::tick plus its headless tail runs the record as the session does"
     );
 }

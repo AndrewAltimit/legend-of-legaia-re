@@ -3287,8 +3287,9 @@ one channel one-shot (`FUN_8003D53C(op>>3, op&7, dur)`); a zero operand seeks
 ahead to the clip (`FUN_80019794(op>>3)`) and plays nothing. The engine queues
 the first shape on the field XA queue both hosts drain in their field SFX
 routing (`World::push_field_xa_cue`, `engine-core::world::field_xa`), the same
-queue the scripted-scene programs' voice state feeds; the seek has no engine
-counterpart.
+queue the scripted-scene programs' voice state feeds. The seek reads nothing in
+the engine, but its starter's stepping still holds the script
+([script-vm](script-vm.md#the-seek-ahead-holds-the-script)).
 
 ## What a normal attack sounds like
 
@@ -4489,7 +4490,7 @@ on the tick the ray first strikes a seat, while the module's ray hits stay prese
 summon band still hid it; a hidden body does not tick (`0x800474D4`), its knockdown never ended, the ray
 skips a reacting seat, and arm 14's row poll held the cast past the recording with the score still ducked:
 the `+2.32` dB the row read was retail's score coming back up `17` s in. PROT 0904's one damage site stores
-the hit's presentation beside the HP write (`+0x04 = 0x3FF0000`, render flag `0`, `+0x21F = 2`,
+the hit's presentation beside the HP write (`+0x04 = 0x3FF00000`, render flag `0`, `+0x21F = 2`,
 `0x801F7D9C` / `0x801F7DB4`); the fold now carries those stores to every monster it sets reacting
 (`World::show_theeder_fold_targets`), and the cast ends on retail's second. The row's correlation fell
 because the score's window is the cast's own seconds, and the cast now ends: the per-second readings over

@@ -1002,8 +1002,13 @@ adds each hit to its target's halfword in the value window `0x801F6980`
 (`0x801DE3C4..0x801DE43C`) with `_DAT_8007BD14` left at `0`, so the flag pass finds
 no cluster to open. It opens a pair of records per row instead (`0x801E8128..`): the
 row's name plate `0x60..=0x63`, rising from `y = 236` to `194`, and its value record
-`0x5C..=0x5F` at the same `x`, gliding in from `160` right; `0x801F6834` lists the
+`0x5C..=0x5F` at the same `x`, gliding in from `160` off it; `0x801F6834` lists the
 records by row count, so one row rests at `x = 244` and four at `16 / 92 / 168 / 244`.
+Each value record's seat A is its own: `0x5C` and `0x5D` spawn at `x = 404` / `328`,
+right of their rests, and `0x5E` and `0x5F` at `-68` / `-144`, left of theirs, so a
+three-row window brings its first row in from the left and the other two from the
+right. Port: `battle_value_readout::MULTI_ROW_SLIDE_SIGN`, held to the placement
+table by `value_readout::the_value_readout_tears_down_and_draws_as_retail`.
 
 A row's name plate does not print the plaque's name. The seed hands each plate the
 seat's **name line** `ctx + 0x292 + (seat - 3) * 0x20` (`0x801E6EF0..0x801E6F78`),

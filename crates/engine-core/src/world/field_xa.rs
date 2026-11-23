@@ -20,7 +20,9 @@
 //! stream start: its body `FUN_8003EAE4` issues `CdlSetloc` + `CdlSeekL`
 //! (`li a0,0x15` at `0x8003EB68`) and never a read, so it only parks the drive
 //! head on the file the next one-shot will read. The engine has no drive, so
-//! that leg has nothing to do.
+//! the seek itself has nothing to do; what it keeps is the starter's own
+//! stepping, which holds op `0x36`'s script four passes
+//! ([`World::field_xa_seek_ahead`]).
 //!
 //! REF: FUN_8003D53C (the starter), FUN_8003EAE4 (the seek-ahead)
 
@@ -184,7 +186,22 @@ impl World {
         if dur == 0 {
             return;
         }
-        self.audio.field_xa_busy_frames = dur;
+        // The starter zeroes the seek-ahead's state word (`0x8003D5C0`) and
+        // the drive word before it raises it to `2` (`0x8003D5D8`).
+        self.audio.field_xa_seek_stage = 0;
+        self.audio.field_xa_seek_parked = false;
+        // Under the frame-span law the drive word holds past the span by the
+        // read tail, as `garmel` `P2[12]`'s does (`554` vsyncs for a `0x216`
+        // line): the stop `FUN_8003EE00` clears it once the read is done.
+        let tail = if self.toggles.field_frame_span_law
+            && self.toggles.field_cd_timing
+                == legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux
+        {
+            legaia_engine_battle_loop::frame_clock::XA_READ_TAIL_VSYNCS
+        } else {
+            0
+        };
+        self.audio.field_xa_busy_frames = dur.saturating_add(tail);
         self.audio
             .field_xa_cues
             .push(legaia_engine_system::sound_state::XaVoiceClip {
@@ -192,6 +209,57 @@ impl World {
                 channel: u32::from(channel),
                 duration_sectors: u32::from(dur),
             });
+    }
+
+    /// One pass of the seek-ahead starter `FUN_80019794` as op `0x36` with
+    /// `sel == 0` calls it: `true` while it is still stepping, which holds
+    /// the script at the op. Stages `0` (arm the busy byte), `1` (no read in
+    /// flight, `FUN_8003DE7C(1)`), `2` (issue the seek, `FUN_8003EAE4`) and
+    /// `3` (the seek settled, `FUN_8003F2B8(1)`) each answer `1` and step on;
+    /// stage `4` answers `0` and stays, so a second seek with no clip start
+    /// between runs straight through. The engine has no drive, so both waits
+    /// are met on arrival and the hold is the starter's own four passes; a
+    /// real seek's settle time, and a read in flight at the op, add to it on
+    /// hardware.
+    ///
+    /// PORT: FUN_80019794
+    /// PORT: FUN_801DE840 (`0x801E0430..0x801E0444`, the hold)
+    pub fn field_xa_seek_ahead(&mut self) -> bool {
+        if self.audio.field_xa_seek_stage >= 4 {
+            return false;
+        }
+        self.audio.field_xa_seek_stage += 1;
+        // Stage 2 issues the seek (`FUN_8003EAE4`), which raises the drive
+        // word to `1` (`0x8003EB78`).
+        if self.audio.field_xa_seek_stage == 3 {
+            self.audio.field_xa_seek_parked = true;
+        }
+        true
+    }
+
+    /// Seat the field drive's remaining read, in vsyncs, as a harness
+    /// standing the engine on a capture reads it off the drive word and the
+    /// stop watch's sectors.
+    pub fn seat_field_xa_drive(&mut self, vsyncs_left: u16, seek_parked: bool) {
+        self.audio.field_xa_busy_frames = vsyncs_left;
+        self.audio.field_xa_seek_parked = seek_parked;
+    }
+
+    /// The seek-ahead starter's stage (`0x8007B9C8`, `0..=4`), as a film
+    /// reads it beside retail's word.
+    pub fn field_xa_seek_stage(&self) -> u8 {
+        self.audio.field_xa_seek_stage
+    }
+
+    /// Field entry: the mode-init core reset clears the busy byte
+    /// `0x8007B648` (`0x80025D18`), and the seek-ahead starter restarts from
+    /// stage `0` the next time it reads the byte clear (`0x800197A8..0x800197BC`).
+    ///
+    /// REF: FUN_80025CB4
+    pub fn reset_field_xa_seek(&mut self) {
+        self.audio.field_xa_seek_stage = 0;
+        // The mode init clears the drive word too (`0x8001DD9C`).
+        self.audio.field_xa_seek_parked = false;
     }
 
     /// Take this tick's field CD-XA clip requests, oldest first. Both hosts
@@ -202,8 +270,15 @@ impl World {
     }
 
     /// `_DAT_8007BC20 != 0` as the field reads it: a one-shot is still
-    /// inside its read span.
+    /// inside its read span, or a seek-ahead parked the head and no clip has
+    /// started since (the word at `1`).
     pub fn field_xa_busy(&self) -> bool {
+        self.field_xa_reading() || self.audio.field_xa_seek_parked
+    }
+
+    /// A one-shot is still reading: the stop watch's polls run (the word at
+    /// `2`).
+    pub fn field_xa_reading(&self) -> bool {
         self.audio.field_xa_busy_frames != 0
     }
 
@@ -224,6 +299,15 @@ impl World {
     /// One vsync of the modelled drive (run by `World::tick`).
     pub(in crate::world) fn tick_field_xa_busy(&mut self) {
         self.audio.field_xa_busy_frames = self.audio.field_xa_busy_frames.saturating_sub(1);
+    }
+}
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// Seat the seek-ahead starter's stage (`0x8007B9C8`) as a differential
+    /// seeds it on retail's side.
+    pub fn drive_field_xa_seek_stage(&mut self, stage: u8) {
+        self.audio.field_xa_seek_stage = stage;
     }
 }
 
@@ -323,10 +407,34 @@ mod tests {
                 duration_sectors: 3
             }]
         );
+        // The span, then the read tail the frame-span law holds the drive
+        // word for (`XA_READ_TAIL_VSYNCS`).
+        let tail = legaia_engine_battle_loop::frame_clock::XA_READ_TAIL_VSYNCS;
+        for _ in 0..3 + tail - 1 {
+            w.tick();
+        }
+        assert!(w.field_xa_busy(), "held through the read tail");
+        w.tick();
+        assert!(
+            !w.field_xa_busy(),
+            "the span and its tail elapse in world ticks"
+        );
+        // Off, the span alone.
+        let mut w = World::default();
+        w.toggles.field_frame_span_law = false;
+        w.push_field_xa_cue(0x10, 7, 3);
         for _ in 0..3 {
             w.tick();
         }
         assert!(!w.field_xa_busy(), "the span elapses in `dur` world ticks");
+        // A console's timing (the play hosts') holds no read tail.
+        let mut w = World::default();
+        w.toggles.field_cd_timing = crate::world::PLAY_FIELD_CD_TIMING;
+        w.push_field_xa_cue(0x10, 7, 3);
+        for _ in 0..3 {
+            w.tick();
+        }
+        assert!(!w.field_xa_busy(), "no tail under a console's timing");
     }
 
     #[test]
@@ -335,5 +443,50 @@ mod tests {
         w.push_field_xa_cue(0x10, 0, 0);
         assert!(w.drain_field_xa_cues().is_empty());
         assert!(!w.field_xa_busy());
+    }
+
+    /// A voiced field frame runs its work under the clip's CD stop watch:
+    /// PCSX-Redux's polls leave a third of the CPU, a console's all but
+    /// `.065` of it; off the law, or with no clip reading, the work stands.
+    #[test]
+    fn a_voiced_field_frame_runs_under_the_stop_watch() {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, xa_loaded_frame_cost};
+        let mut w = World::default();
+        assert_eq!(w.field_xa_polled_cost(400), 400, "no clip reading");
+        w.push_field_xa_cue(0x07, 1, 0x216);
+        assert_eq!(
+            w.field_xa_polled_cost(400),
+            i32::from(xa_loaded_frame_cost(400))
+        );
+        w.toggles.field_cd_timing = CdTiming::Console;
+        assert_eq!(w.field_xa_polled_cost(400), 427);
+        w.toggles.field_frame_span_law = false;
+        assert_eq!(w.field_xa_polled_cost(400), 400);
+    }
+
+    /// The seek raises the drive word to `1` on its seek stage, and a clip
+    /// start or a field entry lowers it; no poll runs behind it.
+    #[test]
+    fn a_seek_parks_the_drive_word_until_a_clip_starts() {
+        let mut w = World::default();
+        for _ in 0..2 {
+            assert!(w.field_xa_seek_ahead());
+        }
+        assert!(!w.field_xa_busy(), "stages 0 and 1 issue nothing");
+        assert!(w.field_xa_seek_ahead());
+        assert!(w.field_xa_busy() && !w.field_xa_reading(), "the seek's 1");
+        assert_eq!(
+            w.field_xa_polled_cost(400),
+            400,
+            "no stop watch behind a seek"
+        );
+        w.push_field_xa_cue(0x07, 1, 4);
+        assert!(w.field_xa_reading());
+        let mut w2 = World::default();
+        for _ in 0..3 {
+            w2.field_xa_seek_ahead();
+        }
+        w2.reset_field_xa_seek();
+        assert!(!w2.field_xa_busy(), "a field entry clears it");
     }
 }

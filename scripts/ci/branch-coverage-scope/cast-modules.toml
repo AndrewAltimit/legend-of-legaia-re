@@ -786,49 +786,1051 @@ reason = "PROT 0935: the monster loop's first test `3 < 3 + ctx+1`; Earthquake i
 
 [[arm]]
 entry = "0x801F69D8"
-image = "471f5e89a01ebb6f"
-range = "0x801F6D08..0x801F6D08"
-verdict = "unported"
-reason = "PROT 0915: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
-
-[[arm]]
-entry = "0x801F69F8"
-image = "7aed4667c1e04dda"
-range = "0x801F6F2C..0x801F6F2C"
-verdict = "unported"
-reason = "PROT 0916: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+image = "9b032d4b97b81f6a"
+range = "0x801F6AB0..0x801F6AB0"
+verdict = "unreachable"
+reason = "PROT 0904 (Theeder): the chain's `beqz` on the phase byte (`lbu 0x279`) below 2 once `beq v1,t3` (`t3 = 1`, 0x801F6AA0) has taken phase 1; an unsigned byte under 2 that is not 1 is 0, so the fall to the epilogue never runs."
 
 [[arm]]
 entry = "0x801F69D8"
-image = "9e9d52ef03115e27"
-range = "0x801F6CEC..0x801F6CEC"
-verdict = "unported"
-reason = "PROT 0920: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+image = "9b032d4b97b81f6a"
+range = "0x801F6B24..0x801F6B24"
+verdict = "unreachable"
+reason = "PROT 0904 (Theeder): the chain's last test, `beq` on `0xFF`, falls to the epilogue only for a phase in `15..=0xFE`. No store makes one: the image steps the phase by one (the shared tail 0x801F7FE8, arm 12's 0x801F7F14), by two at most in arm 1 (0x801F6C7C), and arm 14 stores `0xFF` (0x801F80DC); its stager 0x801F8EAC writes no phase."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9b032d4b97b81f6a"
+range = "0x801F8044..0x801F8044"
+verdict = "unreachable"
+reason = "PROT 0904: arm 14's row poll skips its loop when `3 < 3 + ctx[+0x01]` fails, a monster count of zero; `ctx[+1]` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "ecd3bd0c3f87e124"
+range = "0x801F6AD4..0x801F6AD4"
+verdict = "unreachable"
+reason = "PROT 0906 (Gizam): the chain's `beqz` on the phase byte (`lbu 0x279`) below 2 once `beq v1,t0` (`t0 = 1`, 0x801F6AC4) has taken phase 1; an unsigned byte under 2 that is not 1 is 0, so the fall to the epilogue never runs."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "ecd3bd0c3f87e124"
+range = "0x801F6B48..0x801F6B48"
+verdict = "unreachable"
+reason = "PROT 0906 (Gizam): the chain's last test, `beq` on `0xFF`, falls to the epilogue only for a phase in `15..=0xFE`. No store makes one: the tick steps the phase by one (0x801F70B4, 0x801F71A4, 0x801F7280, 0x801F75E8), by two at most in arm 2 (0x801F6CDC), sets 4 in arm 3 (0x801F6CF4) and `0xFF` in arm 14 (0x801F76DC); the stager's only store is arm 2's `+1` on phase 5 (0x801F7858)."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "ecd3bd0c3f87e124"
+range = "0x801F7658..0x801F7658"
+verdict = "unreachable"
+reason = "PROT 0906: arm 14's row poll skips its loop when `3 < 3 + ctx[+0x01]` fails, a monster count of zero; `ctx[+1]` is the formation's seat count, at least one in any battle."
+
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F7824..0x801F7824"
+verdict = "unreachable"
+reason = "PROT 0915: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F7930..0x801F7930"
+verdict = "unreachable"
+reason = "PROT 0936: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F747C..0x801F747C"
+verdict = "unreachable"
+reason = "PROT 0964: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F7CDC..0x801F7CDC"
+verdict = "unreachable"
+reason = "PROT 0964: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F84F0..0x801F84F0"
+verdict = "unreachable"
+reason = "PROT 0964: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
 
 [[arm]]
 entry = "0x801F69D8"
 image = "7a33f8bcf06a069a"
-range = "0x801F6CBC..0x801F6CBC"
-verdict = "unported"
-reason = "PROT 0923: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+range = "0x801F83C8..0x801F83C8"
+verdict = "unreachable"
+reason = "PROT 0923: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F88BC..0x801F88BC"
+verdict = "unreachable"
+reason = "PROT 0923: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9e9d52ef03115e27"
+range = "0x801F7AAC..0x801F7AAC"
+verdict = "unreachable"
+reason = "PROT 0920: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6B98..0x801F6B98"
+verdict = "unreachable"
+reason = "PROT 0919: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6BC0..0x801F6BC0"
+verdict = "unreachable"
+reason = "PROT 0919: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6C10..0x801F6C10"
+verdict = "unreachable"
+reason = "PROT 0919: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F7F68..0x801F7F68"
+verdict = "unreachable"
+reason = "PROT 0919: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F8408..0x801F8408"
+verdict = "unreachable"
+reason = "PROT 0919: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "cc67ba6b801c4ad3"
+range = "0x801F7584..0x801F7584"
+verdict = "unreachable"
+reason = "PROT 0961: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e3bbc8c8f6546ed2"
+range = "0x801F6DD8..0x801F6DD8"
+verdict = "unreachable"
+reason = "PROT 0965: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e3bbc8c8f6546ed2"
+range = "0x801F72A8..0x801F72A8"
+verdict = "unreachable"
+reason = "PROT 0965: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e3bbc8c8f6546ed2"
+range = "0x801F76C0..0x801F76C0"
+verdict = "unreachable"
+reason = "PROT 0965: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ee0c59ba93a910c6"
+range = "0x801F6E40..0x801F6E40"
+verdict = "unreachable"
+reason = "PROT 0960: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ee0c59ba93a910c6"
+range = "0x801F6FB0..0x801F6FB0"
+verdict = "unreachable"
+reason = "PROT 0960: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "ee0c59ba93a910c6"
+range = "0x801F71F4..0x801F71F4"
+verdict = "unreachable"
+reason = "PROT 0960: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69EC"
+image = "62862162354c13e7"
+range = "0x801F6BB4..0x801F6BB4"
+verdict = "unreachable"
+reason = "PROT 0938: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69EC"
+image = "62862162354c13e7"
+range = "0x801F6C14..0x801F6C14"
+verdict = "unreachable"
+reason = "PROT 0938: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69EC"
+image = "62862162354c13e7"
+range = "0x801F6EE8..0x801F6EE8"
+verdict = "unreachable"
+reason = "PROT 0938: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69EC"
+image = "62862162354c13e7"
+range = "0x801F70B8..0x801F70B8"
+verdict = "unreachable"
+reason = "PROT 0938: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "612354c48153bc33"
+range = "0x801F6BC4..0x801F6BC4"
+verdict = "unreachable"
+reason = "PROT 0947: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "612354c48153bc33"
+range = "0x801F6BF0..0x801F6BF0"
+verdict = "unreachable"
+reason = "PROT 0947: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "612354c48153bc33"
+range = "0x801F6C40..0x801F6C40"
+verdict = "unreachable"
+reason = "PROT 0947: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "612354c48153bc33"
+range = "0x801F77D8..0x801F77D8"
+verdict = "unreachable"
+reason = "PROT 0947: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "612354c48153bc33"
+range = "0x801F7854..0x801F7854"
+verdict = "unreachable"
+reason = "PROT 0947: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "612354c48153bc33"
+range = "0x801F7884..0x801F7884"
+verdict = "unreachable"
+reason = "PROT 0947: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "b4ed2f8a90e3686a"
+range = "0x801F7980..0x801F7980"
+verdict = "unreachable"
+reason = "PROT 0914: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "ec1607d58a828022"
+range = "0x801F6B74..0x801F6B74"
+verdict = "unreachable"
+reason = "PROT 0948: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "ec1607d58a828022"
+range = "0x801F6BA0..0x801F6BA0"
+verdict = "unreachable"
+reason = "PROT 0948: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "ec1607d58a828022"
+range = "0x801F6BF0..0x801F6BF0"
+verdict = "unreachable"
+reason = "PROT 0948: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "ec1607d58a828022"
+range = "0x801F7148..0x801F7148"
+verdict = "unreachable"
+reason = "PROT 0948: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "ec1607d58a828022"
+range = "0x801F71C4..0x801F71C4"
+verdict = "unreachable"
+reason = "PROT 0948: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "ec1607d58a828022"
+range = "0x801F71F4..0x801F71F4"
+verdict = "unreachable"
+reason = "PROT 0948: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "e4ff18f5566963e2"
+range = "0x801F6CDC..0x801F6CDC"
+verdict = "unreachable"
+reason = "PROT 0942: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "e4ff18f5566963e2"
+range = "0x801F7084..0x801F7084"
+verdict = "unreachable"
+reason = "PROT 0942: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "e4ff18f5566963e2"
+range = "0x801F7480..0x801F7480"
+verdict = "unreachable"
+reason = "PROT 0942: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "e4ff18f5566963e2"
+range = "0x801F7700..0x801F7700"
+verdict = "unreachable"
+reason = "PROT 0942: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "e4ff18f5566963e2"
+range = "0x801F7A8C..0x801F7A8C"
+verdict = "unreachable"
+reason = "PROT 0942: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "e4ff18f5566963e2"
+range = "0x801F7B64..0x801F7B64"
+verdict = "unreachable"
+reason = "PROT 0942: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
 
 [[arm]]
 entry = "0x801F69F4"
 image = "f0403708cf2879aa"
-range = "0x801F6D94..0x801F6D94"
-verdict = "unported"
-reason = "PROT 0928: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+range = "0x801F8BD0..0x801F8BD0"
+verdict = "unreachable"
+reason = "PROT 0928: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "5f8c05dacd859682"
+range = "0x801F6CB0..0x801F6CB0"
+verdict = "unreachable"
+reason = "PROT 0940: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "5f8c05dacd859682"
+range = "0x801F6D1C..0x801F6D1C"
+verdict = "unreachable"
+reason = "PROT 0940: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "e64ec1b29a386f02"
+range = "0x801F6B64..0x801F6B64"
+verdict = "unreachable"
+reason = "PROT 0945: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
 
 [[arm]]
 entry = "0x801F69FC"
 image = "a949b76d721e2b2f"
-range = "0x801F6E1C..0x801F6E1C"
-verdict = "unported"
-reason = "PROT 0929: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+range = "0x801F83EC..0x801F83EC"
+verdict = "unreachable"
+reason = "PROT 0929: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
 
 [[arm]]
-entry = "0x801F6A58"
-image = "24d82884a97bcd51"
-range = "0x801F6D54..0x801F6D54"
-verdict = "unported"
-reason = "PROT 0931: the arm's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return). The engine's creature is resident at once, so no summon director holds on it (`cast_module_camera::summon_holds`, waits the engine has nothing to wait on); only PROT 0910 and 0913 model the drive."
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F8710..0x801F8710"
+verdict = "unreachable"
+reason = "PROT 0929: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F89C8..0x801F89C8"
+verdict = "unreachable"
+reason = "PROT 0929: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F6AD8..0x801F6AD8"
+verdict = "unreachable"
+reason = "PROT 0925 / 0926: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F6B34..0x801F6B34"
+verdict = "unreachable"
+reason = "PROT 0925 / 0926: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F6C80..0x801F6C80"
+verdict = "unreachable"
+reason = "PROT 0925 / 0926: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F6CE0..0x801F6CE0"
+verdict = "unreachable"
+reason = "PROT 0925 / 0926: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F7094..0x801F7094"
+verdict = "unreachable"
+reason = "PROT 0925 / 0926: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F70F4..0x801F70F4"
+verdict = "unreachable"
+reason = "PROT 0925 / 0926: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F7788..0x801F7788"
+verdict = "unreachable"
+reason = "PROT 0925 / 0926: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F79C8..0x801F79C8"
+verdict = "unreachable"
+reason = "PROT 0925 / 0926: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A04"
+image = "2e58a904c190bd55"
+range = "0x801F6B10..0x801F6B10"
+verdict = "unreachable"
+reason = "PROT 0943: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A04"
+image = "2e58a904c190bd55"
+range = "0x801F6C90..0x801F6C90"
+verdict = "unreachable"
+reason = "PROT 0943: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A04"
+image = "612354c48153bc33"
+range = "0x801F6BD0..0x801F6BD0"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A04"
+image = "612354c48153bc33"
+range = "0x801F6BFC..0x801F6BFC"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F6A04"
+image = "612354c48153bc33"
+range = "0x801F6C4C..0x801F6C4C"
+verdict = "unreachable"
+reason = "PROT 0944: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A04"
+image = "8f45220a72a5e1d6"
+range = "0x801F6B78..0x801F6B78"
+verdict = "unreachable"
+reason = "PROT 0941: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A04"
+image = "8f45220a72a5e1d6"
+range = "0x801F6C54..0x801F6C54"
+verdict = "unreachable"
+reason = "PROT 0941: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A04"
+image = "8f45220a72a5e1d6"
+range = "0x801F6F60..0x801F6F60"
+verdict = "unreachable"
+reason = "PROT 0941: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A04"
+image = "8f45220a72a5e1d6"
+range = "0x801F7164..0x801F7164"
+verdict = "unreachable"
+reason = "PROT 0941: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F6AB4..0x801F6AB4"
+verdict = "unreachable"
+reason = "PROT 0921: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F7438..0x801F7438"
+verdict = "unreachable"
+reason = "PROT 0921: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F7B90..0x801F7B90"
+verdict = "unreachable"
+reason = "PROT 0921: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F7E60..0x801F7E60"
+verdict = "unreachable"
+reason = "PROT 0921: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F7EE8..0x801F7EE8"
+verdict = "unreachable"
+reason = "PROT 0921: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A0C"
+image = "62862162354c13e7"
+range = "0x801F6E14..0x801F6E14"
+verdict = "unreachable"
+reason = "PROT 0952: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A10"
+image = "09a5959b39c64cac"
+range = "0x801F6D24..0x801F6D24"
+verdict = "unreachable"
+reason = "PROT 0949: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A10"
+image = "09a5959b39c64cac"
+range = "0x801F6DA0..0x801F6DA0"
+verdict = "unreachable"
+reason = "PROT 0949: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A10"
+image = "09a5959b39c64cac"
+range = "0x801F74A0..0x801F74A0"
+verdict = "unreachable"
+reason = "PROT 0949: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A10"
+image = "09a5959b39c64cac"
+range = "0x801F751C..0x801F751C"
+verdict = "unreachable"
+reason = "PROT 0949: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A14"
+image = "356b82773af1ef8f"
+range = "0x801F6CC4..0x801F6CC4"
+verdict = "unreachable"
+reason = "PROT 0957: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A14"
+image = "356b82773af1ef8f"
+range = "0x801F7268..0x801F7268"
+verdict = "unreachable"
+reason = "PROT 0957: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A14"
+image = "356b82773af1ef8f"
+range = "0x801F74C8..0x801F74C8"
+verdict = "unreachable"
+reason = "PROT 0957: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A18"
+image = "0f82124188d0c5a3"
+range = "0x801F6B40..0x801F6B40"
+verdict = "unreachable"
+reason = "PROT 0924: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A18"
+image = "0f82124188d0c5a3"
+range = "0x801F6BA0..0x801F6BA0"
+verdict = "unreachable"
+reason = "PROT 0924: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A18"
+image = "0f82124188d0c5a3"
+range = "0x801F6D84..0x801F6D84"
+verdict = "unreachable"
+reason = "PROT 0924: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A18"
+image = "0f82124188d0c5a3"
+range = "0x801F6DE0..0x801F6DE0"
+verdict = "unreachable"
+reason = "PROT 0924: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A20"
+image = "a8a82e8a86e31fdb"
+range = "0x801F6E40..0x801F6E40"
+verdict = "unreachable"
+reason = "PROT 0951: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A20"
+image = "ec1607d58a828022"
+range = "0x801F6BEC..0x801F6BEC"
+verdict = "unreachable"
+reason = "PROT 0963: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A20"
+image = "ec1607d58a828022"
+range = "0x801F78BC..0x801F78BC"
+verdict = "unreachable"
+reason = "PROT 0963: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A20"
+image = "ec1607d58a828022"
+range = "0x801F7C08..0x801F7C08"
+verdict = "unreachable"
+reason = "PROT 0963: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A20"
+image = "ec1607d58a828022"
+range = "0x801F7D94..0x801F7D94"
+verdict = "unreachable"
+reason = "PROT 0963: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A20"
+image = "ec1607d58a828022"
+range = "0x801F7EE4..0x801F7EE4"
+verdict = "unreachable"
+reason = "PROT 0963: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A20"
+image = "ec1607d58a828022"
+range = "0x801F8028..0x801F8028"
+verdict = "unreachable"
+reason = "PROT 0963: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A20"
+image = "ec1607d58a828022"
+range = "0x801F811C..0x801F811C"
+verdict = "unreachable"
+reason = "PROT 0963: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A24"
+image = "e24432fd154ae2c0"
+range = "0x801F6B90..0x801F6B90"
+verdict = "unreachable"
+reason = "PROT 0950: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A24"
+image = "e24432fd154ae2c0"
+range = "0x801F6D14..0x801F6D14"
+verdict = "unreachable"
+reason = "PROT 0950: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A24"
+image = "e24432fd154ae2c0"
+range = "0x801F76C0..0x801F76C0"
+verdict = "unreachable"
+reason = "PROT 0950: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A24"
+image = "e24432fd154ae2c0"
+range = "0x801F7990..0x801F7990"
+verdict = "unreachable"
+reason = "PROT 0950: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A34"
+image = "674962278c1ea392"
+range = "0x801F8198..0x801F8198"
+verdict = "unreachable"
+reason = "PROT 0932: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F6AF4..0x801F6AF4"
+verdict = "unreachable"
+reason = "PROT 0922: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F753C..0x801F753C"
+verdict = "unreachable"
+reason = "PROT 0922: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F8DCC..0x801F8DCC"
+verdict = "unreachable"
+reason = "PROT 0922: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F8F84..0x801F8F84"
+verdict = "unreachable"
+reason = "PROT 0922: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A3C"
+image = "75f4a4e3a54a73de"
+range = "0x801F900C..0x801F900C"
+verdict = "unreachable"
+reason = "PROT 0922: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F7288..0x801F7288"
+verdict = "unreachable"
+reason = "PROT 0934: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F8574..0x801F8574"
+verdict = "unreachable"
+reason = "PROT 0934: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F8678..0x801F8678"
+verdict = "unreachable"
+reason = "PROT 0934: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F88F4..0x801F88F4"
+verdict = "unreachable"
+reason = "PROT 0934: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F8CF8..0x801F8CF8"
+verdict = "unreachable"
+reason = "PROT 0934: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A40"
+image = "b6c2ae5ef22d3750"
+range = "0x801F8DB4..0x801F8DB4"
+verdict = "unreachable"
+reason = "PROT 0934: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f69a9ec23b1185ea"
+range = "0x801F6B68..0x801F6B68"
+verdict = "unreachable"
+reason = "PROT 0930: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f69a9ec23b1185ea"
+range = "0x801F6C8C..0x801F6C8C"
+verdict = "unreachable"
+reason = "PROT 0930: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f69a9ec23b1185ea"
+range = "0x801F7494..0x801F7494"
+verdict = "unreachable"
+reason = "PROT 0930: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f69a9ec23b1185ea"
+range = "0x801F784C..0x801F784C"
+verdict = "unreachable"
+reason = "PROT 0930: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f69a9ec23b1185ea"
+range = "0x801F7C18..0x801F7C18"
+verdict = "unreachable"
+reason = "PROT 0930: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f69a9ec23b1185ea"
+range = "0x801F7D1C..0x801F7D1C"
+verdict = "unreachable"
+reason = "PROT 0930: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F6BA4..0x801F6BA4"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F6D70..0x801F6D70"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F72EC..0x801F72EC"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F73F8..0x801F73F8"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F75DC..0x801F75DC"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F77AC..0x801F77AC"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F7978..0x801F7978"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F7ED8..0x801F7ED8"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F85C4..0x801F85C4"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F86F8..0x801F86F8"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F87FC..0x801F87FC"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f900be1c53389104"
+range = "0x801F89BC..0x801F89BC"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A84"
+image = "16d8238e9e7f2d7c"
+range = "0x801F6B50..0x801F6B50"
+verdict = "unreachable"
+reason = "PROT 0927: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A84"
+image = "16d8238e9e7f2d7c"
+range = "0x801F6F84..0x801F6F84"
+verdict = "unreachable"
+reason = "PROT 0927: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A84"
+image = "16d8238e9e7f2d7c"
+range = "0x801F6FE0..0x801F6FE0"
+verdict = "unreachable"
+reason = "PROT 0927: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A84"
+image = "16d8238e9e7f2d7c"
+range = "0x801F7740..0x801F7740"
+verdict = "unreachable"
+reason = "PROT 0927: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A84"
+image = "16d8238e9e7f2d7c"
+range = "0x801F7DBC..0x801F7DBC"
+verdict = "unreachable"
+reason = "PROT 0927: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A84"
+image = "16d8238e9e7f2d7c"
+range = "0x801F7F54..0x801F7F54"
+verdict = "unreachable"
+reason = "PROT 0927: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A84"
+image = "16d8238e9e7f2d7c"
+range = "0x801F8070..0x801F8070"
+verdict = "unreachable"
+reason = "PROT 0927: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6A84"
+image = "16d8238e9e7f2d7c"
+range = "0x801F81EC..0x801F81EC"
+verdict = "unreachable"
+reason = "PROT 0927: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6EF4"
+image = "ec1607d58a828022"
+range = "0x801F7060..0x801F7060"
+verdict = "unreachable"
+reason = "PROT 0943: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6EF4"
+image = "ec1607d58a828022"
+range = "0x801F708C..0x801F708C"
+verdict = "unreachable"
+reason = "PROT 0943: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F6EF4"
+image = "ec1607d58a828022"
+range = "0x801F70DC..0x801F70DC"
+verdict = "unreachable"
+reason = "PROT 0943: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F6EF4"
+image = "ec1607d58a828022"
+range = "0x801F7510..0x801F7510"
+verdict = "unreachable"
+reason = "PROT 0943: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6EF4"
+image = "ec1607d58a828022"
+range = "0x801F7540..0x801F7540"
+verdict = "unreachable"
+reason = "PROT 0943: `beqz` on the party seat's roster byte (`0x8007BD10[i]`, the 1-based character id) inside a loop bounded by the party count `ctx+0`, so every seat it reads is seated and non-zero."
+
+[[arm]]
+entry = "0x801F6EF4"
+image = "ec1607d58a828022"
+range = "0x801F7590..0x801F7590"
+verdict = "unreachable"
+reason = "PROT 0943: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F7298"
+image = "efda14ae5c665360"
+range = "0x801F7884..0x801F7884"
+verdict = "unreachable"
+reason = "PROT 0956: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F7298"
+image = "efda14ae5c665360"
+range = "0x801F79E8..0x801F79E8"
+verdict = "unreachable"
+reason = "PROT 0956: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F85A8"
+image = "3a2183f320b0869f"
+range = "0x801F8708..0x801F8708"
+verdict = "unreachable"
+reason = "PROT 0927: `beqz` on the battle's monster count `ctx+1` (`lbu` through `0x8007BD24`), which skips a monster-row loop; `ctx+1` is the formation's seat count, at least one in any battle."
+
+[[arm]]
+entry = "0x801F8D64"
+image = "d51a75b362fbe87d"
+range = "0x801F8EBC..0x801F8EBC"
+verdict = "unreachable"
+reason = "PROT 0966: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."

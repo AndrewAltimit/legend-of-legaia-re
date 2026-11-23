@@ -63,13 +63,15 @@ impl World {
     /// | arm | writes (on its pass) |
     /// |---|---|
     /// | 0 (`0x801F6B30..0x801F6D0C`) | each live monster: pose saved, moved to the alternate-family seat `0x80077628 + (count + 3) * 0x20` at `x / 6`, `z / 2`, facing `0`, hidden; the backdrop pair's `+0x78 = 0x1000` |
-    /// | 2 (`0x801F6DC8..0x801F7044`) | object-effect row 1 = angles `0`, bounds `(-0x300, 0)`, creature `+0x42 = 2`, seated at `(0, _, 0x1C0)` facing `0x800`; party hidden; each live monster shown |
+    /// | 2 (`0x801F6DC8..0x801F6F6C`) | object-effect row 1 = angles `0`, bounds `(-0x300, 0)`, creature `+0x42 = 2`, seated at `(0, _, 0x1C0)` facing `0x800` |
+    /// | 2 (`0x801F6F74..0x801F7044`, every pass, the drive poll's busy ones included) | party hidden; each live monster shown |
     /// | 18 (`0x801F7400..0x801F74D4`) | row 1 = angles `(0x400, 0, 0)`, bounds `(-0x800, 0x800)`; creature at `y = 0x100`, `z = 0x800`; each live monster at `z = -0x400`, hidden |
     /// | 19 (`0x801F750C..0x801F7520`, every pass) | creature `z -= 3` a tick |
     /// | 21 (`0x801F772C..0x801F77A4`) | each live monster shown |
     /// | 26 (`0x801F7CEC`) | creature `+0x42 = 0` |
     /// | 27 (`0x801F805C..0x801F8170`) | each live monster back on its saved pose; creature hidden; caster shown |
-    /// | 28 (`0x801F81D8..0x801F828C`, every pass) | each live monster back on its saved pose |
+    /// | 27 (`0x801F7F40..0x801F7FC8`, every pass) | each live monster's rate `2`, `0` on its get-up entry |
+    /// | 28 (`0x801F81D8..0x801F828C`, every pass) | each live monster back on its saved pose, rate `2` |
     ///
     /// Arm 0 also halves each monster's render scale (`+0x72 = 0x800`) and
     /// arm 27 puts it back to `0x1000`; not carried: the body radius `+0x58`
@@ -146,6 +148,46 @@ impl World {
         if phase == 28 {
             self.juggernaut_restore_monsters(&monster_slots);
         }
+        // Arms 27 and 28 store each live monster's rate on every pass: `2`
+        // (`0x801F7F8C`, `0x801F8234`), and on arm 27 `0` for a monster whose
+        // playing clip is its get-up entry `+0x1F2` (`lbu 0x1d9` / `lbu
+        // 0x1f2` / `bne`, `sb zero,0x21d` at `0x801F7F98..0x801F7FAC`).
+        if matches!(phase, 27 | 28) {
+            for &(_, e) in &monster_slots {
+                let on_get_up = phase == 27
+                    && self.battle_current_anim(e) == self.cast_view(e as u8).reaction_gate;
+                if let Some(a) = self.actors.get_mut(e) {
+                    a.battle.anim_rate =
+                        legaia_engine_battle_vm::battle_anim_rate::AnimRate(if on_get_up {
+                            0
+                        } else {
+                            2
+                        });
+                }
+            }
+        }
+        // Arm 2's drive poll branches busy to the arm's tail
+        // (`bnez v0,0x801F6F74` at `0x801F6D8C`), where the passing pass
+        // falls too: every pass of the arm hides the party and shows each
+        // live monster (`0x801F6F74..0x801F7044`), so the row stands while
+        // the drive is still seeking.
+        if phase == 2 {
+            for s in 0..party {
+                if let Some(a) = map
+                    .engine(s as u8)
+                    .and_then(|e| self.actors.get_mut(usize::from(e)))
+                {
+                    a.battle.render_color = 0;
+                    a.battle.render_flag = HIDDEN;
+                }
+            }
+            for &(_, e) in &monster_slots {
+                if let Some(a) = self.actors.get_mut(e) {
+                    a.battle.render_color = SHOWN_TINT;
+                    a.battle.render_flag = 0;
+                }
+            }
+        }
         if !passed {
             return;
         }
@@ -192,21 +234,6 @@ impl World {
                 self.casting.module_cam.creature_floor_clip = true;
                 if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
                     a.battle.floor_clip = true;
-                }
-                for s in 0..party {
-                    if let Some(a) = map
-                        .engine(s as u8)
-                        .and_then(|e| self.actors.get_mut(usize::from(e)))
-                    {
-                        a.battle.render_color = 0;
-                        a.battle.render_flag = HIDDEN;
-                    }
-                }
-                for &(_, e) in &monster_slots {
-                    if let Some(a) = self.actors.get_mut(e) {
-                        a.battle.render_color = SHOWN_TINT;
-                        a.battle.render_flag = 0;
-                    }
                 }
             }
             18 => {

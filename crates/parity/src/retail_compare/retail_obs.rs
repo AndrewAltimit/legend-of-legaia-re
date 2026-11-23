@@ -226,6 +226,16 @@ pub struct RetailObs {
     /// active-low halfword at `+2`, inverted): what the frame pacer's pad
     /// build (`FUN_8001822C`) latched into the held word for the next frame.
     pub pad_buffer: u16,
+    /// Vsyncs left on a field CD-XA one-shot's read at the save: `0` with the
+    /// drive word `0x8007BC20` clear, else the sectors from the head the
+    /// stop watch last polled (`gp+0x970`, stored at `0x8003D9DC`) to the
+    /// clip's end (`gp+0x974`) at the drive's double speed, plus the vsync
+    /// the stop `FUN_8003EE00` takes to clear the word. `None` for a seek's
+    /// `1` ([`Self::xa_seek_parked`]).
+    pub xa_drive_left: Option<u16>,
+    /// The drive word reads `1`: a seek-ahead parked the head and no clip
+    /// has started since.
+    pub xa_seek_parked: bool,
     /// The frame pacer's history at the capture: the sixteen frame times of
     /// `DAT_80084098` and the write cursor `gp+0x440`
     /// ([`crate::retail_compare_battle::frame_cost_ring`]). `None` where the
@@ -488,6 +498,7 @@ impl RetailObs {
                 }
                 _ => None,
             },
+            xa_seek_parked: game_anchors::u32_at(ram, 0x8007_BC20) == 1,
             camera_staging: (matches!(class, StateClass::Field | StateClass::WorldMap)
                 && player.is_some())
             .then(|| super::walk_rewind::follow_staging_pose(ram, &camera)),
@@ -543,6 +554,15 @@ impl RetailObs {
                 .then(|| game_anchors::u32_at(ram, 0x8007_BA28) as i32)
                 .filter(|c| (-0x20..=0x46).contains(c)),
             pad_buffer: !game_anchors::u16_at(ram, 0x8008_40FA),
+            xa_drive_left: match game_anchors::u32_at(ram, 0x8007_BC20) {
+                0 => Some(0),
+                2 => {
+                    let cur = game_anchors::u32_at(ram, 0x8007_BC88) as i32;
+                    let end = game_anchors::u32_at(ram, 0x8007_BC8C) as i32;
+                    Some((((end - cur).max(0) * 2 / 5) + 1).min(0x7FFF) as u16)
+                }
+                _ => None,
+            },
             departure_state: crate::retail_compare_script::actor_nodes(ram)
                 .into_iter()
                 .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8002_1934)

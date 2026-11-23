@@ -285,6 +285,28 @@ pub struct WorldToggles {
     /// [`Self::pin_retail`] leaves it alone; the native session takes
     /// `LEGAIA_FIELD_FRAME_COST=0` / `=1` over the default.
     pub field_frame_cost: bool,
+    /// On by default: while a field CD-XA one-shot reads (a voice line), price
+    /// each field frame at its work under the clip's CD stop watch, as
+    /// [`Self::battle_frame_span_law`] does a battle frame: the clip player
+    /// `FUN_8003D53C` installs the same sequencer `FUN_8003D764`, whose polls
+    /// run back to back from the CD interrupt for the whole read, so the
+    /// frame stretches by their share of the CPU ([`Self::field_cd_timing`]:
+    /// about two thirds on PCSX-Redux, `.065` on a console). Under
+    /// PCSX-Redux's timing the drive word holds for the read tail as well
+    /// (`XA_READ_TAIL_VSYNCS`). Off, a voiced
+    /// field frame costs what it draws. A timing model, so
+    /// [`Self::pin_retail`] leaves it alone; the native session takes
+    /// `LEGAIA_FIELD_FRAME_SPAN=0` / `=1` over the default.
+    pub field_frame_span_law: bool,
+    /// Which machine's CD response time a voiced field frame reads under
+    /// [`Self::field_frame_span_law`], apart from the battle's
+    /// [`Self::battle_cd_timing`]. PCSX-Redux's here, so every harness, film
+    /// and comparison child prices a field frame the way the recordings it
+    /// scores against ran; the play hosts seat [`PLAY_FIELD_CD_TIMING`], a
+    /// console's, so a voiced cutscene plays at a console's pace. The native
+    /// session takes `LEGAIA_FIELD_CD_TIMING=pcsx-redux` / `=console` over
+    /// either.
+    pub field_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming,
     /// Count a placed object into the field frame cost only when the draw
     /// walk `FUN_8001ADA4` reaches its primitives: an actor holds it (the
     /// scene-init sweep's bound objects, and the window sweep's while its
@@ -559,6 +581,12 @@ pub struct WorldToggles {
 /// before its first write.
 pub const DEFAULT_BATTLE_SM_FRAME_CADENCE: bool = true;
 
+/// The field CD timing a play host seats ([`WorldToggles::field_cd_timing`]):
+/// a console's, whose clip stop watch takes `.065` of the CPU, so a voiced
+/// cutscene runs at a console's pace rather than PCSX-Redux's slower one.
+pub const PLAY_FIELD_CD_TIMING: legaia_engine_battle_loop::frame_clock::CdTiming =
+    legaia_engine_battle_loop::frame_clock::CdTiming::Console;
+
 /// [`WorldToggles::exp_rate_permille`] at retail: every reward as authored.
 pub const EXP_RATE_RETAIL: u16 = 1000;
 
@@ -687,6 +715,8 @@ impl WorldToggles {
             battle_poly_frame_cost: true,
             battle_surface_frame_cost: true,
             field_frame_cost: true,
+            field_frame_span_law: true,
+            field_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             field_cost_placed_walk: true,
             field_cost_prim_outcomes: true,
             fishing_frame_cost: true,
