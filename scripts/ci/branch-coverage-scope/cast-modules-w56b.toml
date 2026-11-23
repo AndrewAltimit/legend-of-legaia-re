@@ -104,3 +104,31 @@ image = "ec1607d58a828022"
 range = "0x801F6A7C..0x801F6A7C"
 verdict = "unreachable"
 reason = "PROT 0948 Cross Beam: the jump table's bound (`sltiu v0,v1,6`). The phase byte `ctx[+0x279]` is `0` at install and the body's stores to it are `+1` (`0x801F6CB4`, `0x801F70A4`); arm 5 finishes, so the phase never reaches `6` and the out-of-range exit never runs."
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801CF7C4..0x801CF7C4"
+verdict = "unreachable"
+reason = "PROT 0980 dance head, the camera track's angle lerp on `z`: the rounding fix-up of `(b.z - a.z) * ease` runs only on a negative product, and every angle record of the pose table `0x801D43A0` (the even entries the key maps `0x801D4440` / `0x801D4488` pick, `idx * 2`) carries `z = 0`; the table's one reference in the overlay is this read (`addiu t0,v0,0x43a0` at `0x801CF67C`), so the product is always `0`."
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801CFE00..0x801CFE08"
+verdict = "unported"
+reason = "PROT 0980 dance state `0xC`: raising the cue latch `DAT_801D5134` from `2` to `3` once the accumulator passes `0x208`. The latch's readers are state 4's `== 1` test (`0x801CFBC0`) and the READY banner's `!= 0` test (`0x801D2DE8`), which never run after state `0xC` and cannot tell `3` from `2`; the port keeps the latch as the count-in's two cue flags (`CountIn`) and makes no store for it."
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801CFE9C..0x801CFE9C"
+verdict = "unreachable"
+reason = "PROT 0980 dance results state `0x14`, the mode fork's last test: it runs for a mode below `2` that is not `1`. The mode word `DAT_801D514C` is stored only as `1` or `0` (`0x801CF35C`, `0x801CF398`), as `(mode + 1) % 4` (`0x801CF8A4..0x801CF8C8`) and as `0..3` from the story flags (`0x801CF908..0x801CF94C`), never negative, so it is `0` here and the fall-through never runs."
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801D0090..0x801D0090"
+verdict = "unported"
+reason = "PROT 0980 dance tail: the load gate `DAT_801D5830` skipping the bar count `DAT_801D5170`'s increment at the beat-phase wrap. The bar count has no reader in the overlay but that increment (`lw` at `0x801D009C`; the other two references are stores of `0`, `0x801D0F18`, `0x801D1310`), so the port keeps no bar count (`TutorialHall::bars` passes the lesson's own store through)."
