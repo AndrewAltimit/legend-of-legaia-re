@@ -470,3 +470,22 @@ impl World {
         }
     }
 }
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// One hall frame of the results state's fade and exit
+    /// ([`World::step_dance_results`]) from the accumulator `acc`, inside the
+    /// hall: the accumulator it leaves, and whether it handed back to the
+    /// field.
+    pub fn drive_dance_results_step(&mut self, acc: u32) -> (u32, bool) {
+        self.mode = SceneMode::Dance;
+        self.minigames.dance_return_mode = SceneMode::Field;
+        self.minigames.dance_results_fade = Some(acc);
+        self.minigames.dance_hall_frame = true;
+        self.step_dance_results();
+        (
+            self.minigames.dance_results_fade.unwrap_or(0),
+            self.mode == SceneMode::Field,
+        )
+    }
+}

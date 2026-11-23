@@ -1149,6 +1149,14 @@ impl DanceGame {
         self.dancers.get(i).map(|d| d.score).unwrap_or(0)
     }
 
+    /// Seat dancer `i`'s score, as a resumed tally or a differential seeds
+    /// `DAT_801d53cc[i]`; a slot the floor has no dancer in is ignored.
+    pub fn set_dancer_score(&mut self, i: usize, score: u32) {
+        if let Some(d) = self.dancers.get_mut(i) {
+            d.score = score;
+        }
+    }
+
     /// Dancer `i`'s groove gauge.
     pub fn dancer_gauge(&self, i: usize) -> u32 {
         self.dancers.get(i).map(|d| d.gauge).unwrap_or(0)
