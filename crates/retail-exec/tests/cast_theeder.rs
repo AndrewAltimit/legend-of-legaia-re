@@ -411,6 +411,7 @@ mod walk {
     /// answers it.
     const DRIVE_POLL: u32 = 0x8003_F2B8;
     const DRIVE_BUSY_PASSES: u32 = 3;
+    const GROUP_LIST: u32 = 0x801F_6978;
     const SCALAR: u32 = 0x1F80_037D;
     const STEP: u32 = 0x1F80_0393;
     const FORMATION: u32 = 0x8007_BD0C;
@@ -883,6 +884,20 @@ mod walk {
                         r.cpu.mem.wr8(a + 0x21C, 0);
                         r.cpu.mem.wr16(ACTOR + stoned.unwrap() * STRIDE + 0x16E, 4);
                     }
+                    // The cast's group list `0x801F6978` (four seats, `0xFF`
+                    // past the last), as the band fills it at the cast: the
+                    // living monsters (Mule's wave divides a roll by three
+                    // only for a seat on it).
+                    let living: Vec<u8> = (3..7u32)
+                        .filter(|&s| r.cpu.mem.rd16(ACTOR + s * STRIDE + 0x14C) != 0)
+                        .map(|s| s as u8)
+                        .collect();
+                    for i in 0..4u32 {
+                        r.cpu.mem.wr8(
+                            GROUP_LIST + i,
+                            living.get(i as usize).copied().unwrap_or(0xFF),
+                        );
+                    }
                     let mut w = shadow(&mut r.cpu, layout, action).expect("shadow");
                     let seeded_facing = if layout.mirror { 0x800 } else { 0 };
                     if let Some(s) = stoned {
@@ -982,6 +997,26 @@ mod walk {
                             c.world_x = x;
                             c.world_z = z;
                         }
+                        // PROT 0907's verdict as retail's arm 0 drew it (its
+                        // fork word `0x801F8534` and resist word
+                        // `0x801F853C`): the shadow's own draw reads its
+                        // zeroed party's levels.
+                        if entry == 907 && pass > 0 {
+                            use legaia_engine_cast::seru_magic_ticks::NightoOutcome as O;
+                            let fork = r.cpu.mem.rd32(0x801F_8534) != 0;
+                            let resisted = r.cpu.mem.rd32(0x801F_853C) != 0;
+                            w.casting.module_nighto_outcome = Some(match (fork, resisted) {
+                                (false, false) => O::Kill,
+                                (false, true) => O::KillResisted,
+                                (true, false) => O::Confuse,
+                                (true, true) => O::ConfuseResisted,
+                            });
+                        }
+                        // PROT 0931's arm `0x16` waits for its creature's
+                        // cursor to stand on `0x120` exactly (`0x801F7C80`).
+                        if (entry, phase) == (931, 0x16) {
+                            r.cpu.mem.wr16(NODES + CREATURE * 0x100 + 0x68, 0x120);
+                        }
                         w.battle_ctx.frame_timer = r.cpu.mem.rd16(CTX + 0x6D8) as i16 as _;
                         w.casting.band_word_live = None;
                         w.rng_state = r.stream.get();
@@ -1042,7 +1077,15 @@ mod walk {
                         };
                         // The arm-8 shot frames the creature the walk stood
                         // on the victim (above).
-                        if turn(retail_shot) != turn(port_shot) && (entry, phase) != (908, 8) {
+                        // A summon director's camera is the summon walk's
+                        // (`summon_cameras`), which lands each shot on the
+                        // camera globals and compares the target: here the
+                        // shadow has no battle camera for its live yaw and
+                        // TR, so only the Seru bodies' shots are compared.
+                        if entry < 914
+                            && turn(retail_shot) != turn(port_shot)
+                            && (entry, phase) != (908, 8)
+                        {
                             failures.push(format!(
                                 "{what} pass {pass} arm {phase:#x}: shot retail {retail_shot:?} port {port_shot:?}"
                             ));
@@ -1291,7 +1334,10 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
 /// faces the row from `(0, 0x400)`, a Stoned seat skipped), 0923 (Gilium:
 /// arm `0x15` faces each to the stage's origin), 0927 (Juggernaut), 0930
 /// (Horn), 0932 (Meta: arm `0x15` faces each out from `(0, 0x200)`) and 0934
-/// (Ozma). The walk's builder does not land a shot on the
+/// (Ozma), and the bodies whose waits the variants hold beyond the summon
+/// walk's: PROT 0907, 0914, 0918, 0924, 0925, 0928, 0929 and 0931. A summon
+/// director's shot is the summon walk's to compare, which lands it on the
+/// camera globals; only the Seru bodies' shots are compared here. The walk's builder does not land a shot on the
 /// focus globals and the shadow's world has no battle camera, so both sides
 /// face Slippery's struck seats to the origin: that store's form is compared,
 /// not the framed point. PROT 0920's arm 10 also waits for the row, which
@@ -1300,13 +1346,21 @@ fn the_theeder_and_gizam_bodies_walk_as_the_band_does() {
 fn the_summon_strikes_turn_their_seats_as_retail_does() {
     differential!(
         prot(905, 0x801F_69D8),
+        prot(907, 0x801F_69E8),
         prot(908, 0x801F_69D8),
+        prot(914, 0x801F_69F0),
         prot(916, 0x801F_69F8),
+        prot(918, 0x801F_6C70),
         prot(920, 0x801F_69D8),
         prot(921, 0x801F_6A08),
         prot(923, 0x801F_69D8),
+        prot(924, 0x801F_6A18),
+        prot(925, 0x801F_6A00),
         prot(927, 0x801F_6A84),
+        prot(928, 0x801F_69F4),
+        prot(929, 0x801F_69FC),
         prot(930, 0x801F_6A74),
+        prot(931, 0x801F_6A58),
         prot(932, 0x801F_6A34),
         prot(934, 0x801F_6A40)
     );
@@ -1320,13 +1374,21 @@ fn the_summon_strikes_turn_their_seats_as_retail_does() {
     // them.
     let bodies: Vec<Body> = [
         (905u32, 0x801F_69D8u32, 2u8),
+        (907, 0x801F_69E8, 3),
         (908, 0x801F_69D8, 3),
+        (914, 0x801F_69F0, 9),
         (916, 0x801F_69F8, 3),
+        (918, 0x801F_6C70, 3),
         (920, 0x801F_69D8, 9),
         (921, 0x801F_6A08, 9),
         (923, 0x801F_69D8, 9),
+        (924, 0x801F_6A18, 3),
+        (925, 0x801F_6A00, 3),
         (927, 0x801F_6A84, 9),
+        (928, 0x801F_69F4, 9),
+        (929, 0x801F_69FC, 9),
         (930, 0x801F_6A74, 8),
+        (931, 0x801F_6A58, 9),
         (932, 0x801F_6A34, 9),
         (934, 0x801F_6A40, 9),
     ]
