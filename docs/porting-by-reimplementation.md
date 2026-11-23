@@ -225,6 +225,11 @@ The line is not simply where a library ends. It depends on what a player can obs
 
 **What it cannot see.** Fidelity. The ladder proves the game can be finished and compares nothing with retail, and the soak harness's detectors are internal-consistency checks. [Gate replay](tooling/gate-replay.md) carries a ladder run across: it plays the engine's own pad on retail beat by beat, resynchronised at each state gate, and reports the gaps, positions and random draws per beat.
 
+It also cannot see past its own hand. A playthrough harness can reach a state only the pad reaches by writing
+world state directly, or by sending the pad around a gate the hosts apply, and a softlock that only shows on a host
+then hides from it. So the hand's presses go through the hosts' pad gate, and every other write it makes of that
+kind is a named, counted [shortcut](tooling/full-game-ladder.md#shortcuts) ([the trap](#traps-a-newcomer-hits)).
+
 **An example.** A stall is a diagnosis rather than a red light. The report names the script instruction that parked, the door gate that refused, the story flag never set and the disc records that set it ([how to read a stall](tooling/full-game-ladder.md#how-to-read-a-stall)). The page also says what the ladder cannot claim, such as a segmented tier that places the player proving doors and scripts but not locomotion ([what it cannot measure](tooling/full-game-ladder.md#what-it-cannot-measure)).
 
 ## Step 6: measure against a retail corpus
@@ -383,7 +388,8 @@ Each step's gate closes one kind of gap and is blind to another. The tables belo
 
 | Gap | Instrument | Held against | Cannot see | Kind |
 |---|---|---|---|---|
-| A game that cannot be finished | [Full-game ladder](tooling/full-game-ladder.md): segments, continuous run | Retail saves at each story milestone | Fidelity: it compares nothing with retail | Ratchet |
+| A game that cannot be finished | [Full-game ladder](tooling/full-game-ladder.md): segments, continuous run | Retail saves at each story milestone | Fidelity: it compares nothing with retail; whatever its hand writes past the pad | Ratchet |
+| A state the harness reached that a player cannot | The hosts' [pad gate](tooling/full-game-ladder.md#input-conventions-in-both-passes) under the hand; the [shortcut census](tooling/full-game-ladder.md#shortcuts) | The hosts' own pad path (`BootSession::claim_tick`) | A world write nobody has named as a shortcut | Report |
 | A run won only by the deal | [The seed set](tooling/full-game-ladder.md#the-seed-set) | The same run on other random streams | Streams outside the set | Ratchet |
 | A panic, softlock or endless battle | [Soak harness](tooling/soak-harness.md) | Nothing of retail: its own detectors | Retail divergence, a wrong picture or sound | Test |
 | A run that does not repeat | [Determinism replay](tooling/determinism-replay.md#determinism-gate) | The same input, run twice | Whether the repeated result is right | Test |
@@ -468,6 +474,20 @@ A docs page is not a grade of its own. A statement on one carries the grade of w
 **A save state replays old RAM.** A state holds the RAM of the disc that booted it, so loading it onto a freshly patched disc keeps the old executable, overlays and models resident. A fix can look absent, and a fixed defect can look present. PCSX-Redux will also silently apply a `.ppf` sitting beside the image. Verify disc edits from a cold boot or a memory-card load, and read the resident executable out of the state rather than trusting a file name ([patched-disc taint](tooling/pcsx-redux-automation.md#patched-disc-taint)).
 
 **"No static caller" is not dead code.** Most game logic lives in overlays loaded at runtime, and much of it is reached through pointer tables and actor templates. "No caller found" becomes "no reference exists" only after a search of every image's bytes in every encoding an address can take ([address reference scan](tooling/address-reference-scan.md)), and a search can fail in its own ways: a `grep` through `| head` reads as empty when the pipe cuts it off before the hit ([shell observer traps](tooling/shell-observer-traps.md)).
+
+**A harness can play a game no player can.** A playthrough harness reaches a state only the pad reaches either by
+writing world state directly or by sending the pad around a gate the hosts apply, and either way a softlock that
+only shows on a host hides from it. Here a helper-record card stayed up over a scripted beat; under it the hosts fed
+the field an empty pad, so a player could not go on, while the ladder hand wrote its pad straight into the world and
+passed. The hand now presses through the hosts' own gate (`BootSession::world_holds_field_pad`, in the order
+`BootSession::claim_tick` decides who owns a tick), and with the engine fix reverted the gated run parks on that
+beat ([input conventions](tooling/full-game-ladder.md#input-conventions-in-both-passes)). Every other write of that
+kind the hand still makes (a seat beside a prop, a hand-set facing, a teleport back, an option set without its
+screen) is named and counted in `full_game_ladder/shortcuts.rs`, and a run can refuse them all and play on the pad
+alone ([shortcuts](tooling/full-game-ladder.md#shortcuts)). The policy behind both is that the ladder plays what
+players play, the hosts' options and CD timing included. That policy is still being brought to the hand, and
+until it is, each difference (the world's default movement decode where the hosts push precise movement,
+PCSX-Redux's CD timing where the hosts play a console's) is disclosed on the ladder page.
 
 **A speedup that changes a result is a bug.** The optimiser's choices must not move a simulation that runs on integers, and a cache that misses one input hands back an old answer for a new question. Prove a speedup by comparing the output ([step 7](#step-7-keep-iteration-quick)).
 

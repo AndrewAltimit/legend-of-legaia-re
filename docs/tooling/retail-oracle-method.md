@@ -435,6 +435,16 @@ cannot.
 - **Random play.** Seeded random input over every scene, with detectors for a
   panic, a softlock, a stalled script and an endless battle, finds the states
   no scripted run reaches ([soak harness](soak-harness.md)).
+- **The harness against the hosts.** A scripted playthrough proves the game
+  can be finished only on the input path a player has. A harness that writes
+  world state directly, or hands the engine a pad the hosts would have gated,
+  reaches states no player reaches, and a softlock that shows only on a host
+  hides from it: here, a card left up over a scripted beat made the hosts feed
+  the field an empty pad while the harness, writing its pad into the world,
+  walked on. Send the harness's input through the hosts' own gate, name and
+  count every write it still makes past the pad, and keep a mode that refuses
+  them all ([shortcuts](full-game-ladder.md#shortcuts)). The policy is that
+  the harness plays what players play, options and device timing included.
 
 ## Where to start
 
