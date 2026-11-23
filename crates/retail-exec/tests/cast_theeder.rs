@@ -825,7 +825,6 @@ mod walk {
     /// module half (see the test below for what is compared).
     pub(super) fn walk_bodies(bodies: &[Body]) -> Walked {
         use legaia_engine_cast::cast_module_camera as cam;
-        use legaia_engine_cast::seru_magic_ticks::THEEDER_TRAIL_PASS_TICKS;
         let mut out = Walked {
             hits: vec![0; bodies.len()],
             faced: vec![0; bodies.len()],
@@ -1095,7 +1094,8 @@ mod walk {
                         if hit_pass && !r.struck.borrow().is_empty() {
                             hits[k] += 1;
                         }
-                        // PROT 0904's retract, on the port's cadence.
+                        // PROT 0904's retract: the port leaves the arm on
+                        // retail's pass, or is ticked on until it does.
                         if entry == 904 && phase == 13 {
                             retract_passes += 1;
                             retract_ticks += 1;
@@ -1241,12 +1241,10 @@ mod walk {
                         ));
                     }
                     if entry == 904 {
-                        // One count drop a pass on retail, one each
-                        // `THEEDER_TRAIL_PASS_TICKS` ticks on the port.
-                        let want = retract_passes * u32::from(THEEDER_TRAIL_PASS_TICKS);
-                        if retract_passes == 0
-                            || retract_ticks.abs_diff(want) > u32::from(THEEDER_TRAIL_PASS_TICKS)
-                        {
+                        // One count drop a pass on both: the walk's pass is
+                        // the World's battle frame, whose first tick moves
+                        // the trail (`TheederTrail::set_pass`).
+                        if retract_passes == 0 || retract_ticks != retract_passes {
                             failures.push(format!(
                                 "{what}: retract {retract_passes} passes, port {retract_ticks} ticks"
                             ));
@@ -1276,12 +1274,10 @@ mod walk {
 /// each monster's staged reaction and facing, must match - but on the hit
 /// arm, whose HP and reaction are the band's fold.
 ///
-/// Two places pace apart on purpose, each walked through rather than
-/// compared: PROT 0904's arm 13 retracts its trail once per
-/// `THEEDER_TRAIL_PASS_TICKS` engine ticks, the frame step the port's trail
-/// is measured at, where this walk's pass is one vsync (the port is ticked on
-/// until it leaves the arm, and the extra ticks are held to the cadence); and
-/// PROT 0906's phase 5 names no arm, its release the spawned record's
+/// PROT 0904's arm 13 retracts its trail once a pass on both sides: the
+/// World marks each battle frame's first tick (`TheederTrail::set_pass`), so
+/// the port leaves the arm on retail's pass. One place paces apart on
+/// purpose, walked through rather than compared: PROT 0906's phase 5 names no arm, its release the spawned record's
 /// stager arm 2 (`ctx[+0x279] += 1`), which the walk stores on the pass the
 /// port's director lets its clock out.
 #[test]

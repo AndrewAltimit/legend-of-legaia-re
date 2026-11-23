@@ -1073,10 +1073,10 @@ seat's colour word, render flag, status word and HP, and each monster's staged r
 
 Over PROT 0904 (Theeder) and 0906 (Gizam) it found Theeder's strike word `0x3FF00000` (`lui 0x3ff0` at `0x801F7DA8`,
 the full blue flash) stored as `0x03FF0000`, Gizam's Venom bit on every seat its sweep reaches (`0x801F749C`) never
-set, since the band feeds that body no roll, and Gizam's struck seats left unturned. Two places pace apart on
-purpose and are walked through: Theeder's trail retracts once per `THEEDER_TRAIL_PASS_TICKS` engine ticks where the
-walk's pass is one vsync (the port is ticked on through arm 13 and the extra ticks are held to that cadence), and
-its arm-12 cone is tested on the port's step-4 ticks, so which pass strikes a seat is not compared, only that each
+set, since the band feeds that body no roll, and Gizam's struck seats left unturned. Theeder's trail retracts once a pass on both
+sides: the World marks each battle frame's first tick (`TheederTrail::set_pass`), so the port leaves arm 13 on
+retail's pass, where a fixed count of four ticks a pass held the walk's one-vsync passes four times as long. One place
+paces apart on purpose and is walked through: Theeder's arm-12 cone is tested on the port's step-4 ticks, so which pass strikes a seat is not compared, only that each
 seat the port strikes retail strikes and that both store the same. Over the summon and Seru bodies whose strikes
 turn their seats (PROT 0905, 0908, 0916, 0920, 0921, 0923, 0927, 0930, 0932, 0934) it compares every pass's facing
 ([the cast-module page's table](../subsystems/cast-module.md#a-strike-turns-the-seat-it-hits)), on runs the summon

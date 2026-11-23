@@ -392,6 +392,10 @@ pub struct TheederTrail {
     pub n: usize,
     /// Engine ticks into the current retail pass.
     pass: u8,
+    /// The host's pass boundary for the coming tick, when it runs retail's
+    /// battle-frame cadence ([`Self::set_pass`]); `None` keeps the fixed
+    /// [`THEEDER_TRAIL_PASS_TICKS`] count.
+    opens: Option<bool>,
 }
 
 impl TheederTrail {
@@ -401,14 +405,31 @@ impl TheederTrail {
         self.pass = 0;
     }
 
+    /// Name the coming tick's place in its pass. Retail samples and retracts
+    /// once a battle pass at whatever step that pass runs (`FUN_801F8634` /
+    /// `FUN_801F8B84`, one call each a module entry), so a host that runs a
+    /// pass as `step` one-vsync ticks back to back marks the first of them
+    /// (`Some(true)`) and the rest (`Some(false)`); the trail then shifts and
+    /// drops on retail's passes, not on a fixed count of four ticks.
+    pub fn set_pass(&mut self, opens: Option<bool>) {
+        self.opens = opens;
+    }
+
+    fn on_pass(&mut self) -> bool {
+        if let Some(opens) = self.opens {
+            return opens;
+        }
+        let on_pass = self.pass == 0;
+        self.pass = (self.pass + 1) % THEEDER_TRAIL_PASS_TICKS;
+        on_pass
+    }
+
     /// `FUN_801F8634`'s ring half. On a pass boundary the ring shifts and
     /// the count grows; between boundaries the newest slot tracks the live
     /// tip. Returns the fan entries this call draws: pairs `hist[i]`,
     /// `hist[i + 1]` for `i < drawn`.
     pub fn sample(&mut self, tip: [i16; 3]) -> usize {
-        let on_pass = self.pass == 0;
-        self.pass = (self.pass + 1) % THEEDER_TRAIL_PASS_TICKS;
-        if !on_pass {
+        if !self.on_pass() {
             self.hist[0] = tip;
             return self.n.saturating_sub(1);
         }
@@ -428,9 +449,7 @@ impl TheederTrail {
 
     /// `FUN_801F8B84`'s count drop, once a pass. Returns what is left.
     pub fn retract(&mut self) -> usize {
-        let on_pass = self.pass == 0;
-        self.pass = (self.pass + 1) % THEEDER_TRAIL_PASS_TICKS;
-        if on_pass {
+        if self.on_pass() {
             self.n = self.n.saturating_sub(1);
         }
         self.n

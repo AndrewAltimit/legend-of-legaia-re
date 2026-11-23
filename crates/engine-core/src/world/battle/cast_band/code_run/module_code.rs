@@ -1744,6 +1744,14 @@ impl World {
                             }
                             let geom = self.theeder_geom(seat_slot);
                             let mut fx = self.casting.module_theeder;
+                            // On retail's battle-frame cadence a pass is
+                            // `step` ticks back to back, and the trail moves
+                            // on the first of them.
+                            fx.trail.set_pass(
+                                self.toggles
+                                    .battle_sm_frame_cadence
+                                    .then_some(!self.casting.module_pass_repeat),
+                            );
                             let attack_in = ctx.phase == ticks_a::THEEDER_ATTACK_ARM;
                             let mut struck = false;
                             let mut faced: Vec<u8> = Vec::new();

@@ -378,6 +378,32 @@ fn theeder_packet_arms_draw_charge_sweep_and_retract() {
     );
 }
 
+/// On a host that marks each pass's first tick, the trail moves once a pass
+/// whatever the pass's step: a step-`3` pass shifts it on its first tick and
+/// tracks the live tip on the other two, and the retract drops one a pass.
+#[test]
+fn theeder_trail_moves_on_the_hosts_passes() {
+    let mut trail = TheederTrail::default();
+    for pass in 0..5i16 {
+        for tick in 0..3 {
+            trail.set_pass(Some(tick == 0));
+            trail.sample([pass, tick, 0]);
+        }
+        assert_eq!(trail.n, usize::from(pass as u16) + 1);
+        assert_eq!(
+            trail.hist[0],
+            [pass, 2, 0],
+            "the tip after the pass's last tick"
+        );
+    }
+    for left in (0..5).rev() {
+        for tick in 0..3 {
+            trail.set_pass(Some(tick == 0));
+            assert_eq!(trail.retract(), left);
+        }
+    }
+}
+
 #[test]
 fn theeder_seat_stands_half_a_unit_short_of_the_victim_facing_it() {
     // Caster at the origin, victim straight down +Z.
