@@ -1180,6 +1180,22 @@ rows in `card_held_box`): the record waits as retail's does. Pinned by
 `dream`, `jouine`, `noaru`, `uru`, `urudre2`) set a press of `120` to `300` frames and hold
 their records for it.
 
+Three rules follow from the card being the pager's box:
+
+- **Any context parks on it.** The runner parks every engaged context on its text, so a helper
+  record's card holds that record exactly as the modal timeline's does. `uru` `P2[36]`, Tieg's
+  parting words, is spawned by his talk (`44 54`) and runs as a helper context; its five cards
+  set `180` frames each, and the box after them is Gala's waking line.
+- **A typed page waits for the press.** State `0x19` holds every page end, the last one
+  included, so a card's record resumes on the automatic press, not when the typing ends.
+- **The press closes the card** unless the page ends on a `0x24` continuation (`map01`'s card,
+  whose rows the blank card scrolls out), and an ordinary line that loads into the box replaces
+  it. The engine draws a card as an overlay and the play hosts give the field a neutral pad while
+  one is up (`BootSession::claim_tick`), so a card left drawn past its box leaves the next box
+  waiting for a press no button delivers. That is the softlock a helper's cards used to cause on
+  Gala's line. Pinned by `engine-session/tests/uru_tieg_fire_droplet_disc.rs`, which drives the
+  record through `claim_tick` as both hosts do.
+
 The parser is [`legaia_scene_formats::cutscene_text`](../../crates/scene-formats/src/cutscene_text.rs)
 (`parse_narration` / `narration_pages`), which distinguishes `NarrationKind::Crawl`
 (`op0 = 0x80`) from `NarrationKind::Card` (`op0 = 0x89`); the engine surfaces a card via

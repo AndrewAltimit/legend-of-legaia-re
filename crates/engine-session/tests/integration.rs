@@ -90,6 +90,7 @@ mod town01_opening_view_window_disc;
 mod town0c_mei_talk_shot_disc;
 mod training_battle;
 mod uru_free_view_region_crop_disc;
+mod uru_tieg_fire_droplet_disc;
 mod vell_bridge_grass_disc;
 mod victory_voice_disc;
 mod world_map_battle_return_camera;

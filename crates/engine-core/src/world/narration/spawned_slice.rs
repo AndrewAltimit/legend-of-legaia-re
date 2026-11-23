@@ -437,14 +437,19 @@ impl World {
                             // (`autorun_audio_timeline.lua` off
                             // `s1_newgame_field`: `map01`'s card holds its
                             // record 100 vsyncs, `opurud`'s blank page 20).
+                            // The runner parks ANY engaged context on its
+                            // text, so a helper's card holds its record as
+                            // the modal timeline's does: `uru` `P2[36]`,
+                            // which Tieg's talk spawns with `44 54`, carries
+                            // five cards ahead of the box the player turns.
+                            // REF: FUN_80039B7C
                             let auto = tl
                                 .bytecode
                                 .get(pc + 3..pc + 5)
                                 .map_or(0, |b| i16::from_le_bytes([b[0], b[1]]));
                             let first_line = (pc + 5..site_end.min(tl.bytecode.len()))
                                 .find(|&i| tl.bytecode[i] == 0x1F);
-                            if modal
-                                && auto > 0
+                            if auto > 0
                                 && let Some(line) = first_line
                             {
                                 let mut panel =
@@ -493,7 +498,10 @@ impl World {
                         // does, or a name renders as an empty string.
                         let _ = modal;
                         // The next line loads into the pager (state `4` ->
-                        // `5`), which takes over a held box's rows.
+                        // `5`), which takes over a held box's rows. A card
+                        // is that same box, so its pages give way to the
+                        // line; left up, the card would keep the field's pad
+                        // neutral under a box that waits for the player.
                         let mut panel =
                             legaia_engine_field::inline_dialogue::HeldBox::next_line_panel(
                                 tl.held_box.take(),
@@ -502,6 +510,7 @@ impl World {
                             );
                         panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
                         host.world.apply_dialog_window_format(&mut panel);
+                        host.world.cutscene.card = None;
                         tl.dialog = Some(panel);
                         host.world.field_vm.dialog_claims += 1;
                         tl.dialog_claim = host.world.field_vm.dialog_claims;
