@@ -1780,6 +1780,13 @@ impl ModuleProfile {
 /// re-armed it; the drain is then read off a pass of the arm on a word too
 /// large to open (`direct` on `before` with the word raised), and a word the
 /// gate had already spent stays where it stood.
+///
+/// An arm whose word is no gate keeps the would-pass word: a raised word that
+/// still passes says the arm opens on something else. The body-paced
+/// directors (PROT 0910..0913) count their arm clock up and pass on the body's
+/// own phase, so PROT 0913's seek arm, held on the drive, keeps the clock its
+/// pass re-armed; read as a drain it took the clock to `-0x0FFB_0001` and
+/// the cast's camera off retail's (`nova_summon_mid_cast`).
 pub fn polled_countdown(
     direct: ModuleDirector,
     before: &ModuleCamState,
@@ -1795,7 +1802,9 @@ pub fn polled_countdown(
         const PROBE: i32 = 1 << 28;
         let mut probe = *before;
         probe.countdown.0 = PROBE;
-        let _ = direct(&mut probe, phase, seats);
+        if !direct(&mut probe, phase, seats).hold {
+            return ahead.countdown;
+        }
         before.countdown.0 - (PROBE - probe.countdown.0)
     } else {
         before.countdown.0

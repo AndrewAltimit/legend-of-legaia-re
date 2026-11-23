@@ -1842,3 +1842,41 @@ fn water_hazard_turns_onto_the_fed_centroid() {
     assert!((a - 2364).abs() <= 4, "faces the party's centroid: {a}");
     assert_ne!(aimed, seat);
 }
+
+/// A held poll keeps a drain gate's drain alone, but an arm whose word is no
+/// gate (it passes with the word raised) keeps the word its pass re-armed.
+#[test]
+fn a_held_poll_reads_a_drain_only_off_a_gating_word() {
+    fn drain(st: &mut ModuleCamState, _: u8, _: ModuleCamSeats) -> ArmDirection {
+        st.countdown.0 -= 3;
+        if st.countdown.0 > 0 {
+            return ArmDirection::HOLD;
+        }
+        st.countdown.0 += 0x200;
+        ArmDirection::PASS
+    }
+    fn clock(st: &mut ModuleCamState, _: u8, _: ModuleCamSeats) -> ArmDirection {
+        st.countdown.0 = 0x2_0000;
+        ArmDirection::PASS
+    }
+    let before = ModuleCamState {
+        countdown: ModuleCountdown(2, 0),
+        ..ModuleCamState::default()
+    };
+    let mut ahead = before;
+    let _ = drain(&mut ahead, 2, ModuleCamSeats::default());
+    assert_eq!(
+        polled_countdown(drain, &before, &ahead, 2, ModuleCamSeats::default()).0,
+        -1
+    );
+    let before = ModuleCamState {
+        countdown: ModuleCountdown(0x2_FFFF, 0),
+        ..ModuleCamState::default()
+    };
+    let mut ahead = before;
+    let _ = clock(&mut ahead, 1, ModuleCamSeats::default());
+    assert_eq!(
+        polled_countdown(clock, &before, &ahead, 1, ModuleCamSeats::default()).0,
+        0x2_0000
+    );
+}
