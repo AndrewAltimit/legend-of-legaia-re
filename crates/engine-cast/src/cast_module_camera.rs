@@ -298,6 +298,10 @@ pub struct ModuleCamState {
     /// What the arm adds to the victim's `+0x1BA` on this pass (PROT 0916's
     /// arm `0x13` breaks a killed victim up). Rewritten every pass.
     pub victim_shatter_step: u16,
+    /// The word a twice-drained arm's shot aims on this pass (Scythe Wind's
+    /// arm 5, Bloody Horns' arm 6, Rolling Flare's arm 4,
+    /// [`Self::twice_drained_aim`]).
+    pub pass_aim: i32,
     /// The host's answer to a victim-settle poll (PROT 0916's arm `0x14`):
     /// a dead victim's playing clip back to `0`, a living one's tint word
     /// `+0x04` cleared.
@@ -440,6 +444,23 @@ pub struct ModuleFollow {
     /// when it is not the band's own (PROT 0941's Steal arm 2 zeroes it,
     /// `sb zero,0xd(s2)` at `0x801F7B44`); `None` frames on the band's.
     pub style: Option<u8>,
+}
+
+impl ModuleCamState {
+    /// The word the shot of an arm that drains twice a pass aims on (Scythe
+    /// Wind's arm 5 `0x801F8044..0x801F80B0`, Bloody Horns' arm 6
+    /// `0x801F7A84..0x801F7AB0`, Rolling Flare's arm 4 `0x801F8088..0x801F80E4`): retail's pass drains `scalar * step` once,
+    /// aims on that word, then drains again while it stays positive. Every
+    /// tick of the pass aims where the pass's opening tick found it: the
+    /// word less the whole pass's first drain. Called ahead of the tick's
+    /// drain; at a step of one every tick is a pass.
+    pub fn twice_drained_aim(&mut self) -> i32 {
+        if self.opens_pass || self.frame_step <= 1 {
+            self.pass_aim =
+                self.countdown.0 - MODULE_DRAIN_PER_TICK * i32::from(self.frame_step.max(1));
+        }
+        self.pass_aim
+    }
 }
 
 /// A module's countdown word.

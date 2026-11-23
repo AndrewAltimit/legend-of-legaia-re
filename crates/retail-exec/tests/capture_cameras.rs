@@ -668,6 +668,15 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
             let mut arm3_passes = 0usize;
             let mut settle_passes = 0usize;
+            // (Rolling Flare's arm 4 aims every pass as well.)
+            let pass_step: u8 = if round % 2 == 1
+                && ((2..=6).any(|p| cam::capture_shot_rearms_every_pass(body.entry, body.va, p))
+                    || body.action == 0x5A)
+            {
+                [2u8, 3, 4][(round / 2) % 3]
+            } else {
+                1
+            };
             let mut settle_world = legaia_engine_core::world::World::default();
             // Every strike-frame wait (PROT 0960's arm 5, PROT 0962's arm 3)
             // finds the caster's node cursor past its mark.
@@ -949,7 +958,37 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         st.victim_settled = true;
                     }
                 }
-                let arm = (body.director)(&mut st, phase, seats);
+                // The bodies whose held arms re-aim every pass
+                // (`capture_shot_rearms_every_pass`) run their odd rounds at a
+                // battle frame step of `2`, `3` or `4`: retail's one call
+                // drains the pass's `scalar * step` in one `subu`, which a
+                // countdown off a step that does not divide it takes below
+                // zero (the `bgez` / `addiu 7` fix-ups of the shot's `cd / 8`,
+                // `0x801F7C8C`, `0x801F7DC0`). The director runs a tick a
+                // vsync as the host's pass does (`World::module_pass`): `step`
+                // ticks, the countdown's rest `step - 1 - i`, stopping on the
+                // tick an arm hands over, the spawns its opening tick seats.
+                let step = pass_step;
+                cpu.mem.wr8(STEP, step);
+                st.frame_step = step;
+                let mut arm = cam::CaptureCamArm::default();
+                let mut opened_spawns = None;
+                for i in 0..step {
+                    st.countdown.1 = step - 1 - i;
+                    st.opens_pass = i == 0;
+                    arm = (body.director)(&mut st, phase, seats);
+                    if i == 0 {
+                        opened_spawns = Some(arm.pass_spawns);
+                    }
+                    if !arm.hold {
+                        break;
+                    }
+                }
+                if let Some(sp) = opened_spawns {
+                    arm.pass_spawns = sp;
+                }
+                st.countdown.1 = 0;
+                st.opens_pass = true;
                 // The band's own pass on the shadow world, while it walks
                 // the phase retail walks.
                 let shadow_phase = shadow.as_ref().map(|w| w.casting.module_phase);

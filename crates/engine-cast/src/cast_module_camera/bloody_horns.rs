@@ -167,10 +167,11 @@ pub fn bloody_horns_camera(
             // shot, one behind it while the word stays positive
             // (`0x801F7A84..0x801F7AB0`), then the wait on the victim's
             // clip.
+            let aim = st.twice_drained_aim();
             st.countdown.drain();
             let cd = st.countdown.0;
             let on = st.victim_body.unwrap_or(v);
-            arm.shot = Some(sweep(focus_on(on), c.facing, cd, 0x8D0, 0xAC0));
+            arm.shot = Some(sweep(focus_on(on), c.facing, aim, 0x8D0, 0xAC0));
             arm.hold = (cd > 0 && st.countdown.drain_above(0)) || !st.victim_settled;
             if !arm.hold {
                 st.countdown.drain_rest(super::MODULE_DRAIN_PER_TICK);

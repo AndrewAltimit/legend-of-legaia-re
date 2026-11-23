@@ -101,8 +101,9 @@ pub fn rolling_flare_camera(
             // (`0x801F8088..0x801F8090`), one behind it while the word stays
             // positive (`0x801F80B8..0x801F80E4`).
             let body = st.victim_body.unwrap_or(v);
+            let aim = st.twice_drained_aim();
             st.countdown.drain();
-            arm.shot = Some(orbit(body, c.facing, st.countdown.0, 0x900, 0xB00));
+            arm.shot = Some(orbit(body, c.facing, aim, 0x900, 0xB00));
             let held = st.countdown.0 > 0 && st.countdown.drain_above(0);
             if held || !st.victim_settled {
                 arm.hold = true;
