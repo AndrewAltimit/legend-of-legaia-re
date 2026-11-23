@@ -4434,10 +4434,16 @@ countdown ahead of the shot, which aims on the drained word (`0x801F7A18..0x801F
 still positive (`blez` / `bgtz` at `0x801F7A8C`, `0x801F80C0`, `0x801F80C0`); past it each
 waits on the victim's clip. `dohaty_nova_v2_pre_scythe_wind`'s recording shows the rate: the
 arm-5 yaw `cd / 8 + 0x900 - facing` falls `6` a step-`3` pass, the engine's single drain `3`.
-The shot aims where the pass's opening tick found the word less the pass's first drain
-(`ModuleCamState::twice_drained_aim`), on every tick of the pass: the port drains a tick at a
-time, and a later tick's word has taken the second drain too, which at a step of `2` aimed
-the shot one tick low. Below zero the aim's `cd / 8` rounds toward zero as the `addiu 7` /
+The port makes the pass's whole arithmetic on its opening tick
+(`ModuleCamState::twice_drained_pass`): the aim, the second drain only while the first left
+the word positive, and the hold while the second does; the pass's later ticks repeat that
+answer. Drained a tick at a time, a later tick's word had taken the second drain too, which
+at a step of `2` aimed the shot one tick low, and a word the first drain took below zero
+was drained again on the pass's later ticks (`-24` against retail's `-8` at a step of `3`).
+Arm 6's poll (`0x801F7AB4..0x801F7AE4`) passes a live victim on clip `0` and a fallen one
+on `8`; the hit clamps the roll to the victim's HP (`0x801F796C`) as
+`cast_module_ticks::apply_hit_floor_zero` does, compared on rolls either side of the HP.
+Below zero the aim's `cd / 8` rounds toward zero as the `addiu 7` /
 `sra 3` does (`0x801F7C8C`, `0x801F7DC0`). Grade `disassembly` + `capture`.
 
 **A compare behind the drain reads the whole pass's word.** Retail drains a pass's

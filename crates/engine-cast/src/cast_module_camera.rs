@@ -298,10 +298,10 @@ pub struct ModuleCamState {
     /// What the arm adds to the victim's `+0x1BA` on this pass (PROT 0916's
     /// arm `0x13` breaks a killed victim up). Rewritten every pass.
     pub victim_shatter_step: u16,
-    /// The word a twice-drained arm's shot aims on this pass (Scythe Wind's
-    /// arm 5, Bloody Horns' arm 6, Rolling Flare's arm 4,
-    /// [`Self::twice_drained_aim`]).
+    /// A twice-drained arm's pass: the word its shot aims on, and whether the
+    /// word holds the arm ([`Self::twice_drained_pass`]).
     pub pass_aim: i32,
+    pub pass_held: bool,
     /// The host's answer to a victim-settle poll (PROT 0916's arm `0x14`):
     /// a dead victim's playing clip back to `0`, a living one's tint word
     /// `+0x04` cleared.
@@ -447,19 +447,23 @@ pub struct ModuleFollow {
 }
 
 impl ModuleCamState {
-    /// The word the shot of an arm that drains twice a pass aims on (Scythe
-    /// Wind's arm 5 `0x801F8044..0x801F80B0`, Bloody Horns' arm 6
-    /// `0x801F7A84..0x801F7AB0`, Rolling Flare's arm 4 `0x801F8088..0x801F80E4`): retail's pass drains `scalar * step` once,
-    /// aims on that word, then drains again while it stays positive. Every
-    /// tick of the pass aims where the pass's opening tick found it: the
-    /// word less the whole pass's first drain. Called ahead of the tick's
-    /// drain; at a step of one every tick is a pass.
-    pub fn twice_drained_aim(&mut self) -> i32 {
+    /// One pass of an arm that drains its word twice (Scythe Wind's arm 5
+    /// `0x801F8044..0x801F80E4`, Bloody Horns' arm 6 `0x801F7A18..0x801F7AB0`,
+    /// Rolling Flare's arm 4 `0x801F8088..0x801F80E4`): retail's pass takes
+    /// `scalar * step` off the word, aims its shot on what is left, and takes
+    /// the same again only while that stays positive, holding while the
+    /// second leaves it positive. The port's ticks make the pass's whole
+    /// arithmetic on its opening tick and repeat its answer on the rest.
+    /// Returns the word the shot aims on and whether the word holds the arm.
+    pub fn twice_drained_pass(&mut self) -> (i32, bool) {
         if self.opens_pass || self.frame_step <= 1 {
-            self.pass_aim =
-                self.countdown.0 - MODULE_DRAIN_PER_TICK * i32::from(self.frame_step.max(1));
+            let p = MODULE_DRAIN_PER_TICK * i32::from(self.frame_step.max(1));
+            let first = self.countdown.0 - p;
+            self.pass_aim = first;
+            self.pass_held = first > 0 && first - p > 0;
+            self.countdown.0 = if first > 0 { first - p } else { first };
         }
-        self.pass_aim
+        (self.pass_aim, self.pass_held)
     }
 }
 

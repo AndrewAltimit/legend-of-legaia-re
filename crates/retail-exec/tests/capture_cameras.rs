@@ -363,6 +363,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut glare_rolls = 0usize;
     let mut kiss_halts = 0usize;
     let mut spray_clears = 0usize;
+    let (mut horn_hits, mut horn_clamps) = (0usize, 0usize);
     let (mut shadow_passes, mut shadow_diverged) = (0usize, 0usize);
     let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
@@ -378,6 +379,14 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             if ![AIM, RANGE, BUILDER, BEARING, RAND].contains(&target) {
                 cpu.stub(target, 0);
             }
+        }
+        // Bloody Horns' hit rolls through the ATK wrapper `FUN_801DD6B4`
+        // (`0x801F7948`), which returns the round's roll here so the clamp
+        // to the victim's HP (`0x801F796C`) runs both ways.
+        let horn_roll = Rc::new(std::cell::Cell::new(0u32));
+        if body.entry == 952 {
+            let roll = horn_roll.clone();
+            cpu.hook(0x801D_D6B4, move |r, _| r.r[2] = roll.get());
         }
         // Terror Scream's refund goes through the bag's find-or-insert
         // `FUN_800421D4`, logged rather than run.
@@ -609,6 +618,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // one HP, which its settle then waits on as fallen.
             if body.action == 0x6E && round % 2 == 1 {
                 cpu.mem.wr16(va_ + 0x14C, 1);
+            }
+            if body.entry == 952 {
+                let hp = u32::from(cpu.mem.rd16(va_ + 0x14C));
+                horn_roll.set([0, hp - 1, hp, hp + 1, hp * 3][round % 5]);
             }
             if death_game {
                 for a in [ca, va_] {
@@ -908,6 +921,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     _ if (body.entry, body.va) == (962, GIGATON_PRESS) => Some(4),
                     // Blade Breath's arm 4, the same poll (`0x801F7AE4` body).
                     _ if (body.entry, body.va) == (962, BLADE_BREATH) => Some(4),
+                    // Bloody Horns' arm 6 (`0x801F7AB4..0x801F7AE4`): a live
+                    // victim's clip `0`, a fallen one's `8`.
+                    0x5C if body.va == BLOODY_HORNS => Some(6),
                     _ => None,
                 };
                 if let Some(arm_at) = victim_settle {
@@ -964,7 +980,14 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 // vsync as the host's pass does (`World::module_pass`): `step`
                 // ticks, the countdown's rest `step - 1 - i`, stopping on the
                 // tick an arm hands over, the spawns its opening tick seats.
-                let step = pass_step;
+                // Retail's step moves from frame to frame: the odd rounds walk
+                // 2, 3, 4, 3, so a word the steps share no divisor with goes
+                // below zero on its last pass.
+                let step = if pass_step > 1 {
+                    [2u8, 3, 4, 3][(pass + usize::from(pass_step)) % 4]
+                } else {
+                    1
+                };
                 cpu.mem.wr8(STEP, step);
                 st.frame_step = step;
                 let mut arm = cam::CaptureCamArm::default();
@@ -1014,7 +1037,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                             act.battle.render_color = word;
                         }
                     }
-                    w.clock.display_frames += u64::from(pass_step);
+                    w.clock.display_frames += u64::from(step);
                     // Retail's `rand()` stream as this pass opens on it, so a
                     // rolled status lands on the seat retail's roll lands.
                     w.rng_state = stream.get();
@@ -1022,11 +1045,12 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     // them at the pass's step (`World::module_pass`), with
                     // the after-pass seam (`World::caster_stages`): Glare's
                     // roll on the pass that counts its arm 2 out.
-                    w.drive_capture_module_pass(body.action, pass_step);
+                    w.drive_capture_module_pass(body.action, step);
                 }
                 let ctx_before = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
                 // The two seats as the pass opens, for Death Game's result.
                 let before = [ca, va_].map(|a| crate::cast_view::read_actor(&mut cpu.mem, a));
+                let horn_before = (cpu.mem.rd16(va_ + 0x14C), cpu.mem.rd32(va_ + 0x10));
                 // Every seat's tint and render flag as the pass opens, with
                 // what decides which seats a hide or show reaches: HP, Stone.
                 let shown: Vec<(u32, u8, u16, u16)> = (0..8u32)
@@ -1213,6 +1237,32 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 shadow_after = (0..8u32)
                     .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
                     .collect();
+                // Bloody Horns' hit against the port's clamp
+                // (`cast_module_ticks::apply_hit_floor_zero`): the roll, cut
+                // to the victim's HP, onto `+0x10` and off `+0x14C`.
+                if body.entry == 952 && body.va == BLOODY_HORNS {
+                    let (hp, acc) = horn_before;
+                    if cpu.mem.rd32(va_ + 0x10) != acc || cpu.mem.rd16(va_ + 0x14C) != hp {
+                        let mut v = legaia_engine_cast::cast_module_ticks::CastActorState {
+                            hp,
+                            hp_bar_delta: acc as i32,
+                            ..Default::default()
+                        };
+                        legaia_engine_cast::cast_module_ticks::apply_hit_floor_zero(
+                            &mut v,
+                            horn_roll.get() as i32,
+                        );
+                        let got = (cpu.mem.rd16(va_ + 0x14C), cpu.mem.rd32(va_ + 0x10));
+                        if got != (v.hp, v.hp_bar_delta as u32) {
+                            failures.push(format!(
+                                "{c}: horn hit hp/+0x10 retail {got:?} port {:?}",
+                                (v.hp, v.hp_bar_delta as u32)
+                            ));
+                        }
+                        horn_hits += 1;
+                        horn_clamps += usize::from(horn_roll.get() > u32::from(hp));
+                    }
+                }
                 // That store against the director's caster write.
                 if body.action == 0x6F && phase == 3 {
                     let staged = cpu.mem.rd8(ca + 0x1DA);
@@ -1527,6 +1577,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         spawn_failures[..spawn_failures.len().min(40)].join("\n")
     );
     eprintln!("band shadow: {status_marks} seat passes with a status bit set compared");
+    eprintln!("Bloody Horns: {horn_hits} hits compared, {horn_clamps} clamped to the victim's HP");
+    assert!(
+        horn_clamps >= 2 && horn_hits > horn_clamps,
+        "horn hits {horn_hits} clamps {horn_clamps}"
+    );
     assert!(status_marks >= 1000, "status marks compared {status_marks}");
     // Half the rounds run at a step of 2 to 4, whose casts take fewer passes.
     assert!(

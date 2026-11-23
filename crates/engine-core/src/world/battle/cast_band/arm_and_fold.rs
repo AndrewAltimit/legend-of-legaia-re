@@ -568,7 +568,8 @@ impl World {
     /// clock by `step` a pass, so every pass opens a battle frame.
     pub fn drive_capture_module_pass(&mut self, spell_id: u8, step: u8) -> bool {
         self.toggles.battle_sm_frame_cadence = true;
-        self.battle.frame_clock.step = step.max(1);
+        let tick = self.clock.display_frames;
+        self.battle.frame_clock.set_step(tick, step);
         self.casting.capture_spell = Some(spell_id);
         self.module_pass(|w| {
             let Some(spell) = w.casting.capture_spell else {
