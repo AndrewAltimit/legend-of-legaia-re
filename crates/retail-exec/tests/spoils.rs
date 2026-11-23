@@ -825,6 +825,35 @@ fn a_party_wipe_barks_taunts_and_fades_as_retail() {
                     world.presentation.fade.is_some(),
                     "{label}: the fade, pass {pass}"
                 );
+                // The passes after the fade: the hold flag `ctx[+0x6CE]`
+                // reads `2` and up (`0x8004FC4C`, counted on at
+                // `0x8004FC6C..0x8004FC7C`), so the hold's accumulate
+                // (`0x8004F9DC`) and the fade's spawn (`0x8004FB14`) are
+                // stepped over: no second fade, bark, cue or window, on
+                // either side.
+                for after in 0..4u32 {
+                    faded.set(false);
+                    cues.borrow_mut().clear();
+                    windows.borrow_mut().clear();
+                    cpu.mem.wr32(XA_WORD, 0);
+                    assert_eq!(
+                        cpu.call(SPOILS, &[]),
+                        Stop::Returned,
+                        "{label} after {after}"
+                    );
+                    assert!(
+                        !faded.get() && cues.borrow().is_empty() && windows.borrow().is_empty(),
+                        "{label}: retail after the fade, pass {after}"
+                    );
+                    let xa_before = world.audio.battle_xa_cues.len();
+                    world.tick_battle_end_sequence();
+                    assert_eq!(
+                        world.audio.battle_xa_cues.len(),
+                        xa_before,
+                        "{label}: port after the fade, pass {after}"
+                    );
+                    assert!(world.presentation.fade.is_some(), "{label}");
+                }
                 break;
             }
             assert!(
