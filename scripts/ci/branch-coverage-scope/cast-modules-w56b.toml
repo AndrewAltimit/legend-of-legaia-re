@@ -132,3 +132,10 @@ image = "2f10b59de1522413"
 range = "0x801D0090..0x801D0090"
 verdict = "unported"
 reason = "PROT 0980 dance tail: the load gate `DAT_801D5830` skipping the bar count `DAT_801D5170`'s increment at the beat-phase wrap. The bar count has no reader in the overlay but that increment (`lw` at `0x801D009C`; the other two references are stores of `0`, `0x801D0F18`, `0x801D1310`), so the port keeps no bar count (`TutorialHall::bars` passes the lesson's own store through)."
+
+[[arm]]
+entry = "0x801D2F38"
+image = "875e3947b34245bb"
+range = "0x801D3190..0x801D31C4"
+verdict = "unreachable"
+reason = "PROT 0980 dance widget emitter: the rounding fix-ups of `cell * scale` (the widget's `+0x0A` / `+0x0B` byte times its `+0x00` word) run only on a negative product. All 34 records of the widget table `0x801D46CC` (stride `0x14`) carry scale `0x1000`, and the overlay's stores into the table land on `+0x06` / `+0x08` (`0x801D263C..0x801D266C`, `0x801D34B8`, `0x801D3A0C`, `0x801D3E8C`), never the scale word, so the product is never negative."
