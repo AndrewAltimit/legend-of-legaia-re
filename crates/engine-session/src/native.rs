@@ -136,6 +136,28 @@ pub fn battle_frame_cadence_on() -> bool {
     env_battle_frame_cadence().unwrap_or(legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE)
 }
 
+/// `LEGAIA_FIELD_CD_TIMING`: which machine's CD response time a voiced
+/// field frame reads (`WorldToggles::field_cd_timing`) - `pcsx-redux` or
+/// `console`, no opinion when unset or anything else.
+pub fn env_field_cd_timing() -> Option<legaia_engine_core::world::CdTiming> {
+    match std::env::var("LEGAIA_FIELD_CD_TIMING")
+        .as_deref()
+        .map(str::trim)
+    {
+        Ok("console") => Some(legaia_engine_core::world::CdTiming::Console),
+        Ok("pcsx-redux") => Some(legaia_engine_core::world::CdTiming::PcsxRedux),
+        _ => None,
+    }
+}
+
+/// The field CD timing a play host runs: a console's
+/// ([`legaia_engine_core::world::PLAY_FIELD_CD_TIMING`]) unless
+/// `LEGAIA_FIELD_CD_TIMING` names one. A comparison child sets
+/// `pcsx-redux`, the recordings' timing.
+pub fn play_field_cd_timing() -> legaia_engine_core::world::CdTiming {
+    env_field_cd_timing().unwrap_or(legaia_engine_core::world::PLAY_FIELD_CD_TIMING)
+}
+
 /// `LEGAIA_ARTS_SAVED_LIST`: set at all.
 pub fn env_arts_saved_list() -> bool {
     std::env::var_os("LEGAIA_ARTS_SAVED_LIST").is_some()
@@ -277,6 +299,9 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             toggles.battle_cd_timing = legaia_engine_core::world::CdTiming::PcsxRedux
         }
         _ => {}
+    }
+    if let Some(t) = env_field_cd_timing() {
+        toggles.field_cd_timing = t;
     }
     if env_arts_saved_list() {
         toggles.arts_saved_list = true;

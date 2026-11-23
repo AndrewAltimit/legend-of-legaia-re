@@ -550,6 +550,13 @@ pub fn engine_frame_with(
     if pcsx_redux {
         cmd.env("LEGAIA_BATTLE_CD_TIMING", "pcsx-redux");
     }
+    // The field's the same, but the play window seats a console's
+    // (`PLAY_FIELD_CD_TIMING`): the child keeps the harness's own field
+    // timing, PCSX-Redux's unless the parent named one, and a PCSX-Redux
+    // capture's whatever the parent named.
+    if pcsx_redux || std::env::var_os("LEGAIA_FIELD_CD_TIMING").is_none() {
+        cmd.env("LEGAIA_FIELD_CD_TIMING", "pcsx-redux");
+    }
     cmd.env("LEGAIA_CAPTURE_NO_PRESENT", "1");
     cmd.args(["play-window", "--no-audio"])
         .args(render.child_args())

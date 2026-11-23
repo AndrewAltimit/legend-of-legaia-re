@@ -596,7 +596,7 @@ impl World {
             return cost;
         }
         let work = cost.clamp(0, i32::from(u16::MAX)) as u16;
-        i32::from(match self.toggles.battle_cd_timing {
+        i32::from(match self.toggles.field_cd_timing {
             CdTiming::PcsxRedux => xa_loaded_frame_cost(work),
             CdTiming::Console => {
                 legaia_engine_cast::cast_module_frame_step::console_poll_cost(work)

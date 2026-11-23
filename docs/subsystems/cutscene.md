@@ -1778,11 +1778,13 @@ the opening chain, which has no voice, the waits fit the rule above. On a consol
 about `.065` of the CPU, so the same beat would run near its frame count.
 
 The engine prices a field frame under a clip's read at its work over the polls' share
-(`World::field_xa_polled_cost`, the battle's `xa_loaded_frame_cost` under the default
-PCSX-Redux CD timing, `console_poll_cost` under `--console-cd`) and holds the drive word for the
-read tail, behind `WorldToggles::field_frame_span_law`. `garmel` `P2[12]`'s wait then takes `346`
-vsyncs where it took `268`, and the beat from the seek to the `36 FF FF` after the wait runs
-`590` vsyncs against retail's `621` (`566` with the timeline's hold on the drive word alone, `422` before that). A harness standing the engine on a state
+(`World::field_xa_polled_cost`), behind `WorldToggles::field_frame_span_law`, on the machine
+`WorldToggles::field_cd_timing` names. Play runs a console's (`PLAY_FIELD_CD_TIMING`,
+`console_poll_cost`): `garmel` `P2[12]`'s wait takes `268` vsyncs and the beat from the seek to
+the `36 FF FF` after the wait `566`. The harnesses, films and comparison children run
+PCSX-Redux's, the recordings' (`xa_loaded_frame_cost`, with the drive word held for the read
+tail; `LEGAIA_FIELD_CD_TIMING=pcsx-redux` in play): the wait takes `346` vsyncs and the beat
+`590` against the recording's `621` (`422` before the timeline held op `0x36` on the drive word). A harness standing the engine on a state
 saved under a line seats the drive's remaining read from the stop watch's sectors
 (`RetailObs::xa_drive_left`).
 

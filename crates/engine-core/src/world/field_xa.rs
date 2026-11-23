@@ -194,7 +194,7 @@ impl World {
         // read tail, as `garmel` `P2[12]`'s does (`554` vsyncs for a `0x216`
         // line): the stop `FUN_8003EE00` clears it once the read is done.
         let tail = if self.toggles.field_frame_span_law
-            && self.toggles.battle_cd_timing
+            && self.toggles.field_cd_timing
                 == legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux
         {
             legaia_engine_battle_loop::frame_clock::XA_READ_TAIL_VSYNCS
@@ -427,6 +427,14 @@ mod tests {
             w.tick();
         }
         assert!(!w.field_xa_busy(), "the span elapses in `dur` world ticks");
+        // A console's timing (the play hosts') holds no read tail.
+        let mut w = World::default();
+        w.toggles.field_cd_timing = crate::world::PLAY_FIELD_CD_TIMING;
+        w.push_field_xa_cue(0x10, 7, 3);
+        for _ in 0..3 {
+            w.tick();
+        }
+        assert!(!w.field_xa_busy(), "no tail under a console's timing");
     }
 
     #[test]
@@ -450,7 +458,7 @@ mod tests {
             w.field_xa_polled_cost(400),
             i32::from(xa_loaded_frame_cost(400))
         );
-        w.toggles.battle_cd_timing = CdTiming::Console;
+        w.toggles.field_cd_timing = CdTiming::Console;
         assert_eq!(w.field_xa_polled_cost(400), 427);
         w.toggles.field_frame_span_law = false;
         assert_eq!(w.field_xa_polled_cost(400), 400);

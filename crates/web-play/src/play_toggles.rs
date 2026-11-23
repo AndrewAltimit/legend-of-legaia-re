@@ -84,6 +84,11 @@ pub struct PageToggles {
     /// `LEGAIA_BATTLE_MEMO_VERIFY`: rebuild behind every hit of the battle
     /// edge's memos (`WorldToggles::battle_memo_verify`). Off by default.
     pub battle_memo_verify: bool,
+    /// A voiced field frame read on PCSX-Redux's CD response time rather
+    /// than the play default, a console's
+    /// (`legaia_engine_core::world::PLAY_FIELD_CD_TIMING`; the native
+    /// `LEGAIA_FIELD_CD_TIMING=pcsx-redux`). Off by default.
+    pub field_pcsx_cd_timing: bool,
     /// Retail's 5-bit texture modulation on the overlay's tinted atlases
     /// (the native `Renderer::set_ui_psx_tint`). On by default: it is retail
     /// behaviour.
@@ -113,6 +118,7 @@ impl Default for PageToggles {
             entry_pulse: true,
             battle_frame_cadence: legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE,
             battle_memo_verify: false,
+            field_pcsx_cd_timing: false,
             arts_saved_list: false,
             ui_psx_tint: true,
             psx_render: false,
@@ -176,6 +182,11 @@ impl LegaiaRuntime {
         if let Some(host) = self.scene_host.host_mut() {
             switches.apply(&mut host.world.toggles);
             host.world.toggles.battle_memo_verify = t.battle_memo_verify;
+            host.world.toggles.field_cd_timing = if t.field_pcsx_cd_timing {
+                legaia_engine_core::world::CdTiming::PcsxRedux
+            } else {
+                legaia_engine_core::world::PLAY_FIELD_CD_TIMING
+            };
         }
         self.persist_page_toggles();
     }
@@ -255,6 +266,13 @@ impl LegaiaRuntime {
     /// difference (the native `LEGAIA_BATTLE_MEMO_VERIFY`). A check, and slow.
     pub fn set_battle_memo_verify(&mut self, on: bool) {
         self.page_toggles.battle_memo_verify = on;
+        self.apply_page_toggles();
+    }
+
+    /// Voiced cutscenes on PCSX-Redux's CD pace, slower than the play
+    /// default, a console's (the native `LEGAIA_FIELD_CD_TIMING=pcsx-redux`).
+    pub fn set_field_pcsx_cd_timing(&mut self, on: bool) {
+        self.page_toggles.field_pcsx_cd_timing = on;
         self.apply_page_toggles();
     }
 
@@ -726,6 +744,7 @@ impl LegaiaRuntime {
                     world_map_markers: session.world_map_markers,
                     battle_frame_cadence: session.battle_frame_cadence,
                     battle_memo_verify: session.battle_memo_verify,
+                    field_pcsx_cd_timing: session.field_pcsx_cd_timing,
                     ui_psx_tint: session.ui_psx_tint,
                     ..PageToggles::from_persisted(&p)
                 };
