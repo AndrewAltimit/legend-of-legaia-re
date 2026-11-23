@@ -247,6 +247,8 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // battle tick frames anything (`BattleCamera::start_entry_sweep`).
         entry_sweep: true,
         open_held: world.battle.battle_open_held(),
+        // The battle-end fold below raises it while the sequencer runs.
+        results_sequencer: false,
     };
     battle_end_cam_inputs(world, inputs, actor_at)
 }
@@ -439,6 +441,8 @@ fn battle_end_cam_inputs(
         a.world = d;
     }
     inputs.attack = None;
+    // The sequencer, not the action SM, steps the yaw counter now.
+    inputs.results_sequencer = true;
     inputs.acting_body = display.map(|d| [d[0], d[2]]);
     inputs.action = script::ActionFraming {
         party_slot: party,
