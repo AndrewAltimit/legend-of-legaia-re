@@ -88,6 +88,7 @@ A recomp is faithful as far as its hardware model is, because the original's cod
 - **Film.** The [cast-sequence oracle](tooling/cast-sequence-oracle.md) records a spell, summon or monster cast on both sides and scores it frame by frame on the game's own state-machine clock, where a still would see one instant. The [walk film](tooling/walk-film.md) does the same for a field walk on a fixed pad schedule. Films carry retail pixels, so their image scores are reported and not committed.
 - **Sound.** The [audio-state sweep and real retail PCM](subsystems/audio.md#the-audio-state-sweep) compare the music and cues against what the emulator actually played, in `scripts/ci/audio-sweep-baseline.json` and `scripts/ci/audio-pcm-baseline.json`. A film's sound cues are the one part of it that is ratcheted ([the cue ratchet](tooling/cast-sequence-oracle.md#the-cue-ratchet)).
 - **Routines.** The [retail kernel differential](tooling/retail-kernel-differential.md) runs a retail routine off the user's disc in the `crates/retail-exec` R3000 interpreter, GTE included, beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two. The emulator-side instruments watch retail's code run on the inputs a capture happened to hold; this one runs a single routine on inputs it chooses, so it is the only one that reaches inputs no capture holds. Every test declares and proves the routines it runs, and the count of tagged routines it covers is a ratchet (`scripts/ci/differential-coverage-baseline.json`). What it cannot see is when, and with what, the engine calls the kernel.
+- **Modules across a walk.** The [shadow walks](#step-6-measure-against-a-retail-corpus) run a whole retail module in the same interpreter beside the engine's own state, from a cast's first pass to its end, and compare what both sides wrote after every pass. They see the engine's call order and what it carries between passes, which a single routine cannot show.
 - **The whole game.** The [full-game ladder](tooling/full-game-ladder.md) plays New Game to credits on pad input, segment by segment and as one continuous run.
 
 [The verification ladder](tooling/verification-ladder.md) stacks these with the format docs and port provenance, rung by rung, with what each one cannot see, and [the coverage map](#what-is-tested-and-the-gap-each-test-closes) below lists every instrument by the gap it closes. None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc ([capture coverage](tooling/capture-coverage.md)) and why its gates refuse a silent loosening ([ratchet integrity](tooling/ratchet-integrity.md)).
@@ -149,6 +150,29 @@ Every step runs through a gate. A gate here is a check that fails on its own, us
 [Port provenance](tooling/port-provenance.md) asks whether a `// PORT:` address names the routine the Rust implements; its signals rank suspicion rather than prove anything, so `check-port-provenance.py --check` gates the delta: a commit that adds an unwaived finding fails, and each waiver records what the bytes showed.
 The [retail kernel differential](tooling/retail-kernel-differential.md) asks whether the Rust computes what the routine computes, by running the routine off the user's disc in an R3000 interpreter beside its kernel, on generated inputs and one scripted `rand()` stream, and comparing the whole regions both wrote.
 Each test declares the routines it runs and fails unless the run entered exactly those bytes, and `differential-coverage.py --check` ratchets how many tagged routines a differential runs. A differential settles provenance for the addresses it runs; the rest stay on the ranked worklist ([the verification ladder](tooling/verification-ladder.md)). The interpreter is user-mode: a `syscall`, an undefined GTE command or a COP0 operation beyond register moves stops the run, and a test that runs no retail routine says so with `not_a_differential!` and its reason, so it is never counted as coverage.
+
+**How much of each routine is driven.** Once a differential runs nearly every tagged routine, the count of
+routines entered stops saying anything new, since a test that walks one arm of a routine enters it.
+[Branch coverage](tooling/retail-kernel-differential.md#branch-coverage) measures the rest: the interpreter
+enumerates each entered routine's conditional branches from its entry and notes which way each one went while the
+suite ran, and `branch-coverage.py` reports direction coverage over the **ported arms**, the branches no scope row
+takes out. That figure is what steers the work at this stage. Every direction that is one-way or unreached ends in
+one of two places. Either a test drives retail down it and compares the Rust that ports it, or a row in
+`scripts/ci/branch-coverage-scope/` takes it out with a verdict (`unported`, `unreachable` or `cannot-drive`) and
+a reason read from the disassembly: the callers, the value range that never occurs, what the interpreter would
+need to run it.
+
+A scope row is a claim about the game, held to the bar of any other claim, and it must never hide an arm that could
+be tested. `--check-scope` checks only its shape (a verdict, a reason, a range that holds a recorded branch, no
+range claimed twice); whether the reason is true is a matter of review, and a row whose arm later gets a driver
+is deleted, not kept.
+
+Branch coverage is a measurement, not a ratchet, and it has blind spots of its own. A branch counts once retail
+takes it, whether or not the test compares that arm's output with its port. The walk does not follow calls, so a
+routine's figure says nothing about its callees, and a routine no differential enters has no branches to count.
+An arm whose effect the engine's host code carries, rather than the ported kernel, shows as covered on retail's
+side whatever the host does with it ([host-owned arms](tooling/retail-kernel-differential.md#host-owned-summon-arms));
+the shadow walks in step 6 are where that half is checked.
 
 **An example.** A sweep for writers of `_DAT_8007B8C2` searched the absolute `lui` + offset form and found none, which was read as "BSS zero-init sets the value", then as "retail runs with the flag at 0", inverting the flag's documented polarity. Its writer is `0x80015F08 sh v0,0x5aa(gp)`, a gp-relative store that scan could not see, and the executable's header clears no BSS at all. The chain is in [`ghidra.md`](tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims), and it is why a negative result is held to the same evidence bar as a positive one.
 
@@ -215,6 +239,22 @@ The line is not simply where a library ends. It depends on what a player can obs
 
 **Order and timing.** A film can score low with every routine right, because the engine reaches an arm after another number of `rand()` draws and the arm's look is its draws. The film logs retail's seed word every vsync and can seat the engine's stream on it at a named phase ([the rand stream](tooling/cast-sequence-oracle.md#the-rand-stream)), which separates a wrong routine from a different deal. Frames pair on the game's own clock, never on wall time ([the pairing rule](tooling/cast-sequence-oracle.md#the-pairing-rule)).
 
+**Between a routine and a state: the shadow walks.** A one-routine differential chooses its inputs and sees none of
+the engine around the kernel; a save state sees the whole engine, at the one instant it holds. The shadow pattern
+sits between the two. A whole retail module runs in the interpreter across a walk, a cast from its first pass to
+its end, while an engine `World` seated off the same records runs the engine's own code for it on retail's phase.
+After every pass, the seats, rates, rows and polls each side wrote are compared
+([the summon band shadow](tooling/retail-kernel-differential.md#the-summon-band-shadow),
+[the tick-body walk](tooling/retail-kernel-differential.md#the-tick-body-walk)).
+
+It finds defects that per-routine coverage misses, because those defects live in the order the engine calls
+things and in what it carries from one pass to the next, not inside any one routine. An arm that misses its step
+over a poll leaves every later arm a pass late. A hit tint relights a seat an earlier pass hid or felled. A held
+poll runs a second countdown once it lets go. A trail paced by a fixed count of ticks retracts at a different rate
+from retail's once-a-pass rule. Each kernel can match its own differential while the composition does not. What a
+walk stubs or does not stage (a wrapper whose finisher never runs, a camera the shadow does not have) is named in
+the test as outside it, so the comparison does not claim more than it runs.
+
 **Keeping it wide.** A corpus grows where capturing is easy, and parity on those moments says nothing about the rest. [Capture coverage](tooling/capture-coverage.md) takes the denominator from the disc, listing every scene, monster, enemy attack, player cast and menu screen, then ranks what no state shows yet. As parity is reached on what the corpus holds, the corpus is extended into what it does not hold, so the headline keeps measuring more of the game.
 
 **An example.** On `noaru_field_card_walk`, the engine's frame is black where retail shows a floor, with every other channel exact. That pattern points at one thing: a mesh-bearing ambient part seated off its anchor. Noaru's ice floor rides the camera focus through move-VM extension op `0x24` ([world position lerp](subsystems/move-vm-overlay-ext.md#world-position-lerp-0x24--0x2a-and-box-gates-0x06--0x07)). The frame pointed at the gap, and the mechanism itself is read from the move VM's overlay extension.
@@ -224,6 +264,11 @@ The line is not simply where a library ends. It depends on what a player can obs
 **What is done.** Focused performance rounds, run now and then rather than continuously, on two costs: what the engine costs a player, and what a change costs a developer. Every other step's value depends on how often it can run. An oracle that takes too long gets run less, and defects survive longer.
 
 **What it produces.** [Frame benchmarks](tooling/frame-bench.md) on both hosts, covering frame time, allocations and scene entry, and [build and test profiles](tooling/build-and-test-speed.md) with an edit-time `dev-fast` path, a result cache on the corpus, and a parallel [full gate](tooling/build-and-test-speed.md#the-full-gate). The numbers are before-and-after comparisons on one machine, deliberately not committed: a frame-time gate on a shared machine can only flake. Counts do not flake, so the [cost ratchet](tooling/frame-bench.md#cost-ratchet) commits those instead: draws and allocations per frame on tick-locked runs, and the shipped bundle's size.
+
+The same pressure shapes the differential's tooling. A branch-coverage record is one run of the interpreter suite,
+and its worksheet lists a routine's branches beside the ranges its `// PORT:` tags cite, so classifying an arm
+needs no rebuild. The scope rows are split by area across files, so that parallel branches adding rows touch
+different files and do not conflict ([branch coverage](tooling/retail-kernel-differential.md#branch-coverage)).
 
 **The gate.** A speedup is proved by the output, not by the timing. The ladder's trace with its
 wall-clock fields stripped must match line for line, and a patcher feature's `.ppf` from a fixed
@@ -314,6 +359,8 @@ Each step's gate closes one kind of gap and is blind to another. The tables belo
 |---|---|---|---|---|
 | A tag naming the wrong routine | [Port provenance](tooling/port-provenance.md) | The bytes at the tagged address | The arithmetic under a correct tag | Ratchet |
 | A routine that computes something else | [Retail kernel differential](tooling/retail-kernel-differential.md) | The routine itself, run off the disc in an R3000 interpreter | When, and with what, the engine calls it | Test, coverage ratchet |
+| An arm of a routine that no test drives | [Branch coverage](tooling/retail-kernel-differential.md#branch-coverage) and its scope rows | The directions retail's branches take as the suite runs | Whether the test compares the arm; whether a scope row's reason is true | Report |
+| A defect in the engine's call order, or in state carried between passes | [Shadow walks](tooling/retail-kernel-differential.md#the-summon-band-shadow): the band shadow, the summon walk, the tick-body walk | A whole retail module run beside the engine's `World`, pass by pass | What the walk stubs or does not stage | Test |
 | A reference GTE that shares the port's defect | The interpreter's [own GTE](tooling/retail-kernel-differential.md#the-gte) | The hardware documentation, not the port | Hardware the documentation gets wrong | Test |
 
 ### Does it look, move and sound like retail?
@@ -355,8 +402,10 @@ Each step's gate closes one kind of gap and is blind to another. The tables belo
 | An instrument that blesses itself | `--propose`, [the full gate](tooling/build-and-test-speed.md#the-full-gate) | A candidate file beside the committed baseline | Whether the reviewer read it | Test |
 | A fix undone by a later merge | [`revert-scan.py`](../scripts/ci/revert-scan.py), in the full gate | Each removed line's blame within the branch | Whether the removal was meant | Report |
 | A claim resting on a rendering | [Evidence grades](#evidence-grades), the [falsified register](reference/re-do-not-re-walk.md) | The instructions at stated addresses | A grade nobody re-audits | Review |
+| A test that could not have failed | [The fix reverted, the test watched to fail](#traps-a-newcomer-hits) | The defect the test guards | Defects nobody has seen yet | Review |
+| An arm taken out of the count to hide it | The scope row's verdict and reason, `--check-scope` | The disassembly the reason cites | A false reason in the right shape | Review |
 
-Three patterns run through the tables. An instrument that runs retail's own code (the differential, a film, real PCM) can disagree with the port in ways its author did not think of, and one that compares the port with itself (the soak harness, determinism, the host pair) cannot speak about retail at all. A report-only instrument is not a weaker one: films and walk films stay uncommitted because their recordings are Sony-derived, not because their findings count for less. And the third table samples the game where a capture stands, which is why capture coverage sits in it: a denominator from the disc says how much of the game the samples reach.
+Three patterns run through the tables. An instrument that runs retail's own code (the differential and its shadow walks, a film, real PCM) can disagree with the port in ways its author did not think of, and one that compares the port with itself (the soak harness, determinism, the host pair) cannot speak about retail at all. A report-only instrument is not a weaker one: films and walk films stay uncommitted because their recordings are Sony-derived, not because their findings count for less. And the third table samples the game where a capture stands, which is why capture coverage sits in it: a denominator from the disc says how much of the game the samples reach.
 
 ## The feedback loops
 
@@ -367,8 +416,23 @@ The arrows that run backwards do most of the work.
 - **From wiring to porting.** A port that cannot be given a caller exposes what is missing above it, such as the constructor in step 3's example.
 - **From denominator to worklist.** Coverage over the disc finds new work, and a rising worklist after a dump pass means the measurement got wider, not that the work went backwards ([disc coverage](tooling/disc-coverage.md#why-this-exists-alongside-the-port-catalog)).
 - **From every step to the falsified register.** A disproved reading is kept with its reasoning: the tempting reading, the decisive instruction, capture or count, and what is true instead ([do not re-walk](reference/re-do-not-re-walk.md)). Each newcomer finds the same wrong readings plausible for the same reasons.
+- **From branch coverage to a shadow.** An arm whose effect lives in the engine's host code counts as covered once retail takes it, so the half the host owns goes to a shadow walk, which compares it pass by pass ([step 6](#step-6-measure-against-a-retail-corpus)).
 
 Measurement is corrected this way as much as the game is. The Sol Tower stair walks miss on `camera` by a position-shaped amount, which reads as a defect in the follow compose. The engine's seat equals retail's staging descriptor to the unit, and retail's live pose is short of it, because the ease only runs while the player moves. The answer is in what the channel compares against, and the wrong reading goes in the register ([measurement readings](reference/re-do-not-re-walk.md#measurement-readings)).
+
+### Where the yield moves
+
+Each instrument pays most while it is young, and the loops shift their weight as it ages. Arm by arm, branch
+coverage turns up defects quickly while most ported directions are undriven. Past roughly the high eighties per
+cent of ported-arm directions, a new arm test mostly ends as a scope row (an arm read, and shown unreachable or
+deliberately unported) rather than as a defect. The shadow walks and the captures keep finding defects past that
+point, because what is left is mostly not inside a routine. It is in the engine's composition, which a shadow sees,
+and in timing and pacing, which only retail running sees.
+
+This is a property of the method, not a verdict on the port. A falling defect rate on one instrument is the signal
+to move effort to the next one, not evidence that the port is right where that instrument cannot look. The scope
+rows a saturated instrument leaves are still worth their cost: each is a reasoned claim about the game that a
+later reader does not have to derive again.
 
 ## Evidence grades
 
@@ -384,6 +448,21 @@ A docs page is not a grade of its own. A statement on one carries the grade of w
 ## Traps a newcomer hits
 
 **Green tests are not parity.** A test can only fail on what its author thought to check, and three quieter failures sit beside that one. A disc-gated test that finds its input missing reports `ok` ([a skipped test is not a passed test](tooling/ratchet-integrity.md#a-skipped-test-is-not-a-passed-test)). An oracle can have no way to disagree: `pcm_oracle`'s "retail" window is the engine's own mixer seeded from a snapshot, which is why [real retail PCM](subsystems/audio.md#real-retail-pcm) records the emulator's actual output. And a corpus channel may measure less than its name suggests: `party` and `inventory` are seeded from the retail window, so on their own they check the seeding ([channels](tooling/retail-compare.md#channels)).
+
+**A test is evidence only if it could have failed.** Two rules follow, one for each colour a test can show.
+
+- *Show that a green test catches the defect it guards.* Revert the fix, watch the test fail, and restore it. The
+  soak harness holds its replays to this: a fixed finding's replay must stop firing on the fixed engine and still
+  fire without the fix, since a detector that changed since can leave it passing for the wrong reason
+  ([checked both ways](tooling/soak-harness.md#reproducing-and-triaging-a-finding)). An invariant (idempotence, an
+  unchanged total, a sorted list) passes vacuously when its subject never ran: a ladder rung meant to show that
+  re-applying an inventory Arrange leaves the bag unchanged compared two empty bags, because an earlier step had
+  emptied it ([measurement and corpus](reference/re-settled-threads/measurement-corpus.md#threads)).
+- *A red test may be asserting the defect, not retail.* A test written beside a port encodes the port's reading,
+  so when a fix turns it red, read the test against the disassembly before changing the code back. The bearing's
+  unit test held the mirrored angle convention in place ([one routine](#one-routine-end-to-end)), and a
+  byte-accounting test required a label that was true of the instrument and false of the disc
+  ([byte accounting](tooling/byte-accounting.md#tests)).
 
 **A still frame cannot prove a cast.** The corpus scores one frame per state, and a cast runs for hundreds of vsyncs. A high image score on a mid-cast state says that frame matches, and nothing about the order, timing or length around it. On most summons the state's one instant is the white flash, which the metric cannot see under. The [cast-sequence oracle](tooling/cast-sequence-oracle.md) records both sides and pairs frames on the game's own state-machine clock.
 

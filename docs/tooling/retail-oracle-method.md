@@ -224,6 +224,19 @@ a pass. Count skips by reason on the machine that has the data, and fail a run
 in which a test skipped for want of an input that machine is supposed to hold
 ([a skipped test is not a passed test](ratchet-integrity.md#a-skipped-test-is-not-a-passed-test)).
 
+A third thing defeats a test rather than a ratchet: **the test cannot fail, or
+fails for the wrong side.** Show that a passing test catches the defect it
+guards by reverting the fix and watching it fail
+([checked both ways](soak-harness.md#reproducing-and-triaging-a-finding)). An
+invariant (an unchanged total, a sorted list, the same result twice) passes
+vacuously when its subject never ran, so give it a precondition that fails when
+the subject is skipped, or a positive effect to assert
+([a canonical rung that did not reach its code](reach-triage.md#rows-a-refresh-added-and-nobody-has-bucketed-yet)). And
+when a fix turns a test red, read the test against the original's instructions
+before changing the code back: a test written beside a port encodes the port's
+reading, and it may be asserting the defect rather than the original
+([one routine, end to end](../porting-by-reimplementation.md#one-routine-end-to-end)).
+
 Two smaller rules follow from the same idea. **No instrument blesses
 itself**: a driver's `--propose` writes a candidate baseline to another path,
 and the committed file changes only in a reviewed edit. And **a merge can undo
@@ -270,8 +283,53 @@ tag claiming a routine is checked by running that routine
 walks a small one, the bearing `FUN_80019B28`, from its instructions to its
 Rust and its test, with the defect the test found.
 What it cannot see is when and with what the engine calls the kernel, which is
-what the state corpus and the films measure. Where it sits among the other
-checks is [the verification ladder](verification-ladder.md).
+what the shadow walks below, the state corpus and the films measure. Where it
+sits among the other checks is [the verification ladder](verification-ladder.md).
+
+**Count the arms, not only the routines.** Once nearly every ported routine has
+a differential, the share of routines entered stops moving, and it never said
+how much of each routine ran. Enumerate each entered routine's conditional
+branches from its entry, note which way each one goes while the tests run, and
+report direction coverage. Then send every direction that is one-way or never
+reached to one of two places: a test that drives the original down it and
+compares the arm's output with the port, or a scope entry that takes it out of
+the count with a verdict (no port implements it by decision, no game state
+reaches it, or the interpreter cannot run it) and a reason read from the
+instructions. A scope entry is a claim about the game and must never hide an
+arm that could be tested; when a driver for its arm appears, the entry goes
+([branch coverage](retail-kernel-differential.md#branch-coverage)).
+
+The figure has blind spots worth stating. An arm counts once the original takes
+it, whether or not the test compares what the arm wrote. The enumeration stops
+at calls, so a routine's figure says nothing of its callees. And an arm whose
+effect the reimplementation carries outside the ported kernel, in host code,
+reads as covered on the original's side whatever the host does with it.
+
+**Run a whole module beside the engine across a walk.** Between a routine on
+generated inputs and a save state at one instant sits a third shape. Load a
+whole module of the original into the interpreter and run it from the start of
+a sequence (a spell, a summon) to its end, while the reimplementation's own
+state, seated off the same records, runs the engine's code for it on the
+original's phase. After every pass, compare what both sides wrote: each seat's
+colour, status and health, animation rates, the row it hid or showed, what a
+poll answered
+([the summon band shadow](retail-kernel-differential.md#the-summon-band-shadow),
+[the tick-body walk](retail-kernel-differential.md#the-tick-body-walk)).
+
+A shadow finds what per-routine coverage cannot, because its defects are in
+composition: the order in which the engine calls its kernels, and the state it
+carries from one pass to the next. An arm that misses one step leaves every
+later arm a pass late; a tint on a later pass relights a seat an earlier pass
+hid; a held poll runs a second countdown. Every kernel involved can match its
+own differential. Name in the test whatever the walk stubs or does not stage,
+so the comparison claims no more than it runs.
+
+**Expect the yield to move.** Arm tests find defects quickly while most ported
+directions are undriven. Past roughly the high eighties per cent of them, new
+arm tests mostly end as scope entries, while shadows and captures keep finding
+defects, since what is left lies in composition and timing rather than in any
+one routine. A falling defect rate on one instrument is a signal to move to the
+next, not evidence that the port is right.
 
 ## Grade every claim by its evidence
 
@@ -391,7 +449,9 @@ The pieces have an order, because each makes the next one cheaper:
 4. The image channel at native resolution.
 5. The routine differential, once the reimplementation has rules worth
    holding to the original's bytes, with its declarations and coverage
-   ratchet from the first test.
+   ratchet from the first test. Branch coverage and its scope entries once
+   most routines have a differential; module shadows once the engine composes
+   kernels into sequences that run over many passes.
 6. The evidence grades and the falsified register, which cost nothing to
    start and only grow in value.
 7. The disc-derived denominators, once there is enough work for a count over
