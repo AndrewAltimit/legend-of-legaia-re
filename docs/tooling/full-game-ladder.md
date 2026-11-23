@@ -2181,6 +2181,7 @@ pad hand counts; the seated tier places the player by definition.
 |---|---|
 | `examine_seat`, `examine_face` | An examined prop with no seat the walk reaches: the player is placed on a seat and turned to it. |
 | `touch_seat` | A touched prop with no side the walk reaches: the player is placed beside it. |
+| `examine_far`, `touch_far` | A prop in a scene that rolls encounters whose seats all lie beyond sixteen tiles of planned path, placed as above: the beats pass plays props retail left alone (`dolk`'s Lightning Gate rooms), and walking a lone member to them across a rolling castle wiped it reload after reload. |
 | `box_face` | A placed box talk (`talk_from_box`) whose facing was set by hand. |
 | `restore_xz` | The player put back where it stood after a placed interaction, or after a box lean that its pad step back did not return. |
 | `run_switch` | The Field Move switch, where the pause menu's Options screen did not take it. |
