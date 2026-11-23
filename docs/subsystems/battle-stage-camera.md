@@ -2522,6 +2522,14 @@ left is mednafen's side: its CD-seek arm 2 reads `3` where PCSX-Redux's reads `1
 parties' light arms run a step higher. Guilty Cross's arms read `3` at the console's share, as
 mednafen's ring does.
 
+A Mednafen still's image child runs the parent's battle CD timing, PCSX-Redux's unless the
+parent names another (`retail_compare_image.rs` forces PCSX-Redux's only on a PCSX-Redux
+capture). Re-run at the console's (`LEGAIA_BATTLE_CD_TIMING=console`, and the field's alike),
+the corpus's Mednafen stills hold on all but three: `cort_guilty_cross_mid_cast` rises `.985` to
+`.989`, and `theeder_summon_value_rows_rising` falls `.842` to `.804` and `_parked` `.916` to
+`.913`. Theeder's history reads step `3`, between the console table's `2` and PCSX-Redux's `4`,
+so neither machine's table is Mednafen's on that cast.
+
 The item and Spirit clips run the same stop watch, so the clamp they hold PCSX-Redux's ring at is
 the same artifact: `XA_STREAM_FRAME_COST` (`1063`) is a frame of about `370` hblanks of work over
 the third of the CPU the polls leave. So the arm tables' whole-screen `4` is, on most voiced arms,
