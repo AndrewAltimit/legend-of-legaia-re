@@ -421,6 +421,16 @@ fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8, layout: Layout) {
     // copies onto the creature seat (`0x801F1D98..0x801F1DB8`).
     cpu.mem.wr8(ACTOR + layout.caster * STRIDE + 0x1DD, code);
     cpu.mem.wr8(ACTOR + CREATURE * STRIDE + 0x1DD, code);
+    // The rest of what the installer leaves on the creature seat: colour word
+    // `-1` (`0x801F1D5C`), tint state `0` (`0x801F1E7C`) and animation rate
+    // `2` (`0x801F1DFC`). The host seats the shadow's creature the same way
+    // (`World::seat_summon_actor`). Its ground and facing stay the walk's:
+    // the camera half frames the creature off the walk's seat, and the
+    // shadow syncs both each pass.
+    let c = ACTOR + CREATURE * STRIDE;
+    cpu.mem.wr32(c + 4, u32::MAX);
+    cpu.mem.wr8(c + 0x21C, 0);
+    cpu.mem.wr8(c + 0x21D, 2);
     for i in 0..5 {
         cpu.mem.wr32(RECORDS + i * 4, MONSTER_RECORD);
     }
@@ -479,6 +489,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     let mut sideband_held = 0usize;
     let (mut spawns_matched, mut spawn_failures) = (0usize, Vec::<String>::new());
     let (mut shadow_passes, mut shadow_left) = (0usize, 0usize);
+    let mut creature_passes = 0usize;
     let mut fold_passes = 0usize;
     let mut drive_polls_held = 0usize;
     let mut chase_hits = 0usize;
@@ -1208,7 +1219,15 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 if let Some(w) = shadow.as_ref() {
                     // The seated seats: an unseated monster seat is no actor
                     // the engine draws.
-                    for s in 0..(3 + layout.monsters as usize).min(7) {
+                    // The creature's seat 7 too: the host seats it as the
+                    // walk does (`World::seat_summon_actor`), but on the
+                    // modules whose creature writes another half of the host
+                    // carries ([`CREATURE_WRITES_ELSEWHERE`]).
+                    let creature = !CREATURE_WRITES_ELSEWHERE.contains(&entry);
+                    creature_passes += usize::from(creature);
+                    let seated = (0..(3 + layout.monsters as usize).min(7))
+                        .chain(creature.then_some(CREATURE as usize));
+                    for s in seated {
                         let a = ACTOR + s as u32 * STRIDE;
                         let got = (
                             cpu.mem.rd32(a + 4),
@@ -1277,7 +1296,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     // 7), which the host seats and the walk stands as retail
                     // leaves it, and the spirit gauge, which retail's stubbed
                     // wrapper (its finisher unrun) never fills.
-                    for s in 3..(3 + layout.monsters).min(7) {
+                    let creature_rate = creature && !CREATURE_RATE_ELSEWHERE.contains(&entry);
+                    let rows =
+                        (3..(3 + layout.monsters).min(7)).chain(creature_rate.then_some(CREATURE));
+                    for s in rows {
                         let a = ACTOR + s * STRIDE;
                         let act = &w.actors[s as usize];
                         let dead = cpu.mem.rd16(a + 0x14C) == 0;
@@ -1580,6 +1602,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         shadow_passes >= 200_000,
         "summon shadow passes {shadow_passes}"
     );
+    eprintln!("summon shadow: seat 7 compared on {creature_passes} passes");
+    assert!(
+        creature_passes >= 60_000,
+        "summon shadow seat 7 passes {creature_passes}"
+    );
     // Every directed hit's fold ran on its pass, but PROT 0927's, which its
     // stager sweeps spend outside the walk.
     assert!(fold_passes >= 120, "summon shadow folds {fold_passes}");
@@ -1633,6 +1660,21 @@ fn group_aim(cpu: &mut Cpu, code: u8, any_up: bool) -> Option<GroupAim> {
     })
 }
 
+/// The modules whose creature-seat writes (seat 7's colour word, tint state
+/// and staged clip) another half of the host carries - the creature's
+/// presentation, its seat-arm tables or the anim tick - not the band's module
+/// half the shadow drives, so the shadow leaves seat 7 out on them. On every
+/// other module seat 7 is compared as the monster seats are.
+const CREATURE_WRITES_ELSEWHERE: &[u32] = &[
+    905, 907, 908, 914, 915, 917, 921, 922, 923, 924, 925, 928, 930, 931, 932, 933,
+];
+
+/// The modules whose creature rate `+0x21D` the host stores outside the
+/// module half: PROT 0934's seat arm 5 stores it, which the host runs with
+/// the install (`World::apply_seat_arm_write`) where the shadow installs
+/// ahead of arm 0; PROT 0927's creature rate is its parts'.
+const CREATURE_RATE_ELSEWHERE: &[u32] = &[927, 934];
+
 /// A world in battle seated as `cpu`'s actor records are, the creature on
 /// seat 7, with `action`'s summon armed (`World::arm_summon_stager`).
 fn summon_shadow(
@@ -1685,6 +1727,22 @@ fn summon_shadow(
     }
     w.cast_module_for(action)?;
     w.arm_summon_stager(layout.caster as u8, action);
+    // The creature seat as the host installs it (`FUN_801F19EC`'s port), its
+    // ground and facing then put back on the walk's: the walk stands the
+    // creature where retail's arms leave it, and the shadow syncs that each
+    // pass.
+    w.seat_summon_actor(CREATURE as usize);
+    {
+        let a = ACTOR + CREATURE * STRIDE;
+        let p = trio(&mut cpu.mem, a + 0x34);
+        let act = &mut w.actors[CREATURE as usize];
+        [
+            act.move_state.world_x,
+            act.move_state.world_y,
+            act.move_state.world_z,
+        ] = p;
+        act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
+    }
     // The cast the band's fold owes, as the Magic submenu arms it
     // (`World::arm_player_cast`): the spell record off the executable, on
     // the targets its shape names from the walk's target code.

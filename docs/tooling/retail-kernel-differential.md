@@ -1002,8 +1002,18 @@ root motion that walks it; its chase hits agree.
 The shadow also compares each seated monster's ground trio and animation rate
 `+0x21D`. Retail's rate on a seat with no HP stays out (the loops test its colour
 word, which a faded seat and the engine's resting shown word both read as `0`),
-as do the creature (seat 7, which the host seats) and the spirit gauge (retail's
-stubbed wrapper never runs the finisher that fills it). It found Palma's arm 3
+as does the spirit gauge (retail's stubbed wrapper never runs the finisher that
+fills it).
+
+**The creature's seat 7.** The walk leaves the creature seat as the installer
+`FUN_801F19EC` does (colour word `-1`, tint state `0`, rate `2`), and the shadow
+seats its own through the host's call (`World::seat_summon_actor`), its ground
+and facing then synced off the walk each pass. Seat 7's colour word, tint
+state, status, HP, staged clip and rate are then compared as a monster seat's,
+but on the modules whose creature writes another half of the host carries (the
+creature's presentation, its seat-arm tables, the anim tick:
+`CREATURE_WRITES_ELSEWHERE` in the test, and `CREATURE_RATE_ELSEWHERE` for the
+rate alone). It found Palma's arm 3
 never lifting the row (`+0x36 -= 2 p` a pass while its sweep word is under
 `160 * scalar`, then set down, `0x801F70E8..0x801F7144`, `0x801F6FC0..0x801F6FF8`),
 Juggernaut's arms 27 and 28 storing no rate on the live row (`2`, and `0` on arm
@@ -1050,7 +1060,7 @@ the port's half agrees. The shadow is where the host's half is checked.
 | The hit tints | `cast_module_impact::MODULE_IMPACTS` | `+0x04` on each seat |
 | The side-band and drive polls | `module_code`'s polling hold, `World::module_drive_holds` | the hold, against retail's phase walk |
 | Mushura's chase | `World::mushura_chase` | everything above, its reach poll live |
-| The creature's placement, walk and clips | `World::apply_module_creature_writes`, `summon_walk_to_victim`, `module_seat_arm` | not compared: seat 7 sits outside the seat loop, and the walk feeds the director retail's creature |
+| The creature's placement, walk and clips | `World::apply_module_creature_writes`, `summon_walk_to_victim`, `module_seat_arm` | seat 7's word, tint state, staged clip and rate compared on the modules the module half writes; ground and facing synced |
 | Scales of the row | the seat-write tables | not compared |
 | The part-driven stager calls | PROT 0927's sweeps, `run_juggernaut_stager_calls` | not compared: the walk runs no part |
 | The spell XP, spirit gauge and readout | `World::summon_module_roll`, the fold's tail | not compared: retail's wrapper is stubbed, so its finisher does not run |
