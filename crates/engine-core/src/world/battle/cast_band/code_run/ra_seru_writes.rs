@@ -1286,7 +1286,12 @@ impl World {
                     }
                 }
             }
-            (0xB, true) => self.ra_seru_row_restore(monster_count, true),
+            // The exit restores each seat's trio, facing, radius `+0x58` and
+            // size byte (`0x801F7F40..0x801F7F98`) and stores no scale: a
+            // Stoned seat keeps arm 9's shrunken scale in retail. The
+            // Stoned-seat rescale (`WorldToggles::stone_scale_fix`) stands it
+            // back at unity.
+            (0xB, true) => self.ra_seru_row_restore(monster_count, self.toggles.stone_scale_fix),
             _ => {}
         }
     }

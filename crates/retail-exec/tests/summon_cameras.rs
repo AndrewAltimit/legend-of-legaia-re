@@ -1409,13 +1409,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             (!rate_out).then(|| act.battle.anim_rate.get()),
                         );
                         // The render node's scale `+0x72`, against the seat's
-                        // `render_scale` (unity when unset). PROT 0921's exit
-                        // on a Stoned seat stays out ([`ROW_SCALE_GAP`]).
-                        let stoned_exit =
-                            (entry, phase) == ROW_SCALE_GAP && cpu.mem.rd16(a + 0x16E) & 4 != 0;
+                        // `render_scale` (unity when unset): PROT 0921's exit
+                        // leaves a Stoned seat shrunken in the retail mode
+                        // (`WorldToggles::stone_scale_fix` off).
                         let rs = cpu.mem.rd16(NODES + s * 0x100 + 0x72);
                         let ps = act.battle.render_scale.unwrap_or(0x1000);
-                        if rs != ps && !stoned_exit {
+                        if rs != ps {
                             shadow_failures.push(format!(
                                 "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} scale retail {rs:#x} port {ps:#x}",
                                 layout.caster, layout.monsters
@@ -1809,15 +1808,6 @@ const CREATURE_GAPS: [(u32, std::ops::RangeInclusive<u8>, CreatureGap, &str); 4]
     ),
 ];
 
-/// PROT 0921's exit arm `0xB`, whose row restore stands each seat back on
-/// its saved trio, facing, body radius `+0x58` and size byte `+0x1F`
-/// (`0x801F7F40..0x801F7F98`) and stores no scale `+0x72`. A Stoned seat,
-/// which arm 9 shrank and arm `0xA`'s hit loop skips (`andi 4` at
-/// `0x801F7BD4`), keeps the shrunken scale in retail; the port's restore
-/// stands it back at unity. Left out until it is settled whether retail
-/// re-scales a Stoned body elsewhere.
-const ROW_SCALE_GAP: (u32, u8) = (921, 0xB);
-
 /// Whether `part` of seat 7 is out of the comparison on PROT `entry`'s `arm`.
 fn creature_gap(entry: u32, arm: u8, part: CreatureGap) -> bool {
     CREATURE_GAPS
@@ -1833,6 +1823,9 @@ fn summon_shadow(
     action: u8,
 ) -> Option<legaia_engine_core::world::World> {
     let mut w = legaia_engine_core::world::World::new();
+    // The shadow plays the retail-faithful mode, which every comparison
+    // child runs (the Stoned-seat rescale among its switches).
+    w.toggles.pin_retail();
     w.load_party(legaia_save::Party::zeroed(3));
     w.enter_battle(3, layout.monsters as u8);
     while w.actors.len() < 12 {

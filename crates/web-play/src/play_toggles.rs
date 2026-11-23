@@ -399,6 +399,19 @@ impl LegaiaRuntime {
         self.page_toggles.tweaks.hp_readout_guard
     }
 
+    /// The Stoned-seat rescale, the native `--no-stone-scale-fix` inverted
+    /// (on by default): Iota's exit stands a Stoned monster back at full
+    /// size, where retail leaves it shrunken. Retail mode holds it off.
+    pub fn set_stone_scale_fix(&mut self, on: bool) {
+        self.page_toggles.tweaks.stone_scale_fix = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_stone_scale_fix`] is on.
+    pub fn stone_scale_fix(&self) -> bool {
+        self.page_toggles.tweaks.stone_scale_fix
+    }
+
     /// The heal numerals, the native `--no-heal-numerals` inverted (on by
     /// default): a battle restore throws a heal-coloured number where retail
     /// only rolls the HP figure up. Retail mode holds it off.
@@ -1039,6 +1052,7 @@ mod tests {
             "set_tetsu_spar_fix",
             "set_jewel_fix",
             "set_hp_readout_guard",
+            "set_stone_scale_fix",
             "set_heal_numerals",
             "set_bonus_drop",
             "set_save_anywhere",

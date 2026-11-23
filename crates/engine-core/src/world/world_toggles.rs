@@ -497,6 +497,14 @@ pub struct WorldToggles {
     /// damage-number ring, so off (and under [`Self::pin_retail`]) only the
     /// HP figure rolls up. Presentation only: no HP, readout or RNG change.
     pub heal_numerals: bool,
+    /// Stoned-seat rescale (a fix of a retail oversight, **on** by default):
+    /// Iota's exit (PROT 0921 arm `0xB`) stands every row seat back at unity
+    /// render scale. Retail's restore stores the saved trio, facing, radius
+    /// `+0x58` and size byte but no scale `+0x72`, so a Stoned monster, which
+    /// arm 9 shrank and the hit loop skips, keeps the shrunken scale and
+    /// stays drawn at a sliver of its size. Off (and under
+    /// [`Self::pin_retail`]) the seat keeps retail's scale.
+    pub stone_scale_fix: bool,
     /// Spirit AP (the engine twin of the patcher's `--spirit-ap`): the AP a
     /// Spirit turn charges into the gauge, retail [`SPIRIT_AP_RETAIL`]
     /// (`actor[+0x224] = 0x20` at `0x801E5D84`). Negative drains the gauge,
@@ -776,6 +784,7 @@ impl WorldToggles {
             jewel_fix: false,
             hp_readout_guard: true,
             heal_numerals: true,
+            stone_scale_fix: true,
             spirit_ap: SPIRIT_AP_RETAIL,
             damage_ap: DAMAGE_AP_RETAIL,
             seru_catch_pct: None,
@@ -831,6 +840,7 @@ impl WorldToggles {
         self.jewel_fix = false;
         self.hp_readout_guard = false;
         self.heal_numerals = false;
+        self.stone_scale_fix = false;
         self.spirit_ap = SPIRIT_AP_RETAIL;
         self.damage_ap = DAMAGE_AP_RETAIL;
         self.seru_catch_pct = None;
@@ -917,6 +927,9 @@ impl WorldToggles {
         }
         if self.heal_numerals {
             out.push("heal_numerals");
+        }
+        if self.stone_scale_fix {
+            out.push("stone_scale_fix");
         }
         if self.spirit_ap != SPIRIT_AP_RETAIL {
             out.push("spirit_ap");
@@ -1005,6 +1018,7 @@ mod fidelity_tests {
                 "tetsu_spar_fix",
                 "hp_readout_guard",
                 "heal_numerals",
+                "stone_scale_fix",
                 "battle_entry_off_axis"
             ]
         );
@@ -1033,7 +1047,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 33);
+        assert_eq!(t.retail_deviations().len(), 34);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

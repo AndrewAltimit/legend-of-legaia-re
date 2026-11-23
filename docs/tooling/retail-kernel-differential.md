@@ -1003,11 +1003,12 @@ The shadow also compares each seated seat's ground trio, animation rate `+0x21D`
 render node scale `+0x72`, on dead seats too. It found Terra's arm `0x14` turning and
 slowing a felled seat whose fade had run out: retail tests the colour word
 (`lw v0,4(v1)` / `beqz`), and the engine's resting shown word is `0` under a lowered
-marker, so the port now reads a seat as drawn on its word, or, alive, on its marker. One
-scale stays out: PROT 0921's exit (arm `0xB`) restores each seat's trio, facing, body
-radius `+0x58` and size byte `+0x1F` (`0x801F7F40..0x801F7F98`) but no scale, so a
-Stoned seat, which arm 9 shrank and arm `0xA`'s hit loop skips, keeps the shrunken scale
-in retail, where the port's restore stands it back at unity. The spirit gauge and spell
+marker, so the port now reads a seat as drawn on its word, or, alive, on its marker. The
+shadow runs the retail mode (`WorldToggles::pin_retail`), which matters on one pass:
+PROT 0921's exit (arm `0xB`) restores each seat's trio, facing, body radius `+0x58` and
+size byte `+0x1F` (`0x801F7F40..0x801F7F98`) but no scale, so a Stoned seat, which arm 9
+shrank and arm `0xA`'s hit loop skips, keeps the shrunken scale; the player default
+stands it back at unity ([the switch](../subsystems/gameplay-tweaks.md#stoned-foes-keep-their-size)). The spirit gauge and spell
 XP stay out: retail's stubbed wrapper never runs the finisher (`FUN_801DDB30`) that
 fills them, and the per-hit call pattern that drives them is what the scripted rolls
 already pin through HP.

@@ -944,6 +944,9 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.switches.no_hp_readout_guard {
         args.push("--no-hp-readout-guard".into());
     }
+    if settings.switches.no_stone_scale_fix {
+        args.push("--no-stone-scale-fix".into());
+    }
     if settings.switches.no_heal_numerals {
         args.push("--no-heal-numerals".into());
     }
@@ -1452,6 +1455,7 @@ pub enum OptionRow {
     TetsuSparFix,
     JewelFix,
     HpReadoutGuard,
+    StoneScaleFix,
     HealNumerals,
     BonusDrop,
     SaveAnywhere,
@@ -1467,7 +1471,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 46] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 47] = [
     (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
@@ -1501,6 +1505,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 46] = [
     (None, OptionRow::TetsuSparFix),
     (None, OptionRow::JewelFix),
     (None, OptionRow::HpReadoutGuard),
+    (None, OptionRow::StoneScaleFix),
     (Some("Battle tuning"), OptionRow::ExpRate),
     (None, OptionRow::EnemyStats),
     (None, OptionRow::EnemyAttacks),
@@ -1538,6 +1543,7 @@ fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSett
     w.no_tetsu_spar_fix = true;
     w.jewel_fix = false;
     w.no_hp_readout_guard = true;
+    w.no_stone_scale_fix = true;
     w.no_heal_numerals = true;
     w.spirit_ap = None;
     w.damage_ap = None;
@@ -1633,6 +1639,7 @@ impl OptionRow {
             Self::TetsuSparFix => "Tetsu spar order fix",
             Self::JewelFix => "Boss casts respect jewels",
             Self::HpReadoutGuard => "Battle freeze guard",
+            Self::StoneScaleFix => "Stoned foes keep their size",
             Self::HealNumerals => "Heal numbers",
             Self::BonusDrop => "Bonus equipment drops",
             Self::SaveAnywhere => "Save anywhere",
@@ -1795,6 +1802,10 @@ impl OptionRow {
                 "Show the amount over a character healed in battle. The original only \
                  counts the HP figure up."
             }
+            Self::StoneScaleFix => {
+                "After Iota's attack, a monster turned to stone stands back at full size. \
+                 The original leaves it shrunk to a sliver."
+            }
             Self::HpReadoutGuard => {
                 "Stops a rare original bug where a battle freezes with the camera \
                  circling forever after a party member's HP gauge stops counting."
@@ -1836,6 +1847,7 @@ impl OptionRow {
                 | Self::TetsuSparFix
                 | Self::JewelFix
                 | Self::HpReadoutGuard
+                | Self::StoneScaleFix
                 | Self::HealNumerals
                 | Self::BonusDrop
                 | Self::SaveAnywhere
@@ -1915,6 +1927,7 @@ impl OptionRow {
             Self::TetsuSparFix => on_off(!s.switches.no_tetsu_spar_fix),
             Self::JewelFix => on_off(s.switches.jewel_fix),
             Self::HpReadoutGuard => on_off(!s.switches.no_hp_readout_guard),
+            Self::StoneScaleFix => on_off(!s.switches.no_stone_scale_fix),
             Self::HealNumerals => on_off(!s.switches.no_heal_numerals),
             Self::BonusDrop => on_off(s.switches.equipment_drops),
             Self::SaveAnywhere => on_off(s.switches.save_anywhere),
@@ -2079,6 +2092,7 @@ impl OptionRow {
             Self::TetsuSparFix => w.no_tetsu_spar_fix = d.no_tetsu_spar_fix,
             Self::JewelFix => w.jewel_fix = d.jewel_fix,
             Self::HpReadoutGuard => w.no_hp_readout_guard = d.no_hp_readout_guard,
+            Self::StoneScaleFix => w.no_stone_scale_fix = d.no_stone_scale_fix,
             Self::HealNumerals => w.no_heal_numerals = d.no_heal_numerals,
             Self::BonusDrop => w.equipment_drops = d.equipment_drops,
             Self::SaveAnywhere => w.save_anywhere = d.save_anywhere,
@@ -2190,6 +2204,7 @@ impl OptionRow {
             Self::TetsuSparFix => s.switches.no_tetsu_spar_fix ^= true,
             Self::JewelFix => s.switches.jewel_fix ^= true,
             Self::HpReadoutGuard => s.switches.no_hp_readout_guard ^= true,
+            Self::StoneScaleFix => s.switches.no_stone_scale_fix ^= true,
             Self::HealNumerals => s.switches.no_heal_numerals ^= true,
             Self::BonusDrop => s.switches.equipment_drops ^= true,
             Self::SaveAnywhere => s.switches.save_anywhere ^= true,
@@ -2556,6 +2571,7 @@ mod tests {
         );
         assert_eq!(shown(OptionRow::JewelFix), on_off(t.jewel_fix));
         assert_eq!(shown(OptionRow::HpReadoutGuard), on_off(t.hp_readout_guard));
+        assert_eq!(shown(OptionRow::StoneScaleFix), on_off(t.stone_scale_fix));
         assert_eq!(shown(OptionRow::HealNumerals), on_off(t.heal_numerals));
         assert_eq!(shown(OptionRow::BonusDrop), on_off(t.bonus_drop));
         assert_eq!(shown(OptionRow::SaveAnywhere), on_off(t.save_anywhere));
@@ -3257,6 +3273,7 @@ mod tests {
             TetsuSparFix => "play-tetsu-spar-fix",
             JewelFix => "play-jewel-fix",
             HpReadoutGuard => "play-hp-readout-guard",
+            StoneScaleFix => "play-stone-scale-fix",
             HealNumerals => "play-heal-numerals",
             BonusDrop => "play-bonus-drop",
             SaveAnywhere => "play-save-anywhere",
