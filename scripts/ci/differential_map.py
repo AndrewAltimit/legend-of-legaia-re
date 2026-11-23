@@ -15,9 +15,14 @@ describes, and this module can read the declarations statically - no disc, no
 build - which is what lets the coverage figure gate on a runner.
 
 The parse is deliberately narrow. An argument is an integer literal or a
-`const` of the same file (or of `common.rs`); anything else is an error rather
-than a guess, because a coverage number built on a guessed address is the
-defect this exists to remove.
+`const` of the same file (or of `common.rs`) whose value is itself a literal;
+anything else is an error rather than a guess, because a coverage number built
+on a guessed address is the defect this exists to remove. A name a `use` brings
+in (an engine crate's address const, say) is an error even where the file also
+defines a const of that name: Rust resolves the import, the scan would read the
+file's value, and the two need not agree. The parser does not follow imports
+into other crates by design - resolving them means compiling, or re-parsing
+the engine's const expressions, and a declaration is meant to be read as typed.
 
 Used by `differential-coverage.py` (the report and ratchet), `port-catalog.py`
 (the `differential` column) and `check-port-provenance.py` (a differential is
@@ -42,6 +47,8 @@ _CONST_RE = re.compile(
 _TEST_RE = re.compile(r"#\[test\]\s*(?:#\[[^\]]*\]\s*)*fn\s+([a-z_][a-z0-9_]*)\s*\(")
 _MOD_RE = re.compile(r"^\s*mod\s+([a-z_][a-z0-9_]*)\s*;", re.MULTILINE)
 _ROUTINE_RE = re.compile(r"\b(scus|prot)\s*\(([^()]*)\)")
+_USE_RE = re.compile(r"\buse\s+([^;]+);")
+_IDENT_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)|\b([A-Za-z_][A-Za-z0-9_]*)\b")
 
 
 @dataclass
@@ -103,6 +110,20 @@ def _ambiguous(text: str) -> set[str]:
         if v is not None:
             seen.setdefault(name, set()).add(v)
     return {n for n, vs in seen.items() if len(vs) > 1}
+
+
+def _imports(text: str) -> set[str]:
+    """Names `use` statements in `text` bring into scope (the alias of an
+    `as`, the last segment otherwise; module path segments included, which is
+    harmless since an argument is never a module name)."""
+    out: set[str] = set()
+    for clause in _USE_RE.findall(text):
+        for m in _IDENT_RE.finditer(clause):
+            if m.group(2):
+                out.add(m.group(2))
+            elif m.group(3) not in ("as", "self", "super", "crate"):
+                out.add(m.group(3))
+    return out
 
 
 def _balanced(text: str, open_at: int, pair: str = "{}") -> int:
@@ -169,6 +190,9 @@ def scan(tests_dir: Path = TESTS_DIR) -> Scan:
             )
         file_consts = {**common, **_consts(text)}
         ambiguous = _ambiguous(text)
+        # The file's top-level imports (unindented `use` lines); a test
+        # body's own `use` lines are taken per test below.
+        file_imports = _imports("\n".join(re.findall(r"^(?:pub\s+)?use\s[^;]*;", text, re.M)))
         spans: list[tuple[int, int]] = []
         for m in _TEST_RE.finditer(text):
             brace = text.find("{", m.end())
@@ -178,6 +202,7 @@ def scan(tests_dir: Path = TESTS_DIR) -> Scan:
             # A test's own `const`s shadow the file's, as Rust scopes them.
             local = _consts(body)
             consts = {**file_consts, **local}
+            imported = (_imports(body) | file_imports) - set(local)
             line = text.count("\n", 0, m.start()) + 1
             t = TestDecl(module, m.group(1), line)
             where = f"{path.relative_to(REPO)}:{line} {t.path}"
@@ -214,11 +239,22 @@ def scan(tests_dir: Path = TESTS_DIR) -> Scan:
                             "test or rename one"
                         )
                         continue
+                    used = [p.strip() for p in parts if p.strip() in imported]
+                    if used:
+                        errors.append(
+                            f"{where}: {kind}({inner}) - {', '.join(used)} comes in "
+                            "by `use`, so its value is another module's and cannot be "
+                            "read without compiling; write the address as a literal "
+                            "(the run's guard still checks it against the bytes)"
+                        )
+                        continue
                     vals = [_resolve(p, consts) for p in parts]
                     if any(v is None for v in vals):
                         errors.append(
-                            f"{where}: {kind}({inner}) - each argument must be a "
-                            "literal or a const of this file or common.rs"
+                            f"{where}: {kind}({inner}) - each argument must be an "
+                            "integer literal, or a const of this file or common.rs "
+                            "whose value is a literal (not an engine crate's const "
+                            "or an expression); write the address as a literal"
                         )
                         continue
                     img = None if kind == "scus" else vals[0]

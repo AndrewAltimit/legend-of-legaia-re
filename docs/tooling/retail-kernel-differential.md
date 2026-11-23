@@ -117,6 +117,15 @@ can be read without compiling anything. A `const` in the test's own body shadows
 the file's, as in Rust; a name the file defines with two values and the test does
 not define itself fails the gate, since the scan cannot tell which one it means.
 
+An address an engine crate exports (`legaia_engine_cast::seru_magic_ticks::THEEDER_TICK`)
+is not an argument: write the literal. `--check` names any argument a `use`
+brings in, even where the file also defines a `const` of that name, since Rust
+resolves the import and the scan would read the file's value; and any `const`
+whose value is not a literal (an engine const, a cast, a sum). The scan does
+not follow imports into other crates by design: that means compiling, or
+re-parsing the engine's const expressions, and a declaration is meant to be
+read as typed. The run's guard still checks the literal against the bytes.
+
 **The run checks the declaration.** `Cpu::call` notes every entry it is asked
 to run in a thread-local ledger (`psx_retail_exec::ledger`), with the bytes at
 that entry. The macro plants a guard whose `Drop` runs when the test ends
