@@ -64,6 +64,9 @@ impl World {
         if let Some(state) = w.flag {
             a.battle.render_flag = state;
         }
+        if let Some(code) = w.target {
+            a.battle.active_target = code;
+        }
         if let Some((count, timer)) = w.loop_hold {
             a.battle.hit_count_bound = count;
             if let Some(p) = a.battle_animation.as_mut() {

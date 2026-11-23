@@ -184,6 +184,10 @@ impl World {
             }
             (9, true) => {
                 a.battle.render_flag = 7;
+                // The arm aims the creature back at its victim
+                // (`sb s3,0x1dd(s4)` at `0x801F7554`), after the seat arm's
+                // row code `9`.
+                a.battle.active_target = victim;
                 // The arm's pass turns the creature on its target
                 // (`jal 0x80019B28`, `sh v0,0x46(s4)` at `0x801F7578..0x801F7594`),
                 // off the spin arm 8 left, before it moves the victim: arm

@@ -1320,6 +1320,18 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     }
                     let creature = retail_seated && port_seated;
                     creature_passes += usize::from(creature);
+                    // The creature's target code `+0x1DD`, which its root
+                    // motion's range poll reads.
+                    if creature {
+                        let rt = cpu.mem.rd8(ACTOR + CREATURE * STRIDE + 0x1DD);
+                        let pt = w.actors[CREATURE as usize].battle.active_target;
+                        if rt != pt {
+                            shadow_failures.push(format!(
+                                "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat 7 target retail {rt:#x} port {pt:#x}",
+                                layout.caster, layout.monsters
+                            ));
+                        }
+                    }
                     let seated = (0..(3 + layout.monsters as usize).min(7))
                         .chain(creature.then_some(CREATURE as usize));
                     for s in seated {

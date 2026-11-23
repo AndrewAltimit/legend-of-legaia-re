@@ -47,6 +47,8 @@ pub struct SeatArmWrite {
     pub tint: Option<(u8, u32)>,
     /// `+0x21C` alone, the tint state stored with no blend word beside it.
     pub flag: Option<u8>,
+    /// `+0x1DD`, the target code the root-motion range poll reads.
+    pub target: Option<u8>,
     /// The anim node's `+0x68`, the clip cursor in sixteenths of a keyframe.
     pub cursor: Option<u16>,
 }
@@ -63,6 +65,7 @@ pub const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
         render_scale: None,
         tint: None,
         flag: None,
+        target: None,
         cursor: None,
     }
 }
@@ -107,6 +110,11 @@ impl SeatArmWrite {
         self.flag = Some(state);
         self
     }
+
+    const fn target(mut self, code: u8) -> Self {
+        self.target = Some(code);
+        self
+    }
 }
 
 /// The seat-arm stores of PROT `prot_entry`, or `None` where the arm leaves
@@ -134,6 +142,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             render_scale: None,
             tint: None,
             flag: None,
+            target: None,
             cursor: Some(0x30),
         },
         // `0x801F6DC0..0x801F6E5C`: after the arm's two vortex records and its
@@ -150,6 +159,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             render_scale: None,
             tint: None,
             flag: None,
+            target: None,
             cursor: None,
         },
         // `0x801F6C54`: the facing only.
@@ -164,6 +174,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             render_scale: None,
             tint: None,
             flag: None,
+            target: None,
             cursor: None,
         },
         // `0x801F6CC0..0x801F6CE0`: `0x400` across and `0x267` back off
@@ -190,7 +201,11 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
         908 => in_place().colour(0x2008_0200).flag(0),
         // `0x801F6EA0..0x801F6EB8`: on the victim's line, `0xA00` toward the
         // party.
-        915 => seat(VictimPlus(0), VictimPlus(-0xA00), 0),
+        // ... and the creature aimed at the row (`li v0,9` / `sb v0,0x1dd`
+        // at `0x801F6E94..0x801F6E9C`; the caster's byte too, which the port
+        // leaves, since its band resolves the victim off it); arm 9's pass
+        // aims it back at the victim (`0x801F7554`).
+        915 => seat(VictimPlus(0), VictimPlus(-0xA00), 0).target(9),
         // `0x801F6E48..0x801F6E50`.
         917 => seat(Lit(0), Lit(0), 0),
         // `0x801F71EC..0x801F7200`.
@@ -207,6 +222,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             render_scale: None,
             tint: None,
             flag: None,
+            target: None,
             cursor: None,
         },
         // `0x801F6FC0..0x801F6FCC`, the colour word zeroed with them
@@ -225,9 +241,11 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             .render_scale(0),
         // `0x801F6D2C..0x801F6D58`, the colour word zeroed with them
         // (`sw zero,0x4(s2)` at `0x801F6D58`), which the tint pass eases back
-        // up. The arm also aims the creature at the row (`+0x1DD = 9` at
-        // `0x801F6D4C`), which no seat field here carries.
-        924 => seat(Lit(0), Lit(0x2000), 0x800).rate(8).colour(0),
+        // up, and the creature aimed at the row (`+0x1DD = 9` at
+        // `0x801F6D4C`): the root-motion range poll `FUN_8004E2F0` answers a
+        // group code out of range (`sltiu 8` at `0x8004E330`), so a walking
+        // clip is never stopped short of the victim.
+        924 => seat(Lit(0), Lit(0x2000), 0x800).rate(8).colour(0).target(9),
         // `0x801F6DC0..0x801F6DF4`: with the colour word `+0x04 = 0x3FFFFFFF`
         // and the render node's scale `0x300`, which arm 5 grows.
         925 => seat(Lit(0), Lit(0), 0x800)
