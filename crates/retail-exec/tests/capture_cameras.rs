@@ -354,12 +354,15 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let (mut passes, mut casts) = (0u32, 0u32);
     let mut outcomes = std::collections::BTreeSet::new();
     let mut unsettled_holds = 0usize;
+    let mut victim_settle_holds = 0usize;
     let (mut results, mut heal_capped) = (0usize, false);
     let mut debuffs = 0usize;
     let mut buffs = 0usize;
     let mut seat_passes = 0usize;
     let mut steals = 0usize;
     let mut glare_rolls = 0usize;
+    let mut kiss_halts = 0usize;
+    let mut spray_clears = 0usize;
     let (mut shadow_passes, mut shadow_diverged) = (0usize, 0usize);
     let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
@@ -391,15 +394,34 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         let death_game = body.action == 0x76;
         // Every other body's part spawns, logged as `(record, point, angles,
         // scale)`, for the director's literal-anchored records.
+        // Kiss of Death keeps the handles of the records arms 1 and 2 seat
+        // (`0x801F9B28`, count `0x801F9D2C`), drops a handle whose part has
+        // stopped (`+0x10 & 8`, `0x801F88F0..0x801F8910`) and stops the rest
+        // as arm 2 passes (`0x801F8B14..0x801F8B60`): each spawn of its gets
+        // a part, kept as `(record, part)`.
+        let seated = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
         if !death_game {
+            let kiss = body.action == 0x6E;
+            let next = Rc::new(std::cell::Cell::new(PARTS));
             for spawn in [SPAWN_PART, SPAWN_SEATED] {
                 let log = spawn_log.clone();
+                let seated = seated.clone();
+                let next = next.clone();
                 cpu.hook(spawn, move |r, m| {
                     let trio = |m: &mut Memory, a: u32| [0u32, 2, 4].map(|o| m.rd16(a + o) as i16);
                     let p = trio(m, r.r[A0]);
                     let a = trio(m, r.r[A1]);
                     log.borrow_mut().push((r.r[A2], p, a, r.r[A3] as u16));
                     r.r[V0] = 0;
+                    if kiss {
+                        let at = next.get();
+                        next.set(at + 0x80);
+                        for o in (0..0x80).step_by(4) {
+                            m.wr32(at + o, 0);
+                        }
+                        seated.borrow_mut().push((r.r[A2], at));
+                        r.r[V0] = at;
+                    }
                 });
             }
         }
@@ -444,6 +466,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             _ => 6,
         };
         for round in 0..rounds {
+            seated.borrow_mut().clear();
             let (caster, victim) = seed(&mut cpu, &mut rng, &module, body, 0);
             // State `0x6F` drains the framing depth by `16 * step` a vsync
             // while it waits on the module's seek (`0x801E5008..0x801E5014`,
@@ -582,6 +605,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     cpu.mem.wr8(va_ + 0x1DF, 0x10 + round as u8);
                 }
             }
+            // Kiss of Death's one-point hit (`0x801F8C68..`) downs a victim on
+            // one HP, which its settle then waits on as fallen.
+            if body.action == 0x6E && round % 2 == 1 {
+                cpu.mem.wr16(va_ + 0x14C, 1);
+            }
             if death_game {
                 for a in [ca, va_] {
                     let hp = cpu.mem.rd16(a + 0x14C);
@@ -639,6 +667,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             let mut arm_24_passes = 0usize;
             let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
             let mut arm3_passes = 0usize;
+            let mut settle_passes = 0usize;
             // Every strike-frame wait (PROT 0960's arm 5, PROT 0962's arm 3)
             // finds the caster's node cursor past its mark.
             cpu.mem.wr16(NODES + caster * 0x100 + 0x68, 0x7FFF);
@@ -721,6 +750,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 }
                 // What the host feeds a director every pass
                 // (`feed_capture_cam`).
+                // Melt Spray's arm 3 clears the staged spray clip once it plays
+                // (`0x801F828C..0x801F82A0`): on odd rounds the caster is on it.
+                if body.action == 0x6F && phase == 3 && round % 2 == 1 {
+                    cpu.mem.wr8(ca + 0x1D9, 7);
+                }
                 st.caster_clip = Some(cpu.mem.rd8(ca + 0x1D9));
                 st.caster_frame = Some(cpu.mem.rd16(NODES + caster * 0x100 + 0x68));
                 st.caster_loops = Some(cpu.mem.rd8(ca + 0x21B));
@@ -851,6 +885,42 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     st.target_unsettled = !rows.iter().all(|&s| settled(&mut cpu, s));
                     unsettled_holds += usize::from(phase == 3 && st.target_unsettled);
                 }
+                // Kiss of Death's arm 5, Melt Spray's arm 4 and Scythe Wind's
+                // arm 5 wait, once their
+                // word runs out, on the victim's clip: a standing victim's
+                // still playing (`0x801F8E60` / `0x801F8644`), a fallen one's
+                // not yet the fallen clip `8` (`0x801F8E38` / `0x801F861C`),
+                // for round-keyed passes; the host's flag off the same bytes
+                // (`World::chain_seat_settled`).
+                let victim_settle = match body.action {
+                    0x6E => Some(5),
+                    0x6F => Some(4),
+                    // Scythe Wind's arm 5 (`0x801F80E8..0x801F8128`).
+                    0x5B if body.va == SCYTHE_WIND => Some(5),
+                    _ => None,
+                };
+                if let Some(arm_at) = victim_settle {
+                    settle_passes = if phase == arm_at && st.countdown.0 <= SPEED_SCALAR {
+                        settle_passes + 1
+                    } else {
+                        0
+                    };
+                    if phase == arm_at {
+                        let dead = cpu.mem.rd16(va_ + 0x14C) == 0;
+                        let busy = settle_passes <= round % 3 + 1;
+                        let clip = match (busy, dead) {
+                            (true, false) => 5,
+                            (true, true) => 0,
+                            (false, false) => 0,
+                            (false, true) => 8,
+                        };
+                        cpu.mem.wr8(va_ + 0x1D9, clip);
+                        st.victim_settled = if dead { clip == 8 } else { clip == 0 };
+                        victim_settle_holds += usize::from(!st.victim_settled && settle_passes > 0);
+                    } else {
+                        st.victim_settled = true;
+                    }
+                }
                 let arm = (body.director)(&mut st, phase, seats);
                 // The band's own pass on the shadow world, while it walks
                 // the phase retail walks.
@@ -904,8 +974,19 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         )
                     })
                     .collect();
+                // A seated part that runs out on its own while arms 1 and 2
+                // still hold its handle: every third, on odd rounds.
+                if body.action == 0x6E && (phase == 1 || phase == 2) && round % 2 == 1 {
+                    for (i, &(_, part)) in seated.borrow().iter().enumerate() {
+                        if i % 3 == 2 {
+                            let f = cpu.mem.rd32(part + 0x10);
+                            cpu.mem.wr32(part + 0x10, f | 8);
+                        }
+                    }
+                }
                 shots.borrow_mut().clear();
                 spawn_log.borrow_mut().clear();
+                let stage_before = cpu.mem.rd8(ca + 0x1DA);
                 let stop = cpu.call(body.va, &[]);
                 let c = format!("{c0} pass {pass} arm {phase}");
                 if stop != Stop::Returned {
@@ -1066,6 +1147,32 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 shadow_after = (0..8u32)
                     .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
                     .collect();
+                // That store against the director's caster write.
+                if body.action == 0x6F && phase == 3 {
+                    let staged = cpu.mem.rd8(ca + 0x1DA);
+                    let port = arm.caster_write.stage.unwrap_or(stage_before);
+                    if staged != port {
+                        failures.push(format!(
+                            "{c}: caster stage retail {staged:#x} port {port:#x}"
+                        ));
+                    }
+                    spray_clears += usize::from(arm.caster_write.stage == Some(0));
+                }
+                // Kiss of Death's arm 2 leaving: every part of a record the
+                // port halts on the arm stopped (`+0x10 & 8`), the rest not.
+                if body.action == 0x6E && phase == 2 && after != phase {
+                    let halts = cam::capture_arm_halts_records(body.entry, phase);
+                    for &(record, part) in seated.borrow().iter() {
+                        let got = cpu.mem.rd32(part + 0x10) & 8 != 0;
+                        if got != halts.contains(&record) {
+                            failures.push(format!(
+                                "{c}: part {part:#x} of record {record:#x} stopped retail {got} port {}",
+                                !got
+                            ));
+                        }
+                        kiss_halts += 1;
+                    }
+                }
                 // Glare's Stone on the pass that leaves arm 2: the queued
                 // action it cancels and the Item it refunds, against the
                 // shadow's (`World::stone_cancels_queued_action`).
@@ -1279,6 +1386,19 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                                 .any(|(b, m)| u32::from(m - b.hp) < (u32::from(m) + 3) >> 2);
                     }
                 }
+                // The band's own settle hold on the arm (`t::gated_hit_arm`,
+                // `World::run_cast_module_code`), beside the director's.
+                let band_settle = t::gated_hit_arm(body.entry, Some(body.va))
+                    .is_some_and(|(_, at, _)| at == phase)
+                    && !st.victim_settled;
+                if victim_settle == Some(phase)
+                    && !arm.hold
+                    && !band_settle
+                    && busy
+                    && after == phase
+                {
+                    failures.push(format!("{c}: port passes the victim settle, retail holds"));
+                }
                 if water_hazard && phase == 3 && !arm.hold && after == phase {
                     failures.push(format!("{c}: port passes, retail holds"));
                 }
@@ -1317,6 +1437,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     assert!(seat_passes > 100, "seat-write passes {seat_passes}");
     assert!(steals >= 12, "Terror Scream steals compared {steals}");
     assert!(glare_rolls >= 6, "Glare Stone rolls compared {glare_rolls}");
+    assert!(kiss_halts >= 6, "Kiss of Death parts compared {kiss_halts}");
+    assert!(
+        spray_clears >= 3,
+        "Melt Spray stage clears compared {spray_clears}"
+    );
     eprintln!(
         "band shadow: {shadow_passes} passes compared, {shadow_diverged} casts left retail's phase walk, {} mismatches",
         shadow_failures.len()
@@ -1351,6 +1476,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     assert!(
         results >= 4 && heal_capped,
         "Death Game results compared {results}, a heal capped by the missing HP {heal_capped}"
+    );
+    assert!(
+        victim_settle_holds > 10,
+        "Kiss of Death's and Melt Spray's victim settles held {victim_settle_holds} passes"
     );
     assert!(
         unsettled_holds > 10,

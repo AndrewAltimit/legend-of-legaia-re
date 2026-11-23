@@ -769,6 +769,9 @@ pub fn gated_hit_arm(entry: u32, body: Option<u32>) -> Option<(u8, u8, ChainSett
         // the row (`0x801F799C`), the victim and the target.
         (938, Some(CHAOS_BREATH_TICK)) => Some((NO_ARM, 3, ChainSettle::PartyRow)),
         (955, Some(MELT_SPRAY_TICK)) => Some((NO_ARM, 4, ChainSettle::Victim)),
+        // Kiss of Death's arm 5, past its word: a standing victim back on
+        // clip `0`, a fallen one on `8` (`0x801F8E14..0x801F8E80`).
+        (955, Some(KISS_OF_DEATH_TICK)) => Some((NO_ARM, 5, ChainSettle::Victim)),
         (955, Some(POWER_CHARGE_TICK)) => Some((NO_ARM, 3, ChainSettle::Victim)),
         _ => None,
     }

@@ -139,3 +139,87 @@ image = "875e3947b34245bb"
 range = "0x801D3190..0x801D31C4"
 verdict = "unreachable"
 reason = "PROT 0980 dance widget emitter: the rounding fix-ups of `cell * scale` (the widget's `+0x0A` / `+0x0B` byte times its `+0x00` word) run only on a negative product. All 34 records of the widget table `0x801D46CC` (stride `0x14`) carry scale `0x1000`, and the overlay's stores into the table land on `+0x06` / `+0x08` (`0x801D263C..0x801D266C`, `0x801D34B8`, `0x801D3A0C`, `0x801D3E8C`), never the scale word, so the product is never negative."
+
+[[arm]]
+entry = "0x801F86A4"
+image = "343003f46fecd3df"
+range = "0x801F8754..0x801F8754"
+verdict = "unreachable"
+reason = "PROT 0955 Kiss of Death (`0x6E`): the head's `beqz` on `0` runs only for a phase under `2` that is not the `1` in `s7` (tested at `0x801F8744`), so the phase is `0` there and the fall-through never runs."
+
+[[arm]]
+entry = "0x801F86A4"
+image = "343003f46fecd3df"
+range = "0x801F877C..0x801F877C"
+verdict = "unreachable"
+reason = "PROT 0955 Kiss of Death (`0x6E`): the phase byte `ctx[+0x279]` is `0` at install and the body writes it only `+1` from `0` to `5` and `0xFF` off arm 5 (`0x801F8E84`), so the fall-through past the `0xFF` test (a phase above `5` other than `0xFF`) never runs."
+
+[[arm]]
+entry = "0x801F86A4"
+image = "343003f46fecd3df"
+range = "0x801F8A40..0x801F8A40"
+verdict = "unreachable"
+reason = "PROT 0955 Kiss of Death (`0x6E`) arm 2's handle walk, skipped on a handle count `0x801F9D2C` of `0`. Arm 0 zeroes the count and seeds its word at `scalar * 12`; arm 1 seats a record and bumps the count on every odd pass (`0x801F9D30 & 1`) and holds while the word drained by `scalar * step` (`step <= 4`) stays positive, so it runs at least three passes and leaves the count at least `1`."
+
+[[arm]]
+entry = "0x801F86A4"
+image = "343003f46fecd3df"
+range = "0x801F8B20..0x801F8B20"
+verdict = "unreachable"
+reason = "PROT 0955 Kiss of Death (`0x6E`) arm 2's halt walk on the handle count `0x801F9D2C`, which arm 1 leaves at least `1` (three or more passes, a seat on every odd one) and arm 2 only raises, so the skip on a count of `0` never runs."
+
+[[arm]]
+entry = "0x801F86A4"
+image = "343003f46fecd3df"
+range = "0x801F8E18..0x801F8E18"
+verdict = "unreachable"
+reason = "PROT 0955 Kiss of Death (`0x6E`) arm 5's settle, the branch to the monster-victim wait (`sltiu v0,s1,3`). Its target shape is `0x44` (one opponent, spell record `+2`), which the monster picker turns into a party seat (`0x801EA8CC..0x801EA918`); the retarget `FUN_801E7320` runs only for `+0x16E & 0x380` actors, Rage party seats in retail, so the victim is always a party seat."
+
+[[arm]]
+entry = "0x801F86A4"
+image = "343003f46fecd3df"
+range = "0x801F8E50..0x801F8E50"
+verdict = "unreachable"
+reason = "PROT 0955 Kiss of Death (`0x6E`) arm 5: the monster-victim leg's HP test, behind the `sltiu v0,s1,3` branch that a party victim (target shape `0x44`) never takes."
+
+[[arm]]
+entry = "0x801F86A4"
+image = "343003f46fecd3df"
+range = "0x801F8E78..0x801F8E78"
+verdict = "unreachable"
+reason = "PROT 0955 Kiss of Death (`0x6E`) arm 5: a fallen monster victim's prim-word wait, behind the `sltiu v0,s1,3` branch that a party victim (target shape `0x44`) never takes."
+
+[[arm]]
+entry = "0x801F7FA4"
+image = "ab3102c20af94972"
+range = "0x801F806C..0x801F806C"
+verdict = "unreachable"
+reason = "PROT 0955 Melt Spray (`0x6F`): the phase byte `ctx[+0x279]` is `0` at install and the body writes it as `1` (arm 0), `+1` and `0xFF` off arm 4 (`0x801F8664..0x801F866C`), so the fall-through past the `0xFF` test (a phase above `4` other than `0xFF`) never runs."
+
+[[arm]]
+entry = "0x801F7FA4"
+image = "ab3102c20af94972"
+range = "0x801F85FC..0x801F85FC"
+verdict = "unreachable"
+reason = "PROT 0955 Melt Spray (`0x6F`) arm 4's settle, the branch to the monster-victim wait (`sltiu v0,s3,3`). Its target shape is `0x44` (one opponent), which the monster picker turns into a party seat (`0x801EA8CC..0x801EA918`); the retarget `FUN_801E7320` runs only for Rage party seats in retail, so the victim is always a party seat."
+
+[[arm]]
+entry = "0x801F7FA4"
+image = "ab3102c20af94972"
+range = "0x801F8634..0x801F8634"
+verdict = "unreachable"
+reason = "PROT 0955 Melt Spray (`0x6F`) arm 4: the monster-victim leg's HP test, behind the `sltiu v0,s3,3` branch that a party victim (target shape `0x44`) never takes."
+
+[[arm]]
+entry = "0x801F7FA4"
+image = "ab3102c20af94972"
+range = "0x801F865C..0x801F865C"
+verdict = "unreachable"
+reason = "PROT 0955 Melt Spray (`0x6F`) arm 4: a fallen monster victim's prim-word wait, behind the `sltiu v0,s3,3` branch that a party victim (target shape `0x44`) never takes."
+
+[[arm]]
+entry = "0x801F77E8"
+image = "62862162354c13e7"
+range = "0x801F7878..0x801F7878"
+verdict = "unreachable"
+reason = "PROT 0951 Scythe Wind (`0x5B`): the jump table's bound (`sltiu v0,v1,6`). The phase byte is `0` at install and every store the body makes to it is `+1` (`0x801F78E4`, `0x801F7990`, `0x801F7AB0`, `0x801F8018`); arm 5 finishes, so the phase never reaches `6` and the out-of-range exit never runs."

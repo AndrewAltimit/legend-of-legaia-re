@@ -4358,6 +4358,13 @@ hidden through arm 5, the miss line raised on a hit and a draw on every passing
 pass, the same film read `.815`; with them `.848` (arm 5 `.770` to `.883`, the
 HP-bar settle `0x51` `.688` to `.793`). Grade `disassembly` + `capture`.
 
+Arm 5 waits, once its word runs out, on the victim: a standing one back on clip
+`0`, a fallen one (the one-point hit can down a victim on `1` HP) on clip `8`
+(`0x801F8E14..0x801F8E80`), then stores `0xFF`. The band holds it there
+(`cast_module_ticks::gated_hit_arm`, settle `Victim`). The monster-victim half of
+that wait is unreachable: the target shape `0x44` aims at a party seat. Grade
+`disassembly`.
+
 The hit leg throws a numeral: `FUN_801F44A0(1, seat)` at `0x801F8D6C`, behind the
 Stone guard at `0x801F8D60` that also gates its one-point HP write, so a landed
 Kiss of Death shows a `1` over its victim. The miss leg throws none. Port:
