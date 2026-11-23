@@ -573,9 +573,35 @@ impl World {
                 Some(gpu) if self.toggles.field_gpu_cost_step => cost.max(i32::from(gpu)),
                 _ => cost,
             };
+            let cost = self.field_xa_polled_cost(cost);
             self.clock.frame_cost = Some(cost.clamp(0, 0x7FFF));
             self.field_cost_priced = true;
         }
+    }
+
+    /// A field frame's cost while a CD-XA one-shot reads, under
+    /// [`WorldToggles::field_frame_span_law`](super::WorldToggles::field_frame_span_law):
+    /// the clip's stop watch `FUN_8003D764` polls the drive from the CD
+    /// interrupt for the whole read, so the frame's work runs in what the
+    /// polls leave of the CPU. PCSX-Redux's polls take about two thirds
+    /// (`xa_loaded_frame_cost`, the battle's ratio and floor), a console's
+    /// `.065` (`console_poll_cost`). `garmel` `P2[12]`'s voice line on
+    /// PCSX-Redux: frames of `6` to `7` vsyncs at step `4` over a work of
+    /// about `400` hblanks, from the clip's start to the drive word's clear.
+    ///
+    /// REF: FUN_8003D53C, FUN_8003D764
+    pub(in crate::world) fn field_xa_polled_cost(&self, cost: i32) -> i32 {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, xa_loaded_frame_cost};
+        if !self.toggles.field_frame_span_law || !self.field_xa_busy() {
+            return cost;
+        }
+        let work = cost.clamp(0, i32::from(u16::MAX)) as u16;
+        i32::from(match self.toggles.battle_cd_timing {
+            CdTiming::PcsxRedux => xa_loaded_frame_cost(work),
+            CdTiming::Console => {
+                legaia_engine_cast::cast_module_frame_step::console_poll_cost(work)
+            }
+        })
     }
 
     /// The model's price of a frame that draws `f`: the fitted weights, or

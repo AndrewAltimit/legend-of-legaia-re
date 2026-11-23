@@ -1764,6 +1764,28 @@ counts the same display frames, and `World::clock.display_frames` counts elapsed
 for consumers that advance in retail-frame time - the camera glide diffs it rather than counting
 ticks.
 
+A voice line breaks the "duration in 60 Hz frames" rule. The field's CD-XA one-shot
+`FUN_8003D53C` installs the same stop watch the battle's clips run
+([battle-stage-camera](battle-stage-camera.md#the-cd-stop-watch)): `FUN_8003D764` polls the
+head from the CD interrupt, back to back, until it passes the clip's end sector, so the frame's
+work runs in what the polls leave of the CPU and the frame outlasts the step it credits. On
+PCSX-Redux the polls take about two thirds of it. `garmel` `P2[12]` (Zeto's appearance, from
+`chapter2_garmel_pre_zeto`, on the recompiler and the interpreter alike) runs at step `2` and
+two vsyncs a frame up to the line at `+0x43F`, then at step `4` and six to seven vsyncs a frame,
+its ring entries at the clamp (`700`), until the drive word `0x8007BC20` clears `554` vsyncs
+after the start; its `270`-frame wait at `+0x544` takes `393` vsyncs. Before the line and in
+the opening chain, which has no voice, the waits fit the rule above. On a console the polls take
+about `.065` of the CPU, so the same beat would run near its frame count.
+
+The engine prices a field frame under a clip's read at its work over the polls' share
+(`World::field_xa_polled_cost`, the battle's `xa_loaded_frame_cost` under the default
+PCSX-Redux CD timing, `console_poll_cost` under `--console-cd`) and holds the drive word for the
+read tail, behind `WorldToggles::field_frame_span_law`. `garmel` `P2[12]`'s wait then takes `346`
+vsyncs where it took `268`, and the beat from the seek to the `36 FF FF` after the wait runs
+`590` vsyncs against retail's `621` (`566` with the timeline's hold on the drive word alone, `422` before that). A harness standing the engine on a state
+saved under a line seats the drive's remaining read from the stop watch's sectors
+(`RetailObs::xa_drive_left`).
+
 The legs a record runs on an actor are on the same grid. The walk kernel `FUN_8003774C` spends
 the frame step (`lbu s2,0x393` at `0x80037864`) once a game frame against a compass walk's or a
 turn's budget, and an actor's tick `FUN_8003BC08` runs it after the script runner

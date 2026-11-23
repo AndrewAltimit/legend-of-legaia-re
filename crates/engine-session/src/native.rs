@@ -199,6 +199,7 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
             "LEGAIA_BATTLE_FRAME_SPAN",
             &mut toggles.battle_frame_span_law,
         ),
+        ("LEGAIA_FIELD_FRAME_SPAN", &mut toggles.field_frame_span_law),
         (
             "LEGAIA_BATTLE_POLY_COST",
             &mut toggles.battle_poly_frame_cost,

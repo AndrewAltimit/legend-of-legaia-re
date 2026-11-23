@@ -15,6 +15,9 @@
 --   word    - each change of the drive word 0x8007BC20 (vsync, new value)
 --   pc      - with LEGAIA_TRACE_CTX set, each new PC the field VM
 --             (FUN_801DE840) is entered on for that context
+--   visit   - with LEGAIA_TRACE_EVERY=1 as well, every entry for that
+--             context: the PC, the frame step DAT_1F800393 and the wait
+--             sum +0x54
 --   cdsync  - each answer of the stage-3 settle wait `FUN_8003F2B8(1)`
 --             (0x8001985C; non-zero holds the stage)
 --
@@ -29,6 +32,7 @@ local vsync = 0
 local word_was = nil
 local trace_ctx = tonumber(probe.getenv("LEGAIA_TRACE_CTX", "0"))
 local pc_was = nil
+local trace_every = probe.getenv_num("LEGAIA_TRACE_EVERY", 0) == 1
 
 probe.run({
     sstate = probe.getenv("LEGAIA_SSTATE", ""),
@@ -58,6 +62,10 @@ probe.run({
         end)
         if trace_ctx ~= 0 then
             arm(0x801DE840, "pc", function(r)
+                if trace_every and tonumber(r.a2) == trace_ctx then
+                    csv:row("%d,visit,0x%X,%d,%d,0,0", vsync, tonumber(r.a1),
+                        probe.read_scratch_u8(0x1F800393), probe.read_u16(trace_ctx + 0x54))
+                end
                 if tonumber(r.a2) == trace_ctx and tonumber(r.a1) ~= pc_was then
                     pc_was = tonumber(r.a1)
                     csv:row("%d,pc,0x%X,0,0,0,0", vsync, pc_was)

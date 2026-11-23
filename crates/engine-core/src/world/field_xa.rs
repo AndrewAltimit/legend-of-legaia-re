@@ -188,7 +188,18 @@ impl World {
         }
         // The starter zeroes the seek-ahead's state word (`0x8003D5C0`).
         self.audio.field_xa_seek_stage = 0;
-        self.audio.field_xa_busy_frames = dur;
+        // Under the frame-span law the drive word holds past the span by the
+        // read tail, as `garmel` `P2[12]`'s does (`554` vsyncs for a `0x216`
+        // line): the stop `FUN_8003EE00` clears it once the read is done.
+        let tail = if self.toggles.field_frame_span_law
+            && self.toggles.battle_cd_timing
+                == legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux
+        {
+            legaia_engine_battle_loop::frame_clock::XA_READ_TAIL_VSYNCS
+        } else {
+            0
+        };
+        self.audio.field_xa_busy_frames = dur.saturating_add(tail);
         self.audio
             .field_xa_cues
             .push(legaia_engine_system::sound_state::XaVoiceClip {
@@ -217,6 +228,13 @@ impl World {
         }
         self.audio.field_xa_seek_stage += 1;
         true
+    }
+
+    /// Seat the field drive's remaining read, in vsyncs, as a harness
+    /// standing the engine on a capture reads it off the drive word and the
+    /// stop watch's sectors.
+    pub fn seat_field_xa_drive(&mut self, vsyncs_left: u16) {
+        self.audio.field_xa_busy_frames = vsyncs_left;
     }
 
     /// The seek-ahead starter's stage (`0x8007B9C8`, `0..=4`), as a film
@@ -372,6 +390,19 @@ mod tests {
                 duration_sectors: 3
             }]
         );
+        // The span, then the read tail the frame-span law holds the drive
+        // word for (`XA_READ_TAIL_VSYNCS`).
+        let tail = legaia_engine_battle_loop::frame_clock::XA_READ_TAIL_VSYNCS;
+        for _ in 0..3 + tail - 1 {
+            w.tick();
+        }
+        assert!(w.field_xa_busy(), "held through the read tail");
+        w.tick();
+        assert!(!w.field_xa_busy(), "the span and its tail elapse in world ticks");
+        // Off, the span alone.
+        let mut w = World::default();
+        w.toggles.field_frame_span_law = false;
+        w.push_field_xa_cue(0x10, 7, 3);
         for _ in 0..3 {
             w.tick();
         }
@@ -384,5 +415,21 @@ mod tests {
         w.push_field_xa_cue(0x10, 0, 0);
         assert!(w.drain_field_xa_cues().is_empty());
         assert!(!w.field_xa_busy());
+    }
+
+    /// A voiced field frame runs its work under the clip's CD stop watch:
+    /// PCSX-Redux's polls leave a third of the CPU, a console's all but
+    /// `.065` of it; off the law, or with no clip reading, the work stands.
+    #[test]
+    fn a_voiced_field_frame_runs_under_the_stop_watch() {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, xa_loaded_frame_cost};
+        let mut w = World::default();
+        assert_eq!(w.field_xa_polled_cost(400), 400, "no clip reading");
+        w.push_field_xa_cue(0x07, 1, 0x216);
+        assert_eq!(w.field_xa_polled_cost(400), i32::from(xa_loaded_frame_cost(400)));
+        w.toggles.battle_cd_timing = CdTiming::Console;
+        assert_eq!(w.field_xa_polled_cost(400), 427);
+        w.toggles.field_frame_span_law = false;
+        assert_eq!(w.field_xa_polled_cost(400), 400);
     }
 }

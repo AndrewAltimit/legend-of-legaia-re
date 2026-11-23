@@ -392,6 +392,15 @@ impl WalkFilm {
         {
             session.host.world.seat_retail_frame_pad(retail.pad_buffer);
         }
+        // A voice line still reading at the save: the drive word's remaining
+        // read, which the engine's own run to the state's PC cannot know
+        // (`RetailObs::xa_drive_left`). A harness seat;
+        // `LEGAIA_RC_NO_XA_SEAT=1` keeps the engine's.
+        if let Some(left) = retail.xa_drive_left
+            && std::env::var_os("LEGAIA_RC_NO_XA_SEAT").is_none()
+        {
+            session.host.world.seat_field_xa_drive(left);
+        }
         session.host.world.open_sfx_ring_tap();
         for t in 0..self.ticks {
             if t < 8

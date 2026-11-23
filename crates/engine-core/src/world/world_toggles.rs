@@ -285,6 +285,18 @@ pub struct WorldToggles {
     /// [`Self::pin_retail`] leaves it alone; the native session takes
     /// `LEGAIA_FIELD_FRAME_COST=0` / `=1` over the default.
     pub field_frame_cost: bool,
+    /// On by default: while a field CD-XA one-shot reads (a voice line), price
+    /// each field frame at its work under the clip's CD stop watch, as
+    /// [`Self::battle_frame_span_law`] does a battle frame: the clip player
+    /// `FUN_8003D53C` installs the same sequencer `FUN_8003D764`, whose polls
+    /// run back to back from the CD interrupt for the whole read, so the
+    /// frame stretches by their share of the CPU ([`Self::battle_cd_timing`]:
+    /// about two thirds on PCSX-Redux, `.065` on a console). The drive word
+    /// holds for the read tail as well (`XA_READ_TAIL_VSYNCS`). Off, a voiced
+    /// field frame costs what it draws. A timing model, so
+    /// [`Self::pin_retail`] leaves it alone; the native session takes
+    /// `LEGAIA_FIELD_FRAME_SPAN=0` / `=1` over the default.
+    pub field_frame_span_law: bool,
     /// Count a placed object into the field frame cost only when the draw
     /// walk `FUN_8001ADA4` reaches its primitives: an actor holds it (the
     /// scene-init sweep's bound objects, and the window sweep's while its
@@ -687,6 +699,7 @@ impl WorldToggles {
             battle_poly_frame_cost: true,
             battle_surface_frame_cost: true,
             field_frame_cost: true,
+            field_frame_span_law: true,
             field_cost_placed_walk: true,
             field_cost_prim_outcomes: true,
             fishing_frame_cost: true,
