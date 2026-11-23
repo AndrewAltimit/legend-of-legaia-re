@@ -1552,19 +1552,14 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
             .is_some_and(|id| id.prop_anchor == Some(anchor))
     };
     let back = player_xz(session);
-    // The pad hand walks to a side tile and presses in from there, nearest
-    // side first; only when its walk reaches none of them does it fall back
-    // to placing the player, over the seated hand's order ([`shortcut`]
-    // `touch_seat`).
+    // The pad hand walks to a side tile and presses in from there; only when
+    // its walk reaches none of them does it fall back to placing the player
+    // ([`shortcut`] `touch_seat`). Both passes keep the seated hand's order
+    // of sides, as [`interact_at`] does.
     let sides = [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)];
     let attempts: Vec<((i16, i16), bool)> = if pad_hand() {
-        let (px, pz) = player_xz(session);
-        let me = dispatch_tile(px, pz);
-        let mut near = sides;
-        near.sort_by_key(|&(dx, dz)| {
-            (i32::from(tx + dx) - me.0).abs() + (i32::from(tz + dz) - me.1).abs()
-        });
-        near.into_iter()
+        sides
+            .into_iter()
             .map(|d| (d, true))
             .chain(sides.into_iter().map(|d| (d, false)))
             .collect()

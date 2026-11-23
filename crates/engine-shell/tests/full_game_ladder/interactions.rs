@@ -202,19 +202,17 @@ pub(super) fn interact_at(
     // Whether the last seat tried was a placement, which is given back.
     let mut placed_last = !pad_hand();
     // The pad hand walks to a seat and leans in until the probe lands, as a
-    // player does, nearest seat first; only when its walk reaches none of
-    // them does it fall back to placing the player, over the seated hand's
-    // order ([`shortcut`] `examine_seat`).
+    // player does; only when its walk reaches none of them does it fall back
+    // to placing the player ([`shortcut`] `examine_seat`). Both passes keep
+    // the seated hand's order of sides: a record that answers by where the
+    // player stands answers alike (`stone`'s statues turn to face the side
+    // they are examined from, and the way to `tunnela` opens on one set of
+    // facings; tried nearest side first, the dial spun past it).
     let seats = interact_seats(session, (nx, nz), walked);
     let attempts: Vec<((i16, i16, bool), bool)> = if pad_hand() {
-        let (px, pz) = player_xz(session);
-        let me = dispatch_tile(px, pz);
-        let mut near = seats.clone();
-        near.sort_by_key(|&(sx, sz, _)| {
-            (i32::from(sx) - me.0).abs() + (i32::from(sz) - me.1).abs()
-        });
-        near.into_iter()
-            .map(|s| (s, true))
+        seats
+            .iter()
+            .map(|&s| (s, true))
             .chain(seats.iter().map(|&s| (s, false)))
             .collect()
     } else {
