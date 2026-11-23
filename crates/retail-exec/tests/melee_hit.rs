@@ -643,6 +643,13 @@ fn seed_port(w: &mut World, h: &Hit) {
                 c.effect_script[..4].copy_from_slice(&h.look.entries[b]);
             }
         }
+        // Monster record 0's first entry carries a header, as a real record's
+        // does: the Mystic Shield's tail stores a root speed into it.
+        if s == 3
+            && let Some(Some(c)) = clips.first_mut()
+        {
+            c.effect_script = vec![0; 0x14];
+        }
         w.set_actor_battle_action_clips(i, std::sync::Arc::new(clips));
         if !is_party {
             let mut def = MonsterDef::new(monster_id(h, s), "m", 1, 10);
@@ -720,6 +727,9 @@ struct Outcome {
     /// The attacker's cue cursor `+0x1F6`, which a blocked hit steps over the
     /// impact cue it does not sound (`0x801EE6D4..0x801EE6F8`).
     cue_cursor: u8,
+    /// The root speed `+0x0C` of monster record 0's first entry, which the
+    /// Mystic Shield's tail stores (`0x801EEBA4..0x801EEBB4`).
+    mystic_speed: i16,
 }
 
 #[test]
@@ -771,6 +781,7 @@ fn a_melee_hit_lands_what_retail_lands() {
     let mut hits = 0;
     let mut rewrites = 0;
     let mut misses = 0;
+    let mut mystic_tails = 0usize;
     let mut failures: Vec<String> = Vec::new();
     let rounds: u32 = std::env::var("MELEE_ROUNDS")
         .ok()
@@ -812,6 +823,7 @@ fn a_melee_hit_lands_what_retail_lands() {
             rng: state.get(),
             facing: cpu.mem.rd16(t + 0x46) & 0xFFF,
             cue_cursor: cpu.mem.rd8(a + 0x1F6),
+            mystic_speed: cpu.mem.rd16(ANIM_NODE + 0xC) as i16,
             tint: (
                 cpu.mem.rd32(t + 4),
                 cpu.mem.rd32(t + 0xC),
@@ -887,7 +899,13 @@ fn a_melee_hit_lands_what_retail_lands() {
             facing,
             tint,
             cue_cursor: w.actors[usize::from(h.attacker)].battle_anim_cue_cursor,
+            mystic_speed: w.actors[3]
+                .battle_action_clips
+                .as_ref()
+                .and_then(|c| c.first()?.as_ref()?.entry_root_speed())
+                .unwrap_or(0),
         };
+        mystic_tails += usize::from(retail.mystic_speed != 0);
         if dmg == 0 {
             blocked += 1;
         } else {
@@ -906,6 +924,7 @@ fn a_melee_hit_lands_what_retail_lands() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(mystic_tails > 100, "{mystic_tails} Mystic tails");
     assert!(
         blocked > 100 && hits > 1000 && misses > 100,
         "{blocked} blocked, {hits} hits, {misses} limb misses, {rewrites}"
