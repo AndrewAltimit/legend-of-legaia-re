@@ -991,7 +991,14 @@ reach for every seat where the shadow measures reach off the seats.
 `FUN_8003EAE4(0, slot)`, read off the bytes by `battle_cast_cue::module_drive_arms`)
 answers busy for its first three passes, and the shadow world stands its drive in
 flight for them, so the host's hold (`World::module_drive_holds`) runs against
-retail's busy return. Every module holds as retail does. PROT 0927's arm 2
+retail's busy return. Every module holds as retail does. Arm 2 of PROT 0920
+to 0924 drains its own countdown ahead of the poll (PROT 0923's `bgtz a1` at
+`0x801F6CAC`), so the poll's first call comes once that countdown is out, and
+its busy return needs a seek that outlasts the countdown: the walk stages none.
+Held there, the host would keep the drain the director's would-pass reports,
+which includes the exit's re-arm, and hold the arm for a second countdown. No
+play path reaches it while the seek issued at arm 1 ends inside arm 2's count.
+PROT 0927's arm 2
 branches busy to the arm's tail (`0x801F6D8C` to `0x801F6F74`), where the
 passing pass falls too, so every pass of the arm hides the party and shows the
 live row; the port had stored both on the passing pass only, which left the
