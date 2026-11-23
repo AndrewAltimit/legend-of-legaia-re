@@ -282,6 +282,7 @@ pub(super) fn answer_notice_on<S>(
             break;
         }
         // The handler reads an edge: a released frame, then the press.
+        shortcut("notice_raw_pad");
         w.set_pad(if i % 2 == 0 {
             0
         } else {

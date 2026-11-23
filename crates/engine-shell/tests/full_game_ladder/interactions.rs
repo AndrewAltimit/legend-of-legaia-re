@@ -202,6 +202,7 @@ pub(super) fn interact_at(
     for (sx, sz, extra) in interact_seats(session, (nx, nz), walked) {
         session.host_pad(0);
         session.host.world.seat_player_at_tile(sx as u8, sz as u8);
+        shortcut("examine_seat");
         // The one compass sector whose probe point lands in the NPC's box.
         let mut facing = (0..8u8).find(|&d| {
             session.host.world.face_player_sector(d);
@@ -242,6 +243,7 @@ pub(super) fn interact_at(
         };
         let before = flags_of_world(session);
         let seat_xz = player_xz(session);
+        shortcut("examine_face");
         match press_edge(session, PadButton::Cross.mask()) {
             Ok(Some(name)) => return Run::Entered(name),
             Ok(None) => {}
@@ -380,6 +382,7 @@ pub(super) fn interact_seats(
 /// tile can be solid: `jiji`'s prop examine left the party at (69, 71),
 /// walled on all four sides, after starting from (9020, 9216).
 pub(super) fn restore_player_xz(session: &mut NativeSession, (x, z): (i16, i16)) {
+    shortcut("restore_xz");
     let w = &mut session.host.world;
     let y = w.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
     let slot = w.player_actor_slot.unwrap_or(0) as usize;

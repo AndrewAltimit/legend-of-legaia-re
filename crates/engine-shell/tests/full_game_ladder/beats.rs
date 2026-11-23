@@ -887,6 +887,7 @@ pub(super) fn play_beats(
                 }
                 continue;
             }
+            shortcut("door_object_seat");
             session.host.world.props.active_walk_touch = None;
             session
                 .host
@@ -1558,6 +1559,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
         }
         session.host_pad(0);
         session.host.world.seat_player_at_tile(sx as u8, sz as u8);
+        shortcut("touch_seat");
         let mut started = false;
         for _ in 0..40 {
             let pad = pad_for_step(session, -dx, -dz);
@@ -1815,6 +1817,7 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
     if !found {
         return None;
     }
+    shortcut("box_face");
     match press_edge(session, PadButton::Cross.mask()) {
         Ok(Some(name)) => return Some(Run::Entered(name)),
         Ok(None) => {}

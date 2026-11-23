@@ -120,6 +120,7 @@ mod script_runner;
 mod seated_hops;
 mod segment;
 mod session;
+mod shortcuts;
 mod spine;
 mod terra_quiz;
 mod walk_links;
@@ -144,6 +145,7 @@ use script_runner::*;
 use seated_hops::*;
 use segment::*;
 use session::*;
+use shortcuts::*;
 use spine::*;
 use walk_links::*;
 

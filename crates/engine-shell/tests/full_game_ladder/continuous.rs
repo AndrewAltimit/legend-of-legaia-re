@@ -382,6 +382,9 @@ fn print_state_diff(session: &mut NativeSession, inp: &Inputs, m: &Milestone) {
 #[test]
 fn part_c_continuous_run() {
     let Some(inp) = inputs() else { return };
+    // Every shortcut the pad hand takes on the run, by name ([`shortcut`]).
+    let _ = take_shortcuts();
+    let mut shortcut_total: BTreeMap<&'static str, u64> = BTreeMap::new();
     let spine = load_spine();
     let index = ProtIndex::open_extracted(&inp.extracted).expect("open ProtIndex");
     let graph = DiscGraph::build(&index);
@@ -734,6 +737,13 @@ fn part_c_continuous_run() {
                         session.frames,
                         session.host.world.rng_state
                     );
+                    let stretch = take_shortcuts();
+                    if !stretch.is_empty() {
+                        eprintln!("    {}", shortcut_line(&stretch));
+                    }
+                    for (k, n) in stretch {
+                        *shortcut_total.entry(k).or_insert(0) += n;
+                    }
                     if until.as_deref() == Some(to.id.as_str()) {
                         break 'spine;
                     }
@@ -791,6 +801,7 @@ fn part_c_continuous_run() {
             }
             if run_retry {
                 run_tried = true;
+                shortcut("run_switch");
                 session.host.world.locomotion.run_default = true;
                 switched_in_place = true;
                 if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
@@ -868,6 +879,7 @@ fn part_c_continuous_run() {
             // words travel with it, SC `+0x58C`); a player who switched to Run
             // switches again on a save from before the switch.
             if run_tried {
+                shortcut("run_switch");
                 session.host.world.locomotion.run_default = true;
             }
             if !(attempt == 1 && prepare.is_some()) {
@@ -911,6 +923,10 @@ fn part_c_continuous_run() {
     if let Some(s) = &stall {
         eprintln!("[stall] {s}");
     }
+    for (k, n) in take_shortcuts() {
+        *shortcut_total.entry(k).or_insert(0) += n;
+    }
+    eprintln!("{}", shortcut_line(&shortcut_total));
     let (steps, aimed) = super::fight_turn::AIM_TALLY.with(std::cell::Cell::take);
     {
         let w = &session.host.world;
