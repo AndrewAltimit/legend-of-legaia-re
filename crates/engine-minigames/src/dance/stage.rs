@@ -39,6 +39,13 @@ pub const COUNTIN_LEAD_IN: i32 = 4;
 /// (`GO!` out), 6 (the song opens) and 7 (the lead-in) of `FUN_801cf470`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum CountInStage {
+    /// State 2, the how-to run's park (`0x801CFA18..0x801CFA5C`): the hall
+    /// waits while the lesson holds the load gate `DAT_801D5830` up, and the
+    /// pass that finds it down zeroes the cue latch, this clock, the beat
+    /// track's flash and the human's gauge and moves to READY, which first
+    /// runs the pass after. The caller holds [`CountIn::step`] off while the
+    /// gate is up.
+    Parked,
     /// State 3: the READY banner animator `FUN_801d2d98`.
     #[default]
     Ready,
@@ -149,11 +156,27 @@ pub struct CountInStep {
     pub done: bool,
     /// This vsync ran the animator: one of the hall's game frames.
     pub ran: bool,
+    /// This run left the how-to park ([`CountInStage::Parked`]): the caller
+    /// zeroes the beat track's flash `DAT_801D512C` and the human's gauge
+    /// `DAT_801D544C` (`0x801CFA3C..0x801CFA50`).
+    pub released: bool,
 }
 
 impl CountIn {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The how-to run's count-in, which opens on the park of state 2: state 1
+    /// sends mode `2` there rather than to READY (`0x801CF9F4..0x801CFA08`),
+    /// and so does the lesson's restart (`DAT_801D5334 = 2`).
+    ///
+    /// PORT: FUN_801cf470 (state 2: the load-gate park and its release)
+    pub fn parked() -> Self {
+        Self {
+            stage: CountInStage::Parked,
+            ..Self::default()
+        }
     }
 
     /// Frames elapsed (the banner animator's own counter).
@@ -190,6 +213,14 @@ impl CountIn {
         let mut song_start = false;
         let mut done = false;
         match self.stage {
+            // The release pass zeroes the clock `DAT_801D5158`, and the
+            // head's tail adds the pass's `dt` to it as it does on every pass
+            // (`0x801D015C..0x801D0184`), so READY's first run draws `3`.
+            CountInStage::Parked => {
+                self.view = CountInView::default();
+                self.stage = CountInStage::Ready;
+                self.frame = COUNTIN_ANIM_STEP;
+            }
             CountInStage::Ready => {
                 let banner = dance_countin_banner_envelope(self.frame);
                 if banner.hold && !self.cue_fired {
@@ -258,6 +289,7 @@ impl CountIn {
     /// so this returns the same view three vsyncs running and then jumps.
     pub fn step(&mut self) -> CountInStep {
         let ran = self.phase == 0;
+        let released = ran && self.stage == CountInStage::Parked;
         let (cue, song_start, done) = if ran {
             self.run()
         } else {
@@ -274,6 +306,7 @@ impl CountIn {
             song_start,
             done,
             ran,
+            released,
         }
     }
 }
