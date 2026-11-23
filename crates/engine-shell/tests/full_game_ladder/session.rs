@@ -93,6 +93,11 @@ pub(super) fn open_session(extracted: &Path) -> NativeSession {
     // record's flag writes, branches and scene changes. `NativeSession` leaves
     // it off; without it a conversation only types its first text segment.
     session.host.world.toggles.use_vm_dialogue = true;
+    // The CD timing players get (console pacing for the field and for
+    // battle), as both play hosts seat it: a ladder on the harness's
+    // PCSX-Redux timing paced voiced beats and fights the way no player sees
+    // them.
+    legaia_engine_session::native::play_cd_timing().apply(&mut session.host.world.toggles);
     // NPC bodies are solid, as both play hosts have them: a body stops the
     // pad tier's walk as it stops a player, and a story gate that is a body
     // (`kor`'s guard dogs, `deene`'s P1[4] / P1[5]) holds.
