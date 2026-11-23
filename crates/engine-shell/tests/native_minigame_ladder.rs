@@ -478,12 +478,20 @@ fn rung5_baka_fighter_duel_is_won_and_shows_its_tally() {
     let base = baseline(&disc, &out);
     let shot = out.join("baka.png");
     let _ = std::fs::remove_file(&shot);
-    let (stdout, stderr) = run_window(
+    // The schedule was played on PCSX-Redux's CD pace, which the cabinet's
+    // announcer windows stretch (`WorldToggles::battle_cd_timing`); the
+    // window seats a console's for players, where the cabinet holds step `1`
+    // and the same presses land on other beats of the duel.
+    let pace = [("LEGAIA_BATTLE_CD_TIMING", "pcsx-redux")];
+    let (stdout, stderr) = run_window_env(
         &disc,
         &shot,
         "40:B",
         Some(&baka_attacks()),
         BAKA_TICKS as u64,
+        &[],
+        &pace,
+        false,
     );
     assert!(
         stdout.contains("[ok] screenshot"),
@@ -504,12 +512,15 @@ fn rung5_baka_fighter_duel_is_won_and_shows_its_tally() {
     // where the host logs who won. A loss logs "match lost" and fails here,
     // so this cannot pass on a duel that never reached the tally.
     let throwaway = out.join("baka_exit.png");
-    let (_, stderr) = run_window(
+    let (_, stderr) = run_window_env(
         &disc,
         &throwaway,
         &format!("40:B,{}:B", BAKA_TICKS - 30),
         Some(&baka_attacks()),
         BAKA_TICKS as u64,
+        &[],
+        &pace,
+        false,
     );
     assert!(
         stderr.contains("baka: match WON"),
