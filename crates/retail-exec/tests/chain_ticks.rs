@@ -224,7 +224,12 @@ struct Run {
     split_checked: usize,
     /// Director spawns matched against retail's.
     spawns_checked: usize,
+    /// Passes a victim settle held, against retail's hold.
+    settles_checked: usize,
 }
+
+/// The bodies whose victim settle the walk holds and releases.
+const SETTLE_WALKED: [u32; 3] = [939, 947, 948];
 
 /// Who a walk casts at and which seats stand: `target` a seat or a group code
 /// (`None`: a random party seat), `dead` the seats at zero HP (party seats
@@ -476,8 +481,10 @@ fn run_body(
         hits: 0,
         split_checked: 0,
         spawns_checked: 0,
+        settles_checked: 0,
     };
     let mut held = 0;
+    let mut settle_run: Option<usize> = None;
     let (mut quake_passes, mut quake_phase) = (0usize, 0xFEu8);
     let quake_hold = 1 + (usize::from(formation) + victim) % 4;
     for _ in 0..40_000 {
@@ -507,13 +514,43 @@ fn run_body(
                 _ => {}
             }
         }
-        // PROT 0939's arm 5 waits out the victim's clip: a standing victim's
-        // still playing (`0x801F7440`), a fallen one's not yet the fallen
-        // clip `8` (`0x801F7458`), for the same field-keyed passes.
-        if body.prot_entry == 939 && phase == 5 && quake_passes < quake_hold {
-            let va = ACTOR + victim.min(7) as u32 * STRIDE as u32;
+        // A victim settle (PROT 0939's arm 5, 0947's and 0948's arm 5) waits
+        // out the victim's clip, for the same field-keyed passes: a standing
+        // victim's still playing (`0x801F7440`), a fallen one's not yet the
+        // fallen clip `8` and its prim word still lit (`0x801F7458`,
+        // `0x801F7110..0x801F7120` on PROT 0948). Then on odd-keyed walks a
+        // fallen victim settles faded off its clip, else down on clip `8`.
+        let settle = body.arm(phase).and_then(|a| a.settle).filter(|s| {
+            victim < 8 && matches!(s, t::ChainSettle::Victim | t::ChainSettle::VictimOrFaded)
+        });
+        // The wait counts from the pass whose countdown runs out (the arm's
+        // gate ahead of its settle), or from the arm's first pass.
+        let spent = cam::capture_countdown_va(action)
+            .is_none_or(|va| cpu.mem.rd32(va) as i32 <= cam::SPEED_SCALAR);
+        settle_run = match settle_run {
+            Some(n) if spent && quake_passes > 0 => Some(n + 1),
+            _ if spent => Some(0),
+            _ => None,
+        };
+        let settle_passes = settle_run.unwrap_or(0);
+        if let Some(kind) = settle
+            && SETTLE_WALKED.contains(&body.prot_entry)
+        {
+            let va = ACTOR + victim as u32 * STRIDE as u32;
             let fallen = cpu.mem.rd16(va + 0x14C) == 0;
-            cpu.mem.wr8(va + 0x1D9, if fallen { 0 } else { 1 });
+            let faded = kind == t::ChainSettle::VictimOrFaded && seed & 1 == 1;
+            match (settle_passes < quake_hold, fallen) {
+                (true, false) => cpu.mem.wr8(va + 0x1D9, 1),
+                (true, true) => {
+                    cpu.mem.wr8(va + 0x1D9, 0);
+                    cpu.mem.wr32(va + 4, 0x2008_0200);
+                }
+                (false, true) if faded => {
+                    cpu.mem.wr8(va + 0x1D9, 0);
+                    cpu.mem.wr32(va + 4, 0);
+                }
+                _ => {}
+            }
         }
         let (ctx0, rec0) = (cpu.mem.read(CTX, CTX_LEN), cpu.mem.read(ACTOR, 8 * STRIDE));
         let vi = usize::from(rec0[CASTER * STRIDE + 0x1DD].min(7));
@@ -671,6 +708,27 @@ fn run_body(
         }
         let busy = cpu.regs.r[V0] != 0;
         let after = cpu.mem.rd8(CTX + 0x279);
+        // The arm's declared settle on the victim as the pass opened: a
+        // victim it calls unsettled holds retail, and a pass retail lets
+        // through finds it settled.
+        if let Some(kind) = settle {
+            let o = vi * STRIDE;
+            let hp = u16::from_le_bytes([rec0[o + 0x14C], rec0[o + 0x14D]]);
+            let clip = rec0[o + 0x1D9];
+            let lit = rec0[o + 4..o + 8] != [0; 4];
+            let settled = match (hp, kind) {
+                (0, t::ChainSettle::VictimOrFaded) => clip == t::SETTLE_DOWN_CLIP || !lit,
+                (0, _) => clip == t::SETTLE_DOWN_CLIP,
+                _ => clip == 0,
+            };
+            let retail_held = busy && after == phase;
+            if !settled && !retail_held {
+                out.gaps.push(format!(
+                    "{c0}: the {kind:?} settle holds where retail passed"
+                ));
+            }
+            out.settles_checked += usize::from(!settled);
+        }
         if busy && after == phase {
             held += 1;
             if held > 5000 {
@@ -997,6 +1055,14 @@ fn fields(entry: u32) -> Vec<(u64, Field)> {
     // Item action queued and its turn to come (`0x801F705C`, `0x801F706C`
     // and the refund), its turn spent, and another action's turn to come
     // (`0x801F7088`).
+    // PROT 0947's and 0948's monster-row walks past a fallen monster
+    // (`0x801F6C70` / `0x801F6C20`, `0x801F717C`), and their arm 5's settle on a
+    // victim already down.
+    if [947, 948].contains(&entry) {
+        out.push((0x4D44_4544, f(Some(2), 0b0001_0000, 0)));
+        out.push((0x5644_4544, f(Some(2), 0b100, 0)));
+        out.push((0x5644_4545, f(Some(2), 0b100, 0)));
+    }
     if entry == 956 {
         let at = |seed, ability, queued| {
             (
@@ -1048,6 +1114,7 @@ fn the_chain_bodies_walk_as_retail_does() {
     let (mut casts, mut arms, mut hits, mut known) = (0, 0, 0, 0);
     let mut split = 0usize;
     let mut spawns_checked = 0usize;
+    let mut settles_checked = 0usize;
     for body in t::chain_bodies() {
         // PROT 0961 rolls its sweep in the evolved Cort's formation only; PROT
         // 0964 forks on the last Element Change roll.
@@ -1078,6 +1145,7 @@ fn the_chain_bodies_walk_as_retail_does() {
                     known += run.known;
                     split += run.split_checked;
                     spawns_checked += run.spawns_checked;
+                    settles_checked += run.settles_checked;
                     let terminal = run.path.last().and_then(|&p| body.arm(p));
                     if !terminal.is_some_and(|a| a.exit == t::ChainExit::Finish) {
                         failures.push(format!(
@@ -1093,7 +1161,11 @@ fn the_chain_bodies_walk_as_retail_does() {
     eprintln!("{casts} casts, {arms} arms left, {hits} wrapper hits, {known} known gaps hit");
     assert!(hits > 20, "{hits} hits");
     assert!(split >= 4, "{split} split-hit passes compared");
-    eprintln!("{spawns_checked} director spawns matched");
+    eprintln!("{spawns_checked} director spawns matched, {settles_checked} settle holds");
+    assert!(
+        settles_checked >= 20,
+        "{settles_checked} settle holds compared"
+    );
     assert!(
         spawns_checked >= 900,
         "{spawns_checked} director spawns matched"
