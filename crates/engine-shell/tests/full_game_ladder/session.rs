@@ -55,9 +55,16 @@ impl HostPad for NativeSession {
                 panic!("prologue hand-off: enter '{target}' failed: {e:#}");
             }
         }
-        let pad = if self.world_holds_field_pad() && !raw_pad() {
+        // The neutral pad is the field's, in `claim_tick`'s order: the
+        // pause menu and the naming prompt take the tick ahead of it and
+        // read the pad as pressed, on both hosts.
+        let field_owns_tick = self.field_menu.is_none() && !self.host.world.name_entry_active();
+        let pad = if field_owns_tick && self.world_holds_field_pad() && !raw_pad() {
             0
         } else {
+            if !field_owns_tick && self.world_holds_field_pad() && pad != 0 {
+                shortcut("gate_order");
+            }
             pad
         };
         self.host.world.set_pad(pad);
