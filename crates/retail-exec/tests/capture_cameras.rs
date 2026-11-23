@@ -668,11 +668,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
             let mut arm3_passes = 0usize;
             let mut settle_passes = 0usize;
-            // (Rolling Flare's arm 4 aims every pass as well.)
-            let pass_step: u8 = if round % 2 == 1
-                && ((2..=6).any(|p| cam::capture_shot_rearms_every_pass(body.entry, body.va, p))
-                    || body.action == 0x5A)
-            {
+            let pass_step: u8 = if round % 2 == 1 {
                 [2u8, 3, 4][(round / 2) % 3]
             } else {
                 1
@@ -976,6 +972,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 for i in 0..step {
                     st.countdown.1 = step - 1 - i;
                     st.opens_pass = i == 0;
+                    // The pad's edge reaches the pass's first tick alone, as
+                    // the host feeds it (`World::feed_death_game`).
+                    if i > 0 {
+                        st.death_game.pad = Default::default();
+                    }
                     arm = (body.director)(&mut st, phase, seats);
                     if i == 0 {
                         opened_spawns = Some(arm.pass_spawns);
@@ -1013,17 +1014,15 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                             act.battle.render_color = word;
                         }
                     }
-                    w.clock.display_frames += 1;
+                    w.clock.display_frames += u64::from(pass_step);
                     // Retail's `rand()` stream as this pass opens on it, so a
                     // rolled status lands on the seat retail's roll lands.
                     w.rng_state = stream.get();
-                    // The band's after-pass seam (`World::caster_stages`):
-                    // Glare's roll on the pass that counts its arm 2 out.
-                    if let Some(run) = w.run_cast_module_code(body.action, phase)
-                        && run.phase != phase
-                    {
-                        w.drive_fold_glare_on_its_arm(run.prot_entry, body.action, run.phase);
-                    }
+                    // The band's pass (`0x70`), its ticks as the engine runs
+                    // them at the pass's step (`World::module_pass`), with
+                    // the after-pass seam (`World::caster_stages`): Glare's
+                    // roll on the pass that counts its arm 2 out.
+                    w.drive_capture_module_pass(body.action, pass_step);
                 }
                 let ctx_before = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
                 // The two seats as the pass opens, for Death Game's result.
@@ -1529,8 +1528,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     );
     eprintln!("band shadow: {status_marks} seat passes with a status bit set compared");
     assert!(status_marks >= 1000, "status marks compared {status_marks}");
+    // Half the rounds run at a step of 2 to 4, whose casts take fewer passes.
     assert!(
-        shadow_passes >= 150_000,
+        shadow_passes >= 110_000,
         "band shadow passes {shadow_passes}"
     );
     assert!(

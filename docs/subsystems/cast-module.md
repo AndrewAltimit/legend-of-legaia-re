@@ -4989,6 +4989,12 @@ than holding its own: the script is what walks a card in.
 the way a pass. A confirm press (`0x800846D0`) or the spent word plays cue `0x21`.
 The module is entered once a pass, so a press is one step; the port runs a pass as a
 frame step of one-vsync ticks and feeds the pad to the first alone.
+The swap's frame counter `0x801FA27C` moves the same way: by the pass's step, once,
+on the opening tick (`0x801F8240..0x801F8264`, `0x801F84CC..0x801F84F0`), clamped to
+`16` before the end test, and the next swap is drawn on the pass that opens it. Moved
+a tick at a time, a step of `3` ran each swap one tick short and drew the next swap
+inside the pass that ended the last. Arm 9 drains and grows the pick a pass at a time
+too, so a tick that leaves ahead of the pass's last takes the rest of both.
 Arm 6's pick is the handle whose `+0x14` equals `(target - 0x28) * 192 / 76 - 0x120`.
 
 **The two sprites** are screen-space `0x2C` `POLY_FT4` (textured, opaque, colour
