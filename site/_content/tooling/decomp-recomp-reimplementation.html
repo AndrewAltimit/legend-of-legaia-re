@@ -252,6 +252,7 @@
     <div><strong>One instant</strong><span class="cs-when">A retail save state</span><span>The frame, camera, placements and flags the state holds. Blind to time.</span></div>
     <div><strong>A stretch of time</strong><span class="cs-when">An emulator recording</span><span>A cast or a walk, paired frame by frame on the game's clock, with sound cues and the emulator's audio output scored beside it.</span></div>
   </figure>
+  <p>Between the first two grains sit the shadow walks: a whole cast module of the original runs in the interpreter beside the engine's own state, from the cast's first pass to its end, and every pass is compared, which sees the order in which the engine calls its kernels inside that module (<a href="porting-by-reimplementation.html#step-6">step 6</a>).</p>
   <p>Above those, a pad-only run plays New Game to the credits, which proves the game can be finished and compares nothing with retail. <a href="porting-by-reimplementation.html#coverage">The coverage map</a> lists every instrument with the gap it closes and what it stays blind to.</p>
 </section>
 
