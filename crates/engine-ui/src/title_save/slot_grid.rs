@@ -17,7 +17,7 @@ pub const SLOT_GRID_ROW_STAGGER_X: i32 = 4;
 pub const SLOT_GRID_COLS: usize = 5;
 pub const SLOT_GRID_ROWS: usize = 3;
 
-/// Per-cell view passed into [`slot_preview_grid_draws_for`] - the three
+/// Per-cell view passed into [`slot_preview_grid_draws_at`] - the three
 /// arms of `FUN_801E0FD0`, keyed on the block's class:
 ///
 /// | Class | Draws |
@@ -75,10 +75,9 @@ pub const SLOT_GRID_SPRITE_MARGIN: i32 = 6;
 /// grid (`98 + col*40 + row*4`); at `t = 0` the cells park off-screen
 /// right from x = 354 with the 104 px per-slot fan-out.
 ///
-/// Wired: [`slot_preview_grid_draws_for`] places every cell through this at
-/// [`SLOT_GRID_SLIDE_LANDED`]. The intermediate `t` frames still have no host
-/// driver - the save screen opens on the landed grid rather than animating the
-/// commit slide - so only the endpoint is exercised in the live path.
+/// Wired: [`slot_preview_grid_draws_at`] places every cell through this at
+/// the card-text fade the session ramps once the card answers
+/// (`SaveSelectSession::info_panel_slide_anim_t`).
 ///
 /// PORT: FUN_801e06c0 (per-cell x of the grid loop, `0x801e0734..0x801e0784`)
 /// REF: FUN_801e0fd0 (the per-cell drawer whose `+8` inset is folded in)
@@ -98,20 +97,28 @@ pub fn slot_grid_quad_x(col: u32, row: u32, slot: u32, t: u16) -> i32 {
 /// cell additionally gets its save-icon face centred in the frame. The
 /// cursor sprite sits to the left of the currently selected cell.
 ///
-/// PORT: FUN_801e06c0 (the landed grid: quad x = `98 + col*40 + row*4`,
-/// y = `28 + row*20`; focused cell full `0x80` modulation, every other
-/// cell dimmed - the `mode 0 / mode 3` split its per-cell calls pass;
-/// hand cursor at quad `(-10, +4)` = the `FUN_8002C488(x-2, y-4, 0x4E)`
-/// call against the pre-inset pen). The commit slide's per-frame x is
-/// [`slot_grid_quad_x`].
+/// `t` is the frame of the grid's slide: every cell, and the hand beside
+/// the focused one, sits at [`slot_grid_quad_x`] for the card-text fade
+/// `t` (`0x801EF1A0`, which `FUN_801E06C0` reads at `0x801E0740`).
+/// [`SLOT_GRID_SLIDE_LANDED`] is the landed grid; below it the cells fan in
+/// from the right, the way retail's grid arrives under the "Now checking"
+/// dialog once the card answers.
+///
+/// PORT: FUN_801e06c0 (the grid: quad x = `98 + col*40 + row*4` landed, the
+/// slide timer read at `0x801e0740`; y = `28 + row*20`; focused cell full
+/// `0x80` modulation, every other cell dimmed - the `mode 0 / mode 3` split
+/// its per-cell calls pass; hand cursor at quad `(-10, +4)` = the
+/// `FUN_8002C488(x-2, y-4, 0x4E)` call against the pre-inset pen).
 /// PORT: FUN_801e0fd0 (the per-cell drawer the loop calls: the 32x32
 /// cell quad at the `+8 / -8` content inset, the portrait inside the
 /// frame, and the full-vs-dim modulation by the caller's mode - this
 /// builder emits the same per-cell draws).
-pub fn slot_preview_grid_draws_for(
+/// REF: FUN_8002C488 (the indexed sprite cell the loop stamps the hand with)
+pub fn slot_preview_grid_draws_at(
     rects: &SaveMenuAtlasRects,
     cells: &[SlotGridCell],
     cursor_slot: u8,
+    t: u16,
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
@@ -156,7 +163,7 @@ pub fn slot_preview_grid_draws_for(
         // at `t = 0x1000` it is the GP0-pinned landed row (98 + col*40 +
         // row*4), so the visible frame sits `SLOT_GRID_SPRITE_MARGIN` further
         // right - which is `SLOT_GRID_ORIGIN.0` for column 0.
-        let quad_x = slot_grid_quad_x(col as u32, row as u32, slot as u32, SLOT_GRID_SLIDE_LANDED);
+        let quad_x = slot_grid_quad_x(col as u32, row as u32, slot as u32, t);
         let cell_x = quad_x + SLOT_GRID_SPRITE_MARGIN;
         let cell_y = SLOT_GRID_ORIGIN.1 + (row as i32) * SLOT_GRID_PITCH_Y;
         let color = if slot == cursor_slot as usize {
@@ -200,9 +207,12 @@ pub fn slot_preview_grid_draws_for(
     // visible-cell coords is `(cell_x - 16, cell_y - 2)`.
     let cursor_col = (cursor_slot as usize) % SLOT_GRID_COLS;
     let cursor_row = (cursor_slot as usize) / SLOT_GRID_COLS;
-    let cursor_x = SLOT_GRID_ORIGIN.0
-        + (cursor_col as i32) * SLOT_GRID_PITCH_X
-        + (cursor_row as i32) * SLOT_GRID_ROW_STAGGER_X
+    let cursor_x = slot_grid_quad_x(
+        cursor_col as u32,
+        cursor_row as u32,
+        u32::from(cursor_slot),
+        t,
+    ) + SLOT_GRID_SPRITE_MARGIN
         - 16;
     let cursor_y = SLOT_GRID_ORIGIN.1 + (cursor_row as i32) * SLOT_GRID_PITCH_Y - 2;
     push(&mut out, rects.cursor, cursor_x, cursor_y, 16, 16, white);

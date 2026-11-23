@@ -182,10 +182,35 @@ fn circle_on_the_review_restarts_the_entry() {
     s.input(press("D"), party3(), one_monster());
     s.input(idle(), party3(), one_monster());
     assert!(matches!(s.phase, ArtsInputPhase::Review));
+    // Pressed while the pennants still glide in, the cancel is not read.
+    s.input(press("o"), party3(), one_monster());
+    assert!(
+        matches!(s.phase, ArtsInputPhase::Review),
+        "held by the glide"
+    );
+    land_pennants(&mut s);
     s.input(press("o"), party3(), one_monster());
     assert!(matches!(s.phase, ArtsInputPhase::Entering));
     assert!(s.buffer.is_empty());
     assert_eq!(s.pool, 60, "the cancel re-seeds the pool");
+    // The pennants slide back off under the same flag: a second cancel inside
+    // the retreat is not read either.
+    assert!(s.cancel_held(), "the retreat");
+    s.input(press("o"), party3(), one_monster());
+    assert!(matches!(s.phase, ArtsInputPhase::Entering), "not aborted");
+    land_pennants(&mut s);
+    s.input(press("o"), party3(), one_monster());
+    assert!(
+        matches!(s.phase, ArtsInputPhase::Aborted),
+        "an empty entry's cancel leaves it"
+    );
+}
+
+/// Idles the session until no pennant glide holds the cancel.
+fn land_pennants(s: &mut ArtsCommandInputSession) {
+    while s.cancel_held() {
+        s.input(idle(), party3(), one_monster());
+    }
 }
 
 /// The review's press goes straight to the target: there is no per-member
@@ -295,6 +320,7 @@ fn circle_on_a_typed_buffer_resets_the_entry_instead_of_leaving_it() {
     assert_eq!(s.buffer.len(), 1, "the direction was accepted");
     assert_eq!(s.pool, 30, "and debited its cost");
 
+    land_pennants(&mut s);
     s.input(press("o"), party3(), one_monster());
 
     assert_eq!(s.resolved(), None, "the entry is still open, not aborted");
@@ -304,7 +330,9 @@ fn circle_on_a_typed_buffer_resets_the_entry_instead_of_leaving_it() {
     assert_eq!(s.pool, s.pool_max, "the pool is re-seeded in full");
 
     // And a second Circle - now on the empty buffer it just made - is
-    // the leave press, so the reset is not a one-way trap.
+    // the leave press once the pennants' retreat has landed, so the reset is
+    // not a one-way trap.
+    land_pennants(&mut s);
     s.input(press("o"), party3(), one_monster());
     assert_eq!(s.resolved(), Some(ArtsInputResolution::Aborted));
 }
@@ -475,4 +503,24 @@ fn the_list_window_slides_by_the_frame_step() {
     }
     s.step_list_slide(3);
     assert_eq!((s.list_page, s.list_slide), (None, 0));
+}
+
+/// The target cursor is retail's `0x5A`, the review's own state: one cancel
+/// from it wipes the string and returns to the entry (case `0xF`), with the
+/// pennants sliding off, rather than stepping back to the review.
+#[test]
+fn one_cancel_from_the_target_cursor_returns_to_the_entry() {
+    let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0);
+    s.input(press("U"), party3(), one_monster());
+    s.input(press("D"), party3(), one_monster());
+    s.input(idle(), party3(), one_monster());
+    assert!(matches!(s.phase, ArtsInputPhase::Review));
+    land_pennants(&mut s);
+    s.input(press("R"), party3(), one_monster());
+    assert!(matches!(s.phase, ArtsInputPhase::Targeting { .. }));
+    s.input(press("o"), party3(), one_monster());
+    assert!(matches!(s.phase, ArtsInputPhase::Entering));
+    assert!(s.buffer.is_empty());
+    assert_eq!(s.pool, 60);
+    assert!(s.pennant_retreat.is_some(), "the pennants slide off");
 }

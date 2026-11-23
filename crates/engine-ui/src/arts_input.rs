@@ -435,6 +435,9 @@ pub struct ArtsInputFrame<'a> {
     /// `(slot, elapsed, total)` frames ([`Self::pennant_seat`]). Empty draws
     /// every pennant on its bar seat.
     pub glides: &'a [(usize, u8, u8)],
+    /// Wiped pennants sliding off the bar after a restart or a review
+    /// cancel ([`PennantRetreatFrame`]); `None` draws none.
+    pub retreat: Option<PennantRetreatFrame<'a>>,
     /// The direction chips' slide-in, `(elapsed, total)` frames, while it
     /// runs ([`Self::chip_anchor`]); `None` draws them on seat B.
     pub chip_slide: Option<(u8, u8)>,
@@ -450,6 +453,46 @@ pub struct ArtsInputFrame<'a> {
 /// `sh v0,0xc(a2)` at `0x801D3D10` / `0x801D3D14`). It draws
 /// `PENNANT_RECORD_Y - BAR_Y` above that, on the bar row.
 pub const PENNANT_RECORD_Y: i32 = 0xC0;
+
+/// Record-space `y` a retreating pennant slides down to: case `0xF`'s tail
+/// rewrites each pennant record's seat A to `(seat B x, 0xE8)` and re-spawns
+/// it in mode `1`, gliding from seat B (`li s1,0xe8` / `sh s1,0x4(v0)` at
+/// `0x801D52FC` / `0x801D5318`). It rests below the 228-line display.
+pub const PENNANT_RETREAT_RECORD_Y: i32 = 0xE8;
+
+/// The pennants a restart or a review cancel wiped, sliding straight down
+/// off the bar ([`PENNANT_RETREAT_RECORD_Y`]) over `total` frames.
+#[derive(Debug, Clone, Copy)]
+pub struct PennantRetreatFrame<'a> {
+    /// The wiped command bytes, in order.
+    pub commands: &'a [u8],
+    /// Their costs, which seat them along the bar as the committed
+    /// pennants' do.
+    pub spent: &'a [u16],
+    /// Frames run.
+    pub elapsed: u8,
+    /// The slide's length (`ctx[+0x1C] = 0x10`).
+    pub total: u8,
+}
+
+impl PennantRetreatFrame<'_> {
+    /// Stage `(x, y)` of retreating pennant `slot`'s drawn left edge: the
+    /// bar seat it was wiped from, moved down along `FUN_801D9BBC`'s linear
+    /// step toward [`PENNANT_RETREAT_RECORD_Y`], with the landing pennant's
+    /// record-to-row offset.
+    pub fn seat(&self, slot: usize) -> (i32, i32) {
+        let x = PENNANT_ANCHOR_X0 + self.spent.iter().take(slot).map(|&c| c as i32).sum::<i32>();
+        let total = i32::from(self.total.max(1));
+        let elapsed = i32::from(self.elapsed).min(total);
+        let y = PENNANT_RECORD_Y + (PENNANT_RETREAT_RECORD_Y - PENNANT_RECORD_Y) * elapsed / total;
+        (x - 9, y - (PENNANT_RECORD_Y - BAR_Y))
+    }
+
+    /// Drawn strip width of retreating pennant `slot` (`cost - 6`).
+    pub fn width(&self, slot: usize) -> i32 {
+        (self.spent.get(slot).copied().unwrap_or(0) as i32 - COST_WIDTH_BIAS).max(1)
+    }
+}
 
 impl ArtsInputFrame<'_> {
     /// `true` while the direction chips + D-pad are up. Retail draws
@@ -649,16 +692,29 @@ pub fn arts_input_chrome_draws(
     // gap 6), and retail's ordering table puts the earlier pennant on top:
     // its right cap over the next label, the next left cap under its label
     // (the captured OT walks the pennants right to left).
-    for (slot, &b) in frame.buffer.iter().enumerate().rev() {
+    // A restart's wiped pennants slide off under the bar's new ones (the
+    // queue is empty while they run, so nothing overlaps them in practice).
+    let retreating = frame.retreat.iter().flat_map(|r| {
+        r.commands
+            .iter()
+            .enumerate()
+            .rev()
+            .map(move |(slot, &b)| (b, r.seat(slot), r.width(slot)))
+    });
+    let committed = frame
+        .buffer
+        .iter()
+        .enumerate()
+        .rev()
+        .map(|(slot, &b)| (b, frame.pennant_seat(slot), frame.pennant_w(slot)));
+    for (b, (px, py), strip_w) in retreating.chain(committed) {
         let Some(dir) = ChipDirection::from_command_byte(b) else {
             continue;
         };
-        let (px, py) = frame.pennant_seat(slot);
         let cap_w = rects.pennant_cap_l.2 as i32;
         // The strip between the caps is the record's own width, `cost - 6` -
         // so an off-class command stamps a wider pennant, and the next one
         // starts that much further along the bar.
-        let strip_w = frame.pennant_w(slot);
         let label = frame.chip_label(rects, dir);
         for (t, x0, x1) in label_strip_columns(strip_w) {
             push(
@@ -1327,9 +1383,31 @@ mod tests {
             list_pages: 0,
             phase: ArtsInputScreen::Entering,
             glides: &[],
+            retreat: None,
             chip_slide: None,
             dpad: true,
         }
+    }
+
+    /// A wiped pennant slides straight down from its bar seat to the
+    /// retreat seat `0xE8` over the slide, linearly. Retail's handle ran
+    /// `(16, 190) -> (16, 230)` in the restart capture; the draw sits two
+    /// above the handle, as the landed pennant's does.
+    #[test]
+    fn a_wiped_pennant_slides_off_the_bottom() {
+        let r = PennantRetreatFrame {
+            commands: &[0x0E, 0x0F],
+            spent: &[30, 42],
+            elapsed: 0,
+            total: 16,
+        };
+        assert_eq!(r.seat(0), (16 - 9, 188));
+        assert_eq!(r.seat(1), (16 + 30 - 9, 188));
+        let at = |e| PennantRetreatFrame { elapsed: e, ..r }.seat(0).1;
+        // The capture's handle at elapsed 3 / 6 / 9 / 12 / 15: 197 205 212 220 227.
+        assert_eq!([3, 6, 9, 12, 15].map(at), [195, 203, 210, 218, 225]);
+        assert_eq!(at(16), 228, "landed, below the 228-line display");
+        assert_eq!(r.width(1), 36);
     }
 
     /// The chips spawn on seat A and glide to seat B over the slide.

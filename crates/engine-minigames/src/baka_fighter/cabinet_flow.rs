@@ -214,6 +214,15 @@ impl BakaFight {
         })
     }
 
+    /// Roster `roster`'s idle clip header (action `0`), the clip the lineup
+    /// stands on in the player select.
+    pub fn roster_idle_header(&self, roster: usize) -> Option<super::ClipHeader> {
+        self.roster_clips
+            .as_ref()
+            .and_then(|r| r.get(roster))
+            .and_then(|h| h[0])
+    }
+
     /// The cabinet's own widget draws this frame - the attract prompt, the
     /// "PLAYER SELECT" banner, the "NEXT GAME / PAY OUT" sheet and the
     /// all-clear captions - as one

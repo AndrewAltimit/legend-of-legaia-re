@@ -221,6 +221,10 @@ pub struct SubmodeScreen {
     pub scripted_menu_opened: bool,
     /// Slot `0x33`'s return-to-title state ([`SoftResetScreen`]).
     pub soft_reset: SoftResetScreen,
+    /// The art-learned painter's marker frame (kind `1` of the cursor
+    /// primitive's strip, [`World::art_notice_mark`]), stepped once a pass
+    /// while window record `9` is up.
+    pub notice_mark_frame: u8,
 }
 
 /// Handler slot op `49 0C` installs: `FUN_801EDF00`, the return-to-title soft

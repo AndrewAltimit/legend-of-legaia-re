@@ -40,7 +40,17 @@ The entry is the ordinary scene-backup -> overlay-load -> return-to-field sequen
 
 **The driver has no `jal` caller.** `FUN_801cf3bc` is the `+0x08` tick word of the static 24-byte actor template at `0x801D8FF4`. The sub-id-0 init `FUN_801CF070` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CF22C`); the per-frame pool walk reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`.
 
-**BGM.** Fishing loads no BGM of its own: the overlay has no streaming-loader call (`8001fc00`). The `func_0x80026478(&DAT_8007056c)` calls in the state machine are the actor sound-source attach / re-pan primitive (`FUN_80026478` in [`functions.md`](../reference/functions.md)) - the positional reel / water / cast SFX voice. The music is whatever the departure field scene was playing (its op-`0x35` BGM), the same host-scene-inherited shape as the [slot machine](minigame-slot-machine.md).
+**BGM.** Fishing streams no music of its own: the overlay has no streaming-loader call (`8001fc00`). It plays two streams the scene already staged, on the battle sound source `0x8007056C`. The strike swaps in the battle theme: the lure tick stops the source, installs category 5 from the staging buffer at `_DAT_8007B85C + 0x32000` through the chunk installer `FUN_8001E54C` and restarts it, raising the latch `0x801D92A4` (`0x801D360C..0x801D3664`).
+
+That half of the buffer is where the battle intro streams its bundle, and it stays there after the fight, so the hook plays the last fight's theme. The session puts the venue's track back from the buffer's head when the catch showcase opens (state `0x20`, `0x801CFD84..0x801CFDD4`) or the shore comes back (state `0xA`, `0x801CF7E0..0x801CF82C`), dropping the latch.
+
+A capture across a hook (`autorun_fishing_hook_audio`, from `minigame_fishing_retail_lure_cast`) found the latch rising on the strike's frame, extraction 878 (battle theme 2: a `pBAV` header, VAG bodies and a `pQES` score) at `+0x32000`, and extraction 1005 at the buffer's head. The latch starts at `-1` (`0x801CF358`), so the shore's first arrival also replays the venue's track from its head.
+
+Port: `World::fishing_hook_music` starts the last fight's track (`AudioState::last_battle_track`, or the configured battle theme before any fight) on `PondEvent::Hooked` and restores the scene's track on `PondEvent::Landed` or `Recast`. The catch's swap lands as the fish is decided, a close-up lift ahead of retail's showcase, and the first arrival's replay is not modelled. The strike's install is held against the lure tick in `retail-exec/tests/fishing_lure_tick.rs`.
+
+**Vibration.** The session head zeroes both motor words `_DAT_8007B92C` / `_DAT_8007B930` every frame, then, with the options screen's Events vibration row On (`_DAT_800845A8 == 0`), copies the venue's rumble pair `DAT_801D90E0` / `DAT_801D90E4` into them (`0x801CF3F4..0x801CF41C`). The driver tail refills the pair from the hooked fish's surge `DAT_801D90F4` as `surge / 8` and `surge / 4`, rounded toward zero (`0x801D0344..0x801D0380`), so the small motor's pulse and the large motor's level follow the fish's pull.
+
+Port: `World::fishing_motor_copy` on the shared rumble state, held against the routine in `retail-exec/tests/fishing_cadence.rs` (`the_session_drives_the_motors_off_the_surge`).
 
 ### Venue select
 

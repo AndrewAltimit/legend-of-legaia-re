@@ -23,6 +23,18 @@ pub enum ImpactSeat {
     Creature,
     /// `actor_table[3..7]` with non-zero HP: the loops the row hits run.
     LiveMonsters,
+    /// [`Self::LiveMonsters`] without the seats in Stone (`+0x16E & 4`):
+    /// the row-hit loops that skip a Stoned seat ahead of the hit and its
+    /// tint (`lhu 0x16e` / `andi 4` / `bnez` to the loop's step).
+    LiveUnstonedMonsters,
+    /// [`Self::Victim`] unless it stood in Stone as the tick opened: the
+    /// hits that skip a Stoned victim with their tint (PROT 0908's arms 8
+    /// and 11, `andi 4` at `0x801F76B8` / `0x801F7C00`).
+    UnstonedVictim,
+    /// The monster seats other than the victim that stood shown
+    /// (`+0x21C == 0`), living and out of Stone as the tick opened: PROT
+    /// 0908's arm-11 splash loop (`0x801F7DB0..0x801F7DEC`).
+    ShownOtherMonsters,
     /// `actor_table[0..ctx[+0]]`: the party row.
     Party,
     /// The party row's seats with HP `+0x14C` and no Stone (`+0x16E & 4`):
@@ -112,25 +124,36 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
     // PROT 0908 Zenoir. Arm 7's pass lights the creature (`0x801F761C`, the
     // delay slot of the arm's exit); arm 8's opener strikes the victim
     // (`0x801F77DC..0x801F7800`); arm 11's finisher strikes the victim
-    // (`0x801F7D58..0x801F7D6C`) and its splash every other live monster
-    // (`0x801F7F60..0x801F7F7C`).
+    // (`0x801F7D58..0x801F7D6C`) and its splash every other shown monster
+    // (`0x801F7F60..0x801F7F7C`); each skips a Stoned seat.
     latch(908, 7, ImpactEdge::Pass, ImpactSeat::Creature, 1),
-    tint(908, 8, ImpactSeat::Victim, RED, 1),
-    tint(908, 11, ImpactSeat::Victim, RED, 1),
-    tint(908, 11, ImpactSeat::LiveMonsters, RED, 1),
+    tint(908, 8, ImpactSeat::UnstonedVictim, RED, 1),
+    tint(908, 11, ImpactSeat::UnstonedVictim, RED, 1),
+    tint(908, 11, ImpactSeat::ShownOtherMonsters, RED, 1),
     // PROT 0909 Viguro. Arm 11 marks the live row (`0x801F7248..0x801F7268`,
-    // beside `+0x21C = 4`), the sweep strikes it (`0x801F76DC..0x801F76F8`).
+    // beside `+0x21C = 4`), the sweep strikes it (`0x801F76DC..0x801F76F8`),
+    // skipping a Stoned seat (`andi 4` at `0x801F75E0`).
     latch(909, 11, ImpactEdge::Pass, ImpactSeat::LiveMonsters, 2),
-    tint(909, 13, ImpactSeat::LiveMonsters, BLUE, 2),
+    tint(909, 13, ImpactSeat::LiveUnstonedMonsters, BLUE, 2),
     // PROT 0914 Gola Gola. Arm 12's pass marks the live row
     // (`0x801F7458..0x801F7488`, its colour word cleared and the row hidden),
-    // arm 13 strikes it (`0x801F77E8..0x801F7804`).
+    // arm 13 strikes it (`0x801F77E8..0x801F7804`), skipping a Stoned seat
+    // (`andi 4` at `0x801F7704`).
     latch(914, 12, ImpactEdge::Pass, ImpactSeat::LiveMonsters, 1),
-    tint(914, 13, ImpactSeat::LiveMonsters, RED, 1),
+    tint(914, 13, ImpactSeat::LiveUnstonedMonsters, RED, 1),
     // PROT 0916 Aluru: arm 18's victim (`0x801F8684`, beside its rate `2`).
     latch(916, 18, ImpactEdge::Pass, ImpactSeat::Victim, 2),
-    // PROT 0923 Gilium: the finale's row strike (`0x801F8A08..0x801F8A24`).
-    tint(923, 20, ImpactSeat::LiveMonsters, BLUE, 1),
+    // PROT 0923 Gilium: the finale's row strike (`0x801F8A08..0x801F8A24`),
+    // in arm `0x15`'s pass (the dispatch sends `0x15` to `0x801F87AC`; arm
+    // `0x14`'s code ends at `0x801F87A4`), beside its hit; a Stoned seat is
+    // skipped (`andi 4` at `0x801F88F4`).
+    tint(
+        923,
+        crate::cast_module_camera::GILIUM_HIT_ARM,
+        ImpactSeat::LiveUnstonedMonsters,
+        BLUE,
+        1,
+    ),
     // PROT 0932 Meta: the row strike (`0x801F7C5C..0x801F7C78`).
     tint(932, 18, ImpactSeat::LiveMonsters, RED, 1),
     // PROT 0934 Ozma. Arms 17 and 18 hold the creature's sparks every pass

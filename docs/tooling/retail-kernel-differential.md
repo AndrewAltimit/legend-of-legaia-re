@@ -213,9 +213,9 @@ at another routine's frame setup when the `jr` was a tail call through a
 function pointer. Against the SCUS routines with a Ghidra dump, the counts
 agree except where the dump itself is short of the routine.
 
-Not every branch is a test gap. `scripts/ci/branch-coverage-scope.toml` takes
-arms out of scope, one row per range with a verdict and a disassembly-grounded
-reason: `unported` (no port implements the arm, by decision), `unreachable` (no
+Not every branch is a test gap. The `scripts/ci/branch-coverage-scope/*.toml`
+files take arms out of scope, one row per range with a verdict and a
+disassembly-grounded reason: `unported` (no port implements the arm, by decision), `unreachable` (no
 game state reaches it) or `cannot-drive` (the interpreter cannot run it). The
 report gives coverage over all branches and over the **ported arms**, the
 branches no row covers; what stays below 100% there is the worklist, arms a
@@ -223,7 +223,9 @@ port claims and no test exercises. `--worksheet` lists a routine's branches
 beside the address ranges its `PORT:` tags cite and the rows that cover them.
 A slot-B VA holds different routines in different images, so a row at a
 VA-aliased entry also gives `image`, the image hash `--worksheet` prints;
-without it a row applies to every image at its entry.
+without it a row applies to every image at its entry. The rows are split by
+area across the directory's files so that branches adding rows in parallel
+touch different files; `--check-scope` flags a range two rows both claim.
 
 Driving the retail side down an arm is half of it. A branch counts once the
 retail routine takes it; the test still has to compare that arm's output with
@@ -890,6 +892,11 @@ White Shield, Power Charge, Power Up and the surge on the pass that leaves their
 Lightning and Spore Gas on varied rolls (`chain_ticks`). All agree. Terror Scream's turn steal did not: its arm 3
 tests the Item category alone, where the port ran Kiss of Death's idiom, which also needs the initiative key.
 Kemaro's arm 17 runs on every formation byte (`kemaro_spear`), so its per-species jump table takes every case.
+Fatal Decision's whole body also runs pass by pass against `fatal_decision_tick` (`fatal_outcomes`): every arm's
+shot, records, cues, message raises, wheel words, icon offsets and seat stores, the steal against
+`steal_party_draw`, and the Numb and Stone refund. It found arm 0 zeroing the wheel tick's remainder `0x801F9014`
+beside the angle, and arm 2 showing the victim before it hides the caster, so a cast on the caster's own seat
+leaves it hidden.
 
 <a id="the-band-shadow"></a>
 **The band shadow.** Each capture cast also runs on an engine `World` seated off the same actor records
@@ -905,6 +912,67 @@ Strike's Wind loop, and party-row tints that missed a seat the hit felled
 test: the creature seat of PROT 0964 and 0966, which a stubbed `FUN_801F19EC` seats, and Death Game past its spin,
 whose pad reaches retail alone. A cast whose band leaves retail's phase walk stops being compared at that pass;
 most of those are a band holding an arm one pass longer on a clip settle the harness does not stage.
+
+The shadow also compares each seat's status word `+0x16E` against `World::raw_status_word`. For the rolled bits to
+be comparable the shadow draws from retail's `rand()` stream as each pass opens, carries every seat's AGL `+0x168`,
+gives Glare its one victim, and runs the band's after-pass seam that folds Glare's roll on the pass its arm 2 counts
+out (`World::drive_fold_glare_on_its_arm`). A seat the band's own damage roll leaves on other HP than retail's stubbed
+wrapper stops being compared for the cast: PROT 0956's arm 2 marks only a living victim. All of Glare's Stone,
+Paralyzing Wave's Numb, Kiss of Death's bits and Curse All's mark agree.
+
+<a id="the-summon-band-shadow"></a>
+**The summon band shadow.** The summon walk (`summon_cameras`) runs the same shadow beside each summon image: a
+`World` seated off the records, its summon stager armed, runs the band's module half
+(`World::drive_summon_module_pass`: the creature feeds, the module's pass, the creature and seat writes) on retail's
+phase, and every seated seat's `+0x04`, `+0x21C` and `+0x16E` must agree after each pass. The summon band's shown
+word is the engine's resting `0` under a lowered marker, where retail writes `0x20080200`. Every run opens on state
+`0x34`'s hide loop (`0x801E4B30..0x801E4B6C`, every party seat and living monster hidden), which the module's first
+pass finds; the fallen runs also stand the last monster in Stone, so each module's Stone skip is driven. It found
+Gilium's arm `0x11` leaving the row hidden and its row strike an arm early, Slippery's arm 8 framing the victim of a
+row the band had hidden and its hit tint relighting dead and Stoned seats, Jedo's kill arms missing the dissolve
+state, the defeat fade and the spell XP, Aluru's last arm hiding only a dead victim, Ultimate Rave's row loop (it
+tests `actor_table[3 + i]` and stores through `actor_table[i]`), and the row hits of Viguro, Gola Gola, Gilium,
+Palma and Mule that lit a Stoned seat ([the seat walks](../subsystems/cast-module.md#the-seat-walks)).
+
+The shadow also compares HP and each monster's staged reaction `+0x1DA`. The damage wrapper `FUN_801DD0AC`
+answers each seat's calls with a scripted run of rolls (small, middling, past HP) and the shadow's module rolls
+take the same (`summon_roll_override`, behind `test-drivers`), so every pre-hit's quartering, floor, `HP - 1`
+clamp and kill is compared; the hit arm's own pass is left out, since that hit is the band's fold. The walk seeds
+the group list `0x801F6978` with the living row, fades a felled monster's word out six passes after the kill, and
+gates the settle arms on retail's rule (a dead seat once its word is zero, a living one once its clip is). The
+restage byte `+0x1DC` stays outside: the engine carries its commit bit as the reaction channel, which a seat with no
+clips does not run. Every cast walks retail's phase to its end, the paced bodies included: the shadow reads
+Nighto's verdict off retail's fork and resist words `0x801F8534` / `0x801F853C`, and stands Zenoir's creature on
+its victim for arm 8's range poll. It found Palma's and Meta's pre-hits knocking a monster down where retail stages
+a flinch, Aluru's arms `0x11..0x13` relighting a felled victim, Nighto's and Zenoir's side-band arm missing its step
+over arm 3 when the band word is out, Zenoir's hits tinting a Stoned victim and its splash lighting hidden seats,
+and Vera's fade arm stepping to 11 where it stores `0xFF`.
+
+The walk leaves seat 3 off the group list on its fallen runs, on both sides, which drives Mule's undivided roll
+for a seat the list does not hold. Theeder's and Gizam's side-band arms, which their tick bodies pace and the walk
+does not, run in a test of their own (`the_side_band_arm_steps_over_the_band_word_poll_as_retail_does`): each arm
+once with the band word `ctx[+0x6D8]` out and once with it standing, beside a shadow world's module pass. It found
+Theeder's arm 1 stepping to 2 where retail stores 3.
+
+One arm stays apart from retail by choice. Aluru's arm `0x14` holds on a dead victim until its word is zero
+(`0x801F8870`), a word that eases out only under the defeat fade the commit's monster-death arm arms at the
+knockdown's end (`0x8004B66C`); the port's settle poll also lets the arm go on the down clip, so the cast leaves
+at the knockdown's start where retail waits out the fade, and a victim whose knockdown never commits cannot hold
+it for good.
+
+**The spawned records.** The capture and chain walks log every `FUN_80021B04` / `FUN_80050ED4` call a pass makes,
+as record, point, angle trio and scale, and every literal-anchored record a director seats (its charge records and
+per-pass spawns) must match one of them. The chain walk had run without the SCUS sine and cosine table pointers
+(`0x8007B81C` / `0x8007B7F8`), so every placement off a heading read zeros and its rounding fix-ups never ran. With
+them it found PROT 0964's far records on the wrong trios: they take the arm's own focus and angle trios
+`sp+0x20` / `sp+0x10`, which hold the cut's yaw `0x800 - facing` on a cutting pass and the prologue's zeros on
+`k = 4`'s, where the director gave them the caster's facing. It also found Chaos Breath's cloud a unit off: the arm
+takes a sixth of the whole product through the `0x2AAAAAAB` multiply-high and corrects the sign after the shift.
+The chain walk hands each director the module's countdown word as retail's pass opens on it, so an arm whose
+records follow its pass's whole drain (PROT 0947's trail) is compared too; PROT 0947's trail agrees. The summon walk
+makes the same comparison over each director's anchored spawns, resolved on the seats the host resolves them on,
+and runs half its casts with the Battles vibration row `0x800845C8` off: every module's rumble store, the Puera
+landing and Ozma's spray agree that nothing is written then.
 
 The capture-camera walk also starts every fifth round on a framing depth below zero: state `0x6F` drains
 `ctx[+0x6D0]` by `16 * step` a vsync with no floor while it waits on the module's seek, so a negative depth reaches

@@ -48,6 +48,8 @@ const MEM_COUNTER: u32 = 0x801C_ADB8;
 const NO_DRAIN: u32 = 0x801C_D208;
 const TRACE: u32 = 0x8007_97B8;
 const UNTOUCHED: u32 = 0xEE;
+/// Where the test parks the end-of-stream callback `StSetStream` takes.
+const END_CALLBACK: u32 = 0x8000_2000;
 
 fn st_cpu() -> Option<Cpu> {
     let mut cpu = scus_cpu()?;
@@ -120,6 +122,13 @@ fn the_st_ring_matches_the_library() {
     let mut traces = [0usize; 11];
     let (mut reads, mut frees, mut payload_bytes) = (0usize, 0usize, 0usize);
     let mut latched = 0usize;
+    let mut cd_full = 0usize;
+    let mut callbacks = 0usize;
+    let ended = std::rc::Rc::new(std::cell::Cell::new(0usize));
+    {
+        let ended = ended.clone();
+        cpu.hook(END_CALLBACK, move |_, _| ended.set(ended.get() + 1));
+    }
     for movie in 0..300 {
         let n = 4 + rng.below(0x1D) as usize;
         let start = if movie % 3 == 0 { 2 + rng.below(6) } else { 0 };
@@ -143,7 +152,12 @@ fn the_st_ring_matches_the_library() {
         }
         cpu.mem.load(RING, &vec![0xA5; n * 2048]);
         assert_eq!(cpu.call(SET_RING, &[RING, n as u32]), Stop::Returned);
-        cpu.mem.wr32(STACK + 0x10, 0);
+        // Every third movie installs the end-of-stream callback (the fifth
+        // argument, stored to `0x801CADA0` at `0x8005EE2C`), which the demux
+        // calls where the port reports `StStep::end_of_stream`.
+        let with_callback = movie % 3 == 1;
+        cpu.mem
+            .wr32(STACK + 0x10, if with_callback { END_CALLBACK } else { 0 });
         assert_eq!(cpu.call(SET_STREAM, &[0, start, end, 0]), Stop::Returned);
         cpu.mem.wr32(MEM_SOURCE, SRC);
         cpu.mem.wr32(NO_DRAIN, 1);
@@ -185,13 +199,35 @@ fn the_st_ring_matches_the_library() {
                         let held = held.clone();
                         cpu.hook(LATCH, move |_, _| held.set(true));
                     }
+                    // Back-pressure on the CD source: a busy write slot
+                    // turns the sector away before the header is read off
+                    // the drive (`0x8005F118..0x8005F164`), so the CD arm runs
+                    // with no device behind it. Half the full-ring calls
+                    // take it.
+                    let w = ring.cursors().write_slot;
+                    let cd_source = ring.slot_status(w) != 0 && rng.below(2) == 0;
+                    if cd_source {
+                        cpu.mem.wr32(MEM_SOURCE, 0);
+                        cd_full += 1;
+                    }
                     assert_eq!(cpu.call(DEMUX, &[]), Stop::Returned, "{ctx}");
+                    if cd_source {
+                        assert_eq!(cpu.mem.rd32(MEM_COUNTER), 0, "{ctx}");
+                        cpu.mem.wr32(MEM_SOURCE, SRC);
+                    }
                     cpu.unhook(LATCH);
                     if held.get() {
                         assert_eq!(cpu.call(LATCH, &[]), Stop::Returned, "{ctx}");
                         latched += 1;
                     }
                     let step = ring.deliver_sector(&s);
+                    let calls = ended.replace(0);
+                    assert_eq!(
+                        calls,
+                        usize::from(with_callback && step.end_of_stream),
+                        "end callback, {ctx}"
+                    );
+                    callbacks += calls;
                     let trace = cpu.mem.rd32(TRACE);
                     if trace == UNTOUCHED {
                         assert!(
@@ -272,6 +308,8 @@ fn the_st_ring_matches_the_library() {
     assert!(
         reads > 1000
             && latched > 300
+            && cd_full > 100
+            && callbacks > 20
             && frees > 500
             && payload_bytes > 0
             && [4, 5, 6, 7, 8, 10].iter().all(|t| traces[*t] > 0),

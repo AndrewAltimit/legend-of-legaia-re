@@ -16,7 +16,7 @@
 //! painter for record `9` the screen drew nothing and the confirm that
 //! closes it looked like skipped text (issue #603).
 //!
-//! REF: FUN_801E733C, FUN_8003CBF8, FUN_801F1FDC
+//! REF: FUN_801E733C, FUN_8003CBF8, FUN_801F1FDC, FUN_8002B994
 
 use super::*;
 
@@ -44,6 +44,14 @@ pub fn art_notice_frame_rect() -> (i32, i32, i32, i32) {
         w + 2 * ART_NOTICE_FRAME_PAD,
         h + 2 * ART_NOTICE_FRAME_PAD,
     )
+}
+
+/// Where the painter draws its marker: `FUN_8002B994(1, 1, x + w - 0x10,
+/// y + h - 0x0E)` over the window's `+0x0A..+0x10` words
+/// (`0x801E73F4..0x801E741C`) - kind `1`, the two-frame page mark, animated.
+pub fn art_notice_mark_pos() -> (i32, i32) {
+    let (x, y, w, h) = ART_NOTICE_CONTENT_RECT;
+    (x + w - 0x10, y + h - 0x0E)
 }
 
 /// The two lines' pens `(x, y)` in 320x240 stage pixels.
@@ -92,6 +100,37 @@ impl World {
             && s.actor.state == slot::PROMPT
             && s.installed_windows.contains(&hub::window::ART_NOTICE))
         .then(|| (s.op49_operand[2], s.op49_operand[3]))
+    }
+
+    /// The painter's marker while the notice is up: its stage position and
+    /// the strip frame to draw (`ATLAS_RECT_ADVANCE_ICON[frame]`).
+    pub fn art_notice_mark(&self) -> Option<((i32, i32), u8)> {
+        self.art_notice_shown()?;
+        Some((
+            art_notice_mark_pos(),
+            self.field_vm.submode_screen.notice_mark_frame,
+        ))
+    }
+
+    /// One painter pass's marker call: step the cursor primitive's kind-1
+    /// frame at the marker's position (the state is global, shared with the
+    /// dialogue pager and the Incense notice). No-op while the notice is
+    /// not up.
+    pub(crate) fn step_art_notice_mark(&mut self, frame_delta: u8) {
+        if self.art_notice_shown().is_none() {
+            return;
+        }
+        let (mx, my) = art_notice_mark_pos();
+        self.field_vm.submode_screen.notice_mark_frame = self
+            .dialog
+            .cursor_sprites
+            .call(
+                legaia_engine_dialog::cursor_sprite::KIND_PAGE_MARK,
+                mx as i16,
+                my as i16,
+                frame_delta,
+            )
+            .frame;
     }
 
     /// The notice's two lines, with the painter's operand patches applied and

@@ -623,11 +623,18 @@ pub(super) fn pad_walk(
                     // forbids running is fought whatever installed it (the
                     // Cort fight is entered from a band the staged-fight
                     // census does not list), and the continuous hand fights
-                    // the random encounters it prices as winnable.
+                    // the random encounters it prices as winnable - except
+                    // on the way to a boss, where it runs from all of them.
                     if scripted_next {
                         "scripted, fought"
                     } else if session.host.world.battle.no_escape {
                         "no escape, fought"
+                    } else if continuous::PLAYS_ON.with(std::cell::Cell::get)
+                        && (continuous::SAVING_FOR_BOSS.with(std::cell::Cell::get)
+                            || continuous::BOSS_LEAD_IN.with(std::cell::Cell::get))
+                        && !super::pad_field_upkeep::TRAINING.with(std::cell::Cell::get)
+                    {
+                        "random, fled (saving for a boss)"
                     } else if continuous::PLAYS_ON.with(std::cell::Cell::get) {
                         "random, fought if winnable"
                     } else {

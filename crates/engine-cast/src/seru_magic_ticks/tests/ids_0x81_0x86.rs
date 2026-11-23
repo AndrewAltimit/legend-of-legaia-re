@@ -390,6 +390,22 @@ fn theeder_seat_stands_half_a_unit_short_of_the_victim_facing_it() {
     assert_eq!((x, z), (3000 - 2048, 0));
 }
 
+/// The seat is invertible: the victim stood half a unit along the seat's
+/// facing from it, which is how a capture past the sweep - its victim
+/// knocked back - still names where the victim stood on arm 4.
+#[test]
+fn theeder_seat_inverts_to_the_victim() {
+    for (victim, caster) in [((-1005, 367), (-59, -212)), ((1200, -40), (-300, 500))] {
+        let (x, z, f) = theeder_seat_placement(victim, caster);
+        let (s, c) = legaia_engine_system::trig::trig12(f);
+        let back = (x.wrapping_add(s / 2), z.wrapping_add(c / 2));
+        assert!(
+            (back.0 - victim.0).abs() <= 1 && (back.1 - victim.1).abs() <= 1,
+            "{back:?} {victim:?}"
+        );
+    }
+}
+
 #[test]
 fn theeder_ray_swings_about_the_facing() {
     let mouth = theeder_mouth(0, 0, 0);
@@ -1296,4 +1312,22 @@ fn theeder_rise_arms_the_spark_selector_and_the_show_clears_it() {
         assert_eq!(seats[WHO.summon as usize].render_flag, flag);
         assert_eq!(seats[WHO.summon as usize].render_21f, sel);
     }
+}
+
+/// Retail's arm-12 passes land on `0x40 + 0x100 * k`: the per-vsync ticks
+/// that carry one test the words `0x40, 0x140, ..., 0xF40`, and the ticks
+/// between (and the old `0x100 * k` phase) test nothing. Against the arm's
+/// ray, those passes strike `theeder_summon_mid_cast`'s seat 3 (dead ahead)
+/// on the first pass, seat 5 two passes later and seat 4 seven after that -
+/// the frame-stepped capture's vsyncs `783 / 791 / 819`.
+#[test]
+fn theeder_tests_its_cone_on_retails_pass_phase() {
+    let tested: Vec<u16> = (1..=64u16)
+        .map(|t| t * 0x40)
+        .filter(|&w| theeder_pass_tested(w))
+        .collect();
+    assert_eq!(tested.len(), 16);
+    assert_eq!(tested[0], THEEDER_FIRST_PASS_PHASE);
+    assert!(tested.iter().all(|w| w & 0xFF == 0x40));
+    assert!(!theeder_pass_tested(0x100) && !theeder_pass_tested(0x800));
 }

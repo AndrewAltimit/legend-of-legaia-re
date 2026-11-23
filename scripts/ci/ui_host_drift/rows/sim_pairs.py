@@ -173,7 +173,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web": ("crates/web-play/src/play_battle/screen_prims.rs", "tick_battle_intro"),
         },
         "mode": "symbols_all",
-        "symbols": ["battle_fx_prims_by_link", "theeder_prims"],
+        "symbols": ["battle_fx_prims_by_link", "theeder_prims_by_link"],
     },
     {
         "what": "shop / prize-counter opening, native vs play page - each host "

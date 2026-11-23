@@ -1,0 +1,43 @@
+# Field tier: FUN_801DE840 (PROT 0897).
+
+[[arm]]
+entry = "0x801DE840"
+image = "f8d115a5ee81f25a"
+range = "0x801E0724..0x801E0724"
+verdict = "unreachable"
+reason = "Op 0x3E's scripted-battle install skips under the dev word _DAT_8007B868; the word's one store on the disc (0x8001E008, FUN_8001DCF8) clears bit 1 of it, so it stays zero in retail and the skip is never taken."
+
+[[arm]]
+entry = "0x801DE840"
+image = "f8d115a5ee81f25a"
+range = "0x801E1C8C..0x801E1C8C"
+verdict = "unreachable"
+reason = "Op 4C nibble 7's sub test: the sub is `s3 & 0xF`, never negative, and 1 and 2..3 are taken above (0x801E1C7C, 0x801E1C84), so below 2 it is always 0 and the default exit is never reached."
+
+[[arm]]
+entry = "0x801DE840"
+image = "f8d115a5ee81f25a"
+range = "0x801E2494..0x801E2494"
+verdict = "unreachable"
+reason = "Op 4C nibble 9's sub test: past 0xE the sub `s3 & 0xF` can only be 0xF, so the compare with 0xF never fails."
+
+[[arm]]
+entry = "0x801DE840"
+image = "f8d115a5ee81f25a"
+range = "0x801E283C..0x801E283C"
+verdict = "unreachable"
+reason = "Op 4C C3's tile-x round toward zero: +0x14 was just stored as `(b & 0x7F) << 7` plus 0x40, plus 0x40 more with bit 7 (0x801E271C..0x801E276C), so x - 0x40 is never negative and the bgez always holds."
+
+[[arm]]
+entry = "0x801DE840"
+image = "f8d115a5ee81f25a"
+range = "0x801E2858..0x801E2858"
+verdict = "unreachable"
+reason = "Op 4C C3's tile-z round toward zero: +0x18 is built the same way from the record's next byte (0x801E2734..0x801E2790), so z - 0x40 is never negative."
+
+[[arm]]
+entry = "0x801DE840"
+image = "f8d115a5ee81f25a"
+range = "0x801E263C..0x801E2654"
+verdict = "unreachable"
+reason = "Divide traps of 4C C0's clip-phase roll, rand() % the bound clip's frame count (the record ctx[+0x4C], +2): the arm runs only with a clip playing (ctx[+0x5C] > 0, 0x801E260C..0x801E2614), whose frame count is non-zero, and the count is loaded with lhu, so it is never -1."

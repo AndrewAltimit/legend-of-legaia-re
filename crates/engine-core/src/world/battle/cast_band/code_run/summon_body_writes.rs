@@ -6,6 +6,13 @@
 
 use super::*;
 
+/// The tint state PROT 0931's arm 29 puts each living monster in on a fight
+/// that is not scripted (`li v0,0xC8` / `sb v0,0x21C` at `0x801F8660`).
+const JEDO_DISSOLVE_FLAG: u8 = 0xC8;
+/// The spell XP PROT 0931's arm 29 adds per living monster (`addiu v1,v1,3`
+/// at `0x801F86C0`).
+const JEDO_KILL_XP: u32 = 3;
+
 /// The PROT entry of Jedo's module (`summon_jedo`).
 const JEDO_ENTRY: u32 = 931;
 
@@ -97,6 +104,7 @@ impl World {
         passed: bool,
         caster_slot: u8,
         victim_slot: u8,
+        spell_id: u8,
     ) {
         use legaia_engine_cast::cast_module_camera as cam;
         use legaia_engine_cast::seru_magic_ticks as sm;
@@ -130,8 +138,18 @@ impl World {
                 self.credit_monster_defeated(caster_slot);
             }
             JEDO_ENTRY if self.battle_ctx.scripted_fight == 0 && phase_in == cam::JEDO_HIT_ARM => {
-                for _ in self.living_monster_slots() {
+                // Per living monster (`0x801F85F8..0x801F86D0`): the credit,
+                // the dissolve state `+0x21C = 0xC8` over the neutral word
+                // arm 23 stored (`0x801F8660..0x801F8664`), and three of the
+                // spell's XP into the caster's record outside a special
+                // battle (`lw 0x5D0` / `addiu 3` / `sw` at `0x801F86B8..
+                // 0x801F86C4`, behind `0x8007BAC0 == 0`).
+                for slot in self.living_monster_slots() {
                     self.credit_monster_defeated(caster_slot);
+                    if let Some(a) = self.actors.get_mut(slot) {
+                        a.battle.render_flag = JEDO_DISSOLVE_FLAG;
+                    }
+                    self.accrue_summon_spell_xp(caster_slot, spell_id, JEDO_KILL_XP);
                 }
             }
             _ => {}
@@ -152,7 +170,7 @@ impl World {
     /// | `0xFF` (`0x801F88BC`) | every | a dead victim hidden |
     ///
     /// The word the `0xC8` state reads is the neutral `0x20080200` arm 7
-    /// stored.
+    /// stored; arms `0x11..0x13` store no word.
     ///
     /// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the part kills of arm 15, the arm-14 root speed and the seat tints of arms 4, 7, 15, 0x11..0x13)
     fn apply_aluru_seat_writes(&mut self, phase_in: u8, passed: bool, victim: u8, seat_slot: u8) {
@@ -266,12 +284,13 @@ impl World {
                 a.battle.render_flag = HIDDEN;
             }
         }
-        // Arm `0xFF` hides the victim (`sb s0,0x21C(s3)`, `sw zero,0x4(s3)` at
-        // `0x801F88BC`, `s0` the phase byte). A live victim's way back is not read
-        // yet, so the port hides only the seat the kill path emptied.
+        // Arm `0xFF` hides the victim, living or not, on every pass
+        // (`sb s0,0x21C(s3)`, `sw zero,0x4(s3)` at `0x801F88BC`, `s0` the
+        // phase byte `0xFF`). A living victim's way back is the band's: state
+        // `0x36`'s restore lowers the marker over the cleared word
+        // (`battle_action::summon`), the engine's resting neutral.
         if phase_in == cam::ALURU_DONE_ARM
             && let Some(a) = self.actors.get_mut(usize::from(victim))
-            && a.battle.hp == 0
         {
             a.battle.render_flag = HIDDEN;
             a.battle.render_color = 0;
@@ -297,9 +316,12 @@ impl World {
         if let Some(a) = self.actors.get_mut(usize::from(victim))
             && (blast || (spread && a.battle.current_anim == 0))
         {
+            // Rate and state only (`sb 0x21D` / `sb 0x21C` at `0x801F7E8C`,
+            // `0x801F81D4..0x801F81DC`): the word stays what arm 7 stored or
+            // the defeat fade has eased it to, so a victim the hit felled
+            // fades out under the arm rather than standing back up.
             a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(1);
             a.battle.render_flag = TINT_FLAT;
-            a.battle.render_color = NEUTRAL_WORD;
             if blast && let Some(f) = creature_facing {
                 a.battle.facing_angle = f.wrapping_add(0x800) & 0xFFF;
             }
@@ -382,10 +404,17 @@ impl World {
                     }
                 }
                 if passed {
+                    // `sh zero,0x14C` / `sb 2,0x21C` / `sw zero,0x4`
+                    // (`0x801F8814..0x801F882C`): each living monster's HP
+                    // zeroed, into the defeat fade on a cleared word.
                     for slot in self.living_monster_slots() {
                         let mut v = self.cast_view(slot as u8);
                         v.hp = 0;
                         self.write_cast_view(slot as u8, &v);
+                        if let Some(a) = self.actors.get_mut(slot) {
+                            a.battle.render_flag = 2;
+                            a.battle.render_color = 0;
+                        }
                     }
                 }
             }
@@ -505,6 +534,20 @@ impl World {
                     u32::from(dmg),
                 );
                 legaia_engine_cast::seru_magic_ticks::stage_reaction_alt_only(&mut v);
+            } else if matches!(entry, 928 | 932) {
+                // PROT 0928's and 0932's stage the flinch `+0x1EF`, else
+                // `+0x1F0`, with no knockdown fork, and OR the restage bits
+                // (`ori 5` at `0x801F81B8`, `ori 1` at `0x801F7C44`).
+                legaia_engine_cast::seru_magic_ticks::apply_hit_cap_hp_minus_one(
+                    &mut v,
+                    u32::from(dmg),
+                );
+                v.staged_anim = if v.reaction_alt != 0 {
+                    v.reaction_alt
+                } else {
+                    v.reaction_alt2
+                };
+                v.restage |= if entry == 928 { 0x05 } else { 0x01 };
             } else {
                 legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
             }
@@ -774,8 +817,20 @@ impl World {
             _ => return,
         };
         let pc = usize::from(self.party.party_count);
-        for a in self.actors.iter_mut().skip(pc) {
+        // The hit arm's loop skips a Stoned seat whole (`andi 4` at
+        // `0x801F8744`, `bnez` to the step at `0x801F889C`).
+        let stoned: Vec<bool> = (0..self.actors.len())
+            .map(|s| {
+                self.raw_status_word(s as u8)
+                    & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                    != 0
+            })
+            .collect();
+        for (s, a) in self.actors.iter_mut().enumerate().skip(pc) {
             if a.battle_monster_id.is_none() || a.battle.hp == 0 {
+                continue;
+            }
+            if (phase_in, passed) == (18, true) && stoned[s] {
                 continue;
             }
             a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
@@ -929,6 +984,10 @@ impl World {
     /// REF: FUN_801DD0AC (each wave roll, through [`Self::summon_module_roll`])
     /// REF: FUN_801F44A0 (the popup push, `World::battle.hit_fx`)
     fn mule_wave_hit(&mut self, slot: usize, front: i32, shield: bool, caster: u8, spell_id: u8) {
+        fn map_bit(w: &World, slot: u8) -> u8 {
+            let r = w.cast_seat_map().retail(slot);
+            if (3..7).contains(&r) { 1 << (r - 3) } else { 0 }
+        }
         use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
         let s = slot as u8;
         let v = self.cast_view(s);
@@ -953,7 +1012,11 @@ impl World {
         let Some(roll) = self.summon_module_roll(caster, s, spell_id) else {
             return;
         };
-        let mut hit = roll / 3;
+        // A whole-row cast (`+0x1DD == 9`) divides only for a seat on the
+        // group list (`0x801F7EA8..0x801F7ED0`); any other divides always.
+        let group = self.cast_view(caster).target_code == 9;
+        let listed = map_bit(self, s) & self.casting.module_group_seats != 0;
+        let mut hit = if group && !listed { roll } else { roll / 3 };
         if hit == 0 {
             hit = self.next_rand() % 16 + 16;
         }
@@ -1205,6 +1268,13 @@ impl World {
                     if !living(self, s) {
                         continue;
                     }
+                    // The second loop, the hit's (`0x801F89BC..0x801F8B3C`),
+                    // skips a Stoned seat (`andi 4` at `0x801F89DC`): such a
+                    // seat gets its parked pose back from the first loop and
+                    // nothing else.
+                    let stoned = self.raw_status_word(s as u8)
+                        & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                        != 0;
                     let saved = self
                         .casting
                         .module_saved_poses
@@ -1212,13 +1282,16 @@ impl World {
                         .find(|p| p.0 == s)
                         .copied();
                     let a = &mut self.actors[s];
-                    // The rate arm 0xF parked at `0` (`0x801F8AD8`).
-                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
                     if let Some((_, pos, facing)) = saved {
                         let m = &mut a.move_state;
                         [m.world_x, m.world_y, m.world_z] = pos;
                         a.battle.facing_angle = facing;
                     }
+                    if stoned {
+                        continue;
+                    }
+                    // The rate arm 0xF parked at `0` (`0x801F8AD8`).
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
                     if let Some(c) = creature {
                         let m = &a.move_state;
                         let h = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
@@ -1256,7 +1329,19 @@ impl World {
         &mut self,
         phase_in: u8,
         passed: bool,
+        monster_count: u8,
     ) {
+        // Arm `0x11`'s pass lowers every living monster's marker
+        // (`sb zero,0x21C` at `0x801F83FC`, in the loop
+        // `0x801F83C8..0x801F8418`) and leaves its colour word to the tint
+        // pass: the row the band hid stands again for the closing arms.
+        if (phase_in, passed) == (0x11, true) {
+            for (e, _) in self.ra_seru_row(monster_count) {
+                if let Some(a) = self.actors.get_mut(e) {
+                    a.battle.render_flag = 0;
+                }
+            }
+        }
         let d = legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as i16;
         let Some(a) = self
             .casting

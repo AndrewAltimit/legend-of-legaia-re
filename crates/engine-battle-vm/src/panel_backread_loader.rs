@@ -91,7 +91,7 @@
 //! which is why a search for the literal `0x180` never found the consumer.
 //! It is ported as `legaia_engine_ui::ringside_backdrop::ringside_still_quads`
 //! and drawn by both hosts over the re-entered hub; the level it is drawn at
-//! is `legaia_engine_minigames::muscle_ringside::HubBackdrop`.
+//! is `legaia_engine_minigames::muscle_ringside::ReentryHub`.
 //! [`ringside-still.md`](../../../docs/formats/ringside-still.md) carries the
 //! packets and the `_DAT_801D1AE0` re-entry latch that selects the arm.
 

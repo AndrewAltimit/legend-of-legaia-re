@@ -9,10 +9,13 @@
 //! out.
 //!
 //! Retail's painter also draws a marker sprite at the panel's right edge
-//! (`FUN_8002B994(1, 1, x + w - 0x10, y - 2)`); which atlas cell kind `1`
-//! selects is not pinned, so the panel draws without it.
+//! (`FUN_8002B994(1, 1, x + w - 0x10, y - 2)`): kind `1` is the dialogue
+//! pager's two-frame page mark, animated by the shared cursor primitive
+//! state (`engine-core` steps it and hands the frame here). The art-learned
+//! notice's painter `FUN_801E733C` draws the same mark at its lower-right
+//! rim.
 //!
-//! REF: FUN_801F1B64, FUN_80036888
+//! REF: FUN_801F1B64, FUN_801E733C, FUN_80036888, FUN_8002B994
 
 use crate::*;
 
@@ -40,6 +43,30 @@ pub fn incense_notice_sprites_for(
         stage_origin,
         stage_scale,
     )
+}
+
+/// The painter's page mark: the strip cell `icon`
+/// (`ATLAS_RECT_ADVANCE_ICON[frame]`) at the stage position `pos` the
+/// painter passes `FUN_8002B994`, drawn untinted (the primitive's colour word
+/// is the neutral `0x808080`).
+pub fn notice_mark_sprite(
+    icon: (u32, u32, u32, u32),
+    pos: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1) as i32;
+    let (_, _, w, h) = icon;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + pos.0 * scale,
+            stage_origin.1 + pos.1 * scale,
+            w * stage_scale,
+            h * stage_scale,
+        ),
+        src: icon,
+        color: [1.0, 1.0, 1.0, 1.0],
+    }
 }
 
 /// The notice line at `pen`, in stage pixels (the host scales it with

@@ -28,7 +28,7 @@ use legaia_engine_cast::cast_module_camera::{
 use legaia_engine_cast::cast_module_ticks::{
     self as t, CastActorState, CasterClipRule, ChainActor, ChainBody, ChainClip, ChainRestage,
 };
-use psx_retail_exec::{A0, A2, Stop, V0};
+use psx_retail_exec::{A0, A1, A2, A3, Stop, V0};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -222,6 +222,8 @@ struct Run {
     hits: usize,
     /// Passes whose split hits were compared.
     split_checked: usize,
+    /// Director spawns matched against retail's.
+    spawns_checked: usize,
 }
 
 /// Who a walk casts at and which seats stand: `target` a seat or a group code
@@ -252,6 +254,7 @@ fn run_body(
     let stream = Rc::new(std::cell::Cell::new(seed as u32));
     let hits = Rc::new(RefCell::new(Vec::<usize>::new()));
     let rolls = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let spawns = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3], u16)>::new()));
     for target in jal_targets(&module) {
         if target == RAND {
             let stream = stream.clone();
@@ -290,6 +293,19 @@ fn run_body(
             });
         } else if target == AIM {
             // The group aim runs live: a group framing needs it whole.
+        } else if target == SPAWN_PART || target == SPAWN_POOLED {
+            // The part spawn and its pool wrapper, logged as `(record, point,
+            // angles, scale)`.
+            let spawns = spawns.clone();
+            cpu.hook(target, move |r, m| {
+                let trio = |m: &mut psx_retail_exec::Memory, a: u32| {
+                    [0u32, 2, 4].map(|o| m.rd16(a + o) as i16)
+                };
+                let p = trio(m, r.r[A0]);
+                let a = trio(m, r.r[A1]);
+                spawns.borrow_mut().push((r.r[A2], p, a, r.r[A3] as u16));
+                r.r[V0] = 0;
+            });
         } else {
             cpu.stub(target, 0);
         }
@@ -299,6 +315,9 @@ fn run_body(
     if body.prot_entry == 948 {
         cpu.stub(CROSS_BEAM_PACKETS, 0);
     }
+    // The SCUS sine and cosine table pointers the arms' placements read.
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
     let mut rng = Rng(seed);
     for b in 0..CTX_LEN as u32 {
         cpu.mem.wr8(CTX + b, 0);
@@ -394,8 +413,11 @@ fn run_body(
         known: 0,
         hits: 0,
         split_checked: 0,
+        spawns_checked: 0,
     };
     let mut held = 0;
+    let (mut quake_passes, mut quake_phase) = (0usize, 0xFEu8);
+    let quake_hold = 1 + (usize::from(formation) + victim) % 4;
     for _ in 0..40_000 {
         for s in 0..8u32 {
             let a = ACTOR + s * STRIDE as u32;
@@ -405,6 +427,24 @@ fn run_body(
             cpu.mem.wr16(NODES + s * 0x100 + 0x68, 0x7FFF);
         }
         let phase = cpu.mem.rd8(CTX + 0x279);
+        // Earthquake's two clip holds: arm 1 waits out the wind-up's first
+        // run (`+0x21B == 0xFF`, the `beq` to its busy exit at `0x801F6C78`)
+        // and arm 3 the caster's node cursor reaching `0x160`; each walk
+        // holds them for a field-keyed number of passes.
+        quake_passes = if phase == quake_phase {
+            quake_passes + 1
+        } else {
+            0
+        };
+        quake_phase = phase;
+        if body.prot_entry == 935 && quake_passes < quake_hold {
+            let ca = ACTOR + (CASTER * STRIDE) as u32;
+            match phase {
+                1 => cpu.mem.wr8(ca + 0x21B, 0xFF),
+                3 => cpu.mem.wr16(NODES + CASTER as u32 * 0x100 + 0x68, 0x100),
+                _ => {}
+            }
+        }
         let (ctx0, rec0) = (cpu.mem.read(CTX, CTX_LEN), cpu.mem.read(ACTOR, 8 * STRIDE));
         let vi = usize::from(rec0[CASTER * STRIDE + 0x1DD].min(7));
         // The group aim, as the host measures it each pass; a row the body
@@ -421,8 +461,33 @@ fn run_body(
         }
         // The director runs on every pass, held or not, as the host's does.
         let yaw0 = st.yaw_base;
+        // The caster's display trio `+0x3C..+0x40`, as the host feeds it
+        // (`feed_capture_cam`).
+        st.caster_body = Some({
+            let h = |k: usize| {
+                i16::from_le_bytes([rec0[CASTER * STRIDE + k], rec0[CASTER * STRIDE + k + 1]])
+            };
+            ModuleSeat {
+                x: h(0x3C),
+                y: h(0x3E),
+                z: h(0x40),
+                facing: h(0x46) as u16 & 0xFFF,
+            }
+        });
+        // The caster's loop byte and node cursor, as `feed_capture_cam`
+        // feeds them.
+        st.caster_loops = Some(rec0[CASTER * STRIDE + 0x21B]);
+        st.caster_frame = Some(cpu.mem.rd16(NODES + CASTER as u32 * 0x100 + 0x68));
+        // PROT 0964's last Element Change roll, which the host keeps.
+        if body.prot_entry == 964 {
+            st.module_words[0] = i32::from(selector);
+        }
+        // The director sees the module's countdown word as retail's pass
+        // opens on it, where the module has one; a director with none
+        // reads a spent word, and the walk paces it on retail's phase.
+        let countdown_word = cam::capture_countdown_va(action).map(|va| cpu.mem.rd32(va) as i32);
         let dir = director.map(|d| {
-            st.countdown.0 = 0;
+            st.countdown.0 = countdown_word.unwrap_or(0);
             st.victim_on_gate_clip = rec0[vi * STRIDE + 0x1D9] == rec0[vi * STRIDE + 0x1F2];
             let seats = ModuleCamSeats {
                 caster: seat_of(&rec0, CASTER),
@@ -438,6 +503,7 @@ fn run_body(
             d(&mut st, phase, seats)
         });
         hits.borrow_mut().clear();
+        spawns.borrow_mut().clear();
         let stop = cpu.call(body.body, &[]);
         let c0 = format!(
             "PROT {:04} {action:#04x} {field:?} arm {phase:#x}",
@@ -494,6 +560,37 @@ fn run_body(
         }
         held = 0;
         out.path.push(phase);
+        // The records the director seats at points it works out (the
+        // charge records, the per-pass pairs), each against a part spawn
+        // retail's pass made with the same record, point, angles and scale.
+        // An arm that seats on the point its pass's whole drain leaves
+        // (`spawns_at_pass_end`, PROT 0947's trail) is compared where the
+        // director drained retail's own countdown word.
+        if let Some(d) = dir
+            .as_ref()
+            .filter(|d| !d.spawns_at_pass_end || countdown_word.is_some())
+        {
+            let mut left = spawns.borrow().clone();
+            for sp in d.charge_spawns.iter().chain(&d.pass_spawns).flatten() {
+                let (
+                    cam::SpawnRecord::Module(r),
+                    cam::SpawnAnchor::LiteralScaled { pos, rot, scale },
+                ) = (sp.record, sp.anchor)
+                else {
+                    continue;
+                };
+                match left.iter().position(|&x| x == (r, pos, rot, scale)) {
+                    Some(i) => {
+                        left.remove(i);
+                        out.spawns_checked += 1;
+                    }
+                    None => out.gaps.push(format!(
+                        "{c0}: spawn {r:#x} at {pos:?} {rot:?} x{scale:#x}: retail {:x?}",
+                        left.iter().filter(|x| x.0 == r).collect::<Vec<_>>()
+                    )),
+                }
+            }
+        }
         let mut struck: Vec<usize> = hits.borrow().clone();
         out.hits += struck.len();
 
@@ -742,16 +839,28 @@ fn the_chain_bodies_walk_as_retail_does() {
     let mut failures = Vec::new();
     let (mut casts, mut arms, mut hits, mut known) = (0, 0, 0, 0);
     let mut split = 0usize;
+    let mut spawns_checked = 0usize;
     for body in t::chain_bodies() {
         // PROT 0961 rolls its sweep in the evolved Cort's formation only; PROT
         // 0964 forks on the last Element Change roll.
-        let formation = if body.prot_entry == 961 { 0xB5 } else { 0x2A };
+        // PROT 0935 also runs with Van Saryu (`0x89`) first in the formation,
+        // whose records stand higher and whose quake window starts sooner
+        // (`0x801F6D80`, `0x801F7068`).
+        let formations: &[u8] = match body.prot_entry {
+            961 => &[0xB5],
+            935 => &[0x2A, 0x89],
+            _ => &[0x2A],
+        };
         let selectors: &[u8] = if body.prot_entry == 964 {
             &[0, 1, 2]
         } else {
             &[0]
         };
-        for &action in body.action_ids {
+        for (&action, &formation) in body
+            .action_ids
+            .iter()
+            .flat_map(|a| formations.iter().map(move |f| (a, f)))
+        {
             for &sel in selectors {
                 for (seed, field) in fields(body.prot_entry) {
                     let run = run_body(body, action, formation, sel, seed, field).expect("disc");
@@ -760,6 +869,7 @@ fn the_chain_bodies_walk_as_retail_does() {
                     hits += run.hits;
                     known += run.known;
                     split += run.split_checked;
+                    spawns_checked += run.spawns_checked;
                     let terminal = run.path.last().and_then(|&p| body.arm(p));
                     if !terminal.is_some_and(|a| a.exit == t::ChainExit::Finish) {
                         failures.push(format!(
@@ -775,6 +885,11 @@ fn the_chain_bodies_walk_as_retail_does() {
     eprintln!("{casts} casts, {arms} arms left, {hits} wrapper hits, {known} known gaps hit");
     assert!(hits > 20, "{hits} hits");
     assert!(split >= 4, "{split} split-hit passes compared");
+    eprintln!("{spawns_checked} director spawns matched");
+    assert!(
+        spawns_checked >= 900,
+        "{spawns_checked} director spawns matched"
+    );
     failures.dedup();
     let n = failures.len();
     failures.truncate(200);
@@ -1004,6 +1119,8 @@ fn the_summon_tick_bodies_walk_their_phases_as_retail_does() {
 /// The part spawn `FUN_80021B04` and the pool the walk hands its objects
 /// from.
 const SPAWN_PART: u32 = 0x8002_1B04;
+/// The part pool's wrapper round [`SPAWN_PART`], on the same arguments.
+const SPAWN_POOLED: u32 = 0x8005_0ED4;
 const PARTS: u32 = 0x8016_0000;
 const WATER_CRYSTALS: u32 = 0x801F_6A10;
 const SPIKEFISH: u32 = 0x801F_6A00;

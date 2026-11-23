@@ -61,6 +61,18 @@ pub const STRIKE_RATE_DIVISOR: i32 = 8;
 /// (`0x801D6320..0x801D632C`) - half a frame per tick.
 pub const CAMEO_STEP: i32 = 8;
 
+/// The idle frame a lineup fighter stands on `clock` vsyncs after the select
+/// spawned it: the clip selector `FUN_800204F8` steps the cursor by
+/// [`ClipHeader::selector_step`] of the actor step `+0x6A` each vsync and
+/// wraps it to `0` at the clip's end. The idle clips step a whole frame per
+/// game frame, so the wrap drops no remainder and the cursor is the clock
+/// modulo the clip.
+pub fn lineup_idle_frame(header: &ClipHeader, actor_step: i32, clock: i32) -> usize {
+    let step = header.selector_step(actor_step);
+    let span = (i32::from(header.frames) * 16).max(1);
+    (clock.wrapping_mul(step).rem_euclid(span) >> 4) as usize
+}
+
 /// The three ANM record header fields the clip selector `FUN_800204F8` and
 /// the afterimage read off a fighter's clip record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

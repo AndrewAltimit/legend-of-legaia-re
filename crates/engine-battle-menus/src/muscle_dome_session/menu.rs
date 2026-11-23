@@ -659,6 +659,7 @@ impl MuscleDomeSession {
             phase: (&s.phase).into(),
             status: self.ring(0).status,
             pennant_glides: &s.pennant_glides,
+            pennant_retreat: s.pennant_retreat.as_ref(),
             chip_slide: s.chip_slide,
         })
     }

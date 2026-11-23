@@ -74,7 +74,12 @@ impl LegaiaRuntime {
             theeder: self
                 .scene_host
                 .host()
-                .map(|h| legaia_engine_screens::battle_fx::theeder_prims(&h.world))
+                .map(|h| {
+                    legaia_engine_screens::battle_fx::theeder_prims_by_link(
+                        &h.world,
+                        self.page_toggles.psx_render,
+                    )
+                })
                 .unwrap_or_default(),
             value_readout: self.battle_value_readout_prims(),
             dance_countin: self

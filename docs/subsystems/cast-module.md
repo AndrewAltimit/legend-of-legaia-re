@@ -1997,6 +1997,14 @@ cleared again on arm 13's once the retract reports done (`0x801F7FC4`). The
 director carries the four (`theeder_direct`); arms 7 and 13 are the body's to
 pace, so their two land on the next arm's first pass, a tick after retail's.
 
+Each seat arm 12 strikes turns to face the creature: after staging the
+reaction (`+0x1DA`, `+0x1DC |= 1`) it stores
+`+0x46 = FUN_80019B28(victim +0x38, +0x34, slot 7 +0x38, +0x34)`
+(`0x801F7E58..0x801F7E7C`; slot 7 is the actor table's `+0x1C`, read at
+`0x801F6A2C`). The reaction's knockback runs along that facing, so every
+victim is thrown straight away from the creature (the rising frame's Gilium
+face `1420 / 1268 / 1632`). Port: `World::face_theeder_victims`.
+
 Arm 11's exit lights the monster row again: every live seat `3..7` takes the
 neutral word `+0x04 = 0x20080200` behind its HP test
 (`0x801F7934..0x801F7978`), its render flag left at the band's `0xFF`. The
@@ -2023,9 +2031,16 @@ the root) reaches only the monsters in that arc. The port runs both ramps at
 64 ticks (`theeder_ramp_per_tick`), builds the ray with `theeder_ray_tip`,
 tests the cone against it on the ticks that carry a retail pass
 (`theeder_pass_tested`), and gives the module a profile whose outcome arm is
-the sweep, so the band holds `0x36` until the phase has run its turn. Retail's first
-test is at phase `0x100`, where the ray is already `0x62` off the facing, so a victim dead
-ahead takes its hit at the centre crossing `0x800`, 32 vsyncs into the arm. A hit in
+the sweep, so the band holds `0x36` until the phase has run its turn. Retail's passes
+follow its frame step: a Mednafen frame-stepped recording of `theeder_summon_mid_cast`
+runs arm 11 at steps 2 then 1, arm 12 at step 2 (the word `0x80` a pass, tested from
+`0x80`) and arm 13 at step 3, and strikes seat 3 (dead ahead) on arm 12's first test,
+seat 5 at `0x280` and seat 4 at `0x980` (vsyncs `+0 / +8 / +36`). The engine runs both
+arms on its table's step 4 and tests on `0x40 + 0x100 * k`, which lands the same hits on
+the same gaps (`0x40 / 0x240 / 0x940`, a vsync earlier); testing on `0x100 * k` struck seat
+5 first and seat 3 at the `0x800` crossing, eight passes late. Arm 13 retracts one a pass,
+so on retail's step 3 the trail empties in 45 vsyncs where the engine's step 4 takes 60.
+A hit in
 the sweep arm stages the victim's knockdown id `+0x1F1` when its get-up id
 `+0x1F2` is non-zero (`0x801F7DF0..0x801F7E08`) and the flinch id `+0x1EF` /
 `+0x1F0` only otherwise (`0x801F7E0C..0x801F7E24`); the playing-clip test at
@@ -2067,7 +2082,11 @@ the trail is empty, and arm 14 drains it and then polls the monster row
 (alive and on idle, or dead with the node's `+0x74` colour gone) before it
 stores `0xFF`. Port: `cast_module_camera::theeder_direct` (the countdown
 gates, the settle word and the camera arms 0, 3, 6, 8, 9, 11, 12 and `0xFF`'s
-case 8) beside the tick body (arm 7's wait and arm 14's poll). Clip 1 parks
+case 8) beside the tick body (arm 7's wait and arm 14's poll). Arm 4 writes
+its seat into slot 7 (`0x801F6EEC..0x801F6F8C`) and every later shot frames
+slot 7, so the port keeps one seat: the body's pin is the director's creature
+(`ModuleCamState::creature`), and the director's own placement stands only
+where nothing has seated slot 7. Clip 1 parks
 on frame 17, so arm 7 holds about 140 vsyncs
 ([the loop counter](#the-creatures-loop-counter-0x21b)).
 

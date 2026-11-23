@@ -497,7 +497,16 @@ battle units the port draws `SZ` is `w` itself.
 | Effect-pool billboards | per pixel | corner mean (the quad's centre) |
 | Weapon-trail bands, move-FX streak, clip-tag ribbon | over the 3D frame in their own order | depth-tested at their own link |
 | Cast-arm ribbons | depth-tested at their anchor | depth-tested at their anchor |
-| Other screen primitives (Theeder beam, value readout, HUD) | over the 3D frame in their own order | unchanged |
+| Theeder fan and beam core, charge beam's near half | over the 3D frame in their own order | depth-tested at their fixed entry (`ot + 0x1000`, `ot + 8`) |
+| Other screen primitives (Theeder prongs, value readout, HUD) | over the 3D frame in their own order | unchanged |
+
+A fixed entry is a depth too: entry `n` holds the leaves whose mean `SZ` is
+`16n..16n+15`, so `engine-screens::battle_fx::battle_link_depth` tests a packet
+linked there at `w = 16n` (`theeder_prims_by_link`). PROT 0904's retract fan is
+the case that needs it: retail links its pairs at entry `0x400`, ahead of the
+summon creature's panels (`0x23C..=0x2B5`) and the backdrop shell's near panels
+(down to `0x26`), so neither framebuffer of the rising frame shows any of its
+additive blue, where a fan composited over the frame paints it across them.
 
 A part or node whose colour word carries `0x10000000` links at its farthest corner,
 the field's rule for a record flag `0x800`. The dispatcher stages the word's top

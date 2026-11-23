@@ -230,7 +230,10 @@ impl World {
                 }
             }
         }
-        for (slot, render) in [(caster, p.caster_render), (victim, p.victim_render)] {
+        // Victim first: arm 2 shows the victim and then hides the caster
+        // (`0x801F6EE0..0x801F6EF4`), so a cast on the caster's own seat
+        // leaves it hidden.
+        for (slot, render) in [(victim, p.victim_render), (caster, p.caster_render)] {
             if let (Some(r), Some(a)) = (render, self.actors.get_mut(usize::from(slot))) {
                 a.battle.render_color = r.tint;
                 a.battle.render_flag = r.flag;

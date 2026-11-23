@@ -1,0 +1,295 @@
+# Minigame overlays: the Muscle Dome arena (PROT 0977), the slot machine (0975), the fishing venue (0972), the dance hall (0980).
+
+[[arm]]
+entry = "0x801CF074"
+image = "3847fbc3b843fa2e"
+range = "0x801CF2A4..0x801CF814"
+verdict = "unreachable"
+reason = "PROT 0977 dome tally: the 24 `bgez` round-toward-zero arms of `lane_fade * (fade << 4) / 128`; the lane fades are zeroed at 0x801CEB24..0x801CEB3C and only grow by the frame step or reseed to 0x10, and both callers pass a non-negative fade (0x80 at 0x801CFDC0, 0x801D1A84 at 0x801CFEB4 after 0x801CFE24 / 0x801CFE3C zero it once it goes negative), so the product is never negative"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D2690..0x801D26A8"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (700 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 700 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D26D8..0x801D26F0"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (500 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 500 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D2750..0x801D2768"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (350 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 350 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D279C..0x801D27B4"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (250 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 250 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D2814..0x801D282C"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (175 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 175 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D2860..0x801D2878"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (125 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 125 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D258C"
+image = "ddcd76fa7b1f2b11"
+range = "0x801D28B8..0x801D28D0"
+verdict = "unreachable"
+reason = "PROT 0975 slot feature roll: the compiler's divide-by-zero and overflow traps on `rand() % (600 + s0)`; s0 is 0 or the spin-up widen `rand() % 100 + 200` (0x801D25E0, 0x801D2654), so the divisor is at least 600 and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D5724..0x801D573C"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D57CC..0x801D57E4"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D5874..0x801D588C"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D591C..0x801D5934"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D59C4..0x801D59DC"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D5A6C..0x801D5A84"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D5B14..0x801D5B2C"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801D56E4"
+image = "c6300bc092182707"
+range = "0x801D5BBC..0x801D5BD4"
+verdict = "unreachable"
+reason = "PROT 0972 fishing line clip: the compiler's divide-by-zero and overflow traps on the edge-crossing divide; the arm is entered only past two strict `slt` tests that put the clip edge strictly between the two endpoints, so the divisor (their difference along that axis) is positive and never 0 or -1"
+
+[[arm]]
+entry = "0x801CF870"
+image = "63404152651b4e2c"
+range = "0x801CF8E8..0x801CF8E8"
+verdict = "unreachable"
+reason = "PROT 0977 contest hub: the jump table's bound test; the state word 0x801D1A78 only takes 0..6, 0x0A..0x0C, 0x14..0x17 and 0x32 (the arena init at 0x801CECA4 / 0x801CEDD0..0x801CEE8C and the arms' +1 steps), all under 0x33"
+
+[[arm]]
+entry = "0x801CF870"
+image = "63404152651b4e2c"
+range = "0x801CFB48..0x801CFB48"
+verdict = "unreachable"
+reason = "PROT 0977 contest hub: arm 4's wait on the XA in-flight flag; the only line a first visit starts before it is arm 0's intro, arm 3 leaves only once that line is idle, and nothing between starts another"
+
+[[arm]]
+entry = "0x801CF870"
+image = "63404152651b4e2c"
+range = "0x801CFC74..0x801CFC74"
+verdict = "unported"
+reason = "PROT 0977 contest hub: arm 6's wait for the loader state 0x8007B648 == 0x80 that arm 4 kicked; the port's loads are synchronous, so the done value is always there (FirstVisitHub)"
+
+[[arm]]
+entry = "0x801CF870"
+image = "63404152651b4e2c"
+range = "0x801CFDD8..0x801CFDD8"
+verdict = "unreachable"
+reason = "PROT 0977 contest hub: arm 0x0B's roll-stopped-but-still-dimming arm; the dim needs lane 0's fade at 0x10 plus 0x40 / 2 = 32 frame-step units, while the roll cannot stop before all four lanes have each counted past 0x10 (over 60 units), so the still is always at 0x40 when the tally returns 0"
+
+[[arm]]
+entry = "0x801CF870"
+image = "63404152651b4e2c"
+range = "0x801CFE48..0x801CFE5C"
+verdict = "unported"
+reason = "PROT 0977 contest hub: arm 0x0C's exit waits on the drive (FUN_8003DE7C(1)) and the loader state 0x8007B648 == 0x80; the port's reads and loads are synchronous, so ReentryHub models only the XA wait"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D6890..0x801D6890"
+verdict = "unreachable"
+reason = "PROT 0972 plate fish draw: the unlocked node path (MulMatrix2 with the camera, 0x801D68B4); the draw's only caller is the result actor's tick (jal at 0x801D5468), and that actor's only spawn (0x801D2164) ORs 0x420 into +0x52 (0x801D217C), which no 0972 code stores again, so +0x52 & 0x780 is never zero"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D6868..0x801D6868"
+verdict = "cannot-drive"
+reason = "PROT 0972 plate fish draw: the parent-matrix arm on +0x42 (also 0x801D692C); the spawn's FUN_80020DE0 zeroes +0x42 (0x80020EFC) and only the pose leaves (0x8001B4C8, 0x8001BCD8) the actor's animation runs set it, so driving it needs the real species model and clip seated as the result actor's tick builds them"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D692C..0x801D692C"
+verdict = "cannot-drive"
+reason = "PROT 0972 plate fish draw: the second scale on the +0x42 parent matrix (see 0x801D6868); needs the real species model and clip the pose leaves run over"
+
+[[arm]]
+entry = "0x801D67BC"
+image = "65390fcfb4913705"
+range = "0x801D6970..0x801D6B34"
+verdict = "cannot-drive"
+reason = "PROT 0972 plate fish draw: the part loop (FUN_8001BE80 pose per part, the tie part's angles, the tie vertex's projection into 0x801E9154 at part 0, FUN_80043390's draw); it runs only when the clip's part count matches the model's (0x801D6970), so it needs a real species TMD block at +0x44 and clip at +0x4C relocated as FUN_80020DE0 / FUN_800204F8 build them; the port poses the body in float (fishing_catch::pose_into) and the tie projection (plate_line) has no integer differential yet"
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801CF500..0x801CF500"
+verdict = "unported"
+reason = "PROT 0980 dance tick head: the dev counter _DAT_8007B6D0 skips the best-score raise and the camera keyframe track; only the two debug menus write it (PROT 0897 0x801EA00C / 0x801EA030, PROT 0971 0x801CED54) and the port holds it at zero (DanceGame::rival_hud_visible); retail's effect is pinned by dance_floor::the_dev_counter_freezes_the_dance_head_and_holds_the_song_open"
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801D00B8..0x801D00B8"
+verdict = "unported"
+reason = "PROT 0980 dance tick tail: the same dev counter _DAT_8007B6D0 skips the song-end test, so the song never hands over; held at zero in the port, retail pinned by dance_floor::the_dev_counter_freezes_the_dance_head_and_holds_the_song_open"
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801CFADC..0x801CFAF4"
+verdict = "unreachable"
+reason = "PROT 0980 dance state 3's song pick on the mode word 0x801D514C: the below-0 and above-3 fall-throughs; every store to the word writes 0..3 (state 1's flag map 0x801CF908..0x801CF94C, the entry's 0 / 1, the debug picker's mod-4 wrap at 0x801CF8C8)"
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801CFC78..0x801CFC78"
+verdict = "unported"
+reason = "PROT 0980 dance state 5's wait on the drive (FUN_8003DE7C(1)) before it opens the song stream; the port's reads are synchronous, so CountIn hands over on the GO! fade alone"
+
+[[arm]]
+entry = "0x801CF470"
+image = "2f10b59de1522413"
+range = "0x801D011C..0x801D011C"
+verdict = "unported"
+reason = "PROT 0980 dance tick tail: the song-counter dev print (FUN_8001A068) behind _DAT_8007B9B0, which SCUS only clears (0x8001D448) and only the PROT 0971 debug menu sets (0x801CED64); the port prints nothing"
+
+[[arm]]
+entry = "0x801CF3BC"
+image = "d34a946ed9c68fe0"
+range = "0x801CF440..0x801CF440"
+verdict = "unported"
+reason = "PROT 0972 fishing session head: the dev print (FUN_8001A068 of the game-state +0x310 / +0x314 words) behind _DAT_8007B9B0, which SCUS only clears (0x8001D448) and only the PROT 0971 debug menu sets (0x801CED64); the port prints nothing"
+
+[[arm]]
+entry = "0x801CF3BC"
+image = "d34a946ed9c68fe0"
+range = "0x801D028C..0x801D028C"
+verdict = "unported"
+reason = "PROT 0972 fishing session tail: the XA in-flight test that clears or raises the latch 0x801D90CC; PROT 0972 starts no CD-XA line (no jal to FUN_8003D53C / FUN_80019794 / FUN_8003EAE4) and nothing reads the latch (docs/subsystems/minigame-fishing.md), so the port keeps no latch"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D26F8..0x801D26F8"
+verdict = "unported"
+reason = "PROT 0972 fishing lure tick: the lure's self-retire when the session has cleared its alive word 0x801D91A8 (stores at 0x801CF8AC / 0x801CFBC8): the actor sets its own +0x10 bit 8 and returns (0x801D3CD0); the port's session drops the lure with its phase, and keeps no actor flag word"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D27BC..0x801D27BC"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the round-toward-zero arm of `power * 5 << 7 / 0x1000`; the cast power 0x801D9274 is seeded 0x40 (0x801CF910), held in 0x20..0x1000 by the meter (0x801CFB5C..0x801CFB94), and every flight-frame decrement ends clamped at 0 (0x801D2920 / 0x801D2944), so the product is never negative"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D2C54..0x801D2C54"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the clamp of `(record - 0x12C) << 3` below zero: the arm reads the previous frame's line record 0x801D927C, and the tail lands or recasts the cast on the frame the record drops under 0x136 (0x801D3C70), so a running in-water arm always sees a record of 0x136 or more"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D2CD0..0x801D2CD0"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the clamp of `(record - 0x12C) << 4` below zero, behind the same record of 0x136 or more as 0x801D2C54"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D2FD4..0x801D2FD4"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the round-toward-zero arm of `pull * 3 << 9 >> 13`; the pull 0x801D9148 is 0 or a 0xA00 / 0xC00 seed stepped down by dt << 7 and zeroed once under 0x600 (0x801D2ED8..0x801D2F40), so it is never negative"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D302C..0x801D302C"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the round-toward-zero arm of `pull * 5 << 8 >> 13`, over the same non-negative pull as 0x801D2FD4"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D34CC..0x801D34CC"
+verdict = "unported"
+reason = "PROT 0972 fishing lure tick: the dev print behind _DAT_8007B9B0, which SCUS only clears (0x8001D448) and only the PROT 0971 debug menu sets (0x801CED64); the port prints nothing"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3754..0x801D3754"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the round-toward-zero arm of `record / 32`; the line record 0x801D927C is FUN_801D765C's square root clamped at 0 (0x801D76C4) or the session's seed 10 (0x801CF89C), never negative"
+
+[[arm]]
+entry = "0x801D26CC"
+image = "914784a36560ef74"
+range = "0x801D3770..0x801D3770"
+verdict = "unreachable"
+reason = "PROT 0972 fishing lure tick: the divide trap on `rand() % (rod + 1)`; the rod word 0x80084454 is the bag's rod index, so the unsigned divisor is never 0"
+
+[[arm]]
+entry = "0x801CF3BC"
+image = "d34a946ed9c68fe0"
+range = "0x801CF46C..0x801CF46C"
+verdict = "unreachable"
+reason = "PROT 0972 fishing session: the jump table's bound test on the state 0x801D926C, an overlay word only 0972 stores; its 33 stores are the constants 0 / 1 / 0xA / 0x14 / 0x19 / 0x1E / 0x20 / 0x28 / 0x32 / 0x64 / 0x66 / 0x78 / 0x79 / 0x7A / 0x96 / 0xC8 and six +1 steps inside the arms of states 0xA, 0xB, 0xC, 0x14, 0x20 and 0x21, so it never reaches 0xC9"

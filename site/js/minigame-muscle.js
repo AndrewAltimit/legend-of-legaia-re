@@ -1656,7 +1656,7 @@ window.MgMuscle = (function () {
      * 1222, the 320x256 16bpp image the battle end streams into VRAM
      * (384, 0)) as retail's two FUN_801D00F8 quads, at the hub's backdrop
      * level - the engine replays both (`muscle_interval_still_json`: the
-     * HubBackdrop arms 0x0A..0x0C beside the INTERVAL envelope). The hub
+     * re-entered hub's arms 0x0A..0x14, the kernel the play hosts step). The hub
      * draws no arena, so the frame is black around it. Returns whether the
      * still drew. */
     function drawIntervalStill() {

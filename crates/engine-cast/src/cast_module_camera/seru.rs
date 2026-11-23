@@ -684,6 +684,7 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             // the attack name comes down as the cast ends.
             ArmDirection {
                 caption: Some(ModuleCaption::Cleared),
+                jump: Some(crate::seru_magic_ticks::SERU_B_DONE_PHASE),
                 ..ArmDirection::PASS.nudged(drift)
             }
         }

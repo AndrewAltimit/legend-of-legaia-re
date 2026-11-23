@@ -54,6 +54,13 @@ struct Win {
     /// camera.
     pose_seat: u8,
     seed: u32,
+    /// Each member's committed item `+0x1DF` under category Item `+0x1DE`,
+    /// and its initiative key `+0x16C` (non-zero: the turn has not run).
+    queued: [Option<u8>; 3],
+    init_key: [u16; 3],
+    /// An item the bag already holds 99 of, which a drop skips
+    /// (`0x8004F5A8..0x8004F5BC`).
+    full: Option<u8>,
 }
 
 fn gen_win(rng: &mut Rng, threshold: impl Fn(usize, u8) -> u32) -> Win {
@@ -79,6 +86,9 @@ fn gen_win(rng: &mut Rng, threshold: impl Fn(usize, u8) -> u32) -> Win {
         special: if rng.below(10) == 0 { 0x200 } else { 0 },
         pose_seat: 0,
         seed: rng.next(),
+        queued: [None; 3],
+        init_key: [0; 3],
+        full: None,
     };
     w.pose_seat = rng.below(w.party as u32) as u8;
     let mut standing = 0;
@@ -122,6 +132,13 @@ fn gen_win(rng: &mut Rng, threshold: impl Fn(usize, u8) -> u32) -> Win {
         };
         w.chance[s] = [0, 1, 50, 99, 100, rng.below(100) as u8][rng.below(6) as usize];
     }
+    for m in 0..3 {
+        w.queued[m] = (rng.below(3) == 0).then(|| 1 + rng.below(100) as u8);
+        w.init_key[m] = [0, 0, 1, 0x1234][rng.below(4) as usize];
+    }
+    if rng.below(4) == 0 {
+        w.full = Some(w.item[rng.below(5) as usize]).filter(|&i| i != 0);
+    }
     w
 }
 
@@ -146,6 +163,14 @@ fn seed_retail(cpu: &mut Cpu, w: &Win) {
     for b in 0..256u32 {
         cpu.mem.wr8(0x8008_5958 + b, 0);
     }
+    // The bag's live slot range `gp+0x2D2 .. gp+0x2D4` over `(id, count)`
+    // pairs at `0x80085958`.
+    cpu.mem.wr16(gp + 0x2D2, 0);
+    cpu.mem.wr16(gp + 0x2D4, u16::from(w.full.is_some()));
+    if let Some(id) = w.full {
+        cpu.mem.wr8(0x8008_5958, id);
+        cpu.mem.wr8(0x8008_5959, 99);
+    }
     for s in 0..8u32 {
         let a = ACTOR + s * ACTOR_STRIDE;
         cpu.mem.wr32(ACTORS + s * 4, a);
@@ -158,6 +183,14 @@ fn seed_retail(cpu: &mut Cpu, w: &Win) {
         cpu.mem.wr8(SEATS + m as u32, m as u8 + 1);
         cpu.mem.wr16(a + 0x14C, w.member_hp[m]);
         cpu.mem.wr16(a + 0x16E, w.member_status[m]);
+        cpu.mem.wr16(a + 0x16C, w.init_key[m]);
+        match w.queued[m] {
+            Some(id) => {
+                cpu.mem.wr8(a + 0x1DE, 1);
+                cpu.mem.wr8(a + 0x1DF, id);
+            }
+            None => cpu.mem.wr8(a + 0x1DE, 3),
+        }
         let rec = RECORDS + m as u32 * STRIDE;
         for b in 0..STRIDE {
             cpu.mem.wr8(rec + b, 0);
@@ -222,6 +255,15 @@ fn seed_port(world: &mut World, w: &Win) -> (FormationDef, MonsterCatalog) {
         let a = &mut world.actors[m];
         a.battle.hp = w.member_hp[m];
         a.battle_monster_id = None;
+        a.battle.init_key = w.init_key[m];
+        a.battle.action_category = if w.queued[m].is_some() { 1 } else { 3 };
+        world.battle.round_flow.pending[m] =
+            w.queued[m].map(
+                |id| legaia_engine_battle_loop::round_flow::PendingPartyAction::Item {
+                    item_id: id,
+                    used_slots: vec![],
+                },
+            );
         seat_status(world, m as u8, w.member_status[m], w.seed >> m & 1 != 0);
     }
     for s in 0..w.monsters {
@@ -239,6 +281,9 @@ fn seed_port(world: &mut World, w: &Win) -> (FormationDef, MonsterCatalog) {
         if w.captured[s] {
             world.seru.battle_captures.push(id);
         }
+    }
+    if let Some(id) = w.full {
+        world.party.inventory.insert(id, 99);
     }
     world.rng_state = w.seed;
     (FormationDef::new(1000, slots), catalog)
@@ -283,7 +328,7 @@ fn a_win_pays_what_retail_pays() {
         &AccessoryPassiveTable::from_scus(&scus).expect("passives"),
     ));
     let mut rng = Rng(0x534F_494C);
-    let (mut failures, mut drops) = (Vec::new(), 0);
+    let (mut failures, mut drops, mut refunds) = (Vec::new(), 0, 0);
     for round in 0..4000 {
         let tracker = &world.party.level_up_tracker;
         let w = gen_win(&mut rng, |m, level| {
@@ -321,6 +366,13 @@ fn a_win_pays_what_retail_pays() {
             state.get(),
         );
         let (formation, catalog) = seed_port(&mut world, &w);
+        // The refund runs in the per-member loop, ahead of the drops.
+        world.drive_refund_unacted_items();
+        let refunded: Vec<u8> = (0..w.party)
+            .filter(|&m| world.battle.round_flow.pending[m].is_none())
+            .filter_map(|m| w.queued[m])
+            .collect();
+        refunds += refunded.len();
         let r = world.apply_battle_loot(&formation, &catalog);
         let port_xp: Vec<(u32, u8)> = (0..w.party)
             .map(|m| {
@@ -334,7 +386,7 @@ fn a_win_pays_what_retail_pays() {
         let port = (
             world.party.money as u32,
             port_xp,
-            r.drops.clone(),
+            [refunded, r.drops.clone()].concat(),
             world.rng_state,
         );
         drops += r.drops.len();
@@ -348,7 +400,10 @@ fn a_win_pays_what_retail_pays() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert!(drops > 100, "{drops} drops");
+    assert!(
+        drops > 100 && refunds > 100,
+        "{drops} drops {refunds} refunds"
+    );
 }
 
 /// The results hold (`gp+0xA54`, `0x8004F740..0x8004F778`): the results frame
@@ -639,6 +694,8 @@ fn a_party_wipe_barks_taunts_and_fades_as_retail() {
     }
     let barkers = [
         0x4Cu8, 0x88, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA9, 0xB4, 0x40, 0x10,
+        // The switch tree's gaps: ids that fall out between its compares.
+        0x90, 0xA1, 0xA7, 0xB0, 0xB5,
     ];
     let durations = vec![300u16; 0x200];
     let mut rng = Rng(0x5749_5045);

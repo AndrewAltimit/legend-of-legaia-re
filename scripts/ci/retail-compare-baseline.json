@@ -1096,7 +1096,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.976,
+      "image": 0.979,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1850,7 +1850,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.996,
+      "image": 0.993,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1915,7 +1915,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.995,
+      "image": 0.993,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1954,7 +1954,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.993,
+      "image": 0.994,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -4034,7 +4034,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.877,
+      "image": 0.874,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -4047,7 +4047,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.993,
+      "image": 0.99,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -6745,7 +6745,7 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.997,
+      "image": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
       "npcs": 1.0,
@@ -7858,7 +7858,7 @@
       "scene": 1.0
     },
     "load_slot2_grid": {
-      "image": 0.429
+      "image": 1.0
     },
     "load_slot2_now_checking": {
       "image": 1.0
@@ -8327,13 +8327,13 @@
       "scene": 1.0
     },
     "minigame_baka_fighter_retail_select": {
-      "image": 0.963,
+      "image": 1.0,
       "minigame": 1.0,
       "mode": 1.0,
       "scene": 1.0
     },
     "minigame_baka_fighter_retail_select_right": {
-      "image": 0.97,
+      "image": 0.998,
       "minigame": 1.0,
       "mode": 1.0,
       "scene": 1.0
@@ -8506,7 +8506,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.974,
+      "image": 0.975,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -10392,11 +10392,11 @@
     "theeder_summon_value_rows_parked": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.927,
+      "camera": 1.0,
       "enemies": 1.0,
-      "enemy_hp": 0.75,
+      "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.614,
+      "image": 0.916,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -10405,11 +10405,11 @@
     "theeder_summon_value_rows_rising": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.935,
+      "camera": 1.0,
       "enemies": 1.0,
-      "enemy_hp": 0.75,
+      "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.403,
+      "image": 0.787,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,

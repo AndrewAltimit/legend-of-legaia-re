@@ -48,7 +48,7 @@
 //! ([`crate::field_submode_screen`]): no script is parked on it, and a stale
 //! `Done` there would resume the next op-`0x49` a script arms.
 //!
-//! REF: FUN_801D0B90, FUN_801F1278, FUN_801F1E48, FUN_801F1B64
+//! REF: FUN_801D0B90, FUN_801F1278, FUN_801F1E48, FUN_801F1B64, FUN_8002B994
 
 use legaia_engine_field::field_overlay::field_overlay_cstr;
 use legaia_engine_field::submode_hub_actors::{self as hub, HubAction, HubActor, HubEnv, HubGrid};
@@ -77,6 +77,15 @@ pub const NOTICE_TEXT_INSET: i32 = 0x0C;
 /// every side (the window-system convention `legaia_game_tables::menu_windows`
 /// pins for the menu overlay's records).
 pub const NOTICE_FRAME_PAD: i32 = 8;
+
+/// Where the painter draws its marker: `FUN_8002B994(1, 1, x + w - 0x10,
+/// y - 2)` over the live window's `+0x0A` / `+0x0C` / `+0x0E` words
+/// (`0x801F1BA4..0x801F1BC4`) - kind `1`, the two-frame page mark, animated
+/// (mode `1`).
+pub fn notice_mark_pos() -> (i32, i32) {
+    let (x, y, w, _) = NOTICE_CONTENT_RECT;
+    (x + w - 0x10, y - 2)
+}
 
 /// The frame rect `(x, y, w, h)` a host draws the notice chrome at.
 pub fn notice_frame_rect() -> (i32, i32, i32, i32) {
@@ -142,6 +151,9 @@ pub struct IncenseNotice {
     /// Window record `16` is installed (shown) - state `0` shows it, state
     /// `1`'s confirm hides it.
     pub shown: bool,
+    /// The painter's marker frame (kind `1` of the cursor primitive's strip),
+    /// stepped once a game frame while the window is up.
+    pub mark_frame: u8,
 }
 
 impl IncenseNotice {
@@ -160,6 +172,7 @@ impl IncenseNotice {
                 ..HubGrid::default()
             },
             shown: false,
+            mark_frame: 0,
         }
     }
 
@@ -198,6 +211,16 @@ impl World {
             .is_some_and(|n| n.shown)
     }
 
+    /// The painter's marker while the notice is up: its stage position and
+    /// the strip frame to draw (`ATLAS_RECT_ADVANCE_ICON[frame]`).
+    pub fn incense_notice_mark(&self) -> Option<((i32, i32), u8)> {
+        self.locomotion
+            .incense_notice
+            .as_ref()
+            .filter(|n| n.shown)
+            .map(|n| (notice_mark_pos(), n.mark_frame))
+    }
+
     /// One frame of the notice: run the ported `FUN_801F1E48` body, fold its
     /// panel installs and confirm cue, and close the notice (releasing the
     /// movement lock) once it hands back. No-op with no notice up.
@@ -232,6 +255,22 @@ impl World {
         if notice.handed_back() {
             self.lock_player_for_incense_notice(false);
             return;
+        }
+        // The window walker runs record `16`'s painter once a game frame,
+        // and the painter's marker call steps the cursor primitive's kind-1
+        // frame (the state is global, shared with the dialogue pager).
+        if notice.shown && self.clock.frame_credited {
+            let (mx, my) = notice_mark_pos();
+            notice.mark_frame = self
+                .dialog
+                .cursor_sprites
+                .call(
+                    legaia_engine_dialog::cursor_sprite::KIND_PAGE_MARK,
+                    mx as i16,
+                    my as i16,
+                    self.clock.frame_step,
+                )
+                .frame;
         }
         // Keep the lock asserted while the notice is up: other field kernels
         // own the same bit and may drop it under the panel.

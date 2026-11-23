@@ -11,6 +11,7 @@ mod module_code;
 mod module_ctx;
 mod module_hits;
 mod module_impact;
+use module_impact::ImpactOpen;
 mod module_rumble;
 mod mushura_writes;
 mod puera_writes;

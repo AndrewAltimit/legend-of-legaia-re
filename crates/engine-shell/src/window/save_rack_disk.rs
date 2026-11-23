@@ -657,7 +657,10 @@ mod save_rack_tests {
             &mut flow,
             legaia_engine_system::input::PadButton::Cross.mask(),
         );
-        for _ in 0..session.now_checking_frames() + 1 {
+        for _ in 0..session.now_checking_frames()
+            + 1
+            + legaia_engine_menus::save_select::card_scan_frames(15)
+        {
             step(&mut session, &mut flow, 0);
         }
         assert!(matches!(session.phase(), SelectPhase::SlotPreview { .. }));

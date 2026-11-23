@@ -119,7 +119,7 @@
           <tr><td class="hex">5</td><td>Course card hold</td><td>holds 180 ticks, pad-skippable</td><td><code>6</code></td></tr>
           <tr><td class="hex">6</td><td>Wall drain</td><td>backdrop drains; kicks the battle load</td><td><code>0x14</code></td></tr>
           <tr><td class="hex">0x0A</td><td>INTERVAL fade-in</td><td>heading and backdrop climb; arms the four tally cues</td><td><code>0x0B</code></td></tr>
-          <tr><td class="hex">0x0B</td><td>Tally roll</td><td>drains the four tally lanes</td><td><code>0x0C</code></td></tr>
+          <tr><td class="hex">0x0B</td><td>Tally roll</td><td>drains the four tally lanes under the held heading; backdrop dims to half</td><td><code>0x0C</code> once the roll stops</td></tr>
           <tr><td class="hex">0x0C</td><td>HP restore</td><td><code>hp = min(max, hp + accumulator)</code></td><td><code>0x14</code></td></tr>
           <tr><td class="hex">0x14</td><td>Backdrop return</td><td>backdrop back to full; one pass-through tick on a first visit</td><td><code>0x15</code></td></tr>
           <tr><td class="hex">0x15</td><td>ROUND card</td><td>banner fades in, holds 61 ticks, pad-skippable</td><td><code>0x16</code></td></tr>
@@ -372,7 +372,7 @@
     </tbody>
   </table>
   </div>
-  <p>The three HP rows drain into one accumulator, and the restore state adds it to <strong>current</strong> HP, capped at max. So a later round can open hurt, and the longer the run, the more each interval gives back. Each row drains one step per frame with a voice blip per step; one button press fast-forwards the whole roll.</p>
+  <p>The three HP rows drain into one accumulator, and the restore state adds it to <strong>current</strong> HP, capped at max. So a later round can open hurt, and the longer the run, the more each interval gives back. Each row drains one step per frame with a voice blip per step; one button press fast-forwards the whole roll. The INTERVAL heading stays up until the roll has finished, so a big round holds the screen longer than a small one.</p>
   <h3>The contest-start refill</h3>
   <ul class="bullets">
     <li>HP, MP and SP are refilled to max when the contest starts.</li>

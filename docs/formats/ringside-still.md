@@ -220,9 +220,9 @@ leg, `World::exit_muscle_dome`, over the fighter's live HP and the lead
 record's `+0x11C` maximum (`legaia_engine_minigames::muscle_ringside::still_prot_index`,
 through the loader port's `backread_texture_variant`), and the world keeps the
 answer as `MinigameState::muscle_ringside_still`. When a finished leg raises the
-INTERVAL screen, each host arms a `muscle_ringside::HubBackdrop` - the level
-table above, riding the host's INTERVAL envelope for arms `0x0A..0x0C` and
-running `0x14..0x16` itself - and draws
+INTERVAL screen, the shared hub timers arm a `muscle_ringside::ReentryHub` -
+arms `0x0A..0x0C` and `0x14..0x16` whole, the level table above among them -
+and both play hosts draw
 `legaia_engine_ui::ringside_backdrop::ringside_still_quads` at its level,
 first in the hub's list, then the ROUND banner over it on arms `0x15` /
 `0x16`, through the one decomposition both play hosts draw
@@ -233,9 +233,8 @@ and the sheet is laid down band by band at the loader's own rects
 stills into its hub atlas, and the play page samples them out of the hub's own
 VRAM image (`ringside_backdrop::hub_vram`, the bands written at the same rects
 from `(384, 0)`) through a 15-bit page, as retail's packets do. The standalone minigames page draws the same pair under
-its INTERVAL screen (HUD sheet `7`, `muscle_interval_still_json`): it replays a
-`HubBackdrop` beside the INTERVAL envelope and the tally roll to the screen's
-tick, picks the variant through `still_prot_index` over the fighter's HP as
+its INTERVAL screen (HUD sheet `7`, `muscle_interval_still_json`): it replays
+the same `ReentryHub` to the screen's tick, picks the variant through `still_prot_index` over the fighter's HP as
 the leg ended, and blacks out the arena behind it, since the hub draws no
 arena. The frame-sliced read schedule itself is not ported as a
 schedule - the port reads the whole entry at once.

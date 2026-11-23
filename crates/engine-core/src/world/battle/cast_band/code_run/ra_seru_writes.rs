@@ -238,13 +238,23 @@ impl World {
         use legaia_engine_cast::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
         const RINGS: [u32; 3] = [0x801F_8344, 0x801F_8398, 0x801F_83EC];
         let party = self.party.party_count.clamp(1, 3);
+        // The hit loop over seats `3..7` (`0x801F7810..0x801F7974`) skips a
+        // seat with no HP or with Stone (`+0x16E & 4`) ahead of its hit, and
+        // stores the tint, its blend and a lowered marker after it
+        // (`0x801F7910..0x801F7934`).
         for s in party..party + 4 {
+            let stoned = self.raw_status_word(s)
+                & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                != 0;
             if let Some(a) = self.actors.get_mut(usize::from(s))
                 && a.active
                 && a.battle_monster_id.is_some()
+                && a.battle.hp != 0
+                && !stoned
             {
                 a.battle.render_color = 0x3FF0_03FF;
                 a.battle.render_blend = legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL;
+                a.battle.render_flag = 0;
             }
         }
         let facing = self
@@ -380,7 +390,15 @@ impl World {
         match phase {
             0xC => self.ra_seru_row_word(monster_count, 0, 7),
             0xD => {
+                // The hit loop skips a Stoned seat whole (`andi 4` at
+                // `0x801F7704`, `bnez` to the step at `0x801F7858`).
                 for (e, _) in self.ra_seru_row(monster_count) {
+                    let stoned = self.raw_status_word(e as u8)
+                        & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                        != 0;
+                    if stoned {
+                        continue;
+                    }
                     if let Some(a) = self.actors.get_mut(e) {
                         a.battle.render_flag = 0;
                         let b = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
@@ -1239,7 +1257,7 @@ impl World {
     ///
     /// | Arm | Edge | Store |
     /// |---|---|---|
-    /// | 0..=2 (`0x801F6B18`, `0x801F6D74`) | every pass | every party seat and living monster hidden |
+    /// | 0..=2 (`0x801F6B18`, `0x801F6D74`) | every pass | every party seat hidden, and seat `i` for each living monster `3 + i` (the row loop's index slip) |
     /// | 3, 5 | pass | the creature put where the director stood it |
     /// | 7 (`0x801F7300`) | pass | the victim shown |
     /// | 11 (`0x801F77A4`) | every pass | the creature rising, `+0x36 += 4 * step`; under `0x81` its fade `+0x21C = 2` |
@@ -1257,7 +1275,27 @@ impl World {
                 a.battle.render_color = 0;
                 a.battle.render_flag = FLAG_PARKED;
             }
-            self.ra_seru_row_word(monster_count, 0, FLAG_PARKED);
+            // The row loop (`0x801F6BC0..0x801F6C0C`) tests the HP of
+            // `actor_table[3 + i]` but stores through `actor_table[i]`
+            // (`v1` walks from the table base): for each living monster it
+            // hides retail seat `i`, a party seat or a low monster seat, and
+            // no monster of the row by its own HP. The band's hide already
+            // holds the living row down.
+            let map = self.cast_seat_map();
+            for i in 0..monster_count {
+                let alive = map
+                    .engine(3 + i)
+                    .and_then(|e| self.actors.get(usize::from(e)))
+                    .is_some_and(|a| a.battle.hp != 0);
+                if let Some(a) = alive
+                    .then(|| map.engine(i))
+                    .flatten()
+                    .and_then(|e| self.actors.get_mut(usize::from(e)))
+                {
+                    a.battle.render_color = 0;
+                    a.battle.render_flag = FLAG_PARKED;
+                }
+            }
         }
         let seat = self.casting.module_cam.creature;
         let countdown = self.casting.module_cam.countdown.0;

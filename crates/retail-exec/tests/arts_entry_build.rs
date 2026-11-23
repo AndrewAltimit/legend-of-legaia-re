@@ -115,6 +115,7 @@ fn the_arts_entry_seats_its_chips_as_retail() {
             list_pages: 0,
             phase: ArtsInputScreen::Entering,
             glides: &[],
+            retreat: None,
             chip_slide: slide,
             dpad: slide.is_none(),
         };
@@ -236,6 +237,7 @@ fn a_staged_string_seats_its_pennants_as_retail() {
             list_pages: 0,
             phase: ArtsInputScreen::Entering,
             glides: &[],
+            retreat: None,
             chip_slide: None,
             dpad: true,
         };

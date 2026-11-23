@@ -151,7 +151,17 @@ impl PlayWindowApp {
         // The shop-family overlay (shop / prize / inn / banners), built
         // once and read by both the text pass and the chrome sprite pass.
         let screens = self.shop_overlay_frame(w, h);
-        let mut hud = self.build_hud(w, h, &screens);
+        // The fishing venue's screens, built once a frame (texts and panels
+        // from one composition) and read by both passes, like the shop
+        // overlay above.
+        let venue = (self.session.host.world.mode == SceneMode::Fishing).then(|| {
+            legaia_engine_screens::fishing_venue_screen(
+                &self.session.host.world,
+                &self.font,
+                self.save_menu.is_some(),
+            )
+        });
+        let mut hud = self.build_hud(w, h, &screens, venue.as_ref());
         hud.extend(field_hud_draws.text.iter().copied());
         // Post-battle spoils panel. The XP / gold / drops a victory
         // credits used to land with no on-screen acknowledgement at all
@@ -246,10 +256,9 @@ impl PlayWindowApp {
         // no-lure line, the prize list and its two dialogs) in the class-0
         // frame of style 0x44, and their hand cursors, under the text layer
         // that draws their text.
-        if let Some(menu) = self.save_menu.as_ref() {
-            save_chrome_draw_vec.extend(legaia_engine_screens::fishing_venue_chrome_sprites(
-                &self.session.host.world,
-                &self.font,
+        if let (Some(menu), Some(venue)) = (self.save_menu.as_ref(), venue.as_ref()) {
+            save_chrome_draw_vec.extend(legaia_engine_screens::venue_chrome_sprites(
+                &venue.chrome,
                 &menu.rects,
                 w,
                 h,
@@ -488,7 +497,10 @@ impl PlayWindowApp {
             drop_shadows: self.field_drop_shadow_prims(),
             move_strips: move_strip_prims,
             field_lights: self.field_light_screen_prims(),
-            theeder: legaia_engine_screens::battle_fx::theeder_prims(&self.session.host.world),
+            theeder: legaia_engine_screens::battle_fx::theeder_prims_by_link(
+                &self.session.host.world,
+                self.win.renderer.as_ref().is_some_and(|r| r.psx_mode()),
+            ),
             // The floating value readout needs the struck actor's projected
             // screen position, which only a host holding the camera has.
             value_readout: self.battle_value_readout_prims(fx_cam),

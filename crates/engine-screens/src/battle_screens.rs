@@ -522,6 +522,12 @@ pub fn arts_input_chrome_draws(
         .collect();
     let frame = ai::ArtsInputFrame {
         glides: &glides,
+        retreat: view.pennant_retreat.map(|r| ai::PennantRetreatFrame {
+            commands: &r.commands,
+            spent: &r.spent,
+            elapsed: r.elapsed,
+            total: legaia_engine_battle::arts_command_input::CHIP_SLIDE_FRAMES,
+        }),
         chip_slide: view.chip_slide.map(|e| {
             (
                 e,
@@ -616,6 +622,7 @@ fn arts_list_caption_draws(
     };
     let frame = ai::ArtsInputFrame {
         glides: &[],
+        retreat: None,
         chip_slide: None,
         dpad: false,
         buffer: view.pennants,

@@ -7,6 +7,23 @@ either carry a matching `// PORT: FUN_<addr>` tag (claiming the port site)
 or the line should carry a `// REF: FUN_<addr>` marker (claiming the mention
 is intentional cross-reference and not a port).
 
+A citation is drift only when the catalog has nowhere else to put the
+routine. Two kinds of address are already settled and never warn:
+
+  * one a `// PORT:` tag claims in ANY file under `crates/` - the routine has
+    its port site, so a mention here is a cross-reference by construction
+    (whether that tag is on the right item is `port-catalog.py --live`'s and
+    `check-port-provenance.py`'s question, not this one's);
+  * one `scripts/ci/port-catalog-ignore.toml` lists - a recorded decision that
+    the routine is not ported line by line (BIOS glue, libc, unreferenced).
+
+Requiring a per-file `REF:` for those made every prose mention of a ported
+routine a warning, which buried the signal under thousands of rows.
+
+The dump corpus (`ghidra/scripts/funcs/`) is gitignored. Without it the
+"has a dump" filter cannot run, so every code-range citation is a candidate
+(`--ignore-dumps` forces the same locally, to reproduce what CI sees).
+
 The checker is **warn-only** by default. Pre-commit runs `--staged` so new
 mentions get flagged at commit time; existing untagged citations are
 grandfathered. `--scan-all` audits the entire engine codebase, `--strict`
@@ -43,6 +60,7 @@ import argparse
 import re
 import subprocess
 import sys
+import tomllib
 from collections import defaultdict
 from pathlib import Path
 
@@ -52,10 +70,14 @@ import port_tag_reader  # noqa: E402  (sibling module, path set just above)
 REPO = Path(__file__).resolve().parent.parent.parent
 FUNCS_DIR = REPO / "ghidra" / "scripts" / "funcs"
 CRATES_DIR = REPO / "crates"
+IGNORE_TOML = REPO / "scripts" / "ci" / "port-catalog-ignore.toml"
 
 # Match the same SCUS / overlay code range port-catalog.py uses.
+#
+# The look-behind keeps `PTR_FUN_<addr>` (a data global: a function-pointer
+# table) from reading as a citation of a function at that address.
 ADDR_RE = re.compile(
-    r"FUN_(80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4})",
+    r"(?<!PTR_)FUN_(80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4})",
     re.IGNORECASE,
 )
 
@@ -81,6 +103,38 @@ def collect_dumped() -> set[str]:
         m = addr_re.search(p.name)
         if m:
             out.add(m.group(1).lower())
+    return out
+
+
+def collect_ported_anywhere() -> set[str]:
+    """Every address a `// PORT:` tag claims in any Rust file under `crates/`.
+
+    The same set `port-catalog.py` credits as ported (`collect_ports`): every
+    crate, not only `engine-*`, through the shared marker reader.
+    """
+    out: set[str] = set()
+    if not CRATES_DIR.exists():
+        return out
+    for p in CRATES_DIR.rglob("*.rs"):
+        try:
+            text = p.read_text(errors="ignore")
+        except (OSError, PermissionError):
+            continue
+        port_tags, _ref = parse_tags(text)
+        out |= port_tags
+    return out
+
+
+def collect_ignored() -> set[str]:
+    """Every address `scripts/ci/port-catalog-ignore.toml` lists (any section)."""
+    if not IGNORE_TOML.exists():
+        return set()
+    with IGNORE_TOML.open("rb") as fh:
+        data = tomllib.load(fh)
+    out: set[str] = set()
+    for rows in data.values():
+        if isinstance(rows, dict):
+            out |= {k.lower() for k in rows}
     return out
 
 
@@ -220,7 +274,8 @@ def find_citations(text: str) -> list[tuple[int, str, str]]:
 
 def check_file(
     path: Path,
-    dumped: set[str],
+    dumped: set[str] | None,
+    settled: set[str],
     scope_lines: set[int] | None,
     only_addr: str | None,
 ) -> list[tuple[int, str, str]]:
@@ -229,7 +284,10 @@ def check_file(
     A warning is `(line_no, addr, line_content)` for a citation that:
       - sits in `scope_lines` if scoping is requested (`--staged`);
       - matches `only_addr` if a drill-down is requested;
-      - cites an address that has a Ghidra dump (porter-able);
+      - cites an address that has a Ghidra dump (porter-able), unless
+        `dumped` is `None` (no corpus: every address is a candidate);
+      - cites an address not in `settled` (ported in another file, or on
+        the catalog ignore list);
       - is not tagged at the file level (`// PORT:` or `// REF:`);
       - is not itself the body of a PORT/REF tag line.
 
@@ -251,10 +309,12 @@ def check_file(
             continue
         if only_addr and addr != only_addr:
             continue
-        if addr not in dumped:
+        if dumped is not None and addr not in dumped:
             continue  # can't be a port site; nothing to tag against
         if addr in silenced:
             continue  # tagged at file level (PORT or REF)
+        if addr in settled:
+            continue  # ported elsewhere or ignored: a cross-reference
         # Skip lines that are themselves a PORT or REF tag (the address there
         # is part of the tag header, not a freeform citation).
         if TAG_RE.search(line):
@@ -312,7 +372,7 @@ def insert_ref_block(text: str, addrs: list[str]) -> str:
     return "".join(lines)
 
 
-def run_backfill(dumped: set[str]) -> int:
+def run_backfill(dumped: set[str] | None, settled: set[str]) -> int:
     """`--backfill-refs` driver. For each engine-* Rust file that has at
     least one `// PORT:` tag and ALSO has untagged citations, append a
     `//! REF: ...` block listing every untagged address. Writes in place.
@@ -331,10 +391,12 @@ def run_backfill(dumped: set[str]) -> int:
         port_tags, ref_tags = parse_tags(text)
         if not port_tags:
             continue
-        silenced = port_tags | ref_tags
+        silenced = port_tags | ref_tags | settled
         untagged: set[str] = set()
         for _lineno, addr, line in find_citations(text):
-            if addr in dumped and addr not in silenced and not TAG_RE.search(line):
+            if dumped is not None and addr not in dumped:
+                continue
+            if addr not in silenced and not TAG_RE.search(line):
                 untagged.add(addr)
         if not untagged:
             continue
@@ -391,13 +453,24 @@ def main() -> int:
         "currently-untagged citation. One-shot grandfather pass; files are "
         "rewritten in place. Implies --scan-all.",
     )
+    ap.add_argument(
+        "--ignore-dumps",
+        action="store_true",
+        help="treat every code-range citation as a candidate, as a checkout "
+        "without the gitignored dump corpus (CI) does",
+    )
     args = ap.parse_args()
 
-    dumped = collect_dumped()
+    dumped: set[str] | None = None if args.ignore_dumps else collect_dumped()
+    if dumped is not None and not dumped:
+        # No corpus. An empty "has a dump" set would silence every citation
+        # and make the scan vacuous; drop the filter instead.
+        dumped = None
+    settled = collect_ported_anywhere() | collect_ignored()
     only_addr = args.addr.lower().removeprefix("0x") if args.addr else None
 
     if args.backfill_refs:
-        return run_backfill(dumped)
+        return run_backfill(dumped, settled)
 
     if args.scan_all:
         files = list_engine_rust_files()
@@ -414,7 +487,7 @@ def main() -> int:
     total_files = 0
     for path in files:
         scope_lines = scope[path]
-        warnings = check_file(path, dumped, scope_lines, only_addr)
+        warnings = check_file(path, dumped, settled, scope_lines, only_addr)
         if not warnings:
             continue
         total_files += 1
@@ -441,6 +514,7 @@ def main() -> int:
             f"\n[check-port-tags --{mode_label}] "
             f"{total_warnings} drift warning(s) in {total_files} file(s), "
             f"{len(files)} scanned"
+            + ("" if dumped is not None else " (no dump filter)")
         )
 
     return 1 if (args.strict and total_warnings > 0) else 0

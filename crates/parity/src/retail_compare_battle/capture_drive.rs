@@ -18,8 +18,8 @@ impl RetailBattle {
     /// The hits a party **melee** capture's action had landed, in push order
     /// ([`RetailBattle::action_hit_sequence`]), for the replay to deal again
     /// at retail's amounts (`legaia_engine_capture::melee_hits`), and the
-    /// same for a monster's cast. Empty for any other plan: a party cast's
-    /// hits come from its module, not the melee kernel.
+    /// same for a monster's cast and a party row-aimed cast. Empty for any
+    /// other plan.
     ///
     /// The total is `DAT_8007BD14` on the action's target, read only when
     /// the ring holds pushes (so it is this action's).
@@ -46,6 +46,24 @@ impl RetailBattle {
                 if seat >= 3
                     && self.queued_category == 2
                     && !self.action_hit_sequence.is_empty() =>
+            {
+                legaia_engine_capture::melee_hits::MeleeHitSeed {
+                    hits: self.action_hit_sequence.clone(),
+                    total: None,
+                    own_clip: None,
+                }
+            }
+            // A party row-aimed cast (Theeder's `0x82`) pushes its struck
+            // seats with the amounts on the value window
+            // ([`action_hit_sequence`] reads them there): the replay folds
+            // the cast on its own stream, so it takes retail's amounts. Only
+            // when every push carries one - a ring of bare seats is a cast
+            // whose amounts left the screen.
+            SeedPlan::Action { seat: 0..=2, .. } | SeedPlan::Cast
+                if self.active_actor < 3
+                    && self.queued_category == 2
+                    && !self.action_hit_sequence.is_empty()
+                    && self.action_hit_sequence.iter().all(|&(_, v)| v != 0) =>
             {
                 legaia_engine_capture::melee_hits::MeleeHitSeed {
                     hits: self.action_hit_sequence.clone(),
@@ -2129,9 +2147,20 @@ impl RetailBattle {
                             && self.caster_clip > 1)
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.caster_clip),
+                    // Not on a results or exit capture: its target byte is
+                    // the finishing blow's, the last of a chain of turns, and
+                    // aiming every turn of the chain at it reorders the kills
+                    // (`battle_jou_gala_finisher_results_retail`: the film's
+                    // pad confirms each turn's default and kills rows 0, 1, 2,
+                    // leaving `+0x1DD = 5`; aimed, the replay killed 2, 0, 1
+                    // and left `3`).
                     aim: (seat < 3
                         && self.queued_category == 3
-                        && (3..8).contains(&self.target_code))
+                        && (3..8).contains(&self.target_code)
+                        && !matches!(
+                            self.span_gate,
+                            SpanGate::Results { .. } | SpanGate::Exit { .. }
+                        ))
                     .then(|| self.target_code - 3),
                     queue: ((seat < 3 && self.queued_category == 3 && self.arts_queue)
                         || (self.strike_stream_steer && self.strike_stream_steerable())

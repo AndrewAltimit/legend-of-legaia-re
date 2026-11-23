@@ -625,8 +625,9 @@ fn card_save_dir(out_dir: Option<&Path>, label: &str, card: &Path) -> Result<Pat
 pub const TITLE_CONTINUE_PRESSES: &str =
     "100:Down,160:Cross,700:Cross,760:Down,820:Cross,900:Cross";
 /// Tick the title Continue frame is taken at: the grid is up and still by
-/// then ([`TITLE_CONTINUE_PRESSES`]' last confirm plus the card read).
-pub const TITLE_CONTINUE_CAPTURE_TICK: u64 = 1200;
+/// then ([`TITLE_CONTINUE_PRESSES`]' last confirm plus the card check, see
+/// `pause_menu_drive::CARD_READ_SETTLE_TICKS`).
+pub const TITLE_CONTINUE_CAPTURE_TICK: u64 = 1400;
 
 /// The tick [`TitleScreen::CardCheck`]'s drive commits its pill on.
 pub const CARD_CHECK_COMMIT_TICK: u64 = 940;

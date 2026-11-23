@@ -27,6 +27,16 @@ pub const THEEDER_STAGE_WAIT: i32 = 180;
 /// `scalar * 96` - the settle word `0x801F9204` arm 13 arms on its exit
 /// (`0x801F7FCC..0x801F7FE4`), which arm 14 drains before it polls the row.
 pub const THEEDER_SETTLE_WAIT: i32 = 96;
+/// PROT 0904's settle word, which arm 13 arms with [`THEEDER_SETTLE_WAIT`]
+/// and arm 14 drains: the module's countdown on that arm.
+pub const THEEDER_SETTLE_VA: u32 = 0x801F_9204;
+/// PROT 0904's trail count word (`crate::seru_magic_ticks::TheederTrail`),
+/// which arm 13's retract drops by one a pass.
+pub const THEEDER_TRAIL_COUNT_VA: u32 = 0x801F_91FC;
+/// The arm the retract runs in.
+pub const THEEDER_RETRACT_ARM: u8 = crate::seru_magic_ticks::THEEDER_RETRACT_ARM;
+/// The arm that drains the settle word.
+pub const THEEDER_SETTLE_ARM: u8 = 14;
 
 /// The arm-7 shot (`0x801F7228..0x801F7274`): pitch `0`, yaw
 /// `0x800 - facing`, TR `(0, 0x480, 0x140)`, focus the creature, snapped.
@@ -183,7 +193,10 @@ pub fn theeder_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
             if drain_halfword(st) {
                 return theeder_bolt_hold(seated, THEEDER_BOLT_HEIGHT_RISE);
             }
-            st.creature = Some(seated);
+            // Arm 4's seat lands on slot 7 (`0x801F6EEC..0x801F6F8C`), which
+            // every later shot frames; a host that has seated slot 7 already
+            // (the body's pin) keeps that seat.
+            st.creature.get_or_insert(seated);
             st.countdown.0 = SPEED_SCALAR * THEEDER_SHOW_WAIT;
             ArmDirection::PASS
         }
@@ -632,6 +645,27 @@ mod tests {
         assert!(st.creature.is_some(), "arm 4 seats the creature");
         assert_eq!(dwell(theeder_direct, &mut st, 5, s), 61);
         assert_eq!(dwell(theeder_direct, &mut st, 6, s), 181);
+    }
+
+    /// One seat: when the host has already seated slot 7 (the body's pin),
+    /// arm 4 keeps it, and the later shots frame that seat - retail's camera
+    /// arms read slot 7, not a second computation of the placement.
+    #[test]
+    fn theeder_frames_the_seat_slot_7_holds() {
+        let mut st = ModuleCamState::default();
+        let s = seats(0);
+        let pinned = ModuleSeat {
+            x: 699,
+            y: 0,
+            z: -768,
+            facing: 3455,
+        };
+        st.creature = Some(pinned);
+        theeder_direct(&mut st, 3, s);
+        dwell(theeder_direct, &mut st, 4, s);
+        assert_eq!(st.creature, Some(pinned));
+        let shot = theeder_direct(&mut st, 12, s).shot.expect("arm 12 frames");
+        assert_eq!(shot.focus, focus_on(pinned));
     }
 
     #[test]

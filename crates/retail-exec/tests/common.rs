@@ -336,3 +336,40 @@ pub fn resident_is_retail(
             }),
     }
 }
+
+/// Lets the battle overlay's glide stepper `FUN_801D9BBC` run for real over the glide table
+/// `ctx[+0x11B4]` and has the element spawner register what retail's
+/// `FUN_801DB7B0` would for a spawn under the glide flag `ctx[+0x1B] = 0`:
+/// a committed pennant (case `0xB`, `0x801D3D3C..0x801D3D48`, over the count
+/// `ctx[+0x1C] = 0x18`) and the pennants' retreat (cases `0x26` / `0xF`,
+/// `0x801D52E4..0x801D5340`). A flag-0 record does not gate the pass, but
+/// while one glides the entry's and the review's cancels are not read (`s4`,
+/// the `0x801D0C64` scan, at `0x801D20E4` / `0x801D2304`). The other spawns
+/// (flag `1`) are the chips' and the window's, which the stepper's gate and
+/// the port's own pad hold cover elsewhere.
+pub fn register_flag0_glides(cpu: &mut psx_retail_exec::Cpu) {
+    const SPAWN: u32 = 0x801D_8DE8;
+    const FRAME_STEP: u32 = 0x1F80_0393;
+    const CTX_PTR: u32 = 0x8007_BD24;
+    const HANDLES: u32 = 0x8017_0000;
+    cpu.mem.wr8(FRAME_STEP, 1);
+    cpu.hook(SPAWN, |r, m| {
+        let ctx = m.rd32(CTX_PTR);
+        // A mode with bit 1 set spawns on its seat with no glide record
+        // (`andi v0,s5,0x2` / `bne` at `0x801D93A8..0x801D93B0`): case
+        // `0xD`'s re-spawns on a cursor step.
+        if m.rd8(ctx + 0x1B) != 0 || r.r[psx_retail_exec::A1] & 2 != 0 {
+            return;
+        }
+        // The spawner takes the first free handle (`0x801D91D4..0x801D9260`).
+        let Some(slot) = (0..0x28).find(|&k| m.rd32(ctx + 0x1074 + 4 * k) == 0) else {
+            return;
+        };
+        let rec = ctx + 0x11B4 + 0xC * slot;
+        m.load(rec, &[0u8; 0xC]);
+        let total = m.rd8(ctx + 0x1C);
+        m.wr8(rec, total);
+        m.wr8(rec + 2, slot as u8);
+        m.wr32(ctx + 0x1074 + 4 * slot, HANDLES + 0x10 * slot);
+    });
+}

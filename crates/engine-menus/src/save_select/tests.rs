@@ -965,3 +965,28 @@ fn interpolate_method_uses_session_anim_t() {
     assert_eq!(s.slide_anim_t(), SLIDE_ANIM_FULL);
     assert_eq!(s.interpolate((100, 50), (200, 80)), (200, 80));
 }
+
+/// The block walk against the SLOT 2 film (saves in cells 0..=4, 10 and
+/// 14; scan setup `0x09` at vsync 369): cell 10's face shows at 414 and cell
+/// 14's at 426, the free cells between blanking a frame apart, and the grid
+/// opens at 434.
+#[test]
+fn the_block_walk_flags_a_cell_a_pass_and_holds_on_each_read() {
+    let saves: Vec<bool> = (0..15).map(|i| matches!(i, 0..=4 | 10 | 14)).collect();
+    let at = |cell: usize| {
+        (0..200u16)
+            .find(|&e| card_walk_stamped(&saves, e) > cell)
+            .unwrap()
+    };
+    assert_eq!(at(0), 1);
+    assert_eq!(at(1), 9, "a save holds the walk for its read");
+    assert_eq!(
+        (at(5), at(6), at(9)),
+        (41, 42, 45),
+        "free cells a frame apart"
+    );
+    assert_eq!(369 + at(10), 415);
+    assert_eq!(369 + at(14), 426);
+    assert_eq!(369 + card_walk_frames(&saves), 434);
+    assert_eq!(card_walk_frames(&[false; 15]), 2, "no save: one walk pass");
+}

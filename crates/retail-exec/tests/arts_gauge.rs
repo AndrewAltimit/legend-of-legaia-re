@@ -8,7 +8,7 @@ use legaia_art::queue::Command;
 use legaia_engine_battle::arts_command_input::{
     ArtsCommandInputSession, ArtsCommandPad, ArtsInputPhase, rot_blocks,
 };
-use legaia_engine_battle::target_picker::SlotState;
+use legaia_engine_battle::target_picker::{PickerState, SlotState};
 use psx_retail_exec::{Cpu, Stop};
 
 const STATE_MACHINE: u32 = 0x801D_0748;
@@ -29,6 +29,11 @@ const COMMANDS: [(u32, Command); 4] = [
 ];
 const CONFIRM: u32 = 0x0040;
 const CANCEL: u32 = 0x0020;
+const LEFT_PAD: u32 = 0x8000;
+const RIGHT_PAD: u32 = 0x2000;
+const UP_PAD: u32 = 0x1000;
+const DOWN_PAD: u32 = 0x4000;
+const CROSS_ENTRY: u32 = 0x8008_46C8;
 
 fn frame(cpu: &mut Cpu, pad: u32) {
     cpu.mem.wr32(PAD, pad);
@@ -50,22 +55,23 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
     for stub in [
         0x8004_FCC8u32, // the blip
         0x801D_3444,    // the frame's HUD pass
-        0x801D_9BBC,    // the window glide: settled
         0x801D_B8F4,    // the chip draw
         0x801D_BDDC,    // the Rot marks
         0x801D_8A88,
         0x801D_A6B4,
         0x801D_3748,
-        0x801D_8DE8,
         0x801D_5854, // the camera
         0x801D_5718,
         0x8003_5F04,
+        0x801D_BB8C, // the review's re-entry leaf
     ] {
         cpu.stub(stub, 0);
     }
+    crate::common::register_flag0_glides(&mut cpu);
     let mut rng = Rng(0x4152_5453);
     let dead = SlotState::default();
-    let (mut ends, mut refused, mut restarts) = (0, 0, 0);
+    let (mut ends, mut refused, mut restarts, mut held, mut backed) = (0, 0, 0, 0, 0);
+    let (mut stepped, mut committed) = (0u32, 0u32);
     for round in 0..3000 {
         let costs: [u8; 4] =
             std::array::from_fn(|_| [0x1E, 0x1E, 0x2A, 0x36][rng.below(4) as usize]);
@@ -84,9 +90,11 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
         ][rng.below(11) as usize];
         let status: u16 = [0, 0, 0, 8, 0x10, 0x20, 0x38][rng.below(7) as usize];
         cpu.mem.wr32(CTX_PTR, CTX);
-        for b in 0..0x900 {
-            cpu.mem.wr8(CTX + b, 0);
-        }
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        // The round reset's glide flag and count (`FUN_801D88CC`,
+        // `0x801D88FC..0x801D8914`: `ctx[+0x1B] = 1`, `ctx[+0x1C] = 0x10`).
+        cpu.mem.wr8(CTX + 0x1B, 1);
+        cpu.mem.wr8(CTX + 0x1C, 0x10);
         for b in 0..0x400 {
             cpu.mem.wr8(ACTOR + b, 0);
         }
@@ -118,6 +126,14 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
                 8 => COMMANDS[rng.below(4) as usize].0 | COMMANDS[rng.below(4) as usize].0,
                 _ => 0,
             };
+            // Now and then the player waits for the pennants to land.
+            if rng.below(4) == 0 {
+                for _ in 0..rng.below(30) {
+                    frame(&mut cpu, 0);
+                    s.input(ArtsCommandPad::default(), [dead; 3], [dead; 5]);
+                }
+            }
+            let gliding = !s.pennant_glides.is_empty();
             let before_count = cpu.mem.rd8(CTX + 0x19);
             frame(&mut cpu, press);
             // Retail's automatic end is read on the frame after the press.
@@ -168,19 +184,146 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
             assert_eq!(buffer, port_buffer, "buffer: {context}");
             if retail_state == 0x5A {
                 ends += 1;
+                // The target cursor the entry ends on (`0x5A`,
+                // `0x801D21CC..0x801D23EC`): Right, then Left step the ring
+                // (`FUN_801D8D00`, run for real over the queue `ctx[+0x244]`)
+                // and stay; Up or Down commit under the directional entry
+                // and the confirm commits, on the cursor's seat `+0x1DD`;
+                // the cancel goes back to the entry through case `0xF`
+                // (`0x801D23C8..0x801D23DC`, with `ctx[+0x266 + seat]` clear
+                // and the option word not `1`), wiping the string. The port
+                // runs the same presses from the member's current target.
+                use legaia_engine_battle_vm::battle_action::{
+                    PoolActor, bearing_12bit_approx, build_attack_target_queue,
+                };
+                let count = 1 + rng.below(4) as usize;
+                let seats: Vec<(i16, i16)> = (0..count)
+                    .map(|_| {
+                        (
+                            rng.below(0x1000) as i16 - 0x800,
+                            rng.below(0x1000) as i16 - 0x800,
+                        )
+                    })
+                    .collect();
+                let me = (
+                    rng.below(0x1000) as i16 - 0x800,
+                    rng.below(0x1000) as i16 - 0x800,
+                );
+                let cur = rng.below(count as u32) as u8;
+                let mut pool = [PoolActor::default(); 8];
+                pool[0] = PoolActor {
+                    alive: true,
+                    x: me.0,
+                    z: me.1,
+                    target_slot: 3 + cur,
+                    status: 0,
+                };
+                for (k, p) in seats.iter().enumerate() {
+                    pool[3 + k] = PoolActor {
+                        alive: true,
+                        x: p.0,
+                        z: p.1,
+                        target_slot: 0,
+                        status: 0,
+                    };
+                }
+                let q = build_attack_target_queue(&pool, 0, bearing_12bit_approx);
+                for (k, b) in [
+                    q.count,
+                    q.wrap_slot,
+                    q.ordered[0],
+                    q.ordered[1],
+                    q.ordered[2],
+                ]
+                .iter()
+                .enumerate()
+                {
+                    cpu.mem.wr8(CTX + 0x244 + k as u32, *b);
+                }
+                cpu.mem.wr8(ACTOR + 0x1DD, 3 + cur);
+                let cross_entry = rng.below(2) == 1;
+                cpu.mem.wr32(CROSS_ENTRY, u32::from(cross_entry));
+                s.cross_entry = cross_entry;
+                s.target_seat = Some(cur);
+                let mut foe = [dead; 5];
+                for (k, p) in seats.iter().enumerate() {
+                    foe[k] = SlotState::alive(true, true).with_seat(p.0, p.1);
+                }
+                let mut me_row = [dead; 3];
+                me_row[0] = SlotState::alive(true, true).with_seat(me.0, me.1);
+                let mut hist: Vec<u32> = Vec::new();
+                for sub in 0..4 {
+                    let press = [LEFT_PAD, RIGHT_PAD, CANCEL, 0, UP_PAD, DOWN_PAD, CONFIRM]
+                        [rng.below(7) as usize];
+                    frame(&mut cpu, press);
+                    let ev = ArtsCommandPad {
+                        left: press == LEFT_PAD,
+                        right: press == RIGHT_PAD,
+                        up: press == UP_PAD,
+                        down: press == DOWN_PAD,
+                        cross: press == CONFIRM,
+                        circle: press == CANCEL,
+                        ..ArtsCommandPad::default()
+                    };
+                    s.input(ev, me_row, foe);
+                    let state = cpu.mem.rd8(CTX + 0x06);
+                    let target = cpu.mem.rd8(ACTOR + 0x1DD);
+                    let table = cpu.mem.read(CTX + 0x11B4, 0x28 * 0xC);
+                    let live: Vec<(usize, u8, u8, u8)> = (0..0x28)
+                        .filter(|&k| table[0xC * k] != 0)
+                        .map(|k| (k, table[0xC * k], table[0xC * k + 1], table[0xC * k + 3]))
+                        .collect();
+                    let label = format!(
+                        "cursor {sub} press {press:#x} cross-entry {cross_entry} foes {count} cur {cur} glides {live:?} held {} hist {hist:x?}: {context}",
+                        s.cancel_held()
+                    );
+                    hist.push(press);
+                    match &s.phase {
+                        ArtsInputPhase::Entering => {
+                            assert_eq!((state, cpu.mem.rd8(CTX + 0x19)), (0x50, 0), "{label}");
+                            backed += 1;
+                            break;
+                        }
+                        ArtsInputPhase::Review => {
+                            assert_eq!((state, target), (0x5A, 3 + cur), "{label}");
+                        }
+                        ArtsInputPhase::Targeting { picker } => {
+                            let PickerState::Cursor { slot, .. } = picker.state() else {
+                                panic!("{label}");
+                            };
+                            assert_eq!((state, target), (0x5A, 3 + slot), "{label}");
+                            stepped += u32::from(slot != cur);
+                        }
+                        ArtsInputPhase::Confirmed { target_slot, .. } => {
+                            assert!(matches!(state, 0x28 | 0x6E), "{label}: retail {state:#x}");
+                            assert_eq!(target, 3 + target_slot, "{label}");
+                            committed += 1;
+                            break;
+                        }
+                        other => panic!("port {other:?} retail {state:#x}: {label}"),
+                    }
+                }
                 break;
             }
             if retail_count == before_count && press & 0xF000 != 0 {
                 refused += 1;
             }
             if press == CANCEL && before_count != 0 {
-                restarts += 1;
+                if gliding {
+                    held += 1;
+                } else {
+                    restarts += 1;
+                }
             }
         }
     }
     assert!(
-        ends > 300 && refused > 100 && restarts > 50,
-        "{ends} {refused} {restarts}"
+        ends > 300 && refused > 100 && restarts > 30 && held > 50 && backed > 10,
+        "{ends} {refused} {restarts} {held} {backed}"
+    );
+    assert!(
+        stepped > 30 && committed > 50,
+        "stepped {stepped} committed {committed}"
     );
 }
 
@@ -205,19 +348,18 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
     for stub in [
         0x8004_FCC8u32, // the blip
         0x801D_3444,    // the frame's HUD pass
-        0x801D_9BBC,    // the window glide: settled
         0x801D_B8F4,    // the chip draw
         0x801D_BDDC,    // the Rot marks
         0x801D_8A88,
         0x801D_A6B4,
         0x801D_3748,
-        0x801D_8DE8,
         0x801D_5854, // the camera
         0x801D_5718,
         0x8003_5F04,
     ] {
         cpu.stub(stub, 0);
     }
+    crate::common::register_flag0_glides(&mut cpu);
     let mut rng = Rng(0x5245_504C);
     const STAGED: u32 = 0x8007_BD04;
     const SELECT_ATTACK: u32 = 0x8008_46C4;
@@ -248,9 +390,11 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
         ][rng.below(11) as usize];
         let status: u16 = [0, 0, 0, 8, 0x10, 0x20, 0x38][rng.below(7) as usize];
         cpu.mem.wr32(CTX_PTR, CTX);
-        for b in 0..0x900 {
-            cpu.mem.wr8(CTX + b, 0);
-        }
+        cpu.mem.load(CTX, &[0u8; 0x1400]);
+        // The round reset's glide flag and count (`FUN_801D88CC`,
+        // `0x801D88FC..0x801D8914`: `ctx[+0x1B] = 1`, `ctx[+0x1C] = 0x10`).
+        cpu.mem.wr8(CTX + 0x1B, 1);
+        cpu.mem.wr8(CTX + 0x1C, 0x10);
         for b in 0..0x400 {
             cpu.mem.wr8(ACTOR + b, 0);
         }
@@ -339,8 +483,9 @@ fn a_preseeded_arts_entry_replays_and_cancels_as_retail_does() {
                 && shown_before
                 && s.preseed.is_empty()
                 && !s.replay;
+            // A slot the wipe freed may hold a pennant's handle since.
             let live: Vec<bool> = (0..40)
-                .map(|k| cpu.mem.rd32(CTX + 0x1074 + 4 * k) != 0)
+                .map(|k| cpu.mem.rd32(CTX + 0x1074 + 4 * k) == HANDLES + 0x10 * k)
                 .collect();
             let windows_left = kinds
                 .iter()

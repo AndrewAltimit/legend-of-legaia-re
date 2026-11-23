@@ -248,6 +248,11 @@ const GLOW_FLAG_WORD: u32 = 0x9900_0000;
 const DISC_PATCH_TEXEL: u16 = 14;
 /// The lift keeping a coplanar disc above the floor in a depth-tested host.
 const DISC_DEPTH_LIFT: f32 = 2.5;
+/// The share of its distance to the eye each glow vertex is pulled in by
+/// (`BakaDuelScene::place_glow`): enough to clear the floor at the far
+/// cells' grazing angle, small enough that a fighter standing on the glow
+/// still covers it.
+const GLOW_EYE_PULL: f32 = 1.0 / 64.0;
 
 /// The far colour the floor emitter cues toward: the glow's colour word.
 ///
@@ -738,9 +743,10 @@ impl BakaDuelScene {
         let floor = self.floor.clone();
         if arena {
             self.positions[floor.clone()].copy_from_slice(&self.base[floor.clone()]);
-            self.cue_floor(fight.duel_camera(), floor);
-            let focus_x = fight.duel_camera().view().focus[0];
-            self.place_disc(self.glow.clone(), [focus_x, 0.0, 0.0]);
+            self.cue_floor(fight.duel_camera(), floor.clone());
+            self.cull_floor(fight.duel_camera(), floor);
+            let view = fight.duel_camera().view();
+            self.place_glow([view.focus[0], 0.0, 0.0], view.eye());
         } else {
             self.collapse(floor);
             self.collapse(self.glow.clone());
@@ -813,9 +819,11 @@ impl BakaDuelScene {
                     let h = legaia_engine_minigames::baka_fighter::ClipHeader::from_record_words(
                         r.a, r.b, r.flag,
                     );
-                    let step = h.selector_step(i32::from(r.flag >> 8));
-                    let span = (i32::from(r.frame_count) * 16).max(1);
-                    (clock.wrapping_mul(step).rem_euclid(span) >> 4) as usize
+                    legaia_engine_minigames::baka_fighter::lineup_idle_frame(
+                        &h,
+                        i32::from(r.flag >> 8),
+                        clock,
+                    )
                 })
                 .unwrap_or(0);
             let [x, y, z] = *spot;
@@ -879,6 +887,25 @@ impl BakaDuelScene {
         start..self.base.len()
     }
 
+    /// Seat the floor glow on `point`, drawn over the whole floor.
+    ///
+    /// The floor emitter links every quad into one slot at the ordering
+    /// table's deep end (`OT + (0x3FEC >> shift) * 4`, `0x801CEB90..0x801CEBA4`,
+    /// linked at `0x801CEF54..0x801CEF78`), so retail paints the glow over
+    /// every floor cell. A small world lift ([`DISC_DEPTH_LIFT`]) lost that
+    /// race in a depth-tested host where the disc's long triangles meet the
+    /// far cells at a grazing angle - the player select showed a black band
+    /// of cued-out floor where retail's frame shows the glow. Each vertex is
+    /// pulled toward the `eye` instead ([`GLOW_EYE_PULL`] of its distance),
+    /// along its own ray, so its screen position is unchanged.
+    fn place_glow(&mut self, point: [f32; 3], eye: [f32; 3]) {
+        for i in self.glow.clone() {
+            let b = self.base[i];
+            let p = [b[0] + point[0], b[1] + point[1], b[2] + point[2]];
+            self.positions[i] = std::array::from_fn(|k| p[k] + (eye[k] - p[k]) * GLOW_EYE_PULL);
+        }
+    }
+
     /// Seat a ground disc on `point`, lifted off the plane it is coplanar with.
     fn place_disc(&mut self, range: Range<usize>, point: [f32; 3]) {
         for i in range {
@@ -888,6 +915,25 @@ impl BakaDuelScene {
                 b[1] + point[1] - DISC_DEPTH_LIFT,
                 b[2] + point[2],
             ];
+        }
+    }
+
+    /// Drop the floor cells the emitter would not draw this frame
+    /// ([`floor_cell_mask`]): each cell's sixteen vertices collapse to a
+    /// point.
+    fn cull_floor(
+        &mut self,
+        camera: &legaia_engine_minigames::baka_duel::DuelCamera,
+        floor: Range<usize>,
+    ) {
+        let (w, h) = legaia_engine_system::mode_entry_init::duel_overlay_init().window_tiles;
+        let mask = floor_cell_mask(camera, w as i16, h as i16);
+        let per_cell = floor.len() / mask.len().max(1);
+        for (cell, keep) in mask.into_iter().enumerate() {
+            if !keep {
+                let a = floor.start + cell * per_cell;
+                self.positions[a..a + per_cell].fill([0.0; 3]);
+            }
         }
     }
 
@@ -1208,6 +1254,66 @@ impl BakaDuelScene {
     }
 }
 
+/// Which cells of the duel floor's `width x height` grid the emitter draws
+/// under `camera`, row-major (the order
+/// `legaia_scene_formats::battle_backdrop::build_ground_grid_sized` emits
+/// them in).
+///
+/// `FUN_801CEB84` is the battle grid emitter relocated, culls and all: pass
+/// 1 runs `MVMVA` on each cell's probe point and keeps only an `IR3` inside
+/// the bracket (`0x801CECF4..0x801CED28`: `IR3 + 0x200 <= 0` behind,
+/// `> 0x6700` far), and pass 2 skips the other two classes
+/// (`0x801CED74` / `0x801CED7C`) and rejects a cell whose outer lattice
+/// corners all fall off one screen edge (`0x801CEDF0..`). A floor drawn
+/// without them laid the far rows - fully cued to black - over the walls'
+/// base in the player select, where retail leaves them out.
+///
+/// PORT: FUN_801D02C0 (pass 1's depth bracket and pass 2's screen reject, on the duel camera)
+/// REF: FUN_801CEB84 (the same emitter relocated into PROT 0976)
+pub fn floor_cell_mask(
+    camera: &legaia_engine_minigames::baka_duel::DuelCamera,
+    width: i16,
+    height: i16,
+) -> Vec<bool> {
+    use legaia_engine_battle_vm::battle_ground_grid::{
+        CellVis, cell_lattice, classify_cell, implied_y, probe_point, quad_on_screen,
+    };
+    use legaia_engine_minigames::baka_duel::DUEL_WORLD_SCALE;
+    let view = camera.view();
+    // A grid point as the emitter feeds it: the X word packed into `VXY`,
+    // so its high half is the `VY` the GTE reads.
+    let eye = |x: i32, z: i32| {
+        let p = [x as f32, f32::from(implied_y(x)), z as f32];
+        view.eye_space(p).map(|v| v * DUEL_WORLD_SCALE)
+    };
+    // `RTPT`'s `SXY`: `IR1` / `IR2` saturated, the quotient capped at
+    // `H / SZ = 2`, `SX` / `SY` saturated.
+    let sxy = |x: i32, z: i32| {
+        let e = eye(x, z);
+        let ir = [e[0].clamp(-32768.0, 32767.0), e[1].clamp(-32768.0, 32767.0)];
+        let d = e[2].clamp(0.0, 65535.0).max(view.h * 0.5);
+        let sx = (160.0 + view.h * ir[0] / d).clamp(-1024.0, 1023.0);
+        let sy =
+            (legaia_engine_camera::projection::GTE_OFY + view.h * ir[1] / d).clamp(-1024.0, 1023.0);
+        (sx.floor() as i16, sy.floor() as i16)
+    };
+    let mut mask = Vec::with_capacity(usize::from(width as u16) * usize::from(height as u16));
+    for row in 0..i32::from(height) {
+        for col in 0..i32::from(width) {
+            let (px, pz) = probe_point(width, height, col, row);
+            let ir3 = eye(px, pz)[2].clamp(-32768.0, 32767.0);
+            if classify_cell(ir3.floor() as i32) != CellVis::Visible {
+                mask.push(false);
+                continue;
+            }
+            let l = cell_lattice(width, height, col, row);
+            let corners = [l[0][0], l[0][2], l[2][0], l[2][2]].map(|(x, z)| sxy(x, z));
+            mask.push(quad_on_screen(corners));
+        }
+    }
+    mask
+}
+
 /// Place one stage model for this frame, or drop it: the model at `pos`
 /// turned `yaw` about Y, drawn only while the camera sees its origin past
 /// [`WALL_CULL_DEPTH`]. A dropped model's vertices collapse to a point.
@@ -1431,5 +1537,36 @@ mod floor_cue_tests {
         let rows: Vec<u8> = (0..6).map(|k| floor_cue_colour(7456 + 1536 * k)).collect();
         assert_eq!(rows, [122, 101, 80, 59, 38, 17]);
         assert_eq!(floor_cue_colour(16672), 0);
+    }
+}
+
+#[cfg(test)]
+mod floor_cull_tests {
+    use super::floor_cell_mask;
+    use legaia_engine_minigames::baka_duel::DuelCamera;
+
+    /// The emitter's two culls over the duel camera: every cell the mask
+    /// keeps has its probe inside pass 1's bracket, and some cell of the
+    /// `6 x 6` window is left out at the round setup's pose.
+    #[test]
+    fn the_floor_mask_keeps_only_the_bracket_and_the_screen() {
+        use legaia_engine_battle_vm::battle_ground_grid::{
+            CellVis, classify_cell, implied_y, probe_point,
+        };
+        let camera = DuelCamera::default();
+        let mask = floor_cell_mask(&camera, 6, 6);
+        assert_eq!(mask.len(), 36);
+        assert!(mask.iter().any(|&k| k), "the floor is on screen");
+        for (i, keep) in mask.iter().enumerate() {
+            let (px, pz) = probe_point(6, 6, (i % 6) as i32, (i / 6) as i32);
+            let ir3 = camera.eye_depth([px as f32, f32::from(implied_y(px)), pz as f32]);
+            if *keep {
+                assert_eq!(
+                    classify_cell(ir3.floor() as i32),
+                    CellVis::Visible,
+                    "cell {i}"
+                );
+            }
+        }
     }
 }

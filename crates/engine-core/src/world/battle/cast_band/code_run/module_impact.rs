@@ -3,7 +3,34 @@
 
 use super::*;
 
+/// The seat state a hit loop tests, read as the tick opens.
+#[derive(Debug, Clone, Copy, Default)]
+pub(in crate::world::battle::cast_band) struct ImpactOpen {
+    /// The latched victim stood in Stone.
+    pub victim_stoned: bool,
+    /// Each monster seat `party + k` stood living, shown (`+0x21C == 0`) and
+    /// out of Stone.
+    pub monster_shown: [bool; 4],
+}
+
 impl World {
+    /// [`ImpactOpen`] as the tick opens.
+    pub(in crate::world::battle::cast_band) fn impact_open(&self, victim: u8) -> ImpactOpen {
+        let party = usize::from(self.party.party_count.clamp(1, 3));
+        ImpactOpen {
+            victim_stoned: self.battle.actor_is_petrified(victim),
+            monster_shown: std::array::from_fn(|k| {
+                let s = party + k;
+                self.actors.get(s).is_some_and(|a| {
+                    a.active
+                        && a.battle_monster_id.is_some()
+                        && a.battle.hp != 0
+                        && a.battle.render_flag == 0
+                }) && !self.battle.actor_is_petrified(s as u8)
+            }),
+        }
+    }
+
     /// Apply every store `entry`'s `body` makes on `arm` this tick. `passed`
     /// is whether the arm's gate let it through, `countdown` the module
     /// countdown after the tick's drain: PROT 0950's arm 3 tests the word it
@@ -22,23 +49,40 @@ impl World {
         victim: u8,
         creature: u8,
         party_hittable: [bool; 3],
+        opened: ImpactOpen,
     ) {
         use legaia_engine_cast::cast_module_impact::{ImpactSeat, module_impacts_due};
         let party = self.party.party_count.clamp(1, 3);
         for m in module_impacts_due(entry, body, arm, passed, countdown) {
             let seats: Vec<u8> = match m.seat {
                 ImpactSeat::Victim => vec![victim],
+                ImpactSeat::UnstonedVictim => {
+                    if opened.victim_stoned {
+                        Vec::new()
+                    } else {
+                        vec![victim]
+                    }
+                }
+                ImpactSeat::ShownOtherMonsters => (party..party + 4)
+                    .filter(|&s| s != victim && opened.monster_shown[usize::from(s - party)])
+                    .collect(),
                 ImpactSeat::Caster => vec![caster],
                 ImpactSeat::Creature => vec![creature],
                 ImpactSeat::Party => (0..party).collect(),
                 ImpactSeat::LiveParty => (0..party)
                     .filter(|&s| party_hittable[usize::from(s)])
                     .collect(),
-                ImpactSeat::LiveMonsters => (party..party + 4)
+                ImpactSeat::LiveMonsters | ImpactSeat::LiveUnstonedMonsters => (party..party + 4)
                     .filter(|&s| {
                         self.actors.get(usize::from(s)).is_some_and(|a| {
                             a.active && a.battle_monster_id.is_some() && a.battle.hp != 0
                         })
+                    })
+                    .filter(|&s| {
+                        m.seat != ImpactSeat::LiveUnstonedMonsters
+                            || self.raw_status_word(s)
+                                & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                                == 0
                     })
                     .collect(),
             };

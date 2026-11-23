@@ -8,10 +8,24 @@ pub struct SaveSelectSession {
     pub(super) mode: SaveSelectMode,
     pub(super) slots: Vec<SlotSnapshot>,
     pub(super) phase: SelectPhase,
-    /// Frames the "Now checking" dialog stays visible after the user
-    /// confirms a Load on a non-empty slot. Public knob so tests can
-    /// fast-forward through the dialog without ticking 120 times.
+    /// The "Now checking" grace for the next card check: retail's
+    /// `state[+0x228]` seed (`0x10E` on a first probe, [`CARD_CHECK_GRACE`]
+    /// after). Public knob so tests can fast-forward the dialog.
     pub(super) now_checking_frames: u16,
+    /// A test fixed the beat with [`Self::set_now_checking_frames`]: the
+    /// grace stays what it set and no block scan follows it.
+    pub(super) beat_overridden: bool,
+    /// A card check has run in this screen (retail's probed flag, raised by
+    /// card-op staging): later checks hold [`CARD_CHECK_GRACE`].
+    pub(super) probed: bool,
+    /// Frames since the current card check began (`0x801EF124`, the card
+    /// screen's frame count since the commit).
+    pub(super) check_elapsed: u16,
+    /// The block scan's length over the card under check, once the host has
+    /// read it ([`Self::set_card_scan`], [`card_walk_frames`]).
+    pub(super) card_scan_saves: Option<u16>,
+    /// Frames the block scan has run, once the grace is out.
+    pub(super) scan_elapsed: Option<u16>,
     /// 12-bit fixed-point slide-in animation timer (0..=4096). Holds
     /// at 0 while Browsing/Done. On entry to `NowChecking` it resets
     /// to 0 and ramps `+SLIDE_ANIM_RATE` per tick, clamped at
@@ -23,14 +37,24 @@ pub struct SaveSelectSession {
     /// engine doesn't currently break the slide into independent
     /// elements).
     pub(super) slide_anim_t: u16,
-    /// 12-bit fixed-point slide-in timer for the bottom info panel.
-    /// Mirrors retail's `DAT_801ef1a0` in `FUN_801E08D8`, which is
-    /// distinct from the slot-composite timer above: the info panel
-    /// starts hidden (off-screen below the stage at y=394) and slides
-    /// up to its parked position (y=138) only AFTER NowChecking
-    /// completes. Holds at 0 during Browsing / NowChecking / Done;
-    /// ramps during SlotPreview / ConfirmOverwrite / ConfirmDelete.
+    /// 12-bit fixed-point slide-in timer for the bottom info panel and the
+    /// block grid. Mirrors retail's card-text fade `DAT_801ef1a0`, read by
+    /// `FUN_801E08D8` (the panel's y) and `FUN_801E06C0` (the grid's slide,
+    /// `0x801E0740`), which is distinct from the slot-composite timer
+    /// above: the panel starts off-screen below the stage at y=394 and
+    /// rises to its parked y=138 once the card has answered - under the
+    /// "Now checking" dialog, at [`CARD_TEXT_RATE`] - and keeps ramping
+    /// through SlotPreview / ConfirmOverwrite / ConfirmDelete. Holds at 0
+    /// while Browsing / Done and until the card answers.
     pub(super) info_panel_slide_anim_t: u16,
+    /// The "Now checking" dialog's own slide timer, retail's `DAT_801ef160`
+    /// (mode `0` of `FUN_801E1C1C`): stepped up `SLIDE_ANIM_RATE` a tick
+    /// while the card check runs and back down once it ends, clamped
+    /// `0..=0x1000`; the dialog draws while it is non-zero
+    /// (`0x801DD6B8..0x801DD76C`). So the dialog slides back out to the
+    /// right when the grid opens, where the pill composite's timer above
+    /// stays landed.
+    pub(super) now_checking_t: u16,
     /// Opt-in retail two-stage flow: the slot list is the console's two
     /// **memory-card slots** rather than the save blocks themselves, so
     /// Save mode must cross the same `NowChecking` card-read beat Load
@@ -131,8 +155,14 @@ impl SaveSelectSession {
             slots,
             phase,
             now_checking_frames: DEFAULT_NOW_CHECKING_FRAMES,
+            beat_overridden: false,
+            probed: false,
+            check_elapsed: 0,
+            card_scan_saves: None,
+            scan_elapsed: None,
             slide_anim_t: 0,
             info_panel_slide_anim_t: 0,
+            now_checking_t: 0,
             card_slots_mode: false,
             card_events: [false; CARD_STATUS_EVENTS],
             card_poll_counter: 0,
@@ -213,10 +243,46 @@ impl SaveSelectSession {
         self.info_panel_slide_anim_t
     }
 
+    /// The "Now checking" dialog's slide timer (12-bit fixed point): the
+    /// dialog is on screen while it is non-zero.
+    pub fn now_checking_t(&self) -> u16 {
+        self.now_checking_t
+    }
+
     /// Override the "Now checking" dialog duration (frames @ 60 Hz).
     /// Tests use this to bypass the 2-second beat.
     pub fn set_now_checking_frames(&mut self, frames: u16) {
         self.now_checking_frames = frames;
+        self.beat_overridden = true;
+    }
+
+    /// The host has read the card under check: it holds `saves` Legend of
+    /// Legaia saves. From here the card has answered (the grid and the
+    /// card-text fade come up under the dialog) and the beat ends with
+    /// retail's block scan, `walk_frames` long ([`card_walk_frames`]), once
+    /// the grace is out.
+    pub fn set_card_scan(&mut self, walk_frames: u16) {
+        self.card_scan_saves = Some(walk_frames);
+    }
+
+    /// Whether the card under check has answered: the host read it and the
+    /// reader's latency ([`CARD_ANSWER_FRAMES`]) has run. `false` outside
+    /// the "Now checking" beat.
+    pub fn card_answered(&self) -> bool {
+        matches!(self.phase, SelectPhase::NowChecking { .. })
+            && self.card_scan_saves.is_some()
+            && !self.beat_overridden
+            && self.check_elapsed >= CARD_ANSWER_FRAMES
+    }
+
+    /// Frames since the current card check began: retail's `0x801EF124`.
+    pub fn card_check_elapsed(&self) -> u16 {
+        self.check_elapsed
+    }
+
+    /// Frames the block scan has run (`None` until the grace is out).
+    pub fn card_scan_elapsed(&self) -> Option<u16> {
+        self.scan_elapsed
     }
 
     /// Read-only accessor used by render code to compute the dialog's
@@ -308,6 +374,15 @@ impl SaveSelectSession {
     ///   `DAT_801ef1a0` only starts incrementing once `DAT_801ef160`
     ///   (NowChecking) has retracted.
     pub(super) fn advance_slide_anim(&mut self) {
+        // The dialog's flag `0x801EF15C` is up for the card check alone; its
+        // timer steps toward the flag either way (`0x801DD6E8..0x801DD76C`).
+        self.now_checking_t = if matches!(self.phase, SelectPhase::NowChecking { .. }) {
+            self.now_checking_t
+                .saturating_add(SLIDE_ANIM_RATE)
+                .min(SLIDE_ANIM_FULL)
+        } else {
+            self.now_checking_t.saturating_sub(SLIDE_ANIM_RATE)
+        };
         match self.phase {
             SelectPhase::Browsing { .. } | SelectPhase::Done(_) => {
                 self.slide_anim_t = 0;
@@ -318,7 +393,19 @@ impl SaveSelectSession {
                 if self.slide_anim_t > SLIDE_ANIM_FULL {
                     self.slide_anim_t = SLIDE_ANIM_FULL;
                 }
-                self.info_panel_slide_anim_t = 0;
+                // The card-text fade `0x801EF1A0` (the info panel's rise and
+                // the grid's slide) waits for the card's answer, then ramps
+                // under the dialog: the tail's gate is the fade flag, the
+                // slide timer landed, no block count, no fault and the scan
+                // request cleared (`0x801DFDD4..0x801DFE64`).
+                if self.card_answered() {
+                    self.info_panel_slide_anim_t = self
+                        .info_panel_slide_anim_t
+                        .saturating_add(CARD_TEXT_RATE)
+                        .min(SLIDE_ANIM_FULL);
+                } else {
+                    self.info_panel_slide_anim_t = 0;
+                }
             }
             SelectPhase::SlotPreview { .. }
             | SelectPhase::ConfirmOverwrite { .. }
@@ -383,7 +470,7 @@ impl SaveSelectSession {
                     self.card_poll_counter = 0;
                     self.phase = SelectPhase::NowChecking {
                         slot: cursor,
-                        frames_remaining: self.now_checking_frames,
+                        frames_remaining: self.begin_card_check(),
                     };
                     events.push(SelectEvent::EnteredNowChecking { slot: cursor });
                 }
@@ -398,7 +485,7 @@ impl SaveSelectSession {
                     self.card_poll_counter = 0;
                     self.phase = SelectPhase::NowChecking {
                         slot: cursor,
-                        frames_remaining: self.now_checking_frames,
+                        frames_remaining: self.begin_card_check(),
                     };
                     events.push(SelectEvent::EnteredNowChecking { slot: cursor });
                 }
@@ -444,12 +531,32 @@ impl SaveSelectSession {
         }
     }
 
+    /// Card-op staging (`0x07`, `0x801DE134`): start a card check and return
+    /// its grace. The first probe holds `0x78 + 0x96`; the staging raises the
+    /// probed flag, so later checks in the same screen hold `0x78`.
+    pub(super) fn begin_card_check(&mut self) -> u16 {
+        let grace = if self.probed && !self.beat_overridden {
+            CARD_CHECK_GRACE
+        } else {
+            self.now_checking_frames
+        };
+        self.probed = true;
+        self.check_elapsed = 0;
+        self.card_scan_saves = None;
+        self.scan_elapsed = None;
+        grace
+    }
+
     /// Run one frame of the "Now checking" card-read beat.
     ///
-    /// Retail does not sit on a fixed timer here: `FUN_801E3294`'s state
-    /// 1 polls the card every frame through `FUN_801E3900` and branches
-    /// on what comes back. That poll is [`card_status_poll`], and it runs
-    /// on every frame of this phase.
+    /// The beat is the card screen's check (sub-mode `0x15`, `0x801DE260`):
+    /// it holds while the grace card-op staging seeded is non-zero
+    /// ([`Self::begin_card_check`]), then - once the host has read the card
+    /// ([`Self::set_card_scan`]) - runs retail's block scan (`0x09` /
+    /// `0x0A`, [`card_walk_frames`]) before the grid opens. Beside that,
+    /// `FUN_801E3294`'s state 1 polls the card every frame through
+    /// `FUN_801E3900`; that poll is [`card_status_poll`], and it runs on
+    /// every frame of this phase.
     ///
     /// * [`CardStatus::Ready`] / [`CardStatus::Complete`] - the card
     ///   answered, so the beat ends early and the slot preview opens.
@@ -457,9 +564,8 @@ impl SaveSelectSession {
     ///   read; the session drops back to browsing with
     ///   [`SelectEvent::CardReadFailed`].
     /// * [`CardStatus::Pending`] / [`CardStatus::Aborted`] - nothing
-    ///   conclusive, so the frame countdown decides. With no card events
-    ///   latched (the default) this is the only path taken, and the beat
-    ///   lasts exactly [`Self::now_checking_frames`] frames.
+    ///   conclusive, so the grace and the scan decide. With no card events
+    ///   latched (the default) this is the only path taken.
     ///
     /// The poll models retail's four `TestEvent` calls, and `TestEvent`
     /// *consumes* the event it tests - so the latched flags are cleared
@@ -472,6 +578,7 @@ impl SaveSelectSession {
         frames_remaining: u16,
         events: &mut Vec<SelectEvent>,
     ) {
+        self.check_elapsed = self.check_elapsed.saturating_add(1);
         let mut counter = self.card_poll_counter;
         let status = card_status_poll(self.card_events, &mut counter);
         self.card_poll_counter = counter;
@@ -492,6 +599,16 @@ impl SaveSelectSession {
         }
 
         if frames_remaining == 0 {
+            // The grace is out (`0x15` hands to `0x09`): a card the host has
+            // read runs retail's block scan under the dialog before the grid
+            // opens (`0x0A` -> `0x0B`).
+            if let Some(walk) = self.card_scan_saves.filter(|_| !self.beat_overridden) {
+                let elapsed = self.scan_elapsed.map_or(0, |e| e.saturating_add(1));
+                self.scan_elapsed = Some(elapsed);
+                if elapsed < walk {
+                    return;
+                }
+            }
             self.phase = SelectPhase::SlotPreview { slot };
             events.push(SelectEvent::EnteredSlotPreview { slot });
         } else {

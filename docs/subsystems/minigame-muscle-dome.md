@@ -120,7 +120,7 @@ stateDiagram-v2
 | `5` | Course card hold | holds `0xB4` ticks, pad-skippable | `6` |
 | `6` | Wall drain | drains the backdrop level `-dt*4`; kicks the battle load (`0x801CFC88..0x801CFC94`) | `0x14` |
 | `0x0A` | INTERVAL fade-in | heading + backdrop climb `+dt*4`; arms the four tally cues | `0x0B` at full |
-| `0x0B` | Tally roll | `FUN_801CF074` drains the four lanes; backdrop eases to `0x40` | `0x0C` when the roll stops |
+| `0x0B` | Tally roll | `FUN_801CF074` drains the four lanes under the held heading; backdrop eases to `0x40` once lane 0 has lit | `0x0C` when the roll stops and the backdrop is at `0x40` |
 | `0x0C` | HP restore | `hp_cur = min(hp_max, hp_cur + DAT_801D1AC8)` (`0x801CFE7C..0x801CFEA8`); heading drains | `0x14` |
 | `0x14` | Backdrop return | backdrop climbs back to `0x80` (`0x801CFEF4..0x801CFF34`); a single pass-through tick on a first visit | `0x15` |
 | `0x15` | ROUND card | `FUN_801D02F0` banner fades in `+dt*2`, holds `0x3D` ticks, pad-skippable | `0x16` |
@@ -142,7 +142,7 @@ Both the course and the round live in the low byte of the mode-24 sub-id word `_
 | course | `((word - 1) & 0xFF) >> 4` | `0x801CEBD4..0x801CEBE8`, `0x801CEC30` |
 | round | `(word - 1) & 0xF` | `0x801CEC18` |
 | next leg | `word + 1` | `0x801CEC00` / `0x801CEC08` |
-| re-pack | `(word & ~0xFF) + 1 + (course << 4) + round` | `FUN_801D0088`, `0x801D00B8..0x801D00E4` |
+| re-pack | `(word & ~0xFF) + 1 + (course << 4) + round` | `FUN_801CF870` exit tail, `0x801D00B8..0x801D00E4` |
 
 The re-pack leaves every byte above the low one alone, so the restriction bits seeded at entry (`0x100` / `0x300` above the low byte) survive the whole contest. Decoded course / round land in `DAT_801D1A90` / `DAT_801D1A94`, the pair `FUN_801D1510` indexes the ladder with.
 
@@ -327,8 +327,10 @@ A retail run from `minigame_muscle_dome_retail_welcome` ([`autorun_hub_cadence.l
 | ROUND-n card (`FUN_801D02F0`) | `0x15` / `0x16` | `+dt*2`, 64 ticks | `0x3D` = 61 ticks (`slti 0x3d`, `0x801CFFB8`) | yes | `-dt*2` |
 | INTERVAL + score tally | `0x0A` / `0x0B` / `0x0C` | `+dt*4`, 32 ticks | the tally roll (data-dependent) | fast-forward, not skip | `-dt*2` to the `0x40` floor (`slti 0x40`, `0x801CFDAC`), then `-dt*4` |
 
+- **The INTERVAL screen lasts as long as its roll.** Arm `0x0A` draws the heading alone and arms the four lanes (`FUN_801D1184`) on the frame it reaches full; arm `0x0B` holds the heading at `0x80` and calls the tally every frame, and leaves only when the tally returns `0` **and** the backdrop sits at `0x40` (`0x801CFDC4..0x801CFDF0`); arm `0x0C` drains the heading `-dt*4` with the tally drawn at the heading's level. A small leg rolls out in about 33 game ticks, a large one in well over 100.
+  Port: `muscle_ringside::ReentryHub`, run by `HubTimers` on both play hosts and held against the routine frame by frame (`retail-exec/tests/muscle_hub.rs`, `a_hub_re_entered_after_a_leg_runs_as_retail_runs_it`). The standalone minigames page replays the same kernel to its screen's vsync.
 - **Skip.** A skippable hold reads the pad-edge snapshot `DAT_801D1A9C` (`_DAT_8007B874 | _DAT_8007B938`, stored at `0x801CF8C4`) and leaves on any bit of `& 0xF4` (`0x801CFBE0`, `0x801CFFE4`).
-- **Tally fast-forward.** Arm `0x0B` opens by testing `_DAT_8007B874 & 0xF4` and storing `1` to `DAT_801D1AB4` (`0x801CFD60..0x801CFD7C`), ahead of the roll's `jal 0x801CF074` at `0x801CFDBC`. That word is the step scaler's bypass ([`FUN_801D14B0`](../reference/functions/minigames-debug.md)): while it is up a lane moves its whole remainder in one step. It is a latch - the only clear is the arena init's `sw zero` at `0x801CEB1C` - so one press rolls out everything left on the screen. The function dump of `FUN_801CF870` has a hole over `0x801CFD70..0x801CFE08`; the store is read from the image's bytes. Port `muscle_ringside::HubTimers::tally_boost`.
+- **Tally fast-forward.** Arm `0x0B` opens by testing `_DAT_8007B874 & 0xF4` and storing `1` to `DAT_801D1AB4` (`0x801CFD60..0x801CFD7C`), ahead of the roll's `jal 0x801CF074` at `0x801CFDBC`. That word is the step scaler's bypass ([`FUN_801D14B0`](../reference/functions/minigames-debug.md)): while it is up a lane moves its whole remainder in one step. It is a latch - the only clear is the arena init's `sw zero` at `0x801CEB1C` - so one press rolls out everything left on the screen. The function dump of `FUN_801CF870` has a hole over `0x801CFD70..0x801CFE08`; the store is read from the image's bytes. Port `muscle_ringside::ReentryHub::boost`.
 - **Course card.** `FUN_801D042C` (drawn at `*(0x801D1A84)` beside the title art at a fixed `0x80`) is six corner-anchored draws: the course-name strip (record `5 + course`, `*(0x801D1A90)`) as variant 1 at `(8, 0x78)`, variant 2 at the same seat and variant 2 again at `(0x10, 0x80)`, then record `8` the same way at `(0xB8, 0x7B)` / `(0xC0, 0x83)` - a shadow, an under-layer and a face in OT order. Variant-2 packets subtract a white knockout palette and the variant-1 face adds over it; the arena uploads the hub CLUTs STP-set ([`ringside-still.md`](../formats/ringside-still.md#which-hub-packets-blend)). The ROUND banner `FUN_801D02F0` is drawn only by state `0x15`.
 - **Other seats.** The Welcome strip (record 3) is centred on `(160, 120)`, the course-title art (record 4) at `(160, 64)` with a variant-2 shadow at `(168, 72)`, the INTERVAL heading (record 16) at `(160, 32)`.
 - **Subtractive packets fade too.** A variant-2 packet is `B - F` with `F` the white knockout palette times the quad's Gouraud colour `c / 128`, so a tally row still at level `0` takes nothing away. The standalone minigames page draws hub quads through `site/js/canvas-abr.js`, which scales the `B - F` silhouette by that colour (`B * (1 - c/128)`, equal to retail's `B - 255 * c/128` at both ends of the fade); drawn at full strength, every row not yet faded in knocked a black box out of the ringside still. The play page draws them as screen primitives, whose shader modulates the texel by the colour before the equation applies.
@@ -1066,7 +1068,7 @@ Arena overlay (PROT 0977):
 | `FUN_801CF870` | contest hub (dump `overlay_0977_slotA_801cf870.txt`, truncated) |
 | `FUN_801CF074` | score tally screen |
 | `FUN_801D00F8` | hub backdrop emitter (ringside still / brick wall) |
-| `FUN_801D0088` | `(course, round)` re-pack tail |
+| `0x801D0088..0x801D00F0` | `(course, round)` re-pack tail: the exit of `FUN_801CF870`, not a routine of its own |
 | `FUN_801D02F0` / `FUN_801D042C` / `FUN_801D050C` | ROUND banner / course card / scaled sprite emitter |
 | `FUN_801D0CD4` | dev course / round picker |
 | `FUN_801D0ED8` | contest-start restore |
@@ -1100,7 +1102,7 @@ The port models the same two layers and shares every rule between the native `pl
 | Ladder + score tables | `engine-minigames::muscle_dome` (`course.rs`) | `parse_course_ladder`, `parse_score_table`, `course_score_cell` off raw PROT 0977 |
 | Contest | `engine-minigames::muscle_dome` (`contest.rs`) | `DomeContest` (cursor, unlock seed, Master clamp, tally rows, start restore), `settle_contest`, `leg_boundary_raises_interval` |
 | Damage | `engine-minigames::muscle_dome` (`damage.rs`) | `DomeDamageModel`: move-power row via the id map, predamage roll (`FUN_801DD0AC`), element affinity (`FUN_801DD864`), finisher (`FUN_801DDB30`), on a PsyQ `rand()` stream in retail call order; defender's `+0x170` gauge accrues per hit |
-| Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-minigames::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
+| Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-minigames::muscle_ringside` | `HubScreen`, `HubTimers`, `ReentryHub`, `FirstVisitHub` |
 | Battle leg | `engine-core` (`world/frame_tick/minigame_sessions/muscle_battle_leg.rs`) | `World::start_muscle_battle_leg` / `finish_muscle_battle_leg`: the leg as the ordinary battle ([below](#a-leg-is-the-ordinary-battle)) |
 | Leg session | `engine-battle-menus::muscle_dome_session` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
 | Command flow | `engine-battle-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-world-views::muscle_dome::magic_loadout_for` |

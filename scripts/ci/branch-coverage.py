@@ -19,7 +19,7 @@ A branch is **both** (taken and fell through), **one** (only one way) or
 **unreached**. Direction coverage is (2*both + one) / (2*branches). The file
 holds addresses and hashes, no instruction bytes; it stays under `target/`.
 
-Not every branch is a test gap. `branch-coverage-scope.toml` records the arms
+Not every branch is a test gap. `branch-coverage-scope/*.toml` records the arms
 that are out of scope, each with a verdict and a reason: `unported` (no port
 implements the arm, by decision), `unreachable` (no game state reaches it),
 `cannot-drive` (the interpreter cannot run it). Branches inside a scope row
@@ -45,7 +45,7 @@ from port_catalog.citations import collect_ports  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 TABLE = REPO / "target" / "branch-coverage" / "branches.tsv"
-SCOPE = REPO / "scripts" / "ci" / "branch-coverage-scope.toml"
+SCOPE = REPO / "scripts" / "ci" / "branch-coverage-scope"
 VERDICTS = ("unported", "unreachable", "cannot-drive")
 
 
@@ -110,9 +110,16 @@ def hexaddr(s: str) -> int:
 
 
 def load_scope(path: Path = SCOPE) -> list[dict]:
-    if not path.exists():
-        return []
-    rows = tomllib.loads(path.read_text()).get("arm", [])
+    """Every `[[arm]]` row of every `*.toml` in the scope directory, in file order.
+
+    The rows are split across files (one per area or lane) so that parallel
+    branches appending rows stop conflicting in one shared file."""
+    files = sorted(path.glob("*.toml")) if path.is_dir() else ([path] if path.exists() else [])
+    rows = []
+    for f in files:
+        for row in tomllib.loads(f.read_text()).get("arm", []):
+            row["file"] = f.name
+            rows.append(row)
     for row in rows:
         lo, _, hi = row["range"].partition("..")
         row["lo"], row["hi"] = hexaddr(lo), hexaddr(hi.removeprefix("=") or lo)
@@ -134,8 +141,14 @@ def apply_scope(table: dict[tuple[str, str], Routine], rows: list[dict]) -> None
 def check_scope(table: dict[tuple[str, str], Routine], rows: list[dict]) -> int:
     bad = 0
     entries = {r.entry for r in table.values()}
+    seen: dict[tuple[str, str, int, int], str] = {}
     for row in rows:
-        where = f"{row['entry']} {row['range']}"
+        where = f"{row['file']}: {row['entry']} {row['range']}"
+        k = (row["entry"], row["image"], row["lo"], row["hi"])
+        if k in seen:
+            print(f"scope: {where}: duplicates a row in {seen[k]}")
+            bad += 1
+        seen.setdefault(k, row["file"])
         if row.get("verdict") not in VERDICTS:
             print(f"scope: {where}: verdict must be one of {', '.join(VERDICTS)}")
             bad += 1
@@ -258,7 +271,7 @@ def main() -> int:
     ap.add_argument("--worst", type=int, default=15, help="list this many routines with the most untested arms")
     ap.add_argument("--addr", help="one routine's branches")
     ap.add_argument("--worksheet", help="one routine's branches with tag ranges and scope rows")
-    ap.add_argument("--check-scope", action="store_true", help="validate branch-coverage-scope.toml")
+    ap.add_argument("--check-scope", action="store_true", help="validate the rows under branch-coverage-scope/")
     args = ap.parse_args()
     if args.record:
         return record(args.table)

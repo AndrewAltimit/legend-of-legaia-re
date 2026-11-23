@@ -343,6 +343,7 @@ impl PlayWindowApp {
         w: u32,
         h: u32,
         screens: &legaia_engine_screens::ShopOverlayFrame,
+        venue: Option<&legaia_engine_screens::FishingVenueScreen>,
     ) -> Vec<TextDraw> {
         let Some(atlas) = &self.font_atlas else {
             return Vec::new();
@@ -693,18 +694,14 @@ impl PlayWindowApp {
         // and tackle list (Triangle or Select on the idle shore), the
         // no-lure line, and the prize list, quantity picker and confirm -
         // composed once for both hosts (`legaia_engine_screens::
-        // fishing_venue_screen`), each screen's text cropped under the
-        // panels drawn over it; the panels are the chrome pass's.
-        if self.session.host.world.mode == SceneMode::Fishing {
-            let mut venue = legaia_engine_screens::fishing_venue_screen(
-                &self.session.host.world,
-                &self.font,
-                self.save_menu.is_some(),
-            )
-            .texts;
+        // fishing_venue_screen`, built once a frame by the caller), each
+        // screen's text cropped under the panels drawn over it; the panels
+        // are the chrome pass's.
+        if let Some(venue) = venue {
+            let mut texts = venue.texts.clone();
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            legaia_engine_ui::scale_stage_text_draws(&mut venue, stage_origin, stage_scale);
-            out.extend(venue);
+            legaia_engine_ui::scale_stage_text_draws(&mut texts, stage_origin, stage_scale);
+            out.extend(texts);
         }
         // The slot machine's rules pages are its one text draw. Its status
         // rows (the fallback readout while the machine itself is not on

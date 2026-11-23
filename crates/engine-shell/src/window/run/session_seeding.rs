@@ -394,6 +394,13 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
     // (`BattleState::creature_seat_restage`), which the replay's fresh fight
     // has not played. A harness seat.
     world.battle.creature_seat_restage = std::env::var_os("LEGAIA_SEAT_CREATURE_RESTAGE").is_some();
+    // `LEGAIA_SEAT_SUMMON_SEAT=x:z:facing`: the summon seat the capture's
+    // creature held (`BattleState::summon_seat_seed`). A harness seat.
+    world.battle.summon_seat_seed = std::env::var("LEGAIA_SEAT_SUMMON_SEAT").ok().and_then(|s| {
+        let mut it = s.split(':').map(str::parse::<i32>);
+        let (x, z, f) = (it.next()?.ok()?, it.next()?.ok()?, it.next()?.ok()?);
+        Some((x as i16, z as i16, (f & 0xFFF) as u16))
+    });
     // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z[:facing],...[;cursor,...]]`:
     // dispatch that cast the moment the first command prompt opens - the
     // retail comparison corpus's replay of a capture taken mid-cast
@@ -424,6 +431,15 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
     }) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
         world.battle.inflight_seed = Some(seed);
+        // A replayed cast's landed hits (`LEGAIA_BATTLE_MELEE_HITS`, a
+        // row-aimed cast's value window): its rolls take retail's amounts,
+        // as the headless seed's do. A harness seat.
+        if let Ok(v) = std::env::var("LEGAIA_BATTLE_MELEE_HITS") {
+            legaia_engine_capture::melee_hits::seed_melee_hits(
+                world,
+                &legaia_engine_capture::melee_hits::melee_hits_from_env(&v),
+            );
+        }
     }
     apply_monster_cast_env(world);
     // `LEGAIA_SEAT_CUE_CLUT=<x>`: the parked palette column the retail state's

@@ -20,6 +20,14 @@ use legaia_engine_save_state::WorldSaveState;
 /// wipe, the guard retry included: twice the pad pass's allowance. A player
 /// keeps retrying, and one stream in fourteen takes twelve goes at Cort.
 const CONTINUOUS_WIPE_ATTEMPTS: u32 = 2 * PAD_WIPE_ATTEMPTS;
+/// Reloads a boss-door stretch - one that starts at a milestone reached with
+/// a fight committed (`cort_chamber`) - gets for wipes before the boss is
+/// beaten. Its own allowance, so a change to how often the boss wins moves
+/// this count and not the walk on after it, which is counted apart from it
+/// ([`CONTINUOUS_WIPE_ATTEMPTS`] of its own once [`BOSS_WON`] is set). Never
+/// below the shared allowance, so a run that never runs it out plays the
+/// same frames.
+const BOSS_DOOR_WIPE_ATTEMPTS: u32 = CONTINUOUS_WIPE_ATTEMPTS;
 /// Reloads a stretch takes for a walk that stalled with nothing holding the
 /// player, before the stall ends the run.
 const WALK_STALL_RELOADS: u32 = 2;
@@ -61,6 +69,17 @@ thread_local! {
     /// ([`pad_ready`]), as a player who met the boss at that door does.
     pub(super) static FIGHT_ON_ARRIVAL: std::cell::RefCell<BTreeSet<String>> =
         const { std::cell::RefCell::new(BTreeSet::new()) };
+    /// Set when a fight that forbids running ends with the party standing
+    /// ([`super::fight_turn::drain_battle`]); cleared at the start of every
+    /// attempt at a stretch. On a boss-door stretch it splits the attempt's
+    /// failures: before it, a wipe draws on [`BOSS_DOOR_WIPE_ATTEMPTS`];
+    /// after it, the walk on has an allowance of its own.
+    pub(super) static BOSS_WON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Set for a stretch whose milestone is a door with a fight committed
+    /// behind it (`cort_chamber`): the walk to that door runs from the random
+    /// encounters on the way ([`worth_fighting`]), as [`SAVING_FOR_BOSS`]
+    /// does for a scene with a staged fight of its own.
+    pub(super) static BOSS_LEAD_IN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The flags the order-checked anchors up to [`LEVEL_LOOKAHEAD`]
     /// milestones ahead carry between them: a chest whose flag is among
     /// them is one the retail run had opened by then, and the beats pass
@@ -109,7 +128,13 @@ pub(super) fn worth_fighting(w: &legaia_engine_core::world::World) -> bool {
     // On the way to a boss the party's HP and the bag are the boss's: a
     // walk there runs from what it meets. Training is the exception - its
     // outings are for the fights.
-    if SAVING_FOR_BOSS.with(std::cell::Cell::get) && !TRAINING.with(std::cell::Cell::get) {
+    // So does the walk to a door the boss waits behind: `jouind`'s Puera
+    // triples (F19, three 2000-HP casters) wiped a party at seven tenths on
+    // the way to Cort's door and left a member at 1 HP from full, and each
+    // such wipe reloaded the stretch before Cort was met.
+    if (SAVING_FOR_BOSS.with(std::cell::Cell::get) || BOSS_LEAD_IN.with(std::cell::Cell::get))
+        && !TRAINING.with(std::cell::Cell::get)
+    {
         return false;
     }
     // Against a running escape clock (`4C D3`: the Floating Castle's six
@@ -510,13 +535,24 @@ fn part_c_continuous_run() {
     let mut fit_cp: Option<(Checkpoint, usize)> = None;
     let mut cp_fit = true;
     let mut reloads = 0u32;
+    // The reloads spent on a boss-door stretch before its boss fell.
+    let mut boss_reloads = 0u32;
+    // Milestones reached with a fight committed: the stretch from one is a
+    // boss-door stretch ([`BOSS_DOOR_WIPE_ATTEMPTS`]).
+    let mut boss_doors: BTreeSet<usize> = spine
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.arrival_fight)
+        .map(|(k, _)| k)
+        .collect();
     let mut run_tried = false;
     // The stretches a stalled walk has already reloaded once ([`WALK_STALL_RELOADS`]).
     let mut stall_reloads: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
     let mut stall: Option<String> = None;
     // Attempts a stretch had used when a reload sent the run back behind
     // it, by stretch.
-    let mut retries: BTreeMap<usize, (u32, Option<u8>)> = BTreeMap::new();
+    // The third is the attempts that failed after the stretch's boss fell.
+    let mut retries: BTreeMap<usize, (u32, Option<u8>, u32)> = BTreeMap::new();
     let mut next = start;
     'spine: while next < spine.len() - 1 {
         let i = next;
@@ -617,7 +653,9 @@ fn part_c_continuous_run() {
         });
         // A stretch played again after a reload from behind it keeps the
         // attempts it had used.
-        let (mut attempt, mut prepare) = retries.remove(&i).unwrap_or((0, None));
+        let (mut attempt, mut prepare, mut walk_fails) = retries.remove(&i).unwrap_or((0, None, 0));
+        let boss_door = boss_doors.contains(&i);
+        BOSS_LEAD_IN.with(|b| b.set(boss_doors.contains(&(i + 1))));
         if attempt == 0 {
             RACE_LOST.with(|l| l.set(false));
         }
@@ -636,6 +674,7 @@ fn part_c_continuous_run() {
                 // This hand takes the fights it can win, so a stretch's
                 // battles run long past the fleeing hand's allowance.
                 PAD_BATTLE_LEFT.with(|l| l.set(4 * PAD_BATTLE_ALLOWANCE));
+                BOSS_WON.with(|b| b.set(false));
             }
             LOST_TO_ELEMENT.with(|l| l.set(None));
             let played = catch_unwind(AssertUnwindSafe(|| {
@@ -659,6 +698,7 @@ fn part_c_continuous_run() {
                     // player's last save is still the one before.
                     if !session.host.world.host_save_allowed() {
                         FIGHT_ON_ARRIVAL.with(|f| f.borrow_mut().insert(scene_name(&session)));
+                        boss_doors.insert(i + 1);
                         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                             eprintln!(
                                 "    [checkpoint] {} reached with a fight committed: keeping the {} save",
@@ -766,6 +806,17 @@ fn part_c_continuous_run() {
                     prepare = Some(el);
                     true
                 }
+                // A boss-door stretch counts its attempts in two parts: the
+                // ones lost before the boss fell, against its own allowance,
+                // and the ones lost on the walk after it, against a fresh
+                // one. Elsewhere every attempt counts against the stretch's.
+                _ if boss_door && BOSS_WON.with(std::cell::Cell::get) => {
+                    walk_fails += 1;
+                    (wiped && walk_fails < CONTINUOUS_WIPE_ATTEMPTS) || stall_retry
+                }
+                _ if boss_door => {
+                    (wiped && attempt - walk_fails < BOSS_DOOR_WIPE_ATTEMPTS) || stall_retry
+                }
                 _ => (wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS) || stall_retry,
             };
             if !again {
@@ -780,6 +831,17 @@ fn part_c_continuous_run() {
             // milestone, and another hand of the rand stream unless this is
             // the guard retry (which measures the guard alone).
             reloads += 1;
+            if boss_door && !BOSS_WON.with(std::cell::Cell::get) {
+                boss_reloads += 1;
+            }
+            if boss_door && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!(
+                    "    [boss door] {} -> {}: attempt {attempt}, {} lost to the boss, {walk_fails} after it",
+                    spine[i].id,
+                    to.id,
+                    attempt - walk_fails
+                );
+            }
             if wiped
                 && !cp_fit
                 && attempt >= 2
@@ -823,7 +885,7 @@ fn part_c_continuous_run() {
             // A save from behind this stretch: the stretches between it
             // and here are played again, each as itself.
             if cp_at < i {
-                retries.insert(i, (attempt, prepare));
+                retries.insert(i, (attempt, prepare, walk_fails));
                 next = cp_at;
                 continue 'spine;
             }
@@ -831,6 +893,7 @@ fn part_c_continuous_run() {
     }
 
     PLAYS_ON.with(|p| p.set(false));
+    BOSS_LEAD_IN.with(|b| b.set(false));
     STORY_WAYPOINTS.with(|w| w.borrow_mut().clear());
     STRETCH_FRAMES.with(|f| f.set(PAD_SEGMENT_FRAMES));
     TARGET_LEVELS.with(|t| t.borrow_mut().clear());
@@ -842,7 +905,7 @@ fn part_c_continuous_run() {
     let denom = spine.len() - 1 - start;
     eprintln!();
     eprintln!(
-        "[headline] one continuous run from {} reaches {reached_count}/{denom} milestones on pad input, {reloads} reload(s) of its own saves",
+        "[headline] one continuous run from {} reaches {reached_count}/{denom} milestones on pad input, {reloads} reload(s) of its own saves ({boss_reloads} at boss doors)",
         spine[start].id
     );
     if let Some(s) = &stall {

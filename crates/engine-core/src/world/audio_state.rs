@@ -225,6 +225,12 @@ pub struct AudioState {
     /// machine, fishing - both inherit the host scene's BGM) does not
     /// re-emit the field track on exit.
     pub(crate) minigame_bgm_active: bool,
+    /// The track the last fight's battle bundle carried
+    /// ([`crate::world::World::swap_to_battle_bgm`]). Retail streams that
+    /// bundle into the staging buffer at `_DAT_8007B85C + 0x32000`, where it
+    /// stays after the fight; the fishing hook replays it from there
+    /// (`FUN_801D26CC`, `0x801D3614..0x801D3664`).
+    pub(crate) last_battle_track: Option<u16>,
     /// Retail's timed sound-source auto-release (`gp+0x808`/`0x814`/`0x81C`),
     /// serviced by the frame-begin driver once a game frame by that frame's
     /// step, so its count is vsyncs. Advanced by [`crate::world::World::tick`]
@@ -442,6 +448,7 @@ impl AudioState {
             battle_bgm_active: false,
             minigame_bgm_resume: None,
             minigame_bgm_active: false,
+            last_battle_track: None,
             sound_release: legaia_engine_system::sound_state::SoundReleaseTimer::default(),
             pending_sound_release: false,
             start_pending_commit: false,

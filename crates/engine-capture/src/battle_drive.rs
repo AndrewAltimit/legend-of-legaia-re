@@ -17,7 +17,14 @@ pub const MENU_HOLD_TICKS: u32 = 32;
 /// state: long enough for several rounds, since the seat's turn comes up in
 /// initiative order.
 pub(crate) const ACTION_DRIVE_TICKS: u32 = 4000;
-/// The extra capture deadline a driven `play-window` child gets.
+/// The extra ticks a drive to the results frame or the exit fade gets past
+/// [`ACTION_DRIVE_TICKS`]: the fight has to end first, and a finisher chain
+/// that confirms each turn's own default target (as the retail film's pad
+/// does) reaches the results frame just inside the action budget, with the
+/// hold's vsyncs still to run.
+pub(crate) const RESULTS_DRIVE_EXTRA_TICKS: u32 = 0x200;
+/// The extra capture deadline a driven `play-window` child gets, at least
+/// (a drive that may run longer gets its own [`BattleDrive::budget`]).
 pub const DRIVE_DEADLINE: u64 = ACTION_DRIVE_TICKS as u64;
 
 /// How a capture that sits past the round prompt is reached through the
@@ -1220,6 +1227,10 @@ impl BattleDrive {
         match self {
             Self::Opening { .. } => 0,
             Self::Menu { .. } => MENU_DRIVE_TICKS,
+            Self::Action {
+                end: SpanGate::Results { .. } | SpanGate::Exit { .. },
+                ..
+            } => ACTION_DRIVE_TICKS + RESULTS_DRIVE_EXTRA_TICKS,
             Self::Action { .. } => ACTION_DRIVE_TICKS,
         }
     }
@@ -2024,6 +2035,33 @@ impl BattleDrive {
             {
                 return Some(PadButton::Right);
             }
+            // The entry ends on the target cursor itself (retail's `0x5A`),
+            // standing on the member's current target before any picker is
+            // raised: a confirm there commits, so a seat aimed elsewhere
+            // steps first.
+            if world
+                .battle
+                .arts_input
+                .as_ref()
+                .filter(|a| a.party_slot == seat)
+                .is_some_and(|a| {
+                    matches!(
+                        a.phase,
+                        legaia_engine_battle::arts_command_input::ArtsInputPhase::Review
+                    )
+                })
+            {
+                let n = world.party.party_count.clamp(1, 3);
+                let current = world
+                    .actors
+                    .get(usize::from(seat))
+                    .map(|a| a.battle.active_target)
+                    .filter(|&t| t >= n && t < n + 5)
+                    .map(|t| t - n);
+                if current != Some(want) && aim_alive(world, want) {
+                    return Some(PadButton::Right);
+                }
+            }
         }
         if let Self::Action { steer, .. } = self
             && steer.arts
@@ -2040,12 +2078,13 @@ impl BattleDrive {
             // `.964` to `.981`, `image` `.592` to `.910`). A harness pacing
             // ([`ActionSteer::harvest_pacing`]): no play path reads it.
             if steer.harvest_pacing
-                && world
-                    .battle
-                    .arts_input
-                    .as_ref()
-                    .and_then(|a| a.picker())
-                    .is_some()
+                && world.battle.arts_input.as_ref().is_some_and(|a| {
+                    a.picker().is_some()
+                        || matches!(
+                            a.phase,
+                            legaia_engine_battle::arts_command_input::ArtsInputPhase::Review
+                        )
+                })
                 && world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
             {
                 return None;

@@ -312,6 +312,15 @@ fn the_art_learned_prompt_names_the_character_and_the_art() {
     assert_eq!(first, b"Noa uses".to_vec());
     assert_eq!(second, b"[\xCF\x06Test Dive\xCF\x07]".to_vec());
 
+    // The painter's page mark (`FUN_8002B994(1, 1, x + w - 0x10,
+    // y + h - 0x0E)`): frame 0 on the call that seats it, frame 1 once the
+    // kind's sixteen-vsync period has run.
+    assert_eq!(w.art_notice_mark(), Some(((0x110, 0x6C), 0)));
+    for _ in 0..16 {
+        w.tick_submode_screen(1);
+    }
+    assert_eq!(w.art_notice_mark(), Some(((0x110, 0x6C), 1)));
+
     // The confirm hands the screen back and the notice goes with it.
     w.input.set_pad(legaia_engine_system::pad::retail_packed(
         SUBMODE_ACCEPT_MASK as u16,

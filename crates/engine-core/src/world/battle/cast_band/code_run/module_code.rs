@@ -62,6 +62,7 @@ impl World {
             live_victim
         };
         let seat_slot = self.casting.summon_actor_slot.unwrap_or(ticks::SUMMON_SEAT);
+        let impact_open: ImpactOpen = self.impact_open(victim_slot);
 
         // The kernels index a retail-shaped seat row (`seat_map`): these
         // three are the same actors' seats in it.
@@ -264,6 +265,14 @@ impl World {
                         _ => self.chain_seat_settled(s, false),
                     });
                 // PROT 0916's arm `0x14` settle poll on the latched victim.
+                // Retail's waits on a dead victim's word alone (`lw 4(s3)` /
+                // `bnez` at `0x801F8870`), and that word eases to zero only
+                // under the defeat fade `+0x21C = 2`, which the commit's
+                // monster-death arm sets as the knockdown clip ends
+                // (`0x8004B66C`). The port keeps its down-clip and clipless
+                // exits beside the faded one: a victim whose knockdown never
+                // commits never fades, so the word-only gate would trade
+                // retail's later exit for a hold that never lets go.
                 st.victim_settled = self.chain_seat_settled(usize::from(latched), true);
                 // The applier stage `ctx[+0x276]` a side-band wait arm polls:
                 // up while the engine's stand-in for its reads runs, or while
@@ -1618,10 +1627,11 @@ impl World {
                     // PROT 0904's ring sweep: advance the ray, then resolve
                     // the cone once for this tick (both borrow `self`, which
                     // the seat row below does not allow).
-                    // Retail tests once a pass, four vsyncs of `0x40` apart: from
-                    // `0x100` on, so the ray's first swing past the victim
-                    // misses and the hit waits for the centre crossing at
-                    // `0x800`, 32 vsyncs in. The pass ramps the word first
+                    // Retail tests once a pass, on its frame step's ramp; the
+                    // engine's step-4 ticks test on `0x40 + 0x100 * k`
+                    // (`theeder_pass_tested`), so a victim dead ahead is struck
+                    // on the arm's first test and the others as the swing
+                    // reaches them, on retail's gaps. The pass ramps the word first
                     // (`0x801F7ADC..0x801F7AF0`) and builds its ray from the
                     // ramped word, so the test is on the word this tick's ramp
                     // reaches: read before it, the `0x800` crossing struck a
@@ -1705,16 +1715,34 @@ impl World {
                             // No later arm writes the seat's position, so it
                             // stays pinned there for the rest of the cast.
                             if ctx.phase == ticks_a::THEEDER_RISE_ARM {
-                                self.casting.module_theeder.seat =
-                                    self.theeder_seat_for(caster_slot, victim_slot);
+                                // A replayed capture hands the seat its
+                                // creature already held
+                                // (`BattleState::summon_seat_seed`); arm 4
+                                // re-seats on every pass, so it stands for
+                                // the whole arm.
+                                self.casting.module_theeder.seat = self
+                                    .battle
+                                    .summon_seat_seed
+                                    .or_else(|| self.theeder_seat_for(caster_slot, victim_slot));
                             }
                             if let Some(seat) = self.casting.module_theeder.seat {
                                 self.pin_theeder_seat(seat_slot, seat);
+                                // The camera arms frame slot 7 as arm 4 left
+                                // it: one seat, which the director reads.
+                                let (x, z, facing) = seat;
+                                self.casting.module_cam.creature =
+                                    Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+                                        x,
+                                        y: 0,
+                                        z,
+                                        facing,
+                                    });
                             }
                             let geom = self.theeder_geom(seat_slot);
                             let mut fx = self.casting.module_theeder;
                             let attack_in = ctx.phase == ticks_a::THEEDER_ATTACK_ARM;
                             let mut struck = false;
+                            let mut faced: Vec<u8> = Vec::new();
                             let tick = ticks_a::theeder_tick(
                                 &mut ctx,
                                 &mut seats,
@@ -1726,6 +1754,7 @@ impl World {
                                         return None;
                                     }
                                     struck = true;
+                                    faced.push(seat);
                                     if !party_cast {
                                         return Some(0);
                                     }
@@ -1745,6 +1774,12 @@ impl World {
                                     },
                                 );
                             }
+                            // Each arm-12 hit turns its victim to face the
+                            // creature (`0x801F7E58..0x801F7E7C`: `+0x46 =
+                            // FUN_80019B28(victim +0x38/+0x34, slot 7's)`), so
+                            // the reaction's knockback carries the body
+                            // straight away from it.
+                            self.face_theeder_victims(&faced, map, seat_slot);
                             // Each arm-12 hit sets the effect pool's sprite
                             // scale to `0x800` (`0x801F7DC8..0x801F7DD4`),
                             // which sizes the sparks its impact selector `2`
@@ -1856,6 +1891,24 @@ impl World {
                             out
                         }
                     };
+                    // The side-band arm of PROT 0904, 0906, 0907 and 0908 steps
+                    // over the band-word poll after it when the word is already
+                    // out (`lh 0x6D8` / `addiu 2`: 0904 `0x801F6C64..0x801F6C7C`,
+                    // 0906 `0x801F6CC4..0x801F6CDC`, 0907 `0x801F71B0..
+                    // 0x801F71C8`, 0908 `0x801F6DF0..0x801F6E04`); the tick
+                    // bodies advance one.
+                    let sideband = legaia_engine_cast::cast_module_camera::sideband_wait_arm(entry);
+                    if matches!(entry, 904 | 906 | 907 | 908)
+                        && let Some(arm) = sideband
+                        && (phase_in, ctx.phase) == (arm, arm + 1)
+                        && self
+                            .casting
+                            .band_word_live
+                            .unwrap_or(self.battle_ctx.frame_timer)
+                            == 0
+                    {
+                        ctx.phase = arm + 2;
+                    }
                     self.write_cast_seat_row(&seats);
                     caster = seats.get(r_caster).copied().unwrap_or(caster);
                     victim = seats.get(r_victim).copied().unwrap_or(victim);
@@ -2554,6 +2607,7 @@ impl World {
             victim_slot,
             seat_slot,
             party_hittable,
+            impact_open,
         );
         self.apply_cast_kill_results(
             entry,
@@ -2561,6 +2615,7 @@ impl World {
             ctx.phase != phase_in,
             caster_slot,
             victim_slot,
+            spell_id,
         );
         if let Some(scale) =
             legaia_engine_cast::cast_module_ticks::effect_sprite_scale_store(entry, phase_in)
@@ -2703,7 +2758,7 @@ impl World {
                 );
             }
             if entry == 923 {
-                self.apply_gilium_writes(phase_in, ctx.phase != phase_in);
+                self.apply_gilium_writes(phase_in, ctx.phase != phase_in, ctx.monster_count);
             }
             self.apply_summon_pre_hits(
                 entry,

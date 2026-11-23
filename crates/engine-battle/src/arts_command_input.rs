@@ -136,8 +136,11 @@ pub struct ArtsCommandPad {
 pub enum ArtsInputPhase {
     /// Accepting directional presses (retail `0x50`).
     Entering,
-    /// The committed bar review (retail `0x5A`) - any press but the cancel
-    /// opens the target picker.
+    /// Retail's target cursor `0x5A` before its first press, the committed
+    /// bar up: Left / Right step the cursor (and raise the picker), Up /
+    /// Down under the directional entry and the confirm commit on the
+    /// member's current target, the cancel returns to the entry
+    /// ([`ArtsCommandInputSession::input`]).
     Review,
     /// Picking the art's target (retail's `0x5A` target cursor, with the
     /// committed bar still up).
@@ -221,12 +224,58 @@ pub struct ArtsCommandInputSession {
     /// a frame. One step per [`Self::input`] call, which every host makes
     /// once a frame while the entry is up.
     pub pennant_glides: Vec<(usize, u8)>,
+    /// The committed pennants' retreat, while it runs: the entry's restart
+    /// (case `0x26`) and the review's return to the entry (case `0xF`)
+    /// re-spawn every committed pennant in mode `1` under the glide flag `0`
+    /// (`0x801D52E4..0x801D5340`), so they slide off the bottom over
+    /// [`CHIP_SLIDE_FRAMES`] without gating the pass
+    /// ([`PennantRetreat`]).
+    pub pennant_retreat: Option<PennantRetreat>,
     /// The direction chips' slide-in, elapsed frames, while it runs: the
     /// entry screen's step `9` opens the four chip records in mode `0`
     /// (spawn on seat A, glide to seat B) over `ctx[+0x1C]` frames, and the
     /// review's return to the entry (step `0xF`) does the same.
     pub chip_slide: Option<u8>,
+    /// The enemy row the member targets now (`+0x1DD`, a monster seat), where
+    /// the `0x5A` cursor stands before its first step. The host seats it
+    /// each frame; `None` leaves the picker on its first live row.
+    pub target_seat: Option<u8>,
+    /// The cross-button entry option: Up / Down commit the `0x5A` cursor
+    /// only under the directional entry (`0x801D226C..0x801D228C`). The host
+    /// sets it each frame.
+    pub cross_entry: bool,
+    /// Frames run of the records a cursor step re-spawns: a step that moved
+    /// calls `FUN_801D388C(0xD)` (`0x801D2218` / `0x801D2264`), which clears
+    /// the glide flag `ctx[+0x1B]` (`0x801D3DE8`) before its tail spawns
+    /// records `0x29` / `0x2A` in mode `0` over `ctx[+0x1C] = 0x10` frames, so
+    /// they glide without gating the pass but hold the cursor's cancel
+    /// behind the live-glide scan, as a pennant's glide does.
+    pub cursor_glide: Option<u8>,
     pub phase: ArtsInputPhase,
+}
+
+/// The committed pennants sliding off the bar after a restart or a review
+/// cancel wiped them: the commands and costs they had (the queue is already
+/// clear) and the frames the slide has run.
+///
+/// Case `0xF`'s tail (`0x801D52E4..0x801D5334`, case `0x26` falls into it)
+/// rewrites each pennant record `0x20 + k`'s seat A to its own seat B's `x`
+/// and `y = 0xE8` (`li s1,0xe8` / `sh s1,0x4(v0)` / `sh v1,0x2(v0)`) and
+/// re-spawns it in mode `1`: on the bar seat, gliding straight down to seat
+/// A over `ctx[+0x1C] = 0x10` frames, where it rests below the 228-line
+/// display. A PCSX-Redux run from `arts_bar_ideal_noa_fangs` (Up, then
+/// Circle once the pennant had landed) logged the pennant's handle from
+/// `(16, 190)` to `(16, 230)` in steps of `40 * elapsed / 16` and its glide
+/// record `0x10` long under flag `0`; the frame shot at the end shows no
+/// pennant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PennantRetreat {
+    /// Frames run, `0..CHIP_SLIDE_FRAMES`.
+    pub elapsed: u8,
+    /// The wiped commands, as [`ArtsCommandInputSession::buffer`] held them.
+    pub commands: Vec<u8>,
+    /// Their costs, as [`ArtsCommandInputSession::spent`] held them.
+    pub spent: Vec<u16>,
 }
 
 /// Frames the direction chips slide in over: the glide count `ctx[+0x1C]`,
@@ -516,7 +565,11 @@ impl ArtsCommandInputSession {
             preseed_spent: Vec::new(),
             replay: false,
             pennant_glides: Vec::new(),
+            pennant_retreat: None,
             chip_slide: Some(0),
+            target_seat: None,
+            cross_entry: false,
+            cursor_glide: None,
             phase: ArtsInputPhase::Entering,
         }
     }
@@ -646,17 +699,135 @@ impl ArtsCommandInputSession {
             g.1 = g.1.saturating_add(1);
             g.1 < PENNANT_GLIDE_FRAMES
         });
+        self.cursor_glide = self
+            .cursor_glide
+            .map(|e| e.saturating_add(1))
+            .filter(|&e| e < CHIP_SLIDE_FRAMES);
+        if let Some(r) = self.pennant_retreat.as_mut() {
+            r.elapsed = r.elapsed.saturating_add(1);
+            if r.elapsed >= CHIP_SLIDE_FRAMES {
+                self.pennant_retreat = None;
+            }
+        }
         self.chip_slide = self
             .chip_slide
             .map(|e| e.saturating_add(1))
             .filter(|&e| e < CHIP_SLIDE_FRAMES);
     }
 
+    /// Whether a pennant glide the stepper does not gate on is still in
+    /// flight. Their records carry the glide flag `0`, so `FUN_801D9BBC`
+    /// returns `0` over them and the pass runs, but the pre-dispatch scan of
+    /// the glide table (`0x801D0C64..0x801D0C80`) finds them live and leaves
+    /// `s4 = 0`, and the entry's and the review's cancels sit behind
+    /// `beq s4,zero` (`0x801D20E4`, `0x801D2304`).
+    ///
+    /// PORT: FUN_801D0748 (`0x801D0C64..0x801D0C80`, `0x801D20E4`, `0x801D2304`)
+    pub fn cancel_held(&self) -> bool {
+        !self.pennant_glides.is_empty()
+            || self.pennant_retreat.is_some()
+            || self.cursor_glide.is_some()
+    }
+
+    /// The committed pennants slide off the bar (cases `0x26` / `0xF` with a
+    /// non-zero count, `0x801D52E4..0x801D5334`), before the queue is wiped.
+    fn retreat_pennants(&mut self) {
+        self.pennant_glides.clear();
+        let commands = self.committed_string().to_vec();
+        let spent = if self.replay {
+            self.preseed_spent.clone()
+        } else {
+            self.spent.clone()
+        };
+        self.pennant_retreat = (!commands.is_empty()).then_some(PennantRetreat {
+            elapsed: 0,
+            commands,
+            spent,
+        });
+    }
+
+    /// One pass of retail's target cursor `0x5A` on the raised picker: Right,
+    /// then Left, each stepping the ring and ending the pass only when the
+    /// cursor moved (`0x801D21D4..0x801D2264`); then Up or Down, which commit
+    /// under the directional entry with no side direction held
+    /// (`0x801D226C..0x801D228C`); then the confirm mask; then the cancel,
+    /// which returns to the entry ([`Self::cancel_to_entry`]) behind the
+    /// live-glide scan (`0x801D2304`).
+    ///
+    /// PORT: FUN_801D0748 (`0x801D21CC..0x801D2304`, the arts target cursor)
+    fn cursor_input(&mut self, ev: ArtsCommandPad) {
+        let ArtsInputPhase::Targeting { mut picker } =
+            std::mem::replace(&mut self.phase, ArtsInputPhase::Aborted)
+        else {
+            return;
+        };
+        let press = |right: bool, left: bool, cross: bool| PickerInput {
+            up: false,
+            down: false,
+            left,
+            right,
+            cross,
+            circle: false,
+        };
+        let at = picker.state();
+        if ev.right {
+            picker.input(press(true, false, false));
+        }
+        if picker.state() == at && ev.left {
+            picker.input(press(false, true, false));
+        }
+        if picker.state() != at {
+            self.cursor_glide = Some(0);
+        }
+        if picker.state() == at {
+            let vertical = !self.cross_entry && (ev.up || ev.down) && !(ev.left || ev.right);
+            if vertical || ev.cross {
+                picker.input(press(false, false, true));
+            } else if ev.circle {
+                if self.cancel_held() {
+                    self.phase = ArtsInputPhase::Targeting { picker };
+                } else {
+                    self.cancel_to_entry();
+                }
+                return;
+            }
+        }
+        self.phase = match picker.outcome() {
+            Some(PickerOutcome::Single { slot, row }) => ArtsInputPhase::Confirmed {
+                target_row: row,
+                target_slot: slot,
+            },
+            Some(PickerOutcome::Sweep { row }) => ArtsInputPhase::Confirmed {
+                target_row: row,
+                target_slot: 0,
+            },
+            Some(PickerOutcome::NoCandidates) => ArtsInputPhase::Aborted,
+            _ => ArtsInputPhase::Targeting { picker },
+        };
+    }
+
+    /// Retail's `0x5A` cancel (`0x801D2304..0x801D23DC`): wipe the sixteen
+    /// queue bytes and, for an entry opened from the arts input, return to
+    /// it (`0x50`, case `0xF`), the committed pennants sliding off. The wipe
+    /// takes a replayed preseed with it; step `0xF` re-opens the chips in
+    /// mode `0`.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D2304..0x801D23DC`, the target cursor's cancel)
+    fn cancel_to_entry(&mut self) {
+        self.retreat_pennants();
+        self.clear_preseed();
+        self.replay = false;
+        self.buffer.clear();
+        self.spent.clear();
+        self.pool = self.pool_max;
+        self.phase = ArtsInputPhase::Entering;
+        self.chip_slide = Some(0);
+    }
+
     /// Advance one frame. `party` / `monsters` describe slot occupancy for
     /// the Begin target picker. A no-op once the session has resolved.
     pub fn input(&mut self, ev: ArtsCommandPad, party: [SlotState; 3], monsters: [SlotState; 5]) {
         self.step_glides();
-        let was_review = matches!(self.phase, ArtsInputPhase::Review);
         // Triangle cycles the learned-arts list in the entry phases
         // (closed -> page 0 -> .. -> last page -> closed); inert with no
         // pages, matching retail's no-learned-art case.
@@ -753,7 +924,15 @@ impl ArtsCommandInputSession {
                     // empty buffer, and `801d20a0 and v0,s2,v0` /
                     // `801d20ac sb v0,0x0(s3)` writes state `0x5A`.
                     self.phase = ArtsInputPhase::Review;
-                } else if ev.circle {
+                } else if ev.circle && !self.cancel_held() {
+                    // While a committed pennant still glides the cancel is
+                    // not read at all: the pennant's record carries the glide
+                    // flag `0` (case `0xB`, `0x801D3D3C..0x801D3D48`), so the
+                    // stepper does not gate the pass, but the pre-dispatch
+                    // scan `0x801D0C64..0x801D0C80` finds it live and leaves
+                    // `s4 = 0`, and `beq s4,zero` at `0x801D20E4` skips the
+                    // mask test.
+                    //
                     // Retail's cancel mask `_DAT_800846D4`
                     // (`801d20ec lw v0,0x46d4(v0)` / `801d20f4 and v0,s2,v0`)
                     // forks on the same committed count at
@@ -775,9 +954,9 @@ impl ArtsCommandInputSession {
                     if self.buffer.is_empty() {
                         self.phase = ArtsInputPhase::Aborted;
                     } else {
+                        self.retreat_pennants();
                         self.buffer.clear();
                         self.spent.clear();
-                        self.pennant_glides.clear();
                         self.pool = self.pool_max;
                         self.phase = ArtsInputPhase::Entering;
                     }
@@ -786,57 +965,30 @@ impl ArtsCommandInputSession {
                 }
             }
             ArtsInputPhase::Review => {
-                if ev.circle {
-                    // Retail's `0x5A` cancel (`0x801D2304..0x801D23DC`) wipes
-                    // the sixteen queue bytes and, for an entry opened from
-                    // the arts input, returns to it (`0x50`, case `0xF`).
-                    // The wipe takes a replayed preseed with it.
-                    self.clear_preseed();
-                    self.replay = false;
-                    self.buffer.clear();
-                    self.spent.clear();
-                    self.pennant_glides.clear();
-                    self.pool = self.pool_max;
-                    self.phase = ArtsInputPhase::Entering;
-                    // Step `0xF` re-opens the chips in mode `0`.
-                    if was_review {
-                        self.chip_slide = Some(0);
+                // Retail's `0x5A` (`0x801D21CC..0x801D23EC`): one state for
+                // the review and the cursor. The picker is raised on the
+                // first press, standing on the member's current target, and
+                // the press is the cursor's.
+                let moves = ev.left || ev.right || ev.up || ev.down || ev.cross;
+                if !moves {
+                    // A bare cancel is the cursor's last test, and needs no
+                    // target to read.
+                    if ev.circle && !self.cancel_held() {
+                        self.cancel_to_entry();
+                    } else {
+                        self.phase = ArtsInputPhase::Review;
                     }
-                } else if ev.cross || ev.up || ev.down || ev.left || ev.right {
-                    // Any other press opens the target picker; the commit it
-                    // resolves to walks the ring on, and the last member's
-                    // commit raises the party's Begin | Reselect.
-                    let picker = TargetPickerSession::new(
-                        TargetKind::SingleEnemy,
-                        self.party_slot,
-                        party,
-                        monsters,
-                    );
-                    self.phase = match picker.outcome() {
-                        Some(PickerOutcome::Single { slot, row }) => ArtsInputPhase::Confirmed {
-                            target_row: row,
-                            target_slot: slot,
-                        },
-                        Some(PickerOutcome::Sweep { row }) => ArtsInputPhase::Confirmed {
-                            target_row: row,
-                            target_slot: 0,
-                        },
-                        Some(PickerOutcome::NoCandidates) => ArtsInputPhase::Aborted,
-                        _ => ArtsInputPhase::Targeting { picker },
-                    };
-                } else {
-                    self.phase = ArtsInputPhase::Review;
+                    return;
                 }
-            }
-            ArtsInputPhase::Targeting { mut picker } => {
-                picker.input(PickerInput {
-                    up: ev.up,
-                    down: ev.down,
-                    left: ev.left,
-                    right: ev.right,
-                    cross: ev.cross,
-                    circle: ev.circle,
-                });
+                let mut picker = TargetPickerSession::new(
+                    TargetKind::SingleEnemy,
+                    self.party_slot,
+                    party,
+                    monsters,
+                );
+                if let Some(seat) = self.target_seat {
+                    picker.seat_cursor(CursorRow::Enemy, seat);
+                }
                 self.phase = match picker.outcome() {
                     Some(PickerOutcome::Single { slot, row }) => ArtsInputPhase::Confirmed {
                         target_row: row,
@@ -846,10 +998,16 @@ impl ArtsCommandInputSession {
                         target_row: row,
                         target_slot: 0,
                     },
-                    Some(PickerOutcome::Cancelled) => ArtsInputPhase::Review,
                     Some(PickerOutcome::NoCandidates) => ArtsInputPhase::Aborted,
-                    None => ArtsInputPhase::Targeting { picker },
+                    _ => ArtsInputPhase::Targeting { picker },
                 };
+                if matches!(self.phase, ArtsInputPhase::Targeting { .. }) {
+                    self.cursor_input(ev);
+                }
+            }
+            ArtsInputPhase::Targeting { picker } => {
+                self.phase = ArtsInputPhase::Targeting { picker };
+                self.cursor_input(ev);
             }
             other => self.phase = other,
         }
@@ -985,6 +1143,9 @@ pub struct ArtsInputView<'a> {
     /// Committed pennants still gliding in, `(slot, elapsed)` over
     /// [`PENNANT_GLIDE_FRAMES`] ([`ArtsCommandInputSession::pennant_glides`]).
     pub pennant_glides: &'a [(usize, u8)],
+    /// The wiped pennants sliding off the bar
+    /// ([`ArtsCommandInputSession::pennant_retreat`]).
+    pub pennant_retreat: Option<&'a PennantRetreat>,
     /// The chips' slide-in, elapsed frames over [`CHIP_SLIDE_FRAMES`]
     /// ([`ArtsCommandInputSession::chip_slide`]).
     pub chip_slide: Option<u8>,

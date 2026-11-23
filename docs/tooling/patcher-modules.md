@@ -1274,6 +1274,9 @@ Curated "unused content" the opt-in toggles re-introduce (`unused` module).
   clones 176/177/178 (no formation references them, but the battle loader streams a
   monster slot on demand by id, so adding one to a scene's encounter Random pool via
   `SceneEncounters::randomize_with_extra` is enough to spawn it).
+- `UNSAFE_UNUSED_ENEMY_IDS` = 183..=186, the unseated byte copies of Cort (id
+  180). Excluded from the pool: the action picker's physical arm divides by the
+  swing count, which is zero for Cort, and only id `0xB4` is forced past it.
 - `UNUSED_ITEM_IDS` = Something Good `0x6B` + the unnamed accessory `0xFD`, unioned
   into the random-fill item pool by `extend_pool`.
 

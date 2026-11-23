@@ -56,6 +56,15 @@ const RAND: u32 = 0x8005_6798;
 const BUILDER: u32 = 0x801D_829C;
 const BEARING: u32 = 0x8001_9B28;
 const AIM: u32 = 0x801D_CEAC;
+/// The cast damage wrapper the summon modules roll their own hits through.
+const WRAPPER: u32 = 0x801D_D0AC;
+const GROUP_LIST: u32 = 0x801F_6978;
+
+/// The `k`th roll on `seat`: small, middling and past a monster's HP in
+/// turn, so the floors, the `HP - 1` clamps and the kills all run.
+fn scripted_roll(seat: usize, k: u32) -> u32 {
+    [0x10, 0x5A, 0x7D, 0x180][(seat + k as usize) % 4]
+}
 const OUT_CENTRE: u32 = 0x8011_0000;
 const OUT_EXTENT: u32 = 0x8011_0100;
 const SCALAR: u32 = 0x1F80_037D;
@@ -273,6 +282,10 @@ const PUERA: u32 = 0x801F_6A3C;
 /// The part spawn `FUN_80021B04`, the pool the walk hands PROT 0922's parts
 /// from, and arm 18's 23 crystal handles (`0x801F9F90 + 0x58`).
 const SPAWN_PART: u32 = 0x8002_1B04;
+/// The Battles vibration option word: non-zero turns the pad's rumble off.
+const VIBRATION_OFF: u32 = 0x8008_45C8;
+/// The part pool's wrapper round [`SPAWN_PART`], on the same arguments.
+const SPAWN_POOLED: u32 = 0x8005_0ED4;
 const PARTS: u32 = 0x8016_0000;
 const PUERA_CRYSTALS: u32 = 0x801F_9FE8;
 
@@ -447,6 +460,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     let overlay = disc.read_entry(898).expect("PROT 0898");
     let mut failures = Vec::new();
     let mut sideband_held = 0usize;
+    let (mut spawns_matched, mut spawn_failures) = (0usize, Vec::<String>::new());
+    let (mut shadow_passes, mut shadow_left) = (0usize, 0usize);
+    let mut shadow_failures = Vec::<String>::new();
+    let mut shadow_leaves = Vec::<String>::new();
     let all: Vec<(u32, u32, u8)> = BODIES.iter().chain(&PACED).copied().collect();
     // Each module runs twice: on the full row, then with the second monster
     // seat fallen and faded (`+0x14C = 0`, `+0x04 = 0`), which the row walks
@@ -469,21 +486,52 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
         cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
         for target in jal_targets(&module) {
-            if ![AIM, BUILDER, BEARING, RAND].contains(&target) {
+            if ![AIM, BUILDER, BEARING, RAND, WRAPPER].contains(&target) {
                 cpu.stub(target, 0);
             }
         }
+        // The damage wrapper `FUN_801DD0AC(_, 7, seat)` answers each call on
+        // a seat with the next of that seat's scripted rolls, and the
+        // shadow's module rolls take the same (`summon_roll_override`), so
+        // each module's own HP arithmetic is compared on equal rolls.
+        {
+            let calls = Rc::new(RefCell::new([0u32; 8]));
+            cpu.hook(WRAPPER, move |r, _| {
+                let seat = (r.r[A2] & 7) as usize;
+                let mut c = calls.borrow_mut();
+                r.r[V0] = scripted_roll(seat, c[seat]);
+                c[seat] += 1;
+            });
+            let calls = RefCell::new([0u32; 8]);
+            legaia_engine_core::world::summon_roll_override::set(Some(Box::new(move |seat| {
+                let seat = usize::from(seat & 7);
+                let mut c = calls.borrow_mut();
+                let v = scripted_roll(seat, c[seat]);
+                c[seat] += 1;
+                v
+            })));
+        }
         // PROT 0922 keeps the handles of the parts it spawns and moves them
         // (arm 19's crystal re-seat, arm 20's fall): each spawn gets a part.
-        if entry == 922 {
-            let next = Rc::new(std::cell::Cell::new(PARTS));
-            cpu.hook(SPAWN_PART, move |r, m| {
-                let at = next.get();
-                next.set(at + 0x80);
-                for o in (0..0x80).step_by(4) {
-                    m.wr32(at + o, 0);
+        // Every part spawn and its pool wrapper is logged as `(record,
+        // point, angles)` for the director's spawns.
+        let spawn_log = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3])>::new()));
+        let next = Rc::new(std::cell::Cell::new(PARTS));
+        for spawn in [SPAWN_PART, SPAWN_POOLED] {
+            let next = next.clone();
+            let log = spawn_log.clone();
+            cpu.hook(spawn, move |r, m| {
+                log.borrow_mut()
+                    .push((r.r[A2], trio(m, r.r[A0]), trio(m, r.r[A1])));
+                r.r[V0] = 0;
+                if entry == 922 {
+                    let at = next.get();
+                    next.set(at + 0x80);
+                    for o in (0..0x80).step_by(4) {
+                        m.wr32(at + o, 0);
+                    }
+                    r.r[V0] = at;
                 }
-                r.r[V0] = at;
             });
         }
         {
@@ -517,8 +565,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             let a = |i: usize| r.r[A0 + i] as i16;
             r.r[V0] = u32::from(bearing_12bit_approx(a(0), a(1), a(2), a(3)));
         });
+        // The fallen-seat runs also play with the Battles vibration row off
+        // (`0x800845C8 != 0`), which every rumble store tests first.
+        let vibration_off = fallen;
         {
             seed(&mut cpu, &module, action, code, layout);
+            cpu.mem.wr32(VIBRATION_OFF, u32::from(vibration_off));
             if fallen {
                 let s = if layout.victim + 1 < 3 + layout.monsters {
                     layout.victim + 1
@@ -529,6 +581,53 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 cpu.mem.wr16(a + 0x14C, 0);
                 cpu.mem.wr32(a + 4, 0);
             }
+            // The fallen runs also stand the last monster seat in Stone
+            // (`+0x16E = 4`), which the modules' hit, tint and settle loops
+            // skip (`andi 4` ahead of each hit).
+            let stoned = fallen.then_some(2 + layout.monsters);
+            if let Some(s) = stoned {
+                cpu.mem.wr16(ACTOR + s * STRIDE + 0x16E, 4);
+            }
+            // The cast's group list `0x801F6978` (four seats, `0xFF` past
+            // the last), as the band fills it at the cast: the living
+            // monsters. Mule's wave divides a roll by three only for a seat
+            // on it (`0x801F7EA8..0x801F7ED0`).
+            // The fallen runs leave seat 3 off it, as for a monster that
+            // stood back up after the list was filled.
+            let living: Vec<u8> = (3..7u32)
+                .filter(|&s| cpu.mem.rd16(ACTOR + s * STRIDE + 0x14C) != 0)
+                .filter(|&s| !(fallen && s == 3))
+                .map(|s| s as u8)
+                .collect();
+            for i in 0..4u32 {
+                cpu.mem.wr8(
+                    GROUP_LIST + i,
+                    living.get(i as usize).copied().unwrap_or(0xFF),
+                );
+            }
+            // Each monster's reaction run `+0x1EF..+0x1F2`, which a hit arm
+            // stages from: the flinch, its fallback, the knockdown and the
+            // knockdown gate (set on every other seat).
+            for s in 3..7u32 {
+                let a = ACTOR + s * STRIDE;
+                cpu.mem
+                    .wr8(a + 0x1EF, if s == 4 { 0 } else { 0x10 + s as u8 });
+                cpu.mem.wr8(a + 0x1F0, 0x20 + s as u8);
+                cpu.mem.wr8(a + 0x1F1, 0x30 + s as u8);
+                cpu.mem.wr8(a + 0x1F2, (s & 1) as u8);
+            }
+            // State `0x34`'s hide loop, which runs before the module's first
+            // pass (`0x801E4B30..0x801E4B6C`, `battle_action::summon`): every
+            // party seat and every living monster of seats `0..7`, word `0`
+            // and the hidden marker.
+            for s in 0..7u32 {
+                let a = ACTOR + s * STRIDE;
+                if s < 3 || cpu.mem.rd16(a + 0x14C) != 0 {
+                    cpu.mem.wr32(a + 4, 0);
+                    cpu.mem.wr8(a + 0x21C, 0xFF);
+                }
+            }
+            let mut dead_passes = [0usize; 4];
             let mut st = ModuleCamState {
                 lead_roster: 1,
                 opens_pass: true,
@@ -567,6 +666,22 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             });
             let mut puera_compared = std::collections::BTreeSet::new();
             let mut sideband_passes = 0u32;
+            // The band shadow: a world seated off the same records, the
+            // band's module half (`World::drive_summon_module_pass`) run on
+            // retail's phase beside each pass, every seat compared after it.
+            let mut shadow = summon_shadow(&mut cpu, layout, action);
+            if let Some(w) = shadow.as_mut()
+                && fallen
+            {
+                w.casting.module_group_seats &= !1;
+            }
+            if let (Some(w), Some(s)) = (shadow.as_mut(), stoned) {
+                w.battle.status_effects.apply(
+                    s as u8,
+                    legaia_engine_battle_vm::status_effects::StatusKind::Stone,
+                );
+            }
+            let mut shadow_after: Vec<u32> = Vec::new();
             for pass in 0..20_000u32 {
                 // Every seat idle and far along its clip, its display pair on its
                 // ground pair as the draw pass leaves it.
@@ -624,6 +739,30 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 if matches!((entry, phase), (915, 0xD) | (917, 0xF)) {
                     cpu.mem.wr32(ACTOR + CREATURE * STRIDE + 4, 0);
                 }
+                // A monster a hit felled fades out: the tint pass eases its
+                // word to zero outside the module, which the walk stands in
+                // for once its word has stood six passes after the kill. The settle gates read it as
+                // retail's do (a dead seat settled once its word is zero, a
+                // living one once its clip is).
+                for s in 3..7u32 {
+                    let a = ACTOR + s * STRIDE;
+                    let dead = cpu.mem.rd16(a + 0x14C) == 0 && cpu.mem.rd32(a + 4) != 0;
+                    let k = (s - 3) as usize;
+                    dead_passes[k] = if dead { dead_passes[k] + 1 } else { 0 };
+                    if dead_passes[k] == 7 {
+                        cpu.mem.wr32(a + 4, 0);
+                    }
+                }
+                let settled = |m: &mut psx_retail_exec::Memory, s: u32| {
+                    let a = ACTOR + s * STRIDE;
+                    if m.rd16(a + 0x14C) == 0 {
+                        m.rd32(a + 4) == 0
+                    } else {
+                        m.rd8(a + 0x1D9) == 0
+                    }
+                };
+                st.row_settled = (3..3 + layout.monsters).all(|s| settled(&mut cpu.mem, s));
+                st.victim_settled = settled(&mut cpu.mem, victim);
                 let t0 = Target::read(&mut cpu.mem);
                 let live_code = cpu.mem.rd8(ACTOR + layout.caster * STRIDE + 0x1DD);
                 let seats = ModuleCamSeats {
@@ -645,20 +784,25 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 st.live_pitch_tr = Some((t0.angles[0], t0.tr));
                 st.target_code = Some(live_code);
                 let any_up = (3..7u32).any(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4) != 0);
-                let mut group = |code: u8| {
-                    (code == 8 || any_up).then(|| {
-                        assert_eq!(
-                            cpu.call(AIM, &[u32::from(code), OUT_CENTRE, OUT_EXTENT]),
-                            Stop::Returned
-                        );
-                        GroupAim {
-                            centroid_x: cpu.mem.rd16(OUT_CENTRE) as i16,
-                            centroid_z: cpu.mem.rd16(OUT_CENTRE + 4) as i16,
-                            extent: cpu.mem.rd16(OUT_EXTENT + 4) as i16,
+                st.row_aim = group_aim(&mut cpu, 9, any_up);
+                // PROT 0920's arm 8 shows every living monster before its aim
+                // (`0x801F752C..0x801F755C`, then `jal 0x801DCEAC`): the aim
+                // is measured on the row as that pass shows it, its words put
+                // back after.
+                let shown_first = (entry, phase) == (920, 8);
+                let words: Vec<u32> = (3..7u32)
+                    .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
+                    .collect();
+                if shown_first {
+                    for s in 3..7u32 {
+                        if cpu.mem.rd16(ACTOR + s * STRIDE + 0x14C) != 0 {
+                            cpu.mem.wr32(ACTOR + s * STRIDE + 4, 0x2008_0200);
                         }
-                    })
-                };
-                st.row_aim = group(9);
+                    }
+                }
+                let any_up = any_up
+                    || (shown_first
+                        && (3..7u32).any(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4) != 0));
                 st.target_aim = if live_code < 8 {
                     let s = seat_at(&mut cpu.mem, u32::from(live_code), false);
                     Some(GroupAim {
@@ -667,8 +811,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         extent: MIN_GROUP_EXTENT,
                     })
                 } else {
-                    group(live_code)
+                    group_aim(&mut cpu, live_code, any_up)
                 };
+                if shown_first {
+                    for (s, w) in (3..7u32).zip(&words) {
+                        cpu.mem.wr32(ACTOR + s * STRIDE + 4, *w);
+                    }
+                }
                 // `keep_row_tr_y`: `-4 * +0x3E` averaged over the living row.
                 let mut row = Vec::new();
                 for s in 3..3 + layout.monsters {
@@ -745,6 +894,98 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         act.battle.render_color = cpu.mem.rd32(a + 4);
                     }
                 }
+                // The seats the host resolves a spawn's anchor on
+                // (`World::module_anchor_context`), as this pass opens.
+                let anchor_seats = cam::AnchorSeats {
+                    caster: Some(caster_seat),
+                    caster_body: Some(seat_at(&mut cpu.mem, layout.caster, true)),
+                    victim_body: Some(seat_at(&mut cpu.mem, victim, true)),
+                    creature_body: Some(seat_at(&mut cpu.mem, CREATURE, true)),
+                    party: std::array::from_fn(|n| {
+                        (cpu.mem.rd16(ACTOR + n as u32 * STRIDE + 0x14C) != 0)
+                            .then(|| seat_at(&mut cpu.mem, n as u32, false))
+                    }),
+                    depth: cpu.mem.rd16(CTX + 0x6D0) as i16,
+                };
+                let anchor_victim = seat_at(&mut cpu.mem, victim, false);
+                // The creature's live seat, which the host feeds every tick
+                // its seat is up (`module_cam.creature_live`).
+                let creature_live = seat_at(&mut cpu.mem, CREATURE, false);
+                let shadow_phase = shadow.as_ref().map(|w| w.casting.module_phase);
+                if shadow.is_some() && shadow_phase != Some(phase) {
+                    shadow = None;
+                    shadow_left += 1;
+                    shadow_leaves.push(format!(
+                        "PROT {entry:04} target {code} fallen {fallen} caster {}: retail arm {phase:#x} band {shadow_phase:x?} at pass {pass}",
+                        layout.caster
+                    ));
+                }
+                if let Some(w) = shadow.as_mut() {
+                    for s in 0..8u32 {
+                        let a = ACTOR + s * STRIDE;
+                        let act = &mut w.actors[s as usize];
+                        act.battle.hp = cpu.mem.rd16(a + 0x14C);
+                        let word = cpu.mem.rd32(a + 4);
+                        if shadow_after.get(s as usize).is_some_and(|&was| was != word) {
+                            act.battle.render_color = word;
+                        }
+                        if s == CREATURE {
+                            act.battle.current_anim = cpu.mem.rd8(a + 0x1D9);
+                            let p = trio(&mut cpu.mem, a + 0x34);
+                            act.move_state.world_x = p[0];
+                            act.move_state.world_y = p[1];
+                            act.move_state.world_z = p[2];
+                            act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
+                        }
+                    }
+                    // The monsters' staged reaction `+0x1DA` / `+0x1DC`, as
+                    // this pass finds them.
+                    for s in 3..(3 + layout.monsters).min(7) {
+                        let r = crate::cast_view::read_actor(&mut cpu.mem, ACTOR + s * STRIDE);
+                        let mut v = w.drive_cast_view(s as u8);
+                        v.staged_anim = r.staged_anim;
+                        v.restage = r.restage;
+                        w.drive_write_cast_view(s as u8, &v);
+                    }
+                    // The walk stubs the range poll `FUN_8004E2F0(7, victim)`
+                    // in range, where its creature never walks; the shadow's
+                    // PROT 0908 arm 8 reads range off the creature's pair, so
+                    // it stands on the victim's for that arm.
+                    if (entry, phase) == (908, 8) {
+                        let (x, z) = {
+                            let v = &w.actors[victim as usize].move_state;
+                            (v.world_x, v.world_z)
+                        };
+                        let c = &mut w.actors[CREATURE as usize].move_state;
+                        c.world_x = x;
+                        c.world_z = z;
+                    }
+                    // PROT 0907's verdict as retail's arm 0 drew it (its
+                    // fork word `0x801F8534` and resist word `0x801F853C`):
+                    // the shadow's own draw reads its zeroed party's levels.
+                    if entry == 907 && pass > 0 {
+                        use legaia_engine_cast::seru_magic_ticks::NightoOutcome as O;
+                        let fork = cpu.mem.rd32(0x801F_8534) != 0;
+                        let resisted = cpu.mem.rd32(0x801F_853C) != 0;
+                        w.casting.module_nighto_outcome = Some(match (fork, resisted) {
+                            (false, false) => O::Kill,
+                            (false, true) => O::KillResisted,
+                            (true, false) => O::Confuse,
+                            (true, true) => O::ConfuseResisted,
+                        });
+                    }
+                    // The band's word `ctx[+0x6D8]` the paced arms poll
+                    // (PROT 0907's arm 3), as the SM leaves it this pass.
+                    w.battle_ctx.frame_timer = cpu.mem.rd16(CTX + 0x6D8) as i16 as _;
+                    w.casting.band_word_live = None;
+                    w.rng_state = stream.get();
+                    // The side-band stage the walk stands up, as a turn's
+                    // side-band read raises it.
+                    w.casting.module_cam.sideband_busy = cpu.mem.rd8(CTX + 0x276) != 0;
+                    w.clock.display_frames += 1;
+                    w.drive_summon_module_pass(layout.caster as u8, action, true);
+                }
+                spawn_log.borrow_mut().clear();
                 let stop = cpu.call(va, &[]);
                 if stop != Stop::Returned {
                     failures.push(format!("PROT {entry:04} pass {pass} arm {phase}: {stop:?}"));
@@ -785,6 +1026,114 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 } else {
                     (profile.direct)(&mut st, phase, seats)
                 };
+                // The records the director reports this pass, each on the
+                // point its anchor resolves to, against one of retail's
+                // spawn calls with the same record, point and angles.
+                // PROT 0934's spray points are the host's draws.
+                {
+                    let mut left = spawn_log.borrow().clone();
+                    for sp in arm.spawns {
+                        let record = match sp.record {
+                            cam::SpawnRecord::Module(r) => r,
+                            cam::SpawnRecord::BattleProto(p) => cpu.mem.rd32(p),
+                        };
+                        if entry == 934 && matches!(record, 0x801F_A320 | 0x801F_A36C | 0x801F_A3B8)
+                        {
+                            continue;
+                        }
+                        let point = match sp.anchor {
+                            cam::SpawnAnchor::ArmPoint => arm.arm_point,
+                            a => cam::spawn_anchor_point_with(
+                                a,
+                                st.creature.or(st.creature_live).or(Some(creature_live)),
+                                Some(anchor_victim),
+                                arm.shot,
+                                anchor_seats,
+                            ),
+                        };
+                        let Some((pos, rot)) = point else {
+                            spawn_failures.push(format!(
+                                "PROT {entry:04} pass {pass} arm {phase:#x}: spawn {record:#x} anchor {:?} unresolved",
+                                sp.anchor
+                            ));
+                            continue;
+                        };
+                        // Angles compare as the 12-bit turns the record
+                        // reads: a director's shot holds its yaw masked
+                        // where retail's stack holds the raw halfword.
+                        let turn = |a: [i16; 3]| a.map(|v| v & 0xFFF);
+                        match left
+                            .iter()
+                            .position(|&x| (x.0, x.1, turn(x.2)) == (record, pos, turn(rot)))
+                        {
+                            Some(i) => {
+                                left.remove(i);
+                                spawns_matched += 1;
+                            }
+                            None => spawn_failures.push(format!(
+                                "PROT {entry:04} target {code} fallen {fallen} pass {pass} arm {phase:#x}: spawn {record:#x} {:?} at {pos:?} {rot:?}: retail {:x?}",
+                                sp.anchor,
+                                left.iter().filter(|x| x.0 == record).collect::<Vec<_>>()
+                            )),
+                        }
+                    }
+                }
+                if let Some(w) = shadow.as_ref() {
+                    // The seated seats: an unseated monster seat is no actor
+                    // the engine draws.
+                    for s in 0..(3 + layout.monsters as usize).min(7) {
+                        let a = ACTOR + s as u32 * STRIDE;
+                        let got = (
+                            cpu.mem.rd32(a + 4),
+                            cpu.mem.rd8(a + 0x21C),
+                            cpu.mem.rd16(a + 0x16E),
+                            cpu.mem.rd16(a + 0x14C),
+                        );
+                        let b = &w.actors[s].battle;
+                        // The summon band's shown word is the engine's resting
+                        // `0` under a lowered flag (`apply_mushura_writes`,
+                        // `apply_palma_writes`): retail's `0x20080200` there.
+                        let shown = |c: u32, f: u8| if f == 0 && c == 0x2008_0200 { 0 } else { c };
+                        // The hit arm's own hit is the band's fold, which
+                        // lands after the module's pass (`summon_stager_tick`'s
+                        // strike) and which the shadow does not run: that
+                        // pass's HP is not compared.
+                        let got = if profile.hit_arm == Some(phase) {
+                            (got.0, got.1, got.2, w.actors[s].battle.hp)
+                        } else {
+                            got
+                        };
+                        let got = (shown(got.0, got.1), got.1, got.2, got.3);
+                        let port = (
+                            shown(b.render_color, b.render_flag),
+                            b.render_flag,
+                            w.raw_status_word(s as u8),
+                            b.hp,
+                        );
+                        if s >= 3 && profile.hit_arm != Some(phase) {
+                            let r = crate::cast_view::read_actor(&mut cpu.mem, a);
+                            let v = w.drive_cast_view(s as u8);
+                            let rs = r.staged_anim;
+                            let ps = v.staged_anim;
+                            if rs != ps {
+                                shadow_failures.push(format!(
+                                    "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} staged retail ({rs:x}) port ({ps:x})",
+                                    layout.caster, layout.monsters
+                                ));
+                            }
+                        }
+                        if got != port {
+                            shadow_failures.push(format!(
+                                "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} tint/flag/status/hp retail {got:x?} port {port:x?}",
+                                layout.caster, layout.monsters
+                            ));
+                        }
+                    }
+                    shadow_passes += 1;
+                }
+                shadow_after = (0..8u32)
+                    .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
+                    .collect();
                 let mut port = t0;
                 port.apply(&arm);
                 let busy = cpu.regs.r[V0] != 0;
@@ -882,8 +1231,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 });
                 let rates =
                     (words[2] != RUMBLE_SENTINEL).then(|| (words[2] as i32, words[3] as i32));
+                // `World::module_rumble` with the row off stores nothing.
                 let due: Vec<_> =
-                    module_rumble_due(entry, SINGLE_BODY, phase, !held, countdown_before).collect();
+                    module_rumble_due(entry, SINGLE_BODY, phase, !held, countdown_before)
+                        .filter(|_| !vibration_off)
+                        .collect();
                 let mut landed = false;
                 for &(h, y) in &crystals {
                     let (y, l) = puera_crystal_fall(y, SPEED_SCALAR << 7);
@@ -913,8 +1265,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     _ => false,
                 };
                 // Arm 20's landing store: `FF / FF / 0x10 / 0x10`, hold `0`.
+                // With the vibration row off it stores nothing
+                // (`World::apply_puera_writes`).
                 let rumble_ok = if crystals.is_empty() {
                     rumble_ok
+                } else if landed && vibration_off {
+                    stored.is_none() && rates.is_none()
                 } else if landed {
                     stored
                         == Some(BattleRumbleWrite {
@@ -1011,7 +1367,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             }
             // Every carried rumble write of the module was compared.
             let carried = MODULE_RUMBLE.iter().filter(|m| m.entry == entry).count();
-            if carried > 0 && rumbles == 0 {
+            if carried > 0 && rumbles == 0 && !vibration_off {
                 failures.push(format!("PROT {entry:04}: no rumble write compared"));
             }
             if max_roll != 0 {
@@ -1035,9 +1391,116 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         }
     }
     assert!(sideband_held > 100, "{sideband_held} side-band passes held");
+    eprintln!(
+        "summon shadow: {shadow_passes} passes compared, {shadow_left} casts left retail's phase walk, {} mismatches",
+        shadow_failures.len()
+    );
+    // The casts whose band leaves retail's walk: the paced bodies (PROT
+    // 0905, 0907, 0908) whose tick ports pace an arm the walk's director
+    // does not.
+    for l in &shadow_leaves {
+        eprintln!("{l}");
+    }
+    legaia_engine_core::world::summon_roll_override::set(None);
+    if let Ok(path) = std::env::var("W54_SHADOW_DUMP") {
+        let _ = std::fs::write(&path, shadow_failures.join("\n"));
+    }
+    assert!(
+        shadow_passes >= 200_000,
+        "summon shadow passes {shadow_passes}"
+    );
+    assert!(
+        shadow_failures.is_empty(),
+        "{} summon shadow mismatches:\n{}",
+        shadow_failures.len(),
+        shadow_failures[..shadow_failures.len().min(40)].join("\n")
+    );
+    eprintln!(
+        "director spawns: {spawns_matched} matched, {} mismatches",
+        spawn_failures.len()
+    );
+    assert!(
+        spawns_matched >= 800,
+        "director spawns matched {spawns_matched}"
+    );
+    assert!(
+        spawn_failures.is_empty(),
+        "{} director spawn mismatches:\n{}",
+        spawn_failures.len(),
+        spawn_failures[..spawn_failures.len().min(40)].join("\n")
+    );
     let n = failures.len();
     failures.truncate(600);
     assert!(n == 0, "{n} mismatches:\n{}", failures.join("\n"));
+}
+
+/// `FUN_801DCEAC(code, ..)` run live, when the party is asked for or any
+/// monster's word is up (a row hidden whole has no aim).
+fn group_aim(cpu: &mut Cpu, code: u8, any_up: bool) -> Option<GroupAim> {
+    (code == 8 || any_up).then(|| {
+        assert_eq!(
+            cpu.call(AIM, &[u32::from(code), OUT_CENTRE, OUT_EXTENT]),
+            Stop::Returned
+        );
+        GroupAim {
+            centroid_x: cpu.mem.rd16(OUT_CENTRE) as i16,
+            centroid_z: cpu.mem.rd16(OUT_CENTRE + 4) as i16,
+            extent: cpu.mem.rd16(OUT_EXTENT + 4) as i16,
+        }
+    })
+}
+
+/// A world in battle seated as `cpu`'s actor records are, the creature on
+/// seat 7, with `action`'s summon armed (`World::arm_summon_stager`).
+fn summon_shadow(
+    cpu: &mut Cpu,
+    layout: Layout,
+    action: u8,
+) -> Option<legaia_engine_core::world::World> {
+    let mut w = legaia_engine_core::world::World::new();
+    w.load_party(legaia_save::Party::zeroed(3));
+    w.enter_battle(3, layout.monsters as u8);
+    while w.actors.len() < 12 {
+        w.actors.push(Default::default());
+    }
+    for s in 0..8u32 {
+        let a = ACTOR + s * STRIDE;
+        let p = trio(&mut cpu.mem, a + 0x34);
+        let act = &mut w.actors[s as usize];
+        act.active = s < 3 + layout.monsters || s == CREATURE;
+        act.battle.hp = cpu.mem.rd16(a + 0x14C);
+        act.battle.max_hp = cpu.mem.rd16(a + 0x14E).max(act.battle.hp);
+        act.battle.liveness = u16::from(act.battle.hp > 0);
+        act.battle.render_color = cpu.mem.rd32(a + 4);
+        act.battle.render_flag = cpu.mem.rd8(a + 0x21C);
+        act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
+        act.battle.active_target = cpu.mem.rd8(a + 0x1DD);
+        act.battle.anim_rate =
+            legaia_engine_battle_vm::battle_anim_rate::AnimRate(cpu.mem.rd8(a + 0x21D));
+        act.move_state.world_x = p[0];
+        act.move_state.world_y = p[1];
+        act.move_state.world_z = p[2];
+        if (3..3 + layout.monsters).contains(&s) {
+            act.battle_monster_id = Some(1);
+        }
+    }
+    w.battle_ctx.active_actor = layout.caster as u8;
+    w.casting.summon_actor_slot = Some(CREATURE as u8);
+    // The reaction run `+0x1EF..+0x1F2`, as the records hold it: a seat
+    // with no clips reads it off its action bytes `+0x1DF..`.
+    for s in 3..(3 + layout.monsters).min(7) {
+        let a = ACTOR + s * STRIDE;
+        for o in 0x1EFu32..=0x1F2 {
+            w.actors[s as usize].battle.params[(o - 0x1DF) as usize] = cpu.mem.rd8(a + o);
+        }
+    }
+    w.cast_module_for(action)?;
+    w.arm_summon_stager(layout.caster as u8, action);
+    // PROT 0916's verdict: the walk's director runs the damage path (its
+    // `kill` left unset), which is the path retail's roll takes on this
+    // walk's zeroed records; the world's roll reads its own party's levels.
+    w.casting.module_cam.kill = Some(false);
+    Some(w)
 }
 
 /// A part of the camera the port is known to leave out.
@@ -1071,4 +1534,62 @@ const KNOWN_GAPS: [(u32, &[u8], Gap, &str); 2] = [
 fn sign12(a: i32) -> i32 {
     let a = a & 0xFFF;
     if a >= 0x800 { a - 0x1000 } else { a }
+}
+
+/// The side-band arm of PROT 0904 (arm 1) and PROT 0906 (arm 2), whose tick
+/// bodies own their phase: each image's arm run once with the band word
+/// `ctx[+0x6D8]` out and once with it standing, beside a shadow world's
+/// module pass on the same arm, and the phase each leaves compared.
+#[test]
+fn the_side_band_arm_steps_over_the_band_word_poll_as_retail_does() {
+    use legaia_engine_cast::seru_magic_ticks::{GIZAM_TICK, THEEDER_TICK};
+    differential!(prot(904, 0x801F_69D8), prot(906, 0x801F_69F4));
+    let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = disc.read_entry(898).expect("PROT 0898");
+    let layout = LAYOUTS[0];
+    let mut compared = 0;
+    for (entry, va, arm) in [(904u32, THEEDER_TICK, 1u8), (906, GIZAM_TICK, 2)] {
+        for word in [0u16, 0x40] {
+            let module = disc.read_entry(entry as usize).expect("module");
+            let action = action_of(entry);
+            let mut cpu = scus_cpu().expect("SCUS");
+            cpu.mem.load(OVERLAY_BASE, &overlay);
+            cpu.mem.wr32(CTX_PTR, CTX);
+            cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+            cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+            for target in jal_targets(&module) {
+                if ![BEARING, RAND].contains(&target) {
+                    cpu.stub(target, 0);
+                }
+            }
+            cpu.hook(RAND, |r, _| r.r[V0] = 0);
+            cpu.hook(BEARING, |r, _| {
+                let a = |i: usize| r.r[A0 + i] as i16;
+                r.r[V0] = u32::from(bearing_12bit_approx(a(0), a(1), a(2), a(3)));
+            });
+            seed(&mut cpu, &module, action, layout.code(9), layout);
+            let Some(mut w) = summon_shadow(&mut cpu, layout, action) else {
+                panic!("PROT {entry:04}: no shadow");
+            };
+            cpu.mem.wr8(CTX + 0x279, arm);
+            cpu.mem.wr8(CTX + 0x276, 0);
+            cpu.mem.wr16(CTX + 0x6D8, word);
+            w.casting.module_phase = arm;
+            w.battle_ctx.frame_timer = word as i16 as _;
+            w.casting.band_word_live = None;
+            w.casting.module_cam.sideband_busy = false;
+            w.drive_summon_module_pass(layout.caster as u8, action, true);
+            assert_eq!(cpu.call(va, &[]), Stop::Returned, "PROT {entry:04}");
+            let retail = cpu.mem.rd8(CTX + 0x279);
+            assert_eq!(
+                w.casting.module_phase, retail,
+                "PROT {entry:04} arm {arm} band word {word:#x}: port phase vs retail"
+            );
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, 4);
 }

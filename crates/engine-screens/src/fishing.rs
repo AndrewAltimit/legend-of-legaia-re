@@ -234,7 +234,7 @@ pub fn fishing_line_screen_prims(
 pub struct FishingVenueScreen {
     /// The screens' chrome, back to front: each screen's panel, then its
     /// cursor icon. Hosts draw it in their chrome pass under every text
-    /// ([`fishing_venue_chrome_sprites`]).
+    /// ([`venue_chrome_sprites`]).
     pub chrome: Vec<VenueChrome>,
     /// Stage-pixel texts, back to front, each screen's cropped against the
     /// panels of the screens drawn over it
@@ -499,24 +499,4 @@ pub fn venue_chrome_sprites(
         }
     }
     out
-}
-
-/// The venue screens' chrome this frame ([`fishing_venue_screen`] with the
-/// atlas's hand), as sprites. Empty outside fishing.
-pub fn fishing_venue_chrome_sprites(
-    world: &World,
-    font: &legaia_font::Font,
-    rects: &legaia_engine_ui::SaveMenuAtlasRects,
-    surface_w: u32,
-    surface_h: u32,
-) -> Vec<legaia_engine_ui::SpriteDraw> {
-    if world.mode != legaia_engine_mode::mode::SceneMode::Fishing {
-        return Vec::new();
-    }
-    venue_chrome_sprites(
-        &fishing_venue_screen(world, font, true).chrome,
-        rects,
-        surface_w,
-        surface_h,
-    )
 }

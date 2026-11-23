@@ -21,6 +21,7 @@ impl World {
         self.minigames.fishing_exchange_cursor = 0;
         self.minigames.fishing_events.clear();
         self.minigames.fishing_cues.reset();
+        self.minigames.fishing_hook_music = false;
         self.mode = SceneMode::Fishing;
     }
 
@@ -237,6 +238,65 @@ impl World {
     /// [`Cross`]: input::PadButton::Cross
     /// [`Square`]: input::PadButton::Square
     ///
+    /// The session head's motor copy: it zeroes both motor words, then with
+    /// the options screen's Events vibration row On (`_DAT_800845A8 == 0`)
+    /// gives them the
+    /// venue's rumble pair `DAT_801D90E0` / `DAT_801D90E4` every frame
+    /// (`0x801CF3F4..0x801CF41C`), which the driver tail sets from the hooked
+    /// fish's surge as `surge / 8` and `surge / 4`, each rounded toward zero
+    /// (`0x801D0344..0x801D0380`). The head reads last frame's tail, which is
+    /// the surge the session's last game tick left.
+    ///
+    /// PORT: FUN_801cf3bc (`0x801CF3F4..0x801CF41C`, `0x801D0344..0x801D0380`)
+    fn fishing_motor_copy(&mut self) {
+        let Some(surge) = self.minigames.fishing.as_ref().map(|s| s.surge()) else {
+            return;
+        };
+        // The head zeroes both words first (`0x801CF3FC` and its delay
+        // slot), so an Off row holds the motors still.
+        let (pulse, level) = if self.event_vibration_off() {
+            (0, 0)
+        } else {
+            (surge / 8, surge / 4)
+        };
+        self.rumble.motors.pulse = pulse;
+        self.rumble.motors.level = level;
+    }
+
+    /// The hook's music swap. On the strike the lure tick stops the battle
+    /// sound source `0x8007056C`, reinstalls it from the battle staging
+    /// buffer `_DAT_8007B85C + 0x32000` - the bundle the last fight streamed
+    /// there, still resident - and plays it, raising the latch
+    /// `DAT_801D92A4` (`FUN_801D26CC`, `0x801D360C..0x801D3664`). The session
+    /// puts the venue's own track back from the buffer's head when the catch
+    /// showcase opens (state `0x20`, `0x801CFD84..0x801CFDD4`) or the shore
+    /// comes back (state `0xA`, `0x801CF7E0..0x801CF82C`), dropping the latch.
+    ///
+    /// The port plays the last fight's track ([`crate::world::AudioState`]'s
+    /// `last_battle_track`, the configured battle theme before any fight)
+    /// and swaps back on [`legaia_engine_fishing::fishing::PondEvent::Landed`]
+    /// or `Recast`: a catch's swap lands as it is decided, where retail's waits
+    /// out the close-up lift to the showcase.
+    ///
+    /// PORT: FUN_801d26cc (`0x801D360C..0x801D3664`)
+    /// PORT: FUN_801cf3bc (`0x801CF7E0..0x801CF82C`, `0x801CFD84..0x801CFDD4`)
+    fn fishing_hook_music(&mut self, events: &[legaia_engine_fishing::fishing::PondEvent]) {
+        use legaia_engine_fishing::fishing::PondEvent;
+        let hooked = events.iter().any(|e| matches!(e, PondEvent::Hooked(_)));
+        let back = events
+            .iter()
+            .any(|e| matches!(e, PondEvent::Landed(_) | PondEvent::Recast));
+        if hooked && !self.minigames.fishing_hook_music {
+            self.minigames.fishing_hook_music = true;
+            if let Some(track) = self.audio.last_battle_track.or(self.audio.battle_bgm) {
+                self.start_minigame_track(track);
+            }
+        } else if back && self.minigames.fishing_hook_music {
+            self.minigames.fishing_hook_music = false;
+            self.restore_minigame_bgm();
+        }
+    }
+
     /// PORT: FUN_801cf3bc (the fishing overlay's driver, reached through its
     /// actor-template tick word). What this covers: the run-loop states
     /// `0xc` idle / `0xd` wind-up / `0x14` power oscillator / `0x1e..0x22`
@@ -264,6 +324,7 @@ impl World {
             self.mode = self.minigames.fishing_return_mode;
             return;
         }
+        self.fishing_motor_copy();
         // The venue's hub menu (Triangle / Select on the idle shore) owns the
         // frame while it is up, the exchange list it opens included.
         if self.tick_fishing_hub() || self.minigames.fishing_exchange.is_some() {
@@ -298,6 +359,7 @@ impl World {
             }
             None => (Vec::new(), false, Vec::new()),
         };
+        self.fishing_hook_music(&events);
         // A broken line spends the equipped lure: the break arm's
         // `FUN_80042310(lure + 0x9D, 1)` (`0x801D3C20`), the bag's
         // window-bounded consume-by-id.
@@ -386,5 +448,79 @@ impl World {
             self.minigames.pending_sfx.extend(cues);
         }
         self.minigames.fishing_events = events;
+    }
+}
+
+#[cfg(test)]
+mod hook_audio_tests {
+    use crate::world::{FieldEvent, World};
+    use legaia_engine_fishing::fishing::{FishingRecord, PondEvent, PondSession};
+
+    fn pond_world() -> World {
+        let mut w = World::new();
+        w.enter_fishing(PondSession::new(
+            Vec::new(),
+            vec![[0; 8]; 3],
+            Vec::new(),
+            0,
+            0,
+            0,
+            0,
+            FishingRecord::default(),
+            0,
+            1,
+        ));
+        w
+    }
+
+    fn bgm_starts(w: &mut World) -> Vec<u16> {
+        std::mem::take(&mut w.pending_field_events)
+            .into_iter()
+            .filter_map(|e| match e {
+                FieldEvent::Bgm { text_id, sub_op: 1 } => Some(text_id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The strike swaps the last fight's theme in once; the landing or the
+    /// shore puts the scene's track back once.
+    #[test]
+    fn the_hook_plays_the_last_fights_theme_until_the_shore() {
+        let mut w = pond_world();
+        w.audio.current_bgm = Some(2017);
+        w.audio.battle_bgm = Some(2026);
+        w.audio.last_battle_track = Some(2027);
+        w.fishing_hook_music(&[PondEvent::Hooked(3)]);
+        assert_eq!(bgm_starts(&mut w), [2027]);
+        w.fishing_hook_music(&[PondEvent::Hooked(3)]);
+        assert!(bgm_starts(&mut w).is_empty(), "the latch holds");
+        w.fishing_hook_music(&[PondEvent::Landed(40)]);
+        assert_eq!(bgm_starts(&mut w), [2017]);
+        w.fishing_hook_music(&[PondEvent::Recast]);
+        assert!(bgm_starts(&mut w).is_empty(), "the latch is down");
+        // Before any fight the configured theme stands in.
+        w.audio.last_battle_track = None;
+        w.fishing_hook_music(&[PondEvent::Hooked(1)]);
+        assert_eq!(bgm_starts(&mut w), [2026]);
+        w.fishing_hook_music(&[PondEvent::Recast]);
+        assert_eq!(bgm_starts(&mut w), [2017]);
+    }
+
+    /// The head copies `surge / 8` and `surge / 4` into the motor words while
+    /// the Events vibration row is On, and holds them at zero when it is Off.
+    #[test]
+    fn the_fight_drives_the_motors_behind_the_events_row() {
+        let mut w = pond_world();
+        w.minigames.fishing.as_mut().unwrap().seat_surge(0x3C0);
+        w.fishing_motor_copy();
+        assert_eq!((w.rumble.motors.pulse, w.rumble.motors.level), (0x78, 0xF0));
+        w.minigames.fishing.as_mut().unwrap().seat_surge(-13);
+        w.fishing_motor_copy();
+        assert_eq!((w.rumble.motors.pulse, w.rumble.motors.level), (-1, -3));
+        w.toggles.retail_options.vibration_events = 1;
+        w.minigames.fishing.as_mut().unwrap().seat_surge(0x100);
+        w.fishing_motor_copy();
+        assert_eq!((w.rumble.motors.pulse, w.rumble.motors.level), (0, 0));
     }
 }

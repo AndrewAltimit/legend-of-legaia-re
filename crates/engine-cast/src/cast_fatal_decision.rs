@@ -511,6 +511,10 @@ pub fn fatal_decision_tick(
             ctx.ctx_278 = 3;
             advance(ctx);
             p.cue = Some(OPEN_CUE);
+            // `sw zero` to `0x801F9014` and `0x801F9010` (`0x801F6D80..
+            // 0x801F6D8C`): the angle and its last remainder both start at
+            // zero, so the epilogue's wheel tick does not sound on the open.
+            st.tick_rem = 0;
             st.rot = 0;
         }
         1 => {

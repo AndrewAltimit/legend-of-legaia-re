@@ -42,6 +42,8 @@ const SCENE: u32 = 0x8018_0000;
 const MAP_LEN: usize = 0x12000;
 const REGION_BLOCK: usize = 0x10000;
 const SPAWN_TABLE: u32 = 0x8016_0000;
+/// The sound staging buffer `_DAT_8007B85C` (only its address is read).
+const STAGING: u32 = 0x8010_0000;
 const PACKETS: u32 = 0x8017_0000;
 
 const ALIVE: u32 = 0x801D_91A8;
@@ -116,7 +118,6 @@ fn rig(rand: Rc<Cell<u32>>, cue: Rc<Cell<u32>>) -> Option<Cpu> {
     for f in [
         0x8001_A068,
         0x8005_67A8,
-        0x8001_E54C,
         0x8002_6478,
         0x8002_6520,
         0x8002_66E0,
@@ -209,6 +210,15 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         map
     };
     let (mut on_water, mut drifted) = (0u32, 0u32);
+    let mut lift_capped = 0u32;
+    let mut swapped = 0u32;
+    let installs = Rc::new(Cell::new(None::<(u32, u32)>));
+    {
+        let installs = installs.clone();
+        cpu.hook(0x8001_E54C, move |r, _| {
+            installs.set(Some((r.r[A0], r.r[A1])))
+        });
+    }
     let templates = fs::parse_cadence_templates(&overlay).expect("templates");
     // Distinct species ids, so the lookup shows.
     let n = species.len() as u32;
@@ -323,7 +333,10 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         }
         cpu.mem.wr32(ANGLER_PTR, ANGLER);
         cpu.mem.wr32(ROD_PTR, ROD_ACTOR);
-        cpu.mem.wr32(BGM_LATCH, 1);
+        // Half the casts start with the hook-music latch down, so the strike
+        // swaps the battle theme in from the staging buffer's `+0x32000`.
+        cpu.mem.wr32(BGM_LATCH, u32::from(scenario % 2 == 0));
+        cpu.mem.wr32(0x8007_B85C, STAGING);
         cpu.mem.wr32(SPAWN_PTR, SPAWN_TABLE);
         cpu.mem.wr32(ROD_ACTOR + 0x44, MODEL);
         cpu.mem.wr32(MODEL + 4, MODEL + 0x100);
@@ -364,6 +377,7 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         assert_eq!(cpu.call(LURE_TICK, &[LURE]), Stop::Returned);
 
         let mut held_for = [0i32; 2];
+        let mut latch_down = scenario % 2 == 1;
         let mut held = 0u32;
         let mut ended = false;
         for frame in 0..3000 {
@@ -383,6 +397,11 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             if rng.below(6) == 0 {
                 next |= [0x2000u32, 0x4000, 0x8000][rng.below(3) as usize];
             }
+            // One cast in five holds the lift a long stretch at a time, so
+            // the lift runs into its `0x1000` clamp (`0x801D2AEC..0x801D2AFC`).
+            if scenario % 5 == 2 && (frame / 40) % 2 == 0 {
+                next |= 0x4000;
+            }
             for (i, bit) in [0x40u32, 0x80].into_iter().enumerate() {
                 held_for[i] = if next & bit != 0 { held_for[i] + fs } else { 0 };
                 if held_for[i] >= 24 {
@@ -396,7 +415,10 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             port.tick(input(held, edge, false), fs, CAST_POWER_STEP);
             let creaks = port.take_rod_creaks();
             port.take_spent_lures();
-            port.take_events();
+            let hooked_now = port
+                .take_events()
+                .iter()
+                .any(|e| matches!(e, legaia_engine_fishing::fishing::PondEvent::Hooked(_)));
 
             cpu.mem.wr32(HELD, held);
             cpu.mem.wr32(PRESSED, edge);
@@ -416,6 +438,27 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
                 "{:x?}",
                 cpu.calls
             );
+            lift_capped += u32::from(cpu.mem.rd32(LIFT) == 0x1000);
+            // The strike's music swap (`0x801D360C..0x801D3664`): with the
+            // latch down, the frame the port reports the hook installs
+            // category 5 from the battle staging buffer and raises the latch
+            // (`World::fishing_hook_music` answers the same event).
+            let install = installs.take();
+            if latch_down && hooked_now {
+                assert_eq!(
+                    install,
+                    Some((5, STAGING + 0x3_2000)),
+                    "scenario {scenario} frame {frame}: the hook's install"
+                );
+                assert_eq!(cpu.mem.rd32(BGM_LATCH), 1);
+                swapped += 1;
+                latch_down = false;
+            } else {
+                assert_eq!(
+                    install, None,
+                    "scenario {scenario} frame {frame}: no install"
+                );
+            }
             // The landing hands over to the machine's state `0x19`, whose
             // entry resets the band check and the cadence ring.
             if state_before == 1 && cpu.mem.rd16(LURE + 0x22) == 2 {
@@ -601,8 +644,8 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
          classed water {on_water} drift {drifted}"
     );
     assert!(
-        on_water > 0 && drifted > 0,
-        "water {on_water} drift {drifted}"
+        on_water > 0 && drifted > 0 && lift_capped > 0 && swapped > 5,
+        "water {on_water} drift {drifted} lift capped {lift_capped} swaps {swapped}"
     );
     // A strike wants a held reel against a credit that mostly comes from a
     // recognised gesture (`0x801D31F4`), which a random pad seldom makes:

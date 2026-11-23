@@ -33,7 +33,7 @@ use legaia_engine_ui::slot_info_caption_draws_for;
 use legaia_engine_ui::slot_info_caption_sprites_for;
 use legaia_engine_ui::slot_info_panel_draws_for;
 use legaia_engine_ui::slot_info_panel_text_draws_for;
-use legaia_engine_ui::slot_preview_grid_draws_for;
+use legaia_engine_ui::slot_preview_grid_draws_at;
 use legaia_engine_ui::title_draws_for;
 
 #[test]
@@ -625,7 +625,14 @@ fn slot_preview_grid_emits_one_frame_per_cell_plus_faces_plus_cursor() {
         icon_tile: None,
         foreign: true,
     };
-    let draws = slot_preview_grid_draws_for(&rects, &cells, 0, (0, 0), 1);
+    let draws = slot_preview_grid_draws_at(
+        &rects,
+        &cells,
+        0,
+        legaia_engine_ui::SLOT_GRID_SLIDE_LANDED,
+        (0, 0),
+        1,
+    );
     assert_eq!(
         draws.len(),
         15 + 3 + 1,
@@ -669,7 +676,14 @@ fn slot_preview_grid_emits_one_frame_per_cell_plus_faces_plus_cursor() {
 fn slot_preview_grid_rows_carry_the_retail_stagger_and_dim() {
     let rects = pinned_save_menu_rects();
     let cells = [SlotGridCell::default(); 15];
-    let draws = slot_preview_grid_draws_for(&rects, &cells, 0, (0, 0), 1);
+    let draws = slot_preview_grid_draws_at(
+        &rects,
+        &cells,
+        0,
+        legaia_engine_ui::SLOT_GRID_SLIDE_LANDED,
+        (0, 0),
+        1,
+    );
     // Cell quads land at the GP0-pinned positions: row 0 starts at
     // (98, 28), each row below shifts +4 px right and +20 down.
     assert_eq!((draws[0].dst.0, draws[0].dst.1), (98, 28));
@@ -687,7 +701,14 @@ fn slot_preview_grid_cursor_follows_selected_slot() {
     let cells = [SlotGridCell::default(); 15];
     // Slot 7 = row 1 col 2. Row 1 carries the retail +4 px row
     // stagger; the cursor rides the same slant.
-    let draws = slot_preview_grid_draws_for(&rects, &cells, 7, (0, 0), 1);
+    let draws = slot_preview_grid_draws_at(
+        &rects,
+        &cells,
+        7,
+        legaia_engine_ui::SLOT_GRID_SLIDE_LANDED,
+        (0, 0),
+        1,
+    );
     let cursor = draws.last().unwrap();
     let expected_x = SLOT_GRID_ORIGIN.0 + 2 * SLOT_GRID_PITCH_X + SLOT_GRID_ROW_STAGGER_X - 16;
     let expected_y = SLOT_GRID_ORIGIN.1 + SLOT_GRID_PITCH_Y - 2;

@@ -191,8 +191,9 @@ impl LegaiaMinigames {
     /// Key the Muscle Dome tally's **voice-attr** cues through the INTERVAL
     /// screen's `round`-th vsync.
     ///
-    /// The dome page replays `ScoreTallyRamp` from the INTERVAL screen's own
-    /// vsync rather than stepping it (`muscle_hub_quads_json`), on the hub's
+    /// The dome page replays the re-entered hub (`ReentryHub`) from the
+    /// INTERVAL screen's own vsync rather than stepping it
+    /// (`muscle_hub_quads_json`), on the hub's
     /// cadence (`HubCadence::ticks_through`: a game tick every second vsync
     /// on a step of two), so this replays the same way and keys only the
     /// steps it has not keyed yet - `muscle_tally_voiced_steps` is the
@@ -204,42 +205,39 @@ impl LegaiaMinigames {
     /// `arena_voice_cue` resolves the whole tuple and advances the rotating
     /// voice counter, exactly as the native window's INTERVAL arm does.
     pub fn muscle_tally_voice(&mut self, round: i32) -> u32 {
-        let Some(run) = self.muscle_run.as_ref() else {
-            return 0;
-        };
         let volume_word = legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
-        use legaia_engine_minigames::muscle_ringside::{HUB_FRAME_STEP, HubCadence};
-        let (mut ramp, _) = run.tally_roll();
+        use legaia_engine_minigames::muscle_ringside::HubCadence;
         let vsync = round.clamp(0, 1 << 16);
         let target = HubCadence::ticks_through(vsync);
         let from = self.muscle_tally_voiced_steps;
-        let mut attrs = Vec::new();
-        for step_idx in 0..target {
-            let step = ramp.tick(
-                HUB_FRAME_STEP,
-                self.muscle_tally_boost_at(step_idx),
-                volume_word,
-            );
-            if step_idx >= from {
-                // Re-resolve through the kernel rather than reusing the
-                // replayed step's own cue: the replay restarts the ramp's
-                // internal counter every call, so its voice slot would be
-                // 0 every time and every lane would key into one voice.
-                // The rotating counter belongs to the host, as retail's
-                // free-running `DAT_801D1AE4` does.
-                for _ in &step.cues {
-                    attrs.push(
-                        legaia_engine_minigames::other_game_overlay::arena_voice_cue(
-                            &mut self.muscle_tally_cue_counter,
-                            volume_word,
-                        ),
-                    );
-                }
-            }
-            if !step.rolling {
-                break;
-            }
+        let mut voiced = 0usize;
+        if self
+            .muscle_reentry_replay(
+                target,
+                |_| false,
+                |step, cues| {
+                    if step >= from {
+                        voiced += cues.len();
+                    }
+                },
+            )
+            .is_none()
+        {
+            return 0;
         }
+        // Re-resolve through the kernel rather than reusing the replayed
+        // step's own cue: the replay restarts the hub's internal counter
+        // every call, so its voice slot would be 0 every time and every lane
+        // would key into one voice. The rotating counter belongs to the host,
+        // as retail's free-running `DAT_801D1AE4` does.
+        let attrs: Vec<_> = (0..voiced)
+            .map(|_| {
+                legaia_engine_minigames::other_game_overlay::arena_voice_cue(
+                    &mut self.muscle_tally_cue_counter,
+                    volume_word,
+                )
+            })
+            .collect();
         self.muscle_tally_voiced_steps = self.muscle_tally_voiced_steps.max(target);
         let keyed = attrs
             .into_iter()

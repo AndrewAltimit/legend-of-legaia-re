@@ -121,3 +121,12 @@ impl World {
         self.open_battle_command(prev);
     }
 }
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// The ring's cancel arm for the retail differential
+    /// ([`Self::step_back_battle_command`]).
+    pub fn drive_step_back_battle_command(&mut self, actor: u8) {
+        self.step_back_battle_command(actor);
+    }
+}

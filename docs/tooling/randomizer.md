@@ -2119,6 +2119,15 @@ adds the curated ids ([`unused::UNUSED_ENEMY_IDS`]) to each scene's encounter
 candidate pool. It only takes effect with `--encounters random`: a
 multiset-preserving `shuffle` can't introduce a new monster, by construction.
 
+Monster ids 183..=186 (`0xB7..=0xBA`) are unused as well - byte-identical copies
+of Cort's first form, id 180 (`0xB4`), that no formation seats - and the toggle
+leaves them out on purpose ([`unused::UNSAFE_UNUSED_ENEMY_IDS`]). Cort's record
+carries no physical swing candidate, and the monster action picker `FUN_801E9FD4`
+takes `rand()` modulo the swing count on its physical arm (`div` at
+`0x801EA30C`), so an empty list reaches the divide-by-zero `break` at
+`0x801EA318`. Only id `0xB4` forces the magic arm (`0x801EA18C..0x801EA198`), so a
+copy would trap on about half its turns.
+
 **`--unused-items`** adds two items to the random-fill pool used by the `random`
 drop / chest / steal modes:
 

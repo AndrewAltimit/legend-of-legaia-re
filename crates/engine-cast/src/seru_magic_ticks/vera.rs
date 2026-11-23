@@ -254,8 +254,14 @@ pub fn vera_tick(
             }
             CastArmStep::Advance
         }
+        // Arm 10 leaves straight for `0xFF` (`sb v0,0x279(s2)` with `v0 =
+        // 0xFF` at `0x801F803C`), not through `phase + 1`.
+        VERA_FADE_ARM => {
+            c.phase = CHOREOGRAPHY_DONE_PHASE;
+            CastArmStep::Hold
+        }
         CHOREOGRAPHY_DONE_PHASE => CastArmStep::Finish,
-        p if p <= VERA_FADE_ARM => CastArmStep::Advance,
+        p if p < VERA_FADE_ARM => CastArmStep::Advance,
         _ => CastArmStep::Finish,
     });
     (step, outcome)

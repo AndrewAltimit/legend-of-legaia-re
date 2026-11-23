@@ -376,6 +376,23 @@ pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
             ArtsInputPhase::Targeting { picker } => {
                 aim_press(picker, aimed_foe(w, None), Some(arts.actor))
             }
+            // The entry ends on the target cursor itself (retail's `0x5A`):
+            // a Cross there commits on the member's current target, so a
+            // hand that aims elsewhere steps the cursor first and lets the
+            // aim above walk it on.
+            ArtsInputPhase::Review => {
+                let n = w.party.party_count.clamp(1, 3);
+                let current = w
+                    .actors
+                    .get(usize::from(arts.actor))
+                    .map(|a| a.battle.active_target)
+                    .filter(|&t| t >= n && t < n + 5)
+                    .map(|t| t - n);
+                match aimed_foe(w, None) {
+                    Some(want) if current != Some(want) => PadButton::Right.mask(),
+                    _ => PadButton::Cross.mask(),
+                }
+            }
             _ => PadButton::Cross.mask(),
         };
     }
@@ -798,7 +815,16 @@ pub(super) fn drain_battle(session: &mut NativeSession) -> Option<Run> {
     }
     PAD_DEADLINE.with(|d| d.set(d.get().saturating_add(lent)));
     let start = session.frames;
+    // A fight that forbids running and ends with the party standing is a
+    // boss beaten ([`super::continuous::BOSS_WON`]).
+    let boss = session.host.world.battle.no_escape;
     let r = fight_battle(session);
+    if boss
+        && super::segment::wiped(session).is_none()
+        && session.host.world.mode != SceneMode::Battle
+    {
+        super::continuous::BOSS_WON.with(|b| b.set(true));
+    }
     let used = session.frames.saturating_sub(start).min(lent);
     PAD_DEADLINE.with(|d| d.set(d.get().saturating_sub(lent - used)));
     PAD_BATTLE_LEFT.with(|l| l.set(l.get().saturating_sub(used)));

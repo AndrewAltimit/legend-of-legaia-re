@@ -602,6 +602,14 @@ struct Seeded {
     captured: Option<usize>,
     /// The system flag bank `0x80085758` (`FUN_8003CE64`'s, MSB first).
     system: std::rc::Rc<Vec<u8>>,
+    /// The options screen's event-vibration word `_DAT_800845A8` is set.
+    vibration_off: bool,
+    /// `FUN_801D65D8`, the staged mode switch, is still stepping.
+    switch_stepping: bool,
+    /// The camera mover `FUN_8003CF04` finds is up and live.
+    camera_glide: bool,
+    /// The confirm mask is in this frame's new-press word.
+    pressed: bool,
 }
 impl FieldFlagsHost for Seeded {
     fn global_flags(&self) -> u32 {
@@ -637,10 +645,14 @@ impl FieldTerrainHost for Seeded {
 impl FieldCameraHost for Seeded {}
 impl FieldCameraMotionHost for Seeded {
     fn camera_glide_live(&mut self) -> bool {
-        false
+        self.camera_glide
     }
 }
-impl FieldScreenHost for Seeded {}
+impl FieldScreenHost for Seeded {
+    fn event_vibration_off(&self) -> bool {
+        self.vibration_off
+    }
+}
 impl FieldAudioHost for Seeded {
     fn bgm_ready(&mut self, sub_op: u8) -> bool {
         sub_op != 0xA
@@ -653,10 +665,13 @@ impl FieldPartyInventoryHost for Seeded {
 }
 impl FieldDialogMenuHost for Seeded {
     fn press_prompt(&mut self, _x: u16, _y: u16) -> bool {
-        false
+        self.pressed
     }
     fn op4c_n5_sub3_dialog_wait(&mut self, _ctx: &mut FieldCtx) -> bool {
         true
+    }
+    fn op4c_n5_sub4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
+        self.switch_stepping
     }
     fn op49_state(&self) -> Op49State {
         self.op49
@@ -750,12 +765,42 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
     let clean = cpu.mem.clone();
     let mut corpus = corpus();
     corpus.extend(crate::field_vm::synthetic());
+    // `43 09`'s seat words with the keep sentinel `-1` (`FUN_8003CE9C`
+    // reads `0xFFFF`; `0x801DF7E0` / `0x801DF7F8` skip the store), which no
+    // shipped script writes.
+    let kept: Vec<_> = corpus
+        .iter()
+        .filter(|(_, _, label)| label == "43 09")
+        .flat_map(|(script, pc, label)| {
+            (0..3).map(move |k| {
+                let mut s = script.clone();
+                if let Some(w) = s.get_mut(pc + 2 + 2 * k..pc + 4 + 2 * k) {
+                    w.copy_from_slice(&[0xFF, 0xFF]);
+                }
+                (s, *pc, label.clone())
+            })
+        })
+        .collect();
+    assert!(!kept.is_empty(), "the corpus carries 43 09");
+    corpus.extend(kept);
+    // `4C 51` with its fourth operand `0x63`, the player arm's clip
+    // re-seat (`0x801E196C`), which no shipped script writes.
+    let clip: Vec<_> = corpus
+        .iter()
+        .filter(|(_, _, label)| label == "4C 51")
+        .filter_map(|(script, pc, label)| {
+            let mut s = script.clone();
+            *s.get_mut(pc + 5)? = 0x63;
+            Some((s, *pc, label.clone()))
+        })
+        .collect();
+    corpus.extend(clip);
     let mut rng = Rng(0x5345_4544);
 
     let mut ran = 0u32;
     let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
     for (script, pc, label) in &corpus {
-        for variant in 0..8u32 {
+        for variant in 0..10u32 {
             cpu.mem = clean.clone();
             cpu.regs.r[GP] = gp;
             cpu.mem.load(SCRIPT, script);
@@ -770,6 +815,10 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                 light: false,
                 captured: None,
                 system: system.clone(),
+                vibration_off: false,
+                switch_stepping: false,
+                camera_glide: false,
+                pressed: false,
             };
             if rng.below(4) == 0 {
                 // A pad that matches a compass entry.
@@ -805,6 +854,67 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                     cpu.mem.wr32(CTX + 0x94, 0);
                     cpu.mem.wr32(PLAYER, CTX);
                 }
+                // The globals the corpus leaves clear, which gate host
+                // effects only (the heading store under `_DAT_8007B6A8`, the
+                // rumble option `_DAT_800845A8`, `_DAT_8007B6AC`'s arm, the
+                // pad-octant store under the idle sentinel `_DAT_8007B6B0 ==
+                // -1000`) and so leave the next PC and the modelled fields as
+                // the port's step leaves them.
+                8 => {
+                    // Calls the corpus answers with a miss, answered with a
+                    // hit: the bag consume finds nothing (`0x100`, `4C 52`'s
+                    // unequip fallback), the trigger-block lookup a record
+                    // (`4C 83`'s tile write) and the name lookup an actor
+                    // (`43`'s flag store), each a host effect at the same PC.
+                    cpu.hook(0x8004_2310, |r, _| r.r[2] = 0x100);
+                    cpu.hook(0x801D_5630, |r, _| r.r[2] = 0x8016_0000);
+                    cpu.hook(0x8003_CF04, |r, _| r.r[2] = 0x8016_0100);
+                    // The name lookup is also `4C CD` / `4C D1`'s camera mover,
+                    // live with its dead bit `+0x10 & 8` clear, or dead
+                    // (`0x801E2B60..0x801E2B6C`).
+                    let dead = rng.below(2) == 0;
+                    cpu.mem.load(0x8016_0100, &[0u8; 0x20]);
+                    cpu.mem.wr32(0x8016_0110, if dead { 8 } else { 0 });
+                    host.camera_glide = !dead;
+                    // `4C C3`'s placement record (`FUN_8003D0BC`), its seat
+                    // bytes with the half-tile bit 7 (`0x801E2754`,
+                    // `0x801E2778`); the seat is the host's.
+                    cpu.mem.load(
+                        0x8016_0200,
+                        &[0x01, 0x00, 0x85, 0x83, 0x00, 0x00, 0x00, 0x00],
+                    );
+                    cpu.hook(0x8003_D0BC, |r, _| r.r[2] = 0x8016_0200);
+                    // A confirm pressed this frame: `4C D0`'s prompt takes it
+                    // (`0x801E2AE4..0x801E2B04`).
+                    cpu.mem.wr32(0x8008_46D0, 0x40);
+                    cpu.mem.wr32(0x8007_B874, 0x40);
+                    host.pressed = true;
+                    host.vibration_off = true;
+                    // A player context that is not this one: the player arms
+                    // (`0x801E0FB0..`) write it, which the port leaves to its
+                    // host.
+                    cpu.mem.load(0x8014_0000, &[0u8; 0x100]);
+                    cpu.mem.wr32(PLAYER, 0x8014_0000);
+                    cpu.mem.wr8(0x8007_B6A8, 1);
+                    cpu.mem.wr32(0x8008_45A8, 1);
+                    cpu.mem.wr32(0x8007_B6AC, 1);
+                    cpu.mem.wr32(0x8007_B6B0, (-1000i32) as u32);
+                }
+                // The player's own context under the same globals: the
+                // player arms of `4C 51` read the clip override
+                // `_DAT_8007B6AC` (`0x801E19B4`).
+                9 => {
+                    // The staged mode switch still stepping: `4C 54` holds
+                    // (`0x801E1B10..0x801E1B18`).
+                    cpu.hook(0x801D_65D8, |r, _| r.r[2] = 1);
+                    host.switch_stepping = true;
+                    host.vibration_off = true;
+                    cpu.mem.wr32(PLAYER, CTX);
+                    cpu.mem.wr8(0x8007_B6A8, 1);
+                    cpu.mem.wr32(0x8008_45A8, 1);
+                    cpu.mem.wr32(0x8007_B6AC, 1 + rng.below(8));
+                    cpu.mem.wr32(0x8007_B6B0, (-1000i32) as u32);
+                }
                 _ => {}
             }
             cpu.mem.wr32(FLAGS, host.flags);
@@ -831,7 +941,17 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                 wr(&mut cpu, off, width, v);
                 seat(&mut ctx, name, v);
             }
-            if cpu.call(VM, &[SCRIPT, *pc as u32, CTX]) != Stop::Returned {
+            let returned = cpu.call(VM, &[SCRIPT, *pc as u32, CTX]) == Stop::Returned;
+            for va in [
+                0x8004_2310,
+                0x801D_5630,
+                0x8003_CF04,
+                0x801D_65D8,
+                0x8003_D0BC,
+            ] {
+                cpu.unhook(va);
+            }
+            if !returned {
                 continue;
             }
             let retail_pc = cpu.regs.r[2] as usize & 0xFFFF;
@@ -881,7 +1001,7 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
             // `A3 F8` moves the player, so retail's player arms
             // (`0x801DE9A8..0x801DEA84`, `0x801DEC80..0x801DECA8`) are held
             // to the next PC only.
-            if matches!(variant, 5 | 7) && matches!(label.as_str(), "22" | "23") {
+            if matches!(variant, 5 | 7 | 9) && matches!(label.as_str(), "22" | "23") {
                 wrong.retain(|w| w.starts_with("pc "));
             }
             if !wrong.is_empty() && label != "4C 50" {
@@ -977,6 +1097,10 @@ fn an_attached_light_is_found_where_retail_finds_it() {
                 light: mine.is_some(),
                 captured: None,
                 system: std::rc::Rc::new(Vec::new()),
+                vibration_off: false,
+                switch_stepping: false,
+                camera_glide: false,
+                pressed: false,
             };
             let mut ctx = FieldCtx::default();
             let port = match step(&mut host, &mut ctx, &script, pc) {

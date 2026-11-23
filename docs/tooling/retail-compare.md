@@ -2878,6 +2878,21 @@ lands the total completes (`BattleState::forced_melee_total`). The rolls
 still draw, so the stream advances as retail's did. `noa_levelup_fight_pre`
 reads `camera` `.970` to `1.000` and `image` `.790` to `.996`.
 
+A party **row-aimed** cast (Theeder's `0x82`, and `0x86` / `0x8D` / any
+every-enemy cast) pushes each struck seat on the ring with a `0` amount and
+adds the hit to its row's halfword in the value window `0x801F6980` instead
+(rows listed at `0x801F6978`, [battle-hud](../subsystems/battle-hud.md)). Where
+every push of the action reads `0`, `action_hit_sequence` and `action_hits`
+take each listed seat's amount off the window, so the bars are seeded ahead of
+the hits and the replay's cast lands retail's amounts: the seed rides an
+in-flight cast too (`SeedPlan::Cast`, seeded with `LEGAIA_BATTLE_INFLIGHT` on
+both sides), and the module's own roll (`World::summon_module_roll`) or the
+fold takes the struck seat's push wherever it sits, the module's push order
+(`3 / 5 / 4`) not being the fold's. `theeder_summon_value_rows_rising` read
+rows `279 / 274 / 280` against retail's `270 / 270 / 283` and `enemy_hp` `.75`;
+seeded, the rows match and `enemy_hp` is `1.0`. A harness seat: the rolls
+still draw.
+
 An unknown amount ahead of a known one leaves the known tail its room, and
 the last unknown hit ahead of a tail the ring still holds whole takes what
 the total leaves after it, so that tail lands its own captured amounts.
@@ -4130,6 +4145,31 @@ mesh where the engine draws the unpatched member; with the capture's
 `resident_disc` found, the engine assembles the same swapped mesh from the
 patched player files and that part of the distance is gone.
 
+**A seat the cast already placed.** PROT 0904 (Theeder) seats its creature
+once, on arm 4, half a unit short of the victim along the caster's line, and
+its sweep then knocks the victims back. A capture past the sweep
+(`theeder_summon_value_rows_rising` / `_parked`) holds the victim where the
+beam left it, and the position ring (24 passes) does not reach back to the
+hit, so a replay seeded on the captured ground seated the creature `380`
+units off retail's and framed that. The creature's seat is the history the
+capture keeps: slot 7's `+0x34` / `+0x38` and facing `+0x46`. The seed hands
+it over whole (`BattleState::summon_seat_seed`, `LEGAIA_SEAT_SUMMON_SEAT`;
+the arm-4 seat also reads the caster's ground at that pass, which has moved
+on too), and puts the victim back where the seat names it, half a unit along
+the seat's facing (`RetailBattle::inflight_ground`), so the replayed knockback
+starts where retail's did. Both apply only in `0x35` / `0x36`, where the
+module phase byte is the module's.
+
+The gate places the frame inside the arm by the module's own clocks: arm 13
+(the retract) by the trail count `0x801F91FC` (`PhaseGate::trail_count`, the
+`r<n>` suffix) and arm 14 by the settle word `0x801F9204`
+(`PhaseGate::module_countdown`, as PROT 0903's arms). Together they took
+`theeder_summon_value_rows_rising` from `.403` to `.648` and `_parked` from
+`.614` to `.876`, the camera to retail's exactly. What is left is the
+creature's pose, the damage digits (the replay's own rolls) and, on the rising
+frame, the retract fan: retail's ordering table holds it, yet neither
+framebuffer shows it.
+
 A replayed cast is one frame of a cast that runs for hundreds of vsyncs, and
 on most summons that frame is the white flash. The
 [cast-sequence oracle](cast-sequence-oracle.md) scores the whole cast frame by
@@ -4241,9 +4281,10 @@ the drive onto CONTINUE needs one. `0x15` is a committed pill (the card read):
 the drive picks the committed port off `_DAT_8007B834`, commits at tick `940`
 and captures the card screen's own frame count since the commit
 (`_DAT_801EF124`) later, with the scenario's card in port 2 (`--card`) when
-the capture committed `SLOT 2`. The engine's card read is instant, so a
-capture caught mid-read (`load_slot2_grid`) scores the read's end against
-retail's placeholder cells. Any other title sub-mode (the launch fade
+the capture committed `SLOT 2`. The engine runs retail's card check
+([save-screen](../subsystems/save-screen.md#the-card-check-under-now-checking)),
+so a capture caught mid-check (`load_slot2_grid`, the check's 235th frame)
+shows the grid of `USED` cells and the empty panel under the dialog. Any other title sub-mode (the launch fade
 `0x16` a card-boot capture is caught in) is kept with a `menu not seedable:`
 reason and counted as a classified limit.
 
@@ -4385,7 +4426,14 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   attract card, then Right to the capture's cursor `DAT_801DBF70` once the
   lineup takes the pad. The lineup's one `rand()` lands in a focus id no
   fighter carries, so the screen does not depend on it. The `minigame` channel
-  adds the state and the cursor.
+  adds the state and the cursor. The lineup's idle clips are the frame's
+  clock - nothing else counts the lineup's age - so the seed reads each
+  fighter's clip cursor `+0x68` and step `+0x6A` (found by its seat and idle
+  clip, `baka_lineup`) and the replay takes its frame where its own lineup
+  (`baka_fighter::lineup_idle_frame`) stands a game frame short of them, the
+  displayed frame's lag. The two select states read `.974` to `1.000` and
+  `.980` to `.998`: the fixed settle had caught the fighters mid-idle at
+  other poses.
 - **The slot machine's cash-out picker and rules pages** (`0x32`, `0x35`,
   `0x36`) on a machine never played (balance still the bank's): Triangle opens
   the picker, Down to its cursor `DAT_801D4110`; row 2's Cross fades into the

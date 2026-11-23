@@ -1383,6 +1383,7 @@ pub fn save_select_overlay_draws(
         caption: p.caption,
         caption_icon: p.caption_icon,
         panel_y_offset: p.panel_y_offset,
+        grid_t: p.grid_t,
     });
     let view = ui::SaveSelectOverlayView {
         title: m.title,
@@ -1394,6 +1395,7 @@ pub fn save_select_overlay_draws(
         slide_t: m.slide_t,
         info_t: m.info_t,
         now_checking: m.now_checking,
+        now_checking_t: m.now_checking_t,
         banner: m.banner.map(|b| ui::CardBannerView {
             lines: b.lines,
             note: b.note,

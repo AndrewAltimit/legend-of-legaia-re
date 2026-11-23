@@ -69,16 +69,26 @@ pub const fn theeder_sweep_phase(ctx_6d8: u16) -> u16 {
     ctx_6d8.wrapping_add(theeder_ramp_per_tick(THEEDER_SWEEP_ARM)) & 0x0FFF
 }
 
-/// Whether the engine's tick carries one of retail's arm 12 passes. Retail's
-/// frame step is 4 through this arm, so its word moves `0x100` a pass where the
-/// engine's moves `0x40` a tick, and only every fourth tick samples what retail's
-/// cone test sees. A test on the word's small values would hit a victim the first
-/// swing of retail's ray steps over. `ctx_6d8` is the word after this tick's
-/// ramp: retail ramps (`0x801F7ADC..0x801F7AF0`) and then tests the ray it
-/// builds from the ramped word.
+/// Whether the engine's tick carries one of retail's arm 12 passes. The
+/// engine ramps the word `0x40` a tick and runs the arm on its table's step 4
+/// (`cast_module_frame_step`), so only every fourth tick samples what a
+/// retail pass's cone test sees. Retail's own passes follow its frame step: a
+/// Mednafen recording of `theeder_summon_mid_cast` runs arm 12 at step 2 and
+/// tests on `0x80 * k` from `0x80`, striking seat 3 (dead ahead) on its first
+/// test, seat 5 at `0x280` and seat 4 at `0x980` (vsyncs `+0 / +8 / +36`).
+/// Ticks on `0x40 + 0x100 * k` land those three hits on the same vsync gaps
+/// (`0x40 / 0x240 / 0x940`, one vsync earlier); ticks on `0x100 * k` struck
+/// seat 5 first and seat 3 at the `0x800` crossing, eight passes late.
+/// `ctx_6d8` is the word after this tick's ramp: retail ramps
+/// (`0x801F7ADC..0x801F7AF0`) and then tests the ray it builds from the
+/// ramped word.
 pub const fn theeder_pass_tested(ctx_6d8: u16) -> bool {
-    ctx_6d8 >= 0x100 && ctx_6d8 & 0xFF == 0
+    ctx_6d8 & 0xFF == THEEDER_FIRST_PASS_PHASE
 }
+
+/// The word the engine's first tested arm-12 tick stands on: one tick's ramp,
+/// the tested ticks after it `0x100` apart ([`theeder_pass_tested`]).
+pub const THEEDER_FIRST_PASS_PHASE: u16 = 0x40;
 
 /// The render flag PROT 0904 raises the summon seat to in arm 4.
 pub const THEEDER_RISE_RENDER_FLAG: u8 = 4;

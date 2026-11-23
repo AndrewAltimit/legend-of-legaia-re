@@ -35,6 +35,8 @@ pub struct SaveSelectPreviewView<'a> {
     pub caption_icon: Option<u8>,
     /// The info panel's slide delta from its parked y (`0` = landed).
     pub panel_y_offset: i32,
+    /// The grid's slide timer ([`slot_preview_grid_draws_at`]).
+    pub grid_t: u16,
 }
 
 /// A save-select screen for [`save_select_overlay_draws`].
@@ -57,6 +59,8 @@ pub struct SaveSelectOverlayView<'a> {
     /// The info-panel timer: the confirm messagebox rides it too.
     pub info_t: u16,
     pub now_checking: bool,
+    /// The "Now checking" dialog's own slide timer (retail `DAT_801ef160`).
+    pub now_checking_t: u16,
     /// A card-operation messagebox over the preview: the write / read beat
     /// and the result line after a confirmed Save or Load (two lines; an
     /// empty second line centres the first). Drawn on the "Now checking"
@@ -284,49 +288,16 @@ pub fn save_select_overlay_draws(
             });
         }
     }
-    if view.now_checking {
-        darken_under(
-            &mut out,
-            darken_level_small(view.slide_t),
-            rects,
-            stage_origin,
-            stage_scale,
-        );
-        let x = slide(
-            NOW_CHECKING_SLIDE_START_X,
-            NOW_CHECKING_SLIDE_TARGET_X,
-            view.slide_t,
-        );
-        let offset = (x - NOW_CHECKING_SLIDE_TARGET_X, 0);
-        if let Some(rects) = rects {
-            let (px, py) = NOW_CHECKING_PANEL_POS;
-            let (pw, ph) = NOW_CHECKING_PANEL_SIZE;
-            occlude_text_under_frames(
-                &mut out.texts,
-                &[(px + offset.0, py + offset.1, pw as i32, ph as i32)],
-                stage_origin,
-                stage_scale,
-            );
-            out.sprites.extend(now_checking_panel_draws_for(
-                rects,
-                stage_origin,
-                stage_scale,
-                offset,
-            ));
-        }
-        out.texts.extend(now_checking_text_draws_for(
-            font,
-            stage_origin,
-            stage_scale,
-            offset,
-        ));
-    }
+    // The preview is linked after the "Now checking" panel, so under its
+    // darkening and its box: drawn first here (the grid and the empty info
+    // panel come up under the dialog once the card answers).
     if let Some(p) = view.preview.as_ref() {
         if let Some(rects) = rects {
-            out.sprites.extend(slot_preview_grid_draws_for(
+            out.sprites.extend(slot_preview_grid_draws_at(
                 rects,
                 p.cells,
                 p.cell,
+                p.grid_t,
                 stage_origin,
                 stage_scale,
             ));
@@ -366,6 +337,43 @@ pub fn save_select_overlay_draws(
                 stage_scale,
             ));
         }
+    }
+    if view.now_checking {
+        darken_under(
+            &mut out,
+            darken_level_small(view.now_checking_t),
+            rects,
+            stage_origin,
+            stage_scale,
+        );
+        let x = slide(
+            NOW_CHECKING_SLIDE_START_X,
+            NOW_CHECKING_SLIDE_TARGET_X,
+            view.now_checking_t,
+        );
+        let offset = (x - NOW_CHECKING_SLIDE_TARGET_X, 0);
+        if let Some(rects) = rects {
+            let (px, py) = NOW_CHECKING_PANEL_POS;
+            let (pw, ph) = NOW_CHECKING_PANEL_SIZE;
+            occlude_text_under_frames(
+                &mut out.texts,
+                &[(px + offset.0, py + offset.1, pw as i32, ph as i32)],
+                stage_origin,
+                stage_scale,
+            );
+            out.sprites.extend(now_checking_panel_draws_for(
+                rects,
+                stage_origin,
+                stage_scale,
+                offset,
+            ));
+        }
+        out.texts.extend(now_checking_text_draws_for(
+            font,
+            stage_origin,
+            stage_scale,
+            offset,
+        ));
     }
     if let Some(banner) = view.banner.as_ref() {
         if banner.work {
@@ -493,6 +501,7 @@ mod tests {
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
+            now_checking_t: 0,
             banner: None,
             preview: None,
             confirm: None,
@@ -507,6 +516,7 @@ mod tests {
                 caption: Some("Free block"),
                 caption_icon: None,
                 panel_y_offset: 0,
+                grid_t: SLOT_GRID_SLIDE_LANDED,
             }),
             confirm: Some(("Do you wish to save?", 0)),
             ..base
@@ -557,6 +567,7 @@ mod tests {
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
+            now_checking_t: 0,
             banner: None,
             preview: Some(SaveSelectPreviewView {
                 cells: &cells,
@@ -565,6 +576,7 @@ mod tests {
                 caption: Some("Able to save."),
                 caption_icon: None,
                 panel_y_offset: 0,
+                grid_t: SLOT_GRID_SLIDE_LANDED,
             }),
             confirm: Some(("Do you wish to save?", cursor)),
             location_tab: None,
@@ -631,6 +643,7 @@ mod tests {
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
+            now_checking_t: 0,
             banner: None,
             preview: Some(SaveSelectPreviewView {
                 cells: &cells,
@@ -639,6 +652,7 @@ mod tests {
                 caption: None,
                 caption_icon: None,
                 panel_y_offset: 0,
+                grid_t: SLOT_GRID_SLIDE_LANDED,
             }),
             confirm,
             location_tab: None,
@@ -702,6 +716,7 @@ mod tests {
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
+            now_checking_t: 0,
             banner: Some(banner(0x800)),
             preview: Some(SaveSelectPreviewView {
                 cells: &cells,
@@ -710,6 +725,7 @@ mod tests {
                 caption: Some("Able to save."),
                 caption_icon: None,
                 panel_y_offset: 0,
+                grid_t: SLOT_GRID_SLIDE_LANDED,
             }),
             confirm: None,
             location_tab: None,
@@ -758,6 +774,7 @@ mod tests {
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
+            now_checking_t: 0,
             banner: None,
             preview: Some(SaveSelectPreviewView {
                 cells: &cells,
@@ -766,6 +783,7 @@ mod tests {
                 caption: Some("Able to save."),
                 caption_icon: None,
                 panel_y_offset: 0,
+                grid_t: SLOT_GRID_SLIDE_LANDED,
             }),
             confirm: None,
             location_tab: None,

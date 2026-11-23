@@ -33,6 +33,10 @@ pub struct MinigameState {
     /// The pond's SFX cue clock ([`PondCueClock`]): the hook cue on the
     /// strike and the celebration's cues on their retail frames.
     pub fishing_cues: PondCueClock,
+    /// The hook-music latch `DAT_801D92A4`: up from the strike that swapped
+    /// the battle theme in until the session swaps the venue's track back
+    /// (`World::tick_fishing`).
+    pub fishing_hook_music: bool,
     /// The scene mode to restore when the fishing minigame ends
     /// (`World::enter_fishing` snapshots the interrupted mode).
     pub fishing_return_mode: SceneMode,
@@ -167,7 +171,7 @@ pub struct MinigameState {
     /// off the lead's HP at the leg's end by
     /// [`legaia_engine_minigames::muscle_ringside::still_prot_index`]. `None` until a leg
     /// ends. A re-entered hub draws it as its backdrop
-    /// ([`legaia_engine_minigames::muscle_ringside::HubBackdrop`]).
+    /// ([`legaia_engine_minigames::muscle_ringside::ReentryHub`]).
     pub muscle_ringside_still: Option<u32>,
     /// The arena hub is between two legs of an open contest: a survived leg
     /// with the course not exhausted keeps the mode on the arena, and the
@@ -390,6 +394,7 @@ impl MinigameState {
             dance_free_play_song: 0,
             fishing_events: Vec::new(),
             fishing_cues: PondCueClock::default(),
+            fishing_hook_music: false,
             fishing_exchange: None,
             fishing_exchange_dialog: Default::default(),
             fishing_exchange_cursor: 0,

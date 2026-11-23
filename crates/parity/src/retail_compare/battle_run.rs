@@ -1205,6 +1205,9 @@ pub(super) fn battle_image(
             .iter()
             .map(|c| c.map_or_else(|| "-".to_string(), |c| c.to_string()))
             .collect();
+        if let Some((x, z, f)) = battle.summon_seat_seed() {
+            env.push(("LEGAIA_SEAT_SUMMON_SEAT", format!("{x}:{z}:{f}")));
+        }
         env.push((
             "LEGAIA_BATTLE_INFLIGHT",
             format!(
@@ -1312,7 +1315,7 @@ pub(super) fn battle_image(
                 env.push(("LEGAIA_CAPTURE_DISPLAY_LAG", battle.display_lag.to_string()));
             }
         }
-        tick += legaia_engine_capture::battle_drive::DRIVE_DEADLINE;
+        tick += legaia_engine_capture::battle_drive::DRIVE_DEADLINE.max(u64::from(drive.budget()));
     }
     match crate::retail_compare_image::engine_frame_with(
         exe,

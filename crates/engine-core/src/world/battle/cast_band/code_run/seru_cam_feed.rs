@@ -50,6 +50,10 @@ impl World {
             // `FUN_801DCEAC` walks retail numbering (party `0..3`, monsters
             // `3..7`); the engine seats monsters straight after the party.
             let seats = self.battle_seat_map();
+            // PROT 0920's arm 8 shows every living monster of seats `3..7`
+            // (`0x801F752C..0x801F755C`) before its `FUN_801DCEAC` call
+            // (`0x801F7578`), so the aim counts the row the band hid.
+            let row_shown_first = entry == 920 && self.casting.module_phase == 8;
             let mut slots = [GroupSlot {
                 live: false,
                 x: 0,
@@ -64,7 +68,8 @@ impl World {
                 };
                 let live = seats.is_party(engine)
                     || (t.battle_monster_id.is_some()
-                        && t.battle.render_flag != RENDER_FLAG_HIDDEN);
+                        && (t.battle.render_flag != RENDER_FLAG_HIDDEN
+                            || (row_shown_first && t.battle.hp != 0)));
                 *out = GroupSlot {
                     live,
                     x: t.move_state.world_x,
