@@ -200,7 +200,7 @@ pub(super) fn interact_at(
     let (bx, bz) = player_xz(session);
     let mut last = Run::Released;
     // Whether the last seat tried was a placement, which is given back.
-    let mut placed_last = !pad_hand();
+    let mut placed_last = !pad_props();
     // The pad hand walks to a seat and leans in until the probe lands, as a
     // player does; only when its walk reaches none of them does it fall back
     // to placing the player ([`shortcut`] `examine_seat`). Both passes keep
@@ -209,7 +209,7 @@ pub(super) fn interact_at(
     // they are examined from, and the way to `tunnela` opens on one set of
     // facings; tried nearest side first, the dial spun past it).
     let seats = interact_seats(session, (nx, nz), walked);
-    let attempts: Vec<((i16, i16, bool), bool)> = if pad_hand() {
+    let attempts: Vec<((i16, i16, bool), bool)> = if pad_props() {
         seats
             .iter()
             .map(|&s| (s, true))

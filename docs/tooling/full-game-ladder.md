@@ -1033,6 +1033,7 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, naming its scene in the resume trailer, so `legaia-engine`'s `--resume-save` lands there without `--scene`; the rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
+| `LEGAIA_FGL_PAD_PROPS=1` | Plays examines, touches and box talks on the pad ([shortcuts](#shortcuts)). |
 | `LEGAIA_FGL_NO_SHORTCUTS=1` | Refuses every fallback placement the pad hand would make ([shortcuts](#shortcuts)): the run is played on the pad alone. |
 | `LEGAIA_FGL_SKIP_OPENING=1` | Presses through the opening, so the first Cross takes the hosts' intro hand-off ([input conventions](#input-conventions-in-both-passes)). |
 | `LEGAIA_FGL_HOST_OPTIONS=1` | Pushes the play hosts' default options at session open (precise movement among them): a probe, not the measured configuration. |
@@ -1673,14 +1674,11 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   P2[42], Lord Saryu's audience, spans (104..107, 50) and (107, 50) is walled
   in): when the walk finds no path to its tile, or stalls at its edge, the
   band's other tiles are tried, nearest first;
-- an **examined** or **touched** prop is walked to and leaned on until the
-  retail probe lands on it (an examine) or its record starts (a touch); the
-  player walks on from where it stood. Its seats are tried in the seated
-  tier's order of sides, since a record can answer by where the player
-  stands: `stone`'s statues turn to face the side they are examined from,
-  and tried nearest side first the dial spun past the facings that open the
-  way to `tunnela`. Only a prop no seat of which the walk reaches is played
-  the seated tier's way, and that is counted ([the shortcuts](#shortcuts));
+- an **examined** or **touched** prop is played the seated tier's way: the
+  player is placed on a seat beside it and turned to it, and each placement
+  is counted ([the shortcuts](#shortcuts)). `LEGAIA_FGL_PAD_PROPS=1` walks to
+  the seats instead, in the seated tier's order of sides, and leans in until
+  the probe lands or the prop's record starts;
 - an **object door** or a **boss stager** is walked up to and leaned on. A
   stager's fight fires on the next field step, so the walk that step belongs
   to fights it instead of fleeing it;
@@ -2189,9 +2187,24 @@ pad hand counts; the seated tier places the player by definition.
 | `prologue_skip` | The opening skipped on the hosts' hand-off (`LEGAIA_FGL_SKIP_OPENING=1` only). |
 | `gate_order` | A press the pause menu or the naming prompt took while a card or a crawl held the field's pad, which the gate once dropped. |
 
-`LEGAIA_FGL_NO_SHORTCUTS=1` refuses every fallback placement: a stretch is
-then played on the pad alone, and a stall it shows is a candidate defect of
-the #653 class, to be reproduced through `claim_tick` and fixed in the engine.
+`LEGAIA_FGL_PAD_PROPS=1` plays examines, touches and box talks on the pad:
+the hand walks to each seat in the seated tier's order of sides, leans in
+until the probe lands, turns to an interact-class door before its tap, and
+places the player only where no seat is in reach (in a scene that rolls
+encounters, within sixteen tiles of planned path). It is not yet the
+measured configuration. Walked, a prop answers by the side it is reached
+from and by the fights met on the way, so the run's story branches part
+from the placed run's: `stone`'s statues turn to face their examiner, and
+`dolk`'s Lightning Gate rooms, which retail's player left alone, are a long
+walk across a rolling castle. A run under it stopped in Uru Mais on every
+stream, on a talk whose branch read flags an earlier walked beat had left
+otherwise; bringing it to the full game is the next step for these
+shortcuts.
+
+`LEGAIA_FGL_NO_SHORTCUTS=1` refuses every fallback placement (and implies
+`LEGAIA_FGL_PAD_PROPS=1`): a stretch is then played on the pad alone, and a
+stall it shows is a candidate defect of the #653 class, to be reproduced
+through `claim_tick` and fixed in the engine.
 
 The hand keeps some writes on purpose, each marked `Harness` in the code: the
 rand stream's deals, a reload from the engine's own save (the game-over hold,

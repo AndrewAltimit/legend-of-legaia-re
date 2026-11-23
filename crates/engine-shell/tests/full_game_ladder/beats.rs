@@ -1557,7 +1557,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
     // ([`shortcut`] `touch_seat`). Both passes keep the seated hand's order
     // of sides, as [`interact_at`] does.
     let sides = [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)];
-    let attempts: Vec<((i16, i16), bool)> = if pad_hand() {
+    let attempts: Vec<((i16, i16), bool)> = if pad_props() {
         sides
             .into_iter()
             .map(|d| (d, true))
@@ -1805,7 +1805,7 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
     let inside = |s: &NativeSession| inside_box_tile(s, t);
     // The seated hand turns the player to each sector until the probe lands;
     // the pad hand reads the probe as the lean left it.
-    let by_pad = pad_hand();
+    let by_pad = pad_props();
     let reaches = |s: &mut NativeSession| {
         if by_pad {
             return s.host.world.field_interact_probe_slot() == Some(slot);

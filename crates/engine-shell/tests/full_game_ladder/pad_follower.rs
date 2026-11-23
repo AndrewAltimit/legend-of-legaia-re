@@ -1034,7 +1034,8 @@ pub(super) fn pad_walk(
                 // north face at the box's corner, where the west-facing
                 // probe falls past the box, and the gate was opened only
                 // by a seat.
-                let probe_empty = walking_mode == SceneMode::Field
+                let probe_empty = pad_props()
+                    && walking_mode == SceneMode::Field
                     && session.host.world.field_interact_prop_anchor().is_none()
                     && session.host.world.field_interact_probe_slot().is_none();
                 match probe_empty
