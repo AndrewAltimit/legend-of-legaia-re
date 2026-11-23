@@ -596,6 +596,21 @@ fn whole_songs_run_as_retail_runs_them() {
                 0
             };
             cpu.mem.wr32(PAD_EDGE, edge);
+            // The lesson's two holds on the floor, raised for a stretch of
+            // the song on the odd scenarios past the first four: the song
+            // hold `DAT_801D5138` stops the song timer (`0x801D0050`) and the
+            // load gate `DAT_801D5830` the row counter's wrap
+            // (`0x801D0090`) and every press (`0x801D1B8C`).
+            if scenario >= 4 && scenario % 2 == 1 {
+                let hold = (200..260).contains(&frame);
+                let gate = (400..440).contains(&frame) || (1200..1240).contains(&frame);
+                cpu.mem.wr32(0x801D_5138, u32::from(hold));
+                cpu.mem.wr32(0x801D_5830, u32::from(gate));
+                let mut hall = g.tutorial_hall(Default::default());
+                hall.song_hold = u32::from(hold);
+                hall.load_gate = u32::from(gate);
+                g.apply_tutorial_hall(&hall);
+            }
             assert_eq!(cpu.call(SM, &[SM_ACTOR]), Stop::Returned, "frame {frame}");
             // The head's best-score raise and camera keyframe track.
             g.raise_best_score();
