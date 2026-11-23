@@ -955,6 +955,11 @@ impl BattleActor {
 /// struct is much larger and managed by the rest of the battle overlay.
 #[derive(Debug, Clone, Default)]
 pub struct BattleActionCtx {
+    /// `[+0x1D]` - the acting member's target `+0x1DD` as the Item or Magic
+    /// window found it on opening (`0x801D13AC..0x801D13C0`,
+    /// `0x801D1484..0x801D1498`); the window's cancel puts it back when the
+    /// byte no longer names a monster seat. Engine seat numbering.
+    pub window_saved_target: u8,
     /// `[7]` - execution phase / action-state cursor. The outer `switch
     /// (ctx[7])`. Stored as raw byte so unmapped values round-trip.
     pub action_state: u8,
