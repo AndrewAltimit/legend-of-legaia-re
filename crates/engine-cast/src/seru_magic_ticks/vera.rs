@@ -160,7 +160,8 @@ pub struct VeraOutcome {
 /// `= 0xFF` with `+0x04 = 0` in arm 4 ([`VERA_HIDE_ARM`]), the
 /// summon seat's `+0x0C = 0x1000` / animation rate `= 8` / render flag `= 0`
 /// / clip pair `+= 1` in arm 5, `+0x1DA = 2` then `= 3` with a `+0x1DC` bump
-/// and render flag `= 9` in arm 8, and the fade countdown in arm 10 that
+/// and render flag `= 9` in arm 8, the defeat fade (`+0x21C = +0x225 = 2`)
+/// in arm 9, and the fade countdown in arm 10 that
 /// latches `0xFF`. Arm `0xFF` writes no actor state; it only returns `0`.
 ///
 /// Tier `4` also doubles the target's AP gauge `+0x170`, capped at 100
@@ -223,6 +224,13 @@ pub fn vera_tick(
             CastArmStep::Advance
         }
         VERA_RESTORE_ARM => {
+            // `li v0,2; sb v0,0x21c(s4); sb v0,0x225(s4)` (`0x801F7BD0..
+            // 0x801F7BDC`): the creature goes into the defeat fade as the
+            // restore lands.
+            if let Some(s) = seats.get_mut(who.summon as usize) {
+                s.render_flag = 2;
+                s.render_225 = 2;
+            }
             if let Some(r) = restore
                 && let Some(t) = seats.get_mut(who.victim as usize)
             {

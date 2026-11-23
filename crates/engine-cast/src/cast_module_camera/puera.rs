@@ -353,13 +353,14 @@ pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
             st.creature_rate = Some(8);
         }
         // The two bumped stages (`j 0x801F7184` at `0x801F727C`,
-        // `0x801F7FFC..0x801F8020`) and arm 10's bare `4` (`0x801F7284`),
-        // which waits for clip 3's natural end.
+        // `0x801F7FFC..0x801F8020`) and arm 10's bare `4` (`0x801F7284`, at
+        // the arm's head, so every pass), which waits for clip 3's natural
+        // end.
         9 if !held => {
             st.creature_stage = Some(3);
             st.creature_restage = true;
         }
-        10 if !held => st.creature_stage = Some(4),
+        10 => st.creature_stage = Some(4),
         18 if !held => {
             st.creature_stage = Some(5);
             st.creature_restage = true;

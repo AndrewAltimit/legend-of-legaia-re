@@ -325,7 +325,7 @@ impl World {
     /// PROT 0931 (Jedo)'s stores on the row and the creature, outside its
     /// director.
     ///
-    /// PORT: overlay_summon_jedo_0931_801f6a58 (arms 0, 1, 5, 6, 23, 30, 31)
+    /// PORT: overlay_summon_jedo_0931_801f6a58 (arms 0, 1, 5, 6, 7, 10, 23, 26, 30, 31)
     pub(in crate::world::battle::cast_band) fn apply_jedo_writes(
         &mut self,
         phase: u8,
@@ -335,6 +335,23 @@ impl World {
     ) {
         // What arm 26's cut reads off the row, its middle.
         self.keep_row_tr_y(monster_count);
+        // The creature's own stores on the arms' passes: arm 6 shows the
+        // creature the seat arm hid (`sb zero,0x21c(s6)` at `0x801F7248`),
+        // arm 7 slows it to rate `3` (`0x801F7400`), arm 10 to `2`
+        // (`0x801F7648`), and arm 26 hides it (`+0x21C = 0xFF`,
+        // `+0x04 = 0` at `0x801F80B0` / `0x801F80C0`).
+        if passed && let Some(a) = self.actors.get_mut(usize::from(creature)) {
+            match phase {
+                6 => a.battle.render_flag = 0,
+                7 => a.battle.anim_rate = AnimRate(3),
+                10 => a.battle.anim_rate = AnimRate(2),
+                26 => {
+                    a.battle.render_flag = 0xFF;
+                    a.battle.render_color = 0;
+                }
+                _ => {}
+            }
+        }
         match (phase, passed) {
             // Arm 0's re-seat onto the alternate family at half its reach,
             // facing `0x800` (`0x801F6B74..0x801F6C5C`); arm 1 hides the row.
@@ -675,9 +692,12 @@ impl World {
                     a.battle.render_flag = FLAG_PARKED;
                 }
             }
+            // ... with the blend `+0x0C = 0x1000` beside the word
+            // (`0x801F6FB4..0x801F6FB8`).
             (4, true) => {
                 if let Some(a) = self.actors.get_mut(usize::from(creature)) {
                     a.battle.render_color = 0x3FFF_FFFF;
+                    a.battle.render_blend = 0x1000;
                     a.battle.render_flag = 0;
                 }
             }

@@ -13,11 +13,6 @@ const RED_WORD: u32 = 0x3FF;
 const HALF_TURN: i32 = 0x800;
 /// A full circle.
 const FULL_TURN: i32 = 0x1000;
-/// The frame step arms 7 and 8 run at. Their term `word / 4` comes off once a
-/// frame where the frame product comes off per vsync, so the engine takes it
-/// whole on every fourth tick: retail's stand reads `-552` entering arm 8 and
-/// `-140` leaving.
-const ARM_FRAME_STEP: i32 = 4;
 
 /// The chase target an empty retail seat leaves (`0x801F8154` naming a
 /// seat the engine seats nobody in).
@@ -135,6 +130,7 @@ impl World {
             }
         }
         let step = legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
+        let pass_ends = self.module_tick_closes_pass();
         let Some(a) = self.actors.get_mut(usize::from(seat)) else {
             return;
         };
@@ -153,8 +149,10 @@ impl World {
                 // comes off once a pass, on the tick that closes it (the word
                 // has grown a pass's `(step * scalar) >> 3`), whole: shared
                 // out a tick at a time it truncated away and stood the
-                // creature `36` units short of retail's `-140`.
-                let pass_ends = *spin % ARM_FRAME_STEP == 0;
+                // creature `36` units short of retail's `-140`. The pass is
+                // the battle frame's, whatever its step: a fixed four ticks
+                // took the quarter off a step-2 or step-1 pass's word once in
+                // every two or four passes.
                 let back = if pass_ends { *spin / 4 } else { 0 };
                 a.move_state.world_z = a.move_state.world_z.wrapping_add((k * step - back) as i16);
                 a.battle.facing_angle = (*spin * -0x14) as u16 & 0xFFF;

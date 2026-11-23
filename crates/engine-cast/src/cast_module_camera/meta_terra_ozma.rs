@@ -245,6 +245,10 @@ pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             }
             st.yaw_base = 0;
             st.creature_loop_release = true;
+            // `li v0,1; sb v0,0x1da(s7)` beside the release (`0x801F8358..
+            // 0x801F835C`): the idle clip `1` waits bare for the playing
+            // clip's end.
+            st.creature_stage = Some(1);
             finish(caption(
                 with_drift(ArmDirection::PASS, dz),
                 ModuleCaption::Cleared,

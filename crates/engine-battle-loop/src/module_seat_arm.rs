@@ -45,6 +45,8 @@ pub struct SeatArmWrite {
     pub render_scale: Option<u16>,
     /// `(+0x21C, +0x0C)`: the tint state and blend word.
     pub tint: Option<(u8, u32)>,
+    /// `+0x21C` alone, the tint state stored with no blend word beside it.
+    pub flag: Option<u8>,
     /// The anim node's `+0x68`, the clip cursor in sixteenths of a keyframe.
     pub cursor: Option<u16>,
 }
@@ -60,7 +62,18 @@ pub const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
         colour: None,
         render_scale: None,
         tint: None,
+        flag: None,
         cursor: None,
+    }
+}
+
+/// A seat arm that leaves the seat where the installer (or the module's
+/// director) puts it, for its other stores.
+pub const fn in_place() -> SeatArmWrite {
+    SeatArmWrite {
+        y: SeatCoord::Keep,
+        facing: None,
+        ..seat(SeatCoord::Keep, SeatCoord::Keep, 0)
     }
 }
 
@@ -89,6 +102,11 @@ impl SeatArmWrite {
         self.tint = Some((state, blend));
         self
     }
+
+    const fn flag(mut self, state: u8) -> Self {
+        self.flag = Some(state);
+        self
+    }
 }
 
 /// The seat-arm stores of PROT `prot_entry`, or `None` where the arm leaves
@@ -115,6 +133,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            flag: None,
             cursor: Some(0x30),
         },
         // `0x801F6DC0..0x801F6E5C`: after the arm's two vortex records and its
@@ -130,6 +149,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            flag: None,
             cursor: None,
         },
         // `0x801F6C54`: the facing only.
@@ -143,11 +163,31 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            flag: None,
             cursor: None,
         },
         // `0x801F6CC0..0x801F6CE0`: `0x400` across and `0x267` back off
         // the installer's seat.
         914 => seat(SeatPlus(0x400), SeatPlus(-0x267), 0),
+        // The seat itself is the director's (computed off the victim's
+        // heading); the arm then lights the creature white, hidden under
+        // tint state `0xFF` (`0x801F7120..0x801F7134`), which the assembly
+        // sweep shows (`World::apply_aluru_seat_writes`).
+        916 => in_place()
+            .colour(legaia_engine_cast::cast_module_camera::ALURU_ASSEMBLY_COLOUR)
+            .tint(
+                0xFF,
+                legaia_engine_cast::cast_module_camera::ALURU_ASSEMBLY_BLEND,
+            ),
+        // The seat itself is the director's (computed off the target's
+        // heading); the arm then stores the creature's colour word
+        // `0x3FFFFFFF`, blend `0x1000`, rate `8` and tint state `0`
+        // (`0x801F72F0..0x801F7324`).
+        905 => in_place().colour(0x3FFF_FFFF).tint(0, 0x1000).rate(8),
+        // The seat itself is the director's (computed off the victim's
+        // heading); the arm then shows the creature on the shown word
+        // (`+0x21C = 0`, `+0x04 = 0x20080200` at `0x801F7098..0x801F70A4`).
+        908 => in_place().colour(0x2008_0200).flag(0),
         // `0x801F6EA0..0x801F6EB8`: on the victim's line, `0xA00` toward the
         // party.
         915 => seat(VictimPlus(0), VictimPlus(-0xA00), 0),
@@ -166,10 +206,13 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             colour: None,
             render_scale: None,
             tint: None,
+            flag: None,
             cursor: None,
         },
-        // `0x801F6FC0..0x801F6FC8`.
-        921 => seat(Lit(0), Lit(0), 0),
+        // `0x801F6FC0..0x801F6FCC`, the colour word zeroed with them
+        // (`sw zero,0x4(s2)` at `0x801F6FCC`), which the tint pass eases back
+        // up: the creature fades in.
+        921 => seat(Lit(0), Lit(0), 0).colour(0),
         // `0x801F6E04..0x801F6E14`: frozen (`+0x21D = 0`) until arm 5.
         922 => seat(Lit(0), Lit(-0x80), 0).rate(0),
         // `0x801F6DC0..0x801F6DD4`; and the colour word and the render
@@ -180,8 +223,11 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             .y(-0x100)
             .colour(0)
             .render_scale(0),
-        // `0x801F6D2C..0x801F6D54`.
-        924 => seat(Lit(0), Lit(0x2000), 0x800).rate(8),
+        // `0x801F6D2C..0x801F6D58`, the colour word zeroed with them
+        // (`sw zero,0x4(s2)` at `0x801F6D58`), which the tint pass eases back
+        // up. The arm also aims the creature at the row (`+0x1DD = 9` at
+        // `0x801F6D4C`), which no seat field here carries.
+        924 => seat(Lit(0), Lit(0x2000), 0x800).rate(8).colour(0),
         // `0x801F6DC0..0x801F6DF4`: with the colour word `+0x04 = 0x3FFFFFFF`
         // and the render node's scale `0x300`, which arm 5 grows.
         925 => seat(Lit(0), Lit(0), 0x800)
@@ -209,12 +255,14 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
         // `0x801F6EA0..0x801F6EC0`, the hide with it: arm 4's way out shows the
         // creature, and a hidden seat holds its first frames (the walker's
         // zero-colour skip).
-        930 => seat(Lit(0), Lit(0x800), 0x800)
-            .rate(2)
-            .colour(0)
-            .tint(0xFF, 0),
-        // `0x801F6E3C..0x801F6E60`.
-        931 => seat(Lit(0), Lit(-0x800), 0).rate(4),
+        930 => seat(Lit(0), Lit(0x800), 0x800).rate(2).colour(0).flag(0xFF),
+        // `0x801F6E3C..0x801F6E64`: rate `4`, and seated hidden on the dim
+        // word (`+0x04 = 0x401004`, `+0x21C = 0xFF` at `0x801F6E50` /
+        // `0x801F6E64`), which arm 6's pass shows (`World::apply_jedo_writes`).
+        931 => seat(Lit(0), Lit(-0x800), 0)
+            .rate(4)
+            .colour(0x0040_1004)
+            .flag(0xFF),
         // `0x801F6EC4..0x801F6EE8`.
         // ... and `li v0,0x1800; sh v0,0x72(v1)` at `0x801F6EF4`: half as big
         // again.
@@ -224,7 +272,7 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
         // `0x801F6D90..0x801F6DA8`, and the hide beside them (`sw zero,0x4`
         // / `sb 0xFF,0x21C` at `0x801F6DAC` / `0x801F6DB0`): the clip holds
         // its first advance until arm 4's pass shows the creature.
-        933 => seat(Lit(0), Lit(0), 0).rate(4).colour(0).tint(0xFF, 0),
+        933 => seat(Lit(0), Lit(0), 0).rate(4).colour(0).flag(0xFF),
         // `0x801F7048..0x801F7060`.
         934 => seat(Lit(0), Lit(-0x600), 0).rate(4),
         // `0x801F7134..0x801F7148` (`s1 = 0x800` at `0x801F710C`).
@@ -244,10 +292,6 @@ pub const PUERA_SLIDE_END_Z: i16 = 0x80;
 /// The slide per engine tick: one vsync of `2 * step * scalar` at step `2`
 /// and scalar `8`.
 pub const PUERA_SLIDE_PER_TICK: i16 = 16;
-
-/// PROT 0922's arm 5 (`0x801F6EE4..0x801F6EF4`): rate back to `8` and the
-/// next clip staged.
-pub const PUERA_WAKE_ARM: u8 = 5;
 
 /// The modules whose seat arm drains a countdown and calls the installer
 /// only on the pass that finds it spent (a `bgez` / `bgtz` straight ahead of
@@ -310,7 +354,8 @@ mod seat_due_tests {
         assert!(!seat_due(Some(930), 3, 3));
         let w = seat_arm_write(930).expect("seat row");
         assert_eq!(w.colour, Some(0));
-        assert_eq!(w.tint, Some((0xFF, 0)));
+        // The tint state alone: the arm stores no blend word `+0x0C`.
+        assert_eq!((w.flag, w.tint), (Some(0xFF), None));
     }
 
     /// A gate ahead of the installer holds the seat to the arm's pass (PROT
@@ -353,7 +398,8 @@ mod seat_due_tests {
         assert!(seat_due(Some(933), 2, 3));
         let w = seat_arm_write(933).expect("seat row");
         assert_eq!(w.colour, Some(0));
-        assert_eq!(w.tint, Some((0xFF, 0)));
+        // The tint state alone: the arm stores no blend word `+0x0C`.
+        assert_eq!((w.flag, w.tint), (Some(0xFF), None));
         assert_eq!(w.rate, Some(4));
     }
 }

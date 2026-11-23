@@ -125,7 +125,7 @@ fn nighto_drain_holds(st: &mut ModuleCamState) -> bool {
 /// | 4 | the stream poll | pitch `0x200`, yaw `-y`, TR `(0, 0, 0x600)`, over `0x80` frames; spawns [`NIGHTO_OPEN_SPAWNS`]; `ctx[+0x6D8] = scalar * 129` |
 /// | 5 | drift TR z `+P`; drain, hold while non-negative | snap... over `0x10` frames: pitch `0`, TR `(0, 0x500, 0xA00)`; spawns [`NIGHTO_CRYSTAL_SPAWNS`]; `ctx[+0x6D8] = scalar * 96` |
 /// | 6 | drift TR z `+2P`; drain, hold while non-negative | seats the creature on the grid point facing the victim; `ctx[+0x6D8] = scalar << 6` |
-/// | 7 | drift TR z `-4P`; drain, hold while non-negative | the spell name (`FUN_8003541C` at `0x801F78F8`); `ctx[+0x6D8] = scalar * 180` |
+/// | 7 | drift TR z `-4P`; drain, hold while non-negative | clip `1` staged bare every pass; the spell name (`FUN_8003541C` at `0x801F78F8`); `ctx[+0x6D8] = scalar * 180` |
 /// | 8 | drain, hold while non-negative | the attack name (`0x801F79E8`); snap: pitch `-0x100`, yaw `0x800 - f`, TR `(0, 0x500, 0x400)`, focus the creature |
 /// | 9 | - | pitch `0x40`, yaw `0x800 - f`, TR `(0, 0x700, 0x800)`, over `0xC0` frames |
 /// | 10 | hold while the creature's `+0x21B` reads `0xFF` ([`NIGHTO_LOOP_SENTINEL`]), clip `2` committed ([`NIGHTO_SUMMON_CLIP`]) | pitch `0`, yaw `0x800 - f`, TR `(0, 0x700, 0x480)`, over `0x80` frames; spawns [`NIGHTO_SONG_SPAWNS`]; `ctx[+0x6D8] = scalar << 7` |
@@ -235,6 +235,11 @@ pub fn nighto_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             ArmDirection::PASS.drifted(tr_z(2))
         }
         7 => {
+            // Every pass, ahead of the drain (`lbu t1,0x40(sp)` / `sb t1,
+            // 0x1da(s1)` at `0x801F77FC..0x801F7804`, `t1 = 1`): clip 1 waits
+            // bare for the seat clip's natural end from the arm's first pass,
+            // not from the tick body's arm 7 on the pass that leaves.
+            st.creature_stage = Some(1);
             if nighto_drain_holds(st) {
                 return ArmDirection::HOLD.drifted(tr_z(-4));
             }

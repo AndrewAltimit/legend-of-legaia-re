@@ -19,7 +19,7 @@ impl World {
     /// | 0 (`0x801F6AE0..0x801F6C1C`, pass) | each live monster: pose saved, moved to half its alternate-family seat less `0x1F4` on `z`, facing `0x800` |
     /// | 11 (every pass while counting; pass `0x801F7378..0x801F737C`) | the creature sinks `2 * scalar` a tick (`0x801F7330..0x801F734C`); on the pass its tint arm `+0x21C` goes to `9`, the yellow ease |
     /// | 12 (every pass; pass `0x801F7524..0x801F75A0`) | the creature sinks `2 * scalar` a tick (`0x801F74A0..0x801F74B0`); on the pass it is hidden and each live monster shown |
-    /// | 18 (`0x801F7FE0..0x801F8020`, pass) | the creature at `(0, -0x1100, -0x1100)`, shown, its next clip staged |
+    /// | 18 (`0x801F7FE0..0x801F8020`, pass) | the creature at `(0, -0x1100, -0x1100)`, shown (its next clip is the director's) |
     /// | 19 (`0x801F81C8..0x801F8210`, while counting; pass `0x801F82B4..0x801F82C0`) | with `w = (scalar << 6) - countdown`, the creature at `y = 17 w / 2 - 0x1100`, `z = 13 w - 0x1100`; on the pass it is hidden and arm 18's ring re-seated as the crystals ([`Self::seat_puera_crystals`]) |
     /// | 20 (every pass, `0x801F85F8..0x801F8690`) | the crystals fall ([`Self::fall_puera_crystals`]) |
     /// | 24 (`0x801F9014..0x801F90A0`, pass) | each live monster back on its saved pose |
@@ -121,8 +121,10 @@ impl World {
                     let mut v = self.cast_view(slot);
                     v.render_flag = 0;
                     v.present_04 = 0;
-                    let next = v.staged_anim.wrapping_add(1);
-                    legaia_engine_cast::cast_module_ticks::stage_clip(&mut v, next);
+                    // The clip step beside these (`+0x1DA` / `+0x1DC` both
+                    // `+1`, `0x801F7FFC..0x801F8020`) is the director's
+                    // (`puera_direct`'s `creature_stage`): stepped here as
+                    // well, the creature skipped a clip.
                     self.write_cast_view(slot, &v);
                     if let Some(a) = self.actors.get_mut(usize::from(slot)) {
                         a.move_state.world_x = 0;

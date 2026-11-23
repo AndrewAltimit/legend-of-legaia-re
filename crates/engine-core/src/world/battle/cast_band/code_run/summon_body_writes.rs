@@ -1115,6 +1115,9 @@ impl World {
     ///   the end of its eight-slot track, so the flinch the arm parked plays
     ///   out silent (`0x801F82CC..0x801F8370`);
     /// - arm `0x10` keeps that stand every pass (`0x801F8418..0x801F8484`);
+    /// - arm `0xB`'s pass puts the creature into the defeat fade
+    ///   (`+0x21C = +0x225 = 2`, `0x801F7CA4..0x801F7CB0`) and arm `0xC`'s
+    ///   pass zeroes its colour word (`0x801F7D70`);
     /// - arm `0x11`'s pass hides the living row (`0x801F8694..0x801F86DC`);
     /// - the hit arm `0x13`'s pass puts each living seat's parked trio and
     ///   facing back, turns it from the creature (`FUN_80019B28` + `0x800`)
@@ -1274,19 +1277,12 @@ impl World {
                     }
                 }
             }
-            (0x11, true) => {
-                for &s in &seats {
-                    if living(self, s) {
-                        let a = &mut self.actors[s];
-                        a.battle.render_color = 0;
-                        a.battle.render_flag = RENDER_FLAG_HIDDEN;
-                    }
-                }
-                // The same exit puts the creature into the defeat fade
-                // (`sb v0,0x21C(s4)` / `sb v0,0x225(s4)` with `v0 = 2`,
-                // `0x801F7CA4..0x801F7CB0`): it fades out over arm `0x12`'s
-                // `96 * scalar`, whose exit zeroes its word (`sw zero,0x4(s4)`
-                // at `0x801F7D70`).
+            // Arm `0xB`'s exit (the arm at `0x801F7C08`) puts the creature
+            // into the defeat fade (`sb v0,0x21C(s4)` / `sb v0,0x225(s4)`
+            // with `v0 = 2`, `0x801F7CA4..0x801F7CB0`): it fades out over arm
+            // `0xC`'s `96 * scalar`, whose exit (the arm at `0x801F7CB4`)
+            // zeroes its word (`sw zero,0x4(s4)` at `0x801F7D70`).
+            (0xB, true) => {
                 if let Some(a) = self
                     .casting
                     .summon_actor_slot
@@ -1296,13 +1292,22 @@ impl World {
                     a.battle.capture_state = 2;
                 }
             }
-            (0x12, true) => {
+            (0xC, true) => {
                 if let Some(a) = self
                     .casting
                     .summon_actor_slot
                     .and_then(|s| self.actors.get_mut(usize::from(s)))
                 {
                     a.battle.render_color = 0;
+                }
+            }
+            (0x11, true) => {
+                for &s in &seats {
+                    if living(self, s) {
+                        let a = &mut self.actors[s];
+                        a.battle.render_color = 0;
+                        a.battle.render_flag = RENDER_FLAG_HIDDEN;
+                    }
                 }
             }
             (0x13, true) => {

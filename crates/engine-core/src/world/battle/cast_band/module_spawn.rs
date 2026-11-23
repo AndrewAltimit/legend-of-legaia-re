@@ -778,3 +778,23 @@ impl World {
         }
     }
 }
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// The seat pass's held seat-arm writes on their own
+    /// ([`Self::apply_seru_seat_writes`], which the seat pass's node tick
+    /// runs behind the installer's resets), for a differential whose world
+    /// seats the creature with no battle frame cadence to run that tick.
+    pub fn drive_seat_pass_writes(&mut self) {
+        let Some(entry) = self
+            .casting
+            .summon_stager
+            .as_ref()
+            .and_then(|st| self.cast_module_for(st.spell_id))
+        else {
+            return;
+        };
+        let phase = self.casting.module_phase;
+        self.apply_seru_seat_writes(entry, phase);
+    }
+}

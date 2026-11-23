@@ -61,6 +61,9 @@ impl World {
             a.battle.render_flag = state;
             a.battle.render_blend = blend;
         }
+        if let Some(state) = w.flag {
+            a.battle.render_flag = state;
+        }
         if let Some((count, timer)) = w.loop_hold {
             a.battle.hit_count_bound = count;
             if let Some(p) = a.battle_animation.as_mut() {
@@ -75,7 +78,12 @@ impl World {
     }
 
     /// The creature stores of a module's later arms that the engine runs
-    /// beside its director: PROT 0922's slide (arm 4) and wake (arm 5).
+    /// beside its director: PROT 0922's slide (every pass of arm 4 its word
+    /// finds positive, the passing one too, `0x801F6E40..0x801F6E7C`).
+    /// `phase` is the arm the pass ran. Arm 5's wake (rate `8` and the next
+    /// clip on its pass, `0x801F6EE4..0x801F6EF4`) is the director's
+    /// (`puera_direct`); run here as well off the phase the pass left on, it
+    /// woke the creature a whole arm early and staged its clip twice.
     pub(in crate::world::battle::cast_band) fn apply_module_seat_motion(
         &mut self,
         prot_entry: u32,
@@ -92,20 +100,9 @@ impl World {
         else {
             return;
         };
-        match phase {
-            PUERA_SLIDE_ARM => {
-                let z = &mut a.move_state.world_z;
-                *z = (*z + PUERA_SLIDE_PER_TICK).min(PUERA_SLIDE_END_Z);
-            }
-            PUERA_WAKE_ARM
-                if a.battle.anim_rate.get() == 0
-                    && a.battle.current_anim == 0
-                    && a.battle.queued_anim == 0 =>
-            {
-                a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(8);
-                a.battle.queued_anim = 1;
-            }
-            _ => {}
+        if phase == PUERA_SLIDE_ARM {
+            let z = &mut a.move_state.world_z;
+            *z = (*z + PUERA_SLIDE_PER_TICK).min(PUERA_SLIDE_END_Z);
         }
     }
 }

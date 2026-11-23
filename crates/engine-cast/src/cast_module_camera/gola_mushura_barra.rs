@@ -193,6 +193,12 @@ pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeat
             if drained {
                 st.countdown.drain_rest(P);
             }
+            // The exit steps the creature's clip back one with the `+0x1DC`
+            // bump (`addiu v0,v0,-1` / `addiu v1,v1,1` at `0x801F7A14..
+            // 0x801F7A34`): arm `0xA`'s attack clip `3` cuts back to `2` as
+            // the creature is hidden.
+            st.creature_stage = Some(2);
+            st.creature_restage = true;
             finish(caption(
                 with_drift(ArmDirection::PASS, d),
                 ModuleCaption::Cleared,

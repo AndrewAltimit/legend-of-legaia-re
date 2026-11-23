@@ -508,8 +508,8 @@ impl World {
             // A body-paced director's first tick in an arm drifts after the
             // passed arm's shot is armed (below).
             let drift = r.capture_drift.filter(|_| !r.capture_drift_after_shot);
-            self.apply_module_creature_writes(r.prot_entry, r.phase, drift);
-            self.apply_module_seat_motion(r.prot_entry, r.phase);
+            self.apply_module_creature_writes(r.prot_entry, module_arm, r.phase, drift);
+            self.apply_module_seat_motion(r.prot_entry, module_arm);
         }
         // The module seats its creature itself (Gimard's arm 3); put the
         // engine's creature where it did.
