@@ -1101,7 +1101,19 @@ both waits met on arrival, so it holds the four passes and not a real seek's
 settle time, and it restarts on a clip start and at field entry but not on the
 busy byte's other writers (the side-band loader and two field-VM arms clear it
 too). `retail-exec`'s `a_seek_ahead_holds_the_script_as_retail_holds_it` runs
-the op against the executable's starter, pass by pass.
+the op against the executable's starter, pass by pass. A cutscene timeline holds
+the op too, as it holds op `0x35`: its release is a clock, not a flag a
+sub-context raises, so it is not stepped past by width.
+
+Measured on PCSX-Redux (`autorun_seek_ahead_hold.lua` from
+`chapter2_garmel_pre_zeto`), `garmel` `P2[12]`'s seek at `+0x3EE` holds five
+passes at frame step `2`: the four stepping passes and one more where stage 3's
+settle wait answered `1`. The engine holds four, so the beat's voice line
+(`36 16 02 39 00` at `+0x43F`) lands two vsyncs early where it landed ten early
+before. The film's `cues` column tags the stage (`seek<n>`) and a one-shot's
+start (`xa`). The seek also raises the drive word `0x8007BC20` to `1` until the
+one-shot, which raises it to `2` for the clip's read: `554` vsyncs for that
+line's `0x216`.
 
 #### The stream gates on op 0x36
 

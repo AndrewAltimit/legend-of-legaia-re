@@ -308,6 +308,10 @@ impl WalkFilm {
         };
         let mut n0 = partition0(session);
         let mut n0_scene = session.host.world.active_scene_label.clone();
+        // The seek-ahead stage and the field XA drive, to tag their edges in
+        // the `cues` column (`seek<stage>`, `xa` for a one-shot's start).
+        let mut seek_was = session.host.world.field_xa_seek_stage();
+        let mut xa_was = session.host.world.field_xa_busy();
         let mut actors = self.out.clone();
         actors.set_extension("actors.csv");
         let mut a = std::io::BufWriter::new(std::fs::File::create(&actors)?);
@@ -557,6 +561,17 @@ impl WalkFilm {
                 })
                 .map(|id| id.to_string())
                 .collect();
+            let mut cues = cues;
+            let seek_now = session.host.world.field_xa_seek_stage();
+            if seek_now != seek_was {
+                cues.push(format!("seek{seek_now}"));
+                seek_was = seek_now;
+            }
+            let xa_now = session.host.world.field_xa_busy();
+            if xa_now && !xa_was {
+                cues.push("xa".to_string());
+            }
+            xa_was = xa_now;
             let cues = if cues.is_empty() {
                 "-".to_string()
             } else {

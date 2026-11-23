@@ -1631,6 +1631,15 @@ impl World {
                 // the warp tiles' P0[14..16] selects).
                 // REF: FUN_801DE840 (`0x801E0238`, `0x801E0284..0x801E0288`), FUN_800243F0
                 let bgm_wait = op == 0x35 && target.is_none();
+                // Op `0x36` holds the same way, on clocks rather than flags: the
+                // seek-ahead `FUN_80019794` while its starter steps
+                // (`0x801E0438`), `36 FF FF` while a field XA one-shot is still
+                // reading (`0x801E02F0..0x801E0308`), and the stream-pair
+                // gates. Stepping it by width ran a voice line's beat on with
+                // no hold (`garmel` P2[12], where retail holds the seek five
+                // passes before its one-shot).
+                // REF: FUN_801DE840 (op `0x36`), FUN_80019794
+                let sound_wait = op == 0x36 && target.is_none();
                 // NPC end-latch spin (`AD <id> 08`): the record re-tests the
                 // poked actor's `+0x62 & 0x100` every frame until its clip
                 // tick latches it - the clip's remaining length for a
@@ -1706,6 +1715,7 @@ impl World {
                     && !glide_wait
                     && !flag_wait
                     && !bgm_wait
+                    && !sound_wait
                     && (target.is_none() || is_flag_test_handshake)
                 {
                     // By the op's own width: the flag tests are two bytes

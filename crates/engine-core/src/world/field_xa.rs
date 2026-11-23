@@ -219,6 +219,12 @@ impl World {
         true
     }
 
+    /// The seek-ahead starter's stage (`0x8007B9C8`, `0..=4`), as a film
+    /// reads it beside retail's word.
+    pub fn field_xa_seek_stage(&self) -> u8 {
+        self.audio.field_xa_seek_stage
+    }
+
     /// Field entry: the mode-init core reset clears the busy byte
     /// `0x8007B648` (`0x80025D18`), and the seek-ahead starter restarts from
     /// stage `0` the next time it reads the byte clear (`0x800197A8..0x800197BC`).
