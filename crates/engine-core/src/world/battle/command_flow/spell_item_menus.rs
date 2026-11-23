@@ -179,6 +179,7 @@ impl World {
             }
             Some(SpellResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
+                self.restore_window_target(actor);
                 self.open_battle_command(actor);
             }
             None => {
@@ -206,6 +207,32 @@ impl World {
                     self.open_battle_command(actor);
                 }
             }
+        }
+    }
+
+    /// The ring's Item and Magic arms keep the member's target `+0x1DD` in
+    /// `ctx[+0x1D]` as they open their window.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D13AC..0x801D13C0`, `0x801D1484..0x801D1498`)
+    pub(in crate::world) fn save_window_target(&mut self, actor: u8) {
+        if let Some(a) = self.actors.get(usize::from(actor)) {
+            self.battle_ctx.window_saved_target = a.battle.active_target;
+        }
+    }
+
+    /// The Item and Magic windows' cancel back to the ring (result `3`)
+    /// puts the kept target back when `+0x1DD` no longer names a monster
+    /// seat (`+0x1DD - 3 >= 5`) - a one-ally cursor left a party seat
+    /// there - so the next cursor opens where the member last aimed.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D183C..0x801D185C`, `0x801D1BBC..0x801D1BDC`)
+    pub(in crate::world) fn restore_window_target(&mut self, actor: u8) {
+        let pc = self.party.party_count.clamp(1, 3);
+        let saved = self.battle_ctx.window_saved_target;
+        if let Some(a) = self.actors.get_mut(usize::from(actor))
+            && !(pc..pc + 5).contains(&a.battle.active_target)
+        {
+            a.battle.active_target = saved;
         }
     }
 
@@ -623,6 +650,7 @@ impl World {
             InventoryUseState::Aborted => {
                 // Backed out without using an item - reopen the command menu.
                 let actor = self.battle_ctx.active_actor;
+                self.restore_window_target(actor);
                 self.open_battle_command(actor);
             }
             _ => {
@@ -894,5 +922,21 @@ impl World {
             is_heal,
             is_crit: false,
         });
+    }
+}
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`World::restore_window_target`] on `actor` holding `active_target`
+    /// with `saved` kept at the window's opening: the target it leaves.
+    pub fn drive_restore_window_target(&mut self, actor: u8, active_target: u8, saved: u8) -> u8 {
+        self.battle_ctx.window_saved_target = saved;
+        if let Some(a) = self.actors.get_mut(usize::from(actor)) {
+            a.battle.active_target = active_target;
+        }
+        self.restore_window_target(actor);
+        self.actors
+            .get(usize::from(actor))
+            .map_or(0, |a| a.battle.active_target)
     }
 }

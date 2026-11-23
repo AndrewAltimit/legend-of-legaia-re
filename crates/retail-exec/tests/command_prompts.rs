@@ -1535,6 +1535,7 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
     cpu.hook(0x801D_B8B4, move |r, _| r.r[psx_retail_exec::V0] = fl.get());
     let mut rng = Rng(0x4954_574E);
     let mut seen = std::collections::HashMap::<u8, u32>::new();
+    let mut restored = 0u32;
     for round in 0..8000 {
         let party = 1 + rng.below(3) as u8;
         let seat = rng.below(u32::from(party)) as u8;
@@ -1579,7 +1580,15 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
         cpu.mem.wr8(CTX, party);
         cpu.mem.wr8(CTX + 0x06, 0x3C);
         cpu.mem.wr8(CTX + 0x13, seat);
-        cpu.mem.wr8(CTX + 0x11 + 0xC, prev_pool);
+        // The target the window kept on opening (`ctx[+0x1D]`): the cancel
+        // puts it back over a `+0x1DD` that names no monster seat
+        // (`0x801D183C..0x801D185C`).
+        let saved_pool: u8 = if rng.below(2) == 0 {
+            prev_pool
+        } else {
+            3 + live[rng.below(live.len() as u32) as usize]
+        };
+        cpu.mem.wr8(CTX + 0x11 + 0xC, saved_pool);
         cpu.mem.wr8(actor + 0x1DD, prev_pool);
         cpu.mem.wr32(VERDICT, verdict);
         cpu.mem.wr32(SELECTION, 0);
@@ -1641,6 +1650,10 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
             p => p,
         };
         w.actors[usize::from(seat)].battle.active_target = prev_engine;
+        w.battle_ctx.window_saved_target = match saved_pool {
+            3..=7 => saved_pool - 3 + party,
+            p => p,
+        };
         w.battle_ctx.active_actor = seat;
         w.party.inventory.insert(id, 1);
         w.battle.item_menu = Some(w.build_battle_item_session());
@@ -1657,7 +1670,20 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
         );
         let state = w.battle.item_menu.as_ref().map(|m| m.state);
         match (after, state) {
-            (0x28, None) => {}
+            (0x28, None) => {
+                let left = w.actors[usize::from(seat)].battle.active_target;
+                let want = match target {
+                    3..=7 => target - 3 + party,
+                    t => t,
+                };
+                assert_eq!(
+                    left, want,
+                    "the cancel's target, saved {saved_pool}: {label}"
+                );
+                if target != prev_pool {
+                    restored += 1;
+                }
+            }
             (0x3C, Some(InventoryUseState::Browsing { .. })) => {}
             (0x5B | 0x64, Some(InventoryUseState::TargetSelect { cursor, .. })) => {
                 let m = w.battle.item_menu.as_ref().unwrap();
@@ -1676,6 +1702,7 @@ fn the_item_window_raises_the_sub_cursor_retail_raises() {
     for s in [0x28u8, 0x3C, 0x5B, 0x5D, 0x64, 0x66] {
         assert!(seen.get(&s).copied().unwrap_or(0) > 20, "{s:#x}: {seen:?}");
     }
+    assert!(restored > 50, "the cancel restored {restored}");
 }
 
 /// The magic window `0x46` (`0x801D19F8..0x801D1D80`): the list kernel's
@@ -1765,6 +1792,13 @@ fn the_magic_window_prices_and_commits_as_retail() {
             _ => 3 + rng.below(2) as u8,
         };
         cpu.mem.wr8(actor + 0x1DD, own);
+        // The target the window kept on opening (`ctx[+0x1D]`), which its
+        // cancel puts back over a `+0x1DD` that names no monster seat.
+        let saved = match rng.below(3) {
+            0 => rng.below(u32::from(party)) as u8,
+            _ => 3 + rng.below(5) as u8,
+        };
+        cpu.mem.wr8(CTX + 0x1D, saved);
         // The two standing monsters the port's rows carry, for the re-pick.
         for i in 3..5 {
             cpu.mem.wr16(ACTOR + STRIDE * i + 0x14C, 1);
@@ -1846,7 +1880,26 @@ fn the_magic_window_prices_and_commits_as_retail() {
                     "browse"
                 }
             }
-            (SpellPhase::Aborted, 0x28) => "cancel",
+            (SpellPhase::Aborted, 0x28) => {
+                w.party.party_count = party;
+                let port_seat = |t: u8| {
+                    if (3..8).contains(&t) {
+                        party + t - 3
+                    } else {
+                        t
+                    }
+                };
+                let left = w.drive_restore_window_target(seat, port_seat(own), port_seat(saved));
+                assert_eq!(
+                    port_seat(target),
+                    left,
+                    "the cancel's target, own {own} saved {saved}: {label}"
+                );
+                if target != own {
+                    *seen.entry("cancel restored").or_default() += 1;
+                }
+                "cancel"
+            }
             (SpellPhase::Targeting { picker, .. }, 0x5C) => {
                 let mut picker = picker.clone();
                 w.party.party_count = party;
@@ -1915,6 +1968,7 @@ fn the_magic_window_prices_and_commits_as_retail() {
         "one ally",
         "all enemies",
         "all allies",
+        "cancel restored",
     ] {
         assert!(seen.get(key).copied().unwrap_or(0) > 20, "{key}: {seen:?}");
     }
