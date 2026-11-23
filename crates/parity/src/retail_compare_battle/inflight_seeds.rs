@@ -750,6 +750,15 @@ impl RetailBattle {
             *c += i32::from(self.display_lag)
                 * legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
         }
+        if let Some(r) = g.trail_count.as_mut() {
+            // The retract drops the count by one a pass, so the displayed
+            // frame, two passes older, drew two more fan entries
+            // (`theeder_summon_value_rows_rising`: RAM count `8`, the frame on
+            // screen the pass at `10`, its value rows still gliding in).
+            *r = r
+                .saturating_add(DISPLAY_LAG_PASSES as u8)
+                .min(legaia_engine_cast::seru_magic_ticks::THEEDER_TRAIL_CAP as u8);
+        }
         if let Some(y) = g.walk_yaw.as_mut() {
             // `6 * scalar` a vsync, taken back no further than the seat.
             //
