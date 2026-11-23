@@ -1379,6 +1379,10 @@ fn the_summon_strikes_turn_their_seats_as_retail_does() {
         (914, 0x801F_69F0, 9),
         (916, 0x801F_69F8, 3),
         (918, 0x801F_6C70, 3),
+        // Spoon heals the party: code `8` aims at the party seats; a monster
+        // code leaves the aim `FUN_801DCEAC` no live seat to average (its
+        // `div` by the count traps at `0x801DD004`).
+        (919, 0x801F_69D8, 8),
         (920, 0x801F_69D8, 9),
         (921, 0x801F_6A08, 9),
         (923, 0x801F_69D8, 9),
