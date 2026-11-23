@@ -611,6 +611,9 @@ pub struct ScreenshotConfig {
     /// same driver the headless seed runs. `capture_tick` becomes the
     /// deadline. Set by the retail-compare image channel.
     pub battle_drive: Option<legaia_engine_capture::battle_drive::BattleDrive>,
+    /// A load-window drive's ground has been seated
+    /// ([`Self::seats_load_window`]).
+    pub load_window_seated: std::cell::Cell<bool>,
     /// Where the drive's start and press clock stand: it starts where the
     /// headless seed's opening loop hands its drive over (past the entry
     /// sweep, on the first tick the command flow leaves `Idle`), and counts
@@ -1098,6 +1101,21 @@ pub struct ScreenshotSweep {
 }
 
 impl ScreenshotConfig {
+    /// A drive whose gate sits inside the battle-end load window
+    /// ([`legaia_engine_capture::battle_drive::SpanGate::Loading`]): its
+    /// ground is seated on the window's first tick and its camera runs the
+    /// engine's own case-8 law from there, unaligned, so the still scores the
+    /// window's drift (`LEGAIA_BATTLE_CAM_ALIGN` is not applied).
+    pub fn seats_load_window(&self) -> bool {
+        matches!(
+            self.battle_drive,
+            Some(legaia_engine_capture::battle_drive::BattleDrive::Action {
+                end: legaia_engine_capture::battle_drive::SpanGate::Loading,
+                ..
+            })
+        )
+    }
+
     /// `--screenshot-chrome` ([`Self::chrome`]).
     pub fn with_chrome(mut self, chrome: bool) -> Self {
         self.chrome = chrome;
@@ -1525,6 +1543,7 @@ impl ScreenshotConfig {
                         .collect()
                 })
                 .unwrap_or_default(),
+            load_window_seated: std::cell::Cell::new(false),
             battle_drive: std::env::var("LEGAIA_BATTLE_DRIVE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::battle_drive::BattleDrive::from_env(&v)),

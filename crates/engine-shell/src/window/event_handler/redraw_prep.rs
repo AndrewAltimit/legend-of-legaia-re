@@ -553,9 +553,29 @@ impl PlayWindowApp {
         {
             self.session.host.world.battle.ambient_stored = [b; 3];
         }
+        // A load-window capture stands the combatants on the capture's ground
+        // on the window's first tick and frames on the engine's own law from
+        // there (`ScreenshotConfig::seats_load_window`). HARNESS.
+        if let Some(sc) = self.screenshot.as_ref().filter(|sc| sc.seats_load_window())
+            && !sc.load_window_seated.get()
+            && self.session.host.world.mode == SceneMode::Battle
+            && legaia_engine_capture::battle_drive::SpanGate::Loading
+                .phase_kind_held(&self.session.host.world)
+        {
+            sc.load_window_seated.set(true);
+            let snaps = sc.battle_ground_snap.clone();
+            legaia_engine_capture::ground_snap::snap_battle_ground(
+                &mut self.session.host.world,
+                &snaps,
+            );
+        }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
-        if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)
+        if let Some((live, end)) = self
+            .screenshot
+            .as_ref()
+            .filter(|sc| !sc.seats_load_window())
+            .and_then(|sc| sc.battle_cam_align)
             && self.session.host.world.mode == SceneMode::Battle
             && self.capture_phase_met()
             && self.session.host.world.battle.camera.is_some()
