@@ -786,20 +786,6 @@ reason = "PROT 0935: the monster loop's first test `3 < 3 + ctx+1`; Earthquake i
 
 [[arm]]
 entry = "0x801F69D8"
-image = "9e9d52ef03115e27"
-range = "0x801F6CEC..0x801F6CEC"
-verdict = "unported"
-reason = "PROT 0920: host-owned. Arm 2's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return) sits behind the arm's own countdown, so it returns busy only if the seek issued at arm 1 outlasts that countdown; the host's drive hold (`World::module_drive_holds`) covers it, and no play path has a seek that long."
-
-[[arm]]
-entry = "0x801F69D8"
-image = "7a33f8bcf06a069a"
-range = "0x801F6CBC..0x801F6CBC"
-verdict = "unported"
-reason = "PROT 0923: host-owned. Arm 2's poll of the creature stream's CD read (`jal 0x8003F2B8` with `a0 = 1`, then `bne v0,zero` to the busy return) sits behind the arm's own countdown, so it returns busy only if the seek issued at arm 1 outlasts that countdown; the host's drive hold (`World::module_drive_holds`) covers it, and no play path has a seek that long."
-
-[[arm]]
-entry = "0x801F69D8"
 image = "9b032d4b97b81f6a"
 range = "0x801F6AB0..0x801F6AB0"
 verdict = "unreachable"
