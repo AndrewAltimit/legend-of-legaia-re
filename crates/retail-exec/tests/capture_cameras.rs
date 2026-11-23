@@ -126,6 +126,17 @@ fn shadow_world(
         if s >= 3 {
             act.battle_monster_id = Some(u16::from(if s == caster { monster.max(1) } else { 1 }));
         }
+        // Glare's Stone cancels the victim's queued action and refunds an
+        // Item; the guards it tests are the record's `+0x6BC` word.
+        if body.action == 0x3C {
+            act.battle.action_category = cpu.mem.rd8(a + 0x1DE);
+            act.battle.init_key = cpu.mem.rd16(a + 0x16C);
+            act.battle.params[0] = cpu.mem.rd8(a + 0x1DF);
+            if s < 3 {
+                w.party.character_ability_bits[s as usize] =
+                    cpu.mem.rd32(CHAR_RECORDS + s * CHAR_STRIDE + 0x6BC);
+            }
+        }
     }
     w.battle_ctx.active_actor = caster as u8;
     let mut entries = vec![SpellEntry::default(); 0x100];
@@ -348,6 +359,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut buffs = 0usize;
     let mut seat_passes = 0usize;
     let mut steals = 0usize;
+    let mut glare_rolls = 0usize;
     let (mut shadow_passes, mut shadow_diverged) = (0usize, 0usize);
     let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
@@ -367,7 +379,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         // Terror Scream's refund goes through the bag's find-or-insert
         // `FUN_800421D4`, logged rather than run.
         let refunds = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
-        if body.action == 0x70 {
+        if matches!(body.action, 0x70 | 0x3C) {
             let refunds = refunds.clone();
             cpu.hook(BAG_INSERT, move |r, _| {
                 refunds.borrow_mut().push((r.r[A0], r.r[A1]));
@@ -427,6 +439,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         let countdown_va = cam::capture_countdown_va(body.action);
         let rounds = match body.action {
             0x76 => 30,
+            0x3C => 8,
             0x71 | 0x70 => 12,
             _ => 6,
         };
@@ -450,6 +463,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 0x70 => [0x28u8, 0x7F, 0x83, 0x29, 0x84, 0x2A, 0x85][round % 7],
                 // The two casters that deal a stacked table.
                 0x76 => [0u8, 0x9D, 0x9E][round % 3],
+                // Glare forks its cue, cut, clip and caster rate on Zora
+                // (`0xA9`, `0x801F6AE0`, `0x801F6B34`, `0x801F6C94`,
+                // `0x801F700C`).
+                0x3C => [0u8, GLARE_ZORA][round % 2],
                 _ => 0,
             };
             // The formation cells `0x8007BD0C[seat - 3]`. A seat-7 caster's
@@ -534,6 +551,36 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     cpu.mem.wr16(va_ + o, v);
                 }
                 cpu.mem.wr8(va_ + 0x1F2, (round % 2) as u8);
+            }
+            // Glare's roll on a slow victim beside a quick caster from round
+            // 2 on, so it lands: behind Stone Guard (rounds 2 and 6) and
+            // Master Guard (3), each record's `+0x6BC` (`0x801F7054..0x801F7070`),
+            // on a victim with an Item queued and its turn to come (4, 6),
+            // its turn spent (5) and another action queued (7), which the
+            // Stone's cancel and refund read (`0x801F70A8..0x801F70EC`).
+            if body.action == 0x3C {
+                if round >= 2 {
+                    cpu.mem.wr16(va_ + 0x168, 1);
+                    cpu.mem.wr16(ca + 0x168, 200);
+                }
+                let guard = match round {
+                    2 | 6 => 1u32 << 0x1A,
+                    3 => 1 << 0x1C,
+                    _ => 0,
+                };
+                for i in 0..3 {
+                    cpu.mem.wr32(CHAR_RECORDS + i * CHAR_STRIDE + 0x6BC, guard);
+                }
+                if let Some((category, key)) = match round {
+                    4 | 6 => Some((1u8, 0x40u16)),
+                    5 => Some((1, 0)),
+                    7 => Some((2, 0x40)),
+                    _ => None,
+                } {
+                    cpu.mem.wr8(va_ + 0x1DE, category);
+                    cpu.mem.wr16(va_ + 0x16C, key);
+                    cpu.mem.wr8(va_ + 0x1DF, 0x10 + round as u8);
+                }
             }
             if death_game {
                 for a in [ca, va_] {
@@ -1019,6 +1066,32 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 shadow_after = (0..8u32)
                     .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
                     .collect();
+                // Glare's Stone on the pass that leaves arm 2: the queued
+                // action it cancels and the Item it refunds, against the
+                // shadow's (`World::stone_cancels_queued_action`).
+                if body.action == 0x3C
+                    && phase == 2
+                    && after != phase
+                    && let Some(w) = shadow.as_ref().filter(|_| shadow_live)
+                {
+                    let called = refunds.borrow_mut().drain(..).collect::<Vec<_>>();
+                    let mut bag: Vec<(u32, u32)> = w
+                        .party
+                        .inventory
+                        .iter()
+                        .filter(|&(_, &n)| n > 0)
+                        .map(|(&id, &n)| (u32::from(id), u32::from(n)))
+                        .collect();
+                    bag.sort_unstable();
+                    let got = (called, cpu.mem.rd8(va_ + 0x1DE));
+                    let port = (bag, w.actors[victim as usize].battle.action_category);
+                    if got != port {
+                        failures.push(format!(
+                            "{c}: Stone's cancel and refund retail {got:x?} port {port:x?}"
+                        ));
+                    }
+                    glare_rolls += 1;
+                }
                 // Terror Scream's turn steal on the pass that leaves arm 3,
                 // against `terror_scream_tick`.
                 if body.action == 0x70 && phase == 3 && after != phase {
@@ -1243,6 +1316,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     eprintln!("buff passes compared {buffs}, seat-write passes {seat_passes}");
     assert!(seat_passes > 100, "seat-write passes {seat_passes}");
     assert!(steals >= 12, "Terror Scream steals compared {steals}");
+    assert!(glare_rolls >= 6, "Glare Stone rolls compared {glare_rolls}");
     eprintln!(
         "band shadow: {shadow_passes} passes compared, {shadow_diverged} casts left retail's phase walk, {} mismatches",
         shadow_failures.len()
@@ -1344,6 +1418,11 @@ const SPAWN_PART: u32 = 0x8002_1B04;
 const PARTS: u32 = 0x8016_0000;
 /// The bag's find-or-insert `FUN_800421D4`, which a turn steal refunds through.
 const BAG_INSERT: u32 = 0x8004_21D4;
+/// Zora, the monster Glare's body forks on (`0x8007BD0C[seat - 3] == 0xA9`).
+const GLARE_ZORA: u8 = 0xA9;
+/// The character records (`0x80084140 + (id - 1) * 0x414`).
+const CHAR_RECORDS: u32 = 0x8008_4140;
+const CHAR_STRIDE: u32 = 0x414;
 /// The monster-record pointer table and the records the buff bodies read.
 const RECORDS: u32 = 0x801C_9348;
 const MONSTER_RECORDS: u32 = 0x8017_0000;

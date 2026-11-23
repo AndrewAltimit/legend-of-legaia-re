@@ -48,3 +48,38 @@ image = "c5d240f2c9243856"
 range = "0x801F71AC..0x801F71E4"
 verdict = "unreachable"
 reason = "PROT 0956 `0x75` arm 3: per pass the level `0x801F86A8` climbs `4p` (`p` = frame step x scalar) from `0` and stores phase `0xFF` past `0x1000` (`0x801F7130..0x801F714C`), while the countdown `0x801F86A0` falls `p` from arm 2's `scalar << 9` (`4096` at the constant scalar `8`) plus a remnant in `(-4p, 0]`. The level passes `0x1000` near `1025` units of `p`, the countdown needs about `4096`, so the `bgtz` at `0x801F71AC` always skips the settle wait behind it."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "5f8c05dacd859682"
+range = "0x801F6AA4..0x801F6AA4"
+verdict = "unreachable"
+reason = "PROT 0940 Glare (`0x3C`): the head's `beq` on `0` runs only for a phase byte under `2` that is not the `1` in `t2` (`0x801F6A4C`, tested at `0x801F6A90`), so it is always `0` there and the fall-through never runs."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "5f8c05dacd859682"
+range = "0x801F6ABC..0x801F6ABC"
+verdict = "unreachable"
+reason = "PROT 0940 Glare (`0x3C`): the phase byte `ctx[+0x279]` is `0` at install and only arms 0..2 write it, `+1` each (`0x801F71A0..0x801F71B0`); arm 3 ends the cast with the byte at `3`, so the fall-through past the `3` test never runs."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "5f8c05dacd859682"
+range = "0x801F6F94..0x801F6F94"
+verdict = "unreachable"
+reason = "PROT 0940 Glare (`0x3C`): the branch to the failed-roll caption on a monster victim (`sltiu v0,s0,3`). Glare's target shape is `0x44` (one opponent), which the monster picker turns into a party seat (`0x801EA8CC..0x801EA918`); the retarget `FUN_801E7320` runs only for `+0x16E & 0x380` actors, which are Rage party seats in retail, so a monster's Glare never names a monster seat."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "5f8c05dacd859682"
+range = "0x801F6FB8..0x801F6FD0"
+verdict = "unreachable"
+reason = "PROT 0940 Glare (`0x3C`): the compiler's divide traps on `rand() % (caster AGL + victim AGL)`. The divisor is the sum of two `lhu` halfwords (`+0x168`, `0x801F6FA4..0x801F6FB0`), so it is never `-1`; it is `0` only when the party victim's AGL is `0`, a stat the new-game records seat above `0` and level-ups only raise (inference, not a traced clamp)."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "5f8c05dacd859682"
+range = "0x801F7118..0x801F712C"
+verdict = "unreachable"
+reason = "PROT 0940 Glare (`0x3C`): the stoned victim's caption pick on its character id (`0x8007BD10[seat]` against `2`, `1` and `3`); the victim is a party seat, whose id is `1..=3`, so the two fall-throughs past the last test (an id of `0` or above `3`) never run."
