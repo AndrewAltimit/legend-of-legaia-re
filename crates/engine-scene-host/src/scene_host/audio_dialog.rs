@@ -284,6 +284,20 @@ impl SceneHost {
         // slice.
         let mut attached_this_drain = false;
         for ev in self.world.drain_field_events() {
+            // An explicit restart: the slot is torn down first, so the start
+            // behind it loads the track afresh even where it is the one
+            // sounding (the director's same-track suppression and the
+            // poller's latch both stand for every other start).
+            let ev = match ev {
+                legaia_engine_field::field_events::FieldEvent::Bgm { text_id, sub_op }
+                    if sub_op == super::BGM_SUB_OP_ENGINE_RESTART =>
+                {
+                    director.stop();
+                    self.bgm_latched = None;
+                    legaia_engine_field::field_events::FieldEvent::Bgm { text_id, sub_op: 1 }
+                }
+                ev => ev,
+            };
             match ev {
                 // An expansion pack's start: a pack track (resolved against
                 // the pack, never the music bank), or a retail track that

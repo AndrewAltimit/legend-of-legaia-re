@@ -22,6 +22,7 @@ impl World {
         self.minigames.fishing_events.clear();
         self.minigames.fishing_cues.reset();
         self.minigames.fishing_hook_music = false;
+        self.minigames.fishing_shore_reached = false;
         self.mode = SceneMode::Fishing;
     }
 
@@ -280,6 +281,36 @@ impl World {
     ///
     /// PORT: FUN_801d26cc (`0x801D360C..0x801D3664`)
     /// PORT: FUN_801cf3bc (`0x801CF7E0..0x801CF82C`, `0x801CFD84..0x801CFDD4`)
+    /// State `0xA`'s track restore on the session's first arrival at the
+    /// shore (`0x801CF7E0..0x801CF830`): the hook latch `0x801D92A4` starts at
+    /// `-1` (`0x801CF358`), so the arm's `beqz` on it falls through once,
+    /// stops the battle source `0x8007056C` (`FUN_800266E0` / `FUN_80026520`),
+    /// reinstalls category 5 from the staging buffer's head (`FUN_8001E54C`,
+    /// the venue's track the scene staged) and restarts the source
+    /// (`FUN_80026478`): the track the departure scene was playing starts
+    /// again from its head. The rod / type select ahead of it (state `0`) is
+    /// not modelled, so the replay lands on the session's first shore tick.
+    ///
+    /// PORT: FUN_801cf3bc (state 0xa: the first arrival's track restore, 0x801CF7E0..0x801CF830)
+    fn fishing_shore_replay(&mut self) {
+        use legaia_engine_fishing::fishing::PondPhase;
+        let at_shore = self
+            .minigames
+            .fishing
+            .as_ref()
+            .is_some_and(|s| matches!(s.phase(), PondPhase::Idle | PondPhase::NoLure));
+        if !at_shore || self.minigames.fishing_shore_reached {
+            return;
+        }
+        self.minigames.fishing_shore_reached = true;
+        if let Some(track) = self.audio.current_bgm {
+            self.pending_field_events.push(FieldEvent::Bgm {
+                text_id: track,
+                sub_op: crate::world::BGM_SUB_OP_ENGINE_RESTART,
+            });
+        }
+    }
+
     fn fishing_hook_music(&mut self, events: &[legaia_engine_fishing::fishing::PondEvent]) {
         use legaia_engine_fishing::fishing::PondEvent;
         let hooked = events.iter().any(|e| matches!(e, PondEvent::Hooked(_)));
@@ -369,6 +400,7 @@ impl World {
             None => (Vec::new(), false, Vec::new()),
         };
         self.fishing_hook_music(&events);
+        self.fishing_shore_replay();
         // A broken line spends the equipped lure: the break arm's
         // `FUN_80042310(lure + 0x9D, 1)` (`0x801D3C20`), the bag's
         // window-bounded consume-by-id.
@@ -521,6 +553,38 @@ mod hook_audio_tests {
         assert_eq!(bgm_starts(&mut w), [2026]);
         w.fishing_hook_music(&[PondEvent::Recast]);
         assert_eq!(bgm_starts(&mut w), [2017]);
+    }
+
+    /// The first shore arrival restarts the scene's track from its head,
+    /// once per session (the latch's `-1`, `0x801CF358`): the restart word,
+    /// not a plain start the host would play on through.
+    #[test]
+    fn the_first_shore_replays_the_scenes_track_once() {
+        let mut w = pond_world();
+        w.audio.current_bgm = Some(2017);
+        w.pending_field_events.clear();
+        w.fishing_shore_replay();
+        let restarts = |w: &mut World| -> Vec<u16> {
+            std::mem::take(&mut w.pending_field_events)
+                .into_iter()
+                .filter_map(|e| match e {
+                    FieldEvent::Bgm { text_id, sub_op }
+                        if sub_op == crate::world::BGM_SUB_OP_ENGINE_RESTART =>
+                    {
+                        Some(text_id)
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(restarts(&mut w), [2017]);
+        w.fishing_shore_replay();
+        assert!(restarts(&mut w).is_empty(), "only the first arrival");
+        // A new session loads the overlay again: the latch is back at -1.
+        w.exit_fishing();
+        w.enter_fishing(pond_world().minigames.fishing.take().unwrap());
+        w.fishing_shore_replay();
+        assert_eq!(restarts(&mut w), [2017]);
     }
 
     /// The head copies `surge / 8` and `surge / 4` into the motor words while

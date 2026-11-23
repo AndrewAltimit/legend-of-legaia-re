@@ -40,6 +40,14 @@ pub const BGM_SUB_OP_ENGINE_FIELD_CLOSE: u8 = 0xFD;
 /// raises it; like [`BGM_SUB_OP_ENGINE_STOP`], not a retail op-`0x35` word.
 pub const BGM_SUB_OP_ENGINE_FADE: u8 = 0xFC;
 
+/// The `FieldEvent::Bgm` sub-op the **engine** raises to start a track again
+/// from its head when it may already be the one sounding: the host stops the
+/// slot first, so the director's same-track suppression (a sub-op `1` of the
+/// sounding id plays on) does not swallow it. The fishing overlay's first
+/// shore arrival raises it (`World::fishing_shore_replay`). Not a retail
+/// op-`0x35` word.
+pub const BGM_SUB_OP_ENGINE_RESTART: u8 = 0xFB;
+
 /// Audio-side state: BGM selection and resume, the SFX cue / delay slots, sound-bank handshakes and the battle SFX / XA / shout cue queues.
 #[derive(Debug)]
 pub struct AudioState {

@@ -101,9 +101,9 @@ mod world_toggles;
 pub use ambient_fx_state::{AmbientFxState, FrameGrab, SeededVramRect, VenueAmbientRestore};
 pub use audio_state::{
     ARENA_SIDE_BAND_REQUEST, AudioState, BGM_PARK_SENTINEL, BGM_SUB_OP_ENGINE_FADE,
-    BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP,
-    FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SideBandBank, VAB_01_RAW_BASE,
-    monster_sound_banks, monster_sound_category, runtime_sfx_descriptor_in,
+    BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_RESTART,
+    BGM_SUB_OP_ENGINE_STOP, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SideBandBank,
+    VAB_01_RAW_BASE, monster_sound_banks, monster_sound_category, runtime_sfx_descriptor_in,
     side_band_bank_for_request,
 };
 pub use config::*;

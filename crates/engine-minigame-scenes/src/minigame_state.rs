@@ -37,6 +37,11 @@ pub struct MinigameState {
     /// the battle theme in until the session swaps the venue's track back
     /// (`World::tick_fishing`).
     pub fishing_hook_music: bool,
+    /// Whether the session has reached the shore since the overlay loaded:
+    /// the hook latch starts at `-1` (`0x801CF358`), so the first state
+    /// `0xA` replays the venue's track from its head
+    /// (`World::fishing_shore_replay`).
+    pub fishing_shore_reached: bool,
     /// The scene mode to restore when the fishing minigame ends
     /// (`World::enter_fishing` snapshots the interrupted mode).
     pub fishing_return_mode: SceneMode,
@@ -395,6 +400,7 @@ impl MinigameState {
             fishing_events: Vec::new(),
             fishing_cues: PondCueClock::default(),
             fishing_hook_music: false,
+            fishing_shore_reached: false,
             fishing_exchange: None,
             fishing_exchange_dialog: Default::default(),
             fishing_exchange_cursor: 0,

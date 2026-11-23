@@ -211,7 +211,7 @@ pub fn bgm_bank_id(bgm_id: u16) -> u16 {
 
 use legaia_engine_core::world::{
     BGM_SUB_OP_ENGINE_FADE, BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH,
-    BGM_SUB_OP_ENGINE_STOP,
+    BGM_SUB_OP_ENGINE_RESTART, BGM_SUB_OP_ENGINE_STOP,
 };
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired
