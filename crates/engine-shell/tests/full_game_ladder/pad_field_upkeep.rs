@@ -43,6 +43,81 @@ fn boss_bound() -> bool {
 // Healing through the pause menu
 // ---------------------------------------------------------------------------
 
+/// Set Field Move to Run the way a player does: Start, the Options row, the
+/// Field Move row, Run, and out. `true` when the world now runs by default.
+///
+/// The options screen hands its closing state to the session
+/// (`SubsessionHandoff::Options`); both play hosts then push their options
+/// onto the world every tick (`BootSession::apply_option_knobs`). A headless
+/// session has no such tick, so the hand plays that part for the one row it
+/// changed. A menu that does not open, or a screen that does not commit,
+/// falls back to the direct write ([`shortcut`] `run_switch`).
+pub(super) fn pad_field_move_run(session: &mut NativeSession) -> bool {
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
+    use legaia_engine_menus::options::OptionsPhase;
+    use legaia_engine_system::option_values::FieldMoveOpt;
+    const FIELD_MOVE_ROW: u8 = 3;
+    let options_row = FieldMenuRow::Options.index();
+    let committed = |s: &NativeSession| s.options_state.field_move == FieldMoveOpt::Run;
+    if walking(session) && released(session) {
+        open_pause_menu(session);
+    }
+    for _ in 0..80 {
+        let Some(menu) = session.field_menu.as_ref() else {
+            break;
+        };
+        let pad = match session.field_menu_sub.as_ref() {
+            None => match menu.phase() {
+                FieldMenuPhase::Browsing { cursor } => {
+                    if committed(session) {
+                        PadButton::Circle.mask()
+                    } else if cursor != options_row {
+                        PadButton::Down.mask()
+                    } else {
+                        PadButton::Cross.mask()
+                    }
+                }
+                _ => 0,
+            },
+            Some(FieldMenuSubsession::Config(o)) => match o.phase() {
+                _ if o.state().field_move == FieldMoveOpt::Run => PadButton::Circle.mask(),
+                OptionsPhase::Browsing { cursor } if cursor != FIELD_MOVE_ROW => {
+                    PadButton::Down.mask()
+                }
+                OptionsPhase::Browsing { .. } => PadButton::Cross.mask(),
+                OptionsPhase::Editing { choice, .. } => {
+                    if choice == 1 {
+                        PadButton::Cross.mask()
+                    } else {
+                        PadButton::Down.mask()
+                    }
+                }
+                _ => PadButton::Circle.mask(),
+            },
+            Some(_) => PadButton::Circle.mask(),
+        };
+        if pad == 0 {
+            let _ = session.tick();
+            continue;
+        }
+        tap_pad(session, pad);
+    }
+    for _ in 0..16 {
+        if session.field_menu.is_none() {
+            break;
+        }
+        tap_pad(session, PadButton::Circle.mask());
+    }
+    if committed(session) && session.field_menu.is_none() {
+        session.host.world.locomotion.run_default = true;
+        return true;
+    }
+    shortcut("run_switch");
+    session.host.world.locomotion.run_default = true;
+    false
+}
+
 /// Press `mask` for one frame and release on the next: every menu surface
 /// reads `just_pressed`, so a held mask is one event.
 /// Press Start and wait out the pause wipe: retail's field session raises

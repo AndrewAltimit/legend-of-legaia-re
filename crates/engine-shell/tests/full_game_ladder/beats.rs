@@ -1552,14 +1552,56 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
             .is_some_and(|id| id.prop_anchor == Some(anchor))
     };
     let back = player_xz(session);
-    for (dx, dz) in [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)] {
+    // The pad hand walks to a side tile and presses in from there, nearest
+    // side first; only when its walk reaches none of them does it fall back
+    // to placing the player, over the seated hand's order ([`shortcut`]
+    // `touch_seat`).
+    let sides = [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)];
+    let attempts: Vec<((i16, i16), bool)> = if pad_hand() {
+        let (px, pz) = player_xz(session);
+        let me = dispatch_tile(px, pz);
+        let mut near = sides;
+        near.sort_by_key(|&(dx, dz)| {
+            (i32::from(tx + dx) - me.0).abs() + (i32::from(tz + dz) - me.1).abs()
+        });
+        near.into_iter()
+            .map(|d| (d, true))
+            .chain(sides.into_iter().map(|d| (d, false)))
+            .collect()
+    } else {
+        sides.into_iter().map(|d| (d, false)).collect()
+    };
+    let mut pad_reached = false;
+    for ((dx, dz), try_pad) in attempts {
         let (sx, sz) = (tx + dx, tz + dz);
         if !(0..128).contains(&sx) || !(0..128).contains(&sz) {
             continue;
         }
+        if !try_pad && pad_hand() && (pad_reached || shortcuts_refused() || !walking(session)) {
+            break;
+        }
         session.host_pad(0);
-        session.host.world.seat_player_at_tile(sx as u8, sz as u8);
-        shortcut("touch_seat");
+        let by_pad = try_pad
+            && match pad_walk(session, (sx, sz), &pad_avoid(session, Some((sx, sz))), 0) {
+                Ok(Walk::Entered(s)) => return Run::Entered(s),
+                Ok(Walk::Arrived) => walking(session),
+                Err(e) if e.contains("party wiped") => return Run::Battle(e),
+                Err(e) => {
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        let e: String = e.chars().take(160).collect();
+                        eprintln!("      [touch] side {:?} of {anchor:?}: {e}", (sx, sz));
+                    }
+                    false
+                }
+            };
+        if try_pad && !by_pad {
+            continue;
+        }
+        pad_reached |= by_pad;
+        if !by_pad {
+            session.host.world.seat_player_at_tile(sx as u8, sz as u8);
+            shortcut("touch_seat");
+        }
         let mut started = false;
         for _ in 0..40 {
             let pad = pad_for_step(session, -dx, -dz);
@@ -1586,6 +1628,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
             // touched from (109, 117)), and the walk on starts where the
             // walk to it ended.
             if matches!(r, Run::Released)
+                && !by_pad
                 && walking(session)
                 && tile_of(player_xz(session).0, player_xz(session).1) == (sx, sz)
             {
@@ -1760,11 +1803,32 @@ fn inside_box_tile(session: &NativeSession, t: (u8, u8)) -> bool {
 /// from inside the box.
 pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) -> Option<Run> {
     let inside = |s: &NativeSession| inside_box_tile(s, t);
+    // The seated hand turns the player to each sector until the probe lands;
+    // the pad hand reads the probe as the lean left it.
+    let by_pad = pad_hand();
     let reaches = |s: &mut NativeSession| {
+        if by_pad {
+            return s.host.world.field_interact_probe_slot() == Some(slot);
+        }
         (0..8u8).any(|d| {
             s.host.world.face_player_sector(d);
             s.host.world.field_interact_probe_slot() == Some(slot)
         })
+    };
+    // A lean that left the box goes back into it: the pad hand steps back
+    // toward where it stood; only a step that does not get there falls back
+    // to the placement.
+    let step_back = |s: &mut NativeSession, back: (i16, i16)| -> Option<String> {
+        if by_pad {
+            if let Some(scene) = pad_lean(s, move |_| Some(back), 12, |s| inside(s)) {
+                return Some(scene);
+            }
+            if inside(s) || shortcuts_refused() {
+                return None;
+            }
+        }
+        restore_player_xz(s, back);
+        None
     };
     // A lean whose next step leaves the box backs off one step at the other
     // speed and leans again. The walk's step is 8 a frame and the run's 12
@@ -1793,7 +1857,9 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
         }
         session.host_pad(0);
         if !inside(session) {
-            restore_player_xz(session, back);
+            if let Some(scene) = step_back(session, back) {
+                return Some(Run::Entered(scene));
+            }
             found = reaches(session);
             if found || backoffs >= 3 {
                 break;
@@ -1808,7 +1874,9 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
             }
             session.host_pad(0);
             if !inside(session) {
-                restore_player_xz(session, back);
+                if let Some(scene) = step_back(session, back) {
+                    return Some(Run::Entered(scene));
+                }
                 break;
             }
         }
@@ -1817,7 +1885,9 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
     if !found {
         return None;
     }
-    shortcut("box_face");
+    if !by_pad {
+        shortcut("box_face");
+    }
     match press_edge(session, PadButton::Cross.mask()) {
         Ok(Some(name)) => return Some(Run::Entered(name)),
         Ok(None) => {}

@@ -26,6 +26,35 @@ pub(super) trait HostPad {
 
 impl HostPad for NativeSession {
     fn host_pad(&mut self, pad: u16) {
+        // The opening's intro hand-off (`claim_tick`'s `PrologueSkip`, retail
+        // `FUN_801D1344`): once the opening chain arms it, a Cross edge ends
+        // the opening on both play hosts, whatever holds the field's pad -
+        // the hosts read the raw edge ahead of the neutral-pad rule. The
+        // headless tick never takes it, so the gate does, as the hosts do.
+        //
+        // The hand watches the opening, as a player who wants to see it
+        // does: it presses no Cross while the hand-off is armed, so the
+        // ladder plays the whole chain. `LEGAIA_FGL_SKIP_OPENING=1` presses
+        // through instead, and the first press takes the hosts' skip.
+        let armed = {
+            let w = &self.host.world;
+            w.flags.story_flags & legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG != 0
+                && w.cutscene.opening_chain_active
+        };
+        let pad = if armed && !skip_opening() {
+            pad & !PadButton::Cross.mask()
+        } else {
+            pad
+        };
+        if armed
+            && pad & !self.host.world.input.pad() & PadButton::Cross.mask() != 0
+            && let Some(target) = self.host.world.take_prologue_handoff(true)
+        {
+            shortcut("prologue_skip");
+            if let Err(e) = self.enter_field_live(target, &live_opts(pad_hand())) {
+                panic!("prologue hand-off: enter '{target}' failed: {e:#}");
+            }
+        }
         let pad = if self.world_holds_field_pad() && !raw_pad() {
             0
         } else {
@@ -33,6 +62,11 @@ impl HostPad for NativeSession {
         };
         self.host.world.set_pad(pad);
     }
+}
+
+fn skip_opening() -> bool {
+    static SKIP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SKIP.get_or_init(|| std::env::var_os("LEGAIA_FGL_SKIP_OPENING").is_some_and(|v| v != "0"))
 }
 
 fn raw_pad() -> bool {
@@ -259,16 +293,20 @@ pub(super) fn answer_notice(session: &mut NativeSession) -> bool {
     answer_notice_on(
         session,
         |s| &mut s.host.world,
+        |s, pad| s.host_pad(pad),
         |s| {
             let _ = s.tick();
         },
     )
 }
 
-/// [`answer_notice`] over anything that owns a world and can tick it.
+/// [`answer_notice`] over anything that owns a world and can tick it. Each
+/// press goes through `pad`: the session's is the hosts' pad gate
+/// ([`HostPad::host_pad`]), as every other press the hand makes.
 pub(super) fn answer_notice_on<S>(
     s: &mut S,
     world: impl Fn(&mut S) -> &mut legaia_engine_core::world::World,
+    pad: impl Fn(&mut S, u16),
     mut tick: impl FnMut(&mut S),
 ) -> bool {
     if world(s).locomotion.incense_notice.is_none() {
@@ -282,15 +320,17 @@ pub(super) fn answer_notice_on<S>(
             break;
         }
         // The handler reads an edge: a released frame, then the press.
-        shortcut("notice_raw_pad");
-        w.set_pad(if i % 2 == 0 {
-            0
-        } else {
-            PadButton::Cross.mask()
-        });
+        pad(
+            s,
+            if i % 2 == 0 {
+                0
+            } else {
+                PadButton::Cross.mask()
+            },
+        );
         tick(s);
     }
-    world(s).set_pad(0);
+    pad(s, 0);
     true
 }
 
@@ -415,6 +455,7 @@ fn the_hand_answers_the_incense_notice() {
         assert!(answer_notice_on(
             &mut w,
             |w| w,
+            |w, pad| w.set_pad(pad),
             |w| {
                 ticks += 1;
                 let _ = w.tick();
@@ -433,6 +474,11 @@ fn no_notice_costs_no_tick() {
     let mut w = world_under_the_notice();
     w.locomotion.incense_notice = None;
     let mut ticks = 0;
-    assert!(!answer_notice_on(&mut w, |w| w, |_| ticks += 1));
+    assert!(!answer_notice_on(
+        &mut w,
+        |w| w,
+        |w, pad| w.set_pad(pad),
+        |_| ticks += 1
+    ));
     assert_eq!(ticks, 0);
 }

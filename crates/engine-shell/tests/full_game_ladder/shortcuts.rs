@@ -37,9 +37,8 @@ pub(super) fn shortcut(name: &'static str) {
 pub(super) fn shortcuts_refused() -> bool {
     static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     pad_hand()
-        && *OFF.get_or_init(|| {
-            std::env::var_os("LEGAIA_FGL_NO_SHORTCUTS").is_some_and(|v| v != "0")
-        })
+        && *OFF
+            .get_or_init(|| std::env::var_os("LEGAIA_FGL_NO_SHORTCUTS").is_some_and(|v| v != "0"))
 }
 
 /// The tally so far, emptied.

@@ -801,8 +801,7 @@ fn part_c_continuous_run() {
             }
             if run_retry {
                 run_tried = true;
-                shortcut("run_switch");
-                session.host.world.locomotion.run_default = true;
+                pad_field_move_run(&mut session);
                 switched_in_place = true;
                 if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                     eprintln!(
@@ -879,8 +878,7 @@ fn part_c_continuous_run() {
             // words travel with it, SC `+0x58C`); a player who switched to Run
             // switches again on a save from before the switch.
             if run_tried {
-                shortcut("run_switch");
-                session.host.world.locomotion.run_default = true;
+                pad_field_move_run(&mut session);
             }
             if !(attempt == 1 && prepare.is_some()) {
                 let w = &mut session.host.world;
