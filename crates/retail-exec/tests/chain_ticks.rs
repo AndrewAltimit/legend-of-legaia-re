@@ -235,6 +235,8 @@ struct Field {
     target: Option<u8>,
     dead: u8,
     stoned: u8,
+    /// Seats standing on less HP than a hit's roll, which the hit kills.
+    low: u8,
 }
 
 fn run_body(
@@ -336,6 +338,8 @@ fn run_body(
         }
         let hp = if field.dead & (1 << s) != 0 {
             0
+        } else if field.low & (1 << s) != 0 {
+            (ROLL - 4) as u16
         } else {
             100 + rng.below(400) as u16
         };
@@ -797,11 +801,21 @@ fn fields(entry: u32) -> Vec<(u64, Field)> {
         target,
         dead,
         stoned,
+        low: 0,
     };
     let mut out = vec![
         (0x4348_4149, Field::default()),
         (0x5449_434B, Field::default()),
         (0x5345_4154, f(Some(2), 0b001, 0)),
+        // The target on less HP than the hit: it dies under it, and a settle
+        // that waits on the victim waits out its fallen clip.
+        (
+            0x4B49_4C4C,
+            Field {
+                low: 0b100,
+                ..f(Some(2), 0, 0)
+            },
+        ),
     ];
     if [935, 936, 942, 960, 961, 963, 964].contains(&entry) {
         out.push((0x4752_5031, f(Some(8), 0b010, 0b100)));
