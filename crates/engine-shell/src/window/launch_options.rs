@@ -635,6 +635,14 @@ pub struct ScreenshotConfig {
     /// gates where the displayed frame measures closer
     /// (`RetailBattle::display_retake` in `legaia-parity`).
     pub display_lag: u64,
+    /// `LEGAIA_CAPTURE_GATE_LATE=<ticks>`: take a gated capture's frame this
+    /// many world ticks after the tick its gate first opens, every seed and
+    /// drive still running. A seating probe: whether a residual is the
+    /// frame's phase (a trail, a flash's age) or a draw the engine lacks.
+    /// HARNESS.
+    pub gate_late: u64,
+    /// The tick [`Self::gate_late`] counts from: the first one the gate held.
+    pub gate_met_tick: std::cell::Cell<Option<u64>>,
     /// `LEGAIA_CAPTURE_RETAKE_SHOT=1`: retake only when the battle camera
     /// armed the magic band's shot it stands on after the retake's tick, so
     /// the gate's frame shows a different shot than the display did
@@ -1527,6 +1535,11 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(0),
+            gate_late: std::env::var("LEGAIA_CAPTURE_GATE_LATE")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(0),
+            gate_met_tick: std::cell::Cell::new(None),
             retake_shot_only: std::env::var("LEGAIA_CAPTURE_RETAKE_SHOT")
                 .is_ok_and(|v| v.trim() == "1"),
             battle_cam_stand_displayed: std::env::var("LEGAIA_BATTLE_CAM_STAND_DISPLAYED")

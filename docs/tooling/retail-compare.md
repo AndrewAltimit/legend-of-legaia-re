@@ -165,6 +165,17 @@ changes; the Done-arm camera walk back
 displayed yaw this way. The override is a probe only: the cache keys on every
 `LEGAIA_*` variable, so an override run never feeds a normal one.
 
+`LEGAIA_CAPTURE_GATE_LATE=<ticks>` through the override takes a gated frame
+that many world ticks after its gate first opens, every seed and drive still
+running (a display-lag retake counts back from the later tick). It asks
+whether a residual is the frame's phase or a draw the engine lacks. The Flying
+Knee stills answer it both ways: `battle_garmel_party_gala_flying_knee_mid`
+reads `.969` on its gate and `.976` two ticks (one pass) later, the body's pose
+closer to retail's, while `battle_ropeway_party_gala_flying_knee_mid` holds
+`.990` and falls to `.942` from three ticks, and `_late` falls from `.874` to
+`.818` from two. The frames hold no weapon-trail band, move-FX streak, ribbon
+or near-camera ghost: dropping each pass leaves all three scores unchanged.
+
 ## Reading the report
 
 `report.md` opens with the channel means over the seeded states and the
