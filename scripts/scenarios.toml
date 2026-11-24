@@ -5141,6 +5141,15 @@ expected_active_scene = "koin3"
 topics = ["field", "koin3", "dance", "how-to", "dialogue", "route walk"]
 
 [[scenarios]]
+label = "koin3_disco_king_points_box"
+backup_fingerprint = "acc669d21249947b64cf0fae35fd94a231c2476f3bebe9c27a3a07198a7a9fa0"
+description = "koin3 dance hall after the how-to lesson: the Disco King's box reads 'Disco King: 0 points!', the score through the line renderer's numeric 0xCE escape (0x0B, the numeral face, 8 px a digit). RETAIL disc, pad only, no pokes: koin3_disco_king_talk_open run on under autorun_field_walk_film.lua with Cross every 20 vsyncs (the lesson's Yes, its pages and songs, the return to the field), saved 5870 vsyncs in with the line on screen."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin3"
+topics = ["field", "koin3", "dance", "dialogue", "numeric escape"]
+
+[[scenarios]]
 label = "koin1b_field_route_walk"
 backup_fingerprint = "5431d5b3f0963cd85f3694888f9cb9c4745924f2fee80500181ce14c3df68373"
 description = "koin1b (Sol Tower rooms F) free field run, party HUD up after the walk stopped. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3; from the kor3 arrival state a second walk through kor3's rec-3 door, saved 1057 vsyncs in."
