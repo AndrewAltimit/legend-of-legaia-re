@@ -148,6 +148,10 @@ pub struct DeathGame {
     pub pick_level: u16,
     /// Host feeds for this pass.
     pub pad: DeathGamePad,
+    /// The held pad word the host read on the last pass, from which it
+    /// builds the pass's new-press word (`_DAT_8007B874 = held & !prev`, the
+    /// pad pump's once-a-frame edge).
+    pub pad_held_at_pass: u16,
     pub caster_faded: bool,
     /// What the pass did, for the host to carry out.
     pub cues: [u16; 3],
