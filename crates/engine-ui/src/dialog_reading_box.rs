@@ -108,16 +108,9 @@ pub fn dialog_reading_box_text_draws_for(
         // The pager stores `DAT_800740E8 = 1` before each row it draws
         // (`0x801D97D8`), so dialogue runs a pixel wider per glyph than the
         // same text in a menu.
-        let (laid, inks) = font.layout_padded_inked(
-            &dialog_page_bytes(line),
-            legaia_font::measure::DIALOG_GLYPH_PAD,
-            &mut ink,
-        );
-        let draws = text_draws_for(&laid, pen, MENU_TEXT_WHITE);
-        for (mut d, (g, glyph_ink)) in draws.into_iter().zip(laid.glyphs.iter().zip(inks)) {
-            if g.byte != legaia_font::ESCAPE_GLYPH_BYTE && glyph_ink != DIALOG_DEFAULT_INK {
-                d.color = crate::menu_ink_color(glyph_ink);
-            }
+        let mut row = Vec::new();
+        dialog_row_draws_into(font, &dialog_page_bytes(line), pen, &mut ink, &mut row);
+        for d in row {
             match band {
                 None => out.push(d),
                 Some((top, bottom)) => out.extend(crop_rows(d, top, bottom)),
@@ -125,6 +118,79 @@ pub fn dialog_reading_box_text_draws_for(
         }
     }
     out
+}
+
+/// One pager row at `pen`, threading the ink through it.
+///
+/// A resolved numeric escape (the page's `0xCE, NUMERAL_ESCAPE_BASE + d`
+/// pairs) is drawn as retail's renderer draws a script counter: through the
+/// numeral writer `FUN_80034B78(value, 0, x, y)` at the pen, one menu-numeral
+/// cell per digit in the staged ink, the pen stepping 8 px a digit with no
+/// glyph pad. The text either side lays out as before, the runs between the
+/// numerals each from the pen the numerals left.
+///
+/// PORT: FUN_80036888 (0x80036A14..0x80036A94, the numeric escape's call into the numeral writer)
+pub fn dialog_row_draws_into(
+    font: &legaia_font::Font,
+    bytes: &[u8],
+    pen: (i32, i32),
+    ink: &mut u8,
+    out: &mut Vec<TextDraw>,
+) {
+    let numeral_at = |i: usize| {
+        (bytes.get(i) == Some(&legaia_font::ESCAPE_GLYPH_BYTE))
+            .then(|| {
+                bytes
+                    .get(i + 1)
+                    .copied()
+                    .and_then(legaia_font::numeral_escape_digit)
+            })
+            .flatten()
+    };
+    let mut x = pen.0;
+    let mut start = 0;
+    let mut i = 0;
+    let run = |seg: &[u8], x: &mut i32, ink: &mut u8, out: &mut Vec<TextDraw>| {
+        if seg.is_empty() {
+            return;
+        }
+        let (laid, inks) =
+            font.layout_padded_inked(seg, legaia_font::measure::DIALOG_GLYPH_PAD, ink);
+        let draws = text_draws_for(&laid, (*x, pen.1), MENU_TEXT_WHITE);
+        for (mut d, (g, glyph_ink)) in draws.into_iter().zip(laid.glyphs.iter().zip(inks)) {
+            if g.byte != legaia_font::ESCAPE_GLYPH_BYTE && glyph_ink != DIALOG_DEFAULT_INK {
+                d.color = crate::menu_ink_color(glyph_ink);
+            }
+            out.push(d);
+        }
+        *x += laid.advance_x as i32;
+    };
+    while i < bytes.len() {
+        if bytes[i] == 0 {
+            break;
+        }
+        if let Some(d) = numeral_at(i) {
+            run(&bytes[start..i], &mut x, ink, out);
+            let color = if *ink == DIALOG_DEFAULT_INK {
+                MENU_TEXT_WHITE
+            } else {
+                crate::menu_ink_color(*ink)
+            };
+            let ch = char::from_digit(u32::from(d), 10).unwrap_or('0');
+            out.extend(crate::numeral_cell_draws(font, ch, (x, pen.1), color));
+            x += legaia_font::measure::NUMERIC_DIGIT_PX as i32;
+            i += 2;
+            start = i;
+            continue;
+        }
+        // Step whole pairs, so an operand is never read as a lead.
+        i += if matches!(bytes[i], 0xCE | 0xCF) {
+            2
+        } else {
+            1
+        };
+    }
+    run(&bytes[start..i.min(bytes.len())], &mut x, ink, out);
 }
 
 /// The ink the field pager stages before its rows: `7`, the dialogue white.

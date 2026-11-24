@@ -15,13 +15,6 @@ verdict = "unreachable"
 reason = "The Yes arm's page step looks up window 0x10 (`jal 0x80035334` with a0 0x10) to read its visible rows; that is the Throw Out list window phase 0 opened and phase 3 reopens over, so it is live whenever phase 3 runs and the null test never jumps."
 
 [[arm]]
-entry = "0x80036888"
-image = "98f28532deebc6d6"
-range = "0x80036A14..0x80036B10"
-verdict = "unported"
-reason = "The numeric 0xCE escape (table entry string_id 0): the counter at 0x801C6460[y_offset] drawn through the numeral writer FUN_80034B78 and the pen stepped 8 per digit. The port resolves the escape to dialog-font digit glyphs before layout (engine-dialog script_counter_digits, a REF), so this arm has no Rust; the typeface and the per-digit advance differ."
-
-[[arm]]
 entry = "0x801CFBB8"
 image = "13f991988fa12de5"
 range = "0x801CFBD0..0x801CFF2C"

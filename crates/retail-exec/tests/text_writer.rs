@@ -597,3 +597,113 @@ fn the_baked_pictograms_are_the_cells_retail_draws() {
         &modes[..4]
     );
 }
+
+/// The numeric `0xCE` escape (`0x0B..=0x0E`, string id `0`) through the line
+/// renderer at the dialog pad: retail reads the script counter
+/// `0x801C6460[y_offset]` with `lh`, hands it to the numeral writer
+/// `FUN_80034B78(value, 0, x, y)` at the pen (hooked and logged) and steps the
+/// pen 8 px a digit off its threshold ladder (`0x80036A9C..0x80036B10`). The
+/// port resolves the escape to the page's numeral pairs
+/// (`legaia_font::numeral_escape_run` over `script_counter_digits`) and the
+/// pager row draw (`engine-ui::dialog_row_draws_into`) lays the text and the
+/// numeral cells. Every glyph sprite retail links and every numeral cell the
+/// writer would place (`decimal_field_cells(value, 0)`) is a draw of the port
+/// at the same pen, and nothing else is.
+#[test]
+fn a_numeric_escape_draws_the_counter_where_retail_draws_it() {
+    differential!(scus(WRITER));
+    use legaia_engine_dialog::dialog::script_counter_digits;
+    use legaia_engine_ui::dialog_row_draws_into;
+    use legaia_engine_ui::menu::decimal_field::decimal_field_cells;
+    const COUNTERS: u32 = 0x801C_6460;
+    let Some(mut rig) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let numbers = Rc::new(RefCell::new(Vec::<(i32, u32, i32, i32)>::new()));
+    let n = numbers.clone();
+    rig.cpu.hook(NUMBER, move |r, _| {
+        n.borrow_mut().push((
+            r.r[A0] as i32,
+            r.r[A1],
+            r.r[psx_retail_exec::A2] as i32,
+            r.r[psx_retail_exec::A3] as i32,
+        ))
+    });
+    let mut rng = Rng(0x4E55_4D42);
+    let mut wide = 0;
+    for round in 0..4000 {
+        let slots: Vec<i16> = (0..4)
+            .map(|_| match rng.below(4) {
+                0 => rng.below(10) as i16,
+                1 => -(rng.below(200) as i16),
+                2 => rng.below(0x8000) as i16,
+                _ => rng.below(1000) as i16,
+            })
+            .collect();
+        for (k, &v) in slots.iter().enumerate() {
+            rig.cpu.mem.wr16(COUNTERS + 2 * k as u32, v as u16);
+        }
+        let mut text = Vec::new();
+        let mut page = Vec::new();
+        for _ in 0..1 + rng.below(8) {
+            match rng.below(5) {
+                0 => {
+                    let op = 0x0B + rng.below(4) as u8;
+                    // The table's `+3` byte is the counter slot.
+                    let slot = rig.cpu.mem.rd8(ESCAPES + u32::from(op) * 4 + 3) as usize;
+                    text.extend([0xCE, op]);
+                    page.extend(legaia_font::numeral_escape_run(&script_counter_digits(
+                        slots[slot],
+                    )));
+                }
+                1 => {
+                    let ink = rng.below(10) as u8;
+                    text.extend([0xCF, ink]);
+                    page.extend([0xCF, ink]);
+                }
+                _ => {
+                    let b = 0x21 + rng.below(0x5B) as u8;
+                    let b = if b == 0x5E || b == 0x7C { b'A' } else { b };
+                    text.push(b);
+                    page.push(b);
+                }
+            }
+        }
+        if text[0] < 0x21 {
+            text.insert(0, b'B');
+            page.insert(0, b'B');
+        }
+        let (x, y) = (rng.below(200) as i32, rng.below(200) as i32);
+        let mut z = text.clone();
+        z.extend([0u8; 4]);
+        rig.cpu.mem.load(TEXT, &z);
+        rig.cpu.mem.wr32(PAD, 1);
+        rig.cpu.mem.wr32(INK, 7);
+        rig.reset();
+        numbers.borrow_mut().clear();
+        rig.cpu.mem.wr32(STACK_TOP + 0x10, y as u32);
+        assert_eq!(
+            rig.cpu.call(WRITER, &[TEXT, 0, 0, x as u32]),
+            Stop::Returned,
+            "round {round}"
+        );
+        let what = format!("round {round}: {text:02x?} slots {slots:?} at ({x}, {y})");
+        let mut want: Vec<(i32, i32)> = rig.glyphs().iter().map(|g| (g.0, g.1)).collect();
+        for &(value, digits, nx, ny) in numbers.borrow().iter() {
+            assert_eq!(digits, 0, "{what}: no field");
+            assert!(slots.contains(&(value as i16)), "{what}: {value}");
+            let cells = decimal_field_cells(value, 0, false);
+            wide += u32::from(cells.len() > 1);
+            want.extend(cells.iter().map(|&(dx, _)| (nx + dx, ny)));
+        }
+        let mut ink = 7;
+        let mut draws = Vec::new();
+        dialog_row_draws_into(&rig.font, &page, (x, y), &mut ink, &mut draws);
+        let mut got: Vec<(i32, i32)> = draws.iter().map(|d| (d.dst.0, d.dst.1)).collect();
+        want.sort_unstable();
+        got.sort_unstable();
+        assert_eq!(got, want, "{what}");
+    }
+    assert!(wide > 1000, "{wide}");
+}

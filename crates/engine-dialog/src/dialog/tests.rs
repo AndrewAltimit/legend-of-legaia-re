@@ -98,7 +98,11 @@ fn a_number_escape_prints_the_resolved_script_counter() {
     };
     let mut map = std::collections::HashMap::new();
     map.insert((SCRIPT_COUNTER_KEY, 0x0B), script_counter_digits(0x2A));
-    assert_eq!(run(Some(Arc::new(map))), b"N42x".to_vec());
+    // One numeral pair a digit: retail draws the counter in the numeral face.
+    assert_eq!(
+        run(Some(Arc::new(map))),
+        vec![b'N', 0xCE, 0xF4, 0xCE, 0xF2, b'x'].to_vec()
+    );
     assert_eq!(
         run(None),
         vec![b'N', 0xCE, 0x0B, b'x'],

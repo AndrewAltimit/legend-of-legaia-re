@@ -114,6 +114,13 @@ impl Font {
                 0xCE if i < text.len() => {
                     let op = text[i];
                     i += 1;
+                    // A resolved numeric escape: one numeral cell, which the
+                    // host draws at this pen, and an 8 px step with no pad.
+                    // PORT: FUN_80036888 (0x80036A9C..0x80036B10, the 8 px per digit pen step)
+                    if crate::numeral_escape_digit(op).is_some() {
+                        pen_x = pen_x.saturating_add(crate::measure::NUMERIC_DIGIT_PX as i32);
+                        continue;
+                    }
                     if let Some(c) = self.escape_cell(op) {
                         if let Some(inks) = inks.as_deref_mut() {
                             inks.push(*ink);

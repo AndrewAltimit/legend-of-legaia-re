@@ -399,7 +399,7 @@ impl OwnedDialogPanel {
                 if let Some(subs) = self.substitutions.as_ref()
                     && let Some(digits) = subs.get(&(SCRIPT_COUNTER_KEY, arg))
                 {
-                    for &b in digits {
+                    for b in legaia_font::numeral_escape_run(digits) {
                         self.page.push(PanelGlyph {
                             byte: b,
                             clut: self.current_clut,
