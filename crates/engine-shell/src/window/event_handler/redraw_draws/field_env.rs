@@ -2,6 +2,7 @@
 //! environment, the terrain tiles and the placed objects.
 
 use super::*;
+use crate::window::field_render::FieldDrawLifts;
 use legaia_engine_render::{DRAW_ORDER_FAR_CORNER, DRAW_ORDER_NEAR_BUCKETS};
 
 impl<'m> DrawCtx<'_, 'm> {
@@ -140,9 +141,15 @@ impl<'m> DrawCtx<'_, 'm> {
                     {
                         order_marks.push((draws.len(), DRAW_ORDER_FAR_CORNER));
                     }
+                    let (model, cam) = FieldDrawLifts::depth_draw(
+                        &app.field_draw_lifts.terrain,
+                        di,
+                        facing_model(model, app.field_terrain_facing.get(di)),
+                        cam,
+                    );
                     draws.push(SceneDraw {
                         mesh,
-                        mvp: cam * facing_model(model, app.field_terrain_facing.get(di)),
+                        mvp: cam * model,
                         cue: None,
                     });
                 }
@@ -171,9 +178,15 @@ impl<'m> DrawCtx<'_, 'm> {
                     {
                         color_order_marks.push((color_draws.len(), DRAW_ORDER_FAR_CORNER));
                     }
+                    let (model, cam) = FieldDrawLifts::depth_draw(
+                        &app.field_draw_lifts.terrain_color,
+                        di,
+                        facing_model(model, app.field_terrain_color_facing.get(di)),
+                        cam,
+                    );
                     color_draws.push(ColorSceneDraw {
                         mesh,
-                        mvp: cam * facing_model(model, app.field_terrain_color_facing.get(di)),
+                        mvp: cam * model,
                         cue: None,
                     });
                 }
@@ -370,6 +383,15 @@ impl<'m> DrawCtx<'_, 'm> {
                 if place_near_culled_key(&mvp, app.field_placement_cell_keys.get(di)) {
                     continue;
                 }
+                let mvp = {
+                    let (m, c) = FieldDrawLifts::depth_draw(
+                        &app.field_draw_lifts.placement,
+                        di,
+                        *model,
+                        cam,
+                    );
+                    c * m
+                };
                 if let Some(mesh) = mesh {
                     if let Some(c) = object_key(record).and_then(|k| effect_clip(k, model)) {
                         clip_marks.push((draws.len(), c));
@@ -476,6 +498,15 @@ impl<'m> DrawCtx<'_, 'm> {
                 if place_near_culled_key(&mvp, app.field_placement_color_cell_keys.get(di)) {
                     continue;
                 }
+                let mvp = {
+                    let (m, c) = FieldDrawLifts::depth_draw(
+                        &app.field_draw_lifts.placement_color,
+                        di,
+                        *model,
+                        cam,
+                    );
+                    c * m
+                };
                 let color_idx = object_color_swaps
                     .get(di)
                     .copied()

@@ -8,8 +8,17 @@ use super::*;
 pub struct Baseline {
     /// Engine ticks between seeding and sampling when the baseline was cut.
     pub settle_ticks: u64,
-    /// Label -> channel -> score.
+    /// Label -> channel -> score, for the states made on a retail disc: the
+    /// ratchet.
     pub states: BTreeMap<String, BTreeMap<String, f64>>,
+    /// The same, for the states made on a patched disc (the manifest's
+    /// `resident_patch`). They replay a modified executable, so they are
+    /// kept apart from the retail list: a drop on one is reported as
+    /// [`Self::patched_drift`] and never fails the ratchet, and nothing that
+    /// reads the file as "the retail scores" (the site's frame-match tile)
+    /// takes them in.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub patched_states: BTreeMap<String, BTreeMap<String, f64>>,
     /// Label -> class, for the non-seeded states too (a class change is
     /// itself worth a review).
     pub classes: BTreeMap<String, StateClass>,
@@ -105,7 +114,8 @@ impl Baseline {
             // own image measures the patch's distance, not the engine's:
             // the baseline keeps what its own image scored.
             if !r.channels.is_empty() && r.resident_disc_missing.is_none() {
-                b.states.insert(r.label.clone(), r.channels.clone());
+                b.list_mut(r.resident_patch.is_some())
+                    .insert(r.label.clone(), r.channels.clone());
             }
         }
         b
@@ -128,19 +138,45 @@ impl Baseline {
         let Some(mut out) = prior else { return self };
         out.settle_ticks = self.settle_ticks;
         out.classes.extend(self.classes);
-        for (label, mut chans) in self.states {
-            if let Some(old) = out.states.get(&label) {
+        let measured = self
+            .states
+            .into_iter()
+            .map(|e| (false, e))
+            .chain(self.patched_states.into_iter().map(|e| (true, e)));
+        for (patched, (label, mut chans)) in measured {
+            // A state files under the list its run says it belongs to, so a
+            // manifest that gains or loses a `resident_patch` moves its row.
+            let old = out
+                .states
+                .remove(&label)
+                .or_else(|| out.patched_states.remove(&label));
+            if let Some(old) = old {
                 let frame_failed = failed_frames.contains(label.as_str());
                 for (ch, v) in old {
                     let image = IMAGE_CHANNELS.contains(&ch.as_str());
                     if unmeasured_by_run.contains(&ch.as_str()) || (frame_failed && image) {
-                        chans.entry(ch.clone()).or_insert(*v);
+                        chans.entry(ch).or_insert(v);
                     }
                 }
             }
-            out.states.insert(label, chans);
+            out.list_mut(patched).insert(label, chans);
         }
         out
+    }
+
+    /// The list a state files under: [`Self::patched_states`] for one made on
+    /// a patched disc, [`Self::states`] otherwise.
+    fn list_mut(&mut self, patched: bool) -> &mut BTreeMap<String, BTreeMap<String, f64>> {
+        if patched {
+            &mut self.patched_states
+        } else {
+            &mut self.states
+        }
+    }
+
+    /// Every baselined state, retail list first.
+    fn all_states(&self) -> impl Iterator<Item = (&String, &BTreeMap<String, f64>)> {
+        self.states.iter().chain(self.patched_states.iter())
     }
 
     /// Every drop against this baseline on a state made on a retail disc.
@@ -159,6 +195,35 @@ impl Baseline {
         self.drops(reports, allow_unmeasured, true)
     }
 
+    /// The measured states filed under the other list from the one their
+    /// own `resident_patch` names: a retail-disc state in
+    /// [`Self::patched_states`] or a patched-disc one in [`Self::states`].
+    /// [`Self::drops`] still judges each by its report, so a misfiled row
+    /// is compared, not lost; a bless moves it.
+    pub fn misfiled(&self, reports: &[StateReport]) -> Vec<String> {
+        reports
+            .iter()
+            .filter_map(|r| {
+                let (wrong, list) = if r.resident_patch.is_some() {
+                    (self.states.contains_key(&r.label), "states")
+                } else {
+                    (self.patched_states.contains_key(&r.label), "patched_states")
+                };
+                wrong.then(|| {
+                    format!(
+                        "{}: filed under `{list}` but its manifest entry says {}",
+                        r.label,
+                        if r.resident_patch.is_some() {
+                            "patched disc"
+                        } else {
+                            "retail disc"
+                        }
+                    )
+                })
+            })
+            .collect()
+    }
+
     /// The baselined states this run measured on the retail disc because
     /// their own patched image was not found ([`StateReport::resident_disc_missing`]),
     /// with the reason. [`Self::drops`] leaves them out: the baseline was cut
@@ -167,7 +232,9 @@ impl Baseline {
     pub fn fallback_skips(&self, reports: &[StateReport]) -> Vec<String> {
         reports
             .iter()
-            .filter(|r| self.states.contains_key(&r.label))
+            .filter(|r| {
+                self.states.contains_key(&r.label) || self.patched_states.contains_key(&r.label)
+            })
             .filter_map(|r| {
                 let why = r.resident_disc_missing.as_deref()?;
                 Some(format!(
@@ -236,7 +303,10 @@ impl Baseline {
         let by_label: BTreeMap<&str, &StateReport> =
             reports.iter().map(|r| (r.label.as_str(), r)).collect();
         let mut out = Vec::new();
-        for (label, chans) in &self.states {
+        // Both lists are walked and each report is judged by its own
+        // `resident_patch`, so a row filed under the wrong list is still
+        // compared rather than silently dropped.
+        for (label, chans) in self.all_states() {
             // A state absent from this run is a property of the local
             // library (backups are gitignored and per-machine), not of the
             // engine, so it is reported by the caller rather than failed.

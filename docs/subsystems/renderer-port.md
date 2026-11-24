@@ -233,6 +233,16 @@ canvas once: "the screen" is that framebuffer until the frame ends, reads inside
 the frame included. On the canvas itself the fill rule below would not hold, since
 a polygon edge resolves to a blend of partly covered samples. The native renderer
 is single-sample throughout, and the page's enhanced mode keeps its MSAA.
+The scene program samples its UV, Gouraud colour and corner weights at the
+centroid (`centroid` on `v_uv_pw`, `v_affine_w`, `v_flat_rgba_pw`,
+`v_prim_bary_pw` in [`webgl-shaders.js`](../../site/js/webgl-shaders.js)): an
+edge pixel the primitive only partly covers is otherwise shaded at the pixel
+centre outside it, and the UV extrapolated there reads past the primitive's
+texels. On the battle ground grid that is the VRAM round the tile's
+`(192..=255)²` window, palette entry `0`, so every grid seam drew as a dashed
+bright line, green on `map01` (`map01` battle frames: hundreds of such pixels
+per frame before, none after). A single-sample target shades at the centre
+either way, so the PSX frame is unchanged.
 That framebuffer runs bottom-up, so where a snapped edge lies exactly on a row
 of pixel centres its rasteriser hands the tie to the other side from the window's
 top-left rule: every flat 3D edge drew a row low, and a slanted edge through pixel

@@ -515,6 +515,12 @@ pub struct FieldFrameFeatures {
     /// The models' primitives through the depth-cued leaves (a colour word
     /// with a non-zero mode byte).
     pub npc_cued_kinds: [u32; 12],
+    /// Of the models: the objects, and their primitives, that a raised
+    /// `+0x42` (field-VM `4C C2`) sends through the object-effect clip arm,
+    /// `FUN_8001C204` and the TMD renderer `FUN_8002735C`, in place of the
+    /// dispatcher (`0x8001BC34..0x8001BC64`, `0x8001BD80..0x8001BD88`).
+    pub npc_clip_objects: u32,
+    pub npc_clip_prims: u32,
     pub list_actors: u32,
     /// The live script actors (field-VM channels: placements and bound
     /// objects), each an entry of the tick and render lists.
@@ -530,6 +536,8 @@ pub struct FieldFrameFeatures {
     pub morph_vertices: u32,
     /// The player's model, when the scene's table holds it.
     pub player: Option<MeshCost>,
+    /// The player's `+0x42` is raised: its model takes the clip arm.
+    pub player_clipped: bool,
 }
 
 impl World {
@@ -598,7 +606,7 @@ impl World {
         let work = cost.clamp(0, i32::from(u16::MAX)) as u16;
         i32::from(match self.toggles.field_cd_timing {
             CdTiming::PcsxRedux => field_xa_loaded_frame_cost(work),
-            CdTiming::Console => {
+            CdTiming::Console | CdTiming::Mednafen => {
                 legaia_engine_cast::cast_module_frame_step::console_poll_cost(work)
             }
         })
@@ -878,6 +886,20 @@ impl World {
             };
             f.npc_models += 1;
             f.add_morph(self.field_morph_work(MorphOwner::Placement(slot), m));
+            // A raised `+0x42` (`lhu s2,0x42(s0)` at `0x8001B9E0`, kept as
+            // `s7` at `0x8001BB00`) takes every object of the model through
+            // the clip arm: `FUN_8001C204` (`0x8001BC3C`), then the TMD
+            // renderer `FUN_8002735C` over the object's primitives
+            // (`0x8001BC64` -> `0x8001BD88`), none of them through the
+            // dispatcher `FUN_80043390`.
+            let clipped = self.field_vm.channels.iter().any(|c| {
+                !c.object_bind && c.placement_index == usize::from(slot) && c.ctx.field_42 != 0
+            });
+            if clipped {
+                f.npc_clip_objects += u32::from(m.objects);
+                f.npc_clip_prims += m.kinds.iter().map(|&k| u32::from(k)).sum::<u32>();
+                continue;
+            }
             f.npc_objects += u32::from(m.objects);
             f.npc_groups += u32::from(m.groups);
             // The actor's colour word `+0x74` (the channel's `field_74`): a
@@ -910,6 +932,10 @@ impl World {
             .player_actor_slot
             .is_some_and(|s| self.locomotion.actor_moving.contains(&s));
         f.player = table.player;
+        // The player's model takes the clip arm on its own `+0x42` too
+        // (`CC F8 C2`, `World::field_vm.player_field_42`): the animated
+        // renderer reads the word off whichever actor it draws.
+        f.player_clipped = self.field_vm.player_field_42 != 0;
         f.fog = u32::from(self.fog.live);
         // The quads the last walk left; a closed gate runs no walk.
         f.fog_quads = if self.fog.gate {

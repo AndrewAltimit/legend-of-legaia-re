@@ -92,6 +92,16 @@ RULES: dict[str, list[tuple[str, str]]] = {
 
 ABSENT = "absent"
 
+# Sections of one baseline that are the same ratchet split across lists. A
+# leaf under the first prefix is compared and ledgered under the second, so
+# moving a row between the lists is no loosening and the ledger keeps one key
+# per measurement. The retail-compare baseline files its patched-disc states
+# (`resident_patch`) under `patched_states`, apart from the retail list the
+# ratchet and the site read; their values still may not fall unrecorded.
+FOLD: dict[str, list[tuple[str, str]]] = {
+    "scripts/ci/retail-compare-baseline.json": [("patched_states/", "states/")],
+}
+
 
 def parse(path: str, text: str) -> dict:
     return tomllib.loads(text) if path.endswith(".toml") else json.loads(text)
@@ -122,11 +132,23 @@ def leaves(node, rules: list[tuple[str, str]], prefix: str = "") -> dict[str, ob
     return out
 
 
+def folded(path: str, flat: dict[str, object]) -> dict[str, object]:
+    """`flat` with each `FOLD` prefix of `path` renamed to its target."""
+    out: dict[str, object] = {}
+    for key, value in flat.items():
+        for src, dst in FOLD.get(path, []):
+            if key.startswith(src):
+                key = dst + key[len(src):]
+                break
+        out[key] = value
+    return out
+
+
 def loosenings(path: str, old: dict, new: dict) -> tuple[list[tuple[str, object, object]], list[str]]:
     """`(key, from, to)` for every leaf that moved the wrong way between two
     parses of one baseline, plus the keys no rule classifies."""
     rules = RULES[path]
-    before, after = leaves(old, rules), leaves(new, rules)
+    before, after = folded(path, leaves(old, rules)), folded(path, leaves(new, rules))
     found: list[tuple[str, object, object]] = []
     unclassified: list[str] = []
     for key in sorted(before.keys() | after.keys()):
@@ -239,6 +261,16 @@ def self_test() -> int:
     )[0]
     if [k for k, _, _ in got] != ["settle_ticks"]:
         print(f"self-test: pin -> {got}")
+        failures += 1
+    moved = {"settle_ticks": 60, "states": {}, "patched_states": {"s": {"image": 0.9}}}
+    got = loosenings(pinned, {"settle_ticks": 60, "states": {"s": {"image": 0.9}}}, moved)[0]
+    if got:
+        print(f"self-test: a row moved to patched_states -> {got}")
+        failures += 1
+    fell = {"settle_ticks": 60, "patched_states": {"s": {"image": 0.8}}}
+    got = [k for k, _, _ in loosenings(pinned, moved, fell)[0]]
+    if got != ["states/s/image"]:
+        print(f"self-test: a patched_states fall -> {got}")
         failures += 1
     unclassified = loosenings(path, old, {**old, "extra": 1})[1]
     if unclassified != ["extra"]:

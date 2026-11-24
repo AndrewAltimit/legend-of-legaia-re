@@ -61,6 +61,13 @@
   <p>The pre-commit hook compares the working tree with the merge-base against <code>main</code>. The automated <code>gates</code> job compares a pull request's merge commit with the pull request's base, and a push with the commit it replaced.</p>
 </section>
 
+<section class="doc-section" id="stale-inputs" data-doc="a-build-input-may-not-go-stale">
+  <h2>A build input may not go stale</h2>
+  <p>The site builds without the disc, so the landing page shows figures committed beside the code: <code>scripts/ci/progress-metrics.json</code> (the tiles) and <code>scripts/ci/image-port-status.json</code> (the per-image port table). They are not ratchets, since a number may move either way, but they describe one version of the code, and a stale one is invisible: well-formed numbers that look plausible.</p>
+  <p><code>scripts/ci/update-progress-metrics.py --check</code> fails when a refresh would change either file. The parts that need no disc are always compared: the verification tile, the port count against the code's <code>// PORT:</code> tags and the catalog baseline, and the per-image table's input fingerprints. Where the function dumps and the extracted disc are present it also recomputes the disc-measured tiles. The pre-commit hook and the automated <code>gates</code> job both run it with <code>--skip-catalog</code>, which leaves out the slow catalog pass. Clearing a failure means refreshing on a machine with the disc and committing both files; the check never rewrites them.</p>
+  <p>The retail comparison baseline is one ratchet kept in two lists: the states made on a retail disc, and the mod states made on a patched one, which are reported but never fail the check. The loosening gate reads both under one key, so moving a row between the lists is not a loosening.</p>
+</section>
+
 <section class="doc-section" id="skips" data-doc="a-skipped-test-is-not-a-passed-test">
   <h2>A skipped test is not a passed test</h2>
   <p>A disc-gated test that finds its input missing prints a skip line and returns, and the test runner reports <code>ok</code>. On a machine with no disc the whole gated suite is green. On a machine <em>with</em> the disc, a test whose second input is gone (the extraction folder, the save library, a memory-card file) is green too.</p>

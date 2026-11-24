@@ -479,30 +479,28 @@ fn with_ring(dir: ArmDirection) -> ArmDirection {
     }
 }
 
-/// The vsyncs one retail frame takes through PROT 0934's arms 5..9: the frame
-/// step reads `4` on every capture of them. The arms' words count frames, and
-/// the engine's tick is a vsync, so the shake's low bit is read per this many
-/// ticks: the camera does not jump `0x200` on alternate vsyncs.
-const OZMA_SHAKE_TICKS: u32 = 4;
-
 /// One pass of the camera shake PROT 0934's arms 5..9 store straight into
-/// TR y: the pass word `0x801FA408` read for its low bit and bumped, the
-/// rise word `0x801FA40C` moved by `step` (`0x801F6FBC..0x801F7018`). The
-/// low bit and the moved word.
+/// TR y: the pass word `0x801FA408` read for its low bit and bumped once a
+/// pass (`lw t2` / `andi t0,t2,1` / `addiu t2,t2,1` at `0x801F6FAC..0x801F6FC0`,
+/// stored back at `0x801F701C`), the rise word `0x801FA40C` moved by `step`
+/// (`0x801F6FDC`). The tick that opens the battle frame reads and bumps the
+/// word, and every later tick of the pass keeps that tick's bit, so the
+/// shake flips once a pass at any frame step. The low bit and the moved word.
 fn ozma_shake_step(st: &mut ModuleCamState, step: i32) -> (i32, i32) {
-    let odd = ((st.ozma_shake.0 / OZMA_SHAKE_TICKS) & 1) as i32;
-    st.ozma_shake.0 = st.ozma_shake.0.wrapping_add(1);
+    if st.opens_pass || st.frame_step <= 1 {
+        st.ozma_shake.0 = st.ozma_shake.0.wrapping_add(1);
+    }
+    let odd = (st.ozma_shake.0.wrapping_sub(1) & 1) as i32;
     st.ozma_shake.1 += step;
     (odd, st.ozma_shake.1)
 }
 
 /// [`ozma_shake_step`] for a tick that may leave: a held tick is one tick,
-/// a leaving one its pass's owed ticks too (`ModuleCountdown::1`). The odd
-/// bit is the leaving tick's own.
+/// a leaving one moves the rise by its pass's owed ticks too
+/// (`ModuleCountdown::1`). The pass word moves once a pass either way.
 fn ozma_shake_steps(st: &mut ModuleCamState, step: i32, hold: bool) -> (i32, i32) {
     let owed = if hold { 0 } else { i32::from(st.countdown.1) };
     let (odd, _) = ozma_shake_step(st, step);
-    st.ozma_shake.0 = st.ozma_shake.0.wrapping_add(owed as u32);
     st.ozma_shake.1 += step * owed;
     (odd, st.ozma_shake.1)
 }

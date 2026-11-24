@@ -137,8 +137,8 @@ pub fn battle_frame_cadence_on() -> bool {
 }
 
 /// `LEGAIA_FIELD_CD_TIMING`: which machine's CD response time a voiced
-/// field frame reads (`WorldToggles::field_cd_timing`) - `pcsx-redux` or
-/// `console`, no opinion when unset or anything else.
+/// field frame reads (`WorldToggles::field_cd_timing`) - `pcsx-redux`,
+/// `console` or `mednafen`, no opinion when unset or anything else.
 pub fn env_field_cd_timing() -> Option<legaia_engine_core::world::CdTiming> {
     match std::env::var("LEGAIA_FIELD_CD_TIMING")
         .as_deref()
@@ -146,13 +146,14 @@ pub fn env_field_cd_timing() -> Option<legaia_engine_core::world::CdTiming> {
     {
         Ok("console") => Some(legaia_engine_core::world::CdTiming::Console),
         Ok("pcsx-redux") => Some(legaia_engine_core::world::CdTiming::PcsxRedux),
+        Ok("mednafen") => Some(legaia_engine_core::world::CdTiming::Mednafen),
         _ => None,
     }
 }
 
 /// `LEGAIA_BATTLE_CD_TIMING`: which machine's CD response time a voiced
-/// battle frame reads (`WorldToggles::battle_cd_timing`) - `pcsx-redux` or
-/// `console`, no opinion when unset or anything else.
+/// battle frame reads (`WorldToggles::battle_cd_timing`) - `pcsx-redux`,
+/// `console` or `mednafen`, no opinion when unset or anything else.
 pub fn env_battle_cd_timing() -> Option<legaia_engine_core::world::CdTiming> {
     match std::env::var("LEGAIA_BATTLE_CD_TIMING")
         .as_deref()
@@ -160,6 +161,7 @@ pub fn env_battle_cd_timing() -> Option<legaia_engine_core::world::CdTiming> {
     {
         Ok("console") => Some(legaia_engine_core::world::CdTiming::Console),
         Ok("pcsx-redux") => Some(legaia_engine_core::world::CdTiming::PcsxRedux),
+        Ok("mednafen") => Some(legaia_engine_core::world::CdTiming::Mednafen),
         _ => None,
     }
 }

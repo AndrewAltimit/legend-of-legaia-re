@@ -2,6 +2,7 @@
 //! the disc / extracted source, session boot and the report directory.
 
 use super::*;
+use legaia_engine_core::world::{CdTiming, PlayCdTiming};
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -82,6 +83,7 @@ pub(super) fn open_session(src: &Source) -> NativeSession {
         Arming {
             host: true,
             retail: false,
+            cd: legaia_engine_session::native::play_cd_timing(),
         },
     )
 }
@@ -97,6 +99,62 @@ pub(super) struct Arming {
     /// (`WorldToggles::pin_retail`), as `SessionSwitches::apply` does - the
     /// hop landing guard down, the retail tile windows, no flash slew.
     pub(super) retail: bool,
+    /// The CD timing the run plays on, field and battle. A new run takes the
+    /// players' (`native::play_cd_timing`: a console's both, the
+    /// `LEGAIA_FIELD_CD_TIMING` / `LEGAIA_BATTLE_CD_TIMING` overrides over
+    /// it); a replay takes the timing its tape was recorded on
+    /// ([`cd_timing_from_tag`]).
+    pub(super) cd: PlayCdTiming,
+}
+
+/// PCSX-Redux's CD timing, field and battle: the engine's own default, which
+/// every soak session ran on before the soak took the players' timing.
+pub(super) const PCSX_CD_TIMING: PlayCdTiming = PlayCdTiming {
+    field: CdTiming::PcsxRedux,
+    battle: CdTiming::PcsxRedux,
+};
+
+fn cd_timing_name(t: CdTiming) -> &'static str {
+    match t {
+        CdTiming::Console => "console",
+        CdTiming::PcsxRedux => "pcsx-redux",
+        CdTiming::Mednafen => "mednafen",
+    }
+}
+
+/// A run's `# soak-cd-timing` value: `field=<timing>,battle=<timing>`.
+pub(super) fn cd_timing_tag(cd: PlayCdTiming) -> String {
+    format!(
+        "field={},battle={}",
+        cd_timing_name(cd.field),
+        cd_timing_name(cd.battle)
+    )
+}
+
+/// Read back a replay's `# soak-cd-timing` value. A tape without the tag
+/// predates the soak's player timing and was recorded on PCSX-Redux's, field
+/// and battle alike, so it replays there: a pad tape is the input of the
+/// frames it was recorded over, and under another machine's CD response time
+/// a voiced frame spans other vsyncs and the same pads land on other frames.
+pub(super) fn cd_timing_from_tag(tag: Option<&str>) -> PlayCdTiming {
+    let mut cd = PCSX_CD_TIMING;
+    for part in tag.unwrap_or("").split(',') {
+        let Some((k, v)) = part.split_once('=') else {
+            continue;
+        };
+        let t = match v.trim() {
+            "console" => CdTiming::Console,
+            "pcsx-redux" => CdTiming::PcsxRedux,
+            "mednafen" => CdTiming::Mednafen,
+            _ => continue,
+        };
+        match k.trim() {
+            "field" => cd.field = t,
+            "battle" => cd.battle = t,
+            _ => {}
+        }
+    }
+    cd
 }
 
 impl Arming {
@@ -110,6 +168,7 @@ impl Arming {
         Self {
             host: base == "host",
             retail,
+            cd: PCSX_CD_TIMING,
         }
     }
 }
@@ -127,9 +186,9 @@ pub(super) fn open_session_armed(src: &Source, arm: Arming) -> NativeSession {
         }
         Source::Disc(p) => NativeSession::open_disc(p, &cfg).expect("open NativeSession (disc)"),
     };
-    // The players' CD timing, field and battle (`play_cd_timing`): the
-    // ladder plays what a player plays. HARNESS.
-    legaia_engine_core::world::play_cd_timing().apply(&mut session.host.world.toggles);
+    // The run's CD timing, field and battle (`Arming::cd`): a new run plays
+    // what a player plays, a replay what its tape was recorded on. HARNESS.
+    arm.cd.apply(&mut session.host.world.toggles);
     if arm.host {
         arm_host_play_defaults(&mut session);
     }

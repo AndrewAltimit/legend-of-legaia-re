@@ -1693,6 +1693,15 @@ the gate: every seat the sweep hits re-arms the module timer `0x801F8040` to
 gauge at zero, and the breath returns only after the monster takes fresh
 damage. The port folds the whole drain at the sweep.
 
+**Chaos Breath waits for the party to get up.** Once arm 3's timer reads `0`,
+the body walks every `ctx[+0]` party seat before it stores `0xFF`
+(`0x801F797C..0x801F79F4`): a live seat must be back on idle (`+0x1D9 == 0`),
+a downed one on the down clip `8`. Doomsday's arm `0x0C` and Neo Star Slash's
+arm 6 (PROT 0960, `0x801F7404..0x801F7484`) make the same walk. The port holds
+Chaos Breath's and Neo Star Slash's on the band (`gated_hit_arm`, the chain
+arm's `ChainSettle::PartyRow`) and Doomsday's in its director, all three on
+the same per-seat rule (`World::capture_party_settled`).
+
 #### Fourteen trampoline-arm bodies
 
 <a id="the-fourteen-trampoline-arms-that-are-the-bands-other-tick-bodies"></a>
@@ -4249,6 +4258,15 @@ seated `battle_korb2_ghost_knight_neo_windhash_mid_cast` film drew four words on
 pass where retail draws five, and landed `807` against retail's `771`; with it the two
 streams agree through the Done band and the hit lands `771`. Grade `disassembly` + `capture`.
 
+The hit's reaction is the arm's own pick (`0x801F7474..0x801F74C0`): the knockdown `+0x1F1` when the
+victim's gate byte `+0x1F2` is set or the hit downs it, else the flinch `+0x1EF`, or `+0x1F0` when that is
+empty, with the bump `+0x1DC = 1`; then the victim turns away from the caster (`FUN_80019B28` plus a half
+turn, `0x801F74C4..0x801F74E8`). `v_windhash_hit` runs the arm off the disc beside the band's pass and fold
+with the wrapper `FUN_801DD4B0` live on both sides, and the fold stages the same reaction, HP, bar delta,
+spirit, Curse and facing. It found the fold landing the hit on a Stoned victim whose Stone bit only the raw
+status half held: the finisher tests the whole word (`+0x16E & 4`, `0x801DE2E4`), and so does the fold's
+absorb now. Grade `disassembly` + differential.
+
 ### PROT 0943, 0945, 0949 and 0956: a director, the arm tables and a stager
 
 These enemy bodies share one shape. The camera arms and the seat writes live in the body,
@@ -5591,8 +5609,15 @@ and the whole film `.976`, cues `1.000` (one pass an arm, `.331`). Grade
   the spin `0x801F88BC`. Every arm-4 pass grows the pull by `2 * delta` and the spin
   by the pull, then stands each seat with HP at the bearing from its mark to the
   caster (`FUN_80019B28`) turned by the spin, at the mark's sin / cos weighted reach
-  less half the pull (no nearer than `0x200`), facing turned by twice the pull,
-  height minus half of it (`0x801F7488..0x801F76AC`). Arm 5 lets each seat back
+  less half the pull (no nearer than `0x200`; a mark already inside `0x200` keeps
+  its reach, `0x801F7578`), facing turned by twice the pull, height minus half of
+  it (`0x801F7488..0x801F76AC`). The loop runs ahead of the arm's countdown and its
+  hit sweep (`0x801F7710..0x801F7830`), so the engine runs the swirl before the
+  fold: on the pass that lands the hit a seat it downs is still pulled once more,
+  and each seat the sweep strikes (HP, no Stone) turns its back to the caster from
+  where the pull left it (`FUN_80019B28(caster, seat) + 0x800` at `0x801F77D8`).
+  Run after the fold, the swirl would leave a downed member one spin step short
+  and every struck member on the swirl's heading. Arm 5 lets each seat back
   down by `scalar * delta` a pass and its pass stands them on the floor. The engine
   takes one tick as one pass of step 1, so its spin runs ahead of a retail run whose
   heavy arms sit at step 3 or 4.
@@ -7290,8 +7315,9 @@ records. Further 0903 facts:
 - `gimard_burning_attack` (arm 11) holds the two tunnel parts mid-program and
   `0x801F7804` (render mode `4`, wait `1360`) still allocated, and no breath
   node: the breath's program has halted and the list walk has killed it, so a
-  port must stop drawing a halted part. `shiny_refactor_gimard_plus35` (arm 9)
-  holds the breath at lane 25 weight `2048`, depth cue `0x340`, wait `584`,
+  port must stop drawing a halted part. `shiny_refactor_gimard_plus35` (arm 9,
+  a patched-disc capture; the `shiny-seru` build rewrites the executable and
+  PROT 0867 / 0898 / 0899, not PROT 0903) holds the breath at lane 25 weight `2048`, depth cue `0x340`, wait `584`,
   the values the engine's part reaches on the matching tick: a column of flame
   that fades in, grows through `vdf.dat` entries 25..27 and halts during arm
   10.

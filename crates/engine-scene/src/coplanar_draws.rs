@@ -370,6 +370,44 @@ fn lift_dir(vis: [f32; 3]) -> [f32; 3] {
     }
 }
 
+/// How far a frame pulls a lifted draw's depth toward the eye, as a
+/// fraction of its view depth per world unit of [`coplanar_draw_offsets`]
+/// lift. A `DRAW_NUDGE` lift tests about `0.0002` of its view depth nearer:
+/// at the field's usual eye distances, about the separation the lift gave.
+pub const DEPTH_LIFT_PER_UNIT: f32 = 1.0 / 4096.0;
+
+/// `cam` with a coplanar lift taken in depth instead of in space: every
+/// point tests depth as the point `|lift| * DEPTH_LIFT_PER_UNIT` of its view
+/// depth nearer the eye would, while it rasterises where it stands.
+///
+/// A lift moves a draw's whole surface, so where the lifted draw meets a
+/// neighbour it does not overlap - most ground tiles have one - the step it
+/// opens is a crack the ground behind shows through, from the angles that
+/// look into the step (`rayman`'s ledge, a dashed line along the tile seam).
+/// Taken in depth, the draw still wins its coplanar tie and its edges stay on
+/// its neighbours'.
+///
+/// For a perspective `cam` (column-major) the depth row is `k * w + b` over
+/// the w row, so a point at view depth `w * (1 - e)` tests at
+/// `z + b * e / (1 - e)`: a constant added to the depth row's translation.
+/// A camera whose w row carries no view axis (an orthographic one) comes back
+/// unchanged, as does a zero lift.
+pub fn depth_lifted_camera(cam: [f32; 16], lift: [f32; 3]) -> [f32; 16] {
+    let len = (lift[0] * lift[0] + lift[1] * lift[1] + lift[2] * lift[2]).sqrt();
+    let e = len * DEPTH_LIFT_PER_UNIT;
+    let row2 = [cam[2], cam[6], cam[10]];
+    let row3 = [cam[3], cam[7], cam[11]];
+    let w_axis = dot(row3, row3);
+    if e <= 0.0 || e >= 0.5 || w_axis <= 0.0 {
+        return cam;
+    }
+    let k = dot(row2, row3) / w_axis;
+    let b = cam[14] - k * cam[15];
+    let mut out = cam;
+    out[14] += b * e / (1.0 - e);
+    out
+}
+
 /// Detect cross-draw coplanar overlap clusters and return the world-space
 /// offset each affected draw should add to its translation. Draws without a
 /// conflict are absent from the map.
@@ -1092,6 +1130,53 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_depth_lift_moves_depth_only_and_toward_the_eye() {
+        // A perspective camera: depth `a * Ez + b`, w = Ez, eye at the origin
+        // looking down +Z (the PSX projection's shape).
+        let (a, b) = (1.002, -16.03);
+        let cam: [f32; 16] = [
+            1.5, 0.0, 0.0, 0.0, //
+            0.0, -2.0, 0.0, 0.0, //
+            0.0, 0.1, a, 1.0, //
+            3.0, 5.0, b, 0.0,
+        ];
+        let lift = [0.0, -DRAW_NUDGE, 0.0];
+        let lifted = depth_lifted_camera(cam, lift);
+        let clip = |m: &[f32; 16], p: [f32; 3]| -> [f32; 4] {
+            std::array::from_fn(|r| m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r])
+        };
+        for p in [[10.0, 20.0, 400.0], [-300.0, 7.0, 2500.0]] {
+            let (c, l) = (clip(&cam, p), clip(&lifted, p));
+            assert_eq!((c[0], c[1], c[3]), (l[0], l[1], l[3]), "x, y, w untouched");
+            // The lifted depth is the depth of the point `e` of its view
+            // depth nearer.
+            let e = DRAW_NUDGE * DEPTH_LIFT_PER_UNIT;
+            let nearer = [p[0], p[1], p[2] * (1.0 - e)];
+            let want = clip(&cam, nearer);
+            let got = l[2] / l[3];
+            assert!(
+                (got - want[2] / want[3]).abs() < 1e-6,
+                "{got} vs {}",
+                want[2] / want[3]
+            );
+            assert!(got < c[2] / c[3], "nearer on this camera's depth axis");
+        }
+        assert_eq!(
+            depth_lifted_camera(cam, [0.0; 3]),
+            cam,
+            "no lift, no change"
+        );
+        let ortho: [f32; 16] = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
+        ];
+        assert_eq!(
+            depth_lifted_camera(ortho, lift),
+            ortho,
+            "orthographic stays"
+        );
+    }
+
     use super::*;
 
     fn draw(res_tmd: usize, x: i32, y: i32, z: i32) -> EnvDraw {

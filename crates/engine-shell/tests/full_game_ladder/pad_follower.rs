@@ -636,6 +636,7 @@ pub(super) fn pad_walk(
                         && (continuous::SAVING_FOR_BOSS.with(std::cell::Cell::get)
                             || continuous::BOSS_LEAD_IN.with(std::cell::Cell::get))
                         && !super::pad_field_upkeep::TRAINING.with(std::cell::Cell::get)
+                        && !super::pad_training::GROWING.with(std::cell::Cell::get)
                     {
                         "random, fled (saving for a boss)"
                     } else if continuous::PLAYS_ON.with(std::cell::Cell::get) {

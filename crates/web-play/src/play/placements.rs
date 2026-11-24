@@ -22,6 +22,23 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Per-placement coplanar lift, three floats each, parallel to
+    /// [`Self::field_placement_positions`] (which includes it): what the scene
+    /// pass draws in depth only (`crate::play::env_lifts`).
+    pub fn field_placement_lifts(&self) -> Vec<f32> {
+        self.field
+            .as_ref()
+            .map(|f| crate::play::env_lifts(&f.placements, &f.coplanar_offsets))
+            .unwrap_or_default()
+    }
+
+    /// The fraction of its view depth a lifted draw tests nearer per world
+    /// unit of lift
+    /// ([`legaia_engine_scene::coplanar_draws::DEPTH_LIFT_PER_UNIT`]).
+    pub fn coplanar_depth_lift_per_unit(&self) -> f32 {
+        legaia_engine_scene::coplanar_draws::DEPTH_LIFT_PER_UNIT
+    }
+
     pub fn field_placement_rot_y(&self) -> Vec<u16> {
         self.field
             .as_ref()

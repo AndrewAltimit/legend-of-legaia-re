@@ -438,6 +438,7 @@ mod transition_sweep;
 mod travel_art;
 mod turn_pick;
 mod unequip;
+mod v_windhash_hit;
 mod validator;
 mod value_readout;
 mod vdf_morph;

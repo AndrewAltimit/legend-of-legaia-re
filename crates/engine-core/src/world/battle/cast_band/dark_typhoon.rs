@@ -22,10 +22,14 @@ impl World {
     ///   pull (`0x801F744C..0x801F7474`). Each party seat with HP takes the
     ///   bearing and the sin / cos weighted reach from its mark to the
     ///   caster (`FUN_80019B28`, the SCUS tables `0x8007B81C` / `0x8007B7F8`),
-    ///   draws the reach in by half the pull down to `0x200`, turns the
+    ///   draws the reach in by half the pull down to `0x200` (a reach already
+    ///   inside it stays, `0x801F7578`), turns the
     ///   bearing by the spin, and stands that far from the caster; its facing
     ///   turns by twice the pull and its height is minus half of it
-    ///   (`0x801F7488..0x801F76AC`);
+    ///   (`0x801F7488..0x801F76AC`). The loop runs ahead of the arm's
+    ///   countdown and its hit sweep, so the caller runs this before the
+    ///   fold; on the pass the arm counts out, each seat the sweep strikes
+    ///   turns its back to the caster (`0x801F77B0..0x801F77D8`);
     /// - arm 5, every pass: each seat's height climbs back by `step * rate`,
     ///   no higher than the floor (`0x801F7AA8..0x801F7B10`); its pass stands
     ///   every seat on the floor (`0x801F7B6C..0x801F7B94`).
@@ -76,6 +80,20 @@ impl World {
                     a.battle.facing_angle =
                         (i32::from(a.battle.facing_angle) + 2 * pull) as u16 & 0xFFF;
                     a.move_state.world_y = (-pull / 2) as i16;
+                }
+                // The pass that counts the arm out sweeps the party with the
+                // hit (`0x801F7710..0x801F7830`): each seat with HP and no
+                // Stone (`+0x16E & 4`) turns its back to the caster from where
+                // the pull left it, `FUN_80019B28(caster, seat) + 0x800` into
+                // `+0x46` (`0x801F77B0..0x801F77D8`). The fold lands the
+                // damage and the reaction after this.
+                if passed {
+                    for i in 0..party {
+                        if self.actors[i].battle.hp > 0 && !self.battle.actor_is_petrified(i as u8)
+                        {
+                            self.face_seat_away_from_caster(i as u8, caster_slot);
+                        }
+                    }
                 }
             }
             5 => {

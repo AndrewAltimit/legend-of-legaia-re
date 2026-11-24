@@ -88,6 +88,53 @@ So on Mednafen a table costs, packet after packet, the longer of its DMA and its
 with up to `128` cycles banked by an idle GPU, and the whole wait overlaps the next pass's
 CPU work.
 
+### CD response (`psx/cdc.cpp`)
+
+| Part | Rule | Where |
+|---|---|---|
+| Command to first phase | `10500 + rand(0, 3000) + 1815` cycles from the command write | `PS_CDC::Write`, register `0` |
+| Argument-free command to its result | `8500` more, then the command runs and raises its interrupt | `PS_CDC::Update`, phase `-1` and phase `1` |
+| Result interrupt to the next command | a command written within `2000` cycles of the last interrupt waits that out | `CDCReadyReceiveCounter`, `WriteIRQ` |
+
+So a `GetStat` or `GetlocL` answers `20815..23815` cycles after it, `22315` on average,
+against PCSX-Redux's `0x800` (`2048`) and a console's `0xC4E1` (`50401`, psx-spx). The
+voice clip's stop watch `FUN_8003D764` issues the next poll from inside each completion
+([the CD stop watch](../subsystems/battle-stage-camera.md#the-cd-stop-watch)), so the
+share of the CPU the polls take is their interrupt work over that interval.
+
+That share is measured, not derived. [`frame-cost-film.py`](../../scripts/mednafen/frame-cost-film.py)
+steps the same Mednafen state twice, once as saved and once with the CdSync callback word
+`0x800793AC` (`FUN_8005BECC`'s store) cleared, so no poll follows the one in flight, and
+reads each game frame's CPU word `gp+0x3A8` on both. Over Theeder's arms 13 and 14
+(`theeder_summon_value_rows_rising` and `_parked`, `20` frames on the same frame
+numbers), a frame costs `1.27..1.29` times its pollless self at the median, so the polls
+take `.21..0.23` of Mednafen's CPU:
+
+| Machine | Response | Polls' share of the CPU | Source |
+|---|---:|---:|---|
+| PCSX-Redux | `2048` cycles | `.62..0.67` | `--cd-trace` recordings |
+| Mednafen | `20815..23815` | `.22` | the callback cleared |
+| Console | `0xC4E1` on average | `.065` | psx-spx, at PCSX-Redux's interrupt work |
+
+The poll's interrupt work is about `6300` Mednafen cycles at that share, about twice
+PCSX-Redux's `3300`, where the CPU table above prices hot straight-line code at half
+PCSX-Redux's: the handler runs from a cold cache between frames of work, and its CD
+register reads cost `+6` a byte.
+
+Mednafen's frames are its own on both counts, a poll share three times a console's and a
+CPU that runs a battle frame's work at `.67..1.12` of PCSX-Redux's price, arm by arm. On
+Theeder's band its steps are `3`, `1`, `1`, `2`, `2`, `3` where a console's table reads
+`2` throughout and PCSX-Redux's `4`, `3`, `3`, `4`, `4`, `4` (arms 5, 7, 8, 9, 12, 13).
+`CdTiming::Mednafen` (`LEGAIA_BATTLE_CD_TIMING=mednafen`) carries it, and a Mednafen
+capture's comparison child runs it: the summon bands a Mednafen recording covers end to
+end read that recording's steps (Theeder, Zenoir, Swordie: `MEDNAFEN_ARM_STEPS`), and every
+other frame prices as a console's, whose reading of the PCSX-Redux traces agrees with
+Mednafen's own per-arm steps on `.64` of their vsyncs against `.13` for PCSX-Redux's
+(`scripts/ci/cd-poll-steps.py --mednafen`). Mednafen's own `.22` read at PCSX-Redux's CPU
+scale agrees on `.49`: its cheaper CPU gives back about what its larger share takes, so
+the console's factor (`1 / .935`) stands nearer Mednafen's (`.86 / .78` on a heavy frame)
+than the share alone.
+
 ## The GPU model against these rules
 
 [`gpu_cost.py`](../../scripts/mednafen/gpu_cost.py) carries two prices of a retail table.

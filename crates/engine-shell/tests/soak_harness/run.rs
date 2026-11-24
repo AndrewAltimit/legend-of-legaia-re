@@ -185,6 +185,7 @@ impl Tunables {
             arming: Arming {
                 host: std::env::var_os("LEGAIA_SOAK_BARE").is_none(),
                 retail: env_flag("LEGAIA_SOAK_RETAIL"),
+                cd: legaia_engine_session::native::play_cd_timing(),
             },
         }
     }

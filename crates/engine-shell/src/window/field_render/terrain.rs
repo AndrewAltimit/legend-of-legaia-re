@@ -39,9 +39,9 @@ impl PlayWindowApp {
             return Default::default();
         }
         // Field frame: raw retail-convention transforms (see above).
-        let (draws, floors, _, cells, _, facing) =
+        let (draws, floors, _, cells, _, facing, lifts) =
             self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None, None);
-        (draws, floors, cells, facing)
+        (draws, floors, cells, facing, lifts)
     }
 
     /// World-map continent terrain draws: the dense visible-tile set

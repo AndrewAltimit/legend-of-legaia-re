@@ -48,7 +48,11 @@ fn ozmas_hit_ladder_is_retails() {
     let mut rng = Rng(0x4F5A_4D41);
     let mut failures = Vec::new();
     let (mut hits, mut clamps, mut skipped) = (0, 0, 0);
-    for round in 0..400 {
+    for round in 0..600 {
+        // Each round at a frame step of 1, 2 or 3: a console's battle CD
+        // timing runs frames above one vsync, where the ladder's word drains
+        // and its rungs roll once a pass.
+        let step = 1 + (round % 3) as u8;
         let mut c: Cast = gen_cast(&mut rng);
         c.spell = OZMA;
         c.special = false;
@@ -83,7 +87,7 @@ fn ozmas_hit_ladder_is_retails() {
         cpu.mem.wr8(CTX + 0x279, 0x18);
         cpu.mem.wr32(WORD, 0x80);
         cpu.mem.wr32(THRESHOLD, 0x60);
-        cpu.mem.wr8(FRAME_STEP, 1);
+        cpu.mem.wr8(FRAME_STEP, step);
         state.set(c.seed);
         let rec = CHAR_RECORDS + u32::from(c.caster) * 0x414;
         let mut retail = Vec::new();
@@ -122,9 +126,15 @@ fn ozmas_hit_ladder_is_retails() {
         w.casting.module_ozma_ladder = 0x60;
         w.casting.module_cam.countdown.0 = 0x80;
         w.rng_state = c.seed;
+        // The port's battle frame is retail's step: one frame of `step`
+        // one-vsync stager ticks a pass (`World::module_pass`).
+        w.clock.display_frames = 0;
+        w.set_battle_frame_step(step);
+        w.battle.frame_clock.span_extra = 0;
         let mut port = Vec::new();
         for _ in 0..retail.len() {
-            w.summon_stager_tick();
+            w.clock.display_frames += u64::from(step);
+            w.drive_summon_stager_frame();
             port.push(Pass {
                 hp: [3usize, 4].map(|s| w.actors[s].battle.hp),
                 spirit: [3usize, 4].map(|s| w.actors[s].battle.spirit_gauge),
@@ -133,7 +143,8 @@ fn ozmas_hit_ladder_is_retails() {
         }
         let port_xp = w.casting.module_hit_xp;
         let held = w.casting.module_phase == 0x18;
-        w.summon_stager_tick();
+        w.clock.display_frames += u64::from(step);
+        w.drive_summon_stager_frame();
         let left = w.casting.module_phase != 0x18;
         skipped += [3, 4]
             .iter()
@@ -150,7 +161,7 @@ fn ozmas_hit_ladder_is_retails() {
                 .position(|(a, b)| a != b)
                 .unwrap_or(retail.len());
             failures.push(format!(
-                "round {round}: {} passes, first difference at pass {first}, held {held} left {left}\n retail {:?}\n port   {:?}\n xp retail {retail_xp} port {port_xp}\n {:?}",
+                "round {round} step {step}: {} passes, first difference at pass {first}, held {held} left {left}\n retail {:?}\n port   {:?}\n xp retail {retail_xp} port {port_xp}\n {:?}",
                 retail.len(),
                 &retail[first.saturating_sub(1)..(first + 1).min(retail.len())],
                 &port[first.saturating_sub(1)..(first + 1).min(port.len())],

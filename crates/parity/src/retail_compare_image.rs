@@ -543,15 +543,19 @@ pub fn engine_frame_with(
     if render == FrameRender::Psx && pcsx_redux {
         cmd.env("LEGAIA_PSX_CAPTURE_RASTER", "pcsx-redux");
     }
-    // A PCSX-Redux capture's frames ran on its CD response time: a voice
-    // clip's stop watch took two thirds of the CPU there, a sixteenth of a
-    // console's (`WorldToggles::battle_cd_timing`). The play window seats a
-    // console's for battle and field alike (`play_cd_timing`), so the child
-    // keeps the harness's own timing: PCSX-Redux's unless the parent named
-    // one, and a PCSX-Redux capture's whatever the parent named.
+    // A capture's frames ran on its emulator's CD response time: a voice
+    // clip's stop watch took two thirds of the CPU on PCSX-Redux, about a
+    // fifth on Mednafen and a sixteenth on a console
+    // (`WorldToggles::battle_cd_timing`). The play window seats a console's
+    // for battle and field alike (`play_cd_timing`), so the child keeps the
+    // capture's own: a PCSX-Redux capture's whatever the parent named, a
+    // Mednafen capture's unless the parent named one, and PCSX-Redux's, the
+    // engine's own, for a frame no capture names.
+    let mednafen = CAPTURE_EMULATOR.with(|c| c.get()) == "mednafen";
+    let capture_timing = if mednafen { "mednafen" } else { "pcsx-redux" };
     for var in ["LEGAIA_BATTLE_CD_TIMING", "LEGAIA_FIELD_CD_TIMING"] {
         if pcsx_redux || std::env::var_os(var).is_none() {
-            cmd.env(var, "pcsx-redux");
+            cmd.env(var, capture_timing);
         }
     }
     cmd.env("LEGAIA_CAPTURE_NO_PRESENT", "1");

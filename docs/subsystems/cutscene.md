@@ -1799,12 +1799,42 @@ prices a voiced field frame at `3.34` (`FIELD_XA_POLL_COST_RATIO_MILLI`,
 
 | Beat | Retail step-`4` frames | Engine at `3.34` | Engine at the battle's `3.1` |
 |---|---|---|---|
-| `garmel` `P2[12]`, Zeto's appearance | 90, mean `6.12` vsyncs | 92, `5.98` | 103, `5.38` |
+| `garmel` `P2[12]`, Zeto's appearance | 90, mean `6.12` vsyncs | 91, `6.09` | 92, `6.00` |
 | record 14, Zeto's defeat | 66, mean `5.74` | 66, `5.83` | 66, `5.83` |
 
 The defeat beat reads the same at either ratio because the engine prices its frames' work at
-about `460` against retail's `433`; the appearance's it prices at about `400` against `444`,
-so the frames that remain there are the work model's, not the ratio's.
+about `460` against retail's `433`; the appearance's it prices at about `435` against `444`,
+so the frames that remain there are the work model's, not the ratio's. The defeat beat raises
+no model's `+0x42` and draws the same three models on both sides, so its excess is not the
+clip arm's or the near reject's.
+
+The appearance's shortfall is the actor draw pass. A per-routine profile of the same line
+([`autorun_field_frame_profile.lua`](../../scripts/pcsx-redux/autorun_field_frame_profile.lua),
+Cross every 20 vsyncs as the trace ran) reads `FUN_8001D140`, called once a frame for each
+of the five actor lists. Before the line the lists cost `30`, `49`, `0`, `111` and `31`
+hblanks; through the line the second costs about `150` and the first empties, about `60`
+over the frame's pre-line work, with the decoration pass at its pre-line `108`. (The
+profile's interrupt split holds over the line's first `200` vsyncs and not past them; there
+the calls are scaled by the decoration pass's own ratio.)
+
+Two models leave the walk under the camera's dolly on both sides. The dolly carries the eye
+past the party's two placements (flat `27` and `28`), whose view depth `+0x34` (the
+`MVMVA` of the origin at `0x8001AE20`) falls under `0xA1` and then below zero, and the
+kind-`1` arm drops them there (`slti v0,v0,0xa1` at `0x8001AE9C`; `+0x52 & 0x20` is clear):
+the walk film's actor columns read `64` and `832` on the frame the first goes, `-2793` and
+`-3560` from the end of the dolly to the cut. The engine's near reject drops the same two
+(`npc_models` `3` to `1`), and the frames agree: rendered at four states through the
+crossing in PSX mode and the clean rasteriser, the port shows the same heads leaving at the
+same frames (`0.999..1.000` and `0.992..0.997`). The retail pass drops `37` hblanks there
+(`retail-exec frame-cost`, `299` to `262`).
+
+What the work model missed is Zeto's clip arm. His actor's `+0x42` is up while he rises out
+of the teleport pad, so each of his six objects goes through `FUN_8001C204` and the TMD
+renderer `FUN_8002735C` (`0x8001BC34..0x8001BD88`), `90356..121407` cycles a frame, where the
+model had priced him through the dispatcher at about a third of that. Priced by its own units
+([engine](engine.md#the-derived-field-frame-cost-model)), the engine's step-`4` frames over the
+line cost a median `435` (retail `444`) and run `91` frames at `6.09` vsyncs (retail `90`,
+`6.12`). Grade `capture` for the depths and the frames, `disassembly` for the arm.
 
 The legs a record runs on an actor are on the same grid. The walk kernel `FUN_8003774C` spends
 the frame step (`lbu s2,0x393` at `0x80037864`) once a game frame against a compass walk's or a

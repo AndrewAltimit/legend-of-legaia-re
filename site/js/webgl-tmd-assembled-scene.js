@@ -1020,6 +1020,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     let nclipOn = this.nclipCull;
     /* Whether the whole-draw far bucket (`u_far_slice`) is staged. */
     let farOn = false;
+    /* The clean frame's coplanar depth lift staged (`_stageDepthLift`). */
+    let depthLift = 0;
     /* Whether a placement's forced ABE (`u_force_semi`) is staged. */
     let forceOn = 0;
     /* The opaque draws - the ground, then every placement - as one
@@ -1076,7 +1078,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         this._ensureNormals(m);
         gl.bindVertexArray(m.vao);
         for (const p of list) {
-          const model = this._placementModel(p, m);
+          const model = this._liftedModel(p, this._placementModel(p, m));
+          depthLift = this._stageDepthLift(p, depthLift);
           const wantCue = p.cue
             || (p.decoCue && overworldDecorationCue(vp, model, this.overworldCurve))
             || this.cueParams;
@@ -1115,6 +1118,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         }
       }
       if (farOn) gl.uniform1i(this.locFarSlice, 0);
+      if (depthLift) depthLift = this._stageDepthLift(null, depthLift);
       if (forceOn) { gl.uniform1i(this.locForceSemi, 0); forceOn = 0; }
       gl.depthFunc(gl.LEQUAL);
       /* Hand the frame-global cue back before the blend pass / next frame. */
@@ -1166,7 +1170,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       gl.bindVertexArray(m.vao);
     };
     const stagePlacement = (p, m) => {
-      const model = this._placementModel(p, m);
+      const model = this._liftedModel(p, this._placementModel(p, m));
+      depthLift = this._stageDepthLift(p, depthLift);
       const wantCue = p.cue
         || (p.decoCue && overworldDecorationCue(vp, model, this.overworldCurve))
         || this.cueParams;
@@ -1338,6 +1343,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       gl.uniform1i(this.locSemiPass, 0);
     }
     if (strictOn) gl.depthFunc(gl.LEQUAL);
+    if (depthLift) depthLift = this._stageDepthLift(null, depthLift);
     if (eclipOn) this._setEffectClip(null, true);
     if (hazeOn) this._setHazeDraw(0);
     this._setPlacementNclip(undefined, nclipOn);
@@ -1440,6 +1446,29 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
 
   /* Model matrix for one renderAssembled placement (shared by the opaque
    * and blend passes so both draw at identical transforms). */
+  /* A coplanar-lifted static draw (`p.lift`, play-view-scene-build.js):
+   * drawn where it stands, the lift taken out of its translation, in PSX
+   * mode as on a clean frame. Every other draw keeps the model as given. */
+  _liftedModel(p, model) {
+    if (!p.lift) return model;
+    const out = this._liftScratch || (this._liftScratch = new Float32Array(16));
+    out.set(model);
+    out[12] -= p.lift[0];
+    out[13] -= p.lift[1];
+    out[14] -= p.lift[2];
+    return out;
+  }
+
+  /* The lift in depth (`u_depth_lift`, the twin of engine-scene's
+   * coplanar_draws::depth_lifted_camera): the draw tests depth as a point
+   * that fraction of its view depth nearer. Zero on an unlifted draw and
+   * for `p = null` (the pass's reset). Returns what is staged now. */
+  _stageDepthLift(p, cur) {
+    const want = (p && p.lift) ? (p.liftDepth || 0) : 0;
+    if (want !== cur && this.locDepthLift) this.gl.uniform1f(this.locDepthLift, want);
+    return want;
+  }
+
   _placementModel(p, m) {
     /* Engine-composed override: the battle FX layer hands whole model
      * matrices through (billboards ride an identity, FX parts ride the

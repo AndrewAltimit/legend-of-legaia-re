@@ -131,10 +131,9 @@ impl World {
                 .seru
                 .log
                 .is_shiny(self.party_roster_slot(caster as usize) as u8, def.id);
-        let group_target = matches!(
-            def.target,
-            legaia_engine_battle::spells::SpellTarget::AllEnemies
-        );
+        // The seated creature's target byte, or the spell's shape on a host
+        // with no creature ([`Self::summon_hit_group`]).
+        let group_target = self.summon_hit_group(def.id);
         // What the module's own rolls already earned (its pre-hits, Ozma's
         // ladder): each ran the finisher's XP tail when it rolled, so the fold
         // adds to it rather than starting over.

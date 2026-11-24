@@ -1,0 +1,85 @@
+# Summon module images (PROT 0905..0934): arms out of scope, by image.
+
+[[arm]]
+entry = "0x801F6A58"
+image = "24d82884a97bcd51"
+range = "0x801F8108..0x801F8120"
+verdict = "unreachable"
+reason = "PROT 0931: the compiler's divide guards (`break` on a zero divisor, the `-1` / `0x80000000` overflow test) around the row centroid's `/ n`, where `n` counts the monster seats with HP (`addiu a3,a3,1` behind the `lhu 0x14c` / `beqz` at 0x801F80DC): a summon is cast on a living monster and nothing strikes before this arm, so `n` is at least 1, never 0 or -1."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "24d82884a97bcd51"
+range = "0x801F89AC..0x801F89C0"
+verdict = "cannot-drive"
+reason = "PROT 0931: the per-pass tail swaps the creature's mesh pointer (`+0x22C` node `+0x44` record `+0x1C`) between the two saved at arm 2 (`0x801F6E68..0x801F6E94`) by its clip; the walk's creature node carries no model record at `+0x44`, so the saved word reads 0 and the tail skips. Needs a seated creature model in the walk."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6AF4..0x801F6AF4"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: `beqz s0` is reached only by a phase under 2 (`slti 2` at 0x801F6AE8) that is not 1 (`beq s0,1` at 0x801F6AE4), so by phase 0 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6B0C..0x801F6B0C"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: `beq s0,3` is reached only by a phase from 2 to 3 (`slti 5` at 0x801F6AD0 past the `beq 4`, `slti 2` at 0x801F6AE8) that is not 2 (`beq s0,2` at 0x801F6B04), so by phase 3 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6BF0..0x801F6BF0"
+verdict = "unreachable"
+reason = "PROT 0916's phase dispatch: `beq s0,0xff` is reached only by a phase above 0x14 (`slti 0x14` at 0x801F6BC0, `beq 0x14` at 0x801F6BE8), and the module stores no phase but its own plus 1 or 2, 3 (0x801F6F18) and 0xFF (arm 0x14's exit, 0x801F8884): every arm up to 0x13 steps by one, so the only phase above 0x14 is 0xFF, which takes it."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F6DF0..0x801F6E08"
+verdict = "unreachable"
+reason = "PROT 0916: the compiler's divide guards (`break` on a zero divisor, the `-1` / `0x80000000` overflow test) around the kill verdict's `/ (0x11 - level)`, the level the caster's record `+0x729` slot holds (0x801F6DE0): a magic level runs 0..9 (the eight-step threshold table `0x8007656C` levels it), so the divisor is 8..17, never 0 or -1."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6AC0..0x801F6AC0"
+verdict = "unreachable"
+reason = "PROT 0929's phase dispatch: `beqz v1` is reached only by a phase under 2 that is not 1 (`beq v1,t4` with `t4 = 1` at 0x801F6AB0), so by phase 0 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6AD8..0x801F6AD8"
+verdict = "unreachable"
+reason = "PROT 0929's phase dispatch: `beq v1,3` is reached only by a phase from 2 to 4 (`slti 5`, `slti 2`) that is neither 4 (0x801F6AA0) nor 2 (0x801F6AD0), so by phase 3 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6B00..0x801F6B00"
+verdict = "unreachable"
+reason = "PROT 0929's phase dispatch: `beq v1,6` is reached only by a phase from 5 to 7 (`slti 0xb`, `slti 5`, `slti 8`) that is neither 7 (0x801F6AE8) nor 5 (0x801F6AF8), so by phase 6 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6B1C..0x801F6B1C"
+verdict = "unreachable"
+reason = "PROT 0929's phase dispatch: `beq v1,9` is reached only by a phase from 8 to 10 (`slti 0xb`, `slti 8`) that is neither 10 (0x801F6A8C) nor 8 (0x801F6B14), so by phase 9 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6B5C..0x801F6B5C"
+verdict = "unreachable"
+reason = "PROT 0929's phase dispatch: `beq v1,0xe` is reached only by a phase from 0xC to 0xF (`slti 0x10`, the `slt` against 0xC at 0x801F6B44) that is none of 0xF (0x801F6B30), 0xC (0x801F6B40) and 0xD (0x801F6B54), so by phase 0xE alone, which takes it."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6B88..0x801F6B88"
+verdict = "unreachable"
+reason = "PROT 0929's phase dispatch: `beq v1,0x11` is reached only by a phase from 0x10 to 0x12 (`slti 0x13`) that is neither 0x12 (0x801F6B70) nor 0x10 (0x801F6B80), so by phase 0x11 alone, which takes it."

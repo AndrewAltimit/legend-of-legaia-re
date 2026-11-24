@@ -1387,7 +1387,9 @@ The seat test reads the spill `sp+0x20`, which the prologue fills from
 target actor - not the acting seat `ctx[+0x13]`. A party caster whose spell
 killed a monster therefore keeps case 6 on itself through the tail
 (`shiny_refactor_gimard_levelup`: target slot `3` at `0` HP, step-table
-endpoints case 6's). `zora_glare_petrify_post` (`ctx[7] == 0x51` after a
+endpoints case 6's; a patched-disc capture - the `shiny-seru` build also
+rewrites PROT 0898 - so it illustrates the disassembly's reading rather than
+grounding it). `zora_glare_petrify_post` (`ctx[7] == 0x51` after a
 monster's spell) reads pitch `0`, `TR (0, 1275, 4820)` - one tween step short
 of case 6's `(0, 0x500, prescale(0xC00) = 4915)` - with the focus on the
 caster's own seat and the yaw `ctx[+0x6DA] − actor[+0x46]`.
@@ -2522,13 +2524,25 @@ left is mednafen's side: its CD-seek arm 2 reads `3` where PCSX-Redux's reads `1
 parties' light arms run a step higher. Guilty Cross's arms read `3` at the console's share, as
 mednafen's ring does.
 
-A Mednafen still's image child runs the parent's battle CD timing, PCSX-Redux's unless the
-parent names another (`retail_compare_image.rs` holds PCSX-Redux's on a PCSX-Redux capture
-whatever the parent names). Re-run at the console's (`LEGAIA_BATTLE_CD_TIMING=console`, and the field's alike),
-the corpus's Mednafen stills hold on all but three: `cort_guilty_cross_mid_cast` rises `.985` to
-`.989`, and `theeder_summon_value_rows_rising` falls `.842` to `.804` and `_parked` `.916` to
-`.913`. Theeder's history reads step `3`, between the console table's `2` and PCSX-Redux's `4`,
-so neither machine's table is Mednafen's on that cast.
+Mednafen's CD answers between the two: an argument-free command `20815..23815` cycles
+after it, and its polls take `.22` of its CPU, measured on the same frames with the CdSync
+callback cleared ([emulator timing](../tooling/emulator-timing.md#cd-response-psxcdccpp)).
+So a Mednafen still's image child runs Mednafen's own timing (`CdTiming::Mednafen`) unless
+the parent names another, as a PCSX-Redux still's runs PCSX-Redux's whatever the parent
+names (`retail_compare_image.rs`). A summon band a Mednafen recording covers end to end
+reads that recording's steps (`MEDNAFEN_ARM_STEPS`: Theeder's `3`, `1`, `1`, `2`, `2`,
+`3` on arms 5, 7, 8, 9, 12 and 13, between the console table's `2` and PCSX-Redux's `4`);
+every other frame prices as a console's. Over the corpus's `62` Mednafen battle stills:
+
+| State | PCSX-Redux's timing | Console's | Mednafen's |
+|---|---:|---:|---:|
+| `theeder_summon_value_rows_rising` | `.842` | `.804` | `.842` |
+| `theeder_summon_value_rows_parked` | `.916` | `.913` | `.916` |
+| `cort_guilty_cross_mid_cast` | `.985` | `.989` | `.989` |
+
+and no other channel of any of the `62` moves. Theeder's two frames are not held by the step:
+at Mednafen's steps they read as at PCSX-Redux's, and what is left is the creature's pose,
+the damage digits and the retract fan ([retail-compare](../tooling/retail-compare.md#battle-states)).
 
 The item and Spirit clips run the same stop watch, so the clamp they hold PCSX-Redux's ring at is
 the same artifact: `XA_STREAM_FRAME_COST` (`1063`) is a frame of about `370` hblanks of work over

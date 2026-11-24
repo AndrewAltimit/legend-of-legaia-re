@@ -2,7 +2,9 @@
 
 A ratchet compares a measurement against a committed baseline and fails when
 the measurement gets worse. Two things undo it without any ratchet noticing:
-the baseline itself is edited, or the measurement never runs. Each has a gate.
+the baseline itself is edited, or the measurement never runs. Each has a gate,
+and so does the committed build input the site renders, which goes stale the
+same invisible way.
 
 ## A baseline may not loosen silently
 
@@ -44,6 +46,33 @@ which a squash-merged log otherwise buries inside a wave commit.
 The pre-commit hook compares the working tree against the merge-base with
 `main`. The `gates` job compares a pull request's merge commit against the PR
 base, and a push against the commit it replaced. It needs no disc and no build.
+
+The retail-compare baseline is one ratchet filed in two lists: `states`, the
+retail-disc states, and `patched_states`, the mod states the manifest tags
+with a `resident_patch` ([`retail-compare.md`](retail-compare.md#the-ratchet)).
+The gate reads a `patched_states/<state>/<channel>` leaf under its
+`states/...` key (`FOLD` in the script), so moving a row between the lists is
+no loosening and a fall on either list needs its ledger entry.
+
+## A build input may not go stale
+
+The site builds without disc data, so the landing page renders figures
+committed beside the code: `scripts/ci/progress-metrics.json` (the tiles) and
+`scripts/ci/image-port-status.json` (the per-image port table). They are not
+ratchets - a number may move either way - but they describe one tree, and a
+stale one is invisible: well-formed JSON with plausible numbers.
+
+`python3 scripts/ci/update-progress-metrics.py --check` fails when a refresh
+would change either file. What needs no corpus is always compared: the
+verification block, the port track's counts against the `// PORT:` tags and
+`port-catalog-baseline.json`, and the per-image table's input digests. With
+the dump corpus and the extracted disc present it also recomputes the corpus
+tracks and, without `--skip-catalog`, the catalog tracks and the per-image
+table. The pre-commit hook and the `gates` job run `--check --skip-catalog`.
+Clearing a failure means refreshing on a machine with the disc
+(`update-progress-metrics.py`, no flags) and committing both files; the check
+never rewrites them. Details:
+[`disc-coverage.md`](disc-coverage.md#refreshing-the-landing-page-tiles).
 
 ## A skipped test is not a passed test
 

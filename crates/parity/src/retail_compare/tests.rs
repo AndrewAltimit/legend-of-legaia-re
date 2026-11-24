@@ -147,6 +147,49 @@ fn a_state_run_without_its_own_image_is_skipped_and_never_blessed() {
     assert!(prior.fallback_skips(&own).is_empty());
 }
 
+/// A patched-disc state files under `patched_states`, apart from the
+/// retail ratchet: a bless puts it there (moving a row the prior file kept
+/// in the retail list), its drop is drift and never a regression, and the
+/// committed JSON carries no `patched_states` key while the list is empty.
+#[test]
+fn a_patched_disc_state_files_under_its_own_list() {
+    let mut prior = Baseline::default();
+    prior.states.insert("swap".into(), chans(&[("image", 0.9)]));
+    prior
+        .states
+        .insert("plain".into(), chans(&[("image", 0.9)]));
+    let mut plain = patched_report("plain", 0.95, None);
+    plain.resident_patch = None;
+    let run = vec![patched_report("swap", 0.95, None), plain];
+    assert_eq!(prior.misfiled(&run).len(), 1);
+    let blessed = Baseline::from_reports(&run).merged_over(Some(prior), &[], &BTreeSet::new());
+    assert!(!blessed.states.contains_key("swap"));
+    assert_eq!(blessed.patched_states["swap"], chans(&[("image", 0.95)]));
+    assert_eq!(blessed.states["plain"], chans(&[("image", 0.95)]));
+    assert!(blessed.misfiled(&run).is_empty());
+    let dropped = vec![patched_report("swap", 0.5, None)];
+    assert!(blessed.regressions(&dropped, &[]).is_empty());
+    assert_eq!(blessed.patched_drift(&dropped, &[]).len(), 1);
+    let retail_only = serde_json::to_string(&Baseline::default()).unwrap();
+    assert!(!retail_only.contains("patched_states"));
+    let back: Baseline = serde_json::from_str(&serde_json::to_string(&blessed).unwrap()).unwrap();
+    assert_eq!(back.patched_states, blessed.patched_states);
+}
+
+/// The committed baseline parses with both lists, and no state sits in
+/// both (`retail-compare.py --check-split` holds them to the manifest).
+#[test]
+fn the_committed_baseline_keeps_its_lists_apart() {
+    let b: Baseline = serde_json::from_str(include_str!(
+        "../../../../scripts/ci/retail-compare-baseline.json"
+    ))
+    .expect("the committed baseline parses");
+    assert!(!b.states.is_empty());
+    for label in b.patched_states.keys() {
+        assert!(!b.states.contains_key(label), "{label} is in both lists");
+    }
+}
+
 /// A frame that could not be produced is no measurement: a bless keeps the
 /// state's image score and takes its other channels, and a check still
 /// reports the unscored image.

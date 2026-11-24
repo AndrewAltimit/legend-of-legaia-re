@@ -183,6 +183,7 @@ impl PlayWindowApp {
                     placement_cell_keys,
                     placement_records,
                     _,
+                    placement_lifts,
                 ),
             placement_color:
                 (
@@ -192,14 +193,17 @@ impl PlayWindowApp {
                     placement_color_cell_keys,
                     placement_color_records,
                     _,
+                    placement_color_lifts,
                 ),
-            terrain: (field_terrain_draws, floor_terrain, terrain_cell_keys, terrain_facing),
+            terrain:
+                (field_terrain_draws, floor_terrain, terrain_cell_keys, terrain_facing, terrain_lifts),
             terrain_color:
                 (
                     field_terrain_color_draws,
                     floor_terrain_color,
                     terrain_color_cell_keys,
                     terrain_color_facing,
+                    terrain_color_lifts,
                 ),
         } = draws;
         let WorldMapDraws {
@@ -246,6 +250,12 @@ impl PlayWindowApp {
         self.field_placement_color_cell_keys = placement_color_cell_keys;
         self.field_placement_records = placement_records;
         self.field_placement_color_records = placement_color_records;
+        self.field_draw_lifts = super::super::field_render::FieldDrawLifts {
+            terrain: terrain_lifts,
+            terrain_color: terrain_color_lifts,
+            placement: placement_lifts,
+            placement_color: placement_color_lifts,
+        };
         // Pack slot -> uploaded mesh, for the placed objects a motion
         // stream re-binds (`World::object_live_models`).
         let env_tmds = self

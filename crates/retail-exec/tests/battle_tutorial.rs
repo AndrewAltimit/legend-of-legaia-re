@@ -39,6 +39,8 @@ const STEP: u32 = 0x1F80_0393;
 const OPT_COMMAND: u32 = 0x8008_46C8;
 const OPT_SELECT: u32 = 0x8008_46C4;
 const CANCEL_MASK: u32 = 0x8008_46D4;
+/// The pad's new-press word `_DAT_8007B874` the countdown section reads.
+const PRESSED: u32 = 0x8007_B874;
 
 fn image_cpu() -> Option<Cpu> {
     let mut cpu = scus_cpu()?;
@@ -94,9 +96,11 @@ fn the_tutorial_hook_emits_what_retail_does() {
     let mut rng = Rng(0x5455_544F);
     let mut failures = Vec::new();
     let (mut boxes, mut rewinds, mut closes) = (0, 0, 0);
-    for flow in 0x1Eu8..=0x78 {
+    // The table's states and a few past either end of it, which the bound
+    // test (`sltiu v0,v1,0x5b` at `0x801F6BD8`) sends to the no-op tail.
+    for flow in (0x1Eu8..=0x78).chain([0x00, 0x1D, 0x79, 0xC8, 0xFF]) {
         for lesson in 0u8..=5 {
-            for _ in 0..8 {
+            for _ in 0..32 {
                 let mut buf = [0u8; 5];
                 for b in &mut buf {
                     *b = [0x0E, 0x0F, 0x00, 0x11][rng.below(4) as usize];
@@ -260,7 +264,16 @@ fn the_tutorial_countdown_runs_down_as_retails() {
         // A lesson of `4` runs the sign-off tail on the hook's first call,
         // which arms the countdown afresh; past it (`5`) the run-down closes.
         for lesson in [0u8, 2, 3, 5] {
-            for scalar in [8u8, 16] {
+            // A press on one pass (`0x801F720C`) zeroes the countdown unless
+            // a box is up (`ctx[+0x6B2]`, `0x801F721C`).
+            for (scalar, press_at, box_up) in [
+                (8u8, None, false),
+                (16, None, false),
+                (8, Some(3usize), false),
+                (16, Some(40), false),
+                (8, Some(3), true),
+                (16, Some(1), true),
+            ] {
                 clear_ctx(&mut cpu);
                 cpu.mem.wr8(SCALAR, scalar);
                 cpu.mem.wr8(STEP, step);
@@ -270,7 +283,9 @@ fn the_tutorial_countdown_runs_down_as_retails() {
                 let mut t = BattleTutorial::new();
                 t.lesson = lesson;
                 t.arm_countdown();
-                let c = format!("step {step} lesson {lesson} scalar {scalar}");
+                let c = format!(
+                    "step {step} lesson {lesson} scalar {scalar} press {press_at:?} box {box_up}"
+                );
                 let seeded = i32::from(cpu.mem.rd16(CTX + 0x6B4) as i16);
                 if seeded != i32::from(COMPLETION_COUNTDOWN_VSYNCS) * i32::from(scalar)
                     || cpu.mem.rd16(CTX + 0x6B0) != 1
@@ -282,10 +297,15 @@ fn the_tutorial_countdown_runs_down_as_retails() {
                 // its dispatch from running.
                 cpu.mem.wr16(CTX + 0x6AE, 1);
                 cpu.mem.wr8(CTX + 0x06, 0x1E);
+                // A box up takes the hook's suppressed arm instead
+                // (`0x801F71AC`), which reaches the same countdown section.
+                cpu.mem.wr16(CTX + 0x6B2, u16::from(box_up));
                 let mut retail_passes = 0;
                 let mut retail_end = None;
                 for pass in 1..=400 {
                     let phase = cpu.mem.rd8(CTX + 0x289);
+                    cpu.mem
+                        .wr32(PRESSED, if press_at == Some(pass) { 0x40 } else { 0 });
                     assert_eq!(cpu.call(TICK, &[]), Stop::Returned);
                     if cpu.mem.rd16(CTX + 0x6B4) as i16 <= 0 {
                         retail_passes = pass;
@@ -300,7 +320,7 @@ fn the_tutorial_countdown_runs_down_as_retails() {
                 let mut port_passes = 0;
                 let mut port_end = None;
                 for pass in 1..=400 {
-                    match t.tick_countdown(false, false, step) {
+                    match t.tick_countdown(press_at == Some(pass), box_up, step) {
                         CountdownTick::Holding => {}
                         CountdownTick::Rewind => {
                             port_passes = pass;

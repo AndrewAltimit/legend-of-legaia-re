@@ -433,6 +433,9 @@ pub(super) struct PlayWindowApp {
     /// (`World::object_draw_displacements` - `chitei2`'s falling boulder).
     pub(super) field_placement_records: Vec<Option<usize>>,
     pub(super) field_placement_color_records: Vec<Option<usize>>,
+    /// The coplanar lift in each field draw's translation, per list
+    /// ([`super::field_render::FieldDrawLifts`]).
+    pub(super) field_draw_lifts: super::field_render::FieldDrawLifts,
     /// Scene-bank model id (= env-pack slot) -> uploaded mesh, for a placed
     /// object whose motion stream swapped its model (op `0x0E`,
     /// `World::object_live_models`); textured and colour bridges.

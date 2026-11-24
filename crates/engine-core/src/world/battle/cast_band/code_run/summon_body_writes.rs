@@ -26,6 +26,10 @@ pub(super) const HORN_FORMATION: [[[i16; 2]; 3]; 4] = [
     [[0, 800], [-600, 900], [600, 900]],
 ];
 
+/// The colour word PROT 0931's scripted hit loop shows each struck monster
+/// with (`lui 0x40; ori 0x1004` at `0x801F8520..0x801F8538`).
+const JEDO_STRUCK_WORD: u32 = 0x0040_1004;
+
 impl World {
     /// Draw PROT 0916's arm-0 verdict once per cast and hold it on the
     /// module state ([`ModuleCamState::kill`]), the way retail parks it in
@@ -404,6 +408,24 @@ impl World {
             && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
         {
             a.battle.render_flag = 2;
+        }
+        // A scripted fight's arm 29 strikes instead (`ctx[+0x287]`,
+        // `0x801F833C`): the hit loop rolls the wrapper on every monster seat
+        // with HP (the band's fold here) and shows each one lit at rate `2`:
+        // `sb zero,0x21C`, `sb 2,0x21D`, `sw 0x00401004,0x4`
+        // (`0x801F851C..0x801F853C`), whatever the hit leaves it.
+        if entry == JEDO_ENTRY
+            && self.battle_ctx.scripted_fight != 0
+            && phase_in == cam::JEDO_HIT_ARM
+            && passed
+        {
+            for slot in self.living_monster_slots() {
+                if let Some(a) = self.actors.get_mut(slot) {
+                    a.battle.render_flag = 0;
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
+                    a.battle.render_color = JEDO_STRUCK_WORD;
+                }
+            }
         }
         if entry == JEDO_ENTRY && self.battle_ctx.scripted_fight == 0 {
             if phase_in == cam::JEDO_HIT_ARM && passed {

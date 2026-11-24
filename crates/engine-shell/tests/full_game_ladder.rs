@@ -177,6 +177,10 @@ struct Baseline {
     /// hand of the rand stream, keyed `seed_<n>` (decimal).
     #[serde(default)]
     continuous_seeds: BTreeMap<String, usize>,
+    /// Part C's shortcut tally, per prop mode (`placed` / `walked`) and
+    /// stream (`default` / `seed_<n>`), per category: asserted `<=`.
+    #[serde(default)]
+    shortcuts: BTreeMap<String, BTreeMap<String, BTreeMap<String, u64>>>,
 }
 
 fn read_baseline() -> Baseline {
@@ -184,6 +188,19 @@ fn read_baseline() -> Baseline {
         .ok()
         .and_then(|t| toml::from_str(&t).ok())
         .unwrap_or_default()
+}
+
+/// The committed baseline parses whole: a table [`read_baseline`] could not
+/// read would fall back to an empty baseline and assert nothing. Disc-free.
+#[test]
+fn the_committed_baseline_parses() {
+    let text = std::fs::read_to_string(baseline_path()).expect("baseline file");
+    let b: Baseline = toml::from_str(&text).expect("baseline parses");
+    assert!(b.continuous.get("reached").is_some_and(|&n| n > 0));
+    assert!(!b.segments.is_empty());
+    for mode in b.shortcuts.keys() {
+        assert!(["placed", "walked"].contains(&mode.as_str()), "mode {mode}");
+    }
 }
 
 /// The planner's parent links stay acyclic through a teleport waypoint, and

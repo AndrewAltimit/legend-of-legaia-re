@@ -78,6 +78,19 @@ fn bodies() -> Vec<Body> {
             });
         }
     }
+    // PROT 0940's split body casts `0xAE` as well as Slime Divide `0x50`, and
+    // forks its cues and cuts on which (`bne` on `+0x1DF` at `0x801F7990`,
+    // `0x801F79F0`, `0x801F7AF0`).
+    if let Some(director) = cam::capture_camera_director(940, 0x801F_78B8)
+        && t::capture_body_for_action(0xAE) == Some((940, 0x801F_78B8))
+    {
+        out.push(Body {
+            entry: 940,
+            va: 0x801F_78B8,
+            action: 0xAE,
+            director,
+        });
+    }
     // Cort's Evil Seru Magic (`0xAD`) casts through the boss band rather
     // than the capture table, on the same single body and director shape.
     out.push(Body {
@@ -364,9 +377,16 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut kiss_halts = 0usize;
     let mut spray_clears = 0usize;
     let (mut horn_hits, mut horn_clamps) = (0usize, 0usize);
+    let (mut doom_hits, mut doom_clamps, mut doom_holds) = (0usize, 0usize, 0usize);
+    let mut status_draws = 0usize;
+    let mut cursor_floors = 0usize;
+    let mut plasma_gates = 0usize;
+    let mut combo_lands = 0usize;
     let (mut shadow_passes, mut shadow_diverged) = (0usize, 0usize);
     let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
+    let mut typhoon_poses = 0usize;
+    let mut venom_marks = 0usize;
     let spawn_log = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3], u16)>::new()));
     let (mut spawns_matched, mut spawn_failures) = (0usize, Vec::<String>::new());
     let all = bodies();
@@ -384,9 +404,32 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         // (`0x801F7948`), which returns the round's roll here so the clamp
         // to the victim's HP (`0x801F796C`) runs both ways.
         let horn_roll = Rc::new(std::cell::Cell::new(0u32));
-        if body.entry == 952 {
+        // Blazing Slash's six hits roll through the same wrapper and land on
+        // seat 0 (`actor_table[0]`, `0x801F750C` and the five like it).
+        let horn_calls = Rc::new(std::cell::Cell::new(0u32));
+        // So does Plasma Strike's arm 0x0D burst (`0x801F8168`), on the victim.
+        if matches!(body.entry, 952 | 958 | 960) {
             let roll = horn_roll.clone();
-            cpu.hook(0x801D_D6B4, move |r, _| r.r[2] = roll.get());
+            let calls = horn_calls.clone();
+            cpu.hook(0x801D_D6B4, move |r, _| {
+                calls.set(calls.get() + 1);
+                r.r[2] = roll.get();
+            });
+        }
+        // Doomsday's arm 0x0B and Chaos Breath's arm 2 roll each hittable
+        // party seat through `FUN_801DD4B0(power, caster, seat)`
+        // (`0x801F77B4`, `0x801F77C8`), which returns a roll keyed on the
+        // round and the seat here, so the clamp to the seat's HP
+        // (`0x801F77E0`, `0x801F77EC`) runs both ways.
+        let doom_round = Rc::new(std::cell::Cell::new(0usize));
+        let sweeps = party_sweep_arm(body).is_some();
+        if sweeps {
+            let round = doom_round.clone();
+            cpu.hook(0x801D_D4B0, move |r, m| {
+                let seat = r.r[A2];
+                let hp = u32::from(m.rd16(ACTOR + seat * STRIDE + 0x14C));
+                r.r[V0] = doomsday_roll(round.get(), seat, hp);
+            });
         }
         // Terror Scream's refund goes through the bag's find-or-insert
         // `FUN_800421D4`, logged rather than run.
@@ -472,11 +515,29 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             0x76 => 30,
             0x3C => 8,
             0x71 | 0x70 => 12,
+            // Chaos Breath's two status draws per seat land one time in
+            // eight each.
+            0x4E => 24,
             _ => 6,
         };
         for round in 0..rounds {
             seated.borrow_mut().clear();
-            let (caster, victim) = seed(&mut cpu, &mut rng, &module, body, 0);
+            let (caster, mut victim) = seed(&mut cpu, &mut rng, &module, body, 0);
+            // Lu Delilas casts Plasma Strike in a duel, on the lone hero in
+            // seat 0, which its burst hits by the table (`actor_table[0]`,
+            // `0x801F8184`) whatever the victim byte names.
+            if body.entry == 960 {
+                victim = 0;
+                cpu.mem.wr8(ACTOR + caster * STRIDE + 0x1DD, 0);
+            }
+            // A spell whose target shape has `& 0x60 == 0` aims at the
+            // monster row: the picker names the caster itself or a wounded
+            // ally (`0x801EA5E4..0x801EA718`), never a party seat.
+            let shape = cpu.mem.rd8(SPELL_STATS + u32::from(body.action) * 0xC + 2) & 0x60;
+            if shape == 0 {
+                victim = caster;
+                cpu.mem.wr8(ACTOR + caster * STRIDE + 0x1DD, caster as u8);
+            }
             // State `0x6F` drains the framing depth by `16 * step` a vsync
             // while it waits on the module's seek (`0x801E5008..0x801E5014`,
             // no clamp), so a long enough seek hands the module a depth below
@@ -499,6 +560,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 // (`0xA9`, `0x801F6AE0`, `0x801F6B34`, `0x801F6C94`,
                 // `0x801F700C`).
                 0x3C => [0u8, GLARE_ZORA][round % 2],
+                // Ultra Charge forks its cue and its cuts on the evolved Cort
+                // (`0x8007BD0C[0] == 0xB5`, `0x801F6A84`, `0x801F6AE0`,
+                // `0x801F6C28`).
+                0xA5 => [0u8, 0xB5][round % 2],
                 _ => 0,
             };
             // The formation cells `0x8007BD0C[seat - 3]`. A seat-7 caster's
@@ -508,6 +573,17 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 cpu.mem.wr8(FORMATION + i, monster);
             }
             cpu.mem.wr8(ROSTER, monster.max(1));
+            // Megaton Press forks three arms on the lead's character id
+            // (`0x8007BD10[0] == 1`, `0x801F74C4`, `0x801F76A4`, `0x801F80A0`):
+            // each lead in turn.
+            let lead = if body.entry == 959 {
+                1 + (round % 3) as u8
+            } else {
+                1
+            };
+            if body.entry == 959 {
+                cpu.mem.wr8(ROSTER, lead);
+            }
             // Death Game's heal reads each seat's maximum `+0x14E` and caps
             // the quarter at the missing HP: a seat at full, one short and
             // one wounded.
@@ -619,8 +695,32 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             if body.action == 0x6E && round % 2 == 1 {
                 cpu.mem.wr16(va_ + 0x14C, 1);
             }
-            if body.entry == 952 {
+            doom_round.set(round);
+            // The seat the wrapper's roll lands on.
+            let hit_at = if matches!(body.entry, 958 | 960) {
+                ACTOR
+            } else {
+                va_
+            };
+            // A hero the burst downs takes Plasma Strike's own wipe leg
+            // (`0x801F8588`, phase `0x11`, which parks the module for the
+            // battle's end) unless its record carries `+0x6C0 & 0x80`
+            // (`0x801F8554`): on odd rounds it does.
+            if body.entry == 960 {
+                let rec = CHAR_RECORDS + 0x6C0;
+                let bits = cpu.mem.rd32(rec) & !0x80;
+                cpu.mem
+                    .wr32(rec, bits | if round % 2 == 1 { 0x80 } else { 0 });
+            }
+            // Plasma Strike's arm 0x0C lands the flurry's combo total, the
+            // victim's `+0x00` (`0x801F8098..0x801F80C8`): none, short of the
+            // HP, past it.
+            if body.action == 0x7B {
                 let hp = u32::from(cpu.mem.rd16(va_ + 0x14C));
+                cpu.mem.wr32(va_, [0, hp / 2, hp + 7][round % 3]);
+            }
+            if matches!(body.entry, 952 | 958 | 960) {
+                let hp = u32::from(cpu.mem.rd16(hit_at + 0x14C));
                 horn_roll.set([0, hp - 1, hp, hp + 1, hp * 3][round % 5]);
             }
             if death_game {
@@ -634,9 +734,15 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // Water Hazard sweeps the party or the monster row as well as a
             // seat, and its arm 3 waits on the row its code names.
             let water_hazard = body.action == 0x71;
+            // A spell whose target shape (the record's `+2` at `0x800754C8`)
+            // has `& 0x60 == 0x60` aims at the party: the monster picker
+            // stores the party code `8` (`0x801EA5D4` -> `sb` at
+            // `0x801EA934`), Curse All and Doomsday among them.
+            let party_shape =
+                cpu.mem.rd8(SPELL_STATS + u32::from(body.action) * 0xC + 2) & 0x60 == 0x60;
             let group = match body.action {
-                0x53 => Some(8u8),
                 0x71 => [None, Some(8u8), Some(9)][round % 3],
+                _ if party_shape => Some(8u8),
                 _ => None,
             };
             if let Some(g) = group {
@@ -670,9 +776,36 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             let blazing = (body.entry, body.va) == (958, BLAZING_SLASH);
             if blazing {
                 cpu.mem.wr8(va_ + 0x1F1, KNOCKDOWN);
+                // The victim's node cursor (12.4) arms 10, 13 and 16 hold at
+                // or past `0x10` (`0x801F78EC..0x801F7908` and the two like
+                // it): short of it, on it and well past it.
+                cpu.mem
+                    .wr16(NODES + victim * 0x100 + 0x68, [0, 9, 0x10, 0x40][round % 4]);
+            }
+            // Dark Typhoon's pull leaves a seat whose arm-2 mark already
+            // stands within `0x200` of the caster at that reach (`slti 0x201`,
+            // taken at `0x801F7578`). An action leaves its combatants where it
+            // put them, so a party member that struck the caster last stands
+            // beside it; rounds 2 and 4 (step-1 rounds, whose swirl the
+            // shadow compares) seat one a reach of about `0x130` off. The
+            // random seats find it about one seat-round in twenty.
+            if (body.entry, body.va) == (942, DARK_TYPHOON) && matches!(round, 2 | 4) {
+                let seat = ACTOR + (round / 2) as u32 * STRIDE;
+                let (x, z) = (cpu.mem.rd16(ca + 0x34), cpu.mem.rd16(ca + 0x38));
+                cpu.mem.wr16(seat + 0x34, x.wrapping_add(0xC0));
+                cpu.mem.wr16(seat + 0x38, z.wrapping_sub(0xE0));
             }
             let mut shadow = shadow_world(&mut cpu, body, caster, victim, monster);
             let mut shadow_live = shadow.is_some();
+            // A Stoned party seat (`+0x16E & 4`), which a party sweep skips
+            // (`0x801F77A4` in Chaos Breath), on every third round. The
+            // shadow is seated without the bit, so it sits those rounds out.
+            if party_sweep_arm(body).is_some() && round % 3 == 2 {
+                let a = ACTOR + ((round / 3) % 3) as u32 * STRIDE;
+                let f = cpu.mem.rd16(a + 0x16E);
+                cpu.mem.wr16(a + 0x16E, f | t::FLAG_NON_TARGETABLE);
+                shadow_live = false;
+            }
             let mut shadow_after: Vec<u32> = Vec::new();
             // The seats whose status the shadow stops comparing for the cast,
             // once its damage left them on other HP than retail's.
@@ -681,6 +814,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
             let mut arm3_passes = 0usize;
             let mut settle_passes = 0usize;
+            let mut doom_settle = 0usize;
+            let (mut plasma_phase, mut plasma_passes) = (0xFEu8, 0usize);
+            let settle_arm = party_settle_arm(body);
             let pass_step: u8 = if round % 2 == 1 {
                 [2u8, 3, 4][(round / 2) % 3]
             } else {
@@ -691,7 +827,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // finds the caster's node cursor past its mark.
             cpu.mem.wr16(NODES + caster * 0x100 + 0x68, 0x7FFF);
             let mut st = ModuleCamState {
-                lead_roster: 1,
+                lead_roster: lead,
                 opens_pass: true,
                 frame_step: 1,
                 victim_settled: true,
@@ -702,6 +838,14 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             };
             stream.set(if death_game {
                 1 + 0x9E37 * round as u32
+            } else if sweeps {
+                1 + 0x2F1D * round as u32
+            } else if (body.entry, body.va) == (945, WATER_COLUMN) {
+                // Water Column's Venom draw ahead of its hit, `rand() & 7 == 0`
+                // (`0x801F7460..0x801F746C`), is the round's first draw: a
+                // stream a round whose first draw lands the bit on rounds 2
+                // and 5, so the shadow's status word is held to it.
+                1 + 0x1001 * round as u32
             } else {
                 1
             });
@@ -773,6 +917,34 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 // (`0x801F828C..0x801F82A0`): on odd rounds the caster is on it.
                 if body.action == 0x6F && phase == 3 && round % 2 == 1 {
                     cpu.mem.wr8(ca + 0x1D9, 7);
+                }
+                // Plasma Strike's clip gates on odd rounds: arm 5 waits for
+                // the caster's strike clip `0x0D` (`0x801F7B60`) and its
+                // cursor past `0x90` (`0x801F7B78`), arm 6 for its loops to
+                // stop reading `0xFF` (`0x801F7C84`), arm 0x0D for its cursor
+                // past `0x160` (`0x801F8148`): each not yet for a few passes
+                // of the arm, then ready.
+                if body.action == 0x7B {
+                    plasma_passes = if phase == plasma_phase {
+                        plasma_passes + 1
+                    } else {
+                        0
+                    };
+                    plasma_phase = phase;
+                    let early = round % 2 == 1 && plasma_passes < 4;
+                    let cursor = NODES + caster * 0x100 + 0x68;
+                    match phase {
+                        5 => {
+                            let clip_early = early && plasma_passes < 2;
+                            cpu.mem
+                                .wr8(ca + 0x1D9, if clip_early { 0x0C } else { 0x0D });
+                            cpu.mem.wr16(cursor, if early { 0x40 } else { 0x7FFF });
+                        }
+                        6 => cpu.mem.wr8(ca + 0x21B, if early { 0xFF } else { 0 }),
+                        0x0D => cpu.mem.wr16(cursor, if early { 0x100 } else { 0x7FFF }),
+                        _ => {}
+                    }
+                    plasma_gates += usize::from(early && matches!(phase, 5 | 6 | 0x0D));
                 }
                 st.caster_clip = Some(cpu.mem.rd8(ca + 0x1D9));
                 st.caster_frame = Some(cpu.mem.rd16(NODES + caster * 0x100 + 0x68));
@@ -878,7 +1050,16 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         _ => row,
                     };
                     if phase == 3 {
-                        let s = rows[round % rows.len()];
+                        // Not the caster: nothing downs a monster in its
+                        // own cast, and its colour and flag are arm 0's.
+                        let s = rows
+                            .iter()
+                            .copied()
+                            .cycle()
+                            .skip(round % rows.len())
+                            .take(rows.len())
+                            .find(|&s| s != caster)
+                            .unwrap_or(rows[0]);
                         let a = ACTOR + s * STRIDE;
                         let dead = round % 2 == 1;
                         let busy = arm3_passes <= round + 1;
@@ -924,6 +1105,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     // Bloody Horns' arm 6 (`0x801F7AB4..0x801F7AE4`): a live
                     // victim's clip `0`, a fallen one's `8`.
                     0x5C if body.va == BLOODY_HORNS => Some(6),
+                    // Power Charge's arm 3 (`0x801F758C..0x801F75F4`), on the
+                    // monster seat it aims at, which stands.
+                    0x72 => Some(3),
                     _ => None,
                 };
                 if let Some(arm_at) = victim_settle {
@@ -939,7 +1123,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     if phase == arm_at {
                         // A victim the strike downed on every fourth round
                         // (Kiss of Death's own hit downs its one-HP victims).
-                        if body.action != 0x6E && round % 4 == 3 && settle_passes == 1 {
+                        if !matches!(body.action, 0x6E | 0x72)
+                            && round % 4 == 3
+                            && settle_passes == 1
+                        {
                             cpu.mem.wr16(va_ + 0x14C, 0);
                         }
                         let hp = cpu.mem.rd16(va_ + 0x14C);
@@ -990,6 +1177,55 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 };
                 cpu.mem.wr8(STEP, step);
                 st.frame_step = step;
+                // Doomsday's arm 0x0C and Chaos Breath's arm 3, once their
+                // word runs out, wait on every `ctx[+0]` party seat
+                // (`0x801F797C..0x801F79F4` in both images): a live seat
+                // until idle, a downed one until on clip `8`. Each seat plays
+                // for round-keyed passes (on odd rounds one is downed as the
+                // wait opens), then rests; the host's flag off the same bytes
+                // (`World::capture_party_settled`).
+                if let Some((at, word_va, drain)) = settle_arm {
+                    let word = cpu.mem.rd32(word_va) as i32;
+                    // Doomsday and Neo Star Slash drain and walk on one pass;
+                    // Chaos Breath walks on the pass after its word reads `0`.
+                    let ready = if drain > 0 {
+                        word <= drain * i32::from(step)
+                    } else {
+                        word == 0
+                    };
+                    doom_settle = if phase == at && ready {
+                        doom_settle + 1
+                    } else {
+                        0
+                    };
+                    st.party_settled = true;
+                    if phase == at {
+                        let seats: Vec<(u16, u8)> = (0..3u32)
+                            .map(|s| {
+                                let a = ACTOR + s * STRIDE;
+                                if doom_settle == 1
+                                    && round % 2 == 1
+                                    && s as usize == (round / 2) % 3
+                                {
+                                    cpu.mem.wr16(a + 0x14C, 0);
+                                }
+                                let hp = cpu.mem.rd16(a + 0x14C);
+                                let busy =
+                                    doom_settle > 0 && doom_settle <= (round + s as usize) % 4;
+                                let clip = match (busy, hp == 0) {
+                                    (true, false) => [5, 8][round % 2],
+                                    (true, true) => [3, 0][round % 2],
+                                    (false, false) => 0,
+                                    (false, true) => 8,
+                                };
+                                cpu.mem.wr8(a + 0x1D9, clip);
+                                (hp, clip)
+                            })
+                            .collect();
+                        st.party_settled = settle_world.drive_capture_party_settled(&seats);
+                        doom_holds += usize::from(!st.party_settled);
+                    }
+                }
                 let mut arm = cam::CaptureCamArm::default();
                 let mut opened_spawns = None;
                 for i in 0..step {
@@ -1050,7 +1286,20 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 let ctx_before = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
                 // The two seats as the pass opens, for Death Game's result.
                 let before = [ca, va_].map(|a| crate::cast_view::read_actor(&mut cpu.mem, a));
-                let horn_before = (cpu.mem.rd16(va_ + 0x14C), cpu.mem.rd32(va_ + 0x10));
+                let before_party: Vec<_> = (0..3u32)
+                    .map(|s| crate::cast_view::read_actor(&mut cpu.mem, ACTOR + s * STRIDE))
+                    .collect();
+                let horn_before = (cpu.mem.rd16(hit_at + 0x14C), cpu.mem.rd32(hit_at + 0x10));
+                let horn_calls_before = horn_calls.get();
+                // Arms 12 and 15 send the victim into its knockdown, whose
+                // clip the stubbed driver never restarts: on odd rounds the
+                // rig rewinds the cursor ahead of arms 13 and 16, as a fresh
+                // clip would leave it.
+                if blazing && matches!(phase, 13 | 16) && round % 2 == 1 && pass % 3 == 0 {
+                    cpu.mem
+                        .wr16(NODES + victim * 0x100 + 0x68, (pass % 0x10) as u16);
+                }
+                let victim_cursor = cpu.mem.rd16(NODES + victim * 0x100 + 0x68);
                 // Every seat's tint and render flag as the pass opens, with
                 // what decides which seats a hide or show reaches: HP, Stone.
                 let shown: Vec<(u32, u8, u16, u16)> = (0..8u32)
@@ -1077,6 +1326,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 shots.borrow_mut().clear();
                 spawn_log.borrow_mut().clear();
                 let stage_before = cpu.mem.rd8(ca + 0x1DA);
+                let stream_before = stream.get();
                 let stop = cpu.call(body.va, &[]);
                 let c = format!("{c0} pass {pass} arm {phase}");
                 if stop != Stop::Returned {
@@ -1186,6 +1436,13 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 if body.action == 0x76 && phase >= 9 {
                     shadow_live = false;
                 }
+                // A party sweep's rolls here are the hooked wrapper's, not
+                // the band's own, and so is its share of the `rand()` stream:
+                // its status draws are compared against the tick kernel
+                // below, not on the shadow.
+                if party_sweep_arm(body) == Some(phase) && after != phase {
+                    status_left[..3].fill(true);
+                }
                 if shadow_live && let Some(w) = shadow.as_ref() {
                     for (s, left) in status_left.iter_mut().enumerate() {
                         // PROT 0964's and 0966's creature stands in seat 7
@@ -1232,6 +1489,53 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                             ));
                         }
                     }
+                    // Water Column's Venom bit, drawn ahead of its hit: the
+                    // fold's damage roll leaves the victim on other HP than
+                    // the stubbed wrapper's, which stops the status compare
+                    // above for the seat, so the bit the draw writes is held
+                    // on its own.
+                    if (body.entry, body.va) == (945, WATER_COLUMN) {
+                        let a = ACTOR + victim * STRIDE;
+                        let got = cpu.mem.rd16(a + 0x16E) & 1;
+                        let port = w.raw_status_word(victim as u8) & 1;
+                        if got != port {
+                            shadow_failures.push(format!(
+                                "{c}: Water Column victim {victim} Venom retail {got} port {port}"
+                            ));
+                        }
+                        venom_marks += usize::from(got != 0);
+                    }
+                    // Dark Typhoon's swirl (`World::dark_typhoon_party_swirl`):
+                    // each party seat's plane pair, height and heading against
+                    // retail's arms 2..=5 (the marks `0x801F708C..0x801F70F8`,
+                    // the pull `0x801F7488..0x801F76AC`, the let-down
+                    // `0x801F7AA8..0x801F7B94`). The engine ticks a vsync at a
+                    // time, so a pass at step > 1 grows the pull over several
+                    // ticks where retail grows it once: only step-1 passes
+                    // are compared.
+                    if (body.entry, body.va) == (942, DARK_TYPHOON) && step == 1 {
+                        for s in 0..3u32 {
+                            let a = ACTOR + s * STRIDE;
+                            let m = &w.actors[s as usize];
+                            let got = [0x34u32, 0x36, 0x38].map(|o| cpu.mem.rd16(a + o) as i16);
+                            let port = [
+                                m.move_state.world_x,
+                                m.move_state.world_y,
+                                m.move_state.world_z,
+                            ];
+                            let facing = (
+                                cpu.mem.rd16(a + 0x46) & 0xFFF,
+                                m.battle.facing_angle & 0xFFF,
+                            );
+                            if got != port || facing.0 != facing.1 {
+                                shadow_failures.push(format!(
+                                    "{c}: Dark Typhoon seat {s} pose retail {got:?} {:#x} port {port:?} {:#x}",
+                                    facing.0, facing.1
+                                ));
+                            }
+                            typhoon_poses += 1;
+                        }
+                    }
                     shadow_passes += 1;
                 }
                 shadow_after = (0..8u32)
@@ -1240,9 +1544,12 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 // Bloody Horns' hit against the port's clamp
                 // (`cast_module_ticks::apply_hit_floor_zero`): the roll, cut
                 // to the victim's HP, onto `+0x10` and off `+0x14C`.
-                if body.entry == 952 && body.va == BLOODY_HORNS {
+                if (body.entry == 952 && body.va == BLOODY_HORNS)
+                    || (body.entry, body.va) == (958, BLAZING_SLASH)
+                    || (body.entry, body.va) == (960, PLASMA_STRIKE)
+                {
                     let (hp, acc) = horn_before;
-                    if cpu.mem.rd32(va_ + 0x10) != acc || cpu.mem.rd16(va_ + 0x14C) != hp {
+                    if horn_calls.get() != horn_calls_before {
                         let mut v = legaia_engine_cast::cast_module_ticks::CastActorState {
                             hp,
                             hp_bar_delta: acc as i32,
@@ -1252,7 +1559,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                             &mut v,
                             horn_roll.get() as i32,
                         );
-                        let got = (cpu.mem.rd16(va_ + 0x14C), cpu.mem.rd32(va_ + 0x10));
+                        let got = (cpu.mem.rd16(hit_at + 0x14C), cpu.mem.rd32(hit_at + 0x10));
                         if got != (v.hp, v.hp_bar_delta as u32) {
                             failures.push(format!(
                                 "{c}: horn hit hp/+0x10 retail {got:?} port {:?}",
@@ -1262,6 +1569,118 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         horn_hits += 1;
                         horn_clamps += usize::from(horn_roll.get() > u32::from(hp));
                     }
+                }
+                // Plasma Strike's combo landing on the pass that leaves arm
+                // 0x0C, against `plasma_strike_tick`.
+                if body.action == 0x7B && phase == 0x0C && after != phase {
+                    let mut pctx = ctx_before;
+                    pctx.phase = phase;
+                    let (mut pc, mut pv) = (before[0], before[1]);
+                    pv.hits_pending = false;
+                    t::plasma_strike_tick(&mut pctx, &mut pc, &mut pv, None);
+                    let got = crate::cast_view::read_actor(&mut cpu.mem, va_);
+                    if (got.hp, got.combo_total) != (pv.hp, pv.combo_total) {
+                        failures.push(format!(
+                            "{c}: combo landing hp/+0x00 retail {:?} port {:?}",
+                            (got.hp, got.combo_total),
+                            (pv.hp, pv.combo_total)
+                        ));
+                    }
+                    combo_lands += usize::from(before[1].combo_total > u32::from(before[1].hp));
+                }
+                // Blazing Slash's victim cursor stores (the floor and the
+                // resets), against the director's victim write.
+                if blazing {
+                    let w = &arm.victim_write;
+                    let mut want = if w.cursor_reset { 0 } else { victim_cursor };
+                    if let Some(f) = w.seek_floor
+                        && (want as i16) < f as i16
+                    {
+                        want = f;
+                    }
+                    let got = cpu.mem.rd16(NODES + victim * 0x100 + 0x68);
+                    if got != want {
+                        failures.push(format!(
+                            "{c}: victim cursor retail {got:#x} port {want:#x} (from {victim_cursor:#x})"
+                        ));
+                    }
+                    cursor_floors += usize::from(w.seek_floor.is_some() && victim_cursor < 0x10);
+                }
+                // Doomsday's party sweep on the pass that leaves arm 0x0B,
+                // against `doomsday_tick` on the same rolls: each live seat's
+                // roll cut to its HP onto `+0x10` and off `+0x14C`, its
+                // knockdown staged (`0x801F77E0..0x801F7840`).
+                if party_sweep_arm(body) == Some(phase) && after != phase {
+                    let rolls: Vec<i32> = before_party
+                        .iter()
+                        .enumerate()
+                        .map(|(s, v)| doomsday_roll(round, s as u32, u32::from(v.hp)) as i32)
+                        .collect();
+                    let mut pctx = ctx_before;
+                    pctx.phase = phase;
+                    let mut seats = before_party.clone();
+                    let hits = if body.entry == 965 {
+                        t::doomsday_tick(&mut pctx, &mut seats, true, |s| rolls[usize::from(s)]).1
+                    } else {
+                        // Chaos Breath's two 1-in-8 draws per hittable seat
+                        // (`0x801F7888`, the second only on a miss at
+                        // `0x801F78B0`), off the stream as the pass opened.
+                        let mut seed = stream_before;
+                        let mut draw = || {
+                            seed = seed.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+                            (seed >> 16) & 0x7FFF
+                        };
+                        let draws: Vec<(u32, u32)> = before_party
+                            .iter()
+                            .map(|v| {
+                                if !t::aoe_seat_is_hittable(v) {
+                                    return (1, 1);
+                                }
+                                let a = draw();
+                                (a, if a & 7 != 0 { draw() } else { 1 })
+                            })
+                            .collect();
+                        status_draws += draws
+                            .iter()
+                            .filter(|d| d.0 & 7 == 0 || d.1 & 7 == 0)
+                            .count();
+                        let mut caster = before[0];
+                        t::chaos_breath_tick(
+                            &mut pctx,
+                            &mut caster,
+                            &mut seats,
+                            |s| rolls[usize::from(s)],
+                            |s| draws[usize::from(s)],
+                        )
+                        .1
+                    };
+                    for (s, port) in seats.iter().enumerate() {
+                        let got =
+                            crate::cast_view::read_actor(&mut cpu.mem, ACTOR + s as u32 * STRIDE);
+                        let key = |v: &t::CastActorState| {
+                            (
+                                v.hp,
+                                v.hp_bar_delta,
+                                v.staged_anim,
+                                v.restage,
+                                v.flags,
+                                // Doomsday's `+0x04` store is its director's party
+                                // show (`0x801F76E4..0x801F76F0`).
+                                if body.entry == 965 { 0 } else { v.present_04 },
+                            )
+                        };
+                        if key(&got) != key(port) {
+                            failures.push(format!(
+                                "{c}: sweep seat {s} hp/+0x10/+0x1DA/+0x1DC/+0x16E/+0x04 retail {:x?} port {:x?}",
+                                key(&got),
+                                key(port)
+                            ));
+                        }
+                        doom_clamps += usize::from(
+                            before_party[s].hp != 0 && rolls[s] > i32::from(before_party[s].hp),
+                        );
+                    }
+                    doom_hits += hits.len();
                 }
                 // That store against the director's caster write.
                 if body.action == 0x6F && phase == 3 {
@@ -1515,6 +1934,30 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 {
                     failures.push(format!("{c}: port passes the victim settle, retail holds"));
                 }
+                if body.action == 0x7B
+                    && round % 2 == 1
+                    && plasma_passes < 4
+                    && matches!(phase, 5 | 6 | 0x0D)
+                    && !arm.hold
+                    && busy
+                    && after == phase
+                {
+                    failures.push(format!("{c}: port passes the clip gate, retail holds"));
+                }
+                // The band holds a party-row settle of its own
+                // (`gated_hit_arm`, a chain arm's `settle`) beside the
+                // director's, on the same host flag.
+                let band_party_hold =
+                    !st.party_settled && band_party_settle_arm(body).is_some_and(|at| at == phase);
+                if settle_arm.is_some_and(|(at, ..)| at == phase)
+                    && doom_settle > 0
+                    && !arm.hold
+                    && !band_party_hold
+                    && busy
+                    && after == phase
+                {
+                    failures.push(format!("{c}: port passes the party settle, retail holds"));
+                }
                 if water_hazard && phase == 3 && !arm.hold && after == phase {
                     failures.push(format!("{c}: port passes, retail holds"));
                 }
@@ -1531,7 +1974,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         st.countdown.0 = word;
                     }
                 }
-                if !busy {
+                if !busy || (body.entry == 960 && after == 0x11) {
                     finished = true;
                     break;
                 }
@@ -1577,9 +2020,31 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         spawn_failures[..spawn_failures.len().min(40)].join("\n")
     );
     eprintln!("band shadow: {status_marks} seat passes with a status bit set compared");
-    eprintln!("Bloody Horns: {horn_hits} hits compared, {horn_clamps} clamped to the victim's HP");
+    eprintln!(
+        "Bloody Horns and Blazing Slash: {horn_hits} hits compared, {horn_clamps} clamped to the victim's HP"
+    );
+    eprintln!(
+        "Doomsday and Chaos Breath: {doom_hits} sweep hits compared, {doom_clamps} clamped, \
+         {status_draws} status draws landed, {doom_holds} party-settle holds"
+    );
     assert!(
-        horn_clamps >= 2 && horn_hits > horn_clamps,
+        cursor_floors >= 4,
+        "Blazing Slash cursor floors {cursor_floors}"
+    );
+    assert!(
+        plasma_gates >= 12,
+        "Plasma Strike clip gates held {plasma_gates}"
+    );
+    assert!(
+        combo_lands >= 1,
+        "Plasma Strike combos past the HP {combo_lands}"
+    );
+    assert!(
+        doom_hits > 20 && doom_clamps >= 4 && doom_holds > 20 && status_draws >= 2,
+        "sweep hits {doom_hits} clamps {doom_clamps} draws {status_draws} holds {doom_holds}"
+    );
+    assert!(
+        horn_clamps >= 6 && horn_hits > horn_clamps,
         "horn hits {horn_hits} clamps {horn_clamps}"
     );
     assert!(status_marks >= 1000, "status marks compared {status_marks}");
@@ -1587,6 +2052,16 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     assert!(
         shadow_passes >= 110_000,
         "band shadow passes {shadow_passes}"
+    );
+    eprintln!("Dark Typhoon swirl: {typhoon_poses} party seat poses compared");
+    eprintln!("Water Column: {venom_marks} passes with the victim's Venom bit compared");
+    assert!(
+        venom_marks > 0,
+        "no Water Column round landed its Venom draw"
+    );
+    assert!(
+        typhoon_poses >= 100,
+        "Dark Typhoon swirl seat poses compared: {typhoon_poses}"
     );
     assert!(
         shadow_failures.is_empty(),
@@ -1663,6 +2138,57 @@ const GIGATON_PRESS: u32 = 0x801F_6D54;
 const ELEMENT_CHANGE: u32 = 0x801F_88EC;
 const ELEMENT_STRIKE: u32 = 0x801F_69D8;
 const DOOMSDAY: u32 = 0x801F_69D8;
+/// The spell records (`0x800754C8`, `0xC` bytes each), whose `+2` is the
+/// target shape the monster picker reads (`0x801EA59C`).
+const SPELL_STATS: u32 = 0x8007_54C8;
+/// Doomsday's countdown word, in vsyncs (`0x801F8370`).
+const DOOMSDAY_WORD: u32 = 0x801F_8370;
+
+/// The bodies whose last arm waits on every party seat once its word is
+/// spent, as `(arm, word, drain)`: Doomsday's arm 0x0C drains the word by
+/// the frame step and walks on that pass (`0x801F78E0..0x801F79F4`), Chaos
+/// Breath's arm 3 walks on the pass after its gauge drain left the word `0`
+/// (`0x801F7910..0x801F79F4`, `drain` `0`).
+fn party_settle_arm(body: &Body) -> Option<(u8, u32, i32)> {
+    match (body.entry, body.va) {
+        (965, DOOMSDAY) => Some((0x0C, DOOMSDAY_WORD, 1)),
+        (938, CHAOS_BREATH) => Some((3, 0x801F_8040, 0)),
+        // Neo Star Slash's arm 6 drains `scalar * step` and walks on one pass
+        // (`0x801F73F8..0x801F7484`).
+        (960, NEO_STAR_SLASH) => Some((6, 0x801F_8E50, SPEED_SCALAR)),
+        _ => None,
+    }
+}
+
+/// The arm whose party-row settle the band holds itself, off the engine's
+/// own tables: `gated_hit_arm`'s terminal wait (Chaos Breath's arm 3) or a
+/// chain descriptor arm's `settle` (Neo Star Slash's arm 6).
+fn band_party_settle_arm(body: &Body) -> Option<u8> {
+    use t::ChainSettle::PartyRow;
+    if let Some((_, at, PartyRow)) = t::gated_hit_arm(body.entry, Some(body.va)) {
+        return Some(at);
+    }
+    t::chain_body_for(body.entry, body.va)?
+        .arms
+        .iter()
+        .find(|a| a.settle == Some(PartyRow))
+        .map(|a| a.phase)
+}
+
+/// The bodies whose sweep arm rolls each hittable party seat, by arm.
+fn party_sweep_arm(body: &Body) -> Option<u8> {
+    match (body.entry, body.va) {
+        (965, DOOMSDAY) => Some(t::DOOMSDAY_SWEEP_ARM),
+        (938, CHAOS_BREATH) => Some(t::CHAOS_BREATH_SWEEP_ARM),
+        _ => None,
+    }
+}
+
+/// The roll Doomsday's `FUN_801DD4B0` returns for party seat `seat` on HP
+/// `hp` in round `round`: none, short of the HP, the HP, past it, far past.
+fn doomsday_roll(round: usize, seat: u32, hp: u32) -> u32 {
+    [0, hp.saturating_sub(1), hp, hp + 1, hp * 3][(round + seat as usize) % 5]
+}
 const EVIL_SERU_MAGIC: u32 = 0x801F_6A74;
 /// The part spawn `FUN_80021B04` and the pool the walk hands parts from.
 const SPAWN_PART: u32 = 0x8002_1B04;

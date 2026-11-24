@@ -302,6 +302,11 @@ precision highp int;
 
 uniform mat4 u_mvp;
 uniform mat4 u_model;   /* per-draw model matrix (identity for single-mesh mode) */
+/* A coplanar-lifted draw (the play page's _stageDepthLift): the fraction of
+ * its view depth nearer the draw tests at, drawn where it stands. 0 (every
+ * other draw) leaves the depth alone. Twin of
+ * engine-scene's coplanar_draws::depth_lifted_camera. */
+uniform float u_depth_lift;
 
 /* World-overview distance haze: the kingdom overworld's walk-view depth cue
  * (PROT 0901, docs/subsystems/world-map.md#ground-texturing) measured from a
@@ -756,17 +761,23 @@ in vec4 a_ground_ref_y;
 in vec3 a_normal;
 
 /* Affine (screen-linear) UV and gouraud colour, as the PSX rasteriser and
- * native's @interpolate(linear) draw them. GLSL ES 3.00 has no
+ * native's @interpolate(linear) draw them. Centroid-sampled: on the MSAA
+ * canvas a pixel the primitive only partly covers is shaded at the pixel
+ * centre, which can lie outside it, and the UV extrapolated there read the
+ * texel past the primitive's own - on the battle ground grid, the VRAM zeros
+ * round the tile's (192..255) window, palette entry 0, a thin bright line
+ * along every grid seam. A single-sample target (PSX mode) shades at the
+ * centre either way. GLSL ES 3.00 has no
  * noperspective, so each is written premultiplied by clip w alongside w
  * itself; perspective-correct interpolation of (a * w) / w is the
  * screen-linear interpolation of a. The fragment shader divides. */
-out vec2 v_uv_pw;
-out vec4 v_flat_rgba_pw;
-out float v_affine_w;
+centroid out vec2 v_uv_pw;
+centroid out vec4 v_flat_rgba_pw;
+centroid out float v_affine_w;
 /* The vertex's corner of its primitive, one-hot (primCornerWeight), w-premultiplied
  * like the UV: screen-linear, the fragment's barycentric weights, which keep
  * PSX mode's texel row inside the primitive. */
-out vec4 v_prim_bary_pw;
+centroid out vec4 v_prim_bary_pw;
 flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* distance-haze IR0 / 0x1000 (0..1) */
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
@@ -859,6 +870,12 @@ void main() {
     vec2 dab = depthAffine(u_mvp * u_model);
     v_depth_w = gl_Position.w * dropS;
     gl_Position.z = (dab.x + dab.y / v_depth_w) * gl_Position.w;
+  }
+  if (u_depth_lift > 0.0 && gl_Position.w > 0.0) {
+    vec2 lab = depthAffine(u_mvp * u_model);
+    float nearW = gl_Position.w * (1.0 - u_depth_lift);
+    gl_Position.z += lab.y * (1.0 / nearW - 1.0 / gl_Position.w) * gl_Position.w;
+    v_depth_w *= 1.0 - u_depth_lift;
   }
   v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0
     : (fieldFlatFarBucket(a_ground_ref_xz) ? 2.0 : 0.0);
@@ -1024,10 +1041,10 @@ uniform highp sampler2DArrayShadow u_shadow_maps;
 uniform mat4 u_light_vp[8];
 uniform vec4 u_shadow;
 
-in vec2 v_uv_pw;
-in vec4 v_flat_rgba_pw;
-in float v_affine_w;
-in vec4 v_prim_bary_pw;
+centroid in vec2 v_uv_pw;
+centroid in vec4 v_flat_rgba_pw;
+centroid in float v_affine_w;
+centroid in vec4 v_prim_bary_pw;
 flat in uvec2 v_cba_tsb;
 in float v_fog_t;
 /* The screen-linear UV and colour, recovered from their w-premultiplied

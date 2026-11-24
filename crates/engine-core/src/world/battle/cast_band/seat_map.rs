@@ -89,6 +89,25 @@ impl World {
         }
     }
 
+    /// [`Self::write_cast_seat_row`] of only what a tick changed in each
+    /// seat against `orig` (the row it was handed), folded onto the seat's
+    /// live state: what ran on the live seat during the tick (a wrapper
+    /// roll's spirit fill and status strip) stays.
+    pub(in crate::world) fn fold_cast_seat_row(
+        &mut self,
+        orig: &[legaia_engine_cast::cast_module_ticks::CastActorState],
+        seats: &[legaia_engine_cast::cast_module_ticks::CastActorState],
+    ) {
+        let map = self.cast_seat_map();
+        for (r, (o, st)) in orig.iter().zip(seats).enumerate() {
+            if let Some(e) = map.engine(r as u8) {
+                let mut live = self.cast_view(e);
+                live.fold_writes(o, st);
+                self.write_cast_view(e, &live);
+            }
+        }
+    }
+
     /// [`Self::cast_seat_row`] for the extra record fields
     /// ([`World::cast_arm_ext_state`]).
     pub(in crate::world) fn cast_arm_ext_row(

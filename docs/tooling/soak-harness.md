@@ -433,6 +433,21 @@ with a `-retail` suffix for a run under the hosts' retail mode);
 one without the tag predates the hosts' arming and replays bare, so a fixed
 finding recorded before it still replays the input that once raised it.
 
+A run plays on the players' CD timing, a console's in field and battle
+(`native::play_cd_timing`, which the `LEGAIA_FIELD_CD_TIMING` /
+`LEGAIA_BATTLE_CD_TIMING` overrides reach), and its replay names it
+(`# soak-cd-timing = "field=console,battle=console"`). A replay without the
+tag was recorded on PCSX-Redux's, the engine's own default, and replays there.
+A pad tape is the input of the frames it was recorded over: under another
+machine's CD response time a voiced frame spans other vsyncs, the same pads
+land on other frames, and the run leaves the path the finding took. Replayed
+on a console's, eight of the fixed tapes drift: `cave01_come_with_me_player_walk`
+walks into a third fight its tape never met, and
+`retockin_monster_curse_folded_as_capture` wins its fight and stops
+`4688` frames short of the frame its finding guards, with a `menu_stuck` its
+own run never raised. A fixed finding cannot be recorded again (its defect no
+longer reproduces), so a tape keeps the timing it was made on.
+
 ## Running
 
 ```bash

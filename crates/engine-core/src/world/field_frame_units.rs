@@ -187,6 +187,22 @@ const NPC_OBJECT_CYCLES: i64 = 919 + 200;
 /// A drawn model actor: its list entry's path (`148`) and the model set-up
 /// (`1297`).
 const NPC_CYCLES: i64 = 148 + 1297;
+/// A model object a raised `+0x42` sends through the clip arm
+/// (`0x8001BC34..0x8001BD88`): the object path's own share (`919`, no
+/// dispatcher draw), `FUN_8001C204` (`1610`, every call) and the TMD
+/// renderer `FUN_8002735C`'s set-up (`600`); and each primitive the renderer
+/// walks and clips (`634`), pooled over `garmel`'s Zeto (six objects, `145`
+/// primitives) on four frames of his appearance, from `80696` to `111747`
+/// cycles a frame with the share of edges the clip loop `FUN_80027F00`
+/// crosses. A primitive the renderer's `NCLIP` turns away (`bltz` at
+/// `0x8002755C`) costs little and a front face about a thousand, so the
+/// figure holds for a model about half of whose faces face the eye: raising
+/// Vahn's `+0x42` on `rugi_field_card_boot` (a `retail-exec frame-cost
+/// --poke` probe) takes retail's actor passes from `150.7` to `274.0`
+/// hblanks, and the price of the same switch on `rugi`'s player is about
+/// `115`.
+const CLIP_OBJECT_CYCLES: i64 = 919 + 1610 + 600;
+const CLIP_PRIM_CYCLES: i64 = 634;
 /// A placed actor (`1202`), and each of its meshes (`75` and a dispatcher
 /// draw, `200`).
 const PLACED_CYCLES: i64 = 1202;
@@ -212,7 +228,12 @@ const FOG_CULLED_CYCLES: i64 = 149;
 /// The player's model when the scene's table lacks it: one model
 /// actor of `10` objects and `388` primitives at the actor pool's mean
 /// (`136` a primitive), the shape of `stone_field_door_hop`'s only model.
-const PLAYER_CYCLES: i64 = NPC_CYCLES + 10 * NPC_OBJECT_CYCLES + 10 * GROUP_CYCLES + 388 * 136;
+const PLAYER_OBJECTS: i64 = 10;
+const PLAYER_PRIMS: i64 = 388;
+const PLAYER_CYCLES: i64 = NPC_CYCLES
+    + PLAYER_OBJECTS * NPC_OBJECT_CYCLES
+    + PLAYER_OBJECTS * GROUP_CYCLES
+    + PLAYER_PRIMS * 136;
 /// A render-list entry the walk tests (`50..61` cycles, mean `59`).
 const LIST_ENTRY_CYCLES: i64 = 59;
 /// The lists' entries besides the script actors and the parts: the player
@@ -291,13 +312,23 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
             * GROUND_WALK_CELL_CYCLES;
     let actors = 5 * 120
         + (n(f.tick_actors) + n(f.parts) + LIST_FIXED_ENTRIES) * LIST_ENTRY_CYCLES
-        + f.player.map_or(PLAYER_CYCLES, |m| {
-            let k: [u32; 12] = m.kinds.map(u32::from);
-            NPC_CYCLES
-                + i64::from(m.objects) * NPC_OBJECT_CYCLES
-                + i64::from(m.groups) * GROUP_CYCLES
-                + kinds(&k, &ACTOR_PRIM_CYCLES)
-        })
+        + match (f.player, f.player_clipped) {
+            (None, false) => PLAYER_CYCLES,
+            (None, true) => {
+                NPC_CYCLES + PLAYER_OBJECTS * CLIP_OBJECT_CYCLES + PLAYER_PRIMS * CLIP_PRIM_CYCLES
+            }
+            (Some(m), false) => {
+                let k: [u32; 12] = m.kinds.map(u32::from);
+                NPC_CYCLES
+                    + i64::from(m.objects) * NPC_OBJECT_CYCLES
+                    + i64::from(m.groups) * GROUP_CYCLES
+                    + kinds(&k, &ACTOR_PRIM_CYCLES)
+            }
+            (Some(m), true) => {
+                let prims: i64 = m.kinds.iter().map(|&k| i64::from(k)).sum();
+                NPC_CYCLES + i64::from(m.objects) * CLIP_OBJECT_CYCLES + prims * CLIP_PRIM_CYCLES
+            }
+        }
         + n(f.placed_draws) * PLACED_CYCLES
         + n(f.placed_objects) * PLACED_MESH_CYCLES
         + n(f.placed_groups) * GROUP_CYCLES
@@ -308,6 +339,8 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + n(f.npc_groups) * GROUP_CYCLES
         + kinds(&f.npc_kinds, &ACTOR_PRIM_CYCLES)
         + kinds(&f.npc_cued_kinds, &ACTOR_OFFTEST_PRIM_CYCLES)
+        + n(f.npc_clip_objects) * CLIP_OBJECT_CYCLES
+        + n(f.npc_clip_prims) * CLIP_PRIM_CYCLES
         + n(f.sprite_parts) * SPRITE_PART_CYCLES
         + n(f.morph_calls) * MORPH_CALL_CYCLES
         + n(f.morph_copied) * MORPH_COPY_CYCLES
@@ -400,5 +433,56 @@ mod tests {
         f.npc_kinds[17 - 8] = 44;
         let c = derived_field_frame_cost(&f);
         assert!((560..680).contains(&c), "{c}");
+    }
+
+    /// `garmel`'s Zeto under a raised `+0x42` (six objects, `145`
+    /// primitives) costs what retail's clip arm spends on him: `FUN_8001C204`
+    /// and `FUN_8002735C` ran `90356..121407` cycles a frame over the four
+    /// profiled frames, beside the objects' own path, where the dispatcher
+    /// price of the same model is about a third of that.
+    #[test]
+    fn a_raised_model_prices_the_clip_arm() {
+        let clipped = FieldFrameFeatures {
+            npc_models: 1,
+            npc_clip_objects: 6,
+            npc_clip_prims: 145,
+            ..FieldFrameFeatures::default()
+        };
+        let plain = FieldFrameFeatures {
+            npc_clip_objects: 0,
+            npc_clip_prims: 0,
+            npc_objects: 6,
+            npc_groups: 19,
+            npc_kinds: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 145],
+            ..clipped
+        };
+        let base = FieldFrameFeatures::default();
+        let n = |v: u32| i64::from(v);
+        let arm = n(clipped.npc_clip_objects) * (CLIP_OBJECT_CYCLES - 919)
+            + n(clipped.npc_clip_prims) * CLIP_PRIM_CYCLES;
+        assert!((90_356..=121_407).contains(&arm), "{arm}");
+        let hb =
+            |f: &FieldFrameFeatures| derived_field_frame_cost(f) - derived_field_frame_cost(&base);
+        assert!(
+            hb(&clipped) > hb(&plain) + 20,
+            "{} {}",
+            hb(&clipped),
+            hb(&plain)
+        );
+    }
+
+    /// The player's raised `+0x42` takes the clip arm too: on a retail
+    /// `rugi` state the switch moves the actor passes by `123` hblanks
+    /// (`150.7` to `274.0`); the table-less player's price moves by about
+    /// as much.
+    #[test]
+    fn a_raised_player_prices_the_clip_arm() {
+        let plain = FieldFrameFeatures::default();
+        let raised = FieldFrameFeatures {
+            player_clipped: true,
+            ..plain
+        };
+        let d = derived_field_frame_cost(&raised) - derived_field_frame_cost(&plain);
+        assert!((90..=140).contains(&d), "{d}");
     }
 }

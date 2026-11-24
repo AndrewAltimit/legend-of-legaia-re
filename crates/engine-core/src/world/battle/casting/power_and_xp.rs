@@ -265,6 +265,29 @@ impl World {
         list.levels[i]
     }
 
+    /// Whether a summon hit's spell XP takes the group unit (`4` where a
+    /// single target's is `12`): the finisher reads the attacking seat 7's
+    /// target byte `+0x1DD` (`lbu v0,0x1dd(s5)` / `sltiu v0,v0,8` at
+    /// `0x801DE51C..0x801DE524`), which a module can raise mid-cast (PROT
+    /// 0915's chase stores `9`), not the spell's table shape. A host with no
+    /// creature seated reads the shape.
+    ///
+    /// PORT: FUN_801DDB30 (`0x801DE51C..0x801DE528`, the XP tail's group test)
+    pub(in crate::world) fn summon_hit_group(&self, spell_id: u8) -> bool {
+        if let Some(a) = self
+            .casting
+            .summon_actor_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .filter(|a| a.active)
+        {
+            return a.battle.active_target >= 8;
+        }
+        self.tables
+            .spell_catalog
+            .get(spell_id)
+            .is_some_and(|d| d.target == legaia_engine_battle::spells::SpellTarget::AllEnemies)
+    }
+
     /// The spell XP one summon hit banks, on the victim's HP before the hit:
     /// nothing in a special battle (the tail's `_DAT_8007BAC0` test at
     /// `0x801DE450`), and nothing from a Stoned victim, whose hit the finisher
@@ -331,10 +354,7 @@ impl World {
             roll = u32::from(known);
         }
         if legaia_engine_effects::summon::module_trains_spell_xp(spell_id) {
-            let group =
-                self.tables.spell_catalog.get(spell_id).is_some_and(|d| {
-                    d.target == legaia_engine_battle::spells::SpellTarget::AllEnemies
-                });
+            let group = self.summon_hit_group(spell_id);
             let gain = self.summon_hit_xp(target, roll, group);
             self.casting.module_hit_xp = self.casting.module_hit_xp.saturating_add(gain);
         }

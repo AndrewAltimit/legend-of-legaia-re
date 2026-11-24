@@ -116,8 +116,7 @@ impl World {
         st.victim_on_gate_clip = v.playing_anim == v.reaction_gate;
         st.victim_on_knockdown_clip = v.playing_anim == v.knockdown_anim;
         st.caster_in_reach = self.battle_range_metric(caster_slot, victim_slot) == 0;
-        st.party_settled =
-            (0..usize::from(self.party.party_count)).all(|s| self.chain_seat_settled(s, false));
+        st.party_settled = self.capture_party_settled();
         st.target_unsettled = !self.capture_target_settled(caster_slot);
         // The caster's clip state, for the bodies that wait on it.
         let caster = self
@@ -140,6 +139,18 @@ impl World {
         if st.opens_pass {
             self.casting.capture_pass_mark = Some(frame);
         }
+    }
+
+    /// Whether every party seat has settled, as PROT 0965's arm `0x0C` walks
+    /// the `ctx[+0]` party seats once its word runs out
+    /// (`0x801F797C..0x801F79F4`): a live seat idle (`+0x1D9 == 0`), a downed
+    /// one on the down clip `8`. Doomsday's target shape `0x66` makes the
+    /// caster's code the party's `8` (`0x801EA5D4` / `0x801EA934`), so its
+    /// single-seat walk (`0x801F7930..0x801F7978`) never runs.
+    ///
+    /// PORT: FUN_801F69D8 (PROT 0965; arm 0x0C's party settle walk, 0x801F797C..0x801F79F4)
+    pub(in crate::world) fn capture_party_settled(&self) -> bool {
+        (0..usize::from(self.party.party_count)).all(|s| self.chain_seat_settled(s, false))
     }
 
     /// Whether the seats the caster's target code names have settled, as
@@ -818,5 +829,24 @@ impl World {
         a.battle_pose = None;
         a.battle_action_clips = Some(std::sync::Arc::new(Vec::new()));
         self.capture_victim_settled_for(entry, Some(body), victim)
+    }
+
+    /// The host's party-settle feed ([`World::capture_party_settled`]) over
+    /// party seats with clips installed, each standing on its `(hp, clip)`
+    /// (no reaction channel).
+    pub fn drive_capture_party_settled(&mut self, seats: &[(u16, u8)]) -> bool {
+        while self.actors.len() < seats.len() {
+            self.actors.push(Default::default());
+        }
+        for (a, &(hp, clip)) in self.actors.iter_mut().zip(seats) {
+            a.battle.hp = hp;
+            a.battle.current_anim = clip;
+            a.battle_reaction = None;
+            a.battle_reaction_entry = None;
+            a.battle_pose = None;
+            a.battle_action_clips = Some(std::sync::Arc::new(Vec::new()));
+        }
+        self.party.party_count = seats.len() as u8;
+        self.capture_party_settled()
     }
 }

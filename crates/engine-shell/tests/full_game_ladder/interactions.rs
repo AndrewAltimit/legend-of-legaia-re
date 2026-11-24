@@ -221,6 +221,8 @@ pub(super) fn interact_at(
     let mut pad_reached = false;
     // A seat left out for its distance ([`prop_seat_in_walk_reach`]).
     let mut far = false;
+    // Why each walked seat fell short, for `LEGAIA_FGL_SHORTCUT_SITES=1`.
+    let mut whys: Vec<String> = Vec::new();
     for ((sx, sz, extra), try_pad) in attempts {
         if !try_pad && pad_hand() && (pad_reached || shortcuts_refused() || !walking(session)) {
             break;
@@ -228,6 +230,7 @@ pub(super) fn interact_at(
         session.host_pad(0);
         if try_pad && !prop_seat_in_walk_reach(session, (sx, sz)) {
             far = true;
+            whys.push(format!("{:?} far", (sx, sz)));
             continue;
         }
         let by_pad = if try_pad {
@@ -239,6 +242,11 @@ pub(super) fn interact_at(
                     true
                 }
                 Reach::Short(why) => {
+                    whys.push(format!(
+                        "{:?} {}",
+                        (sx, sz),
+                        why.chars().take(90).collect::<String>()
+                    ));
                     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                         eprintln!(
                             "      [examine] seat {:?} for {:?}: {why}",
@@ -257,6 +265,16 @@ pub(super) fn interact_at(
         if !by_pad {
             session.host.world.seat_player_at_tile(sx as u8, sz as u8);
             shortcut(if far { "examine_far" } else { "examine_seat" });
+            if shortcut_sites_on() {
+                eprintln!(
+                    "      [placed] examine in {} for {:?} on {:?} from {:?}: {}",
+                    scene_name(session),
+                    (nx, nz),
+                    (sx, sz),
+                    (bx, bz),
+                    whys.join("; ")
+                );
+            }
             // The one compass sector whose probe point lands in the NPC's box.
             facing = (0..8u8).find(|&d| {
                 session.host.world.face_player_sector(d);
@@ -511,7 +529,30 @@ pub(super) fn interact_seats(
 /// standing off-centre onto the neighbouring tile, and against a wall that
 /// tile can be solid: `jiji`'s prop examine left the party at (69, 71),
 /// walled on all four sides, after starting from (9020, 9216).
+///
+/// The pad hand leaves a player already standing there alone, and counts
+/// nothing: the give-back after an interaction that ended where it began is
+/// no teleport.
+#[track_caller]
 pub(super) fn restore_player_xz(session: &mut NativeSession, (x, z): (i16, i16)) {
+    if pad_hand() && player_xz(session) == (x, z) {
+        return;
+    }
+    if pad_hand() && shortcut_sites_on() {
+        let at = std::panic::Location::caller();
+        let (px, pz) = player_xz(session);
+        eprintln!(
+            "      [restore] {}:{} in {} from {:?} {:?} to {:?} {:?} (frame {})",
+            at.file().rsplit('/').next().unwrap_or(at.file()),
+            at.line(),
+            scene_name(session),
+            (px, pz),
+            tile_of(px, pz),
+            (x, z),
+            tile_of(x, z),
+            session.frames
+        );
+    }
     shortcut("restore_xz");
     let w = &mut session.host.world;
     let y = w.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;

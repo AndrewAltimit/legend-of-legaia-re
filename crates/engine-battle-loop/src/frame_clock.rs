@@ -470,7 +470,7 @@ pub const fn xa_stream_pass_cost(
     timing: CdTiming,
     poll_share: bool,
 ) -> u16 {
-    if let CdTiming::Console = timing {
+    if let CdTiming::Console | CdTiming::Mednafen = timing {
         return if passes_since_cue == 0 {
             base
         } else {

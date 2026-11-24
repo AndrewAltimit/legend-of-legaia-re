@@ -590,7 +590,22 @@ impl FieldHostImpl<'_> {
             // phase the spawner seated on the header clip just before the
             // slice: a prologue-seated villager starts its idle at frame 0.
             if let Some(slot) = self.world.field_vm.executing_channel {
-                self.restart_run_clip(ctx, slot, move_id, false);
+                // A `4C C3` re-seat re-runs the section mid-scene, on an actor
+                // whose clip is live: the arm's bind (`jal 0x800204F8` behind
+                // the `+0x5E = -2` store) replaces whatever it plays, as on a
+                // live channel. `rayman` `P2[17]` re-seats the woman and man
+                // `P2[7]` left on their run clips (`A2 1A 2F`, `A2 19 21`);
+                // their sections' `4C 51 .. 30` / `4C 51 .. 1F` stand them in
+                // their idles, and without the bind they ran on the spot. The
+                // install pre-run leaves the bind to the hosts' header clip.
+                if self.world.field_vm.respawn_rerun {
+                    self.restart_run_clip(ctx, slot, move_id, true);
+                    self.world.seat_npc_run_anim(slot, move_id);
+                    self.world.script_npc_move(slot, move_id);
+                    self.bind_run_clip(ctx, slot, move_id);
+                } else {
+                    self.restart_run_clip(ctx, slot, move_id, false);
+                }
             }
             return;
         }

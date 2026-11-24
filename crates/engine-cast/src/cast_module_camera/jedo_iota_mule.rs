@@ -588,6 +588,14 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             } else {
                 seats.band_timer != 0
             };
+            // Retail pushes the anchor `scalar * delta / 2` in one store a
+            // pass, ahead of arm 1's stage test (`0x801F6D60..0x801F6D90`):
+            // the tick that hands arm 1 over pushes it for the ticks of its
+            // pass still owed. Arm 2 leaves only on a spent word, which
+            // pushes nothing.
+            if phase == 1 && !hold && seats.band_timer != 0 {
+                st.ramp += (P / 2) * i32::from(st.countdown.1);
+            }
             anchored(st.ramp, hold)
         }
         // Retail pushes the anchor `scalar * delta / 2` in one store a pass

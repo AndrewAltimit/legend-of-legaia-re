@@ -1897,3 +1897,28 @@ changes = [
   ["counts/browser/cast/retail/gl_draws_per_frame", 108.46, 108.47],
   ["counts/bundle/play_gzip_bytes", 5243359, 5247516],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "PSX mode now takes the coplanar lift in depth instead of moving the geometry: each overlapping ground tile is drawn where the disc places it, and only its depth test is pulled toward the eye. Retail has no lift at all, and the space lift drew cracks between a lifted tile and a neighbour it did not overlap (rayman's bridge ledge, a dashed see-through line) that retail never shows. Drawing tiles at their authored positions shifts the vertex snap and texel choice by a pixel here and there. These five frames move down by up to .004, while eight others move up (kor3 .990 -> .992, korout .997 -> .999, teien .999 -> 1.000, kor, town0d x2, urudre1, credits_edstati3) and mean error against retail falls on 51 of 105 field states sampled, rising on 9. The frames show a scattered texel-shift dither along tile edges and no z-fighting. Each state scored its old figure on the commit before the change."
+changes = [
+  ["states/conc3_ceremony_lab/image", 0.999, 0.996],
+  ["states/credits_edkorout_window_pcsx/image", 0.992, 0.988],
+  ["states/kor5_field_card_boot/image", 0.992, 0.99],
+  ["states/kor5_post_436_organic/image", 0.995, 0.994],
+  ["states/ropeway_field_route_walk/image", 1.0, 0.999],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The bundles carry the wave's added behaviour: the play page's coplanar lift in depth (three new exports, field_terrain_lifts, field_placement_lifts and coplanar_depth_lift_per_unit, plus the shader's u_depth_lift path), centroid-sampled varyings, the clip-arm pricing of raised models and the raised player in the field frame cost, and the summon and cast fixes (spell XP group unit, in-tick spirit fold, Stone absorb, Dark Typhoon's swirl order and facing, Mule and Jedo stores). Native frames allocate a little more for the per-draw depth lift record and the frame cost's clip-arm counts: at most 0.8 KB a frame (town01, which has the most coplanar draws), 0.1 KB elsewhere."
+changes = [
+  ["counts/bundle/gzip_bytes", 7395916, 7400158],
+  ["counts/bundle/play_gzip_bytes", 5247516, 5249137],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4485.6, 4485.7],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1290.6, 1290.7],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4485.4, 4485.6],
+  ["counts/native/summon_cast/enhanced/alloc_kb_per_frame", 4607.7, 4607.8],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 1713.6, 1714.4],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1491.3, 1491.4],
+]

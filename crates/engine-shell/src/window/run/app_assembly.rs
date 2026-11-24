@@ -82,6 +82,7 @@ impl PlayWindowApp {
             field_placement_window_keys: Vec::new(),
             field_placement_records: Vec::new(),
             field_placement_color_records: Vec::new(),
+            field_draw_lifts: Default::default(),
             field_pack_meshes: Vec::new(),
             field_pack_color_meshes: Vec::new(),
             field_placement_color_window_keys: Vec::new(),

@@ -189,6 +189,15 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Per-terrain-draw coplanar lift, three floats each, parallel to
+    /// [`Self::field_terrain_positions`] (which includes it).
+    pub fn field_terrain_lifts(&self) -> Vec<f32> {
+        self.field
+            .as_ref()
+            .map(|f| crate::play::env_lifts(&f.terrain, &f.coplanar_offsets))
+            .unwrap_or_default()
+    }
+
     pub fn field_terrain_positions(&self) -> Vec<f32> {
         self.field
             .as_ref()

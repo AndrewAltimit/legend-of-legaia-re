@@ -2904,7 +2904,7 @@ and the site's WebGL viewers:
 |---|---|---|
 | Double-sided pairs | `legaia_tmd::mesh::mark_double_sided_pairs` | flag both copies; the shader discards the away-facing one |
 | Intra-mesh decals | `legaia_tmd::mesh::separate_coplanar_prims` | nudge each overlapping layer half a unit toward its visible side |
-| Cross-draw overlaps | `legaia_engine_scene::coplanar_draws` | lift the smaller / later draw `DRAW_NUDGE` per rank |
+| Cross-draw overlaps | `legaia_engine_scene::coplanar_draws` | lift the smaller / later draw `DRAW_NUDGE` per rank (in depth only) |
 | Walk-ground vs floor art | `coplanar_draws::GROUND_SINK` | sink the ground layer `0.4` units at render sites |
 | Depth precision | reversed-Z (native), scaled near plane (WebGL) | keeps sub-unit offsets resolvable at any distance |
 
@@ -2964,6 +2964,24 @@ assemble field scenes apply the same map - the native play-window in its
 placement / posed-prop resolvers, the browser play page and the field-scene
 viewer in their placement / terrain position exporters (the drift gate's
 sim-pair rows pin all three call sites).
+
+**The lift is taken in depth.** A lift moves the draw's whole surface, and
+most lifted ground tiles also meet a neighbour they do not overlap. There the
+lift opens a step, and from the angles that look into it the step is a crack
+the space behind shows through: a dashed line along the tile seam (the ledge
+`rayman`'s collapse beat leaves the party on), which retail, with no lift and
+no depth buffer, never draws. So the native play-window keeps the lift beside
+each baked field draw (`FieldDrawLifts`), draws the tile where it stands and
+tests its depth as a point nearer the eye by `DEPTH_LIFT_PER_UNIT` of its view
+depth per unit of lift (`coplanar_draws::depth_lifted_camera`, a constant
+added to the depth row of the draw's camera; under PSX mode's per-primitive
+order the same constant moves the link depth the shader keys). The tile wins
+its coplanar tie as before and its edges stay on its neighbours'. The browser
+play page does the same: `field_terrain_lifts` / `field_placement_lifts` hand
+it each draw's lift beside the lifted positions, and the scene pass takes the
+lift back out of the model (`_liftedModel`) and stages it as `u_depth_lift`,
+which pulls the draw's clip depth and its log-depth `w` nearer by the same
+fraction (`_stageDepthLift`). Both modes, both hosts.
 
 The candidate pairs come from buckets of quantized plane (normal and
 distance). A bucket can hold thousands of planes - every ground cell of a

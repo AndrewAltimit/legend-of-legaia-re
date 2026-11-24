@@ -235,13 +235,29 @@ display).
 
 A state the manifest tags with a `resident_patch` was made on a patched
 disc, so it replays a modified executable and its RAM and frame are not
-retail's. Those states stay in the corpus and in the baseline file - several
-are the only capture of their scene - but they sit outside both the headline
-and the ratchet: the channel means and the mean state score are taken over
-the retail-disc states, the patched-disc states get a channel table of their
-own in the report, and a drop on one prints as `[patched-drift]` for review
-instead of failing the check. A difference on a patched-disc state is a lead
-to confirm against a retail capture, not a measured engine defect.
+retail's: it is a mod state (the Delilas party swap, shiny-Seru, the location
+rename, the seed-code starting bag), and `resident_patch` is the manifest's
+one non-retail marker. Those states stay in the corpus - several are the only
+capture of their scene - but the baseline files them in a list of their own,
+`patched_states`, beside the retail list `states`, and they sit outside both
+the headline and the ratchet: the channel means and the mean state score are
+taken over the retail-disc states, the patched-disc states get a channel
+table of their own in the report, and a drop on one prints as
+`[patched-drift]` for review instead of failing the check. A bless files each
+state under the list its manifest entry names, and a row found under the
+other list prints as `[misfiled]` (it is still compared, by its own entry).
+A difference on a patched-disc state is a lead to confirm against a retail
+capture, not a measured engine defect, and nothing that reads the baseline as
+the retail scores (the site's frame-match tile, `play-depth.py`) takes
+`patched_states` in.
+
+`retail-compare.py --check-split` holds the two lists to the manifest with
+neither the disc nor a build, and runs in the Repo Gates job: every
+`patched_states` row must name a scenario with a `resident_patch`, every
+`states` row one without, and the scenarios sharing one backup must agree.
+The loosening gate reads `patched_states/<state>/<channel>` under the same
+`states/...` key, so moving a row between the lists is no loosening and a
+fall on a patched-disc state still needs its ledger entry.
 
 A patched-disc scenario that also names the image it was made on
 (`resident_disc`, the file name `legaia-patcher` wrote) runs the engine on
@@ -296,8 +312,10 @@ main checkout.
 Every `[[scenarios]]` block in [`scripts/scenarios.toml`](../../scripts/scenarios.toml)
 whose `backup_fingerprint` resolves to a file under `saves/library/mednafen/`
 or `saves/library/pcsx-redux/` is one corpus state; a backup several
-scenarios name is walked once, under the first label. Each state is classed
-by the game-mode word and the scene label:
+scenarios name is walked once, under the first label. The scenarios with a
+`resident_patch` are corpus states too, scored and filed under
+`patched_states` ([above](#the-ratchet) for how they are kept apart). Each
+state is classed by the game-mode word and the scene label:
 
 | Class | Retail condition | Seeded |
 |---|---|---|
@@ -4187,6 +4205,10 @@ clip's stop watch takes two thirds of PCSX-Redux's CPU) against the `2` and `3`
 mednafen ran. The frame step is not what holds the two frames: replayed on a
 console's CD response time (`LEGAIA_BATTLE_CD_TIMING=console`, whose arm table
 reads `2` there), `rising` reads `.804` and `parked` `.913` against `.842` and `.916`.
+The child of a Mednafen state runs Mednafen's own timing
+([emulator timing](emulator-timing.md#cd-response-psxcdccpp)), whose recording of this
+cast runs arms 5 to 14 at `3`, `1`, `1`, `1`, `2`, `2`, `2`, `2`, `3`, `3`; the two
+frames read `.842` and `.916` there too.
 
 The displayed frame's trail count is two above the RAM's. The retract drops the
 count by one a pass, so the frame on screen, two passes older, drew two more
