@@ -1693,6 +1693,15 @@ the gate: every seat the sweep hits re-arms the module timer `0x801F8040` to
 gauge at zero, and the breath returns only after the monster takes fresh
 damage. The port folds the whole drain at the sweep.
 
+**Chaos Breath waits for the party to get up.** Once arm 3's timer reads `0`,
+the body walks every `ctx[+0]` party seat before it stores `0xFF`
+(`0x801F797C..0x801F79F4`): a live seat must be back on idle (`+0x1D9 == 0`),
+a downed one on the down clip `8`. Doomsday's arm `0x0C` and Neo Star Slash's
+arm 6 (PROT 0960, `0x801F7404..0x801F7484`) make the same walk. The port holds
+Chaos Breath's and Neo Star Slash's on the band (`gated_hit_arm`, the chain
+arm's `ChainSettle::PartyRow`) and Doomsday's in its director, all three on
+the same per-seat rule (`World::capture_party_settled`).
+
 #### Fourteen trampoline-arm bodies
 
 <a id="the-fourteen-trampoline-arms-that-are-the-bands-other-tick-bodies"></a>
