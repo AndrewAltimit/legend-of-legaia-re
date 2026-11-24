@@ -196,11 +196,25 @@ pub fn save_select_overlay_draws(
     // timer `_DAT_801F01CC` is short of `0x1000` (`0x801DFCDC..0x801DFCE4`
     // in `FUN_801DD35C`), and the panel's own subtractive push
     // (`FUN_80024EE4(1, 2, t >> 4)`) has blacked the frame by then. The
-    // result line keeps the parked timer, so it sits on black too.
+    // result line keeps the parked timer, so it sits on black too. That
+    // push still runs on every parked frame - mode 4 reaches
+    // `0x801E2D50..0x801E2D88` whatever the timer reads, grey `0xFF` once it
+    // has parked - so the quad goes in under the panel here too: without it
+    // whatever the host drew under the overlay (the field behind a pause-menu
+    // save) stayed lit around the panel.
     if let Some(banner) = view.banner.as_ref()
         && banner.slide_t >= 0x1000
     {
         let mut out = SaveSelectOverlayDraws::default();
+        if banner.work {
+            darken_under(
+                &mut out,
+                darken_level_panel(banner.slide_t),
+                rects,
+                stage_origin,
+                stage_scale,
+            );
+        }
         let block = view.preview.as_ref().map(|p| p.cell);
         let (sprites, texts) =
             card_banner_draws_for(font, rects, banner, block, stage_origin, stage_scale);

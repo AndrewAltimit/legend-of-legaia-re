@@ -352,3 +352,113 @@ fn the_card_pills_slide_where_the_port_draws_them() {
     }
     assert!(slid > 500, "{slid}");
 }
+
+/// The darkening every panel mode pushes under itself, `FUN_80024EE4(1, 2,
+/// grey * 0x010101)` at `0x801E2D78..0x801E2D88`, against the port's
+/// `SaveScreenDarken` level: mode `0` ("Now checking") off `_DAT_801EF160`
+/// and mode `3` (the confirm) off `_DAT_801EF1A4`, each `min(t >> 5, 0x50)`
+/// (`0x801E1D10..0x801E1D34`), and mode `4` (the write / read panel) off its
+/// slide timer `_DAT_801F01CC` after the routine's own ramp, `min(t >> 4,
+/// 0xFF)`. The timers run their whole `0..=0x1000` range, the caps included.
+#[test]
+fn the_panel_darkening_is_the_port_level() {
+    differential!(prot(899, SLIDE));
+    use legaia_engine_ui::{CardBannerView, SaveSelectOverlayView, save_select_overlay_draws};
+    const DARKEN: u32 = 0x8002_4EE4;
+    const SMALL_T: u32 = 0x801E_F160;
+    const CONFIRM_T: u32 = 0x801E_F1A4;
+    const WORK_T: u32 = 0x801F_01CC;
+    const WORK_FILL: u32 = 0x801F_01D0;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &disc().expect("disc").read_entry(899).expect("PROT 0899"),
+    );
+    cpu.stub_outside = Some((SLIDE, SLIDE_END));
+    let grey = Rc::new(RefCell::new(None::<(u32, u32, u32)>));
+    let g = grey.clone();
+    cpu.hook(DARKEN, move |r, _| {
+        *g.borrow_mut() = Some((r.r[A0], r.r[A1], r.r[A2]))
+    });
+    // Zero-sized tiles would leave the nine-slice frames nothing to step by.
+    let tile = (0, 0, 8, 8);
+    let rects = SaveMenuAtlasRects {
+        panel_tl: tile,
+        panel_tr: tile,
+        panel_bl: tile,
+        panel_br: tile,
+        panel_top: tile,
+        panel_bot: tile,
+        panel_left: tile,
+        panel_right: tile,
+        panel_interior: tile,
+        cursor: (200, 200, 16, 16),
+        ..SaveMenuAtlasRects::default()
+    };
+    let font = legaia_font::Font::placeholder();
+    let mut rng = Rng(0x4441_524B);
+    let mut capped = [0u32; 3];
+    for case in 0..3000 {
+        let mode = [0u32, 3, 4][rng.below(3) as usize];
+        let t = if rng.below(4) == 0 {
+            [0u32, 0x1000, 0xA00, 0xA20, 0xFF0][rng.below(5) as usize]
+        } else {
+            rng.below(0x1001)
+        };
+        let step = 1 + rng.below(3);
+        cpu.mem.wr8(0x1F80_0393, step as u8);
+        cpu.mem.wr32(SMALL_T, t);
+        cpu.mem.wr32(CONFIRM_T, t);
+        cpu.mem.wr32(WORK_T, t);
+        cpu.mem.wr32(WORK_FILL, rng.below(0x1001));
+        cpu.mem.wr32(CONFIRM_CURSOR, rng.below(2));
+        cpu.mem.wr32(STACK_TOP + 0x10, 0xA0);
+        cpu.mem.wr32(STACK_TOP + 0x14, 0x70);
+        *grey.borrow_mut() = None;
+        assert_eq!(
+            cpu.call(SLIDE, &[mode, 0x1000, 0xA0, 0x70]),
+            Stop::Returned,
+            "case {case}"
+        );
+        let (a0, a1, rgb) = grey.borrow().expect("the darkening is pushed");
+        assert_eq!((a0, a1), (1, 2), "case {case}");
+        let level = rgb & 0xFF;
+        assert_eq!(rgb, level * 0x01_0101, "case {case}: a grey");
+        // Mode 4 ramps its timer before it reads it.
+        let seen = if mode == 4 { cpu.mem.rd32(WORK_T) } else { t } as u16;
+        let banner = CardBannerView {
+            lines: ("", ""),
+            note: "",
+            work: true,
+            slide_t: seen,
+            progress_t: 0,
+        };
+        let view = SaveSelectOverlayView {
+            title: "Load",
+            rows: &[],
+            cursor: 0,
+            single_pill: false,
+            pills: &[],
+            pill_cursor: None,
+            slide_t: 0,
+            info_t: if mode == 3 { seen } else { 0 },
+            now_checking: mode == 0,
+            now_checking_t: if mode == 0 { seen } else { 0 },
+            banner: (mode == 4).then_some(banner),
+            preview: None,
+            confirm: (mode == 3).then_some(("", 0)),
+            location_tab: None,
+        };
+        let draws = save_select_overlay_draws(&font, Some(&rects), &view, (0, 0), 1);
+        let port = draws.darken.map_or(0, |d| u32::from(d.level));
+        assert_eq!(
+            level, port,
+            "case {case}: mode {mode} t {t:#x} seen {seen:#x}"
+        );
+        let cap = if mode == 4 { 0xFF } else { 0x50 };
+        capped[[0, 3, 4].iter().position(|&m| m == mode).unwrap()] += u32::from(level == cap);
+    }
+    assert!(capped.iter().all(|&n| n > 50), "{capped:?}");
+}
