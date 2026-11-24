@@ -1278,6 +1278,11 @@ inside retail's last held pass). They found:
 - Spikefish's arm 8 adds `step << 3` to the creature's shatter word ahead of its gate and leaves on that pass; the
   tick it leaves on owes the rest (`spikefish_shatter_add`).
 
+The chain-body walk also compares the rumble words every pass against `module_rumble_due`, with the Battles
+vibration row `0x800845C8` off on the odd-seeded walks. It found Genocidal Cannon's arms 7 and 9 storing arm `0xB`'s
+rumble: both leave through its tail (`j 0x801F77E0` at `0x801F73B8` / `0x801F75A0`), so the pad shook on three arms
+where the port shook it on one.
+
 The summon walk also runs a lone-monster layout, and compares PROT 0916's band packets (every `AddPrim` of arms
 `0x11..0x13` and the tpage its `SetDrawMode` takes) against `aluru_band_prims` at the spread its director leaves
 each pass on. Its fallen and odd-step live runs take the kill path (the verdict word `0x801F9010` at `0`). That

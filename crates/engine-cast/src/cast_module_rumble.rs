@@ -267,6 +267,10 @@ pub const MODULE_RUMBLE: &[ModuleRumble] = &[
     },
     // PROT 0963 Genocidal Cannon.
     in_body(write(963, 3, Pass, 0xFF, 2, 0x801F_70C4), GENOCIDAL_CANNON),
+    // Arms 7 and 9 leave through arm 0xB's tail (`j 0x801F77E0` at
+    // `0x801F73B8` / `0x801F75A0`): the phase step, then its store.
+    in_body(write(963, 7, Pass, 0xFF, 4, 0x801F_77F4), GENOCIDAL_CANNON),
+    in_body(write(963, 9, Pass, 0xFF, 4, 0x801F_77F4), GENOCIDAL_CANNON),
     in_body(
         write(963, 0x0B, Pass, 0xFF, 4, 0x801F_77F4),
         GENOCIDAL_CANNON,
@@ -354,7 +358,12 @@ mod tests {
                 .iter()
                 .all(|&s| (0x801F_69D8..0x8020_0000).contains(&s))
         );
-        let mut keyed: Vec<(u32, u32)> = MODULE_RUMBLE.iter().map(|m| (m.entry, m.site)).collect();
+        // One store site may serve several arms that leave through it (PROT
+        // 0963's arms 7, 9 and 0xB), never one arm twice.
+        let mut keyed: Vec<(u32, u8, u32)> = MODULE_RUMBLE
+            .iter()
+            .map(|m| (m.entry, m.arm, m.site))
+            .collect();
         keyed.sort_unstable();
         keyed.dedup();
         sites.sort_unstable();

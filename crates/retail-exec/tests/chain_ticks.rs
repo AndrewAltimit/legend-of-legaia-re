@@ -55,6 +55,12 @@ const ELEMENT_ROLL: u32 = 0x801C_8FE4;
 /// What every damage wrapper returns: a hit that lands and kills no one.
 const ROLL: u32 = 7;
 const CASTER: usize = 3;
+/// The Battles vibration option word: non-zero turns the pad's rumble off.
+const VIBRATION_OFF: u32 = 0x8008_45C8;
+/// The rumble words: pulse, level and their rates (`0x8007B92C`,
+/// `0x8007B930`, `gp+0xA30`, `gp+0xA34`), and what the walk seeds them with.
+const RUMBLE: [u32; 4] = [0x8007_B92C, 0x8007_B930, 0x8007_BD48, 0x8007_BD4C];
+const RUMBLE_SENTINEL: u32 = 0x5A5A_5A5A;
 const CROSS_BEAM_PACKETS: u32 = 0x801F_726C;
 /// The target-group aim `FUN_801DCEAC` and the buffers the rig hands it.
 const AIM: u32 = 0x801D_CEAC;
@@ -226,6 +232,8 @@ struct Run {
     spawns_checked: usize,
     /// Passes a victim settle held, against retail's hold.
     settles_checked: usize,
+    /// Passes retail stored a rumble on, compared.
+    rumbles: usize,
 }
 
 /// The bodies whose victim settle the walk holds and releases.
@@ -438,6 +446,8 @@ fn run_body(
         cpu.mem.wr8(r + 0x77F, 0x21 + i as u8);
     }
     cpu.mem.wr32(ELEMENT_ROLL, u32::from(selector));
+    let vibration_off = seed & 1 == 1;
+    cpu.mem.wr32(VIBRATION_OFF, u32::from(vibration_off));
     if body.prot_entry == 956 {
         for (slot, part) in POOLED {
             cpu.mem.wr32(PART_POOL + slot * 4, part);
@@ -483,6 +493,7 @@ fn run_body(
         split_checked: 0,
         spawns_checked: 0,
         settles_checked: 0,
+        rumbles: 0,
     };
     let mut held = 0;
     let mut settle_run: Option<usize> = None;
@@ -606,6 +617,9 @@ fn run_body(
             })
             .collect();
         cpu.mem.wr8(CLUSTER_FLAG, 1);
+        for w in RUMBLE {
+            cpu.mem.wr32(w, RUMBLE_SENTINEL);
+        }
         let stop = cpu.call(body.body, &[]);
         let c0 = format!(
             "PROT {:04} {action:#04x} step {step} {field:?} arm {phase:#x}",
@@ -694,6 +708,48 @@ fn run_body(
         let busy = cpu.regs.r[V0] != 0;
         let after = cpu.mem.rd8(CTX + 0x279);
         let retail_held = busy && after == phase;
+        // The rumble stores (`cast_module_rumble`), every pass, held or
+        // not, behind the Battles vibration word `0x800845C8`: the odd-seeded
+        // walks run with the row off, which stores nothing.
+        {
+            use legaia_engine_cast::cast_module_rumble::{RumbleStore, module_rumble_due};
+            let words = RUMBLE.map(|w| cpu.mem.rd32(w));
+            let stored = (words[0] != RUMBLE_SENTINEL).then(|| {
+                (
+                    words[0] as i32,
+                    words[1] as i32,
+                    words[2] as i32,
+                    words[3] as i32,
+                )
+            });
+            // A row keyed on the body (PROT 0963's) or on the image.
+            let due: Vec<_> = [body.body, cam::SINGLE_BODY]
+                .into_iter()
+                .flat_map(|b| {
+                    module_rumble_due(
+                        body.prot_entry,
+                        b,
+                        phase,
+                        !retail_held,
+                        countdown_word.unwrap_or(0),
+                    )
+                })
+                .filter(|_| !vibration_off)
+                .collect();
+            let port = match due.as_slice() {
+                [] => None,
+                [m] => match m.store {
+                    RumbleStore::Write(w) => Some((w.pulse, w.level, w.pulse_rate, w.level_rate)),
+                    _ => stored,
+                },
+                _ => Some((-1, -1, -1, -1)),
+            };
+            out.rumbles += usize::from(stored.is_some());
+            if stored != port {
+                out.gaps
+                    .push(format!("{c0}: rumble retail {stored:x?} port {port:x?}"));
+            }
+        }
         // The host's pass (`World::module_pass`): `step` one-vsync ticks of
         // the director, the countdown's rest `step - 1 - i`, stopping on the
         // tick it lets through.
@@ -1166,6 +1222,7 @@ fn the_chain_bodies_walk_as_retail_does() {
     let mut split = 0usize;
     let mut spawns_checked = 0usize;
     let mut settles_checked = 0usize;
+    let mut rumbles = 0usize;
     for body in t::chain_bodies() {
         // PROT 0961 rolls its sweep in the evolved Cort's formation only; PROT
         // 0964 forks on the last Element Change roll.
@@ -1201,6 +1258,7 @@ fn the_chain_bodies_walk_as_retail_does() {
                     split += run.split_checked;
                     spawns_checked += run.spawns_checked;
                     settles_checked += run.settles_checked;
+                    rumbles += run.rumbles;
                     let terminal = run.path.last().and_then(|&p| body.arm(p));
                     if !terminal.is_some_and(|a| a.exit == t::ChainExit::Finish) {
                         failures.push(format!(
@@ -1217,6 +1275,7 @@ fn the_chain_bodies_walk_as_retail_does() {
     assert!(hits > 20, "{hits} hits");
     assert!(split >= 4, "{split} split-hit passes compared");
     eprintln!("{spawns_checked} director spawns matched, {settles_checked} settle holds");
+    assert!(rumbles >= 100, "{rumbles} rumble stores compared");
     assert!(
         settles_checked >= 20,
         "{settles_checked} settle holds compared"
