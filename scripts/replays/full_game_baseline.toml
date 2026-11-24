@@ -94,7 +94,8 @@ credits = 4
 # (default, or seed_<n> under LEGAIA_FGL_RNG_SEED=<n>), one key per category.
 # Asserted <= in the measured configuration: a category that rises fails the
 # run, a category the row leaves out stands at 0. Lower a number in a
-# reviewed edit when a run fires fewer; never raise one to pass a run.
+# reviewed edit when a run fires fewer; never raise one to pass a run. A
+# reload replays its stretch's shortcuts, so a row counts its stream's reloads.
 
 [shortcuts.walked.default]
 box_face = 1
@@ -230,3 +231,108 @@ examine_seat = 15
 restore_xz = 55
 touch_far = 1
 touch_seat = 29
+
+[shortcuts.placed.default]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_3]
+box_face = 12
+examine_face = 122
+examine_seat = 171
+restore_xz = 148
+touch_seat = 81
+
+[shortcuts.placed.seed_4]
+box_face = 12
+examine_face = 112
+examine_seat = 162
+restore_xz = 138
+touch_seat = 81
+
+[shortcuts.placed.seed_5]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_6]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_7]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_8]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_9]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_10]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_11]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_12]
+box_face = 12
+examine_face = 112
+examine_seat = 163
+restore_xz = 138
+touch_seat = 81
+
+[shortcuts.placed.seed_13]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_14]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_15]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
+
+[shortcuts.placed.seed_16]
+box_face = 12
+examine_face = 108
+examine_seat = 156
+restore_xz = 134
+touch_seat = 81
