@@ -310,8 +310,7 @@ impl PlayWindowApp {
     /// the session's one constructor with a fresh scan of both card ports,
     /// and score it.
     pub(super) fn reopen_title(&mut self) {
-        let any_save = rack_has_save(self.card_ports());
-        self.boot_ui = BootUiState::FrontEnd(self.session.front_end_title(any_save));
+        self.boot_ui = BootUiState::FrontEnd(self.session.front_end_title());
         self.start_title_bgm();
     }
 
@@ -398,17 +397,11 @@ impl PlayWindowApp {
                 // lane, and acts on what the step reports.
                 use legaia_engine_session::FrontEndStep;
                 use legaia_engine_title::title::TitleOutcome;
-                let ports = [self.port1_card.as_ref(), self.card.as_ref()];
                 let mut lane = WindowAttractLane {
                     live: cutscene_live,
                     aborted: false,
                 };
-                let step = front_end.step(
-                    &mut self.session.mode_seat,
-                    pressed,
-                    || rack_has_save(ports),
-                    &mut lane,
-                );
+                let step = front_end.step(&mut self.session.mode_seat, pressed, &mut lane);
                 match step {
                     FrontEndStep::TitleOpened(_) => self.start_title_bgm(),
                     FrontEndStep::AttractStart(id) => start_attract = Some(id),

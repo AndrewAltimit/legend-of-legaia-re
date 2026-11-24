@@ -1049,12 +1049,10 @@ shared epilogue. Exported launch constants: `MASTER_GAME_MODE_FIELD_LAUNCH`,
 `engine-title::title::TitleSession` owns the title tick both hosts run. Its menu
 half steps `title_overlay::TitleMenuState`, the port of the `0x10` block, so
 both hosts get retail's cursor step + wrap, confirm mask, cue pair and attract
-countdown from one kernel. Three things around it are the port's own:
+countdown from one kernel. Two things around it are the port's own:
 
 - `TitlePhase::FadeIn` / `PressStart` are port staging ahead of the menu; the
   attract countdown runs through the prompt by the same rules.
-- `continue_enabled` greys out CONTINUE when no save exists. Retail always lets
-  the row be picked and lets the save screen say "No data".
 - The attract hand-off is opt-in per host (`TitleSession::attract_enabled`).
   The native window plays `fmv_id 0` through its MDEC path; the browser play
   page enters the same phase and finishes it immediately, having no STR
@@ -1062,8 +1060,14 @@ countdown from one kernel. Three things around it are the port's own:
 
 A cold `TitleSession` opens on row 0. Each host records the running title's
 `row_counter` into `ModeSeat::title_row` every frame and opens every later title
-through `TitleSession::for_front_end_at` on that row (CONTINUE folds to NEW GAME
-when the port has greyed it out).
+through `TitleSession::for_front_end_at` on that row.
+
+CONTINUE is live on every front-end title, whatever the card rack holds, as in
+retail: the Continue screen is where a player reads, inserts or imports a card,
+so greying the row on an empty rack locks out the player who has a card to
+bring. On the two-row menu a greyed row also turns Up / Down into a wrap back
+onto NEW GAME, which reads as dead arrow keys. `TitleSession::without_save_data`
+(the row skipped) survives only for the synthetic `legaia-engine title` driver.
 
 #### A cold boot always shows sub-mode `0x10`, never `0x02`
 

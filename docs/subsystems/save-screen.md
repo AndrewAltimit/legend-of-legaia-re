@@ -1291,10 +1291,12 @@ it. Both hosts run it as one `engine-session::title_continue::ContinueScreen`
 over `SaveSelectSession::title_continue`; a backed-out Continue returns to
 the title card.
 
-Continue's enablement is a port guard with no retail counterpart (retail lets
-the row be picked and lets the save screen say "No data"). Both hosts open
-every title through `TitleSession::for_front_end_at` with a fresh scan of
-their rack, so the row is live exactly when some port holds a save.
+Continue is live on every title, as in retail: the row is picked whatever the
+rack holds, and the save screen it opens reports each port's blocks (an empty
+rack shows empty blocks, and Circle backs out). Both hosts open every title
+through `TitleSession::for_front_end_at`. A player who imports or inserts a
+card while the title is up reaches it through this screen, which reads the
+rack live rather than off a scan taken when the title opened.
 
 ## Where the Save row's pad route is
 
