@@ -322,6 +322,10 @@ fn fatal_decisions_phase_chain_runs_as_retail_runs_it() {
     ];
     for round in 0..2800usize {
         let phase = phases[round % phases.len()];
+        // Every phase at frame steps 1 to 4: retail's one call scales its
+        // drains, spin, spread and snap by `0x1F800393`, and the host runs
+        // the body once a pass at that step (`World::run_fatal_decision`).
+        let step = 1 + ((round / phases.len()) % 4) as u8;
         let mut cpu = scus_cpu().expect("SCUS");
         cpu.mem.load(OVERLAY_BASE, &overlay);
         cpu.mem.load(BASE, &module);
@@ -467,7 +471,7 @@ fn fatal_decisions_phase_chain_runs_as_retail_runs_it() {
         }
         cpu.mem.wr8(va + 0x1F2, rng.below(2) as u8);
         cpu.mem.wr8(SCALAR, 8);
-        cpu.mem.wr8(STEP, 1);
+        cpu.mem.wr8(STEP, step);
         let confirm = rng.below(3) == 0;
         cpu.mem.wr32(CONFIRM_MASK, 0x40);
         cpu.mem.wr32(PAD_A, if confirm { 0x40 } else { 0x10 });
@@ -551,6 +555,7 @@ fn fatal_decisions_phase_chain_runs_as_retail_runs_it() {
             victim_hp: cpu.mem.rd16(va + 0x14C),
             victim_playing: cpu.mem.rd8(va + 0x1D9),
             victim_tint: cpu.mem.rd32(va + 4),
+            step,
         };
         let seats_before: Vec<SeatWords> = (0..3 + monsters)
             .map(|s| seat_words(&mut cpu.mem, ACTOR + s * STRIDE))
@@ -564,7 +569,7 @@ fn fatal_decisions_phase_chain_runs_as_retail_runs_it() {
         let victim_block = read_victim(&mut cpu, va);
 
         let stop = cpu.call(FATAL_DECISION, &[]);
-        let c = format!("round {round} phase {phase:#x}");
+        let c = format!("round {round} step {step} phase {phase:#x}");
         if stop != Stop::Returned {
             failures.push(format!("{c}: {stop:?}"));
             continue;

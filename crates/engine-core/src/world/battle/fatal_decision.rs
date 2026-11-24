@@ -50,7 +50,28 @@ impl fd::FatalDecisionHost for Host<'_> {
 impl World {
     /// One pass of PROT 0954's body, from the capture band's module seam
     /// ([`Self::run_cast_module_code`]).
+    ///
+    /// Retail enters the body once a battle frame and scales every drain,
+    /// spin, spread and snap by the frame step (`lbu 0x7f(0x1F800314)` at
+    /// `0x801F6D9C`, `0x801F7734`, `0x801F777C`, ...), so the body runs on the
+    /// tick that opens the pass at the pass's step
+    /// ([`fd::FatalDecisionView::step`]) and holds on the rest of its ticks
+    /// ([`Self::module_pass`]). Run a tick at a time instead, arm 7's
+    /// slowdown spun the wheel by `delta * word / 128` on each tick's
+    /// drained word, where retail spins once on the pass's, so the wheel
+    /// stopped on another slot above step 1, and every gated arm kept the
+    /// pass's unspent drain past the tick it left on.
     pub(in crate::world) fn run_fatal_decision(&mut self, entry: u32) -> CastModuleCodeRun {
+        if self.casting.module_pass_repeat {
+            return CastModuleCodeRun {
+                prot_entry: entry,
+                phase: self.casting.module_phase,
+                ctx_278: self.casting.module_ctx_278,
+                busy: true,
+                tick_ported: true,
+                ..Default::default()
+            };
+        }
         let caster = self.battle_ctx.active_actor;
         let victim = self
             .actors
@@ -135,6 +156,11 @@ impl World {
                 None => 0,
             },
             victim_tint: v.map_or(0, |a| a.battle.render_color),
+            step: if self.toggles.battle_sm_frame_cadence {
+                self.module_frame_step()
+            } else {
+                1
+            },
         }
     }
 
