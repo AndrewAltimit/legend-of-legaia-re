@@ -1823,7 +1823,9 @@ past the party's two placements (flat `27` and `28`), whose view depth `+0x34` (
 kind-`1` arm drops them there (`slti v0,v0,0xa1` at `0x8001AE9C`; `+0x52 & 0x20` is clear):
 the walk film's actor columns read `64` and `832` on the frame the first goes, `-2793` and
 `-3560` from the end of the dolly to the cut. The engine's near reject drops the same two
-(`npc_models` `3` to `1`), and the frames agree: rendered at four states through the
+(`npc_models` `3` to `1`), and so do both play hosts' NPC passes at retail's vantage
+(`field_view_window::npc_near_rejected`, the kernel `World::field_npc_near_rejected` shares
+with the cost model); the frames agree: rendered at four states through the
 crossing in PSX mode and the clean rasteriser, the port shows the same heads leaving at the
 same frames (`0.999..1.000` and `0.992..0.997`). The retail pass drops `37` hblanks there
 (`retail-exec frame-cost`, `299` to `262`).

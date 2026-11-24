@@ -71,6 +71,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // the spawn tile), floor-snapped like the player.
         let w = &app.session.host.world;
         let near_npcs = w.near_bucket_npcs();
+        let retail_vantage = app.retail_vantage();
         for d in app.field_npc_draws.iter().filter(|_| layer_on("npc")) {
             // The NPC's whole draw pose is the engine's
             // (`World::field_npc_draw_pose`, which the browser play page
@@ -92,6 +93,16 @@ impl<'m> DrawCtx<'_, 'm> {
             if !legaia_engine_world_views::field_view_window::npc_actor_visible(
                 w,
                 self.view_cells.as_ref(),
+                d.slot,
+                d.spawn,
+            ) {
+                continue;
+            }
+            // The draw walk's near reject (`FUN_8001ADA4`'s kind-1 arm), at
+            // retail's vantage only, as the placed pass gates its own.
+            if legaia_engine_world_views::field_view_window::npc_near_rejected(
+                w,
+                retail_vantage,
                 d.slot,
                 d.spawn,
             ) {

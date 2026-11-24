@@ -342,6 +342,22 @@ pub fn npc_actor_visible(
     // Placement radius: `+0x58` read 0 on every captured placement.
     !world.field_actor_culled_in_window(x, z, 0, cells.window_in)
 }
+
+/// The field-NPC near reject a host applies per draw: `true` = drop
+/// placement `slot` (spawned at `spawn`) this frame. Retail's draw walk
+/// skips a posed actor whose origin stands nearer the eye than view depth
+/// `0xA1` (`World::field_npc_near_rejected`), as it skips a placed object
+/// nearer than `0xA0` ([`legaia_engine_scene::field_env::placed_origin_near_culled`]),
+/// and both play hosts gate the two the same way: only at retail's vantage
+/// ([`retail_vantage`]), where the camera the rule measures is the one on
+/// screen. `garmel`'s dolly into Zeto's appearance puts two of the three
+/// party heads inside it; retail draws neither.
+///
+/// REF: FUN_8001ADA4
+pub fn npc_near_rejected(world: &World, vantage: bool, slot: u8, spawn: (i16, i16)) -> bool {
+    vantage && world.field_npc_near_rejected(slot, spawn)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

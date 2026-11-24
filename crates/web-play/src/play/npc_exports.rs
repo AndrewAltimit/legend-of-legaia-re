@@ -179,14 +179,20 @@ impl LegaiaRuntime {
     }
 
     /// Per catalogued NPC: `1` = retail's actor cull (`FUN_801D79E8`) hides
-    /// it under this frame's visible-tile crop, so the page skips its draw
-    /// (`FieldActors::culled`). Empty while no crop applies.
+    /// it under this frame's visible-tile crop, or the draw walk's near
+    /// reject (`FUN_8001ADA4`) drops it at retail's vantage, so the page
+    /// skips its draw (`FieldActors::culled`). Empty while neither applies.
     pub fn play_npc_culled(&self, debug_camera: bool) -> Vec<u8> {
         let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };
         let cells = self.field_view_cells_now(debug_camera);
-        self.actors.culled(h, cells.as_ref())
+        let vantage = legaia_engine_world_views::field_view_window::retail_vantage(
+            &h.world,
+            self.scene_host.camera(),
+            debug_camera,
+        );
+        self.actors.culled(h, cells.as_ref(), vantage)
     }
 
     /// Every catalogued NPC's draw pose (`FieldActors::draw_poses`, the

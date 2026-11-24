@@ -618,6 +618,30 @@ impl World {
         })
     }
 
+    /// Whether the draw walk's near reject drops field NPC model `slot`
+    /// (spawned at `spawn`) this frame: its live anchor
+    /// ([`Self::field_npc_live_anchor`]) at a view depth under `0xA1` through
+    /// the camera the cull view publishes. A placement model is a posed
+    /// actor (draw kind `1`), whose arm skips the whole actor there
+    /// (`0x8001AE94..0x8001AEB4`) unless its `+0x52 & 0x20` exempts it; no
+    /// placement model on the disc's captured states carries that bit. The
+    /// frame-cost model drops the same models (`npc_models`). `false` with
+    /// no published camera or while the model is not drawn.
+    ///
+    /// REF: FUN_8001ADA4
+    pub fn field_npc_near_rejected(&self, slot: u8, spawn: (i16, i16)) -> bool {
+        let (Some(cam), Some([x, y, z])) = (
+            self.npcs.cull_camera.as_ref(),
+            self.field_npc_live_anchor(slot, spawn),
+        ) else {
+            return false;
+        };
+        let depth = placed_cull_gte(cam)
+            .rtps([x as i16, y as i16, z as i16])
+            .mac[2];
+        walker_near_rejected(depth, true, false)
+    }
+
     /// Whether a raised actor's anchor `at` (world units) stands inside the
     /// slab of the object-effect row its `+0x42 = kind` names, at render
     /// scale `scale` (`+0x72`, `1.0 = 0x1000`, `0` read as `1.0`).
@@ -895,9 +919,13 @@ impl World {
                 continue;
             }
             // The dispatcher's near reject on the actor's view depth
-            // (`slti v0,v0,0xa1` at `0x8001AE9C`).
+            // (`slti v0,v0,0xa1` at `0x8001AE9C`), the one both play hosts
+            // ask (`World::field_npc_near_rejected`).
             let at = [x as i16, y as i16, z as i16];
-            if gte.as_ref().is_some_and(|g| g.rtps(at).mac[2] < 0xA1) {
+            if gte
+                .as_ref()
+                .is_some_and(|g| walker_near_rejected(g.rtps(at).mac[2], true, false))
+            {
                 continue;
             }
             // A model whose `+0x10 & 4` is up draws only when its box
