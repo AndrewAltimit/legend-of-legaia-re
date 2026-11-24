@@ -302,9 +302,9 @@ precision highp int;
 
 uniform mat4 u_mvp;
 uniform mat4 u_model;   /* per-draw model matrix (identity for single-mesh mode) */
-/* A coplanar-lifted draw on a clean frame (the play page's _stageDepthLift):
- * the fraction of its view depth nearer the draw tests at, drawn where it
- * stands. 0 (PSX mode, every other draw) leaves the depth alone. Twin of
+/* A coplanar-lifted draw (the play page's _stageDepthLift): the fraction of
+ * its view depth nearer the draw tests at, drawn where it stands. 0 (every
+ * other draw) leaves the depth alone. Twin of
  * engine-scene's coplanar_draws::depth_lifted_camera. */
 uniform float u_depth_lift;
 

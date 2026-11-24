@@ -156,11 +156,11 @@
        * floor-wave offset array (`rt.field_floor_wave_offsets()`, terrain then
        * placements), so a draw the loop below SKIPS - a mesh with
        * no renderable prims - does not shift every later draw's rung. */
-      /* Each draw's coplanar lift, already in `pos`: a clean frame draws
+      /* Each draw's coplanar lift, already in `pos`: the scene pass draws
        * the tile where it stands and takes the lift in depth only
        * (renderAssembled's `_stageDepthLift`, the native window's
        * FieldDrawLifts), so a lifted tile opens no crack against the
-       * neighbour it abuts. PSX mode draws the positions as given. */
+       * neighbour it abuts, in PSX mode as on a clean frame. */
       const liftPerUnit = rt.coplanar_depth_lift_per_unit ? rt.coplanar_depth_lift_per_unit() : 0;
       const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase, placed, scales, decoStart, lifts) => {
         for (let i = 0; i < slots.length; i++) {

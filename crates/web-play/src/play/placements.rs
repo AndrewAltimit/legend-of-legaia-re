@@ -23,8 +23,8 @@ impl LegaiaRuntime {
     }
 
     /// Per-placement coplanar lift, three floats each, parallel to
-    /// [`Self::field_placement_positions`] (which includes it): what a clean
-    /// frame draws in depth only (`crate::play::env_lifts`).
+    /// [`Self::field_placement_positions`] (which includes it): what the scene
+    /// pass draws in depth only (`crate::play::env_lifts`).
     pub fn field_placement_lifts(&self) -> Vec<f32> {
         self.field
             .as_ref()
@@ -33,7 +33,7 @@ impl LegaiaRuntime {
     }
 
     /// The fraction of its view depth a lifted draw tests nearer per world
-    /// unit of lift on a clean frame
+    /// unit of lift
     /// ([`legaia_engine_scene::coplanar_draws::DEPTH_LIFT_PER_UNIT`]).
     pub fn coplanar_depth_lift_per_unit(&self) -> f32 {
         legaia_engine_scene::coplanar_draws::DEPTH_LIFT_PER_UNIT

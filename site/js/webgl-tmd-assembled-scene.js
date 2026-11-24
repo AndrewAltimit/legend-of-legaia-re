@@ -1446,11 +1446,11 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
 
   /* Model matrix for one renderAssembled placement (shared by the opaque
    * and blend passes so both draw at identical transforms). */
-  /* A coplanar-lifted static draw (`p.lift`, play-view-scene-build.js) on a
-   * clean frame: drawn where it stands, the lift taken out of its
-   * translation. PSX mode and every other draw keep the model as given. */
+  /* A coplanar-lifted static draw (`p.lift`, play-view-scene-build.js):
+   * drawn where it stands, the lift taken out of its translation, in PSX
+   * mode as on a clean frame. Every other draw keeps the model as given. */
   _liftedModel(p, model) {
-    if (this.psxMode || !p.lift) return model;
+    if (!p.lift) return model;
     const out = this._liftScratch || (this._liftScratch = new Float32Array(16));
     out.set(model);
     out[12] -= p.lift[0];
@@ -1461,11 +1461,10 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
 
   /* The lift in depth (`u_depth_lift`, the twin of engine-scene's
    * coplanar_draws::depth_lifted_camera): the draw tests depth as a point
-   * that fraction of its view depth nearer. Zero on PSX mode, on an
-   * unlifted draw and for `p = null` (the pass's reset). Returns what is
-   * staged now. */
+   * that fraction of its view depth nearer. Zero on an unlifted draw and
+   * for `p = null` (the pass's reset). Returns what is staged now. */
   _stageDepthLift(p, cur) {
-    const want = (p && !this.psxMode && p.lift) ? (p.liftDepth || 0) : 0;
+    const want = (p && p.lift) ? (p.liftDepth || 0) : 0;
     if (want !== cur && this.locDepthLift) this.gl.uniform1f(this.locDepthLift, want);
     return want;
   }

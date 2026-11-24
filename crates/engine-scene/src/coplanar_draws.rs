@@ -370,7 +370,7 @@ fn lift_dir(vis: [f32; 3]) -> [f32; 3] {
     }
 }
 
-/// How far a clean frame pulls a lifted draw's depth toward the eye, as a
+/// How far a frame pulls a lifted draw's depth toward the eye, as a
 /// fraction of its view depth per world unit of [`coplanar_draw_offsets`]
 /// lift. A `DRAW_NUDGE` lift tests about `0.0002` of its view depth nearer:
 /// at the field's usual eye distances, about the separation the lift gave.

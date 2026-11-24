@@ -458,7 +458,7 @@ impl LegaiaRuntime {
 /// field-scene viewer's `field_scene_*_positions` accessors apply.
 /// Each draw's coplanar lift ([`legaia_engine_scene::coplanar_draws`]),
 /// three floats per draw (zero for one with none), in the same retail frame as
-/// [`env_positions`], which already holds it. A clean frame takes it back out
+/// [`env_positions`], which already holds it. The scene pass takes it back out
 /// of the translation and tests the draw that much nearer in depth instead
 /// ([`legaia_engine_scene::coplanar_draws::depth_lifted_camera`], the native
 /// window's `FieldDrawLifts`).

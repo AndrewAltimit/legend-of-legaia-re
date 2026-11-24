@@ -72,11 +72,12 @@ pub(super) type TerrainDrawList = (
 /// The coplanar lift ([`legaia_engine_scene::coplanar_draws`]) folded into
 /// each field draw's translation, parallel to the four baked lists.
 ///
-/// PSX mode draws the lists as baked. A clean frame takes each lift back out
-/// of the model and tests the draw that much nearer in depth instead
+/// The frame takes each lift back out of the model and tests the draw that
+/// much nearer in depth instead
 /// ([`legaia_engine_scene::coplanar_draws::depth_lifted_camera`]): moved in
 /// space, a lifted ground tile stood a step off every neighbour it abuts and
-/// the step opened a crack along the seam.
+/// the step opened a crack along the seam, which retail (no lift, no depth
+/// buffer) never draws. PSX mode and the clean frame alike.
 #[derive(Debug, Clone, Default)]
 pub(in crate::window) struct FieldDrawLifts {
     pub(in crate::window) terrain: Vec<[f32; 3]>,
@@ -86,18 +87,16 @@ pub(in crate::window) struct FieldDrawLifts {
 }
 
 impl FieldDrawLifts {
-    /// Draw `di`'s `(model, camera)` on a clean frame: the lift out of the
-    /// model and into the camera's depth. As baked while `psx` or for a draw
-    /// with no lift.
-    pub(in crate::window) fn clean_draw(
+    /// Draw `di`'s `(model, camera)`: the lift out of the model and into the
+    /// camera's depth. As baked for a draw with no lift.
+    pub(in crate::window) fn depth_draw(
         lifts: &[[f32; 3]],
         di: usize,
-        psx: bool,
         model: Mat4,
         cam: Mat4,
     ) -> (Mat4, Mat4) {
         match lifts.get(di) {
-            Some(&lift) if !psx && lift != [0.0; 3] => (
+            Some(&lift) if lift != [0.0; 3] => (
                 Mat4::from_translation(-glam::Vec3::from(lift)) * model,
                 Mat4::from_cols_array(&legaia_engine_scene::coplanar_draws::depth_lifted_camera(
                     cam.to_cols_array(),
