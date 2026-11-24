@@ -63,6 +63,10 @@ impl World {
     /// pass's unspent drain past the tick it left on.
     pub(in crate::world) fn run_fatal_decision(&mut self, entry: u32) -> CastModuleCodeRun {
         if self.casting.module_pass_repeat {
+            // A press on a tick the body does not run on waits for the next
+            // pass, as a press inside a retail frame waits for its read.
+            let cross = legaia_engine_system::input::PadButton::Cross;
+            self.casting.fatal_decision_confirm |= self.input.just_pressed(cross);
             return CastModuleCodeRun {
                 prot_entry: entry,
                 phase: self.casting.module_phase,
@@ -80,7 +84,8 @@ impl World {
             .unwrap_or(0);
         let mut ctx = self.cast_module_ctx();
         let mut st = self.casting.fatal_decision.unwrap_or_default();
-        let view = self.fatal_decision_view(caster, victim);
+        let mut view = self.fatal_decision_view(caster, victim);
+        view.confirm |= std::mem::take(&mut self.casting.fatal_decision_confirm);
         let pass = {
             let mut host = Host {
                 world: self,
