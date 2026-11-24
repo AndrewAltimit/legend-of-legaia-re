@@ -132,8 +132,14 @@ pub(super) fn worth_fighting(w: &legaia_engine_core::world::World) -> bool {
     // triples (F19, three 2000-HP casters) wiped a party at seven tenths on
     // the way to Cort's door and left a member at 1 HP from full, and each
     // such wipe reloaded the stretch before Cort was met.
+    // Growing a Miracle wearer for a race is training too: a fled fight
+    // earns no EXP, and a grow outing that ran from every encounter at
+    // Koru's door (`nilboa`, dealt stream 15 with walked props) spent the
+    // bag and the MP on the fights it fled and met the race at a third of
+    // its HP, with Gala no nearer the AGL it was out for.
     if (SAVING_FOR_BOSS.with(std::cell::Cell::get) || BOSS_LEAD_IN.with(std::cell::Cell::get))
         && !TRAINING.with(std::cell::Cell::get)
+        && !super::pad_training::GROWING.with(std::cell::Cell::get)
     {
         return false;
     }
@@ -480,6 +486,7 @@ fn part_c_continuous_run() {
         );
     });
     reset_shopping();
+    reset_dry_placements();
     reset_duel_dress();
     HEAL_HUNTED.with(|h| h.borrow_mut().clear());
     let mut session = open_session(&inp.extracted);
@@ -935,6 +942,9 @@ fn part_c_continuous_run() {
         *shortcut_total.entry(k).or_insert(0) += n;
     }
     eprintln!("{}", shortcut_line(&shortcut_total));
+    for line in take_shortcut_sites() {
+        eprintln!("{line}");
+    }
     let (steps, aimed) = super::fight_turn::AIM_TALLY.with(std::cell::Cell::take);
     {
         let w = &session.host.world;
@@ -972,11 +982,41 @@ fn part_c_continuous_run() {
     }
     .or_else(|| baseline.continuous.get("reached").copied())
     .unwrap_or(0);
+    // The shortcut ratchet: the run's tally per category, against its prop
+    // mode's row for this stream.
+    let ratchet = shortcut_ratchet_mode().map(|mode| {
+        let stream = seed_key.clone().unwrap_or_else(|| "default".to_string());
+        eprintln!("[shortcuts.{mode}.{stream}]");
+        for (k, n) in &shortcut_total {
+            eprintln!("{k} = {n}");
+        }
+        let row = baseline
+            .shortcuts
+            .get(mode)
+            .and_then(|m| m.get(&stream))
+            .cloned();
+        (mode, stream, row)
+    });
     assert!(
         reached_count >= want,
         "continuous run reached {reached_count} milestone(s), baseline {want}: {}",
         stall.as_deref().unwrap_or("no stall recorded")
     );
+    if let Some((mode, stream, row)) = ratchet {
+        match row {
+            Some(row) => {
+                let rises = shortcut_rises(&shortcut_total, &row);
+                assert!(
+                    rises.is_empty(),
+                    "shortcut fallbacks rose against [shortcuts.{mode}.{stream}]: {}",
+                    rises.join(", ")
+                );
+            }
+            None => {
+                eprintln!("[shortcuts] no [shortcuts.{mode}.{stream}] row to hold the tally to")
+            }
+        }
+    }
 }
 
 /// The deal is a function of the stream's seed, the pad and the code's

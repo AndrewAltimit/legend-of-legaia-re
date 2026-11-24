@@ -177,6 +177,10 @@ struct Baseline {
     /// hand of the rand stream, keyed `seed_<n>` (decimal).
     #[serde(default)]
     continuous_seeds: BTreeMap<String, usize>,
+    /// Part C's shortcut tally, per prop mode (`placed` / `walked`) and
+    /// stream (`default` / `seed_<n>`), per category: asserted `<=`.
+    #[serde(default)]
+    shortcuts: BTreeMap<String, BTreeMap<String, BTreeMap<String, u64>>>,
 }
 
 fn read_baseline() -> Baseline {

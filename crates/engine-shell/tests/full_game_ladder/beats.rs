@@ -1052,10 +1052,19 @@ fn play_prop_beats(
         {
             continue;
         }
+        if dry_placement(
+            name,
+            anchor,
+            &flags_of_world(session),
+            &prop_tested_flags(session, mf, man, anchor),
+        ) {
+            continue;
+        }
         if *ran >= MAX_BEATS || !examined.insert(anchor) {
             continue;
         }
         *ran += 1;
+        let placed_before = placements_made();
         // A prop whose touch moves its flags and still leaves the one
         // the next anchor holds clear is a dial: it is turned again
         // until it stands where the retail run left it. `stone`'s four
@@ -1130,7 +1139,16 @@ fn play_prop_beats(
                 break;
             }
         }
-        if flags_of_world(session) == before {
+        let after = flags_of_world(session);
+        // Walked to on no seat (a beat that reached a seat on foot placed
+        // nothing after it) and to no effect.
+        note_placement(
+            name,
+            anchor,
+            after == before && placements_made() > placed_before && walking(session),
+            &after,
+        );
+        if after == before {
             dry.insert(anchor, before);
         }
     }
@@ -1587,6 +1605,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
     };
     let mut pad_reached = false;
     let mut far = false;
+    let mut whys: Vec<String> = Vec::new();
     for ((dx, dz), try_pad) in attempts {
         let (sx, sz) = (tx + dx, tz + dz);
         if !(0..128).contains(&sx) || !(0..128).contains(&sz) {
@@ -1597,6 +1616,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
         }
         if try_pad && !prop_seat_in_walk_reach(session, (sx, sz)) {
             far = true;
+            whys.push(format!("{:?} far", (sx, sz)));
             continue;
         }
         session.host_pad(0);
@@ -1606,6 +1626,11 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
                 Ok(Walk::Arrived) => walking(session),
                 Err(e) if e.contains("party wiped") => return Run::Battle(e),
                 Err(e) => {
+                    whys.push(format!(
+                        "{:?} {}",
+                        (sx, sz),
+                        e.chars().take(90).collect::<String>()
+                    ));
                     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                         let e: String = e.chars().take(160).collect();
                         eprintln!("      [touch] side {:?} of {anchor:?}: {e}", (sx, sz));
@@ -1620,6 +1645,14 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
         if !by_pad {
             session.host.world.seat_player_at_tile(sx as u8, sz as u8);
             shortcut(if far { "touch_far" } else { "touch_seat" });
+            if shortcut_sites_on() {
+                eprintln!(
+                    "      [placed] touch in {} for {anchor:?} on {:?} from {back:?}: {}",
+                    scene_name(session),
+                    (sx, sz),
+                    whys.join("; ")
+                );
+            }
         }
         let mut started = false;
         for _ in 0..40 {
@@ -1872,9 +1905,23 @@ fn talk_from_box_as(
     // to the placement.
     let step_back = |s: &mut NativeSession, back: (i16, i16)| -> Option<String> {
         if by_pad {
-            if let Some(scene) = pad_lean(s, move |_| Some(back), 12, |s| inside(s)) {
-                return Some(scene);
+            // A lean leaves the box by a few units, inside [`pad_lean`]'s
+            // 16-unit dead zone, so the step back presses toward `back` on
+            // every axis it is off by at all (`rayman`'s gate guards, a lean
+            // of 6 units across the row edge).
+            for _ in 0..12 {
+                if inside(s) || !walking(s) {
+                    break;
+                }
+                let (px, pz) = player_xz(s);
+                let pad = pad_for_step(s, (back.0 - px).signum(), (back.1 - pz).signum());
+                s.host_pad(pad);
+                if let Ok(SceneTickEvent::SceneEntered { name }) = s.tick() {
+                    s.host_pad(0);
+                    return Some(name);
+                }
             }
+            s.host_pad(0);
             if inside(s) || shortcuts_refused() {
                 return None;
             }
