@@ -22,12 +22,13 @@ impl World {
                 self.finisher_struck(target);
                 // A petrified target (Stone) absorbs the hit - no HP loss, like
                 // the basic-attack path; Stone is invulnerable at every damage
-                // entry point.
-                let applied = if self.battle.actor_is_petrified(target) {
-                    0
-                } else {
-                    amount
-                };
+                // entry point. The finisher tests the whole word `+0x16E & 4`
+                // (`0x801DE2E4..0x801DE2E8`): a Stone bit a module's view
+                // wrote, which the ailment tracker does not hold, absorbs too.
+                let stoned = self.raw_status_word(target)
+                    & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                    != 0;
+                let applied = if stoned { 0 } else { amount };
                 // Retail applies a cast's HP through `FUN_801E09F8`'s
                 // effect-child hit arm, whose clamp is the **safe** one: one
                 // value clamped against live HP reaches both `+0x10` and

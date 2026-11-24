@@ -4258,6 +4258,15 @@ seated `battle_korb2_ghost_knight_neo_windhash_mid_cast` film drew four words on
 pass where retail draws five, and landed `807` against retail's `771`; with it the two
 streams agree through the Done band and the hit lands `771`. Grade `disassembly` + `capture`.
 
+The hit's reaction is the arm's own pick (`0x801F7474..0x801F74C0`): the knockdown `+0x1F1` when the
+victim's gate byte `+0x1F2` is set or the hit downs it, else the flinch `+0x1EF`, or `+0x1F0` when that is
+empty, with the bump `+0x1DC = 1`; then the victim turns away from the caster (`FUN_80019B28` plus a half
+turn, `0x801F74C4..0x801F74E8`). `v_windhash_hit` runs the arm off the disc beside the band's pass and fold
+with the wrapper `FUN_801DD4B0` live on both sides, and the fold stages the same reaction, HP, bar delta,
+spirit, Curse and facing. It found the fold landing the hit on a Stoned victim whose Stone bit only the raw
+status half held: the finisher tests the whole word (`+0x16E & 4`, `0x801DE2E4`), and so does the fold's
+absorb now. Grade `disassembly` + differential.
+
 ### PROT 0943, 0945, 0949 and 0956: a director, the arm tables and a stager
 
 These enemy bodies share one shape. The camera arms and the seat writes live in the body,
