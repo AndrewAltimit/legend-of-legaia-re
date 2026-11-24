@@ -1806,6 +1806,21 @@ The defeat beat reads the same at either ratio because the engine prices its fra
 about `460` against retail's `433`; the appearance's it prices at about `400` against `444`,
 so the frames that remain there are the work model's, not the ratio's.
 
+The appearance's shortfall is the actor draw pass. A per-routine profile of the same line
+([`autorun_field_frame_profile.lua`](../../scripts/pcsx-redux/autorun_field_frame_profile.lua),
+Cross every 20 vsyncs as the trace ran) reads `FUN_8001D140`, called once a frame for each
+of the five actor lists. Before the line the lists cost `30`, `49`, `0`, `111` and `31`
+hblanks; through the line the second costs about `150` and the first empties, about `60`
+over the frame's pre-line work, with the decoration pass at its pre-line `108`. (The
+profile's interrupt split holds over the line's first `200` vsyncs and not past them; there
+the calls are scaled by the decoration pass's own ratio.) The engine prices the same rise
+while the line opens (its actor term `193` to `260`, Zeto's model joining) and loses it under
+the camera's dolly: two of its three model placements, ten objects each, leave its model
+count as the eye closes in (`npc_models` `3` to `1`), and the frame prices `394` to the end
+of the line where retail's second list still draws. Which of the walk's tests the engine
+drops them on (the origin's near reject, or the box probe a `+0x10 & 4` model takes) is
+not traced. Grade `capture` for the lists and the counts.
+
 The legs a record runs on an actor are on the same grid. The walk kernel `FUN_8003774C` spends
 the frame step (`lbu s2,0x393` at `0x80037864`) once a game frame against a compass walk's or a
 turn's budget, and an actor's tick `FUN_8003BC08` runs it after the script runner
