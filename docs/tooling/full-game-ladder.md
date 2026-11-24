@@ -1041,6 +1041,7 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_NO_SHORTCUTS=1` | Refuses every fallback placement the pad hand would make ([shortcuts](#shortcuts)): the run is played on the pad alone. |
 | `LEGAIA_FGL_SKIP_OPENING=1` | Presses through the opening, so the first Cross takes the hosts' intro hand-off ([input conventions](#input-conventions-in-both-passes)). |
 | `LEGAIA_FGL_RETAIL_DECODE=1` | Walks retail's quantised direction decode rather than the hosts' default precise movement ([shortcuts](#shortcuts)). |
+| `LEGAIA_FGL_WATCH_FLAGS=0x403,...` | Prints each flip of those system flags, with scene, frame and the pad holder's park site. |
 | `LEGAIA_FGL_LEAD_IN_HEAL=0` | Leaves out the heal before the walk to a boss door ([arriving at a boss](#a-milestone-reached-with-a-fight-committed)). |
 | `LEGAIA_FGL_CONTINUOUS_UNTIL=<id>` | Ends part C once it reaches that milestone, and does not assert the baseline: with `LEGAIA_FGL_CONTINUOUS_RESUME` and a spread of `LEGAIA_FGL_RNG_SEED` values, how often one stretch clears. |
 
@@ -2203,18 +2204,20 @@ from the placed run's: `stone`'s statues turn to face their examiner, and
 `dolk`'s Lightning Gate rooms, which retail's player left alone, are a long
 walk across a rolling castle.
 
-A run under it stops in Uru Mais (`usha_research` -> `nivora`, the hop to
-`urudre1` closed) at the end of a chain of story gates, each read off the
-field scripts: `uru` P2[28], Gala's cutscene, spawns only once `0x379` is up
-(its C1 gate), which `doman` P1[15] raises; P1[15] stands past the door
-Dr. Usha's intercom (`doman` P1[18]) opens with the password `0x36E`, which
-the intercom gives only to a party that has `koin2` P1[19]'s `0x36D`. Walked,
-the run reached `koin2` in another phase of its residents, P1[19] was not
-standing (parked off the map), and nothing later raised `0x36D`. Placed, the
-same chain completes, and the stretch clears from the retail anchor either
-way: the engine takes the branch the scripts name, and the gap is the hand's
-order of beats. The `0x21B`..`0x21D` that first part the two runs in
-`town01` are `P1[32]`'s talk counter (a set per conversation), not a branch.
+Under it, part C once stopped in Uru Mais (`usha_research` -> `nivora`,
+the hop to `urudre1` closed) at the end of a chain of story gates, each
+read off the field scripts: `uru` P2[28], Gala's cutscene, spawns only once
+`0x379` is up (its C1 gate), which `doman` P1[15] raises; P1[15] stands past
+the door Dr. Usha's intercom (`doman` P1[18]) opens with the password
+`0x36E`, given only to a party that has `koin2` P1[19]'s `0x36D`; P1[19]
+stands only under `0x403`, which `map03` P2[11] raises after `korb3`'s band
+P2[2] to `kor` has raised `0x41D`. Walked, the stones of `korb3`'s maze
+lined up in another order, the walk to P2[2] stalled once, and the beats
+pass never tried it again. A walk-on whose walk stalls is now re-armed for
+the next round whose flags differ, and the chain completes. The engine took
+the branch the scripts name throughout; the gap was the hand's. The
+`0x21B`..`0x21D` that first part a walked run from a placed one in `town01`
+are `P1[32]`'s talk counter (one set per conversation), not a branch.
 
 `LEGAIA_FGL_NO_SHORTCUTS=1` refuses every fallback placement (and implies
 `LEGAIA_FGL_PAD_PROPS=1`): a stretch is then played on the pad alone, and a
