@@ -48,3 +48,143 @@ image = "e3bbc8c8f6546ed2"
 range = "0x801F7A10..0x801F7A10"
 verdict = "unreachable"
 reason = "PROT 0965: `beqz` on the battle's party count `ctx+0` (`lbu` at `0x801F7A08`), ahead of the `0xFF` arm's seat restore loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6AAC..0x801F6AAC"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F82A0..0x801F82B0`, `0x801F87EC..0x801F87FC`), `0x32` or `0x64` at arm 1's fork (`0x801F6EE4`, `0x801F6EF4`) and `0xFF` (`0x801F8850`), so it is one of `0..8`, `0x32..0x38`, `0x64..0x6A`, `0xFF`; the dispatch test here has already matched every one of those its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6AC8..0x801F6AC8"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F82A0..0x801F82B0`, `0x801F87EC..0x801F87FC`), `0x32` or `0x64` at arm 1's fork (`0x801F6EE4`, `0x801F6EF4`) and `0xFF` (`0x801F8850`), so it is one of `0..8`, `0x32..0x38`, `0x64..0x6A`, `0xFF`; the dispatch test here has already matched every one of those its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6AF4..0x801F6AF4"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F82A0..0x801F82B0`, `0x801F87EC..0x801F87FC`), `0x32` or `0x64` at arm 1's fork (`0x801F6EE4`, `0x801F6EF4`) and `0xFF` (`0x801F8850`), so it is one of `0..8`, `0x32..0x38`, `0x64..0x6A`, `0xFF`; the dispatch test here has already matched every one of those its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6B10..0x801F6B10"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F82A0..0x801F82B0`, `0x801F87EC..0x801F87FC`), `0x32` or `0x64` at arm 1's fork (`0x801F6EE4`, `0x801F6EF4`) and `0xFF` (`0x801F8850`), so it is one of `0..8`, `0x32..0x38`, `0x64..0x6A`, `0xFF`; the dispatch test here has already matched every one of those its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6B4C..0x801F6B4C"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F82A0..0x801F82B0`, `0x801F87EC..0x801F87FC`), `0x32` or `0x64` at arm 1's fork (`0x801F6EE4`, `0x801F6EF4`) and `0xFF` (`0x801F8850`), so it is one of `0..8`, `0x32..0x38`, `0x64..0x6A`, `0xFF`; the dispatch test here has already matched every one of those its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6B68..0x801F6B68"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F82A0..0x801F82B0`, `0x801F87EC..0x801F87FC`), `0x32` or `0x64` at arm 1's fork (`0x801F6EE4`, `0x801F6EF4`) and `0xFF` (`0x801F8850`), so it is one of `0..8`, `0x32..0x38`, `0x64..0x6A`, `0xFF`; the dispatch test here has already matched every one of those its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6B94..0x801F6B94"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F82A0..0x801F82B0`, `0x801F87EC..0x801F87FC`), `0x32` or `0x64` at arm 1's fork (`0x801F6EE4`, `0x801F6EF4`) and `0xFF` (`0x801F8850`), so it is one of `0..8`, `0x32..0x38`, `0x64..0x6A`, `0xFF`; the dispatch test here has already matched every one of those its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6BBC..0x801F6BBC"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F82A0..0x801F82B0`, `0x801F87EC..0x801F87FC`), `0x32` or `0x64` at arm 1's fork (`0x801F6EE4`, `0x801F6EF4`) and `0xFF` (`0x801F8850`), so it is one of `0..8`, `0x32..0x38`, `0x64..0x6A`, `0xFF`; the dispatch test here has already matched every one of those its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6BE8..0x801F6BE8"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: a fork on the AI counter `0x801C8FE4` past its three values `0`, `1`, `2`. The Rogue's AI case `0xA8` casts this body as spell `counter - 0x50` (`0xB0`..`0xB2`), so the word is in `0..2` when it runs; Element Change's roll writes it only with `rand() % 3`, and the steal bookkeeping that shares the `0x801C8FE0` array writes the slot of the monster stolen from, which for the lone Rogue is index `0`, not this index-`1` word."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6BF8..0x801F6BF8"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: a fork on the AI counter `0x801C8FE4` past its three values `0`, `1`, `2`. The Rogue's AI case `0xA8` casts this body as spell `counter - 0x50` (`0xB0`..`0xB2`), so the word is in `0..2` when it runs; Element Change's roll writes it only with `rand() % 3`, and the steal bookkeeping that shares the `0x801C8FE0` array writes the slot of the monster stolen from, which for the lone Rogue is index `0`, not this index-`1` word."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6CD0..0x801F6CD0"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: a fork on the AI counter `0x801C8FE4` past its three values `0`, `1`, `2`. The Rogue's AI case `0xA8` casts this body as spell `counter - 0x50` (`0xB0`..`0xB2`), so the word is in `0..2` when it runs; Element Change's roll writes it only with `rand() % 3`, and the steal bookkeeping that shares the `0x801C8FE0` array writes the slot of the monster stolen from, which for the lone Rogue is index `0`, not this index-`1` word."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6CE0..0x801F6CE0"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: a fork on the AI counter `0x801C8FE4` past its three values `0`, `1`, `2`. The Rogue's AI case `0xA8` casts this body as spell `counter - 0x50` (`0xB0`..`0xB2`), so the word is in `0..2` when it runs; Element Change's roll writes it only with `rand() % 3`, and the steal bookkeeping that shares the `0x801C8FE0` array writes the slot of the monster stolen from, which for the lone Rogue is index `0`, not this index-`1` word."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6EBC..0x801F6EBC"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: a fork on the AI counter `0x801C8FE4` past its three values `0`, `1`, `2`. The Rogue's AI case `0xA8` casts this body as spell `counter - 0x50` (`0xB0`..`0xB2`), so the word is in `0..2` when it runs; Element Change's roll writes it only with `rand() % 3`, and the steal bookkeeping that shares the `0x801C8FE0` array writes the slot of the monster stolen from, which for the lone Rogue is index `0`, not this index-`1` word."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6ECC..0x801F6ECC"
+verdict = "unreachable"
+reason = "PROT 0964 `0xB0`..`0xB2`: a fork on the AI counter `0x801C8FE4` past its three values `0`, `1`, `2`. The Rogue's AI case `0xA8` casts this body as spell `counter - 0x50` (`0xB0`..`0xB2`), so the word is in `0..2` when it runs; Element Change's roll writes it only with `rand() % 3`, and the steal bookkeeping that shares the `0x801C8FE0` array writes the slot of the monster stolen from, which for the lone Rogue is index `0`, not this index-`1` word."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F6DD4..0x801F6DD4"
+verdict = "unreachable"
+reason = "PROT 0964: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F7628..0x801F7628"
+verdict = "unreachable"
+reason = "PROT 0964: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F7E78..0x801F7E78"
+verdict = "unreachable"
+reason = "PROT 0964: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "6b41fff96759409f"
+range = "0x801F8694..0x801F8694"
+verdict = "unreachable"
+reason = "PROT 0964: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F88EC"
+image = "994a4249fcfac379"
+range = "0x801F8B0C..0x801F8B0C"
+verdict = "unreachable"
+reason = "PROT 0964: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F88EC"
+image = "994a4249fcfac379"
+range = "0x801F8970..0x801F8980"
+verdict = "unreachable"
+reason = "PROT 0964 `0xAF`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F8B80..0x801F8B90`) up to arm 2, which reports done, so after the `beq` on `1` (`0x801F895C`) it is `0` below `2` and `2` above, and neither fall-through runs."
