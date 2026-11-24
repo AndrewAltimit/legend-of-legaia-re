@@ -895,7 +895,39 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             let seat_arm = cam::module_profile(entry).and_then(|p| p.seat_arm);
             let mut port_seated = seat_arm.is_none();
             installs.set(0);
+            // The fallen runs stand in for the action SM's band word
+            // `ctx[+0x6D8]` on both sides (`battle_action::summon`): `0x34`
+            // arms it to `0x78` ahead of the module's first pass
+            // (`0x801E4B10..0x801E4B20`), `0x35` drains it by the frame step
+            // ahead of each pass (`0x801E4BCC..0x801E4BDC`), clamps a spent
+            // word to `1` while the side-band stage `ctx[+0x276]` stands
+            // (`0x801E4C60..0x801E4C78`), and leaves for `0x36` once the pass
+            // leaves it negative, zeroing it (`0x801E4C84..0x801E4C9C`). A
+            // module that keeps its countdown in the word (PROT 0904, 0907,
+            // 0908, 0916) shares it; the shadow takes it through the World's
+            // own seam (`World::summon_band_word_in` / `_out`). Every
+            // side-band arm (PROT 0916's arm 1 steps to its wait arm 2 on a
+            // standing word, `0x801F6EF8`) runs on it as in a cast.
+            let (mut sm, mut port_sm, mut port_word) = (0x34u8, 0x34u8, 0x78i16);
+            if fallen {
+                cpu.mem.wr16(CTX + 0x6D8, 0x78);
+            }
             for pass in 0..20_000u32 {
+                if fallen {
+                    let step = walk_step() as i16;
+                    let staged = cpu.mem.rd8(CTX + 0x276) != 0;
+                    let drain = |w: i16| {
+                        let w = w.wrapping_sub(step);
+                        if w < 0 && staged { 1 } else { w }
+                    };
+                    if sm == 0x35 {
+                        let w = drain(cpu.mem.rd16(CTX + 0x6D8) as i16);
+                        cpu.mem.wr16(CTX + 0x6D8, w as u16);
+                    }
+                    if port_sm == 0x35 {
+                        port_word = drain(port_word);
+                    }
+                }
                 // Every seat idle and far along its clip, its display pair on its
                 // ground pair as the draw pass leaves it.
                 for s in 0..8u32 {
@@ -1244,8 +1276,16 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     }
                     // The band's word `ctx[+0x6D8]` the paced arms poll
                     // (PROT 0907's arm 3), as the SM leaves it this pass.
-                    w.battle_ctx.frame_timer = cpu.mem.rd16(CTX + 0x6D8) as i16 as _;
+                    w.battle_ctx.frame_timer = if fallen {
+                        port_word as _
+                    } else {
+                        cpu.mem.rd16(CTX + 0x6D8) as i16 as _
+                    };
                     w.casting.band_word_live = None;
+                    let port_band = fallen && port_sm <= 0x35;
+                    if port_band {
+                        w.drive_summon_band_word_in(port_word);
+                    }
                     w.rng_state = stream.get();
                     // The side-band stage the walk stands up, as a turn's
                     // side-band read raises it.
@@ -1271,6 +1311,17 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         .drive_summon_module_frame(layout.caster as u8, action, true)
                         .pop()
                         .flatten();
+                    if port_band {
+                        if let Some(o) = w.drive_summon_band_word_out() {
+                            port_word = o;
+                        }
+                        if port_sm == 0x34 {
+                            port_sm = 0x35;
+                        } else if port_word < 0 {
+                            port_word = 0;
+                            port_sm = 0x36;
+                        }
+                    }
                     w.battle.stage_camera = None;
                     // The band's fold, on the tick the pass leaves the hit
                     // arm (`summon_stager_tick`'s strike): retail's module
@@ -1309,6 +1360,14 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     .map(|s| cpu.mem.rd16(ACTOR + s * STRIDE + 0x14C))
                     .collect();
                 let stop = cpu.call(va, &[]);
+                if fallen {
+                    if sm == 0x34 {
+                        sm = 0x35;
+                    } else if sm == 0x35 && (cpu.mem.rd16(CTX + 0x6D8) as i16) < 0 {
+                        cpu.mem.wr16(CTX + 0x6D8, 0);
+                        sm = 0x36;
+                    }
+                }
                 if (entry, phase) == (915, 0xC) {
                     chase_hits += (3..7u32)
                         .zip(&hp_before)

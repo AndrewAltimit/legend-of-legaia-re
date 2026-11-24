@@ -61,3 +61,17 @@ impl World {
             .then_some(self.casting.module_cam.countdown.0 as i16)
     }
 }
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`Self::summon_band_word_in`], for the walks that stand in for the
+    /// action SM's `0x34` / `0x35` around a summon module pass.
+    pub fn drive_summon_band_word_in(&mut self, word: i16) {
+        self.summon_band_word_in(word);
+    }
+
+    /// [`Self::summon_band_word_out`], the SM's re-read after the pass.
+    pub fn drive_summon_band_word_out(&mut self) -> Option<i16> {
+        self.summon_band_word_out()
+    }
+}
