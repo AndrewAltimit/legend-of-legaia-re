@@ -386,6 +386,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
     let mut typhoon_poses = 0usize;
+    let mut venom_marks = 0usize;
     let spawn_log = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3], u16)>::new()));
     let (mut spawns_matched, mut spawn_failures) = (0usize, Vec::<String>::new());
     let all = bodies();
@@ -839,6 +840,12 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 1 + 0x9E37 * round as u32
             } else if sweeps {
                 1 + 0x2F1D * round as u32
+            } else if (body.entry, body.va) == (945, WATER_COLUMN) {
+                // Water Column's Venom draw ahead of its hit, `rand() & 7 == 0`
+                // (`0x801F7460..0x801F746C`), is the round's first draw: a
+                // stream a round whose first draw lands the bit on rounds 2
+                // and 5, so the shadow's status word is held to it.
+                1 + 0x1001 * round as u32
             } else {
                 1
             });
@@ -1482,6 +1489,22 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                             ));
                         }
                     }
+                    // Water Column's Venom bit, drawn ahead of its hit: the
+                    // fold's damage roll leaves the victim on other HP than
+                    // the stubbed wrapper's, which stops the status compare
+                    // above for the seat, so the bit the draw writes is held
+                    // on its own.
+                    if (body.entry, body.va) == (945, WATER_COLUMN) {
+                        let a = ACTOR + victim * STRIDE;
+                        let got = cpu.mem.rd16(a + 0x16E) & 1;
+                        let port = w.raw_status_word(victim as u8) & 1;
+                        if got != port {
+                            shadow_failures.push(format!(
+                                "{c}: Water Column victim {victim} Venom retail {got} port {port}"
+                            ));
+                        }
+                        venom_marks += usize::from(got != 0);
+                    }
                     // Dark Typhoon's swirl (`World::dark_typhoon_party_swirl`):
                     // each party seat's plane pair, height and heading against
                     // retail's arms 2..=5 (the marks `0x801F708C..0x801F70F8`,
@@ -2031,6 +2054,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         "band shadow passes {shadow_passes}"
     );
     eprintln!("Dark Typhoon swirl: {typhoon_poses} party seat poses compared");
+    eprintln!("Water Column: {venom_marks} passes with the victim's Venom bit compared");
+    assert!(
+        venom_marks > 0,
+        "no Water Column round landed its Venom draw"
+    );
     assert!(
         typhoon_poses >= 100,
         "Dark Typhoon swirl seat poses compared: {typhoon_poses}"
