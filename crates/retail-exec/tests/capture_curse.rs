@@ -3,6 +3,11 @@
 //! `cast_arm_ticks::curse_single_tick` under the body's countdown table
 //! (`capture_arm_countdowns(943, CURSE_SINGLE_TICK)`).
 //!
+//! The rounds run at frame steps 1 to 4 (`0x1F800393`): retail's one call
+//! drains its pass's `scalar * step` in one `subu`, and the shadow runs the
+//! pass as the host does (`World::module_pass`), `step` one-vsync ticks with
+//! the countdown's rest `step - 1 - i`, stopping on the tick the arm passes.
+//!
 //! Every call out of the image returns `0`. Each pass compares the countdown
 //! word `0x801F7A04` with the table's, and a hold with a phase the body left
 //! alone. A pass that leaves its arm compares the whole context and the
@@ -72,8 +77,10 @@ fn the_single_curse_walks_and_marks_as_retail_does() {
     let table = capture_arm_countdowns(943, CURSE_SINGLE_TICK).expect("the curse table");
     let mut rng = Rng(0x4355_5253);
     let mut failures = Vec::new();
-    let (mut casts, mut marks, mut holds) = (0, 0, 0);
+    let (mut casts, mut marks) = (0, 0);
+    let mut holds = [0usize; 5];
     for round in 0..400 {
+        let step = 1 + (round % 4) as u8;
         cpu.mem.load(BASE, &module);
         for b in 0..CTX_LEN as u32 {
             cpu.mem.wr8(CTX + b, rng.next() as u8);
@@ -106,7 +113,7 @@ fn the_single_curse_walks_and_marks_as_retail_does() {
         cpu.mem
             .wr8(ACTOR + caster * STRIDE as u32 + 0x1DD, victim as u8);
         cpu.mem.wr8(SCALAR, cam::SPEED_SCALAR as u8);
-        cpu.mem.wr8(STEP, 1);
+        cpu.mem.wr8(STEP, step);
         let (ca, va) = (
             ACTOR + caster * STRIDE as u32,
             ACTOR + victim * STRIDE as u32,
@@ -114,20 +121,30 @@ fn the_single_curse_walks_and_marks_as_retail_does() {
         let mut cd = ModuleCountdown::default();
         let mut done = false;
         for pass in 0..2_000 {
-            let c = format!("round {round} pass {pass} caster {caster} victim {victim}");
+            let c =
+                format!("round {round} step {step} pass {pass} caster {caster} victim {victim}");
             let mut ctx = read_ctx(&mut cpu.mem, CTX);
             let phase = ctx.phase;
             let mut k = read_actor(&mut cpu.mem, ca);
             let mut v = read_actor(&mut cpu.mem, va);
             let ctx_before = cpu.mem.read(CTX, CTX_LEN);
             let recs_before = cpu.mem.read(ACTOR, 8 * STRIDE);
-            let gate = arms_gate(table, phase, &mut cd);
+            // The host's pass: `step` ticks, stopping on the one the gate
+            // lets through (`World::module_pass`).
+            let mut gate = true;
+            for i in 0..step {
+                cd.1 = step - 1 - i;
+                if !arms_gate(table, phase, &mut cd) {
+                    gate = false;
+                    break;
+                }
+            }
             assert_eq!(cpu.call(CURSE, &[]), Stop::Returned, "{c}");
             let busy = cpu.regs.r[V0] != 0;
             let after = cpu.mem.rd8(CTX + 0x279);
             let word = cpu.mem.rd32(COUNTDOWN) as i32;
             if gate {
-                holds += 1;
+                holds[usize::from(step)] += 1;
                 if !busy || after != phase {
                     failures.push(format!("{c}: port holds arm {phase}, retail moved"));
                     break;
@@ -210,8 +227,8 @@ fn the_single_curse_walks_and_marks_as_retail_does() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(
-        casts == 400 && marks == 400 && holds > 10_000,
-        "{casts} {marks} {holds}"
+        casts == 400 && marks == 400 && holds[1..].iter().all(|&h| h > 1_000),
+        "{casts} {marks} {holds:?}"
     );
 }
 

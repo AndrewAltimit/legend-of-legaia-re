@@ -1990,6 +1990,12 @@ fn the_magic_window_prices_and_commits_as_retail() {
 /// `BattleState::step_battle_intro_names` (the hold's seed and its drain),
 /// the formation byte's decode the round start's ambush test reads, and the
 /// round counter `World::battle_mode` the DoT gate reads.
+///
+/// The rounds run at frame steps 1 to 4: `0x0B` drains the timer by the step
+/// `0x1F800393` once a pass (`subu` / `bgtz` at `0x801D0E4C..0x801D0E58`),
+/// and the port drains it one a vsync on the command flow's per-vsync ticks,
+/// so the port's last held tick lands inside retail's last held pass: a pass
+/// of `step` vsyncs, so `(passes - 1) * step < ticks <= passes * step`.
 #[test]
 fn the_battle_open_holds_and_opens_the_round_as_retail() {
     differential!(prot(898, STATE_MACHINE));
@@ -2020,6 +2026,7 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
     let mut rng = Rng(0x4F50_454E);
     let mut seen = std::collections::HashMap::<&str, u32>::new();
     for round in 0..400 {
+        let step = 1 + (round % 4) as u8;
         let adv = [0u8, 0, 1, 2, 3][rng.below(5) as usize];
         let first = if rng.below(4) == 0 {
             0xB5
@@ -2037,7 +2044,7 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
         cpu.mem.wr8(CTX + 0x290, adv);
         cpu.mem.wr8(CTX + 0x28A, rounds_done);
         cpu.mem.wr8(BATTLE_ID, first);
-        cpu.mem.wr8(STEP, 1);
+        cpu.mem.wr8(STEP, step);
         cpu.mem.wr32(PAD, 0);
         cpu.mem.wr32(CROSS_ENTRY, 0);
         let pass = |cpu: &mut Cpu| {
@@ -2064,7 +2071,8 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
         w.actors[3].battle_monster_id = Some(u16::from(first));
         w.battle_ctx.formation_advantage = adv;
         w.arm_battle_intro_names();
-        let label = format!("round {round}: adv {adv} first {first:#x} rounds {rounds_done}");
+        let label =
+            format!("round {round} step {step}: adv {adv} first {first:#x} rounds {rounds_done}");
         if first == 0xB5 {
             // Parked for the arrival module: no names, no hold of the port's.
             assert_eq!(after, 0x0C, "{label}");
@@ -2078,9 +2086,9 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
         assert_eq!(after, 0x0B, "{label}");
         assert!(named, "{label}");
         assert_eq!(seed, w.battle.intro_names_frames, "{label}: the hold");
-        // The drain, one pass a vsync.
+        // The drain: one retail pass of `step` vsyncs, one port tick a vsync.
         w.battle.intro_lead_ticks = 0;
-        let mut retail_passes = 0;
+        let mut retail_passes = 0u32;
         let exit = loop {
             let s = pass(&mut cpu);
             retail_passes += 1;
@@ -2089,12 +2097,19 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
             }
             assert!(retail_passes < 0x100, "{label}");
         };
-        let mut port_ticks = 0;
+        let mut port_ticks = 0u32;
         while w.battle.battle_open_held() {
             w.battle.step_battle_intro_names();
             port_ticks += 1;
         }
-        assert_eq!(retail_passes, port_ticks, "{label}");
+        let step = u32::from(step);
+        assert!(
+            (retail_passes - 1) * step < port_ticks && port_ticks <= retail_passes * step,
+            "{label}: retail {retail_passes} passes, port {port_ticks} ticks"
+        );
+        *seen
+            .entry(["", "step 1", "step 2", "step 3", "step 4"][step as usize])
+            .or_default() += 1;
         let ambushed = FormationAdvantage::from_byte(adv) == FormationAdvantage::BackAttack;
         if ambushed {
             assert_eq!(exit, 0xFE, "{label}");
@@ -2119,7 +2134,16 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
             })
             .or_default() += 1;
     }
-    for key in ["nameless", "ambushed", "first round", "later round"] {
+    for key in [
+        "nameless",
+        "ambushed",
+        "first round",
+        "later round",
+        "step 1",
+        "step 2",
+        "step 3",
+        "step 4",
+    ] {
         assert!(seen.get(key).copied().unwrap_or(0) > 10, "{key}: {seen:?}");
     }
 }
