@@ -521,6 +521,10 @@ pub struct FieldFrameFeatures {
     /// dispatcher (`0x8001BC34..0x8001BC64`, `0x8001BD80..0x8001BD88`).
     pub npc_clip_objects: u32,
     pub npc_clip_prims: u32,
+    /// Of [`Self::npc_clip_prims`]: those of models whose anchor stands
+    /// inside the row's slab, which the renderer keeps and links
+    /// ([`World::effect_clip_keeps_anchor`]).
+    pub npc_clip_kept_prims: u32,
     pub list_actors: u32,
     /// The live script actors (field-VM channels: placements and bound
     /// objects), each an entry of the tick and render lists.
@@ -538,6 +542,8 @@ pub struct FieldFrameFeatures {
     pub player: Option<MeshCost>,
     /// The player's `+0x42` is raised: its model takes the clip arm.
     pub player_clipped: bool,
+    /// The raised player's anchor stands inside its row's slab.
+    pub player_clip_kept: bool,
 }
 
 impl World {
@@ -610,6 +616,35 @@ impl World {
                 legaia_engine_cast::cast_module_frame_step::console_poll_cost(work)
             }
         })
+    }
+
+    /// Whether a raised actor's anchor `at` (world units) stands inside the
+    /// slab of the object-effect row its `+0x42 = kind` names, at render
+    /// scale `scale` (`+0x72`, `1.0 = 0x1000`, `0` read as `1.0`).
+    ///
+    /// The renderer behind the clip arm keeps a vertex whose effect-space `Y`
+    /// lies inside the row's bounds and drops one past them
+    /// (`FUN_80027F00`, `0x80027F60..0x80028098`); a primitive left with no
+    /// corner links nothing, and one inside is projected and linked
+    /// (`0x80027C6C..0x80027EFC`). A model's corners sit close about its
+    /// anchor along the row's axis, so the anchor decides the model: on
+    /// `rugi` `P2[72]` each of the three flyers links nothing while its
+    /// anchor is outside the slab and most of its primitives from the frame
+    /// its anchor crosses in. A row the port does not track keeps.
+    // REF: FUN_8001C204, FUN_80027F00
+    pub fn effect_clip_keeps_anchor(&self, kind: u16, scale: u16, at: [f32; 3]) -> bool {
+        let Some(clip) = self
+            .object_effect
+            .clip_for(kind, &self.sin_lut, &self.cos_lut)
+        else {
+            return true;
+        };
+        let s = match scale {
+            0 => 1.0,
+            s => f32::from(s) / 4096.0,
+        };
+        let y = s * (0..3).map(|i| clip.n[i] * at[i]).sum::<f32>();
+        y >= clip.lo && y <= clip.hi
     }
 
     /// The model's price of a frame that draws `f`: the fitted weights, or
@@ -892,12 +927,16 @@ impl World {
             // renderer `FUN_8002735C` over the object's primitives
             // (`0x8001BC64` -> `0x8001BD88`), none of them through the
             // dispatcher `FUN_80043390`.
-            let clipped = self.field_vm.channels.iter().any(|c| {
+            let clipped = self.field_vm.channels.iter().find(|c| {
                 !c.object_bind && c.placement_index == usize::from(slot) && c.ctx.field_42 != 0
             });
-            if clipped {
+            if let Some(c) = clipped {
+                let prims = m.kinds.iter().map(|&k| u32::from(k)).sum::<u32>();
                 f.npc_clip_objects += u32::from(m.objects);
-                f.npc_clip_prims += m.kinds.iter().map(|&k| u32::from(k)).sum::<u32>();
+                f.npc_clip_prims += prims;
+                if self.effect_clip_keeps_anchor(c.ctx.field_42, c.ctx.field_72, [x, y, z]) {
+                    f.npc_clip_kept_prims += prims;
+                }
                 continue;
             }
             f.npc_objects += u32::from(m.objects);
@@ -936,6 +975,18 @@ impl World {
         // (`CC F8 C2`, `World::field_vm.player_field_42`): the animated
         // renderer reads the word off whichever actor it draws.
         f.player_clipped = self.field_vm.player_field_42 != 0;
+        f.player_clip_kept = f.player_clipped
+            && self
+                .player_actor_slot
+                .and_then(|s| self.actors.get(usize::from(s)))
+                .is_some_and(|a| {
+                    let m = &a.move_state;
+                    self.effect_clip_keeps_anchor(
+                        self.field_vm.player_field_42,
+                        m.field_72,
+                        [m.world_x, m.world_y, m.world_z].map(f32::from),
+                    )
+                });
         f.fog = u32::from(self.fog.live);
         // The quads the last walk left; a closed gate runs no walk.
         f.fog_quads = if self.fog.gate {

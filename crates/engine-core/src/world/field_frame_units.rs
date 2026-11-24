@@ -190,19 +190,25 @@ const NPC_CYCLES: i64 = 148 + 1297;
 /// A model object a raised `+0x42` sends through the clip arm
 /// (`0x8001BC34..0x8001BD88`): the object path's own share (`919`, no
 /// dispatcher draw), `FUN_8001C204` (`1610`, every call) and the TMD
-/// renderer `FUN_8002735C`'s set-up (`600`); and each primitive the renderer
-/// walks and clips (`634`), pooled over `garmel`'s Zeto (six objects, `145`
-/// primitives) on four frames of his appearance, from `80696` to `111747`
-/// cycles a frame with the share of edges the clip loop `FUN_80027F00`
-/// crosses. A primitive the renderer's `NCLIP` turns away (`bltz` at
-/// `0x8002755C`) costs little and a front face about a thousand, so the
-/// figure holds for a model about half of whose faces face the eye: raising
-/// Vahn's `+0x42` on `rugi_field_card_boot` (a `retail-exec frame-cost
-/// --poke` probe) takes retail's actor passes from `150.7` to `274.0`
-/// hblanks, and the price of the same switch on `rugi`'s player is about
-/// `115`.
+/// renderer `FUN_8002735C`'s set-up (`600`).
+///
+/// Each primitive the renderer walks costs [`CLIP_PRIM_CYCLES`] whether or
+/// not its corners survive the slab, and a primitive of a model whose anchor
+/// stands inside it ([`World::effect_clip_keeps_anchor`]) costs
+/// [`CLIP_KEPT_PRIM_CYCLES`] more: the corners `FUN_80027F00` keeps, the
+/// projection and the link (`0x80027C6C..0x80027EFC`, which a dropped
+/// primitive never reaches). Fitted on `rugi` `P2[72]` (`retail-exec
+/// frame-cost` on states a retail film of the flight kept): the three flyers'
+/// `30` objects, the engine's `1041` primitives, cost `499526` cycles in the
+/// renderer while every anchor is short of the slab (no primitive linked) and
+/// `745087` once all three are through it (`714..739` linked). `garmel`'s
+/// Zeto (six objects, `145` primitives, `112..118` linked) prices at `104800`
+/// against retail's `107301..111747`.
+///
+/// [`World::effect_clip_keeps_anchor`]: crate::world::World::effect_clip_keeps_anchor
 const CLIP_OBJECT_CYCLES: i64 = 919 + 1610 + 600;
-const CLIP_PRIM_CYCLES: i64 = 634;
+const CLIP_PRIM_CYCLES: i64 = 462;
+const CLIP_KEPT_PRIM_CYCLES: i64 = 236;
 /// A placed actor (`1202`), and each of its meshes (`75` and a dispatcher
 /// draw, `200`).
 const PLACED_CYCLES: i64 = 1202;
@@ -273,6 +279,15 @@ pub fn derived_field_frame_cost(f: &FieldFrameFeatures) -> i32 {
     derived_field_frame_parts(f)[5]
 }
 
+/// One clip-arm primitive's price: kept models link theirs.
+const fn clip_prim(kept: bool) -> i64 {
+    if kept {
+        CLIP_PRIM_CYCLES + CLIP_KEPT_PRIM_CYCLES
+    } else {
+        CLIP_PRIM_CYCLES
+    }
+}
+
 /// [`derived_field_frame_cost`] by part, in hblanks: the decoration pass,
 /// the ground emitter, the actor render passes, the fog walk, the tick share
 /// (the tick passes, the cyclers and the fitted other work), and the whole price
@@ -315,7 +330,9 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + match (f.player, f.player_clipped) {
             (None, false) => PLAYER_CYCLES,
             (None, true) => {
-                NPC_CYCLES + PLAYER_OBJECTS * CLIP_OBJECT_CYCLES + PLAYER_PRIMS * CLIP_PRIM_CYCLES
+                NPC_CYCLES
+                    + PLAYER_OBJECTS * CLIP_OBJECT_CYCLES
+                    + PLAYER_PRIMS * clip_prim(f.player_clip_kept)
             }
             (Some(m), false) => {
                 let k: [u32; 12] = m.kinds.map(u32::from);
@@ -326,7 +343,9 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
             }
             (Some(m), true) => {
                 let prims: i64 = m.kinds.iter().map(|&k| i64::from(k)).sum();
-                NPC_CYCLES + i64::from(m.objects) * CLIP_OBJECT_CYCLES + prims * CLIP_PRIM_CYCLES
+                NPC_CYCLES
+                    + i64::from(m.objects) * CLIP_OBJECT_CYCLES
+                    + prims * clip_prim(f.player_clip_kept)
             }
         }
         + n(f.placed_draws) * PLACED_CYCLES
@@ -341,6 +360,7 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + kinds(&f.npc_cued_kinds, &ACTOR_OFFTEST_PRIM_CYCLES)
         + n(f.npc_clip_objects) * CLIP_OBJECT_CYCLES
         + n(f.npc_clip_prims) * CLIP_PRIM_CYCLES
+        + n(f.npc_clip_kept_prims) * CLIP_KEPT_PRIM_CYCLES
         + n(f.sprite_parts) * SPRITE_PART_CYCLES
         + n(f.morph_calls) * MORPH_CALL_CYCLES
         + n(f.morph_copied) * MORPH_COPY_CYCLES
@@ -446,11 +466,13 @@ mod tests {
             npc_models: 1,
             npc_clip_objects: 6,
             npc_clip_prims: 145,
+            npc_clip_kept_prims: 145,
             ..FieldFrameFeatures::default()
         };
         let plain = FieldFrameFeatures {
             npc_clip_objects: 0,
             npc_clip_prims: 0,
+            npc_clip_kept_prims: 0,
             npc_objects: 6,
             npc_groups: 19,
             npc_kinds: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 145],
@@ -459,7 +481,8 @@ mod tests {
         let base = FieldFrameFeatures::default();
         let n = |v: u32| i64::from(v);
         let arm = n(clipped.npc_clip_objects) * (CLIP_OBJECT_CYCLES - 919)
-            + n(clipped.npc_clip_prims) * CLIP_PRIM_CYCLES;
+            + n(clipped.npc_clip_prims) * CLIP_PRIM_CYCLES
+            + n(clipped.npc_clip_kept_prims) * CLIP_KEPT_PRIM_CYCLES;
         assert!((90_356..=121_407).contains(&arm), "{arm}");
         let hb =
             |f: &FieldFrameFeatures| derived_field_frame_cost(f) - derived_field_frame_cost(&base);
@@ -480,9 +503,32 @@ mod tests {
         let plain = FieldFrameFeatures::default();
         let raised = FieldFrameFeatures {
             player_clipped: true,
+            player_clip_kept: true,
             ..plain
         };
         let d = derived_field_frame_cost(&raised) - derived_field_frame_cost(&plain);
         assert!((90..=140).contains(&d), "{d}");
+    }
+
+    /// `rugi` `P2[72]`'s three flyers short of their slab link nothing, and
+    /// retail's renderer spends `499526` cycles on them a frame against
+    /// `745087` once they are through it: about `114` hblanks between the
+    /// two.
+    #[test]
+    fn a_model_short_of_its_slab_links_nothing() {
+        let out = FieldFrameFeatures {
+            npc_models: 2,
+            npc_clip_objects: 20,
+            npc_clip_prims: 617,
+            player_clipped: true,
+            ..FieldFrameFeatures::default()
+        };
+        let through = FieldFrameFeatures {
+            npc_clip_kept_prims: 617,
+            player_clip_kept: true,
+            ..out
+        };
+        let d = derived_field_frame_cost(&through) - derived_field_frame_cost(&out);
+        assert!((100..=125).contains(&d), "{d}");
     }
 }
