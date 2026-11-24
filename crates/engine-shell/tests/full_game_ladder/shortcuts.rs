@@ -133,13 +133,12 @@ pub(super) fn shortcuts_refused() -> bool {
             .get_or_init(|| std::env::var_os("LEGAIA_FGL_NO_SHORTCUTS").is_some_and(|v| v != "0"))
 }
 
-/// Whether the pad hand plays examines, touches and box talks on the pad
-/// (`LEGAIA_FGL_PAD_PROPS=1`, implied by `LEGAIA_FGL_NO_SHORTCUTS=1`), walking to each seat, leaning in and turning
-/// to an interact door before its tap, and placing the player only where no
-/// seat is in reach. Off, it places the player as the seated tier does, and
-/// each placement is counted. Not yet the default: walked, the beats pass's
-/// props answer by the side they are reached from, and the run's story
-/// branches part from the measured one (see the ladder docs).
+/// Whether the pad hand plays examines, touches and box talks on the pad,
+/// walking to each seat, leaning in and turning to an interact door before
+/// its tap, and placing the player only where no seat is in reach. On by
+/// default: a placed prop is a shortcut no player can take.
+/// `LEGAIA_FGL_PAD_PROPS=0` places the player as the seated tier does, each
+/// placement counted; `LEGAIA_FGL_NO_SHORTCUTS=1` keeps it on.
 pub(super) fn pad_props() -> bool {
     pad_hand() && props_walked()
 }
@@ -149,9 +148,8 @@ pub(super) fn pad_props() -> bool {
 pub(super) fn props_walked() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
-        ["LEGAIA_FGL_PAD_PROPS", "LEGAIA_FGL_NO_SHORTCUTS"]
-            .iter()
-            .any(|k| std::env::var_os(k).is_some_and(|v| v != "0"))
+        std::env::var_os("LEGAIA_FGL_NO_SHORTCUTS").is_some_and(|v| v != "0")
+            || std::env::var_os("LEGAIA_FGL_PAD_PROPS").is_none_or(|v| v != "0")
     })
 }
 

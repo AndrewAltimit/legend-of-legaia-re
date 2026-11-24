@@ -190,6 +190,19 @@ fn read_baseline() -> Baseline {
         .unwrap_or_default()
 }
 
+/// The committed baseline parses whole: a table [`read_baseline`] could not
+/// read would fall back to an empty baseline and assert nothing. Disc-free.
+#[test]
+fn the_committed_baseline_parses() {
+    let text = std::fs::read_to_string(baseline_path()).expect("baseline file");
+    let b: Baseline = toml::from_str(&text).expect("baseline parses");
+    assert!(b.continuous.get("reached").is_some_and(|&n| n > 0));
+    assert!(!b.segments.is_empty());
+    for mode in b.shortcuts.keys() {
+        assert!(["placed", "walked"].contains(&mode.as_str()), "mode {mode}");
+    }
+}
+
 /// The planner's parent links stay acyclic through a teleport waypoint, and
 /// the walk-back refuses a cycle rather than growing without bound. Before
 /// the waypoint's cost was recorded, a plain step into it from past the

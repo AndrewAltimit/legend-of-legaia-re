@@ -88,3 +88,145 @@ bio_castle = 4
 cort_chamber = 4
 ending = 4
 credits = 4
+
+# Part C's shortcut fallbacks (full_game_ladder/shortcuts.rs), one row per
+# prop mode (walked: the default; placed: LEGAIA_FGL_PAD_PROPS=0) and stream
+# (default, or seed_<n> under LEGAIA_FGL_RNG_SEED=<n>), one key per category.
+# Asserted <= in the measured configuration: a category that rises fails the
+# run, a category the row leaves out stands at 0. Lower a number in a
+# reviewed edit when a run fires fewer; never raise one to pass a run.
+
+[shortcuts.walked.default]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_3]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_4]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_5]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_6]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_7]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_8]
+box_face = 2
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_9]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_10]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_11]
+box_face = 2
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 26
+
+[shortcuts.walked.seed_12]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_13]
+box_face = 1
+examine_face = 43
+examine_far = 43
+examine_seat = 15
+restore_xz = 63
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_14]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_15]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29
+
+[shortcuts.walked.seed_16]
+box_face = 1
+examine_face = 35
+examine_far = 29
+examine_seat = 15
+restore_xz = 55
+touch_far = 1
+touch_seat = 29

@@ -1037,7 +1037,8 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, naming its scene in the resume trailer, so `legaia-engine`'s `--resume-save` lands there without `--scene`; the rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
-| `LEGAIA_FGL_PAD_PROPS=1` | Plays examines, touches and box talks on the pad ([shortcuts](#shortcuts)). |
+| `LEGAIA_FGL_PAD_PROPS=0` | Places the player beside each examined and touched prop and on each box talk's tile, as the seated tier does, instead of walking there: the placed mode, a probe ([shortcuts](#shortcuts)). |
+| `LEGAIA_FGL_SHORTCUT_SITES=1` | Part C prints each shortcut's tally by the line of the hand that took it (`[shortcut-site]`), and each placement and teleport back with its scene, its seats and why the walk to each fell short (`[placed]`, `[restore]`). |
 | `LEGAIA_FGL_NO_SHORTCUTS=1` | Refuses every fallback placement the pad hand would make ([shortcuts](#shortcuts)): the run is played on the pad alone. |
 | `LEGAIA_FGL_SKIP_OPENING=1` | Presses through the opening, so the first Cross takes the hosts' intro hand-off ([input conventions](#input-conventions-in-both-passes)). |
 | `LEGAIA_FGL_RETAIL_DECODE=1` | Walks retail's quantised direction decode rather than the hosts' default precise movement ([shortcuts](#shortcuts)). |
@@ -1637,7 +1638,7 @@ map as its street:
 - **A ride a touch sets going.** A touch's prop record takes its first slice in the tick that posted it, so a record that spawns a ride and ends (`chitei2`'s lift P0[5], `44 56` then `21`) is over before the follower looks, and the ride is a helper context installed at the tick's end that has not stepped yet. The follower lets go of the pad for it as for any script it sets off. Pressing on through the ride, the walk landed on the far lift and touched it straight back, ten rides a stretch, until the frame budget ran out.
 - **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, from the waypoint's cell or the cell beside it: a lattice cell can straddle the tile edge (`conc3`'s inn exit (21, 95), whose waypoint cell is centred on the tile's west edge), and pressed toward the cell centre from beside it, the room's slanted wall slid the walker on and off the cell without ever entering the tile. It also backs out of a diagonal-wall notch where all four lattice steps read blocked. The lattice cannot say which neighbouring cell the free movement reaches, so each second the walk stays wedged it heads for the next open cell in turn: on `retona`'s stair landing at (16, 99) the nearest one lies west, and the slide toward it carries the player straight back.
 - **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few. A tap that opens the same talk twice on one walk without changing a flag ends the tapping for that walk: `jiji`'s inn counter (P0[8..10], the witch's "Want to stay?") opened on every tap of the walk past it, two thousand frames each, and spent a stretch's budget on the walk to P1[19]'s pickup.
-  Under `LEGAIA_FGL_PAD_PROPS=1`, beside an interact-class door with the probe on nothing, it first leans toward the door until the probe lands on it: a walk along the north face of `dolk`'s Lightning Gate (P0[16]) stops at the box's corner, where the probe of the walk's own facing falls past the box.
+  Walking its props (the default), beside an interact-class door with the probe on nothing, it first leans toward the door until the probe lands on it: a walk along the north face of `dolk`'s Lightning Gate (P0[16]) stops at the box's corner, where the probe of the walk's own facing falls past the box.
 - **A notice nobody scripted.** The walk tick that drains the Incense window's last count locks the player's movement and shows a one-line panel, and the panel waits for a confirm or cancel edge (retail `FUN_801D0B90`'s zero edge and `FUN_801F1E48`; [`field-menu.md`](../subsystems/field-menu.md)). No script runs under it, so none of the pad holders the hand pages is up. The walk and the lean answer it as a player does - pad released, Cross, until it is gone (`answer_notice`).
   A walk that only held its direction stood there for good: the idle tap above used to close the panel by accident, a second into the stall, and that tap is withheld beside a person. `kor3`'s resident P1[9] stands at (18, 38) in the stair doorway, and a notice that came up within reach of the body stopped every walk through the doorway until the stretch gave up.
 - **A held player is not leaning on anybody.** With the engaged bit (`+0x10 & 0x80000`) up and no script running, no press moves the player and the interact probe is shut, so a body in reach of the probes is not what stops the walk and the idle tap is not withheld for it. The stall line names the hold (`the player is held ... with no script running`).
@@ -1680,11 +1681,12 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   P2[42], Lord Saryu's audience, spans (104..107, 50) and (107, 50) is walled
   in): when the walk finds no path to its tile, or stalls at its edge, the
   band's other tiles are tried, nearest first;
-- an **examined** or **touched** prop is played the seated tier's way: the
-  player is placed on a seat beside it and turned to it, and each placement
-  is counted ([the shortcuts](#shortcuts)). `LEGAIA_FGL_PAD_PROPS=1` walks to
-  the seats instead, in the seated tier's order of sides, and leans in until
-  the probe lands or the prop's record starts;
+- an **examined** or **touched** prop is walked to: the hand walks to its
+  seats in the seated tier's order of sides and leans in until the probe
+  lands or the prop's record starts, and places the player on a seat only
+  where the walk reaches none, each placement counted
+  ([the shortcuts](#shortcuts)). `LEGAIA_FGL_PAD_PROPS=0` places it on every
+  seat instead;
 - an **object door** or a **boss stager** is walked up to and leaned on. A
   stager's fight fires on the next field step, so the walk that step belongs
   to fights it instead of fleeing it;
@@ -1938,6 +1940,7 @@ So the hand:
 - Strikes with the Point Card whenever `min(bank, 9999)` off the shop-points bank beats the member's own turn (`wanted_point_card`, any fight that forbids running, [`item-effect-table.md`](../formats/item-effect-table.md)). The card goes back in the bag, so a run that has shopped opens Koru with a third to a half of its HP.
 - Hands out Power Elixirs from the opening round when a fifth of what a typist still has to deal beats the giver's own turn (`race_ramp_pays`). Each use ramps again, so Vahn's Miracle reaches about 5600.
 - Grows a Miracle wearer into a typist at the door of a race (`pad_grow_for_race`): one within 8 AGL of the 188 a Fury Boost needs for nine presses walks the scene's encounters before the hand dresses, since the dress plan reads who types. A dealt run met Koru with Vahn at AGL 185 and lost twelve times with Noa typing alone. A wearer further off (Gala) is left a caster. The growing keeps a third of the stretch's budget for the race, and that reserve bounds each outing as well as the start of one: an outing walks against a deadline a third short of the stretch's, and reaching it ends the growing, not the stretch. Two outings begun with the reserve in hand once spent all of `nivora_late -> zora_castle` on `nilboa`'s 6700-frame legs (dealt stream 13).
+  Its outings fight what they meet, as training does, though the walk is a boss's lead-in, where every other walk runs: a fled fight earns no EXP, and an outing that fled every encounter at Koru's door (Gala at AGL 181, walked props, dealt stream 15) spent the bag and the MP on fights it ran from and met the race at a third of its HP, twelve times.
 - Dresses at the door of a race (`race_goods_plan`, `race_ahead`): at the beat whose staged formation row seats Koru in the scene's formation table, or the beat a race was lost at (`RACE_LOST`). Met in the Goods the run chose, the race was lost on every dealt stream's first attempt, Koru at 2184..6684 of 20000 when Dead End Crisis landed.
   Dressed, each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where an undressed run has one.
 - Walks in charged on a reload after a lost race against a timed finisher (`pad_charge_for_race`, `RACE_LOST`). The gauge carries between fights through the record's AP cell, so where the scene rolls encounters the hand walks them first, taking the Spirit stance (`+0x20` a turn) until every typist holds 99, with no art spending what the turns earn. A party that walks into Koru off the duels holds 30..60 AP, and in a race that is the difference between a Miracle in the first round and one in the third. The stance deals nothing, so a charging party flees past half its HP, starts each outing healed, stops under half its MP, and meets the boss healed.
@@ -2178,8 +2181,15 @@ tally per stretch and for the run:
 [shortcuts] 2 use(s): examine_face=1 examine_seat=1
 ```
 
-The tally is a ratchet: a change that adds a shortcut shows in it. Only the
-pad hand counts; the seated tier places the player by definition.
+The tally is a ratchet. The baseline holds one row per prop mode and stream,
+`[shortcuts.placed.default]`, `[shortcuts.walked.seed_15]` and so on, and part
+C fails when a category rises above its row (a category the row does not name
+stands at zero). The row is asserted only in the measured configuration: a run
+under `LEGAIA_FGL_NO_SHORTCUTS`, the retail decode or options, the opening
+skipped, NPCs walked through or the lead-in heal off keeps no ratchet. The
+counts barely move with the deal: the dealt streams of one build fire within a
+few uses of each other. Only the pad hand counts;
+the seated tier places the player by definition.
 
 | Name | What it stands for |
 |---|---|
@@ -2187,24 +2197,48 @@ pad hand counts; the seated tier places the player by definition.
 | `touch_seat` | A touched prop with no side the walk reaches: the player is placed beside it. |
 | `examine_far`, `touch_far` | A prop in a scene that rolls encounters whose seats all lie beyond sixteen tiles of planned path, placed as above: the beats pass plays props retail left alone (`dolk`'s Lightning Gate rooms), and walking a lone member to them across a rolling castle wiped it reload after reload. |
 | `box_face` | A placed box talk (`talk_from_box`) whose facing was set by hand. |
-| `restore_xz` | The player put back where it stood after a placed interaction, or after a box lean that its pad step back did not return. |
+| `restore_xz` | The player put back where it stood after a placed interaction, or after a box lean that its pad step back did not return. A give-back to where the player already stands moves nobody and is not counted. |
 | `run_switch` | The Field Move switch, where the pause menu's Options screen did not take it. |
 | `door_object_seat`, `hop_seat` | The seated tier's door placements, should the pad hand ever reach them. |
 | `prologue_skip` | The opening skipped on the hosts' hand-off (`LEGAIA_FGL_SKIP_OPENING=1` only). |
 | `gate_order` | A press the pause menu or the naming prompt took while a card or a crawl held the field's pad, which the gate once dropped. |
 
-`LEGAIA_FGL_PAD_PROPS=1` plays examines, touches and box talks on the pad:
-the hand walks to each seat in the seated tier's order of sides, leans in
+The pad hand plays examines, touches and box talks on the pad (walked props,
+the measured configuration; `LEGAIA_FGL_PAD_PROPS=0` places the player
+instead): the hand walks to each seat in the seated tier's order of sides, leans in
 until the probe lands, turns to an interact-class door before its tap, and
 places the player only where no seat is in reach (in a scene that rolls
-encounters, within sixteen tiles of planned path). It is not yet the
-measured configuration. Walked, a prop answers by the side it is reached
-from and by the fights met on the way, so the run's story branches part
-from the placed run's: `stone`'s statues turn to face their examiner, and
+encounters, within sixteen tiles of planned path). A box talk's lean that
+leaves the box by a few units steps back on the pad toward where it stood,
+pressing on any axis it is off by at all: the walk's own lean has a 16-unit
+dead zone, and the `rayman` gate guards' and `doman` intercom's leans,
+teleported back instead, were a third of the walked run's `restore_xz`. A
+prop whose beat was played from placed seats alone and moved no flag is not
+placed again until some flag moves: `retona`'s prop at (64, 79), ringed by
+walk-on bands that carry the walker back, was placed on all four seats on
+every beats pass and gave nothing until the boss on that ring had raised
+`0x355` / `0x356`, flags its record does not test. Walked, a prop answers
+by the side it is reached from and by the fights met on the way, so the
+run's story branches part from the placed run's: `stone`'s statues turn to face their examiner, and
 `dolk`'s Lightning Gate rooms, which retail's player left alone, are a long
 walk across a rolling castle.
 
-Under it, part C once stopped in Uru Mais (`usha_research` -> `nivora`,
+Walked, part C reaches the credits on every stream of the seed set, as the
+placed run does. What held seed 15 at Koru was the race's lead-in, not the
+props: the walked party reached `nilboa` with Gala at AGL 181, seven short
+of a typist, and the growing outings fled every encounter
+([guards and boss reads](#guards-and-boss-reads)). The fallbacks left are
+the placements whose walk reaches no seat. Most `examine_far` placements are
+`stone`'s statues, `taiku`'s and `dolk`'s rooms beyond sixteen tiles of
+rolling path; most `touch_seat` placements are props past a walk-on band
+that carries the walker off (`town0b` (33, 81), `balden` (97, 9)) or in a
+walk component the player's does not join (`bylon` (34, 38), `town0b`
+(17, 29)). The second kind is a teleport no player makes, and refusing it is
+not yet possible: the walked hand's way through `dolk` rests on the Lightning
+Gate rooms' props, placed across components, and part B's walked
+`rim_elm_restored -> ravine` pad tier stalls on `map01` without them.
+
+Walked, part C once stopped in Uru Mais (`usha_research` -> `nivora`,
 the hop to `urudre1` closed) at the end of a chain of story gates, each
 read off the field scripts: `uru` P2[28], Gala's cutscene, spawns only once
 `0x379` is up (its C1 gate), which `doman` P1[15] raises; P1[15] stands past
@@ -2219,8 +2253,8 @@ the branch the scripts name throughout; the gap was the hand's. The
 `0x21B`..`0x21D` that first part a walked run from a placed one in `town01`
 are `P1[32]`'s talk counter (one set per conversation), not a branch.
 
-`LEGAIA_FGL_NO_SHORTCUTS=1` refuses every fallback placement (and implies
-`LEGAIA_FGL_PAD_PROPS=1`): a stretch is then played on the pad alone, and a
+`LEGAIA_FGL_NO_SHORTCUTS=1` refuses every fallback placement (and keeps the
+props walked): a stretch is then played on the pad alone, and a
 stall it shows is a candidate defect of the #653 class, to be reproduced
 through `claim_tick` and fixed in the engine.
 
