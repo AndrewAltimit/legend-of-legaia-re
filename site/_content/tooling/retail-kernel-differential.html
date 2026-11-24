@@ -75,6 +75,18 @@
   <div class="cli"><code>python3 scripts/ci/branch-coverage.py --record</code></div>
 </section>
 
+<section class="doc-section" id="checked-arms" data-doc="checked-arms">
+  <h2>Checked arms</h2>
+  <p>Branch coverage counts an arm once retail takes it, not once a comparison sees what the arm did, so its figure is an upper bound. Checked arms measures the rest by mutation: built with the <code>branch-flip</code> feature, the interpreter inverts one conditional branch of one routine image on the retail side only, named by <code>PSX_RETAIL_EXEC_FLIP</code> as entry, image hash, branch address, direction and which execution. The tests that took that direction rerun with the flip, first on its first execution, then on every one.</p>
+  <ul class="bullets">
+    <li><strong>Checked.</strong> A test fails: the comparison sees retail leave the arm.</li>
+    <li><strong>Abnormal.</strong> A flipped call ran away (the step budget, a bad access) or the run timed out. Detected, but by the run aborting, and reported apart.</li>
+    <li><strong>Unchecked.</strong> Every test still passes. The arm's effect is outside what the tests compare, or both directions compute the same thing for every input the tests reach (an equivalent mutant). A test that passes after a runaway call counts here too: it tolerates the stop.</li>
+  </ul>
+  <p>Read from the disassembly, an unchecked arm is an equivalent mutant (a guard made redundant by a later one, a clamp the next test cannot tell from the raw value), equivalent under the harness (the arms differ only in a call the test stubs alike), a comparison gap (a write beside the compared region), weak inputs (no generated value makes the two directions differ), or an unported effect that belongs in a scope row. The summary carries a 95% interval for a sample and a per-routine worklist. It is a measurement, not a gate.</p>
+  <div class="cli"><code>python3 scripts/ci/checked-arms.py --sample 1200 --seed 58</code></div>
+</section>
+
 <section class="doc-section" id="what-it-has-found" data-doc="what-it-has-found">
   <h2>What it has found</h2>
   <p>Every row was a disagreement between the bytes and a port that read as finished.</p>

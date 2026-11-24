@@ -242,6 +242,91 @@ the Rust that ports it, or the arm is exercised and not checked. The table holds
 instruction bytes, and stays under `target/branch-coverage/`. It is a
 measurement, not a gate.
 
+## Checked arms
+
+Branch coverage is an upper bound: it counts an arm once retail takes it, not
+once a comparison sees what the arm did. Checked arms measures the second by
+mutation. Built with the `branch-flip` feature, the interpreter
+(`crates/retail-exec/src/branch_flip.rs`) reads `PSX_RETAIL_EXEC_FLIP` and
+inverts one conditional branch of one routine image, on the retail side only:
+
+```text
+PSX_RETAIL_EXEC_FLIP=<entry>:<image-hash>:<branch-pc>:<taken|fell>:<n|all>
+```
+
+The entry and hash name the routine image as the branch table does, so a
+slot-B VA flips only while its overlay is resident. Each execution of the
+branch that would go the named way counts; the `n`-th one, or every one, goes
+the other way instead. Registers, the delay slot and the link of
+`bltzal` / `bgezal` are as the hardware leaves them; only the next PC changes.
+The Rust side never runs in the interpreter, so nothing on it moves. Without
+the feature the check compiles to nothing; with it and the variable unset it
+is one test per conditional branch.
+
+```bash
+python3 scripts/ci/checked-arms.py --record                # flip binary + its branch table (disc)
+python3 scripts/ci/checked-arms.py --sample 1200 --seed 58  # a seeded sample of the population
+python3 scripts/ci/checked-arms.py --addr 801D0748          # every direction of one routine
+python3 scripts/ci/checked-arms.py --recheck 12             # unchecked rows again, with more tests
+python3 scripts/ci/checked-arms.py --cost                   # population size, the --all estimate
+python3 scripts/ci/checked-arms.py                          # summary and per-routine worklist
+```
+
+The population is the ported arms of [branch coverage](#branch-coverage):
+directions taken in a `PORT:`-tagged routine and outside every scope row. The
+branch table's per-test `B` lines name the tests that took each direction, and
+its `T` lines their run times. A mutant reruns the cheapest few of those
+tests, flipping first the direction's first execution and, when every test
+survives that, every execution. Each direction gets one verdict:
+
+- **checked**: a test fails. The comparison sees retail leave the arm.
+- **abnormal**: no test fails cleanly, but a flipped call stopped other than by
+  returning (the step budget, a bad access, a divide by zero) or the run timed
+  out. The mutant is detected, by the run aborting rather than by the
+  comparison, and is reported apart.
+- **unchecked**: every test that ran the flip passes. Either the arm's effect is
+  outside what the tests compare, or the two directions compute the same thing
+  for every input the tests reach.
+
+A test that passes after a runaway call is unchecked too, and its row says
+`survived-abnormal`: the test tolerates the stop, so the comparison cannot see
+the arm. The summary gives the checked share with a Wilson 95% interval for a
+sample, and the worklist groups the unchecked directions by routine. Results
+land in `target/checked-arms/results.tsv`, addresses and hashes only, and a
+rerun skips the rows already there. A mutant costs about one run of its tests,
+so a sample of a thousand or so directions runs inside an hour, and `--all`
+over the whole population takes most of a day.
+
+An unchecked direction falls in one of these, read from the disassembly:
+
+- **Equivalent mutant.** Both directions compute the same result. The common
+  forms: a guard a later one makes redundant (a digit loop's count exit behind
+  its divisor table's zero sentinel), a clamp the next test cannot tell from
+  the raw value, a ramp that a clamp right after it pins either way, a field
+  cleared that was already zero, a distance `|a - b|` compared with
+  `|b - a|`, and the compiler's divide-overflow guard (`bne` on `-1` ahead of
+  `break 6`), which only a divisor of `-1` tells apart.
+- **Equivalent on the shipped data.** The arms differ only for a table entry
+  the disc does not hold (a spell-0 guard ahead of a test of spell 0's
+  description byte, which is zero).
+- **Equivalent under the harness.** The arms differ only in a call the test
+  stubs or hooks alike (two file loaders answered by one hook).
+- **Comparison gap.** The arm writes something the test does not compare: a
+  global the field VM writes beside the context the test holds, a mode word a
+  battle exit sets beside the seats it checks. This is what the measurement is
+  for; the fix is to widen the comparison.
+- **Weak inputs.** The arm is compared, but no generated input makes its two
+  directions differ (arms that part only for an operand the generator never
+  makes negative, or never takes past a cap).
+- **Unported effect.** The arm's write has no counterpart in the port: the
+  dialog border's tile rows where the port keeps only the footprint, a heap
+  free in an engine with no PSX heap. The arm belongs in a scope row,
+  `unported`, so the ported figure stops counting it.
+- **Tolerated stop.** The test skips a round whose call stops abnormally, and
+  the mutant's runaway lands in that skip. The row says `survived-abnormal`.
+
+Like branch coverage, it is a measurement, not a gate.
+
 ## What it has found
 
 The first routine in it, the stat aggregator `FUN_80042558`, showed its grant

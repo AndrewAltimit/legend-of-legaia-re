@@ -265,12 +265,12 @@ def run(dirs: list[Direction], ms: dict[str, int], k: int, jobs: int, timeout: f
 
 
 def recheck(k: int, jobs: int, timeout: float) -> None:
-    """Rerun every unchecked direction with up to `k` of the tests that took it."""
+    """Rerun each unchecked direction with up to `k` of the tests that took it, when fewer ran."""
     rows = [r.split("\t") for r in RESULTS.read_text().splitlines() if r]
     dirs, ms = population()
     by = {d.key: d for d in dirs}
     todo = [by[tuple(r[:4])] for r in rows
-            if r[4] == "unchecked" and tuple(r[:4]) in by]
+            if r[4] == "unchecked" and tuple(r[:4]) in by and len(r[8].split(",")) < min(k, int(r[6]))]
     print(f"checked-arms --recheck: {len(todo)} unchecked direction(s), up to {k} test(s) each")
     exe = binary()
     with ThreadPoolExecutor(jobs) as pool:
@@ -330,7 +330,7 @@ def main() -> int:
     ap.add_argument("--all", action="store_true", help="mutate the whole population")
     ap.add_argument("--cost", action="store_true", help="population size and the --all estimate")
     ap.add_argument("--recheck", type=int, metavar="K",
-                    help="rerun every unchecked direction with up to K of the tests that took it")
+                    help="rerun unchecked directions with up to K of the tests that took them, when fewer ran")
     ap.add_argument("--tests", type=int, default=3, help="tests run per mutant, cheapest first")
     ap.add_argument("--jobs", type=int, default=3, help="mutant processes at once")
     ap.add_argument("--threads", type=int, default=6, help="--record's test threads")
