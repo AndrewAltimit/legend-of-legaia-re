@@ -238,8 +238,17 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
     let mut failures = Vec::new();
     for scenario in 0..1200 {
         let seed = rng.next();
-        let (lure, rod, venue) = (rng.below(3), rng.below(3) as i32, rng.below(2));
-        let casts = rng.below(120) as i32;
+        let (mut lure, mut rod, venue) = (rng.below(3), rng.below(3) as i32, rng.below(2));
+        let mut casts = rng.below(120) as i32;
+        // A third of the casts carry the venue's band-4 kit - the third rod,
+        // the venue's lure row and an even cast count, past 50 at Buma - so
+        // the strike's rare-band gate (`0x801D34EC..0x801D35CC`) runs both
+        // ways.
+        if rng.below(3) == 0 {
+            rod = 2;
+            lure = if venue == 0 { 1 } else { 2 };
+            casts = (0x34 + rng.below(60) as i32) & !1;
+        }
         let fs = 1 + rng.below(3) as i32;
         let real = rng.below(2) == 0;
         let (facing, anchor) = if real {

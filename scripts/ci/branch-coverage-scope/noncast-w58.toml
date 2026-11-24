@@ -202,3 +202,52 @@ image = "549f895e7b686f32"
 range = "0x8001F558..0x8001F558"
 verdict = "unreachable"
 reason = "The single-TMD arm's FUN_80026B4C result is the non-negative registration counter (see the 0x8001F2C0 row), so the bgez always jumps."
+
+[[arm]]
+entry = "0x801EF2B0"
+image = "4a44d183bc006f94"
+range = "0x801EF4C0..0x801EF4D8"
+verdict = "unreachable"
+reason = "The div guards of rand() % (width * height) for the animated cells: no retail scene installs a board (docs/subsystems/tile-board.md), and a board op whose width or height byte is zero would trap here, so the port's TileBoardHeader::parse refuses one; with both bytes at least 1 the divisor is positive and never -1."
+
+[[arm]]
+entry = "0x801EF2B0"
+image = "4a44d183bc006f94"
+range = "0x801EF534..0x801EF54C"
+verdict = "unreachable"
+reason = "The div guards of rand() % width for the spawn column: no retail scene installs a board (docs/subsystems/tile-board.md), and a board op whose width or height byte is zero would trap here, so the port's TileBoardHeader::parse refuses one; with both bytes at least 1 the divisor is positive and never -1."
+
+[[arm]]
+entry = "0x801EF2B0"
+image = "4a44d183bc006f94"
+range = "0x801EF580..0x801EF598"
+verdict = "unreachable"
+reason = "The div guards of rand() % ((height + 1) >> 1) for the spawn row: no retail scene installs a board (docs/subsystems/tile-board.md), and a board op whose width or height byte is zero would trap here, so the port's TileBoardHeader::parse refuses one; with both bytes at least 1 the divisor is positive and never -1."
+
+[[arm]]
+entry = "0x801EED1C"
+image = "a80009959eadc5ba"
+range = "0x801EEF48..0x801EEF60"
+verdict = "unreachable"
+reason = "The div guards of rand() % (monster count): the divisor is the battle context's monster-count byte (ctx+0x1, 0x801EEF3C), at least 1 while the party is fighting, and a byte is never -1."
+
+[[arm]]
+entry = "0x801F0450"
+image = "a1445dd6c9461d8b"
+range = "0x801F0544..0x801F055C"
+verdict = "unreachable"
+reason = "The div guards of rand() % (monster count): the divisor is the context's monster-count byte (ctx+0x1, 0x801F0538), at least 1 in battle, and a byte is never -1."
+
+[[arm]]
+entry = "0x801F0450"
+image = "a1445dd6c9461d8b"
+range = "0x801F0644..0x801F065C"
+verdict = "unreachable"
+reason = "The div guards of rand() % (learned-art count): the divisor is the character record's +0x185 count byte, which the routine has already tested non-zero for the same member (beqz to the bail at 0x801F05AC), and a byte is never -1."
+
+[[arm]]
+entry = "0x801F0450"
+image = "a1445dd6c9461d8b"
+range = "0x801F0A78..0x801F0A90"
+verdict = "unreachable"
+reason = "The div guards of rand() % s0, s0 = a3 & 0xFF: the loop skips the divide when s0 equals its counter (beq at 0x801F0A64), which starts at 0, so a zero s0 never reaches it, and an 8-bit value is never -1."
