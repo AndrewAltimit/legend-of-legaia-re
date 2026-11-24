@@ -78,6 +78,19 @@ fn bodies() -> Vec<Body> {
             });
         }
     }
+    // PROT 0940's split body casts `0xAE` as well as Slime Divide `0x50`, and
+    // forks its cues and cuts on which (`bne` on `+0x1DF` at `0x801F7990`,
+    // `0x801F79F0`, `0x801F7AF0`).
+    if let Some(director) = cam::capture_camera_director(940, 0x801F_78B8)
+        && t::capture_body_for_action(0xAE) == Some((940, 0x801F_78B8))
+    {
+        out.push(Body {
+            entry: 940,
+            va: 0x801F_78B8,
+            action: 0xAE,
+            director,
+        });
+    }
     // Cort's Evil Seru Magic (`0xAD`) casts through the boss band rather
     // than the capture table, on the same single body and director shape.
     out.push(Body {
