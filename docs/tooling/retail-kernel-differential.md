@@ -1258,7 +1258,32 @@ is put into it by the battle fade pass (`DEAD_IDLE_FADE_PASSES`), so the wait al
 runs, Mule's backdrop follow on a negative pitch (`0x801F8B80`) is driven both ways. `mule_wave` runs its 600
 rounds at steps 1, 2 and 3, the wave's damage, spirit and XP compared live at each, and so does `ozma_ladder` over
 PROT 0934's arm `0x18` hit ladder. The summon tick bodies' phase walk (`chain_ticks`) runs at steps 1 to 4, and
-the Spoon and Vera heal arms at a random step. The chain-body walk over the capture bodies stays at step 1.
+the Spoon and Vera heal arms at a random step.
+
+The capture-side walks run at steps 1 to 4 as well, each pass as the host runs it (`step` one-vsync ticks of the
+director, the countdown's rest `step - 1 - i`, stopping on the tick that passes): the chain-body walk (`chain_ticks`,
+with every tick's seat writes, the calls the host stages once a pass and the countdown word retail's passing pass
+leaves), the single Curse (`capture_curse`), Fatal Decision's phase chain (`fatal_outcomes`), Spikefish's arm 8 on
+words either side of its drain, and the battle open's intro hold (`command_prompts`, whose per-vsync ticks must end
+inside retail's last held pass). They found:
+
+- PROT 0947's arm 3 aims on the pass's drained word off the blade the pass opened on (`0x801F70C4..0x801F7104`)
+  and arm 4 runs the blade by `sin * step >> 6` once a pass (`0x801F752C..0x801F7594`); the trail sat off
+  retail's points above step 1.
+- PROT 0956's arm 3 adds `4 * scalar * step` to the parts' level once a pass and leaves on a level past `0x1000`
+  (`slti 0x1001` at `0x801F7130`), where the port left on reaching it, a pass early at any step.
+- Fatal Decision scales every drain, spin, spread and snap by the step once a pass; run a vsync at a time, arm 7's
+  slowdown spun on each tick's drained word and the wheel could stop on another slot. The host now runs the body
+  on the pass's opening tick at the pass's step (`World::run_fatal_decision`).
+- Spikefish's arm 8 adds `step << 3` to the creature's shatter word ahead of its gate and leaves on that pass; the
+  tick it leaves on owes the rest (`spikefish_shatter_add`).
+
+The summon walk also runs a lone-monster layout, and compares PROT 0916's band packets (every `AddPrim` of arms
+`0x11..0x13` and the tpage its `SetDrawMode` takes) against `aluru_band_prims` at the spread its director leaves
+each pass on. Its fallen and odd-step live runs take the kill path (the verdict word `0x801F9010` at `0`). That
+found arms `0x12` / `0x13` leaving a tick's band growth unpaid on the tick they hand over above step 1, and the
+kill path's fold: retail's arm `0x12` skips its wrapper on a kill (`0x801F8598`), so the victim plays no hit
+reaction, takes no spirit and gets no impact store (`0x801F8684`), where the port's fold had run.
 
 **The spawned records.** The capture and chain walks log every `FUN_80021B04` / `FUN_80050ED4` call a pass makes,
 as record, point, angle trio and scale, and every literal-anchored record a director seats (its charge records and

@@ -4841,6 +4841,12 @@ fold.
   id is `0x299`.
 - **The settle.** Arm 12 reads the victim's clip off the reaction channel, and a
   party seat at zero HP settles on its Defeat pose, the engine's clip `8`.
+- **Once a pass.** Retail enters the body once a battle frame and every drain, spin,
+  spread and snap scales by the frame step (`lbu 0x7f(0x1F800314)`), so the host runs
+  it on the tick that opens a pass at that pass's step and holds on the rest
+  (`World::run_fatal_decision`). Arm 7's slowdown spins by `step * word / 128` on the
+  pass's drained word; run a vsync at a time it spun on each tick's, and above step 1
+  the wheel could stop on another slot.
 - **The spin's frames.** Arm 6 drains its countdown `scalar * step` a pass
   (`0x801F75EC..0x801F7630`), so how long the wheel spins, and where it stops, is
   the arm's frame steps. On `kor_shade_pre_fatal_decision`'s recording the arm's
