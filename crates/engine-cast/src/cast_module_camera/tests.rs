@@ -1482,7 +1482,8 @@ fn ozma_arm_6_stores_tr_y_from_its_rise_and_shake() {
     st.countdown.0 = 0x50;
     let even = ozma_direct(&mut st, 6, seats()).drift.unwrap();
     assert_eq!(i32::from(even.tr_y), 0x40 + 4 * DELTA_PER_TICK);
-    st.ozma_shake.0 = 4;
+    // The first pass read the word's `0` and bumped it: the next is odd.
+    assert_eq!(st.ozma_shake.0, 1);
     let odd = ozma_direct(&mut st, 6, seats()).drift.unwrap();
     assert_eq!(i32::from(odd.tr_y), 0x200 + 0x40 + 8 * DELTA_PER_TICK);
 }

@@ -17,10 +17,10 @@ impl World {
     /// | arm | writes |
     /// |---|---|
     /// | 0 (`0x801F6AE0..0x801F6C1C`, pass) | each live monster: pose saved, moved to half its alternate-family seat less `0x1F4` on `z`, facing `0x800` |
-    /// | 11 (every pass while counting; pass `0x801F7378..0x801F737C`) | the creature sinks `2 * scalar` a tick (`0x801F7330..0x801F734C`); on the pass its tint arm `+0x21C` goes to `9`, the yellow ease |
+    /// | 11 (every pass while counting; pass `0x801F7378..0x801F737C`) | the creature sinks `2 * scalar` a tick, the leaving tick its pass's owed ticks too (`0x801F7330..0x801F734C`); on the pass its tint arm `+0x21C` goes to `9`, the yellow ease |
     /// | 12 (every pass; pass `0x801F7524..0x801F75A0`) | the creature sinks `2 * scalar` a tick (`0x801F74A0..0x801F74B0`); on the pass it is hidden and each live monster shown |
     /// | 18 (`0x801F7FE0..0x801F8020`, pass) | the creature at `(0, -0x1100, -0x1100)`, shown (its next clip is the director's) |
-    /// | 19 (`0x801F81C8..0x801F8210`, while counting; pass `0x801F82B4..0x801F82C0`) | with `w = (scalar << 6) - countdown`, the creature at `y = 17 w / 2 - 0x1100`, `z = 13 w - 0x1100`; on the pass it is hidden and arm 18's ring re-seated as the crystals ([`Self::seat_puera_crystals`]) |
+    /// | 19 (`0x801F81C8..0x801F8210`, while counting; pass `0x801F82B4..0x801F82C0`) | with `w = (scalar << 6) - countdown` off the pass's drained word, unclamped, the creature at `y = 17 w / 2 - 0x1100`, `z = 13 w - 0x1100`; on the pass it is hidden and arm 18's ring re-seated as the crystals ([`Self::seat_puera_crystals`]) |
     /// | 20 (every pass, `0x801F85F8..0x801F8690`) | the crystals fall ([`Self::fall_puera_crystals`]) |
     /// | 24 (`0x801F9014..0x801F90A0`, pass) | each live monster back on its saved pose |
     ///
@@ -52,14 +52,22 @@ impl World {
         };
         if let Some(a) = creature.and_then(|c| self.actors.get_mut(usize::from(c))) {
             match phase {
+                // Arm 11 sinks by the pass's whole `2 * scalar * delta`
+                // ahead of its gate (`0x801F7330..0x801F734C`), so the tick
+                // that leaves sinks its owed ticks too.
                 11 if before > 0 => {
-                    a.move_state.world_y = a.move_state.world_y.wrapping_sub((2 * s) as i16);
+                    a.move_state.world_y =
+                        a.move_state.world_y.wrapping_sub((2 * s * ticks) as i16);
                 }
                 12 => {
                     a.move_state.world_y = a.move_state.world_y.wrapping_sub((2 * s * ticks) as i16)
                 }
+                // Arm 19 places the creature off the word its pass has
+                // drained by the whole `scalar * delta`, unclamped
+                // (`subu a1,a1,t4` / `subu v1,v1,a1` at `0x801F81C4`): a pass
+                // that overshoots zero carries the creature past the end.
                 19 if before > 0 => {
-                    let w = (s << 6) - (before - s).max(0);
+                    let w = (s << 6) - (before - s * ticks);
                     a.move_state.world_y = (17 * w / 2 - 0x1100) as i16;
                     a.move_state.world_z = (13 * w - 0x1100) as i16;
                 }

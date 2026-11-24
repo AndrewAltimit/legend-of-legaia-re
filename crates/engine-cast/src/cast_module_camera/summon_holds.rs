@@ -113,8 +113,11 @@ pub struct HoldArm {
     pub ramp: Option<i32>,
 }
 
-/// Ticks a [`Gate::Settle`] waits on the row before it lets the arm run
+/// Passes a [`Gate::Settle`] waits on the row before it lets the arm run
 /// anyway: an engine seat that never reads idle must not park the band.
+/// Retail's wait has no cap (`0x801F8F68..0x801F8FF4`); counted in battle
+/// frames, the cap cuts no wait short that a slower frame step makes take
+/// more vsyncs.
 pub const SETTLE_TICK_LIMIT: i32 = 600;
 
 const S: i32 = SPEED_SCALAR;
@@ -406,8 +409,10 @@ pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool 
             if *cd > 0 {
                 true
             } else {
-                // The ramp word counts the ticks spent on the row.
-                st.ramp += 1;
+                // The ramp word counts the passes spent on the row.
+                if st.opens_pass || st.frame_step <= 1 {
+                    st.ramp += 1;
+                }
                 !st.row_settled && st.ramp < SETTLE_TICK_LIMIT
             }
         }

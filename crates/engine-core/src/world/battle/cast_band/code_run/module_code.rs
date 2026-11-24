@@ -269,16 +269,22 @@ impl World {
                         Some(a) if a.battle.hp == 0 => a.battle.render_color == 0 || !a.active,
                         _ => self.chain_seat_settled(s, false),
                     });
-                // PROT 0916's arm `0x14` settle poll on the latched victim.
-                // Retail's waits on a dead victim's word alone (`lw 4(s3)` /
-                // `bnez` at `0x801F8870`), and that word eases to zero only
-                // under the defeat fade `+0x21C = 2`, which the commit's
+                // The settle poll on the latched victim that PROT 0916's arm
+                // `0x14` and PROT 0917's arm `0xF` make: a live victim once
+                // its clip `+0x1D9` is idle, a dead one on its colour word
+                // alone (`lhu 0x14c(s3)` / `beqz`, then `lw 4(s3)` / `bnez`,
+                // at `0x801F8848..0x801F8878` in 0916 and
+                // `0x801F817C..0x801F81AC` in 0917). That word eases to zero
+                // only under the defeat fade `+0x21C = 2`, which the commit's
                 // monster-death arm sets as the knockdown clip ends
-                // (`0x8004B66C`). The port keeps its down-clip and clipless
-                // exits beside the faded one: a victim whose knockdown never
-                // commits never fades, so the word-only gate would trade
-                // retail's later exit for a hold that never lets go.
-                st.victim_settled = self.chain_seat_settled(usize::from(latched), true);
+                // (`0x8004B66C`), so the cast waits out the fade, not the
+                // down clip. A dead body standing lit outside the fade is put
+                // into it by the fade pass (`DEAD_IDLE_FADE_PASSES`), so the
+                // wait always lets go.
+                st.victim_settled = match self.actors.get(usize::from(latched)) {
+                    Some(a) if a.battle.hp == 0 => a.battle.render_color == 0 || !a.active,
+                    _ => self.chain_seat_settled(usize::from(latched), false),
+                };
                 // The applier stage `ctx[+0x276]` a side-band wait arm polls:
                 // up while the engine's stand-in for its reads runs, or while
                 // a capture replay holds it.
@@ -1696,6 +1702,13 @@ impl World {
                         summon: r_seat as u8,
                     };
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
+                    // The row as the tick found it, so the write-back below
+                    // lands only what the tick changed: a roll inside the
+                    // tick (`summon_module_roll`) runs the finisher's spirit
+                    // fill and status strip on the live seat
+                    // (`0x801DE2E4..0x801DE364`), which a whole-row write of
+                    // the tick's copies undid.
+                    let row_orig = seats.clone();
                     // Carry the three views into the row so a stager that ran
                     // above this match is not thrown away.
                     for (slot, view) in [(r_caster, caster), (r_victim, victim), (r_seat, seat)] {
@@ -1964,7 +1977,7 @@ impl World {
                     {
                         ctx.phase = arm + 2;
                     }
-                    self.write_cast_seat_row(&seats);
+                    self.fold_cast_seat_row(&row_orig, &seats);
                     caster = seats.get(r_caster).copied().unwrap_or(caster);
                     victim = seats.get(r_victim).copied().unwrap_or(victim);
                     seat = seats.get(r_seat).copied().unwrap_or(seat);
@@ -2012,6 +2025,9 @@ impl World {
                 909..=913 => {
                     let stager_stepped = ctx.phase != self.casting.module_phase;
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
+                    // Swordie's slashes roll inside the tick: the write-back
+                    // keeps their finisher's spirit fill and status strip.
+                    let row_orig = seats.clone();
                     let summon = seat_slot;
                     // A frame the stager stepped the phase is still a busy
                     // one: the tick returns `1` from every arm but `0xFF`.
@@ -2031,7 +2047,7 @@ impl World {
                         Some(step)
                     };
                     if !(entry == 909 && stager_stepped) {
-                        self.write_cast_seat_row(&seats);
+                        self.fold_cast_seat_row(&row_orig, &seats);
                         // The three locals are written back below; take them
                         // from the table so this arm's writes survive.
                         caster = seats.get(r_caster).copied().unwrap_or(caster);

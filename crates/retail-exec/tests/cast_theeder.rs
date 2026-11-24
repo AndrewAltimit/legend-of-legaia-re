@@ -678,8 +678,6 @@ mod walk {
     pub(super) enum CameraGap {
         /// The roll angle `0x8007B794`: the battle camera has no roll.
         Roll,
-        /// TR y `0x800840BC`.
-        TrY,
         /// The whole target.
         All,
     }
@@ -700,12 +698,6 @@ mod walk {
                 CameraGap::All,
                 "the walk stands the shadow's creature on the victim for PROT 0908's arm 8 \
                  range poll, and the shot frames it",
-            )],
-            (934, 5..=9) => vec![(
-                CameraGap::TrY,
-                "PROT 0934's shake: the engine reads the pass word's low bit per four \
-                 vsyncs on its own clock, and one pass of this walk is one vsync (the \
-                 summon walk feeds the walk's words, scaled)",
             )],
             _ => Vec::new(),
         }
@@ -1132,9 +1124,10 @@ mod walk {
             let profile = cam::module_profile(entry).expect("directed");
             let extra: &[Layout] = if entry == 917 { &BARRA_LAYOUTS } else { &[] };
             // Every body also runs on a solo party (`SOLO_LAYOUT`).
-            // At frame steps 1, 2 and 3 (`WALK_STEP`): a console's CD timing
-            // runs battle at steps above 1.
-            let runs = [1u8, 2, 3].into_iter().flat_map(|step| {
+            // At frame steps 1 to 4 (`WALK_STEP`): a console's CD timing
+            // runs battle at steps above 1, and the engine's own clock runs
+            // Zenoir's arms 8 to 12 at step 4 in a PCSX-paced cast.
+            let runs = [1u8, 2, 3, 4].into_iter().flat_map(|step| {
                 LAYOUTS
                     .iter()
                     .chain(extra)
@@ -1458,7 +1451,6 @@ mod walk {
                             for (part, _why) in camera_gaps(entry, phase) {
                                 match part {
                                     CameraGap::Roll => port_t.0[2] = retail_t.0[2],
-                                    CameraGap::TrY => port_t.1[1] = retail_t.1[1],
                                     CameraGap::All => port_t = retail_t,
                                 }
                             }

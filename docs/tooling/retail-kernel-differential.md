@@ -1099,7 +1099,20 @@ the port's half agrees. The shadow is where the host's half is checked.
 | The creature's placement, walk and clips | `World::apply_module_creature_writes`, `summon_walk_to_victim`, `module_seat_arm` | seat 7's seat pass, word, tint state, staged clip, ground trio, rate and scale on every module; ground and facing synced ahead of each pass |
 | Scales of the row | the seat-write tables | the node scale `+0x72` of every seat, the creature's included |
 | The part-driven stager calls | PROT 0927's sweeps, `run_juggernaut_stager_calls` | not compared: the walk runs no part |
-| The spell XP, spirit gauge and readout | `World::summon_module_roll`, the fold's tail | not compared: retail's wrapper is stubbed, so its finisher does not run |
+| The spell XP and spirit gauge | `World::summon_module_roll`, the fold's tail | on the live-wrapper runs (below): every seat's `+0x170` each pass, the caster record's first spell XP slot at the cast's end |
+
+**The live-wrapper runs.** Everywhere else the walk stubs the damage wrapper `FUN_801DD0AC` with scripted rolls,
+so its finisher never runs on retail's side. A third run of every body, layout and step on the full row takes the
+wrapper live on both sides: retail's kernel and finisher off PROT 0898, and the shadow's `World::summon_module_roll`
+and fold, on one spread of seat stats, the caster's record carrying the spell at level 2 (under the level-3 side
+effect, whose stager the walk stubs) and one `rand()` stream, re-seated on retail's as the fold opens (the band's
+module half draws for the spawns it stages, where this walk's retail runs no part). Each pass compares every seat's
+spirit gauge beside its HP, and the cast's end the spell XP the finisher banked. The runs found two defects. The
+XP tail's group unit reads the summon seat's target byte `+0x1DD` (`0x801DE51C..0x801DE524`), not the spell's table
+shape: Mushura's chase raises it to `9` mid-cast, and the port's single-target unit of `12` tripled its XP. And the
+tick bodies that roll inside their tick (Theeder, Zenoir, Swordie, Juggernaut's last hits) wrote their seat row
+back whole over the live seats, undoing each roll's spirit fill and status strip; the row now folds back only what
+the tick changed (`World::fold_cast_seat_row`).
 
 The images the walk does not run (PROT 0903, 0904, 0906, 0909..0913, 0918,
 0919) have ported tick bodies, which their own tick differentials compare; of
@@ -1149,14 +1162,16 @@ straight after it, its target codes and scripted rolls mapped between the two se
 over the party after the lead (`ctx+0 - 1`, PROT 0919's `0x801F8408`, PROT 0930's `0x801F7C18`). Beside the walk,
 PROT 0925's arm 8 runs once on a scripted fight, which takes the round tail in place of the flee
 (`0x801F73F0`), over party rows with a member down and item turns with and without a turn left, against
-`spikefish_round_tail`. Four parts stay out (`camera_gaps` in the test): PROT 0928's
-roll, PROT 0925's arm 8 exit, PROT 0908's arm 8 (the creature stood on the victim) and PROT 0934's shake TR y,
-which the engine reads per four vsyncs where this walk's pass is one.
+`spikefish_round_tail`. Three parts stay out (`camera_gaps` in the test): PROT 0928's
+roll, PROT 0925's arm 8 exit and PROT 0908's arm 8 (the creature stood on the victim). PROT 0934's shake TR y is
+compared: arms 5 to 9 read the pass word `0x801FA408` for its low bit and bump it once a pass
+(`0x801F6FAC..0x801F701C`), so the shake flips on every battle frame at any step, where the port had flipped it
+every four vsyncs and agreed with retail at step 4 alone.
 
 ### Both walks at frame steps above 1
 
-A console's battle CD timing runs battle frames of 2 vsyncs and more, so both walks run every body at frame steps
-1, 2 and 3: retail's step byte `0x1F800393`, the director's `frame_step` and the shadow's battle frame clock. The
+A console's battle CD timing runs battle frames of 2 vsyncs and more, and the engine's own clock runs Zenoir's arms
+8 to 12 at step 4 in a PCSX-paced cast, so both walks run every body at frame steps 1, 2, 3 and 4: retail's step byte `0x1F800393`, the director's `frame_step` and the shadow's battle frame clock. The
 shadow's pass is the host's (`World::drive_summon_module_frame`, `World::module_pass` over `delta` one-vsync ticks,
 stopping on the tick an arm hands over). The summon walk runs its director the same way, feeding the live yaw,
 pitch, TR and the creature's cursor between ticks, and lands the owed ticks' drift and nudge after a handing tick
@@ -1203,17 +1218,21 @@ A second round traced every arm still apart above step 1:
 - Missing stores: Meta's arm 6 exit stores TR y `0x3A0` and TR z `0x720` (`0x801F70BC..0x801F70C4`), where the
   drift happens to land at step 1. Barra's arm `0xF` ease reads its word unclamped (`0x801F8084`).
 
-`STEP_GAPS` keeps two rows, Aluru's arm `0x14` and Barra's arm `0xF`, both on the port's victim settle poll, whose
-down-clip exit the port keeps by choice (below): the tick-body walk plays its fallen victim by pass, so above step 1
-the down clip comes in ahead of the fade's end and the port leaves first. With the step-3 runs, Mule's backdrop
-follow on a negative pitch (`0x801F8B80`) is driven both ways. `mule_wave` runs its 600 rounds at steps 1, 2 and 3,
-the wave's damage, spirit and XP compared live at each.
+The step-4 runs found Puera's arm `0xB` sink and arm `0x13` placement short of retail's: arm `0xB` sinks the
+creature by the pass's whole `2 * scalar * delta` ahead of its gate (`0x801F7330..0x801F734C`), so the tick that
+leaves owes the rest of the pass's sink, and arm `0x13` places it off the word its pass has drained, unclamped
+(`0x801F81C4`), so a pass that overshoots zero carries it past the end. They also found Puera's arm `0x18` row
+wait letting go on the port's cap (`SETTLE_TICK_LIMIT`) before a slow fade ended: the cap counts battle frames, not
+vsyncs, so a slower frame step cuts no wait short.
 
-One arm stays apart from retail by choice. Aluru's arm `0x14` holds on a dead victim until its word is zero
-(`0x801F8870`), a word that eases out only under the defeat fade the commit's monster-death arm arms at the
-knockdown's end (`0x8004B66C`); the port's settle poll also lets the arm go on the down clip, so the cast leaves
-at the knockdown's start where retail waits out the fade, and a victim whose knockdown never commits cannot hold
-it for good.
+`STEP_GAPS` is empty. Aluru's arm `0x14` and Barra's arm `0xF` wait on a dead victim's colour word alone
+(`lw v0,4(s3)` / `bnez` at `0x801F8870` in PROT 0916 and `0x801F81A4` in PROT 0917; a live victim on its clip
+`+0x1D9` reading idle), a word that eases out only under the defeat fade the commit's monster-death arm arms at the
+knockdown's end (`0x8004B66C`). The port had also let both arms go on the down clip, which above step 1 came in
+ahead of the fade's end; the arms now wait out the fade as retail does. A dead body standing lit outside the fade
+is put into it by the battle fade pass (`DEAD_IDLE_FADE_PASSES`), so the wait always lets go. With the step-3
+runs, Mule's backdrop follow on a negative pitch (`0x801F8B80`) is driven both ways. `mule_wave` runs its 600
+rounds at steps 1, 2 and 3, the wave's damage, spirit and XP compared live at each.
 
 **The spawned records.** The capture and chain walks log every `FUN_80021B04` / `FUN_80050ED4` call a pass makes,
 as record, point, angle trio and scale, and every literal-anchored record a director seats (its charge records and

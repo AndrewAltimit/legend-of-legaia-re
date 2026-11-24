@@ -362,6 +362,9 @@ impl World {
         let ctx = self.cast_module_ctx();
         let map = self.cast_seat_map();
         let mut seats = self.cast_seat_row();
+        // Each roll's finisher fills the spirit gauge on the live seat, which
+        // the row's write-back keeps ([`World::fold_cast_seat_row`]).
+        let orig = seats.clone();
         for i in 0..ctx.monster_count {
             let seat = ticks::FIRST_MONSTER_SEAT.saturating_add(i);
             let hittable = seats
@@ -380,7 +383,7 @@ impl World {
                 v.anim_rate = 2;
             }
         }
-        self.write_cast_seat_row(&seats);
+        self.fold_cast_seat_row(&orig, &seats);
         self.battle.combo_cluster_held = false;
         self.bank_juggernaut_hit_xp(caster, spell_id);
     }

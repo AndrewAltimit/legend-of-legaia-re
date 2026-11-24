@@ -877,7 +877,7 @@ the **spirit-gauge** fill at defender `+0x170` (`+ margin/4` or `/10` per `+0x6C
 **Closed-form finalisation arithmetic ported** as pure kernels in `legaia_engine_battle_vm::battle_formulas`:
 `damage_finish` (the six damage-rewrite stages - elemental-resistance halving / guard halve / `rand%9+8` floor / summon power-% scale / 9999 cap),
 `spirit_gauge_fill` (the gauge accrual + the two gain-up bits), and
-`summon_spell_xp_gain` (the **spell-XP accrual tail**, `attacker_slot == 7` only: the cast spell's slot in the caster record's `+0x13D` id list gains `damage * 12 / target_max_hp` per single-target hit / `* 4` group-target, flat `12`/`4` on a kill, nothing from a target below 2 HP, into the `+0x8` u32 XP array - the XP `FUN_801E70BC` then checks; gates `_DAT_8007BAC0` no-reward + `_DAT_8007BDB8` unmodelled),
+`summon_spell_xp_gain` (the **spell-XP accrual tail**, `attacker_slot == 7` only: the cast spell's slot in the caster record's `+0x13D` id list gains `damage * 12 / target_max_hp` per single-target hit / `* 4` group-target (the summon seat's `+0x1DD` at `8` or above at the hit, `0x801DE51C`, which a module can raise mid-cast), flat `12`/`4` on a kill, nothing from a target below 2 HP, into the `+0x8` u32 XP array - the XP `FUN_801E70BC` then checks; gates `_DAT_8007BAC0` no-reward + `_DAT_8007BDB8` unmodelled),
 all unit-tested. The state-mutating tail (damage-popup accumulator, per-seat readout window, MP drain, the per-element stat-**debuff** switch) reads/writes ~20 battle globals and stays in the live battle context (see the `battle_formulas` boundary note). Dump: `overlay_battle_action_801ddb30.txt`.
 
 ### `801E295C`
