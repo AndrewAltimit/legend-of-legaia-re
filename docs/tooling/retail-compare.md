@@ -4187,6 +4187,10 @@ clip's stop watch takes two thirds of PCSX-Redux's CPU) against the `2` and `3`
 mednafen ran. The frame step is not what holds the two frames: replayed on a
 console's CD response time (`LEGAIA_BATTLE_CD_TIMING=console`, whose arm table
 reads `2` there), `rising` reads `.804` and `parked` `.913` against `.842` and `.916`.
+The child of a Mednafen state runs Mednafen's own timing
+([emulator timing](emulator-timing.md#cd-response-psxcdccpp)), whose recording of this
+cast runs arms 5 to 14 at `3`, `1`, `1`, `1`, `2`, `2`, `2`, `2`, `3`, `3`; the two
+frames read `.842` and `.916` there too.
 
 The displayed frame's trail count is two above the RAM's. The retract drops the
 count by one a pass, so the frame on screen, two passes older, drew two more

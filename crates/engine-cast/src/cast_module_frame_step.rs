@@ -172,7 +172,26 @@ pub enum CdTiming {
     /// were recorded on it. The engine's default.
     #[default]
     PcsxRedux,
+    /// Mednafen's (`1.29.0`, `psx/cdc.cpp`): a command with no argument
+    /// answers `20815..23815` cycles after it (`10500 + rand(0, 3000) + 1815`
+    /// to its first phase, then `8500`), and the polls take
+    /// [`MEDNAFEN_POLL_SHARE_PER_MILLE`] of its CPU, between a console's and
+    /// PCSX-Redux's. The comparison children of a Mednafen capture run it
+    /// (`LEGAIA_BATTLE_CD_TIMING=mednafen`). A summon whose band a Mednafen
+    /// film covers reads that film's steps ([`MEDNAFEN_ARM_STEPS`]); every
+    /// other frame prices as a console's, since Mednafen's CPU runs the work
+    /// cheaper than PCSX-Redux's scale prices it by about what its larger
+    /// poll share takes back (`docs/tooling/emulator-timing.md`, "CD
+    /// response").
+    Mednafen,
 }
+
+/// The stop watch's share of Mednafen's CPU, per mille, measured: the same
+/// frames of `theeder_summon_value_rows_rising` and `_parked` (arms 13 and
+/// 14) run with the CdSync callback word `0x800793AC` cleared, so no poll
+/// follows the one in flight, cost `0.78` of what they cost with it (`20`
+/// frames, median).
+pub const MEDNAFEN_POLL_SHARE_PER_MILLE: u32 = 220;
 
 /// The stop watch's share of a console's CPU, per mille: about `3300` cycles
 /// of interrupt work a poll (the exception vector to `FUN_8005DAB0`'s exit,
@@ -319,10 +338,33 @@ pub fn cast_arm_frame_step(entry: u32, phase: u8, timing: CdTiming) -> Option<u8
     let table = match timing {
         CdTiming::Console => CONSOLE_ARM_STEPS,
         CdTiming::PcsxRedux => ARM_STEPS,
+        CdTiming::Mednafen => MEDNAFEN_ARM_STEPS,
     };
-    let (_, steps) = table.iter().find(|(e, _)| *e == entry)?;
+    let (_, steps) = table
+        .iter()
+        .find(|(e, _)| *e == entry)
+        .or_else(|| match timing {
+            CdTiming::Mednafen => CONSOLE_ARM_STEPS.iter().find(|(e, _)| *e == entry),
+            _ => None,
+        })?;
     steps.get(usize::from(phase)).copied().filter(|&s| s != 0)
 }
+
+/// The summon bands a Mednafen recording covers end to end, each arm at the
+/// step Mednafen spends the most vsyncs on there: the frame steps
+/// `scripts/mednafen/drive-timeline.py --steps-out` logs beside each
+/// `audio-pcm` cast recording (`<label>.steps`), from the
+/// `*_summon_mid_cast` state. Theeder's agrees arm for arm with a
+/// `frame-cost-film.py` run of the same state. A module no recording covers
+/// reads [`CONSOLE_ARM_STEPS`] ([`CdTiming::Mednafen`]).
+const MEDNAFEN_ARM_STEPS: &[(u32, &[u8])] = &[
+    // theeder
+    (904, &[0, 2, 1, 1, 2, 3, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
+    // zenoir
+    (908, &[0, 0, 0, 2, 0, 3, 2, 2, 2, 2, 2, 2, 3]),
+    // swordie
+    (910, &[0, 2, 3, 3, 2, 1, 2, 2, 2, 3, 2]),
+];
 
 /// Summon-band arms whose frames change cost inside the arm:
 /// `(PROT entry, module phase, pass, step)`, the arm's frames costing `step`'s
@@ -1339,7 +1381,7 @@ const CONSOLE_CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
 /// step waits for a recording of each.
 pub fn capture_arm_frame_step(spell: u8, phase: u8, timing: CdTiming) -> Option<u8> {
     let table = match timing {
-        CdTiming::Console => CONSOLE_CAPTURE_ARM_STEPS,
+        CdTiming::Console | CdTiming::Mednafen => CONSOLE_CAPTURE_ARM_STEPS,
         CdTiming::PcsxRedux => CAPTURE_ARM_STEPS,
     };
     let (_, steps) = table.iter().find(|(s, _)| *s == spell)?;
@@ -1590,6 +1632,37 @@ mod tests {
         // The band's opening arms play no clip and read the same on both.
         assert_eq!(cast_arm_frame_step(912, 2, CdTiming::Console), Some(1));
         assert_eq!(console_poll_cost(400), 427);
+    }
+
+    #[test]
+    fn mednafen_reads_its_own_recordings_then_the_consoles() {
+        let med = CdTiming::Mednafen;
+        // Theeder's voiced arms: Mednafen's `3`, `1` and `3` against a
+        // console's `2` and PCSX-Redux's `4`, `3` and `4`.
+        for (arm, m, c, p) in [(5, 3, 2, 4), (7, 1, 2, 3), (13, 3, 2, 4)] {
+            assert_eq!(cast_arm_frame_step(904, arm, med), Some(m), "arm {arm}");
+            assert_eq!(cast_arm_frame_step(904, arm, CdTiming::Console), Some(c));
+            assert_eq!(cast_arm_frame_step(904, arm, CdTiming::PcsxRedux), Some(p));
+        }
+        // Zenoir's arms 8 to 11 run at `2` there, as a console's table reads.
+        for arm in 8..=11 {
+            assert_eq!(cast_arm_frame_step(908, arm, med), Some(2), "arm {arm}");
+        }
+        // A module no Mednafen recording covers reads the console's row.
+        for arm in 0..=20 {
+            assert_eq!(
+                cast_arm_frame_step(912, arm, med),
+                cast_arm_frame_step(912, arm, CdTiming::Console),
+                "arm {arm}"
+            );
+        }
+        // An arm the recording passed inside a frame says nothing.
+        assert_eq!(cast_arm_frame_step(908, 4, med), None);
+        // The capture band reads the console's table, and no tail.
+        assert_eq!(
+            capture_arm_frame_step_on_pass(0x6E, 4, 0, med),
+            capture_arm_frame_step_on_pass(0x6E, 4, 0, CdTiming::Console)
+        );
     }
 
     #[test]

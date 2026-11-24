@@ -4244,6 +4244,14 @@ be two; `cast` keeps that, because a hold on the engine's own steps is a hold on
 | `theeder_summon_mid_cast` | `0.954` | `0.964` |
 | `swordie_summon_mid_cast` | `0.990` | `0.990` |
 
+These states are Mednafen's, and the `cast` channel's child now runs Mednafen's own CD timing
+(`CdTiming::Mednafen`, [emulator timing](../tooling/emulator-timing.md#cd-response-psxcdccpp)):
+Theeder, Zenoir and Swordie on the steps their recordings ran, every other arm on a console's
+table. Still on the engine's own clock, `cast` reads Guilty Cross `0.981` (`0.859` on
+PCSX-Redux's timing), Zenoir `0.881` (`0.805`), Theeder `0.964` (`0.954`), and Swordie, Nighto
+and Orb unchanged. So Zenoir's arms 8 to 12 ran at `4` because the child ran PCSX-Redux's CD
+response, where Mednafen's polls take a fifth of the CPU and the recording ran them at `2`.
+
 Guilty Cross's whole loss is the step. Theeder's is not: mednafen runs its arms `6` to `12` at `1`
 or `2` against the table's `3` and `4`, and the score moves by `0.01` either way. Zenoir's arms now
 match, and what its row keeps is the cast's sound against them: the ring cues of arm 12 still key

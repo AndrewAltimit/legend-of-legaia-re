@@ -122,7 +122,8 @@ impl World {
         // The announcer's polls pace the cabinet's frames against the same
         // machine's CD response the battle's voiced frames read.
         let cd_timing = match self.toggles.battle_cd_timing {
-            legaia_engine_battle_loop::frame_clock::CdTiming::Console => {
+            legaia_engine_battle_loop::frame_clock::CdTiming::Console
+            | legaia_engine_battle_loop::frame_clock::CdTiming::Mednafen => {
                 legaia_engine_minigames::baka_fighter::pacing::CdPollTiming::Console
             }
             legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux => {
