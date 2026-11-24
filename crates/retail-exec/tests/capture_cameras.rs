@@ -364,6 +364,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut kiss_halts = 0usize;
     let mut spray_clears = 0usize;
     let (mut horn_hits, mut horn_clamps) = (0usize, 0usize);
+    let (mut doom_hits, mut doom_clamps, mut doom_holds) = (0usize, 0usize, 0usize);
     let (mut shadow_passes, mut shadow_diverged) = (0usize, 0usize);
     let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
@@ -387,6 +388,19 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         if body.entry == 952 {
             let roll = horn_roll.clone();
             cpu.hook(0x801D_D6B4, move |r, _| r.r[2] = roll.get());
+        }
+        // Doomsday's arm 0x0B rolls each live party seat through
+        // `FUN_801DD4B0(0x600, caster, seat)` (`0x801F77B4`), which returns a
+        // roll keyed on the round and the seat here, so the clamp to the
+        // seat's HP (`0x801F77E0`) runs both ways.
+        let doom_round = Rc::new(std::cell::Cell::new(0usize));
+        if body.entry == 965 {
+            let round = doom_round.clone();
+            cpu.hook(0x801D_D4B0, move |r, m| {
+                let seat = r.r[A2];
+                let hp = u32::from(m.rd16(ACTOR + seat * STRIDE + 0x14C));
+                r.r[V0] = doomsday_roll(round.get(), seat, hp);
+            });
         }
         // Terror Scream's refund goes through the bag's find-or-insert
         // `FUN_800421D4`, logged rather than run.
@@ -619,6 +633,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             if body.action == 0x6E && round % 2 == 1 {
                 cpu.mem.wr16(va_ + 0x14C, 1);
             }
+            doom_round.set(round);
             if body.entry == 952 {
                 let hp = u32::from(cpu.mem.rd16(va_ + 0x14C));
                 horn_roll.set([0, hp - 1, hp, hp + 1, hp * 3][round % 5]);
@@ -635,7 +650,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // seat, and its arm 3 waits on the row its code names.
             let water_hazard = body.action == 0x71;
             let group = match body.action {
-                0x53 => Some(8u8),
+                // Doomsday's shape `0x66` aims at the party (`& 0x60 == 0x60`,
+                // `0x801EA5D4` -> `sb 8` at `0x801EA934`).
+                0x53 | 0xB6 => Some(8u8),
                 0x71 => [None, Some(8u8), Some(9)][round % 3],
                 _ => None,
             };
@@ -681,6 +698,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
             let mut arm3_passes = 0usize;
             let mut settle_passes = 0usize;
+            let mut doom_settle = 0usize;
             let pass_step: u8 = if round % 2 == 1 {
                 [2u8, 3, 4][(round / 2) % 3]
             } else {
@@ -990,6 +1008,47 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 };
                 cpu.mem.wr8(STEP, step);
                 st.frame_step = step;
+                // Doomsday's arm 0x0C, once its word runs out, waits on every
+                // `ctx[+0]` party seat (`0x801F797C..0x801F79F4`): a live seat
+                // until idle, a downed one until on clip `8`. Each seat plays
+                // for round-keyed passes (on odd rounds one is downed as the
+                // wait opens), then rests; the host's flag off the same bytes
+                // (`World::capture_party_settled`).
+                if body.entry == 965 {
+                    let word = cpu.mem.rd32(DOOMSDAY_WORD) as i32;
+                    doom_settle = if phase == 0x0C && word <= i32::from(step) {
+                        doom_settle + 1
+                    } else {
+                        0
+                    };
+                    st.party_settled = true;
+                    if phase == 0x0C {
+                        let seats: Vec<(u16, u8)> = (0..3u32)
+                            .map(|s| {
+                                let a = ACTOR + s * STRIDE;
+                                if doom_settle == 1
+                                    && round % 2 == 1
+                                    && s as usize == (round / 2) % 3
+                                {
+                                    cpu.mem.wr16(a + 0x14C, 0);
+                                }
+                                let hp = cpu.mem.rd16(a + 0x14C);
+                                let busy =
+                                    doom_settle > 0 && doom_settle <= (round + s as usize) % 4;
+                                let clip = match (busy, hp == 0) {
+                                    (true, false) => [5, 8][round % 2],
+                                    (true, true) => [3, 0][round % 2],
+                                    (false, false) => 0,
+                                    (false, true) => 8,
+                                };
+                                cpu.mem.wr8(a + 0x1D9, clip);
+                                (hp, clip)
+                            })
+                            .collect();
+                        st.party_settled = settle_world.drive_capture_party_settled(&seats);
+                        doom_holds += usize::from(!st.party_settled);
+                    }
+                }
                 let mut arm = cam::CaptureCamArm::default();
                 let mut opened_spawns = None;
                 for i in 0..step {
@@ -1050,6 +1109,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 let ctx_before = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
                 // The two seats as the pass opens, for Death Game's result.
                 let before = [ca, va_].map(|a| crate::cast_view::read_actor(&mut cpu.mem, a));
+                let before_party: Vec<_> = (0..3u32)
+                    .map(|s| crate::cast_view::read_actor(&mut cpu.mem, ACTOR + s * STRIDE))
+                    .collect();
                 let horn_before = (cpu.mem.rd16(va_ + 0x14C), cpu.mem.rd32(va_ + 0x10));
                 // Every seat's tint and render flag as the pass opens, with
                 // what decides which seats a hide or show reaches: HP, Stone.
@@ -1262,6 +1324,40 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         horn_hits += 1;
                         horn_clamps += usize::from(horn_roll.get() > u32::from(hp));
                     }
+                }
+                // Doomsday's party sweep on the pass that leaves arm 0x0B,
+                // against `doomsday_tick` on the same rolls: each live seat's
+                // roll cut to its HP onto `+0x10` and off `+0x14C`, its
+                // knockdown staged (`0x801F77E0..0x801F7840`).
+                if body.entry == 965 && phase == t::DOOMSDAY_SWEEP_ARM && after != phase {
+                    let rolls: Vec<i32> = before_party
+                        .iter()
+                        .enumerate()
+                        .map(|(s, v)| doomsday_roll(round, s as u32, u32::from(v.hp)) as i32)
+                        .collect();
+                    let mut pctx = ctx_before;
+                    pctx.phase = phase;
+                    let mut seats = before_party.clone();
+                    let (_, hits) =
+                        t::doomsday_tick(&mut pctx, &mut seats, true, |s| rolls[usize::from(s)]);
+                    for (s, port) in seats.iter().enumerate() {
+                        let got =
+                            crate::cast_view::read_actor(&mut cpu.mem, ACTOR + s as u32 * STRIDE);
+                        let key = |v: &t::CastActorState| {
+                            (v.hp, v.hp_bar_delta, v.staged_anim, v.restage)
+                        };
+                        if key(&got) != key(port) {
+                            failures.push(format!(
+                                "{c}: Doomsday seat {s} hp/+0x10/+0x1DA/+0x1DC retail {:?} port {:?}",
+                                key(&got),
+                                key(port)
+                            ));
+                        }
+                        doom_clamps += usize::from(
+                            before_party[s].hp != 0 && rolls[s] > i32::from(before_party[s].hp),
+                        );
+                    }
+                    doom_hits += hits.len();
                 }
                 // That store against the director's caster write.
                 if body.action == 0x6F && phase == 3 {
@@ -1578,6 +1674,13 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     );
     eprintln!("band shadow: {status_marks} seat passes with a status bit set compared");
     eprintln!("Bloody Horns: {horn_hits} hits compared, {horn_clamps} clamped to the victim's HP");
+    eprintln!(
+        "Doomsday: {doom_hits} sweep hits compared, {doom_clamps} clamped, {doom_holds} party-settle holds"
+    );
+    assert!(
+        doom_hits > 10 && doom_clamps >= 2 && doom_holds > 10,
+        "Doomsday hits {doom_hits} clamps {doom_clamps} holds {doom_holds}"
+    );
     assert!(
         horn_clamps >= 2 && horn_hits > horn_clamps,
         "horn hits {horn_hits} clamps {horn_clamps}"
@@ -1663,6 +1766,14 @@ const GIGATON_PRESS: u32 = 0x801F_6D54;
 const ELEMENT_CHANGE: u32 = 0x801F_88EC;
 const ELEMENT_STRIKE: u32 = 0x801F_69D8;
 const DOOMSDAY: u32 = 0x801F_69D8;
+/// Doomsday's countdown word, in vsyncs (`0x801F8370`).
+const DOOMSDAY_WORD: u32 = 0x801F_8370;
+
+/// The roll Doomsday's `FUN_801DD4B0` returns for party seat `seat` on HP
+/// `hp` in round `round`: none, short of the HP, the HP, past it, far past.
+fn doomsday_roll(round: usize, seat: u32, hp: u32) -> u32 {
+    [0, hp.saturating_sub(1), hp, hp + 1, hp * 3][(round + seat as usize) % 5]
+}
 const EVIL_SERU_MAGIC: u32 = 0x801F_6A74;
 /// The part spawn `FUN_80021B04` and the pool the walk hands parts from.
 const SPAWN_PART: u32 = 0x8002_1B04;

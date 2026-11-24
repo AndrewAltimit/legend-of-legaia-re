@@ -1,0 +1,50 @@
+# Non-summon cast-module images (PROT 0935..0970 but 0947), round seven: arms out of scope, by image.
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e3bbc8c8f6546ed2"
+range = "0x801F6A8C..0x801F6A8C"
+verdict = "unreachable"
+reason = "PROT 0965: the phase `ctx[+0x279]` is a byte (`lbu` at `0x801F6A58`) already found below `3` (`slti` at `0x801F6A78`) and neither `2` (`0x801F6A74`) nor `0` (`0x801F6A84`), so it is `1` here and the fall-through past the `beq` on `1` never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e3bbc8c8f6546ed2"
+range = "0x801F6AFC..0x801F6AFC"
+verdict = "unreachable"
+reason = "PROT 0965: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` from `0` to `0x0C` (`0x801F7634..0x801F7644`, `0x801F78CC..0x801F78DC`) and `0xFF` (`0x801F79FC..0x801F7A04`), so the fall-through past the `0xFF` test (a phase in `0x0D..0xFE`) never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e3bbc8c8f6546ed2"
+range = "0x801F6F18..0x801F6F18"
+verdict = "unreachable"
+reason = "PROT 0965: arm 4 clamps the wash alpha `ctx[+0x27A]` past `0x80`, but arm 3 leaves it at the frame step (`sb` of `0x1F800393` at `0x801F6E58`, at most `4`) with arm 4 on a word of `0x40` vsyncs (arm 3 re-arms it `+0x40`), and arm 4 adds the step per pass while the word drains by the same step (`0x801F6EF0..0x801F6F38`): it leaves arm 4 at most `0x40 + 7`, so the clamp store never runs there (arm 5's at `0x801F6F94` does)."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e3bbc8c8f6546ed2"
+range = "0x801F71B8..0x801F71B8"
+verdict = "unreachable"
+reason = "PROT 0965: `beqz` on the battle's party count `ctx+0` (`lbu` at `0x801F71B0`), which skips arm 7's party show loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e3bbc8c8f6546ed2"
+range = "0x801F7928..0x801F796C"
+verdict = "unreachable"
+reason = "PROT 0965: arm 0x0C's single-seat settle (caster code `+0x1DD` below `3`, `sltiu` at `0x801F7924`). Doomsday (`0xB6`) carries target shape `0x66` (spell record `+2` at `0x800754C8 + 0xB6 * 0xC`), whose `& 0x60 == 0x60` the monster picker turns into the party code `8` (`0x801EA5A4..0x801EA5D4`, `sb` at `0x801EA934`), so the walk always takes the party row (`0x801F797C`)."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e3bbc8c8f6546ed2"
+range = "0x801F7988..0x801F7988"
+verdict = "unreachable"
+reason = "PROT 0965: `beqz` on the battle's party count `ctx+0` (`lbu` at `0x801F7980`), ahead of arm 0x0C's party settle walk; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e3bbc8c8f6546ed2"
+range = "0x801F7A10..0x801F7A10"
+verdict = "unreachable"
+reason = "PROT 0965: `beqz` on the battle's party count `ctx+0` (`lbu` at `0x801F7A08`), ahead of the `0xFF` arm's seat restore loop; a battle always seats the lead, so the count is at least one."
