@@ -81,6 +81,7 @@ impl BattleCamera {
             frame_step: DEFAULT_CAMERA_FRAME_STEP,
             pass_granular: false,
             results_sequencer: false,
+            results_yaw_held: false,
             actor,
             formation,
             target: None,
@@ -1556,7 +1557,9 @@ impl BattleCamera {
         // load window's end-of-action shot of the posing seat drifts at that
         // rate, half the action SM's at step `2`.
         let results = self.results_sequencer;
-        if results || self.option != CAMERA_OPTION_FAR {
+        // Under the battle-end signal with the sequencer on an early exit,
+        // nothing steps the counter (`results_yaw_held`).
+        if !self.results_yaw_held && (results || self.option != CAMERA_OPTION_FAR) {
             let inc_at = |step: u8| {
                 if results {
                     results_yaw_pass_increment(step)
@@ -1595,6 +1598,12 @@ impl BattleCamera {
         self.clip_age = self.clip_age.wrapping_add(
             (vsyncs as u32).wrapping_mul(crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE),
         );
+    }
+
+    /// Hold the yaw counter for this frame: the battle-end signal is up and
+    /// the results sequencer leaves ahead of its step.
+    pub fn set_results_yaw_held(&mut self, on: bool) {
+        self.results_yaw_held = on;
     }
 
     /// The results sequencer runs in the action SM's place this frame

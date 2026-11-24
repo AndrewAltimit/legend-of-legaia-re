@@ -249,6 +249,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         open_held: world.battle.battle_open_held(),
         // The battle-end fold below raises it while the sequencer runs.
         results_sequencer: false,
+        results_yaw_held: false,
     };
     battle_end_cam_inputs(world, inputs, actor_at)
 }
@@ -428,6 +429,8 @@ fn battle_end_cam_inputs(
         return inputs;
     };
     if seq.cause == BattleEndCause::Escaped {
+        // The escape arm returns ahead of the step (`0x8004E644`).
+        inputs.results_yaw_held = true;
         return inputs;
     }
     let seat = seq.pose_actor;
@@ -451,6 +454,10 @@ fn battle_end_cam_inputs(
     // 0x67`, `0x8004E644`, returned above).
     // PORT: FUN_8004E568 (0x8004E5B8..0x8004E644, the gates ahead of the yaw step)
     inputs.results_sequencer = world.battle_stage_id() == 0 && !seq.side_band_request_up();
+    // On those early exits nothing steps it: the action SM stopped with the
+    // signal (`0x80047040`). The load window's capture holds `68` through
+    // the request (`rim_elm_gimard_victory` vsyncs `322..350`).
+    inputs.results_yaw_held = !inputs.results_sequencer;
     inputs.acting_body = display.map(|d| [d[0], d[2]]);
     inputs.action = script::ActionFraming {
         party_slot: party,

@@ -545,17 +545,14 @@ pub fn engine_frame_with(
     }
     // A PCSX-Redux capture's frames ran on its CD response time: a voice
     // clip's stop watch took two thirds of the CPU there, a sixteenth of a
-    // console's (`WorldToggles::battle_cd_timing`). The child prices it the
-    // capture's way whatever the parent opted in to.
-    if pcsx_redux {
-        cmd.env("LEGAIA_BATTLE_CD_TIMING", "pcsx-redux");
-    }
-    // The field's the same, but the play window seats a console's
-    // (`PLAY_FIELD_CD_TIMING`): the child keeps the harness's own field
-    // timing, PCSX-Redux's unless the parent named one, and a PCSX-Redux
-    // capture's whatever the parent named.
-    if pcsx_redux || std::env::var_os("LEGAIA_FIELD_CD_TIMING").is_none() {
-        cmd.env("LEGAIA_FIELD_CD_TIMING", "pcsx-redux");
+    // console's (`WorldToggles::battle_cd_timing`). The play window seats a
+    // console's for battle and field alike (`play_cd_timing`), so the child
+    // keeps the harness's own timing: PCSX-Redux's unless the parent named
+    // one, and a PCSX-Redux capture's whatever the parent named.
+    for var in ["LEGAIA_BATTLE_CD_TIMING", "LEGAIA_FIELD_CD_TIMING"] {
+        if pcsx_redux || std::env::var_os(var).is_none() {
+            cmd.env(var, "pcsx-redux");
+        }
     }
     cmd.env("LEGAIA_CAPTURE_NO_PRESENT", "1");
     cmd.args(["play-window", "--no-audio"])

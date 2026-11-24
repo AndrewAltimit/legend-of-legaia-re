@@ -1118,3 +1118,121 @@ fn the_results_state_grades_and_leaves_as_retail_does() {
         "graded {graded:?} left {left}"
     );
 }
+
+/// The how-to run's hall state `2` of `FUN_801CF470` (`0x801CFA18..0x801CFA5C`),
+/// which mode `2` alone reaches (state 1's `+2` skip at `0x801CF9F4..0x801CFA08`):
+/// it waits while the lesson holds the load gate `DAT_801D5830` up, and on
+/// the pass that finds it down zeroes the cue latch, the count-in clock, the
+/// beat track's flash and the human's gauge and moves to the READY state 3,
+/// whose first banner run is the pass after. Retail runs one hall pass per
+/// three vsyncs; the real `World` hall (`World::tick_dance`) is driven three
+/// vsyncs a pass under the same gate, from a how-to `World::enter_dance`.
+#[test]
+fn the_how_to_hall_waits_on_the_load_gate_as_retail_does() {
+    use legaia_engine_minigames::dance::CountInStage;
+    differential!(prot(980, SM));
+    const SM: u32 = 0x801C_F470;
+    const SM_ACTOR: u32 = ACTORS + 0x800;
+    const GATE: u32 = 0x801D_5830;
+    const LATCH: u32 = 0x801D_5134;
+    const CLOCK: u32 = 0x801D_5158;
+    const FLASH: u32 = 0x801D_512C;
+    let Some((mut cpu, _, overlay, _)) = hall() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    for va in [
+        0x801D_231C,
+        0x801D_32F8,
+        0x801D_414C,
+        0x8002_4EE4,
+        0x8001_FC00,
+        0x8001_E54C,
+        0x8003_DE7C,
+        0x8002_6478,
+        0x8005_67A8,
+        0x801D_2F38,
+    ] {
+        cpu.stub(va, 0);
+    }
+    let banner = Rc::new(Cell::new(false));
+    {
+        let banner = banner.clone();
+        cpu.hook(0x801D_2D98, move |_, _| banner.set(true));
+    }
+    cpu.mem.wr32(0x8007_B888, BANK);
+    cpu.mem.wr32(0x8007_B85C, 0x8010_0000);
+    // State 1 raises the gate for every mode (`0x801CF984..0x801CF98C`) and
+    // only READY's state 3 drops it, which mode `2` reaches through state 2;
+    // the lesson's opening prompt (its state `0`, `the_how_to_script_runs_as_retail_runs_it`)
+    // stores no gate. So with no press the how-to hall stays parked.
+    {
+        let mut w = legaia_engine_core::world::World::new();
+        let game = DanceGame::from_overlay_for_mode(&overlay, DanceMode::HowTo).expect("how-to");
+        w.enter_dance(game);
+        for v in 0..300 {
+            let (stage, frame) = w.drive_dance_hall_vsync(None).expect("the count-in");
+            assert_eq!((stage, frame), (CountInStage::Parked, 0), "vsync {v}");
+        }
+    }
+    let mut checked = 0;
+    for held in [1usize, 2, 5] {
+        cpu.mem.wr32(STATE, 2);
+        cpu.mem.wr32(MODE, DanceMode::HowTo.value());
+        cpu.mem.wr8(0x1F80_0393, 3);
+        for (a, v) in [(LATCH, 2), (CLOCK, 0x40), (FLASH, 7), (GAUGE, 900)] {
+            cpu.mem.wr32(a, v);
+        }
+        let mut w = legaia_engine_core::world::World::new();
+        let game = DanceGame::from_overlay_for_mode(&overlay, DanceMode::HowTo).expect("how-to");
+        w.enter_dance(game);
+        for pass in 0..held + 6 {
+            let gate = pass < held;
+            cpu.mem.wr32(GATE, u32::from(gate));
+            cpu.mem.wr32(PAD_EDGE, 0);
+            banner.set(false);
+            assert_eq!(cpu.call(SM, &[SM_ACTOR]), Stop::Returned, "pass {pass}");
+            let (was, before) = w
+                .minigames
+                .dance_countin
+                .as_ref()
+                .map_or((CountInStage::Parked, 0), |c| (c.stage(), c.frame()));
+            let mut port = None;
+            for _ in 0..3 {
+                port = w.drive_dance_hall_vsync(Some(gate));
+            }
+            let ctx = format!("held {held} pass {pass}");
+            let state = cpu.mem.rd32(STATE);
+            let (stage, frame) = port.expect("the count-in");
+            let retail_stage = match state {
+                2 => CountInStage::Parked,
+                3 => CountInStage::Ready,
+                other => panic!("{ctx}: state {other}"),
+            };
+            assert_eq!(
+                (retail_stage, banner.get()),
+                (stage, was == CountInStage::Ready && frame != before),
+                "{ctx}: the hall"
+            );
+            // Off the park, the clock READY draws next (the tail adds `dt`
+            // to it every pass).
+            if stage != CountInStage::Parked {
+                assert_eq!(cpu.mem.rd32(CLOCK) as i32, frame, "{ctx}: the clock");
+            }
+            if pass == held {
+                // The release pass: the words it zeroes.
+                let zeroed = [LATCH, FLASH, GAUGE].map(|a| cpu.mem.rd32(a));
+                assert_eq!(zeroed, [0; 3], "{ctx}: the release");
+                let g = w.minigames.dance.as_ref().expect("the run");
+                let hall = g.tutorial_hall(Default::default());
+                assert_eq!(
+                    (hall.gauge, hall.track_flash),
+                    (0, 0),
+                    "{ctx}: the port's release"
+                );
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked > 20);
+}

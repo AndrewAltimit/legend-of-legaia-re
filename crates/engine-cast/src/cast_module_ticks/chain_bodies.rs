@@ -769,6 +769,9 @@ pub fn gated_hit_arm(entry: u32, body: Option<u32>) -> Option<(u8, u8, ChainSett
         // the row (`0x801F799C`), the victim and the target.
         (938, Some(CHAOS_BREATH_TICK)) => Some((NO_ARM, 3, ChainSettle::PartyRow)),
         (955, Some(MELT_SPRAY_TICK)) => Some((NO_ARM, 4, ChainSettle::Victim)),
+        // Kiss of Death's arm 5, past its word: a standing victim back on
+        // clip `0`, a fallen one on `8` (`0x801F8E14..0x801F8E80`).
+        (955, Some(KISS_OF_DEATH_TICK)) => Some((NO_ARM, 5, ChainSettle::Victim)),
         (955, Some(POWER_CHARGE_TICK)) => Some((NO_ARM, 3, ChainSettle::Victim)),
         _ => None,
     }
@@ -945,6 +948,25 @@ pub const fn spore_gas_rot(hit: u8, roll: u32) -> Option<u8> {
         3 if roll & 3 != 0 => Some(2),
         _ => None,
     }
+}
+
+/// The two bits of the victim's character record `+0x6BC` word
+/// (`0x80084140 + (id - 1) * 0x414`) that turn PROT 0939's Rot roll away:
+/// `0x01000000` and `0x10000000`, each its own `bne` past the draw
+/// (`0x801F71E8..0x801F71FC` on hit 1, `0x801F7264..0x801F7278` on hit 2,
+/// `0x801F72FC..0x801F7310` on hit 3).
+pub const SPORE_GAS_ROT_GUARDS: u32 = 0x1100_0000;
+
+/// PROT 0939 hit `hit`'s Rot roll for a victim whose record word is
+/// `ability`: the limb it lands ([`spore_gas_rot`]), drawing `rand()` only
+/// on hits 1..3 past both guards ([`SPORE_GAS_ROT_GUARDS`]). A limb newly set
+/// clears the head byte of both Auto command strings (record `+0x76F` /
+/// `+0x77F`, `0x801F7348..0x801F73A0`); the caller makes that store.
+pub fn spore_gas_rot_roll(hit: u8, ability: u32, draw: impl FnOnce() -> u32) -> Option<u8> {
+    if !(1..4).contains(&hit) || ability & SPORE_GAS_ROT_GUARDS != 0 {
+        return None;
+    }
+    spore_gas_rot(hit, draw())
 }
 
 /// PROT 0942's `0xAA` tick body, `0x801F69F4..0x801F7D34`.

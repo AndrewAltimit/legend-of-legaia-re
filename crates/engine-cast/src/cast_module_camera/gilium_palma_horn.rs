@@ -88,7 +88,13 @@ pub fn gilium_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats)
                 cut([0, 0x800], [0, 0x600, 0x1000], [0; 3], 1)
             }
             1 => {
-                let (_, drained) = counted_if_positive(st, GILIUM_DRAIN);
+                // The arm leaves whatever the word: a drain that leaves it
+                // positive owes the rest of its pass too, which the gate only
+                // drains on the tick it opens.
+                let (word_left, drained) = counted_if_positive(st, GILIUM_DRAIN);
+                if word_left {
+                    st.countdown.drain_rest(GILIUM_DRAIN);
+                }
                 pass(drained.then_some(z(-4)), ArmDirection::PASS)
             }
             2 => pass(gated(st, z(-4), 0x200)?, ArmDirection::PASS),
@@ -190,8 +196,12 @@ pub fn gilium_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats)
                 gated(st, drift(-1, 0, 0, 0, -4), 0x400)?,
                 ArmDirection::PASS,
             ),
+            // The pull runs on every pass ahead of the word's test (TR z
+            // `-= step << 3`, pitch `-= step` at `0x801F8A74..0x801F8AA0`),
+            // through the drain and the row wait after it.
             0x16 => {
-                let d = gated(st, drift(-1, 0, 0, 0, -8), 0)?;
+                let d = Some(drift(-1, 0, 0, 0, -8));
+                gated(st, CaptureDrift::default(), 0).map_err(|_| held(d))?;
                 if !st.row_settled {
                     return Err(held(d));
                 }
@@ -518,7 +528,7 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
         }
         PALMA_SETTLE_PHASE => {
             let mut d = None;
-            let drained = st.countdown.0 > 0;
+            let drained = st.pass_word() > 0;
             if drained {
                 st.countdown.0 -= P;
                 d = Some(drift(0, 0, 0, 0, P));

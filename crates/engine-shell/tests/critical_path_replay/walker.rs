@@ -207,11 +207,14 @@ pub(super) fn drain_scripted(host: &mut SceneHost) -> Drain {
         // strobe - fast enough to clear a long sequence inside the budget,
         // slow enough that a page that opens an option picker is not
         // double-answered by the same press.
-        host.world.set_pad(if f % 16 < 2 {
-            PadButton::Cross.mask()
-        } else {
-            0
-        });
+        host_pad(
+            host,
+            if f % 16 < 2 {
+                PadButton::Cross.mask()
+            } else {
+                0
+            },
+        );
         match host.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Drain::Entered(name),
             Ok(_) => {}
@@ -257,7 +260,7 @@ pub(super) fn held_frames_before_input(host: &mut SceneHost) -> Option<u32> {
         if !host.world.cutscene_timeline_active() && !host.world.dialogue_owns_input() {
             return Some(f);
         }
-        host.world.set_pad(0);
+        host_pad(host, 0);
         host.tick().ok()?;
     }
     None
@@ -385,7 +388,7 @@ pub(super) fn walk_to(
                 host.world.dialogue_owns_input(),
             );
         }
-        host.world.set_pad(pad);
+        host_pad(host, pad);
         match host.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Leg::Transitioned(name),
             Ok(_) => {}

@@ -326,7 +326,11 @@ Each frame the arm also raises the actor's `+0x1DC` bit 2. The port takes the po
 
 #### The victory camera
 
-The sequencer, not the action SM, steps the yaw counter `ctx[+0x6DA]` from the signal on: by `max(1, DAT_1F800393 >> 1)` a pass, with no camera-option test (`0x8004E728..0x8004E758`), half the action SM's `4 * step / 3`. It skips the step on its three early exits: a stage module running (`gp+0x332`, `0x8004E5B8`), the side-band request still up at the load hold's head (`ctx[+0x26B]`, `0x8004E5C8`) and the escape arm (`0x8004E644`). The retail RAM of the wipe states reads the counter `1984` at the results frame and `2044` 126 vsyncs into the hold. The port raises `BattleCamInputs::results_sequencer` past the same exits.
+The sequencer, not the action SM, steps the yaw counter `ctx[+0x6DA]` from the signal on: by `max(1, DAT_1F800393 >> 1)` a pass, with no camera-option test (`0x8004E728..0x8004E758`), half the action SM's `4 * step / 3`. It skips the step on its three early exits: a stage module running (`gp+0x332`, `0x8004E5B8`), the side-band request still up at the load hold's head (`ctx[+0x26B]`, `0x8004E5C8`) and the escape arm (`0x8004E644`). The retail RAM of the wipe states reads the counter `1984` at the results frame and `2044` 126 vsyncs into the hold. The port raises `BattleCamInputs::results_sequencer` past the same exits, and on them, with the action SM stopped by the signal (`0x80047040`), `BattleCamInputs::results_yaw_held` holds the counter: nothing steps it.
+
+On a party win the load window is where the step shows: `autorun_victory_timeline.lua` from `rim_elm_gimard_victory` (column `yaw6da`) holds the counter at `68` while the side-band request is up (vsyncs `322..350`), then steps it `1` a pass at step `2` to `93` before the results frame stores `0x780` at vsync `402`.
+`rim_elm_gimard_victory_load_window` (vsync `366`, counter `76`) and `_late` (`392`, `89`) are stills inside it.
+Their image child places the frame on the counter rather than seating it: the capture's ground is seated on the window's first tick, and the frame is the first whose engine counter has come forward to retail's word, framed on the engine's own case-8 law with no camera alignment (`ScreenshotConfig::seats_load_window`, `battle_drive::loading_counter_reached`), so the still scores the window's drift. They read `.972` and `.999`, the engine's yaw `2387` / `2400` on retail's.
 
 The sequencer frames its pose actor `ctx[+0x13]` on every frame it runs, in two ways:
 

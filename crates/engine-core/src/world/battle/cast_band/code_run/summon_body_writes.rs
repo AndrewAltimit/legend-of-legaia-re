@@ -946,6 +946,21 @@ impl World {
                 // wrapper hits do. The hit arm 18's own kernel call raises it
                 // again, so the hold ends there.
                 self.battle.combo_cluster_held = true;
+                // Retail walks the front and the row once a pass, by the
+                // pass's whole `step * scalar`, and strikes once after it: a
+                // tick that hands over walks the ticks of its pass still owed
+                // too, and only the tick that ends the pass strikes. Struck
+                // on every one-vsync tick, a frame step of 2 rolled the wave's
+                // damage twice a pass.
+                let strikes = passed || self.module_tick_closes_pass();
+                let delta = if self.toggles.battle_sm_frame_cadence {
+                    i32::from(self.module_frame_step())
+                } else {
+                    1
+                };
+                // The ticks ahead of the pass's last do nothing: the pass's
+                // last runs the whole pass, front, lifts and rolls.
+                let t = if strikes { t * delta } else { 0 };
                 self.casting.module_mule_front += t / 2;
                 let front = self.casting.module_mule_front;
                 let shield = self.battle.mystic_shield_up();
@@ -954,7 +969,7 @@ impl World {
                 let row: Vec<usize> = (0..monsters)
                     .filter_map(|i| map.engine(3 + i as u8).map(usize::from))
                     .collect();
-                for &e in &row {
+                for &e in row.iter().filter(|_| strikes) {
                     self.mule_wave_hit(e, front, shield, caster, spell_id);
                     let Some(a) = self.actors.get_mut(e) else {
                         continue;
@@ -1115,6 +1130,9 @@ impl World {
     ///   the end of its eight-slot track, so the flinch the arm parked plays
     ///   out silent (`0x801F82CC..0x801F8370`);
     /// - arm `0x10` keeps that stand every pass (`0x801F8418..0x801F8484`);
+    /// - arm `0xB`'s pass puts the creature into the defeat fade
+    ///   (`+0x21C = +0x225 = 2`, `0x801F7CA4..0x801F7CB0`) and arm `0xC`'s
+    ///   pass zeroes its colour word (`0x801F7D70`);
     /// - arm `0x11`'s pass hides the living row (`0x801F8694..0x801F86DC`);
     /// - the hit arm `0x13`'s pass puts each living seat's parked trio and
     ///   facing back, turns it from the creature (`FUN_80019B28` + `0x800`)
@@ -1274,19 +1292,12 @@ impl World {
                     }
                 }
             }
-            (0x11, true) => {
-                for &s in &seats {
-                    if living(self, s) {
-                        let a = &mut self.actors[s];
-                        a.battle.render_color = 0;
-                        a.battle.render_flag = RENDER_FLAG_HIDDEN;
-                    }
-                }
-                // The same exit puts the creature into the defeat fade
-                // (`sb v0,0x21C(s4)` / `sb v0,0x225(s4)` with `v0 = 2`,
-                // `0x801F7CA4..0x801F7CB0`): it fades out over arm `0x12`'s
-                // `96 * scalar`, whose exit zeroes its word (`sw zero,0x4(s4)`
-                // at `0x801F7D70`).
+            // Arm `0xB`'s exit (the arm at `0x801F7C08`) puts the creature
+            // into the defeat fade (`sb v0,0x21C(s4)` / `sb v0,0x225(s4)`
+            // with `v0 = 2`, `0x801F7CA4..0x801F7CB0`): it fades out over arm
+            // `0xC`'s `96 * scalar`, whose exit (the arm at `0x801F7CB4`)
+            // zeroes its word (`sw zero,0x4(s4)` at `0x801F7D70`).
+            (0xB, true) => {
                 if let Some(a) = self
                     .casting
                     .summon_actor_slot
@@ -1296,13 +1307,22 @@ impl World {
                     a.battle.capture_state = 2;
                 }
             }
-            (0x12, true) => {
+            (0xC, true) => {
                 if let Some(a) = self
                     .casting
                     .summon_actor_slot
                     .and_then(|s| self.actors.get_mut(usize::from(s)))
                 {
                     a.battle.render_color = 0;
+                }
+            }
+            (0x11, true) => {
+                for &s in &seats {
+                    if living(self, s) {
+                        let a = &mut self.actors[s];
+                        a.battle.render_color = 0;
+                        a.battle.render_flag = RENDER_FLAG_HIDDEN;
+                    }
                 }
             }
             (0x13, true) => {
@@ -1396,6 +1416,15 @@ impl World {
             self.turn_row_away_from(monster_count, (0, 0), true);
         }
         let d = legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as i16;
+        // Arm 4's rise sits inside its word's `blez`: every pass that opens
+        // on a positive word rises by the whole pass, the one that leaves
+        // too (its owed ticks with it).
+        let rises = phase_in == 4 && self.casting.module_cam.pass_word_in > 0;
+        let ticks = 1 + if passed {
+            self.casting.module_cam.countdown.1 as i16
+        } else {
+            0
+        };
         let Some(a) = self
             .casting
             .summon_actor_slot
@@ -1415,11 +1444,20 @@ impl World {
                 a.battle.render_color = 0;
                 a.battle.render_scale = Some(0);
             }
-            (4, false) => {
-                m.world_z = m.world_z.wrapping_add(24 * d);
+            // The pass that leaves stores the creature's `z = 0x400` and scale
+            // `0x1000` over its step (`sh v0,0x38(s6)` / `sh v1,0x72(t0)` at
+            // `0x801F718C` / `0x801F71A4`); its height keeps the rise.
+            (4, _) if rises => {
+                let d = d * ticks;
                 m.world_y = m.world_y.wrapping_add(2 * d);
-                if let Some(s) = a.battle.render_scale.as_mut() {
-                    *s = s.wrapping_add(32 * d as u16);
+                if passed {
+                    m.world_z = 0x400;
+                    a.battle.render_scale = Some(0x1000);
+                } else {
+                    m.world_z = m.world_z.wrapping_add(24 * d);
+                    if let Some(s) = a.battle.render_scale.as_mut() {
+                        *s = s.wrapping_add(32 * d as u16);
+                    }
                 }
             }
             // Arm `0xB`'s pass hides the creature for the rest of the cast

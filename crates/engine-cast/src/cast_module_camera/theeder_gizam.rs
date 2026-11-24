@@ -267,7 +267,7 @@ pub fn theeder_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
             ArmDirection::PASS
         }
         14 => {
-            let drained = st.countdown.0 > 0;
+            let drained = st.pass_word() > 0;
             if drained {
                 st.countdown.drain();
             }
@@ -581,7 +581,7 @@ pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             }
         }
         14 => {
-            let drained = st.countdown.0 > 0;
+            let drained = st.pass_word() > 0;
             if drained {
                 st.countdown.drain();
             }

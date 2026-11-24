@@ -756,6 +756,10 @@ div.play-vis-head { cursor: default; }
               <input type="checkbox" id="play-hp-readout-guard"> Battle freeze guard
             </label>
             <label class="play-dev-menu"
+                   title="After Iota's attack, a monster turned to stone stands back at full size; the original leaves it shrunk to a sliver (play-window --no-stone-scale-fix turns it off). A fix of an original oversight; Retail-faithful holds it off. Starts on the engine's default.">
+              <input type="checkbox" id="play-stone-scale-fix"> Stoned foes keep their size
+            </label>
+            <label class="play-dev-menu"
                    title="A character healed in battle by an item, a Grail or a healing spell shows the amount over them. The original throws no number for a heal and only counts the HP figure up (play-window --no-heal-numerals turns it off). Not retail; Retail-faithful holds it off. Starts on the engine's default.">
               <input type="checkbox" id="play-heal-numerals"> Heal numbers
             </label>
@@ -870,6 +874,10 @@ div.play-vis-head { cursor: default; }
             <label class="play-dev-menu"
                    title="Pace voiced field cutscenes on PCSX-Redux's CD timing, which the retail captures were recorded on, instead of a console's (the native LEGAIA_FIELD_CD_TIMING=pcsx-redux). Off plays at hardware pacing. Lasts for this session only.">
               <input type="checkbox" id="play-field-pcsx-cd-timing"> PCSX-Redux voice pacing
+            </label>
+            <label class="play-dev-menu"
+                   title="Pace voiced battle frames (summons, item and Spirit lines, arts shouts) on PCSX-Redux's CD timing, which the retail captures were recorded on, instead of a console's (the native LEGAIA_BATTLE_CD_TIMING=pcsx-redux). Off plays at hardware pacing. Lasts for this session only.">
+              <input type="checkbox" id="play-battle-pcsx-cd-timing"> PCSX-Redux battle voice pacing
             </label>
             <label class="play-dev-menu"
                    title="The Arts command opens the port's saved-chain list instead of retail's per-press directional input (the native --arts-saved-list, the launcher's Saved-chain Arts list row). Not retail; Retail-faithful holds it off. Remembered for your next visit.">
@@ -3644,6 +3652,7 @@ div.play-vis-head { cursor: default; }
   const entryPulseEl = document.getElementById('play-entry-pulse');
   const cadenceEl = document.getElementById('play-battle-frame-cadence');
   const fieldPcsxCdEl = document.getElementById('play-field-pcsx-cd-timing');
+  const battlePcsxCdEl = document.getElementById('play-battle-pcsx-cd-timing');
   const savedListEl = document.getElementById('play-arts-saved-list');
   const shinyEl = document.getElementById('play-shiny-seru');
   const fleeExpEl = document.getElementById('play-flee-exp');
@@ -3652,6 +3661,7 @@ div.play-vis-head { cursor: default; }
   const tetsuSparFixEl = document.getElementById('play-tetsu-spar-fix');
   const jewelFixEl = document.getElementById('play-jewel-fix');
   const hpGuardEl = document.getElementById('play-hp-readout-guard');
+  const stoneScaleEl = document.getElementById('play-stone-scale-fix');
   const healNumEl = document.getElementById('play-heal-numerals');
   const bonusDropEl = document.getElementById('play-bonus-drop');
   const saveAnywhereEl = document.getElementById('play-save-anywhere');
@@ -3686,6 +3696,7 @@ div.play-vis-head { cursor: default; }
     tetsuSparFixEl.checked = !!rtCall('tetsu_spar_fix');
     jewelFixEl.checked = !!rtCall('jewel_fix');
     hpGuardEl.checked = !!rtCall('hp_readout_guard');
+    stoneScaleEl.checked = !!rtCall('stone_scale_fix');
     healNumEl.checked = !!rtCall('heal_numerals');
     bonusDropEl.checked = !!rtCall('bonus_drop');
     saveAnywhereEl.checked = !!rtCall('save_anywhere');
@@ -3749,6 +3760,7 @@ div.play-vis-head { cursor: default; }
     rtCall('set_entry_pulse', !!entryPulseEl.checked);
     rtCall('set_battle_frame_cadence', !!cadenceEl.checked);
     rtCall('set_field_pcsx_cd_timing', !!fieldPcsxCdEl.checked);
+    rtCall('set_battle_pcsx_cd_timing', !!battlePcsxCdEl.checked);
     rtCall('set_arts_saved_list', !!savedListEl.checked);
     syncTweakDefaults();
     rtCall('set_shiny_seru', !!shinyEl.checked);
@@ -3758,6 +3770,7 @@ div.play-vis-head { cursor: default; }
     rtCall('set_tetsu_spar_fix', !!tetsuSparFixEl.checked);
     rtCall('set_jewel_fix', !!jewelFixEl.checked);
     rtCall('set_hp_readout_guard', !!hpGuardEl.checked);
+    rtCall('set_stone_scale_fix', !!stoneScaleEl.checked);
     rtCall('set_heal_numerals', !!healNumEl.checked);
     rtCall('set_bonus_drop', !!bonusDropEl.checked);
     rtCall('set_save_anywhere', !!saveAnywhereEl.checked);
@@ -3797,6 +3810,7 @@ div.play-vis-head { cursor: default; }
   entryPulseEl.addEventListener('change', () => { rtCall('set_entry_pulse', !!entryPulseEl.checked); canvas.focus(); });
   cadenceEl.addEventListener('change', () => { rtCall('set_battle_frame_cadence', !!cadenceEl.checked); canvas.focus(); });
   fieldPcsxCdEl.addEventListener('change', () => { rtCall('set_field_pcsx_cd_timing', !!fieldPcsxCdEl.checked); canvas.focus(); });
+  battlePcsxCdEl.addEventListener('change', () => { rtCall('set_battle_pcsx_cd_timing', !!battlePcsxCdEl.checked); canvas.focus(); });
   savedListEl.addEventListener('change', () => { rtCall('set_arts_saved_list', !!savedListEl.checked); canvas.focus(); });
   shinyEl.addEventListener('change', () => { rtCall('set_shiny_seru', !!shinyEl.checked); canvas.focus(); });
   fleeExpEl.addEventListener('change', () => { rtCall('set_flee_exp', !!fleeExpEl.checked); canvas.focus(); });
@@ -3805,6 +3819,7 @@ div.play-vis-head { cursor: default; }
   tetsuSparFixEl.addEventListener('change', () => { rtCall('set_tetsu_spar_fix', !!tetsuSparFixEl.checked); canvas.focus(); });
   jewelFixEl.addEventListener('change', () => { rtCall('set_jewel_fix', !!jewelFixEl.checked); canvas.focus(); });
   hpGuardEl.addEventListener('change', () => { rtCall('set_hp_readout_guard', !!hpGuardEl.checked); canvas.focus(); });
+  stoneScaleEl.addEventListener('change', () => { rtCall('set_stone_scale_fix', !!stoneScaleEl.checked); canvas.focus(); });
   healNumEl.addEventListener('change', () => { rtCall('set_heal_numerals', !!healNumEl.checked); canvas.focus(); });
   bonusDropEl.addEventListener('change', () => { rtCall('set_bonus_drop', !!bonusDropEl.checked); canvas.focus(); });
   saveAnywhereEl.addEventListener('change', () => { rtCall('set_save_anywhere', !!saveAnywhereEl.checked); canvas.focus(); });

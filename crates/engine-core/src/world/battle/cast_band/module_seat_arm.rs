@@ -61,6 +61,12 @@ impl World {
             a.battle.render_flag = state;
             a.battle.render_blend = blend;
         }
+        if let Some(state) = w.flag {
+            a.battle.render_flag = state;
+        }
+        if let Some(code) = w.target {
+            a.battle.active_target = code;
+        }
         if let Some((count, timer)) = w.loop_hold {
             a.battle.hit_count_bound = count;
             if let Some(p) = a.battle_animation.as_mut() {
@@ -75,15 +81,28 @@ impl World {
     }
 
     /// The creature stores of a module's later arms that the engine runs
-    /// beside its director: PROT 0922's slide (arm 4) and wake (arm 5).
+    /// beside its director: PROT 0922's slide (every pass of arm 4 its word
+    /// finds positive, the passing one too, `0x801F6E40..0x801F6E7C`).
+    /// `phase` is the arm the pass ran. Arm 5's wake (rate `8` and the next
+    /// clip on its pass, `0x801F6EE4..0x801F6EF4`) is the director's
+    /// (`puera_direct`); run here as well off the phase the pass left on, it
+    /// woke the creature a whole arm early and staged its clip twice.
     pub(in crate::world::battle::cast_band) fn apply_module_seat_motion(
         &mut self,
         prot_entry: u32,
         phase: u8,
+        passed: bool,
     ) {
         if prot_entry != 922 {
             return;
         }
+        // Retail slides once a pass by the pass's whole step: a tick that
+        // hands over slides for the ticks of its pass still owed too.
+        let ticks = 1 + if passed {
+            i32::from(self.casting.module_cam.countdown.1)
+        } else {
+            0
+        };
         let Some(a) = self
             .casting
             .summon_actor_slot
@@ -92,20 +111,13 @@ impl World {
         else {
             return;
         };
-        match phase {
-            PUERA_SLIDE_ARM => {
-                let z = &mut a.move_state.world_z;
-                *z = (*z + PUERA_SLIDE_PER_TICK).min(PUERA_SLIDE_END_Z);
-            }
-            PUERA_WAKE_ARM
-                if a.battle.anim_rate.get() == 0
-                    && a.battle.current_anim == 0
-                    && a.battle.queued_anim == 0 =>
-            {
-                a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(8);
-                a.battle.queued_anim = 1;
-            }
-            _ => {}
+        // The slide sits inside the word's `blez` (`0x801F6E40`): every pass
+        // that opens on a positive word slides by the whole pass, the last
+        // one too, so a step that does not divide the word's `scalar << 4`
+        // carries the creature past `0x80` (retail's `0xA0` at step 3).
+        if phase == PUERA_SLIDE_ARM && self.casting.module_cam.pass_word_in > 0 {
+            let z = &mut a.move_state.world_z;
+            *z = z.wrapping_add((i32::from(PUERA_SLIDE_PER_TICK) * ticks) as i16);
         }
     }
 }

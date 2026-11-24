@@ -117,14 +117,14 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
             })
         }
         1 => {
-            if st.countdown.0 > 0 {
+            if st.pass_word() > 0 {
                 st.countdown.pass_drain(MODULE_DRAIN_PER_TICK);
                 return ArmDirection::PASS.nudged(push);
             }
             ArmDirection::PASS
         }
         2 => {
-            if st.countdown.0 > 0 {
+            if st.pass_word() > 0 {
                 st.countdown.drain();
                 return ArmDirection::HOLD.nudged(push);
             }
@@ -134,7 +134,7 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
         }
         3 => {
             let mut drift = None;
-            if st.countdown.0 > 0 {
+            if st.pass_word() > 0 {
                 drift = Some(push);
                 if st.countdown.drain_above(0) {
                     return ArmDirection::HOLD.nudged(push);
@@ -225,7 +225,7 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
             ArmDirection::PASS.nudged(push)
         }
         SLIPPERY_LAST_ARM => {
-            let drift = if st.countdown.0 > 0 {
+            let drift = if st.pass_word() > 0 {
                 st.countdown.drain();
                 nudge(0, 0, 4 * p, 0)
             } else {

@@ -169,6 +169,9 @@ fn booted(spells: &[u8], bag: &[u8]) -> Option<NativeSession> {
         enable_audio: false,
     };
     let mut s = NativeSession::open(&extracted, &cfg).expect("boot session");
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut s.host.world.toggles);
     s.begin_new_game();
     s.enter_field_live("town01", &FieldLiveOpts::default())
         .expect("enter town01");

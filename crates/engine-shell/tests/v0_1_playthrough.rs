@@ -146,6 +146,9 @@ fn manifest_path() -> Option<PathBuf> {
 /// synthetic driver for a real NativeSession.
 fn synthetic_world(rng_seed: u32) -> World {
     let mut world = World::new();
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut world.toggles);
     while world.actors.len() < 8 {
         world.actors.push(Actor::default());
     }
@@ -464,6 +467,7 @@ fn v0_1_oracle_convergence() {
             enable_audio: false,
         };
         let mut session = NativeSession::open(&extracted, &cfg).expect("reopen for SC round-trip");
+        legaia_engine_core::world::play_cd_timing().apply(&mut session.host.world.toggles);
         session
             .enter_field_live(
                 scene_name,
@@ -568,6 +572,9 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
         enable_audio: false,
     };
     let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut session.host.world.toggles);
     // Story-seed: the new-game opening party = retail pre-Tetsu state.
     session.begin_new_game();
     session
@@ -723,6 +730,9 @@ fn v0_1_battle_leg_walk_talk_accept() {
         enable_audio: false,
     };
     let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut session.host.world.toggles);
     session.begin_new_game();
     session
         .enter_field_live(

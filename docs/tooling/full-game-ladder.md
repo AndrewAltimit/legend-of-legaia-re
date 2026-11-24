@@ -35,6 +35,7 @@ flowchart LR
 - [How the pad tier walks](#how-the-pad-tier-walks)
 - [How fights are played](#how-fights-are-played)
 - [Input conventions in both passes](#input-conventions-in-both-passes)
+- [Shortcuts](#shortcuts)
 - [Diagnostics](#diagnostics)
 - [Solid NPCs](#solid-npcs)
 - [What it cannot measure](#what-it-cannot-measure)
@@ -970,7 +971,11 @@ from full; each wipe reloaded the stretch before Cort was met. A stretch
 whose milestone is a boss door (`BOSS_LEAD_IN`) therefore runs from the
 random encounters on the way, as a scene with a staged fight of its own
 does (`SAVING_FOR_BOSS`), and the party meets the door with what the walk
-left it, which `pad_ready` then tops up.
+left it, which `pad_ready` then tops up. It sets out healed to full, from the
+restoratives the bag holds beyond the boss's reserve and with no field cast
+(`lead_in_heal`): the top-up at the door spends the reserve and the MP, and a
+heal that spent them before the walk traded fewer walk-in reloads for more
+of Cort's.
 
 Running is not free: the escape roll is retail's (`FUN_801E791C`, party
 `1.5 x SPD` against the foes' `SPD`, both raised by missing HP), and one
@@ -1032,6 +1037,12 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, naming its scene in the resume trailer, so `legaia-engine`'s `--resume-save` lands there without `--scene`; the rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
+| `LEGAIA_FGL_PAD_PROPS=1` | Plays examines, touches and box talks on the pad ([shortcuts](#shortcuts)). |
+| `LEGAIA_FGL_NO_SHORTCUTS=1` | Refuses every fallback placement the pad hand would make ([shortcuts](#shortcuts)): the run is played on the pad alone. |
+| `LEGAIA_FGL_SKIP_OPENING=1` | Presses through the opening, so the first Cross takes the hosts' intro hand-off ([input conventions](#input-conventions-in-both-passes)). |
+| `LEGAIA_FGL_RETAIL_DECODE=1` | Walks retail's quantised direction decode rather than the hosts' default precise movement ([shortcuts](#shortcuts)). |
+| `LEGAIA_FGL_WATCH_FLAGS=0x403,...` | Prints each flip of those system flags, with scene, frame and the pad holder's park site. |
+| `LEGAIA_FGL_LEAD_IN_HEAL=0` | Leaves out the heal before the walk to a boss door ([arriving at a boss](#a-milestone-reached-with-a-fight-committed)). |
 | `LEGAIA_FGL_CONTINUOUS_UNTIL=<id>` | Ends part C once it reaches that milestone, and does not assert the baseline: with `LEGAIA_FGL_CONTINUOUS_RESUME` and a spread of `LEGAIA_FGL_RNG_SEED` values, how often one stretch clears. |
 
 ### The seed set
@@ -1063,6 +1074,7 @@ The deal is a function of the stream's seed, the pad and what the code means, an
 
 - **Code that only moves does not re-deal.** Builds that differ by a dead function, a codegen change inside `World::next_rand`, an unrelated crate's new call, or the hand's line numbers play seeds 5 and 16 to the credits with every line of the stripped trace identical. So do runs of one binary under the trace switches, with no trace at all, and with part C sharing the process with part B on other test threads.
 - **A change that re-deals moved a frame or a draw.** Retail has one `rand()` stream for every caller, the battle presentation's and the camera's among them, and the engine keeps it one stream, so a retail-faithful change to an effect's draws or a battle frame's length re-deals every encounter after it, as it would on the console. A hand change that moves one press by one frame does the same. Diff the two runs' `[run N]` lines: the first milestone whose pair differs bounds the stretch, and `LEGAIA_FGL_TRACE=1` on that stretch finds the frame.
+- **A timing model re-deals too.** A run on the engine's default toggles plays PCSX-Redux's CD timing in field and battle alike, so pricing a voiced field frame under the clip's CD stop watch (`WorldToggles::field_frame_span_law`) re-deals every stream from its first voiced field beat (`mist_rim_elm` to `hunters_spring`), and a console's battle CD timing re-deals it from the Tetsu spar's first voiced art.
 - **The guard.** `full_game_ladder::continuous::the_opening_deals_alike_in_two_processes` plays the opening stretches (New Game to Drake Castle) in two processes of one binary side by side and asserts the same pair at every milestone. Each process draws its own `HashMap` keys and addresses and the two contend for the cores, so a path that followed hash order, an address, the clock or a thread's timing fails it. It needs the disc, like the rest of the ladder.
 
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
@@ -1625,6 +1637,7 @@ map as its street:
 - **A ride a touch sets going.** A touch's prop record takes its first slice in the tick that posted it, so a record that spawns a ride and ends (`chitei2`'s lift P0[5], `44 56` then `21`) is over before the follower looks, and the ride is a helper context installed at the tick's end that has not stepped yet. The follower lets go of the pad for it as for any script it sets off. Pressing on through the ride, the walk landed on the far lift and touched it straight back, ten rides a stretch, until the frame budget ran out.
 - **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, from the waypoint's cell or the cell beside it: a lattice cell can straddle the tile edge (`conc3`'s inn exit (21, 95), whose waypoint cell is centred on the tile's west edge), and pressed toward the cell centre from beside it, the room's slanted wall slid the walker on and off the cell without ever entering the tile. It also backs out of a diagonal-wall notch where all four lattice steps read blocked. The lattice cannot say which neighbouring cell the free movement reaches, so each second the walk stays wedged it heads for the next open cell in turn: on `retona`'s stair landing at (16, 99) the nearest one lies west, and the slide toward it carries the player straight back.
 - **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few. A tap that opens the same talk twice on one walk without changing a flag ends the tapping for that walk: `jiji`'s inn counter (P0[8..10], the witch's "Want to stay?") opened on every tap of the walk past it, two thousand frames each, and spent a stretch's budget on the walk to P1[19]'s pickup.
+  Under `LEGAIA_FGL_PAD_PROPS=1`, beside an interact-class door with the probe on nothing, it first leans toward the door until the probe lands on it: a walk along the north face of `dolk`'s Lightning Gate (P0[16]) stops at the box's corner, where the probe of the walk's own facing falls past the box.
 - **A notice nobody scripted.** The walk tick that drains the Incense window's last count locks the player's movement and shows a one-line panel, and the panel waits for a confirm or cancel edge (retail `FUN_801D0B90`'s zero edge and `FUN_801F1E48`; [`field-menu.md`](../subsystems/field-menu.md)). No script runs under it, so none of the pad holders the hand pages is up. The walk and the lean answer it as a player does - pad released, Cross, until it is gone (`answer_notice`).
   A walk that only held its direction stood there for good: the idle tap above used to close the panel by accident, a second into the stall, and that tap is withheld beside a person. `kor3`'s resident P1[9] stands at (18, 38) in the stair doorway, and a notice that came up within reach of the body stopped every walk through the doorway until the stretch gave up.
 - **A held player is not leaning on anybody.** With the engaged bit (`+0x10 & 0x80000`) up and no script running, no press moves the player and the interact probe is shut, so a body in reach of the probes is not what stops the walk and the idle tap is not withheld for it. The stall line names the hold (`the player is held ... with no script running`).
@@ -1667,6 +1680,11 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   P2[42], Lord Saryu's audience, spans (104..107, 50) and (107, 50) is walled
   in): when the walk finds no path to its tile, or stalls at its edge, the
   band's other tiles are tried, nearest first;
+- an **examined** or **touched** prop is played the seated tier's way: the
+  player is placed on a seat beside it and turned to it, and each placement
+  is counted ([the shortcuts](#shortcuts)). `LEGAIA_FGL_PAD_PROPS=1` walks to
+  the seats instead, in the seated tier's order of sides, and leans in until
+  the probe lands or the prop's record starts;
 - an **object door** or a **boss stager** is walked up to and leaned on. A
   stager's fight fires on the next field step, so the walk that step belongs
   to fights it instead of fleeing it;
@@ -2070,6 +2088,7 @@ A fight runs at least 60 000 ticks and goes on past that while a foe's HP is sti
 ## Input conventions in both passes
 
 - **Every press goes through the hosts' pad gate** (`HostPad::host_pad`, on `BootSession::world_holds_field_pad`). The play window and the browser page hand the field a neutral pad while a narration crawl or a title card is up (`BootSession::claim_tick`), and the hand does the same, so a surface that eats the pad on a real host stalls the ladder too. A hand that wrote the world's pad directly passed `uru` `P2[36]` while players could not: a card left up over Gala's waking box held the pad neutral under it ([cutscene.md](../subsystems/cutscene.md#inline-narration-format)). With that fix reverted, the gated run parks on the box (`dialogue at helper pc=0x0BF1`). `LEGAIA_FGL_RAW_PAD=1` restores the direct write for bisecting.
+- **The opening is watched, not skipped.** Once the opening chain arms its intro hand-off (`PROLOGUE_HANDOFF_FLAG`, retail `FUN_801D1344`), a Cross edge ends the opening on both play hosts, whatever holds the field's pad: `claim_tick` reads the raw edge ahead of the neutral-pad rule (`TickOwner::PrologueSkip`). The gate takes that hand-off as the hosts do, and the hand presses no Cross while it is armed, so the run plays the whole chain. The presses it used to make there were inert headless and would have ended the opening on the first one on a host. `LEGAIA_FGL_SKIP_OPENING=1` presses through, and the first press takes the skip.
 - **Scripted sequences** get Cross on a press-2-release-14 duty cycle - and nothing while no script holds the frame. A Cross then is a talk: a seat on `rayman`'s `tunnelb` door beside the gate guard opens his talk on the frame the walk-on band is due.
 - **The naming prompt's Yes/No confirm** gets Up first (it opens on No).
 - **A menu press waits out the field pad hold** (`_DAT_8007B6B4`): every map install seats `0x28` frames of it (`FUN_8003ADAC`), the field-back load after each fight included, and a conversation's release `0x10` (`FUN_80039B7C`). The player tick skips the pad controller and its menu accept while it drains, so a Start sent into it is lost; the heal and dress passes after a fight press only once it is out.
@@ -2144,6 +2163,80 @@ clips and matches the same arts a windowed one does. Beyond that:
   fighter takes the ring's up arm (Item, using the first item) for the Items
   lesson, its down arm for Spirit, and `Command` with the Somersault
   (`Up Down Up`) for the hyper-arts drill, where an Auto attack is refused.
+
+## Shortcuts
+
+A **shortcut** is a world write the pad hand makes that a player can make only
+through the pad: a placement beside a prop, a facing set by hand, a teleport
+back to where the player stood, an option set without its screen. Each is a
+place where a defect only the hosts can show hides, as the card over Gala's
+box did while the hand wrote the pad straight into the world. Each one is
+named and counted (`full_game_ladder/shortcuts.rs`), and part C prints the
+tally per stretch and for the run:
+
+```text
+[shortcuts] 2 use(s): examine_face=1 examine_seat=1
+```
+
+The tally is a ratchet: a change that adds a shortcut shows in it. Only the
+pad hand counts; the seated tier places the player by definition.
+
+| Name | What it stands for |
+|---|---|
+| `examine_seat`, `examine_face` | An examined prop with no seat the walk reaches: the player is placed on a seat and turned to it. |
+| `touch_seat` | A touched prop with no side the walk reaches: the player is placed beside it. |
+| `examine_far`, `touch_far` | A prop in a scene that rolls encounters whose seats all lie beyond sixteen tiles of planned path, placed as above: the beats pass plays props retail left alone (`dolk`'s Lightning Gate rooms), and walking a lone member to them across a rolling castle wiped it reload after reload. |
+| `box_face` | A placed box talk (`talk_from_box`) whose facing was set by hand. |
+| `restore_xz` | The player put back where it stood after a placed interaction, or after a box lean that its pad step back did not return. |
+| `run_switch` | The Field Move switch, where the pause menu's Options screen did not take it. |
+| `door_object_seat`, `hop_seat` | The seated tier's door placements, should the pad hand ever reach them. |
+| `prologue_skip` | The opening skipped on the hosts' hand-off (`LEGAIA_FGL_SKIP_OPENING=1` only). |
+| `gate_order` | A press the pause menu or the naming prompt took while a card or a crawl held the field's pad, which the gate once dropped. |
+
+`LEGAIA_FGL_PAD_PROPS=1` plays examines, touches and box talks on the pad:
+the hand walks to each seat in the seated tier's order of sides, leans in
+until the probe lands, turns to an interact-class door before its tap, and
+places the player only where no seat is in reach (in a scene that rolls
+encounters, within sixteen tiles of planned path). It is not yet the
+measured configuration. Walked, a prop answers by the side it is reached
+from and by the fights met on the way, so the run's story branches part
+from the placed run's: `stone`'s statues turn to face their examiner, and
+`dolk`'s Lightning Gate rooms, which retail's player left alone, are a long
+walk across a rolling castle.
+
+Under it, part C once stopped in Uru Mais (`usha_research` -> `nivora`,
+the hop to `urudre1` closed) at the end of a chain of story gates, each
+read off the field scripts: `uru` P2[28], Gala's cutscene, spawns only once
+`0x379` is up (its C1 gate), which `doman` P1[15] raises; P1[15] stands past
+the door Dr. Usha's intercom (`doman` P1[18]) opens with the password
+`0x36E`, given only to a party that has `koin2` P1[19]'s `0x36D`; P1[19]
+stands only under `0x403`, which `map03` P2[11] raises after `korb3`'s band
+P2[2] to `kor` has raised `0x41D`. Walked, the stones of `korb3`'s maze
+lined up in another order, the walk to P2[2] stalled once, and the beats
+pass never tried it again. A walk-on whose walk stalls is now re-armed for
+the next round whose flags differ, and the chain completes. The engine took
+the branch the scripts name throughout; the gap was the hand's. The
+`0x21B`..`0x21D` that first part a walked run from a placed one in `town01`
+are `P1[32]`'s talk counter (one set per conversation), not a branch.
+
+`LEGAIA_FGL_NO_SHORTCUTS=1` refuses every fallback placement (and implies
+`LEGAIA_FGL_PAD_PROPS=1`): a stretch is then played on the pad alone, and a
+stall it shows is a candidate defect of the #653 class, to be reproduced
+through `claim_tick` and fixed in the engine.
+
+The hand keeps some writes on purpose, each marked `Harness` in the code: the
+rand stream's deals, a reload from the engine's own save (the game-over hold,
+the title and the card screen are not played), a segment's seed from retail's
+save, the movie skip, and the shop screen, which the hand steps with the same
+`MenuRuntime` calls both hosts make.
+
+The ladder plays what players play. Each session it opens takes the hosts'
+default options (`BootSession::apply_option_knobs`, which both hosts push every
+tick; precise movement is on among them) and the players' CD timing
+(`legaia_engine_session::native::play_cd_timing`: console pacing in the field
+and in battle). `LEGAIA_FGL_RETAIL_DECODE=1` walks retail's quantised direction
+decode instead, and `LEGAIA_FGL_PIN_RETAIL=1` pins the options' retail values
+as well as the fidelity toggles.
 
 ## Diagnostics
 

@@ -239,10 +239,33 @@ fn a_dance_widget_emits_the_quad_retail_emits() {
     for round in 0..50_000 {
         let index = rng.below(widgets.len() as u32);
         let mode = rng.below(3);
-        let id = index | mode << 10;
+        // One round in sixteen hands in the id one bank below zero
+        // (`index - 0x400`), whose divide by `0x400` the routine rounds
+        // toward zero (`0x801D2F50`): still mode `0` and the same widget.
+        let id = if index != 0 && rng.below(16) == 0 {
+            (index as i32 - 0x400) as u32
+        } else {
+            index | mode << 10
+        };
+        let mode = if id as i32 >= 0 { mode } else { 0 };
         let (x, y) = (rng.below(400) as i16 - 40, rng.below(300) as i16 - 30);
-        let brightness = [0, 0x80, 0xFF, 0x100, rng.below(0x200) as i32][rng.below(5) as usize];
-        let size = [0x1000, 0x800, 0x2000, rng.below(0x3000) as i32][rng.below(4) as usize];
+        // A brightness or a size below zero takes each product's rounding
+        // fix-up (`0x801D2FDC..0x801D31DC`).
+        let brightness = [
+            0,
+            0x80,
+            0xFF,
+            0x100,
+            rng.below(0x200) as i32,
+            -(rng.below(0x200) as i32) - 1,
+        ][rng.below(6) as usize];
+        let size = [
+            0x1000,
+            0x800,
+            0x2000,
+            rng.below(0x3000) as i32,
+            -(rng.below(0x3000) as i32) - 1,
+        ][rng.below(5) as usize];
         cpu.mem.wr32(PACKETS, PACKET);
         cpu.mem.wr32(STACK_TOP + 0x10, size as u32);
         let args = [x as i32 as u32, y as i32 as u32, id, brightness as u32];

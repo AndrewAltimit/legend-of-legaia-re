@@ -163,7 +163,9 @@ def report_cues(out, window=60):
     for r in read(eng):
         c = str(r.get("cues", "-"))
         if c not in ("-", ""):
-            engine.extend((int(r["tick"]), int(i)) for i in c.split(";"))
+            # The engine also tags the seek-ahead's stages (`seek<n>`) and a
+            # one-shot's start (`xa`) here; only the ids are cue pushes.
+            engine.extend((int(r["tick"]), int(i)) for i in c.split(";") if i.lstrip("-").isdigit())
     if not retail and not engine:
         return
     used, rows = set(), []

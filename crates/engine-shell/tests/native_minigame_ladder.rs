@@ -467,9 +467,14 @@ const BAKA_THROW_EVERY: usize = 20;
 /// exactly like one that reached them - which is how they stayed on the
 /// never-entered list while the duel HUD was plainly on screen.
 ///
-/// Two runs, because the two facts are observable in different places: the
-/// tally is on the frame at the last tick, and the outcome only reaches the log
-/// when the player leaves a decided match.
+/// The window logs the outcome on the tick the match is decided
+/// (`baka: match decided - WON`), so the rung reads it whatever pace the duel
+/// ran at: players run a console's CD timing, where the announcer's lines
+/// leave the cabinet on step `1` and the match is decided hundreds of ticks
+/// sooner than on PCSX-Redux's, and a `B` timed to the result screen would
+/// land past it (the schedule's next Cross takes NEXT GAME and starts the
+/// next match). The schedule and the stream make the duel deterministic at
+/// either pace; it wins at both.
 #[test]
 fn rung5_baka_fighter_duel_is_won_and_shows_its_tally() {
     let Some((disc, out)) = ladder_env() else {
@@ -499,20 +504,10 @@ fn rung5_baka_fighter_duel_is_won_and_shows_its_tally() {
         "baka: the frame is {:.4}% different from the untouched scene",
         delta * 100.0
     );
-
-    // Same schedule, plus the `B` that leaves the decided match - which is
-    // where the host logs who won. A loss logs "match lost" and fails here,
-    // so this cannot pass on a duel that never reached the tally.
-    let throwaway = out.join("baka_exit.png");
-    let (_, stderr) = run_window(
-        &disc,
-        &throwaway,
-        &format!("40:B,{}:B", BAKA_TICKS - 30),
-        Some(&baka_attacks()),
-        BAKA_TICKS as u64,
-    );
+    // A loss logs "match decided - lost" and fails here, so this cannot pass
+    // on a duel that never reached the tally.
     assert!(
-        stderr.contains("baka: match WON"),
+        stderr.contains("baka: match decided - WON"),
         "baka: the scripted duel did not win, so no tally was installed\nstderr:\n{stderr}"
     );
     eprintln!(

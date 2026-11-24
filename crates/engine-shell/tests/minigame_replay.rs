@@ -131,7 +131,11 @@ fn open_host() -> Option<SceneHost> {
         return None;
     }
     let extracted = extracted_dir()?;
-    Some(SceneHost::open_extracted(&extracted).expect("open SceneHost"))
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut host.world.toggles);
+    Some(host)
 }
 
 fn baseline_path() -> PathBuf {

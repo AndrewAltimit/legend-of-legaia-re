@@ -199,6 +199,9 @@ fn a_player_seru_cast_reaches_a_ported_module_kernel() {
         },
         ..World::default()
     };
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut world.toggles);
     while world.actors.len() < 8 {
         world.actors.push(Actor::default());
     }

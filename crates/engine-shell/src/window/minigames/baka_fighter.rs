@@ -32,11 +32,27 @@ impl PlayWindowApp {
         use legaia_engine_minigames::baka_fighter_chrome as bc;
         if self.session.host.world.mode != SceneMode::BakaFighter {
             self.baka_chrome_frame.clear();
+            self.baka_decided_logged = false;
             return;
         }
         let Some(f) = self.session.host.world.minigames.baka_fighter.as_ref() else {
             return;
         };
+        // The match's outcome, once, on the tick it is decided: a harness
+        // reads it here, whatever the pace the duel ran at, rather than on a
+        // `B` it would have to time to the result screen (the cabinet takes
+        // NEXT GAME on a Cross past it and starts the next match).
+        match f.winner() {
+            Some(w) if !self.baka_decided_logged => {
+                self.baka_decided_logged = true;
+                log::info!(
+                    "baka: match decided - {}",
+                    if w == 0 { "WON" } else { "lost" }
+                );
+            }
+            None => self.baka_decided_logged = false,
+            _ => {}
+        }
         let frame = f.chrome_frame().clone();
         // The announcer line the chrome fired (`FUN_8003D53C`): the session's
         // step, which the browser play page runs too.

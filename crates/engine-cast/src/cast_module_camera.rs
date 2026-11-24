@@ -298,6 +298,16 @@ pub struct ModuleCamState {
     /// What the arm adds to the victim's `+0x1BA` on this pass (PROT 0916's
     /// arm `0x13` breaks a killed victim up). Rewritten every pass.
     pub victim_shatter_step: u16,
+    /// A twice-drained arm's pass: the word its shot aims on, and whether the
+    /// word holds the arm ([`Self::twice_drained_pass`]).
+    pub pass_aim: i32,
+    pub pass_held: bool,
+    /// The module word as the pass's opening tick found it, latched by the
+    /// host ([`Self::latch_pass_word`], read through [`Self::pass_word`]).
+    pub pass_word_in: i32,
+    /// [`Self::tr_y`] as the pass's opening tick found it, latched with
+    /// [`Self::pass_word_in`] ([`Self::pass_tr_y`]).
+    pub pass_tr_y_in: i32,
     /// The host's answer to a victim-settle poll (PROT 0916's arm `0x14`):
     /// a dead victim's playing clip back to `0`, a living one's tint word
     /// `+0x04` cleared.
@@ -440,6 +450,61 @@ pub struct ModuleFollow {
     /// when it is not the band's own (PROT 0941's Steal arm 2 zeroes it,
     /// `sb zero,0xd(s2)` at `0x801F7B44`); `None` frames on the band's.
     pub style: Option<u8>,
+}
+
+impl ModuleCamState {
+    /// Latch the module word for [`Self::pass_word`]: the host calls it on
+    /// every tick it feeds [`Self::opens_pass`], ahead of the director.
+    pub fn latch_pass_word(&mut self) {
+        if self.opens_pass || self.frame_step <= 1 {
+            self.pass_word_in = self.countdown.0;
+            self.pass_tr_y_in = self.tr_y;
+        }
+    }
+
+    /// The module word as retail's pass tests it: an arm whose gate reads
+    /// the word once, ahead of its drain (`if (word > 0) { word -= drain;
+    /// <push>; busy }`), takes the branch for the whole pass on the word
+    /// the pass opened on, where the port's later one-vsync ticks of the
+    /// same pass would find it already spent and run the other branch -
+    /// pushing nothing, or leaving the arm a pass early. At a step of one
+    /// every tick is a pass.
+    pub fn pass_word(&self) -> i32 {
+        if self.frame_step <= 1 {
+            self.countdown.0
+        } else {
+            self.pass_word_in
+        }
+    }
+
+    /// [`Self::tr_y`] as retail's pass tests it, the way [`Self::pass_word`]
+    /// reads the word (PROT 0917's climb arm).
+    pub fn pass_tr_y(&self) -> i32 {
+        if self.frame_step <= 1 {
+            self.tr_y
+        } else {
+            self.pass_tr_y_in
+        }
+    }
+
+    /// One pass of an arm that drains its word twice (Scythe Wind's arm 5
+    /// `0x801F8044..0x801F80E4`, Bloody Horns' arm 6 `0x801F7A18..0x801F7AB0`,
+    /// Rolling Flare's arm 4 `0x801F8088..0x801F80E4`): retail's pass takes
+    /// `scalar * step` off the word, aims its shot on what is left, and takes
+    /// the same again only while that stays positive, holding while the
+    /// second leaves it positive. The port's ticks make the pass's whole
+    /// arithmetic on its opening tick and repeat its answer on the rest.
+    /// Returns the word the shot aims on and whether the word holds the arm.
+    pub fn twice_drained_pass(&mut self) -> (i32, bool) {
+        if self.opens_pass || self.frame_step <= 1 {
+            let p = MODULE_DRAIN_PER_TICK * i32::from(self.frame_step.max(1));
+            let first = self.countdown.0 - p;
+            self.pass_aim = first;
+            self.pass_held = first > 0 && first - p > 0;
+            self.countdown.0 = if first > 0 { first - p } else { first };
+        }
+        (self.pass_aim, self.pass_held)
+    }
 }
 
 /// A module's countdown word.
@@ -1344,11 +1409,12 @@ mod white_shield;
 pub use aluru::*;
 pub use astral_slash::{ASTRAL_SLASH_BODY, astral_slash_camera};
 pub use blade_breath::{
-    BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
-    GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_RING_SPAN,
-    THUNDER_NEEDLE_RING_STREAKS, THUNDER_NEEDLE_RING_TRAIL, THUNDER_NEEDLE_STRIKE_CURSOR,
-    THUNDER_NEEDLE_TAIL_CURSOR, WIND_UP_SHOT_FRAMES, blade_breath_camera, capture_approach_follows,
-    capture_approach_reach, capture_approach_yaw_base, gigaton_press_camera, gigaton_press_debris,
+    BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, CaptureVictimSettle, GIGATON_PRESS_BODY,
+    GIGATON_PRESS_DEBRIS, GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY,
+    THUNDER_NEEDLE_RING_SPAN, THUNDER_NEEDLE_RING_STREAKS, THUNDER_NEEDLE_RING_TRAIL,
+    THUNDER_NEEDLE_STRIKE_CURSOR, THUNDER_NEEDLE_TAIL_CURSOR, WIND_UP_SHOT_FRAMES,
+    blade_breath_camera, capture_approach_follows, capture_approach_reach,
+    capture_approach_yaw_base, capture_victim_settle, gigaton_press_camera, gigaton_press_debris,
     gigaton_press_jump_height, thunder_needle_camera, thunder_needle_ring,
 };
 pub use blazing_slash::{
@@ -1794,11 +1860,30 @@ pub fn polled_countdown(
     phase: u8,
     seats: ModuleCamSeats,
 ) -> ModuleCountdown {
+    // A would-pass drains the rest of its pass (`ModuleCountdown::drain_rest`)
+    // as the tick that hands over; held on the poll, the pass goes on and
+    // its later ticks drain their own share. The word keeps this tick's
+    // drain alone: at a frame step of 2, PROT 0920's side-band arm 1 drained
+    // `3 p` a pass where retail drains `2 p`, and arm 2 then ran out a pass
+    // early and pushed nothing on retail's last push.
+    let one_tick;
+    let (before, ahead) = if before.countdown.1 > 0 {
+        let mut b = *before;
+        b.countdown.1 = 0;
+        let mut a = b;
+        direct(&mut a, phase, seats);
+        one_tick = (b, a);
+        (&one_tick.0, &one_tick.1)
+    } else {
+        (before, ahead)
+    };
     if ahead.countdown.0 <= 0 {
         return ahead.countdown;
     }
     let mut kept = ahead.countdown;
-    kept.0 = if before.countdown.0 > 0 {
+    // The gate drains on the word the pass opened on (`pass_word`): a later
+    // tick of a pass that opened positive drains though the word is spent.
+    kept.0 = if before.pass_word() > 0 {
         const PROBE: i32 = 1 << 28;
         let mut probe = *before;
         probe.countdown.0 = PROBE;
@@ -1812,20 +1897,46 @@ pub fn polled_countdown(
     kept
 }
 
+/// The poll arms whose TR z push sits behind a `blez` on the module word
+/// that branches straight to the poll: the side-band arm 1 and the drive arm
+/// 2 of PROT 0919 to 0924 (PROT 0920's `blez` at `0x801F6C18` to the side-band
+/// read at `0x801F6C58`, and at `0x801F6CA0` to `jal 0x8003F2B8` at
+/// `0x801F6CE4`; 0919 `0x801F6C9C` / `0x801F6D24`, 0921 `0x801F6C90` /
+/// `0x801F6D1C`, 0922 `0x801F6C7C` / `0x801F6D08`, 0923 `0x801F6BF4` /
+/// `0x801F6C78`, 0924 `0x801F6C28` / `0x801F6CAC`). A scan of every summon
+/// image's poll sites (each `jal 0x8003F2B8` and each `lbu 0x276`) for a
+/// branch landing on the poll finds no other camera store a gate skips:
+/// PROT 0929's arm 1 gates its focus push on its own anchor halfword
+/// (`beq` at `0x801F6D5C`), which its director already reads, and PROT
+/// 0903's and 0905's gates skip module words only.
+const WORD_GATED_PUSH: [(u32, u8); 12] = [
+    (919, 1),
+    (919, 2),
+    (920, 1),
+    (920, 2),
+    (921, 1),
+    (921, 2),
+    (922, 1),
+    (922, 2),
+    (923, 1),
+    (923, 2),
+    (924, 1),
+    (924, 2),
+];
+
 /// The hold a poll makes of a would-pass `d`: the arm keeps the drift and
 /// nudge the director reports for the pass, since most arms make theirs ahead
 /// of the poll (PROT 0914's arm 2 pushes TR z out on every pass its
-/// side-band poll holds, its word spent or not). PROT 0920's arm 2 makes its
-/// push only while its word is positive (`blez` at `0x801F6CA0` straight to
-/// the poll at `0x801F6CE4`), so once the word is spent a held pass pushes
-/// nothing.
+/// side-band poll holds, its word spent or not). The arms of
+/// [`WORD_GATED_PUSH`] make their push only while the module word is
+/// positive, so once the word is spent a held pass pushes nothing.
 pub fn polled_hold(
     entry: u32,
     phase: u8,
     d: ArmDirection,
     before: &ModuleCamState,
 ) -> ArmDirection {
-    let spent = (entry, phase) == (920, 2) && before.countdown.0 <= 0;
+    let spent = WORD_GATED_PUSH.contains(&(entry, phase)) && before.pass_word() <= 0;
     ArmDirection {
         drift: d.drift.filter(|_| !spent),
         nudge: d.nudge.filter(|_| !spent),
@@ -1882,10 +1993,13 @@ pub const fn creature_poll_arm(prot_entry: u32) -> Option<u8> {
 /// PROT 0923's sits on arm 1 behind that arm's drain (`lbu v0,0x276(v0)` /
 /// `bne v0,zero` at `0x801F6C38..0x801F6C40`, then its seek
 /// `FUN_8003EAE4(0, 0xD)`): `gilium_summon_mid_cast` stands there with the
-/// word drained `56` past the `0x200` arm 0 stored.
+/// word drained `56` past the `0x200` arm 0 stored. PROT 0924's arm 1
+/// (the arm at `0x801F6C1C`) tests the byte behind its push (`lbu
+/// v0,0x276(v0)` / `bne v0,zero` at `0x801F6C6C..0x801F6C74`), then seeks
+/// `FUN_8003EAE4(0, 0x11)`.
 pub const fn sideband_wait_arm(prot_entry: u32) -> Option<u8> {
     match prot_entry {
-        904 | 909..=913 | 916 | 917 | 919..=923 | 925 | 927..=929 | 933 => Some(1),
+        904 | 909..=913 | 916 | 917 | 919..=925 | 927..=929 | 933 => Some(1),
         903 | 905..=908 | 914 | 915 | 918 | 930..=932 | 934 => Some(2),
         _ => None,
     }

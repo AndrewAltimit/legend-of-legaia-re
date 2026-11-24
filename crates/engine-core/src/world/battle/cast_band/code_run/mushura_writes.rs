@@ -13,11 +13,6 @@ const RED_WORD: u32 = 0x3FF;
 const HALF_TURN: i32 = 0x800;
 /// A full circle.
 const FULL_TURN: i32 = 0x1000;
-/// The frame step arms 7 and 8 run at. Their term `word / 4` comes off once a
-/// frame where the frame product comes off per vsync, so the engine takes it
-/// whole on every fourth tick: retail's stand reads `-552` entering arm 8 and
-/// `-140` leaving.
-const ARM_FRAME_STEP: i32 = 4;
 
 /// The chase target an empty retail seat leaves (`0x801F8154` naming a
 /// seat the engine seats nobody in).
@@ -135,39 +130,27 @@ impl World {
             }
         }
         let step = legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
+        // A tick that hands over makes the moves of its pass's owed ticks
+        // too: retail's one pass moves by the whole `step * scalar`.
+        let ticks = 1 + if passed {
+            i32::from(self.casting.module_cam.countdown.1)
+        } else {
+            0
+        };
         let Some(a) = self.actors.get_mut(usize::from(seat)) else {
             return;
         };
         let spin = &mut self.casting.module_mushura_spin;
         match (phase, passed) {
             (6, _) => {
-                a.move_state.world_z = a.move_state.world_z.wrapping_add((3 * step) as i16);
+                a.move_state.world_z = a.move_state.world_z.wrapping_add((3 * step * ticks) as i16);
                 if passed {
                     *spin = 0;
                 }
             }
-            (7 | 8, _) => {
-                *spin += step >> 3;
-                let k = if phase == 7 { 3 } else { 2 };
-                // The frame product runs a vsync a tick; the word's quarter
-                // comes off once a pass, on the tick that closes it (the word
-                // has grown a pass's `(step * scalar) >> 3`), whole: shared
-                // out a tick at a time it truncated away and stood the
-                // creature `36` units short of retail's `-140`.
-                let pass_ends = *spin % ARM_FRAME_STEP == 0;
-                let back = if pass_ends { *spin / 4 } else { 0 };
-                a.move_state.world_z = a.move_state.world_z.wrapping_add((k * step - back) as i16);
-                a.battle.facing_angle = (*spin * -0x14) as u16 & 0xFFF;
-                // ... and the fall wobbles: bank `-sin(word * 32) / 8`
-                // (`0x801F70A8..0x801F70D4`, `0x801F72F0..0x801F7320`), level
-                // again on arm 8's pass (`0x801F734C`).
-                let sin = i32::from(legaia_engine_system::trig::sin12((*spin * 32) as u16));
-                a.battle.render_roll = if phase == 8 && passed {
-                    0
-                } else {
-                    ((-sin / 8) & 0xFFF) as u16
-                };
-            }
+            // The spin and fall ran ahead of the director
+            // ([`Self::mushura_spin_ahead`]).
+            (7 | 8, _) => {}
             // Arm `0xD` levels the bank the chase left, `step * scalar` a
             // pass (`0x801F7DBC..0x801F7E64`).
             (0xD, _) => {
@@ -186,10 +169,21 @@ impl World {
             }
             (9, true) => {
                 a.battle.render_flag = 7;
-                // The arm's pass turns the creature on its target
+                // The arm aims the creature back at its victim
+                // (`sb s3,0x1dd(s4)` at `0x801F7554`), after the seat arm's
+                // row code `9`.
+                a.battle.active_target = victim;
+                // The arm's pass steps the victim back first (`sh v0,0x38(s1)`
+                // at `0x801F7494`), then turns the creature on it
                 // (`jal 0x80019B28`, `sh v0,0x46(s4)` at `0x801F7578..0x801F7594`),
-                // off the spin arm 8 left, before it moves the victim: arm
-                // `0xC`'s chase runs along this heading.
+                // off the spin arm 8 left: arm `0xC`'s chase runs along this
+                // heading.
+                if let Some(v) = self.actors.get_mut(usize::from(victim)) {
+                    v.move_state.world_z = v.move_state.world_z.wrapping_add(0xCA);
+                }
+                let Some(a) = self.actors.get(usize::from(seat)) else {
+                    return;
+                };
                 let here = ModuleSeat {
                     x: a.move_state.world_x,
                     y: 0,
@@ -207,9 +201,6 @@ impl World {
                     if let Some(a) = self.actors.get_mut(usize::from(seat)) {
                         a.battle.facing_angle = bearing & 0xFFF;
                     }
-                }
-                if let Some(v) = self.actors.get_mut(usize::from(victim)) {
-                    v.move_state.world_z = v.move_state.world_z.wrapping_add(0xCA);
                 }
                 for (e, _) in self.ra_seru_row(monster_count) {
                     if let Some(m) = self.actors.get_mut(e) {
@@ -249,6 +240,68 @@ impl World {
             _ => return,
         }
         // The arms' framings read the creature's live stand.
+        if let Some(a) = self.actors.get(usize::from(seat)) {
+            self.casting.module_cam.creature = Some(ModuleSeat {
+                x: a.move_state.world_x,
+                y: a.move_state.world_y,
+                z: a.move_state.world_z,
+                facing: a.battle.facing_angle,
+            });
+        }
+    }
+
+    /// Arms 7 and 8's spin and fall, run ahead of the module's director:
+    /// retail moves the creature (`sh v1,0x38(s4)` at `0x801F72EC`) before
+    /// its gate (`bgtz a3` at `0x801F731C`) and its exit's cut reads the moved
+    /// stand (`lhu v1,0x38(s4)` at `0x801F7400`). Behind the director, the
+    /// tick that hands over framed the stand its own move had not yet made:
+    /// at a frame step above 1 that move is the pass's whole one, `k *
+    /// scalar` a tick off. Whether the tick hands over is the gate's own
+    /// test on the word (arm 7 `word - p <= scalar << 5`, arm 8 `<= 0`).
+    pub(in crate::world::battle::cast_band) fn mushura_spin_ahead(&mut self, phase: u8, seat: u8) {
+        use legaia_engine_cast::cast_module_camera::{MODULE_DRAIN_PER_TICK, SPEED_SCALAR};
+        let left = self.casting.module_cam.countdown.0 - MODULE_DRAIN_PER_TICK;
+        let passed = if phase == 7 {
+            left <= SPEED_SCALAR << 5
+        } else {
+            left <= 0
+        };
+        let step = MODULE_DRAIN_PER_TICK;
+        let ticks = 1 + if passed {
+            i32::from(self.casting.module_cam.countdown.1)
+        } else {
+            0
+        };
+        let pass_ends = passed || self.module_tick_closes_pass();
+        let Some(a) = self.actors.get_mut(usize::from(seat)) else {
+            return;
+        };
+        let spin = &mut self.casting.module_mushura_spin;
+        *spin += (step >> 3) * ticks;
+        let k = if phase == 7 { 3 } else { 2 };
+        // The frame product runs a vsync a tick; the word's quarter
+        // comes off once a pass, on the tick that closes it (the word
+        // has grown a pass's `(step * scalar) >> 3`), whole: shared
+        // out a tick at a time it truncated away and stood the
+        // creature `36` units short of retail's `-140`. The pass is
+        // the battle frame's, whatever its step: a fixed four ticks
+        // took the quarter off a step-2 or step-1 pass's word once in
+        // every two or four passes.
+        let back = if pass_ends { *spin / 4 } else { 0 };
+        a.move_state.world_z = a
+            .move_state
+            .world_z
+            .wrapping_add((k * step * ticks - back) as i16);
+        a.battle.facing_angle = (*spin * -0x14) as u16 & 0xFFF;
+        // ... and the fall wobbles: bank `-sin(word * 32) / 8`
+        // (`0x801F70A8..0x801F70D4`, `0x801F72F0..0x801F7320`), level
+        // again on arm 8's pass (`0x801F734C`).
+        let sin = i32::from(legaia_engine_system::trig::sin12((*spin * 32) as u16));
+        a.battle.render_roll = if phase == 8 && passed {
+            0
+        } else {
+            ((-sin / 8) & 0xFFF) as u16
+        };
         if let Some(a) = self.actors.get(usize::from(seat)) {
             self.casting.module_cam.creature = Some(ModuleSeat {
                 x: a.move_state.world_x,

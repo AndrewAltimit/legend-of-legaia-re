@@ -48,7 +48,7 @@ use disc_tables::*;
 pub use disc_tables::{BATTLE_XA_CLIP_SLOTS, attach_escape_icons};
 pub use frame_steps::step_npc_clip_players;
 pub use scene_entry::{NewGameHost, start_new_game_on};
-pub use tick_owner::{TickClaims, TickOwner};
+pub use tick_owner::{TickClaims, TickOwner, world_holds_field_pad};
 
 /// The pad buttons whose new press is a pause-menu press on the field and
 /// the overworld.

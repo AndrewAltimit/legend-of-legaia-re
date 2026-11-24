@@ -199,14 +199,70 @@ pub(super) fn interact_at(
 ) -> Run {
     let (bx, bz) = player_xz(session);
     let mut last = Run::Released;
-    for (sx, sz, extra) in interact_seats(session, (nx, nz), walked) {
+    // Whether the last seat tried was a placement, which is given back.
+    let mut placed_last = !pad_props();
+    // The pad hand walks to a seat and leans in until the probe lands, as a
+    // player does; only when its walk reaches none of them does it fall back
+    // to placing the player ([`shortcut`] `examine_seat`). Both passes keep
+    // the seated hand's order of sides: a record that answers by where the
+    // player stands answers alike (`stone`'s statues turn to face the side
+    // they are examined from, and the way to `tunnela` opens on one set of
+    // facings; tried nearest side first, the dial spun past it).
+    let seats = interact_seats(session, (nx, nz), walked);
+    let attempts: Vec<((i16, i16, bool), bool)> = if pad_props() {
+        seats
+            .iter()
+            .map(|&s| (s, true))
+            .chain(seats.iter().map(|&s| (s, false)))
+            .collect()
+    } else {
+        seats.iter().map(|&s| (s, false)).collect()
+    };
+    let mut pad_reached = false;
+    // A seat left out for its distance ([`prop_seat_in_walk_reach`]).
+    let mut far = false;
+    for ((sx, sz, extra), try_pad) in attempts {
+        if !try_pad && pad_hand() && (pad_reached || shortcuts_refused() || !walking(session)) {
+            break;
+        }
         session.host_pad(0);
-        session.host.world.seat_player_at_tile(sx as u8, sz as u8);
-        // The one compass sector whose probe point lands in the NPC's box.
-        let mut facing = (0..8u8).find(|&d| {
-            session.host.world.face_player_sector(d);
-            hits(&session.host.world)
-        });
+        if try_pad && !prop_seat_in_walk_reach(session, (sx, sz)) {
+            far = true;
+            continue;
+        }
+        let by_pad = if try_pad {
+            match pad_reach(session, (sx, sz), (nx, nz), hits) {
+                Reach::Entered(s) => return Run::Entered(s),
+                Reach::Wiped(e) => return Run::Battle(e),
+                Reach::Facing => {
+                    pad_reached = true;
+                    true
+                }
+                Reach::Short(why) => {
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!(
+                            "      [examine] seat {:?} for {:?}: {why}",
+                            (sx, sz),
+                            (nx, nz)
+                        );
+                    }
+                    continue;
+                }
+            }
+        } else {
+            false
+        };
+        placed_last = !by_pad;
+        let mut facing = by_pad.then_some(0u8);
+        if !by_pad {
+            session.host.world.seat_player_at_tile(sx as u8, sz as u8);
+            shortcut(if far { "examine_far" } else { "examine_seat" });
+            // The one compass sector whose probe point lands in the NPC's box.
+            facing = (0..8u8).find(|&d| {
+                session.host.world.face_player_sector(d);
+                hits(&session.host.world)
+            });
+        }
         // Out of the probe's reach from a seat beside the target's own tile,
         // the continuous hand walks up against it first, as a player does:
         // the `korb3` gate stones' boxes end exactly where the probe from
@@ -242,6 +298,9 @@ pub(super) fn interact_at(
         };
         let before = flags_of_world(session);
         let seat_xz = player_xz(session);
+        if !by_pad {
+            shortcut("examine_face");
+        }
         match press_edge(session, PadButton::Cross.mask()) {
             Ok(Some(name)) => return Run::Entered(name),
             Ok(None) => {}
@@ -286,7 +345,9 @@ pub(super) fn interact_at(
         let beat_follows = !w.field_vm.pending_record_spawns.is_empty()
             || !w.field_vm.helper_contexts.is_empty()
             || w.cutscene.timeline.is_some();
-        if walking(session) && !beat_follows {
+        // The pad hand walked here and walks on from here: only a placed
+        // seat is given back.
+        if walking(session) && !beat_follows && !by_pad {
             restore_player_xz(session, (bx, bz));
         }
         let r = run_while_moving(session, DEEP_EXIT_TICKS);
@@ -296,6 +357,7 @@ pub(super) fn interact_at(
         // possessed sleeper at (110, 117), examined from (109, 117); its
         // talk walks another actor, which counts as a beat following).
         if beat_follows
+            && !by_pad
             && matches!(r, Run::Released)
             && walking(session)
             && player_xz(session) == seat_xz
@@ -312,10 +374,80 @@ pub(super) fn interact_at(
             break;
         }
     }
-    if walking(session) {
+    if walking(session) && placed_last {
         restore_player_xz(session, (bx, bz));
     }
     last
+}
+
+/// Cells of planned path the pad hand walks to a prop's seat in a scene
+/// that rolls encounters (sixteen tiles).
+const PROP_WALK_REACH: usize = 64;
+
+/// Whether the pad hand walks to seat `seat`: always where no encounter
+/// rolls, and within [`PROP_WALK_REACH`] of planned path where one does.
+/// The beats pass plays props the retail player left alone - `dolk`'s
+/// Lightning Gate rooms raise flags no anchor carries - and the way to them
+/// across a castle whose every region rolls wiped a lone member on twelve
+/// reloads running; a seat further off is placed, and counted
+/// (`examine_far` / `touch_far`), like the walk to a bed ([`pad_rest`]).
+pub(super) fn prop_seat_in_walk_reach(session: &NativeSession, seat: (i16, i16)) -> bool {
+    if !session.host.world.scene_can_roll_encounters() {
+        return true;
+    }
+    let (px, pz) = player_xz(session);
+    plan_path(
+        session,
+        cell_of(px, pz),
+        seat,
+        &pad_avoid(session, Some(seat)),
+    )
+    .is_some_and(|p| p.len() <= PROP_WALK_REACH)
+}
+
+/// How a pad approach to an interaction seat ended ([`pad_reach`]).
+pub(super) enum Reach {
+    /// A scene change landed on the way.
+    Entered(String),
+    /// The player stands on the seat and the probe lands on the target.
+    Facing,
+    /// The walk did not reach the seat, or no lean from it lands the probe.
+    Short(String),
+    /// A fight on the walk wiped the party.
+    Wiped(String),
+}
+
+/// Walk to seat tile `seat` with the pad, then lean toward `target` until
+/// `hits` holds: a press toward a solid body turns the player to face it
+/// and the collision stops the step, which is how a player lines up an
+/// examine. The pad hand's half of [`interact_at`]; the seated hand places
+/// the player and sets the facing instead.
+pub(super) fn pad_reach(
+    session: &mut NativeSession,
+    seat: (i16, i16),
+    target: (i16, i16),
+    hits: &dyn Fn(&legaia_engine_core::world::World) -> bool,
+) -> Reach {
+    match pad_walk(session, seat, &pad_avoid(session, Some(seat)), 0) {
+        Ok(Walk::Entered(s)) => return Reach::Entered(s),
+        Ok(Walk::Arrived) => {}
+        Err(e) if e.contains("party wiped") => return Reach::Wiped(e),
+        Err(e) => return Reach::Short(e.chars().take(160).collect()),
+    }
+    if !hits(&session.host.world)
+        && let Some(s) = pad_lean(session, |_| Some(target), 48, |s| hits(&s.host.world))
+    {
+        return Reach::Entered(s);
+    }
+    session.host_pad(0);
+    if walking(session) && hits(&session.host.world) {
+        Reach::Facing
+    } else {
+        Reach::Short(format!(
+            "no lean from {:?} lands the probe on {target:?}",
+            player_xz(session)
+        ))
+    }
 }
 
 /// The tiles [`interact_at`] stands on to reach the target at `(nx, nz)`:
@@ -380,6 +512,7 @@ pub(super) fn interact_seats(
 /// tile can be solid: `jiji`'s prop examine left the party at (69, 71),
 /// walled on all four sides, after starting from (9020, 9216).
 pub(super) fn restore_player_xz(session: &mut NativeSession, (x, z): (i16, i16)) {
+    shortcut("restore_xz");
     let w = &mut session.host.world;
     let y = w.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
     let slot = w.player_actor_slot.unwrap_or(0) as usize;

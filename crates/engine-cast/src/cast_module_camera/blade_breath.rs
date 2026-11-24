@@ -341,6 +341,34 @@ pub fn gigaton_press_camera(
     arm
 }
 
+/// How a capture body's settle arm reads its victim, which the host turns
+/// into `ModuleCamState::victim_settled`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureVictimSettle {
+    /// A standing victim back on clip `0`, a fallen one on the down clip `8`
+    /// (PROT 0955's Terror Scream, Kiss of Death and Melt Spray, PROT 0952's
+    /// Bloody Horns, PROT 0950's Rolling Flare: `lhu +0x14C`, then `lbu
+    /// +0x1D9` against `0` or `8`). PROT 0951's Scythe Wind also lets a
+    /// fallen victim through once its prim word `+0x04` is `0`
+    /// (`0x801F8110..0x801F8128`); a party seat's word is `0` only while a
+    /// cast hides it, which nothing does under Scythe Wind's settle, and the
+    /// engine's resting word `0` stands for the neutral one, so the host
+    /// reads that body this way too.
+    Rest,
+    /// Either rest clip, `0` or `8`, whatever the HP: PROT 0962's Blade
+    /// Breath and Gigaton Press test the playing clip `+0x1D9` alone (`bnez`
+    /// on `0`, `bne` on `8`, `0x801F7440..0x801F7454` on Gigaton Press).
+    EitherRestClip,
+}
+
+/// The [`CaptureVictimSettle`] rule of capture body `body` in PROT `entry`.
+pub fn capture_victim_settle(entry: u32, body: Option<u32>) -> CaptureVictimSettle {
+    match (entry, body) {
+        (962, Some(BLADE_BREATH_BODY | GIGATON_PRESS_BODY)) => CaptureVictimSettle::EitherRestClip,
+        _ => CaptureVictimSettle::Rest,
+    }
+}
+
 /// Whether a capture body's walk-in arms frame the caster through the
 /// action SM's case 6 on every pass of the approach, and store phase `1` on
 /// arm 0's pass so the walk runs on arm 1. The host's approach leg holds the

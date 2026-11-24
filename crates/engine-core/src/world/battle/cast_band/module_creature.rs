@@ -217,7 +217,8 @@ impl World {
             .map(|p| p.cursor_sixteenths());
     }
 
-    /// The module's direct writes after its pass: the creature seat's
+    /// The module's direct writes after its pass (`phase_in` the arm the pass
+    /// ran, `phase` the one it left on): the creature seat's
     /// position as a module that moves it by hand left it, and the
     /// camera-global drift the arm returned. PROT 0908 writes its creature's
     /// height `+0x36` every pass from arm 9 on, turns it onto the victim in
@@ -227,6 +228,7 @@ impl World {
     pub(in crate::world::battle::cast_band) fn apply_module_creature_writes(
         &mut self,
         prot_entry: u32,
+        phase_in: u8,
         phase: u8,
         drift: Option<legaia_engine_cast::cast_module_camera::CaptureDrift>,
     ) {
@@ -245,7 +247,9 @@ impl World {
                 a.move_state.world_z = c.z;
             }
         }
-        if prot_entry == 908 && phase == ZENOIR_REACH_ARM {
+        // The reach arm's step, on the passes that run it: a pass that only
+        // leaves arm 7 for it runs no reach poll.
+        if prot_entry == 908 && phase_in == ZENOIR_REACH_ARM {
             self.close_creature_on_victim();
         }
         if prot_entry == 909 && phase == VIGURO_ARRIVAL_ARM {

@@ -60,7 +60,11 @@ fn mules_wave_is_retails() {
     let mut rng = crate::common::Rng(0x4D55_4C45);
     let mut failures = Vec::new();
     let (mut hits, mut zero_floor, mut skipped, mut shielded) = (0, 0, 0, 0);
-    for round in 0..400 {
+    for round in 0..600 {
+        // Each round at a frame step of 1, 2 or 3: a console's battle CD
+        // timing runs frames above one vsync, where the wave's walk and
+        // strike are once a pass.
+        let step = 1 + (round % 3) as u8;
         let mut c: Cast = gen_cast(&mut rng);
         c.spell = MULE;
         c.special = false;
@@ -121,7 +125,7 @@ fn mules_wave_is_retails() {
         cpu.mem.wr8(CTX + 0x279, 16);
         cpu.mem.wr32(COUNTDOWN, 0x100);
         cpu.mem.wr32(FRONT, (-0x100i32) as u32);
-        cpu.mem.wr8(STEP, 1);
+        cpu.mem.wr8(STEP, step);
         let scalar = legaia_engine_cast::cast_module_camera::SPEED_SCALAR as u8;
         cpu.mem.wr8(SCALAR, scalar);
         state.set(c.seed);
@@ -165,10 +169,16 @@ fn mules_wave_is_retails() {
         w.casting.module_phase = 16;
         w.casting.module_mule_front = -0x100;
         w.casting.module_cam.countdown.0 = 0x100;
+        // The port's battle frame is retail's step: one frame of `step`
+        // one-vsync stager ticks a pass (`World::module_pass`).
+        w.clock.display_frames = 0;
+        w.set_battle_frame_step(step);
+        w.battle.frame_clock.span_extra = 0;
         w.rng_state = c.seed;
         let mut port = Vec::new();
         for _ in 0..retail.len() {
-            w.summon_stager_tick();
+            w.clock.display_frames += u64::from(step);
+            w.drive_summon_stager_frame();
             port.push(Pass {
                 hp: [3usize, 4].map(|s| w.actors[s].battle.hp),
                 spirit: [3usize, 4].map(|s| w.actors[s].battle.spirit_gauge),
@@ -193,7 +203,7 @@ fn mules_wave_is_retails() {
                 .position(|(a, b)| a != b)
                 .unwrap_or(retail.len());
             failures.push(format!(
-                "round {round}: {} passes, first difference at pass {first}, same exit {same_exit}\n retail {:?}\n port   {:?}\n xp retail {retail_xp} port {port_xp}\n z {z:?} playing {playing:?} shield {shield}\n {:?}",
+                "round {round} step {step}: {} passes, first difference at pass {first}, same exit {same_exit}\n retail {:?}\n port   {:?}\n xp retail {retail_xp} port {port_xp}\n z {z:?} playing {playing:?} shield {shield}\n {:?}",
                 retail.len(),
                 &retail[first.saturating_sub(1)..(first + 1).min(retail.len())],
                 &port[first.saturating_sub(1)..(first + 1).min(port.len())],

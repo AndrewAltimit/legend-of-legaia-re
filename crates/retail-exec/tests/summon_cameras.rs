@@ -67,6 +67,9 @@ const RANGE: u32 = 0x8004_E2F0;
 const BATTLE_OUTCOME: u32 = 0x8007_BD71;
 /// `FUN_8003F2B8`, the drive poll `CdSync(1)` each module's poll arm makes.
 const DRIVE_POLL: u32 = 0x8003_F2B8;
+/// `FUN_801F19EC`, the battle overlay's creature seat installer each seat
+/// arm calls.
+const INSTALLER: u32 = 0x801F_19EC;
 /// The calls of each module's drive poll the walk answers busy.
 const DRIVE_BUSY_CALLS: u32 = 3;
 
@@ -378,6 +381,17 @@ impl Layout {
     }
 }
 
+thread_local! {
+    /// The battle frame step the walk runs at, in vsyncs: retail's
+    /// `0x1F800393`, the director's `frame_step` and the shadow's frame
+    /// clock. A console's CD timing runs battle at steps above `1`.
+    static WALK_STEP: std::cell::Cell<u8> = const { std::cell::Cell::new(1) };
+}
+
+fn walk_step() -> u8 {
+    WALK_STEP.with(|s| s.get())
+}
+
 fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8, layout: Layout) {
     cpu.mem.load(BASE, module);
     for b in 0..0x1100 {
@@ -439,7 +453,7 @@ fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8, layout: Layout) {
     // poll `FUN_8004E2F0` answers out of reach on anything else
     // (`0x8004E2F4..0x8004E310`).
     cpu.mem.wr8(BATTLE_OUTCOME, 0xFF);
-    cpu.mem.wr8(STEP, 1);
+    cpu.mem.wr8(STEP, walk_step());
     for i in 0..5 {
         cpu.mem
             .wr8(FORMATION + i, if i < layout.monsters { 0x10 } else { 0 });
@@ -500,12 +514,34 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     // seat fallen and faded (`+0x14C = 0`, `+0x04 = 0`), which the row walks
     // (settles, sweeps, shows) skip or wait past.
     // Each runs on every layout.
-    let runs = all.iter().flat_map(|&b| {
-        LAYOUTS
-            .iter()
-            .flat_map(move |&l| [(b, false, l), (b, true, l)])
+    // And at frame steps 1, 2 and 3 (`WALK_STEP`).
+    let runs = WALK_STEPS.iter().flat_map(|&step| {
+        all.iter().flat_map(move |&b| {
+            LAYOUTS
+                .iter()
+                .flat_map(move |&l| [(b, false, l, step), (b, true, l, step)])
+        })
     });
-    for ((entry, va, code), fallen, layout) in runs {
+    // Each mismatch carries the step its run had.
+    let mut marks = [0usize; 3];
+    let tag =
+        |f: &mut Vec<String>, s: &mut Vec<String>, sp: &mut Vec<String>, m: &mut [usize; 3]| {
+            let step = walk_step();
+            for (v, k) in [(f, 0), (s, 1), (sp, 2)] {
+                for x in &mut v[m[k]..] {
+                    x.push_str(&format!(" [step {step}]"));
+                }
+                m[k] = v.len();
+            }
+        };
+    for ((entry, va, code), fallen, layout, step) in runs {
+        tag(
+            &mut failures,
+            &mut shadow_failures,
+            &mut spawn_failures,
+            &mut marks,
+        );
+        WALK_STEP.with(|s| s.set(step));
         let code = layout.code(code);
         let module = disc.read_entry(entry as usize).expect("module");
         let action = action_of(entry);
@@ -520,7 +556,8 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // PROT 0915's chase reads the range poll live: its creature
             // stands on the row in turn (below).
             let live_reach = entry == 915 && target == RANGE;
-            if ![AIM, BUILDER, BEARING, RAND, WRAPPER, DRIVE_POLL].contains(&target) && !live_reach
+            if ![AIM, BUILDER, BEARING, RAND, WRAPPER, DRIVE_POLL, INSTALLER].contains(&target)
+                && !live_reach
             {
                 cpu.stub(target, 0);
             }
@@ -541,6 +578,46 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             cpu.hook(DRIVE_POLL, move |r, _| {
                 r.r[V0] = busy.get();
                 calls.set(calls.get() + busy.get());
+            });
+        }
+        // The seat installer stores on the creature seat what
+        // `FUN_801F19EC` stores, but for the node it builds (the walk's
+        // stays): the caster's ground trio on `+0x34` and `+0x3C`
+        // (`0x801F1E04..0x801F1E40`, off the node `FUN_80024C88` builds on
+        // the caster's `+0x34`), the caster's facing `+0x46`
+        // (`0x801F1D94`), colour word `-1` and mode word `0`
+        // (`0x801F1D5C`, `0x801F1D68`), the caster's target `+0x1DD`
+        // (`0x801F1DB8`), clip `+0x1D9 = 0` (`0x801F1DD8`), rate `2`
+        // (`0x801F1DFC`), tint state and impact selector `0`
+        // (`0x801F1E7C`, `0x801F1E88`), the shatter word `+0x1BA`
+        // (`0x801F1E94`) and the committed-id ring `+0x1FB..+0x21B`.
+        let installs = Rc::new(std::cell::Cell::new(0u32));
+        {
+            let installs = installs.clone();
+            cpu.hook(INSTALLER, move |_, m| {
+                installs.set(installs.get() + 1);
+                let caster = ACTOR + u32::from(m.rd8(CTX + 0x13)) * STRIDE;
+                let c = ACTOR + CREATURE * STRIDE;
+                for o in (0..8).step_by(2) {
+                    let v = m.rd16(caster + 0x34 + o);
+                    m.wr16(c + 0x34 + o, v);
+                    m.wr16(c + 0x3C + o, v);
+                }
+                m.wr16(c + 0x44, 0);
+                let facing = m.rd16(caster + 0x46);
+                m.wr16(c + 0x46, facing);
+                m.wr32(c + 4, u32::MAX);
+                m.wr32(c + 8, 0);
+                let target = m.rd8(caster + 0x1DD);
+                m.wr8(c + 0x1DD, target);
+                m.wr8(c + 0x1D9, 0);
+                m.wr8(c + 0x21D, 2);
+                m.wr8(c + 0x21C, 0);
+                m.wr8(c + 0x21F, 0);
+                m.wr16(c + 0x1BA, 0);
+                for o in 0..0x20 {
+                    m.wr8(c + 0x1FB + o, 0);
+                }
             });
         }
         // The damage wrapper `FUN_801DD0AC(_, 7, seat)` answers each call on
@@ -700,7 +777,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             let mut st = ModuleCamState {
                 lead_roster: 1,
                 opens_pass: true,
-                frame_step: 1,
+                frame_step: walk_step(),
                 victim_settled: true,
                 caster_in_reach: true,
                 party_settled: true,
@@ -735,6 +812,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             });
             let mut puera_compared = std::collections::BTreeSet::new();
             let mut sideband_passes = 0u32;
+            let mut spent_side_passes = 0u32;
             busy_calls.set(0);
             // The band shadow: a world seated off the same records, the
             // band's module half (`World::drive_summon_module_pass`) run on
@@ -752,6 +830,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 );
             }
             let mut shadow_after: Vec<u32> = Vec::new();
+            // Whether each side has seated the creature: the port at the
+            // start for a module with no seat arm, retail once its seat arm
+            // calls the installer.
+            let seat_arm = cam::module_profile(entry).and_then(|p| p.seat_arm);
+            let mut port_seated = seat_arm.is_none();
+            installs.set(0);
             for pass in 0..20_000u32 {
                 // Every seat idle and far along its clip, its display pair on its
                 // ground pair as the draw pass leaves it.
@@ -797,9 +881,15 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // The side-band applier's stage `ctx[+0x276]` stands up for the
                 // first passes of the arm that waits on it
                 // (`cam::sideband_wait_arm`), as a turn's side-band read does.
+                // It stands up again for the first passes the arm opens on
+                // its module word spent, where the arms that push behind the
+                // word's gate push nothing (`cam::polled_hold`).
                 if Some(phase) == cam::sideband_wait_arm(entry) {
                     sideband_passes += 1;
-                    let up = sideband_passes <= 3;
+                    if st.countdown.0 <= 0 {
+                        spent_side_passes += 1;
+                    }
+                    let up = sideband_passes <= 3 || (1..=3).contains(&spent_side_passes);
                     cpu.mem.wr8(CTX + 0x276, if up { 8 } else { 0 });
                     sideband_held += usize::from(up);
                 }
@@ -920,7 +1010,15 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 st.lead_monster_down = cpu.mem.rd16(ACTOR + 3 * STRIDE + 0x14C) == 0;
                 st.sideband_busy = cpu.mem.rd8(CTX + 0x276) != 0;
                 let c = CREATURE;
-                st.creature_live = st.creature.map(|_| seat_at(&mut cpu.mem, c, false));
+                // The creature's live seat, which the host feeds every tick
+                // its seat is up: once the installer has seated it (or a
+                // director has placed it).
+                let seated = cam::module_profile(entry)
+                    .and_then(|p| p.seat_arm)
+                    .is_none()
+                    || installs.get() > 0;
+                st.creature_live =
+                    (seated || st.creature.is_some()).then(|| seat_at(&mut cpu.mem, c, false));
                 st.creature_body = st.creature.map(|_| {
                     let s = seat_at(&mut cpu.mem, c, true);
                     (s.x, s.z)
@@ -1002,7 +1100,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 let mut fold_pass = false;
                 if shadow.is_some() && shadow_phase != Some(phase) {
                     shadow = None;
-                    shadow_left += 1;
+                    shadow_left += usize::from(!step_gap(entry, Some(phase), walk_step()));
                     shadow_leaves.push(format!(
                         "PROT {entry:04} target {code} fallen {fallen} caster {}: retail arm {phase:#x} band {shadow_phase:x?} at pass {pass}",
                         layout.caster
@@ -1026,6 +1124,9 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             act.move_state.world_y = p[1];
                             act.move_state.world_z = p[2];
                             act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
+                            // The loop counter `+0x21B` the walk's clip parks
+                            // on, as the anim tick keeps it.
+                            act.battle.hit_count_bound = cpu.mem.rd8(a + 0x21B);
                         }
                     }
                     // The monsters' staged reaction `+0x1DA` / `+0x1DC`, as
@@ -1094,7 +1195,8 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     // flight for the busy passes (`World::module_drive_holds`).
                     w.casting.drive_arms = drive.map(|d| (d, true));
                     w.casting.drive.busy = if polls_busy { 0x100 } else { 0 };
-                    w.clock.display_frames += 1;
+                    // One battle frame of `walk_step` vsyncs a pass.
+                    w.clock.display_frames += u64::from(walk_step());
                     // PROT 0920's hit turns its row from the camera's focus
                     // globals (`0x801F793C..0x801F7968`): the shadow's camera
                     // stands on the focus this pass opens on.
@@ -1106,13 +1208,35 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             focus: t0.focus.map(|v| -v),
                         }
                     });
-                    let run = w.drive_summon_module_pass(layout.caster as u8, action, true);
+                    let run = w
+                        .drive_summon_module_frame(layout.caster as u8, action, true)
+                        .pop()
+                        .flatten();
                     w.battle.stage_camera = None;
                     // The band's fold, on the tick the pass leaves the hit
                     // arm (`summon_stager_tick`'s strike): retail's module
                     // lands the same hit inside its hit arm's pass.
                     fold_pass = w.drive_summon_strike(layout.caster as u8, action, run.as_ref());
                     fold_passes += usize::from(fold_pass);
+                    // The stager's owed seat, landed after the pass that
+                    // reaches the seat arm (`summon_stager_tick`), on the
+                    // caster with the seat arm's stores: retail's installer
+                    // runs inside the same pass.
+                    if !port_seated
+                        && let Some(arm) = seat_arm
+                        && legaia_engine_battle_loop::module_seat_arm::seat_due(
+                            Some(entry),
+                            arm,
+                            w.casting.module_phase,
+                        )
+                    {
+                        w.seat_summon_actor(CREATURE as usize);
+                        // The seat pass's node tick lands the seat arm's held
+                        // stores behind the installer's resets
+                        // (`World::run_seat_pass_node_tick`).
+                        w.drive_seat_pass_writes();
+                        port_seated = true;
+                    }
                 }
                 spawn_log.borrow_mut().clear();
                 let hp_before: Vec<u16> = (3..7u32)
@@ -1133,7 +1257,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // PROT 0915's chase runs ahead of the director
                 // (`World::mushura_chase_ahead`): the director reads the
                 // creature as this pass's turn left it.
-                if (entry, phase) == (915, 0xC) {
+                if entry == 915 && matches!(phase, 7 | 8 | 0xC) {
                     st.creature = Some(seat_at(&mut cpu.mem, CREATURE, false));
                 }
                 // PROT 0934's spray loop opens the pass on six draws, x then
@@ -1149,28 +1273,64 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // drain and its drift and holds.
                 let polling = (st.sideband_busy && cam::sideband_wait_arm(entry) == Some(phase))
                     || polls_busy;
-                let arm = if polling {
-                    let mut ahead = st;
-                    let d = (profile.direct)(&mut ahead, phase, seats);
-                    if d.hold {
-                        st = ahead;
-                        d
-                    } else {
-                        let hold = cam::polled_hold(entry, phase, d, &st);
-                        st.countdown =
-                            cam::polled_countdown(profile.direct, &st, &ahead, phase, seats);
-                        hold
+                // A pass is `walk_step` one-vsync director ticks, as the host
+                // runs it (`World::module_pass`): the first opens the frame,
+                // each carries the ticks still owed after it, and the tick an
+                // arm hands over on ends the pass.
+                let step = walk_step();
+                let mut ticks: Vec<cam::ArmDirection> = Vec::new();
+                let mut tick_before: Vec<i32> = Vec::new();
+                // The camera as the ticks so far leave it, which the host
+                // feeds each tick (`feed_seru_cam`).
+                let mut port = t0;
+                for i in 0..step {
+                    if i > 0 {
+                        st.live_yaw = Some(port.angles[1] as u16);
+                        st.live_pitch_tr = Some((port.angles[0], port.tr));
+                        // A seek the last tick wrote is on the node now.
+                        if let Some(seek) = st.creature_seek {
+                            st.creature_frame = Some(seek);
+                        }
                     }
-                } else {
-                    (profile.direct)(&mut st, phase, seats)
-                };
+                    st.opens_pass = i == 0;
+                    st.latch_pass_word();
+                    tick_before.push(st.countdown.0);
+                    st.countdown.1 = step - 1 - i;
+                    let tick = if polling {
+                        let mut ahead = st;
+                        let d = (profile.direct)(&mut ahead, phase, seats);
+                        if d.hold {
+                            st = ahead;
+                            d
+                        } else {
+                            let hold = cam::polled_hold(entry, phase, d, &st);
+                            st.countdown =
+                                cam::polled_countdown(profile.direct, &st, &ahead, phase, seats);
+                            hold
+                        }
+                    } else {
+                        (profile.direct)(&mut st, phase, seats)
+                    };
+                    ticks.push(tick);
+                    port.apply(&tick);
+                    if !tick.hold {
+                        break;
+                    }
+                }
+                st.opens_pass = true;
+                st.countdown.1 = 0;
+                let owed = step as usize - ticks.len();
+                let arm = *ticks.last().expect("a tick");
                 // The records the director reports this pass, each on the
                 // point its anchor resolves to, against one of retail's
                 // spawn calls with the same record, point and angles.
                 // PROT 0934's spray points are the host's draws.
                 {
                     let mut left = spawn_log.borrow().clone();
-                    for sp in arm.spawns {
+                    let pass_spawns = ticks
+                        .iter()
+                        .flat_map(|t| t.spawns.iter().map(move |sp| (sp, t.arm_point, t.shot)));
+                    for (sp, arm_point, arm_shot) in pass_spawns {
                         let record = match sp.record {
                             cam::SpawnRecord::Module(r) => r,
                             cam::SpawnRecord::BattleProto(p) => cpu.mem.rd32(p),
@@ -1180,12 +1340,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             continue;
                         }
                         let point = match sp.anchor {
-                            cam::SpawnAnchor::ArmPoint => arm.arm_point,
+                            cam::SpawnAnchor::ArmPoint => arm_point,
                             a => cam::spawn_anchor_point_with(
                                 a,
                                 st.creature.or(st.creature_live).or(Some(creature_live)),
                                 Some(anchor_victim),
-                                arm.shot,
+                                arm_shot,
                                 anchor_seats,
                             ),
                         };
@@ -1219,12 +1379,32 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 if let Some(w) = shadow.as_ref() {
                     // The seated seats: an unseated monster seat is no actor
                     // the engine draws.
-                    // The creature's seat 7 too: the host seats it as the
-                    // walk does (`World::seat_summon_actor`), but on the
-                    // modules whose creature writes another half of the host
-                    // carries ([`CREATURE_WRITES_ELSEWHERE`]).
-                    let creature = !CREATURE_WRITES_ELSEWHERE.contains(&entry);
+                    // The creature's seat 7 too, once both sides have seated
+                    // it: retail's seat arm calls the installer, the host
+                    // seats it as the band's pass reaches that arm
+                    // (`World::seat_summon_actor`). A side that seats it on
+                    // another pass is a mismatch of its own.
+                    let retail_seated = seat_arm.is_none() || installs.get() > 0;
+                    if retail_seated != port_seated {
+                        shadow_failures.push(format!(
+                            "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat 7 seated retail {retail_seated} port {port_seated}",
+                            layout.caster, layout.monsters
+                        ));
+                    }
+                    let creature = retail_seated && port_seated;
                     creature_passes += usize::from(creature);
+                    // The creature's target code `+0x1DD`, which its root
+                    // motion's range poll reads.
+                    if creature {
+                        let rt = cpu.mem.rd8(ACTOR + CREATURE * STRIDE + 0x1DD);
+                        let pt = w.actors[CREATURE as usize].battle.active_target;
+                        if rt != pt {
+                            shadow_failures.push(format!(
+                                "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat 7 target retail {rt:#x} port {pt:#x}",
+                                layout.caster, layout.monsters
+                            ));
+                        }
+                    }
                     let seated = (0..(3 + layout.monsters as usize).min(7))
                         .chain(creature.then_some(CREATURE as usize));
                     for s in seated {
@@ -1254,8 +1434,9 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             let ps = v.staged_anim;
                             // The fold's pass also writes the hit's bar
                             // delta, the hit word `+0x0C`, the `+0x21F`
-                            // byte and the victim's facing.
-                            if fold_pass {
+                            // byte and the victim's facing, on the struck
+                            // row (the creature is no fold target).
+                            if fold_pass && s != CREATURE as usize {
                                 let rf = (
                                     r.hp_bar_delta,
                                     r.root_speed,
@@ -1289,32 +1470,41 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             ));
                         }
                     }
-                    // The row's ground trio and animation rate. The rate of a
-                    // seat with no HP stays out: retail tests its colour word,
-                    // which a faded seat and the engine's resting shown word
-                    // both read as `0`. Left out as well: the creature (seat
-                    // 7), which the host seats and the walk stands as retail
-                    // leaves it, and the spirit gauge, which retail's stubbed
-                    // wrapper (its finisher unrun) never fills.
-                    let creature_rate = creature && !CREATURE_RATE_ELSEWHERE.contains(&entry);
+                    // The row's ground trio, animation rate and render scale,
+                    // on dead seats too. The creature's seat 7 is compared as
+                    // well, but for the arms of [`CREATURE_GAPS`].
                     let rows =
-                        (3..(3 + layout.monsters).min(7)).chain(creature_rate.then_some(CREATURE));
+                        (3..(3 + layout.monsters).min(7)).chain(creature.then_some(CREATURE));
                     for s in rows {
                         let a = ACTOR + s * STRIDE;
                         let act = &w.actors[s as usize];
-                        let dead = cpu.mem.rd16(a + 0x14C) == 0;
+                        let gap = |part| s == CREATURE && creature_gap(entry, phase, part);
+                        let trio_out = gap(CreatureGap::Trio);
+                        let rate_out = gap(CreatureGap::Rate);
                         let got = (
-                            trio(&mut cpu.mem, a + 0x34),
-                            (!dead).then(|| cpu.mem.rd8(a + 0x21D)),
+                            (!trio_out).then(|| trio(&mut cpu.mem, a + 0x34)),
+                            (!rate_out).then(|| cpu.mem.rd8(a + 0x21D)),
                         );
                         let port = (
-                            [
+                            (!trio_out).then_some([
                                 act.move_state.world_x,
                                 act.move_state.world_y,
                                 act.move_state.world_z,
-                            ],
-                            (!dead).then(|| act.battle.anim_rate.get()),
+                            ]),
+                            (!rate_out).then(|| act.battle.anim_rate.get()),
                         );
+                        // The render node's scale `+0x72`, against the seat's
+                        // `render_scale` (unity when unset): PROT 0921's exit
+                        // leaves a Stoned seat shrunken in the retail mode
+                        // (`WorldToggles::stone_scale_fix` off).
+                        let rs = cpu.mem.rd16(NODES + s * 0x100 + 0x72);
+                        let ps = act.battle.render_scale.unwrap_or(0x1000);
+                        if rs != ps {
+                            shadow_failures.push(format!(
+                                "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} scale retail {rs:#x} port {ps:#x}",
+                                layout.caster, layout.monsters
+                            ));
+                        }
                         if got != port {
                             shadow_failures.push(format!(
                                 "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} trio/rate retail {got:x?} port {port:x?}",
@@ -1327,8 +1517,22 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 shadow_after = (0..8u32)
                     .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
                     .collect();
-                let mut port = t0;
-                port.apply(&arm);
+                // The ticks of the pass the handing-over tick leaves owed:
+                // its drift and nudge, as retail's one `delta`-scaled pass
+                // makes them (`World::drift_rest_of_pass`). A drift ahead of
+                // the tick's shot owes none: the shot is built after the
+                // pass's whole drift (`World::summon_stager_tick`), and one
+                // after it is the next pass's.
+                let owed_drift = (arm.shot.is_none() && !arm.drift_after_shot)
+                    .then_some(arm.rest_drift.unwrap_or(arm.drift))
+                    .flatten();
+                for _ in 0..owed {
+                    port.apply(&cam::ArmDirection {
+                        drift: owed_drift,
+                        nudge: arm.nudge,
+                        ..cam::ArmDirection::HOLD
+                    });
+                }
                 let busy = cpu.regs.r[V0] != 0;
                 let after = cpu.mem.rd8(CTX + 0x279);
                 let retail = Target::read(&mut cpu.mem);
@@ -1352,7 +1556,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     .filter(|_| matches!(phase, 0 | 11 | 12 | 18 | 19 | 24))
                 {
                     use legaia_engine_core::world::arm_drivers::BattleArmDrivers;
-                    w.puera_writes(phase, !held, countdown_before, layout.monsters as u8);
+                    // Once a tick, as the host's pass runs them.
+                    let n = tick_before.len();
+                    for (i, &before) in tick_before.iter().enumerate() {
+                        let passed = i + 1 == n && !held;
+                        w.casting.module_cam.countdown.1 = walk_step() - 1 - i as u8;
+                        w.puera_writes(phase, passed, before, layout.monsters as u8);
+                    }
                     for &s in &puera_seats {
                         let a = ACTOR + s * STRIDE;
                         let retail_seat = (
@@ -1431,7 +1641,8 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         .collect();
                 let mut landed = false;
                 for &(h, y) in &crystals {
-                    let (y, l) = puera_crystal_fall(y, SPEED_SCALAR << 7);
+                    let (y, l) =
+                        puera_crystal_fall(y, (SPEED_SCALAR << 7) * i32::from(walk_step()));
                     landed |= l;
                     if cpu.mem.rd16(h + 0x16) as i16 != y {
                         diffs_early.push(format!(
@@ -1583,6 +1794,22 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             }
         }
     }
+    tag(
+        &mut failures,
+        &mut shadow_failures,
+        &mut spawn_failures,
+        &mut marks,
+    );
+    WALK_STEP.with(|s| s.set(1));
+    // The step-above-1 rows still open ([`STEP_GAPS`]).
+    let gapped = failures.len() + shadow_failures.len() + spawn_failures.len();
+    failures.retain(|m| !step_gapped(m));
+    shadow_failures.retain(|m| !step_gapped(m));
+    spawn_failures.retain(|m| !step_gapped(m));
+    eprintln!(
+        "summon walk: {} step-gap lines left out",
+        gapped - failures.len() - shadow_failures.len() - spawn_failures.len()
+    );
     assert!(sideband_held > 100, "{sideband_held} side-band passes held");
     eprintln!(
         "summon shadow: {shadow_passes} passes compared ({fold_passes} folds), {shadow_left} casts left retail's phase walk, {} mismatches",
@@ -1597,6 +1824,20 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     legaia_engine_core::world::summon_roll_override::set(None);
     if let Ok(path) = std::env::var("W54_SHADOW_DUMP") {
         let _ = std::fs::write(&path, shadow_failures.join("\n"));
+    }
+    if let Ok(path) = std::env::var("W54_CAMERA_DUMP") {
+        let all: Vec<&String> = failures
+            .iter()
+            .chain(&spawn_failures)
+            .chain(&shadow_leaves)
+            .collect();
+        let _ = std::fs::write(
+            &path,
+            all.iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
     }
     assert!(
         shadow_passes >= 200_000,
@@ -1660,29 +1901,109 @@ fn group_aim(cpu: &mut Cpu, code: u8, any_up: bool) -> Option<GroupAim> {
     })
 }
 
-/// The modules whose creature-seat writes (seat 7's colour word, tint state
-/// and staged clip) another half of the host carries - the creature's
-/// presentation, its seat-arm tables or the anim tick - not the band's module
-/// half the shadow drives, so the shadow leaves seat 7 out on them. On every
-/// other module seat 7 is compared as the monster seats are.
-const CREATURE_WRITES_ELSEWHERE: &[u32] = &[
-    905, 907, 908, 914, 915, 917, 921, 922, 923, 924, 925, 928, 930, 931, 932, 933,
+/// A part of seat 7 the shadow leaves out on some arms.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CreatureGap {
+    /// The ground trio.
+    Trio,
+    /// The animation rate `+0x21D`.
+    Rate,
+}
+
+/// The arms whose creature seat the shadow cannot compare whole, as
+/// `(entry, arms, the part, why)`; seat 7 is compared on every other pass
+/// of every module.
+const CREATURE_GAPS: [(u32, std::ops::RangeInclusive<u8>, CreatureGap, &str); 4] = [
+    (
+        905,
+        0xA..=0xA,
+        CreatureGap::Trio,
+        "PROT 0905's arm 0xA rise (`+0x36 -= p / 2`, 0x801F7FF0) lands through the \
+         camera nudge, which the host applies on the next tick's drift seam",
+    ),
+    (
+        908,
+        8..=8,
+        CreatureGap::Trio,
+        "the walk stands the shadow's creature on the victim for PROT 0908's arm 8 \
+         range poll (above)",
+    ),
+    (
+        922,
+        7..=7,
+        CreatureGap::Rate,
+        "PROT 0922's arm 7 parks the rate once the clip cursor `+0x68` reads 0x1C0, \
+         which the shadow's seat (no clip player) does not carry",
+    ),
+    (
+        927,
+        12..=18,
+        CreatureGap::Rate,
+        "PROT 0927's arms 12 and 14 freeze the rate once the clip cursor `+0x68` reads \
+         0x240 / 0x2D0 (0x801F70F0, 0x801F724C), which the shadow's seat does not carry",
+    ),
 ];
 
-/// The modules whose creature rate `+0x21D` the host stores outside the
-/// module half: PROT 0934's seat arm 5 stores it, which the host runs with
-/// the install (`World::apply_seat_arm_write`) where the shadow installs
-/// ahead of arm 0; PROT 0927's creature rate is its parts'.
-const CREATURE_RATE_ELSEWHERE: &[u32] = &[927, 934];
+/// Whether `part` of seat 7 is out of the comparison on PROT `entry`'s `arm`.
+fn creature_gap(entry: u32, arm: u8, part: CreatureGap) -> bool {
+    CREATURE_GAPS
+        .iter()
+        .any(|(e, arms, p, _)| *e == entry && arms.contains(&arm) && *p == part)
+}
 
 /// A world in battle seated as `cpu`'s actor records are, the creature on
 /// seat 7, with `action`'s summon armed (`World::arm_summon_stager`).
+/// The frame steps every walk runs at.
+const WALK_STEPS: [u8; 3] = [1, 2, 3];
+
+/// The arms left out of both walks (this one and `cast_theeder`'s tick
+/// bodies) at frame steps 2 and 3 only, as `(entry, first arm, last arm)`;
+/// at step 1 every arm is compared. Both hold on the port's victim settle
+/// poll (`World::chain_seat_settled`), whose down-clip exit the port keeps by
+/// choice (the tooling page's "One arm stays apart from retail by choice"):
+/// retail's Aluru arm `0x14` waits on a dead victim's colour word alone
+/// (`lw v0,4(s3)` / `bnez` at `0x801F8870` in PROT 0916), a word only the
+/// defeat fade eases out, where the port also lets go once the victim plays
+/// its down clip. The tick-body walk plays its fallen victim's reaction and
+/// fade by pass, so above step 1 the down clip comes in ahead of the fade's
+/// end and the port leaves first (Barra's arm `0xF` reads the same poll).
+pub(crate) const STEP_GAPS: [(u32, u8, u8); 2] = [(916, 0x14, 0x14), (917, 0xF, 0xF)];
+
+/// Whether `(entry, arm)` at `step` is a [`STEP_GAPS`] row (`arm` `None`:
+/// any of the entry's rows, for a message naming no arm).
+pub(crate) fn step_gap(entry: u32, arm: Option<u8>, step: u8) -> bool {
+    step > 1
+        && STEP_GAPS
+            .iter()
+            .any(|&(e, lo, hi)| e == entry && arm.is_none_or(|a| (lo..=hi).contains(&a)))
+}
+
+/// [`step_gap`] read off a walk's mismatch line: `PROT NNNN`, `arm 0x..`
+/// and `step N` (or `[step N]`) in it.
+pub(crate) fn step_gapped(msg: &str) -> bool {
+    let num = |key: &str, radix: u32| -> Option<u32> {
+        let i = msg.find(key)? + key.len();
+        let digits: String = msg[i..].chars().take_while(|c| c.is_digit(radix)).collect();
+        u32::from_str_radix(&digits, radix).ok()
+    };
+    let (Some(entry), Some(step)) = (
+        num("PROT ", 10),
+        num("[step ", 10).or_else(|| num(" step ", 10)),
+    ) else {
+        return false;
+    };
+    step_gap(entry, num("arm 0x", 16).map(|a| a as u8), step as u8)
+}
+
 fn summon_shadow(
     cpu: &mut Cpu,
     layout: Layout,
     action: u8,
 ) -> Option<legaia_engine_core::world::World> {
     let mut w = legaia_engine_core::world::World::new();
+    // The shadow plays the retail-faithful mode, which every comparison
+    // child runs (the Stoned-seat rescale among its switches).
+    w.toggles.pin_retail();
     w.load_party(legaia_save::Party::zeroed(3));
     w.enter_battle(3, layout.monsters as u8);
     while w.actors.len() < 12 {
@@ -1692,7 +2013,9 @@ fn summon_shadow(
         let a = ACTOR + s * STRIDE;
         let p = trio(&mut cpu.mem, a + 0x34);
         let act = &mut w.actors[s as usize];
-        act.active = s < 3 + layout.monsters || s == CREATURE;
+        // The creature's seat is out until the host seats it
+        // (`seat_creature`).
+        act.active = s < 3 + layout.monsters;
         act.battle.hp = cpu.mem.rd16(a + 0x14C);
         act.battle.max_hp = cpu.mem.rd16(a + 0x14E).max(act.battle.hp);
         act.battle.liveness = u16::from(act.battle.hp > 0);
@@ -1713,9 +2036,13 @@ fn summon_shadow(
     }
     w.battle_ctx.active_actor = layout.caster as u8;
     w.casting.summon_actor_slot = Some(CREATURE as u8);
-    // The walk's battle frame is one vsync (step `1`), so every shadow tick
-    // opens a pass, as each of retail's calls does.
-    w.battle.frame_clock.step = 1;
+    // The creature carries a clip set, so the clip it plays (`+0x1D9`, the
+    // walk's synced each pass) reaches the module half's clip gates
+    // (`World::feed_module_creature`) as the host's seated creature's does.
+    w.actors[CREATURE as usize].battle_action_clips = Some(std::sync::Arc::new(vec![None; 8]));
+    // The walk's battle frame (`walk_step`): every shadow tick opens a
+    // pass, as each of retail's calls does.
+    w.battle.frame_clock.step = walk_step();
     w.battle.frame_clock.span_extra = 0;
     // The reaction run `+0x1EF..+0x1F2`, as the records hold it: a seat
     // with no clips reads it off its action bytes `+0x1DF..`.
@@ -1727,22 +2054,6 @@ fn summon_shadow(
     }
     w.cast_module_for(action)?;
     w.arm_summon_stager(layout.caster as u8, action);
-    // The creature seat as the host installs it (`FUN_801F19EC`'s port), its
-    // ground and facing then put back on the walk's: the walk stands the
-    // creature where retail's arms leave it, and the shadow syncs that each
-    // pass.
-    w.seat_summon_actor(CREATURE as usize);
-    {
-        let a = ACTOR + CREATURE * STRIDE;
-        let p = trio(&mut cpu.mem, a + 0x34);
-        let act = &mut w.actors[CREATURE as usize];
-        [
-            act.move_state.world_x,
-            act.move_state.world_y,
-            act.move_state.world_z,
-        ] = p;
-        act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
-    }
     // The cast the band's fold owes, as the Magic submenu arms it
     // (`World::arm_player_cast`): the spell record off the executable, on
     // the targets its shape names from the walk's target code.
@@ -1781,7 +2092,34 @@ fn summon_shadow(
     // `kill` left unset), which is the path retail's roll takes on this
     // walk's zeroed records; the world's roll reads its own party's levels.
     w.casting.module_cam.kill = Some(false);
+    // The creature seat as the host installs it (`FUN_801F19EC`'s port): a
+    // module with no seat arm before its first pass, as the stager's armed
+    // phase seats it; the rest once the band's pass reaches the seat arm
+    // its profile names (`module_seat_arm::seat_due`), as the stager's owed
+    // seat lands.
+    if cam::module_profile(w.cast_module_for(action)?)
+        .and_then(|p| p.seat_arm)
+        .is_none()
+    {
+        seat_creature(cpu, &mut w);
+    }
     Some(w)
+}
+
+/// The host's seat of the creature (`World::seat_summon_actor`), its ground
+/// and facing then put back on the walk's: the walk stands the creature
+/// where retail's arms leave it, and the shadow syncs that each pass.
+fn seat_creature(cpu: &mut Cpu, w: &mut legaia_engine_core::world::World) {
+    w.seat_summon_actor(CREATURE as usize);
+    let a = ACTOR + CREATURE * STRIDE;
+    let p = trio(&mut cpu.mem, a + 0x34);
+    let act = &mut w.actors[CREATURE as usize];
+    [
+        act.move_state.world_x,
+        act.move_state.world_y,
+        act.move_state.world_z,
+    ] = p;
+    act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
 }
 
 /// A part of the camera the port is known to leave out.
@@ -1873,4 +2211,115 @@ fn the_side_band_arm_steps_over_the_band_word_poll_as_retail_does() {
         }
     }
     assert_eq!(compared, 4);
+}
+
+/// PROT 0925's arm 8 on a scripted fight, which takes the round tail
+/// (`bne` on `ctx[+0x287]` at `0x801F73F0` to `0x801F79B8`) in place of the
+/// flee: the image's arm run once on its spent countdown over party rows of
+/// one to three seats, a member down, members with an item turn that had
+/// or had not a turn left (`+0x1DE`, `+0x16C`), against
+/// `spikefish_round_tail` - the turn cursor `ctx[+0x1A]`, every party
+/// seat's `+0x16C` and the item refunds `FUN_800421D4(item, 1)` in order.
+#[test]
+fn the_spikefish_round_tail_counts_and_refunds_as_retail_does() {
+    use legaia_engine_cast::cast_module_ticks::{
+        CastActorState, CastModuleCtx, spikefish_round_tail,
+    };
+    differential!(prot(925, 0x801F_6A00));
+    let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const REFUND: u32 = 0x8004_21D4;
+    const COUNTDOWN: u32 = 0x801F_800C;
+    let overlay = disc.read_entry(898).expect("PROT 0898");
+    let module = disc.read_entry(925).expect("PROT 0925");
+    let mut compared = 0;
+    // `(hp, +0x1DE, +0x16C, +0x1DF)` per seat.
+    let rows: [&[(u16, u8, u16, u8)]; 5] = [
+        &[(300, 0, 0, 0)],
+        &[(300, 1, 7, 0x2A), (0, 1, 3, 0x2B), (120, 4, 9, 0x2C)],
+        &[(300, 1, 0, 0x2A), (40, 0, 5, 0), (0, 0, 0, 0)],
+        &[(0, 1, 2, 0x31), (300, 1, 1, 0x32)],
+        &[(300, 3, 4, 0), (300, 1, 6, 0x40), (300, 1, 0, 0x41)],
+    ];
+    for (k, row) in rows.iter().enumerate() {
+        let mut cpu = scus_cpu().expect("SCUS");
+        cpu.mem.load(OVERLAY_BASE, &overlay);
+        cpu.mem.load(BASE, &module);
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+        cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+        for target in jal_targets(&module) {
+            cpu.stub(target, 0);
+        }
+        let refunds = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+        {
+            let refunds = refunds.clone();
+            cpu.hook(REFUND, move |r, _| {
+                refunds.borrow_mut().push((r.r[A0], r.r[A1]));
+                r.r[V0] = 0;
+            });
+        }
+        for b in 0..0x1100 {
+            cpu.mem.wr8(CTX + b, 0);
+        }
+        cpu.mem.wr8(CTX, row.len() as u8);
+        cpu.mem.wr8(CTX + 1, 2);
+        cpu.mem.wr8(CTX + 0x1A, 5);
+        cpu.mem.wr8(CTX + 0x279, 8);
+        cpu.mem.wr8(CTX + 0x287, 1);
+        cpu.mem.wr32(COUNTDOWN, 0);
+        cpu.mem.wr8(SCALAR, SPEED_SCALAR as u8);
+        cpu.mem.wr8(STEP, 1);
+        for s in 0..8u32 {
+            let a = ACTOR + s * STRIDE;
+            cpu.mem.wr32(ACTORS + s * 4, a);
+            for o in (0..STRIDE).step_by(4) {
+                cpu.mem.wr32(a + o, 0);
+            }
+            let node = NODES + s * 0x100;
+            cpu.mem.wr32(a + 0x22C, node);
+        }
+        let mut party: Vec<CastActorState> = Vec::new();
+        for (s, &(hp, cat, key, item)) in row.iter().enumerate() {
+            let a = ACTOR + s as u32 * STRIDE;
+            cpu.mem.wr16(a + 0x14C, hp);
+            cpu.mem.wr8(a + 0x1DE, cat);
+            cpu.mem.wr16(a + 0x16C, key);
+            cpu.mem.wr8(a + 0x1DF, item);
+            party.push(CastActorState {
+                hp,
+                action_category: cat,
+                init_key: key,
+                queued_action: item,
+                ..Default::default()
+            });
+        }
+        assert_eq!(cpu.call(SPIKEFISH, &[]), Stop::Returned, "row {k}");
+        let mut ctx = CastModuleCtx {
+            turn_cursor: 5,
+            ..Default::default()
+        };
+        let port_refunds = spikefish_round_tail(&mut ctx, &mut party);
+        assert_eq!(
+            cpu.mem.rd8(CTX + 0x1A),
+            ctx.turn_cursor,
+            "row {k}: turn cursor"
+        );
+        for (s, seat) in party.iter().enumerate() {
+            let a = ACTOR + s as u32 * STRIDE;
+            assert_eq!(
+                cpu.mem.rd16(a + 0x16C),
+                seat.init_key,
+                "row {k} seat {s}: +0x16C"
+            );
+        }
+        let retail: Vec<(u32, u32)> = refunds.borrow().clone();
+        let port: Vec<(u32, u32)> = port_refunds.iter().map(|&i| (u32::from(i), 1)).collect();
+        assert_eq!(retail, port, "row {k}: refunds");
+        assert_eq!(cpu.mem.rd8(CTX + 0x279), 9, "row {k}: the arm leaves");
+        compared += 1;
+    }
+    assert_eq!(compared, rows.len());
 }

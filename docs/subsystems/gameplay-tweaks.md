@@ -31,6 +31,7 @@ Classes:
 | `--fortress-encounter-fix` | (b) carried | `WorldToggles::fortress_encounter_fix`. |
 | `--jewel-fix` | (b) carried | `WorldToggles::jewel_fix`. |
 | (no patcher flag) state-`0x51` HP-readout park | (b) carried | `WorldToggles::hp_readout_guard`; the patcher has no fix for this park. |
+| (no patcher flag) a Stoned monster left shrunken by Iota | (b) carried | `WorldToggles::stone_scale_fix`; the patcher has no fix for this oversight. |
 | (no patcher flag) Tetsu spar fought before the measuring | (b) carried | `WorldToggles::tetsu_spar_fix`; the patcher has no fix for this softlock. |
 | (no patcher flag) Equip preview clipping current HP / MP | (a) | The candidate preview runs on a copy of the record (`engine-menus` `aggregated_menu_block`), so hovering never lowers a current value ([glitch page](../reference/glitches/items-and-equipment.md#hovering-an-equip-candidate-clips-current-hp-or-mp)). |
 | `--equipment-drops` | (b) carried | `WorldToggles::bonus_drop`. |
@@ -66,6 +67,7 @@ Each switch is one field of `legaia_engine_session::session_switches::GameplayTw
 | Tetsu spar order fix | `--no-tetsu-spar-fix` | on | off |
 | Boss casts respect jewels | `--jewel-fix` | off | off |
 | Battle freeze guard | `--no-hp-readout-guard` | on | off |
+| Stoned foes keep their size | `--no-stone-scale-fix` | on | off |
 | Bonus equipment drops | `--equipment-drops` | off | off |
 | Save anywhere | `--save-anywhere` | off | off |
 | Action movement | `--action-movement` | off | off |
@@ -77,7 +79,7 @@ Each switch is one field of `legaia_engine_session::session_switches::GameplayTw
 
 The launcher groups the toggles under *Gameplay tweaks* and the sliders (the EXP rate with them) under *Battle tuning*; the play page has a panel for each. A slider cycles a fixed step list that starts at retail (`GameplayTweaks::SPIRIT_AP_STEPS` and its siblings); the flags take any value in range.
 
-The three fixes default on because a game the defect never touched plays identically with them on: the Fortress fix changes nothing on a save without the stale flag, the Tetsu fix changes nothing in a game that sparred after the measuring, and the readout guard is an identity while retail's readout invariant holds. Shiny Seru keeps the default it shipped with. The jewel fix, run-away EXP and the EXP rate change the game's balance and default to retail.
+The four fixes default on because a game the defect never touched plays identically with them on: the Fortress fix changes nothing on a save without the stale flag, the Tetsu fix changes nothing in a game that sparred after the measuring, the readout guard is an identity while retail's readout invariant holds, and the Stoned-seat rescale changes nothing on an Iota cast with no Stoned monster. Shiny Seru keeps the default it shipped with. The jewel fix, run-away EXP and the EXP rate change the game's balance and default to retail.
 
 ### Shiny Seru
 
@@ -116,6 +118,12 @@ Before each frame of the HP-readout ramp (`World::tick_battle_hp_bars`, retail `
 The resting value is live HP less the melee combo total still banked on the slot (`actor[+0x00]`): `FUN_801EC3E4` adds each hit to both the bank and the readout accumulator (`0x801EDB34..0x801EDB58`) but writes live HP once, at the combo's end (`0x801EEA10..0x801EEA3C`), so mid-combo retail's readout sits below live HP with nothing pending. Re-seeding restores `display - pending == live - banked`, the ramp counts the readout to rest, and state `0x51`'s settle check opens.
 
 Retail re-syncs only on a poison or regen tick (`FUN_801E752C`); without one, every party-targeted action parks in `0x51` for good ([battle-action-exit-gates](battle-action-exit-gates.md#softlock-class-the-absorbing-readout)). Monster slots are untouched: their readout settles in one frame and the gate never waits on it. Measured against live HP alone, the guard would count the readout back up between a multi-hit attack's hits, so it would roll down, up and down again.
+
+### Stoned foes keep their size
+
+Iota's arm 9 shrinks every monster of the row, its render node scale `+0x72` falling `4 * scalar * step` a pass to zero, and arm `0xA`'s hit stands each struck seat back at `0x1000`. That hit loop skips a Stoned seat whole (`andi 4` at `0x801F7BD4` in PROT 0921), and the exit arm `0xB` restores each seat's saved trio, facing, body radius `+0x58` and size byte `+0x1F` (`0x801F7F40..0x801F7F98`) but no scale. In retail a monster that was Stoned when Iota was cast stays drawn at the scale the sweep left it on, a sliver, until something else rescales its node.
+
+The switch makes the exit's restore stand every row seat back at unity scale (`World::apply_iota_writes`, through `ra_seru_row_restore`). A seat the hit already rescaled is unchanged, so a cast on a row with no Stoned monster plays the same either way. The summon walk's shadow runs the retail mode and compares the Stoned seat's scale against retail's on that pass.
 
 ### Bonus equipment drops
 

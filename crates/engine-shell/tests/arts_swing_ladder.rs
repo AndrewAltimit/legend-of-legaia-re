@@ -61,6 +61,9 @@ fn disc_path() -> Option<PathBuf> {
 /// it and the Arts row carries the real action constant.
 fn world_with_somersault() -> World {
     let mut w = World::new();
+    // The players' CD timing, field and battle (`play_cd_timing`): the
+    // ladder plays what a player plays. HARNESS.
+    legaia_engine_core::world::play_cd_timing().apply(&mut w.toggles);
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }

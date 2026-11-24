@@ -30,6 +30,10 @@
 --   LEGAIA_SSTATE   save state to load (a battle state that resolves)
 --   LEGAIA_FRAMES   vsyncs to capture (default 1500)
 --   LEGAIA_OUT[_DIR] output CSV path (default victory_timeline.csv)
+--   LEGAIA_SAVE_AT  comma list of vsyncs (this CSV's numbering) to keep the
+--                   whole emulator state at, as <out dir>/victory_<v>.rawsstate:
+--                   a state inside the load window, where case 8's stand-off
+--                   reads the yaw counter (column yaw6da) every pass
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -53,8 +57,12 @@ local FADE_TMPL   = 0x801C9070 -- DAT_801C9070 fade template: u16 kind, u16 time
 local ACTOR_TABLE = 0x801C9370 -- 8 actor pointers
 local PARTY_IDS   = 0x8007BD10 -- DAT_8007BD10: seat -> 1-based char id
 
+local SAVE_AT = {}
+for v in string.gmatch(probe.getenv("LEGAIA_SAVE_AT", ""), "%d+") do SAVE_AT[tonumber(v)] = true end
+local OUT_DIR = OUT_PATH:match("^(.*)/[^/]*$") or "."
+
 local csv = probe.csv_open(OUT_PATH,
-    "vsync,signal,cause,survived,mode,flow,astate,ctx13,ctx0b,ctx0c,phase6ce,req26b,prog26c," ..
+    "vsync,step,yaw6da,signal,cause,survived,mode,flow,astate,ctx13,ctx0b,ctx0c,phase6ce,req26b,prog26c," ..
     "pose_id,hold,xp,gold,fade_kind,fade_time,p0_q,p0_c,p0_hp,p1_q,p1_c,p1_hp,p2_q,p2_c,p2_hp,m0_hp")
 
 local function actor_triplet(seat)
@@ -82,8 +90,9 @@ probe.run({
         local survived = probe.read_u8(SURVIVED)
         local mode     = probe.read_u16(GAME_MODE)
         local flow, astate, ctx13, ctx0b, ctx0c, phase = 0, 0, 0, 0, 0, 0
-        local req26b, prog26c = 0, 0
+        local req26b, prog26c, yaw = 0, 0, 0
         if ctx_ok then
+            yaw    = probe.read_u16(ctx + 0x6DA)
             flow   = probe.read_u8(ctx + 0x6)
             astate = probe.read_u8(ctx + 0x7)
             ctx13  = probe.read_u8(ctx + 0x13)
@@ -108,10 +117,21 @@ probe.run({
             pose_id, hold, xp, gold, fk, ft, p0q, p0c, p0hp, p1q, p1c, p1hp, p2q, p2c, p2hp, m0hp)
         -- Emit on any change, plus a heartbeat every 30 vsyncs so the hold
         -- timer's slope is visible even when nothing else moves.
-        if sig ~= last_sig or vsync % 30 == 0 then
-            csv:row("%d,%s", vsync, sig)
+        if SAVE_AT[vsync] then
+            local path = string.format("%s/victory_%d.rawsstate", OUT_DIR, vsync)
+            local ok, err = pcall(function()
+                local w = PCSX.createSaveState()
+                local fh = Support.File.open(path, "TRUNCATE")
+                fh:writeMoveSlice(w); fh:close()
+            end)
+            PCSX.log(string.format("[victory] state %s ok=%s %s", path, tostring(ok), tostring(err or "")))
+        end
+        -- The yaw counter moves on every pass of the load window: log it whole.
+        local key = sig .. "," .. yaw
+        if key ~= last_sig or vsync % 30 == 0 then
+            csv:row("%d,%d,%d,%s", vsync, probe.read_scratch_u8(0x1F800393), yaw, sig)
             rows = rows + 1
-            last_sig = sig
+            last_sig = key
         end
         if mode ~= 0x15 and exit_seen == nil then
             exit_seen = vsync

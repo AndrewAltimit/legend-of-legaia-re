@@ -255,6 +255,24 @@ impl World {
             || (faded && (a.battle.render_color == 0 || !a.active))
     }
 
+    /// A seat on either rest clip, idle `0` or the down clip `8`, whatever its
+    /// HP: the settle PROT 0962's Blade Breath and Gigaton Press poll
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureVictimSettle::EitherRestClip`]).
+    /// A downed seat's finished defeat pose and a clipless seat read as
+    /// [`Self::chain_seat_settled`] reads them.
+    pub(in crate::world::battle) fn chain_seat_on_rest_clip(&self, slot: usize) -> bool {
+        let Some(a) = self.actors.get(slot) else {
+            return true;
+        };
+        let playing = match a.battle_reaction {
+            Some(tag) => a.battle_reaction_entry.unwrap_or(tag.max(1)),
+            None => a.battle.current_anim,
+        };
+        playing == 0
+            || playing == legaia_engine_cast::cast_module_ticks::SETTLE_DOWN_CLIP
+            || (a.battle.hp == 0 && self.chain_seat_settled(slot, false))
+    }
+
     /// [`Self::chain_seat_settled`] over the seats a [`legaia_engine_cast::cast_module_ticks::ChainSettle`]
     /// walks.
     pub(in crate::world::battle::cast_band) fn chain_settled(
@@ -339,6 +357,7 @@ impl World {
         st.victim_body = self.module_body_seat(latched);
         st.frame_step = self.module_frame_step();
         st.opens_pass = self.module_tick_opens_pass();
+        st.latch_pass_word();
         st.body_pass_now = true;
         let d = direct(&mut st, phase, seats);
         self.store_module_cam(st);

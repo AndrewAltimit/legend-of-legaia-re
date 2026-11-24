@@ -165,6 +165,17 @@ changes; the Done-arm camera walk back
 displayed yaw this way. The override is a probe only: the cache keys on every
 `LEGAIA_*` variable, so an override run never feeds a normal one.
 
+`LEGAIA_CAPTURE_GATE_LATE=<ticks>` through the override takes a gated frame
+that many world ticks after its gate first opens, every seed and drive still
+running (a display-lag retake counts back from the later tick). It asks
+whether a residual is the frame's phase or a draw the engine lacks. The Flying
+Knee stills answer it both ways: `battle_garmel_party_gala_flying_knee_mid`
+reads `.969` on its gate and `.976` two ticks (one pass) later, the body's pose
+closer to retail's, while `battle_ropeway_party_gala_flying_knee_mid` holds
+`.990` and falls to `.942` from three ticks, and `_late` falls from `.874` to
+`.818` from two. The frames hold no weapon-trail band, move-FX streak, ribbon
+or near-camera ghost: dropping each pass leaves all three scores unchanged. What remained on the garmel still was its hit-spark rays: the melee ray burst (record `0x801F5484`, `+0x52` clear, so the dispatcher folds it into the full camera and no camera-relative prefix applies), drawn on the replay's strike point three pixels right of retail's until the image child seated the burst's RAM position ([a ray burst a pass short](#battle-states)).
+
 ## Reading the report
 
 `report.md` opens with the channel means over the seeded states and the
@@ -7111,15 +7122,19 @@ every pass, so it moves with the phase of both clips):
   part tick writes them, not the draw); a lane on its `0x1000` clamp names
   no age and is left alone, and other morphing parts are left to the replay
   (`image` `.907` to `.916`). The burst also stands where its program put
-  it, with no velocity, so its position `+0x14..+0x18` and banks are the
-  RAM's once the level ramp is older than the lag: the replay seats it on
-  its own strike point. `battle_melee_hit_spark`'s burst, level `0x900`
+  it, with no velocity, and its level ramp fades it without moving it, so
+  its position `+0x14..+0x18` is the RAM's on every frame it drew: the
+  replay seats it on its own strike point, and the image child seats the
+  RAM's. `battle_melee_hit_spark`'s burst, level `0x900`
   against a six-vsync lag, stands at `(-5, -330, 368)` where the replay's
   stood at `(-4, -330, 378)` (`image` `.847` to `.876`;
-  `battle_gimard_tail_fire_b` `.953` to `.963`). A ramp no older than the
-  lag began inside it, and the position stays the replay's:
-  `rim_elm_gimard_victory`'s level `0x400` on a four-vsync lag, seated,
-  fell `.931` to `.920`.
+  `battle_gimard_tail_fire_b` `.953` to `.963`). A ramp younger than the
+  lag is seated too: `battle_garmel_party_gala_flying_knee_mid`'s began
+  three vsyncs before the RAM's pass on a six-vsync lag, and the state's own
+  ordering tables (`ot-raster.py`) put its rays where the RAM's position
+  does, three pixels left of the replay's point (`.969` to `.987`;
+  `battle_garmel_party_noa_lizard_tail_mid` `.979` to `.983`,
+  `rim_elm_gimard_victory` unchanged).
 - **A combo cluster that landed early.** The cluster's glide record
   retires on the pass that snaps it and keeps its last `elapsed`, so a
   capture saved a pass or more later reads a landed table while its frame

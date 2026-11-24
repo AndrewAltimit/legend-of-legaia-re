@@ -27,7 +27,11 @@ impl World {
                 st.death_game.table = table;
             }
         }
-        if phase == 4 && st.death_game.counter == 0 {
+        // The swap is drawn on the pass that opens it: arm 4's counter moves
+        // once a pass (`death_game_camera`), so it stands at `0` through the
+        // rest of the pass that zeroed it.
+        let pass_opens = st.opens_pass || st.frame_step <= 1;
+        if phase == 4 && st.death_game.counter == 0 && pass_opens {
             st.death_game.draw_swap(|| self.next_rand());
             let category = self.retail_actor_category(caster_slot);
             self.route_battle_cue(0x44, category);

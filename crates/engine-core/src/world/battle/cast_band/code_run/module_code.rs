@@ -234,6 +234,10 @@ impl World {
         {
             self.mushura_chase_ahead(ctx.monster_count, seat_slot, caster_slot, spell_id);
         }
+        // ... and its arms 7 and 8 move it before they frame it.
+        if entry == 915 && profile.is_some() && matches!(ctx.phase, 7 | 8) {
+            self.mushura_spin_ahead(ctx.phase, seat_slot);
+        }
         let drive_holds = self.module_drive_holds(ctx.phase);
         let direction = if has_trampoline {
             None
@@ -256,6 +260,7 @@ impl World {
                 // it on the tick that opens the frame.
                 st.frame_step = self.module_frame_step();
                 st.opens_pass = self.module_tick_opens_pass();
+                st.latch_pass_word();
                 // A settle gate's row (`summon_holds::Gate::Settle`): every
                 // monster seat idle, or faded out once dead.
                 let pc = usize::from(self.party.party_count);
@@ -432,6 +437,7 @@ impl World {
         }
         run.capture_drift = direction.and_then(|d| d.drift);
         self.casting.module_tick_rest = direction.and_then(|d| d.rest_drift);
+        run.capture_drift_rest = self.casting.module_tick_rest;
         run.capture_drift_after_shot = direction.is_some_and(|d| d.drift_after_shot);
         run.tr_z_store = direction.and_then(|d| d.tr_z_store);
         let mut capture_held = false;
@@ -3040,7 +3046,6 @@ impl World {
     /// A victim the hit downs ends the count.
     fn spore_gas_hit(&mut self, hit: u8, caster_slot: u8, victim_slot: u8) {
         use legaia_engine_cast::cast_module_ticks as ticks;
-        const IMMUNE: u32 = 0x1100_0000;
         let v = usize::from(victim_slot);
         let Some(dead) = self.land_split_hit(&ticks::SPORE_GAS_HITS, hit, caster_slot, victim_slot)
         else {
@@ -3052,21 +3057,30 @@ impl World {
         // it.
         self.battle.combo_cluster_held = hit < ticks::SPORE_GAS_HITS.holds_cluster_below && !dead;
         let party = victim_slot < self.party.party_count;
-        let immune = party
-            && self
-                .party
+        let ability = if party {
+            self.party
                 .character_ability_bits
                 .get(v)
-                .is_some_and(|&b| b & IMMUNE != 0);
-        if hit < 4
-            && !immune
-            && let Some(limb) = ticks::spore_gas_rot(hit, self.next_rand())
-        {
+                .copied()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        if let Some(limb) = ticks::spore_gas_rot_roll(hit, ability, || self.next_rand()) {
+            let before = self.raw_status_word(victim_slot);
             self.battle.status_effects.apply(
                 victim_slot,
                 legaia_engine_battle_vm::status_effects::StatusKind::Rot,
             );
             self.battle.status_effects.set_rot_limb(victim_slot, limb);
+            // A limb newly rotted empties both Auto strings' heads
+            // (`0x801F7348..0x801F73A0`), as the melee arm's Rot does.
+            if party && self.raw_status_word(victim_slot) != before {
+                let roster = self.party_roster_slot(v);
+                if let Some(rec) = self.party.roster.members.get_mut(roster) {
+                    rec.clear_auto_command_heads();
+                }
+            }
         }
         if dead {
             self.casting.spore_gas_beat.hits = 4;

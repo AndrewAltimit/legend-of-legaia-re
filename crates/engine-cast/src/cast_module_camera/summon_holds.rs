@@ -382,15 +382,21 @@ pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool 
             st.ramp += per_tick;
             st.ramp < limit
         }
+        // Retail tests the model word once a pass against the pass's whole
+        // step (`slt` on `scalar * delta`, PROT 0922's arm 8 at
+        // `0x801F714C`) and steps it by that much: the pass's opening tick
+        // decides, the rest repeat its answer.
         Gate::RampDown { per_tick, drain } => {
             *cd -= drain;
             opened = drain;
-            if st.ramp < per_tick {
-                false
-            } else {
-                st.ramp -= per_tick;
-                true
+            if st.opens_pass || st.frame_step <= 1 {
+                let pass = per_tick * i32::from(st.frame_step.max(1));
+                st.pass_held = st.ramp >= pass;
+                if st.pass_held {
+                    st.ramp -= pass;
+                }
             }
+            st.pass_held
         }
         Gate::Settle(d) => {
             if *cd > 0 {
@@ -545,14 +551,18 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
             crate::cast_module_ticks::ULTIMATE_RAVE_FINALE_ARM,
             3,
         ),
-        // The outcome arm; arm 2 seats on its stream poll alone.
+        // The outcome arm; the seat at arm 2's pass, behind its stream poll
+        // (`jal 0x8003F2B8` / `bne` to the busy return at `0x801F6D4C..
+        // 0x801F6D54`, the installer at `0x801F6DB0`).
         925 => (
             spikefish_direct,
             crate::cast_module_ticks::SPIKEFISH_OUTCOME_ARM,
-            2,
+            3,
         ),
-        // The damage arm 26 (`0x801F7E0C`); arm 2 seats on its stream poll.
-        927 => (super::juggernaut_direct, JUGGERNAUT_DAMAGE_ARM, 2),
+        // The damage arm 26 (`0x801F7E0C`); the seat at arm 2's pass, behind
+        // its stream poll (`0x801F6D84..0x801F6D8C`, the installer at
+        // `0x801F6D9C`).
+        927 => (super::juggernaut_direct, JUGGERNAUT_DAMAGE_ARM, 3),
         _ => return None,
     };
     Some(ModuleProfile {

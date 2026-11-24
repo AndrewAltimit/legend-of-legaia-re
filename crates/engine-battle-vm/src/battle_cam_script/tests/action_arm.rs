@@ -802,7 +802,17 @@ fn a_frame_step_of_three_steps_every_third_frame_and_lands_a_three_frame_tween()
 /// unit a pass where a fight's passes add two, under any camera option.
 #[test]
 fn the_results_sequencer_steps_the_yaw_counter_at_half_the_fights_rate() {
-    for (results, option, per_pair) in [(false, 0u8, 2u16), (true, 0, 1), (true, 2, 1)] {
+    // `held`: the signal is up and the sequencer leaves ahead of its step
+    // (the side-band request, a stage module, the escape arm), so nothing
+    // steps the counter (`rim_elm_gimard_victory`: `68` through vsyncs
+    // `322..350`).
+    for (results, held, option, per_pair) in [
+        (false, false, 0u8, 2u16),
+        (true, false, 0, 1),
+        (true, false, 2, 1),
+        (false, true, 0, 0),
+        (false, true, 1, 0),
+    ] {
         let mut slot: Option<BattleCamera> = None;
         let mut frames = 0u64;
         let mut feed = |slot: &mut Option<BattleCamera>| {
@@ -817,6 +827,7 @@ fn the_results_sequencer_steps_the_yaw_counter_at_half_the_fights_rate() {
                     camera_option: option,
                     frame_step: 2,
                     results_sequencer: results,
+                    results_yaw_held: held,
                     ..Default::default()
                 },
                 frames,
@@ -834,6 +845,6 @@ fn the_results_sequencer_steps_the_yaw_counter_at_half_the_fights_rate() {
         } else {
             10 * per_pair
         };
-        assert_eq!(moved, want, "results {results} option {option}");
+        assert_eq!(moved, want, "results {results} held {held} option {option}");
     }
 }

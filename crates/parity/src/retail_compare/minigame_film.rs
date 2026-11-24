@@ -184,6 +184,7 @@ fn dance_values(w: &legaia_engine_core::world::World) -> Vec<i64> {
     };
     let ci = m.dance_countin.as_ref();
     let state = match ci.map(|c| c.stage()) {
+        Some(S::Parked) => 2,
         Some(S::Ready) => 3,
         Some(S::GoIn) => 4,
         Some(S::GoOut) => 5,

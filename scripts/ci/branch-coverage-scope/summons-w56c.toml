@@ -1,0 +1,64 @@
+# Summon module images (PROT 0905..0934): arms out of scope, by image.
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F6B8C..0x801F6B8C"
+verdict = "unreachable"
+reason = "PROT 0917: the phase dispatch's last test, `beq s1,0xff`, is reached only by a phase above 0xF, and the module stores no phase but 0..0xF and 0xFF (arm 0xF's exit), so it never falls through."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F6C88..0x801F6C88"
+verdict = "unreachable"
+reason = "PROT 0917: `ctx+1` is the monster count, at least one in any battle a summon is cast in, so arm 0's monster loop is never skipped."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F7CDC..0x801F7CDC"
+verdict = "unreachable"
+reason = "PROT 0917: arm 0xD's sign fix-up on `sin(12 * w) * 15` (`sll a1,a2,0x3` with `a2 = 3 * w` into the sine table); the word `w` starts at 0 (arm 0xC's store) and climbs `p / 8` a pass through arms 0xD and 0xE, which leaves at 0x56, so the angle stays under 0x500 and the sine is never negative."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F7F84..0x801F7F84"
+verdict = "unreachable"
+reason = "PROT 0917: arm 0xE's sign fix-up on `sin(12 * w) * 15`; the word is under 0x56 plus one pass's `p / 8` (the arm leaves at 0x56, `slti` at 0x801F7FD8), so the angle stays under 0x500 and the sine is never negative."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F80C4..0x801F80DC"
+verdict = "unreachable"
+reason = "PROT 0917: the compiler's divide guards (`break` on a zero divisor, the `-1` / `0x80000000` overflow test) around arm 0xF's ease `/ (scalar << 7)`: the battle scalar `0x1F80037D` is non-zero, so the divisor is positive and never `0` or `-1`."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F8270..0x801F8290"
+verdict = "unreachable"
+reason = "PROT 0917: the epilogue's row clamp on the backdrop word `v` (`0x801F9362`): arm 7 raises it at most `4 * scalar * 180` (5760), arm 8 stores 0x2000, arms 9..0xB lower it from there by less than 0x1C00 and arm 0xB's exit zeroes it, and arm 0xC adds `8 p` for at most `0x80 / step` passes (its wash alpha 0x80 drained `p / 8` a pass), 0x2000 in all: the word is never negative and never above 0x2000."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "a8226f1d750a6244"
+range = "0x801F6A8C..0x801F6A8C"
+verdict = "unreachable"
+reason = "PROT 0917: `sltiu 8` on the caster's target code `+0x1DD`; Barra's spell record (`0x800754C8 + 0x8F * 12`) has target byte 0x44, one opponent, so the cast's code is always a monster seat under 8 and the group branch is never taken."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F8B98..0x801F8B98"
+verdict = "unreachable"
+reason = "PROT 0929's backdrop follow on a negative pitch: `bgez` on `pitch - 0x1000` (0x801F8B84), the pitch masked to 12 bits (`andi 0xfff` at 0x801F8B78), so the word is always negative and the branch never taken. Its sibling 0x801F8B80 is driven both ways at a frame step of 3."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F7414..0x801F7414"
+verdict = "unreachable"
+reason = "PROT 0925: `beq` on the party count `ctx+0` ahead of arm 8's party loop (`lbu v0,0x0(a0)` at 0x801F740C); a battle always seats the lead, so the count is at least one and the loop is never skipped."

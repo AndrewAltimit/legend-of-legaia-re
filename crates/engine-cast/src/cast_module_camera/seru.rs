@@ -147,7 +147,7 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             })
         }
         2 => {
-            let drained = st.countdown.0 > 0;
+            let drained = st.pass_word() > 0;
             if drained {
                 st.countdown.drain();
                 if st.countdown.0 <= 0 {
@@ -933,7 +933,11 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             }
         }
         7 => {
-            st.countdown.0 += p;
+            // Retail adds `scalar * delta` once a pass and aims on the sum: a
+            // tick that leaves adds the ticks of its pass still owed first.
+            let leaves = !st.creature_clip.is_some_and(|c| c != 2);
+            let ticks = 1 + if leaves { i32::from(st.countdown.1) } else { 0 };
+            st.countdown.0 += p * ticks;
             let w = i32::from(st.countdown.0 as i16);
             let yaw = |k: i32| ((w + k - i32::from(creature.facing)) & 0xFFF) as i16;
             let mut shot = ModuleShot {
@@ -963,8 +967,12 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 frames: 1,
             })
         }
+        // Retail lifts `scalar * delta` in one store a pass: a tick that
+        // hands over lifts for the ticks of its pass still owed
+        // (`countdown.1`) too, or the creature hangs a tick's lift short at
+        // a frame step above 1 for the rest of the cast.
         9 => {
-            lift(st, -1);
+            lift(st, -(1 + i32::from(st.countdown.1)));
             st.countdown.0 = SPEED_SCALAR * 60;
             // The victim's body pair (`lhu v0,0x3c(s6)` / `lhu v0,0x40(s6)`
             // at `0x801F7874` / `0x801F7888`).
@@ -980,6 +988,7 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             if zenoir_drain_holds(st) {
                 return ArmDirection::HOLD;
             }
+            lift(st, -i32::from(st.countdown.1));
             // `+0x34` / `+0x38` = the victim's body pair (`0x801F79E8..
             // 0x801F7A18`): the creature hangs over the victim.
             if let Some(c) = st.creature.as_mut() {
@@ -1007,6 +1016,7 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             if y < ZENOIR_SLAM_FLOOR_Y {
                 return ArmDirection::HOLD.drifted(drift);
             }
+            lift(st, i32::from(st.countdown.1));
             // The finisher arm leaves through `ctx[+0x6D8] = scalar * 192`
             // (`0x801F7BBC..0x801F7BD0`), the shatter arm's countdown.
             st.countdown.0 =
@@ -1040,7 +1050,11 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 tr_x: 0,
             };
             lift(st, 1);
-            gate(zenoir_drain_holds(st)).drifted(drift)
+            let held = zenoir_drain_holds(st);
+            if !held {
+                lift(st, i32::from(st.countdown.1));
+            }
+            gate(held).drifted(drift)
         }
         // The terminal arm zeroes the yaw ladder (`sh zero,0x2(s8)` at `0x801F82B4`),
         // so the Done band's case 6 frames from `0` plus its own drift.

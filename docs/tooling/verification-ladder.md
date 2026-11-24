@@ -78,7 +78,17 @@ test count may only rise. The share of `// PORT:`-tagged addresses a
 differential runs is on the site's landing page, refreshed by
 `update-progress-metrics.py`.
 
-**Blind to:** when and with what the engine calls the kernel. A routine that
+How much of each routine the tests drive is
+[branch coverage](retail-kernel-differential.md#branch-coverage), a report
+over the ported arms with every arm left out carrying a scope row and its
+reason. One form of the rung reaches further up: the shadow walks
+([the summon band shadow](retail-kernel-differential.md#the-summon-band-shadow),
+[the tick-body walk](retail-kernel-differential.md#the-tick-body-walk)) run a
+whole cast module beside the engine's own `World` and compare every pass, which
+sees the engine's call order inside that module.
+
+**Blind to:** when and with what the engine calls the kernel, outside the
+modules a shadow walks. A routine that
 matches here can still be wired a frame late, fed the wrong record, or never
 called; and a routine no test runs is not checked at all
 (`port-catalog.py --no-differential --live` lists the live ones).

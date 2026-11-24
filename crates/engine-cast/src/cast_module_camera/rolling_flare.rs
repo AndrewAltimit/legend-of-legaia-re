@@ -101,14 +101,11 @@ pub fn rolling_flare_camera(
             // (`0x801F8088..0x801F8090`), one behind it while the word stays
             // positive (`0x801F80B8..0x801F80E4`).
             let body = st.victim_body.unwrap_or(v);
-            st.countdown.drain();
-            arm.shot = Some(orbit(body, c.facing, st.countdown.0, 0x900, 0xB00));
-            let held = st.countdown.0 > 0 && st.countdown.drain_above(0);
+            let (aim, held) = st.twice_drained_pass();
+            arm.shot = Some(orbit(body, c.facing, aim, 0x900, 0xB00));
             if held || !st.victim_settled {
                 arm.hold = true;
             } else {
-                // The pass's first drain, the one ahead of the shot.
-                st.countdown.drain_rest(super::MODULE_DRAIN_PER_TICK);
                 arm.caster_reach = Some(REST_REACH);
             }
         }

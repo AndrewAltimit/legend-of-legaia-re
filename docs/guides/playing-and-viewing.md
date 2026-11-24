@@ -279,6 +279,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Gameplay tweaks | Tetsu spar order fix (off = `--no-tetsu-spar-fix`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Boss casts respect jewels (`--jewel-fix`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Battle freeze guard (off = `--no-hp-readout-guard`) | `launcher.toml` | - | on |
+| Gameplay tweaks | Stoned foes keep their size (off = `--no-stone-scale-fix`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Bonus equipment drops (`--equipment-drops`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Save anywhere (`--save-anywhere`) | `launcher.toml` | - | off |
 | Battle tuning | EXP rate (`--exp-rate`: 1x, 1.5x, 2x, 3x, 5x, 0.5x) | `launcher.toml` | - | 1x |

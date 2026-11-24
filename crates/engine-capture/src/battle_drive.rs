@@ -885,6 +885,29 @@ impl SpanGate {
     }
 }
 
+/// A capture inside the load window ([`SpanGate::Loading`]) is placed on the
+/// yaw counter `ctx[+0x6DA]` the window's case-8 stand-off reads, not seated
+/// on it: the results sequencer holds the counter while the side-band request
+/// is up and then steps it `max(1, step >> 1)` a pass (`0x8004E5C8`,
+/// `0x8004E728..0x8004E758`), so the counter is the window's own clock. The
+/// frame is the first one whose engine counter has come forward to retail's
+/// word, on the engine's own rate and its own glide, so a still inside the
+/// window scores the drift a seat would hide. A capture without the word
+/// opens on the window's first tick.
+fn loading_counter_reached(
+    world: &legaia_engine_core::world::World,
+    end: SpanGate,
+    yaw: Option<u16>,
+) -> bool {
+    let (SpanGate::Loading, Some(want)) = (end, yaw) else {
+        return true;
+    };
+    world.battle.camera.as_ref().is_some_and(|c| {
+        let ahead = (c.action_yaw_base() - i32::from(want)).rem_euclid(0x1_0000);
+        ahead < 0x8000
+    })
+}
+
 impl BattleDrive {
     /// `menu,<flow>,<seat>` or
     /// `action,<seat>,<state>,<category>,<queued>[,<spare>,<absorbed>[,<end kind>,<end value>]]`.
@@ -1433,13 +1456,16 @@ impl BattleDrive {
                     && !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
                     && cursor_on_pick(world, flow, pick)
             }
-            Self::Action { seat, end, .. } if end.is_end() => {
+            Self::Action {
+                seat, end, steer, ..
+            } if end.is_end() => {
                 // The sequencer frames its pose actor `ctx[+0x13]`.
                 end.met(world)
                     && world
                         .battle
                         .victory
                         .is_some_and(|v| v.pose_actor == usize::from(engine_seat(seat, pc)))
+                    && loading_counter_reached(world, end, steer.yaw)
             }
             Self::Action {
                 seat,
@@ -1665,8 +1691,10 @@ impl BattleDrive {
                 // replay's wait `36` passes longer).
                 let stage_lead = steer.rung == Some(SEED_YAW_RUNG as u16)
                     && (SPIRIT_WAIT_STATE..want).contains(&state);
+                // The load window's capture is placed by the counter, not
+                // seated on it ([`loading_counter_reached`]).
                 if (state == want || done_entry || stage_lead)
-                    && !matches!(end, SpanGate::CaptureFade { .. })
+                    && !matches!(end, SpanGate::CaptureFade { .. } | SpanGate::Loading)
                 {
                     let near = |c: i32| {
                         let d = (c - i32::from(yaw)).rem_euclid(0x1000);

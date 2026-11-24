@@ -21,11 +21,11 @@
    },
    "cast": {
     "enhanced": {
-     "gl_draws_per_frame": 130.62,
+     "gl_draws_per_frame": 130.63,
      "wasm_bytes_per_frame": 108044
     },
     "retail": {
-     "gl_draws_per_frame": 108.46,
+     "gl_draws_per_frame": 108.47,
      "wasm_bytes_per_frame": 102279
     }
    },
@@ -52,7 +52,7 @@
   },
   "bundle": {
    "gzip_bytes": 7395916,
-   "play_gzip_bytes": 5243359
+   "play_gzip_bytes": 5247516
   },
   "native": {
    "battle": {

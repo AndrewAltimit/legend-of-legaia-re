@@ -291,6 +291,9 @@ fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32), String> {
 /// A fresh session resumed from `cp`, as a card load of that save.
 fn reload(inp: &Inputs, cp: &Checkpoint, opts: &FieldLiveOpts) -> Result<NativeSession, String> {
     let mut session = open_session(&inp.extracted);
+    // Harness (reload): the game-over hold, the title and the card screen a
+    // player passes are not played; the save round trip is
+    // `native_new_game_save_continue`'s and the card tests'.
     session.host.world.load_full(cp.save.clone());
     let landing = session.resume_save(cp.save.clone(), &cp.scene, opts);
     if !landing.entered_scene() {
@@ -382,6 +385,9 @@ fn print_state_diff(session: &mut NativeSession, inp: &Inputs, m: &Milestone) {
 #[test]
 fn part_c_continuous_run() {
     let Some(inp) = inputs() else { return };
+    // Every shortcut the pad hand takes on the run, by name ([`shortcut`]).
+    let _ = take_shortcuts();
+    let mut shortcut_total: BTreeMap<&'static str, u64> = BTreeMap::new();
     let spine = load_spine();
     let index = ProtIndex::open_extracted(&inp.extracted).expect("open ProtIndex");
     let graph = DiscGraph::build(&index);
@@ -511,6 +517,7 @@ fn part_c_continuous_run() {
             stored_checkpoint(id).unwrap_or_else(|e| panic!("LEGAIA_FGL_CONTINUOUS_RESUME: {e}"));
         session = reload(&inp, &cp, &opts)
             .unwrap_or_else(|e| panic!("LEGAIA_FGL_CONTINUOUS_RESUME: {e}"));
+        // Harness (deal): the checkpoint's own stream, as the run left it.
         session.host.world.rng_state = rng;
         cp
     } else {
@@ -522,6 +529,7 @@ fn part_c_continuous_run() {
     // Another hand of the rand stream from the first frame (or from the
     // resumed checkpoint): how a score is checked for resting on one deal.
     if let Some(s) = rng_seed_override() {
+        // Harness (deal): the seed set's stream, no player state.
         session.host.world.rng_state = s;
     }
 
@@ -682,6 +690,9 @@ fn part_c_continuous_run() {
                     pad_equip_guard(&mut session, element);
                 }
                 pad_equip_best(&mut session);
+                if BOSS_LEAD_IN.with(std::cell::Cell::get) {
+                    lead_in_heal(&mut session);
+                }
                 let mut trail = vec![scene_name(&session)];
                 traverse(&mut session, &graph, to, true, &mut trail)
                     .map_err(|e| format!("{e} [trail {}]", trail.join(">")))
@@ -734,6 +745,13 @@ fn part_c_continuous_run() {
                         session.frames,
                         session.host.world.rng_state
                     );
+                    let stretch = take_shortcuts();
+                    if !stretch.is_empty() {
+                        eprintln!("    {}", shortcut_line(&stretch));
+                    }
+                    for (k, n) in stretch {
+                        *shortcut_total.entry(k).or_insert(0) += n;
+                    }
                     if until.as_deref() == Some(to.id.as_str()) {
                         break 'spine;
                     }
@@ -791,7 +809,7 @@ fn part_c_continuous_run() {
             }
             if run_retry {
                 run_tried = true;
-                session.host.world.locomotion.run_default = true;
+                pad_field_move_run(&mut session);
                 switched_in_place = true;
                 if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                     eprintln!(
@@ -868,9 +886,11 @@ fn part_c_continuous_run() {
             // words travel with it, SC `+0x58C`); a player who switched to Run
             // switches again on a save from before the switch.
             if run_tried {
-                session.host.world.locomotion.run_default = true;
+                pad_field_move_run(&mut session);
             }
             if !(attempt == 1 && prepare.is_some()) {
+                // Harness (deal): the time a reload spends on screens the
+                // hand does not play, as another hand of the stream.
                 let w = &mut session.host.world;
                 w.rng_state = w
                     .rng_state
@@ -911,6 +931,10 @@ fn part_c_continuous_run() {
     if let Some(s) = &stall {
         eprintln!("[stall] {s}");
     }
+    for (k, n) in take_shortcuts() {
+        *shortcut_total.entry(k).or_insert(0) += n;
+    }
+    eprintln!("{}", shortcut_line(&shortcut_total));
     let (steps, aimed) = super::fight_turn::AIM_TALLY.with(std::cell::Cell::take);
     {
         let w = &session.host.world;

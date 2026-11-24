@@ -124,7 +124,21 @@ pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             None,
             cut([0xA0, 0xCD4], [-0x200, 0x800, 0x6F4], [0; 3], 1),
         ),
-        6 => arm(st, 0x60, d(0, 0, 0, -140 * D, -128 * D), ArmDirection::PASS),
+        // The exit stores TR y `0x3A0` and TR z `0x720` straight over the
+        // pass's drift (`li v0,0x3a0` / `li v0,0x720` at `0x801F70BC..
+        // 0x801F70C4`): at step 1 the drift happens to land there.
+        6 => {
+            let swing = d(0, 0, 0, -140 * D, -128 * D);
+            if gated(st, 0x60) {
+                return held(swing);
+            }
+            let tr = st.live_pitch_tr.map_or([0, 0x3A0, 0x720], |(_, tr)| tr);
+            with_stored_drift(
+                ArmDirection::PASS,
+                d(0, 0, 0, 0x3A0 - tr[1], 0x720 - tr[2]),
+                None,
+            )
+        }
         7 => arm(
             st,
             0x100,
@@ -233,7 +247,7 @@ pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
         META_HIT_ARM => arm(st, 0x120, d(0, 0, 0, 0, D), ArmDirection::PASS),
         META_LAST_ARM => {
             let dz = d(0, 0, 0, 0, D);
-            let drained = st.countdown.0 > 0;
+            let drained = st.pass_word() > 0;
             if drained {
                 st.countdown.0 -= D;
             }
@@ -245,6 +259,10 @@ pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             }
             st.yaw_base = 0;
             st.creature_loop_release = true;
+            // `li v0,1; sb v0,0x1da(s7)` beside the release (`0x801F8358..
+            // 0x801F835C`): the idle clip `1` waits bare for the playing
+            // clip's end.
+            st.creature_stage = Some(1);
             finish(caption(
                 with_drift(ArmDirection::PASS, dz),
                 ModuleCaption::Cleared,
@@ -478,6 +496,17 @@ fn ozma_shake_step(st: &mut ModuleCamState, step: i32) -> (i32, i32) {
     (odd, st.ozma_shake.1)
 }
 
+/// [`ozma_shake_step`] for a tick that may leave: a held tick is one tick,
+/// a leaving one its pass's owed ticks too (`ModuleCountdown::1`). The odd
+/// bit is the leaving tick's own.
+fn ozma_shake_steps(st: &mut ModuleCamState, step: i32, hold: bool) -> (i32, i32) {
+    let owed = if hold { 0 } else { i32::from(st.countdown.1) };
+    let (odd, _) = ozma_shake_step(st, step);
+    st.ozma_shake.0 = st.ozma_shake.0.wrapping_add(owed as u32);
+    st.ozma_shake.1 += step * owed;
+    (odd, st.ozma_shake.1)
+}
+
 /// The live TR y the host fed, so an absolute store can travel as a drift.
 fn live_tr_y(st: &ModuleCamState) -> i32 {
     st.live_pitch_tr.map_or(0, |(_, tr)| tr[1])
@@ -526,9 +555,13 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             ArmDirection::PASS
         }
         5 => {
-            let (odd, rise) = ozma_shake_step(st, D);
+            // The gate reads only the word, so it is taken first: the tick
+            // that leaves grows the rise for its pass's owed ticks too
+            // before the store (retail's rise grows `delta` a pass).
+            let hold = gated(st, 0xC0);
+            let (odd, rise) = ozma_shake_steps(st, D, hold);
             let dd = d(-D, D, 0, odd * 0x80 + rise - live_tr_y(st), 8 * D);
-            if gated(st, 0xC0) {
+            if hold {
                 return with_ring(held(dd));
             }
             st.creature = Some(ModuleSeat {
@@ -572,9 +605,10 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             ))
         }
         8 => {
-            let (odd, rise) = ozma_shake_step(st, -D);
+            let hold = gated(st, 0x30);
+            let (odd, rise) = ozma_shake_steps(st, -D, hold);
             let dd = d(-D, 0, 0, odd * rise + 0xE00 - live_tr_y(st), 48 * D);
-            if gated(st, 0x30) {
+            if hold {
                 return with_ring(held(dd));
             }
             with_ring(with_stored_drift(

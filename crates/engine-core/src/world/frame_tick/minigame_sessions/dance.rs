@@ -138,9 +138,22 @@ impl World {
         let mut game = game;
         let mode = game.mode();
         game.set_best_score(self.minigames.dance_best);
+        // State 1 raises the load gate `DAT_801D5830` for every mode
+        // (`0x801CF984..0x801CF98C`); READY's state 3 drops it, but the how-to
+        // run goes to state 2 instead and waits there until the lesson drops
+        // it ([`legaia_engine_minigames::dance::CountIn::parked`]).
+        if how_to {
+            let mut hall = game.tutorial_hall(Default::default());
+            hall.load_gate = 1;
+            game.apply_tutorial_hall(&hall);
+        }
         self.minigames.dance = Some(game);
         self.minigames.dance_last_judge = None;
-        self.minigames.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
+        self.minigames.dance_countin = Some(if how_to {
+            legaia_engine_minigames::dance::CountIn::parked()
+        } else {
+            legaia_engine_minigames::dance::CountIn::new()
+        });
         self.minigames.dance_countin_banner = None;
         self.minigames.dance_countin_go = None;
         // State 3 streams the song the mode names, and free play one of
@@ -158,8 +171,11 @@ impl World {
                 u32::from(loader) - 2,
             )
             .map(|i| 2000 + i as u16);
-        self.minigames.dance_tutorial =
-            how_to.then(legaia_engine_minigames::dance_tutorial::DanceTutorial::new);
+        self.minigames.dance_tutorial = how_to.then(|| {
+            let mut t = legaia_engine_minigames::dance_tutorial::DanceTutorial::new();
+            t.hall.load_gate = 1;
+            t
+        });
         self.minigames.dance_tutorial_frame = None;
         self.mode = SceneMode::Dance;
         if legaia_engine_minigames::dance::dance_scene_stage().clear_pad_latch {
@@ -271,6 +287,14 @@ impl World {
         }
         if let Some(mut ci) = self.minigames.dance_countin.take() {
             let step = ci.step();
+            if step.released
+                && let Some(g) = self.minigames.dance.as_mut()
+            {
+                let mut hall = g.tutorial_hall(Default::default());
+                hall.gauge = 0;
+                hall.track_flash = 0;
+                g.apply_tutorial_hall(&hall);
+            }
             self.minigames.dance_hall_frame = step.ran;
             self.minigames.dance_countin_banner = step.banner;
             self.minigames.dance_countin_go = step.go;
@@ -455,7 +479,7 @@ impl World {
         // The hall goes back to its count-in (`DAT_801D5334 = 2`); the
         // count-in itself waits on the load gate.
         if frame.restart && self.minigames.dance_countin.is_none() {
-            self.minigames.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
+            self.minigames.dance_countin = Some(legaia_engine_minigames::dance::CountIn::parked());
         }
         if let Some(cue) = frame.cue {
             // `FUN_801d0750` stores its cursor / confirm blips straight into
@@ -473,6 +497,31 @@ impl World {
 
 #[cfg(feature = "test-drivers")]
 impl World {
+    /// One vsync of the hall ([`World::tick_dance`]) with the lesson's load
+    /// gate `DAT_801D5830` first forced to `gate`, where given: the
+    /// count-in's stage after it, and its READY counter (`DAT_801D5158`).
+    /// `None` once no count-in is staged.
+    pub fn drive_dance_hall_vsync(
+        &mut self,
+        gate: Option<bool>,
+    ) -> Option<(legaia_engine_minigames::dance::CountInStage, i32)> {
+        if let Some(gate) = gate {
+            if let Some(t) = self.minigames.dance_tutorial.as_mut() {
+                t.hall.load_gate = u32::from(gate);
+            }
+            if let Some(g) = self.minigames.dance.as_mut() {
+                let mut hall = g.tutorial_hall(Default::default());
+                hall.load_gate = u32::from(gate);
+                g.apply_tutorial_hall(&hall);
+            }
+        }
+        self.tick_dance();
+        self.minigames
+            .dance_countin
+            .as_ref()
+            .map(|c| (c.stage(), c.frame()))
+    }
+
     /// One hall frame of the results state's fade and exit
     /// ([`World::step_dance_results`]) from the accumulator `acc`, inside the
     /// hall: the accumulator it leaves, and whether it handed back to the

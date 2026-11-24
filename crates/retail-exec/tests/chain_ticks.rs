@@ -224,7 +224,12 @@ struct Run {
     split_checked: usize,
     /// Director spawns matched against retail's.
     spawns_checked: usize,
+    /// Passes a victim settle held, against retail's hold.
+    settles_checked: usize,
 }
+
+/// The bodies whose victim settle the walk holds and releases.
+const SETTLE_WALKED: [u32; 3] = [939, 947, 948];
 
 /// Who a walk casts at and which seats stand: `target` a seat or a group code
 /// (`None`: a random party seat), `dead` the seats at zero HP (party seats
@@ -237,7 +242,32 @@ struct Field {
     stoned: u8,
     /// Seats standing on less HP than a hit's roll, which the hit kills.
     low: u8,
+    /// Seats standing on more HP than every hit's roll together, which no
+    /// hit downs.
+    high: u8,
+    /// Seats whose status word already carries all three Rot limbs
+    /// (`+0x16E & 0x38`).
+    rotted: u8,
+    /// The `+0x6BC` word of every party seat's character record
+    /// (`0x80084140 + (id - 1) * 0x414`), whose Rot guards PROT 0939 reads
+    /// and whose Numb / Master Guard bits PROT 0956's mark reads.
+    ability: u32,
+    /// The victim's action category `+0x1DE` and initiative key `+0x16C`,
+    /// which a turn steal reads.
+    queued: Option<(u8, u16)>,
 }
+
+/// The inventory find-or-insert a turn steal refunds an Item action through.
+const REFUND: u32 = 0x8004_21D4;
+/// The part-actor pool (`0x80` handles), and the two parts a PROT 0956 walk
+/// seats in it, whose level `+0x78` arm 3's fade writes.
+const PART_POOL: u32 = 0x801C_90F0;
+const POOLED: [(u32, u32); 2] = [(5, 0x8016_0000), (0x41, 0x8016_0100)];
+
+/// PROT 0939's hit count, `0x801F7AF8`.
+const SPORE_GAS_COUNT: u32 = 0x801F_7AF8;
+/// The readout flag PROT 0939's hits 1..3 store `0` into (`0x801F70FC`).
+const CLUSTER_FLAG: u32 = 0x8007_B64C;
 
 fn run_body(
     body: &ChainBody,
@@ -256,14 +286,18 @@ fn run_body(
     let stream = Rc::new(std::cell::Cell::new(seed as u32));
     let hits = Rc::new(RefCell::new(Vec::<usize>::new()));
     let rolls = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let draws = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let refunds = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
     let spawns = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3], u16)>::new()));
     for target in jal_targets(&module) {
         if target == RAND {
             let stream = stream.clone();
+            let draws = draws.clone();
             cpu.hook(RAND, move |r, _| {
                 let n = stream.get().wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
                 stream.set(n);
                 r.r[V0] = (n >> 16) & 0x7FFF;
+                draws.borrow_mut().push(r.r[V0]);
             });
         } else if target == BEARING {
             cpu.hook(BEARING, |r, _| {
@@ -292,6 +326,12 @@ fn run_body(
                 };
                 rolls.borrow_mut().push(roll);
                 r.r[V0] = roll;
+            });
+        } else if target == REFUND {
+            let refunds = refunds.clone();
+            cpu.hook(REFUND, move |r, _| {
+                refunds.borrow_mut().push((r.r[A0], r.r[A1]));
+                r.r[V0] = 0;
             });
         } else if target == AIM {
             // The group aim runs live: a group framing needs it whole.
@@ -340,12 +380,18 @@ fn run_body(
             0
         } else if field.low & (1 << s) != 0 {
             (ROLL - 4) as u16
+        } else if field.high & (1 << s) != 0 {
+            3000
         } else {
             100 + rng.below(400) as u16
         };
         cpu.mem.wr16(a + 0x14C, hp);
         if field.stoned & (1 << s) != 0 {
             cpu.mem.wr16(a + 0x16E, 4);
+        }
+        if field.rotted & (1 << s) != 0 {
+            let w = cpu.mem.rd16(a + 0x16E);
+            cpu.mem.wr16(a + 0x16E, w | 0x38);
         }
         cpu.mem.wr16(a + 0x172, 1000);
         cpu.mem.wr8(a + 0x1DA, rng.below(0x10) as u8);
@@ -368,6 +414,13 @@ fn run_body(
         cpu.mem.wr16(node + 0x58, 0x80);
         cpu.mem.wr16(node + 0x72, 0x1000);
     }
+    if let Some((category, key)) = field.queued
+        && victim < 8
+    {
+        let a = ACTOR + (victim * STRIDE) as u32;
+        cpu.mem.wr8(a + 0x1DE, category);
+        cpu.mem.wr16(a + 0x16C, key);
+    }
     let caster_rec = ACTOR + (CASTER * STRIDE) as u32;
     cpu.mem.wr8(caster_rec + 0x1DD, victim as u8);
     cpu.mem.wr8(caster_rec + 0x1DE, 2);
@@ -377,8 +430,18 @@ fn run_body(
     }
     for i in 0..3 {
         cpu.mem.wr8(ROSTER + i, 1 + i as u8);
+        // The record's Rot guards, and a head on both Auto strings.
+        let r = CHAR_RECORDS + i * CHAR_STRIDE;
+        cpu.mem.wr32(r + 0x6BC, field.ability);
+        cpu.mem.wr8(r + 0x76F, 0x11 + i as u8);
+        cpu.mem.wr8(r + 0x77F, 0x21 + i as u8);
     }
     cpu.mem.wr32(ELEMENT_ROLL, u32::from(selector));
+    if body.prot_entry == 956 {
+        for (slot, part) in POOLED {
+            cpu.mem.wr32(PART_POOL + slot * 4, part);
+        }
+    }
     // One vsync a pass at the speed scalar, the clock the directors keep.
     cpu.mem.wr8(SCALAR, cam::SPEED_SCALAR as u8);
     cpu.mem.wr8(STEP, 1);
@@ -418,8 +481,10 @@ fn run_body(
         hits: 0,
         split_checked: 0,
         spawns_checked: 0,
+        settles_checked: 0,
     };
     let mut held = 0;
+    let mut settle_run: Option<usize> = None;
     let (mut quake_passes, mut quake_phase) = (0usize, 0xFEu8);
     let quake_hold = 1 + (usize::from(formation) + victim) % 4;
     for _ in 0..40_000 {
@@ -446,6 +511,44 @@ fn run_body(
             match phase {
                 1 => cpu.mem.wr8(ca + 0x21B, 0xFF),
                 3 => cpu.mem.wr16(NODES + CASTER as u32 * 0x100 + 0x68, 0x100),
+                _ => {}
+            }
+        }
+        // A victim settle (PROT 0939's arm 5, 0947's and 0948's arm 5) waits
+        // out the victim's clip, for the same field-keyed passes: a standing
+        // victim's still playing (`0x801F7440`), a fallen one's not yet the
+        // fallen clip `8` and its prim word still lit (`0x801F7458`,
+        // `0x801F7110..0x801F7120` on PROT 0948). Then on odd-keyed walks a
+        // fallen victim settles faded off its clip, else down on clip `8`.
+        let settle = body.arm(phase).and_then(|a| a.settle).filter(|s| {
+            victim < 8 && matches!(s, t::ChainSettle::Victim | t::ChainSettle::VictimOrFaded)
+        });
+        // The wait counts from the pass whose countdown runs out (the arm's
+        // gate ahead of its settle), or from the arm's first pass.
+        let spent = cam::capture_countdown_va(action)
+            .is_none_or(|va| cpu.mem.rd32(va) as i32 <= cam::SPEED_SCALAR);
+        settle_run = match settle_run {
+            Some(n) if spent && quake_passes > 0 => Some(n + 1),
+            _ if spent => Some(0),
+            _ => None,
+        };
+        let settle_passes = settle_run.unwrap_or(0);
+        if let Some(kind) = settle
+            && SETTLE_WALKED.contains(&body.prot_entry)
+        {
+            let va = ACTOR + victim as u32 * STRIDE as u32;
+            let fallen = cpu.mem.rd16(va + 0x14C) == 0;
+            let faded = kind == t::ChainSettle::VictimOrFaded && seed & 1 == 1;
+            match (settle_passes < quake_hold, fallen) {
+                (true, false) => cpu.mem.wr8(va + 0x1D9, 1),
+                (true, true) => {
+                    cpu.mem.wr8(va + 0x1D9, 0);
+                    cpu.mem.wr32(va + 4, 0x2008_0200);
+                }
+                (false, true) if faded => {
+                    cpu.mem.wr8(va + 0x1D9, 0);
+                    cpu.mem.wr32(va + 4, 0);
+                }
                 _ => {}
             }
         }
@@ -508,6 +611,16 @@ fn run_body(
         });
         hits.borrow_mut().clear();
         spawns.borrow_mut().clear();
+        draws.borrow_mut().clear();
+        refunds.borrow_mut().clear();
+        let spore_count = cpu.mem.rd32(SPORE_GAS_COUNT);
+        let heads0: Vec<[u8; 2]> = (0..3u32)
+            .map(|i| {
+                let r = CHAR_RECORDS + i * CHAR_STRIDE;
+                [cpu.mem.rd8(r + 0x76F), cpu.mem.rd8(r + 0x77F)]
+            })
+            .collect();
+        cpu.mem.wr8(CLUSTER_FLAG, 1);
         let stop = cpu.call(body.body, &[]);
         let c0 = format!(
             "PROT {:04} {action:#04x} {field:?} arm {phase:#x}",
@@ -552,8 +665,70 @@ fn run_body(
             }
             out.split_checked += 1;
         }
+        // PROT 0939's hit pass past the landing: the Rot roll behind the
+        // record's guards, the Auto heads a newly rotted limb clears, and the
+        // readout flag hits 1..3 shut.
+        if body.prot_entry == 939 && phase == 4 && cpu.mem.rd32(SPORE_GAS_COUNT) != spore_count {
+            let hit = (spore_count + 1) as u8;
+            let a = ACTOR + (vi * STRIDE) as u32;
+            let old = u16::from_le_bytes([rec0[vi * STRIDE + 0x16E], rec0[vi * STRIDE + 0x16F]]);
+            let hp0 = u16::from_le_bytes([rec0[vi * STRIDE + 0x14C], rec0[vi * STRIDE + 0x14D]]);
+            let landed = hp0 != 0 && old & 4 == 0;
+            let r = CHAR_RECORDS + vi as u32 * CHAR_STRIDE;
+            let ability = cpu.mem.rd32(r + 0x6BC);
+            let mut used = 0usize;
+            let limb = if landed {
+                t::spore_gas_rot_roll(hit, ability, || {
+                    used += 1;
+                    draws.borrow().first().copied().unwrap_or(0)
+                })
+            } else {
+                None
+            };
+            let want = old | limb.map_or(0, |l| 0x08 << l);
+            let heads = if want != old { [0, 0] } else { heads0[vi] };
+            let got = (
+                draws.borrow().len(),
+                cpu.mem.rd16(a + 0x16E),
+                [cpu.mem.rd8(r + 0x76F), cpu.mem.rd8(r + 0x77F)],
+                cpu.mem.rd8(CLUSTER_FLAG) == 0,
+            );
+            let port = (
+                used,
+                want,
+                heads,
+                landed && hit < t::SPORE_GAS_HITS.holds_cluster_below,
+            );
+            if got != port {
+                out.gaps.push(format!(
+                    "{c0}: hit {hit} (draws, status, Auto heads, flag shut) retail {got:x?} port {port:x?}"
+                ));
+            }
+            out.split_checked += 1;
+        }
         let busy = cpu.regs.r[V0] != 0;
         let after = cpu.mem.rd8(CTX + 0x279);
+        // The arm's declared settle on the victim as the pass opened: a
+        // victim it calls unsettled holds retail, and a pass retail lets
+        // through finds it settled.
+        if let Some(kind) = settle {
+            let o = vi * STRIDE;
+            let hp = u16::from_le_bytes([rec0[o + 0x14C], rec0[o + 0x14D]]);
+            let clip = rec0[o + 0x1D9];
+            let lit = rec0[o + 4..o + 8] != [0; 4];
+            let settled = match (hp, kind) {
+                (0, t::ChainSettle::VictimOrFaded) => clip == t::SETTLE_DOWN_CLIP || !lit,
+                (0, _) => clip == t::SETTLE_DOWN_CLIP,
+                _ => clip == 0,
+            };
+            let retail_held = busy && after == phase;
+            if !settled && !retail_held {
+                out.gaps.push(format!(
+                    "{c0}: the {kind:?} settle holds where retail passed"
+                ));
+            }
+            out.settles_checked += usize::from(!settled);
+        }
         if busy && after == phase {
             held += 1;
             if held > 5000 {
@@ -634,7 +809,21 @@ fn run_body(
             },
             v[si],
         );
+        // Numb / Master Guard, accessory passives `0x1B` / `0x1C` of a party
+        // seat's record word, as the host's victim view carries them.
+        if !group && vi < 3 {
+            let w = cpu.mem.rd32(CHAR_RECORDS + vi as u32 * CHAR_STRIDE + 0x6BC);
+            vv.numb_guard = w & (1 << 0x1B | 1 << 0x1C) != 0;
+        }
         let tick = t::run_chain_body(body, &mut cview, &mut cc, &mut vv, &mut ss, selector);
+        let refunded: Vec<(u32, u32)> = refunds.borrow().clone();
+        let port_refund: Vec<(u32, u32)> =
+            tick.refund.map(|i| (u32::from(i), 1)).into_iter().collect();
+        if refunded != port_refund {
+            out.gaps.push(format!(
+                "{c0}: refunds retail {refunded:x?} port {port_refund:x?}"
+            ));
+        }
         v[si] = ss;
         if !group {
             v[vi] = vv;
@@ -682,6 +871,19 @@ fn run_body(
                 if hp > 0 {
                     want[s * STRIDE + 0x21D] = rate;
                 }
+            }
+        }
+        if let Some(level) = dir.as_ref().and_then(|d| d.parts_level)
+            && body.prot_entry == 956
+        {
+            let got: Vec<u16> = POOLED
+                .iter()
+                .map(|&(_, p)| cpu.mem.rd16(p + 0x78))
+                .collect();
+            if got.iter().any(|&g| g != level) {
+                out.gaps.push(format!(
+                    "{c0}: pooled parts' level retail {got:x?} port {level:#x}"
+                ));
             }
         }
         if let Some(a) = dir {
@@ -801,7 +1003,7 @@ fn fields(entry: u32) -> Vec<(u64, Field)> {
         target,
         dead,
         stoned,
-        low: 0,
+        ..Field::default()
     };
     let mut out = vec![
         (0x4348_4149, Field::default()),
@@ -817,9 +1019,67 @@ fn fields(entry: u32) -> Vec<(u64, Field)> {
             },
         ),
     ];
+    // PROT 0939's four hits on a victim already down (`0x801F7094`), Stoned
+    // (`0x801F70A8`), on HP no hit downs (the counts 3 and 4, `0x801F7190` /
+    // `0x801F7198`, and arm 5's wait on a standing victim's clip), with every
+    // limb already rotted (`0x801F7348`), and behind each Rot guard
+    // (`0x801F71F0` / `0x801F71FC` and their hit-2 and hit-3 twins).
+    if entry == 939 {
+        let high = |seed, rotted, ability| {
+            (
+                seed,
+                Field {
+                    high: 0b100,
+                    rotted,
+                    ability,
+                    ..f(Some(2), 0, 0)
+                },
+            )
+        };
+        out.push((0x444F_574E, f(Some(2), 0b100, 0)));
+        out.push((0x5354_4F4E, f(Some(2), 0, 0b100)));
+        out.push(high(0x4849_4748, 0, 0));
+        out.push(high(0x4849_4749, 0, 0));
+        out.push(high(0x524F_5454, 0b100, 0));
+        out.push(high(0x524F_5455, 0b100, 0));
+        out.push(high(0x524F_5456, 0b100, 0));
+        out.push(high(0x4755_4131, 0, 0x0100_0000));
+        out.push(high(0x4755_4132, 0, 0x1000_0000));
+    }
     if [935, 936, 942, 960, 961, 963, 964].contains(&entry) {
         out.push((0x4752_5031, f(Some(8), 0b010, 0b100)));
         out.push((0x4752_5032, f(Some(8), 0, 0)));
+    }
+    // PROT 0956's mark on a victim behind Numb Guard and Master Guard
+    // (`0x801F6F8C` / `0x801F6F98`), and its turn steal on a victim with an
+    // Item action queued and its turn to come (`0x801F705C`, `0x801F706C`
+    // and the refund), its turn spent, and another action's turn to come
+    // (`0x801F7088`).
+    // PROT 0947's and 0948's monster-row walks past a fallen monster
+    // (`0x801F6C70` / `0x801F6C20`, `0x801F717C`), and their arm 5's settle on a
+    // victim already down.
+    if [947, 948].contains(&entry) {
+        out.push((0x4D44_4544, f(Some(2), 0b0001_0000, 0)));
+        out.push((0x5644_4544, f(Some(2), 0b100, 0)));
+        out.push((0x5644_4545, f(Some(2), 0b100, 0)));
+    }
+    if entry == 956 {
+        let at = |seed, ability, queued| {
+            (
+                seed,
+                Field {
+                    ability,
+                    queued,
+                    ..f(Some(2), 0, 0)
+                },
+            )
+        };
+        out.push(at(0x4E55_4D42, 1 << 0x1B, None));
+        out.push(at(0x4D41_5354, 1 << 0x1C, None));
+        out.push(at(0x4954_454D, 0, Some((1, 0x40))));
+        out.push(at(0x5350_454E, 0, Some((1, 0))));
+        out.push(at(0x4F54_4852, 0, Some((2, 0x40))));
+        out.push(at(0x4755_4152, 1 << 0x1B, Some((1, 0x40))));
     }
     if entry == 935 {
         out.push((0x4752_5039, f(Some(9), 0b0010_0000, 0b0001_0000)));
@@ -854,6 +1114,7 @@ fn the_chain_bodies_walk_as_retail_does() {
     let (mut casts, mut arms, mut hits, mut known) = (0, 0, 0, 0);
     let mut split = 0usize;
     let mut spawns_checked = 0usize;
+    let mut settles_checked = 0usize;
     for body in t::chain_bodies() {
         // PROT 0961 rolls its sweep in the evolved Cort's formation only; PROT
         // 0964 forks on the last Element Change roll.
@@ -884,6 +1145,7 @@ fn the_chain_bodies_walk_as_retail_does() {
                     known += run.known;
                     split += run.split_checked;
                     spawns_checked += run.spawns_checked;
+                    settles_checked += run.settles_checked;
                     let terminal = run.path.last().and_then(|&p| body.arm(p));
                     if !terminal.is_some_and(|a| a.exit == t::ChainExit::Finish) {
                         failures.push(format!(
@@ -899,7 +1161,11 @@ fn the_chain_bodies_walk_as_retail_does() {
     eprintln!("{casts} casts, {arms} arms left, {hits} wrapper hits, {known} known gaps hit");
     assert!(hits > 20, "{hits} hits");
     assert!(split >= 4, "{split} split-hit passes compared");
-    eprintln!("{spawns_checked} director spawns matched");
+    eprintln!("{spawns_checked} director spawns matched, {settles_checked} settle holds");
+    assert!(
+        settles_checked >= 20,
+        "{settles_checked} settle holds compared"
+    );
     assert!(
         spawns_checked >= 900,
         "{spawns_checked} director spawns matched"

@@ -325,7 +325,7 @@ impl World {
     /// PROT 0931 (Jedo)'s stores on the row and the creature, outside its
     /// director.
     ///
-    /// PORT: overlay_summon_jedo_0931_801f6a58 (arms 0, 1, 5, 6, 23, 30, 31)
+    /// PORT: overlay_summon_jedo_0931_801f6a58 (arms 0, 1, 5, 6, 7, 10, 23, 26, 30, 31)
     pub(in crate::world::battle::cast_band) fn apply_jedo_writes(
         &mut self,
         phase: u8,
@@ -335,6 +335,23 @@ impl World {
     ) {
         // What arm 26's cut reads off the row, its middle.
         self.keep_row_tr_y(monster_count);
+        // The creature's own stores on the arms' passes: arm 6 shows the
+        // creature the seat arm hid (`sb zero,0x21c(s6)` at `0x801F7248`),
+        // arm 7 slows it to rate `3` (`0x801F7400`), arm 10 to `2`
+        // (`0x801F7648`), and arm 26 hides it (`+0x21C = 0xFF`,
+        // `+0x04 = 0` at `0x801F80B0` / `0x801F80C0`).
+        if passed && let Some(a) = self.actors.get_mut(usize::from(creature)) {
+            match phase {
+                6 => a.battle.render_flag = 0,
+                7 => a.battle.anim_rate = AnimRate(3),
+                10 => a.battle.anim_rate = AnimRate(2),
+                26 => {
+                    a.battle.render_flag = 0xFF;
+                    a.battle.render_color = 0;
+                }
+                _ => {}
+            }
+        }
         match (phase, passed) {
             // Arm 0's re-seat onto the alternate family at half its reach,
             // facing `0x800` (`0x801F6B74..0x801F6C5C`); arm 1 hides the row.
@@ -675,9 +692,12 @@ impl World {
                     a.battle.render_flag = FLAG_PARKED;
                 }
             }
+            // ... with the blend `+0x0C = 0x1000` beside the word
+            // (`0x801F6FB4..0x801F6FB8`).
             (4, true) => {
                 if let Some(a) = self.actors.get_mut(usize::from(creature)) {
                     a.battle.render_color = 0x3FFF_FFFF;
+                    a.battle.render_blend = 0x1000;
                     a.battle.render_flag = 0;
                 }
             }
@@ -709,16 +729,30 @@ impl World {
             // tests `+0x04` alone, `0x801F84F8..0x801F8548`): the rate holds a
             // dying monster's clip at `2`, over its commit's rise to `4`.
             (0x14, _) => {
+                let turn_ticks = 1 + if passed {
+                    i32::from(self.casting.module_cam.countdown.1)
+                } else {
+                    0
+                };
                 let map = self.cast_seat_map();
                 let seats: Vec<usize> = (0..monster_count)
                     .filter_map(|i| map.engine(3 + i).map(usize::from))
                     .collect();
+                // Retail tests the seat's colour word (`lw v0,4(v1)` / `beqz`).
+                // The engine's resting shown word is `0` under a lowered
+                // marker, so a seat reads as drawn on its word or, alive, on
+                // its marker: a felled seat whose fade has run out (word `0`)
+                // is not turned or slowed.
                 for e in seats {
                     if let Some(a) = self.actors.get_mut(e)
-                        && (a.battle.render_color != 0 || a.battle.render_flag != FLAG_PARKED)
+                        && (a.battle.render_color != 0
+                            || (a.battle.hp != 0 && a.battle.render_flag != FLAG_PARKED))
                     {
-                        a.battle.facing_angle =
-                            a.battle.facing_angle.wrapping_add((0x20 * D) as u16) & 0xFFF;
+                        a.battle.facing_angle = a
+                            .battle
+                            .facing_angle
+                            .wrapping_add((0x20 * D * turn_ticks) as u16)
+                            & 0xFFF;
                         a.battle.anim_rate = AnimRate(2);
                     }
                 }
@@ -769,6 +803,11 @@ impl World {
                 }
             }
         }
+        let owed_ticks = 1 + if passed {
+            i32::from(self.casting.module_cam.countdown.1)
+        } else {
+            0
+        };
         let rate = match (phase, passed) {
             (8, true) | (0xB, true) => Some(2),
             (0xA, true) => Some(4),
@@ -777,8 +816,13 @@ impl World {
         };
         self.ra_seru_creature_rate(creature, rate);
         if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+            // ... by the whole pass: a tick that hands over moves for the
+            // ticks of its pass still owed too.
             if matches!(phase, 0x13 | 0x14) {
-                a.move_state.world_z = a.move_state.world_z.wrapping_add((0x20 * D) as i16);
+                a.move_state.world_z = a
+                    .move_state
+                    .world_z
+                    .wrapping_add((0x20 * D * owed_ticks) as i16);
             }
             if (phase, passed) == (0x14, true) {
                 a.battle.render_color = 0;
@@ -1214,14 +1258,40 @@ impl World {
                     }
                 }
                 let quarter = (STEP / 4) as i16;
+                // The plane pull runs once a pass by the pass's whole
+                // `scalar * delta / 4` (`0x801F76D4..0x801F77E4`): a positive
+                // coordinate steps down, then a negative one steps up, so a
+                // coordinate under one step stands still. Run per one-vsync
+                // tick it walked to zero where retail's pass leaves it.
+                let delta = if self.toggles.battle_sm_frame_cadence {
+                    i32::from(self.module_frame_step())
+                } else {
+                    1
+                };
+                let plane_step = ((STEP * delta) / 4) as i16;
+                let plane = passed || self.module_tick_closes_pass();
+                let pull = |v: i16| {
+                    let v = if v > 0 { v - plane_step } else { v };
+                    if v < 0 { v + plane_step } else { v }
+                };
+                // A tick that hands over sinks and shrinks for the ticks of
+                // its pass still owed too.
+                let ticks = 1 + if passed {
+                    i32::from(self.casting.module_cam.countdown.1)
+                } else {
+                    0
+                };
+                let quarter = quarter * ticks as i16;
                 for (e, _) in self.ra_seru_row(monster_count) {
                     if let Some(a) = self.actors.get_mut(e) {
                         let m = &mut a.move_state;
                         m.world_y -= quarter;
-                        m.world_x -= m.world_x.signum() * quarter.min(m.world_x.abs());
-                        m.world_z -= m.world_z.signum() * quarter.min(m.world_z.abs());
+                        if plane {
+                            m.world_x = pull(m.world_x);
+                            m.world_z = pull(m.world_z);
+                        }
                         let scale = i32::from(a.battle.render_scale.unwrap_or(0x1000));
-                        a.battle.render_scale = Some((scale - 4 * STEP).max(0) as u16);
+                        a.battle.render_scale = Some((scale - 4 * STEP * ticks).max(0) as u16);
                     }
                 }
             }
@@ -1260,7 +1330,12 @@ impl World {
                     }
                 }
             }
-            (0xB, true) => self.ra_seru_row_restore(monster_count, true),
+            // The exit restores each seat's trio, facing, radius `+0x58` and
+            // size byte (`0x801F7F40..0x801F7F98`) and stores no scale: a
+            // Stoned seat keeps arm 9's shrunken scale in retail. The
+            // Stoned-seat rescale (`WorldToggles::stone_scale_fix`) stands it
+            // back at unity.
+            (0xB, true) => self.ra_seru_row_restore(monster_count, self.toggles.stone_scale_fix),
             _ => {}
         }
     }

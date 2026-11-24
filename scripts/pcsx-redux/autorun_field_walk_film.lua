@@ -12,6 +12,9 @@
 --                         row per change of the held word, where bit N of the
 --                         mask is probe.BTN index N - the engine pad word, so
 --                         a `LEGAIA_DIAG_TICK_DIGEST` run's pad replays as is.
+--      LEGAIA_SAVE_AT     comma list of vsyncs to keep the whole emulator
+--                         state at, as <out dir>/film_<v>.rawsstate: a film
+--                         that crosses a scene load can seat a new state past it.
 --
 -- Outputs: walk_film.csv (one row a vsync), walk_film_actors.csv (one row per
 -- placement per vsync). The last three walk_film.csv columns are the frame
@@ -28,6 +31,8 @@ local probe = require("probe")
 local SSTATE = probe.getenv("LEGAIA_SSTATE", "")
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 600)
 local SCRIPT = probe.getenv("LEGAIA_PAD_SCRIPT", "")
+local SAVE_AT = {}
+for v in string.gmatch(probe.getenv("LEGAIA_SAVE_AT", ""), "%d+") do SAVE_AT[tonumber(v)] = true end
 
 local PLAYER_PTR  = 0x8007C364
 local PITCH, YAW  = 0x8007B790, 0x8007B792
@@ -139,6 +144,15 @@ probe.run({
         end
         for btn, _ in pairs(want) do
             if not held[btn] then probe.pad_force(btn); held[btn] = true end
+        end
+        if SAVE_AT[el] then
+            local path = probe.out_path(string.format("film_%d.rawsstate", el))
+            local ok, err = pcall(function()
+                local w = PCSX.createSaveState()
+                local f = Support.File.open(path, "TRUNCATE")
+                f:writeMoveSlice(w); f:close()
+            end)
+            PCSX.log(string.format("[walk_film] state %s ok=%s %s", path, tostring(ok), tostring(err or "")))
         end
         local p = probe.read_u32(PLAYER_PTR)
         if p == nil or not probe.in_ram(p) then return end

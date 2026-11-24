@@ -583,21 +583,21 @@ impl World {
     /// [`WorldToggles::field_frame_span_law`](super::WorldToggles::field_frame_span_law):
     /// the clip's stop watch `FUN_8003D764` polls the drive from the CD
     /// interrupt for the whole read, so the frame's work runs in what the
-    /// polls leave of the CPU. PCSX-Redux's polls take about two thirds
-    /// (`xa_loaded_frame_cost`, the battle's ratio and floor), a console's
+    /// polls leave of the CPU. PCSX-Redux's polls take about seven tenths
+    /// ([`field_xa_loaded_frame_cost`], the battle's floor), a console's
     /// `.065` (`console_poll_cost`). `garmel` `P2[12]`'s voice line on
     /// PCSX-Redux: frames of `6` to `7` vsyncs at step `4` over a work of
-    /// about `400` hblanks, from the clip's start to the drive word's clear.
+    /// about `440` hblanks, from the clip's start to the drive word's clear.
     ///
     /// REF: FUN_8003D53C, FUN_8003D764
     pub(in crate::world) fn field_xa_polled_cost(&self, cost: i32) -> i32 {
-        use legaia_engine_battle_loop::frame_clock::{CdTiming, xa_loaded_frame_cost};
+        use legaia_engine_battle_loop::frame_clock::CdTiming;
         if !self.toggles.field_frame_span_law || !self.field_xa_reading() {
             return cost;
         }
         let work = cost.clamp(0, i32::from(u16::MAX)) as u16;
         i32::from(match self.toggles.field_cd_timing {
-            CdTiming::PcsxRedux => xa_loaded_frame_cost(work),
+            CdTiming::PcsxRedux => field_xa_loaded_frame_cost(work),
             CdTiming::Console => {
                 legaia_engine_cast::cast_module_frame_step::console_poll_cost(work)
             }
@@ -947,6 +947,33 @@ impl World {
         }
         *self.field_cost_scratch.borrow_mut() = scratch;
         Some(f)
+    }
+}
+
+/// What a field frame the clip's polls load costs on PCSX-Redux, in
+/// thousandths of its work: the frame's CPU time over its time outside the CD
+/// interrupt. Two `autorun_field_cd_trace.lua` recordings (breakpoint core)
+/// price each frame of a voice line from the frame end's `VSync(n)` return
+/// (`0x800171C8`) to the CPU-done `VSync(1)` (`0x800174CC`), every CD
+/// interrupt from the exception vector to the response dispatcher's exit
+/// (`0x8005DB74`): `garmel` `P2[12]` (Zeto's appearance, from
+/// `chapter2_garmel_pre_zeto`) reads `3.34` over 85 frames and record 14
+/// (his defeat, from `garmel_zeto_defeat_pre_line`) `3.36` over 62, against
+/// the battle's `3.1` ([`legaia_engine_battle_loop::frame_clock::XA_POLL_COST_RATIO_MILLI`]).
+pub const FIELD_XA_POLL_COST_RATIO_MILLI: u32 = 3340;
+
+/// What a field frame of `work` hblanks costs while the clip's polls load it
+/// on PCSX-Redux ([`FIELD_XA_POLL_COST_RATIO_MILLI`]), at least the battle's
+/// floor ([`legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST`]).
+pub const fn field_xa_loaded_frame_cost(work: u16) -> u16 {
+    let floor = legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST;
+    let c = (work as u32 * FIELD_XA_POLL_COST_RATIO_MILLI + 500) / 1000;
+    if c > u16::MAX as u32 {
+        u16::MAX
+    } else if c < floor as u32 {
+        floor
+    } else {
+        c as u16
     }
 }
 

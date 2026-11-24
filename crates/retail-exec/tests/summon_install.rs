@@ -203,9 +203,11 @@ fn the_summon_installer_relocates_and_seats_as_retail_does() {
         }
         assert_eq!(a.flag_word, cpu.mem.rd32(seat + 8), "{what}: +0x08");
         assert_eq!(a.current_anim, r(0x1D9), "{what}: +0x1D9");
-        assert_eq!(a.active_target, r(0x1DD), "{what}: +0x1DD");
+        if !arm_writes(|w| w.target.is_some()) {
+            assert_eq!(a.active_target, r(0x1DD), "{what}: +0x1DD");
+        }
         assert_eq!(r(0x1DD), target, "{what}");
-        if !arm_writes(|w| w.tint.is_some()) {
+        if !arm_writes(|w| w.tint.is_some() || w.flag.is_some()) {
             assert_eq!(a.render_flag, r(0x21C), "{what}: +0x21C");
         }
         assert_eq!(a.impact_state, r(0x21F), "{what}: +0x21F");

@@ -107,6 +107,19 @@ const GARMEL_P2_12_ZETO: &str = "mid-beat capture inside garmel P2[12]: the reco
      retail's node; the capture is parked at +0x544, before the record's +0x9A2 re-park. \
      A cold entry holds the header park";
 
+/// garmel `P2[14]` (Zeto's defeat) re-stages the beat after the battle.
+/// `P2[12]` arms `0x199` on entering the fight; back on the field `P1[0]`
+/// consumes it (`61 99`) and spawns `P2[14]` (`44 41`), so a capture inside
+/// the record holds `0x198` / `0x363` set and `0x199` already clear - a
+/// cold entry against that bank skips the spawn, as retail's own would.
+const GARMEL_P2_14_SEATS: &str = "mid-beat capture inside garmel P2[14] (Zeto's defeat, \
+     spawned by P1[0]'s 61 99 .. 44 41 arm, so 0x199 is already clear): the record seats \
+     0x1B / 0x1C on tiles (25, 54) / (21, 54) (CC 1B 51 19 36 / CC 1C 51 15 36 at +0x9D / \
+     +0xA4) and Zeto 0x1D on (23, 56) (CC 1D 51 17 38 00 37 at +0x161) - exactly retail's \
+     nodes, the capture sitting before the +0x322 re-park. A cold entry holds the header \
+     parks; the engine's run of the record seats all three on retail's tiles \
+     (engine-scene-host garmel_zeto_defeat_staging_disc.rs)";
+
 const VOZZ_P2_17_SEATS: &str = "mid-beat capture inside vozz P2[17] (Ozma's hatching, gated \
      by the poked 0x2C3 the record clears at +0x12): the record seats 0x06 / 0x07 / 0x09 / \
      0x0B (P1[2] / P1[3] / P1[5] / P1[7]) with its own 4C 51 seats - +0x2AD (233, 100) = \
@@ -431,6 +444,24 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         key: "vis:5",
         class: "b",
         note: GARMEL_P2_12_ZETO,
+    },
+    KnownDivergence {
+        label: "garmel_zeto_defeat_pre_line",
+        key: "vis:3",
+        class: "b",
+        note: GARMEL_P2_14_SEATS,
+    },
+    KnownDivergence {
+        label: "garmel_zeto_defeat_pre_line",
+        key: "vis:4",
+        class: "b",
+        note: GARMEL_P2_14_SEATS,
+    },
+    KnownDivergence {
+        label: "garmel_zeto_defeat_pre_line",
+        key: "vis:5",
+        class: "b",
+        note: GARMEL_P2_14_SEATS,
     },
     KnownDivergence {
         label: "vozz_ozma_hatching_hover",

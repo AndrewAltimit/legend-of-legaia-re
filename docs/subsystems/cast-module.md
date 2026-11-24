@@ -1932,8 +1932,11 @@ player-summon state machines of their own.
 land `33`, `49`, `65` and `81` passes in (`SporeGasBeat`). Each rolls `FUN_801DD4B0(0x60)`,
 keeps a third, stages `+0x1EF`, `+0x1EF`, `+0x1F0`, `+0x1F1` in turn, and hits 1 to 3 roll
 Rot's left, right and low limb on `rand & 1`, `rand % 3 != 0` and `rand & 3 != 0` behind
-the record's two immunity bits (`+0x6BC & 0x11000000`). A victim that dies takes the
-knockdown and ends the count. Its caster stage sits on arm 1 (`0x801F6C54`).
+the record's two immunity bits (`+0x6BC & 0x11000000`). A limb newly rotted clears the
+head byte of both Auto command strings (record `+0x76F` / `+0x77F`,
+`0x801F7348..0x801F73A0`), as the melee arm's Rot does. A victim already down or Stoned
+takes nothing, though the hit still counts. A victim that dies takes the knockdown and
+ends the count. Its caster stage sits on arm 1 (`0x801F6C54`).
 
 **Water Column, Water Crystals and Rolling Flare's `0x5A`** gate on the same countdown shape
 with no chain descriptor (`capture_countdown::WATER_COLUMN`, `WATER_CRYSTALS`, `ROLLING_FLARE`).
@@ -4355,6 +4358,13 @@ hidden through arm 5, the miss line raised on a hit and a draw on every passing
 pass, the same film read `.815`; with them `.848` (arm 5 `.770` to `.883`, the
 HP-bar settle `0x51` `.688` to `.793`). Grade `disassembly` + `capture`.
 
+Arm 5 waits, once its word runs out, on the victim: a standing one back on clip
+`0`, a fallen one (the one-point hit can down a victim on `1` HP) on clip `8`
+(`0x801F8E14..0x801F8E80`), then stores `0xFF`. The band holds it there
+(`cast_module_ticks::gated_hit_arm`, settle `Victim`). The monster-victim half of
+that wait is unreachable: the target shape `0x44` aims at a party seat. Grade
+`disassembly`.
+
 The hit leg throws a numeral: `FUN_801F44A0(1, seat)` at `0x801F8D6C`, behind the
 Stone guard at `0x801F8D60` that also gates its one-point HP write, so a landed
 Kiss of Death shows a `1` over its victim. The miss leg throws none. Port:
@@ -4424,7 +4434,17 @@ countdown ahead of the shot, which aims on the drained word (`0x801F7A18..0x801F
 still positive (`blez` / `bgtz` at `0x801F7A8C`, `0x801F80C0`, `0x801F80C0`); past it each
 waits on the victim's clip. `dohaty_nova_v2_pre_scythe_wind`'s recording shows the rate: the
 arm-5 yaw `cd / 8 + 0x900 - facing` falls `6` a step-`3` pass, the engine's single drain `3`.
-Grade `disassembly` + `capture`.
+The port makes the pass's whole arithmetic on its opening tick
+(`ModuleCamState::twice_drained_pass`): the aim, the second drain only while the first left
+the word positive, and the hold while the second does; the pass's later ticks repeat that
+answer. Drained a tick at a time, a later tick's word had taken the second drain too, which
+at a step of `2` aimed the shot one tick low, and a word the first drain took below zero
+was drained again on the pass's later ticks (`-24` against retail's `-8` at a step of `3`).
+Arm 6's poll (`0x801F7AB4..0x801F7AE4`) passes a live victim on clip `0` and a fallen one
+on `8`; the hit clamps the roll to the victim's HP (`0x801F796C`) as
+`cast_module_ticks::apply_hit_floor_zero` does, compared on rolls either side of the HP.
+Below zero the aim's `cd / 8` rounds toward zero as the `addiu 7` /
+`sra 3` does (`0x801F7C8C`, `0x801F7DC0`). Grade `disassembly` + `capture`.
 
 **A compare behind the drain reads the whole pass's word.** Retail drains a pass's
 `scalar * step` (or `step`, or `step << 1`) in one `subu` and every compare behind it reads
@@ -4975,6 +4995,12 @@ than holding its own: the script is what walks a card in.
 the way a pass. A confirm press (`0x800846D0`) or the spent word plays cue `0x21`.
 The module is entered once a pass, so a press is one step; the port runs a pass as a
 frame step of one-vsync ticks and feeds the pad to the first alone.
+The swap's frame counter `0x801FA27C` moves the same way: by the pass's step, once,
+on the opening tick (`0x801F8240..0x801F8264`, `0x801F84CC..0x801F84F0`), clamped to
+`16` before the end test, and the next swap is drawn on the pass that opens it. Moved
+a tick at a time, a step of `3` ran each swap one tick short and drew the next swap
+inside the pass that ended the last. Arm 9 drains and grows the pick a pass at a time
+too, so a tick that leaves ahead of the pass's last takes the rest of both.
 Arm 6's pick is the handle whose `+0x14` equals `(target - 0x28) * 192 / 76 - 0x120`.
 
 **The two sprites** are screen-space `0x2C` `POLY_FT4` (textured, opaque, colour
@@ -6014,6 +6040,13 @@ back at the arm's tail. The walk clip stays staged for that pass, so its root mo
 steps once more before arm 2 stages the wind-up. Scythe Wind's recording reads
 `(376, -502)`, `(-64, +127)` of push, `(+38, -50)` of walk: `(350, -425)`.
 
+`capture_cameras::the_walk_in_arrives_and_stands_off_as_the_hosts_leg_does` holds
+the leg against the walk-in arms of all nine bodies. The range poll answers "out of
+reach" for up to three polls and `FUN_80050BB8` runs live in the module image. Each
+hold keeps the arm with the caster on the walk clip `1`, the leg's
+`CAPTURE_WALK_ENTRY`. The arrival pass leaves the arm with the caster's live pair
+where `World::settle_capture_approach` puts it, pushed or not. Grade `disassembly`.
+
 Rolling Flare (PROT 0950 `0x5A`) walks further out than the others. Its arm 0 stores
 the caster's size class `0x34` (record `+0x1F`) and body radius `0x680` (`+0x58`
 behind `+0x22C`), so the range poll stops the walk at `0x340` units, and arm 2 and the
@@ -6055,7 +6088,12 @@ two; TR `(0, 0x400, 0x800)` for all three. From there:
   the caster on `-sin(16 w) / 8` off a word stepped by the frame step, waiting
   for cursor `0x100`; its pass grounds the caster, seats five records on it and
   lands the hit. Arm 4 shakes TR y by a word seeded `0x100`, its sign flipping
-  a pass and the word falling `s d / 2`, until the victim settles. Arm 3's
+  a pass and the word falling `s d / 2`, until the victim settles: its playing
+  clip `+0x1D9` on idle `0` or the down clip `8`, whatever its HP
+  (`0x801F7440..0x801F7454`, and Blade Breath's arm 4 the same). The host
+  feeds that rule (`capture_victim_settle`, `World::capture_victim_settled`),
+  where the other capture bodies take a standing victim on `0` and a fallen
+  one on `8`. Arm 3's
   pass also seats sixteen falling rocks after the five caster records and
   before the hit (`0x801F717C..0x801F7294`, `gigaton_press_debris`): point
   `i` on a ring of radius `0x400` round the victim's ground pair at angle

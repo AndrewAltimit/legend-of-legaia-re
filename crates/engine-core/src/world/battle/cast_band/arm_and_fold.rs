@@ -559,4 +559,30 @@ impl World {
     pub fn drive_fold_glare_on_its_arm(&mut self, entry: u32, spell_id: u8, arm: u8) {
         self.fold_glare_on_its_arm(entry, spell_id, arm);
     }
+
+    /// One capture-band pass of `spell_id`'s module at battle frame step
+    /// `step`, on the battle-frame cadence: [`Self::module_pass`]'s `step`
+    /// one-vsync ticks of [`Self::run_cast_module_code`], stopping on the
+    /// tick an arm hands over, and Glare's fold after a tick that left its
+    /// arm ([`Self::fold_glare_on_its_arm`]). The caller advances the display
+    /// clock by `step` a pass, so every pass opens a battle frame.
+    pub fn drive_capture_module_pass(&mut self, spell_id: u8, step: u8) -> bool {
+        self.toggles.battle_sm_frame_cadence = true;
+        let tick = self.clock.display_frames;
+        self.battle.frame_clock.set_step(tick, step);
+        self.casting.capture_spell = Some(spell_id);
+        self.module_pass(|w| {
+            let Some(spell) = w.casting.capture_spell else {
+                return false;
+            };
+            let phase = w.casting.module_phase;
+            let Some(run) = w.run_cast_module_code(spell, phase) else {
+                return false;
+            };
+            if run.phase != phase {
+                w.fold_glare_on_its_arm(run.prot_entry, spell, run.phase);
+            }
+            run.busy
+        })
+    }
 }

@@ -1782,11 +1782,29 @@ The engine prices a field frame under a clip's read at its work over the polls' 
 `WorldToggles::field_cd_timing` names. Play runs a console's (`PLAY_FIELD_CD_TIMING`,
 `console_poll_cost`): `garmel` `P2[12]`'s wait takes `268` vsyncs and the beat from the seek to
 the `36 FF FF` after the wait `566`. The harnesses, films and comparison children run
-PCSX-Redux's, the recordings' (`xa_loaded_frame_cost`, with the drive word held for the read
-tail; `LEGAIA_FIELD_CD_TIMING=pcsx-redux` in play): the wait takes `346` vsyncs and the beat
-`590` against the recording's `621` (`422` before the timeline held op `0x36` on the drive word). A harness standing the engine on a state
+PCSX-Redux's, the recordings' (`field_xa_loaded_frame_cost`, below, with the drive word held
+for the read tail; `LEGAIA_FIELD_CD_TIMING=pcsx-redux` in play). A harness standing the engine on a state
 saved under a line seats the drive's remaining read from the stop watch's sectors
 (`RetailObs::xa_drive_left`).
+
+The field's polls take a larger share than the battle's `3.1` prices.
+[`autorun_field_cd_trace.lua`](../../scripts/pcsx-redux/autorun_field_cd_trace.lua) records
+each frame's CD interrupt time (breakpoint core), and
+[`field-cd-frames.py`](../../scripts/ci/field-cd-frames.py) prices the frame's work apart from it.
+Over `garmel` `P2[12]`'s line the frames' CPU time is `3.34` times their work (85 frames, work
+median `444` hblanks), and over record 14's (Zeto's defeat, `garmel_zeto_defeat_pre_line`, 171
+vsyncs before its first line, Cross every 20 vsyncs) `3.36` (62 frames, `433`). The engine
+prices a voiced field frame at `3.34` (`FIELD_XA_POLL_COST_RATIO_MILLI`,
+`field_xa_loaded_frame_cost`). Filmed on both sides (`LEGAIA_RC_WALK_COST=1`):
+
+| Beat | Retail step-`4` frames | Engine at `3.34` | Engine at the battle's `3.1` |
+|---|---|---|---|
+| `garmel` `P2[12]`, Zeto's appearance | 90, mean `6.12` vsyncs | 92, `5.98` | 103, `5.38` |
+| record 14, Zeto's defeat | 66, mean `5.74` | 66, `5.83` | 66, `5.83` |
+
+The defeat beat reads the same at either ratio because the engine prices its frames' work at
+about `460` against retail's `433`; the appearance's it prices at about `400` against `444`,
+so the frames that remain there are the work model's, not the ratio's.
 
 The legs a record runs on an actor are on the same grid. The walk kernel `FUN_8003774C` spends
 the frame step (`lbu s2,0x393` at `0x80037864`) once a game frame against a compass walk's or a

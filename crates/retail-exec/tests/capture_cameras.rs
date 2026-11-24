@@ -126,6 +126,17 @@ fn shadow_world(
         if s >= 3 {
             act.battle_monster_id = Some(u16::from(if s == caster { monster.max(1) } else { 1 }));
         }
+        // Glare's Stone cancels the victim's queued action and refunds an
+        // Item; the guards it tests are the record's `+0x6BC` word.
+        if body.action == 0x3C {
+            act.battle.action_category = cpu.mem.rd8(a + 0x1DE);
+            act.battle.init_key = cpu.mem.rd16(a + 0x16C);
+            act.battle.params[0] = cpu.mem.rd8(a + 0x1DF);
+            if s < 3 {
+                w.party.character_ability_bits[s as usize] =
+                    cpu.mem.rd32(CHAR_RECORDS + s * CHAR_STRIDE + 0x6BC);
+            }
+        }
     }
     w.battle_ctx.active_actor = caster as u8;
     let mut entries = vec![SpellEntry::default(); 0x100];
@@ -343,11 +354,16 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let (mut passes, mut casts) = (0u32, 0u32);
     let mut outcomes = std::collections::BTreeSet::new();
     let mut unsettled_holds = 0usize;
+    let mut victim_settle_holds = 0usize;
     let (mut results, mut heal_capped) = (0usize, false);
     let mut debuffs = 0usize;
     let mut buffs = 0usize;
     let mut seat_passes = 0usize;
     let mut steals = 0usize;
+    let mut glare_rolls = 0usize;
+    let mut kiss_halts = 0usize;
+    let mut spray_clears = 0usize;
+    let (mut horn_hits, mut horn_clamps) = (0usize, 0usize);
     let (mut shadow_passes, mut shadow_diverged) = (0usize, 0usize);
     let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
@@ -364,10 +380,18 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 cpu.stub(target, 0);
             }
         }
+        // Bloody Horns' hit rolls through the ATK wrapper `FUN_801DD6B4`
+        // (`0x801F7948`), which returns the round's roll here so the clamp
+        // to the victim's HP (`0x801F796C`) runs both ways.
+        let horn_roll = Rc::new(std::cell::Cell::new(0u32));
+        if body.entry == 952 {
+            let roll = horn_roll.clone();
+            cpu.hook(0x801D_D6B4, move |r, _| r.r[2] = roll.get());
+        }
         // Terror Scream's refund goes through the bag's find-or-insert
         // `FUN_800421D4`, logged rather than run.
         let refunds = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
-        if body.action == 0x70 {
+        if matches!(body.action, 0x70 | 0x3C) {
             let refunds = refunds.clone();
             cpu.hook(BAG_INSERT, move |r, _| {
                 refunds.borrow_mut().push((r.r[A0], r.r[A1]));
@@ -379,15 +403,34 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         let death_game = body.action == 0x76;
         // Every other body's part spawns, logged as `(record, point, angles,
         // scale)`, for the director's literal-anchored records.
+        // Kiss of Death keeps the handles of the records arms 1 and 2 seat
+        // (`0x801F9B28`, count `0x801F9D2C`), drops a handle whose part has
+        // stopped (`+0x10 & 8`, `0x801F88F0..0x801F8910`) and stops the rest
+        // as arm 2 passes (`0x801F8B14..0x801F8B60`): each spawn of its gets
+        // a part, kept as `(record, part)`.
+        let seated = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
         if !death_game {
+            let kiss = body.action == 0x6E;
+            let next = Rc::new(std::cell::Cell::new(PARTS));
             for spawn in [SPAWN_PART, SPAWN_SEATED] {
                 let log = spawn_log.clone();
+                let seated = seated.clone();
+                let next = next.clone();
                 cpu.hook(spawn, move |r, m| {
                     let trio = |m: &mut Memory, a: u32| [0u32, 2, 4].map(|o| m.rd16(a + o) as i16);
                     let p = trio(m, r.r[A0]);
                     let a = trio(m, r.r[A1]);
                     log.borrow_mut().push((r.r[A2], p, a, r.r[A3] as u16));
                     r.r[V0] = 0;
+                    if kiss {
+                        let at = next.get();
+                        next.set(at + 0x80);
+                        for o in (0..0x80).step_by(4) {
+                            m.wr32(at + o, 0);
+                        }
+                        seated.borrow_mut().push((r.r[A2], at));
+                        r.r[V0] = at;
+                    }
                 });
             }
         }
@@ -427,10 +470,12 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         let countdown_va = cam::capture_countdown_va(body.action);
         let rounds = match body.action {
             0x76 => 30,
+            0x3C => 8,
             0x71 | 0x70 => 12,
             _ => 6,
         };
         for round in 0..rounds {
+            seated.borrow_mut().clear();
             let (caster, victim) = seed(&mut cpu, &mut rng, &module, body, 0);
             // State `0x6F` drains the framing depth by `16 * step` a vsync
             // while it waits on the module's seek (`0x801E5008..0x801E5014`,
@@ -450,6 +495,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 0x70 => [0x28u8, 0x7F, 0x83, 0x29, 0x84, 0x2A, 0x85][round % 7],
                 // The two casters that deal a stacked table.
                 0x76 => [0u8, 0x9D, 0x9E][round % 3],
+                // Glare forks its cue, cut, clip and caster rate on Zora
+                // (`0xA9`, `0x801F6AE0`, `0x801F6B34`, `0x801F6C94`,
+                // `0x801F700C`).
+                0x3C => [0u8, GLARE_ZORA][round % 2],
                 _ => 0,
             };
             // The formation cells `0x8007BD0C[seat - 3]`. A seat-7 caster's
@@ -535,6 +584,45 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 }
                 cpu.mem.wr8(va_ + 0x1F2, (round % 2) as u8);
             }
+            // Glare's roll on a slow victim beside a quick caster from round
+            // 2 on, so it lands: behind Stone Guard (rounds 2 and 6) and
+            // Master Guard (3), each record's `+0x6BC` (`0x801F7054..0x801F7070`),
+            // on a victim with an Item queued and its turn to come (4, 6),
+            // its turn spent (5) and another action queued (7), which the
+            // Stone's cancel and refund read (`0x801F70A8..0x801F70EC`).
+            if body.action == 0x3C {
+                if round >= 2 {
+                    cpu.mem.wr16(va_ + 0x168, 1);
+                    cpu.mem.wr16(ca + 0x168, 200);
+                }
+                let guard = match round {
+                    2 | 6 => 1u32 << 0x1A,
+                    3 => 1 << 0x1C,
+                    _ => 0,
+                };
+                for i in 0..3 {
+                    cpu.mem.wr32(CHAR_RECORDS + i * CHAR_STRIDE + 0x6BC, guard);
+                }
+                if let Some((category, key)) = match round {
+                    4 | 6 => Some((1u8, 0x40u16)),
+                    5 => Some((1, 0)),
+                    7 => Some((2, 0x40)),
+                    _ => None,
+                } {
+                    cpu.mem.wr8(va_ + 0x1DE, category);
+                    cpu.mem.wr16(va_ + 0x16C, key);
+                    cpu.mem.wr8(va_ + 0x1DF, 0x10 + round as u8);
+                }
+            }
+            // Kiss of Death's one-point hit (`0x801F8C68..`) downs a victim on
+            // one HP, which its settle then waits on as fallen.
+            if body.action == 0x6E && round % 2 == 1 {
+                cpu.mem.wr16(va_ + 0x14C, 1);
+            }
+            if body.entry == 952 {
+                let hp = u32::from(cpu.mem.rd16(va_ + 0x14C));
+                horn_roll.set([0, hp - 1, hp, hp + 1, hp * 3][round % 5]);
+            }
             if death_game {
                 for a in [ca, va_] {
                     let hp = cpu.mem.rd16(a + 0x14C);
@@ -592,6 +680,13 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             let mut arm_24_passes = 0usize;
             let (mut arm_passes, mut last_phase) = (0usize, 0xFEu8);
             let mut arm3_passes = 0usize;
+            let mut settle_passes = 0usize;
+            let pass_step: u8 = if round % 2 == 1 {
+                [2u8, 3, 4][(round / 2) % 3]
+            } else {
+                1
+            };
+            let mut settle_world = legaia_engine_core::world::World::default();
             // Every strike-frame wait (PROT 0960's arm 5, PROT 0962's arm 3)
             // finds the caster's node cursor past its mark.
             cpu.mem.wr16(NODES + caster * 0x100 + 0x68, 0x7FFF);
@@ -674,6 +769,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 }
                 // What the host feeds a director every pass
                 // (`feed_capture_cam`).
+                // Melt Spray's arm 3 clears the staged spray clip once it plays
+                // (`0x801F828C..0x801F82A0`): on odd rounds the caster is on it.
+                if body.action == 0x6F && phase == 3 && round % 2 == 1 {
+                    cpu.mem.wr8(ca + 0x1D9, 7);
+                }
                 st.caster_clip = Some(cpu.mem.rd8(ca + 0x1D9));
                 st.caster_frame = Some(cpu.mem.rd16(NODES + caster * 0x100 + 0x68));
                 st.caster_loops = Some(cpu.mem.rd8(ca + 0x21B));
@@ -804,7 +904,115 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     st.target_unsettled = !rows.iter().all(|&s| settled(&mut cpu, s));
                     unsettled_holds += usize::from(phase == 3 && st.target_unsettled);
                 }
-                let arm = (body.director)(&mut st, phase, seats);
+                // Kiss of Death's arm 5, Melt Spray's arm 4 and Scythe Wind's
+                // arm 5 wait, once their
+                // word runs out, on the victim's clip: a standing victim's
+                // still playing (`0x801F8E60` / `0x801F8644`), a fallen one's
+                // not yet the fallen clip `8` (`0x801F8E38` / `0x801F861C`),
+                // for round-keyed passes; the host's flag off the same bytes
+                // (`World::chain_seat_settled`).
+                let victim_settle = match body.action {
+                    0x6E => Some(5),
+                    0x6F => Some(4),
+                    // Scythe Wind's arm 5 (`0x801F80E8..0x801F8128`), and
+                    // Gigaton Press's arm 4 (`0x801F7440..0x801F7454`, a clip of
+                    // `0` or `8` whatever the HP).
+                    0x5B if body.va == SCYTHE_WIND => Some(5),
+                    _ if (body.entry, body.va) == (962, GIGATON_PRESS) => Some(4),
+                    // Blade Breath's arm 4, the same poll (`0x801F7AE4` body).
+                    _ if (body.entry, body.va) == (962, BLADE_BREATH) => Some(4),
+                    // Bloody Horns' arm 6 (`0x801F7AB4..0x801F7AE4`): a live
+                    // victim's clip `0`, a fallen one's `8`.
+                    0x5C if body.va == BLOODY_HORNS => Some(6),
+                    _ => None,
+                };
+                if let Some(arm_at) = victim_settle {
+                    // Gigaton Press polls on every pass of its arm, its shake
+                    // word drained beside the poll rather than gating it.
+                    let gated = body.entry != 962;
+                    settle_passes = if phase == arm_at && (!gated || st.countdown.0 <= SPEED_SCALAR)
+                    {
+                        settle_passes + 1
+                    } else {
+                        0
+                    };
+                    if phase == arm_at {
+                        // A victim the strike downed on every fourth round
+                        // (Kiss of Death's own hit downs its one-HP victims).
+                        if body.action != 0x6E && round % 4 == 3 && settle_passes == 1 {
+                            cpu.mem.wr16(va_ + 0x14C, 0);
+                        }
+                        let hp = cpu.mem.rd16(va_ + 0x14C);
+                        let dead = hp == 0;
+                        let busy = settle_passes <= round % 3 + 1;
+                        // While busy a standing victim plays a reaction (or,
+                        // on odd rounds, the down clip `8`) and a fallen one a
+                        // knockdown (or, on odd rounds, idle `0`): the clips
+                        // the two rest rules read apart.
+                        let clip = match (busy, dead) {
+                            (true, false) => [5, 8][round % 2],
+                            (true, true) => [3, 0][round % 2],
+                            (false, false) => 0,
+                            (false, true) => 8,
+                        };
+                        cpu.mem.wr8(va_ + 0x1D9, clip);
+                        // The host's own flag (`World::capture_victim_settled`)
+                        // off the same bytes.
+                        st.victim_settled = settle_world.drive_capture_victim_settled(
+                            body.entry,
+                            body.va,
+                            victim as u8,
+                            hp,
+                            clip,
+                        );
+                        victim_settle_holds += usize::from(!st.victim_settled && settle_passes > 0);
+                    } else {
+                        st.victim_settled = true;
+                    }
+                }
+                // The bodies whose held arms re-aim every pass
+                // (`capture_shot_rearms_every_pass`) run their odd rounds at a
+                // battle frame step of `2`, `3` or `4`: retail's one call
+                // drains the pass's `scalar * step` in one `subu`, which a
+                // countdown off a step that does not divide it takes below
+                // zero (the `bgez` / `addiu 7` fix-ups of the shot's `cd / 8`,
+                // `0x801F7C8C`, `0x801F7DC0`). The director runs a tick a
+                // vsync as the host's pass does (`World::module_pass`): `step`
+                // ticks, the countdown's rest `step - 1 - i`, stopping on the
+                // tick an arm hands over, the spawns its opening tick seats.
+                // Retail's step moves from frame to frame: the odd rounds walk
+                // 2, 3, 4, 3, so a word the steps share no divisor with goes
+                // below zero on its last pass.
+                let step = if pass_step > 1 {
+                    [2u8, 3, 4, 3][(pass + usize::from(pass_step)) % 4]
+                } else {
+                    1
+                };
+                cpu.mem.wr8(STEP, step);
+                st.frame_step = step;
+                let mut arm = cam::CaptureCamArm::default();
+                let mut opened_spawns = None;
+                for i in 0..step {
+                    st.countdown.1 = step - 1 - i;
+                    st.opens_pass = i == 0;
+                    // The pad's edge reaches the pass's first tick alone, as
+                    // the host feeds it (`World::feed_death_game`).
+                    if i > 0 {
+                        st.death_game.pad = Default::default();
+                    }
+                    arm = (body.director)(&mut st, phase, seats);
+                    if i == 0 {
+                        opened_spawns = Some(arm.pass_spawns);
+                    }
+                    if !arm.hold {
+                        break;
+                    }
+                }
+                if let Some(sp) = opened_spawns {
+                    arm.pass_spawns = sp;
+                }
+                st.countdown.1 = 0;
+                st.opens_pass = true;
                 // The band's own pass on the shadow world, while it walks
                 // the phase retail walks.
                 let shadow_phase = shadow.as_ref().map(|w| w.casting.module_phase);
@@ -829,21 +1037,20 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                             act.battle.render_color = word;
                         }
                     }
-                    w.clock.display_frames += 1;
+                    w.clock.display_frames += u64::from(step);
                     // Retail's `rand()` stream as this pass opens on it, so a
                     // rolled status lands on the seat retail's roll lands.
                     w.rng_state = stream.get();
-                    // The band's after-pass seam (`World::caster_stages`):
-                    // Glare's roll on the pass that counts its arm 2 out.
-                    if let Some(run) = w.run_cast_module_code(body.action, phase)
-                        && run.phase != phase
-                    {
-                        w.drive_fold_glare_on_its_arm(run.prot_entry, body.action, run.phase);
-                    }
+                    // The band's pass (`0x70`), its ticks as the engine runs
+                    // them at the pass's step (`World::module_pass`), with
+                    // the after-pass seam (`World::caster_stages`): Glare's
+                    // roll on the pass that counts its arm 2 out.
+                    w.drive_capture_module_pass(body.action, step);
                 }
                 let ctx_before = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
                 // The two seats as the pass opens, for Death Game's result.
                 let before = [ca, va_].map(|a| crate::cast_view::read_actor(&mut cpu.mem, a));
+                let horn_before = (cpu.mem.rd16(va_ + 0x14C), cpu.mem.rd32(va_ + 0x10));
                 // Every seat's tint and render flag as the pass opens, with
                 // what decides which seats a hide or show reaches: HP, Stone.
                 let shown: Vec<(u32, u8, u16, u16)> = (0..8u32)
@@ -857,8 +1064,19 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                         )
                     })
                     .collect();
+                // A seated part that runs out on its own while arms 1 and 2
+                // still hold its handle: every third, on odd rounds.
+                if body.action == 0x6E && (phase == 1 || phase == 2) && round % 2 == 1 {
+                    for (i, &(_, part)) in seated.borrow().iter().enumerate() {
+                        if i % 3 == 2 {
+                            let f = cpu.mem.rd32(part + 0x10);
+                            cpu.mem.wr32(part + 0x10, f | 8);
+                        }
+                    }
+                }
                 shots.borrow_mut().clear();
                 spawn_log.borrow_mut().clear();
+                let stage_before = cpu.mem.rd8(ca + 0x1DA);
                 let stop = cpu.call(body.va, &[]);
                 let c = format!("{c0} pass {pass} arm {phase}");
                 if stop != Stop::Returned {
@@ -1019,6 +1237,84 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 shadow_after = (0..8u32)
                     .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
                     .collect();
+                // Bloody Horns' hit against the port's clamp
+                // (`cast_module_ticks::apply_hit_floor_zero`): the roll, cut
+                // to the victim's HP, onto `+0x10` and off `+0x14C`.
+                if body.entry == 952 && body.va == BLOODY_HORNS {
+                    let (hp, acc) = horn_before;
+                    if cpu.mem.rd32(va_ + 0x10) != acc || cpu.mem.rd16(va_ + 0x14C) != hp {
+                        let mut v = legaia_engine_cast::cast_module_ticks::CastActorState {
+                            hp,
+                            hp_bar_delta: acc as i32,
+                            ..Default::default()
+                        };
+                        legaia_engine_cast::cast_module_ticks::apply_hit_floor_zero(
+                            &mut v,
+                            horn_roll.get() as i32,
+                        );
+                        let got = (cpu.mem.rd16(va_ + 0x14C), cpu.mem.rd32(va_ + 0x10));
+                        if got != (v.hp, v.hp_bar_delta as u32) {
+                            failures.push(format!(
+                                "{c}: horn hit hp/+0x10 retail {got:?} port {:?}",
+                                (v.hp, v.hp_bar_delta as u32)
+                            ));
+                        }
+                        horn_hits += 1;
+                        horn_clamps += usize::from(horn_roll.get() > u32::from(hp));
+                    }
+                }
+                // That store against the director's caster write.
+                if body.action == 0x6F && phase == 3 {
+                    let staged = cpu.mem.rd8(ca + 0x1DA);
+                    let port = arm.caster_write.stage.unwrap_or(stage_before);
+                    if staged != port {
+                        failures.push(format!(
+                            "{c}: caster stage retail {staged:#x} port {port:#x}"
+                        ));
+                    }
+                    spray_clears += usize::from(arm.caster_write.stage == Some(0));
+                }
+                // Kiss of Death's arm 2 leaving: every part of a record the
+                // port halts on the arm stopped (`+0x10 & 8`), the rest not.
+                if body.action == 0x6E && phase == 2 && after != phase {
+                    let halts = cam::capture_arm_halts_records(body.entry, phase);
+                    for &(record, part) in seated.borrow().iter() {
+                        let got = cpu.mem.rd32(part + 0x10) & 8 != 0;
+                        if got != halts.contains(&record) {
+                            failures.push(format!(
+                                "{c}: part {part:#x} of record {record:#x} stopped retail {got} port {}",
+                                !got
+                            ));
+                        }
+                        kiss_halts += 1;
+                    }
+                }
+                // Glare's Stone on the pass that leaves arm 2: the queued
+                // action it cancels and the Item it refunds, against the
+                // shadow's (`World::stone_cancels_queued_action`).
+                if body.action == 0x3C
+                    && phase == 2
+                    && after != phase
+                    && let Some(w) = shadow.as_ref().filter(|_| shadow_live)
+                {
+                    let called = refunds.borrow_mut().drain(..).collect::<Vec<_>>();
+                    let mut bag: Vec<(u32, u32)> = w
+                        .party
+                        .inventory
+                        .iter()
+                        .filter(|&(_, &n)| n > 0)
+                        .map(|(&id, &n)| (u32::from(id), u32::from(n)))
+                        .collect();
+                    bag.sort_unstable();
+                    let got = (called, cpu.mem.rd8(va_ + 0x1DE));
+                    let port = (bag, w.actors[victim as usize].battle.action_category);
+                    if got != port {
+                        failures.push(format!(
+                            "{c}: Stone's cancel and refund retail {got:x?} port {port:x?}"
+                        ));
+                    }
+                    glare_rolls += 1;
+                }
                 // Terror Scream's turn steal on the pass that leaves arm 3,
                 // against `terror_scream_tick`.
                 if body.action == 0x70 && phase == 3 && after != phase {
@@ -1206,6 +1502,19 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                                 .any(|(b, m)| u32::from(m - b.hp) < (u32::from(m) + 3) >> 2);
                     }
                 }
+                // The band's own settle hold on the arm (`t::gated_hit_arm`,
+                // `World::run_cast_module_code`), beside the director's.
+                let band_settle = t::gated_hit_arm(body.entry, Some(body.va))
+                    .is_some_and(|(_, at, _)| at == phase)
+                    && !st.victim_settled;
+                if victim_settle == Some(phase)
+                    && !arm.hold
+                    && !band_settle
+                    && busy
+                    && after == phase
+                {
+                    failures.push(format!("{c}: port passes the victim settle, retail holds"));
+                }
                 if water_hazard && phase == 3 && !arm.hold && after == phase {
                     failures.push(format!("{c}: port passes, retail holds"));
                 }
@@ -1243,6 +1552,12 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     eprintln!("buff passes compared {buffs}, seat-write passes {seat_passes}");
     assert!(seat_passes > 100, "seat-write passes {seat_passes}");
     assert!(steals >= 12, "Terror Scream steals compared {steals}");
+    assert!(glare_rolls >= 6, "Glare Stone rolls compared {glare_rolls}");
+    assert!(kiss_halts >= 6, "Kiss of Death parts compared {kiss_halts}");
+    assert!(
+        spray_clears >= 3,
+        "Melt Spray stage clears compared {spray_clears}"
+    );
     eprintln!(
         "band shadow: {shadow_passes} passes compared, {shadow_diverged} casts left retail's phase walk, {} mismatches",
         shadow_failures.len()
@@ -1262,9 +1577,15 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         spawn_failures[..spawn_failures.len().min(40)].join("\n")
     );
     eprintln!("band shadow: {status_marks} seat passes with a status bit set compared");
-    assert!(status_marks >= 1000, "status marks compared {status_marks}");
+    eprintln!("Bloody Horns: {horn_hits} hits compared, {horn_clamps} clamped to the victim's HP");
     assert!(
-        shadow_passes >= 150_000,
+        horn_clamps >= 2 && horn_hits > horn_clamps,
+        "horn hits {horn_hits} clamps {horn_clamps}"
+    );
+    assert!(status_marks >= 1000, "status marks compared {status_marks}");
+    // Half the rounds run at a step of 2 to 4, whose casts take fewer passes.
+    assert!(
+        shadow_passes >= 110_000,
         "band shadow passes {shadow_passes}"
     );
     assert!(
@@ -1277,6 +1598,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     assert!(
         results >= 4 && heal_capped,
         "Death Game results compared {results}, a heal capped by the missing HP {heal_capped}"
+    );
+    assert!(
+        victim_settle_holds > 10,
+        "Kiss of Death's and Melt Spray's victim settles held {victim_settle_holds} passes"
     );
     assert!(
         unsettled_holds > 10,
@@ -1344,6 +1669,11 @@ const SPAWN_PART: u32 = 0x8002_1B04;
 const PARTS: u32 = 0x8016_0000;
 /// The bag's find-or-insert `FUN_800421D4`, which a turn steal refunds through.
 const BAG_INSERT: u32 = 0x8004_21D4;
+/// Zora, the monster Glare's body forks on (`0x8007BD0C[seat - 3] == 0xA9`).
+const GLARE_ZORA: u8 = 0xA9;
+/// The character records (`0x80084140 + (id - 1) * 0x414`).
+const CHAR_RECORDS: u32 = 0x8008_4140;
+const CHAR_STRIDE: u32 = 0x414;
 /// The monster-record pointer table and the records the buff bodies read.
 const RECORDS: u32 = 0x801C_9348;
 const MONSTER_RECORDS: u32 = 0x8017_0000;
@@ -1596,4 +1926,173 @@ fn terror_scream_casters_all_sit_in_a_framed_band() {
     for id in [0x7Du8, 0x7E, 0x28, 0x7F, 0x85] {
         assert!(seated.contains(&id), "{id:#x} in no formation");
     }
+}
+
+/// `FUN_80050BB8`, the pairwise separation the walk-in's arrival runs
+/// thirty-two times.
+const SEPARATION: u32 = 0x8005_0BB8;
+
+/// The walk-in arms of every body whose walk the host's approach leg stands
+/// in for (`cam::capture_approach_follows`), against that leg: while the range
+/// poll `FUN_8004E2F0` answers "out of reach" the arm holds with the caster on
+/// the walk clip (`+0x1DA = 1`, e.g. `0x801F72C8` in PROT 0952) as the leg
+/// holds the module with the caster on `CAPTURE_WALK_ENTRY`; on the pass it
+/// answers "in reach" the arm runs `FUN_80050BB8(caster, victim)` thirty-two
+/// times, live here, and leaves the arm, and the caster's live pair stands
+/// where the leg's arrival pushes put it (`World::settle_capture_approach`).
+#[test]
+fn the_walk_in_arrives_and_stands_off_as_the_hosts_leg_does() {
+    differential!(
+        prot(950, ROLLING_FLARE),
+        prot(951, CHAOS_FLARE),
+        prot(951, SCYTHE_WIND),
+        prot(952, ASTRAL_SLASH),
+        prot(952, BLOODY_HORNS),
+        prot(955, MELT_SPRAY),
+        prot(962, BLADE_BREATH),
+        prot(962, THUNDER_NEEDLE),
+        prot(962, GIGATON_PRESS)
+    );
+    let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5741_4C4B);
+    let mut failures = Vec::new();
+    let (mut holds, mut arrivals, mut pushed) = (0usize, 0usize, 0usize);
+    let mut walked = std::collections::BTreeSet::new();
+    for body in bodies() {
+        if !cam::capture_approach_follows(body.entry, Some(body.va)) {
+            continue;
+        }
+        walked.insert((body.entry, body.va));
+        let module = disc.read_entry(body.entry as usize).expect("module");
+        for round in 0..24usize {
+            let mut cpu = scus_cpu().expect("SCUS");
+            cpu.mem
+                .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+            cpu.mem.wr32(CTX_PTR, CTX);
+            cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+            cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+            cpu.hook(BEARING, |r, _| {
+                let a = |i: usize| r.r[A0 + i] as i16;
+                r.r[V0] = u32::from(bearing_12bit_approx(a(0), a(1), a(2), a(3)));
+            });
+            for target in jal_targets(&module) {
+                if ![AIM, RANGE, BUILDER, BEARING, SEPARATION].contains(&target) {
+                    cpu.stub(target, 0);
+                }
+            }
+            // The polls left to answer "out of reach", and what each pass's
+            // polls answered.
+            let out = Rc::new(std::cell::Cell::new((round % 4) as u32));
+            let answered = Rc::new(RefCell::new(Vec::<bool>::new()));
+            {
+                let (out, answered) = (out.clone(), answered.clone());
+                cpu.hook(RANGE, move |r, _| {
+                    let far = out.get() > 0;
+                    out.set(out.get().saturating_sub(1));
+                    answered.borrow_mut().push(far);
+                    r.r[V0] = u32::from(far);
+                });
+            }
+            let (caster, victim) = seed(&mut cpu, &mut rng, &module, &body, 0);
+            let (ca, va_) = (ACTOR + caster * STRIDE, ACTOR + victim * STRIDE);
+            // Most rounds stand the caster's body pair on the victim's, inside
+            // the two radii's sixth, so the pushes run.
+            if round % 3 != 2 {
+                for o in [0x3Cu32, 0x40] {
+                    let near = cpu.mem.rd16(va_ + o).wrapping_add(rng.below(0x30) as u16);
+                    cpu.mem.wr16(ca + o, near.wrapping_sub(0x18));
+                }
+            }
+            let mut held_at = None;
+            for pass in 0..12 {
+                let phase = cpu.mem.rd8(CTX + 0x279);
+                let c = format!(
+                    "PROT {:04} body {:#x} round {round} pass {pass} arm {phase}",
+                    body.entry, body.va
+                );
+                // The leg's arrival, off the seats as this pass opens on them.
+                let port = shadow_world(&mut cpu, &body, caster, victim, 1).map(|mut w| {
+                    for s in 0..8u32 {
+                        let a = ACTOR + s * STRIDE;
+                        let node = cpu.mem.rd32(a + 0x22C);
+                        let act = &mut w.actors[s as usize];
+                        act.battle.seat =
+                            Some((cpu.mem.rd16(a + 0x3C) as i16, cpu.mem.rd16(a + 0x40) as i16));
+                        act.battle.render_radius = Some(cpu.mem.rd16(node + 0x58) as i16);
+                    }
+                    let settled =
+                        w.drive_settle_capture_approach(body.action, caster as u8, victim as u8);
+                    let m = &w.actors[caster as usize].move_state;
+                    (settled, m.world_x, m.world_z)
+                });
+                let pair = (cpu.mem.rd16(ca + 0x34), cpu.mem.rd16(ca + 0x38));
+                answered.borrow_mut().clear();
+                // The walk clip the first out-of-reach pass stages stays on
+                // the caster through the arm's holds.
+                if pass == 0 {
+                    cpu.mem.wr8(ca + 0x1DA, 0);
+                }
+                let stop = cpu.call(body.va, &[]);
+                if !matches!(stop, Stop::Returned) {
+                    failures.push(format!("{c}: {stop:?}"));
+                    break;
+                }
+                let after = cpu.mem.rd8(CTX + 0x279);
+                let polls = answered.borrow().clone();
+                let Some(&far) = polls.last() else {
+                    // An arm ahead of the walk, or one past it.
+                    if held_at.is_some() || arrivals > 0 && after > 1 {
+                        break;
+                    }
+                    continue;
+                };
+                if far {
+                    holds += 1;
+                    if cpu.mem.rd8(ca + 0x1DA) != 1 {
+                        failures.push(format!(
+                            "{c}: out of reach, caster stage {:#x}, the leg's walk clip",
+                            cpu.mem.rd8(ca + 0x1DA)
+                        ));
+                    }
+                    if held_at.is_some_and(|h| h != after) {
+                        failures.push(format!("{c}: out of reach, retail moved to {after}"));
+                    }
+                    held_at = Some(after);
+                    continue;
+                }
+                arrivals += 1;
+                if held_at.is_some_and(|h| after <= h) {
+                    failures.push(format!("{c}: in reach, retail held on {after}"));
+                }
+                let got = (
+                    cpu.mem.rd16(ca + 0x34) as i16,
+                    cpu.mem.rd16(ca + 0x38) as i16,
+                );
+                pushed += usize::from(got != (pair.0 as i16, pair.1 as i16));
+                match port {
+                    Some((true, x, z)) if (x, z) == got => {}
+                    other => failures.push(format!(
+                        "{c}: arrival pair retail {got:?} from {:?} port {other:?}",
+                        (pair.0 as i16, pair.1 as i16)
+                    )),
+                }
+                break;
+            }
+        }
+    }
+    eprintln!(
+        "walk-in: {} bodies, {holds} out-of-reach holds, {arrivals} arrivals ({pushed} pushed)",
+        walked.len()
+    );
+    assert!(
+        failures.is_empty(),
+        "{} mismatches:\n{}",
+        failures.len(),
+        failures[..failures.len().min(40)].join("\n")
+    );
+    assert!(walked.len() >= 9, "approach bodies walked {}", walked.len());
+    assert!(holds >= 100 && arrivals >= 150 && pushed >= 60);
 }

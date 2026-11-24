@@ -160,6 +160,15 @@ pub(super) fn play_beats(
             .collect()
     });
     let mut idle: BTreeMap<u8, BTreeSet<u16>> = BTreeMap::new();
+    // Walk-ons whose walk stalled on the way, with the flags they stalled
+    // under ([`pad_props`] only): re-armed once a later beat moves a flag,
+    // since a gate stone that clears walls raises one. `korb3`'s maze holds
+    // the walk to P2[2] (the band to `kor` that raises `0x41D`, behind which
+    // `map03` P2[11] raises the `0x403` that stands Koin's residents up)
+    // until the stones' gates line up, and walked props leave the maze in
+    // another order than placed ones; played once, the band was not tried
+    // again, and the run left for `korb2` and stopped in Uru Mais.
+    let mut stalled_walks: BTreeMap<u8, BTreeSet<u16>> = BTreeMap::new();
     let mut rearmed: BTreeSet<u8> = BTreeSet::new();
     // The continuous hand stays while a round still gains: a staged talk
     // (`cave01` P1[2], Terra's seven-stage `0x158`..`0x15E` chain) plays one
@@ -191,6 +200,13 @@ pub(super) fn play_beats(
             walked.remove(&rec);
             rearmed.insert(rec);
         }
+        stalled_walks.retain(|rec, f| {
+            if *f == round_start {
+                return true;
+            }
+            walked.remove(rec);
+            false
+        });
         // A prop examined to no effect is examined again once a flag its
         // record tests has moved (the gate whose key a later prop gave).
         let dry_stale: Vec<(u8, u8)> = dry_props
@@ -797,6 +813,9 @@ pub(super) fn play_beats(
             if matches!(&r, Run::Parked(e) if e.contains("no walkable path")) {
                 walked.remove(&rec);
             }
+            if pad_props() && matches!(&r, Run::Parked(e) if e.contains("pad walk stalled")) {
+                stalled_walks.insert(rec, flags_of_world(session));
+            }
             rearmed.remove(&rec);
             if matches!(r, Run::Released) && flags_of_world(session) == f0 {
                 idle.insert(rec, f0.clone());
@@ -887,6 +906,7 @@ pub(super) fn play_beats(
                 }
                 continue;
             }
+            shortcut("door_object_seat");
             session.host.world.props.active_walk_touch = None;
             session
                 .host
@@ -1551,13 +1571,56 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
             .is_some_and(|id| id.prop_anchor == Some(anchor))
     };
     let back = player_xz(session);
-    for (dx, dz) in [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)] {
+    // The pad hand walks to a side tile and presses in from there; only when
+    // its walk reaches none of them does it fall back to placing the player
+    // ([`shortcut`] `touch_seat`). Both passes keep the seated hand's order
+    // of sides, as [`interact_at`] does.
+    let sides = [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)];
+    let attempts: Vec<((i16, i16), bool)> = if pad_props() {
+        sides
+            .into_iter()
+            .map(|d| (d, true))
+            .chain(sides.into_iter().map(|d| (d, false)))
+            .collect()
+    } else {
+        sides.into_iter().map(|d| (d, false)).collect()
+    };
+    let mut pad_reached = false;
+    let mut far = false;
+    for ((dx, dz), try_pad) in attempts {
         let (sx, sz) = (tx + dx, tz + dz);
         if !(0..128).contains(&sx) || !(0..128).contains(&sz) {
             continue;
         }
+        if !try_pad && pad_hand() && (pad_reached || shortcuts_refused() || !walking(session)) {
+            break;
+        }
+        if try_pad && !prop_seat_in_walk_reach(session, (sx, sz)) {
+            far = true;
+            continue;
+        }
         session.host_pad(0);
-        session.host.world.seat_player_at_tile(sx as u8, sz as u8);
+        let by_pad = try_pad
+            && match pad_walk(session, (sx, sz), &pad_avoid(session, Some((sx, sz))), 0) {
+                Ok(Walk::Entered(s)) => return Run::Entered(s),
+                Ok(Walk::Arrived) => walking(session),
+                Err(e) if e.contains("party wiped") => return Run::Battle(e),
+                Err(e) => {
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        let e: String = e.chars().take(160).collect();
+                        eprintln!("      [touch] side {:?} of {anchor:?}: {e}", (sx, sz));
+                    }
+                    false
+                }
+            };
+        if try_pad && !by_pad {
+            continue;
+        }
+        pad_reached |= by_pad;
+        if !by_pad {
+            session.host.world.seat_player_at_tile(sx as u8, sz as u8);
+            shortcut(if far { "touch_far" } else { "touch_seat" });
+        }
         let mut started = false;
         for _ in 0..40 {
             let pad = pad_for_step(session, -dx, -dz);
@@ -1584,6 +1647,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
             // touched from (109, 117)), and the walk on starts where the
             // walk to it ended.
             if matches!(r, Run::Released)
+                && !by_pad
                 && walking(session)
                 && tile_of(player_xz(session).0, player_xz(session).1) == (sx, sz)
             {
@@ -1756,13 +1820,67 @@ fn inside_box_tile(session: &NativeSession, t: (u8, u8)) -> bool {
 /// while the player's own tile stays `t`, until a facing's probe reaches it,
 /// then press Cross and page what opens. `None` when no facing reaches it
 /// from inside the box.
+///
+/// The pad hand ([`pad_props`]) leans and steps back on the pad alone first.
+/// A box whose answer needs a facing from a band a few units wide
+/// (`doman`'s intercom, z 10490..=10495) can defeat it: the hand then plays
+/// the seated way from where it started - teleported back, the facing set
+/// by hand - and counts it (`box_face`, `restore_xz`). Without that fallback
+/// the intercom kept its password, Dr. Usha's door stayed shut, and every
+/// stream stopped in Uru Mais with Gala's cutscene (`uru` P2[28], gated on
+/// the `0x379` P1[15] raises) never spawned.
 pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) -> Option<Run> {
+    if !pad_props() {
+        return talk_from_box_as(session, slot, t, false);
+    }
+    let start = player_xz(session);
+    let before = flags_of_world(session);
+    let r = talk_from_box_as(session, slot, t, true);
+    if shortcuts_refused() || !walking(session) {
+        return r;
+    }
+    match r {
+        Some(Run::Released) if flags_of_world(session) != before => r,
+        Some(Run::Released) | None => {
+            restore_player_xz(session, start);
+            talk_from_box_as(session, slot, t, false).or(r)
+        }
+        other => other,
+    }
+}
+
+fn talk_from_box_as(
+    session: &mut NativeSession,
+    slot: u8,
+    t: (u8, u8),
+    by_pad: bool,
+) -> Option<Run> {
     let inside = |s: &NativeSession| inside_box_tile(s, t);
+    // The seated hand turns the player to each sector until the probe lands;
+    // the pad hand reads the probe as the lean left it.
     let reaches = |s: &mut NativeSession| {
+        if by_pad {
+            return s.host.world.field_interact_probe_slot() == Some(slot);
+        }
         (0..8u8).any(|d| {
             s.host.world.face_player_sector(d);
             s.host.world.field_interact_probe_slot() == Some(slot)
         })
+    };
+    // A lean that left the box goes back into it: the pad hand steps back
+    // toward where it stood; only a step that does not get there falls back
+    // to the placement.
+    let step_back = |s: &mut NativeSession, back: (i16, i16)| -> Option<String> {
+        if by_pad {
+            if let Some(scene) = pad_lean(s, move |_| Some(back), 12, |s| inside(s)) {
+                return Some(scene);
+            }
+            if inside(s) || shortcuts_refused() {
+                return None;
+            }
+        }
+        restore_player_xz(s, back);
+        None
     };
     // A lean whose next step leaves the box backs off one step at the other
     // speed and leans again. The walk's step is 8 a frame and the run's 12
@@ -1791,7 +1909,9 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
         }
         session.host_pad(0);
         if !inside(session) {
-            restore_player_xz(session, back);
+            if let Some(scene) = step_back(session, back) {
+                return Some(Run::Entered(scene));
+            }
             found = reaches(session);
             if found || backoffs >= 3 {
                 break;
@@ -1806,7 +1926,9 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
             }
             session.host_pad(0);
             if !inside(session) {
-                restore_player_xz(session, back);
+                if let Some(scene) = step_back(session, back) {
+                    return Some(Run::Entered(scene));
+                }
                 break;
             }
         }
@@ -1814,6 +1936,9 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
     }
     if !found {
         return None;
+    }
+    if !by_pad {
+        shortcut("box_face");
     }
     match press_edge(session, PadButton::Cross.mask()) {
         Ok(Some(name)) => return Some(Run::Entered(name)),

@@ -1144,6 +1144,7 @@ pub(super) fn run_segment(
                 .ok()
                 .and_then(|s| s.trim().parse().ok())
             {
+                // Harness (deal): the seated pass's stream, no player state.
                 session.host.world.rng_state = s;
             }
             // A reload other than the guard retry plays another hand (see
@@ -1273,6 +1274,7 @@ pub(super) fn run_segment(
                 // depending on one stream's luck (see "A pad wipe that moves
                 // with an unrelated change" in the ladder docs).
                 if let Some(s) = rng_seed_override() {
+                    // Harness (deal): the seed set's stream, no player state.
                     session.host.world.rng_state = s;
                 }
                 // A reload other than the guard retry plays another hand:

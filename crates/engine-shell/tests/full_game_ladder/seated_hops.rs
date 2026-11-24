@@ -169,6 +169,7 @@ pub(super) fn step_onto(session: &mut NativeSession, tile: (u8, u8)) {
         } else {
             (tile.0 + 1, tile.1)
         });
+    shortcut("hop_seat");
     session.host.world.seat_player_at_tile(off.0, off.1);
     let _ = session.tick();
     session.host.world.seat_player_at_tile(tile.0, tile.1);

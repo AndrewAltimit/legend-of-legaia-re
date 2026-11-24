@@ -89,6 +89,11 @@ pub struct PageToggles {
     /// (`legaia_engine_core::world::PLAY_FIELD_CD_TIMING`; the native
     /// `LEGAIA_FIELD_CD_TIMING=pcsx-redux`). Off by default.
     pub field_pcsx_cd_timing: bool,
+    /// A voiced battle frame read on PCSX-Redux's CD response time rather
+    /// than the play default, a console's
+    /// (`legaia_engine_core::world::PLAY_BATTLE_CD_TIMING`; the native
+    /// `LEGAIA_BATTLE_CD_TIMING=pcsx-redux`). Off by default.
+    pub battle_pcsx_cd_timing: bool,
     /// Retail's 5-bit texture modulation on the overlay's tinted atlases
     /// (the native `Renderer::set_ui_psx_tint`). On by default: it is retail
     /// behaviour.
@@ -119,6 +124,7 @@ impl Default for PageToggles {
             battle_frame_cadence: legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE,
             battle_memo_verify: false,
             field_pcsx_cd_timing: false,
+            battle_pcsx_cd_timing: false,
             arts_saved_list: false,
             ui_psx_tint: true,
             psx_render: false,
@@ -182,11 +188,16 @@ impl LegaiaRuntime {
         if let Some(host) = self.scene_host.host_mut() {
             switches.apply(&mut host.world.toggles);
             host.world.toggles.battle_memo_verify = t.battle_memo_verify;
-            host.world.toggles.field_cd_timing = if t.field_pcsx_cd_timing {
-                legaia_engine_core::world::CdTiming::PcsxRedux
-            } else {
-                legaia_engine_core::world::PLAY_FIELD_CD_TIMING
-            };
+            // The players' CD timing, a console's (`play_cd_timing`), with
+            // the page's PCSX-Redux pacing boxes over each half.
+            let mut timing = legaia_engine_core::world::play_cd_timing();
+            if t.field_pcsx_cd_timing {
+                timing.field = legaia_engine_core::world::CdTiming::PcsxRedux;
+            }
+            if t.battle_pcsx_cd_timing {
+                timing.battle = legaia_engine_core::world::CdTiming::PcsxRedux;
+            }
+            timing.apply(&mut host.world.toggles);
         }
         self.persist_page_toggles();
     }
@@ -273,6 +284,13 @@ impl LegaiaRuntime {
     /// default, a console's (the native `LEGAIA_FIELD_CD_TIMING=pcsx-redux`).
     pub fn set_field_pcsx_cd_timing(&mut self, on: bool) {
         self.page_toggles.field_pcsx_cd_timing = on;
+        self.apply_page_toggles();
+    }
+
+    /// Voiced battle frames on PCSX-Redux's CD pace, slower than the play
+    /// default, a console's (the native `LEGAIA_BATTLE_CD_TIMING=pcsx-redux`).
+    pub fn set_battle_pcsx_cd_timing(&mut self, on: bool) {
+        self.page_toggles.battle_pcsx_cd_timing = on;
         self.apply_page_toggles();
     }
 
@@ -379,6 +397,19 @@ impl LegaiaRuntime {
     /// Whether [`Self::set_hp_readout_guard`] is on.
     pub fn hp_readout_guard(&self) -> bool {
         self.page_toggles.tweaks.hp_readout_guard
+    }
+
+    /// The Stoned-seat rescale, the native `--no-stone-scale-fix` inverted
+    /// (on by default): Iota's exit stands a Stoned monster back at full
+    /// size, where retail leaves it shrunken. Retail mode holds it off.
+    pub fn set_stone_scale_fix(&mut self, on: bool) {
+        self.page_toggles.tweaks.stone_scale_fix = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_stone_scale_fix`] is on.
+    pub fn stone_scale_fix(&self) -> bool {
+        self.page_toggles.tweaks.stone_scale_fix
     }
 
     /// The heal numerals, the native `--no-heal-numerals` inverted (on by
@@ -745,6 +776,7 @@ impl LegaiaRuntime {
                     battle_frame_cadence: session.battle_frame_cadence,
                     battle_memo_verify: session.battle_memo_verify,
                     field_pcsx_cd_timing: session.field_pcsx_cd_timing,
+                    battle_pcsx_cd_timing: session.battle_pcsx_cd_timing,
                     ui_psx_tint: session.ui_psx_tint,
                     ..PageToggles::from_persisted(&p)
                 };
@@ -1020,6 +1052,7 @@ mod tests {
             "set_tetsu_spar_fix",
             "set_jewel_fix",
             "set_hp_readout_guard",
+            "set_stone_scale_fix",
             "set_heal_numerals",
             "set_bonus_drop",
             "set_save_anywhere",

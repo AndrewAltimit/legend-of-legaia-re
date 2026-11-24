@@ -94,7 +94,8 @@ const SPOON_EYE_SPAWNS: [ModuleSpawn; 20] = {
 ///
 /// PORT: overlay_summon_spoon_0919_801f69d8 (PROT 0919; the camera arms, captions and the spawns of arms 2 and 7)
 pub fn spoon_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
-    let word_ran = st.countdown.0 > 0;
+    let word_ran = st.pass_word() > 0;
+    let word_before = st.pass_word();
     let hold = hold_step(SPOON, st, phase);
     let c = st.creature_live.or(st.creature).unwrap_or_default();
     let z = |n: i32| Some(drift(0, 0, 0, 0, n));
@@ -167,7 +168,9 @@ pub fn spoon_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         }
         8 => {
             let (focus, extent) = group_aim(st);
-            let yaw = (SPEED_SCALAR * 0x180 - st.countdown.0 + 0x800 - i32::from(c.facing)) & 0xFFF;
+            // The yaw reads the word as the pass opens (`lhu v1,-0x71a4(s0)`
+            // at `0x801F84E0`), ahead of the pass's drain (`0x801F8520`).
+            let yaw = (SPEED_SCALAR * 0x180 - word_before + 0x800 - i32::from(c.facing)) & 0xFFF;
             shot(
                 [0x80, yaw as i16],
                 [0, 0x200, extent.wrapping_mul(6)],

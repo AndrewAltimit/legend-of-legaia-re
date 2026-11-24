@@ -198,14 +198,9 @@ pub fn scythe_wind_camera(
             // again behind it while it is still positive
             // (`0x801F80B8..0x801F80E4`).
             let body = st.victim_body.unwrap_or(v);
-            st.countdown.drain();
-            let cd = st.countdown.0;
-            arm.shot = Some(sweep(focus_on(body), c.facing, cd, 0x900, 0xE00));
-            if (cd > 0 && st.countdown.drain_above(0)) || !st.victim_settled {
-                arm.hold = true;
-            } else {
-                st.countdown.drain_rest(super::MODULE_DRAIN_PER_TICK);
-            }
+            let (aim, held) = st.twice_drained_pass();
+            arm.shot = Some(sweep(focus_on(body), c.facing, aim, 0x900, 0xE00));
+            arm.hold = held || !st.victim_settled;
         }
         _ => {}
     }

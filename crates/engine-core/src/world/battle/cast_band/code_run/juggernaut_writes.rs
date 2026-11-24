@@ -100,11 +100,17 @@ impl World {
         }
         self.juggernaut_shake();
         self.juggernaut_ride_lead();
-        // Arm 19 walks the creature every pass, ahead of its gate.
+        // Arm 19 walks the creature every pass, ahead of its gate, `3` a
+        // vsync: a tick that hands over walks its pass's owed ticks too.
+        let ticks = 1 + if passed {
+            i16::from(self.casting.module_cam.countdown.1)
+        } else {
+            0
+        };
         if phase == 19
             && let Some(a) = creature.and_then(|c| self.actors.get_mut(c))
         {
-            a.move_state.world_z = a.move_state.world_z.wrapping_sub(3);
+            a.move_state.world_z = a.move_state.world_z.wrapping_sub(3 * ticks);
         }
         // The creature's clips and rates (`s3 = actor_table[7]`): arms 19 and
         // 24 store the playing clip every pass with no restage bump

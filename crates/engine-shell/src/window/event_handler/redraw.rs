@@ -33,6 +33,17 @@ impl PlayWindowApp {
         }) {
             return self.screenshot.is_some() && self.tick_no >= t;
         }
+        // `LEGAIA_CAPTURE_GATE_LATE=<n>` (HARNESS): the frame `n` ticks past
+        // the first tick the gate held, whether or not it still holds.
+        if let Some(sc) = self.screenshot.as_ref().filter(|sc| sc.gate_late > 0) {
+            if sc.gate_met_tick.get().is_none() && self.capture_gate_met() {
+                sc.gate_met_tick.set(Some(self.tick_no));
+            }
+            return sc
+                .gate_met_tick
+                .get()
+                .is_some_and(|t| self.tick_no >= t + sc.gate_late);
+        }
         self.capture_gate_met()
     }
 

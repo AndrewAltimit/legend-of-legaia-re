@@ -508,8 +508,8 @@ impl World {
             // A body-paced director's first tick in an arm drifts after the
             // passed arm's shot is armed (below).
             let drift = r.capture_drift.filter(|_| !r.capture_drift_after_shot);
-            self.apply_module_creature_writes(r.prot_entry, r.phase, drift);
-            self.apply_module_seat_motion(r.prot_entry, r.phase);
+            self.apply_module_creature_writes(r.prot_entry, module_arm, r.phase, drift);
+            self.apply_module_seat_motion(r.prot_entry, module_arm, r.phase != module_arm);
         }
         // The module seats its creature itself (Gimard's arm 3); put the
         // engine's creature where it did.
@@ -694,5 +694,30 @@ impl World {
         walked: bool,
     ) -> Option<CastModuleCodeRun> {
         self.summon_module_pass(caster, spell_id, walked)
+    }
+
+    /// One battle frame of the stager as the host's action SM runs it
+    /// (`module_pass` over [`Self::summon_stager_tick`]): `delta` one-vsync
+    /// ticks on the frame cadence. Returns whether the choreography runs on.
+    pub fn drive_summon_stager_frame(&mut self) -> bool {
+        self.module_pass(World::summon_stager_tick)
+    }
+
+    /// One battle frame's call into the module, as the host's stager makes
+    /// it ([`Self::module_pass`] over [`Self::drive_summon_module_pass`]):
+    /// `delta` one-vsync ticks on the frame cadence, stopping on the tick an
+    /// arm hands over. Returns each tick's run, in order.
+    pub fn drive_summon_module_frame(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+        walked: bool,
+    ) -> Vec<Option<CastModuleCodeRun>> {
+        let mut runs = Vec::new();
+        self.module_pass(|w| {
+            runs.push(w.summon_module_pass(caster, spell_id, walked));
+            true
+        });
+        runs
     }
 }

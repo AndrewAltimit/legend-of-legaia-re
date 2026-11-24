@@ -24,15 +24,97 @@ pub(super) trait HostPad {
     fn host_pad(&mut self, pad: u16);
 }
 
+/// `LEGAIA_FGL_WATCH_FLAGS=0x403,...`: print each flip of those system flags
+/// the hand's presses see, with the scene, frame and the pad holder's park
+/// site - how a flag a later gate needs is traced to what lowered it.
+fn watch_flags(session: &NativeSession) {
+    thread_local! {
+        static SEEN: std::cell::RefCell<BTreeMap<u16, bool>> =
+            const { std::cell::RefCell::new(BTreeMap::new()) };
+    }
+    static WATCH: std::sync::OnceLock<Vec<u16>> = std::sync::OnceLock::new();
+    let watch = WATCH.get_or_init(|| {
+        std::env::var("LEGAIA_FGL_WATCH_FLAGS")
+            .map(|v| {
+                v.split(',')
+                    .filter_map(|f| u16::from_str_radix(f.trim().trim_start_matches("0x"), 16).ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    });
+    if watch.is_empty() {
+        return;
+    }
+    let flags = &session.host.world.flags.system_flags;
+    for &f in watch {
+        let on = flags
+            .get(usize::from(f / 8))
+            .is_some_and(|b| b & (0x80 >> (f % 8)) != 0);
+        let was = SEEN.with(|s| s.borrow_mut().insert(f, on));
+        if was.is_some_and(|w| w != on) {
+            eprintln!(
+                "      [watch] 0x{f:03X} -> {} in {} at frame {} ({}, {})",
+                u8::from(on),
+                scene_name(session),
+                session.frames,
+                holder(session),
+                park_site(session)
+            );
+        }
+    }
+}
+
 impl HostPad for NativeSession {
     fn host_pad(&mut self, pad: u16) {
-        let pad = if self.world_holds_field_pad() && !raw_pad() {
+        watch_flags(self);
+        // The opening's intro hand-off (`claim_tick`'s `PrologueSkip`, retail
+        // `FUN_801D1344`): once the opening chain arms it, a Cross edge ends
+        // the opening on both play hosts, whatever holds the field's pad -
+        // the hosts read the raw edge ahead of the neutral-pad rule. The
+        // headless tick never takes it, so the gate does, as the hosts do.
+        //
+        // The hand watches the opening, as a player who wants to see it
+        // does: it presses no Cross while the hand-off is armed, so the
+        // ladder plays the whole chain. `LEGAIA_FGL_SKIP_OPENING=1` presses
+        // through instead, and the first press takes the hosts' skip.
+        let armed = {
+            let w = &self.host.world;
+            w.flags.story_flags & legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG != 0
+                && w.cutscene.opening_chain_active
+        };
+        let pad = if armed && !skip_opening() {
+            pad & !PadButton::Cross.mask()
+        } else {
+            pad
+        };
+        if armed
+            && pad & !self.host.world.input.pad() & PadButton::Cross.mask() != 0
+            && let Some(target) = self.host.world.take_prologue_handoff(true)
+        {
+            shortcut("prologue_skip");
+            if let Err(e) = self.enter_field_live(target, &live_opts(pad_hand())) {
+                panic!("prologue hand-off: enter '{target}' failed: {e:#}");
+            }
+        }
+        // The neutral pad is the field's, in `claim_tick`'s order: the
+        // pause menu and the naming prompt take the tick ahead of it and
+        // read the pad as pressed, on both hosts.
+        let field_owns_tick = self.field_menu.is_none() && !self.host.world.name_entry_active();
+        let pad = if field_owns_tick && self.world_holds_field_pad() && !raw_pad() {
             0
         } else {
+            if !field_owns_tick && self.world_holds_field_pad() && pad != 0 {
+                shortcut("gate_order");
+            }
             pad
         };
         self.host.world.set_pad(pad);
     }
+}
+
+fn skip_opening() -> bool {
+    static SKIP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SKIP.get_or_init(|| std::env::var_os("LEGAIA_FGL_SKIP_OPENING").is_some_and(|v| v != "0"))
 }
 
 fn raw_pad() -> bool {
@@ -52,6 +134,11 @@ pub(super) fn open_session(extracted: &Path) -> NativeSession {
     // record's flag writes, branches and scene changes. `NativeSession` leaves
     // it off; without it a conversation only types its first text segment.
     session.host.world.toggles.use_vm_dialogue = true;
+    // The CD timing players get (console pacing for the field and for
+    // battle), as both play hosts seat it: a ladder on the harness's
+    // PCSX-Redux timing paced voiced beats and fights the way no player sees
+    // them.
+    legaia_engine_session::native::play_cd_timing().apply(&mut session.host.world.toggles);
     // NPC bodies are solid, as both play hosts have them: a body stops the
     // pad tier's walk as it stops a player, and a story gate that is a body
     // (`kor`'s guard dogs, `deene`'s P1[4] / P1[5]) holds.
@@ -72,6 +159,18 @@ pub(super) fn open_session(extracted: &Path) -> NativeSession {
     // (`World::screen_edge`). The field keeps the tier's pipeline. A harness
     // seat.
     session.host.world.input.set_screen_immediate(true);
+    // The options players play on: both play hosts push their options onto
+    // the world every tick (`BootSession::apply_option_knobs`), and their
+    // defaults turn precise movement on. The hand takes the same push here
+    // (and again in every session a reload opens). `LEGAIA_FGL_RETAIL_DECODE=1`
+    // keeps retail's quantised direction decode instead; `LEGAIA_FGL_PIN_RETAIL`
+    // pins the options' retail values too.
+    let mut opts = legaia_engine_menus::options::OptionsState::default();
+    if std::env::var_os("LEGAIA_FGL_PIN_RETAIL").is_some_and(|v| v != "0") {
+        opts.pin_retail();
+    }
+    let retail_decode = std::env::var_os("LEGAIA_FGL_RETAIL_DECODE").is_some_and(|v| v != "0");
+    session.apply_option_knobs(&opts, retail_decode.then_some(false));
     // `LEGAIA_BATTLE_MEMO_VERIFY=1`: every hit of the battle edge's memos is
     // rebuilt behind and compared.
     session.host.world.toggles.battle_memo_verify =
@@ -120,6 +219,8 @@ pub(super) fn seed(
     // The save's options words (Field Move among them) come in with it, as
     // a card load restores them: `jouind`'s timed switch pair is paced for
     // the anchor's player, who ran.
+    // Harness (seed): a segment starts from retail's save at its milestone;
+    // part C seeds only its New Game this way.
     session.host.world.load_full(sf.clone());
     if let Some((x, z)) = a.seat {
         session.host.set_entry_seat(x, z);
@@ -259,16 +360,20 @@ pub(super) fn answer_notice(session: &mut NativeSession) -> bool {
     answer_notice_on(
         session,
         |s| &mut s.host.world,
+        |s, pad| s.host_pad(pad),
         |s| {
             let _ = s.tick();
         },
     )
 }
 
-/// [`answer_notice`] over anything that owns a world and can tick it.
+/// [`answer_notice`] over anything that owns a world and can tick it. Each
+/// press goes through `pad`: the session's is the hosts' pad gate
+/// ([`HostPad::host_pad`]), as every other press the hand makes.
 pub(super) fn answer_notice_on<S>(
     s: &mut S,
     world: impl Fn(&mut S) -> &mut legaia_engine_core::world::World,
+    pad: impl Fn(&mut S, u16),
     mut tick: impl FnMut(&mut S),
 ) -> bool {
     if world(s).locomotion.incense_notice.is_none() {
@@ -282,14 +387,17 @@ pub(super) fn answer_notice_on<S>(
             break;
         }
         // The handler reads an edge: a released frame, then the press.
-        w.set_pad(if i % 2 == 0 {
-            0
-        } else {
-            PadButton::Cross.mask()
-        });
+        pad(
+            s,
+            if i % 2 == 0 {
+                0
+            } else {
+                PadButton::Cross.mask()
+            },
+        );
         tick(s);
     }
-    world(s).set_pad(0);
+    pad(s, 0);
     true
 }
 
@@ -414,6 +522,7 @@ fn the_hand_answers_the_incense_notice() {
         assert!(answer_notice_on(
             &mut w,
             |w| w,
+            |w, pad| w.set_pad(pad),
             |w| {
                 ticks += 1;
                 let _ = w.tick();
@@ -432,6 +541,11 @@ fn no_notice_costs_no_tick() {
     let mut w = world_under_the_notice();
     w.locomotion.incense_notice = None;
     let mut ticks = 0;
-    assert!(!answer_notice_on(&mut w, |w| w, |_| ticks += 1));
+    assert!(!answer_notice_on(
+        &mut w,
+        |w| w,
+        |w, pad| w.set_pad(pad),
+        |_| ticks += 1
+    ));
     assert_eq!(ticks, 0);
 }

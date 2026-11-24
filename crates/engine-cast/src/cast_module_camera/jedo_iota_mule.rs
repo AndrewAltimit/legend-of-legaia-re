@@ -45,8 +45,15 @@ pub const JEDO_LAST_ARM: u8 = 31;
 /// The creature's advance through arms 5 and 6: `+0x38 += step << 2` on every
 /// pass (`0x801F70A0`, `0x801F7214`), from `-0x800` to `-0x400` over the two arms.
 fn jedo_creature_advance(st: &mut ModuleCamState) {
+    jedo_creature_advance_by(st, 1);
+}
+
+/// [`jedo_creature_advance`] for `ticks` one-vsync ticks: a tick that hands
+/// over advances for the ticks of its pass still owed too, as retail's one
+/// `4 * delta` store a pass does.
+fn jedo_creature_advance_by(st: &mut ModuleCamState, ticks: i32) {
     if let Some(c) = st.creature.as_mut() {
-        c.z += (4 * D) as i16;
+        c.z += (4 * D * ticks) as i16;
     }
 }
 
@@ -116,6 +123,7 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if gated(st, 0x80) {
                 return held(d);
             }
+            jedo_creature_advance_by(st, i32::from(st.countdown.1));
             with_drift(cut([0x100, 0x800], [0, 0x1000, 0x1000], at6, 1), d)
         }
         6 => {
@@ -124,6 +132,7 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if gated(st, 0xC0) {
                 return held(d);
             }
+            jedo_creature_advance_by(st, i32::from(st.countdown.1));
             with_drift(ArmDirection::PASS, d)
         }
         7 => {
@@ -341,7 +350,7 @@ pub const IOTA_HIT_ARM: u8 = 10;
 pub fn iota_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     // `if (cd > 0) { cd -= p; <drift>; busy }`.
     let drained = |st: &mut ModuleCamState| -> bool {
-        if st.countdown.0 > 0 {
+        if st.pass_word() > 0 {
             st.countdown.drain();
             true
         } else {
@@ -355,8 +364,14 @@ pub fn iota_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             cut([0, 0x800], [0, 0x400, 0x800], [0; 3], 1)
         }
         1 => {
-            let d = drained(st).then_some(drift(0, 0, 0, 0, -P));
-            with_drift(ArmDirection::PASS, d)
+            // The arm always leaves: a drained word drains the rest of its
+            // pass too (`0x801F6C90..0x801F6CC8`, one `subu` of
+            // `scalar * delta`).
+            let ran = drained(st);
+            if ran {
+                st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
+            }
+            with_drift(ArmDirection::PASS, ran.then_some(drift(0, 0, 0, 0, -P)))
         }
         2 => {
             if drained(st) {
@@ -575,9 +590,17 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             };
             anchored(st.ramp, hold)
         }
+        // Retail pushes the anchor `scalar * delta / 2` in one store a pass
+        // (`0x801F6E54..0x801F6E7C` on arm 3): a tick that hands over pushes
+        // it for the ticks of its pass still owed (`countdown.1`) too, or a
+        // frame step above 1 leaves the anchor short for the rest of the
+        // cast.
         3 => {
-            st.ramp += P / 2;
-            st.countdown.0 = P / 4;
+            // ... and its count `ctx[+0x27A]` by `scalar * delta / 4`
+            // (`0x801F6E98..0x801F6ECC`) the same way.
+            let pass_ticks = 1 + i32::from(st.countdown.1);
+            st.ramp += (P / 2) * pass_ticks;
+            st.countdown.0 = (P / 4) * pass_ticks;
             anchored(st.ramp, false)
         }
         4 => {
@@ -586,6 +609,7 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if st.countdown.0 < 0x81 {
                 return anchored(st.ramp, true);
             }
+            st.ramp += (P / 2) * i32::from(st.countdown.1);
             st.countdown.0 = 24 * S;
             anchored(st.ramp, false)
         }
@@ -729,7 +753,7 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         }
         19 => {
             let mut d = drift(0, P / 8, 0, 0, 0);
-            let drained = st.countdown.0 > 0;
+            let drained = st.pass_word() > 0;
             if drained {
                 d.tr_z = P as i16;
                 st.countdown.0 -= P;

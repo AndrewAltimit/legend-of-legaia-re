@@ -581,6 +581,9 @@ pub(super) fn pad_walk(
     let mut tapped_at: Option<usize> = None;
     // Ticks the last tap's Cross is still held ([`press_ticks`]).
     let mut tap_hold = 0usize;
+    // A tap owed with the probe on nothing beside an interact-class door
+    // first turns the player to it: `(frames left, anchor, door centre)`.
+    let mut door_aim: Option<DoorAim> = None;
     // The idle tap is never pressed at a minigame cabinet
     // ([`minigame_talks`]): a walk that passes one does not sit down to play.
     let cabinets = if session.host.world.mode == SceneMode::Field {
@@ -1024,10 +1027,46 @@ pub(super) fn pad_walk(
                     .field_interact_probe_slot()
                     .is_some_and(|s| cabinets.contains(&s))
             {
+                // Held against an interact-class door the plan walks
+                // through, the tap is made facing it: the walk's own press
+                // can leave the probe beside its box. `dolk`'s Lightning
+                // Gate (P0[16], anchor (100, 53)) stops a walk along its
+                // north face at the box's corner, where the west-facing
+                // probe falls past the box, and the gate was opened only
+                // by a seat.
+                let probe_empty = pad_props()
+                    && walking_mode == SceneMode::Field
+                    && session.host.world.field_interact_prop_anchor().is_none()
+                    && session.host.world.field_interact_probe_slot().is_none();
+                match probe_empty
+                    .then(|| door_to_face(session, (wx, wz)))
+                    .flatten()
+                {
+                    Some((anchor, centre)) if door_aim.is_none() => {
+                        door_aim = Some((DOOR_AIM_FRAMES, anchor, centre));
+                        tap_owed = false;
+                    }
+                    _ => {
+                        pad = PadButton::Cross.mask();
+                        tap_owed = false;
+                        tapped_at = Some(step);
+                        tap_hold = press_ticks(session) - 1;
+                    }
+                }
+            }
+        }
+        // Turning to a door for the tap: lean toward its centre until the
+        // probe lands on it, then tap.
+        if let Some((left, anchor, (cx, cz))) = door_aim {
+            if session.host.world.field_interact_prop_anchor() == Some(anchor) || left == 0 {
+                door_aim = None;
                 pad = PadButton::Cross.mask();
-                tap_owed = false;
                 tapped_at = Some(step);
                 tap_hold = press_ticks(session) - 1;
+            } else {
+                let axis = |d: i32| if d.abs() > 16 { d.signum() as i16 } else { 0 };
+                pad = pad_for_step(session, axis(cx - i32::from(wx)), axis(cz - i32::from(wz)));
+                door_aim = Some((left - 1, anchor, (cx, cz)));
             }
         }
         // The tap is held across a whole game frame: in the retail-faithful
@@ -1502,6 +1541,39 @@ fn npc_blocks_step(session: &NativeSession, step: (i16, i16)) -> bool {
     dirs.into_iter()
         .flatten()
         .any(|d| w.field_npc_dir_blocked(x, z, d))
+}
+
+/// Frames a tap owed at an interact-class door spends turning the player to
+/// it ([`door_to_face`]).
+const DOOR_AIM_FRAMES: usize = 24;
+
+/// A door the follower is turning to for its tap: frames left, the door's
+/// anchor and its box centre.
+type DoorAim = (usize, (u8, u8), (i32, i32));
+
+/// The interact-class solid prop nearest the player within two tiles, as its
+/// anchor and box centre: the door an owed tap is made facing.
+fn door_to_face(session: &NativeSession, (x, z): (i16, i16)) -> Option<((u8, u8), (i32, i32))> {
+    let w = &session.host.world;
+    w.props
+        .colliders
+        .iter()
+        .filter(|c| c.solid && c.interact && !c.moving_box)
+        .filter_map(|c| {
+            let anchor = c.anchor?;
+            w.props
+                .bank
+                .props
+                .contains_key(&anchor)
+                .then_some((anchor, c.center))
+        })
+        .map(|(a, (cx, cz))| {
+            let d = (cx - i32::from(x)).abs().max((cz - i32::from(z)).abs());
+            (d, a, (cx, cz))
+        })
+        .filter(|&(d, _, _)| d <= 2 * 128)
+        .min()
+        .map(|(_, a, c)| (a, c))
 }
 
 /// Whether a press that did not move the player is a lean on a person, the

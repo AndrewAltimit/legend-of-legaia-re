@@ -360,6 +360,10 @@ pub fn death_game_camera(
         drift_first: true,
         ..Default::default()
     };
+    // A pass is `step` one-vsync ticks; the swap's frame counter moves by the
+    // pass's step once, on its opening tick.
+    let opens_pass = st.opens_pass || st.frame_step <= 1;
+    let step = i32::from(st.frame_step.max(1));
     let g = &mut st.death_game;
     g.cues = [0; 3];
     g.kills = [false; 4];
@@ -439,8 +443,19 @@ pub fn death_game_camera(
         }
         4 => {
             arm.hold = true;
+            if !opens_pass {
+                return arm;
+            }
+            // The counter `0x801FA27C` moves by the pass's frame step
+            // (`lbu 0x393` / `addu` at `0x801F8240..0x801F8264` on the
+            // opening pass, `0x801F84CC..0x801F84F0` after, clamped to `16`),
+            // so a step that does not divide `16` lands on the clamp.
             let opening = g.counter == 0;
-            g.counter = (g.counter + 1).min(16);
+            g.counter = if opening {
+                g.counter + step
+            } else {
+                (g.counter + step).min(16)
+            };
             g.cross();
             // The opening pass leaves ahead of the end test (`j 0x801F99C0`
             // at `0x801F83E0` / `0x801F84C4`).
@@ -556,6 +571,11 @@ pub fn death_game_camera(
             if word.0 > 0 || g.live[g.pair[0]] {
                 arm.hold = true;
             } else {
+                // Retail's pass drains `step * 8` and grows the pick
+                // `step * 32` in one go (`0x801F90D8..0x801F9160`); a tick
+                // that leaves ahead of the pass's last owes the rest.
+                word.drain_rest(super::MODULE_DRAIN_PER_TICK);
+                g.pick_level = g.pick_level.wrapping_add(32 * u16::from(word.1));
                 let (sin, cos) = legaia_engine_system::trig::trig12(c.facing);
                 let vf = c.facing.wrapping_add(0x800) & 0xFFF;
                 // The victim before the caster, a twelfth of the unit circle

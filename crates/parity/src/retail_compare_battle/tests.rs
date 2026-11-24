@@ -2261,22 +2261,38 @@ fn a_ray_burst_level_and_lane_come_back_over_the_lag() {
     assert_eq!(ram_read::displayed_morph_halfword(&ram, node, 0x78, 6), 0);
 }
 
-/// A ray burst's position is the screen's only when its level ramp began
-/// before the displayed frame: `battle_melee_hit_spark`'s level `0x900`
-/// (`0x100` a vsync) is nine vsyncs old against a six-vsync lag;
-/// `rim_elm_gimard_victory`'s `0x400` began on its four-vsync lag's
-/// displayed frame itself, and a level on its clamp names no age.
+/// A ray burst is seeded with its RAM position whatever its level ramp's
+/// age: the burst never moves once its program has put it
+/// (`battle_garmel_party_gala_flying_knee_mid`'s ramp began inside the lag,
+/// and its rays stand where the RAM's position puts them).
 #[test]
-fn a_ray_burst_position_stands_only_through_the_lag() {
+fn a_ray_burst_is_seeded_on_its_ram_position() {
     let mut ram = vec![0u8; 0x20_0000];
-    let node = 0x8008_227C;
+    put32(&mut ram, frame_step::FORCED_STEP, 2);
+    let node = 0x8008_2C9C;
+    put32(&mut ram, 0x8007_C34C + 4, node);
+    put32(&mut ram, node + 0x0C, 0x8002_1DF4);
+    put32(&mut ram, node + 0x10, 0x0804_5880);
+    put32(&mut ram, node + 0x48, 0x801F_5484);
+    put16(&mut ram, node + 0x5A, 1);
+    put16(&mut ram, node + 0x14, 21);
+    put16(&mut ram, node + 0x16, (-330i16) as u16);
+    put16(&mut ram, node + 0x18, 38);
+    // Three vsyncs into its fade, against a lag of four or six.
+    put16(&mut ram, node + 0x78, 0x300);
     put16(&mut ram, node + 0x90, 0x800);
-    put16(&mut ram, node + 0x78, 0x900);
-    assert!(ram_read::ray_burst_stood_through_lag(&ram, node, 6));
-    put16(&mut ram, node + 0x78, 0x400);
-    assert!(!ram_read::ray_burst_stood_through_lag(&ram, node, 4));
-    put16(&mut ram, node + 0x78, 0x1000);
-    assert!(!ram_read::ray_burst_stood_through_lag(&ram, node, 4));
+    let seeds = ram_read::retail_action_fx_parts(&ram);
+    assert_eq!(seeds.len(), 1);
+    let poke = |o: u16| {
+        seeds[0]
+            .pokes
+            .iter()
+            .find(|&&(k, _)| k == o)
+            .map(|&(_, v)| v)
+    };
+    assert_eq!(poke(0x14), Some(21));
+    assert_eq!(poke(0x16), Some((-330i16) as u16));
+    assert_eq!(poke(0x18), Some(38));
 }
 
 /// A numeral's digit quads are read off both packet arenas, and a run two

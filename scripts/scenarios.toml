@@ -691,6 +691,22 @@ description = "Rim Elm (town01) scripted Gimard fight captured mid-combo, just b
 phase = "battle"
 topics = ["battle", "reward", "exp", "gold", "drop", "spoils", "FUN_80026018", "monster record"]
 
+[[scenarios]]
+label = "rim_elm_gimard_victory_load_window"
+backup_fingerprint = "aa73a3ba75e4c19cefb6831fec7230195392ea299cb62ca42b16f4158d156e99"
+description = "RETAIL disc and SCUS, no RAM pokes, no pad: rim_elm_gimard_victory played forward 366 vsyncs on PCSX-Redux (recompiler) by autorun_victory_timeline.lua (LEGAIA_SAVE_AT=366). Gimard is down and the results sequencer is in its load window: the side-band request ctx[+0x26B] cleared at vsync 350, the cause word at 2, the results frame not yet run (ctx[+0x6CE] 0). Every pass frames the stand-off case 8 reads off the yaw counter ctx[+0x6DA], which the sequencer steps by max(1, step >> 1): 76 here, from 68 at the request's clear to 93 before the results frame stores 0x780 at vsync 402."
+phase = "battle"
+expected_game_mode = 0x15
+topics = ["battle", "victory", "results sequencer", "load window", "victory camera", "yaw counter"]
+
+[[scenarios]]
+label = "rim_elm_gimard_victory_load_window_late"
+backup_fingerprint = "6513802b189cc7e433a9cb65988b105f51912b5e0d215321d03459186938e0ba"
+description = "RETAIL disc and SCUS, no RAM pokes, no pad: rim_elm_gimard_victory played forward 392 vsyncs on PCSX-Redux (recompiler) by autorun_victory_timeline.lua (LEGAIA_SAVE_AT=392). Gimard is down and the results sequencer is in its load window: the side-band request ctx[+0x26B] cleared at vsync 350, the cause word at 4, the results frame not yet run (ctx[+0x6CE] 0). Every pass frames the stand-off case 8 reads off the yaw counter ctx[+0x6DA], which the sequencer steps by max(1, step >> 1): 89 here, from 68 at the request's clear to 93 before the results frame stores 0x780 at vsync 402."
+phase = "battle"
+expected_game_mode = 0x15
+topics = ["battle", "victory", "results sequencer", "load window", "victory camera", "yaw counter"]
+
 # ----------------------------------------------------------------------
 # Seru-capture (spell learn) before/after pair, captured during the Rim
 # Elm Gimard fight. `before` is the frame just prior to the capture; `after`
@@ -2395,6 +2411,15 @@ expected_game_mode = 2
 expected_active_scene = "garmel"
 description = "Second-kingdom run, immediately after the boss fight resolves. Scene garmel, mode 0x02 (post-battle transition). Formation DAT_8007BD0C=[4B,00,00,00] - lone-boss id 0x4B (labelled Zeto by the capture, but the id->name lookup + the garmel-vs-jou scene scoping are unverified; see the open reconcile thread). Clean disc. Closes the pre/post bracket."
 topics = ["chapter-2", "garmel", "zeto", "boss", "capture-bracket", "pcsx-redux"]
+
+[[scenarios]]
+label = "garmel_zeto_defeat_pre_line"
+backup_fingerprint = "d72b632e28cb6b927d7885569452cf9aca03ad7055cd14b9914342732452bf4d"
+description = "garmel record 14, Zeto's defeat after the boss fight, 171 vsyncs before its first voice line (the one-shot of 0x16B vsyncs). RETAIL disc, pad only, no pokes: chapter2_garmel_post_zeto played forward 300 vsyncs on PCSX-Redux (recompiler) by autorun_field_walk_film.lua with Cross held two vsyncs every 20 from vsync 40 (LEGAIA_SAVE_AT=300). Played on with Cross every 20 vsyncs from vsync 20, the line runs at step 4 on frames of five to six vsyncs, at the frame time clamp, against two-vsync frames of about 350 hblanks before it."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "garmel"
+topics = ["field", "garmel", "zeto", "voice line", "CD-XA", "CD stop watch", "frame cost"]
 
 [[scenarios]]
 label = "flute_lippian_midcast"

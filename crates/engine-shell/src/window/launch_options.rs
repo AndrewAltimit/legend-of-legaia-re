@@ -611,6 +611,9 @@ pub struct ScreenshotConfig {
     /// same driver the headless seed runs. `capture_tick` becomes the
     /// deadline. Set by the retail-compare image channel.
     pub battle_drive: Option<legaia_engine_capture::battle_drive::BattleDrive>,
+    /// A load-window drive's ground has been seated
+    /// ([`Self::seats_load_window`]).
+    pub load_window_seated: std::cell::Cell<bool>,
     /// Where the drive's start and press clock stand: it starts where the
     /// headless seed's opening loop hands its drive over (past the entry
     /// sweep, on the first tick the command flow leaves `Idle`), and counts
@@ -635,6 +638,14 @@ pub struct ScreenshotConfig {
     /// gates where the displayed frame measures closer
     /// (`RetailBattle::display_retake` in `legaia-parity`).
     pub display_lag: u64,
+    /// `LEGAIA_CAPTURE_GATE_LATE=<ticks>`: take a gated capture's frame this
+    /// many world ticks after the tick its gate first opens, every seed and
+    /// drive still running. A seating probe: whether a residual is the
+    /// frame's phase (a trail, a flash's age) or a draw the engine lacks.
+    /// HARNESS.
+    pub gate_late: u64,
+    /// The tick [`Self::gate_late`] counts from: the first one the gate held.
+    pub gate_met_tick: std::cell::Cell<Option<u64>>,
     /// `LEGAIA_CAPTURE_RETAKE_SHOT=1`: retake only when the battle camera
     /// armed the magic band's shot it stands on after the retake's tick, so
     /// the gate's frame shows a different shot than the display did
@@ -1090,6 +1101,21 @@ pub struct ScreenshotSweep {
 }
 
 impl ScreenshotConfig {
+    /// A drive whose gate sits inside the battle-end load window
+    /// ([`legaia_engine_capture::battle_drive::SpanGate::Loading`]): its
+    /// ground is seated on the window's first tick and its camera runs the
+    /// engine's own case-8 law from there, unaligned, so the still scores the
+    /// window's drift (`LEGAIA_BATTLE_CAM_ALIGN` is not applied).
+    pub fn seats_load_window(&self) -> bool {
+        matches!(
+            self.battle_drive,
+            Some(legaia_engine_capture::battle_drive::BattleDrive::Action {
+                end: legaia_engine_capture::battle_drive::SpanGate::Loading,
+                ..
+            })
+        )
+    }
+
     /// `--screenshot-chrome` ([`Self::chrome`]).
     pub fn with_chrome(mut self, chrome: bool) -> Self {
         self.chrome = chrome;
@@ -1517,6 +1543,7 @@ impl ScreenshotConfig {
                         .collect()
                 })
                 .unwrap_or_default(),
+            load_window_seated: std::cell::Cell::new(false),
             battle_drive: std::env::var("LEGAIA_BATTLE_DRIVE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::battle_drive::BattleDrive::from_env(&v)),
@@ -1527,6 +1554,11 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(0),
+            gate_late: std::env::var("LEGAIA_CAPTURE_GATE_LATE")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(0),
+            gate_met_tick: std::cell::Cell::new(None),
             retake_shot_only: std::env::var("LEGAIA_CAPTURE_RETAKE_SHOT")
                 .is_ok_and(|v| v.trim() == "1"),
             battle_cam_stand_displayed: std::env::var("LEGAIA_BATTLE_CAM_STAND_DISPLAYED")

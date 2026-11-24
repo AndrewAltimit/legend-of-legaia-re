@@ -4,6 +4,8 @@
 use super::*;
 
 thread_local! {
+    /// Set while [`lead_in_heal`] heals: restoratives only, no field cast.
+    static ITEMS_ONLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Set while [`pad_ready`] readies the party at a staged fight's door.
     static AT_BOSS_DOOR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -42,6 +44,101 @@ fn boss_bound() -> bool {
 // ---------------------------------------------------------------------------
 // Healing through the pause menu
 // ---------------------------------------------------------------------------
+
+/// The heal a walk to a boss door sets out with: up to full HP, from the
+/// restoratives the bag holds beyond the boss's reserve ([`HEAL_RESERVE`] a
+/// member, under [`continuous::SAVING_FOR_BOSS`]) and with no field cast,
+/// since [`pad_ready`]'s top-up at the door spends the reserve and the MP.
+/// The plain heal before the walk to Cort spent what the top-up then lacked
+/// (w55's sweep: walk-in reloads fell, Cort's doubled); this one spends
+/// none of it, and the walk from `bio_castle` to Cort's door took 2 reloads
+/// over the fifteen streams against 5 without it, the rest of each run
+/// unchanged. `LEGAIA_FGL_LEAD_IN_HEAL=0` leaves it out.
+pub(super) fn lead_in_heal(session: &mut NativeSession) -> usize {
+    if std::env::var_os("LEGAIA_FGL_LEAD_IN_HEAL").is_some_and(|v| v == "0") {
+        return 0;
+    }
+    let _saving = continuous::SavingForBoss::arm(true);
+    let was = ITEMS_ONLY.with(|i| i.replace(true));
+    let used = pad_field_heal(session, 1000);
+    ITEMS_ONLY.with(|i| i.set(was));
+    used
+}
+
+/// Set Field Move to Run the way a player does: Start, the Options row, the
+/// Field Move row, Run, and out. `true` when the world now runs by default.
+///
+/// The options screen hands its closing state to the session
+/// (`SubsessionHandoff::Options`); both play hosts then push their options
+/// onto the world every tick (`BootSession::apply_option_knobs`). A headless
+/// session has no such tick, so the hand plays that part for the one row it
+/// changed. A menu that does not open, or a screen that does not commit,
+/// falls back to the direct write ([`shortcut`] `run_switch`).
+pub(super) fn pad_field_move_run(session: &mut NativeSession) -> bool {
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
+    use legaia_engine_menus::options::OptionsPhase;
+    use legaia_engine_system::option_values::FieldMoveOpt;
+    const FIELD_MOVE_ROW: u8 = 3;
+    let options_row = FieldMenuRow::Options.index();
+    let committed = |s: &NativeSession| s.options_state.field_move == FieldMoveOpt::Run;
+    if walking(session) && released(session) {
+        open_pause_menu(session);
+    }
+    for _ in 0..80 {
+        let Some(menu) = session.field_menu.as_ref() else {
+            break;
+        };
+        let pad = match session.field_menu_sub.as_ref() {
+            None => match menu.phase() {
+                FieldMenuPhase::Browsing { cursor } => {
+                    if committed(session) {
+                        PadButton::Circle.mask()
+                    } else if cursor != options_row {
+                        PadButton::Down.mask()
+                    } else {
+                        PadButton::Cross.mask()
+                    }
+                }
+                _ => 0,
+            },
+            Some(FieldMenuSubsession::Config(o)) => match o.phase() {
+                _ if o.state().field_move == FieldMoveOpt::Run => PadButton::Circle.mask(),
+                OptionsPhase::Browsing { cursor } if cursor != FIELD_MOVE_ROW => {
+                    PadButton::Down.mask()
+                }
+                OptionsPhase::Browsing { .. } => PadButton::Cross.mask(),
+                OptionsPhase::Editing { choice, .. } => {
+                    if choice == 1 {
+                        PadButton::Cross.mask()
+                    } else {
+                        PadButton::Down.mask()
+                    }
+                }
+                _ => PadButton::Circle.mask(),
+            },
+            Some(_) => PadButton::Circle.mask(),
+        };
+        if pad == 0 {
+            let _ = session.tick();
+            continue;
+        }
+        tap_pad(session, pad);
+    }
+    for _ in 0..16 {
+        if session.field_menu.is_none() {
+            break;
+        }
+        tap_pad(session, PadButton::Circle.mask());
+    }
+    if committed(session) && session.field_menu.is_none() {
+        session.host.world.locomotion.run_default = true;
+        return true;
+    }
+    shortcut("run_switch");
+    session.host.world.locomotion.run_default = true;
+    false
+}
 
 /// Press `mask` for one frame and release on the next: every menu surface
 /// reads `just_pressed`, so a held mask is one event.
@@ -269,7 +366,8 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
     // 20000-HP race) with an empty bag, two members near death and a full
     // set of Spoons unspent.
     let mut spells = 0;
-    if plays_on && !mp {
+    let items_only = ITEMS_ONLY.with(std::cell::Cell::get);
+    if plays_on && !mp && !items_only {
         spells = pad_field_spell_heal(session, threshold, true);
         if gauge(session) >= threshold {
             return spells;
@@ -298,7 +396,7 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
             let near_death = gauge(session) < NEAR_DEATH_PERMILLE
                 || (!mp && race_ahead(session) && weakest_hp(session) < RACE_HIT_HP);
             return spells
-                + if mp || (boss_bound() && !near_death) {
+                + if mp || items_only || (boss_bound() && !near_death) {
                     0
                 } else {
                     pad_field_spell_heal(session, threshold, false)

@@ -254,7 +254,7 @@ pub(super) fn drain_battle(host: &mut SceneHost, resume: SceneMode, policy: &Fig
         let want = policy.pad_for(host);
         let pad = if pad_prev == 0 { want } else { 0 };
         pad_prev = pad;
-        host.world.set_pad(pad);
+        host_pad(host, pad);
         if host.tick().is_err() {
             outcome = Fight::Stuck;
             break;
