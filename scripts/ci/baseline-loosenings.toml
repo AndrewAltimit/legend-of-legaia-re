@@ -1888,3 +1888,12 @@ reason = "The ray burst now seats on its RAM position whatever the fade's age (t
 changes = [
   ["states/battle_jou_party_noa_chain_mid/image", 0.994, 0.993],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The play bundle carries the wave's ported behaviour: the battle CD timing switch and the stone scale tweak (two play-page toggles), the victory yaw hold, the summon modules' owed-tick and pass-word arithmetic at frame steps above 1, the capture victim settle, the Death Game swap counter and the dance hall's parked count-in (play +4.2 KB gzip). No asset or dependency added. The cast scene's GL draws rise by 0.01 per frame (one draw over the sampled frames); the summon motion changes are the likely source, not bisected."
+changes = [
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 130.62, 130.63],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 108.46, 108.47],
+  ["counts/bundle/play_gzip_bytes", 5243359, 5247516],
+]
