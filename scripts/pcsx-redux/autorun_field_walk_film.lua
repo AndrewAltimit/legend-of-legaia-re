@@ -15,9 +15,15 @@
 --      LEGAIA_SAVE_AT     comma list of vsyncs to keep the whole emulator
 --                         state at, as <out dir>/film_<v>.rawsstate: a film
 --                         that crosses a scene load can seat a new state past it.
+--      LEGAIA_SHOT_EVERY  vsyncs between screenshots (`shot_<v>.raw` + `.meta`,
+--                         scripts/pcsx-redux/raw2png.py); 0 (the default) takes none.
+--      LEGAIA_SHOT_FROM / LEGAIA_SHOT_TO  the vsync window the shots cover.
 --
 -- Outputs: walk_film.csv (one row a vsync), walk_film_actors.csv (one row per
--- placement per vsync). The last three walk_film.csv columns are the frame
+-- placement per vsync; its last four columns are the draw walk's inputs: the
+-- view depth `+0x34` the walk `FUN_8001ADA4` wrote on the frame before, the
+-- near-reject exemption word `+0x52`, the draw kind `+0x56` and the cull
+-- radius `+0x58`). The last three walk_film.csv columns are the frame
 -- pacer's: its ring cursor (`0x8007B758`, the slot the next frame stores to),
 -- the newest frame time in hblanks there (`0x80084098`, clamped to `0x2BC`)
 -- and the frame step `0x1F800393` - the retail side of the field frame-cost
@@ -33,6 +39,9 @@ local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 600)
 local SCRIPT = probe.getenv("LEGAIA_PAD_SCRIPT", "")
 local SAVE_AT = {}
 for v in string.gmatch(probe.getenv("LEGAIA_SAVE_AT", ""), "%d+") do SAVE_AT[tonumber(v)] = true end
+local SHOT_EVERY = probe.getenv_num("LEGAIA_SHOT_EVERY", 0)
+local SHOT_FROM = probe.getenv_num("LEGAIA_SHOT_FROM", 0)
+local SHOT_TO = probe.getenv_num("LEGAIA_SHOT_TO", FRAMES)
 
 local PLAYER_PTR  = 0x8007C364
 local PITCH, YAW  = 0x8007B790, 0x8007B792
@@ -90,9 +99,23 @@ fh:write("vsync,x,y,z,prev_x,prev_z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,f
     "ring_cur,frame_cost,step,talk,enc,cues\n")
 
 local afh = assert(io.open(probe.out_path("walk_film_actors.csv"), "w"))
-afh:write("vsync,flat,x,y,z,heading,flags,model,saved,record,clip,clip_cursor,rate\n")
+afh:write("vsync,flat,x,y,z,heading,flags,model,saved,record,clip,clip_cursor,rate,depth,k52,kind,radius\n")
 
 -- Every placement the field actor tick runs (retail_actor_facings' walk).
+local function screenshot(stem)
+    local ok, ss = pcall(PCSX.GPU.takeScreenShot)
+    if not ok or ss == nil then return end
+    local f = io.open(probe.out_path(stem .. ".raw"), "wb")
+    if f == nil then return end
+    f:write(tostring(ss.data)); f:close()
+    local m = io.open(probe.out_path(stem .. ".raw.meta"), "w")
+    if m then
+        m:write(string.format("width=%d\nheight=%d\nbpp=%d\n",
+            ss.width or 320, ss.height or 240, (ss.bpp == "BPP_24") and 24 or 16))
+        m:close()
+    end
+end
+
 local function log_actors(el, player)
     local seen, seen_flat = {}, {}
     for k = 0, 8 do
@@ -104,13 +127,15 @@ local function log_actors(el, player)
                 local flat = probe.read_u16(n + 0x50)
                 if not seen_flat[flat] then
                     seen_flat[flat] = true
-                    afh:write(string.format("%d,%d,%d,%d,%d,%d,%08X,%d,%d,%d,%d,%d,%d\n", el, flat,
+                    afh:write(string.format("%d,%d,%d,%d,%d,%d,%08X,%d,%d,%d,%d,%d,%d,%d,%04X,%d,%d\n", el, flat,
                         s16(n + 0x14), s16(n + 0x16), s16(n + 0x18), s16(n + 0x26),
                         probe.read_u32(n + 0x10), s16(n + 0x64),
                         -- the talk save +0x5A, the record cursor +0x9E, and
                         -- the clip: id +0x5C, cursor +0x68, rate +0x6A
                         s16(n + 0x5A), probe.read_u16(n + 0x9E),
-                        s16(n + 0x5C), s16(n + 0x68), s16(n + 0x6A)))
+                        s16(n + 0x5C), s16(n + 0x68), s16(n + 0x6A),
+                        s32(n + 0x34), probe.read_u16(n + 0x52), probe.read_u16(n + 0x56),
+                        s16(n + 0x58)))
                 end
             end
             n = probe.read_u32(n)
@@ -153,6 +178,9 @@ probe.run({
                 f:writeMoveSlice(w); f:close()
             end)
             PCSX.log(string.format("[walk_film] state %s ok=%s %s", path, tostring(ok), tostring(err or "")))
+        end
+        if SHOT_EVERY > 0 and el >= SHOT_FROM and el <= SHOT_TO and (el - SHOT_FROM) % SHOT_EVERY == 0 then
+            screenshot(string.format("shot_%05d", el))
         end
         local p = probe.read_u32(PLAYER_PTR)
         if p == nil or not probe.in_ram(p) then return end
