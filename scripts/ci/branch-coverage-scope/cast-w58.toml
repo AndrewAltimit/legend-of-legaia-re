@@ -1,0 +1,92 @@
+# Non-summon cast-module images (PROT 0935..0970 but 0947), round eight: arms out of scope, by image.
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F828C..0x801F828C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F82D0..0x801F82D0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F82F8..0x801F82F8"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F833C..0x801F833C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8540..0x801F8540"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8584..0x801F8584"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F85CC..0x801F85CC"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8610..0x801F8610"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8A6C..0x801F8A6C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's blink clock `0x801FA280` (`-0x5D80`): its only stores are `0` (`0x801F812C`, `0x801F87EC`), the swap count `+1` (`0x801F87C4`, reset at thirteen) and itself plus the frame step (`0x801F8A34`, `0x801F8D60`), so it is never negative and the rounding fix-up of its signed `>> 4` never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8AB0..0x801F8AB0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's blink clock `0x801FA280` (`-0x5D80`): its only stores are `0` (`0x801F812C`, `0x801F87EC`), the swap count `+1` (`0x801F87C4`, reset at thirteen) and itself plus the frame step (`0x801F8A34`, `0x801F8D60`), so it is never negative and the rounding fix-up of its signed `>> 4` never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8D9C..0x801F8D9C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's blink clock `0x801FA280` (`-0x5D80`): its only stores are `0` (`0x801F812C`, `0x801F87EC`), the swap count `+1` (`0x801F87C4`, reset at thirteen) and itself plus the frame step (`0x801F8A34`, `0x801F8D60`), so it is never negative and the rounding fix-up of its signed `>> 4` never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8DE0..0x801F8DE0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's blink clock `0x801FA280` (`-0x5D80`): its only stores are `0` (`0x801F812C`, `0x801F87EC`), the swap count `+1` (`0x801F87C4`, reset at thirteen) and itself plus the frame step (`0x801F8A34`, `0x801F8D60`), so it is never negative and the rounding fix-up of its signed `>> 4` never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8ED0..0x801F8ED0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's pick walks the four cards for the one whose `+0x14` x is the pointer's stop `(target - 0x28) * 0xC0 / 0x4C - 0x120` (`0x801F8E70..0x801F8EC0`). The target `0x801FA2AE` (`-0x5D52`) is only ever `0x28` (`0x801F87E4`, `0x801F897C`), `0x10C` (`0x801F8930`) or a step of `0x4C` between them (`0x801F8914`, `0x801F8964`), so the stop is one of `-0x120, -0x60, 0x60, 0x120`; the deal seats the cards on exactly those (`-0x120 + i * 0xC0`, `0x801F7E78..0x801F7F24`) and each swap ends on its clamp `0x10`, where the slide lands on the other card's point exactly, so a card always matches and the walk never runs out."

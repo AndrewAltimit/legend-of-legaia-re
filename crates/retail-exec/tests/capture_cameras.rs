@@ -512,7 +512,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         }
         let countdown_va = cam::capture_countdown_va(body.action);
         let rounds = match body.action {
-            0x76 => 30,
+            // Death Game's heal (`0x801F971C..0x801F9794`) caps each seat's
+            // quarter at its missing HP; enough rounds that the picked card
+            // lands the heal on both a capped and an uncapped seat.
+            0x76 => 72,
             0x3C => 8,
             0x71 | 0x70 => 12,
             // Chaos Breath's two status draws per seat land one time in
@@ -858,6 +861,12 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // three thousand.
             let cap = if body.entry == 966 { 8000 } else { 3000 };
             for pass in 0..cap {
+                // The frame's primitive cursor `0x1F8003A0`, which a body's
+                // sprites advance by their size (Death Game's digit and
+                // pointer, `0x801F8828..0x801F8834`), back at the buffer's
+                // head each pass as the frame resets it: left to run, it
+                // walks up through RAM and over the spell table.
+                cpu.mem.wr32(PRIM_CURSOR, PRIMS);
                 let phase = cpu.mem.rd8(CTX + 0x279);
                 // PROT 0961's arm 0 stands the seats before its cut; the host
                 // runs the line-up ahead of the director
@@ -1170,7 +1179,14 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 // Retail's step moves from frame to frame: the odd rounds walk
                 // 2, 3, 4, 3, so a word the steps share no divisor with goes
                 // below zero on its last pass.
-                let step = if pass_step > 1 {
+                // Death Game's pick timer `0x960` is `8 * step` times a whole
+                // number of passes at any one step, and at that walk too; its
+                // odd rounds walk 4, 3, whose sums pass `0x960 / 8` by one or
+                // two, so the timer's last drain goes below zero and is
+                // clamped (`0x801F880C..0x801F8814`).
+                let step = if pass_step > 1 && death_game {
+                    [4u8, 3][(pass + usize::from(pass_step)) % 2]
+                } else if pass_step > 1 {
                     [2u8, 3, 4, 3][(pass + usize::from(pass_step)) % 4]
                 } else {
                     1
@@ -2192,6 +2208,9 @@ fn doomsday_roll(round: usize, seat: u32, hp: u32) -> u32 {
 const EVIL_SERU_MAGIC: u32 = 0x801F_6A74;
 /// The part spawn `FUN_80021B04` and the pool the walk hands parts from.
 const SPAWN_PART: u32 = 0x8002_1B04;
+/// The frame's primitive cursor and the buffer it is reset to each pass.
+const PRIM_CURSOR: u32 = 0x1F80_03A0;
+const PRIMS: u32 = 0x8018_0000;
 const PARTS: u32 = 0x8016_0000;
 /// The bag's find-or-insert `FUN_800421D4`, which a turn steal refunds through.
 const BAG_INSERT: u32 = 0x8004_21D4;
