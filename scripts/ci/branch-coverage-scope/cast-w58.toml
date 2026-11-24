@@ -279,3 +279,10 @@ image = "09a5959b39c64cac"
 range = "0x801F6AA4..0x801F6AA4"
 verdict = "unreachable"
 reason = "PROT 0949 Water Crystals: the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F6E24`, `0x801F7020`, `0x801F73FC`) and arm 5 returns without a store (`0x801F7480..0x801F7508`), so the phase stays in `0..=5` and the `sltiu 6` table guard never fails."
+
+[[arm]]
+entry = "0x801F7298"
+image = "efda14ae5c665360"
+range = "0x801F7394..0x801F7394"
+verdict = "unreachable"
+reason = "PROT 0956 Water Hazard's arm 0 aims at one seat only for a caster code below `8` (`bnez s1` to `0x801F73C4`, the group aim `FUN_801DCEAC` on the fall-through). The spell's target shape `0x64` has `& 0x60 == 0x60`, which the monster picker stores as the party code `8` (`0x801EA5A4..0x801EA5D4`, `sb` at `0x801EA934`), the AI switch casts it on the whole party (`engine_battle::monster_ai`), and a confused caster's retarget `FUN_801E7320` writes only the group codes `8` and `9` for a group cast (docs: battle-action.md), so no single-seat code reaches the arm."

@@ -545,7 +545,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // lands the heal on both a capped and an uncapped seat.
             0x76 => 72,
             0x3C => 8,
-            0x71 | 0x70 => 12,
+            0x71 => 14,
+            0x70 => 12,
             // Steal's caster on every thief band and either side of each.
             0x51 => 12,
             // Chaos Breath's two status draws per seat land one time in
@@ -553,9 +554,29 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             0x4E => 24,
             _ => 6,
         };
+        // The rounds past a body's first count draw on a stream of their
+        // own, so the bodies after it keep the seeds they always had.
+        let own_rounds = match body.action {
+            0x76 => 30,
+            0x51 => 6,
+            0x71 => 12,
+            _ => rounds,
+        };
+        let mut shared_rng = None;
         for round in 0..rounds {
+            if round == own_rounds {
+                shared_rng = Some(rng.0);
+            }
             seated.borrow_mut().clear();
-            let (caster, mut victim) = seed(&mut cpu, &mut rng, &module, body, 0);
+            let (mut caster, mut victim) = seed(&mut cpu, &mut rng, &module, body, 0);
+            // Water Hazard's last rounds cast from seat 7, which its `0xFF`
+            // arm's seven-seat show leaves on arm 0's `+0x21C = 9`
+            // (`sltiu 7` at `0x801F7E08`).
+            if body.action == 0x71 && round >= own_rounds {
+                caster = 7;
+                cpu.mem.wr8(CTX + 0x13, 7);
+                cpu.mem.wr8(ACTOR + 7 * STRIDE + 0x1DD, victim as u8);
+            }
             // Lu Delilas casts Plasma Strike in a duel, on the lone hero in
             // seat 0, which its burst hits by the table (`actor_table[0]`,
             // `0x801F8184`) whatever the victim byte names.
@@ -2085,6 +2106,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 ));
             }
             casts += 1;
+        }
+        if let Some(r) = shared_rng {
+            rng.0 = r;
         }
     }
     eprintln!("{} bodies, {casts} casts, {passes} passes", all.len());
