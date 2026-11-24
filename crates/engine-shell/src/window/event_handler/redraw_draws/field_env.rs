@@ -2,6 +2,7 @@
 //! environment, the terrain tiles and the placed objects.
 
 use super::*;
+use crate::window::field_render::FieldDrawLifts;
 use legaia_engine_render::{DRAW_ORDER_FAR_CORNER, DRAW_ORDER_NEAR_BUCKETS};
 
 impl<'m> DrawCtx<'_, 'm> {
@@ -48,6 +49,7 @@ impl<'m> DrawCtx<'_, 'm> {
         let cutscene_cam = self.cutscene_cam;
         let view_cells = self.view_cells;
         let in_world_map = self.in_world_map;
+        let psx = app.win.renderer.as_ref().is_some_and(|r| r.psx_mode());
         let DrawLists {
             draws,
             color_draws,
@@ -140,9 +142,16 @@ impl<'m> DrawCtx<'_, 'm> {
                     {
                         order_marks.push((draws.len(), DRAW_ORDER_FAR_CORNER));
                     }
+                    let (model, cam) = FieldDrawLifts::clean_draw(
+                        &app.field_draw_lifts.terrain,
+                        di,
+                        psx,
+                        facing_model(model, app.field_terrain_facing.get(di)),
+                        cam,
+                    );
                     draws.push(SceneDraw {
                         mesh,
-                        mvp: cam * facing_model(model, app.field_terrain_facing.get(di)),
+                        mvp: cam * model,
                         cue: None,
                     });
                 }
@@ -171,9 +180,16 @@ impl<'m> DrawCtx<'_, 'm> {
                     {
                         color_order_marks.push((color_draws.len(), DRAW_ORDER_FAR_CORNER));
                     }
+                    let (model, cam) = FieldDrawLifts::clean_draw(
+                        &app.field_draw_lifts.terrain_color,
+                        di,
+                        psx,
+                        facing_model(model, app.field_terrain_color_facing.get(di)),
+                        cam,
+                    );
                     color_draws.push(ColorSceneDraw {
                         mesh,
-                        mvp: cam * facing_model(model, app.field_terrain_color_facing.get(di)),
+                        mvp: cam * model,
                         cue: None,
                     });
                 }
@@ -193,6 +209,7 @@ impl<'m> DrawCtx<'_, 'm> {
         let store = &self.store;
         let cam = self.cam;
         let view_cells = self.view_cells;
+        let psx = app.win.renderer.as_ref().is_some_and(|r| r.psx_mode());
         let effect_clip = |key: legaia_engine_field::object_tint::ActorTintKey, model: &Mat4| {
             cues.effect_clip(key, model)
         };
@@ -370,6 +387,16 @@ impl<'m> DrawCtx<'_, 'm> {
                 if place_near_culled_key(&mvp, app.field_placement_cell_keys.get(di)) {
                     continue;
                 }
+                let mvp = {
+                    let (m, c) = FieldDrawLifts::clean_draw(
+                        &app.field_draw_lifts.placement,
+                        di,
+                        psx,
+                        *model,
+                        cam,
+                    );
+                    c * m
+                };
                 if let Some(mesh) = mesh {
                     if let Some(c) = object_key(record).and_then(|k| effect_clip(k, model)) {
                         clip_marks.push((draws.len(), c));
@@ -476,6 +503,16 @@ impl<'m> DrawCtx<'_, 'm> {
                 if place_near_culled_key(&mvp, app.field_placement_color_cell_keys.get(di)) {
                     continue;
                 }
+                let mvp = {
+                    let (m, c) = FieldDrawLifts::clean_draw(
+                        &app.field_draw_lifts.placement_color,
+                        di,
+                        psx,
+                        *model,
+                        cam,
+                    );
+                    c * m
+                };
                 let color_idx = object_color_swaps
                     .get(di)
                     .copied()

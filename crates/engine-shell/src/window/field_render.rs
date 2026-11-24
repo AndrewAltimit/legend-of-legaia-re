@@ -46,6 +46,7 @@ pub(super) type PlacedDrawList = (
     Vec<legaia_engine_scene::field_view_window::CellKey>,
     Vec<Option<usize>>,
     Vec<Option<CameraFacing>>,
+    Vec<[f32; 3]>,
 );
 
 /// A camera-facing terrain / decoration cell
@@ -56,14 +57,57 @@ pub(super) type PlacedDrawList = (
 pub(super) type CameraFacing = (u16, Mat4);
 
 /// [`PlayWindowApp::resolve_field_terrain_draws`]'s lists: the draws, the
-/// ladder rungs each Y came from, the visible-tile crop keys and the
-/// camera-facing cells, all parallel.
+/// ladder rungs each Y came from, the visible-tile crop keys, the
+/// camera-facing cells and the coplanar lifts in the draws' translations
+/// ([`legaia_engine_scene::coplanar_draws::depth_lifted_camera`]), all
+/// parallel.
 pub(super) type TerrainDrawList = (
     Vec<(usize, Mat4)>,
     Vec<FloorAnchor>,
     Vec<legaia_engine_scene::field_view_window::CellKey>,
     Vec<Option<CameraFacing>>,
+    Vec<[f32; 3]>,
 );
+
+/// The coplanar lift ([`legaia_engine_scene::coplanar_draws`]) folded into
+/// each field draw's translation, parallel to the four baked lists.
+///
+/// PSX mode draws the lists as baked. A clean frame takes each lift back out
+/// of the model and tests the draw that much nearer in depth instead
+/// ([`legaia_engine_scene::coplanar_draws::depth_lifted_camera`]): moved in
+/// space, a lifted ground tile stood a step off every neighbour it abuts and
+/// the step opened a crack along the seam.
+#[derive(Debug, Clone, Default)]
+pub(in crate::window) struct FieldDrawLifts {
+    pub(in crate::window) terrain: Vec<[f32; 3]>,
+    pub(in crate::window) terrain_color: Vec<[f32; 3]>,
+    pub(in crate::window) placement: Vec<[f32; 3]>,
+    pub(in crate::window) placement_color: Vec<[f32; 3]>,
+}
+
+impl FieldDrawLifts {
+    /// Draw `di`'s `(model, camera)` on a clean frame: the lift out of the
+    /// model and into the camera's depth. As baked while `psx` or for a draw
+    /// with no lift.
+    pub(in crate::window) fn clean_draw(
+        lifts: &[[f32; 3]],
+        di: usize,
+        psx: bool,
+        model: Mat4,
+        cam: Mat4,
+    ) -> (Mat4, Mat4) {
+        match lifts.get(di) {
+            Some(&lift) if !psx && lift != [0.0; 3] => (
+                Mat4::from_translation(-glam::Vec3::from(lift)) * model,
+                Mat4::from_cols_array(&legaia_engine_scene::coplanar_draws::depth_lifted_camera(
+                    cam.to_cols_array(),
+                    lift,
+                )),
+            ),
+            _ => (model, cam),
+        }
+    }
+}
 
 impl PlayWindowApp {
     /// Shade the env draws' light-source rows under the world's live field

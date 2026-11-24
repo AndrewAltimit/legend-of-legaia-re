@@ -524,6 +524,10 @@ impl PlayWindowApp {
         // Parallel to `draws`: a camera-facing cell's flags and rotation
         // (`EnvDraw::view_skip`), re-placed against the camera every frame.
         let mut facing = Vec::new();
+        // Parallel to `draws`: the coplanar lift folded into the draw's
+        // translation, which a clean frame takes back out and tests in depth
+        // (`coplanar_draws::depth_lifted_camera`).
+        let mut lifts = Vec::new();
         let mut bind_records =
             legaia_engine_scene::field_env::placed_bind_records(&env_draws, binds.or(record_binds));
         // An expansion-pack map's animated props draw under their own record
@@ -624,6 +628,7 @@ impl PlayWindowApp {
             cell_keys.push(legaia_engine_scene::field_view_window::CellKey::of_draw(d));
             records.push(record);
             facing.push((d.view_skip != 0 && !flip_y).then_some((d.view_skip, rot)));
+            lifts.push(off);
         }
         log::info!(
             "play-window: {} field placement draws ({} placements, {} env meshes)",
@@ -631,6 +636,14 @@ impl PlayWindowApp {
             placements.len(),
             env_tmds.len(),
         );
-        (draws, floors, window_keys, cell_keys, records, facing)
+        (
+            draws,
+            floors,
+            window_keys,
+            cell_keys,
+            records,
+            facing,
+            lifts,
+        )
     }
 }
