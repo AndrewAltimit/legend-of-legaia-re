@@ -42,6 +42,15 @@
 #                                     by scripts/pcsx-redux/patch_taint_audit.py
 #                                     states (and scan, the whole-executable form); see docs/tooling/
 #                                     pcsx-redux-automation.md#patched-disc-taint
+#                                     THIS IS THE MOD / NON-RETAIL MARKER. A
+#                                     state carrying it is a mod state, never
+#                                     retail ground truth: retail-compare files
+#                                     it under the baseline's `patched_states`
+#                                     list, outside the ratchet and the site's
+#                                     retail tile (`retail-compare.py
+#                                     --check-split` holds the two in step), and
+#                                     new captures never start from one (a
+#                                     state inherits its source's executable).
 #   memory_card                str    the memory-card image the state was
 #                                     captured with, a file name under
 #                                     saves/library/cards/ (gitignored). A

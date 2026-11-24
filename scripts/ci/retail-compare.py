@@ -15,15 +15,25 @@ directory. See `docs/tooling/retail-compare.md`.
     scripts/ci/retail-compare.py --smoke clean   # smoke tier: clean 3x frames, broken-frame check, no ratchet
     scripts/ci/retail-compare.py --jobs 1        # one state at a time (default: several, same report)
     scripts/ci/retail-compare.py --fresh         # measure every state, ignoring the result cache
+    scripts/ci/retail-compare.py --check-split   # disc-free: the baseline's retail / patched-disc lists match the manifest
+
+The baseline keeps two lists. `states` holds the states made on a retail disc
+and is the ratchet `--check` asserts; `patched_states` holds the ones the
+manifest tags with a `resident_patch` (mod states: Delilas party swap,
+shiny-Seru, the location rename, the seed-code starting bag), which `--check`
+reports as `[patched-drift]` and never fails on. `--check-split` needs neither
+the disc nor a build, so it runs as a repo gate.
 
 Exit 0 and a `[skip]` line when the library or the extracted disc is missing,
 matching the repo's disc-gated convention.
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -63,6 +73,62 @@ def resolve(env: str, rel: str, probe) -> Path | None:
     return None
 
 
+MANIFEST = REPO / "scripts" / "scenarios.toml"
+
+
+def split_problems(manifest: dict, baseline: dict) -> tuple[list[str], list[str]]:
+    """`(problems, patched_labels)` for the baseline's two lists against the
+    manifest. A state belongs under `patched_states` exactly when its scenario
+    names a `resident_patch`; every baselined label must name a scenario; and
+    the scenarios sharing one backup must agree, since the corpus walks a
+    backup once under its first label and the executable is the file's."""
+    problems: list[str] = []
+    scenarios = {s["label"]: s for s in manifest.get("scenarios", [])}
+    by_backup: dict[str, set[bool]] = {}
+    for s in manifest.get("scenarios", []):
+        fp = s.get("backup_fingerprint")
+        if fp:
+            by_backup.setdefault(fp, set()).add("resident_patch" in s)
+    for fp, kinds in sorted(by_backup.items()):
+        if len(kinds) > 1:
+            names = [s["label"] for s in manifest["scenarios"] if s.get("backup_fingerprint") == fp]
+            problems.append(f"backup {fp[:12]}: scenarios disagree on resident_patch: {', '.join(names)}")
+    patched: list[str] = []
+    for key, want_patched in (("states", False), ("patched_states", True)):
+        for label in sorted(baseline.get(key, {})):
+            sc = scenarios.get(label)
+            if sc is None:
+                problems.append(f"{key}/{label}: no scenario of that label in {MANIFEST.name}")
+                continue
+            is_patched = "resident_patch" in sc
+            if is_patched:
+                patched.append(label)
+            if is_patched != want_patched:
+                where = "patched_states" if is_patched else "states"
+                why = f"resident_patch = {sc['resident_patch']!r}" if is_patched else "no resident_patch"
+                problems.append(f"{key}/{label}: its scenario has {why}; it belongs under `{where}`")
+    return problems, patched
+
+
+def check_split(verbose: bool) -> int:
+    manifest = tomllib.loads(MANIFEST.read_text())
+    baseline = json.loads(BASELINE.read_text())
+    problems, patched = split_problems(manifest, baseline)
+    for p in problems:
+        print(f"[split] {p}", file=sys.stderr)
+    if verbose:
+        for label in patched:
+            print(f"  patched-disc: {label}")
+    if problems:
+        print(f"[split] {len(problems)} problem(s): move each row to the list its "
+              f"scenario names (the values move unchanged; nothing is re-measured)",
+              file=sys.stderr)
+        return 1
+    print(f"[split] OK - {len(baseline.get('states', {}))} retail-disc states ratcheted, "
+          f"{len(baseline.get('patched_states', {}))} patched-disc states reported apart")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--images", action="store_true", help="score frames too")
@@ -83,7 +149,12 @@ def main() -> int:
                     help="states run at once; report.json is the same at any count (default %(default)s)")
     ap.add_argument("--fresh", action="store_true",
                     help="measure every state: read no cached result (--bless, --check and --smoke always do)")
+    ap.add_argument("--check-split", action="store_true",
+                    help="disc-free: check the baseline's retail / patched-disc lists against the manifest, run nothing")
+    ap.add_argument("--verbose", action="store_true", help="--check-split: list the patched-disc states")
     a = ap.parse_args()
+    if a.check_split:
+        return check_split(a.verbose)
     if a.bless and a.no_build:
         ap.error("--bless always builds: a baseline must come from the tree it is committed with")
     if a.smoke and (a.bless or a.check):

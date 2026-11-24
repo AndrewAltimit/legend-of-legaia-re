@@ -1387,7 +1387,9 @@ The seat test reads the spill `sp+0x20`, which the prologue fills from
 target actor - not the acting seat `ctx[+0x13]`. A party caster whose spell
 killed a monster therefore keeps case 6 on itself through the tail
 (`shiny_refactor_gimard_levelup`: target slot `3` at `0` HP, step-table
-endpoints case 6's). `zora_glare_petrify_post` (`ctx[7] == 0x51` after a
+endpoints case 6's; a patched-disc capture - the `shiny-seru` build also
+rewrites PROT 0898 - so it illustrates the disassembly's reading rather than
+grounding it). `zora_glare_petrify_post` (`ctx[7] == 0x51` after a
 monster's spell) reads pitch `0`, `TR (0, 1275, 4820)` - one tween step short
 of case 6's `(0, 0x500, prescale(0xC00) = 4915)` - with the focus on the
 caster's own seat and the yaw `ctx[+0x6DA] − actor[+0x46]`.

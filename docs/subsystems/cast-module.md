@@ -7308,8 +7308,9 @@ records. Further 0903 facts:
 - `gimard_burning_attack` (arm 11) holds the two tunnel parts mid-program and
   `0x801F7804` (render mode `4`, wait `1360`) still allocated, and no breath
   node: the breath's program has halted and the list walk has killed it, so a
-  port must stop drawing a halted part. `shiny_refactor_gimard_plus35` (arm 9)
-  holds the breath at lane 25 weight `2048`, depth cue `0x340`, wait `584`,
+  port must stop drawing a halted part. `shiny_refactor_gimard_plus35` (arm 9,
+  a patched-disc capture; the `shiny-seru` build rewrites the executable and
+  PROT 0867 / 0898 / 0899, not PROT 0903) holds the breath at lane 25 weight `2048`, depth cue `0x340`, wait `584`,
   the values the engine's part reaches on the matching tick: a column of flame
   that fades in, grows through `vdf.dat` entries 25..27 and halts during arm
   10.

@@ -1566,7 +1566,8 @@ def _playability_tiles() -> list[str]:
       is how much of each stretch rests on a retail player's party.
     * Retail compare (`scripts/ci/retail-compare-baseline.json`): the mean
       `image` score - the fraction of 8x8 blocks whose mean colour is within
-      tolerance of retail's frame - over the baselined states that carry one.
+      tolerance of retail's frame - over the baselined retail-disc states
+      (`states`, not `patched_states`) that carry one.
       States with no scored frame (fades, image runs not taken) are outside
       the denominator, and N is printed beside the figure. The mean rather
       than the median, so a few badly drawn states move the number.
@@ -1657,13 +1658,16 @@ def _playability_tiles() -> list[str]:
               if isinstance(v, dict) and isinstance(v.get("image"), (int, float))]
     if scores:
         mean = 100.0 * sum(scores) / len(scores)
-        # The corpus is every catalogued capture (`scripts/scenarios.toml`),
+        # The corpus is every catalogued retail capture (`scripts/scenarios.toml`),
         # not just the states the baseline seeded; it rounds down to a stable
         # "N00+" so the tile does not move with every state added, while the
-        # mean's own count stays exact.
+        # mean's own count stays exact. A scenario with a `resident_patch` was
+        # made on a patched disc (a mod state): the baseline files it under
+        # `patched_states`, which this tile never reads, and it is not counted.
         try:
             manifest = ROOT.parent / "scripts" / "scenarios.toml"
-            total = len(tomllib.loads(manifest.read_text(encoding="utf-8")).get("scenarios", []))
+            total = sum(1 for sc in tomllib.loads(manifest.read_text(encoding="utf-8"))
+                        .get("scenarios", []) if "resident_patch" not in sc)
         except (OSError, ValueError):
             total = 0
         total = max(total, len(states))
