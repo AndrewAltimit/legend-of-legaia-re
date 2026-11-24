@@ -33,8 +33,8 @@ thread_local! {
 type PropKey = (String, (u8, u8));
 
 thread_local! {
-    /// Prop placements (`examine_*`, `touch_*`) the pad hand has made this
-    /// thread, never reset: [`placements_made`].
+    /// Prop placements (`examine_*`, `touch_*`) the pad hand has made or
+    /// refused this thread, never reset: [`placements_made`].
     static PLACED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Props whose last beat was played by placement alone and moved no
     /// flag, by scene and anchor, with the flags as they stood:
@@ -43,8 +43,9 @@ thread_local! {
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
-/// The prop placements made so far: a beat that raised it was played, at
-/// least in part, from a placed seat.
+/// The prop placements made or refused so far: a beat that raised it was
+/// played, at least in part, from a placed seat, or not played at all for
+/// want of a walkable one ([`refuse_placement`]).
 pub(super) fn placements_made() -> u64 {
     PLACED.with(std::cell::Cell::get)
 }
@@ -108,6 +109,45 @@ pub(super) fn shortcut(name: &'static str) {
     }
 }
 
+/// Whether the pad hand refuses a prop placement where a script on the way
+/// carried a seat's walk off: the walk to the prop is what sets the prop or
+/// its band going, so the placement plays a beat the walk already played,
+/// from a seat no player stands on. `town0b`'s house door at (33, 81) opens
+/// on the walk and its exit band sets the walker back out at (32, 83);
+/// `balden`'s lift at (97, 9), walked to from its own side, rides to
+/// (29, 16). A placement whose seats only lie in another walk component
+/// ([`SeatReach::Unreachable`]) is still made and counted: `dolk`'s Lightning
+/// Gate switches at (12, 8) and (17, 12) raise `0x276` and `0x26E`, and the
+/// walk that crosses the castle back to `map01` in part B's
+/// `rim_elm_restored -> ravine` goes another way without them. On by
+/// default; `LEGAIA_FGL_PLACE_UNWALKABLE=1` places these again, counted, as
+/// a probe.
+pub(super) fn unwalkable_placement_refused() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    pad_props()
+        && pad_hand()
+        && *ON.get_or_init(|| {
+            !std::env::var_os("LEGAIA_FGL_PLACE_UNWALKABLE").is_some_and(|v| v != "0")
+        })
+}
+
+/// Whether a seat's walk ended because a script on it carried the walker
+/// off, the same way each time ([`unwalkable_placement_refused`]).
+pub(super) fn walk_carried_off(why: &str) -> bool {
+    why.contains("carried it to the same spot")
+}
+
+/// Count a refused prop placement as a beat played by placement for the
+/// dry-placement memo ([`dry_placement`]), so the beats pass does not walk
+/// the same unwalkable seats again until some flag moves; and say so under
+/// `LEGAIA_FGL_SHORTCUT_SITES=1`.
+pub(super) fn refuse_placement(what: std::fmt::Arguments<'_>) {
+    PLACED.with(|p| p.set(p.get() + 1));
+    if shortcut_sites_on() {
+        eprintln!("      [refused] {what}");
+    }
+}
+
 /// Whether part C prints each shortcut's firing lines
 /// (`LEGAIA_FGL_SHORTCUT_SITES=1`).
 pub(super) fn shortcut_sites_on() -> bool {
@@ -155,8 +195,9 @@ pub(super) fn props_walked() -> bool {
 
 /// The baseline table part C's shortcut tally is held to, `placed` or
 /// `walked` by how the run plays its props; `None` for a run whose
-/// configuration is a probe (no fallbacks, retail decode or options, the
-/// opening skipped, NPCs walked through, no lead-in heal), which keeps no
+/// configuration is a probe (no fallbacks, unwalkable seats placed, retail
+/// decode or options, the opening skipped, NPCs walked through, no lead-in
+/// heal), which keeps no
 /// ratchet.
 pub(super) fn shortcut_ratchet_mode() -> Option<&'static str> {
     let set = |k: &str| std::env::var_os(k).is_some_and(|v| v != "0");
@@ -167,6 +208,7 @@ pub(super) fn shortcut_ratchet_mode() -> Option<&'static str> {
         "LEGAIA_FGL_PIN_RETAIL",
         "LEGAIA_FGL_SKIP_OPENING",
         "LEGAIA_FGL_NO_PAD",
+        "LEGAIA_FGL_PLACE_UNWALKABLE",
     ]
     .iter()
     .any(|k| set(k))

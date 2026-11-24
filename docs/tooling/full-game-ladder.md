@@ -1049,7 +1049,8 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, naming its scene in the resume trailer, so `legaia-engine`'s `--resume-save` lands there without `--scene`; the rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
 | `LEGAIA_FGL_PAD_PROPS=0` | Places the player beside each examined and touched prop and on each box talk's tile, as the seated tier does, instead of walking there: the placed mode, a probe ([shortcuts](#shortcuts)). |
-| `LEGAIA_FGL_SHORTCUT_SITES=1` | Part C prints each shortcut's tally by the line of the hand that took it (`[shortcut-site]`), and each placement and teleport back with its scene, its seats and why the walk to each fell short (`[placed]`, `[restore]`). |
+| `LEGAIA_FGL_SHORTCUT_SITES=1` | Part C prints each shortcut's tally by the line of the hand that took it (`[shortcut-site]`), and each placement, refused placement and teleport back with its scene, its seats and why the walk to each fell short (`[placed]`, `[refused]`, `[restore]`). |
+| `LEGAIA_FGL_PLACE_UNWALKABLE=1` | Places the props whose seat walks a script carried off, instead of refusing them ([shortcuts](#shortcuts)): a probe, which keeps no ratchet. |
 | `LEGAIA_FGL_NO_SHORTCUTS=1` | Refuses every fallback placement the pad hand would make ([shortcuts](#shortcuts)): the run is played on the pad alone. |
 | `LEGAIA_FGL_SKIP_OPENING=1` | Presses through the opening, so the first Cross takes the hosts' intro hand-off ([input conventions](#input-conventions-in-both-passes)). |
 | `LEGAIA_FGL_RETAIL_DECODE=1` | Walks retail's quantised direction decode rather than the hosts' default precise movement ([shortcuts](#shortcuts)). |
@@ -2263,13 +2264,36 @@ of a typist, and the growing outings fled every encounter
 ([guards and boss reads](#guards-and-boss-reads)). The fallbacks left are
 the placements whose walk reaches no seat. Most `examine_far` placements are
 `stone`'s statues, `taiku`'s and `dolk`'s rooms beyond sixteen tiles of
-rolling path; most `touch_seat` placements are props past a walk-on band
-that carries the walker off (`town0b` (33, 81), `balden` (97, 9)) or in a
-walk component the player's does not join (`bylon` (34, 38), `town0b`
-(17, 29)). The second kind is a teleport no player makes, and refusing it is
-not yet possible: the walked hand's way through `dolk` rests on the Lightning
-Gate rooms' props, placed across components, and part B's walked
-`rim_elm_restored -> ravine` pad tier stalls on `map01` without them.
+rolling path. A seat counts as in reach only when the plan the walk would
+make ends on it, or within the slack a walk presses on through: a plan to a
+goal outside the walker's component comes back as the route to its nearest
+cell, and a short such route once read as a seat in reach, so a seat in
+another component was counted `examine_far` in a scene that rolls and walked
+for nothing in one that does not. Such a seat is now counted
+`examine_seat` / `touch_seat` and not walked.
+
+A prop whose seat walks a script on the way carried off is refused, not
+placed (`[refused]` under `LEGAIA_FGL_SHORTCUT_SITES=1`): the walk to it is
+what set the prop or its band going, so a placement plays a beat the walk
+already played, from a seat no player stands on. `town0b`'s house door at
+(31..33, 81) opens on the walk and its exit band sets the walker back out at
+(32, 83); `balden`'s lift at (97, 9), walked to from its own side, rides to
+(29, 16). The refusal counts as a placement for the dry-placement memo, so the
+beats pass does not walk the same seats again until a flag moves.
+`LEGAIA_FGL_PLACE_UNWALKABLE=1` places them again, as a probe that keeps no
+ratchet.
+
+A seat in a walk component the player's does not join is still placed:
+`bylon` (34, 38), `town0b` (17, 29), and `dolk`'s Lightning Gate switches at
+(12, 8) and (17, 12), which raise `0x276` and `0x26E`. Refusing the `dolk`
+pair is not yet possible. The castle's rooms are separate map regions joined
+by kind-0 teleports, and a gate opens on a `31 00` behind its key flag,
+which the planner already follows: P0[15] at (17, 120) runs it once `0x270`
+is up, and its examine raises `0x270` (taking the key) only once the switch
+flag `0x26B` is. With the gates the beats pass opens (`0x270..0x272`), the
+room the pair stands in is still joined to the walker's by none of them. Without the pair, the walk that crosses `dolk` back to `map01` in
+part B's `rim_elm_restored -> ravine` goes another way, and the lone,
+221-HP Vahn the segment is seeded with wiped on it.
 
 Walked, part C once stopped in Uru Mais (`usha_research` -> `nivora`,
 the hop to `urudre1` closed) at the end of a chain of story gates, each

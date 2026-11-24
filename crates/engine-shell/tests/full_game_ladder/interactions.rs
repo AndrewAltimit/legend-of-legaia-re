@@ -219,19 +219,42 @@ pub(super) fn interact_at(
         seats.iter().map(|&s| (s, false)).collect()
     };
     let mut pad_reached = false;
-    // A seat left out for its distance ([`prop_seat_in_walk_reach`]).
+    // A seat left out for its distance ([`prop_seat_reach`]).
     let mut far = false;
     // Why each walked seat fell short, for `LEGAIA_FGL_SHORTCUT_SITES=1`.
     let mut whys: Vec<String> = Vec::new();
+    // A seat walk that a script on the way carried off refuses the
+    // placement, unless some seat was only far
+    // ([`unwalkable_placement_refused`]).
+    // Whether a script on the way carried some seat's walk off.
+    let mut carried = false;
     for ((sx, sz, extra), try_pad) in attempts {
         if !try_pad && pad_hand() && (pad_reached || shortcuts_refused() || !walking(session)) {
             break;
         }
+        if !try_pad && pad_hand() && carried && !far && unwalkable_placement_refused() {
+            refuse_placement(format_args!(
+                "examine in {} for {:?}: {}",
+                scene_name(session),
+                (nx, nz),
+                whys.join("; ")
+            ));
+            break;
+        }
         session.host_pad(0);
-        if try_pad && !prop_seat_in_walk_reach(session, (sx, sz)) {
-            far = true;
-            whys.push(format!("{:?} far", (sx, sz)));
-            continue;
+        if try_pad {
+            match prop_seat_reach(session, (sx, sz)) {
+                SeatReach::Walk => {}
+                SeatReach::Far => {
+                    far = true;
+                    whys.push(format!("{:?} far", (sx, sz)));
+                    continue;
+                }
+                SeatReach::Unreachable => {
+                    whys.push(format!("{:?} unreachable", (sx, sz)));
+                    continue;
+                }
+            }
         }
         let by_pad = if try_pad {
             match pad_reach(session, (sx, sz), (nx, nz), hits) {
@@ -242,6 +265,7 @@ pub(super) fn interact_at(
                     true
                 }
                 Reach::Short(why) => {
+                    carried |= walk_carried_off(&why);
                     whys.push(format!(
                         "{:?} {}",
                         (sx, sz),
@@ -402,25 +426,57 @@ pub(super) fn interact_at(
 /// that rolls encounters (sixteen tiles).
 const PROP_WALK_REACH: usize = 64;
 
-/// Whether the pad hand walks to seat `seat`: always where no encounter
-/// rolls, and within [`PROP_WALK_REACH`] of planned path where one does.
-/// The beats pass plays props the retail player left alone - `dolk`'s
-/// Lightning Gate rooms raise flags no anchor carries - and the way to them
-/// across a castle whose every region rolls wiped a lone member on twelve
-/// reloads running; a seat further off is placed, and counted
-/// (`examine_far` / `touch_far`), like the walk to a bed ([`pad_rest`]).
-pub(super) fn prop_seat_in_walk_reach(session: &NativeSession, seat: (i16, i16)) -> bool {
-    if !session.host.world.scene_can_roll_encounters() {
-        return true;
-    }
+/// How the pad hand's walk stands to a prop's seat ([`prop_seat_reach`]).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum SeatReach {
+    /// The hand walks there.
+    Walk,
+    /// The seat is in the walker's component but beyond [`PROP_WALK_REACH`]
+    /// of planned path in a scene that rolls encounters.
+    Far,
+    /// No plan from where the player stands gets within
+    /// [`DOOR_APPROACH_SLACK`] tiles of the seat: it lies in a walk
+    /// component the player's does not join, so a placement there is a
+    /// teleport no player makes.
+    Unreachable,
+}
+
+/// Whether the pad hand walks to seat `seat`. The plan has to end on the
+/// seat, or within the slack a pad walk presses on through
+/// ([`DOOR_APPROACH_SLACK`]), as [`pad_walk`] tests before it sets out: a
+/// plan to a goal outside the walker's component comes back as the route to
+/// its nearest cell ([`plan_path`]), and a short such route once read as a
+/// seat in reach. Where an encounter rolls, a seat
+/// further than [`PROP_WALK_REACH`] of planned path is placed and counted
+/// (`examine_far` / `touch_far`), like the walk to a bed ([`pad_rest`]): the
+/// beats pass plays props the retail player left alone - `dolk`'s Lightning
+/// Gate rooms raise flags no anchor carries - and the way to them across a
+/// castle whose every region rolls wiped a lone member on twelve reloads
+/// running.
+pub(super) fn prop_seat_reach(session: &NativeSession, seat: (i16, i16)) -> SeatReach {
     let (px, pz) = player_xz(session);
-    plan_path(
+    // The plan [`pad_walk`] makes before it sets out, and its test of it.
+    let mut doors = hazards(session, "");
+    doors.remove(&(i32::from(seat.0), i32::from(seat.1)));
+    let plan = plan_around(
         session,
         cell_of(px, pz),
         seat,
         &pad_avoid(session, Some(seat)),
-    )
-    .is_some_and(|p| p.len() <= PROP_WALK_REACH)
+        &doors,
+    );
+    let miss = plan.last().map_or(0, |&c| {
+        let (x, z) = cell_center(c);
+        let (tx, tz) = dispatch_tile(x, z);
+        (tx - i32::from(seat.0)).abs() + (tz - i32::from(seat.1)).abs()
+    });
+    if miss > DOOR_APPROACH_SLACK {
+        SeatReach::Unreachable
+    } else if session.host.world.scene_can_roll_encounters() && plan.len() > PROP_WALK_REACH {
+        SeatReach::Far
+    } else {
+        SeatReach::Walk
+    }
 }
 
 /// How a pad approach to an interaction seat ended ([`pad_reach`]).
