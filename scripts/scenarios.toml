@@ -2974,6 +2974,15 @@ description = "Rugi free field run from the endgame card (playthrough-endgame-7s
 topics = ["field", "rugi", "juui1", "card boot", "probe state"]
 
 [[scenarios]]
+label = "rugi_p2_72_flyin_crossing"
+backup_fingerprint = "98476d8270d2828b95ad090f75b0f3e827559e15707cacd3384ed910b6faf9da"
+description = "rugi P2[72], the party flying into Rogue's Tower raised (+0x42 = 1, row 0's slab z 10816..14912): Vahn's anchor at z 10880 just through the slab, Noa and Gala short of it. RETAIL disc, pad only, no pokes: juui1_vortex_exit_flash run on into rugi under autorun_field_walk_film.lua (Cross every 8 vsyncs), saved 800 vsyncs in. The clip-arm price's fit state (retail-exec frame-cost, docs/subsystems/engine.md)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "rugi"
+topics = ["field", "rugi", "cutscene", "clip arm", "frame cost", "film"]
+
+[[scenarios]]
 slot = 255
 label = "retock_pre_entry_card_boot"
 backup_fingerprint = "eb14d449287e8a73f2ea13c87c489e60c6b8fce6e98c891b84a2d56532d9716c"
@@ -5121,6 +5130,15 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "koin3"
 topics = ["field", "koin3", "scene coverage", "dialogue", "route walk"]
+
+[[scenarios]]
+label = "koin3_disco_king_talk_open"
+backup_fingerprint = "a83307d77dc4ebd86825623811e78b0673a8990819d056bba5ecb30769ab685e"
+description = "koin3 (Sol Tower rooms C, the dance hall): the Disco King P1[13]'s talk open, before his lesson offer. RETAIL disc, pad only, no pokes: koin3_gold_card_guard_talk walked by autorun_walk_route.lua (Cross 400 vsyncs to page the guard, then to (6112, 13088) and an ACT facing Z+ at the King, tile (47, 103)); saved 895 vsyncs in. With flags 0x428 / 0x430 clear his talk spawns P2[5] (SpawnRecord 0x53), whose Yes enters the how-to lesson (mode 0x19); Cross every 20 vsyncs from here plays the lesson through (autorun_dance_howto_film.lua)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin3"
+topics = ["field", "koin3", "dance", "how-to", "dialogue", "route walk"]
 
 [[scenarios]]
 label = "koin1b_field_route_walk"

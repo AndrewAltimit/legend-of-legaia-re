@@ -735,3 +735,74 @@ fn a_finished_song_hands_its_scores_to_the_script_counters() {
     );
     assert_eq!(&world.field_vm.slot_table[..3], &want[..]);
 }
+
+/// The how-to lesson's count-in holds against a retail film of the lesson
+/// (`autorun_dance_howto_film.lua` from the Disco King's talk on
+/// `koin3_gold_card_guard_talk`, Cross for two vsyncs every twenty, vsyncs
+/// counted from the hall's first). On retail the first press after the hall
+/// opens pages the King at `24`; each countdown hold (`DAT_801D6080 = 0x3C`,
+/// released once negative) lasts `63` vsyncs, 21 of the hall's frames;
+/// after the first hold the gate drops a frame later and state 3 (READY)
+/// follows a frame after that (`69` vsyncs from the hold's seed), after the
+/// last the gate drops on the hold's last frame and READY follows a frame
+/// later (`66`). The engine had stepped the lesson every vsync on a delta
+/// of `1` and released the park on the vsync after the gate fell, which put
+/// READY `63` vsyncs after the first hold's seed.
+#[test]
+fn the_how_to_count_in_releases_on_retail_frames() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    let mut world = legaia_engine_core::world::World::new();
+    world.mode = legaia_engine_mode::mode::SceneMode::Field;
+    world.enter_dance(
+        DanceGame::from_overlay_for_mode(
+            &overlay,
+            legaia_engine_minigames::dance::DanceMode::HowTo,
+        )
+        .unwrap(),
+    );
+    // (vsync, lesson step, READY up, gate) at each change.
+    type Row = (u32, i16, bool, u32);
+    let mut rows: Vec<Row> = Vec::new();
+    for v in 0..2700u32 {
+        let press = v % 20 == 1 || v % 20 == 2;
+        world.set_pad(if press {
+            legaia_engine_system::input::PadButton::Cross.mask()
+        } else {
+            0
+        });
+        let _ = world.tick();
+        let m = &world.minigames;
+        let step = m.dance_tutorial.as_ref().map_or(-1, |t| t.state);
+        let ready = m
+            .dance_countin
+            .as_ref()
+            .is_some_and(|c| c.stage() == legaia_engine_minigames::dance::CountInStage::Ready);
+        let gate = m.dance_tutorial.as_ref().map_or(0, |t| t.hall.load_gate);
+        if rows.last().map(|r| (r.1, r.2, r.3)) != Some((step, ready, gate)) {
+            rows.push((v, step, ready, gate));
+        }
+    }
+    let first = |f: &dyn Fn(&Row) -> bool| {
+        rows.iter()
+            .find(|r| f(r))
+            .map(|r| r.0)
+            .expect("the lesson reaches it")
+    };
+    assert_eq!(first(&|r| r.1 == 1), 24, "the first page");
+    let hold = first(&|r| r.1 == 12);
+    let out = first(&|r| r.1 == 13);
+    let gate = first(&|r| r.1 == 13 && r.3 == 0);
+    let ready = first(&|r| r.1 == 13 && r.2);
+    assert_eq!(
+        (out - hold, gate - out, ready - gate),
+        (63, 3, 3),
+        "{rows:?}"
+    );
+    let hold = first(&|r| r.1 == 17);
+    let out = first(&|r| r.1 == 18 || r.1 == -1);
+    let ready = first(&|r| r.0 > out && r.2);
+    assert_eq!((out - hold, ready - out), (63, 3), "{rows:?}");
+}
