@@ -129,6 +129,7 @@ mod fog_volume_regions_disc;
 mod formation_header_census_disc;
 mod free_roam_staging_disc;
 mod freeroam_field_channels_disc;
+mod garmel_zeto_defeat_staging_disc;
 mod global_bgm_owned_vab_disc;
 mod hub_tables_disc;
 mod inline_dialogue_vm_no_panic_disc;
