@@ -1101,6 +1101,19 @@ the port's half agrees. The shadow is where the host's half is checked.
 | The part-driven stager calls | PROT 0927's sweeps, `run_juggernaut_stager_calls` | not compared: the walk runs no part |
 | The spell XP and spirit gauge | `World::summon_module_roll`, the fold's tail | on the live-wrapper runs (below): every seat's `+0x170` each pass, the caster record's first spell XP slot at the cast's end |
 
+**The band word.** The fallen runs stand in for the action SM's band word `ctx[+0x6D8]` on both sides, as a cast
+meets it: `0x34` arms it to `0x78` ahead of the module's first pass, `0x35` drains it by the frame step ahead of
+each pass (clamping a spent word to `1` while the side-band stage `ctx[+0x276]` stands) and leaves for `0x36`, zeroing
+it, once a pass leaves it negative. PROT 0904, 0907, 0908 and 0916 keep their arm countdown in that word, and the
+shadow takes it through the World's own seam (`World::summon_band_word_in` / `_out`), so the side-band arms run as
+in a cast (PROT 0916's arm 1 steps to its wait arm 2 on a standing word, `0x801F6EF8`). Draining retail's word
+without the shadow's had put 36 casts off retail's phase walk; with both drained it found Mule's arm 1 anchor push
+short above step 1 (retail pushes `scalar * delta / 2` once a pass ahead of its stage test, `0x801F6D60..0x801F6D90`).
+PROT 0931's fallen runs are also a scripted fight (`ctx[+0x287]`), which takes arm 29's hit loop
+(`0x801F833C..0x801F8548`). It found the loop's stores on each struck monster (shown, rate `2`, word `0x00401004`)
+missing, and arm 30's rate loop (`0x801F8774`, the colour word alone) slowing a dead seat whose cleared word the
+engine reads as its resting shown `0`.
+
 **The live-wrapper runs.** Everywhere else the walk stubs the damage wrapper `FUN_801DD0AC` with scripted rolls,
 so its finisher never runs on retail's side. A third run of every body, layout and step on the full row takes the
 wrapper live on both sides: retail's kernel and finisher off PROT 0898, and the shadow's `World::summon_module_roll`
