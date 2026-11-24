@@ -2394,8 +2394,16 @@ fn the_side_band_arm_steps_over_the_band_word_poll_as_retail_does() {
     let overlay = disc.read_entry(898).expect("PROT 0898");
     let layout = LAYOUTS[0];
     let mut compared = 0;
-    for (entry, va, arm) in [(904u32, THEEDER_TICK, 1u8), (906, GIZAM_TICK, 2)] {
-        for word in [0u16, 0x40] {
+    // At frame steps 1 to 3 (`WALK_STEP`): the arm's band-word test is once
+    // a pass.
+    let runs = [1u8, 2, 3].into_iter().flat_map(|step| {
+        [(904u32, THEEDER_TICK, 1u8), (906, GIZAM_TICK, 2)]
+            .into_iter()
+            .flat_map(move |b| [0u16, 0x40].map(|word| (b, word, step)))
+    });
+    for ((entry, va, arm), word, step) in runs {
+        WALK_STEP.with(|s| s.set(step));
+        {
             let module = disc.read_entry(entry as usize).expect("module");
             let action = action_of(entry);
             let mut cpu = scus_cpu().expect("SCUS");
@@ -2429,12 +2437,13 @@ fn the_side_band_arm_steps_over_the_band_word_poll_as_retail_does() {
             let retail = cpu.mem.rd8(CTX + 0x279);
             assert_eq!(
                 w.casting.module_phase, retail,
-                "PROT {entry:04} arm {arm} band word {word:#x}: port phase vs retail"
+                "PROT {entry:04} arm {arm} band word {word:#x} step {step}: port phase vs retail"
             );
             compared += 1;
         }
     }
-    assert_eq!(compared, 4);
+    WALK_STEP.with(|s| s.set(1));
+    assert_eq!(compared, 12);
 }
 
 /// PROT 0925's arm 8 on a scripted fight, which takes the round tail
