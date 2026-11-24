@@ -160,6 +160,15 @@ pub(super) fn play_beats(
             .collect()
     });
     let mut idle: BTreeMap<u8, BTreeSet<u16>> = BTreeMap::new();
+    // Walk-ons whose walk stalled on the way, with the flags they stalled
+    // under ([`pad_props`] only): re-armed once a later beat moves a flag,
+    // since a gate stone that clears walls raises one. `korb3`'s maze holds
+    // the walk to P2[2] (the band to `kor` that raises `0x41D`, behind which
+    // `map03` P2[11] raises the `0x403` that stands Koin's residents up)
+    // until the stones' gates line up, and walked props leave the maze in
+    // another order than placed ones; played once, the band was not tried
+    // again, and the run left for `korb2` and stopped in Uru Mais.
+    let mut stalled_walks: BTreeMap<u8, BTreeSet<u16>> = BTreeMap::new();
     let mut rearmed: BTreeSet<u8> = BTreeSet::new();
     // The continuous hand stays while a round still gains: a staged talk
     // (`cave01` P1[2], Terra's seven-stage `0x158`..`0x15E` chain) plays one
@@ -191,6 +200,13 @@ pub(super) fn play_beats(
             walked.remove(&rec);
             rearmed.insert(rec);
         }
+        stalled_walks.retain(|rec, f| {
+            if *f == round_start {
+                return true;
+            }
+            walked.remove(rec);
+            false
+        });
         // A prop examined to no effect is examined again once a flag its
         // record tests has moved (the gate whose key a later prop gave).
         let dry_stale: Vec<(u8, u8)> = dry_props
@@ -796,6 +812,9 @@ pub(super) fn play_beats(
             // end of one tunnel, drops its member beside the P2[2] band).
             if matches!(&r, Run::Parked(e) if e.contains("no walkable path")) {
                 walked.remove(&rec);
+            }
+            if pad_props() && matches!(&r, Run::Parked(e) if e.contains("pad walk stalled")) {
+                stalled_walks.insert(rec, flags_of_world(session));
             }
             rearmed.remove(&rec);
             if matches!(r, Run::Released) && flags_of_world(session) == f0 {

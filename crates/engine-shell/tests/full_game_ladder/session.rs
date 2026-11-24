@@ -24,8 +24,49 @@ pub(super) trait HostPad {
     fn host_pad(&mut self, pad: u16);
 }
 
+/// `LEGAIA_FGL_WATCH_FLAGS=0x403,...`: print each flip of those system flags
+/// the hand's presses see, with the scene, frame and the pad holder's park
+/// site - how a flag a later gate needs is traced to what lowered it.
+fn watch_flags(session: &NativeSession) {
+    thread_local! {
+        static SEEN: std::cell::RefCell<BTreeMap<u16, bool>> =
+            const { std::cell::RefCell::new(BTreeMap::new()) };
+    }
+    static WATCH: std::sync::OnceLock<Vec<u16>> = std::sync::OnceLock::new();
+    let watch = WATCH.get_or_init(|| {
+        std::env::var("LEGAIA_FGL_WATCH_FLAGS")
+            .map(|v| {
+                v.split(',')
+                    .filter_map(|f| u16::from_str_radix(f.trim().trim_start_matches("0x"), 16).ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    });
+    if watch.is_empty() {
+        return;
+    }
+    let flags = &session.host.world.flags.system_flags;
+    for &f in watch {
+        let on = flags
+            .get(usize::from(f / 8))
+            .is_some_and(|b| b & (0x80 >> (f % 8)) != 0);
+        let was = SEEN.with(|s| s.borrow_mut().insert(f, on));
+        if was.is_some_and(|w| w != on) {
+            eprintln!(
+                "      [watch] 0x{f:03X} -> {} in {} at frame {} ({}, {})",
+                u8::from(on),
+                scene_name(session),
+                session.frames,
+                holder(session),
+                park_site(session)
+            );
+        }
+    }
+}
+
 impl HostPad for NativeSession {
     fn host_pad(&mut self, pad: u16) {
+        watch_flags(self);
         // The opening's intro hand-off (`claim_tick`'s `PrologueSkip`, retail
         // `FUN_801D1344`): once the opening chain arms it, a Cross edge ends
         // the opening on both play hosts, whatever holds the field's pad -
