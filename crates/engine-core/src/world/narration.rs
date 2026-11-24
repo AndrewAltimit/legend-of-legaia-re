@@ -25,6 +25,7 @@ pub struct FrameGrade {
     pub depth_cue: Option<legaia_engine_system::fade::DepthCueRamp>,
 }
 mod field_channels;
+pub use field_channels::draws_near_buckets;
 mod record_install;
 mod spawned_slice;
 
