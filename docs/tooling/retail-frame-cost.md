@@ -95,6 +95,10 @@ entry: the chain `DrawOTag` takes, walked from `*(0x1F8003F4) + 4 * len - 4`).
 `--calls` lists every call, `--csv` writes one row per routine per frame,
 `--funcs` adds routines to price, and `--watch name=ADDR:kind,...` prints RAM
 words at each frame's end (a cabinet's state word, the step byte `0x1F800393`).
+`--poke ADDR=VALUE` (or `*PTR+OFF=VALUE`, through the word at `PTR`) writes a
+halfword once the state's frame in progress has run out: a what-if on a retail
+state, such as `--poke '*8007C364+42=1'`, which sends the player's model through
+the object-effect clip arm for every frame after.
 
 ## Held against the emulator
 

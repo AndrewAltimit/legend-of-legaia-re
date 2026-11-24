@@ -81,6 +81,12 @@ enum Cmd {
         /// for a narrower kind).
         #[arg(long, value_delimiter = ',')]
         watch: Vec<String>,
+        /// RAM halfwords written once the state's frame in progress has
+        /// run out, `ADDR=VALUE` (hex) or `*PTR+OFF=VALUE` (the word at
+        /// `PTR` plus `OFF`): a what-if on a retail state, such as raising
+        /// an actor's `+0x42` (`*8007C364+42=1`, the player). Probe only.
+        #[arg(long, value_delimiter = ',')]
+        poke: Vec<String>,
     },
     /// Price a battle frame by unit (see `battle_cost`).
     BattleCost {
@@ -244,6 +250,7 @@ fn main() -> Result<()> {
             marks_out,
             mark_reg,
             watch,
+            poke,
         } => {
             let watch = parse_watch(&watch)?;
             let s = state.load()?;
@@ -273,6 +280,9 @@ fn main() -> Result<()> {
                 run.take_interrupts();
             }
             run.settle()?;
+            for spec in &poke {
+                apply_poke(&mut run.cpu.mem, spec)?;
+            }
             run.cpu.hist_within = hist_va;
             run.cpu.mark_reg = mark_reg;
             for m in &marks {
@@ -699,6 +709,25 @@ fn battle_cost(s: &PcsxState, frames: usize, mode: &str) -> Result<()> {
         }
         _ => bail!("unknown mode {mode}"),
     }
+    Ok(())
+}
+
+/// One `--poke`: `ADDR=VALUE` or `*PTR+OFF=VALUE`, a halfword, hex.
+fn apply_poke(mem: &mut psx_retail_exec::Memory, spec: &str) -> Result<()> {
+    let hex = |t: &str| u32::from_str_radix(t.trim().trim_start_matches("0x"), 16);
+    let (at, value) = spec
+        .split_once('=')
+        .ok_or_else(|| anyhow::anyhow!("--poke {spec}: no '='"))?;
+    let va = match at.strip_prefix('*') {
+        Some(rest) => {
+            let (ptr, off) = rest.split_once('+').unwrap_or((rest, "0"));
+            let b = mem.read(hex(ptr)?, 4);
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]]).wrapping_add(hex(off)?)
+        }
+        None => hex(at)?,
+    };
+    mem.wr16(va, hex(value)? as u16);
+    eprintln!("poke {va:08X} = {}", value.trim());
     Ok(())
 }
 
