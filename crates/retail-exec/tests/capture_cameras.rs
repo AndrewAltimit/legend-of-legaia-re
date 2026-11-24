@@ -515,6 +515,14 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 victim = 0;
                 cpu.mem.wr8(ACTOR + caster * STRIDE + 0x1DD, 0);
             }
+            // A spell whose target shape has `& 0x60 == 0` aims at the
+            // monster row: the picker names the caster itself or a wounded
+            // ally (`0x801EA5E4..0x801EA718`), never a party seat.
+            let shape = cpu.mem.rd8(SPELL_STATS + u32::from(body.action) * 0xC + 2) & 0x60;
+            if shape == 0 {
+                victim = caster;
+                cpu.mem.wr8(ACTOR + caster * STRIDE + 0x1DD, caster as u8);
+            }
             // State `0x6F` drains the framing depth by `16 * step` a vsync
             // while it waits on the module's seek (`0x801E5008..0x801E5014`,
             // no clamp), so a long enough seek hands the module a depth below
@@ -1059,6 +1067,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     // Bloody Horns' arm 6 (`0x801F7AB4..0x801F7AE4`): a live
                     // victim's clip `0`, a fallen one's `8`.
                     0x5C if body.va == BLOODY_HORNS => Some(6),
+                    // Power Charge's arm 3 (`0x801F758C..0x801F75F4`), on the
+                    // monster seat it aims at, which stands.
+                    0x72 => Some(3),
                     _ => None,
                 };
                 if let Some(arm_at) = victim_settle {
@@ -1074,7 +1085,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     if phase == arm_at {
                         // A victim the strike downed on every fourth round
                         // (Kiss of Death's own hit downs its one-HP victims).
-                        if body.action != 0x6E && round % 4 == 3 && settle_passes == 1 {
+                        if !matches!(body.action, 0x6E | 0x72)
+                            && round % 4 == 3
+                            && settle_passes == 1
+                        {
                             cpu.mem.wr16(va_ + 0x14C, 0);
                         }
                         let hp = cpu.mem.rd16(va_ + 0x14C);

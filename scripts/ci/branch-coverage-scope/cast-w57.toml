@@ -398,3 +398,24 @@ image = "d4110f5a3148088b"
 range = "0x801F744C..0x801F7464"
 verdict = "unreachable"
 reason = "PROT 0959: arm 9's shake word `0x801F9628`, seeded `0x100` as arm 8 passes (`0x801F742C..0x801F7430`), drains by the frame step each pass (`0x801F7454..0x801F7468`), while arm 9 itself lasts the `scalar * 0xE0` arm 8 added to a spent countdown (`0x801F7330..0x801F734C`), drained `scalar * step` a pass (`0x801F74F4..0x801F7518`): at the battle's scalar `8` that is at most `0xE0` vsyncs plus a step, so the word never reaches `0` (`blez`) or below (`bltz`) inside the arm."
+
+[[arm]]
+entry = "0x801F7158"
+image = "d30427937f75a8a5"
+range = "0x801F71F8..0x801F7214"
+verdict = "unreachable"
+reason = "PROT 0955 `0x72`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F7330..0x801F7340`, `0x801F7530..0x801F7540`) up to `3` and `0xFF` (`0x801F7600`), so after the tests on `2` and `0` a phase below `3` is `1` (`0x801F71F8`) and one above is `3` or `0xFF` (`0x801F7214`): neither fall-through runs."
+
+[[arm]]
+entry = "0x801F7158"
+image = "d30427937f75a8a5"
+range = "0x801F7590..0x801F75B0"
+verdict = "unreachable"
+reason = "PROT 0955 `0x72`: arm 3's party-seat settle (target code `+0x1DD` below `3`, `sltiu` at `0x801F758C`). Power Charge carries target shape `0x04` (`& 0x60 == 0`), for which the monster picker names the caster or a wounded ally of its own row, `3 + i` (`0x801EA5E4..0x801EA718`), so the code is never a party seat."
+
+[[arm]]
+entry = "0x801F7158"
+image = "d30427937f75a8a5"
+range = "0x801F75C8..0x801F75F0"
+verdict = "cannot-drive"
+reason = "PROT 0955 `0x72`: arm 3's wait on a downed monster target (`+0x14C == 0`, then its colour word `+0x04` faded to `0`). The picker names only a live monster (`beqz` on `+0x14C` at `0x801EA644`, or the caster itself), and a buff deals no damage, so this needs the target downed between the pick and the cast, which turns on the action state machine's handling of a dead target; the rig does not stage that flow."
