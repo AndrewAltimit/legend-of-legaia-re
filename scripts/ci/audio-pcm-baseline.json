@@ -12,13 +12,13 @@
     },
     "cort_guilty_cross_mid_cast": {
       "cast_core_corr": 0.9921,
-      "cast_core_level": 0.0107,
+      "cast_core_level": 0.0369,
       "cast_core_steps_corr": 0.9921,
-      "cast_core_steps_level": 0.0149,
-      "cast_corr": 0.8594,
-      "cast_level": 0.0165,
+      "cast_core_steps_level": 0.0093,
+      "cast_corr": 0.9813,
+      "cast_level": 0.007,
       "cast_steps_corr": 0.9813,
-      "cast_steps_level": -0.0028
+      "cast_steps_level": -0.0234
     },
     "cort_mystic_shield_mid_cast": {
       "cast_core_corr": 0.9978,
@@ -40,9 +40,9 @@
     },
     "gilium_summon_mid_cast": {
       "cast_core_corr": 0.9959,
-      "cast_core_level": 0.0096,
+      "cast_core_level": 0.0191,
       "cast_corr": 0.9908,
-      "cast_level": 0.0258
+      "cast_level": 0.01
     },
     "karisto_overworld_resident": {
       "track_corr": 0.9981,
@@ -139,12 +139,12 @@
       "track_level": 0.0037
     },
     "swordie_summon_mid_cast": {
-      "cast_core_corr": 0.9893,
-      "cast_core_level": 0.0405,
+      "cast_core_corr": 0.9948,
+      "cast_core_level": -0.0074,
       "cast_core_steps_corr": 0.995,
       "cast_core_steps_level": -0.0052,
       "cast_corr": 0.9901,
-      "cast_level": 0.0345,
+      "cast_level": -0.0114,
       "cast_steps_corr": 0.9897,
       "cast_steps_level": -0.0149
     },
@@ -153,14 +153,14 @@
       "track_level": 0.0004
     },
     "theeder_summon_mid_cast": {
-      "cast_core_corr": 0.9902,
-      "cast_core_level": 0.1498,
+      "cast_core_corr": 0.9924,
+      "cast_core_level": 0.5385,
       "cast_core_steps_corr": 0.9919,
-      "cast_core_steps_level": 0.4619,
-      "cast_corr": 0.9535,
-      "cast_level": 0.4695,
+      "cast_core_steps_level": 0.4617,
+      "cast_corr": 0.9643,
+      "cast_level": 0.5035,
       "cast_steps_corr": 0.9623,
-      "cast_steps_level": 0.4615
+      "cast_steps_level": 0.4564
     },
     "title_screen_new_game": {
       "core_corr": 1.0,
@@ -186,11 +186,11 @@
     },
     "zenoir_summon_mid_cast": {
       "cast_core_corr": 0.9978,
-      "cast_core_level": 0.1117,
+      "cast_core_level": -0.074,
       "cast_core_steps_corr": 0.9978,
       "cast_core_steps_level": -0.0356,
-      "cast_corr": 0.8045,
-      "cast_level": 0.1317,
+      "cast_corr": 0.8807,
+      "cast_level": 0.0155,
       "cast_steps_corr": 0.904,
       "cast_steps_level": -0.0147
     },
@@ -210,9 +210,9 @@
     },
     "zora_glare_petrify_pre": {
       "cast_core_corr": 0.9959,
-      "cast_core_level": -0.0032,
+      "cast_core_level": -0.0046,
       "cast_corr": 0.9474,
-      "cast_level": -0.0115
+      "cast_level": -0.0121
     }
   }
 }
