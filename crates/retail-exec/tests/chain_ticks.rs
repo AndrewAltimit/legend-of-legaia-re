@@ -276,6 +276,7 @@ fn run_body(
     selector: u8,
     seed: u64,
     field: Field,
+    step: u8,
 ) -> Option<Run> {
     let disc = disc()?;
     let mut cpu = scus_cpu()?;
@@ -442,9 +443,9 @@ fn run_body(
             cpu.mem.wr32(PART_POOL + slot * 4, part);
         }
     }
-    // One vsync a pass at the speed scalar, the clock the directors keep.
+    // `step` vsyncs a pass at the speed scalar.
     cpu.mem.wr8(SCALAR, cam::SPEED_SCALAR as u8);
-    cpu.mem.wr8(STEP, 1);
+    cpu.mem.wr8(STEP, step);
 
     let key = if t::capture_trampoline_for(body.prot_entry).is_some() {
         body.body
@@ -460,7 +461,7 @@ fn run_body(
     let mut st = ModuleCamState {
         lead_roster: 1,
         opens_pass: true,
-        frame_step: 1,
+        frame_step: step,
         victim_settled: true,
         caster_in_reach: true,
         party_settled: true,
@@ -593,22 +594,6 @@ fn run_body(
         // opens on it, where the module has one; a director with none
         // reads a spent word, and the walk paces it on retail's phase.
         let countdown_word = cam::capture_countdown_va(action).map(|va| cpu.mem.rd32(va) as i32);
-        let dir = director.map(|d| {
-            st.countdown.0 = countdown_word.unwrap_or(0);
-            st.victim_on_gate_clip = rec0[vi * STRIDE + 0x1D9] == rec0[vi * STRIDE + 0x1F2];
-            let seats = ModuleCamSeats {
-                caster: seat_of(&rec0, CASTER),
-                victim: seat_of(&rec0, vi),
-                action,
-                depth_raw: 0x900,
-                victim_radius: 0x80,
-                caster_scale: 0x1000,
-                caster_monster: formation,
-                first_monster: formation,
-                ..ModuleCamSeats::default()
-            };
-            d(&mut st, phase, seats)
-        });
         hits.borrow_mut().clear();
         spawns.borrow_mut().clear();
         draws.borrow_mut().clear();
@@ -623,7 +608,7 @@ fn run_body(
         cpu.mem.wr8(CLUSTER_FLAG, 1);
         let stop = cpu.call(body.body, &[]);
         let c0 = format!(
-            "PROT {:04} {action:#04x} {field:?} arm {phase:#x}",
+            "PROT {:04} {action:#04x} step {step} {field:?} arm {phase:#x}",
             body.prot_entry
         );
         if stop != Stop::Returned {
@@ -708,6 +693,40 @@ fn run_body(
         }
         let busy = cpu.regs.r[V0] != 0;
         let after = cpu.mem.rd8(CTX + 0x279);
+        let retail_held = busy && after == phase;
+        // The host's pass (`World::module_pass`): `step` one-vsync ticks of
+        // the director, the countdown's rest `step - 1 - i`, stopping on the
+        // tick it lets through.
+        let mut ticks = Vec::new();
+        if let Some(d) = director {
+            st.countdown.0 = countdown_word.unwrap_or(0);
+            st.victim_on_gate_clip = rec0[vi * STRIDE + 0x1D9] == rec0[vi * STRIDE + 0x1F2];
+            let seats = ModuleCamSeats {
+                caster: seat_of(&rec0, CASTER),
+                victim: seat_of(&rec0, vi),
+                action,
+                depth_raw: 0x900,
+                victim_radius: 0x80,
+                caster_scale: 0x1000,
+                caster_monster: formation,
+                first_monster: formation,
+                ..ModuleCamSeats::default()
+            };
+            for i in 0..step {
+                st.countdown.1 = step - 1 - i;
+                st.opens_pass = i == 0;
+                let a = d(&mut st, phase, seats);
+                let hold = a.hold;
+                ticks.push(a);
+                // A director with no word of retail's reads a spent one and
+                // is paced on retail's phase: a pass retail holds holds all
+                // its ticks.
+                if !hold && (countdown_word.is_some() || !retail_held) {
+                    break;
+                }
+            }
+        }
+        let dir = ticks.last().cloned();
         // The arm's declared settle on the victim as the pass opened: a
         // victim it calls unsettled holds retail, and a pass retail lets
         // through finds it settled.
@@ -749,8 +768,27 @@ fn run_body(
             .as_ref()
             .filter(|d| !d.spawns_at_pass_end || countdown_word.is_some())
         {
+            let _ = d;
             let mut left = spawns.borrow().clone();
-            for sp in d.charge_spawns.iter().chain(&d.pass_spawns).flatten() {
+            // The host stages a held tick's calls once a pass: on the tick
+            // that opens it, or on the one that closes it for a call that
+            // reads the pass's drained state; the passing tick's own always
+            // (`World::capture_stager_tick`).
+            let n = ticks.len();
+            let staged = ticks.iter().enumerate().filter(|&(k, d)| {
+                if !d.hold {
+                    return true;
+                }
+                if d.spawns_at_pass_end {
+                    k + 1 == usize::from(step) && n == usize::from(step)
+                } else {
+                    k == 0
+                }
+            });
+            for sp in staged
+                .flat_map(|(_, d)| d.charge_spawns.iter().chain(&d.pass_spawns))
+                .flatten()
+            {
                 let (
                     cam::SpawnRecord::Module(r),
                     cam::SpawnAnchor::LiteralScaled { pos, rot, scale },
@@ -886,11 +924,24 @@ fn run_body(
                 ));
             }
         }
-        if let Some(a) = dir {
-            if a.hold {
+        if let Some(last) = dir {
+            if last.hold {
                 out.gaps
                     .push(format!("{c0}: the director holds where retail passed"));
             }
+            // Retail's passing pass leaves the word the director's own
+            // drain and re-arm leave.
+            if let Some(va) = cam::capture_countdown_va(action) {
+                let word = cpu.mem.rd32(va) as i32;
+                if word != st.countdown.0 {
+                    out.gaps.push(format!(
+                        "{c0}: countdown retail {word} port {}",
+                        st.countdown.0
+                    ));
+                }
+            }
+        }
+        for a in &ticks {
             if st.yaw_base != yaw0 {
                 ctx[0x6DA..0x6DC].copy_from_slice(&(st.yaw_base as u16).to_le_bytes());
             }
@@ -1137,8 +1188,12 @@ fn the_chain_bodies_walk_as_retail_does() {
             .flat_map(|a| formations.iter().map(move |f| (a, f)))
         {
             for &sel in selectors {
-                for (seed, field) in fields(body.prot_entry) {
-                    let run = run_body(body, action, formation, sel, seed, field).expect("disc");
+                for ((seed, field), step) in fields(body.prot_entry)
+                    .into_iter()
+                    .flat_map(|f| (1..=4u8).map(move |s| (f, s)))
+                {
+                    let run =
+                        run_body(body, action, formation, sel, seed, field, step).expect("disc");
                     casts += 1;
                     arms += run.path.len();
                     hits += run.hits;
