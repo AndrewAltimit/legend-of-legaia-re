@@ -50,22 +50,19 @@ pub(super) fn placements_made() -> u64 {
 }
 
 /// Whether the walked hand skips prop `anchor` in `scene`: its last beat
-/// was played from placed seats alone and moved no flag, and none of the
-/// flags its record tests (`tested`) has moved since. The beats pass plays
-/// a prop again each pass; placed again to the same no effect, `retona`'s
-/// prop at (64, 79), ringed by bands that walk the party back, took sixteen
-/// placements a run and gave nothing.
-pub(super) fn dry_placement(
-    scene: &str,
-    anchor: (u8, u8),
-    flags: &BTreeSet<u16>,
-    tested: &BTreeSet<u16>,
-) -> bool {
+/// was played from placed seats alone and moved no flag, and no flag has
+/// moved since. The beats pass plays a prop again each pass; placed again to
+/// the same no effect, `retona`'s prop at (64, 79), ringed by bands that
+/// walk the party back, took sixteen placements a run and gave nothing. Any
+/// flag re-arms it, not only those its record tests: the same prop is the
+/// way out to `map02` once the boss on its band ring has raised `0x355` /
+/// `0x356`, which it does not test.
+pub(super) fn dry_placement(scene: &str, anchor: (u8, u8), flags: &BTreeSet<u16>) -> bool {
     pad_props()
         && DRY_PLACED.with(|d| {
             d.borrow()
                 .get(&(scene.to_string(), anchor))
-                .is_some_and(|then| tested.iter().all(|f| then.contains(f) == flags.contains(f)))
+                .is_some_and(|then| then == flags)
         })
 }
 

@@ -1052,12 +1052,7 @@ fn play_prop_beats(
         {
             continue;
         }
-        if dry_placement(
-            name,
-            anchor,
-            &flags_of_world(session),
-            &prop_tested_flags(session, mf, man, anchor),
-        ) {
+        if dry_placement(name, anchor, &flags_of_world(session)) {
             continue;
         }
         if *ran >= MAX_BEATS || !examined.insert(anchor) {
