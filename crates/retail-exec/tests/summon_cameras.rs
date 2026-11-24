@@ -2448,15 +2448,25 @@ fn the_side_band_arm_steps_over_the_band_word_poll_as_retail_does() {
 
 /// PROT 0925's arm 8 on a scripted fight, which takes the round tail
 /// (`bne` on `ctx[+0x287]` at `0x801F73F0` to `0x801F79B8`) in place of the
-/// flee: the image's arm run once on its spent countdown over party rows of
-/// one to three seats, a member down, members with an item turn that had
-/// or had not a turn left (`+0x1DE`, `+0x16C`), against
-/// `spikefish_round_tail` - the turn cursor `ctx[+0x1A]`, every party
-/// seat's `+0x16C` and the item refunds `FUN_800421D4(item, 1)` in order.
+/// flee: the image's arm run over party rows of one to three seats, a member
+/// down, members with an item turn that had or had not a turn left (`+0x1DE`,
+/// `+0x16C`), against `spikefish_round_tail` - the turn cursor `ctx[+0x1A]`,
+/// every party seat's `+0x16C` and the item refunds `FUN_800421D4(item, 1)` in
+/// order.
+///
+/// Each row runs at frame steps 1 to 4 on countdown words either side of the
+/// pass's drain: the arm drains its word by the bare step (`subu` / `bgtz`
+/// at `0x801F737C..0x801F7380`) after adding `step << 3` to the creature's
+/// shatter word (`0x801F7344..0x801F7358`). The shadow runs the pass as the
+/// host does (`World::module_pass`): `step` ticks of the director
+/// `spikefish_direct`, the countdown's rest `step - 1 - i`, stopping on the
+/// tick the gate lets through, each tick adding `spikefish_shatter_add`.
+/// Compared: held or passed, the re-armed word, and the shatter word.
 #[test]
 fn the_spikefish_round_tail_counts_and_refunds_as_retail_does() {
+    use legaia_engine_cast::cast_module_camera::summon_holds::spikefish_direct;
     use legaia_engine_cast::cast_module_ticks::{
-        CastActorState, CastModuleCtx, spikefish_round_tail,
+        CastActorState, CastModuleCtx, spikefish_round_tail, spikefish_shatter_add,
     };
     differential!(prot(925, 0x801F_6A00));
     let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
@@ -2467,7 +2477,7 @@ fn the_spikefish_round_tail_counts_and_refunds_as_retail_does() {
     const COUNTDOWN: u32 = 0x801F_800C;
     let overlay = disc.read_entry(898).expect("PROT 0898");
     let module = disc.read_entry(925).expect("PROT 0925");
-    let mut compared = 0;
+    let (mut compared, mut held, mut early) = (0, 0, 0);
     // `(hp, +0x1DE, +0x16C, +0x1DF)` per seat.
     let rows: [&[(u16, u8, u16, u8)]; 5] = [
         &[(300, 0, 0, 0)],
@@ -2477,82 +2487,122 @@ fn the_spikefish_round_tail_counts_and_refunds_as_retail_does() {
         &[(300, 3, 4, 0), (300, 1, 6, 0x40), (300, 1, 0, 0x41)],
     ];
     for (k, row) in rows.iter().enumerate() {
-        let mut cpu = scus_cpu().expect("SCUS");
-        cpu.mem.load(OVERLAY_BASE, &overlay);
-        cpu.mem.load(BASE, &module);
-        cpu.mem.wr32(CTX_PTR, CTX);
-        cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
-        cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
-        for target in jal_targets(&module) {
-            cpu.stub(target, 0);
-        }
-        let refunds = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
-        {
-            let refunds = refunds.clone();
-            cpu.hook(REFUND, move |r, _| {
-                refunds.borrow_mut().push((r.r[A0], r.r[A1]));
-                r.r[V0] = 0;
-            });
-        }
-        for b in 0..0x1100 {
-            cpu.mem.wr8(CTX + b, 0);
-        }
-        cpu.mem.wr8(CTX, row.len() as u8);
-        cpu.mem.wr8(CTX + 1, 2);
-        cpu.mem.wr8(CTX + 0x1A, 5);
-        cpu.mem.wr8(CTX + 0x279, 8);
-        cpu.mem.wr8(CTX + 0x287, 1);
-        cpu.mem.wr32(COUNTDOWN, 0);
-        cpu.mem.wr8(SCALAR, SPEED_SCALAR as u8);
-        cpu.mem.wr8(STEP, 1);
-        for s in 0..8u32 {
-            let a = ACTOR + s * STRIDE;
-            cpu.mem.wr32(ACTORS + s * 4, a);
-            for o in (0..STRIDE).step_by(4) {
-                cpu.mem.wr32(a + o, 0);
+        for step in 1..=4u8 {
+            for word in [-3i32, 0, 1, 2, 3, 4, 5] {
+                let c = format!("row {k} step {step} word {word}");
+                let mut cpu = scus_cpu().expect("SCUS");
+                cpu.mem.load(OVERLAY_BASE, &overlay);
+                cpu.mem.load(BASE, &module);
+                cpu.mem.wr32(CTX_PTR, CTX);
+                cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+                cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+                for target in jal_targets(&module) {
+                    cpu.stub(target, 0);
+                }
+                let refunds = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+                {
+                    let refunds = refunds.clone();
+                    cpu.hook(REFUND, move |r, _| {
+                        refunds.borrow_mut().push((r.r[A0], r.r[A1]));
+                        r.r[V0] = 0;
+                    });
+                }
+                for b in 0..0x1100 {
+                    cpu.mem.wr8(CTX + b, 0);
+                }
+                cpu.mem.wr8(CTX, row.len() as u8);
+                cpu.mem.wr8(CTX + 1, 2);
+                cpu.mem.wr8(CTX + 0x1A, 5);
+                cpu.mem.wr8(CTX + 0x279, 8);
+                cpu.mem.wr8(CTX + 0x287, 1);
+                cpu.mem.wr32(COUNTDOWN, word as u32);
+                cpu.mem.wr8(SCALAR, SPEED_SCALAR as u8);
+                cpu.mem.wr8(STEP, step);
+                for s in 0..8u32 {
+                    let a = ACTOR + s * STRIDE;
+                    cpu.mem.wr32(ACTORS + s * 4, a);
+                    for o in (0..STRIDE).step_by(4) {
+                        cpu.mem.wr32(a + o, 0);
+                    }
+                    let node = NODES + s * 0x100;
+                    cpu.mem.wr32(a + 0x22C, node);
+                }
+                let shatter0 = 0x40u16;
+                cpu.mem.wr16(ACTOR + CREATURE * STRIDE + 0x1BA, shatter0);
+                let mut party: Vec<CastActorState> = Vec::new();
+                for (s, &(hp, cat, key, item)) in row.iter().enumerate() {
+                    let a = ACTOR + s as u32 * STRIDE;
+                    cpu.mem.wr16(a + 0x14C, hp);
+                    cpu.mem.wr8(a + 0x1DE, cat);
+                    cpu.mem.wr16(a + 0x16C, key);
+                    cpu.mem.wr8(a + 0x1DF, item);
+                    party.push(CastActorState {
+                        hp,
+                        action_category: cat,
+                        init_key: key,
+                        queued_action: item,
+                        ..Default::default()
+                    });
+                }
+                assert_eq!(cpu.call(SPIKEFISH, &[]), Stop::Returned, "{c}");
+                // The host's pass.
+                let mut st = ModuleCamState {
+                    frame_step: step,
+                    ..ModuleCamState::default()
+                };
+                st.countdown.0 = word;
+                let (mut shatter, mut passed) = (shatter0, false);
+                for i in 0..step {
+                    st.countdown.1 = step - 1 - i;
+                    st.opens_pass = i == 0;
+                    let dir = spikefish_direct(&mut st, 8, ModuleCamSeats::default());
+                    shatter =
+                        shatter.wrapping_add(spikefish_shatter_add(!dir.hold, st.countdown.1));
+                    if !dir.hold {
+                        passed = true;
+                        early += usize::from(i + 1 < step);
+                        break;
+                    }
+                }
+                let retail_shatter = cpu.mem.rd16(ACTOR + CREATURE * STRIDE + 0x1BA);
+                assert_eq!(retail_shatter, shatter, "{c}: the creature's shatter word");
+                assert_eq!(
+                    cpu.mem.rd32(COUNTDOWN) as i32,
+                    st.countdown.0,
+                    "{c}: the countdown"
+                );
+                let left = cpu.mem.rd8(CTX + 0x279) == 9;
+                assert_eq!(left, passed, "{c}: retail leaves {left}, port {passed}");
+                if !passed {
+                    assert!(refunds.borrow().is_empty(), "{c}: a held pass refunds");
+                    assert_eq!(cpu.mem.rd8(CTX + 0x1A), 5, "{c}: a held pass counts");
+                    held += 1;
+                    continue;
+                }
+                let mut ctx = CastModuleCtx {
+                    turn_cursor: 5,
+                    ..Default::default()
+                };
+                let port_refunds = spikefish_round_tail(&mut ctx, &mut party);
+                assert_eq!(cpu.mem.rd8(CTX + 0x1A), ctx.turn_cursor, "{c}: turn cursor");
+                for (s, seat) in party.iter().enumerate() {
+                    let a = ACTOR + s as u32 * STRIDE;
+                    assert_eq!(
+                        cpu.mem.rd16(a + 0x16C),
+                        seat.init_key,
+                        "{c} seat {s}: +0x16C"
+                    );
+                }
+                let retail: Vec<(u32, u32)> = refunds.borrow().clone();
+                let port: Vec<(u32, u32)> =
+                    port_refunds.iter().map(|&i| (u32::from(i), 1)).collect();
+                assert_eq!(retail, port, "{c}: refunds");
+                compared += 1;
             }
-            let node = NODES + s * 0x100;
-            cpu.mem.wr32(a + 0x22C, node);
         }
-        let mut party: Vec<CastActorState> = Vec::new();
-        for (s, &(hp, cat, key, item)) in row.iter().enumerate() {
-            let a = ACTOR + s as u32 * STRIDE;
-            cpu.mem.wr16(a + 0x14C, hp);
-            cpu.mem.wr8(a + 0x1DE, cat);
-            cpu.mem.wr16(a + 0x16C, key);
-            cpu.mem.wr8(a + 0x1DF, item);
-            party.push(CastActorState {
-                hp,
-                action_category: cat,
-                init_key: key,
-                queued_action: item,
-                ..Default::default()
-            });
-        }
-        assert_eq!(cpu.call(SPIKEFISH, &[]), Stop::Returned, "row {k}");
-        let mut ctx = CastModuleCtx {
-            turn_cursor: 5,
-            ..Default::default()
-        };
-        let port_refunds = spikefish_round_tail(&mut ctx, &mut party);
-        assert_eq!(
-            cpu.mem.rd8(CTX + 0x1A),
-            ctx.turn_cursor,
-            "row {k}: turn cursor"
-        );
-        for (s, seat) in party.iter().enumerate() {
-            let a = ACTOR + s as u32 * STRIDE;
-            assert_eq!(
-                cpu.mem.rd16(a + 0x16C),
-                seat.init_key,
-                "row {k} seat {s}: +0x16C"
-            );
-        }
-        let retail: Vec<(u32, u32)> = refunds.borrow().clone();
-        let port: Vec<(u32, u32)> = port_refunds.iter().map(|&i| (u32::from(i), 1)).collect();
-        assert_eq!(retail, port, "row {k}: refunds");
-        assert_eq!(cpu.mem.rd8(CTX + 0x279), 9, "row {k}: the arm leaves");
-        compared += 1;
     }
-    assert_eq!(compared, rows.len());
+    assert!(
+        compared > 60 && held > 20 && early > 10,
+        "{compared} {held} {early}"
+    );
 }

@@ -2366,13 +2366,19 @@ impl World {
                 .wrapping_add(ticks_a::GIMARD_SHATTER_STEP_PER_TICK);
         }
         // PROT 0925's outcome arm breaks the creature up on every pass,
-        // held or not, ahead of its countdown gate.
+        // held or not, ahead of its countdown gate: the pass's whole
+        // `step << 3`, so the tick the arm leaves on adds the rest of its
+        // pass's (`spikefish_shatter_add`).
+        let rest = self.casting.module_cam.countdown.1;
         if entry == SPIKEFISH_ENTRY
             && phase_in == legaia_engine_cast::cast_module_ticks::SPIKEFISH_OUTCOME_ARM
             && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
         {
             a.battle.shatter = a.battle.shatter.wrapping_add(
-                legaia_engine_cast::cast_module_ticks::SPIKEFISH_SHATTER_STEP_PER_TICK,
+                legaia_engine_cast::cast_module_ticks::spikefish_shatter_add(
+                    ctx.phase != phase_in,
+                    rest,
+                ),
             );
         }
         // PROT 0908's arm 12 shatters the monsters the finisher killed, on

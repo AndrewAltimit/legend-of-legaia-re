@@ -375,6 +375,20 @@ pub const SPIKEFISH_OUTCOME_ARM: u8 = 8;
 /// waits out its countdown.
 pub const SPIKEFISH_SHATTER_STEP_PER_TICK: u16 = 1 << 3;
 
+/// What one engine tick of PROT 0925's arm 8 adds to the creature's
+/// `+0x1BA`: [`SPIKEFISH_SHATTER_STEP_PER_TICK`], and on the tick the arm
+/// leaves, the rest of its pass's as well. Retail adds the pass's whole
+/// `step << 3` ahead of the gate (`0x801F7344..0x801F7358`) and leaves on that
+/// same pass, where the host's one-vsync ticks stop on the one the gate lets
+/// through (`World::module_pass`): `rest` is the ticks of the pass still owed
+/// after this one (`ModuleCountdown`'s `.1`).
+///
+/// PORT: FUN_801F6A00 (arm 8's shatter add, `0x801F7344..0x801F7358`)
+pub const fn spikefish_shatter_add(leaving: bool, rest: u8) -> u16 {
+    let ticks = if leaving { 1 + rest as u16 } else { 1 };
+    SPIKEFISH_SHATTER_STEP_PER_TICK * ticks
+}
+
 /// PROT 0925's **round tail** - the end of arm 8, run on every fight,
 /// scripted or not (`0x801F79B4..0x801F7A88`):
 ///
