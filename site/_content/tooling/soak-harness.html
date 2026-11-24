@@ -143,7 +143,7 @@
     <li><b>Reduce</b><span>chunks of the pad stream are zeroed while the signature still fires - a bounded delta-debugging pass</span></li>
     <li><b>Write</b><span><code>replays/&lt;slug&gt;.replay.toml</code>, with scene, seed and signature in header comments TOML ignores</span></li>
   </ol>
-  <p>A softlock is reduced under the neutral-pad control, so input that only fed the frozen window drops out; the replay records that in a <code># soak-min-distinct</code> header. A <code>control_starved</code> finding is reduced only ahead of its window, because a stream cut down to one looping option would starve a healthy conversation too. Every replay names the session configuration it ran under (<code># soak-arming = "host"</code> or <code>"bare"</code>, with a <code>-retail</code> suffix under the hosts' retail mode).</p>
+  <p>A softlock is reduced under the neutral-pad control, so input that only fed the frozen window drops out; the replay records that in a <code># soak-min-distinct</code> header. A <code>control_starved</code> finding is reduced only ahead of its window, because a stream cut down to one looping option would starve a healthy conversation too. Every replay names the session configuration it ran under (<code># soak-arming = "host"</code> or <code>"bare"</code>, with a <code>-retail</code> suffix under the hosts' retail mode), and the CD timing it played on (<code># soak-cd-timing</code>): a run plays on the players' timing, a console's in field and battle, and a replay without the tag was recorded on PCSX-Redux's and replays there, since a pad tape is the input of the frames it was recorded over and a fixed finding cannot be recorded again.</p>
 </section>
 
 <section class="doc-section" id="running" data-doc="running">

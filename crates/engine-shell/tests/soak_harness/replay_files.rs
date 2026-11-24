@@ -29,6 +29,11 @@ pub(super) const BATTLE_FRAMES_TAG: &str = "# soak-battle-frames = ";
 /// `"-retail"` suffix: the run held the hosts' retail mode
 /// ([`Arming::retail`]).
 pub(super) const ARMING_TAG: &str = "# soak-arming = ";
+/// The CD timing a replay was recorded on, field and battle
+/// (`field=console,battle=console`, [`environment::cd_timing_tag`]). A replay
+/// without the tag predates it and replays on PCSX-Redux's
+/// ([`environment::cd_timing_from_tag`]).
+pub(super) const CD_TIMING_TAG: &str = "# soak-cd-timing = ";
 
 pub(super) fn replay_text(
     spec: &RunSpec,
@@ -70,12 +75,18 @@ pub(super) fn replay_text(
     if let Some(n) = env_u64("LEGAIA_SOAK_BATTLE_FRAMES") {
         let _ = writeln!(out, "{BATTLE_FRAMES_TAG}{n}");
     }
+    let arming_cd = arming.cd;
     let arming = format!(
         "{}{}",
         if arming.host { "host" } else { "bare" },
         if arming.retail { "-retail" } else { "" }
     );
     let _ = writeln!(out, "{ARMING_TAG}{arming:?}");
+    let _ = writeln!(
+        out,
+        "{CD_TIMING_TAG}{:?}",
+        environment::cd_timing_tag(arming_cd)
+    );
     let _ = writeln!(
         out,
         "# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell \
@@ -140,7 +151,10 @@ pub(super) fn load_replay(path: &Path) -> LoadedReplay {
         min_distinct: parse_tag(&text, MIN_DISTINCT_TAG).and_then(|s| s.parse().ok()),
         starve_frames: parse_tag(&text, STARVE_TAG).and_then(|s| s.parse().ok()),
         battle_frames: parse_tag(&text, BATTLE_FRAMES_TAG).and_then(|s| s.parse().ok()),
-        arming: Arming::from_tag(parse_tag(&text, ARMING_TAG).as_deref()),
+        arming: Arming {
+            cd: environment::cd_timing_from_tag(parse_tag(&text, CD_TIMING_TAG).as_deref()),
+            ..Arming::from_tag(parse_tag(&text, ARMING_TAG).as_deref())
+        },
     }
 }
 

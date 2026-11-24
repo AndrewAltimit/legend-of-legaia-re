@@ -606,6 +606,7 @@ fn replay_header_round_trips() {
         Arming {
             host: true,
             retail: true,
+            cd: legaia_engine_core::world::play_cd_timing(),
         },
     );
     let dir = tempfile::tempdir().unwrap();
@@ -619,6 +620,11 @@ fn replay_header_round_trips() {
     assert_eq!(lr.min_distinct, Some(1));
     assert!(lr.arming.host, "a replay records the arming it ran under");
     assert!(lr.arming.retail, "and whether it held retail mode");
+    assert_eq!(
+        lr.arming.cd,
+        legaia_engine_core::world::play_cd_timing(),
+        "and the CD timing it played on"
+    );
 }
 
 /// Every member under the Evil Medallion's Rage: the anim tick's Rage arm
@@ -653,7 +659,11 @@ fn soak_rage_party_plays_its_rounds() {
                 .stack_size(64 << 20)
                 .spawn(move || {
                     let mut t = Tunables::from_env();
-                    t.arming = Arming { host: true, retail };
+                    t.arming = Arming {
+                        host: true,
+                        retail,
+                        ..t.arming
+                    };
                     run_one(&src, &known, &spec, None, &t, None)
                 })
                 .unwrap()
@@ -679,12 +689,35 @@ fn soak_rage_party_plays_its_rounds() {
 /// wrote it; no tag is the pre-arming bare session.
 #[test]
 fn arming_tag_reads_back() {
-    let a = |host, retail| Arming { host, retail };
+    let a = |host, retail| Arming {
+        host,
+        retail,
+        cd: environment::PCSX_CD_TIMING,
+    };
     assert_eq!(Arming::from_tag(None), a(false, false));
     assert_eq!(Arming::from_tag(Some("host")), a(true, false));
     assert_eq!(Arming::from_tag(Some("bare")), a(false, false));
     assert_eq!(Arming::from_tag(Some("host-retail")), a(true, true));
     assert_eq!(Arming::from_tag(Some("bare-retail")), a(false, true));
+}
+
+/// A replay's `# soak-cd-timing` value reads back to the timing that wrote
+/// it; no tag is PCSX-Redux's, which every soak ran on before the soak took
+/// the players' timing.
+#[test]
+fn cd_timing_tag_reads_back() {
+    use legaia_engine_core::world::{CdTiming, PlayCdTiming};
+    assert_eq!(
+        environment::cd_timing_from_tag(None),
+        environment::PCSX_CD_TIMING
+    );
+    for field in [CdTiming::Console, CdTiming::PcsxRedux] {
+        for battle in [CdTiming::Console, CdTiming::PcsxRedux] {
+            let cd = PlayCdTiming { field, battle };
+            let tag = environment::cd_timing_tag(cd);
+            assert_eq!(environment::cd_timing_from_tag(Some(&tag)), cd, "{tag}");
+        }
+    }
 }
 
 /// `+rage` is the outermost run suffix.
