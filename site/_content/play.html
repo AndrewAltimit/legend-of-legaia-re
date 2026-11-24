@@ -108,6 +108,12 @@
 }
 
 .play-canvas-wrap { position: relative; }
+.play-canvas-wrap .play-rules-seed { position: absolute; z-index: 5; margin: 0; }
+.play-canvas-wrap .play-rules-seed input {
+  width: 100%; height: 100%; box-sizing: border-box; margin: 0; padding: 0 0.3em;
+  background: rgba(8, 12, 30, 0.92); color: #e8e8e8; border: 1px solid #c8a040;
+  font-family: ui-monospace, monospace; outline: none;
+}
 /* `?embed=1` (the minigames page's arena): the picture alone, filling the
  * frame it is embedded in. */
 /* No topbar is drawn here, so none of its height is reserved
@@ -2138,14 +2144,6 @@ div.play-vis-head { cursor: default; }
     };
     const pulse = new Set();
     const onKey = (e) => {
-      /* On the New Game rules screen, Tab types a randomizer seed (the pad
-       * row rolls one). */
-      if (handoff === 'rules' && e.code === 'Tab') {
-        e.preventDefault();
-        const seed = window.prompt('Randomizer seed');
-        if (seed) { try { runtime.play_run_rules_set_seed(seed); } catch (err) { console.warn(err); } }
-        return;
-      }
       if (!PAD || PAD[e.code] === undefined) return;
       /* Typing in the scene search (or any field) is not a pad press. */
       const t = e.target;
@@ -2156,11 +2154,81 @@ div.play-vis-head { cursor: default; }
     window.addEventListener('keydown', onKey);
     canvas.focus();
     let torn = false;
+    /* The rules screen's seed text box: an HTML input laid over the seed
+     * editor's text line while the editor is up, so a keyboard (or a phone's
+     * own keyboard) types the seed; the letter grid under it still answers
+     * the pad, a controller and the touch pad. Its text is the engine's
+     * (`play_run_rules_seed_input` filters it), Enter takes the seed and
+     * Escape drops the edit. */
+    let seedBox = null;
+    let seedForm = null;
+    const syncSeedBox = (editing) => {
+      if (!editing) {
+        if (seedForm) { seedForm.remove(); seedForm = null; seedBox = null; canvas.focus(); }
+        return;
+      }
+      const wrap = menuCanvas.parentElement;
+      if (!seedForm) {
+        /* A form, so Enter submits it: the text box reads no key of its own
+         * but Escape. */
+        seedForm = document.createElement('form');
+        seedForm.className = 'play-rules-seed';
+        seedBox = document.createElement('input');
+        seedBox.type = 'text';
+        seedBox.maxLength = 20;
+        seedBox.spellcheck = false;
+        seedBox.autocomplete = 'off';
+        seedBox.enterKeyHint = 'done';
+        seedBox.setAttribute('aria-label', 'Randomizer seed');
+        seedForm.appendChild(seedBox);
+        seedBox.addEventListener('input', () => {
+          try {
+            runtime.play_run_rules_seed_input(seedBox.value);
+            const t = runtime.play_run_rules_seed_text();
+            if (t !== seedBox.value) seedBox.value = t;
+          } catch (err) { console.warn(err); }
+        });
+        seedForm.addEventListener('submit', (e) => {
+          e.preventDefault();
+          try { runtime.play_run_rules_seed_close(true); } catch (err) { console.warn(err); }
+        });
+        seedBox.addEventListener('keydown', (e) => {
+          if (e.code !== 'Escape') return;
+          e.preventDefault();
+          e.stopPropagation();
+          try { runtime.play_run_rules_seed_close(false); } catch (err) { console.warn(err); }
+        });
+        try { seedBox.value = runtime.play_run_rules_seed_text(); } catch (err) {}
+        wrap.appendChild(seedForm);
+        seedBox.focus();
+        seedBox.select();
+      } else if (document.activeElement !== seedBox) {
+        /* The grid typed: show it. */
+        try {
+          const t = runtime.play_run_rules_seed_text();
+          if (t !== seedBox.value) seedBox.value = t;
+        } catch (err) {}
+      }
+      /* Over the editor's text line, in the canvas's CSS pixels. */
+      let r = null;
+      try { r = runtime.play_run_rules_seed_rect(menuCanvas.width, menuCanvas.height); } catch (err) { r = null; }
+      if (r && r.length === 4) {
+        const cr = menuCanvas.getBoundingClientRect();
+        const wr = wrap.getBoundingClientRect();
+        const kx = cr.width / menuCanvas.width, ky = cr.height / menuCanvas.height;
+        seedForm.style.left = (cr.left - wr.left + r[0] * kx) + 'px';
+        seedForm.style.top = (cr.top - wr.top + r[1] * ky) + 'px';
+        seedForm.style.width = (r[2] * kx) + 'px';
+        seedForm.style.height = (r[3] * ky) + 'px';
+        seedBox.style.fontSize = Math.max(10, r[3] * ky * 0.7) + 'px';
+      }
+    };
     const teardownTitle = () => {
       if (torn) return;
       torn = true;
       if (bootTitleRAF) cancelAnimationFrame(bootTitleRAF);
       bootTitleRAF = 0;
+      syncSeedBox(false);
       window.removeEventListener('keydown', onKey);
       ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
       if (cancelBootTitle === cancelThis) cancelBootTitle = null;
@@ -2327,16 +2395,23 @@ div.play-vis-head { cursor: default; }
         catch (e) { rd = null; }
         ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
         if (rd && rd.open) {
-          /* Black past the stage, as the Continue and Options handoffs. */
+          /* Black past the stage, as the Continue and Options handoffs; then
+           * the backdrop rects, the menu windows off the chrome atlas (the
+           * pause menu's), and the labels. */
           ctx.fillStyle = '#000';
           ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
           for (const r of rd.rects) {
             ctx.fillStyle = 'rgba(' + r.rgba[0] + ',' + r.rgba[1] + ',' + r.rgba[2] + ',' + (r.rgba[3] / 255) + ')';
             ctx.fillRect(r.x, r.y, r.w, r.h);
           }
+          const cb = ensureChrome();
+          if (cb && rd.sprites) cb.blit(ctx, rd.sprites);
           const fr = ensureFont();
           if (fr) fr.blit(ctx, rd.texts);
         }
+        let editing = false;
+        try { editing = step === '' && runtime.play_run_rules_seed_editing(); } catch (e) { editing = false; }
+        syncSeedBox(editing);
         if (step === 'start') return finish('new_game');
         if (step === 'back') backToTitle();
         return;
@@ -2419,7 +2494,7 @@ div.play-vis-head { cursor: default; }
         catch (e) { opened = false; }
         if (opened) {
           handoff = 'rules';
-          statusEl.textContent = 'New Game rules. Up/Down picks a row, Left/Right changes it, Z on Start begins, X returns to the title, Tab types a randomizer seed.';
+          statusEl.textContent = 'New Game rules. Q/E switch tabs, Up/Down picks a row, Left/Right changes it, Z confirms, Enter begins, X returns to the title. Z on the seed opens its editor, where the keyboard types.';
           return;
         }
       }

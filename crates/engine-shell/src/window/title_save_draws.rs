@@ -156,6 +156,27 @@ impl PlayWindowApp {
         .unwrap_or_default()
     }
 
+    /// The New Game rules screen's chrome (its windows, tab plaques and hand
+    /// cursors) off the system-UI atlas, the page's
+    /// `play_run_rules_draws_json` sprites too. Empty unless the rules
+    /// screen is up and the atlas is uploaded.
+    pub(super) fn run_rules_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
+        let (BootUiState::RunRules, Some(menu)) = (&self.boot_ui, self.save_menu.as_ref()) else {
+            return Vec::new();
+        };
+        let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+        legaia_engine_screens::run_rules::run_rules_chrome_sprites(
+            &self.session.host.world,
+            &menu.rects,
+            origin,
+            scale,
+        )
+    }
+
     /// Sprite half of the field pause menu and its sub-screens: the 9-slice
     /// window frames, the carved title-tab plaques and the per-screen icon /
     /// cursor / gauge sprites.

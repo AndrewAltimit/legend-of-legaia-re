@@ -921,13 +921,15 @@ impl PlayWindowApp {
             BootUiState::RunRules | BootUiState::BossRush => {
                 // The hint names this host's keys, or the controller's
                 // buttons while one was pressed last (the page's rule too).
-                let keys =
-                    legaia_engine_screens::run_rules::PromptKeys::from_labels(|b| {
+                let keys = legaia_engine_screens::run_rules::PromptKeys {
+                    keyboard: self.last_pad.is_none(),
+                    ..legaia_engine_screens::run_rules::PromptKeys::from_labels(|b| {
                         match self.last_pad {
                             None => self.mapping.key_label_for_button(b).map(str::to_string),
                             Some(_) => self.mapping.prompt_label(b, self.last_pad),
                         }
-                    });
+                    })
+                };
                 let mut texts = legaia_engine_screens::run_rules::run_rules_stage_texts(
                     &self.session.host.world,
                     &self.font,

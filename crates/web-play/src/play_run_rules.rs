@@ -9,8 +9,9 @@
 //! and in game through the screen-prim pass and the overlay's text layer.
 
 use legaia_engine_session::run_rules::{
-    BossRushHostStep, RunRulesStep, boss_rush_screen_input, boss_rush_screen_up, boss_rush_step_on,
-    open_run_rules_screen, set_run_rules_seed, step_run_rules_screen,
+    BossRushHostStep, RunRulesStep, SeedKey, boss_rush_screen_input, boss_rush_screen_up,
+    boss_rush_step_on, open_run_rules_screen, seed_editor_key, seed_editor_open,
+    seed_editor_set_text, set_run_rules_seed, step_run_rules_screen,
 };
 use legaia_render_kernels::screen_prim::ScreenPrim;
 use wasm_bindgen::prelude::*;
@@ -64,8 +65,59 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Whether the rules screen's seed editor is up: the page shows its
+    /// text box over the canvas ([`Self::play_run_rules_seed_rect`]) while
+    /// it is.
+    pub fn play_run_rules_seed_editing(&self) -> bool {
+        self.scene_host
+            .host()
+            .is_some_and(|h| seed_editor_open(&h.world))
+    }
+
+    /// The seed editor's text, as the page's text box shows it.
+    pub fn play_run_rules_seed_text(&self) -> String {
+        self.scene_host
+            .host()
+            .and_then(|h| h.world.run_rules.setup.as_ref())
+            .and_then(|s| s.setup.seed_editor.as_ref())
+            .map(|e| e.text.clone())
+            .unwrap_or_default()
+    }
+
+    /// Replace the seed editor's text from the page's text box.
+    pub fn play_run_rules_seed_input(&mut self, text: &str) {
+        if let Some(h) = self.scene_host.host_mut() {
+            seed_editor_set_text(&mut h.world, text);
+        }
+    }
+
+    /// Close the seed editor from the page's text box: Enter takes the
+    /// seed (`take`), Escape drops the edit.
+    pub fn play_run_rules_seed_close(&mut self, take: bool) {
+        if let Some(h) = self.scene_host.host_mut() {
+            let key = if take {
+                SeedKey::Accept
+            } else {
+                SeedKey::Cancel
+            };
+            seed_editor_key(&mut h.world, key);
+        }
+    }
+
+    /// Where the page puts its seed text box, in surface pixels
+    /// `[x, y, w, h]`: the editor window's text line.
+    pub fn play_run_rules_seed_rect(&self, surface_w: u32, surface_h: u32) -> Vec<i32> {
+        let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
+        let s = scale as i32;
+        let (x, y, w, _) = legaia_engine_ui::run_rules_screen::MENU_GRID_FRAME;
+        let (x, y, w, h) = (x + 52, y + 5, w - 68, 18);
+        vec![origin.0 + x * s, origin.1 + y * s, w * s, h * s]
+    }
+
     /// The rules screen's draws for the title's menu canvas, in surface
-    /// pixels: `{"open", "rects": [{"x","y","w","h","rgba"}], "texts"}`.
+    /// pixels: `{"open", "rects": [{"x","y","w","h","rgba"}], "sprites",
+    /// "texts"}` - the backdrop as rects, the windows as chrome-atlas
+    /// sprites, the labels as font quads.
     pub fn play_run_rules_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
         let (Some(h), Some(assets)) = (self.scene_host.host(), self.menu_assets.as_ref()) else {
             return r#"{"open":false,"rects":[],"texts":[]}"#.to_string();
@@ -99,9 +151,14 @@ impl LegaiaRuntime {
             .collect();
         let mut texts = screen.texts(assets.font_ref());
         legaia_engine_ui::scale_stage_text_draws(&mut texts, origin, scale);
+        let sprites = assets
+            .chrome_rects()
+            .map(|r| screen.sprites(r, origin, scale))
+            .unwrap_or_default();
         serde_json::json!({
             "open": true,
             "rects": rects,
+            "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),
             "texts": texts.iter().map(quad_json).collect::<Vec<_>>(),
         })
         .to_string()
@@ -174,7 +231,12 @@ impl LegaiaRuntime {
 /// controller's buttons while one was pressed last
 /// ([`crate::pad_bindings::prompt_label`], the minigame captions' rule).
 pub(crate) fn prompt_keys() -> legaia_engine_screens::run_rules::PromptKeys {
-    legaia_engine_screens::run_rules::PromptKeys::from_labels(crate::pad_bindings::prompt_label)
+    legaia_engine_screens::run_rules::PromptKeys {
+        keyboard: crate::pad_bindings::last_pad().is_none(),
+        ..legaia_engine_screens::run_rules::PromptKeys::from_labels(
+            crate::pad_bindings::prompt_label,
+        )
+    }
 }
 
 /// A seed-roll entropy word off the page clock (wall time in the browser,

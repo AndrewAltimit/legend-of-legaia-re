@@ -132,7 +132,39 @@ pub struct Knobs {
     pub no_escape: bool,
 }
 
+/// A permille as a multiplier a player reads: `x1`, `x0.75`, `x1.35`.
+pub fn permille_label(p: u16) -> String {
+    let whole = p / 1000;
+    let frac = p % 1000;
+    if frac == 0 {
+        return format!("x{whole}");
+    }
+    let mut s = format!("x{whole}.{frac:03}");
+    while s.ends_with('0') {
+        s.pop();
+    }
+    s
+}
+
 impl Knobs {
+    /// Each knob as `(label, value)` text, in the order a rules screen
+    /// lists them.
+    pub fn rows(&self) -> [(&'static str, String); 10] {
+        let gate = |on: bool| if on { "Yes" } else { "No" }.to_string();
+        [
+            ("Foe stats", permille_label(self.enemy_stat_permille)),
+            ("Foe attacks", permille_label(self.enemy_attack_permille)),
+            ("EXP", permille_label(self.exp_permille)),
+            ("Gold", permille_label(self.gold_permille)),
+            ("Encounters", permille_label(self.encounter_rate_permille)),
+            ("Shop prices", permille_label(self.price_permille)),
+            ("Healing", permille_label(self.heal_permille)),
+            ("AP gain", permille_label(self.ap_gain_permille)),
+            ("Smart foes", gate(self.smart_monsters)),
+            ("No escape", gate(self.no_escape)),
+        ]
+    }
+
     /// Retail: every scale `1000`, every gate off.
     pub const RETAIL: Knobs = Knobs {
         enemy_stat_permille: 1000,
@@ -267,6 +299,33 @@ impl Randomizer {
             monster_stats: true,
             starting_equipment: true,
         }
+    }
+
+    /// Each part as `(label, on)`, in the order a host lists them.
+    pub fn parts(&self) -> [(&'static str, bool); 7] {
+        [
+            ("Encounters", self.encounters),
+            ("Drops", self.drops),
+            ("Steals", self.steals),
+            ("Shops", self.shops),
+            ("Chests and gifts", self.chests),
+            ("Monster stats", self.monster_stats),
+            ("Starting gear", self.starting_equipment),
+        ]
+    }
+
+    /// Flip part `i` of [`Self::parts`].
+    pub fn toggle_part(&mut self, i: usize) {
+        let f = match i {
+            0 => &mut self.encounters,
+            1 => &mut self.drops,
+            2 => &mut self.steals,
+            3 => &mut self.shops,
+            4 => &mut self.chests,
+            5 => &mut self.monster_stats,
+            _ => &mut self.starting_equipment,
+        };
+        *f = !*f;
     }
 
     /// The seed's number: the patcher's own string-to-seed rule, so a seed
@@ -417,5 +476,38 @@ mod tests {
         let mut c = CarrySet::default();
         c.toggle(5);
         assert!(!c.gold && c.rows()[5] == ("Gold", false));
+        let mut r = Randomizer::all("x");
+        r.toggle_part(4);
+        assert!(!r.chests && r.parts()[4] == ("Chests and gifts", false));
+    }
+
+    #[test]
+    fn knob_rows_read_as_multipliers() {
+        assert_eq!(permille_label(1000), "x1");
+        assert_eq!(permille_label(750), "x0.75");
+        assert_eq!(permille_label(1350), "x1.35");
+        assert_eq!(permille_label(1500), "x1.5");
+        let rows = Difficulty::Nightmare.knobs().rows();
+        assert_eq!(rows[0], ("Foe stats", "x1.8".to_string()));
+        assert_eq!(rows[9], ("No escape", "Yes".to_string()));
+    }
+
+    /// A save written before the randomizer's parts or the carry set
+    /// existed (a block with only a seed, or no New Game+ carry) still
+    /// decodes, every missing part on.
+    #[test]
+    fn an_older_rules_block_decodes_with_every_part_on() {
+        let old = r#"{"mode":"story","difficulty":"hard","ng_plus":{"cycle":1},"randomizer":{"seed":"RIM-0042"}}"#;
+        let r: RunRules = serde_json::from_str(old).unwrap();
+        assert_eq!(r.randomizer, Some(Randomizer::all("RIM-0042")));
+        assert_eq!(r.ng_plus.unwrap().carry, CarrySet::default());
+        assert_eq!(r.difficulty, Difficulty::Hard);
+        // And the block a save carries round-trips through the save body.
+        let save = crate::save::RunSave {
+            rules: r.clone(),
+            ..Default::default()
+        };
+        let back = crate::save::RunSave::decode(&save.encode().unwrap()).unwrap();
+        assert_eq!(back.rules, r);
     }
 }

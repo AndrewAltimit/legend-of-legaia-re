@@ -35,9 +35,12 @@ const PAD_DOWN: u16 = 0x0040;
 const PAD_LEFT: u16 = 0x0080;
 const PAD_CIRCLE: u16 = 0x2000;
 const PAD_CROSS: u16 = 0x4000;
+const PAD_L1: u16 = 0x0400;
+const PAD_R1: u16 = 0x0800;
 
 /// The setup screen's input off a pad edge word (retail bit layout:
-/// D-pad `0x10..0x80`, Cross confirms, Circle backs out, Start begins).
+/// D-pad `0x10..0x80`, Cross confirms, Circle backs out, Start begins,
+/// L1 / R1 switch tabs).
 pub fn setup_input(edge: u16) -> SetupInput {
     SetupInput {
         up: edge & PAD_UP != 0,
@@ -47,6 +50,8 @@ pub fn setup_input(edge: u16) -> SetupInput {
         confirm: edge & PAD_CROSS != 0,
         cancel: edge & PAD_CIRCLE != 0,
         start: edge & PAD_START != 0,
+        tab_prev: edge & PAD_L1 != 0,
+        tab_next: edge & PAD_R1 != 0,
     }
 }
 
@@ -134,6 +139,50 @@ pub fn step_run_rules_screen(
 pub fn set_run_rules_seed(world: &mut legaia_engine_core::world::World, seed: &str) {
     if let Some(seat) = world.run_rules.setup.as_mut() {
         seat.setup.set_seed(seed);
+    }
+}
+
+/// Whether the rules screen's seed editor is up: a host routes typed
+/// characters to it ([`seed_editor_key`]) instead of its pad bindings.
+pub fn seed_editor_open(world: &legaia_engine_core::world::World) -> bool {
+    world
+        .run_rules
+        .setup
+        .as_ref()
+        .is_some_and(|s| s.setup.seed_editor.is_some())
+}
+
+/// A key a host typed into the open seed editor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeedKey {
+    /// A character to append.
+    Char(char),
+    /// Erase the last character.
+    Backspace,
+    /// Take the seed.
+    Accept,
+    /// Drop the edit.
+    Cancel,
+}
+
+/// Apply `key` to the open seed editor; nothing when none is up.
+pub fn seed_editor_key(world: &mut legaia_engine_core::world::World, key: SeedKey) {
+    let Some(seat) = world.run_rules.setup.as_mut() else {
+        return;
+    };
+    let s = &mut seat.setup;
+    match key {
+        SeedKey::Char(c) => s.seed_editor_type(c),
+        SeedKey::Backspace => s.seed_editor_backspace(),
+        SeedKey::Accept => s.close_seed_editor(true),
+        SeedKey::Cancel => s.close_seed_editor(false),
+    }
+}
+
+/// Replace the open seed editor's text whole (the page's text box).
+pub fn seed_editor_set_text(world: &mut legaia_engine_core::world::World, text: &str) {
+    if let Some(seat) = world.run_rules.setup.as_mut() {
+        seat.setup.seed_editor_set_text(text);
     }
 }
 
@@ -239,6 +288,16 @@ fn pack_stage_levels<'a>(
         .collect();
     out.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
     out
+}
+
+#[cfg(test)]
+mod input_tests {
+    #[test]
+    fn the_shoulders_switch_the_rules_tabs() {
+        let i = super::setup_input(0x0400 | 0x4000);
+        assert!(i.tab_prev && i.confirm && !i.tab_next);
+        assert!(super::setup_input(0x0800).tab_next);
+    }
 }
 
 #[cfg(test)]

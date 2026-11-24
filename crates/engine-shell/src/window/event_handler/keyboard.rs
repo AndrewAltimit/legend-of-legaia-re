@@ -19,6 +19,9 @@ impl PlayWindowApp {
         code: KeyCode,
         state: ElementState,
     ) {
+        if self.seed_editor_key(code, state) {
+            return;
+        }
         if matches!(code, KeyCode::Escape) {
             // Held keys repeat as a stream of `Pressed` events; only the
             // leading edge counts, or holding Escape would confirm itself.
@@ -126,6 +129,11 @@ impl PlayWindowApp {
         // is already down is the OS auto-repeat, not a new press.
         let repeat = state == ElementState::Pressed && self.keys_down.contains(&code);
         self.latch_key_name(code, state);
+        // The rules screen's seed editor types (here too, for `--key-script`;
+        // a real Escape reaches it from `handle_keyboard`).
+        if self.seed_editor_key(code, state) {
+            return;
+        }
         // The panel first: `Tab` is the multiplayer screen's key everywhere else.
         if self.panel_key(code, state, repeat)
             || self.debug_spawn_key(code, state)
@@ -180,6 +188,42 @@ impl PlayWindowApp {
         false
     }
 
+    /// While the rules screen's seed editor is up, the keyboard types: a
+    /// letter, digit or dash goes into the seed, Backspace erases, Enter
+    /// takes it and Escape drops the edit. The arrows stay the pad's, so
+    /// the letter grid still moves under them. `true` when the key was the
+    /// editor's.
+    fn seed_editor_key(&mut self, code: KeyCode, state: ElementState) -> bool {
+        let Some(key) = self.seed_editor_key_for(code) else {
+            return false;
+        };
+        if state == ElementState::Pressed {
+            legaia_engine_session::run_rules::seed_editor_key(&mut self.session.host.world, key);
+        }
+        true
+    }
+
+    /// What `code` types into the rules screen's seed editor, `None` when
+    /// the editor is not up or the key is not one it takes.
+    pub(in crate::window) fn seed_editor_key_for(
+        &self,
+        code: KeyCode,
+    ) -> Option<legaia_engine_session::run_rules::SeedKey> {
+        use legaia_engine_session::run_rules::{SeedKey, seed_editor_open};
+        if !matches!(self.boot_ui, BootUiState::RunRules)
+            || !seed_editor_open(&self.session.host.world)
+        {
+            return None;
+        }
+        Some(match code {
+            KeyCode::Backspace => SeedKey::Backspace,
+            KeyCode::Enter | KeyCode::NumpadEnter => SeedKey::Accept,
+            KeyCode::Escape => SeedKey::Cancel,
+            KeyCode::Minus => SeedKey::Char('-'),
+            _ => SeedKey::Char(seed_key_char(code)?),
+        })
+    }
+
     /// The pad mapping: a key bound to a pad button holds or releases its
     /// bit, and a transition is recorded for a replay.
     fn key_pad_button(&mut self, code: KeyCode, state: ElementState) {
@@ -204,6 +248,50 @@ impl PlayWindowApp {
     }
 }
 
+/// The character a letter or digit key types into a seed: capitals, as the
+/// letter grid offers them.
+fn seed_key_char(code: KeyCode) -> Option<char> {
+    Some(match code {
+        KeyCode::KeyA => 'A',
+        KeyCode::KeyB => 'B',
+        KeyCode::KeyC => 'C',
+        KeyCode::KeyD => 'D',
+        KeyCode::KeyE => 'E',
+        KeyCode::KeyF => 'F',
+        KeyCode::KeyG => 'G',
+        KeyCode::KeyH => 'H',
+        KeyCode::KeyI => 'I',
+        KeyCode::KeyJ => 'J',
+        KeyCode::KeyK => 'K',
+        KeyCode::KeyL => 'L',
+        KeyCode::KeyM => 'M',
+        KeyCode::KeyN => 'N',
+        KeyCode::KeyO => 'O',
+        KeyCode::KeyP => 'P',
+        KeyCode::KeyQ => 'Q',
+        KeyCode::KeyR => 'R',
+        KeyCode::KeyS => 'S',
+        KeyCode::KeyT => 'T',
+        KeyCode::KeyU => 'U',
+        KeyCode::KeyV => 'V',
+        KeyCode::KeyW => 'W',
+        KeyCode::KeyX => 'X',
+        KeyCode::KeyY => 'Y',
+        KeyCode::KeyZ => 'Z',
+        KeyCode::Digit0 => '0',
+        KeyCode::Digit1 => '1',
+        KeyCode::Digit2 => '2',
+        KeyCode::Digit3 => '3',
+        KeyCode::Digit4 => '4',
+        KeyCode::Digit5 => '5',
+        KeyCode::Digit6 => '6',
+        KeyCode::Digit7 => '7',
+        KeyCode::Digit8 => '8',
+        KeyCode::Digit9 => '9',
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -212,6 +300,14 @@ mod tests {
 
     /// The help keys take no pad button off the keyboard: neither is a
     /// bindable key name, on this host or the page.
+    #[test]
+    fn seed_keys_type_capitals_and_digits() {
+        assert_eq!(seed_key_char(KeyCode::KeyZ), Some('Z'));
+        assert_eq!(seed_key_char(KeyCode::Digit7), Some('7'));
+        assert_eq!(seed_key_char(KeyCode::ArrowUp), None);
+        assert_eq!(seed_key_char(KeyCode::Enter), None);
+    }
+
     #[test]
     fn help_keys_are_not_bindable() {
         for code in [KeyCode::F12, KeyCode::Slash] {
