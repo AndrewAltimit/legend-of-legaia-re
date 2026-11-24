@@ -156,6 +156,19 @@ fn the_bridge_planks_fall_while_they_turn_or_skip() {
     let blocked = row_blocked(&host, EAST_BRIDGE);
     eprintln!("[ran] east bridge row: {blocked} of 7 plank tiles block an X+ step");
     assert_eq!(blocked, 7, "the fallen planks wall the bridge row off");
+    // The beat leaves Debora (`P1[13]`, `0x1A`) and the man who catches her
+    // (`P1[12]`, `0x19`) on their run clips (`A2 1A 2F`, `A2 19 21`); the
+    // closing re-seat `P2[17]` (`CC 1A C3`, `CC 19 C3`) re-runs their spawn
+    // sections, whose `4C 51 23 0A 06 30` / `4C 51 1F 06 00 1F` seat them
+    // on their idles and bind those clips (`0x801E1A90..0x801E1AB4`).
+    for (slot, idle) in [(13u8, 48u8), (12, 31)] {
+        let playing = host.world.npcs.clip_cursors.get(&slot).map(|c| c.anim_id);
+        assert_eq!(
+            playing,
+            Some(idle),
+            "P1[{slot}] stands in its idle (clip {idle}) after the re-seat"
+        );
+    }
     for (t, &slot) in tracks.iter().zip(&FALLING) {
         eprintln!(
             "[ran] plank P1[{slot}]: {} distinct Ys, {:?}",
