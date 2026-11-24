@@ -1,0 +1,50 @@
+# Summon module images (PROT 0905..0934): arms out of scope, by image.
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F6AA8..0x801F6AA8"
+verdict = "unreachable"
+reason = "PROT 0933's phase dispatch bound (`sltiu 0x16` / `beqz` at 0x801F6AA4..0x801F6AA8): the module's one phase store is the shared `+1` (0x801F8614..0x801F8624), and its last arm 0x15 (0x801F8628) returns its busy word cleared (`sw zero,0x38(sp)` at 0x801F8710) without reaching it, so the phase never passes 0x15."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F6C04..0x801F6C04"
+verdict = "unreachable"
+reason = "PROT 0933 arm 0's row seating: the `bgez` is the rounding fix-up of `z / 4` on the formation seat's z (`lh 0x4` at 0x801F6BFC), and every row of the battle's monster seat tables (0x80077608, both families) holds z from 600 to 1400, so the negative side is never taken."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F7D58..0x801F7D70"
+verdict = "unreachable"
+reason = "PROT 0933 arm 0xC: the compiler's divide guards (`break` on a zero divisor, the `-1` / `0x80000000` overflow test) around the row height's `/ n` (`div v1,s5` at 0x801F7D54), where `n` counts the monster seats with HP as the loop opens on each (`beqz` on `+0x14C` at 0x801F7C80 skips the count's `addiu s5` at 0x801F7D0C): the module's only damage roll is inside that loop (`jal 0x801DD0AC` at 0x801F7CCC), so a summon cast on a living monster reaches it with `n` at least 1, never 0 or -1."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "24d82884a97bcd51"
+range = "0x801F6AC4..0x801F6AC4"
+verdict = "unreachable"
+reason = "PROT 0931's phase dispatch bound (`sltiu 0x20` / `beqz` at 0x801F6AC0..0x801F6AC4): the module's one phase store is the shared `+1` (0x801F88B4..0x801F88C4), and its last arm 31 clears its busy register (`clear s7` at 0x801F8988) and returns without reaching it, so the phase never passes 31."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6BA4..0x801F6BA4"
+verdict = "unreachable"
+reason = "PROT 0929's phase dispatch: `beq v1,0xff` is reached only by a phase of 0x13 or more (`slti 0x13` at 0x801F6B74) that is not 0x13 (0x801F6B9C). The module stores only `+1` (0x801F71C4, 0x801F728C, 0x801F7334, 0x801F7B0C, 0x801F7CE8, 0x801F8544, 0x801F8904, the last in arm 0x12) and 0xFF (arm 0x13's exit, 0x801F8A6C), so the only phase past 0x13 is 0xFF, which takes it."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F7F14..0x801F8148"
+verdict = "unported"
+reason = "PROT 0916 arm 0x11's five band links: each `bgez` is the rounding fix-up of `ctx[+0x6D0] >> 3`, the ordering-table slot the band packet links at (`FUN_8003D2C4` at 0x801F7F2C..0x801F8160). The port draws the bands over the finished scene (`render_kernels::cast_aluru`, disclosed), not at the framing depth's slot; the packets themselves are compared against `aluru_band_prims` in the summon walk."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F82E0..0x801F852C"
+verdict = "unported"
+reason = "PROT 0916 arms 0x12 / 0x13's five band links: the same `ctx[+0x6D0] >> 3` ordering-table slot fix-ups as arm 0x11's (0x801F82E0..0x801F852C). The port draws the bands over the finished scene (`render_kernels::cast_aluru`, disclosed); the packets are compared against `aluru_band_prims` in the summon walk."

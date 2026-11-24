@@ -466,6 +466,11 @@ pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             if next != phase {
                 d.hold = false;
                 d.jump = Some(next);
+                // Retail's pass grows the word by its whole `rate * speed`
+                // ahead of the tests (`0x801F81E4..0x801F8228`): the tick that
+                // hands over owes the rest of its pass's growth.
+                st.countdown.0 = i32::from((st.countdown.0 + p * i32::from(st.countdown.1)) as i16);
+                st.band_spread = Some(aluru_band_spread(st.countdown.0));
             }
             d
         }

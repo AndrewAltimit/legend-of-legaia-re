@@ -454,6 +454,15 @@ impl World {
             pc.targets.retain(|&t| !self.battle.actor_is_petrified(t));
             self.casting.pending_cast = Some(pc);
         }
+        // PROT 0916's kill path rolls no hit: arm `0x12` skips its wrapper
+        // call on a kill verdict (`beqz` on `0x801F9010` at `0x801F8598`), so
+        // the fold, its impact store and its finisher's spirit and XP tails
+        // are waived (arm 0 banked the kill's own XP).
+        if entry == Some(legaia_engine_cast::cast_module_camera::ALURU_ENTRY)
+            && self.casting.module_cam.kill == Some(true)
+        {
+            self.casting.module_skips_fold = true;
+        }
         self.fold_pending_cast();
         if run.is_some_and(|r| r.prot_entry == 904) {
             self.show_theeder_fold_targets();
