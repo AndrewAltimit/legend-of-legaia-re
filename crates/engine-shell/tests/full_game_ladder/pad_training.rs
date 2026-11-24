@@ -137,7 +137,18 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
     // frames then coming off the walking budget the reserve was kept for.
     let battle_left = PAD_BATTLE_LEFT.with(std::cell::Cell::get);
     PAD_BATTLE_LEFT.with(|l| l.set(battle_left.max(PAD_BATTLE_ALLOWANCE)));
+    // The bag's heal reserve stays for the race: no outing is begun with the
+    // bag at it. Growing spent the last restorative on dealt stream 10's
+    // outings at Koru's door, where no bed or keeper stands, and the race
+    // opened with the weakest member at 3 per mille and 1 MP, five reloads
+    // running; one outing begun from a bag already at the reserve still
+    // opened it at a fifth.
+    let heal_reserve =
+        HEAL_RESERVE * session.host.world.present_party_list().len().clamp(1, 3) as u32;
     while outings < GROW_OUTINGS && miracle_short(session) && frames_left(session) > 0 {
+        if heals_held(&session.host.world) <= heal_reserve {
+            break;
+        }
         // Mended before each outing, as a player does between fights: the
         // bag first, then the casters' MP, all of it, and the bag's MP
         // restoratives when that runs out. At Koru's door the bag held no
