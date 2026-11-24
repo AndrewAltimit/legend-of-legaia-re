@@ -401,7 +401,9 @@ impl LegaiaRuntime {
         // stage space - the composition the native window draws too.
         if let Some(h) = self.scene_host.host() {
             pack_mode_texts.extend(legaia_engine_screens::run_rules::run_rules_stage_texts(
-                &h.world, font,
+                &h.world,
+                font,
+                &crate::play_run_rules::prompt_keys(),
             ));
         }
         pack_mode_texts.extend(self.netplay_stage_texts(font));

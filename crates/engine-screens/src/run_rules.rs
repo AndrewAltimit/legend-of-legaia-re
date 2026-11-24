@@ -55,8 +55,41 @@ impl RulesScreen {
     }
 }
 
+/// What a key hint calls the pad buttons the screens read: the host's
+/// bound key, or the controller's button while one was pressed last (each
+/// host's `prompt_label` rule, the minigame captions' too).
+/// [`PromptKeys::default`] names the pad buttons themselves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptKeys {
+    /// Cross.
+    pub confirm: String,
+    /// Circle.
+    pub back: String,
+    /// Start.
+    pub start: String,
+}
+
+impl Default for PromptKeys {
+    fn default() -> Self {
+        Self::from_labels(|_| None)
+    }
+}
+
+impl PromptKeys {
+    /// The names `label` gives `"Cross"`, `"Circle"` and `"Start"`, each
+    /// falling back to the button's own name.
+    pub fn from_labels(label: impl Fn(&str) -> Option<String>) -> Self {
+        let name = |b: &str| label(b).unwrap_or_else(|| b.to_string());
+        Self {
+            confirm: name("Cross"),
+            back: name("Circle"),
+            start: name("Start"),
+        }
+    }
+}
+
 /// The New Game rules screen.
-pub fn setup_screen(s: &RulesSetup) -> RulesScreen {
+pub fn setup_screen(s: &RulesSetup, keys: &PromptKeys) -> RulesScreen {
     RulesScreen {
         title: "NEW GAME".into(),
         subtitle: Some(
@@ -66,14 +99,17 @@ pub fn setup_screen(s: &RulesSetup) -> RulesScreen {
         ),
         rows: s.rows(),
         cursor: Some(s.cursor),
-        footer: Some(s.help().to_string()),
-        hint: "Arrows change  X confirm  Start play  O back".into(),
+        footer: Some(s.help()),
+        hint: format!(
+            "Left/Right set  {} OK  {} play  {} back",
+            keys.confirm, keys.start, keys.back
+        ),
     }
 }
 
 /// The Boss Rush screen this frame: the intermission while it is open, the
 /// result once the run is over; `None` otherwise.
-pub fn boss_rush_screen(world: &World) -> Option<RulesScreen> {
+pub fn boss_rush_screen(world: &World, keys: &PromptKeys) -> Option<RulesScreen> {
     let run = world.run_rules.boss_rush.as_ref()?;
     if let Some((cleared, won, frames)) = world.boss_rush_result() {
         let rec = &world.run_rules.record;
@@ -102,7 +138,7 @@ pub fn boss_rush_screen(world: &World) -> Option<RulesScreen> {
             ],
             cursor: None,
             footer: None,
-            hint: "X return to title".into(),
+            hint: format!("{} return to title", keys.confirm),
         });
     }
     let m = world.run_rules.intermission.as_ref()?;
@@ -121,23 +157,29 @@ pub fn boss_rush_screen(world: &World) -> Option<RulesScreen> {
         rows,
         cursor: Some(m.cursor),
         footer: m.message.clone(),
-        hint: "Up/Down choose  X confirm".into(),
+        hint: format!("Up/Down choose  {} OK", keys.confirm),
     })
 }
 
 /// The run-rules screen that owns the frame, if one does: the New Game
 /// rules screen while it is up, else the Boss Rush intermission or result.
-pub fn active_screen(world: &World) -> Option<RulesScreen> {
+/// `keys` name the buttons in its hint; the panel's rects do not depend on
+/// them.
+pub fn active_screen(world: &World, keys: &PromptKeys) -> Option<RulesScreen> {
     if let Some(seat) = world.run_rules.setup.as_deref() {
-        return Some(setup_screen(&seat.setup));
+        return Some(setup_screen(&seat.setup, keys));
     }
-    boss_rush_screen(world)
+    boss_rush_screen(world, keys)
 }
 
 /// The owning screen's labels, in stage pixels (each host's text layer
 /// scales and appends them, as it does the expansion screens').
-pub fn run_rules_stage_texts(world: &World, font: &legaia_font::Font) -> Vec<TextDraw> {
-    active_screen(world).map_or_else(Vec::new, |s| s.texts(font))
+pub fn run_rules_stage_texts(
+    world: &World,
+    font: &legaia_font::Font,
+    keys: &PromptKeys,
+) -> Vec<TextDraw> {
+    active_screen(world, keys).map_or_else(Vec::new, |s| s.texts(font))
 }
 
 /// The pause menu's run line (difficulty, New Game+, seed ...), `None`
@@ -170,12 +212,31 @@ mod tests {
     #[test]
     fn the_setup_screen_lists_the_rows_and_the_run() {
         let s = RulesSetup::new(vec![], 3);
-        let screen = setup_screen(&s);
+        let screen = setup_screen(&s, &PromptKeys::default());
         let strings = screen.strings();
         assert!(strings.iter().any(|t| t == "Difficulty"));
         assert!(strings.iter().any(|t| t == "Original rules"));
         assert!(!screen.prims().is_empty());
         let w = World::new();
-        assert_eq!(boss_rush_screen(&w), None);
+        assert_eq!(boss_rush_screen(&w, &PromptKeys::default()), None);
+    }
+
+    #[test]
+    fn the_hint_names_the_hosts_keys() {
+        let s = RulesSetup::new(vec![], 3);
+        let keys = PromptKeys::from_labels(|b| match b {
+            "Cross" => Some("Z".into()),
+            "Circle" => Some("X".into()),
+            _ => None,
+        });
+        assert_eq!(
+            setup_screen(&s, &keys).hint,
+            "Left/Right set  Z OK  Start play  X back"
+        );
+        // The rects never depend on the key names.
+        assert_eq!(
+            setup_screen(&s, &keys).prims(),
+            setup_screen(&s, &PromptKeys::default()).prims()
+        );
     }
 }

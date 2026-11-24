@@ -90,6 +90,8 @@ A won stage pays `STAGE_PURSE` gold and opens the intermission: next battle, res
 
 The title's NEW GAME opens the rules screen (`engine-session` `open_run_rules_screen`) on both hosts, except in retail-faithful mode, where NEW GAME is retail's straight start. It opens on the retail rules with the cursor on *Start*, so one confirm is the original New Game. Up / Down pick a row, Left / Right change it, Cross confirms, Start begins the run from any row, Circle returns to the title. The seed row rolls a readable seed; the page's `play_run_rules_set_seed` takes a typed one.
 
+The foot line is the selected row's help at its current value (`RulesSetup::help`; a difficulty preset says what it changes, `Difficulty::blurb`). The key hint names the host's own bindings, or the last pressed controller's buttons (`engine-screens` `run_rules::PromptKeys`, built from each host's `prompt_label`, the minigame captions' rule), so it reads `Z OK  Enter play  S back` on the native keyboard and `Z OK  Enter play  X back` on the page. A list longer than the panel scrolls with the cursor; the panel holds as many rows as fit above the foot line and marks rows hidden above or below with a small arrow in its corner. Every label is held to a box and cut with `..` when it would not fit (a long run summary, a long New Game+ source).
+
 The screen sits on the world (`RunRulesState::setup`), so the shared screen layers draw it (`engine-screens` `run_rules::active_screen`): the native window through its screen-prim pass and text layer, the browser play page on the title's menu canvas (`play_run_rules_draws_json`) and in game through the same pass. The pause menu shows the run's summary line (`Hard / NG+1 / Ironman / Seed RIM-0042`) at the foot of the root panel; under retail rules it shows nothing.
 
 ## Saves and replays
@@ -105,8 +107,8 @@ A j-replay-v1 file records the rules as a value row, `set = "run_rules"` with th
 | `retail_rules_are_the_identity`, `presets_order_and_step`, `rules_round_trip_and_summarise` (`rules`); `the_curve_grows_with_cycle_and_level_and_favours_bosses` (`scaling`); `a_run_walks_its_stages_and_records`, `the_intermission_cursor_wraps` (`boss_rush`); `retail_writes_nothing_and_rules_round_trip` (`save`); `one_confirm_starts_the_retail_game`, `rows_set_every_rule` (`setup`) | `engine-run-rules` |
 | `retail_rules_leave_every_reader_alone`, `difficulty_presets_apply_and_clear`, `staged_rules_take_over_at_new_game_and_round_trip_the_save_block`, `ironman_marks_the_run_on_a_wipe_and_owes_autosaves`, `ng_plus_carries_the_chosen_parts`, `the_randomizer_is_a_function_of_its_seed` (`world::tests::run_rules`); `carry_copies_only_the_chosen_spans` (`world::run_rules`) | `engine-core` |
 | `picks_are_stable_per_key_and_spread_across_keys`, `kept_items_and_the_empty_sentinel_never_move`, `bands_hold_and_protected_monsters_keep_their_stats`, `rerolls_keep_the_seat_count_the_species_cap_and_the_guard`, `priced_items_pool_and_named_free_ones_are_kept` | `randomizer` |
-| `the_panel_lists_its_rows_and_scrolls_to_the_cursor` (`run_rules_screen`) | `engine-ui` |
-| `the_setup_screen_lists_the_rows_and_the_run` (`run_rules`) | `engine-screens` |
+| `the_panel_lists_its_rows_and_scrolls_to_the_cursor`, `a_long_list_stays_above_the_foot_line`, `every_label_is_held_inside_the_stage_and_off_its_neighbour`, `hidden_rows_are_marked` (`run_rules_screen`) | `engine-ui` |
+| `the_setup_screen_lists_the_rows_and_the_run`, `the_hint_names_the_hosts_keys` (`run_rules`) | `engine-screens` |
 | `the_rules_screen_draws_nothing_until_opened` (`play_run_rules`) | `web-play` |
 | `erasing_a_save_frees_its_block` (`emu`) | `save` |
 | `ironman_keeps_one_save_and_a_wipe_erases_it` (`card_write`) | `engine-menu-runtime` |

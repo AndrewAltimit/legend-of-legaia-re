@@ -70,7 +70,9 @@ impl LegaiaRuntime {
         let (Some(h), Some(assets)) = (self.scene_host.host(), self.menu_assets.as_ref()) else {
             return r#"{"open":false,"rects":[],"texts":[]}"#.to_string();
         };
-        let Some(screen) = legaia_engine_screens::run_rules::active_screen(&h.world) else {
+        let Some(screen) =
+            legaia_engine_screens::run_rules::active_screen(&h.world, &prompt_keys())
+        else {
             return r#"{"open":false,"rects":[],"texts":[]}"#.to_string();
         };
         let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
@@ -166,6 +168,13 @@ impl LegaiaRuntime {
             .host_mut()
             .is_some_and(|h| boss_rush_screen_input(&mut h.world, edge))
     }
+}
+
+/// The rules screens' key names: the page's live bindings, or the
+/// controller's buttons while one was pressed last
+/// ([`crate::pad_bindings::prompt_label`], the minigame captions' rule).
+pub(crate) fn prompt_keys() -> legaia_engine_screens::run_rules::PromptKeys {
+    legaia_engine_screens::run_rules::PromptKeys::from_labels(crate::pad_bindings::prompt_label)
 }
 
 /// A seed-roll entropy word off the page clock (wall time in the browser,

@@ -41,6 +41,16 @@ impl Difficulty {
         }
     }
 
+    /// One line saying what the preset changes, for a rules screen's foot.
+    pub fn blurb(self) -> &'static str {
+        match self {
+            Difficulty::Easy => "Weaker foes, fewer fights, more EXP and gold.",
+            Difficulty::Normal => "The original game's balance.",
+            Difficulty::Hard => "Tougher, smarter foes; dear shops, weak heals.",
+            Difficulty::Nightmare => "Brutal foes, no escape, half-strength heals.",
+        }
+    }
+
     /// The knob bundle the preset stands for.
     pub fn knobs(self) -> Knobs {
         match self {

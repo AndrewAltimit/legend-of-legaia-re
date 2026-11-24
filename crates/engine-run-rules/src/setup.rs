@@ -205,17 +205,30 @@ impl RulesSetup {
         rows[self.cursor.min(rows.len() - 1)]
     }
 
-    /// A line describing the selected row, for the screen's foot.
-    pub fn help(&self) -> &'static str {
+    /// A line describing the selected row at its current value, for the
+    /// screen's foot: what the row does, and for a preset what it changes.
+    pub fn help(&self) -> String {
         match self.selected() {
-            SetupRow::Mode => "Story, or every boss back to back.",
-            SetupRow::Difficulty => "Normal is the original game.",
-            SetupRow::NgPlus => "Replay a save's party; foes scale up.",
-            SetupRow::Carry(_) => "What the new run keeps.",
-            SetupRow::Ironman => "One save, lost on a wipe. Hardcore: no items.",
-            SetupRow::Randomizer => "Fights, loot, shops, stats from a seed.",
-            SetupRow::Seed => "Confirm rolls a new seed.",
-            SetupRow::Start => "Begin the run.",
+            SetupRow::Mode => match self.rules.mode {
+                RunMode::Story => "The story, from the opening.",
+                RunMode::BossRush => "Every story boss back to back.",
+            }
+            .into(),
+            SetupRow::Difficulty => self.rules.difficulty.blurb().into(),
+            SetupRow::NgPlus => match self.rules.ng_plus {
+                _ if self.ng_sources.is_empty() => "No save on a card to carry from.".into(),
+                None => "Replay a save's party; foes scale up.".into(),
+                Some(n) => format!("Cycle {}: foes grow with the cycle.", n.cycle),
+            },
+            SetupRow::Carry(_) => "What the new run keeps from the save.".into(),
+            SetupRow::Ironman => match self.rules.ironman {
+                Some(Ironman { hardcore: true }) => "Ironman, and no items in battle.",
+                _ => "One save per run, erased if the party falls.",
+            }
+            .into(),
+            SetupRow::Randomizer => "Fights, loot, shops, stats from a seed.".into(),
+            SetupRow::Seed => "Confirm rolls a new seed.".into(),
+            SetupRow::Start => "Begin the run.".into(),
         }
     }
 

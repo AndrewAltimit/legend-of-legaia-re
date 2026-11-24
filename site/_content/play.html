@@ -2237,6 +2237,12 @@ div.play-vis-head { cursor: default; }
       const ticks = titleTicks();
       const edge = ticks > 0 ? titleEdge : 0;
       if (ticks > 0) titleEdge = 0;
+      /* Nearest-neighbour, as the in-game overlay (`play-view-overlay.js`)
+       * and the native window sample: a 2D canvas defaults to bilinear,
+       * which bleeds the neighbouring atlas cell's edge texels into every
+       * scaled glyph - a stray bar after each word of the rules, Continue
+       * and Options screens. Set per frame: resizing the canvas resets it. */
+      ctx.imageSmoothingEnabled = false;
       /* Publisher-logo stage: owns the frame until the sequencer finishes or
        * a Start / Cross edge skips it, then the title card opens. It runs the frame's ticks
        * (the stepper above) - the fade ramps are counted in
@@ -2321,6 +2327,9 @@ div.play-vis-head { cursor: default; }
         catch (e) { rd = null; }
         ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
         if (rd && rd.open) {
+          /* Black past the stage, as the Continue and Options handoffs. */
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
           for (const r of rd.rects) {
             ctx.fillStyle = 'rgba(' + r.rgba[0] + ',' + r.rgba[1] + ',' + r.rgba[2] + ',' + (r.rgba[3] / 255) + ')';
             ctx.fillRect(r.x, r.y, r.w, r.h);
