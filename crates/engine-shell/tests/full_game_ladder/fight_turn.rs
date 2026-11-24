@@ -539,6 +539,11 @@ pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
             {
                 PadButton::Down.mask()
             }
+            // The evolved Cort has charged: its party-wide cast lands this
+            // round, and the stance halves it.
+            CommandPhase::Menu { .. } if lesson.is_none() && wants_cort_guard(w, cmd.actor) => {
+                PadButton::Down.mask()
+            }
             // The foe's heavy round is due: the Spirit stance halves it.
             CommandPhase::Menu { .. } if lesson.is_none() && wants_guard(w, cmd.actor) => {
                 PadButton::Down.mask()
