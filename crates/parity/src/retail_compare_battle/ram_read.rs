@@ -364,28 +364,18 @@ fn is_ray_burst(ram: &[u8], node: u32) -> bool {
 }
 
 /// The ray burst's position `+0x14..+0x18`. The burst stands where its
-/// program put it (no velocity, no speed), so once that program has run
-/// its level ramp longer than the display lag the RAM's position is the
-/// displayed frame's ([`ray_burst_stood_through_lag`]). The replay's strike
-/// point is its own: `battle_melee_hit_spark`'s burst (level `0x900`, nine
-/// vsyncs into its ramp) stands at `(-5, -330, 368)` in the RAM and
-/// `(-4, -330, 378)` in the replay, its banks at `4132` against `4144`
-/// (`image` `.847` to `.876`).
+/// program put it at its spawn (no velocity, no speed), and its level ramp
+/// `+0x78` fades it out without moving it, so the RAM's position is every
+/// frame's it drew on, the displayed one included. The replay's strike point
+/// is its own: `battle_melee_hit_spark`'s burst stands at `(-5, -330, 368)`
+/// in the RAM and `(-4, -330, 378)` in the replay, and
+/// `battle_garmel_party_gala_flying_knee_mid`'s at `(21, -330, 38)` drew
+/// its rays three pixels right on the replay's point (`.969`, seated
+/// `.987`). That burst's ramp began three vsyncs before the RAM's pass, inside
+/// the six-vsync display lag, and its rays stand on the displayed frame
+/// where the RAM's position puts them (`ot-raster.py` over the state's
+/// tables), so the ramp's age does not gate the seat.
 const RAY_BURST_POSITION_OFFSETS: [u16; 3] = [0x14, 0x16, 0x18];
-
-/// Whether the burst's level ramp `+0x78` (`(+0x90 * 8) >> 6` a vsync)
-/// began before the displayed frame, `lag` vsyncs back: the words its
-/// program wrote by then are the screen's. A ramp no older than the lag
-/// started inside it (its displayed level reads `0`), with whatever the
-/// program rewrote alongside: `rim_elm_gimard_victory`'s level reads
-/// `0x400` (four vsyncs) against a four-vsync lag, and seated on the RAM's
-/// position its frame fell `.931` to `.920`.
-pub(super) fn ray_burst_stood_through_lag(ram: &[u8], node: u32, lag: i32) -> bool {
-    let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
-    let per_vsync = h(0x90) >> 3;
-    let level = h(0x78);
-    per_vsync > 0 && level < 0x1000 && level > per_vsync * lag
-}
 
 /// [`MORPH_SEED_OFFSETS`] a ray burst can still be seeded on: a level or
 /// lane on its `0x1000` clamp names no age and is left to the replay.
@@ -479,7 +469,6 @@ pub(super) fn retail_action_fx_parts(
                     tag,
                     pokes: RAY_BURST_POSITION_OFFSETS
                         .iter()
-                        .filter(|_| ray_burst_stood_through_lag(ram, n, lag))
                         .chain(&ACTION_FX_SEED_OFFSETS)
                         .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
                         .chain(
