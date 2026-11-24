@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::scaling;
 
 /// A difficulty preset: a bundle of existing scales plus the rule knobs
-/// below. [`Difficulty::Normal`] is retail.
+/// below. [`Difficulty::Normal`] is retail; [`Difficulty::Custom`] takes its
+/// knobs from [`RunRules::custom`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Difficulty {
@@ -20,15 +21,18 @@ pub enum Difficulty {
     Normal,
     Hard,
     Nightmare,
+    /// The player's own knobs ([`RunRules::custom`]).
+    Custom,
 }
 
 impl Difficulty {
     /// Every preset, in the order a host cycles them.
-    pub const ALL: [Difficulty; 4] = [
+    pub const ALL: [Difficulty; 5] = [
         Difficulty::Easy,
         Difficulty::Normal,
         Difficulty::Hard,
         Difficulty::Nightmare,
+        Difficulty::Custom,
     ];
 
     /// The preset as a player reads it.
@@ -38,6 +42,7 @@ impl Difficulty {
             Difficulty::Normal => "Normal",
             Difficulty::Hard => "Hard",
             Difficulty::Nightmare => "Nightmare",
+            Difficulty::Custom => "Custom",
         }
     }
 
@@ -48,12 +53,15 @@ impl Difficulty {
             Difficulty::Normal => "The original game's balance.",
             Difficulty::Hard => "Tougher, smarter foes; dear shops, weak heals.",
             Difficulty::Nightmare => "Brutal foes, no escape, half-strength heals.",
+            Difficulty::Custom => "Your own scales: Left/Right sets each one below.",
         }
     }
 
-    /// The knob bundle the preset stands for.
+    /// The knob bundle the preset stands for ([`Difficulty::Custom`]'s own
+    /// is [`RunRules::custom`]; here it reads as retail).
     pub fn knobs(self) -> Knobs {
         match self {
+            Difficulty::Custom => Knobs::RETAIL,
             Difficulty::Easy => Knobs {
                 enemy_stat_permille: 750,
                 enemy_attack_permille: 750,
@@ -107,8 +115,10 @@ impl Difficulty {
 }
 
 /// The scales and gates a difficulty preset sets. Every permille is `1000`
-/// at retail, every gate `false`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// at retail, every gate `false`. A custom run saves its own (a missing
+/// field reads as retail's).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Knobs {
     /// Each monster's HP / MP / ATK / UDF / LDF / INT / SPD.
     pub enemy_stat_permille: u16,
@@ -146,7 +156,86 @@ pub fn permille_label(p: u16) -> String {
     s
 }
 
+impl Default for Knobs {
+    fn default() -> Self {
+        Self::RETAIL
+    }
+}
+
+/// How far one Left / Right press moves a permille knob: `x0.05` up to
+/// `x2`, `x0.25` past it.
+fn permille_step(v: u16, dir: i8) -> u16 {
+    let up = dir > 0;
+    let step = if v > 2000 || (up && v >= 2000) {
+        250
+    } else {
+        50
+    };
+    if up {
+        v.saturating_add(step)
+    } else {
+        v.saturating_sub(step)
+    }
+}
+
 impl Knobs {
+    /// How many knobs [`Self::rows`] lists.
+    pub const COUNT: usize = 10;
+
+    /// Each permille knob's `(least, most)`. Encounters may go to `x0` (no
+    /// random fights); every other scale keeps at least `x0.1`.
+    pub const BOUNDS: [(u16, u16); 8] = [
+        (250, 5000),
+        (250, 3000),
+        (100, 5000),
+        (100, 5000),
+        (0, 3000),
+        (100, 3000),
+        (100, 3000),
+        (100, 3000),
+    ];
+
+    /// Step knob `i` of [`Self::rows`] one notch (`dir` `< 0` down): a
+    /// scale by [`permille_step`] inside [`Self::BOUNDS`], a gate flipped.
+    pub fn step(&mut self, i: usize, dir: i8) {
+        let field = match i {
+            0 => &mut self.enemy_stat_permille,
+            1 => &mut self.enemy_attack_permille,
+            2 => &mut self.exp_permille,
+            3 => &mut self.gold_permille,
+            4 => &mut self.encounter_rate_permille,
+            5 => &mut self.price_permille,
+            6 => &mut self.heal_permille,
+            7 => &mut self.ap_gain_permille,
+            8 => {
+                self.smart_monsters = !self.smart_monsters;
+                return;
+            }
+            _ => {
+                self.no_escape = !self.no_escape;
+                return;
+            }
+        };
+        let (lo, hi) = Self::BOUNDS[i];
+        *field = permille_step(*field, dir).clamp(lo, hi);
+    }
+
+    /// What knob `i` of [`Self::rows`] scales, for a help line.
+    pub fn help(i: usize) -> &'static str {
+        match i {
+            0 => "Each monster's HP, MP and battle stats.",
+            1 => "How many swings a monster's agility buys.",
+            2 => "The EXP each monster pays.",
+            3 => "The gold a victory pays.",
+            4 => "How fast walking fills the random-encounter gauge.",
+            5 => "What shops charge.",
+            6 => "What a healing item restores.",
+            7 => "The AP a Spirit turn and a hit taken charge.",
+            8 => "A monster's single-target attack picks the weakest member.",
+            _ => "The party's Run command never works.",
+        }
+    }
+
     /// Each knob as `(label, value)` text, in the order a rules screen
     /// lists them.
     pub fn rows(&self) -> [(&'static str, String); 10] {
@@ -357,6 +446,9 @@ pub struct RunRules {
     pub ng_plus: Option<NgPlus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ironman: Option<Ironman>,
+    /// [`Difficulty::Custom`]'s knobs; `None` under every preset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom: Option<Knobs>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub randomizer: Option<Randomizer>,
 }
@@ -378,7 +470,10 @@ impl RunRules {
 
     /// The knob bundle in force.
     pub fn knobs(&self) -> Knobs {
-        self.difficulty.knobs()
+        match self.difficulty {
+            Difficulty::Custom => self.custom.unwrap_or(Knobs::RETAIL),
+            d => d.knobs(),
+        }
     }
 
     /// The New Game+ cycle, `0` outside New Game+.
@@ -448,7 +543,8 @@ mod tests {
         let n = Difficulty::Nightmare.knobs();
         assert!(n.no_escape && n.smart_monsters && n.ap_gain_permille < 1000);
         assert_eq!(Difficulty::Normal.step(1), Difficulty::Hard);
-        assert_eq!(Difficulty::Easy.step(-1), Difficulty::Nightmare);
+        assert_eq!(Difficulty::Easy.step(-1), Difficulty::Custom);
+        assert_eq!(Difficulty::Custom.step(1), Difficulty::Easy);
     }
 
     #[test]
@@ -465,6 +561,7 @@ mod tests {
             }),
             ironman: Some(Ironman { hardcore: true }),
             randomizer: Some(Randomizer::all("legaia")),
+            custom: None,
         };
         let json = serde_json::to_string(&r).unwrap();
         assert_eq!(serde_json::from_str::<RunRules>(&json).unwrap(), r);
@@ -479,6 +576,50 @@ mod tests {
         let mut r = Randomizer::all("x");
         r.toggle_part(4);
         assert!(!r.chests && r.parts()[4] == ("Chests and gifts", false));
+    }
+
+    #[test]
+    fn custom_knobs_step_inside_their_bounds_and_save() {
+        let mut k = Knobs::RETAIL;
+        k.step(0, 1);
+        assert_eq!(k.enemy_stat_permille, 1050);
+        for _ in 0..200 {
+            k.step(0, 1);
+        }
+        assert_eq!(k.enemy_stat_permille, 5000, "held to the bound");
+        for _ in 0..200 {
+            k.step(4, -1);
+        }
+        assert_eq!(k.encounter_rate_permille, 0, "encounters may stop");
+        k.step(9, 1);
+        assert!(k.no_escape);
+        // Past x2 a press moves x0.25; under it, x0.05.
+        let mut j = Knobs::RETAIL;
+        j.exp_permille = 2000;
+        j.step(2, 1);
+        assert_eq!(j.exp_permille, 2250);
+        j.step(2, -1);
+        assert_eq!(j.exp_permille, 2000);
+        j.step(2, -1);
+        assert_eq!(j.exp_permille, 1950);
+        let r = RunRules {
+            difficulty: Difficulty::Custom,
+            custom: Some(k),
+            ..Default::default()
+        };
+        assert_eq!(r.knobs(), k);
+        assert_eq!(r.summary().unwrap(), "Custom");
+        let json = serde_json::to_string(&r).unwrap();
+        assert_eq!(serde_json::from_str::<RunRules>(&json).unwrap(), r);
+        // A custom block missing a knob reads it as retail's.
+        let partial: Knobs = serde_json::from_str(r#"{"exp_permille":1500}"#).unwrap();
+        assert_eq!(partial.exp_permille, 1500);
+        assert_eq!(partial.enemy_stat_permille, 1000);
+        // A preset's rules never carry custom knobs.
+        assert_eq!(
+            serde_json::to_string(&RunRules::default()).unwrap(),
+            r#"{"mode":"story","difficulty":"normal"}"#
+        );
     }
 
     #[test]

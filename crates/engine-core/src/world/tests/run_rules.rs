@@ -115,6 +115,7 @@ fn staged_rules_take_over_at_new_game_and_round_trip_the_save_block() {
         ironman: Some(Ironman { hardcore: true }),
         randomizer: Some(Randomizer::all("legaia")),
         ng_plus: None,
+        custom: None,
     };
     w.stage_run(Some(crate::world::run_rules::StagedRun {
         rules: r.clone(),

@@ -243,8 +243,9 @@ impl PlayWindowApp {
             save_chrome_draw_vec.extend(self.battle_spoils_chrome_sprite_draws(w, h));
         }
         save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
-        // The New Game rules screen's windows: a boot state of its own, so
-        // nothing above shares the frame with it.
+        // The run rules screens' windows (the New Game rules, the Boss Rush
+        // intermission and result): boot states of their own, so nothing
+        // above shares the frame with them.
         save_chrome_draw_vec.extend(self.run_rules_chrome_sprite_draws(w, h));
         // The shop-family overlay's sprites: the gold shop / prize
         // exchange window frames and atlas markers, and the fallback

@@ -109,6 +109,11 @@
 
 .play-canvas-wrap { position: relative; }
 .play-canvas-wrap .play-rules-seed { position: absolute; z-index: 5; margin: 0; }
+.play-rules-buttons { display: flex; justify-content: center; gap: 0.75em; margin: 0.5em 0; }
+.play-rules-buttons button {
+  font: inherit; padding: 0.35em 1.1em; color: #f0d070; background: rgba(8, 12, 30, 0.88);
+  border: 1px solid #c8a040; border-radius: 4px; cursor: pointer;
+}
 .play-canvas-wrap .play-rules-seed input {
   width: 100%; height: 100%; box-sizing: border-box; margin: 0; padding: 0 0.3em;
   background: rgba(8, 12, 30, 0.92); color: #e8e8e8; border: 1px solid #c8a040;
@@ -2223,12 +2228,53 @@ div.play-vis-head { cursor: default; }
         seedBox.style.fontSize = Math.max(10, r[3] * ky * 0.7) + 'px';
       }
     };
+    /* Touch and mouse on the rules screen: a tap on the canvas goes to the
+     * engine, which resolves it from the layout it draws (a tab, a row, a
+     * value's arrows, a window's choice, a seed cell); Begin and Back are
+     * buttons under the canvas. Both queue for the next frame. */
+    const rulesTaps = [];
+    const wrapEl = menuCanvas.parentElement;
+    const onRulesTap = (e) => {
+      if (handoff !== 'rules') return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'BUTTON')) return;
+      const cr = menuCanvas.getBoundingClientRect();
+      if (e.clientX < cr.left || e.clientY < cr.top || e.clientX >= cr.right || e.clientY >= cr.bottom) return;
+      rulesTaps.push({
+        x: Math.floor((e.clientX - cr.left) * menuCanvas.width / cr.width),
+        y: Math.floor((e.clientY - cr.top) * menuCanvas.height / cr.height),
+      });
+      e.preventDefault();
+    };
+    wrapEl.addEventListener('pointerdown', onRulesTap);
+    let rulesButtons = null;
+    const syncRulesButtons = (open) => {
+      if (!open) {
+        if (rulesButtons) { rulesButtons.remove(); rulesButtons = null; }
+        return;
+      }
+      if (rulesButtons) return;
+      rulesButtons = document.createElement('div');
+      rulesButtons.className = 'play-rules-buttons';
+      for (const [label, button] of [['Back', 'back'], ['Begin', 'begin']]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.addEventListener('click', (e) => { e.preventDefault(); rulesTaps.push({ button }); });
+        rulesButtons.appendChild(b);
+      }
+      /* Under the canvas, not over it: the touch pad's buttons own its
+       * edges. */
+      wrapEl.after(rulesButtons);
+    };
     const teardownTitle = () => {
       if (torn) return;
       torn = true;
       if (bootTitleRAF) cancelAnimationFrame(bootTitleRAF);
       bootTitleRAF = 0;
       syncSeedBox(false);
+      syncRulesButtons(false);
+      wrapEl.removeEventListener('pointerdown', onRulesTap);
       window.removeEventListener('keydown', onKey);
       ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
       if (cancelBootTitle === cancelThis) cancelBootTitle = null;
@@ -2390,6 +2436,16 @@ div.play-vis-head { cursor: default; }
         for (let i = 0; i < ticks && !step; i++) {
           try { step = runtime.play_run_rules_step(i === 0 ? edge : 0); } catch (e) { return finish('new_game'); }
         }
+        /* Taps and the Begin / Back buttons, queued by their handlers. */
+        while (!step && rulesTaps.length) {
+          const t = rulesTaps.shift();
+          try {
+            step = t.button
+              ? runtime.play_run_rules_button(t.button === 'begin')
+              : runtime.play_run_rules_tap(t.x, t.y, menuCanvas.width, menuCanvas.height);
+          } catch (e) { step = ''; }
+        }
+        syncRulesButtons(!step);
         let rd = null;
         try { rd = JSON.parse(runtime.play_run_rules_draws_json(menuCanvas.width, menuCanvas.height)); }
         catch (e) { rd = null; }
@@ -2494,7 +2550,7 @@ div.play-vis-head { cursor: default; }
         catch (e) { opened = false; }
         if (opened) {
           handoff = 'rules';
-          statusEl.textContent = 'New Game rules. Q/E switch tabs, Up/Down picks a row, Left/Right changes it, Z confirms, Enter begins, X returns to the title. Z on the seed opens its editor, where the keyboard types.';
+          statusEl.textContent = 'New Game rules. Q/E switch tabs, Up/Down picks a row, Left/Right changes it, Z confirms, V resets the tab, Enter begins, X returns to the title. Z on the seed opens its editor, where the keyboard types. On a touch screen, tap a tab or a row, tap the arrows beside a value, and use Begin and Back.';
           return;
         }
       }

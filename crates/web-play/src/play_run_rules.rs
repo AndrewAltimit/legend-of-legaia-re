@@ -11,7 +11,7 @@
 use legaia_engine_session::run_rules::{
     BossRushHostStep, RunRulesStep, SeedKey, boss_rush_screen_input, boss_rush_screen_up,
     boss_rush_step_on, open_run_rules_screen, seed_editor_key, seed_editor_open,
-    seed_editor_set_text, set_run_rules_seed, step_run_rules_screen,
+    seed_editor_set_text, set_run_rules_seed, step_run_rules_screen, tap_run_rules_screen,
 };
 use legaia_render_kernels::screen_prim::ScreenPrim;
 use wasm_bindgen::prelude::*;
@@ -63,6 +63,34 @@ impl LegaiaRuntime {
         if let Some(h) = self.scene_host.host_mut() {
             set_run_rules_seed(&mut h.world, seed);
         }
+    }
+
+    /// A tap (or click) at surface pixel `(x, y)` on the rules screen,
+    /// resolved from the layout the screen draws: a tab, a row, a value's
+    /// arrows, a window's choice, a seed cell. Answers as
+    /// [`Self::play_run_rules_step`] does.
+    pub fn play_run_rules_tap(&mut self, x: i32, y: i32, surface_w: u32, surface_h: u32) -> String {
+        let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
+        let s = scale.max(1) as i32;
+        let at = ((x - origin.0).div_euclid(s), (y - origin.1).div_euclid(s));
+        let tap = self
+            .scene_host
+            .host()
+            .and_then(|h| legaia_engine_screens::run_rules::setup_tap(&h.world, at));
+        match tap {
+            Some(t) => self.run_rules_tap(t),
+            None => String::new(),
+        }
+    }
+
+    /// The page's *Begin* (`begin`) and *Back* buttons on the rules screen.
+    pub fn play_run_rules_button(&mut self, begin: bool) -> String {
+        use legaia_engine_session::run_rules::SetupTap;
+        self.run_rules_tap(if begin {
+            SetupTap::Begin
+        } else {
+            SetupTap::Back
+        })
     }
 
     /// Whether the rules screen's seed editor is up: the page shows its
@@ -175,6 +203,23 @@ impl LegaiaRuntime {
 }
 
 impl LegaiaRuntime {
+    /// Act on a resolved tap; `""`, `"back"` or `"start"` as
+    /// [`Self::play_run_rules_step`] answers.
+    fn run_rules_tap(&mut self, tap: legaia_engine_session::run_rules::SetupTap) -> String {
+        let Some(session) = self.scene_host.session_mut() else {
+            return String::new();
+        };
+        match tap_run_rules_screen(&mut session.host.world, tap) {
+            RunRulesStep::Running => String::new(),
+            RunRulesStep::Cancelled => "back".to_string(),
+            RunRulesStep::Start { rules, source } => {
+                crate::console_log(&format!("new game: run rules {:?}", rules.summary()));
+                session.stage_run_rules(rules, source.map(|s| *s));
+                "start".to_string()
+            }
+        }
+    }
+
     /// The run rules' frame step, the native window's `poll_run_rules`
     /// twin: a Boss Rush's next stage entered and armed, and an ironman
     /// run's card rules applied to the rack's port 1 (flagged written for the

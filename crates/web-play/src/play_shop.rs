@@ -441,6 +441,13 @@ impl LegaiaRuntime {
         // The shop-family frames and atlas sprites (the fallback panel's gold
         // frame first, under its own rows).
         sprites.extend(screens.sprites);
+        // The Boss Rush intermission and result's windows - the composition
+        // the native window draws too (`run_rules_chrome_sprites`).
+        if let (Some(rects), Some(h)) = (chrome, self.scene_host.host()) {
+            sprites.extend(legaia_engine_screens::run_rules::run_rules_chrome_sprites(
+                &h.world, rects, origin, scale,
+            ));
+        }
         let mut texts: Vec<TextDraw> = windows;
         texts.extend(banners);
         if let Some(rects) = chrome {
