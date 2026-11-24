@@ -523,7 +523,12 @@ linked afterwards. The grey rides the panel's slide timer: "Now checking"
 Once the transfer panel has slid in, the dispatcher's tail also stops drawing
 the header tab, pill and grid (`0x801DFCDC..0x801DFCE4`, only while
 `_DAT_801F01CC != 0x1000`), so the parked panel and the result line sit alone
-on black.
+on black. The push itself does not stop at the park: mode `4` reaches it on
+every pass, grey `0xFF` once parked, so whatever the host drew beneath the
+overlay - the field behind a pause-menu save - is blacked too, and
+`save_select_overlay_draws` keeps the quad under the parked panel. The three
+grey laws are held to the port's `SaveScreenDarken` level by
+`crates/retail-exec/tests/save_slide.rs`.
 
 **A box covers the text under it.** Each panel's strings are linked with the
 panel, so a later box hides the earlier screen's text as well as its sprites.
