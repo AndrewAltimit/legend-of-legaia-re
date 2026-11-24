@@ -1257,7 +1257,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // PROT 0915's chase runs ahead of the director
                 // (`World::mushura_chase_ahead`): the director reads the
                 // creature as this pass's turn left it.
-                if (entry, phase) == (915, 0xC) {
+                if entry == 915 && matches!(phase, 7 | 8 | 0xC) {
                     st.creature = Some(seat_at(&mut cpu.mem, CREATURE, false));
                 }
                 // PROT 0934's spray loop opens the pass on six draws, x then
@@ -1524,7 +1524,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // pass's whole drift (`World::summon_stager_tick`), and one
                 // after it is the next pass's.
                 let owed_drift = (arm.shot.is_none() && !arm.drift_after_shot)
-                    .then_some(arm.drift)
+                    .then_some(arm.rest_drift.unwrap_or(arm.drift))
                     .flatten();
                 for _ in 0..owed {
                     port.apply(&cam::ArmDirection {
@@ -1560,6 +1560,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     let n = tick_before.len();
                     for (i, &before) in tick_before.iter().enumerate() {
                         let passed = i + 1 == n && !held;
+                        w.casting.module_cam.countdown.1 = walk_step() - 1 - i as u8;
                         w.puera_writes(phase, passed, before, layout.monsters as u8);
                     }
                     for &s in &puera_seats {
@@ -1640,7 +1641,8 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         .collect();
                 let mut landed = false;
                 for &(h, y) in &crystals {
-                    let (y, l) = puera_crystal_fall(y, SPEED_SCALAR << 7);
+                    let (y, l) =
+                        puera_crystal_fall(y, (SPEED_SCALAR << 7) * i32::from(walk_step()));
                     landed |= l;
                     if cpu.mem.rd16(h + 0x16) as i16 != y {
                         diffs_early.push(format!(
@@ -1954,32 +1956,18 @@ fn creature_gap(entry: u32, arm: u8, part: CreatureGap) -> bool {
 /// The frame steps every walk runs at.
 const WALK_STEPS: [u8; 3] = [1, 2, 3];
 
-/// The arms whose camera, pace or seats still differ from retail's at a
-/// frame step above 1, as `(entry, first arm, last arm)`: candidate engine
-/// defects a console's battle CD timing shows, not yet settled. Both walks
-/// (this one and `cast_theeder`'s tick bodies) leave them out at steps 2
-/// and 3 only; at step 1 every arm is compared.
-pub(crate) const STEP_GAPS: [(u32, u8, u8); 19] = [
-    (908, 7, 7),
-    (914, 0xD, 0xD),
-    (915, 7, 9),
-    (916, 6, 6),
-    (916, 0x14, 0x14),
-    (917, 6, 6),
-    (917, 0xD, 0xF),
-    (922, 4, 4),
-    (922, 8, 8),
-    (922, 0xC, 0xF),
-    (922, 0x14, 0x14),
-    (923, 4, 4),
-    (923, 0xF, 0xF),
-    (927, 0x13, 0x13),
-    (928, 0xC8, 0xC8),
-    (929, 0x13, 0x13),
-    (931, 0x1E, 0x1E),
-    (932, 6, 6),
-    (933, 0x13, 0x14),
-];
+/// The arms left out of both walks (this one and `cast_theeder`'s tick
+/// bodies) at frame steps 2 and 3 only, as `(entry, first arm, last arm)`;
+/// at step 1 every arm is compared. Both hold on the port's victim settle
+/// poll (`World::chain_seat_settled`), whose down-clip exit the port keeps by
+/// choice (the tooling page's "One arm stays apart from retail by choice"):
+/// retail's Aluru arm `0x14` waits on a dead victim's colour word alone
+/// (`lw v0,4(s3)` / `bnez` at `0x801F8870` in PROT 0916), a word only the
+/// defeat fade eases out, where the port also lets go once the victim plays
+/// its down clip. The tick-body walk plays its fallen victim's reaction and
+/// fade by pass, so above step 1 the down clip comes in ahead of the fade's
+/// end and the port leaves first (Barra's arm `0xF` reads the same poll).
+pub(crate) const STEP_GAPS: [(u32, u8, u8); 2] = [(916, 0x14, 0x14), (917, 0xF, 0xF)];
 
 /// Whether `(entry, arm)` at `step` is a [`STEP_GAPS`] row (`arm` `None`:
 /// any of the entry's rows, for a message naming no arm).

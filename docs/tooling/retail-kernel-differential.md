@@ -1183,10 +1183,31 @@ a pass. The walks found these, each fixed from the disassembly:
 - Iota's arm 9 pulls each plane coordinate once a pass, a positive one down a step and then a negative one up a
   step, so a coordinate under one step stands still where the per-tick pull walked it to zero.
 
-The arms still apart above step 1 are listed in `STEP_GAPS` (`summon_cameras`), left out of both walks at steps 2
-and 3 only. They include Barra's arms 6 and `0xD..0xF` at step 3, Zenoir's arm 7 tween, Jedo's arm `0x1E` TR y
-and Puera's arms 4, 8, `0xC..0xF` and `0x14`. With the step-3 runs, Mule's backdrop follow on a negative pitch
-(`0x801F8B80`) is driven both ways.
+A second round traced every arm still apart above step 1:
+
+- A gate that tests its word against the pass's whole step, or a model word stepped by it, decides on the pass's
+  opening tick: Puera's arm 8 cursor (`slt` on `scalar * delta` at `0x801F714C`, `Gate::RampDown`).
+- Stores the handing tick still owed for its pass: Gola Gola's hit-arm yaw (the shot reads the global after the
+  pass's whole drift), Zenoir's arm 7 word ahead of its tween, Mushura's arms 6 to 8 creature run, Puera's arm 4
+  slide and arm 12 sink, Terra's arms `0x13` / `0x14` creature walk and row turn, Juggernaut's arm 19 walk, Barra's
+  arm `0xD` ramp and word and arm `0xE` flight, Ozma's arms 5 and 8 shake rise.
+- Moves inside a word's `blez` take the branch the pass's opening word picks: Puera's arm 4 slide (`0x801F6E40`,
+  which carries the creature past `0x80` at step 3), Gilium's arm 4 rise (its pass stores `z = 0x400` and scale
+  `0x1000`, `0x801F718C` / `0x801F71A4`), and the drained pushes of Gimard, Theeder, Gizam, Gola Gola, Palma, Mule and
+  Meta; Barra's arm 6 arc tests the pass's end word (`slti 0xa1`).
+- A stored value travels as a drift that the rest of the pass owes nothing more of: Aluru's arm 6 yaw store
+  (`set_yaw`), Jedo's arm `0x1E` TR y.
+- Order: Mushura's arms 7 and 8 move the creature before the exit's cut reads it (`sh v1,0x38(s4)` at
+  `0x801F72EC`, the cut at `0x801F7400`), so the host runs them ahead of the director; arm 9 steps the victim back
+  `0xCA` (`0x801F7494`) before it turns the creature onto it (`0x801F7578`).
+- Missing stores: Meta's arm 6 exit stores TR y `0x3A0` and TR z `0x720` (`0x801F70BC..0x801F70C4`), where the
+  drift happens to land at step 1. Barra's arm `0xF` ease reads its word unclamped (`0x801F8084`).
+
+`STEP_GAPS` keeps two rows, Aluru's arm `0x14` and Barra's arm `0xF`, both on the port's victim settle poll, whose
+down-clip exit the port keeps by choice (below): the tick-body walk plays its fallen victim by pass, so above step 1
+the down clip comes in ahead of the fade's end and the port leaves first. With the step-3 runs, Mule's backdrop
+follow on a negative pitch (`0x801F8B80`) is driven both ways. `mule_wave` runs its 600 rounds at steps 1, 2 and 3,
+the wave's damage, spirit and XP compared live at each.
 
 One arm stays apart from retail by choice. Aluru's arm `0x14` holds on a dead victim until its word is zero
 (`0x801F8870`), a word that eases out only under the defeat fade the commit's monster-death arm arms at the

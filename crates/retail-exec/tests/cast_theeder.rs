@@ -619,7 +619,8 @@ mod walk {
         };
         let rest = legaia_engine_battle_loop::cast_band::CastModuleCodeRun {
             capture_drift: last
-                .capture_drift
+                .capture_drift_rest
+                .unwrap_or(last.capture_drift)
                 .filter(|_| last.camera_shot.is_none() && !last.capture_drift_after_shot),
             camera_nudge: last.camera_nudge,
             ..Default::default()
