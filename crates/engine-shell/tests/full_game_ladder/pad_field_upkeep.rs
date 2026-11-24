@@ -50,10 +50,12 @@ fn boss_bound() -> bool {
 /// member, under [`continuous::SAVING_FOR_BOSS`]) and with no field cast,
 /// since [`pad_ready`]'s top-up at the door spends the reserve and the MP.
 /// The plain heal before the walk to Cort spent what the top-up then lacked
-/// (w55's sweep: walk-in reloads fell, Cort's doubled). On under
-/// `LEGAIA_FGL_LEAD_IN_HEAL=1`.
+/// (w55's sweep: walk-in reloads fell, Cort's doubled); this one spends
+/// none of it, and the walk from `bio_castle` to Cort's door took 2 reloads
+/// over the fifteen streams against 5 without it, the rest of each run
+/// unchanged. `LEGAIA_FGL_LEAD_IN_HEAL=0` leaves it out.
 pub(super) fn lead_in_heal(session: &mut NativeSession) -> usize {
-    if !std::env::var_os("LEGAIA_FGL_LEAD_IN_HEAL").is_some_and(|v| v != "0") {
+    if std::env::var_os("LEGAIA_FGL_LEAD_IN_HEAL").is_some_and(|v| v == "0") {
         return 0;
     }
     let _saving = continuous::SavingForBoss::arm(true);

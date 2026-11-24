@@ -971,7 +971,11 @@ from full; each wipe reloaded the stretch before Cort was met. A stretch
 whose milestone is a boss door (`BOSS_LEAD_IN`) therefore runs from the
 random encounters on the way, as a scene with a staged fight of its own
 does (`SAVING_FOR_BOSS`), and the party meets the door with what the walk
-left it, which `pad_ready` then tops up.
+left it, which `pad_ready` then tops up. It sets out healed to full, from the
+restoratives the bag holds beyond the boss's reserve and with no field cast
+(`lead_in_heal`): the top-up at the door spends the reserve and the MP, and a
+heal that spent them before the walk traded fewer walk-in reloads for more
+of Cort's.
 
 Running is not free: the escape roll is retail's (`FUN_801E791C`, party
 `1.5 x SPD` against the foes' `SPD`, both raised by missing HP), and one
@@ -1037,7 +1041,7 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_NO_SHORTCUTS=1` | Refuses every fallback placement the pad hand would make ([shortcuts](#shortcuts)): the run is played on the pad alone. |
 | `LEGAIA_FGL_SKIP_OPENING=1` | Presses through the opening, so the first Cross takes the hosts' intro hand-off ([input conventions](#input-conventions-in-both-passes)). |
 | `LEGAIA_FGL_RETAIL_DECODE=1` | Walks retail's quantised direction decode rather than the hosts' default precise movement ([shortcuts](#shortcuts)). |
-| `LEGAIA_FGL_LEAD_IN_HEAL=1` | Heals to full before the walk to a boss door from the restoratives beyond the boss's reserve, with no field cast. |
+| `LEGAIA_FGL_LEAD_IN_HEAL=0` | Leaves out the heal before the walk to a boss door ([arriving at a boss](#a-milestone-reached-with-a-fight-committed)). |
 | `LEGAIA_FGL_CONTINUOUS_UNTIL=<id>` | Ends part C once it reaches that milestone, and does not assert the baseline: with `LEGAIA_FGL_CONTINUOUS_RESUME` and a spread of `LEGAIA_FGL_RNG_SEED` values, how often one stretch clears. |
 
 ### The seed set
