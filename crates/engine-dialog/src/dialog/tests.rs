@@ -101,7 +101,7 @@ fn a_number_escape_prints_the_resolved_script_counter() {
     // One numeral pair a digit: retail draws the counter in the numeral face.
     assert_eq!(
         run(Some(Arc::new(map))),
-        vec![b'N', 0xCE, 0xF4, 0xCE, 0xF2, b'x'].to_vec()
+        vec![b'N', 0xCE, 0xF4, 0xCE, 0xF2, b'x']
     );
     assert_eq!(
         run(None),
