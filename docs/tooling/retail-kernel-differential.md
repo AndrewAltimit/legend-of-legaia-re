@@ -1232,7 +1232,9 @@ knockdown's end (`0x8004B66C`). The port had also let both arms go on the down c
 ahead of the fade's end; the arms now wait out the fade as retail does. A dead body standing lit outside the fade
 is put into it by the battle fade pass (`DEAD_IDLE_FADE_PASSES`), so the wait always lets go. With the step-3
 runs, Mule's backdrop follow on a negative pitch (`0x801F8B80`) is driven both ways. `mule_wave` runs its 600
-rounds at steps 1, 2 and 3, the wave's damage, spirit and XP compared live at each.
+rounds at steps 1, 2 and 3, the wave's damage, spirit and XP compared live at each, and so does `ozma_ladder` over
+PROT 0934's arm `0x18` hit ladder. The summon tick bodies' phase walk (`chain_ticks`) runs at steps 1 to 4, and
+the Spoon and Vera heal arms at a random step. The chain-body walk over the capture bodies stays at step 1.
 
 **The spawned records.** The capture and chain walks log every `FUN_80021B04` / `FUN_80050ED4` call a pass makes,
 as record, point, angle trio and scale, and every literal-anchored record a director seats (its charge records and

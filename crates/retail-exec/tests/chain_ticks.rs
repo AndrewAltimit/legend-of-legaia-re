@@ -1201,7 +1201,7 @@ type SummonTick =
 /// ctx[+0x278] after it)`.
 type Walk = Vec<(u8, u8, bool, u8)>;
 
-fn summon_walk(entry: u32, va: u32, action: u8) -> Option<(Walk, bool)> {
+fn summon_walk(entry: u32, va: u32, action: u8, step: u8) -> Option<(Walk, bool)> {
     let disc = disc()?;
     let mut cpu = scus_cpu()?;
     cpu.mem.load(OVERLAY_BASE, &disc.read_entry(898).ok()?);
@@ -1260,7 +1260,7 @@ fn summon_walk(entry: u32, va: u32, action: u8) -> Option<(Walk, bool)> {
         cpu.mem.wr32(RECORDS + i * 4, MONSTER_RECORD);
     }
     cpu.mem.wr8(SCALAR, cam::SPEED_SCALAR as u8);
-    cpu.mem.wr8(STEP, 1);
+    cpu.mem.wr8(STEP, step);
     let mut path = Vec::new();
     let mut held = 0;
     for _ in 0..40_000 {
@@ -1351,16 +1351,21 @@ fn the_summon_tick_bodies_walk_their_phases_as_retail_does() {
         return;
     }
     let mut failures = Vec::new();
-    for (entry, va, action, port, fewest) in SUMMON_TICKS {
-        let (path, done) = summon_walk(entry, va, action).expect("disc");
+    // At frame steps 1 to 4 (`0x1F800393`): a console's battle CD timing
+    // runs frames above one vsync, and the bodies' arms do not read it.
+    let runs = [1u8, 2, 3, 4]
+        .into_iter()
+        .flat_map(|step| SUMMON_TICKS.map(|t| (t, step)));
+    for ((entry, va, action, port, fewest), step) in runs {
+        let (path, done) = summon_walk(entry, va, action, step).expect("disc");
         eprintln!(
-            "PROT {entry:04}: {:x?}{}",
+            "PROT {entry:04} step {step}: {:x?}{}",
             path.iter().map(|p| p.0).collect::<Vec<_>>(),
             if done { " Done" } else { "" }
         );
         if path.len() < fewest {
             failures.push(format!(
-                "PROT {entry:04}: the walk left {} arms",
+                "PROT {entry:04} step {step}: the walk left {} arms",
                 path.len()
             ));
         }
@@ -1374,10 +1379,10 @@ fn the_summon_tick_bodies_walk_their_phases_as_retail_does() {
                 ..Default::default()
             };
             let (mut k, mut v) = (CastActorState::default(), CastActorState::default());
-            let step = port(&mut ctx, &mut k, &mut v);
-            if (step == t::CastTickStep::Done) == busy || (busy && ctx.phase != a) {
+            let tick = port(&mut ctx, &mut k, &mut v);
+            if (tick == t::CastTickStep::Done) == busy || (busy && ctx.phase != a) {
                 failures.push(format!(
-                    "PROT {entry:04} arm {p:#x}: retail -> {a:#x} busy {busy}, port -> {:#x} {step:?}",
+                    "PROT {entry:04} step {step} arm {p:#x}: retail -> {a:#x} busy {busy}, port -> {:#x} {tick:?}",
                     ctx.phase
                 ));
             }
@@ -1512,7 +1517,8 @@ fn seed_heal_case(
     let special = rng.below(4) == 0;
     cpu.mem.wr32(SPECIAL_BATTLE, u32::from(special));
     cpu.mem.wr8(SCALAR, cam::SPEED_SCALAR as u8);
-    cpu.mem.wr8(STEP, 1);
+    // Any frame step: the heal arm makes its stores once, on its pass.
+    cpu.mem.wr8(STEP, 1 + rng.below(4) as u8);
     // The list walk stops on the first match or at 0x20 (`sltiu 0x20`).
     let idx = at.min(0x20);
     HealCase {
