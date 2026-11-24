@@ -20,3 +20,185 @@ image = "98f28532deebc6d6"
 range = "0x80036A14..0x80036B10"
 verdict = "unported"
 reason = "The numeric 0xCE escape (table entry string_id 0): the counter at 0x801C6460[y_offset] drawn through the numeral writer FUN_80034B78 and the pen stepped 8 per digit. The port resolves the escape to dialog-font digit glyphs before layout (engine-dialog script_counter_digits, a REF), so this arm has no Rust; the typeface and the per-digit advance differ."
+
+[[arm]]
+entry = "0x801CFBB8"
+image = "13f991988fa12de5"
+range = "0x801CFBD0..0x801CFF2C"
+verdict = "unreachable"
+reason = "Every branch here is a sign or page test its five callers fix: a3 is 0, 2, 3, 4 or 5 (0x801CF248, 0x801D087C, 0x801D08C0, 0x801D091C, 0x801D093C), so a3 >= 0 and a3 >> 10 is 0 (the page-1 arm and its 0x7D0F CLUT never run); the level is clamped to 0..0x82 before each call (0x801CF164, 0x801CF220, 0x801CF294, 0x801D08FC) and the scale is 0x1000, so every product the round-toward-zero bgez tests is non-negative."
+
+[[arm]]
+entry = "0x80036D80"
+image = "a021016358cd8ed1"
+range = "0x80036E24..0x80036E3C"
+verdict = "unreachable"
+reason = "The compiler's div guards (zero divisor, -1 by 0x80000000). The divisor is the ramp's total +0x10, which the installer FUN_8003C5F0 stores from the same word as the remaining count +0x14 (0x8003C64C / 0x8003C650); the ticker only lowers +0x14 by the unsigned frame step and divides only while it stays above zero (blez at 0x80036DE8), so the divisor is always positive."
+
+[[arm]]
+entry = "0x80036D80"
+image = "a021016358cd8ed1"
+range = "0x80036E7C..0x80036E94"
+verdict = "unreachable"
+reason = "The compiler's div guards (zero divisor, -1 by 0x80000000). The divisor is the ramp's total +0x10, which the installer FUN_8003C5F0 stores from the same word as the remaining count +0x14 (0x8003C64C / 0x8003C650); the ticker only lowers +0x14 by the unsigned frame step and divides only while it stays above zero (blez at 0x80036DE8), so the divisor is always positive."
+
+[[arm]]
+entry = "0x80036D80"
+image = "a021016358cd8ed1"
+range = "0x80036EC8..0x80036EE0"
+verdict = "unreachable"
+reason = "The compiler's div guards (zero divisor, -1 by 0x80000000). The divisor is the ramp's total +0x10, which the installer FUN_8003C5F0 stores from the same word as the remaining count +0x14 (0x8003C64C / 0x8003C650); the ticker only lowers +0x14 by the unsigned frame step and divides only while it stays above zero (blez at 0x80036DE8), so the divisor is always positive."
+
+[[arm]]
+entry = "0x80036D80"
+image = "a021016358cd8ed1"
+range = "0x80036F1C..0x80036F34"
+verdict = "unreachable"
+reason = "The compiler's div guards (zero divisor, -1 by 0x80000000). The divisor is the ramp's total +0x10, which the installer FUN_8003C5F0 stores from the same word as the remaining count +0x14 (0x8003C64C / 0x8003C650); the ticker only lowers +0x14 by the unsigned frame step and divides only while it stays above zero (blez at 0x80036DE8), so the divisor is always positive."
+
+[[arm]]
+entry = "0x80036D80"
+image = "a021016358cd8ed1"
+range = "0x80036F84..0x80036F98"
+verdict = "unreachable"
+reason = "The store-width dispatch's out-of-range arms (kind 0 or below, kind 5 and up, which retire the ramp unwritten): the kind is FUN_8003C5F0's a2, and every one of its 23 call sites on the disc (all in PROT 0897) loads an immediate 1..4."
+
+[[arm]]
+entry = "0x801EC0DC"
+image = "7ab5de69dcf72184"
+range = "0x801EC250..0x801EC268"
+verdict = "unreachable"
+reason = "The div guards of the party average: the divisor is the battle context's party-count byte (ctx+0x0, lbu at 0x801EC244), at least 1 in any battle where a monster can flee, and a byte is never -1."
+
+[[arm]]
+entry = "0x801EC0DC"
+image = "7ab5de69dcf72184"
+range = "0x801EC284..0x801EC29C"
+verdict = "unreachable"
+reason = "The div guards of the monster average: the divisor is the context's monster-count byte (ctx+0x1, 0x801EC278); the fleeing monster is one of them, so it is at least 1, and a byte is never -1."
+
+[[arm]]
+entry = "0x801EC0DC"
+image = "7ab5de69dcf72184"
+range = "0x801EC334..0x801EC34C"
+verdict = "unreachable"
+reason = "The div guards of the monster's roll rand() % (s2 + mon+0x168): s2 is the party average of (hp >> 4) + (stat >> 3) + (stat >> 3) over live members plus the monster's (max - cur) >> 5, all unsigned terms, and a live member's max-HP term alone keeps the average above zero, so the divisor is positive (value-range inference)."
+
+[[arm]]
+entry = "0x801EC0DC"
+image = "7ab5de69dcf72184"
+range = "0x801EC368..0x801EC380"
+verdict = "unreachable"
+reason = "The div guards of the party's roll rand() % s0: s0 is forced to at least 1 just above it (bgtz / li s0,1 at 0x801EC308..0x801EC310), so it is never zero or -1."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F0F8..0x8001F0F8"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F168..0x8001F168"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F230..0x8001F230"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F324..0x8001F324"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F370..0x8001F370"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F3AC..0x8001F3AC"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F3E8..0x8001F3E8"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F420..0x8001F420"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F4D0..0x8001F4D0"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F504..0x8001F504"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F5BC..0x8001F5BC"
+verdict = "unported"
+reason = "An out-of-heap test on the block FUN_80017888 just returned: null prints the type's error string and raises a bit of _DAT_8007B828. The port decodes into an owned buffer (container-formats decode) with no fixed heap to run out of, so this arm has no Rust."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F210..0x8001F210"
+verdict = "unreachable"
+reason = "The TMD-pack arm's preplaced-destination test on a2 (s7): every call on the disc passes a2 = 0 - the call at SCUS 0x80025564 and the one in PROT 0976 load zero, and the pair walker FUN_80020224 passes its own a0, which each of its six callers (PROT 0897, 0972, 0975, 0976, 0977, 0980) loads as zero."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F2E0..0x8001F2E0"
+verdict = "unreachable"
+reason = "The bank-watermark store under a2 == 1 (_DAT_8007B704 / _DAT_8007B824): a2 is zero at every call on the disc (see the 0x8001F210 row), so the bne always jumps."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F2C0..0x8001F2C0"
+verdict = "unreachable"
+reason = "The TMD registrar FUN_80026B4C returns the registration counter _DAT_8007B774 after its store (0x80026BAC..0x80026BB0), a count of pool slots, never negative, so the bltz to the error print never jumps."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F494..0x8001F494"
+verdict = "unreachable"
+reason = "The VDF registrar FUN_8001FBCC returns the record counter _DAT_8007B7EC from before its increment (0x8001FBD4 / 0x8001FBEC), a count, never negative, so the bltz never jumps."
+
+[[arm]]
+entry = "0x8001F05C"
+image = "549f895e7b686f32"
+range = "0x8001F558..0x8001F558"
+verdict = "unreachable"
+reason = "The single-TMD arm's FUN_80026B4C result is the non-negative registration counter (see the 0x8001F2C0 row), so the bgez always jumps."
