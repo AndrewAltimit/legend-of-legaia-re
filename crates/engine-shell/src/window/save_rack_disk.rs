@@ -194,12 +194,10 @@ impl PlayWindowApp {
 }
 
 /// The window's save rack, the block read behind a port and the
-/// Continue-enable scan are the session's
+/// Continue screen's rack are the session's
 /// ([`legaia_engine_session::title_continue`]), decided once for both play
 /// hosts: each port is a [`MountedCard`] on either.
-pub(crate) use legaia_engine_session::title_continue::{
-    card_port_blocks, card_port_rack, rack_has_save,
-};
+pub(crate) use legaia_engine_session::title_continue::{card_port_blocks, card_port_rack};
 
 /// Path of `slot`'s LGSF file under `save_dir` - the shape
 /// `MenuRuntime::slot_path` writes (`slot_NN.<SAVE_EXT>`, zero-padded).

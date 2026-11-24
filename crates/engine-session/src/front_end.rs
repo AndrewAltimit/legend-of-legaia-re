@@ -50,11 +50,11 @@ pub fn logos_skip_edge(edge: u16) -> bool {
 }
 
 /// A title session as a shipped front end opens one
-/// ([`TitleSession::for_front_end_at`]): Continue live exactly when
-/// `any_save`, the menu on the seat's row counter (`_DAT_8007B820`, which
-/// retail never resets), the attract countdown armed.
-pub fn open_title(seat: &ModeSeat, any_save: bool) -> TitleSession {
-    TitleSession::for_front_end_at(any_save, seat.title_row())
+/// ([`TitleSession::for_front_end_at`]): every row live, the menu on the
+/// seat's row counter (`_DAT_8007B820`, which retail never resets), the
+/// attract countdown armed.
+pub fn open_title(seat: &ModeSeat) -> TitleSession {
+    TitleSession::for_front_end_at(seat.title_row())
 }
 
 /// The movie lane a host plays the title's attract movie on.
@@ -113,13 +113,12 @@ pub struct FrontEnd {
 
 impl FrontEnd {
     /// A cold boot: the publisher logos when the disc's `init.pak` built an
-    /// atlas, else straight to the title with `any_save`'s Continue bit -
-    /// the same scan the logos' hand-off makes when they do play.
-    pub fn cold_boot(seat: &ModeSeat, has_logos: bool, any_save: bool) -> Self {
+    /// atlas, else straight to the title.
+    pub fn cold_boot(seat: &ModeSeat, has_logos: bool) -> Self {
         if has_logos {
             Self::logos()
         } else {
-            Self::title(seat, any_save)
+            Self::title(seat)
         }
     }
 
@@ -137,9 +136,9 @@ impl FrontEnd {
     /// The front end on its title card ([`open_title`]): a cold boot with no
     /// logos, a return from Options or a backed-out Continue, the post-wipe
     /// title.
-    pub fn title(seat: &ModeSeat, any_save: bool) -> Self {
+    pub fn title(seat: &ModeSeat) -> Self {
         Self {
-            screen: FrontEndScreen::Title(open_title(seat, any_save)),
+            screen: FrontEndScreen::Title(open_title(seat)),
         }
     }
 
@@ -189,9 +188,7 @@ impl FrontEnd {
     /// Step the front end one retail frame on `edge`, the frame's
     /// just-pressed pad bits.
     ///
-    /// `any_save` is asked only when the logos hand the screen to the title
-    /// - the Continue-enable scan runs at that moment, not when the logos
-    ///   started. `lane` is asked only while the attract movie plays.
+    /// `lane` is asked only while the attract movie plays.
     ///
     /// The title frame's order: a playing attract owns the frame (its skip
     /// edge, then whether the lane still runs) and the title does not tick;
@@ -204,7 +201,6 @@ impl FrontEnd {
         &mut self,
         seat: &mut ModeSeat,
         edge: u16,
-        any_save: impl FnOnce() -> bool,
         lane: &mut dyn AttractLane,
     ) -> FrontEndStep {
         match &mut self.screen {
@@ -219,17 +215,13 @@ impl FrontEnd {
                 // `init.pak`'s phase-3 arm: the core-state reset, then the
                 // branch on the entry word (`ModeSeat::boot_handoff`).
                 let mode = seat.boot_handoff();
-                let any = match mode {
-                    GameMode::CardInit => any_save(),
-                    other => {
-                        log::info!(
-                            "front end: boot hand-off went to {other:?}; no engine screen owns \
-                             it, opening the title"
-                        );
-                        false
-                    }
-                };
-                self.screen = FrontEndScreen::Title(open_title(seat, any));
+                if mode != GameMode::CardInit {
+                    log::info!(
+                        "front end: boot hand-off went to {mode:?}; no engine screen owns it, \
+                         opening the title"
+                    );
+                }
+                self.screen = FrontEndScreen::Title(open_title(seat));
                 FrontEndStep::TitleOpened(mode)
             }
             FrontEndScreen::Title(title) => {
@@ -261,15 +253,14 @@ impl<S: legaia_engine_audio::AudioSink> crate::BootSession<S> {
         &mut self,
         front_end: &mut FrontEnd,
         edge: u16,
-        any_save: impl FnOnce() -> bool,
         lane: &mut dyn AttractLane,
     ) -> FrontEndStep {
-        front_end.step(&mut self.mode_seat, edge, any_save, lane)
+        front_end.step(&mut self.mode_seat, edge, lane)
     }
 
     /// The title card on this session's seat ([`FrontEnd::title`]).
-    pub fn front_end_title(&self, any_save: bool) -> FrontEnd {
-        FrontEnd::title(&self.mode_seat, any_save)
+    pub fn front_end_title(&self) -> FrontEnd {
+        FrontEnd::title(&self.mode_seat)
     }
 
     /// Score the title card: the global-pool title theme
@@ -373,7 +364,7 @@ mod tests {
         mut stop: impl FnMut(&FrontEndStep) -> bool,
     ) -> Option<FrontEndStep> {
         for f in 0..limit {
-            let step = fe.step(seat, pad(f), || true, &mut NoMovieLane);
+            let step = fe.step(seat, pad(f), &mut NoMovieLane);
             if stop(&step) {
                 return Some(step);
             }
@@ -418,7 +409,7 @@ mod tests {
     #[test]
     fn title_new_game_off_start_then_cross() {
         let mut seat = ModeSeat::new_at_boot();
-        let mut fe = FrontEnd::title(&seat, true);
+        let mut fe = FrontEnd::title(&seat);
         let picked = drive(
             &mut fe,
             &mut seat,
@@ -438,7 +429,7 @@ mod tests {
     #[test]
     fn title_continue_carries_the_row_to_the_seat() {
         let mut seat = ModeSeat::new_at_boot();
-        let mut fe = FrontEnd::title(&seat, true);
+        let mut fe = FrontEnd::title(&seat);
         let mut menu_open = false;
         let mut pressed_down = false;
         let mut picked = None;
@@ -453,7 +444,7 @@ mod tests {
             } else {
                 0
             };
-            let step = fe.step(&mut seat, pad, || true, &mut NoMovieLane);
+            let step = fe.step(&mut seat, pad, &mut NoMovieLane);
             if let Some(TitlePhase::MainMenu { .. }) = fe.title_session().map(|t| t.phase()) {
                 menu_open = true;
             }
@@ -465,17 +456,21 @@ mod tests {
         assert_eq!(picked, Some(TitleOutcome::Continue));
         assert_eq!(seat.title_row(), 1);
         // A later title opens on the row the seat carries.
-        let again = FrontEnd::title(&seat, true);
+        let again = FrontEnd::title(&seat);
         assert_eq!(again.title_session().unwrap().row_counter(), 1);
     }
 
-    /// With no save, Continue is greyed and the cursor folds to New Game.
+    /// Continue is live on every front-end title: Down reaches it and the
+    /// cursor opens on the row the seat carries, whatever the card rack
+    /// holds (the Continue screen is where a card gets inserted).
     #[test]
-    fn no_save_title_opens_on_new_game() {
+    fn continue_is_live_on_every_title() {
         let mut seat = ModeSeat::new_at_boot();
         seat.set_title_row(1);
-        let fe = FrontEnd::title(&seat, false);
-        assert_eq!(fe.title_session().unwrap().row_counter(), 0);
+        let fe = FrontEnd::title(&seat);
+        let t = fe.title_session().unwrap();
+        assert!(t.continue_enabled);
+        assert_eq!(t.row_counter(), 1);
     }
 
     /// A lane that plays for `frames` frames and records skips.
@@ -500,14 +495,14 @@ mod tests {
     #[test]
     fn attract_starts_the_frame_it_fires_and_freezes_the_title() {
         let mut seat = ModeSeat::new_at_boot();
-        let mut fe = FrontEnd::title(&seat, true);
+        let mut fe = FrontEnd::title(&seat);
         let mut lane = CountLane {
             frames: 5,
             skipped: false,
         };
         let mut started = None;
         for f in 0..10_000u32 {
-            match fe.step(&mut seat, 0, || true, &mut lane) {
+            match fe.step(&mut seat, 0, &mut lane) {
                 FrontEndStep::AttractStart(id) => {
                     started = Some((f, id));
                     break;
@@ -520,7 +515,7 @@ mod tests {
         assert_eq!(id, legaia_engine_title::title_overlay::ATTRACT_FMV_ID);
         let mut playing = 0;
         loop {
-            match fe.step(&mut seat, 0, || true, &mut lane) {
+            match fe.step(&mut seat, 0, &mut lane) {
                 FrontEndStep::AttractPlaying => playing += 1,
                 FrontEndStep::AttractEnded => break,
                 other => panic!("unexpected {other:?}"),
@@ -533,21 +528,21 @@ mod tests {
     #[test]
     fn attract_skip_edge_ends_the_movie() {
         let mut seat = ModeSeat::new_at_boot();
-        let mut fe = FrontEnd::title(&seat, true);
+        let mut fe = FrontEnd::title(&seat);
         let mut lane = CountLane {
             frames: 1_000,
             skipped: false,
         };
         while !matches!(
-            fe.step(&mut seat, 0, || true, &mut lane),
+            fe.step(&mut seat, 0, &mut lane),
             FrontEndStep::AttractStart(_)
         ) {}
         assert_eq!(
-            fe.step(&mut seat, 0, || true, &mut lane),
+            fe.step(&mut seat, 0, &mut lane),
             FrontEndStep::AttractPlaying
         );
         assert_eq!(
-            fe.step(&mut seat, CROSS, || true, &mut lane),
+            fe.step(&mut seat, CROSS, &mut lane),
             FrontEndStep::AttractEnded
         );
         assert!(lane.skipped);

@@ -234,3 +234,80 @@ fn the_wipe_spawn_frame_draws_the_menu() {
     let at = spawned_at.expect("Start opened the pause menu on the world map");
     eprintln!("[ok] the wipe spawned the menu on loop frame {at}");
 }
+
+/// With no save on any card, the title's CONTINUE stays live on the
+/// keyboard: the Down arrow - through the window's own key handler - moves
+/// the cursor onto it, Cross opens the Continue screen over the empty rack,
+/// and Circle backs out to the title. A title that greyed CONTINUE on an
+/// empty rack wrapped every Up / Down straight back onto NEW GAME, which
+/// read as dead arrow keys, and kept a player who had a card to insert from
+/// ever reaching the screen that inserts it.
+#[test]
+fn boot_ui_continue_is_reachable_on_the_arrows_with_no_save() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let save_dir = std::env::temp_dir().join(format!(
+        "legaia-native-front-end-no-save-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&save_dir);
+    std::fs::create_dir_all(&save_dir).expect("scratch save dir");
+    let mut w = HeadlessPlayWindow::open_boot_ui_in(Path::new(&disc), "town01", None, &save_dir)
+        .expect("open the boot-UI window");
+    let start = PadButton::Start.mask();
+    let phase = |w: &HeadlessPlayWindow| {
+        w.front_end()
+            .and_then(|fe| fe.title_session())
+            .map(|t| t.phase())
+    };
+    let mut frames = 0;
+    while !matches!(phase(&w), Some(TitlePhase::MainMenu { .. })) {
+        w.display_frame(if frames % 8 < 2 { start } else { 0 }, 1);
+        frames += 1;
+        assert!(frames < 4000, "the title menu never opened");
+    }
+    for _ in 0..4 {
+        w.display_frame(0, 1);
+    }
+    assert_eq!(phase(&w), Some(TitlePhase::MainMenu { cursor: 0 }));
+    assert!(w.press_key("Down"), "the window has a Down arrow key");
+    for _ in 0..4 {
+        w.display_frame(0, 1);
+    }
+    assert_eq!(
+        phase(&w),
+        Some(TitlePhase::MainMenu { cursor: 1 }),
+        "the Down arrow reaches CONTINUE with no save on the rack"
+    );
+    let cross = PadButton::Cross.mask();
+    let mut opened = false;
+    for f in 0..600 {
+        w.display_frame(if f % 8 < 2 { cross } else { 0 }, 1);
+        if w.continue_screen().is_some() {
+            opened = true;
+            break;
+        }
+    }
+    assert!(
+        opened,
+        "CONTINUE opens the Continue screen over an empty rack"
+    );
+    let circle = PadButton::Circle.mask();
+    let mut back = false;
+    for f in 0..600 {
+        w.display_frame(if f % 8 < 2 { circle } else { 0 }, 1);
+        if w.continue_screen().is_none()
+            && w.front_end().is_some_and(|fe| fe.title_session().is_some())
+        {
+            back = true;
+            break;
+        }
+    }
+    assert!(
+        back,
+        "Circle backs out of the empty Continue screen to the title"
+    );
+    let _ = std::fs::remove_dir_all(&save_dir);
+}

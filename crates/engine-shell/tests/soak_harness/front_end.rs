@@ -110,21 +110,17 @@ fn title_pad(fe: &FrontEnd, frame: u32, row: u8) -> u16 {
 
 /// Cold-boot the front end (logos first) and step it with the scripted pad
 /// until the title resolves. `Ok(frames)` when it resolved to `want`.
-pub(super) fn drive_title(
-    session: &mut NativeSession,
-    want: TitleOutcome,
-    any_save: bool,
-) -> Result<u32, String> {
+pub(super) fn drive_title(session: &mut NativeSession, want: TitleOutcome) -> Result<u32, String> {
     let row = match want {
         TitleOutcome::NewGame => 0,
         TitleOutcome::Continue => 1,
         TitleOutcome::Options => 2,
     };
-    let mut fe = FrontEnd::cold_boot(&session.mode_seat, true, any_save);
+    let mut fe = FrontEnd::cold_boot(&session.mode_seat, true);
     let mut opened = false;
     for frame in 0..FRONT_END_BUDGET {
         let pad = title_pad(&fe, frame, row);
-        match session.step_front_end(&mut fe, pad, || any_save, &mut NoMovieLane) {
+        match session.step_front_end(&mut fe, pad, &mut NoMovieLane) {
             FrontEndStep::TitleOpened(mode) => {
                 opened = true;
                 if mode != legaia_engine_mode::mode::GameMode::CardInit {
@@ -240,7 +236,7 @@ pub(super) fn enter_through_front_end(
 ) -> Result<String, String> {
     match route {
         FrontEndRoute::NewGame => {
-            drive_title(session, TitleOutcome::NewGame, false)?;
+            drive_title(session, TitleOutcome::NewGame)?;
             session
                 .start_new_game(opts)
                 .map(str::to_string)
@@ -248,7 +244,7 @@ pub(super) fn enter_through_front_end(
         }
         FrontEndRoute::Continue(save) => {
             let (card, cell) = continue_card(save.as_deref())?;
-            drive_title(session, TitleOutcome::Continue, true)?;
+            drive_title(session, TitleOutcome::Continue)?;
             drive_continue(session, &card, cell, opts).map(|(scene, _)| scene)
         }
     }
@@ -291,8 +287,7 @@ fn front_end_new_game_reaches_free_roam() {
     let Some(src) = source() else { return };
     install_panic_hook();
     let mut session = open_session(&src);
-    let title_frames =
-        drive_title(&mut session, TitleOutcome::NewGame, false).expect("title -> New Game");
+    let title_frames = drive_title(&mut session, TitleOutcome::NewGame).expect("title -> New Game");
     let first = session
         .start_new_game(&opts())
         .expect("New Game enters an opening scene");
@@ -373,7 +368,7 @@ fn front_end_continue_lands_a_library_save() {
     install_panic_hook();
     let mut session = open_session(&src);
     let title_frames =
-        drive_title(&mut session, TitleOutcome::Continue, true).expect("title -> Continue");
+        drive_title(&mut session, TitleOutcome::Continue).expect("title -> Continue");
     let (expected_sf, expected_resume) = card.save_at(cell).expect("the picked block holds a save");
     let (scene, select_frames) =
         drive_continue(&mut session, &card, cell, &opts()).expect("save-select -> Load");

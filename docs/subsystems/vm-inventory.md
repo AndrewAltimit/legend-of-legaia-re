@@ -176,8 +176,9 @@ the title menu lives:
 
 `engine-title::title::TitleSession` owns one and steps it every frame, so the
 native window and the browser play page share it without either host
-changing. One thing around it is still the port's own and says so in the
-module docs: the `continue_enabled` row skip, which retail does not have.
+changing. The shipped front end opens every title with CONTINUE live, as
+retail does; the `continue_enabled` row skip remains only for the synthetic
+`legaia-engine title` driver, and the module docs say so.
 
 The whole dispatcher is ported alongside it as
 `title_overlay::TitleTickState::step` - one arm per sub-mode plus the shared

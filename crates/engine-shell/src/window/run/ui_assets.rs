@@ -296,24 +296,18 @@ pub(super) fn mount_card(card: Option<&Path>) -> Option<MountedCard> {
 /// The boot screen the window opens on.
 ///
 /// Cold boot with no publisher logos on the disc goes straight to the
-/// title, so the Continue-enable scan happens here instead of in the
-/// mode-table hand-off - and it has to scan BOTH ports, exactly as that
-/// hand-off does. Scanning port 1 alone greys the row out for a player whose
-/// only save is on the memory-card image they mounted, which is the one
-/// thing `--card` exists for.
+/// title.
 pub(super) fn initial_boot_ui(
     boot_ui: bool,
     has_publisher_logos: bool,
-    cards: [Option<&MountedCard>; 2],
     seat: &legaia_engine_mode::mode::ModeSeat,
 ) -> BootUiState {
     if boot_ui {
         // The session's one cold-boot rule (`FrontEnd::cold_boot`): the
-        // logos when they built, else the title with the rack's Continue bit.
+        // logos when they built, else the title.
         BootUiState::FrontEnd(legaia_engine_session::FrontEnd::cold_boot(
             seat,
             has_publisher_logos,
-            rack_has_save(cards),
         ))
     } else {
         BootUiState::Inactive

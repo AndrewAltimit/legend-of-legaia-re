@@ -50,8 +50,9 @@
 //!   [`crate::title_overlay::TitleTickState`].
 //! - `continue_enabled` skipping the CONTINUE row has no retail
 //!   counterpart - retail always lets the row be picked and lets the
-//!   save screen say "No data". It is a port guard, applied on top of the
-//!   retail step.
+//!   save screen say "No data". The shipped front end
+//!   ([`TitleSession::for_front_end`]) keeps every row live; only the
+//!   synthetic [`TitleSession::without_save_data`] driver skips it.
 //! - The attract countdown is **opt-in per host**
 //!   ([`TitleSession::attract_enabled`]), because a host with no movie
 //!   destination would freeze input for the last sixteen frames of every
@@ -228,22 +229,19 @@ impl TitleSession {
         self.menu.sfx
     }
 
-    /// The title session a shipped host's front end opens: Continue enabled
-    /// exactly when `any_save_present`, and the attract countdown armed.
+    /// The title session a shipped host's front end opens: every row live
+    /// and the attract countdown armed.
     ///
     /// Both hosts open every title through this - the cold boot, a return
-    /// from Options or a backed-out Continue, and the post-wipe title - and
-    /// each passes a **fresh** scan of its save rack (native: the save
-    /// directory port plus the mounted `--card`; browser: the two card
-    /// ports). The native window used to scan only at cold boot and reopen
-    /// every later title with Continue forced on, so closing Options on a
-    /// rack with no saves turned a greyed Continue live.
-    pub fn for_front_end(any_save_present: bool) -> Self {
-        let mut s = if any_save_present {
-            Self::new()
-        } else {
-            Self::without_save_data()
-        };
+    /// from Options or a backed-out Continue, and the post-wipe title.
+    /// CONTINUE is live whatever the card rack holds, as in retail: the
+    /// Continue screen is where a player inserts or imports a card and reads
+    /// what is on it, so a title that greyed the row on an empty rack kept a
+    /// player with a save to bring from ever reaching it. On the two-row
+    /// menu a greyed CONTINUE also made Up / Down wrap back onto NEW GAME,
+    /// which reads as dead arrow keys.
+    pub fn for_front_end() -> Self {
+        let mut s = Self::new();
         s.attract_enabled = true;
         s
     }
@@ -252,13 +250,10 @@ impl TitleSession {
     /// `_DAT_8007B820` a host carries across titles in its
     /// `legaia_engine_mode::mode::ModeSeat::title_row`. Retail never resets the counter,
     /// so a later title (a party wipe's, a backed-out Continue's) opens on
-    /// whichever row the last one held. A CONTINUE row with nothing to
-    /// continue folds to NEW GAME: the port greys that row out, and the
-    /// cursor must not open on a row its own step skips.
-    pub fn for_front_end_at(any_save_present: bool, row: u8) -> Self {
-        let mut s = Self::for_front_end(any_save_present);
-        let row = i32::from(row) % i32::from(s.rows.max(1));
-        s.menu.row_counter = if s.continue_enabled { row } else { 0 };
+    /// whichever row the last one held.
+    pub fn for_front_end_at(row: u8) -> Self {
+        let mut s = Self::for_front_end();
+        s.menu.row_counter = i32::from(row) % i32::from(s.rows.max(1));
         s
     }
 
@@ -584,11 +579,9 @@ mod tests {
     }
 
     #[test]
-    fn front_end_session_follows_the_scan_and_arms_attract() {
-        let with = TitleSession::for_front_end(true);
-        assert!(with.continue_enabled && with.attract_enabled);
-        let without = TitleSession::for_front_end(false);
-        assert!(!without.continue_enabled && without.attract_enabled);
+    fn front_end_session_keeps_continue_live_and_arms_attract() {
+        let s = TitleSession::for_front_end();
+        assert!(s.continue_enabled && s.attract_enabled);
     }
 
     /// The US build's title opens on NEW GAME even with saves on the card:
@@ -600,7 +593,7 @@ mod tests {
     /// the last one held opens its menu there, and reports it back.
     #[test]
     fn a_later_title_opens_on_the_row_the_last_one_held() {
-        let mut first = TitleSession::for_front_end(true);
+        let mut first = TitleSession::for_front_end();
         first.skip_fade_in();
         first.tick(TitleInput {
             start: true,
@@ -611,21 +604,13 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(first.row_counter(), 1);
-        let mut again = TitleSession::for_front_end_at(true, first.row_counter());
+        let mut again = TitleSession::for_front_end_at(first.row_counter());
         again.skip_fade_in();
         again.tick(TitleInput {
             start: true,
             ..Default::default()
         });
         assert_eq!(again.phase(), TitlePhase::MainMenu { cursor: 1 });
-        // Nothing to continue: the greyed row is never the opening row.
-        let mut bare = TitleSession::for_front_end_at(false, 1);
-        bare.skip_fade_in();
-        bare.tick(TitleInput {
-            start: true,
-            ..Default::default()
-        });
-        assert_eq!(bare.phase(), TitlePhase::MainMenu { cursor: 0 });
     }
 
     #[test]

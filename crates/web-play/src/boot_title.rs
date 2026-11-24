@@ -204,10 +204,9 @@ impl LegaiaRuntime {
     }
 
     /// Put the title card up through the session's one constructor
-    /// ([`FrontEnd::title`]) with a fresh scan of the card rack.
+    /// ([`FrontEnd::title`]).
     fn open_front_end_title(&mut self) {
-        let any_save = crate::cards::rack_has_save(&self.cards);
-        self.boot_front_end = Some(FrontEnd::title(self.scene_host.seat(), any_save));
+        self.boot_front_end = Some(FrontEnd::title(self.scene_host.seat()));
     }
 
     /// The title session, while the front end shows the title card.
@@ -303,9 +302,7 @@ impl LegaiaRuntime {
             fmv: &mut self.fmv,
             ended: None,
         };
-        // The Continue scan is the logos' hand-off's; a title already up
-        // never asks it.
-        let step = front_end.step(self.scene_host.seat_mut(), edge, || false, &mut lane);
+        let step = front_end.step(self.scene_host.seat_mut(), edge, &mut lane);
         let ended = lane.ended;
         match step {
             FrontEndStep::AttractStart(fmv_id) => {
@@ -451,11 +448,9 @@ impl LegaiaRuntime {
         if front_end.logos_session().is_none() {
             return true;
         }
-        let cards = &self.cards;
         let step = front_end.step(
             self.scene_host.seat_mut(),
             edge,
-            || crate::cards::rack_has_save(cards),
             &mut legaia_engine_session::NoMovieLane,
         );
         if let FrontEndStep::TitleOpened(_) = step {
