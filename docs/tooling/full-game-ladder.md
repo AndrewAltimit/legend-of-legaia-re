@@ -1951,6 +1951,7 @@ So the hand:
 - Strikes with the Point Card whenever `min(bank, 9999)` off the shop-points bank beats the member's own turn (`wanted_point_card`, any fight that forbids running, [`item-effect-table.md`](../formats/item-effect-table.md)). The card goes back in the bag, so a run that has shopped opens Koru with a third to a half of its HP.
 - Hands out Power Elixirs from the opening round when a fifth of what a typist still has to deal beats the giver's own turn (`race_ramp_pays`). Each use ramps again, so Vahn's Miracle reaches about 5600.
 - Grows a Miracle wearer into a typist at the door of a race (`pad_grow_for_race`): one within 8 AGL of the 188 a Fury Boost needs for nine presses walks the scene's encounters before the hand dresses, since the dress plan reads who types. A dealt run met Koru with Vahn at AGL 185 and lost twelve times with Noa typing alone. A wearer further off (Gala) is left a caster. The growing keeps a third of the stretch's budget for the race, and that reserve bounds each outing as well as the start of one: an outing walks against a deadline a third short of the stretch's, and reaching it ends the growing, not the stretch. Two outings begun with the reserve in hand once spent all of `nivora_late -> zora_castle` on `nilboa`'s 6700-frame legs (dealt stream 13).
+  Nor is an outing begun with the bag at its heal reserve (three heals a member): Koru's door has no bed or keeper behind it, and outings that spent the last restorative opened the race with the weakest member at 3 per mille and 1 MP, five reloads running (dealt stream 10).
   Its outings fight what they meet, as training does, though the walk is a boss's lead-in, where every other walk runs: a fled fight earns no EXP, and an outing that fled every encounter at Koru's door (Gala at AGL 181, walked props, dealt stream 15) spent the bag and the MP on fights it ran from and met the race at a third of its HP, twelve times.
 - Dresses at the door of a race (`race_goods_plan`, `race_ahead`): at the beat whose staged formation row seats Koru in the scene's formation table, or the beat a race was lost at (`RACE_LOST`). Met in the Goods the run chose, the race was lost on every dealt stream's first attempt, Koru at 2184..6684 of 20000 when Dead End Crisis landed.
   Dressed, each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where an undressed run has one.
@@ -2064,7 +2065,12 @@ the bag and its own spell list give it:
   compounds as in retail ([`item-effect-table.md`](../formats/item-effect-table.md#stat-up--buff-items-class-567)):
   a turn spent on a second ramp is a turn of the foe's swings with no Arts
   in it. A member whose Miracle string the
-  boosted pool pays for drinks a Fury Boost instead. Outside a duel the
+  boosted pool pays for drinks a Fury Boost first, and the Elixirs after
+  it: with the boost taken, the arm once handed the member none, and Vahn
+  fought Lu Delilas out of a bag of five Shield, five Power and two Wonder
+  Elixirs and lost with Lu at about 2000. Resumed from that stream's own
+  `nivora` save on four dealt streams, the duels' stretch took 0/0/0/0
+  reloads where it took 8/1/1/1. Outside a duel the
   Fury Boost and the attack Elixir wait for a foe of ten times the party's
   largest HP, or for a race against a timed finisher (Koru) whatever that
   HP is: Koru's 20000 is ten times a 1891-HP Gala but not a 2080-HP one in
