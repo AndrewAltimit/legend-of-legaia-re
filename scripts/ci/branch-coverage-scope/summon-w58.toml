@@ -111,3 +111,45 @@ image = "a906a582cd44f8eb"
 range = "0x801F6AE4..0x801F6AE4"
 verdict = "unreachable"
 reason = "PROT 0919's phase dispatch: `beq s2,0xff` is reached only by a phase past 8 (0x801F6ADC). The module stores only `+1` (0x801F6F78..0x801F6F88, the shared tail) and 0xFF (arm 8's exit, 0x801F8534..0x801F853C), so the only phase past 8 is 0xFF, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F6AC0..0x801F6AC0"
+verdict = "unreachable"
+reason = "PROT 0915's phase dispatch: `beqz v1` is reached only by a phase under 2 (`slti 2` at 0x801F6AB4) that is not 1 (`beq v1,1` at 0x801F6AB0), so by phase 0 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F6B30..0x801F6B30"
+verdict = "unreachable"
+reason = "PROT 0915's phase dispatch: `beq v1,0xff` is reached only by a phase past 0xD (`slt 0xd` at 0x801F6B20, `beq 0xd` at 0x801F6B1C). The module stores only `+1` (the shared tail 0x801F7DA8..0x801F7DB8, which arm 0xD's code at 0x801F7DBC..0x801F7ED0 never jumps to) and 0xFF (arm 0xD's exit, 0x801F7EC8..0x801F7ED0), so the only phase past 0xD is 0xFF, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9e9d52ef03115e27"
+range = "0x801F6A8C..0x801F6A8C"
+verdict = "unreachable"
+reason = "PROT 0920's phase dispatch: `beq v1,s8` (`s8 = 1`, 0x801F6A18) is reached only by a phase under 3 (`slti 3` at 0x801F6A78) that is neither 2 (0x801F6A74) nor 0 (0x801F6A84), so by phase 1 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9e9d52ef03115e27"
+range = "0x801F6AA8..0x801F6AA8"
+verdict = "unreachable"
+reason = "PROT 0920's phase dispatch: `beq v1,4` is reached only by a phase from 3 to 5 (`slti 6` at 0x801F6A68, `slti 3` at 0x801F6A78) that is neither 5 (0x801F6A60) nor 3 (0x801F6AA0), so by phase 4 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9e9d52ef03115e27"
+range = "0x801F6AD4..0x801F6AD4"
+verdict = "unreachable"
+reason = "PROT 0920's phase dispatch: `beq v1,7` is reached only by a phase from 6 to 8 (`slti 9` at 0x801F6AC0) that is neither 8 (0x801F6ABC) nor 6 (0x801F6ACC), so by phase 7 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "af0b90e2d32e7187"
+range = "0x801F6ACC..0x801F6ACC"
+verdict = "unreachable"
+reason = "PROT 0908's phase dispatch: `beq v1,1` is reached only by a phase under 3 (`slti 3` at 0x801F6AB8) that is neither 2 (0x801F6AB4) nor 0 (0x801F6AC4), so by phase 1 alone, which takes it."
