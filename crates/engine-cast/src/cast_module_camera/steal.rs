@@ -73,6 +73,26 @@ pub fn steal_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
     arm
 }
 
+/// The thief's voice a Steal arm sounds on its way out, by the caster's
+/// formation id `0x8007BD0C[ctx+0x13 - 3]`: three bands of three species,
+/// each tested on its own (`id - lo < 3`), arm 1 once the caster is back out
+/// of reach (`0x801F76EC..0x801F778C`), arm 2 as its word runs out
+/// (`0x801F7BFC..0x801F7C98`). Each sounds through `FUN_8004FE5C(id,
+/// ctx[+0x13])`; any other caster is silent. The host rings it on the pass
+/// that leaves each arm (`World::run_cast_module_code`).
+///
+/// PORT: overlay_cast_steal_0941_801f730c (PROT 0941 `0x51`; the thief voices of arms 1 and 2)
+pub fn steal_voice(arm: u8, caster_monster: u8) -> Option<u16> {
+    let band = [4u8, 0x43, 0x90]
+        .iter()
+        .position(|&lo| caster_monster.wrapping_sub(lo) < 3)?;
+    match arm {
+        1 => Some([0x1D, 0x137, 0x155][band]),
+        2 => Some([0x1C, 0x138, 0x18B][band]),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::ModuleSeat;
@@ -116,6 +136,29 @@ mod tests {
             n += 1;
         }
         assert_eq!(n, 64);
+    }
+
+    /// Each thief band sounds its own voice on arms 1 and 2; the ids either
+    /// side of a band are silent.
+    #[test]
+    fn the_thief_bands_voice_their_arms() {
+        for (id, one, two) in [
+            (4u8, Some(0x1D), Some(0x1C)),
+            (6, Some(0x1D), Some(0x1C)),
+            (0x43, Some(0x137), Some(0x138)),
+            (0x45, Some(0x137), Some(0x138)),
+            (0x90, Some(0x155), Some(0x18B)),
+            (0x92, Some(0x155), Some(0x18B)),
+            (3, None, None),
+            (7, None, None),
+            (0x42, None, None),
+            (0x93, None, None),
+            (0, None, None),
+        ] {
+            assert_eq!(steal_voice(1, id), one, "{id:#x}");
+            assert_eq!(steal_voice(2, id), two, "{id:#x}");
+            assert_eq!(steal_voice(3, id), None);
+        }
     }
 
     /// Every arm frames through case 6, and the headings turn.

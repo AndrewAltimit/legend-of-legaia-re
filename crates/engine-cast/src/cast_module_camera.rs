@@ -1493,7 +1493,7 @@ pub use shadow_break::{
 };
 pub use spoon::*;
 pub use spore_gas::{spore_gas_camera, spore_gas_hit_spawn};
-pub use steal::{STEAL_BODY, steal_camera};
+pub use steal::{STEAL_BODY, steal_camera, steal_voice};
 pub use stone_circle::{
     RING_RECORDS, STONE_CIRCLE_BODY, STONE_CIRCLE_COUNTDOWN, stone_circle_camera,
 };

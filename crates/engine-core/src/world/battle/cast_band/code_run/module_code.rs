@@ -2272,16 +2272,9 @@ impl World {
                 .get(usize::from(caster_slot))
                 .and_then(|a| a.battle_monster_id)
                 .unwrap_or(0);
-            let cue = match (phase_entry, id) {
-                (1, 4..=6) => Some(0x1D),
-                (1, 0x43..=0x45) => Some(0x137),
-                (1, 0x90..=0x92) => Some(0x155),
-                (2, 4..=6) => Some(0x1C),
-                (2, 0x43..=0x45) => Some(0x138),
-                (2, 0x90..=0x92) => Some(0x18B),
-                _ => None,
-            };
-            if let Some(cue) = cue {
+            let id = u8::try_from(id).unwrap_or(0);
+            if let Some(cue) = legaia_engine_cast::cast_module_camera::steal_voice(phase_entry, id)
+            {
                 let category = self.retail_actor_category(caster_slot);
                 self.route_battle_cue(cue, category);
             }
