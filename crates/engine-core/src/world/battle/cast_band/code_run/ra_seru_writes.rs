@@ -729,6 +729,11 @@ impl World {
             // tests `+0x04` alone, `0x801F84F8..0x801F8548`): the rate holds a
             // dying monster's clip at `2`, over its commit's rise to `4`.
             (0x14, _) => {
+                let turn_ticks = 1 + if passed {
+                    i32::from(self.casting.module_cam.countdown.1)
+                } else {
+                    0
+                };
                 let map = self.cast_seat_map();
                 let seats: Vec<usize> = (0..monster_count)
                     .filter_map(|i| map.engine(3 + i).map(usize::from))
@@ -743,8 +748,11 @@ impl World {
                         && (a.battle.render_color != 0
                             || (a.battle.hp != 0 && a.battle.render_flag != FLAG_PARKED))
                     {
-                        a.battle.facing_angle =
-                            a.battle.facing_angle.wrapping_add((0x20 * D) as u16) & 0xFFF;
+                        a.battle.facing_angle = a
+                            .battle
+                            .facing_angle
+                            .wrapping_add((0x20 * D * turn_ticks) as u16)
+                            & 0xFFF;
                         a.battle.anim_rate = AnimRate(2);
                     }
                 }
@@ -795,6 +803,11 @@ impl World {
                 }
             }
         }
+        let owed_ticks = 1 + if passed {
+            i32::from(self.casting.module_cam.countdown.1)
+        } else {
+            0
+        };
         let rate = match (phase, passed) {
             (8, true) | (0xB, true) => Some(2),
             (0xA, true) => Some(4),
@@ -803,8 +816,13 @@ impl World {
         };
         self.ra_seru_creature_rate(creature, rate);
         if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+            // ... by the whole pass: a tick that hands over moves for the
+            // ticks of its pass still owed too.
             if matches!(phase, 0x13 | 0x14) {
-                a.move_state.world_z = a.move_state.world_z.wrapping_add((0x20 * D) as i16);
+                a.move_state.world_z = a
+                    .move_state
+                    .world_z
+                    .wrapping_add((0x20 * D * owed_ticks) as i16);
             }
             if (phase, passed) == (0x14, true) {
                 a.battle.render_color = 0;

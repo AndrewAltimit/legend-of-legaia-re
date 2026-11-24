@@ -528,7 +528,7 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
         }
         PALMA_SETTLE_PHASE => {
             let mut d = None;
-            let drained = st.countdown.0 > 0;
+            let drained = st.pass_word() > 0;
             if drained {
                 st.countdown.0 -= P;
                 d = Some(drift(0, 0, 0, 0, P));

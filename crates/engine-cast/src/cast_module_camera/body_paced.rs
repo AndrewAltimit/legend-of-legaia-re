@@ -178,7 +178,12 @@ pub(super) fn set_yaw(st: &ModuleCamState, yaw: i32) -> ArmDirection {
         Some(live) => {
             let d = ((yaw - i32::from(live)) & 0xFFF) as i16;
             let d = if d >= 0x800 { d - 0x1000 } else { d };
-            drift(0, i32::from(d), 0, 0)
+            // A store: the ticks of its pass still owed owe it nothing more
+            // (`ArmDirection::rest_drift`).
+            ArmDirection {
+                rest_drift: Some(None),
+                ..drift(0, i32::from(d), 0, 0)
+            }
         }
         None => ArmDirection::PASS,
     }

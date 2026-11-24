@@ -159,7 +159,9 @@ pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeat
             // (`0x801F74F0..0x801F74FC`, read back at `0x801F7630`): its yaw
             // gap is zero, so the yaw lane never walks and the drift of arm
             // `0xE` runs on it.
-            let yaw = st.live_yaw.map_or(0, i32::from) + 4 * P;
+            // The pass's whole drift is in the global by then: on a tick
+            // that hands over, the ticks of its pass still owed too.
+            let yaw = st.live_yaw.map_or(0, i32::from) + 4 * P * (1 + i32::from(st.countdown.1));
             let shot = match (st.target_code, st.target_aim) {
                 (Some(code), Some(a)) if code >= 8 => cut(
                     [0x80, yaw],
@@ -183,7 +185,7 @@ pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeat
             let w = st.creature_shatter.unwrap_or(0);
             st.creature_shatter =
                 Some(w.saturating_add((D << 7) as u16).min(GOLA_GOLA_SHATTER_CAP));
-            let drained = st.countdown.0 > 0;
+            let drained = st.pass_word() > 0;
             if drained {
                 st.countdown.0 -= P;
             }
@@ -314,8 +316,16 @@ pub fn mushura_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
             if counted_rearm(st, S * 120) {
                 return ArmDirection::HOLD;
             }
+            // The pass steps the victim back `0xCA` (`sh v0,0x38(s1)` at
+            // `0x801F7494`) before it turns the creature onto it
+            // (`jal 0x80019B28` at `0x801F7578`): a creature that has run
+            // past the victim's old stand faces its new one.
+            let moved = ModuleSeat {
+                z: v.z.wrapping_add(0xCA),
+                ..v
+            };
             let c = ModuleSeat {
-                facing: heading(creature, v),
+                facing: heading(creature, moved),
                 ..creature
             };
             st.creature = Some(c);
@@ -614,13 +624,24 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             // creature's arc, `0x801F7CB0..0x801F7CE0`), and arm 0xE climbs
             // on from where it leaves it rather than from zero.
             st.countdown.0 += P / 8;
-            gate(st.ramp < 0)
+            // Both climb by the whole pass: a tick that leaves climbs for the
+            // ticks of its pass still owed too, or arm 0xE opens short.
+            let held = st.ramp < 0;
+            if !held {
+                let owed = i32::from(st.countdown.1);
+                st.ramp += 16 * P * owed;
+                st.countdown.0 += P / 8 * owed;
+            }
+            gate(held)
         }
         0xF => {
             let full = S << 7;
-            // The ease reads the word ahead of the pass's drain: every tick
-            // of a multi-vsync pass on the word its pass opened on.
-            let ease = ((full - st.pass_word().max(0)) * (depth / 2)) / full;
+            // The ease reads the word ahead of the pass's drain
+            // (`lw v0,-0x6cb4(s1)` at `0x801F8084`, the drain after the cut):
+            // every tick of a multi-vsync pass on the word its pass opened
+            // on, unclamped - a pass that overshot zero leaves it negative,
+            // and the cast's last passes ease past the half depth.
+            let ease = ((full - st.pass_word()) * (depth / 2)) / full;
             // The cut frames the victim's display pair `+0x3C` / `+0x40`
             // (`lhu v0,0x3c(s3)` / `lhu v1,0x40(s3)` at `0x801F8068` /
             // `0x801F8078`), which its knockdown clip carries off the live

@@ -382,15 +382,21 @@ pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool 
             st.ramp += per_tick;
             st.ramp < limit
         }
+        // Retail tests the model word once a pass against the pass's whole
+        // step (`slt` on `scalar * delta`, PROT 0922's arm 8 at
+        // `0x801F714C`) and steps it by that much: the pass's opening tick
+        // decides, the rest repeat its answer.
         Gate::RampDown { per_tick, drain } => {
             *cd -= drain;
             opened = drain;
-            if st.ramp < per_tick {
-                false
-            } else {
-                st.ramp -= per_tick;
-                true
+            if st.opens_pass || st.frame_step <= 1 {
+                let pass = per_tick * i32::from(st.frame_step.max(1));
+                st.pass_held = st.ramp >= pass;
+                if st.pass_held {
+                    st.ramp -= pass;
+                }
             }
+            st.pass_held
         }
         Gate::Settle(d) => {
             if *cd > 0 {

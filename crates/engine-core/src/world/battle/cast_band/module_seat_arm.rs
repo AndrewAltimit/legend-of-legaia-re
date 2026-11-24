@@ -91,10 +91,18 @@ impl World {
         &mut self,
         prot_entry: u32,
         phase: u8,
+        passed: bool,
     ) {
         if prot_entry != 922 {
             return;
         }
+        // Retail slides once a pass by the pass's whole step: a tick that
+        // hands over slides for the ticks of its pass still owed too.
+        let ticks = 1 + if passed {
+            i32::from(self.casting.module_cam.countdown.1)
+        } else {
+            0
+        };
         let Some(a) = self
             .casting
             .summon_actor_slot
@@ -103,9 +111,13 @@ impl World {
         else {
             return;
         };
-        if phase == PUERA_SLIDE_ARM {
+        // The slide sits inside the word's `blez` (`0x801F6E40`): every pass
+        // that opens on a positive word slides by the whole pass, the last
+        // one too, so a step that does not divide the word's `scalar << 4`
+        // carries the creature past `0x80` (retail's `0xA0` at step 3).
+        if phase == PUERA_SLIDE_ARM && self.casting.module_cam.pass_word_in > 0 {
             let z = &mut a.move_state.world_z;
-            *z = (*z + PUERA_SLIDE_PER_TICK).min(PUERA_SLIDE_END_Z);
+            *z = z.wrapping_add((i32::from(PUERA_SLIDE_PER_TICK) * ticks) as i16);
         }
     }
 }

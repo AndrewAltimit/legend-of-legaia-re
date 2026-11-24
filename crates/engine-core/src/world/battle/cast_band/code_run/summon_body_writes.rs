@@ -1416,6 +1416,15 @@ impl World {
             self.turn_row_away_from(monster_count, (0, 0), true);
         }
         let d = legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as i16;
+        // Arm 4's rise sits inside its word's `blez`: every pass that opens
+        // on a positive word rises by the whole pass, the one that leaves
+        // too (its owed ticks with it).
+        let rises = phase_in == 4 && self.casting.module_cam.pass_word_in > 0;
+        let ticks = 1 + if passed {
+            self.casting.module_cam.countdown.1 as i16
+        } else {
+            0
+        };
         let Some(a) = self
             .casting
             .summon_actor_slot
@@ -1435,11 +1444,20 @@ impl World {
                 a.battle.render_color = 0;
                 a.battle.render_scale = Some(0);
             }
-            (4, false) => {
-                m.world_z = m.world_z.wrapping_add(24 * d);
+            // The pass that leaves stores the creature's `z = 0x400` and scale
+            // `0x1000` over its step (`sh v0,0x38(s6)` / `sh v1,0x72(t0)` at
+            // `0x801F718C` / `0x801F71A4`); its height keeps the rise.
+            (4, _) if rises => {
+                let d = d * ticks;
                 m.world_y = m.world_y.wrapping_add(2 * d);
-                if let Some(s) = a.battle.render_scale.as_mut() {
-                    *s = s.wrapping_add(32 * d as u16);
+                if passed {
+                    m.world_z = 0x400;
+                    a.battle.render_scale = Some(0x1000);
+                } else {
+                    m.world_z = m.world_z.wrapping_add(24 * d);
+                    if let Some(s) = a.battle.render_scale.as_mut() {
+                        *s = s.wrapping_add(32 * d as u16);
+                    }
                 }
             }
             // Arm `0xB`'s pass hides the creature for the rest of the cast

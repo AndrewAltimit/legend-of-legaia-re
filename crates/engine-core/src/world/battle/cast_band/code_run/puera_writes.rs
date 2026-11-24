@@ -43,12 +43,21 @@ impl World {
             .filter(|&(_, e)| self.actors.get(e).is_some_and(|a| a.battle.hp != 0))
             .collect();
         let creature = self.casting.summon_actor_slot;
+        // A tick that hands over makes the moves of its pass's owed ticks
+        // too (`World::module_pass`): retail's pass moves by the whole step.
+        let ticks = 1 + if passed {
+            i32::from(self.casting.module_cam.countdown.1)
+        } else {
+            0
+        };
         if let Some(a) = creature.and_then(|c| self.actors.get_mut(usize::from(c))) {
             match phase {
                 11 if before > 0 => {
                     a.move_state.world_y = a.move_state.world_y.wrapping_sub((2 * s) as i16);
                 }
-                12 => a.move_state.world_y = a.move_state.world_y.wrapping_sub((2 * s) as i16),
+                12 => {
+                    a.move_state.world_y = a.move_state.world_y.wrapping_sub((2 * s * ticks) as i16)
+                }
                 19 if before > 0 => {
                     let w = (s << 6) - (before - s).max(0);
                     a.move_state.world_y = (17 * w / 2 - 0x1100) as i16;

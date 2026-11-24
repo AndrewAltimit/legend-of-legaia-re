@@ -753,7 +753,7 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         }
         19 => {
             let mut d = drift(0, P / 8, 0, 0, 0);
-            let drained = st.countdown.0 > 0;
+            let drained = st.pass_word() > 0;
             if drained {
                 d.tr_z = P as i16;
                 st.countdown.0 -= P;

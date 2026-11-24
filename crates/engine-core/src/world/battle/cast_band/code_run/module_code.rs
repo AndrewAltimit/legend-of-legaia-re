@@ -234,6 +234,10 @@ impl World {
         {
             self.mushura_chase_ahead(ctx.monster_count, seat_slot, caster_slot, spell_id);
         }
+        // ... and its arms 7 and 8 move it before they frame it.
+        if entry == 915 && profile.is_some() && matches!(ctx.phase, 7 | 8) {
+            self.mushura_spin_ahead(ctx.phase, seat_slot);
+        }
         let drive_holds = self.module_drive_holds(ctx.phase);
         let direction = if has_trampoline {
             None
@@ -433,6 +437,7 @@ impl World {
         }
         run.capture_drift = direction.and_then(|d| d.drift);
         self.casting.module_tick_rest = direction.and_then(|d| d.rest_drift);
+        run.capture_drift_rest = self.casting.module_tick_rest;
         run.capture_drift_after_shot = direction.is_some_and(|d| d.drift_after_shot);
         run.tr_z_store = direction.and_then(|d| d.tr_z_store);
         let mut capture_held = false;

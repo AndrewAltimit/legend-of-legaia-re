@@ -147,7 +147,7 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             })
         }
         2 => {
-            let drained = st.countdown.0 > 0;
+            let drained = st.pass_word() > 0;
             if drained {
                 st.countdown.drain();
                 if st.countdown.0 <= 0 {
@@ -933,7 +933,11 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             }
         }
         7 => {
-            st.countdown.0 += p;
+            // Retail adds `scalar * delta` once a pass and aims on the sum: a
+            // tick that leaves adds the ticks of its pass still owed first.
+            let leaves = !st.creature_clip.is_some_and(|c| c != 2);
+            let ticks = 1 + if leaves { i32::from(st.countdown.1) } else { 0 };
+            st.countdown.0 += p * ticks;
             let w = i32::from(st.countdown.0 as i16);
             let yaw = |k: i32| ((w + k - i32::from(creature.facing)) & 0xFFF) as i16;
             let mut shot = ModuleShot {

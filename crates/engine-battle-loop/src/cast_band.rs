@@ -153,6 +153,10 @@ pub struct CastModuleCodeRun {
     /// The drift is the next pass's, applied after the shot is armed
     /// ([`legaia_engine_cast::cast_module_camera::ArmDirection::drift_after_shot`]).
     pub capture_drift_after_shot: bool,
+    /// What the rest of a handing pass owes of [`Self::capture_drift`] when
+    /// it lands a stored value (`ArmDirection::rest_drift`): `Some(rate)`,
+    /// `None` for the whole drift.
+    pub capture_drift_rest: Option<Option<legaia_engine_cast::cast_module_camera::CaptureDrift>>,
     /// A straight store of the TR z global the arm made, landed after its
     /// shot (`ArmDirection::tr_z_store`).
     pub tr_z_store: Option<i32>,

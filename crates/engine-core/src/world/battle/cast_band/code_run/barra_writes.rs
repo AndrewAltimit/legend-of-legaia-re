@@ -117,12 +117,17 @@ impl World {
                 }
             }
             6 => {
-                if w < 0xA1 {
+                // Retail steps the word by the whole pass and tests the sum
+                // once (`slti 0xa1` at `0x801F7100`): every tick of the pass
+                // takes the branch the pass's end word picks.
+                let end = w + legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK / 8
+                    * i32::from(self.casting.module_cam.countdown.1);
+                if end < 0xA1 {
                     let (y, z) = barra_arc(w);
                     if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
                         set_y_z(a, drop.wrapping_add(y), Some(z));
                     }
-                    if w >= 0x51
+                    if end >= 0x51
                         && let Some(a) = self.actors.get_mut(v)
                     {
                         set_y_z(a, y, Some(z));
@@ -184,7 +189,12 @@ impl World {
             0xD | 0xE => {
                 // Arm `0xE`'s pass re-arms the word: its flight still runs
                 // on the stepped value (`0x801F7F50` ahead of the `slti`).
-                let w = if phase == 0xE && passed { stepped } else { w };
+                // ... the pass's whole step: the owed ticks' too.
+                let w = if phase == 0xE && passed {
+                    stepped + p / 8 * i32::from(self.casting.module_cam.countdown.1)
+                } else {
+                    w
+                };
                 let (y, z) = barra_flight(w, drop);
                 if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
                     set_y_z(a, y, Some(z));
@@ -208,8 +218,15 @@ impl World {
                 }
             }
             0xF => {
+                // A tick that hands over moves for its pass's owed ticks too.
+                let ticks = 1 + if passed {
+                    i32::from(self.casting.module_cam.countdown.1)
+                } else {
+                    0
+                };
                 if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
-                    a.move_state.world_z = a.move_state.world_z.wrapping_add((16 * p) as i16);
+                    a.move_state.world_z =
+                        a.move_state.world_z.wrapping_add((16 * p * ticks) as i16);
                     if passed {
                         a.battle.render_pitch = 0;
                     }

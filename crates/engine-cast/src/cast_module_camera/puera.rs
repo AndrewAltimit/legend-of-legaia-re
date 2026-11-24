@@ -388,7 +388,14 @@ pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
         st.puera_shake = 0;
     }
     if matches!(phase, 14 | 15) {
-        return puera_shake(st, base, phase);
+        // The store reads the word the pass's drain leaves, ahead of the
+        // exit's re-arm (`0x801F7A80..0x801F7AA0`).
+        let drained = if pass_word > 0 {
+            pass_word - MODULE_DRAIN_PER_TICK * i32::from(st.frame_step.max(1))
+        } else {
+            pass_word
+        };
+        return puera_shake(st, base, phase, drained);
     }
     base
 }
@@ -403,7 +410,7 @@ pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
 /// and lands the store as a drift
 /// off the live TR y. The `0x94` recording holds `0x400` / `0x500` through
 /// arm 14 and `0x400` / `0x5E0`, `0x5A0`, .. through arm 15.
-fn puera_shake(st: &mut ModuleCamState, base: ArmDirection, phase: u8) -> ArmDirection {
+fn puera_shake(st: &mut ModuleCamState, base: ArmDirection, phase: u8, word: i32) -> ArmDirection {
     // The store sits ahead of the arm's gate (`bgtz` at `0x801F7AA0`), so the
     // pass that leaves the arm makes it too, on the tick it leaves.
     if st.countdown.1 != 0 && base.hold {
@@ -419,7 +426,7 @@ fn puera_shake(st: &mut ModuleCamState, base: ArmDirection, phase: u8) -> ArmDir
     } else if phase == 14 {
         0x500
     } else {
-        st.countdown.0 * 8 / SPEED_SCALAR + 0x400
+        word * 8 / SPEED_SCALAR + 0x400
     };
     let rate = base.drift.unwrap_or_default();
     let mut d = rate;

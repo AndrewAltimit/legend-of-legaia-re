@@ -509,7 +509,7 @@ impl World {
             // passed arm's shot is armed (below).
             let drift = r.capture_drift.filter(|_| !r.capture_drift_after_shot);
             self.apply_module_creature_writes(r.prot_entry, module_arm, r.phase, drift);
-            self.apply_module_seat_motion(r.prot_entry, module_arm);
+            self.apply_module_seat_motion(r.prot_entry, module_arm, r.phase != module_arm);
         }
         // The module seats its creature itself (Gimard's arm 3); put the
         // engine's creature where it did.
@@ -694,6 +694,13 @@ impl World {
         walked: bool,
     ) -> Option<CastModuleCodeRun> {
         self.summon_module_pass(caster, spell_id, walked)
+    }
+
+    /// One battle frame of the stager as the host's action SM runs it
+    /// (`module_pass` over [`Self::summon_stager_tick`]): `delta` one-vsync
+    /// ticks on the frame cadence. Returns whether the choreography runs on.
+    pub fn drive_summon_stager_frame(&mut self) -> bool {
+        self.module_pass(World::summon_stager_tick)
     }
 
     /// One battle frame's call into the module, as the host's stager makes
