@@ -285,8 +285,16 @@ fn the_field_hud_decides_what_retail_decides() {
         let menu_lock = pick(&mut rng, 16);
         let sys_lock = pick(&mut rng, 8);
         let engaged = pick(&mut rng, 8);
-        let warp_timer = if pick(&mut rng, 8) { 1 + rng.below(0x28) } else { 0 };
-        let warp_hold = if pick(&mut rng, 8) { 1 + rng.below(0x28) } else { 0 };
+        let warp_timer = if pick(&mut rng, 8) {
+            1 + rng.below(0x28)
+        } else {
+            0
+        };
+        let warp_hold = if pick(&mut rng, 8) {
+            1 + rng.below(0x28)
+        } else {
+            0
+        };
         let marker = [0u32, 0, 1, 2][rng.below(4) as usize];
         let (px, pz) = (rng.next() as i16, rng.next() as i16);
         let (cx, cz) = match rng.below(4) {
@@ -309,7 +317,8 @@ fn the_field_hud_decides_what_retail_decides() {
         cpu.mem.wr32(0x8008_45C4, mode);
         cpu.mem.wr32(0x8007_B850, pad);
         let scratch = (u32::from(menu_lock) << 27) | (u32::from(sys_lock) << 10);
-        cpu.mem.wr32(0x1F80_0394, scratch | (rng.next() & 0xF7FF_FBFF));
+        cpu.mem
+            .wr32(0x1F80_0394, scratch | (rng.next() & 0xF7FF_FBFF));
         cpu.mem.wr32(0x8007_B6B4, warp_timer);
         cpu.mem.wr32(0x8007_B6B0, warp_hold);
         cpu.mem.wr32(0x8007_B5F4, marker);
@@ -345,9 +354,7 @@ fn the_field_hud_decides_what_retail_decides() {
         let (want_pos, want_marker, want_draw) = match decision {
             HudDecision::Suppressed => ((cx, cz), 0, None),
             HudDecision::Rearmed { .. } if rearm => ((px, pz), marker, None),
-            HudDecision::Rearmed { .. } | HudDecision::CountingDown { .. } => {
-                ((px, pz), 0, None)
-            }
+            HudDecision::Rearmed { .. } | HudDecision::CountingDown { .. } => ((px, pz), 0, None),
             HudDecision::Draw { y } => ((px, pz), 0, Some(y)),
         };
         *seen
@@ -364,14 +371,23 @@ fn the_field_hud_decides_what_retail_decides() {
             cpu.mem.rd16(LAST_POS) as i16,
             cpu.mem.rd16(LAST_POS + 2) as i16,
         );
-        let got_draw = drew.borrow().map(|(p, y)| if p || y < 0x30 { 0xAA } else { 0xC });
+        let got_draw = drew
+            .borrow()
+            .map(|(p, y)| if p || y < 0x30 { 0xAA } else { 0xC });
         let ctx = format!("run {run} {input:?} marker {marker} -> {decision:?}");
         assert_eq!(cpu.mem.rd16(COUNTDOWN) as i16, timer, "countdown, {ctx}");
         assert_eq!(got_pos, want_pos, "cached position, {ctx}");
         assert_eq!(cpu.mem.rd32(0x8007_B5F4), want_marker, "marker, {ctx}");
         assert_eq!(got_draw, want_draw, "draw, {ctx}");
     }
-    for arm in ["suppressed", "entry-short", "entry", "moved", "counting", "draw"] {
+    for arm in [
+        "suppressed",
+        "entry-short",
+        "entry",
+        "moved",
+        "counting",
+        "draw",
+    ] {
         assert!(seen.get(arm).copied().unwrap_or(0) > 200, "{arm}: {seen:?}");
     }
 }

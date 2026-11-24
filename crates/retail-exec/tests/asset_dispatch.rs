@@ -322,7 +322,11 @@ fn every_dispatch_arm_installs_what_the_port_decodes() {
             }
             _ => {
                 if let Some(p) = stale {
-                    assert_eq!(h.frees.first(), Some(&p), "{ctx}: the old buffer is freed first");
+                    assert_eq!(
+                        h.frees.first(),
+                        Some(&p),
+                        "{ctx}: the old buffer is freed first"
+                    );
                     reinstalled += 1;
                 }
                 let global = install_global(ty).expect("a buffer type");

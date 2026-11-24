@@ -313,7 +313,11 @@ fn the_throw_out_list_phases_and_page_step_match_retail() {
             PauseItemsFocus::ThrowOutConfirm => {
                 assert_eq!(result, 2, "{ctx}");
                 assert_eq!(cpu.mem.rd32(STEP), 3, "{ctx}: the confirm opens");
-                assert_eq!(cpu.mem.rd32(CURSOR), u32::from(port.confirm_cursor), "{ctx}");
+                assert_eq!(
+                    cpu.mem.rd32(CURSOR),
+                    u32::from(port.confirm_cursor),
+                    "{ctx}"
+                );
                 opened += 1;
             }
             other => panic!("{ctx}: {other:?}"),
