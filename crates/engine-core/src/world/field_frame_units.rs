@@ -187,6 +187,16 @@ const NPC_OBJECT_CYCLES: i64 = 919 + 200;
 /// A drawn model actor: its list entry's path (`148`) and the model set-up
 /// (`1297`).
 const NPC_CYCLES: i64 = 148 + 1297;
+/// A model object a raised `+0x42` sends through the clip arm
+/// (`0x8001BC34..0x8001BD88`): the object path's own share (`919`, no
+/// dispatcher draw), `FUN_8001C204` (`1610`, every call) and the TMD
+/// renderer `FUN_8002735C`'s set-up (`600`); and each primitive the renderer
+/// walks and clips (`634`), pooled over `garmel`'s Zeto (six objects, `145`
+/// primitives) on four frames of his appearance, from `80696` to `111747`
+/// cycles a frame with the share of edges the clip loop `FUN_80027F00`
+/// crosses.
+const CLIP_OBJECT_CYCLES: i64 = 919 + 1610 + 600;
+const CLIP_PRIM_CYCLES: i64 = 634;
 /// A placed actor (`1202`), and each of its meshes (`75` and a dispatcher
 /// draw, `200`).
 const PLACED_CYCLES: i64 = 1202;
@@ -308,6 +318,8 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + n(f.npc_groups) * GROUP_CYCLES
         + kinds(&f.npc_kinds, &ACTOR_PRIM_CYCLES)
         + kinds(&f.npc_cued_kinds, &ACTOR_OFFTEST_PRIM_CYCLES)
+        + n(f.npc_clip_objects) * CLIP_OBJECT_CYCLES
+        + n(f.npc_clip_prims) * CLIP_PRIM_CYCLES
         + n(f.sprite_parts) * SPRITE_PART_CYCLES
         + n(f.morph_calls) * MORPH_CALL_CYCLES
         + n(f.morph_copied) * MORPH_COPY_CYCLES
@@ -400,5 +412,41 @@ mod tests {
         f.npc_kinds[17 - 8] = 44;
         let c = derived_field_frame_cost(&f);
         assert!((560..680).contains(&c), "{c}");
+    }
+
+    /// `garmel`'s Zeto under a raised `+0x42` (six objects, `145`
+    /// primitives) costs what retail's clip arm spends on him: `FUN_8001C204`
+    /// and `FUN_8002735C` ran `90356..121407` cycles a frame over the four
+    /// profiled frames, beside the objects' own path, where the dispatcher
+    /// price of the same model is about a third of that.
+    #[test]
+    fn a_raised_model_prices_the_clip_arm() {
+        let clipped = FieldFrameFeatures {
+            npc_models: 1,
+            npc_clip_objects: 6,
+            npc_clip_prims: 145,
+            ..FieldFrameFeatures::default()
+        };
+        let plain = FieldFrameFeatures {
+            npc_clip_objects: 0,
+            npc_clip_prims: 0,
+            npc_objects: 6,
+            npc_groups: 19,
+            npc_kinds: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 145],
+            ..clipped
+        };
+        let base = FieldFrameFeatures::default();
+        let n = |v: u32| i64::from(v);
+        let arm = n(clipped.npc_clip_objects) * (CLIP_OBJECT_CYCLES - 919)
+            + n(clipped.npc_clip_prims) * CLIP_PRIM_CYCLES;
+        assert!((90_356..=121_407).contains(&arm), "{arm}");
+        let hb =
+            |f: &FieldFrameFeatures| derived_field_frame_cost(f) - derived_field_frame_cost(&base);
+        assert!(
+            hb(&clipped) > hb(&plain) + 20,
+            "{} {}",
+            hb(&clipped),
+            hb(&plain)
+        );
     }
 }
