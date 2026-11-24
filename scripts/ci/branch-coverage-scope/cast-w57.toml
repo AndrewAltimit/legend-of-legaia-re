@@ -426,3 +426,10 @@ image = "aa940337ce1c64a4"
 range = "0x801F7944..0x801F7960"
 verdict = "unreachable"
 reason = "PROT 0940 split (`0x50` / `0xAE`): the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F81A0..0x801F81B0`) up to `3` and `0xFF` (`0x801F81EC`), so after the tests on `2` and `0` a phase below `3` is `1` (`0x801F7944`) and one above is `3` or `0xFF` (`0x801F7960`): neither fall-through runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "e7154eacbb14e34c"
+range = "0x801F6A58..0x801F6A68"
+verdict = "unreachable"
+reason = "PROT 0962 `0xA5`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F6C08..0x801F6C18`) to arm 1 and `0xFF` off arm 1 (`0x801F6D28`, `s0 = 0xFF`), so after the test on `1` a phase below `2` is `0` (`0x801F6A58`) and one above is `0xFF` (`0x801F6A68`): neither fall-through runs."

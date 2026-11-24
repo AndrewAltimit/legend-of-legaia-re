@@ -558,6 +558,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 // (`0xA9`, `0x801F6AE0`, `0x801F6B34`, `0x801F6C94`,
                 // `0x801F700C`).
                 0x3C => [0u8, GLARE_ZORA][round % 2],
+                // Ultra Charge forks its cue and its cuts on the evolved Cort
+                // (`0x8007BD0C[0] == 0xB5`, `0x801F6A84`, `0x801F6AE0`,
+                // `0x801F6C28`).
+                0xA5 => [0u8, 0xB5][round % 2],
                 _ => 0,
             };
             // The formation cells `0x8007BD0C[seat - 3]`. A seat-7 caster's
