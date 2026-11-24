@@ -503,7 +503,11 @@ fn the_write_panel_ramps_by_the_frame_step() {
             assert_eq!(cpu.call(SLIDE, &[4, 0x1000, 0xA0, 0x70]), Stop::Returned);
             elapsed += step;
             let ctx = format!("run {run} pass {pass} step {step} elapsed {elapsed}");
-            assert_eq!(cpu.mem.rd32(WORK_T), u32::from(commit_slide_t(elapsed)), "{ctx}");
+            assert_eq!(
+                cpu.mem.rd32(WORK_T),
+                u32::from(commit_slide_t(elapsed)),
+                "{ctx}"
+            );
             assert_eq!(
                 cpu.mem.rd32(WORK_FILL),
                 u32::from(commit_progress_t(elapsed)),

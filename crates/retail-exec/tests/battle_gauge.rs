@@ -321,3 +321,97 @@ fn the_frame_driver_exits_and_decays_as_retail_does() {
         "{exits} {held} {decayed} {spun} {timed_out}"
     );
 }
+
+/// The battle-entry sweep the frame driver runs ahead of the battle tick
+/// (`0x80046EEC..0x8004700C`), pass by pass from the entry counter `gp+0x330
+/// = 0x80` until it parks at `0xFF`, against `BattleCamera`'s entry sweep: the
+/// counter after each pass (`+ step`, parked past `0xC0`), the drift of TR y /
+/// z (`+0x30 * step` / `-0x40 * step` below `0xA2`, `0x80046FA4..0x80046FDC`)
+/// and the passes that re-arm case 2 instead (`FUN_801D5854(0, 2)` from `0xA2`
+/// on, logged), with retail fed the frame step the port's sweep runs each pass
+/// at. The stage load on the first pass at `0x84` or more
+/// (`0x80046F30..0x80046F74`) raises the context's `+0x11` once.
+#[test]
+fn the_entry_sweep_counts_and_drifts_as_retail_does() {
+    use legaia_engine_battle_vm::battle_cam_script::{
+        BattleCamPhase, BattleCamera, ENTRY_COUNTER_START, ENTRY_TR,
+    };
+    differential!(scus(FRAME));
+    const COUNTER: u32 = 0x8007_B648;
+    const TR: u32 = 0x8008_40B8;
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub_outside = Some((FRAME, FRAME_END));
+    let case2 = std::rc::Rc::new(std::cell::RefCell::new(Vec::<(u32, u32)>::new()));
+    let c2 = case2.clone();
+    cpu.hook(0x801D_5854, move |r, _| {
+        c2.borrow_mut().push((r.r[4], r.r[5]))
+    });
+    let clean = cpu.mem.clone();
+    let mut loads = 0;
+    for fs in 1..=4u8 {
+        let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+        cam.set_frame_step(fs);
+        cam.start_entry_sweep();
+        cpu.mem = clean.clone();
+        cpu.mem.wr32(CTX_PTR, CTX);
+        cpu.mem.wr8(CTX, 1);
+        cpu.mem.wr8(CTX + 0x11, 0);
+        cpu.mem.wr8(COUNTER, ENTRY_COUNTER_START as u8);
+        for (k, v) in ENTRY_TR.iter().enumerate() {
+            cpu.mem.wr32(TR + 4 * k as u32, *v as i32 as u32);
+        }
+        let mut frames = 0u64;
+        for pass in 0..0x80 {
+            let Some(counter) = cam.entry_sweep_counter() else {
+                break;
+            };
+            assert_eq!(
+                u32::from(cpu.mem.rd8(COUNTER)),
+                counter,
+                "fs {fs} pass {pass}"
+            );
+            // The step this pass runs at, as the port's sweep schedules it.
+            let before = cam.entry_sweep_counter();
+            let pose_before = cam.pose();
+            frames += u64::from(fs);
+            cam.advance_to(frames);
+            let step = match cam.entry_sweep_counter() {
+                Some(next) => next - before.unwrap(),
+                None => 0,
+            };
+            // A pass that ends the sweep ran at the step the counter needed
+            // to pass 0xC0; read it off the drift-free tail: the fight's own.
+            let step = if step == 0 { u32::from(fs) } else { step };
+            cpu.mem.wr8(FRAME_STEP, step as u8);
+            case2.borrow_mut().clear();
+            assert_eq!(cpu.call(FRAME, &[]), Stop::Returned, "fs {fs} pass {pass}");
+            let ctx = format!("fs {fs} pass {pass} counter {counter:#x} step {step}");
+            let after = cpu.mem.rd8(COUNTER);
+            match cam.entry_sweep_counter() {
+                Some(next) => assert_eq!(u32::from(after), next, "{ctx}"),
+                None => assert_eq!(after, 0xFF, "{ctx}: parked"),
+            }
+            if counter < 0xA2 {
+                assert!(case2.borrow().is_empty(), "{ctx}");
+                let pose = cam.pose();
+                for k in 1..3 {
+                    let retail = cpu.mem.rd32(TR + 4 * k as u32) as i32;
+                    let drift = pose.tr[k] - pose_before.tr[k];
+                    let retail_drift = retail - (pose_before.tr[k] as i32);
+                    assert_eq!(retail_drift, drift as i32, "{ctx}: TR {k}");
+                    // Retail's TR runs on from the same seed as the port's.
+                    cpu.mem.wr32(TR + 4 * k as u32, pose.tr[k] as i32 as u32);
+                }
+            } else {
+                assert_eq!(*case2.borrow(), vec![(0, 2)], "{ctx}: case 2 re-armed");
+            }
+        }
+        assert_eq!(cam.entry_sweep_counter(), None, "fs {fs}: the sweep ends");
+        assert_eq!(cpu.mem.rd8(COUNTER), 0xFF, "fs {fs}");
+        loads += u32::from(cpu.mem.rd8(CTX + 0x11));
+    }
+    assert_eq!(loads, 4, "one stage load a sweep");
+}
