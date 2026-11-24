@@ -188,3 +188,59 @@ image = "994a4249fcfac379"
 range = "0x801F8970..0x801F8980"
 verdict = "unreachable"
 reason = "PROT 0964 `0xAF`: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F8B80..0x801F8B90`) up to arm 2, which reports done, so after the `beq` on `1` (`0x801F895C`) it is `0` below `2` and `2` above, and neither fall-through runs."
+
+[[arm]]
+entry = "0x801F6B70"
+image = "84d2771b8781de57"
+range = "0x801F6C24..0x801F6C24"
+verdict = "unreachable"
+reason = "PROT 0967: the lesson byte `ctx[+0x28A]` (`lbu`) is already found below `2` and not `1`, so it is `0` and the fall-through past this `beqz` never runs."
+
+[[arm]]
+entry = "0x801F6B70"
+image = "84d2771b8781de57"
+range = "0x801F6CDC..0x801F6CDC"
+verdict = "unreachable"
+reason = "PROT 0967: the lesson byte `ctx[+0x28A]` (`lbu`) is already found below `2` and not `1`, so it is `0` and the fall-through past this `beqz` never runs."
+
+[[arm]]
+entry = "0x801F6B70"
+image = "84d2771b8781de57"
+range = "0x801F6D54..0x801F6D54"
+verdict = "unreachable"
+reason = "PROT 0967: the lesson byte `ctx[+0x28A]` (`lbu`) is already found below `2` and not `1`, so it is `0` and the fall-through past this `beqz` never runs."
+
+[[arm]]
+entry = "0x801F6B70"
+image = "84d2771b8781de57"
+range = "0x801F6DF0..0x801F6DF0"
+verdict = "unreachable"
+reason = "PROT 0967: the lesson byte `ctx[+0x28A]` (`lbu`) is already found below `2` and not `1`, so it is `0` and the fall-through past this `beqz` never runs."
+
+[[arm]]
+entry = "0x801F6B70"
+image = "84d2771b8781de57"
+range = "0x801F6E70..0x801F6E70"
+verdict = "unreachable"
+reason = "PROT 0967: the lesson byte `ctx[+0x28A]` (`lbu`) is already found below `2` and not `1`, so it is `0` and the fall-through past this `beqz` never runs."
+
+[[arm]]
+entry = "0x801F6B70"
+image = "84d2771b8781de57"
+range = "0x801F6F08..0x801F6F08"
+verdict = "unreachable"
+reason = "PROT 0967: the lesson byte `ctx[+0x28A]` (`lbu`) is already found below `2` and not `1`, so it is `0` and the fall-through past this `beqz` never runs."
+
+[[arm]]
+entry = "0x801F6B70"
+image = "84d2771b8781de57"
+range = "0x801F70AC..0x801F70AC"
+verdict = "unreachable"
+reason = "PROT 0967: the lesson byte `ctx[+0x28A]` (`lbu`) is already found below `2` and not `1`, so it is `0` and the fall-through past this `beqz` never runs."
+
+[[arm]]
+entry = "0x801F6B70"
+image = "84d2771b8781de57"
+range = "0x801F71C4..0x801F71C4"
+verdict = "unported"
+reason = "PROT 0967: the box-up arm's call pair `FUN_800319A8(0)` / `(1)` on flow state `0x5A` while the one-shot latch is up (`0x801F71BC..0x801F71D8`). The engine parks the whole battle tick while a tutorial box is up (`World::tick_battle_tutorial_boxes`) instead of calling the hook with `ctx[+0x6B2]` raised, so this arm has no port; the latch clear and the countdown section it falls into are compared."
