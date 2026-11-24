@@ -118,6 +118,7 @@ fn cd_timing_name(t: CdTiming) -> &'static str {
     match t {
         CdTiming::Console => "console",
         CdTiming::PcsxRedux => "pcsx-redux",
+        CdTiming::Mednafen => "mednafen",
     }
 }
 
@@ -144,6 +145,7 @@ pub(super) fn cd_timing_from_tag(tag: Option<&str>) -> PlayCdTiming {
         let t = match v.trim() {
             "console" => CdTiming::Console,
             "pcsx-redux" => CdTiming::PcsxRedux,
+            "mednafen" => CdTiming::Mednafen,
             _ => continue,
         };
         match k.trim() {

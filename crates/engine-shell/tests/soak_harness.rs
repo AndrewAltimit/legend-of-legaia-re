@@ -711,8 +711,9 @@ fn cd_timing_tag_reads_back() {
         environment::cd_timing_from_tag(None),
         environment::PCSX_CD_TIMING
     );
-    for field in [CdTiming::Console, CdTiming::PcsxRedux] {
-        for battle in [CdTiming::Console, CdTiming::PcsxRedux] {
+    let all = [CdTiming::Console, CdTiming::PcsxRedux, CdTiming::Mednafen];
+    for field in all {
+        for battle in all {
             let cd = PlayCdTiming { field, battle };
             let tag = environment::cd_timing_tag(cd);
             assert_eq!(environment::cd_timing_from_tag(Some(&tag)), cd, "{tag}");
