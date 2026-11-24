@@ -977,6 +977,17 @@ restoratives the bag holds beyond the boss's reserve and with no field cast
 heal that spent them before the walk traded fewer walk-in reloads for more
 of Cort's.
 
+The triples' cast is Death Game, and their deal is stacked: three of the four
+cards are "the victim falls". The player steers the pick whoever cast it, and
+the fighter follows the one good card through the shuffle and walks the pointer
+onto it. The pointer reads the pad once a pass, one tick of each two- or
+three-tick battle frame, so the fighter holds each press for four ticks: the
+one-tick press it gives a command window could miss that tick every frame. It
+did, until the engine built the pass's press from the held pad (see
+[the Death Game pad](../subsystems/cast-module.md#prot-0957-death-game)):
+read as the per-tick edge, a press that did not begin on the pass's own tick
+was lost, the pointer stood still, and the timer took the leftmost card.
+
 Running is not free: the escape roll is retail's (`FUN_801E791C`, party
 `1.5 x SPD` against the foes' `SPD`, both raised by missing HP), and one
 deal met a Puera triple with a string of failed runs that wiped a full
@@ -1975,6 +1986,20 @@ member of the anchor's lv30 party - more than any member holds - and about
 half that in the Spirit stance. So once the shield has dropped, on the rounds
 the cast can come, every member above 55% of its HP takes Spirit; the others
 are the heal arm's, and the even rounds are the party's to act on.
+
+The evolved Cort (monster `0xB5`, `jouine` P2[5]'s fight) tells its heavy
+cast the same way a capture body does. Its pick arm casts Ultra Charge
+(`0xA5`) on itself one turn in four while it holds 200 MP and counts the phase
+word `DAT_801C8FE4` up; its next turn counts the word down and casts `0xB4` on
+the whole party, about 3100 a member at level 53, more than Noa's whole bar.
+On a round the word is up, a member the stance lets live and the cast would
+drop or leave within an eighth of it takes Spirit (`wants_cort_guard`; before
+the cast has landed once, every member above a quarter of its bar). Read as a
+plain cadence, the charge was invisible: Noa took the cast at full HP and fell
+to it on every charge, and the three Phoenixes the run carries in were spent
+by the third. Its other party-wide cast, `0xB6` (255 MP, about 2400 a
+member, on odd battle-mode rounds below half HP), comes unannounced and is
+the heal arm's.
 
 The shield also stops every plain swing whoever swings it (`FUN_801EC3E4`,
 `0x801ECA84..0x801ECAF8`, a clip below `0x10`), and an art passes at half damage.

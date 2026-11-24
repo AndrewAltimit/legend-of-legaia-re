@@ -981,7 +981,14 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         // between reads and the command window never moved: the press is
         // held until the word the game reads carries it, then neutral until
         // that word clears.
-        let pad = if session.host.world.toggles.immediate_pad {
+        // The Death Game pointer reads the pad once a pass, which under the
+        // battle frame cadence is one tick of each two- or three-tick frame:
+        // a one-tick press is read only when it lands on that tick, and the
+        // alternating press could miss it every frame. A player holds the
+        // direction longer than a frame; so does the hand.
+        let pad = if death_game_pad(&session.host.world).is_some() {
+            if t % 8 < 4 { want } else { 0 }
+        } else if session.host.world.toggles.immediate_pad {
             if prev == 0 { want } else { 0 }
         } else {
             let read = session.host.world.input.pad();
