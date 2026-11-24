@@ -919,6 +919,17 @@ shot, records, cues, message raises, wheel words, icon offsets and seat stores, 
 beside the angle, and arm 2 showing the victim before it hides the caster, so a cast on the caster's own seat
 leaves it hidden.
 
+The walk resets the frame's primitive cursor `0x1F8003A0` every pass, as the frame does: a body's sprites
+advance it by their size (Death Game's digit and pointer, `0x801F8828..0x801F8834`), and left to run it
+walked up through RAM until, past Death Game's sixty-third round, it rewrote the spell table at `0x800754C8`
+and with it the target shape the walk seats the cast by. With that fixed, Death Game runs enough rounds for its
+heal to land capped and uncapped on both seats, and its odd rounds walk a frame step of 4, 3 so the pick
+timer's last drain goes below zero and is clamped (`0x801F880C`). Water Hazard's `0xFF` arm shows seats `0..6`
+with HP (`sltiu 7` at `0x801F7E08`), where the port showed the caster whatever its seat, so a seat-7 caster lost
+arm 0's `+0x21C = 9`. Stone Circle's sweep matches `steal_sweep_tick` on a Stoned seat and on rolls past the
+seat's HP, Steal's thief voices match `steal_voice`, and Water Column's hit clamp and its arm 7 settle tail,
+on a live victim's clip and a fallen one's down clip or fade, match the band.
+
 <a id="the-band-shadow"></a>
 **The band shadow.** Each capture cast also runs on an engine `World` seated off the same actor records
 (`World::drive_arm_capture_cast_module`), stepped through `World::run_cast_module_code` while the band walks
