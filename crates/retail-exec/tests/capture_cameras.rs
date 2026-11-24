@@ -546,6 +546,17 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 cpu.mem.wr8(FORMATION + i, monster);
             }
             cpu.mem.wr8(ROSTER, monster.max(1));
+            // Megaton Press forks three arms on the lead's character id
+            // (`0x8007BD10[0] == 1`, `0x801F74C4`, `0x801F76A4`, `0x801F80A0`):
+            // each lead in turn.
+            let lead = if body.entry == 959 {
+                1 + (round % 3) as u8
+            } else {
+                1
+            };
+            if body.entry == 959 {
+                cpu.mem.wr8(ROSTER, lead);
+            }
             // Death Game's heal reads each seat's maximum `+0x14E` and caps
             // the quarter at the missing HP: a seat at full, one short and
             // one wounded.
@@ -776,7 +787,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             // finds the caster's node cursor past its mark.
             cpu.mem.wr16(NODES + caster * 0x100 + 0x68, 0x7FFF);
             let mut st = ModuleCamState {
-                lead_roster: 1,
+                lead_roster: lead,
                 opens_pass: true,
                 frame_step: 1,
                 victim_settled: true,

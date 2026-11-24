@@ -349,3 +349,52 @@ image = "ee0c59ba93a910c6"
 range = "0x801F7410..0x801F7410"
 verdict = "unreachable"
 reason = "PROT 0960 `0xA6`: `beqz` on the battle's party count `ctx+0` (`lbu` at `0x801F7408`), ahead of arm 6's party settle walk; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F6AB8..0x801F6AB8"
+verdict = "unreachable"
+reason = "PROT 0959: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F8038..0x801F8048`, `0x801F81FC..0x801F820C`) and `0xFF` (`0x801F81CC`), arm by arm from `0` to `0x11`; the dispatch test here has already matched every phase its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F6AD0..0x801F6AD0"
+verdict = "unreachable"
+reason = "PROT 0959: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F8038..0x801F8048`, `0x801F81FC..0x801F820C`) and `0xFF` (`0x801F81CC`), arm by arm from `0` to `0x11`; the dispatch test here has already matched every phase its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F6B00..0x801F6B00"
+verdict = "unreachable"
+reason = "PROT 0959: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F8038..0x801F8048`, `0x801F81FC..0x801F820C`) and `0xFF` (`0x801F81CC`), arm by arm from `0` to `0x11`; the dispatch test here has already matched every phase its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F6B40..0x801F6B40"
+verdict = "unreachable"
+reason = "PROT 0959: the phase byte `ctx[+0x279]` is `0` at install and this body writes it only `+1` (`0x801F8038..0x801F8048`, `0x801F81FC..0x801F820C`) and `0xFF` (`0x801F81CC`), arm by arm from `0` to `0x11`; the dispatch test here has already matched every phase its range holds, so its fall-through never runs."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F6B70..0x801F6B70"
+verdict = "unported"
+reason = "PROT 0959: the fall-through past the `0xFF` test runs only on phase `0x12`, which arm `0x11` stores on its party-wipe leg alone (a downed victim whose record lacks `+0x6C0 & 0x80`: `0x801F81D0..0x801F820C`, `0x8007BD71 = 0xFE`, `0x8007BD2C = 5`), parking the module while the battle ends. The port leaves a downed victim to the end-of-action liveness sweep and does not run the module's wipe."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F8158..0x801F81A0"
+verdict = "unported"
+reason = "PROT 0959: arm `0x11's fork on a downed victim (`+0x14C == 0`) and its record's `+0x6C0 & 0x80` (`0x801F8150..0x801F81A0`) between the module's own party-wipe body (`0x801F81D0`) and the normal close; the port leaves a downed victim to the end-of-action liveness sweep, so the fork has no port."
+
+[[arm]]
+entry = "0x801F69F0"
+image = "d4110f5a3148088b"
+range = "0x801F744C..0x801F7464"
+verdict = "unreachable"
+reason = "PROT 0959: arm 9's shake word `0x801F9628`, seeded `0x100` as arm 8 passes (`0x801F742C..0x801F7430`), drains by the frame step each pass (`0x801F7454..0x801F7468`), while arm 9 itself lasts the `scalar * 0xE0` arm 8 added to a spent countdown (`0x801F7330..0x801F734C`), drained `scalar * step` a pass (`0x801F74F4..0x801F7518`): at the battle's scalar `8` that is at most `0xE0` vsyncs plus a step, so the word never reaches `0` (`blez`) or below (`bltz`) inside the arm."
