@@ -820,6 +820,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // spell XP a kill (`0x801F8668..0x801F8674`) and the finisher's
             // own tail (`0x801DE450`).
             cpu.mem.wr32(SPECIAL_WORD, special_word);
+            // PROT 0925's fallen runs have a party member down, whom the
+            // flee arm 8 stands back up on 1 HP (`0x801F796C..0x801F7984`).
+            if entry == 925 && fallen {
+                let s = (layout.caster + 1) % 3;
+                cpu.mem.wr16(ACTOR + s * STRIDE + 0x14C, 0);
+            }
             // PROT 0931's lone monster stands raised, so arm 26's cut on the
             // row's middle (`-4 * +0x3E`) stands TR y above `0x400` and arm
             // 31's exit leaves it there (`slti 0x400` at 0x801F8894).

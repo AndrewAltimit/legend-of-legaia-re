@@ -48,3 +48,66 @@ image = "7aed4667c1e04dda"
 range = "0x801F82E0..0x801F852C"
 verdict = "unported"
 reason = "PROT 0916 arms 0x12 / 0x13's five band links: the same `ctx[+0x6D0] >> 3` ordering-table slot fix-ups as arm 0x11's (0x801F82E0..0x801F852C). The port draws the bands over the finished scene (`render_kernels::cast_aluru`, disclosed); the packets are compared against `aluru_band_prims` in the summon walk."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F6A6C..0x801F6A6C"
+verdict = "unreachable"
+reason = "PROT 0925's phase dispatch bound (`sltiu 0xA` / `beqz` at 0x801F6A68..0x801F6A6C): the module's phase stores are `+1` alone (0x801F6C34..0x801F6C40, 0x801F7A8C..0x801F7A9C), and its last arm 9 clears its busy register (`clear s6` at 0x801F7AA0) without storing one, so the phase never passes 9."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F7660..0x801F76B4"
+verdict = "unreachable"
+reason = "PROT 0925: the compiler's divide guards (`break` on a zero divisor, the `-1` / `0x80000000` overflow test) around the two `/ ctx[+0]` of the party centroid (`div` at 0x801F765C and 0x801F7698): `ctx[+0]` is the battle's party count, 1 to 3 in any fight, never 0 or -1."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F76D4..0x801F76D4"
+verdict = "unreachable"
+reason = "PROT 0925: the empty-party skip (`beqz` on `ctx[+0]` at 0x801F76D4) ahead of a loop over the party seats: `ctx[+0]` is the battle's party count, at least 1 in any fight."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F77AC..0x801F77AC"
+verdict = "unreachable"
+reason = "PROT 0925: the empty-party skip (`beqz` on `ctx[+0]` at 0x801F77AC) ahead of a loop over the party seats: `ctx[+0]` is the battle's party count, at least 1 in any fight."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F795C..0x801F795C"
+verdict = "unreachable"
+reason = "PROT 0925 arm 8's flee: the empty-party skip (`beqz` on `ctx[+0]` at 0x801F795C) ahead of the loop that stands each downed member up on 1 HP: `ctx[+0]` is the battle's party count, at least 1 in any fight."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6A88..0x801F6A88"
+verdict = "unreachable"
+reason = "PROT 0919's phase dispatch: `beqz s2` is reached only by a phase under 2 (`slti 2` at 0x801F6A7C) that is not 1 (`beq s2,1` at 0x801F6A78), so by phase 0 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6AA0..0x801F6AA0"
+verdict = "unreachable"
+reason = "PROT 0919's phase dispatch: `beq s2,3` is reached only by a phase from 2 to 4 (`slti 5` at 0x801F6A6C) that is neither 4 (0x801F6A68) nor 2 (0x801F6A98), so by phase 3 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6AC8..0x801F6AC8"
+verdict = "unreachable"
+reason = "PROT 0919's phase dispatch: `beq s2,6` is reached only by a phase from 5 to 7 (`slti 8` at 0x801F6AB4) that is neither 7 (0x801F6AB0) nor 5 (0x801F6AC0), so by phase 6 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6AE4..0x801F6AE4"
+verdict = "unreachable"
+reason = "PROT 0919's phase dispatch: `beq s2,0xff` is reached only by a phase past 8 (0x801F6ADC). The module stores only `+1` (0x801F6F78..0x801F6F88, the shared tail) and 0xFF (arm 8's exit, 0x801F8534..0x801F853C), so the only phase past 8 is 0xFF, which takes it."
