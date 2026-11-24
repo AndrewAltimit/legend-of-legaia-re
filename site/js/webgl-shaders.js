@@ -302,6 +302,11 @@ precision highp int;
 
 uniform mat4 u_mvp;
 uniform mat4 u_model;   /* per-draw model matrix (identity for single-mesh mode) */
+/* A coplanar-lifted draw on a clean frame (the play page's _stageDepthLift):
+ * the fraction of its view depth nearer the draw tests at, drawn where it
+ * stands. 0 (PSX mode, every other draw) leaves the depth alone. Twin of
+ * engine-scene's coplanar_draws::depth_lifted_camera. */
+uniform float u_depth_lift;
 
 /* World-overview distance haze: the kingdom overworld's walk-view depth cue
  * (PROT 0901, docs/subsystems/world-map.md#ground-texturing) measured from a
@@ -859,6 +864,12 @@ void main() {
     vec2 dab = depthAffine(u_mvp * u_model);
     v_depth_w = gl_Position.w * dropS;
     gl_Position.z = (dab.x + dab.y / v_depth_w) * gl_Position.w;
+  }
+  if (u_depth_lift > 0.0 && gl_Position.w > 0.0) {
+    vec2 lab = depthAffine(u_mvp * u_model);
+    float nearW = gl_Position.w * (1.0 - u_depth_lift);
+    gl_Position.z += lab.y * (1.0 / nearW - 1.0 / gl_Position.w) * gl_Position.w;
+    v_depth_w *= 1.0 - u_depth_lift;
   }
   v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0
     : (fieldFlatFarBucket(a_ground_ref_xz) ? 2.0 : 0.0);

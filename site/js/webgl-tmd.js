@@ -279,6 +279,8 @@ class TmdRenderer {
     this.locLogDepthOn = gl.getUniformLocation(this.program, 'u_log_depth_on');
     /* Whole-draw far bucket (a placement's `farBucket`, the battle grid). */
     this.locFarSlice = gl.getUniformLocation(this.program, 'u_far_slice');
+    /* A coplanar-lifted draw's depth pull on a clean frame (`_stageDepthLift`). */
+    this.locDepthLift = gl.getUniformLocation(this.program, 'u_depth_lift');
     /* Opt-in log-depth write (setLogDepth); off on every page but play. */
     this.logDepth = false;
     this.lastLogDepth = false;

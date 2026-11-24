@@ -2904,7 +2904,7 @@ and the site's WebGL viewers:
 |---|---|---|
 | Double-sided pairs | `legaia_tmd::mesh::mark_double_sided_pairs` | flag both copies; the shader discards the away-facing one |
 | Intra-mesh decals | `legaia_tmd::mesh::separate_coplanar_prims` | nudge each overlapping layer half a unit toward its visible side |
-| Cross-draw overlaps | `legaia_engine_scene::coplanar_draws` | lift the smaller / later draw `DRAW_NUDGE` per rank (in depth only on a clean native frame) |
+| Cross-draw overlaps | `legaia_engine_scene::coplanar_draws` | lift the smaller / later draw `DRAW_NUDGE` per rank (in depth only on a clean frame) |
 | Walk-ground vs floor art | `coplanar_draws::GROUND_SINK` | sink the ground layer `0.4` units at render sites |
 | Depth precision | reversed-Z (native), scaled near plane (WebGL) | keeps sub-unit offsets resolvable at any distance |
 
@@ -2975,8 +2975,12 @@ stands and tests its depth as a point nearer the eye by `DEPTH_LIFT_PER_UNIT`
 of its view depth per unit of lift (`coplanar_draws::depth_lifted_camera`, a
 constant added to the depth row of the draw's camera). The tile wins its
 coplanar tie as before and its edges stay on its neighbours'. PSX mode draws
-the lists as baked, so the retail-compare frames are unchanged; the browser
-play page still lifts in space.
+the lists as baked, so the retail-compare frames are unchanged. The browser
+play page does the same: `field_terrain_lifts` / `field_placement_lifts` hand
+it each draw's lift beside the lifted positions, and off PSX mode the scene
+pass takes the lift back out of the model (`_liftedModel`) and stages it as
+`u_depth_lift`, which pulls the draw's clip depth and its log-depth `w`
+nearer by the same fraction (`_stageDepthLift`).
 
 The candidate pairs come from buckets of quantized plane (normal and
 distance). A bucket can hold thousands of planes - every ground cell of a

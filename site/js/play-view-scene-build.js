@@ -156,7 +156,13 @@
        * floor-wave offset array (`rt.field_floor_wave_offsets()`, terrain then
        * placements), so a draw the loop below SKIPS - a mesh with
        * no renderable prims - does not shift every later draw's rung. */
-      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase, placed, scales, decoStart) => {
+      /* Each draw's coplanar lift, already in `pos`: a clean frame draws
+       * the tile where it stands and takes the lift in depth only
+       * (renderAssembled's `_stageDepthLift`, the native window's
+       * FieldDrawLifts), so a lifted tile opens no crack against the
+       * neighbour it abuts. PSX mode draws the positions as given. */
+      const liftPerUnit = rt.coplanar_depth_lift_per_unit ? rt.coplanar_depth_lift_per_unit() : 0;
+      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase, placed, scales, decoStart, lifts) => {
         for (let i = 0; i < slots.length; i++) {
           const anim = anims ? anims[i] : 0;
           let meshId, animRec = null;
@@ -244,6 +250,14 @@
              * placements by the mask entry of an unrelated terrain tile. */
             draw.terrainIdx = i;
           }
+          if (lifts && liftPerUnit > 0) {
+            const lx = lifts[i * 3], ly = lifts[i * 3 + 1], lz = lifts[i * 3 + 2];
+            if (lx || ly || lz) {
+              /* The page frame negates Y, as `draw.y` above does. */
+              draw.lift = [lx, -ly, lz];
+              draw.liftDepth = Math.hypot(lx, ly, lz) * liftPerUnit;
+            }
+          }
           this.staticDraws.push(draw);
           if (animRec) this.animProps.push(animRec);
         }
@@ -253,14 +267,16 @@
        * trees, bubu1's tilted slabs); the native window composes all three. */
       push(terrainSlots, rt.field_terrain_positions(), rt.field_terrain_rot_y(), null,
         rt.field_terrain_rot_x ? rt.field_terrain_rot_x() : null,
-        rt.field_terrain_rot_z ? rt.field_terrain_rot_z() : null, 0);
+        rt.field_terrain_rot_z ? rt.field_terrain_rot_z() : null, 0, false, null, undefined,
+        rt.field_terrain_lifts ? rt.field_terrain_lifts() : null);
       push(rt.field_placement_slots(), rt.field_placement_positions(), rt.field_placement_rot_y(),
         rt.field_placement_anim_ids(),
         rt.field_placement_rot_x ? rt.field_placement_rot_x() : null,
         rt.field_placement_rot_z ? rt.field_placement_rot_z() : null,
         terrainSlots.length, true,
         rt.field_placement_scales ? rt.field_placement_scales() : null,
-        rt.field_decoration_start ? rt.field_decoration_start() : undefined);
+        rt.field_decoration_start ? rt.field_decoration_start() : undefined,
+        rt.field_placement_lifts ? rt.field_placement_lifts() : null);
       /* The last build's meshes this one did not keep. */
       if (detached) {
         this.renderer.freeSceneMeshRecords(
