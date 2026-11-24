@@ -3,10 +3,12 @@
 //! resolution: `steal_party_draw` and the bag's consume on a party victim, the
 //! steal table's roll on a monster one, the thief's two cells
 //! `0x801C8FE0 + (seat - 3) * 4` / `(seat + 5) * 4`, the `rand()` draws spent,
-//! and the message bar's text `steal_caption`.
+//! the message bar's text `steal_caption`, and the thief's voice
+//! `steal_voice`.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_cast::cast_arm_ticks::{StealOutcome, steal_caption, steal_party_draw};
+use legaia_engine_cast::cast_module_camera::steal_voice;
 use legaia_engine_menus::item_bag::ItemBag;
 use legaia_save::retail_inventory::ItemWindow;
 use psx_retail_exec::{GP, Stop};
@@ -30,6 +32,7 @@ const CTX: u32 = 0x8012_0000;
 const ACTOR: u32 = 0x8013_0000;
 const STRIDE: u32 = 0x400;
 const REC: u32 = 0x8014_0000;
+const SOUND_FUNNEL: u32 = 0x8004_FE5C;
 
 fn lcg(s: u32) -> u32 {
     s.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039)
@@ -86,8 +89,19 @@ fn the_steal_takes_what_retail_takes() {
             r.r[psx_retail_exec::V0] = u32::from(n % 2 == 1);
         });
     }
-    for va in [0x801D_5854, 0x8004_FE5C, 0x801D_8DE8, 0x8005_0E2C] {
+    for va in [0x801D_5854, 0x801D_8DE8, 0x8005_0E2C] {
         cpu.stub(va, 0);
+    }
+    // The thief's voice through the sound funnel, logged as `(id, seat)`.
+    let voices = Rc::new(std::cell::RefCell::new(Vec::<(u32, u32)>::new()));
+    {
+        let voices = voices.clone();
+        cpu.hook(SOUND_FUNNEL, move |r, _| {
+            voices
+                .borrow_mut()
+                .push((r.r[psx_retail_exec::A0], r.r[psx_retail_exec::A1]));
+            r.r[psx_retail_exec::V0] = 0;
+        });
     }
     cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
     cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
@@ -108,6 +122,7 @@ fn the_steal_takes_what_retail_takes() {
         .collect();
     let mut rng = Rng(0x5354_454C);
     let (mut took, mut empty, mut gated, mut hits, mut misses) = (0, 0, 0, 0, 0);
+    let mut voiced = 0usize;
     for round in 0..6000 {
         // A bag from sparse to full, half of it unpriced quest ids.
         let mut raw = vec![(0u8, 0u8); 256];
@@ -163,7 +178,18 @@ fn the_steal_takes_what_retail_takes() {
         stream.set(seed);
         draws.set(0);
         arrivals.set(0);
+        voices.borrow_mut().clear();
         assert_eq!(cpu.call(TICK, &[]), Stop::Returned, "round {round}");
+        let want: Vec<(u32, u32)> = steal_voice(1, ids[usize::from(caster - 3)])
+            .map(|id| (u32::from(id), u32::from(caster)))
+            .into_iter()
+            .collect();
+        assert_eq!(
+            *voices.borrow(),
+            want,
+            "voice: round {round} caster {caster}"
+        );
+        voiced += want.len();
         let retail_draws = draws.get();
         let retail_caption = {
             let p = cpu.mem.rd32(CAPTION);
@@ -241,6 +267,7 @@ fn the_steal_takes_what_retail_takes() {
         );
         assert_eq!(cpu.mem.rd8(CTX + 0x279), 2, "phase: {ctx}");
     }
+    assert!(voiced > 100, "thief voices compared {voiced}");
     assert!(
         took > 500 && empty > 300 && gated > 50 && hits > 100 && misses > 300,
         "{took} {empty} {gated} {hits} {misses}"
