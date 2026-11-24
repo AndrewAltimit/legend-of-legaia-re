@@ -150,9 +150,11 @@ pub fn water_hazard_camera(
             }
         }
         0xFF => {
+            // The show walks seats `0..7` behind one HP test (`sltiu 7` at
+            // `0x801F7E08`): it takes in a caster on those seats and leaves
+            // a seat-7 caster on arm 0's `+0x21C = 9` (`0x801F74DC`).
             arm.others_write = SHOWN;
             arm.others_live_only = true;
-            arm.caster_write = SHOWN;
         }
         _ => {}
     }

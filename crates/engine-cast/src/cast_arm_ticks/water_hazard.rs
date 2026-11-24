@@ -108,7 +108,12 @@ pub fn water_hazard_tick(
         }
         LATCHED_DONE_PHASE => {
             c.ctx_0d = 0;
-            caster.render_flag = 0;
+            // The show walks seats `0..7` with HP left (`sltiu 7` at
+            // `0x801F7E08`, the HP test at `0x801F7DE0`): a seat-7 caster
+            // keeps its `+0x21C = 9`.
+            if caster_seat < 7 && caster.hp > 0 {
+                caster.render_flag = 0;
+            }
             CastArmStep::Finish
         }
         // A phase the chain does not name: Done, not retail's Busy.
