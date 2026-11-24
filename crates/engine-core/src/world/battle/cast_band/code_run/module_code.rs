@@ -877,6 +877,18 @@ impl World {
             seat = self.cast_view(seat_slot);
             (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
         }
+        // PROT 0942 `0xAA`'s party swirl, every pass of its arms 2..=5, ahead
+        // of the arm's hit: arm 4's pull loop (`0x801F7488..0x801F76AC`) runs
+        // before its countdown and the hit sweep (`0x801F7710`), so a seat the
+        // hit downs is still pulled on that pass and the sweep's facing
+        // (`0x801F77D8`) is taken from where the pull left it.
+        if entry == 942 && spell_id == 0xAA && capture_arm.is_some() {
+            self.dark_typhoon_party_swirl(caster_slot, phase_in, !capture_held);
+            caster = self.cast_view(caster_slot);
+            victim = self.cast_view(victim_slot);
+            seat = self.cast_view(seat_slot);
+            (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
+        }
         if let Some(arm) = chain.and_then(|c| c.arm(phase_in))
             && !capture_held
         {
@@ -2393,10 +2405,6 @@ impl World {
                 },
             );
             self.casting.flush_module_part_pool();
-        }
-        // PROT 0942 `0xAA`'s party swirl, every pass of its arms 2..=5.
-        if entry == 942 && spell_id == 0xAA && capture_arm.is_some() {
-            self.dark_typhoon_party_swirl(caster_slot, phase_in, !capture_held);
         }
         // A capture arm's streak-ribbon calls are per pass: this tick's, or
         // none (and none on the pass a ring behind its gate is spent on).

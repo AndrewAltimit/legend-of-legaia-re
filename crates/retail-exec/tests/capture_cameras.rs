@@ -385,6 +385,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let (mut shadow_passes, mut shadow_diverged) = (0usize, 0usize);
     let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
+    let mut typhoon_poses = 0usize;
     let spawn_log = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3], u16)>::new()));
     let (mut spawns_matched, mut spawn_failures) = (0usize, Vec::<String>::new());
     let all = bodies();
@@ -779,6 +780,19 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 // it): short of it, on it and well past it.
                 cpu.mem
                     .wr16(NODES + victim * 0x100 + 0x68, [0, 9, 0x10, 0x40][round % 4]);
+            }
+            // Dark Typhoon's pull leaves a seat whose arm-2 mark already
+            // stands within `0x200` of the caster at that reach (`slti 0x201`,
+            // taken at `0x801F7578`). An action leaves its combatants where it
+            // put them, so a party member that struck the caster last stands
+            // beside it; rounds 2 and 4 (step-1 rounds, whose swirl the
+            // shadow compares) seat one a reach of about `0x130` off. The
+            // random seats find it about one seat-round in twenty.
+            if (body.entry, body.va) == (942, DARK_TYPHOON) && matches!(round, 2 | 4) {
+                let seat = ACTOR + (round / 2) as u32 * STRIDE;
+                let (x, z) = (cpu.mem.rd16(ca + 0x34), cpu.mem.rd16(ca + 0x38));
+                cpu.mem.wr16(seat + 0x34, x.wrapping_add(0xC0));
+                cpu.mem.wr16(seat + 0x38, z.wrapping_sub(0xE0));
             }
             let mut shadow = shadow_world(&mut cpu, body, caster, victim, monster);
             let mut shadow_live = shadow.is_some();
@@ -1468,6 +1482,37 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                             ));
                         }
                     }
+                    // Dark Typhoon's swirl (`World::dark_typhoon_party_swirl`):
+                    // each party seat's plane pair, height and heading against
+                    // retail's arms 2..=5 (the marks `0x801F708C..0x801F70F8`,
+                    // the pull `0x801F7488..0x801F76AC`, the let-down
+                    // `0x801F7AA8..0x801F7B94`). The engine ticks a vsync at a
+                    // time, so a pass at step > 1 grows the pull over several
+                    // ticks where retail grows it once: only step-1 passes
+                    // are compared.
+                    if (body.entry, body.va) == (942, DARK_TYPHOON) && step == 1 {
+                        for s in 0..3u32 {
+                            let a = ACTOR + s * STRIDE;
+                            let m = &w.actors[s as usize];
+                            let got = [0x34u32, 0x36, 0x38].map(|o| cpu.mem.rd16(a + o) as i16);
+                            let port = [
+                                m.move_state.world_x,
+                                m.move_state.world_y,
+                                m.move_state.world_z,
+                            ];
+                            let facing = (
+                                cpu.mem.rd16(a + 0x46) & 0xFFF,
+                                m.battle.facing_angle & 0xFFF,
+                            );
+                            if got != port || facing.0 != facing.1 {
+                                shadow_failures.push(format!(
+                                    "{c}: Dark Typhoon seat {s} pose retail {got:?} {:#x} port {port:?} {:#x}",
+                                    facing.0, facing.1
+                                ));
+                            }
+                            typhoon_poses += 1;
+                        }
+                    }
                     shadow_passes += 1;
                 }
                 shadow_after = (0..8u32)
@@ -1984,6 +2029,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     assert!(
         shadow_passes >= 110_000,
         "band shadow passes {shadow_passes}"
+    );
+    eprintln!("Dark Typhoon swirl: {typhoon_poses} party seat poses compared");
+    assert!(
+        typhoon_poses >= 100,
+        "Dark Typhoon swirl seat poses compared: {typhoon_poses}"
     );
     assert!(
         shadow_failures.is_empty(),

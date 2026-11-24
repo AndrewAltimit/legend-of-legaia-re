@@ -5609,8 +5609,15 @@ and the whole film `.976`, cues `1.000` (one pass an arm, `.331`). Grade
   the spin `0x801F88BC`. Every arm-4 pass grows the pull by `2 * delta` and the spin
   by the pull, then stands each seat with HP at the bearing from its mark to the
   caster (`FUN_80019B28`) turned by the spin, at the mark's sin / cos weighted reach
-  less half the pull (no nearer than `0x200`), facing turned by twice the pull,
-  height minus half of it (`0x801F7488..0x801F76AC`). Arm 5 lets each seat back
+  less half the pull (no nearer than `0x200`; a mark already inside `0x200` keeps
+  its reach, `0x801F7578`), facing turned by twice the pull, height minus half of
+  it (`0x801F7488..0x801F76AC`). The loop runs ahead of the arm's countdown and its
+  hit sweep (`0x801F7710..0x801F7830`), so the engine runs the swirl before the
+  fold: on the pass that lands the hit a seat it downs is still pulled once more,
+  and each seat the sweep strikes (HP, no Stone) turns its back to the caster from
+  where the pull left it (`FUN_80019B28(caster, seat) + 0x800` at `0x801F77D8`).
+  Run after the fold, the swirl would leave a downed member one spin step short
+  and every struck member on the swirl's heading. Arm 5 lets each seat back
   down by `scalar * delta` a pass and its pass stands them on the floor. The engine
   takes one tick as one pass of step 1, so its spin runs ahead of a retail run whose
   heavy arms sit at step 3 or 4.
