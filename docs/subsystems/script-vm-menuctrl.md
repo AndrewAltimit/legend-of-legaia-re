@@ -467,6 +467,17 @@ again (a seat op seats that actor, never the player).
   is up, steps aside to `(13, 44)`; that last re-seat is spawned by `P2[19]`'s
   closing `44 7A`.
 
+A seat op the re-run meets binds its clip as it does on a live channel: the
+`4C 51` arm stores `+0x5E = -2`, writes byte `+4` into `+0x5C` and calls
+`FUN_800204F8` (`0x801E1A8C..0x801E1AB4`), so whatever the actor was playing
+gives way. `rayman` `P2[7]` leaves Debora (`P1[13]`) and the man who catches
+her (`P1[12]`) on their run clips (`A2 1A 2F`, `A2 19 21`); `P2[17]`'s
+`CC 1A C3` / `CC 19 C3` re-run their sections, whose `4C 51 23 0A 06 30` /
+`4C 51 1F 06 00 1F` stand them in their idles. The scene-entry install's own
+pre-run leaves the bind to the hosts' header clip; a re-seat mid-scene
+cannot, or the two run on the spot for the rest of the visit
+(`engine-scene-host/tests/rayman_bridge_collapse_disc.rs`).
+
 The header read does not follow the record's partition. `FUN_8003D0BC`
 skips the `[u8 N][N*2]` name field and the arm takes the next four bytes as
 `[model, anim, bx, bz]`, rebasing `+0x9E` to the byte after them
