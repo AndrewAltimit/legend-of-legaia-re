@@ -70,6 +70,12 @@ const CHAR_STRIDE: u32 = 0x414;
 /// stages the Seru side effect `FUN_801F3D3C` (stubbed in the walk).
 const LIVE_LEVEL: u8 = 2;
 const GROUP_LIST: u32 = 0x801F_6978;
+/// The part pool, and where the walk seats PROT 0933's whirls: `(pool slot,
+/// record, level +0x78)`.
+const PART_POOL: u32 = 0x801C_90F0;
+const WHIRL_PARTS: u32 = 0x8017_8000;
+const TERRA_WHIRLS: [(u32, u32, u16); 2] =
+    [(0x10, 0x801F_8838, 0x1000), (0x11, 0x801F_88F0, 0x900)];
 /// `AddPrim`, and the scratch the walk hands PROT 0916's band arms for
 /// their packets.
 const ADD_PRIM: u32 = 0x8003_D2C4;
@@ -601,6 +607,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         }
     };
     let mut band_passes = 0usize;
+    let mut whirl_passes = 0usize;
     let mut live_runs = 0usize;
     let mut live_spirit = 0usize;
     let mut live_xp = 0usize;
@@ -765,7 +772,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 log.borrow_mut()
                     .push((r.r[A2], trio(m, r.r[A0]), trio(m, r.r[A1])));
                 r.r[V0] = 0;
-                if entry == 922 {
+                if entry == 922 || entry == 933 {
                     let at = next.get();
                     next.set(at + 0x80);
                     for o in (0..0x80).step_by(4) {
@@ -986,6 +993,48 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             }
             if scripted {
                 cpu.mem.wr8(CTX + 0x287, 1);
+            }
+            // PROT 0933's whirl pool: the stager's two whirl records seated
+            // in the part pool (`0x801C90F0`), one on a level `+0x78` past
+            // `0xA00` and one under it, beside the module's own part
+            // (`0x801F941C`), which arms 6 and 7 step over
+            // (`0x801F70E0..0x801F7160`, `0x801F724C..0x801F72CC`); the
+            // shadow's scene holds the same two, tagged by record.
+            let whirls = entry == 933;
+            let mut whirl_retired = [false; 2];
+            if whirls {
+                for (k, &(slot, _, level)) in TERRA_WHIRLS.iter().enumerate() {
+                    let at = WHIRL_PARTS + 0x100 * k as u32;
+                    for o in (0..0x80).step_by(4) {
+                        cpu.mem.wr32(at + o, 0);
+                    }
+                    cpu.mem.wr16(at + 0x78, level);
+                    cpu.mem.wr32(PART_POOL + 4 * slot, at);
+                }
+                let own = WHIRL_PARTS + 0x300;
+                cpu.mem.wr16(own + 0x78, 0x1000);
+                cpu.mem.wr32(PART_POOL + 4 * 0x20, own);
+                // Seated as the handle the module keeps: its own spawns
+                // (handed objects, as PROT 0922's) overwrite it later.
+                cpu.mem.wr32(0x801F_941C, own);
+                if let Some(w) = shadow.as_mut() {
+                    let offs: Vec<usize> = TERRA_WHIRLS
+                        .iter()
+                        .map(|&(_, rec, _)| (rec - BASE) as usize)
+                        .collect();
+                    let parts =
+                        legaia_overlay_images::summon_overlay::parse_records_at(&module, &offs);
+                    let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts_tagged(
+                        &parts, &module, 0, [0; 3], BASE,
+                    );
+                    for (p, &(_, _, level)) in scene.parts.iter_mut().zip(&TERRA_WHIRLS) {
+                        p.state.field_78 = level;
+                        p.state.field_7a = 0;
+                        p.state.world_y = 0;
+                    }
+                    assert_eq!(scene.parts.len(), 2, "the two whirls seat");
+                    w.casting.active_summon = Some(scene);
+                }
             }
             for pass in 0..20_000u32 {
                 if fallen {
@@ -1463,6 +1512,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 spawn_log.borrow_mut().clear();
                 prims.borrow_mut().clear();
                 modes.borrow_mut().clear();
+                // The part PROT 0933 keeps the handle of stands in the pool.
+                if whirls {
+                    let own = cpu.mem.rd32(0x801F_941C);
+                    cpu.mem.wr32(PART_POOL + 4 * 0x20, own);
+                }
                 // The packet cursor `0x1F8003A0` and the ordering table
                 // `0x1F8003F4` the band arms write through.
                 cpu.mem.wr32(0x1F80_03A0, PACKETS);
@@ -1607,6 +1661,37 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             bands.iter().map(|b| [b[0xA], b[0x1A]]).collect::<Vec<_>>(),
                             st.band_spread
                         ));
+                    }
+                }
+                // PROT 0933's whirls, against the shadow's scene parts: the
+                // pass's `+0x7A += step`, `+0x16 += 4 * step` and the retire
+                // (`+0x10 | 8`) of a part under level `0xA01`, while the part
+                // stands (retail's pool keeps stepping a retired part, which
+                // the part pass then frees).
+                if whirls
+                    && let Some(w) = shadow.as_ref()
+                    && let Some(scene) = w.casting.active_summon.as_ref()
+                {
+                    for (k, &(_, rec, _)) in TERRA_WHIRLS.iter().enumerate() {
+                        let at = WHIRL_PARTS + 0x100 * k as u32;
+                        let Some(p) = scene.parts.iter().find(|p| p.tag == Some(rec)) else {
+                            continue;
+                        };
+                        let retired = cpu.mem.rd32(at + 0x10) & 8 != 0;
+                        let got = (
+                            cpu.mem.rd16(at + 0x7A),
+                            cpu.mem.rd16(at + 0x16) as i16,
+                            retired,
+                        );
+                        let port = (p.state.field_7a, p.state.world_y, p.finished);
+                        if !whirl_retired[k] && got != port {
+                            shadow_failures.push(format!(
+                                "PROT 0933 target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: whirl {k} 7A/16/retired retail {got:x?} port {port:x?}",
+                                layout.caster, layout.monsters
+                            ));
+                        }
+                        whirl_retired[k] |= retired;
+                        whirl_passes += usize::from(matches!(phase, 6 | 7));
                     }
                 }
                 // The records the director reports this pass, each on the
@@ -2188,6 +2273,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     );
     assert_eq!(shadow_left, 0, "casts left retail's phase walk");
     assert!(band_passes >= 200, "PROT 0916: {band_passes} band passes");
+    assert!(
+        whirl_passes >= 100,
+        "PROT 0933: {whirl_passes} whirl passes"
+    );
     // PROT 0915's chase struck the row through its live reach poll.
     assert!(chase_hits >= 50, "PROT 0915 chase: {chase_hits} hits");
     assert!(
@@ -2756,4 +2845,156 @@ fn the_spikefish_round_tail_counts_and_refunds_as_retail_does() {
         compared > 60 && held > 20 && early > 10,
         "{compared} {held} {early}"
     );
+}
+
+/// PROT 0903's settle arm 12 (`0x801F7628..0x801F76D8`) at frame steps 1 to
+/// 4, on countdown words either side of the pass's drain and a victim
+/// standing idle or not, fallen faded or not: retail drains `0x801F7960` by
+/// `scalar * step` while it is positive, polls the settle once it is spent
+/// (storing `0xFF`), and on every pass, the leaving one included, adds
+/// `2 * step * scalar` to the creature's shatter word `+0x1BA`. The shadow
+/// runs the pass as the host does: `step` ticks of `gimard_direct`, the
+/// countdown's rest, the settle on the tick the gate lets through, each
+/// tick adding `gimard_shatter_add`.
+#[test]
+fn gimards_settle_arm_breaks_the_creature_up_as_retail_does() {
+    use legaia_engine_cast::cast_module_camera::gimard_direct;
+    use legaia_engine_cast::seru_magic_ticks::gimard_shatter_add;
+    differential!(prot(903, 0x801F_69D8));
+    let (Some(_), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const COUNTDOWN: u32 = 0x801F_7960;
+    const VICTIM: u32 = 4;
+    let overlay = disc.read_entry(898).expect("PROT 0898");
+    let module = disc.read_entry(903).expect("PROT 0903");
+    let (mut compared, mut early) = (0usize, 0usize);
+    for step in 1..=4u8 {
+        for word in [-8i32, 0, 1, 8, 15, 16, 24, 31, 32, 40] {
+            // (hp, clip, colour word): standing idle, standing busy, fallen
+            // faded, fallen lit.
+            for (hp, clip, colour) in [
+                (100u16, 0u8, 0x2008_0200u32),
+                (100, 3, 0x2008_0200),
+                (0, 8, 0),
+                (0, 8, 0x2008_0200),
+            ] {
+                let c = format!("step {step} word {word} hp {hp} clip {clip} word4 {colour:#x}");
+                let mut cpu = scus_cpu().expect("SCUS");
+                cpu.mem.load(OVERLAY_BASE, &overlay);
+                cpu.mem.load(BASE, &module);
+                cpu.mem.wr32(CTX_PTR, CTX);
+                cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+                cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+                for target in jal_targets(&module) {
+                    cpu.stub(target, 0);
+                }
+                for b in 0..0x1100 {
+                    cpu.mem.wr8(CTX + b, 0);
+                }
+                cpu.mem.wr8(CTX, 3);
+                cpu.mem.wr8(CTX + 1, 2);
+                cpu.mem.wr8(CTX + 0x13, 0);
+                cpu.mem.wr8(CTX + 0x279, 12);
+                cpu.mem.wr32(COUNTDOWN, word as u32);
+                cpu.mem.wr8(SCALAR, SPEED_SCALAR as u8);
+                cpu.mem.wr8(STEP, step);
+                for s in 0..8u32 {
+                    let a = ACTOR + s * STRIDE;
+                    cpu.mem.wr32(ACTORS + s * 4, a);
+                    for o in (0..STRIDE).step_by(4) {
+                        cpu.mem.wr32(a + o, 0);
+                    }
+                    cpu.mem.wr16(a + 0x14C, 100);
+                    cpu.mem.wr32(a + 0x22C, NODES + s * 0x100);
+                }
+                cpu.mem.wr8(ACTOR + 0x1DD, VICTIM as u8);
+                let va = ACTOR + VICTIM * STRIDE;
+                cpu.mem.wr16(va + 0x14C, hp);
+                cpu.mem.wr8(va + 0x1D9, clip);
+                cpu.mem.wr32(va + 4, colour);
+                let shatter0 = 0x100u16;
+                cpu.mem.wr16(ACTOR + CREATURE * STRIDE + 0x1BA, shatter0);
+                assert_eq!(cpu.call(0x801F_69D8, &[]), Stop::Returned, "{c}");
+                // The host's settle off the same bytes: a standing victim
+                // idle, a fallen one faded out.
+                let settled = if hp != 0 { clip == 0 } else { colour == 0 };
+                let mut st = ModuleCamState {
+                    frame_step: step,
+                    ..ModuleCamState::default()
+                };
+                st.countdown.0 = word;
+                let (mut shatter, mut left) = (shatter0, false);
+                for i in 0..step {
+                    st.countdown.1 = step - 1 - i;
+                    st.opens_pass = i == 0;
+                    let held = gimard_direct(&mut st, 12, ModuleCamSeats::default()).hold;
+                    let leaving = !held && settled;
+                    shatter = shatter.wrapping_add(gimard_shatter_add(leaving, st.countdown.1));
+                    if leaving {
+                        left = true;
+                        early += usize::from(i + 1 < step);
+                        break;
+                    }
+                }
+                let retail_left = cpu.mem.rd8(CTX + 0x279) == 0xFF;
+                assert_eq!(retail_left, left, "{c}: leaves");
+                assert_eq!(
+                    cpu.mem.rd16(ACTOR + CREATURE * STRIDE + 0x1BA),
+                    shatter,
+                    "{c}: the creature's shatter word"
+                );
+                assert_eq!(
+                    cpu.mem.rd32(COUNTDOWN) as i32,
+                    st.countdown.0,
+                    "{c}: the countdown"
+                );
+                compared += 1;
+            }
+        }
+    }
+    assert!(compared == 160 && early > 10, "{compared} {early}");
+}
+
+/// PROT 0933's orbit radii (arms 9 and 0xB, `0x801F7658..0x801F76F4` and
+/// `0x801F79D8..0x801F7A74`) over every monster seat of both seat families
+/// (`legaia_engine_battle::battle_seats`): the arm takes `a = ratan2(z', x)`
+/// of the seat its arm 0 copied (`z' = z - 0x613`, 0x801F6C9C), then
+/// `|sin(a) * x| + |cos(a) * z'|`. Every authored seat stands at `z` from 600
+/// to 1400, so `z'` is negative and `cos(a) * z'` is too: the rounding
+/// fix-up's `bgez` and the `abs`'s `bgez` on that product (0x801F76D4,
+/// 0x801F76E8, 0x801F7A54, 0x801F7A68) only fall through. The run reads
+/// both products off SCUS's own `ratan2` and tables.
+#[test]
+fn terras_orbit_products_keep_their_sign_on_every_seat() {
+    use legaia_engine_battle::battle_seats::{MONSTER_SEATS, MONSTER_SEATS_ALT};
+    not_a_differential!(
+        "a reachability measure: retail's ratan2 and tables over the authored seats, no port side"
+    );
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.mem.wr32(0x8007_B7F8, 0x8007_0A2C + 0x800);
+    let mut seats = 0usize;
+    for (family, table) in [MONSTER_SEATS, MONSTER_SEATS_ALT].iter().enumerate() {
+        for (row, cells) in table.iter().enumerate() {
+            for seat in cells.iter().take(row + 1) {
+                let (x, z) = (i32::from(seat.x), i32::from(seat.z) - 0x613);
+                assert_eq!(cpu.call(0x8001_9B28, &[z as u32, x as u32]), Stop::Returned);
+                let a = cpu.regs.r[V0] as i16 as i32;
+                let sin = cpu.mem.rd16(0x8007_0A2Cu32.wrapping_add((2 * a) as u32)) as i16 as i32;
+                let cos = cpu.mem.rd16(0x8007_122Cu32.wrapping_add((2 * a) as u32)) as i16 as i32;
+                let p = cos * z;
+                assert!(
+                    p < 0 && p >> 12 < 0,
+                    "family {family} row {row} seat ({x}, {z}): a {a:#x} sin {sin} cos {cos}"
+                );
+                seats += 1;
+            }
+        }
+    }
+    assert_eq!(seats, 20);
 }

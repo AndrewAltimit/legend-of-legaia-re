@@ -237,7 +237,13 @@ struct Run {
 }
 
 /// The bodies whose victim settle the walk holds and releases.
-const SETTLE_WALKED: [u32; 3] = [939, 947, 948];
+const SETTLE_WALKED: [u32; 4] = [937, 939, 947, 948];
+/// The bodies whose row settle the walk holds (PROT 0935's arm 6 over the
+/// row its target names, `0x801F7E2C..0x801F7F50`; PROT 0936's arm 8 over
+/// the party, `0x801F7B18..0x801F7B90`).
+const ROW_SETTLE_WALKED: [u32; 2] = [935, 936];
+/// PROT 0937's hit count.
+const HYPER_LIGHTNING_HITS: u32 = 0x801F_8098;
 
 /// Who a walk casts at and which seats stand: `target` a seat or a group code
 /// (`None`: a random party seat), `dead` the seats at zero HP (party seats
@@ -263,6 +269,10 @@ struct Field {
     /// The victim's action category `+0x1DE` and initiative key `+0x16C`,
     /// which a turn steal reads.
     queued: Option<(u8, u16)>,
+    /// Seats whose alternate reaction `+0x1F2` is `0`, so a sweep that
+    /// stages one off it takes `+0x1EF` instead (PROT 0935 arm 5,
+    /// `0x801F7CD4`).
+    still: u8,
 }
 
 /// The inventory find-or-insert a turn steal refunds an Item action through.
@@ -284,7 +294,7 @@ fn run_body(
     selector: u8,
     seed: u64,
     field: Field,
-    step: u8,
+    run_step: u8,
 ) -> Option<Run> {
     let disc = disc()?;
     let mut cpu = scus_cpu()?;
@@ -412,6 +422,9 @@ fn run_body(
         // A fallen seat holds the rate its last reaction left, so a sweep
         // that skips it shows.
         cpu.mem.wr8(a + 0x21D, if hp == 0 { 4 } else { 8 });
+        if field.still & (1 << s) != 0 {
+            cpu.mem.wr8(a + 0x1F2, 0);
+        }
         cpu.mem.wr8(a + 0x1DF, action);
         cpu.mem.wr16(a + 0x46, rng.below(0x1000) as u16);
         for o in [0x34u32, 0x38, 0x3C, 0x40] {
@@ -455,7 +468,7 @@ fn run_body(
     }
     // `step` vsyncs a pass at the speed scalar.
     cpu.mem.wr8(SCALAR, cam::SPEED_SCALAR as u8);
-    cpu.mem.wr8(STEP, step);
+    cpu.mem.wr8(STEP, run_step);
 
     let key = if t::capture_trampoline_for(body.prot_entry).is_some() {
         body.body
@@ -471,7 +484,7 @@ fn run_body(
     let mut st = ModuleCamState {
         lead_roster: 1,
         opens_pass: true,
-        frame_step: step,
+        frame_step: run_step,
         victim_settled: true,
         caster_in_reach: true,
         party_settled: true,
@@ -499,7 +512,17 @@ fn run_body(
     let mut settle_run: Option<usize> = None;
     let (mut quake_passes, mut quake_phase) = (0usize, 0xFEu8);
     let quake_hold = 1 + (usize::from(formation) + victim) % 4;
-    for _ in 0..40_000 {
+    for pass in 0..40_000usize {
+        // Retail's step moves from frame to frame: the step-3 walks run
+        // 2, 3, 4, 4, thirteen vsyncs a cycle, so a word of whole scalars
+        // overshoots its gate (PROT 0937's `0x801F6C04`, 0936's `0x801F6C6C`).
+        let step = if run_step == 3 {
+            [2u8, 3, 4, 4][pass % 4]
+        } else {
+            run_step
+        };
+        cpu.mem.wr8(STEP, step);
+        st.frame_step = step;
         for s in 0..8u32 {
             let a = ACTOR + s * STRIDE as u32;
             let fallen = s < 3 && cpu.mem.rd16(a + 0x14C) == 0;
@@ -537,8 +560,14 @@ fn run_body(
         });
         // The wait counts from the pass whose countdown runs out (the arm's
         // gate ahead of its settle), or from the arm's first pass.
-        let spent = cam::capture_countdown_va(action)
-            .is_none_or(|va| cpu.mem.rd32(va) as i32 <= cam::SPEED_SCALAR);
+        // PROT 0937's arm 7 settles once its fourth hit has landed (the
+        // count `0x801F8098`, `bne v1,4` at 0x801F77AC).
+        let spent = if body.prot_entry == 937 {
+            cpu.mem.rd32(HYPER_LIGHTNING_HITS) >= 4
+        } else {
+            cam::capture_countdown_va(action)
+                .is_none_or(|va| cpu.mem.rd32(va) as i32 <= cam::SPEED_SCALAR)
+        };
         settle_run = match settle_run {
             Some(n) if spent && quake_passes > 0 => Some(n + 1),
             _ if spent => Some(0),
@@ -564,6 +593,39 @@ fn run_body(
                 _ => {}
             }
         }
+        // A row settle waits out one seat of the row for the same passes,
+        // turn by turn: a standing seat still playing, a fallen party seat
+        // not yet down on clip `8`, a fallen monster still lit.
+        let row_settle = body
+            .arm(phase)
+            .and_then(|a| a.settle)
+            .filter(|s| matches!(s, t::ChainSettle::TargetRow | t::ChainSettle::PartyRow));
+        // Once the wait is out, a fallen monster's fade has run out.
+        if let Some(kind) = row_settle
+            && ROW_SETTLE_WALKED.contains(&body.prot_entry)
+            && settle_passes >= quake_hold
+        {
+            for s in settle_row(&mut cpu.mem, kind) {
+                let a = ACTOR + s * STRIDE as u32;
+                if s >= 3 && cpu.mem.rd16(a + 0x14C) == 0 {
+                    cpu.mem.wr32(a + 4, 0);
+                }
+            }
+        }
+        if let Some(kind) = row_settle
+            && ROW_SETTLE_WALKED.contains(&body.prot_entry)
+            && settle_passes < quake_hold
+        {
+            let row = settle_row(&mut cpu.mem, kind);
+            let s = row[(seed as usize / 2 + settle_passes) % row.len()];
+            let a = ACTOR + s * STRIDE as u32;
+            match (cpu.mem.rd16(a + 0x14C) != 0, s < 3) {
+                (true, _) => cpu.mem.wr8(a + 0x1D9, 1),
+                (false, true) => cpu.mem.wr8(a + 0x1D9, 0),
+                (false, false) => cpu.mem.wr32(a + 4, 0x2008_0200),
+            }
+        }
+        let row_seats = row_settle.map(|k| settle_row(&mut cpu.mem, k));
         let (ctx0, rec0) = (cpu.mem.read(CTX, CTX_LEN), cpu.mem.read(ACTOR, 8 * STRIDE));
         let vi = usize::from(rec0[CASTER * STRIDE + 0x1DD].min(7));
         // The group aim, as the host measures it each pass; a row the body
@@ -622,7 +684,7 @@ fn run_body(
         }
         let stop = cpu.call(body.body, &[]);
         let c0 = format!(
-            "PROT {:04} {action:#04x} step {step} {field:?} arm {phase:#x}",
+            "PROT {:04} {action:#04x} step {run_step}/{step} {field:?} arm {phase:#x}",
             body.prot_entry
         );
         if stop != Stop::Returned {
@@ -798,6 +860,26 @@ fn run_body(
             };
             let retail_held = busy && after == phase;
             if !settled && !retail_held {
+                out.gaps.push(format!(
+                    "{c0}: the {kind:?} settle holds where retail passed"
+                ));
+            }
+            out.settles_checked += usize::from(!settled);
+        }
+        // The row settle as the pass opened: a row the port calls unsettled
+        // holds retail.
+        if let (Some(kind), Some(row)) = (row_settle, row_seats.as_ref()) {
+            let settled = row.iter().all(|&s| {
+                let o = s as usize * STRIDE;
+                let hp = u16::from_le_bytes([rec0[o + 0x14C], rec0[o + 0x14D]]);
+                let clip = rec0[o + 0x1D9];
+                match (hp, s < 3) {
+                    (0, true) => clip == t::SETTLE_DOWN_CLIP,
+                    (0, false) => rec0[o + 4..o + 8] == [0; 4],
+                    _ => clip == 0,
+                }
+            });
+            if !settled && !(busy && after == phase) {
                 out.gaps.push(format!(
                     "{c0}: the {kind:?} settle holds where retail passed"
                 ));
@@ -1078,6 +1160,18 @@ fn run_body(
     Some(out)
 }
 
+/// The seats a row settle waits on: the party row `0 .. ctx[+0]`, or for a
+/// [`t::ChainSettle::TargetRow`] whose caster names a monster seat or the
+/// monster group `9`, the monster row `3 .. 3 + ctx[+1]`.
+fn settle_row(m: &mut psx_retail_exec::Memory, kind: t::ChainSettle) -> Vec<u32> {
+    let target = m.rd8(ACTOR + (CASTER * STRIDE) as u32 + 0x1DD);
+    if kind == t::ChainSettle::TargetRow && target >= 3 && target != 8 {
+        (3..3 + u32::from(m.rd8(CTX + 1))).collect()
+    } else {
+        (0..u32::from(m.rd8(CTX))).collect()
+    }
+}
+
 /// The view of seat `s` as the pass opened.
 fn read_actor_from(rec: &[u8], s: usize, _now: CastActorState) -> CastActorState {
     let mut m = psx_retail_exec::Memory::default();
@@ -1191,6 +1285,33 @@ fn fields(entry: u32) -> Vec<(u64, Field)> {
     if entry == 935 {
         out.push((0x4752_5039, f(Some(9), 0b0010_0000, 0b0001_0000)));
         out.push((0x4D4F_4E34, f(Some(4), 0b0010_0000, 0)));
+        // The sweep on monsters under the roll, which it kills (the clamp
+        // at 0x801F7C80, the fallen clip at 0x801F7CC4), and on monsters
+        // with no alternate reaction (0x801F7CD4); the party row's settle
+        // with a member down.
+        out.push((
+            0x4C4F_5739,
+            Field {
+                low: 0b0010_0000,
+                still: 0b0001_0000,
+                ..f(Some(9), 0, 0)
+            },
+        ));
+        out.push((
+            0x4C4F_5730,
+            Field {
+                low: 0b0000_1000,
+                still: 0b0011_0000,
+                ..f(Some(0), 0b010, 0)
+            },
+        ));
+    }
+    // PROT 0937's arm 7 on a victim already down (`0x801F767C`) and on a
+    // Stoned one (`0x801F7690`), whose settle waits on its clip
+    // (`0x801F77BC`, `0x801F77CC`).
+    if entry == 937 {
+        out.push((0x4C44_4F57, f(Some(2), 0b100, 0)));
+        out.push((0x4C53_544E, f(Some(2), 0, 0b100)));
     }
     out
 }

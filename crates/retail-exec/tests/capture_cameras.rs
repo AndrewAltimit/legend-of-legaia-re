@@ -92,6 +92,14 @@ fn bodies() -> Vec<Body> {
             director,
         });
     }
+    // PROT 0949's Water Crystals (`0x59`) is a single-body module the
+    // trampolines do not name: its body sits at the image's own entry.
+    out.push(Body {
+        entry: 949,
+        va: 0x801F_6A10,
+        action: 0x59,
+        director: cam::capture_camera_director(949, cam::SINGLE_BODY).expect("directed"),
+    });
     // Cort's Evil Seru Magic (`0xAD`) casts through the boss band rather
     // than the capture table, on the same single body and director shape.
     out.push(Body {
@@ -291,6 +299,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         prot(944, CURSE_ALL),
         prot(945, WATER_COLUMN),
         prot(945, JUGGER_POWER),
+        prot(949, 0x801F_6A10),
         prot(950, SHADOW_BREAK),
         prot(950, ROLLING_FLARE),
         prot(951, SCYTHE_WIND),
@@ -371,6 +380,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let (mut passes, mut casts) = (0u32, 0u32);
     let mut outcomes = std::collections::BTreeSet::new();
     let mut unsettled_holds = 0usize;
+    let (mut storm_seats, mut storm_stoned, mut storm_clamps) = (0usize, 0usize, 0usize);
+    let mut storm_levels = 0usize;
     let mut victim_settle_holds = 0usize;
     let (mut results, mut heal_capped) = (0usize, false);
     let mut debuffs = 0usize;
@@ -424,7 +435,23 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         // Water Column's hit rolls through `FUN_801DD4B0` (`0x801F74A4`),
         // clamped to the victim's HP (`0x801F74C8`).
         let water_column = (body.entry, body.va) == (945, WATER_COLUMN);
-        if water_column {
+        // Water Crystals' one hit rolls the same wrapper (`0x801F7318`),
+        // clamped to the victim's HP (`0x801F733C..0x801F7348`).
+        let crystals = body.entry == 949;
+        // Thunder Storm's party sweep rolls the same wrapper (`0x801F7514`),
+        // logged by seat: a small roll, or on odd rounds one past every HP.
+        let storm = (body.entry, body.va) == (957, THUNDER_STORM);
+        let storm_hits = Rc::new(RefCell::new(Vec::<u32>::new()));
+        let storm_roll = Rc::new(std::cell::Cell::new(30u32));
+        if storm {
+            let hits = storm_hits.clone();
+            let roll = storm_roll.clone();
+            cpu.hook(0x801D_D4B0, move |r, _| {
+                hits.borrow_mut().push(r.r[A2]);
+                r.r[2] = roll.get();
+            });
+        }
+        if water_column || crystals {
             let roll = horn_roll.clone();
             let calls = horn_calls.clone();
             cpu.hook(0x801D_D4B0, move |r, _| {
@@ -609,6 +636,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     .wr16(CTX + 0x6D0, (-1 - rng.below(0x800) as i32) as u16);
             }
             let (ca, va_) = (ACTOR + caster * STRIDE, ACTOR + victim * STRIDE);
+            // A wide victim: Water Crystals' framing caps its TR z at `0xC00`
+            // (`slti 0xc01` at 0x801F6FC0) on three radii.
+            if crystals && round % 5 == 2 && victim < 8 {
+                cpu.mem.wr16(NODES + victim * 0x100 + 0x58, 0x480);
+            }
             // The caster's formation id, which a body can fork on: Terror
             // Scream's owners (Terror Face `0x7F`, the `0x28` row).
             let monster = match body.action {
@@ -787,7 +819,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 let hp = u32::from(cpu.mem.rd16(va_ + 0x14C));
                 cpu.mem.wr32(va_, [0, hp / 2, hp + 7][round % 3]);
             }
-            if matches!(body.entry, 952 | 958 | 960) || water_column {
+            if matches!(body.entry, 952 | 958 | 960) || water_column || crystals {
                 let hp = u32::from(cpu.mem.rd16(hit_at + 0x14C));
                 horn_roll.set([0, hp - 1, hp, hp + 1, hp * 3][round % 5]);
             }
@@ -867,7 +899,27 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 cpu.mem.wr16(seat + 0x34, x.wrapping_add(0xC0));
                 cpu.mem.wr16(seat + 0x38, z.wrapping_sub(0xE0));
             }
+            // Thunder Storm: on every other pair of rounds a party member
+            // stands in Stone (`+0x16E & 4`), on both sides.
+            let storm_stone = (storm && round % 4 >= 2).then_some((round % 3) as u32);
+            if let Some(s) = storm_stone {
+                let a = ACTOR + s * STRIDE;
+                let w0 = cpu.mem.rd16(a + 0x16E);
+                cpu.mem.wr16(a + 0x16E, w0 | 4);
+            }
+            storm_roll.set(if round % 2 == 1 { 0x7FFF } else { 30 });
+            // A part standing in the pool, whose level `+0x78` arm 6 sets
+            // on every pass (`0x801F78B8..0x801F78E0`).
+            if storm {
+                for o in (0..0x80).step_by(4) {
+                    cpu.mem.wr32(STORM_PART + o, 0);
+                }
+                cpu.mem.wr32(PART_POOL + 4 * 0x30, STORM_PART);
+            }
             let mut shadow = shadow_world(&mut cpu, body, caster, victim, monster);
+            if let (Some(s), Some(w)) = (storm_stone, shadow.as_mut()) {
+                w.actors[s as usize].battle.field_flags |= 4;
+            }
             let mut shadow_live = shadow.is_some();
             // A Stoned party seat (`+0x16E & 4`), which a party sweep skips
             // (`0x801F77A4` in Chaos Breath), on every third round. The
@@ -1197,6 +1249,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     // Water Column's arm 7 (`0x801F7654..0x801F769C`), once
                     // its word runs out.
                     _ if water_column => Some(7),
+                    // Water Crystals' arm 5 (`0x801F7438..0x801F7478`): a
+                    // fallen victim settles on clip `8` or faded out.
+                    _ if body.entry == 949 => Some(5),
                     _ => None,
                 };
                 if let Some(arm_at) = victim_settle {
@@ -1238,6 +1293,24 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                             (false, true) => 8,
                         };
                         cpu.mem.wr8(va_ + 0x1D9, clip);
+                        // Water Crystals' fallen victim stands lit while
+                        // busy, then on odd rounds fades out off its clip.
+                        if body.entry == 949 && dead {
+                            let word = if busy { 0x2008_0200 } else { 0 };
+                            if busy || round % 2 == 1 {
+                                cpu.mem.wr32(va_ + 4, word);
+                            }
+                            if !busy && round % 2 == 1 {
+                                cpu.mem.wr8(va_ + 0x1D9, 0);
+                            }
+                        }
+                        let clip = cpu.mem.rd8(va_ + 0x1D9);
+                        while settle_world.actors.len() <= victim as usize {
+                            settle_world.actors.push(Default::default());
+                        }
+                        let sa = &mut settle_world.actors[victim as usize];
+                        sa.active = true;
+                        sa.battle.render_color = cpu.mem.rd32(va_ + 4);
                         // The host's own flag (`World::capture_victim_settled`)
                         // off the same bytes.
                         st.victim_settled = settle_world.drive_capture_victim_settled(
@@ -1358,6 +1431,9 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     shadow_live = false;
                     shadow_diverged += 1;
                 }
+                let mut storm_port: Option<Vec<(u16, bool)>> = None;
+                let mut storm_before: Vec<(u16, u16)> = Vec::new();
+                storm_hits.borrow_mut().clear();
                 if shadow_live && let Some(w) = shadow.as_mut() {
                     // The seats' HP as retail's pass opens on it: the band's
                     // damage rolls are not the stubbed wrapper's, and a seat
@@ -1375,6 +1451,16 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                             act.battle.render_color = word;
                         }
                     }
+                    // Water Crystals' settle reads the victim's clip: the clip
+                    // the harness stands it on reaches the shadow as well.
+                    if body.entry == 949 && victim_settle == Some(phase) && victim < 8 {
+                        let act = &mut w.actors[victim as usize];
+                        act.battle.current_anim = cpu.mem.rd8(va_ + 0x1D9);
+                        act.battle_reaction = None;
+                        act.battle_reaction_entry = None;
+                        act.battle_pose = None;
+                        act.battle_action_clips = Some(std::sync::Arc::new(Vec::new()));
+                    }
                     w.clock.display_frames += u64::from(step);
                     // Retail's `rand()` stream as this pass opens on it, so a
                     // rolled status lands on the seat retail's roll lands.
@@ -1383,7 +1469,19 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     // them at the pass's step (`World::module_pass`), with
                     // the after-pass seam (`World::caster_stages`): Glare's
                     // roll on the pass that counts its arm 2 out.
+                    storm_before = (0..3)
+                        .map(|s| (w.actors[s].battle.hp, w.raw_status_word(s as u8)))
+                        .collect();
                     w.drive_capture_module_pass(body.action, step);
+                    if storm {
+                        storm_port = Some(
+                            (0..3)
+                                .map(|s| {
+                                    (w.actors[s].battle.hp, w.actors[s].battle_reaction.is_none())
+                                })
+                                .collect::<Vec<_>>(),
+                        );
+                    }
                 }
                 let ctx_before = crate::cast_view::read_ctx(&mut cpu.mem, CTX);
                 // The two seats as the pass opens, for Death Game's result.
@@ -1658,11 +1756,57 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 shadow_after = (0..8u32)
                     .map(|s| cpu.mem.rd32(ACTOR + s * STRIDE + 4))
                     .collect();
+                // Thunder Storm's party sweep (`0x801F74E0..0x801F75D0`)
+                // against the host's fold: a seat retail's sweep rolls (alive,
+                // out of Stone, `0x801F74E8` / `0x801F74FC`) the fold strikes,
+                // and a Stoned one it leaves whole and unreacting; a roll past
+                // HP leaves it on `0` (`0x801F7540..0x801F754C`), and the
+                // fold's own clamp never wraps a seat past its HP.
+                if let Some(port) = storm_port.as_ref() {
+                    let rolled: Vec<u32> = storm_hits.borrow().clone();
+                    if !rolled.is_empty() {
+                        for (s, (&(hp, status), &(port_hp, calm))) in
+                            storm_before.iter().zip(port).enumerate()
+                        {
+                            let stoned = status & 4 != 0;
+                            let hit = rolled.contains(&(s as u32));
+                            let want_hit = hp != 0 && !stoned;
+                            let retail_hp = cpu.mem.rd16(ACTOR + s as u32 * STRIDE + 0x14C);
+                            let ok = hit == want_hit
+                                && (!stoned || (port_hp == hp && calm))
+                                && port_hp <= hp;
+                            storm_seats += 1;
+                            storm_stoned += usize::from(stoned);
+                            // The fold rolls the port's own damage, not the
+                            // stubbed roll: its clamp shows as a struck seat
+                            // left on `0`, never wrapped past its HP.
+                            storm_clamps +=
+                                usize::from(hit && retail_hp == 0 && port_hp == 0 && hp != 0);
+                            if !ok {
+                                shadow_failures.push(format!(
+                                    "round {round} arm {phase}: Thunder Storm seat {s} hp {hp} stoned {stoned}: retail rolled {hit} (hp {retail_hp}), port hp {port_hp} calm {calm}"
+                                ));
+                            }
+                        }
+                    }
+                }
+                // Thunder Storm's pool level against the director's.
+                if storm && phase == 6 {
+                    let got = cpu.mem.rd16(STORM_PART + 0x78);
+                    storm_levels += 1;
+                    if Some(got) != arm.parts_level {
+                        shadow_failures.push(format!(
+                            "round {round} arm 6: Thunder Storm pool level retail {got:#x} port {:x?}",
+                            arm.parts_level
+                        ));
+                    }
+                }
                 // Bloody Horns' hit against the port's clamp
                 // (`cast_module_ticks::apply_hit_floor_zero`): the roll, cut
                 // to the victim's HP, onto `+0x10` and off `+0x14C`.
                 if (body.entry == 952 && body.va == BLOODY_HORNS)
                     || water_column
+                    || crystals
                     || (body.entry, body.va) == (958, BLAZING_SLASH)
                     || (body.entry, body.va) == (960, PLASMA_STRIKE)
                 {
@@ -2194,6 +2338,13 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         shadow_failures[..shadow_failures.len().min(40)].join("\n")
     );
     assert!(buffs >= 12, "buff passes compared {buffs}");
+    eprintln!(
+        "Thunder Storm: {storm_seats} swept seats compared, {storm_stoned} Stoned, {storm_clamps} clamped"
+    );
+    assert!(
+        storm_seats >= 12 && storm_stoned >= 2 && storm_clamps >= 2 && storm_levels >= 20,
+        "{storm_seats} {storm_stoned} {storm_clamps}"
+    );
     assert!(
         results >= 4 && heal_capped,
         "Death Game results compared {results}, a heal capped by the missing HP {heal_capped}"
@@ -2250,6 +2401,9 @@ const PARALYZING_WAVE: u32 = 0x801F_69D8;
 const WATER_HAZARD: u32 = 0x801F_7298;
 const DEATH_GAME: u32 = 0x801F_798C;
 const THUNDER_STORM: u32 = 0x801F_6A14;
+/// The part pool, and the part the walk stands in it for Thunder Storm.
+const PART_POOL: u32 = 0x801C_90F0;
+const STORM_PART: u32 = 0x8017_9000;
 const BLAZING_SLASH: u32 = 0x801F_6DD8;
 const MEGATON_PRESS: u32 = 0x801F_69F0;
 const PLASMA_STRIKE: u32 = 0x801F_74E4;
