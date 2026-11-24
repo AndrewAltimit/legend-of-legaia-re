@@ -213,6 +213,21 @@ pub fn commit_progress_t(elapsed: u16) -> u16 {
     elapsed.saturating_mul(COMMIT_PROGRESS_STEP).min(0x1000)
 }
 
+/// The write / read panel's per-frame slide step (`sll v1,v1,0x8` on the
+/// frame scalar at `0x801E2D34`).
+pub const COMMIT_SLIDE_STEP: u16 = 0x100;
+
+/// The write / read panel's slide timer `_DAT_801F01CC` after `elapsed`
+/// sixtieth-second units of the beat. `FUN_801E1C1C` mode 4 adds the frame
+/// step `<< 8` on each pass and clamps at `0x1000`
+/// (`0x801E2D28..0x801E2D4C`), so whatever steps the passes ran at, the timer
+/// is `0x100` per unit elapsed.
+///
+/// PORT: FUN_801E1C1C (mode `4`, `0x801E2D00..0x801E2D4C`, the slide and progress ramps)
+pub fn commit_slide_t(elapsed: u16) -> u16 {
+    elapsed.saturating_mul(COMMIT_SLIDE_STEP).min(0x1000)
+}
+
 /// The write / read half's length for a session's direction.
 pub fn commit_work_frames(mode: SaveSelectMode) -> u16 {
     match mode {

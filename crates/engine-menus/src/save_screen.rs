@@ -967,7 +967,7 @@ impl SaveScreenFlow {
                 lines: (a, b),
                 note,
                 work,
-                slide_t: (session.committing_elapsed().saturating_mul(0x100)).min(0x1000),
+                slide_t: crate::save_select::commit_slide_t(session.committing_elapsed()),
                 progress_t: crate::save_select::commit_progress_t(session.committing_elapsed()),
             }
         });

@@ -414,6 +414,8 @@ fn the_panel_darkening_is_the_port_level() {
         cpu.mem.wr32(WORK_T, t);
         cpu.mem.wr32(WORK_FILL, rng.below(0x1001));
         cpu.mem.wr32(CONFIRM_CURSOR, rng.below(2));
+        cpu.mem.wr32(0x1F80_03A0, 0x8015_0000);
+        cpu.mem.wr32(0x1F80_03F4, 0x8016_0000);
         cpu.mem.wr32(STACK_TOP + 0x10, 0xA0);
         cpu.mem.wr32(STACK_TOP + 0x14, 0x70);
         *grey.borrow_mut() = None;
@@ -461,4 +463,54 @@ fn the_panel_darkening_is_the_port_level() {
         capped[[0, 3, 4].iter().position(|&m| m == mode).unwrap()] += u32::from(level == cap);
     }
     assert!(capped.iter().all(|&n| n > 50), "{capped:?}");
+}
+
+/// Mode `4`'s two ramps, pass after pass at frame steps `1..=4`: the slide
+/// timer `_DAT_801F01CC` (`+ step << 8`) and the progress timer
+/// `_DAT_801F01D0` (`+ step << 5`), each clamped at `0x1000`
+/// (`0x801E2D00..0x801E2D4C`), against the port's `commit_slide_t` /
+/// `commit_progress_t` of the units elapsed (the steps summed).
+#[test]
+fn the_write_panel_ramps_by_the_frame_step() {
+    differential!(prot(899, SLIDE));
+    use legaia_engine_menus::save_select::{commit_progress_t, commit_slide_t};
+    const WORK_T: u32 = 0x801F_01CC;
+    const WORK_FILL: u32 = 0x801F_01D0;
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &disc().expect("disc").read_entry(899).expect("PROT 0899"),
+    );
+    cpu.stub_outside = Some((SLIDE, SLIDE_END));
+    let mut rng = Rng(0x5241_4D50);
+    let mut clamped = 0;
+    for run in 0..300 {
+        cpu.mem.wr32(WORK_T, 0);
+        cpu.mem.wr32(WORK_FILL, 0);
+        let fixed = rng.below(5);
+        let mut elapsed = 0u16;
+        for pass in 0..0x90 {
+            let step = if fixed == 0 { 1 + rng.below(4) } else { fixed } as u16;
+            cpu.mem.wr8(0x1F80_0393, step as u8);
+            // The packet cursor and OT, reset so the quads never walk into
+            // the timers.
+            cpu.mem.wr32(0x1F80_03A0, 0x8015_0000);
+            cpu.mem.wr32(0x1F80_03F4, 0x8016_0000);
+            cpu.mem.wr32(STACK_TOP + 0x10, 0xA0);
+            cpu.mem.wr32(STACK_TOP + 0x14, 0x70);
+            assert_eq!(cpu.call(SLIDE, &[4, 0x1000, 0xA0, 0x70]), Stop::Returned);
+            elapsed += step;
+            let ctx = format!("run {run} pass {pass} step {step} elapsed {elapsed}");
+            assert_eq!(cpu.mem.rd32(WORK_T), u32::from(commit_slide_t(elapsed)), "{ctx}");
+            assert_eq!(
+                cpu.mem.rd32(WORK_FILL),
+                u32::from(commit_progress_t(elapsed)),
+                "{ctx}"
+            );
+            clamped += u32::from(cpu.mem.rd32(WORK_FILL) == 0x1000);
+        }
+    }
+    assert!(clamped > 1000, "{clamped}");
 }
