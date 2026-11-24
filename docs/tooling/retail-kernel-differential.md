@@ -1362,6 +1362,31 @@ inside retail's last held pass). They found:
   on the pass's opening tick at the pass's step (`World::run_fatal_decision`).
 - Spikefish's arm 8 adds `step << 3` to the creature's shatter word ahead of its gate and leaves on that pass; the
   tick it leaves on owes the rest (`spikefish_shatter_add`).
+- Gimard's settle arm 12 has the same shape: it adds `2 * step * scalar` to the creature's shatter word on every
+  pass, the one that stores `0xFF` included (`0x801F7698` falls into the add at `0x801F76A4`), so its leaving tick
+  owes the rest too (`gimard_shatter_add`, driven at steps 1 to 4 by
+  `gimards_settle_arm_breaks_the_creature_up_as_retail_does`).
+
+The chain-body walk holds a row settle as well as the victim's: PROT 0935's arm 6 over the row its target names
+(`0x801F7E2C..0x801F7F50`) and PROT 0936's arm 8 over the party (`0x801F7B18..0x801F7B90`), one seat busy at a time,
+fallen monsters lit until the hold ends. PROT 0937's arm 7 settles once its fourth hit has landed (`0x801F8098`,
+`0x801F77AC`). Its step-3 walks run 2, 3, 4, 4, so a word of whole scalars overshoots its gate.
+
+The capture walk runs PROT 0949's Water Crystals, a single-body module at its image's own entry. Its arm 0 hides
+the monster row by its count (`3 .. 3 + ctx[+0x01]`, `0x801F6D98..0x801F6E04`) and arm 5 shows it again, so a
+fifth monster at seat 7 hides and shows with the rest, where the port's seven-seat walk left it standing. Arm 5
+waits on the victim (`0x801F7438..0x801F7478`): a live one idle, a fallen one on clip `8` or faded out, and the
+port's victim settle now reads the fade (`CaptureVictimSettle::RestOrFaded`). The walk also drives its hit past
+the victim's HP and a victim radius past its framing cap.
+
+The capture walk also checks Thunder Storm's party sweep against the host's fold: the seats retail's sweep rolls
+(alive and out of Stone, `0x801F74E8` / `0x801F74FC`) are the ones the fold strikes, a Stoned seat stays whole and
+unreacting, and a roll past HP leaves a seat on `0`. Arm 6's pool level (`0x801F78B8..0x801F78E0`) is compared
+against the director's on a part standing in the pool. The summon walk seats PROT 0933's two whirl records in the
+part pool beside the module's own part, with the shadow's scene holding the same two, and compares each pass's
+`+0x7A`, `+0x16` and retire. Terra's orbit radius takes `|sin(a) * x| + |cos(a) * z'|` off the seat its arm 0
+copied, `z' = z - 0x613`; every seat of both seat families stands at `z` from 600 to 1400, so the second product's
+fix-ups never run (`terras_orbit_products_keep_their_sign_on_every_seat`).
 
 The chain-body walk also compares the rumble words every pass against `module_rumble_due`, with the Battles
 vibration row `0x800845C8` off on the odd-seeded walks. It found Genocidal Cannon's arms 7 and 9 storing arm `0xB`'s

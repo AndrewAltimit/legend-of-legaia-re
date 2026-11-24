@@ -153,3 +153,38 @@ image = "af0b90e2d32e7187"
 range = "0x801F6ACC..0x801F6ACC"
 verdict = "unreachable"
 reason = "PROT 0908's phase dispatch: `beq v1,1` is reached only by a phase under 3 (`slti 3` at 0x801F6AB8) that is neither 2 (0x801F6AB4) nor 0 (0x801F6AC4), so by phase 1 alone, which takes it."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F76D4..0x801F76D4"
+verdict = "unreachable"
+reason = "PROT 0933 arm 9's orbit radius: the `bgez` is the rounding fix-up of `cos(a) * z'` (`mult` at 0x801F76BC), where `z'` is the seat z its arm 0 copied less 0x613 (0x801F6C9C) and `a = ratan2(z', x)`. Every monster seat of both families stands at z from 600 to 1400, so `z'` and the product are negative on every seat (`terras_orbit_products_keep_their_sign_on_every_seat` reads both off SCUS's own ratan2 and tables)."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F76E8..0x801F76E8"
+verdict = "unreachable"
+reason = "PROT 0933 arm 9's orbit radius: the `abs` of `cos(a) * z' >> 12` (`bgez` / `subu` at 0x801F76E8..0x801F76F0), negative on every seat of both seat families for the reason the fix-up at 0x801F76D4 gives."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F7A54..0x801F7A54"
+verdict = "unreachable"
+reason = "PROT 0933 arm 0xB's orbit radius: the same `cos(a) * z'` rounding fix-up as arm 9's 0x801F76D4 (`mult` at 0x801F7A3C over the arm 0 copy), negative on every seat of both seat families."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F744C..0x801F744C"
+verdict = "unreachable"
+reason = "PROT 0936's rounding fix-up of `word / 4` on its growth word 0x801F8178 (`lw` / `bgez` at 0x801F7444..0x801F744C): the word's stores are the zero at 0x801F72F4 and the adds of `scalar * step` (0x801F7528) and `(scalar * step) / 4` (0x801F7894), both of unsigned bytes, so it never goes negative."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F779C..0x801F779C"
+verdict = "unreachable"
+reason = "PROT 0936's second read of the growth word 0x801F8178 (`lw` / `bgez` at 0x801F7794..0x801F779C), non-negative for the reason the fix-up at 0x801F744C gives."

@@ -1955,6 +1955,9 @@ Charge have the same shape: without their tables every arm took one pass, so Cha
 landed `384` game frames early and a body that stepped off the end of its arms walked on to `0xFF`. Water Column runs its caster at half rate from arm 0 and halves the
 victim's beside the hit, so the knockdown's cues sit twice as far apart, and doubles both
 back in arm 7.
+Water Crystals hides the monster row by its count, a fifth monster at seat 7 included
+(`0x801F6D98..0x801F6E04`), and its arm 5 lets a fallen victim through on clip `8` or once its
+prim word `+0x04` reads `0` (`0x801F7460..0x801F7478`, `CaptureVictimSettle::RestOrFaded`).
 
 **Settle waits** are carried (`ChainSettle`, held by the band's caller). Each
 tests a seat the same way: live (`+0x14C != 0`) once its playing clip `+0x1D9`
