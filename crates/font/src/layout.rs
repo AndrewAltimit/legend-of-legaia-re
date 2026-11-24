@@ -82,6 +82,14 @@ impl Font {
         let mut pen_y: i32 = 0;
         let mut max_x: i32 = 0;
         let mut i = 0;
+        // A string that opens below `0x20` draws nothing at all: the
+        // renderer tests the first byte (`sltiu v0,v0,0x20` / `beqz` at
+        // `0x800368C4..0x800368C8`) and returns `0` before its walk. Only the
+        // first byte - a control byte later in the string is skipped below.
+        // PORT: FUN_80036888 (0x800368BC..0x800368D4, the leading-byte refusal)
+        if text.first().is_some_and(|&b| b < FIRST_CHAR) {
+            i = text.len();
+        }
         while i < text.len() {
             let c = text[i];
             i += 1;

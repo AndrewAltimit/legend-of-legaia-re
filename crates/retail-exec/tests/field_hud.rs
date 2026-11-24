@@ -230,3 +230,148 @@ fn the_field_hud_draws_what_retail_draws() {
     }
     assert!(fallen > 300, "{fallen}");
 }
+
+/// The decision half of `FUN_801D0D38` (`0x801D0D38..0x801D0F1C`) against
+/// `engine-field::world_map_panel_actors::field_hud_tick`: every gate the
+/// routine reads is drawn at random - the screen-owner word `_DAT_8007B868`,
+/// the Field HP Display mode `_DAT_800845C4`, the D-pad bank, the menu lock and
+/// the system lock in `_DAT_1F800394`, the player's engaged bit, both warp
+/// words, the short-idle marker `_DAT_8007B5F4`, the cached position against
+/// the player's, the countdown and its per-frame decrement - and the
+/// countdown, the cached position, the marker and the draw (with its panel row)
+/// are held to the kernel's decision. The rearm term is the `HudInput::rearm`
+/// definition (any of the engaged bit, the system lock and the two warp
+/// words); the marker survives only the scene-entry arm.
+#[test]
+fn the_field_hud_decides_what_retail_decides() {
+    differential!(prot(897, HUD));
+    use legaia_engine_field::world_map_panel_actors::{HudDecision, HudInput, field_hud_tick};
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    for leaf in [0x8003_6888u32, 0x8002_C488, 0x8003_4B78, 0x8003_C1F8] {
+        cpu.stub(leaf, 0);
+    }
+    // The draw is entered through the staged-load test; the hook records it
+    // and answers the low panel or the projection, as the run asks.
+    let drew = Rc::new(RefCell::new(None::<(bool, i16)>));
+    let ask = Rc::new(RefCell::new((false, 0i16)));
+    let (dr, a) = (drew.clone(), ask.clone());
+    cpu.hook(0x8003_CF04, move |r, _| {
+        let (pending, y) = *a.borrow();
+        *dr.borrow_mut() = Some((pending, y));
+        r.r[psx_retail_exec::V0] = u32::from(pending);
+    });
+    cpu.stub(0x8001_72C0, 0);
+    let a = ask.clone();
+    cpu.hook(0x8001_95A8, move |r, m| {
+        let p = m.rd32(r.r[SP] + 0x10);
+        m.wr16(p + 2, a.borrow().1 as u16);
+    });
+    let mut rng = Rng(0x4855_4444);
+    let mut seen = std::collections::BTreeMap::<&str, u32>::new();
+    for run in 0..20_000 {
+        let pick = |rng: &mut Rng, p: u32| rng.below(p) == 0;
+        let disabled = pick(&mut rng, 16);
+        let mode = [0u32, 0, 1, 1, 2][rng.below(5) as usize];
+        let pad = if pick(&mut rng, 12) {
+            0x1000 << rng.below(4)
+        } else {
+            [0u32, 0x0040, 0x0800, 0x0F0F][rng.below(4) as usize]
+        };
+        let menu_lock = pick(&mut rng, 16);
+        let sys_lock = pick(&mut rng, 8);
+        let engaged = pick(&mut rng, 8);
+        let warp_timer = if pick(&mut rng, 8) { 1 + rng.below(0x28) } else { 0 };
+        let warp_hold = if pick(&mut rng, 8) { 1 + rng.below(0x28) } else { 0 };
+        let marker = [0u32, 0, 1, 2][rng.below(4) as usize];
+        let (px, pz) = (rng.next() as i16, rng.next() as i16);
+        let (cx, cz) = match rng.below(4) {
+            0 => (px.wrapping_add(1), pz),
+            1 => (px, pz.wrapping_sub(1)),
+            _ => (px, pz),
+        };
+        let countdown = if pick(&mut rng, 2) {
+            rng.below(4) as i16
+        } else {
+            rng.below(0xA1) as i16
+        };
+        let delta = [1u8, 1, 2, 3][rng.below(4) as usize];
+        let pending = pick(&mut rng, 3);
+        let projected = rng.below(0x60) as i16;
+        *ask.borrow_mut() = (pending, projected);
+        *drew.borrow_mut() = None;
+
+        cpu.mem.wr32(0x8007_B868, u32::from(disabled));
+        cpu.mem.wr32(0x8008_45C4, mode);
+        cpu.mem.wr32(0x8007_B850, pad);
+        let scratch = (u32::from(menu_lock) << 27) | (u32::from(sys_lock) << 10);
+        cpu.mem.wr32(0x1F80_0394, scratch | (rng.next() & 0xF7FF_FBFF));
+        cpu.mem.wr32(0x8007_B6B4, warp_timer);
+        cpu.mem.wr32(0x8007_B6B0, warp_hold);
+        cpu.mem.wr32(0x8007_B5F4, marker);
+        cpu.mem.wr8(0x1F80_0393, delta);
+        cpu.mem.wr32(ACTOR_SLOT, ACTOR);
+        let flags = (rng.next() & !0x0008_0000) | (u32::from(engaged) << 19);
+        cpu.mem.wr32(ACTOR + 0x10, flags);
+        cpu.mem.wr16(ACTOR + 0x14, px as u16);
+        cpu.mem.wr16(ACTOR + 0x18, pz as u16);
+        cpu.mem.wr16(LAST_POS, cx as u16);
+        cpu.mem.wr16(LAST_POS + 2, cz as u16);
+        cpu.mem.wr16(COUNTDOWN, countdown as u16);
+        cpu.mem.wr8(PARTY_COUNT, rng.below(2) as u8);
+        cpu.mem.wr8(PARTY, 0);
+        cpu.mem.wr32(0x1F80_03A0, 0x8014_0000);
+        cpu.mem.wr32(0x1F80_03F4, 0x8016_0000);
+        assert_eq!(cpu.call(HUD, &[]), Stop::Returned, "run {run}");
+
+        let rearm = engaged || sys_lock || warp_timer != 0 || warp_hold != 0;
+        let input = HudInput {
+            hud_disabled: disabled,
+            view_mode: mode as i32,
+            pad,
+            scratch_suppress: menu_lock,
+            rearm,
+            short_idle: marker == 1,
+            timer: countdown,
+            timer_delta: i16::from(delta),
+            player_stationary: (cx, cz) == (px, pz),
+            projected_y: (!pending).then_some(projected),
+        };
+        let (timer, decision) = field_hud_tick(input);
+        let (want_pos, want_marker, want_draw) = match decision {
+            HudDecision::Suppressed => ((cx, cz), 0, None),
+            HudDecision::Rearmed { .. } if rearm => ((px, pz), marker, None),
+            HudDecision::Rearmed { .. } | HudDecision::CountingDown { .. } => {
+                ((px, pz), 0, None)
+            }
+            HudDecision::Draw { y } => ((px, pz), 0, Some(y)),
+        };
+        *seen
+            .entry(match decision {
+                HudDecision::Suppressed => "suppressed",
+                HudDecision::Rearmed { .. } if rearm && marker == 1 => "entry-short",
+                HudDecision::Rearmed { .. } if rearm => "entry",
+                HudDecision::Rearmed { .. } => "moved",
+                HudDecision::CountingDown { .. } => "counting",
+                HudDecision::Draw { .. } => "draw",
+            })
+            .or_default() += 1;
+        let got_pos = (
+            cpu.mem.rd16(LAST_POS) as i16,
+            cpu.mem.rd16(LAST_POS + 2) as i16,
+        );
+        let got_draw = drew.borrow().map(|(p, y)| if p || y < 0x30 { 0xAA } else { 0xC });
+        let ctx = format!("run {run} {input:?} marker {marker} -> {decision:?}");
+        assert_eq!(cpu.mem.rd16(COUNTDOWN) as i16, timer, "countdown, {ctx}");
+        assert_eq!(got_pos, want_pos, "cached position, {ctx}");
+        assert_eq!(cpu.mem.rd32(0x8007_B5F4), want_marker, "marker, {ctx}");
+        assert_eq!(got_draw, want_draw, "draw, {ctx}");
+    }
+    for arm in ["suppressed", "entry-short", "entry", "moved", "counting", "draw"] {
+        assert!(seen.get(arm).copied().unwrap_or(0) > 200, "{arm}: {seen:?}");
+    }
+}

@@ -1,0 +1,22 @@
+# Non-cast routines from the worst-40 list: field HUD, menus, text, motion, battle helpers, fishing.
+
+[[arm]]
+entry = "0x801D0D38"
+image = "cc48acf5dce6ea94"
+range = "0x801D0E4C..0x801D0E4C"
+verdict = "unreachable"
+reason = "The scene-entry arm's Gradual test `bne a0,1`: a0 is the Field HP Display word _DAT_800845C4, 0 is taken at 0x801D0E1C and 2 returned at 0x801D0D7C, and the options row writes only 0..2, so past 0 it is always 1 and the branch never jumps."
+
+[[arm]]
+entry = "0x801D8734"
+image = "43ec69f89e5b5cf7"
+range = "0x801D8950..0x801D8950"
+verdict = "unreachable"
+reason = "The Yes arm's page step looks up window 0x10 (`jal 0x80035334` with a0 0x10) to read its visible rows; that is the Throw Out list window phase 0 opened and phase 3 reopens over, so it is live whenever phase 3 runs and the null test never jumps."
+
+[[arm]]
+entry = "0x80036888"
+image = "98f28532deebc6d6"
+range = "0x80036A14..0x80036B10"
+verdict = "unported"
+reason = "The numeric 0xCE escape (table entry string_id 0): the counter at 0x801C6460[y_offset] drawn through the numeral writer FUN_80034B78 and the pen stepped 8 per digit. The port resolves the escape to dialog-font digit glyphs before layout (engine-dialog script_counter_digits, a REF), so this arm has no Rust; the typeface and the per-digit advance differ."

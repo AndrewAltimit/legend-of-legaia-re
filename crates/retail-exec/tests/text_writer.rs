@@ -254,9 +254,14 @@ fn the_line_renderer_draws_the_glyphs_the_layout_places() {
     };
     let ops = sprite_ops(&mut rig);
     let mut rng = Rng(0x5752_4954);
-    let (mut broken, mut escaped, mut inked, mut blank) = (0, 0, 0, 0);
+    let (mut broken, mut escaped, mut inked, mut blank, mut refused) = (0, 0, 0, 0, 0);
     for round in 0..12_000 {
-        let text = gen_text(&mut rng, &ops, true);
+        let mut text = gen_text(&mut rng, &ops, true);
+        // A string that opens below `0x20` (an empty row's `NUL`, a stray
+        // control byte) is refused whole.
+        if rng.below(16) == 0 {
+            text.insert(0, rng.below(0x20) as u8);
+        }
         let pad = rng.below(2);
         let (x, y) = (rng.below(300) as i32 - 20, rng.below(220) as i32 - 10);
         let ink0 = rng.below(10) as u16;
@@ -274,13 +279,19 @@ fn the_line_renderer_draws_the_glyphs_the_layout_places() {
         );
         let count = rig.cpu.regs.r[V0];
         let what = format!("round {round}: {text:02x?} pad {pad} at ({x}, {y})");
-        assert_eq!(rig.cpu.mem.rd32(PAD), 0, "{what}: the pad is spent");
         let got = rig.glyphs();
         if text[0] < 0x20 {
+            // The early return skips the pad's clear (`0x800368D0` jumps
+            // past the `sw zero,0x40e8` at `0x80036C18`).
+            assert_eq!(rig.cpu.mem.rd32(PAD), pad, "{what}: the pad is kept");
             assert!(got.is_empty() && count == 0, "{what}");
+            let port = rig.font.layout_padded(&text, pad);
+            assert!(port.glyphs.is_empty(), "{what}: port {:?}", port.glyphs);
+            refused += 1;
             continue;
         }
         let (glyphs, escapes, laid) = port_line(&rig.font, &text, pad, (x, y), ink0);
+        assert_eq!(rig.cpu.mem.rd32(PAD), 0, "{what}: the pad is spent");
         assert_eq!(got, glyphs, "{what}: glyph sprites");
         let pictos = rig.pictos.borrow().clone();
         let seats: Vec<(i32, i32)> = pictos.iter().map(|p| (p.0, p.1)).collect();
@@ -292,8 +303,8 @@ fn the_line_renderer_draws_the_glyphs_the_layout_places() {
         blank += u32::from(text.contains(&0x20));
     }
     assert!(
-        broken > 3000 && escaped > 3000 && inked > 3000 && blank > 3000,
-        "{broken} {escaped} {inked} {blank}"
+        broken > 3000 && escaped > 3000 && inked > 3000 && blank > 3000 && refused > 300,
+        "{broken} {escaped} {inked} {blank} {refused}"
     );
 }
 
