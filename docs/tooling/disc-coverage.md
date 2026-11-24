@@ -1323,15 +1323,24 @@ The refresh rule:
   a different vintage publishes numbers that describe neither tree. Prefer the
   checkout that holds both.
 
-`scripts/ci/check-progress-metrics-freshness.py` is the warning. It compares the
-tiles' own rendered strings against `port-catalog-baseline.json` - two committed
-files, so it needs no disc, no corpus and no catalog pass, and runs everywhere in
-milliseconds. The pre-commit hook runs it **warn-only**: a contributor without
-the disc cannot clear a failure, so failing them would only teach the bypass.
-`--live` adds the expensive comparison against a real `port-catalog.py` pass for
-a closeout run, and `--strict` turns any mismatch into exit 1.
+`python3 scripts/ci/update-progress-metrics.py --check` is the gate. It
+computes what a refresh would write, writes nothing, and exits 1 when either
+committed file would change. The parts that need no corpus are always
+compared: the verification block in full, the port track's counts against the
+tree's `// PORT:` tags and `port-catalog-baseline.json`, and the per-image
+table's input digests (the comparisons `check-progress-metrics-freshness.py`
+makes, which it runs through that script's `stale_findings`). With the corpora
+present it also recomputes the disc-denominated tracks and, unless
+`--skip-catalog` drops the catalog pass, the catalog tracks and the per-image
+table, figure by figure. The pre-commit hook runs `--check --skip-catalog` (a
+few seconds) and the Repo Gates job the same, where it compares the committed
+inputs only, which is exactly what an added `// PORT:` tag moves. So a lane
+that moves the port count refreshes the JSON in the same change; a contributor
+without the disc cannot, and hands the refresh to a machine that has it.
+`check-progress-metrics-freshness.py` alone still only warns (`--strict`
+fails; `--live` adds a real `port-catalog.py` pass).
 
-Read a warning as "the published number is behind this tree", never as "the
+Read a failure as "the published number is behind this tree", never as "the
 number is wrong": the tiles were correct when they were written, and the drift
 is the interval since.
 

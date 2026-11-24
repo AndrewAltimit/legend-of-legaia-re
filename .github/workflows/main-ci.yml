@@ -272,6 +272,23 @@ jobs:
       - name: Differential coverage ratchet
         run: python3 scripts/ci/differential-coverage.py --check
 
+      # The landing page's metrics are committed build inputs
+      # (progress-metrics.json, image-port-status.json): the site builds with
+      # no disc, so a stale file renders as plausible numbers. `--check` fails
+      # when a refresh would change them. Here it compares what needs no
+      # corpus - the verification block in full, the port track's counts
+      # against the PORT tags and the catalog baseline, the per-image table's
+      # input digests - which is what moves when a PORT tag is added; the hook
+      # adds the corpus tracks. See docs/tooling/ratchet-integrity.md.
+      - name: Landing-page metrics freshness
+        run: python3 scripts/ci/update-progress-metrics.py --check --skip-catalog
+
+      # The retail-compare baseline files the manifest's `resident_patch`
+      # (mod, patched-disc) states under `patched_states`, apart from the
+      # retail ratchet and the site's frame-match tile. Two committed files.
+      - name: Retail-compare baseline lists
+        run: python3 scripts/ci/retail-compare.py --check-split
+
       # Unwaived provenance findings may not grow, and a waiver that matches no
       # finding may not linger. It reads the gitignored dump corpus and the
       # extracted images, so it reports SKIPPED here and has teeth in the hook

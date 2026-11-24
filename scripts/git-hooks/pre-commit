@@ -519,21 +519,28 @@ start_gate 'port provenance ratchet' \
     '[pre-commit] a new unwaived provenance finding (or a stale waiver) -- read it against the disassembly, fix the tag or waive it with what the bytes showed (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)' \
     scripts/ci/check-port-provenance.py --check
 
-# Landing-page metric freshness (warn-only). scripts/ci/progress-metrics.json is
-# a committed BUILD INPUT: the site builds without disc data, so the homepage
-# tiles render whatever was last committed and nothing compares it to the tree.
-# A stale file is invisible -- well-formed JSON, plausible numbers -- and the
-# tiles once showed 840 ported / 0 on the worklist while the ratchet baseline
-# beside them said 847 / 93.
-#
-# Warn, never fail: refreshing the JSON needs the disc and the dump corpus, so a
-# contributor without them could not clear a failure, and a hook that rewrote it
-# would put an unreviewed number on the public site. The comparison itself is
-# between two COMMITTED files, so it costs milliseconds and runs the same with
-# or without disc data -- which is why it is not gated on the corpus the way the
-# ratchets above are.
-start_gate --advisory 'landing-page metric freshness (advisory)' '' \
-    scripts/ci/check-progress-metrics-freshness.py
+# Landing-page metric freshness. scripts/ci/progress-metrics.json and
+# image-port-status.json are committed BUILD INPUTS: the site builds without
+# disc data, so the homepage tiles render whatever was last committed. A stale
+# file is invisible -- well-formed JSON, plausible numbers -- and the tiles once
+# showed 840 ported / 0 on the worklist while the ratchet baseline beside them
+# said 847 / 93. A warning did not stop it recurring every time a lane moved the
+# port count, so this is a gate: `--check` computes what a refresh would write
+# and fails on any difference. `--skip-catalog` keeps it to a few seconds (the
+# catalog figures are still held to the PORT tags and the catalog baseline);
+# without the corpus it compares the committed inputs only, which still catches
+# a moved port count. The hook never rewrites the JSON -- refreshing is
+# `update-progress-metrics.py` on a disc machine, committed deliberately.
+start_gate 'landing-page metric freshness' \
+    '[pre-commit] the landing-page metrics are stale -- run python3 scripts/ci/update-progress-metrics.py and commit both JSON files (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)' \
+    scripts/ci/update-progress-metrics.py --check --skip-catalog
+
+# The retail-compare baseline files patched-disc (mod) states, the manifest's
+# `resident_patch` scenarios, under `patched_states`, apart from the retail
+# ratchet and the site's tile. Two committed files, milliseconds.
+start_gate 'retail-compare baseline lists' \
+    '[pre-commit] a retail-compare baseline row sits in the wrong list for its scenario -- move it (values unchanged) or fix the scenario'"'"'s resident_patch (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)' \
+    scripts/ci/retail-compare.py --check-split
 
 # Shipped-bundle freshness (warn-only, and only when the commit could have
 # invalidated the bundle). site/wasm/ is untracked build output that CI rebuilds

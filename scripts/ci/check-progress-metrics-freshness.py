@@ -46,10 +46,13 @@ compared figure by figure. It is the one block this check can hold exactly.
 
 ## What it deliberately does not do
 
-It never fails a commit, and it never rewrites the JSON. Refreshing is a
-disc-machine operation whose output is committed deliberately
-(`update-progress-metrics.py`), and a hook that silently rewrote a build input
-would put an unreviewed number on the public site.
+It never rewrites the JSON. Refreshing is a disc-machine operation whose
+output is committed deliberately (`update-progress-metrics.py`), and a hook
+that silently rewrote a build input would put an unreviewed number on the
+public site. Run alone it warns (`--strict` fails); the gate is
+`update-progress-metrics.py --check`, which runs these comparisons through
+`stale_findings` and adds the corpus recompute, in the pre-commit hook and the
+Repo Gates job.
 
     python3 scripts/ci/check-progress-metrics-freshness.py
     python3 scripts/ci/check-progress-metrics-freshness.py --live
@@ -147,28 +150,20 @@ def live_catalog():
     }
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--live", action="store_true",
-                    help="also run port-catalog.py (slow) and compare to it")
-    ap.add_argument("--strict", action="store_true",
-                    help="exit 1 on a mismatch instead of warning")
-    args = ap.parse_args()
-
+def stale_findings(live: bool = False) -> list[str] | None:
+    """What no longer matches this tree, one line each; `None` when the two
+    committed files this compares are missing. Shared with
+    `update-progress-metrics.py --check`, which adds the corpus half."""
     if not os.path.exists(METRICS) or not os.path.exists(CATALOG_BASELINE):
-        print("[progress-freshness] SKIPPED - progress-metrics.json and/or "
-              "port-catalog-baseline.json missing; nothing to compare.")
-        return 0
+        return None
 
     metrics = json.load(open(METRICS))
     baseline = json.load(open(CATALOG_BASELINE))
     tr = tracks(metrics)
     port = tr.get("port")
     if port is None:
-        print("[progress-freshness] progress-metrics.json carries no `port` "
-              "track - the landing page renders nothing for it. Run "
-              "scripts/ci/update-progress-metrics.py on a disc machine.")
-        return 1 if args.strict else 0
+        return ["progress-metrics.json carries no `port` track - the landing "
+                "page renders nothing for it"]
 
     shown_ported, shown_worklist = port_track_counts(port)
     base_ported = baseline.get("totals", {}).get("ported")
@@ -211,7 +206,7 @@ def main() -> int:
                 bad.append("verification %s: tiles say %s, this tree's "
                            "declarations give %s" % (f, have.get(f), t.get(f)))
 
-    if args.live:
+    if live:
         if not os.path.isdir(FUNCS):
             print("[progress-freshness] --live needs ghidra/scripts/funcs/; "
                   "the corpus is gitignored and absent here, so only the "
@@ -229,15 +224,30 @@ def main() -> int:
                     bad.append("port worklist: tiles say %d, this tree has %d"
                                % (shown_worklist, cat["worklist"]))
                 wiring = tr.get("wiring")
-                live, denom = wiring_track_counts(wiring or {})
+                shown_live, denom = wiring_track_counts(wiring or {})
                 owed = ((cat["inert"] or 0) - (cat["replaced"] or 0)
                         if cat["inert"] is not None else None)
-                if live is not None and cat["live"] is not None and owed is not None:
+                if shown_live is not None and cat["live"] is not None and owed is not None:
                     want = cat["live"] + owed
-                    if live != cat["live"] or denom != want:
+                    if shown_live != cat["live"] or denom != want:
                         bad.append("wiring: tiles say %d of %d, this tree has "
-                                   "%d of %d" % (live, denom, cat["live"], want))
+                                   "%d of %d" % (shown_live, denom, cat["live"], want))
+    return bad
 
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--live", action="store_true",
+                    help="also run port-catalog.py (slow) and compare to it")
+    ap.add_argument("--strict", action="store_true",
+                    help="exit 1 on a mismatch instead of warning")
+    args = ap.parse_args()
+
+    bad = stale_findings(args.live)
+    if bad is None:
+        print("[progress-freshness] SKIPPED - progress-metrics.json and/or "
+              "port-catalog-baseline.json missing; nothing to compare.")
+        return 0
     if not bad:
         print("[progress-freshness] OK - the landing-page tiles agree with "
               "this tree's PORT tags and %s, and image-port-status.json's "

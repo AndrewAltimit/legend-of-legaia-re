@@ -35,6 +35,8 @@ numbers, because the two families are not comparable:
 Usage:
     python3 scripts/ci/update-progress-metrics.py          # refresh + write
     python3 scripts/ci/update-progress-metrics.py --print  # show, don't write
+    python3 scripts/ci/update-progress-metrics.py --check  # fail if a refresh would change the committed JSON
+    python3 scripts/ci/update-progress-metrics.py --check --skip-catalog  # the same, without the slow catalog pass
     python3 scripts/ci/update-progress-metrics.py \
         --funcs /path/to/checkout/ghidra/scripts/funcs \
         --extracted /path/to/checkout/extracted
@@ -43,6 +45,19 @@ Both corpora are gitignored, so outside the checkout that holds them this
 script has nothing to read and says SKIPPED. `--funcs` / `--extracted` point it
 at another checkout's copies, which is the supported way to compute the figures
 from somewhere else - copying either corpus in would stage Sony bytes.
+
+`--check` is the gate form: it computes what a refresh would write, writes
+nothing, and exits 1 when the committed `progress-metrics.json` or
+`image-port-status.json` differs. Every part that needs no corpus is always
+compared - the verification block in full, and the port track's counts and
+the per-image table's input digests against the tree
+(`check-progress-metrics-freshness.py`'s comparisons) - so a runner without
+the disc still fails a stale port count. Where the corpora are present it
+also recomputes the corpus tracks and the per-image table and compares them
+figure by figure. `--skip-catalog` drops the catalog pass (the `port` /
+`wiring` tracks keep their tag and baseline comparisons, and the per-image
+table its digests, since its `replaced` column needs the pass), which is the
+pre-commit hook's form.
 
 One warning about doing that, because the failure is silent: the disc-coverage
 half pairs the live corpus with **this tree's** committed
@@ -652,6 +667,117 @@ def build(scus, data, cat, verification=None):
     return out
 
 
+def assemble(scus, data, cat, verification, skip_catalog):
+    """The `progress-metrics.json` document a refresh writes."""
+    if skip_catalog and os.path.exists(OUT):
+        prev = json.load(open(OUT))
+        keep = {t["key"]: t for t in prev.get("tracks", [])}
+        out = build(scus, data, None, verification)
+        have = {t["key"] for t in out["tracks"]}
+        for key in ("port", "wiring"):
+            if key in keep and key not in have:
+                out["tracks"].append(keep[key])
+    else:
+        out = build(scus, data, cat, verification)
+    if not verification and os.path.exists(OUT):
+        keep = json.load(open(OUT)).get("verification")
+        if keep:
+            out["verification"] = keep
+
+    order = {"decompilation": 0, "formats": 1, "port": 2, "wiring": 3}
+    out["tracks"].sort(key=lambda t: order.get(t["key"], 99))
+    return out
+
+
+def _differences(what, want, have):
+    """One line per top-level block of `want` that `have` does not match."""
+    if want == have:
+        return []
+    if not isinstance(want, dict) or not isinstance(have, dict):
+        return ["%s: differs" % what]
+    out = []
+    for key in sorted(set(want) | set(have)):
+        a, b = want.get(key), have.get(key)
+        if a == b:
+            continue
+        if isinstance(a, list) and isinstance(b, list) and \
+                all(isinstance(x, dict) and ("key" in x or "name" in x) for x in a + b):
+            ident = lambda x: x.get("key") or x.get("name")
+            wa = {ident(x): x for x in a}
+            hb = {ident(x): x for x in b}
+            for k in sorted(set(wa) | set(hb), key=str):
+                if wa.get(k) == hb.get(k):
+                    continue
+                if k not in hb:
+                    out.append("%s %s/%s: missing from the committed file" % (what, key, k))
+                elif k not in wa:
+                    out.append("%s %s/%s: a refresh would drop it" % (what, key, k))
+                else:
+                    fields = sorted(f for f in set(wa[k]) | set(hb[k])
+                                    if wa[k].get(f) != hb[k].get(f))
+                    shown = ", ".join("%s %r -> %r" % (f, hb[k].get(f), wa[k].get(f))
+                                      for f in fields if not isinstance(wa[k].get(f), (dict, list)))
+                    out.append("%s %s/%s: %s" % (what, key, k, shown or ", ".join(fields)))
+        else:
+            out.append("%s %s: differs" % (what, key))
+    return out
+
+
+def check(args):
+    """`--check`: what a refresh would change, written nowhere. Exit 1 on any."""
+    spec = importlib.util.spec_from_file_location(
+        "progress_freshness",
+        os.path.join(REPO, "scripts", "ci", "check-progress-metrics-freshness.py"))
+    fresh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh)
+    bad = fresh.stale_findings(live=False)
+    if bad is None:
+        print("[progress] --check: progress-metrics.json or "
+              "port-catalog-baseline.json is missing")
+        return 1
+
+    verification = build_verification()
+    if verification is None:
+        bad.append("the differential declarations do not parse, so the "
+                   "verification block cannot be recomputed")
+
+    scus, data = load_disc_coverage(args.funcs, args.extracted)
+    if scus is None:
+        corpus = ("no dump corpus / extracted tree here: compared the committed "
+                  "inputs only (verification block, port counts against the "
+                  "tags and the catalog baseline, per-image input digests)")
+    else:
+        corpus = "recomputed the corpus tracks%s" % (
+            "" if args.skip_catalog else ", the catalog tracks and the per-image table")
+        if not args.skip_catalog:
+            images = build_image_status(args.funcs, args.extracted, with_replaced=True)
+            if images is not None:
+                have = (json.load(open(IMAGE_STATUS_OUT))
+                        if os.path.exists(IMAGE_STATUS_OUT) else {})
+                bad += _differences("image-port-status.json", images, have)
+        cat = None if args.skip_catalog else run_port_catalog(args.funcs)
+        if not args.skip_catalog and (cat is None or cat.get("ported") is None):
+            bad.append("port-catalog.py did not complete; rerun, or pass --skip-catalog")
+        else:
+            want = assemble(scus, data, cat, verification, args.skip_catalog)
+            have = json.load(open(OUT))
+            bad += _differences("progress-metrics.json", want, have)
+
+    if not bad:
+        print("[progress] --check OK - a refresh would write what is committed "
+              "(%s)." % corpus)
+        return 0
+    print("[progress] --check STALE - the landing-page metrics are committed "
+          "build inputs and a refresh would change them:")
+    for line in bad:
+        print("   " + line)
+    print("[progress] (%s)" % corpus)
+    print("[progress] refresh on a machine with the disc and the dump corpus: "
+          "python3 scripts/ci/update-progress-metrics.py, then commit both "
+          "JSON files. See docs/tooling/ratchet-integrity.md#a-build-input-may-not-go-stale.")
+    return 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--print", dest="show", action="store_true")
@@ -667,7 +793,14 @@ def main():
     ap.add_argument("--list-open", nargs="*", metavar="IMAGE", default=None,
                     help="print every open entry (optionally only for the named "
                          "image labels) with its function extent, and write nothing")
+    ap.add_argument("--check", action="store_true",
+                    help="write nothing; exit 1 when a refresh would change the "
+                         "committed JSON (with --skip-catalog: without the slow "
+                         "catalog pass)")
     args = ap.parse_args()
+
+    if args.check:
+        return check(args)
 
     if args.list_open is not None:
         global OPEN_SINK
@@ -716,23 +849,7 @@ def main():
         return 0
 
     cat = None if args.skip_catalog else run_port_catalog(args.funcs)
-    if args.skip_catalog and os.path.exists(OUT):
-        prev = json.load(open(OUT))
-        keep = {t["key"]: t for t in prev.get("tracks", [])}
-        out = build(scus, data, None, verification)
-        have = {t["key"] for t in out["tracks"]}
-        for key in ("port", "wiring"):
-            if key in keep and key not in have:
-                out["tracks"].append(keep[key])
-    else:
-        out = build(scus, data, cat, verification)
-    if not verification and os.path.exists(OUT):
-        keep = json.load(open(OUT)).get("verification")
-        if keep:
-            out["verification"] = keep
-
-    order = {"decompilation": 0, "formats": 1, "port": 2, "wiring": 3}
-    out["tracks"].sort(key=lambda t: order.get(t["key"], 99))
+    out = assemble(scus, data, cat, verification, args.skip_catalog)
 
     text = json.dumps(out, indent=2) + "\n"
     if args.show:
