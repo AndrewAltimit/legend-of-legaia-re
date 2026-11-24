@@ -536,6 +536,8 @@ pub struct FieldFrameFeatures {
     pub morph_vertices: u32,
     /// The player's model, when the scene's table holds it.
     pub player: Option<MeshCost>,
+    /// The player's `+0x42` is raised: its model takes the clip arm.
+    pub player_clipped: bool,
 }
 
 impl World {
@@ -930,6 +932,10 @@ impl World {
             .player_actor_slot
             .is_some_and(|s| self.locomotion.actor_moving.contains(&s));
         f.player = table.player;
+        // The player's model takes the clip arm on its own `+0x42` too
+        // (`CC F8 C2`, `World::field_vm.player_field_42`): the animated
+        // renderer reads the word off whichever actor it draws.
+        f.player_clipped = self.field_vm.player_field_42 != 0;
         f.fog = u32::from(self.fog.live);
         // The quads the last walk left; a closed gate runs no walk.
         f.fog_quads = if self.fog.gate {

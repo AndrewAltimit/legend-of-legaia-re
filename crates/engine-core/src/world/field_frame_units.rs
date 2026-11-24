@@ -194,7 +194,13 @@ const NPC_CYCLES: i64 = 148 + 1297;
 /// walks and clips (`634`), pooled over `garmel`'s Zeto (six objects, `145`
 /// primitives) on four frames of his appearance, from `80696` to `111747`
 /// cycles a frame with the share of edges the clip loop `FUN_80027F00`
-/// crosses.
+/// crosses. A primitive the renderer's `NCLIP` turns away (`bltz` at
+/// `0x8002755C`) costs little and a front face about a thousand, so the
+/// figure holds for a model about half of whose faces face the eye: raising
+/// Vahn's `+0x42` on `rugi_field_card_boot` (a `retail-exec frame-cost
+/// --poke` probe) takes retail's actor passes from `150.7` to `274.0`
+/// hblanks, and the price of the same switch on `rugi`'s player is about
+/// `115`.
 const CLIP_OBJECT_CYCLES: i64 = 919 + 1610 + 600;
 const CLIP_PRIM_CYCLES: i64 = 634;
 /// A placed actor (`1202`), and each of its meshes (`75` and a dispatcher
@@ -222,7 +228,12 @@ const FOG_CULLED_CYCLES: i64 = 149;
 /// The player's model when the scene's table lacks it: one model
 /// actor of `10` objects and `388` primitives at the actor pool's mean
 /// (`136` a primitive), the shape of `stone_field_door_hop`'s only model.
-const PLAYER_CYCLES: i64 = NPC_CYCLES + 10 * NPC_OBJECT_CYCLES + 10 * GROUP_CYCLES + 388 * 136;
+const PLAYER_OBJECTS: i64 = 10;
+const PLAYER_PRIMS: i64 = 388;
+const PLAYER_CYCLES: i64 = NPC_CYCLES
+    + PLAYER_OBJECTS * NPC_OBJECT_CYCLES
+    + PLAYER_OBJECTS * GROUP_CYCLES
+    + PLAYER_PRIMS * 136;
 /// A render-list entry the walk tests (`50..61` cycles, mean `59`).
 const LIST_ENTRY_CYCLES: i64 = 59;
 /// The lists' entries besides the script actors and the parts: the player
@@ -301,13 +312,23 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
             * GROUND_WALK_CELL_CYCLES;
     let actors = 5 * 120
         + (n(f.tick_actors) + n(f.parts) + LIST_FIXED_ENTRIES) * LIST_ENTRY_CYCLES
-        + f.player.map_or(PLAYER_CYCLES, |m| {
-            let k: [u32; 12] = m.kinds.map(u32::from);
-            NPC_CYCLES
-                + i64::from(m.objects) * NPC_OBJECT_CYCLES
-                + i64::from(m.groups) * GROUP_CYCLES
-                + kinds(&k, &ACTOR_PRIM_CYCLES)
-        })
+        + match (f.player, f.player_clipped) {
+            (None, false) => PLAYER_CYCLES,
+            (None, true) => {
+                NPC_CYCLES + PLAYER_OBJECTS * CLIP_OBJECT_CYCLES + PLAYER_PRIMS * CLIP_PRIM_CYCLES
+            }
+            (Some(m), false) => {
+                let k: [u32; 12] = m.kinds.map(u32::from);
+                NPC_CYCLES
+                    + i64::from(m.objects) * NPC_OBJECT_CYCLES
+                    + i64::from(m.groups) * GROUP_CYCLES
+                    + kinds(&k, &ACTOR_PRIM_CYCLES)
+            }
+            (Some(m), true) => {
+                let prims: i64 = m.kinds.iter().map(|&k| i64::from(k)).sum();
+                NPC_CYCLES + i64::from(m.objects) * CLIP_OBJECT_CYCLES + prims * CLIP_PRIM_CYCLES
+            }
+        }
         + n(f.placed_draws) * PLACED_CYCLES
         + n(f.placed_objects) * PLACED_MESH_CYCLES
         + n(f.placed_groups) * GROUP_CYCLES
@@ -448,5 +469,20 @@ mod tests {
             hb(&clipped),
             hb(&plain)
         );
+    }
+
+    /// The player's raised `+0x42` takes the clip arm too: on a retail
+    /// `rugi` state the switch moves the actor passes by `123` hblanks
+    /// (`150.7` to `274.0`); the table-less player's price moves by about
+    /// as much.
+    #[test]
+    fn a_raised_player_prices_the_clip_arm() {
+        let plain = FieldFrameFeatures::default();
+        let raised = FieldFrameFeatures {
+            player_clipped: true,
+            ..plain
+        };
+        let d = derived_field_frame_cost(&raised) - derived_field_frame_cost(&plain);
+        assert!((90..=140).contains(&d), "{d}");
     }
 }

@@ -146,7 +146,9 @@ fn frame(session: &mut NativeSession, binding: &SceneActorBinding) {
 /// landing slot and never the motion-derived walk.
 #[test]
 fn rugi_flies_vahn_in_on_his_scene_clip() {
-    let Some(run) = run_record("rugi", 72, 600) else {
+    // The flight's three raised (`+0x42`) models take the clip arm, priced
+    // at about 720 hblanks a frame under the clip's read: it lands near 740.
+    let Some(run) = run_record("rugi", 72, 1000) else {
         return;
     };
     let flight: Vec<&Sample> = run
