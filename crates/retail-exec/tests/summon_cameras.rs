@@ -876,11 +876,21 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // The band shadow: a world seated off the same records, the
             // band's module half (`World::drive_summon_module_pass`) run on
             // retail's phase beside each pass, every seat compared after it.
+            let scripted = entry == 931 && fallen;
             let mut shadow = summon_shadow(&mut cpu, layout, action, live.then_some(&overlay[..]));
             if let Some(w) = shadow.as_mut()
                 && fallen
             {
                 w.casting.module_group_seats &= !1;
+            }
+            // PROT 0931's fallen runs are a scripted fight (`ctx[+0x287]`):
+            // its arm 29 rolls the wrapper on every living monster
+            // (`0x801F833C..0x801F8548`) where a free fight banishes them.
+            if let Some(w) = shadow.as_mut()
+                && scripted
+            {
+                w.battle_ctx.scripted_fight = 1;
+                w.battle.scripted_fight = true;
             }
             if let (Some(w), Some(s)) = (shadow.as_mut(), stoned) {
                 w.battle.status_effects.apply(
@@ -911,6 +921,9 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             let (mut sm, mut port_sm, mut port_word) = (0x34u8, 0x34u8, 0x78i16);
             if fallen {
                 cpu.mem.wr16(CTX + 0x6D8, 0x78);
+            }
+            if scripted {
+                cpu.mem.wr8(CTX + 0x287, 1);
             }
             for pass in 0..20_000u32 {
                 if fallen {

@@ -414,8 +414,11 @@ impl World {
                         .engine(seat)
                         .and_then(|e| self.actors.get_mut(usize::from(e)))
                         // The engine's shown word is its resting `0` under a
-                        // lowered marker, where retail's is `0x20080200`.
-                        && (a.battle.render_color != 0 || a.battle.render_flag == 0)
+                        // lowered marker, where retail's is `0x20080200`; a
+                        // dead seat's `0` under a lowered marker is the word
+                        // its fade cleared, as Terra's arm `0x14` reads it.
+                        && (a.battle.render_color != 0
+                            || (a.battle.hp != 0 && a.battle.render_flag == 0))
                     {
                         a.battle.anim_rate = AnimRate(2);
                     }
