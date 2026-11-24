@@ -23,7 +23,11 @@
 //! ```text
 //! R  test  entry  image-hash  branches  jump-tables  truncated
 //! B  test  entry  image-hash  branch-pc  mask      (1 = taken, 2 = fell through)
+//! T  test  milliseconds from the first routine noted to the thread's end
 //! ```
+//!
+//! The `T` line is the test's run time, which `scripts/ci/checked-arms.py` uses to
+//! pick the cheapest tests to rerun under a [`branch_flip`](crate::branch_flip).
 //!
 //! No instruction bytes are written, only addresses and a hash.
 //! `scripts/ci/branch-coverage.py` aggregates the file across tests.
@@ -88,6 +92,7 @@ struct Routine {
 struct Table {
     routines: HashMap<(u32, u64), Routine>,
     hits: HashMap<(u32, u32), u8>,
+    started: Option<std::time::Instant>,
 }
 
 impl Drop for Table {
@@ -114,6 +119,9 @@ impl Drop for Table {
                 ));
             }
         }
+        if let Some(t) = self.started {
+            out.push_str(&format!("T\t{name}\t{}\n", t.elapsed().as_millis()));
+        }
         if let Ok(mut f) = f.lock() {
             let _ = f.write_all(out.as_bytes());
         }
@@ -124,7 +132,9 @@ thread_local! {
     static TABLE: RefCell<Table> = RefCell::new(Table::default());
 }
 
-fn hash(body: &[u8]) -> u64 {
+/// The image hash the table names a routine by: FNV-1a over the bytes at
+/// its entry.
+pub(crate) fn image_hash(body: &[u8]) -> u64 {
     body.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
     })
@@ -133,10 +143,15 @@ fn hash(body: &[u8]) -> u64 {
 /// Note the routine at `entry` (whose first bytes are `body`), walking its
 /// control flow the first time this thread sees it.
 pub(crate) fn note_routine(mem: &mut Memory, entry: u32, body: &[u8]) {
-    let key = (entry, hash(body));
+    let key = (entry, image_hash(body));
     if TABLE.with(|t| t.borrow().routines.contains_key(&key)) {
         return;
     }
+    TABLE.with(|t| {
+        t.borrow_mut()
+            .started
+            .get_or_insert_with(std::time::Instant::now);
+    });
     let bad = mem.bad.take();
     let routine = walk(mem, entry);
     mem.bad = bad;

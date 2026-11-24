@@ -20,6 +20,7 @@ use std::collections::HashMap;
 
 pub mod battle_cost;
 pub mod branch_cov;
+pub mod branch_flip;
 pub mod field_units;
 pub mod frame_runner;
 pub mod ledger;
@@ -640,7 +641,14 @@ impl Cpu {
         // Standing on the halt address already is not an arrival.
         let count = count.max(1) + u64::from(pc == halt);
         self.halt = Some((halt, count));
+        let flip = branch_flip::active().is_some();
+        if flip {
+            branch_flip::begin_call();
+        }
         let stop = self.run(pc, budget);
+        if flip {
+            branch_flip::end_call(&stop);
+        }
         self.halt = None;
         if branch_cov::enabled() {
             branch_cov::merge_hits(&mut self.branch_hits);
@@ -677,7 +685,14 @@ impl Cpu {
         if cov {
             branch_cov::note_routine(&mut self.mem, entry, &body);
         }
+        let flip = branch_flip::active().is_some();
+        if flip {
+            branch_flip::begin_call();
+        }
         let stop = self.run(entry, budget);
+        if flip {
+            branch_flip::end_call(&stop);
+        }
         if cov {
             branch_cov::merge_hits(&mut self.branch_hits);
         }
@@ -694,6 +709,7 @@ impl Cpu {
         // tests for an interrupt only there (`branchTest` in `execBlock`).
         let mut after_delay = false;
         let cov = branch_cov::enabled();
+        let flip = branch_flip::active();
         loop {
             if pc == RETURN_SENTINEL {
                 return Stop::Returned;
@@ -802,7 +818,23 @@ impl Cpu {
             let after = next.wrapping_add(4);
             after_delay = next != pc.wrapping_add(4);
             let touched = self.accesses.total();
-            let stepped = self.step(pc, w, next);
+            let mut stepped = self.step(pc, w, next);
+            if let Some(spec) = flip
+                && pc == spec.pc
+                && branch_cov::is_conditional(w)
+                && let Ok(went) = stepped
+            {
+                let bad = self.mem.bad.take();
+                let body = self.mem.read(spec.entry, ledger::BODY_LEN);
+                self.mem.bad = bad;
+                if branch_flip::flips(spec, &body, went.is_some()) {
+                    let simm = (w & 0xFFFF) as u16 as i16 as i32 as u32;
+                    stepped = Ok(match went {
+                        Some(_) => None,
+                        None => Some(next.wrapping_add(simm << 2)),
+                    });
+                }
+            }
             let made = self.accesses.total() - touched;
             self.mem.clock += made;
             if let Some(t) = self.hist_within

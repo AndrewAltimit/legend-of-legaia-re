@@ -24,6 +24,13 @@ branches and notes which way each one went, so
 `scripts/ci/branch-coverage.py` can report how much of each routine the suite
 exercises, not just whether it entered it.
 
+Built with the `branch-flip` feature and run with `PSX_RETAIL_EXEC_FLIP`
+naming one branch of one routine image, `branch_flip` inverts that branch on
+the retail side only, so `scripts/ci/checked-arms.py` can tell which taken
+directions a test's comparison actually sees (a test that still passes did
+not see the arm). See
+[checked arms](../../docs/tooling/retail-kernel-differential.md#checked-arms).
+
 ## Pricing retail code
 
 Each call also counts its data accesses by region (`Cpu::accesses`: RAM,

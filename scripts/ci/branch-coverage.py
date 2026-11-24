@@ -96,6 +96,8 @@ def read(path: Path) -> dict[tuple[str, str], Routine]:
     out: dict[tuple[str, str], Routine] = {}
     for line in path.read_text().splitlines():
         f = line.split("\t")
+        if f[0] not in ("R", "B"):
+            continue  # `T` (a test's run time) is checked-arms.py's
         key = (f[2], f[3])
         if f[0] == "R":
             r = out.setdefault(key, Routine(f[2], int(f[4]), int(f[5]), f[6] == "1"))
