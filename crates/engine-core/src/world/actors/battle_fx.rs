@@ -113,19 +113,19 @@ impl World {
         // the substituted one, so an art's ray burst (code `9`, the purple
         // pool `9` mesh) replaces the plain swing's (code `0`, the red pool
         // `8` twin) - `battle_melee_hit_spark`'s Somersault.
-        // PORT: FUN_801DEA50 (`0x801DF054..0x801DF094`)
-        let art_slot_active = self
+        // (`fx::table_effect_code`).
+        let active_anim = self
             .actors
             .get(usize::from(self.battle_ctx.active_actor))
-            .is_some_and(|a| a.battle.current_anim == ACTION_FX_ART_SLOT);
+            .map_or(0, |a| a.battle.current_anim);
         let mut floor_parts = 0usize;
         for s in &step.spawns {
             if s.direct && fx::seats_floor_part(s.effect) {
                 floor_parts += 1;
             }
             let mut effect = s.effect & !fx::EFFECT_DIRECT_BIT;
-            if !s.direct && effect == 0 && art_slot_active {
-                effect = ACTION_FX_ART_CODE;
+            if !s.direct {
+                effect = fx::table_effect_code(effect, active_anim);
             }
             self.battle.effect_spawns.push(
                 legaia_engine_battle::battle_events::BattleEffectSpawn {
@@ -135,6 +135,7 @@ impl World {
                     at: s.at,
                     facing: script_actor.facing,
                     homing_slot: None,
+                    table_scale: s.table_scale,
                 },
             );
         }

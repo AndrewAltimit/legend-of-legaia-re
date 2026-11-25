@@ -71,23 +71,10 @@ impl World {
                 Some(staged)
             } else {
                 // `FUN_801DEA50`'s table arm: the actor's facing turned half
-                // a circle, the code's base scale times the actor's render
-                // node `+0x72` (`0x801DF140..0x801DF164`,
-                // `BattleActor::render_scale`).
+                // a circle, and the scale the walk carried for the record
+                // (the arm's running `s7`, `table_effect_scale`).
                 let rot = [0, (s.facing as i16).wrapping_add(0x800), 0];
-                let base = crate::world::effects::action_fx_base_scale(s.effect);
-                let scale = match self
-                    .actors
-                    .get(usize::from(s.actor_slot))
-                    .and_then(|a| a.battle.render_scale)
-                {
-                    Some(node) => {
-                        let p = i32::from(base) * i32::from(node);
-                        ((if p < 0 { p + 0xFFF } else { p }) >> 12) as u16
-                    }
-                    None => base,
-                };
-                Some(self.spawn_action_table_effect_posed(s.effect, at, rot, scale))
+                Some(self.spawn_action_table_effect_posed(s.effect, at, rot, s.table_scale))
             };
             out.push(RoutedEffectSpawn {
                 spawn: s,

@@ -161,7 +161,7 @@ impl World {
     /// `(0, actor[+0x46] + 0x800, 0)` - the spawning actor's facing turned
     /// half a circle (`lhu v0,0x46(v0)` / `addiu v0,v0,0x800` /
     /// `sh v0,0x1a(sp)`, the two other angles zeroed) - and the scale is
-    /// the code's base ([`action_fx_base_scale`]) times the actor's
+    /// the code's base (`table_effect_scale`) times the actor's
     /// mesh-header `+0x72` over `0x1000`. The seater `FUN_80021B04` copies
     /// the trio into the render banks `+0x24..+0x28`, `rot[1] & 0xFFF` into
     /// the heading `+0x96` and the scale into `+0x72`. Codes `4..=6` then
@@ -1004,14 +1004,3 @@ impl World {
 /// `4..=6` (`addiu a2,a2,0x5e28` / `0x5e6c` ahead of the two
 /// `jal 0x80050ED4` at `0x801DF210` / `0x801DF228`).
 const ACTION_FX_TWIN_RECORDS: [u32; 2] = [0x801F_5E28, 0x801F_5E6C];
-
-/// The table arm's base spawn scale for an effect code (`li s7,0x1000` at
-/// `0x801DEC74`; `0xC00` for code `4` at `0x801DF0C4`, `0x2000` for code `6`
-/// at `0x801DF0D0`), before the actor's mesh-header `+0x72` scales it.
-pub(crate) fn action_fx_base_scale(effect_id: u8) -> u16 {
-    match effect_id {
-        4 => 0xC00,
-        6 => 0x2000,
-        _ => 0x1000,
-    }
-}

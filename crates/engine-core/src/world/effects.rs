@@ -12,4 +12,3 @@ mod vram_moves;
 
 pub use clut_fx::*;
 pub use effect_pool::*;
-pub(crate) use move_fx::*;

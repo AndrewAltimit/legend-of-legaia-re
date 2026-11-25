@@ -422,6 +422,53 @@ pub fn move_power_record_offset(map: &[u8], action: u8) -> Option<usize> {
     Some(id * MOVE_POWER_STRIDE)
 }
 
+/// The committed anim id (`actor[+0x1D9]`) the table arm's code substitution
+/// keys on - the dynamic art slot the anim commit remaps an art clip onto.
+pub const TABLE_ART_SLOT: u8 = 0x11;
+
+/// The table-form code the spawn uses: code `0` reads as `9` while the
+/// context's **active** actor (`ctx[+0x13]`) has the art slot
+/// [`TABLE_ART_SLOT`] committed in `+0x1D9` (`bnez s1` at `0x801DF05C`,
+/// `bne v1,0x11` at `0x801DF08C`, `li s1,0x9` at `0x801DF094`). Every later
+/// read of the code - the CLUT map, the scale arms, the prototype table -
+/// takes the substituted one.
+///
+/// PORT: FUN_801DEA50 (`0x801DF054..0x801DF094`)
+pub fn table_effect_code(code: u8, active_anim: u8) -> u8 {
+    if code == 0 && active_anim == TABLE_ART_SLOT {
+        9
+    } else {
+        code
+    }
+}
+
+/// The table arm's running spawn scale after one more table-form record
+/// with (substituted) code `code`. The arm keeps it in `s7` for the whole
+/// call: `li s7,0x1000` at `0x801DEC74` runs once ahead of the record loop
+/// (whose back edge, `bnez` at `0x801DF538`, lands at `0x801DEC88`), codes
+/// `4` and `6` reload it with `0xC00` / `0x2000` (`0x801DF0C4` /
+/// `0x801DF0D0`), and every table record multiplies it by the actor's
+/// render-node `+0x72` over `0x1000`, rounded toward zero, and keeps the
+/// product (`mult` at `0x801DF150`, `bgez` / `addiu 0xfff` at `0x801DF158`,
+/// `move s7,a3` at `0x801DF168`). So under a node scale other than unity a
+/// call's second table spawn is scaled twice. The result is what the
+/// prototype seater gets (`a3` of `FUN_80050ED4`, sign-extended from the low
+/// half).
+///
+/// PORT: FUN_801DEA50 (`0x801DF0B8..0x801DF168`, the running table scale)
+pub fn table_effect_scale(code: u8, running: u16, node_scale: u16) -> u16 {
+    let base = match code {
+        4 => 0xC00,
+        6 => 0x2000,
+        _ => running,
+    };
+    let p = i32::from(base as i16) * i32::from(node_scale);
+    ((if p < 0 { p + 0xFFF } else { p }) >> 12) as u16
+}
+
+/// The running table scale's value on entry to a call (`li s7,0x1000`).
+pub const TABLE_SCALE_SEED: u16 = 0x1000;
+
 /// One effect the stepper wants spawned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EffectSpawn {
@@ -435,6 +482,10 @@ pub struct EffectSpawn {
     pub direct: bool,
     /// World-space position the effect is spawned at.
     pub at: (i32, i32, i32),
+    /// The table form's spawn scale ([`table_effect_scale`], the arm's
+    /// running `s7` after this record); [`TABLE_SCALE_SEED`] for the direct
+    /// form, which does not touch it.
+    pub table_scale: u16,
 }
 
 /// What one call of the stepper decided.
@@ -1056,6 +1107,7 @@ pub fn step_effect_script<L: RotationLut>(
     if actor.suppressed || actor.cursor >= MAX_CURSOR {
         return out;
     }
+    let mut running = TABLE_SCALE_SEED;
     while out.cursor < MAX_CURSOR {
         let Some(rec) = EffectRecord::at(block, out.cursor) else {
             break;
@@ -1090,11 +1142,18 @@ pub fn step_effect_script<L: RotationLut>(
             out.homing_band = Some(TargetBand::from_scope(actor.scope));
             out.launch = Some(at);
         } else {
+            let table_scale = if rec.is_direct() {
+                TABLE_SCALE_SEED
+            } else {
+                running = table_effect_scale(rec.effect & !EFFECT_DIRECT_BIT, running, actor.scale);
+                running
+            };
             out.spawns.push(EffectSpawn {
                 cursor: out.cursor,
                 effect: rec.effect,
                 direct: rec.is_direct(),
                 at,
+                table_scale,
             });
         }
         out.cursor += 1;
