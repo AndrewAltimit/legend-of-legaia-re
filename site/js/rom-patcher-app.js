@@ -219,6 +219,43 @@ function cueFor(binName) {
 // rom-patcher-page-controls.js. The page loads all five ahead of this file,
 // page-controls first.
 
+// The disc another page of the site cached (js/rom-cache.js), placed into
+// this page's file input when it is the disc this patcher writes: a Mode 2/2352
+// .bin of the USA release (serial SCUS-94254, read off the image's own
+// SYSTEM.CNF by js/disc-info.js). Anything else - a bare PROT.DAT, an ISO, another
+// region - stays out, and the page waits for a pick as before. A pick made
+// while the check runs wins.
+async function adoptCachedDisc(fileInput, setAdopting) {
+  if (!fileInput || !window.RomCache || !window.DiscInfo || typeof DataTransfer === 'undefined') return;
+  if (fileInput.files && fileInput.files.length) return;
+  const rec = await window.RomCache.get();
+  if (!rec || !rec.blob) return;
+  const blob = rec.blob;
+  const info = await window.DiscInfo.identify({
+    name: rec.name, size: blob.size,
+    read: (off, len) => blob.slice(off, off + len).arrayBuffer().then((ab) => new Uint8Array(ab)),
+  });
+  if (info.mode !== 'bin2352' || info.serial !== 'SCUS-94254') return;
+  if (fileInput.files && fileInput.files.length) return;
+  const file = blob instanceof File && blob.name === rec.name
+    ? blob
+    : new File([blob], rec.name || 'disc.bin', { type: 'application/octet-stream' });
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  fileInput.files = dt.files;
+  setAdopting(true);
+  try {
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+  } finally {
+    setAdopting(false);
+  }
+  const note = document.createElement('span');
+  note.className = 'rom-hint rom-cached-note';
+  note.textContent = 'Using the disc loaded on another page. Pick a file to use a different one.';
+  fileInput.insertAdjacentElement('afterend', note);
+  fileInput.addEventListener('change', () => note.remove(), { once: true });
+}
+
 function init() {
   const fileInput = $('rom-file');
   // Disc-identity panel (js/disc-info.js, a classic script loaded before this
@@ -227,12 +264,14 @@ function init() {
   if (window.DiscInfo) window.DiscInfo.attachInput(fileInput);
   // Share the picked disc with the rest of the site (js/rom-cache.js, a
   // classic script loaded before this module), so the translation workbench
-  // and the viewers open it without a second pick. This page still reads its
-  // own input; the cache is only written, never read, here.
+  // and the viewers open it without a second pick. The page reads its own
+  // input; a disc another page cached is placed into that input at the end of
+  // init (`adoptCachedDisc`), and that placement does not write it back.
+  let adoptingCached = false;
   if (fileInput && window.RomCache) {
     fileInput.addEventListener('change', () => {
       const f = fileInput.files && fileInput.files[0];
-      if (f) window.RomCache.put(f).catch(() => {});
+      if (f && !adoptingCached) window.RomCache.put(f).catch(() => {});
     });
   }
   const seedInput = $('rom-seed');
@@ -826,6 +865,13 @@ function init() {
   });
 
   syncDependents();
+
+  // Every reader of the disc (the run button, the table editors, the texture
+  // panel, the identity panel) reads `fileInput` or its `change`, so the
+  // cached disc goes into the input itself, after all of them are wired.
+  adoptCachedDisc(fileInput, (on) => { adoptingCached = on; }).catch((e) => {
+    console.warn('rom-patcher: cached disc not used -', e);
+  });
 
   runBtn.addEventListener('click', async () => {
     const file = fileInput.files && fileInput.files[0];
