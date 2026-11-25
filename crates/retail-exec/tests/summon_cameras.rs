@@ -335,6 +335,8 @@ const VIBRATION_OFF: u32 = 0x8008_45C8;
 const SPAWN_POOLED: u32 = 0x8005_0ED4;
 const PARTS: u32 = 0x8016_0000;
 const PUERA_CRYSTALS: u32 = 0x801F_9FE8;
+/// PROT 0919's twenty eye-part handles, four records an eye.
+const SPOON_EYES: u32 = 0x801F_8E6C;
 
 /// A summon's spell id: PROT 0914 casts `0x8C`, one id an image up.
 fn action_of(entry: u32) -> u8 {
@@ -620,6 +622,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     let mut band_passes = 0usize;
     let mut whirl_passes = 0usize;
     let mut gimard_far_passes = 0usize;
+    let (mut spoon_eyes, mut spoon_signs) = (0usize, 0u8);
     let mut live_runs = 0usize;
     let mut live_spirit = 0usize;
     let mut live_xp = 0usize;
@@ -803,7 +806,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 log.borrow_mut()
                     .push((r.r[A2], trio(m, r.r[A0]), trio(m, r.r[A1])));
                 r.r[V0] = 0;
-                if matches!(entry, 918 | 922 | 933) {
+                if matches!(entry, 918 | 919 | 922 | 933) {
                     let at = next.get();
                     next.set(at + 0x80);
                     for o in (0..0x80).step_by(4) {
@@ -945,6 +948,14 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 creature_in_range: Some(true),
                 ..ModuleCamState::default()
             };
+            // PROT 0919's caster turned off the axis, so the creature the
+            // installer stands on it faces an angle with both a sine and a
+            // cosine (its eye parts, `0x801F7164..0x801F76F0`).
+            let spoon_facing = (entry == 919)
+                .then(|| (0x800 + [0x123i32, -0x2B1, 0x3C7, -0x099][usize::from(step) % 4]) as u16);
+            if let Some(f) = spoon_facing {
+                cpu.mem.wr16(ACTOR + layout.caster * STRIDE + 0x46, f);
+            }
             let caster_seat = seat_at(&mut cpu.mem, layout.caster, false);
             let victim = if code < 8 {
                 u32::from(code)
@@ -988,6 +999,9 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 cpu.mem.wr8(FORMATION + victim - 3, id);
             }
             let mut shadow = summon_shadow(&mut cpu, layout, action, live.then_some(&overlay[..]));
+            if let (Some(f), Some(w)) = (spoon_facing, shadow.as_mut()) {
+                w.actors[layout.caster as usize].battle.facing_angle = f;
+            }
             if let (Some(id), Some(w)) = (set_back, shadow.as_mut()) {
                 w.actors[victim as usize].battle_monster_id = Some(u16::from(id));
             }
@@ -1053,6 +1067,26 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // creature resident.
             if entry == 903 {
                 cpu.mem.wr32(0x8007_BDB0, u32::MAX);
+            }
+            // PROT 0919's eye poses: the battle context's five pose objects
+            // `ctx[+0x6F4 + 12 * eye]` (x / y / z), which arms 4..7 stand the
+            // eye parts on, offsets of both signs keyed on the run.
+            let spoon_poses: [[i16; 3]; 5] = std::array::from_fn(|eye| {
+                let k =
+                    (eye as i32 + 1) * 0x97 + i32::from(step) * 0x3B + layout.caster as i32 * 0x51;
+                [
+                    ((k * 7) % 0x500 - 0x280) as i16,
+                    ((k * 3) % 0x300 - 0x200) as i16,
+                    ((k * 11) % 0x600 - 0x300) as i16,
+                ]
+            });
+            if entry == 919 {
+                for (eye, p) in spoon_poses.iter().enumerate() {
+                    for (o, v) in p.iter().enumerate() {
+                        cpu.mem
+                            .wr16(CTX + 0x6F4 + 12 * eye as u32 + 2 * o as u32, *v as u16);
+                    }
+                }
             }
             let whirls = entry == 933;
             let mut whirl_retired = [false; 2];
@@ -1734,6 +1768,38 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         ));
                     }
                 }
+                // PROT 0919's eye parts against `spoon_eye_seat` on the
+                // creature as the pass leaves it: retail's handles at
+                // `0x801F8E6C`, four records an eye.
+                if entry == 919 && (4..=7).contains(&phase) {
+                    let c = ACTOR + CREATURE * STRIDE;
+                    let (cx, cz, f) = (
+                        cpu.mem.rd16(c + 0x34) as i16,
+                        cpu.mem.rd16(c + 0x38) as i16,
+                        cpu.mem.rd16(c + 0x46),
+                    );
+                    for (eye, pose) in spoon_poses.iter().enumerate() {
+                        let want = cam::spoon_eye_seat(cx, cz, f, *pose, phase, eye);
+                        for r in 0..4u32 {
+                            let h = cpu.mem.rd32(SPOON_EYES + 4 * (eye as u32 * 4 + r));
+                            if h == 0 {
+                                continue;
+                            }
+                            let got = trio(&mut cpu.mem, h + 0x14);
+                            spoon_eyes += 1;
+                            spoon_signs |= u8::from(pose[0] < 0)
+                                | u8::from(pose[2] < 0) << 1
+                                | u8::from(pose[0] > 0) << 2
+                                | u8::from(pose[2] > 0) << 3;
+                            if got != want {
+                                shadow_failures.push(format!(
+                                    "PROT 0919 caster {} of {} pass {pass} arm {phase:#x}: eye {eye} record {r} retail {got:x?} port {want:x?}",
+                                    layout.caster, layout.monsters
+                                ));
+                            }
+                        }
+                    }
+                }
                 // PROT 0933's whirls, against the shadow's scene parts: the
                 // pass's `+0x7A += step`, `+0x16 += 4 * step` and the retire
                 // (`+0x10 | 8`) of a part under level `0xA01`, while the part
@@ -2347,6 +2413,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     assert!(
         whirl_passes >= 100,
         "PROT 0933: {whirl_passes} whirl passes"
+    );
+    assert!(
+        spoon_eyes >= 1000 && spoon_signs == 0xF,
+        "PROT 0919: {spoon_eyes} eye parts compared, signs {spoon_signs:#x}"
     );
     assert!(
         gimard_far_passes >= 100,

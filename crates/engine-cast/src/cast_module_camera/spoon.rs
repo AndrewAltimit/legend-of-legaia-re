@@ -78,6 +78,37 @@ const SPOON_EYE_SPAWNS: [ModuleSpawn; 20] = {
     out
 };
 
+/// Where PROT 0919 stands eye `eye`'s parts on a pass of arm `phase` (4..=7):
+/// the creature's ground pair `(cx, cz)` plus the eye's pose offset `pose`
+/// (the battle context's pose objects `ctx[+0x6F4 + 12 * eye]`, x / y / z
+/// halfwords) turned by the creature's facing `f`,
+/// `x = cx + sin(f) * z / d + cos(0xFFF - f) * x / d`,
+/// `z = cz + sin(0xFFF - f) * x / d + cos(f) * z / d`, each product cut
+/// toward zero on its own (`bgez` / `addiu 0xFFF` / `sra 0xC`), `d = 0x1000`,
+/// or `0x1400` for arm 7's last four eyes; the height is the pose's plus `8`
+/// (arm 7: the first eye's plus `0x20`, the last two's less `0x18`).
+/// Arms 4..6 at `0x801F7164..0x801F72A0`, `0x801F7388..0x801F7480`,
+/// `0x801F760C..0x801F76F0`.
+pub fn spoon_eye_seat(cx: i16, cz: i16, f: u16, pose: [i16; 3], phase: u8, eye: usize) -> [i16; 3] {
+    let div = if phase == 7 && eye != 0 {
+        0x1400
+    } else {
+        0x1000
+    };
+    let f = f & 0xFFF;
+    let (sin_f, cos_f) = legaia_engine_system::trig::trig12(f);
+    let (sin_b, cos_b) = legaia_engine_system::trig::trig12(0xFFF - f);
+    let (px, py, pz) = (i32::from(pose[0]), i32::from(pose[1]), i32::from(pose[2]));
+    let x = i32::from(cx) + i32::from(sin_f) * pz / div + i32::from(cos_b) * px / div;
+    let z = i32::from(cz) + i32::from(sin_b) * px / div + i32::from(cos_f) * pz / div;
+    let y = match (phase, eye) {
+        (7, 0) => py + 0x20,
+        (7, 3..) => py + 8 - 0x20,
+        _ => py + 8,
+    };
+    [x as i16, y as i16, z as i16]
+}
+
 /// PROT 0919's director. `c` is the creature seat, `f` its heading, `P` the
 /// frame product a tick.
 ///
