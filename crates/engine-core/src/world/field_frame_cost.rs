@@ -533,6 +533,13 @@ pub struct FieldFrameFeatures {
     pub player_moving: bool,
     /// The live move-VM parts on draw kind `4` (the sprite emitter).
     pub sprite_parts: u32,
+    /// Of [`Self::sprite_parts`]: those on the default arm (`+0x9E & 0x6000`
+    /// clear), and the packets their builds write
+    /// (`effect_default_arm::default_arm_packet_count`).
+    pub default_arm_parts: u32,
+    pub default_arm_packets: u32,
+    /// Of [`Self::default_arm_packets`]: those built under a texture mode.
+    pub default_arm_textured_packets: u32,
     /// The draws' morph substitution: `FUN_8001C604` calls, the vertices
     /// they copy, and the vertices `FUN_8005B038` blends.
     pub morph_calls: u32,
@@ -1031,6 +1038,17 @@ impl World {
             .iter()
             .filter(|p| !p.finished && p.state.move_substate == 4)
             .count() as u32;
+        for p in self.ambient.fx.iter().filter(|p| {
+            !p.finished && legaia_engine_effects::effect_default_arm::is_default_arm(&p.state)
+        }) {
+            let (n, textured) =
+                legaia_engine_effects::effect_default_arm::default_arm_packet_count(&p.state);
+            f.default_arm_parts += 1;
+            f.default_arm_packets += n;
+            if textured {
+                f.default_arm_textured_packets += n;
+            }
+        }
         // The CLUT-cell cyclers that upload on this frame's tick: the arm runs
         // `FUN_80019D50` on a part whose gate `+0x9C` already reads past `1`
         // (the tick has not run yet, so the gate is the last tick's).

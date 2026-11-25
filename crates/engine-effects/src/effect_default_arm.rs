@@ -982,6 +982,30 @@ pub fn default_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMes
     (!mesh.indices.is_empty()).then_some(mesh)
 }
 
+/// How many packets the node's default-arm build writes (`0` off the default
+/// arm or on a shape `>= 8`) - the quads the model draw then dispatches - and
+/// whether the build ran under a texture mode (shape `0` with `mode >> 8`
+/// non-zero, which splits each quad four ways and maps the node's UV
+/// rectangle). The field frame-cost model prices the node by them.
+// REF: FUN_80028158
+pub fn default_arm_packet_count(s: &ActorState) -> (u32, bool) {
+    let Some((mode, packed, src)) = call_args(s) else {
+        return (0, false);
+    };
+    let textured = (mode >> 3) & 0xF == 0 && mode >> 8 != 0;
+    let n = build(
+        0x8000_0000 + SCRATCH_OFFSET,
+        mode,
+        packed,
+        &src,
+        &crate::effect_ribbon::RetailTrig,
+        bios_rand(s.draw_rand_seed),
+        0,
+    )
+    .map_or(0, |b| decode(&b).packets.len() as u32);
+    (n, textured)
+}
+
 /// How many `rand()` words the node's default-arm build draws: three a column
 /// on the jittered shapes `4` / `5` (`0x800289F4`, `0x80028A78`,
 /// `0x80028AA4`), none on any other. The words a frame's draw takes from the
@@ -1419,5 +1443,28 @@ mod tests {
         assert_eq!(d.mesh.indices.len(), 10 * 6);
         s.field_9e = 0x4000;
         assert!(default_arm_draw(&s).is_none());
+    }
+
+    /// `kor5` `P2[5]`'s portal rings: a 32-column ring writes 32 packets,
+    /// and the same ring under a texture mode 128 (each quad split four ways).
+    #[test]
+    fn a_ring_writes_a_packet_a_column_and_four_textured() {
+        let mut s = ActorState {
+            move_substate: DRAW_KIND_MULTI,
+            field_9e: 0,
+            field_72: 1600,
+            field_74: 0xC900_0000,
+            ..Default::default()
+        };
+        s.set_actor_u16(0x9C, 32);
+        s.set_actor_u16(0xB4, 294);
+        s.set_actor_u16(0xB6, 294);
+        s.set_actor_u16(0xBC, 0x1000);
+        s.set_actor_u16(0xBE, 0x1000);
+        assert_eq!(default_arm_packet_count(&s), (32, false));
+        s.field_9e = 0x100;
+        assert_eq!(default_arm_packet_count(&s), (128, true));
+        s.field_9e = 0x4000;
+        assert_eq!(default_arm_packet_count(&s), (0, false), "the sprite arm");
     }
 }

@@ -225,6 +225,17 @@ const MORPH_VERTEX_CYCLES: i64 = 61;
 /// actor pass: `3300` drawn, `705` off screen, `3071` at
 /// `uru2_field_door_hop`'s `62` drawn of `68`.
 const SPRITE_PART_CYCLES: i64 = 3071;
+/// A move-VM part on the default arm (`+0x9E & 0x6000` clear), priced by the
+/// packets its build `FUN_80028158` writes and the model draw dispatches.
+/// Per actor on retail's draw walk (`retail-exec frame-cost` marks at
+/// `0x8001AE60`): `rugi` `P2[72]`'s plain rings cost `17063` (24 columns),
+/// `21914..22057` (32) and `24370` (36), `2450` a part and `609` a packet;
+/// `kor5` `P2[5]`'s textured 32-column rings (`128` packets, each quad split
+/// four ways) `95072..95215`, `724` a packet. [`SPRITE_PART_CYCLES`] keeps
+/// the sprite arm.
+const DEFAULT_ARM_PART_CYCLES: i64 = 2450;
+const DEFAULT_ARM_PACKET_CYCLES: i64 = 609;
+const DEFAULT_ARM_TEXTURED_PACKET_CYCLES: i64 = 724;
 /// A fog record, its half-sheets kept (`233`) and culled (`149`); each
 /// record emits two.
 const FOG_RECORD_CYCLES: i64 = 655;
@@ -259,6 +270,10 @@ const TICK_PLAYER_STILL_CYCLES: i64 = 5_071;
 const TICK_PLAYER_MOVING_CYCLES: i64 = 31_115;
 const TICK_SYSTEM_CYCLES: i64 = 12_300;
 const TICK_SPRITE_PART_CYCLES: i64 = 1_475;
+/// A default-arm part's tick (draw kind `4`, `+0x9E & 0x6000` clear):
+/// `782..894` over `kor5` `P2[5]`'s and `rugi` `P2[72]`'s rings
+/// (`retail-exec actor-ticks`).
+const TICK_DEFAULT_ARM_PART_CYCLES: i64 = 870;
 const TICK_PART_CYCLES: i64 = 2_243;
 
 /// Fitted, not derived: the frame driver's work outside the priced passes
@@ -361,7 +376,11 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + n(f.npc_clip_objects) * CLIP_OBJECT_CYCLES
         + n(f.npc_clip_prims) * CLIP_PRIM_CYCLES
         + n(f.npc_clip_kept_prims) * CLIP_KEPT_PRIM_CYCLES
-        + n(f.sprite_parts) * SPRITE_PART_CYCLES
+        + n(f.sprite_parts).saturating_sub(n(f.default_arm_parts)) * SPRITE_PART_CYCLES
+        + n(f.default_arm_parts) * DEFAULT_ARM_PART_CYCLES
+        + n(f.default_arm_packets).saturating_sub(n(f.default_arm_textured_packets))
+            * DEFAULT_ARM_PACKET_CYCLES
+        + n(f.default_arm_textured_packets) * DEFAULT_ARM_TEXTURED_PACKET_CYCLES
         + n(f.morph_calls) * MORPH_CALL_CYCLES
         + n(f.morph_copied) * MORPH_COPY_CYCLES
         + n(f.morph_vertices) * MORPH_VERTEX_CYCLES;
@@ -374,7 +393,8 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         TICK_PLAYER_STILL_CYCLES
     } + n(f.tick_actors) * TICK_ACTOR_CYCLES
         + TICK_SYSTEM_CYCLES
-        + n(f.sprite_parts) * TICK_SPRITE_PART_CYCLES
+        + n(f.sprite_parts).saturating_sub(n(f.default_arm_parts)) * TICK_SPRITE_PART_CYCLES
+        + n(f.default_arm_parts) * TICK_DEFAULT_ARM_PART_CYCLES
         + n(f.parts).saturating_sub(n(f.sprite_parts)) * TICK_PART_CYCLES;
     let cycles = decoration + ground + actors + fog + tick;
     // The cyclers' measured terms, in 1/1024 hblank.
@@ -530,5 +550,25 @@ mod tests {
         };
         let d = derived_field_frame_cost(&through) - derived_field_frame_cost(&out);
         assert!((100..=125).contains(&d), "{d}");
+    }
+
+    /// `kor5` `P2[5]`'s five portal rings (two textured, 128 packets each;
+    /// three plain, 32 each) cost retail `258139` cycles in the actor pass,
+    /// where the flat sprite price had them at `15355`.
+    #[test]
+    fn default_arm_rings_price_by_their_packets() {
+        let flat = FieldFrameFeatures {
+            sprite_parts: 5,
+            ..FieldFrameFeatures::default()
+        };
+        let rings = FieldFrameFeatures {
+            default_arm_parts: 5,
+            default_arm_packets: 2 * 128 + 3 * 32,
+            default_arm_textured_packets: 2 * 128,
+            ..flat
+        };
+        let cycles = (derived_field_frame_cost(&rings) - derived_field_frame_cost(&flat)) * 2146
+            + 5 * SPRITE_PART_CYCLES as i32;
+        assert!((240_000..=275_000).contains(&cycles), "{cycles}");
     }
 }

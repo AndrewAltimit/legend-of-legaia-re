@@ -1598,13 +1598,17 @@ pub fn field_cost_table(
     let clamp16 = |v: u32| v.min(u32::from(u16::MAX)) as u16;
     // What one mesh hands the prim dispatcher: objects, groups and
     // primitives by leaf kind (`flags >> 1`, kinds `8..=19`).
-    let mesh_of = |tmd: &legaia_tmd::Tmd, raw: &[u8]| {
+    // `live` caps the objects the draw walks: a party head's list carries
+    // its first `PARTY_LIVE_GROUPS`, the two equipment templates past them
+    // never drawn.
+    let mesh_of = |tmd: &legaia_tmd::Tmd, raw: &[u8], live: usize| {
+        let objects = &tmd.objects[..tmd.objects.len().min(live)];
         let mut m = legaia_engine_core::world::field_frame_cost::MeshCost {
-            objects: clamp16(tmd.objects.len() as u32),
-            verts: clamp16(tmd.objects.iter().map(|o| o.vertices.len() as u32).sum()),
+            objects: clamp16(objects.len() as u32),
+            verts: clamp16(objects.iter().map(|o| o.vertices.len() as u32).sum()),
             ..Default::default()
         };
-        for o in &tmd.objects {
+        for o in objects {
             for g in legaia_tmd::legaia_prims::iter_groups_lenient(
                 raw,
                 o.primitives_byte_offset,
@@ -1622,7 +1626,16 @@ pub fn field_cost_table(
     let mesh = |ti: usize| {
         res.tmds
             .get(ti)
-            .map_or_else(Default::default, |t| mesh_of(&t.tmd, &t.raw))
+            .map_or_else(Default::default, |t| mesh_of(&t.tmd, &t.raw, usize::MAX))
+    };
+    // The party heads' live object count (`FUN_8001E890` caps the group
+    // count of slots `0..=2` at `10`; the TMDs ship `nobj = 12`).
+    let live = |i: usize| {
+        if i < legaia_actor_formats::character_pack::equipment_swap::ACTIVE_PARTY_SLOTS.len() {
+            legaia_actor_formats::character_pack::PARTY_LIVE_GROUPS
+        } else {
+            usize::MAX
+        }
     };
     // A party / savepoint head from PROT 0874 \u{a7}0 (model `0xF0 + i`), the
     // player's model at `0xF0`.
@@ -1630,7 +1643,7 @@ pub fn field_cost_table(
         head_pool
             .get(i)
             .and_then(|g| g.as_ref())
-            .map(|g| mesh_of(&g.tmd, &g.raw))
+            .map(|g| mesh_of(&g.tmd, &g.raw, live(i)))
     };
     // The primitives of a mesh's first `i + 1` objects, at `[i]`.
     let prims_through = |tmd: &legaia_tmd::Tmd| {
