@@ -1959,6 +1959,11 @@ Water Crystals hides the monster row by its count, a fifth monster at seat 7 inc
 (`0x801F6D98..0x801F6E04`), and its arm 5 lets a fallen victim through on clip `8` or once its
 prim word `+0x04` reads `0` (`0x801F7460..0x801F7478`, `CaptureVictimSettle::RestOrFaded`).
 
+Kemaro grows in on a spin: its seat leaves the creature at node scale `0`, and arm 6 adds
+`4 * scalar * step` a pass up to `0x1000`, the facing six times the scale. Its arm `0x12` hit
+stages no clip, a kill's knockdown included, so the victim stays frozen on its flinch until
+arm `0x13`; in a scripted fight that arm lays a killed victim in front of the caster.
+
 Gimard's walk-in hit (arm 11) skips a Stoned victim, as the hit loops in `STONE_SKIPPING_HITS` do
 (`0x801F7494..0x801F749C`): no roll, no reaction and no turn onto the creature. Its arm 4 sinks the
 creature by the pass's whole `step * scalar` before the gate, so the arm's leaving tick owes the rest of

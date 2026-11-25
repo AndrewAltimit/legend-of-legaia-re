@@ -272,3 +272,52 @@ image = "8de763d58af1724c"
 range = "0x801CF968..0x801CF968"
 verdict = "unported"
 reason = "PROT 0970's context init starts the slice cursor on the frame rect `ctx+0x28` names (0x801CF960..0x801CF984): on a residency's first movie the toggle is reset to 0, and only a later movie can keep the other rect, which the port's whole-context init does not model (see 0x801CF8FC)."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6CCC..0x801F6CCC"
+verdict = "unreachable"
+reason = "PROT 0918's prologue loads its victim only for a seat target code (`sltiu 8` / `beq` at 0x801F6CC8..0x801F6CCC). Kemaro strikes one monster, so the cast reaches the module with the caster's `+0x1DD` on that monster's seat and never on a group code 8 or 9."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7138..0x801F718C"
+verdict = "unreachable"
+reason = "PROT 0918 arm 4's step of the part `0x801F92C4` holds: the word's one store is arm 0's zero (`sw zero,-0x6d3c` at 0x801F6EA8), and the image holds zero there, so the `beq a0,zero` at 0x801F7138 is always taken and the `slti -0x800` clamp behind it never runs. The handles the module keeps sit at `0x801F92C8..0x801F92D4`."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F765C..0x801F765C"
+verdict = "unreachable"
+reason = "PROT 0918 arm 8's height: the rounding fix-up of `sin(4 * word) / 4` (`lh` off the sine table at 0x801F7650). The arm reads the word only once it is at most `scalar << 6` (0x801F7634), 0x200 at the battle's speed scalar 8, and holds while it is positive, so the angle `4 * word` stays in `(0, 0x800]`, where the sine is never negative."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7944..0x801F7944"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`, `mult` at 0x801F792C). Both bytes are unsigned, so the product is never negative and the fix-up `addiu a1,a1,0x7` never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7F00..0x801F7F44"
+verdict = "unreachable"
+reason = "PROT 0918 arm 0xE's rounding fix-ups of `ctx[+0x6D0] / 8` (0x801F7F00, 0x801F7F24, 0x801F7F44). The arm opens on the target-size framing `FUN_801F0348` (`jal` at 0x801F7EA4), which stores the word clamped to 0xC00..0x1400 (`camera_height_for_frame`), so it is never negative."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F82B0..0x801F82B0"
+verdict = "unreachable"
+reason = "PROT 0918 arm 16's rounding fix-up of `ctx[+0x6D0] / 4` (0x801F82A8..0x801F82B8): the word arm 0xE's framing stored, at least 0xC00 (see 0x801F7F00), and nothing in arms 0xE..0x10 writes it."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F86A0..0x801F86A0"
+verdict = "unreachable"
+reason = "PROT 0918 arm 0x12's rounding fix-up of `ctx[+0x6D0] / 8` (0x801F8698..0x801F86A8): the word arm 0xE's framing stored, at least 0xC00 (see 0x801F7F00)."

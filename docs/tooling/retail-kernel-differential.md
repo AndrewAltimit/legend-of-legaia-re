@@ -1389,6 +1389,22 @@ leaves on owes the rest of its pass's sink. And arm 11 skips a Stoned victim (`a
 `0x801F7494..0x801F749C`): no roll, no reaction and no turn onto the creature, where the host's fold struck it and
 turned it. Gimard now sits in `STONE_SKIPPING_HITS`.
 
+The summon walk runs Kemaro (PROT 0918) as a paced director too. Its part handles are real, so the spear's
+`+0x16` that arm `0x11` frames on is the part's own, and its arm `0xE` framing call `FUN_801F0348` runs live,
+since the depth it stores is what arm `0x12` and the shots after it read. It found five defects:
+
+- The creature grows in. Arm 4's seat leaves the node scale `+0x72` at `0` (`0x801F7204`), and arm 6 adds
+  `4 * scalar * step` a pass, clamped to `0x1000` (`0x801F7328..0x801F73B0`); the port drew it full size.
+- Arm 13 reads its word once a pass, ahead of the pass's drain (`0x801F7C2C`, drain at `0x801F7DA0`). Its spawns
+  and its creature walk start on the pass that opens at or under `scalar << 5`, and the walk steps the whole pass,
+  the leaving pass's too. The port started a pass early, ended a pass short, and spawned the records again on the
+  leaving tick.
+- Arm 8's height and pitch read the same opening word at every frame step.
+- Arm `0x12`'s hit stages no clip, a kill's knockdown included (`0x801F87A4..0x801F8834`), where the fold staged
+  the knockdown (`module_fold_unstaged`).
+- Arm `0x12` stands monsters `0x4B` and `0xB3` at `z = -0x600` (`0x801F86B8..0x801F86E0`). In a scripted fight,
+  arm `0x13` lays a victim the spear killed half a unit in front of the caster (`0x801F89BC..0x801F8A48`).
+
 The command prompts (`command_prompts`) also compare the battle tick's idle orbit at frame steps 1 to 4: on the
 round prompt, the flee confirm and the commit confirm its prologue turns the shared yaw `0x8007B792` by `2 * step`
 (`0x801D078C..0x801D07CC`), the turn `BattleCamera`'s Menu phase takes over the same pass. The ring and the
