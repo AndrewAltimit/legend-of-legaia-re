@@ -11,7 +11,7 @@
 use legaia_engine_session::run_rules::{
     BossRushHostStep, RunRulesStep, SeedKey, boss_rush_screen_input, boss_rush_screen_up,
     boss_rush_step_on, open_run_rules_screen, seed_editor_key, seed_editor_open,
-    seed_editor_set_text, set_run_rules_seed, step_run_rules_screen, tap_run_rules_screen,
+    seed_editor_set_text, step_run_rules_screen, tap_run_rules_screen,
 };
 use legaia_render_kernels::screen_prim::ScreenPrim;
 use wasm_bindgen::prelude::*;
@@ -55,13 +55,6 @@ impl LegaiaRuntime {
                 session.stage_run_rules(rules, source.map(|s| *s));
                 "start".to_string()
             }
-        }
-    }
-
-    /// Type a randomizer seed into the open rules screen.
-    pub fn play_run_rules_set_seed(&mut self, seed: &str) {
-        if let Some(h) = self.scene_host.host_mut() {
-            set_run_rules_seed(&mut h.world, seed);
         }
     }
 
