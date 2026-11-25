@@ -69,6 +69,9 @@ const TENSION: u32 = 0x801D_9168;
 const DEPTH: u32 = 0x801D_9298;
 const MODE: u32 = 0x801D_926C;
 const RECORD: u32 = 0x801D_927C;
+/// The camera rotation trio's pitch and yaw (`_DAT_8007B790` / `_DAT_8007B792`).
+const CAM_PITCH: u32 = 0x8007_B790;
+const CAM_YAW: u32 = 0x8007_B792;
 const READOUT: u32 = 0x801D_9280;
 const ANGLER_PTR: u32 = 0x801D_9284;
 const ROD_PTR: u32 = 0x801D_928C;
@@ -211,6 +214,7 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
     };
     let (mut on_water, mut drifted) = (0u32, 0u32);
     let mut lift_capped = 0u32;
+    let mut camera_frames = 0u32;
     let mut swapped = 0u32;
     let installs = Rc::new(Cell::new(None::<(u32, u32)>));
     {
@@ -441,6 +445,11 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             if cpu.mem.rd32(SWING) != 0x14 {
                 assert_eq!(cpu.call(ROD_TICK, &[ROD_ACTOR]), Stop::Returned);
             }
+            // What the in-water camera reads, as the lure tick finds it.
+            let pitch_before = cpu.mem.rd16(CAM_PITCH) as i16;
+            let record_before = cpu.mem.rd32(RECORD) as i32;
+            let points =
+                [SPAWN + 4, SPAWN, TRACKED + 4, TRACKED].map(|a| i32::from(cpu.mem.rd16(a) as i16));
             assert_eq!(
                 cpu.call(LURE_TICK, &[LURE]),
                 Stop::Returned,
@@ -448,6 +457,30 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
                 cpu.calls
             );
             lift_capped += u32::from(cpu.mem.rd32(LIFT) == 0x1000);
+            // The in-water camera (`0x801D29E8..0x801D2A80`, `0x801D3084..
+            // 0x801D3158`) against `VenueCamera::in_water`, from the lead's
+            // facing, the bearing from the cast origin to the tracked lure,
+            // the line record and the frame step retail read, and the pitch
+            // the frame started on.
+            if state_before == 2 && cpu.mem.rd16(LURE + 0x22) == 2 {
+                let lead = cpu.mem.rd32(ANGLER_PTR);
+                let facing = cpu.mem.rd16(lead + 0x26) as i16;
+                let heading = legaia_engine_field::camera_zone::bearing(
+                    points[0], points[1], points[2], points[3],
+                ) & 0xFFF;
+                let mut cam = legaia_engine_fishing::fishing_actors::VenueCamera::default();
+                cam.rot[0] = pitch_before;
+                cam.in_water(facing, heading, record_before, fs);
+                let retail_cam = (cpu.mem.rd16(CAM_PITCH) as i16, cpu.mem.rd16(CAM_YAW) as i16);
+                if retail_cam != (cam.rot[0], cam.rot[1]) {
+                    failures.push(format!(
+                        "scenario {scenario} frame {frame}: in-water camera (pitch, yaw) retail \
+                         {retail_cam:?} port {:?}",
+                        (cam.rot[0], cam.rot[1])
+                    ));
+                }
+                camera_frames += 1;
+            }
             // The strike's music swap (`0x801D360C..0x801D3664`): with the
             // latch down, the frame the port reports the hook installs
             // category 5 from the battle staging buffer and raises the latch
@@ -653,8 +686,8 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
          classed water {on_water} drift {drifted}"
     );
     assert!(
-        on_water > 0 && drifted > 0 && lift_capped > 0 && swapped > 5,
-        "water {on_water} drift {drifted} lift capped {lift_capped} swaps {swapped}"
+        on_water > 0 && drifted > 0 && lift_capped > 0 && swapped > 5 && camera_frames > 1000,
+        "water {on_water} drift {drifted} lift capped {lift_capped} swaps {swapped} camera {camera_frames}"
     );
     // A strike wants a held reel against a credit that mostly comes from a
     // recognised gesture (`0x801D31F4`), which a random pad seldom makes:
