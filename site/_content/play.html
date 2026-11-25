@@ -499,7 +499,7 @@ div.play-vis-head { cursor: default; }
   <p class="lede">
     Walk around inside <em>Legend of Legaia</em>, in this browser, on your own copy of the game.
     This is the project's from-scratch rewrite of the game engine compiled to WebAssembly - not a
-    video and not an emulator. Pick your disc image, choose New Game or a town, and take the controls.
+    video and not an emulator. Pick your disc image and the game boots to its title card; take the controls from there.
     The whole game plays, New Game to the credits - towns, battles, menus, minigames, saves - with the
     occasional bug; the <a href="#what-works">list below</a> says what works and what is still rough. To play the original
     with mods instead, patch your disc with the <a href="tooling/rom-patcher.html">ROM patcher</a>
@@ -551,7 +551,7 @@ div.play-vis-head { cursor: default; }
         <span class="play-mode-tag">explore</span>
         <span class="play-mode-name">Scene picker</span>
         <span class="play-mode-desc">Drop into any town or field map on the disc and walk it. The
-          best-supported mode - click here, then pick a place from the Scenes list.</span>
+          Scenes list stays hidden until you click here; then pick a place from it.</span>
       </button>
     </div>
 
@@ -1046,7 +1046,8 @@ div.play-vis-head { cursor: default; }
       </div>
 
       <div class="play-rail">
-        <div class="play-card" id="play-scene-card">
+        <!-- Hidden until the Scene picker button: New Game is the default way in. -->
+        <div class="play-card" id="play-scene-card" hidden>
           <h3 id="play-scene-title">Scenes</h3>
           <input type="search" id="play-scene-search" class="play-scene-search"
                  placeholder="Filter…" autocomplete="off">
@@ -1140,8 +1141,8 @@ div.play-vis-head { cursor: default; }
     pages here, and never uploaded.
   </p>
   <p>
-    <strong>Three ways in.</strong> <em>New game</em> runs the title card and prologue.
-    <em>Scene picker</em> drops you straight into any town, field or dungeon. You arrive where the game's own doors land you: a town's gate from the world map, a
+    <strong>Three ways in.</strong> <em>New game</em> runs the title card and prologue, and starts on its own once the disc is read.
+    <em>Scene picker</em> opens the Scenes list and drops you straight into any town, field or dungeon. You arrive where the game's own doors land you: a town's gate from the world map, a
     dungeon's door from the room before it; the few scenes no door leads into (Rim Elm, which the
     game itself starts in Vahn's yard, and some cutscene-only maps) start at a standable spot
     inside the map instead. Where the story opens a scene on a cutscene - a town's welcome, a
@@ -1322,6 +1323,7 @@ div.play-vis-head { cursor: default; }
   const menuCanvas = document.getElementById('play-menu-canvas');
   const listEl    = document.getElementById('play-scene-list');
   const searchEl  = document.getElementById('play-scene-search');
+  const sceneCardEl = document.getElementById('play-scene-card');
   const keysEl    = document.getElementById('play-keys');
 
   /* Reveal the stage grid. The about-prose keeps its full-width spot below
@@ -1493,6 +1495,7 @@ div.play-vis-head { cursor: default; }
        * scene's loop stops (the title owns the screen until its outcome
        * enters the opening) and any start still in flight is torn down. */
       if (!runtime) return;
+      sceneCardEl.hidden = true;
       supersedeStarts();
       if (view) { try { view.stop(); } catch (e) {} }
       runBootTitle(onTitleOutcome);
@@ -1501,7 +1504,9 @@ div.play-vis-head { cursor: default; }
        * the stage so the picker is visible and selectable without first
        * booting a scene via New Game. The canvas stays blank until a scene is
        * chosen from the list. */
+      sceneCardEl.hidden = false;
       showStage();
+      sceneCardEl.scrollIntoView({ block: 'nearest' });
       searchEl.focus();
     }
   });
@@ -1512,7 +1517,7 @@ div.play-vis-head { cursor: default; }
    * is not copied into wasm memory (a cached bundle without the export gets
    * the whole of it). */
   /* The first scene entry's one-time work that reads nothing a scene or a save
-   * decides, done while the page sits at "Pick a boot mode": the renderer's
+   * decides, done while the page sits on a linked start (a plain load boots New Game): the renderer's
    * shaders and the menu assets. A pick that beats the idle callback builds
    * them where it always did. */
   let prewarmedRenderer = null;
@@ -1563,8 +1568,8 @@ div.play-vis-head { cursor: default; }
        * so a consumer can read a named file - an XA voice bank, a movie -
        * without the engine holding a second copy of the image. */
       const count = await disc.loadInto(runtime);
-      prog.done(`${count} PROT entries. Pick a boot mode.`);
-      statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
+      prog.done(`${count} PROT entries. Starting a New Game.`);
+      statusEl.textContent = `Disc loaded (${count} PROT entries). Starting a New Game.`;
       modesEl.style.display = 'grid';
       window.__playRuntime = runtime;
       if (typeof window.__playListHotkeys === 'function') window.__playListHotkeys(runtime);
@@ -1584,6 +1589,10 @@ div.play-vis-head { cursor: default; }
        * portrait faces + card icons now that WASM + disc bytes are available. */
       renderSavesStrip();
       installXaBanks();
+      /* A plain load boots New Game, the default way in; a link that names
+       * its own start (a minigame, a cast, a resumed session) takes that
+       * instead. The Scene picker button is the other way in. */
+      const bootNewGame = !minigamePending && !castPending && !resumePending;
       /* ?minigame=<sub_id>: open that minigame once the disc is up. */
       if (minigamePending) startPendingMinigame();
       /* ?cast=<spell>: open a battle and cast it once the disc is up. */
@@ -1595,7 +1604,11 @@ div.play-vis-head { cursor: default; }
         if (entry) resumeSession(entry);
         else saveMsg('The session in the resume link is no longer in this browser.', true);
       }
-      prewarmFirstEntry(runtime);
+      if (bootNewGame) {
+        modesEl.querySelector('[data-mode="newgame"]').click();
+      } else {
+        prewarmFirstEntry(runtime);
+      }
     } catch (err) {
       const msg = String(err.message || err);
       /* The loader's own refusal: `load_disc: ...` is a file with no game in it. */
