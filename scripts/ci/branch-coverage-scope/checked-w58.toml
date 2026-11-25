@@ -1,0 +1,26 @@
+# Arms that checked-arms.py found taken but unchecked because no port implements their effect.
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FB3C..0x8002FB3C"
+verdict = "unported"
+reason = "The reading box's border walk: the row loop's entry test over the style's tile records (0x8002FB2C..0x8002FC5C, the inner sprite loop already scoped). The port keeps the border as one footprint rect (dialog_window_footprint) that the host fills from its atlas nine-slice, so no Rust lays the rows; window_emitter compares the union bound"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FC5C..0x8002FC5C"
+verdict = "unported"
+reason = "The same border walk's row loop-back (s2 += row height; s2 < bottom): the per-row sprites the port does not emit, the host drawing the footprint from its atlas"
+
+[[arm]]
+entry = "0x801D6704"
+range = "0x801D6970..0x801D6970"
+verdict = "unported"
+reason = "The mode-entry init frees the previous scene heap block _DAT_8007BAF0 through FUN_8001763C when it is set, then clears the word; the engine allocates no PSX heap, so the port has no free to make"
+
+[[arm]]
+entry = "0x801DD35C"
+image = "4612e100f59ba766"
+range = "0x801E01D8..0x801E0254"
+verdict = "unported"
+reason = "The title tail's attract fade: under the entry word 0x8007BB00 and a page offset 0x801EF194 short of 0x1000, it scales the attract countdown 0x801EF16C (capped at 16) into a 0..0xFF shade and draws it through the overlay's own quad builders 0x801E02A4 / 0x801E0418; no Rust names those builders or the shade, so title_menu compares the sub-mode step only (port gap)"

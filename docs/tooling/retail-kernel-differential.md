@@ -325,6 +325,17 @@ An unchecked direction falls in one of these, read from the disassembly:
 - **Tolerated stop.** The test skips a round whose call stops abnormally, and
   the mutant's runaway lands in that skip. The row says `survived-abnormal`.
 
+**The compiler's divide guards.** Every `div` / `divu` the compiler emits
+carries two guards: `bnez divisor` over `break 7`, and `bne divisor,-1`
+then `bne dividend,0x80000000` over `break 6`. They are real conditional
+branches, so both populations count them, but no game input takes the trap
+side of the first and only a divisor of `-1` tells the second's two
+directions apart: in branch coverage they sit at "one way" for ever, and
+here their taken side is an equivalent mutant. They should leave both
+populations together, recognised by the walk from the `break 6` / `break 7`
+they guard, rather than by scope rows one routine at a time. Until then a
+routine with many divides reads lower on both figures than its arms are.
+
 Like branch coverage, it is a measurement, not a gate.
 
 ## What it has found
