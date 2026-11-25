@@ -413,6 +413,14 @@ pub fn boss_rush_screen(world: &World, keys: &PromptKeys) -> Option<RulesMenu> {
     })
 }
 
+/// Whether a run-rules screen can own the frame: the New Game rules screen
+/// is up, or a Boss Rush run is (its intermission and result). A cheap test
+/// the per-frame callers make before they build a [`PromptKeys`], whose
+/// labels are allocated strings.
+pub fn screen_may_be_up(world: &World) -> bool {
+    world.run_rules.setup.is_some() || world.run_rules.boss_rush.is_some()
+}
+
 /// The run-rules screen that owns the frame, if one does: the New Game
 /// rules screen while it is up, else the Boss Rush intermission or result.
 /// `keys` name the buttons in its hint; no rect or sprite depends on them.
@@ -442,6 +450,9 @@ pub fn run_rules_chrome_sprites(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
+    if !screen_may_be_up(world) {
+        return Vec::new();
+    }
     active_screen(world, &PromptKeys::default())
         .map_or_else(Vec::new, |s| s.sprites(rects, stage_origin, stage_scale))
 }

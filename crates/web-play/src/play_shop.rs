@@ -399,7 +399,11 @@ impl LegaiaRuntime {
         let mut pack_mode_texts = pack_mode_texts;
         // The run rules' screens (the Boss Rush intermission and result),
         // stage space - the composition the native window draws too.
-        if let Some(h) = self.scene_host.host() {
+        if let Some(h) = self
+            .scene_host
+            .host()
+            .filter(|h| legaia_engine_screens::run_rules::screen_may_be_up(&h.world))
+        {
             pack_mode_texts.extend(legaia_engine_screens::run_rules::run_rules_stage_texts(
                 &h.world,
                 font,

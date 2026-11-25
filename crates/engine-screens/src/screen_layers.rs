@@ -183,7 +183,12 @@ pub fn compose_screen_prims(
 
     // A run-rules screen (the New Game rules, the Boss Rush intermission or
     // result) owns the whole frame; nothing is drawn under it.
-    if let Some(screen) = crate::run_rules::active_screen(world, &Default::default()) {
+    // `screen_may_be_up` first: the default keys are allocated labels, and
+    // this runs every frame.
+    if let Some(screen) = crate::run_rules::screen_may_be_up(world)
+        .then(|| crate::run_rules::active_screen(world, &Default::default()))
+        .flatten()
+    {
         return (screen.prims(), Vec::new());
     }
 
