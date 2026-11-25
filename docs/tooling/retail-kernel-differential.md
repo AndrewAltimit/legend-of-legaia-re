@@ -328,7 +328,7 @@ An unchecked direction falls in one of these, read from the disassembly:
 **The compiler's divide guards.** Every `div` / `divu` the compiler emits
 carries two guards: `bnez divisor` over `break 7`, and `bne divisor,-1`
 then `bne dividend,0x80000000` over `break 6`. They are real conditional
-branches, so both populations count them, but no game input takes the trap
+branches, so both populations count them, but no shipped game state takes the trap
 side of the first and only a divisor of `-1` tells the second's two
 directions apart: in branch coverage they sit at "one way" for ever, and
 here their taken side is an equivalent mutant. They should leave both

@@ -341,10 +341,17 @@ mod tests {
             .position(|r| *r == DevMenuRow::EventFlag)
             .unwrap();
         let lit = dev_menu_list_draws(&session, &font);
-        let tinted: Vec<_> = lit.iter().filter(|d| d.color != ui::MENU_TEXT_WHITE).collect();
+        let tinted: Vec<_> = lit
+            .iter()
+            .filter(|d| d.color != ui::MENU_TEXT_WHITE)
+            .collect();
         assert!(!tinted.is_empty());
         for d in tinted {
-            assert!(d.color[1] > d.color[0] && d.color[2] < d.color[0], "{:?}", d.color);
+            assert!(
+                d.color[1] > d.color[0] && d.color[2] < d.color[0],
+                "{:?}",
+                d.color
+            );
         }
     }
 
