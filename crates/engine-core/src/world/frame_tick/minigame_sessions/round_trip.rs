@@ -165,6 +165,10 @@ impl World {
             .min(9_999_999);
         if let Some(name) = self.minigames.scene_backup.take() {
             self.active_scene_label = name;
+            // MAIN INIT re-enters the scene, and its MAN loader re-runs the
+            // entry script (`FUN_8003AEB0` -> `FUN_8003AB2C`); the host
+            // reloads it (`SceneHost::tick`).
+            self.minigames.entry_rerun_pending = true;
         }
         // Give the departure scene its own track back when the minigame's
         // overlay init took the score over (dance / Baka / dome). No-op for

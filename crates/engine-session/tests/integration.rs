@@ -42,6 +42,7 @@ mod fog_gate_census;
 mod frame_step_kernels;
 mod free_roam_camera_reset;
 mod helper_card_records_disc;
+mod koin3_dance_return_disc;
 mod map01_tree_pan_hides_player_disc;
 mod minigame_audio_disc;
 mod new_game_seed;

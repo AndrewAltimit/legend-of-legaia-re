@@ -243,6 +243,12 @@ pub struct MinigameState {
     /// from `0x80084548`). `World::minigame_return_warp` restores it into
     /// `World::active_scene_label` on exit. `None` while no warp is armed.
     pub scene_backup: Option<String>,
+    /// Raised by `World::minigame_return_warp` when it closes a door-warp
+    /// round trip (a [`Self::scene_backup`] was armed): retail's return warp
+    /// `FUN_80026018` re-enters the departure scene through MAIN INIT, whose
+    /// MAN loader re-runs the scene-entry script. The scene host takes it and
+    /// re-runs `P1[0]`, as it does on a battle's return.
+    pub entry_rerun_pending: bool,
     /// The mode-24 session-winnings accumulator (retail `_DAT_80084440`,
     /// zeroed by the field-VM `0x3E` warp arm; the minigame overlays add
     /// their winnings here). `World::minigame_return_warp` commits it
@@ -443,6 +449,7 @@ impl MinigameState {
             casino_coins: 0,
             point_card: 0,
             scene_backup: None,
+            entry_rerun_pending: false,
             winnings: 0,
             pending_warp: None,
             dance_countin: None,

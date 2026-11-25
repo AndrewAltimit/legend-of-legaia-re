@@ -130,6 +130,21 @@ impl SceneHost {
         })
     }
 
+    /// Reload the scene-entry system script `P1[0]` over the resident field,
+    /// as retail's MAIN INIT re-entry after a battle or a minigame does, with
+    /// the field init's BGM window open for the starts it issues.
+    fn rerun_scene_entry_script(&mut self, why: &str) {
+        let entry_script = self
+            .scene
+            .as_ref()
+            .and_then(|scene| scene.field_man_entry_script(&self.index).ok().flatten());
+        if let Some((bytecode, pc0)) = entry_script {
+            self.world.load_field_script_at(bytecode, pc0);
+            self.world.open_battle_return_field_init();
+            log::info!("field: {why} return re-ran the scene-entry script");
+        }
+    }
+
     /// Arm the field MAIN INIT hold of a battle's return to the field, in the
     /// retail-faithful mode only: the scene's block is read again, and the
     /// hold follows its size
@@ -275,15 +290,20 @@ impl SceneHost {
         // entry script here.
         // REF: FUN_8003ab2c (system-script rebuild on field entry)
         if was_battle && matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Field) {
-            let entry_script = self
-                .scene
-                .as_ref()
-                .and_then(|scene| scene.field_man_entry_script(&self.index).ok().flatten());
-            if let Some((bytecode, pc0)) = entry_script {
-                self.world.load_field_script_at(bytecode, pc0);
-                self.world.open_battle_return_field_init();
-                log::info!("field: post-battle return re-ran the scene-entry script");
-            }
+            self.rerun_scene_entry_script("post-battle");
+        }
+        // The minigame door-warp's return is the same re-entry: the return
+        // warp `FUN_80026018` latches mode 2 (MAIN INIT) with the field-entry
+        // word at 2, the warp arm a battle's return takes. `koin3`'s entry
+        // tests the dance markers `0x59B` / `0x59C` / `0x59D` the lesson and
+        // the contest raise before their warps and spawns the Disco King's
+        // verdict (`P2[8]`) and the judging (`P2[9]`); without the re-run the
+        // field came back with the marker up and no verdict.
+        // REF: FUN_80026018, FUN_8003ab2c
+        if std::mem::take(&mut self.world.minigames.entry_rerun_pending)
+            && matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Field)
+        {
+            self.rerun_scene_entry_script("minigame");
         }
         if was_battle
             && matches!(
