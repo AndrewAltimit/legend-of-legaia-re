@@ -663,15 +663,17 @@ impl World {
         if !(0x4000..=0x4001).contains(&(rec.model_sel as u16)) {
             state.tween_scale_x = rot[1] & 0x0FFF;
         }
-        // The two special render-mode records seed the part-tick mode
-        // `+0x5A`: `0x4000` the CLUT-cell cycler `3` (`0x80021CE4`), `0x4001`
-        // the positional sound emitter `5` (`0x80021D08`). Both skip the
-        // motion block, and mode 5 is what the emitter arm keys on.
-        match rec.model_sel as u16 {
-            0x4000 => state.move_submode = 3,
-            0x4001 => state.move_submode = legaia_engine_vm::sfx_emitter::EMITTER_RENDER_MODE,
-            _ => {}
-        }
+        // The draw kind `+0x56` and part-tick mode `+0x5A` the spawn leaves:
+        // a library mesh keeps the spawn descriptor's draw kind `5` (the
+        // walk's static-mesh case) on mode `1`; a transform node clears both;
+        // the two special render-mode records take `0x4000` the CLUT-cell
+        // cycler `3` (`0x80021CE4`) and `0x4001` the positional sound emitter
+        // `5` (`0x80021D08`), on kind `0`. Both skip the motion block, and
+        // mode 5 is what the emitter arm keys on.
+        let (kind, mode) = legaia_engine_vm::move_vm::SpawnSubmode::classify(rec.model_sel as u16)
+            .draw_kind_and_mode();
+        state.move_substate = kind;
+        state.move_submode = mode;
         self.ambient.fx.push(AmbientPart {
             record_off,
             model_sel: rec.model_sel,
@@ -1610,7 +1612,7 @@ impl World {
 /// scene pack (`DAT_8007B6F8 = 5`), so pack slot = `model_sel - 5`.
 /// `None` for transform nodes (`-1`), the character meshes (`0..5`), and
 /// the `0x4000`/`0x4001` render-mode sentinels.
-fn pack_slot_of_model_sel(model_sel: i16) -> Option<usize> {
+pub(crate) fn pack_slot_of_model_sel(model_sel: i16) -> Option<usize> {
     (5..0x4000)
         .contains(&model_sel)
         .then(|| model_sel as usize - 5)

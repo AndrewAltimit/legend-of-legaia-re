@@ -157,6 +157,9 @@ pub struct FieldCostTable {
     /// The player's model (PROT 0874 §0 head `0`), which the actor passes
     /// draw every field frame and no placement holds.
     pub player: Option<MeshCost>,
+    /// The scene pack's meshes by pack slot (retail `DAT_8007C018[5..]`), the
+    /// library a move-VM part's record names (`record[+0] - 5`).
+    pub part_meshes: Vec<MeshCost>,
     /// The decoration draws' pack meshes as their leaves walk them, one per
     /// distinct mesh ([`CostCell::geom`]).
     pub decoration_geoms: Vec<super::field_deco_outcomes::DecoGeom>,
@@ -529,6 +532,17 @@ pub struct FieldFrameFeatures {
     /// The live script actors (field-VM channels: placements and bound
     /// objects), each an entry of the tick and render lists.
     pub tick_actors: u32,
+    /// Of [`Self::tick_actors`]: the model actors (draw kind `1`, a channel
+    /// with a move id), whose tick runs dearer than a placed static's.
+    pub tick_model_actors: u32,
+    /// The live move-VM parts by the tick's arm, beside the draw-kind-`4`
+    /// counts: draw kind `5` (a library mesh), mode `3` (the CLUT-cell
+    /// cycler), mode `4` (the VRAM scroller) and mode `5` (the sound
+    /// emitter). The rest tick on mode `0`.
+    pub static_parts: u32,
+    pub cycler_parts: u32,
+    pub scroll_parts: u32,
+    pub emitter_parts: u32,
     /// Whether the player moved on the last tick.
     pub player_moving: bool,
     /// The live move-VM parts on draw kind `4` (the sprite emitter).
@@ -540,6 +554,14 @@ pub struct FieldFrameFeatures {
     pub default_arm_packets: u32,
     /// Of [`Self::default_arm_packets`]: those built under a texture mode.
     pub default_arm_textured_packets: u32,
+    /// The live move-VM parts on the static-mesh draw kind `5` (a library
+    /// mesh record, `SpawnSubmode::draw_kind_and_mode`), with their meshes'
+    /// objects, groups and primitives by leaf kind: the walk's case `5`
+    /// draws them through the same arm as the placed statics (`0x8001B1A8`).
+    pub mesh_parts: u32,
+    pub mesh_part_objects: u32,
+    pub mesh_part_groups: u32,
+    pub mesh_part_kinds: [u32; 12],
     /// The draws' morph substitution: `FUN_8001C604` calls, the vertices
     /// they copy, and the vertices `FUN_8005B038` blends.
     pub morph_calls: u32,
@@ -1002,6 +1024,25 @@ impl World {
             .iter()
             .filter(|c| c.is_live())
             .count() as u32;
+        f.tick_model_actors = self
+            .field_vm
+            .channels
+            .iter()
+            .filter(|c| c.is_live() && c.ctx.move_substate == 1)
+            .count() as u32;
+        for p in self.ambient.fx.iter().filter(|p| !p.finished) {
+            let s = &p.state;
+            if s.move_substate == 4 {
+                continue;
+            }
+            match (s.move_substate, s.move_submode) {
+                (5, _) => f.static_parts += 1,
+                (_, 3) => f.cycler_parts += 1,
+                (_, 4) => f.scroll_parts += 1,
+                (_, 5) => f.emitter_parts += 1,
+                _ => {}
+            }
+        }
         f.player_moving = self
             .player_actor_slot
             .is_some_and(|s| self.locomotion.actor_moving.contains(&s));
@@ -1038,6 +1079,24 @@ impl World {
             .iter()
             .filter(|p| !p.finished && p.state.move_substate == 4)
             .count() as u32;
+        for p in self
+            .ambient
+            .fx
+            .iter()
+            .filter(|p| !p.finished && p.state.move_substate == 5)
+        {
+            let Some(m) = super::ambient::pack_slot_of_model_sel(p.model_sel)
+                .and_then(|i| table.part_meshes.get(i))
+            else {
+                continue;
+            };
+            f.mesh_parts += 1;
+            f.mesh_part_objects += u32::from(m.objects);
+            f.mesh_part_groups += u32::from(m.groups);
+            for (k, n) in f.mesh_part_kinds.iter_mut().zip(m.kinds) {
+                *k += u32::from(n);
+            }
+        }
         for p in self.ambient.fx.iter().filter(|p| {
             !p.finished && legaia_engine_effects::effect_default_arm::is_default_arm(&p.state)
         }) {
@@ -1159,6 +1218,7 @@ mod tests {
             npc_spawns: Vec::new(),
             npc_prims_through: Vec::new(),
             player: None,
+            part_meshes: Vec::new(),
             decoration_geoms: Vec::new(),
         }));
         assert_eq!(w.field_frame_features(), None, "no view published");

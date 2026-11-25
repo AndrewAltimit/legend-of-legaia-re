@@ -212,6 +212,30 @@ pub trait MoveSpawnHost: ActorAllocatorHost {
 /// `DAT_8007C018`. So the model the rebuild resolves is the init word plus
 /// the scene's model base, which is what
 /// [`ActorAllocatorHost::rebuild_object_table`] has to be told.
+/// The draw kind `+0x56` the spawn descriptor `0x8007062C` carries at `+0x14`
+/// (`DAT_80070640`), which `FUN_80020DE0` copies into every actor it hands
+/// `FUN_80021B04` (`lhu v0,0x14(s1)` / `sh v0,0x56(s0)` at
+/// `0x80020E5C..0x80020E64`): the static-mesh kind, the same one the walk's
+/// case `5` draws (`0x8001B1A8`).
+pub const SPAWN_DESCRIPTOR_DRAW_KIND: i16 = 5;
+
+impl SpawnSubmode {
+    /// The draw kind `+0x56` and render mode `+0x5A` the spawn leaves before
+    /// the first move-VM run: a model reference keeps the descriptor's kind
+    /// `5` and takes mode `1` (`0x80021C58..0x80021C5C`); a negative word
+    /// clears both (`0x80021BE4..0x80021BE8`); `0x4000` / `0x4001` clear the
+    /// kind and take mode `3` / `5` (`0x80021CE4..0x80021CE8`,
+    /// `0x80021D08..0x80021D0C`).
+    pub fn draw_kind_and_mode(self) -> (i16, i16) {
+        match self {
+            Self::Negative => (0, 0),
+            Self::Keyframe => (0, 3),
+            Self::Tween => (0, 5),
+            Self::Default => (SPAWN_DESCRIPTOR_DRAW_KIND, 1),
+        }
+    }
+}
+
 /// The model index `FUN_80021B04` stages into its spawn descriptor
 /// (`DAT_80070630`, descriptor `0x8007062C + 4`) before allocating: the init
 /// word plus the scene model base `gp[0x754]` (a `lhu`, added and stored as a

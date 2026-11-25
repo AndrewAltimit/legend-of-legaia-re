@@ -264,3 +264,13 @@ fn template_model_index_adds_the_scene_base_only_for_model_words() {
     // 0x4002 is a model word like any other positive value.
     assert_eq!(template_model_index(0x4002, 0x20), 0x4022);
 }
+
+/// A library mesh keeps the spawn descriptor's draw kind `5` on mode `1`
+/// (`rugi`'s model-45 parts); the other three classes clear the kind.
+#[test]
+fn a_mesh_spawn_keeps_the_descriptor_draw_kind() {
+    assert_eq!(SpawnSubmode::classify(45).draw_kind_and_mode(), (5, 1));
+    assert_eq!(SpawnSubmode::classify(0xFFFF).draw_kind_and_mode(), (0, 0));
+    assert_eq!(SpawnSubmode::classify(0x4000).draw_kind_and_mode(), (0, 3));
+    assert_eq!(SpawnSubmode::classify(0x4001).draw_kind_and_mode(), (0, 5));
+}

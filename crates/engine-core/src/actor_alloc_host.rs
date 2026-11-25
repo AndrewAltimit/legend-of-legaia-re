@@ -167,6 +167,8 @@ impl MoveSpawnHost for World {
             _ => {
                 // Positive-arm initial state (Keyframe / Tween / Default
                 // all start here before the Block 3 fine-tune).
+                // `FUN_80020DE0` seats the spawn descriptor's draw kind.
+                ms.move_substate = legaia_engine_vm::move_vm::SPAWN_DESCRIPTOR_DRAW_KIND;
                 ms.move_submode = 1;
                 ms.flags |= 0x0800_0000;
             }

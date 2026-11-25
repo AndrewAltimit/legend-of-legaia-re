@@ -225,6 +225,11 @@ const MORPH_VERTEX_CYCLES: i64 = 61;
 /// actor pass: `3300` drawn, `705` off screen, `3071` at
 /// `uru2_field_door_hop`'s `62` drawn of `68`.
 const SPRITE_PART_CYCLES: i64 = 3071;
+/// A move-VM part on the static-mesh draw kind `5`, its walk entry, box
+/// test and object set-up beside its groups and primitives: `rugi`
+/// `P2[72]`'s ten model-45 parts (one object, one group of twelve kind-`18`
+/// quads) cost `5143` cycles each on retail's draw walk.
+const MESH_PART_CYCLES: i64 = 5143 - GROUP_CYCLES - 12 * ACTOR_PRIM_CYCLES[10];
 /// A move-VM part on the default arm (`+0x9E & 0x6000` clear), priced by the
 /// packets its build `FUN_80028158` writes and the model draw dispatches.
 /// Per actor on retail's draw walk (`retail-exec frame-cost` marks at
@@ -257,18 +262,31 @@ const LIST_ENTRY_CYCLES: i64 = 59;
 /// and the system actors.
 const LIST_FIXED_ENTRIES: i64 = 5;
 
-/// The tick passes (`FUN_8002519C`, `retail-exec actor-ticks` over thirteen
-/// states): a script actor's tick through `FUN_8003BC08` (`485`, `669`
-/// entries), the player's (`FUN_801D1344`: `5071` standing, `31115`
-/// walking or running, `3106..44018` in all), the system actors' (the
-/// ambient emitter, the camera and the rest: `2967..24399`, mean `12300`),
-/// a sprite part's (`1475`), and any other move-VM part's own tick off a
-/// cycler upload (`689..3940`, mean `2243` over `35`; an upload frame adds
-/// the cycler terms).
-const TICK_ACTOR_CYCLES: i64 = 485;
+/// The tick passes (`FUN_8002519C`, `retail-exec actor-ticks`): the
+/// player's (`FUN_801D1344`: `5071` standing, `31115` walking or running,
+/// `3106..44018` in all), the system actors' (the sum of each one's mean over
+/// the `130` cost states: `FUN_801DA51C` `4452`, the ambient emitter
+/// `FUN_801D6058` `4245`, `FUN_801D84D0` `3109`, `FUN_80036D80` and
+/// `FUN_801E76D4` `109` each, `FUN_8002504C` `39`), a sprite part's
+/// (`1475`), and a cycler part's own tick off an upload (`689..3940`, mean
+/// `2243` over `35`; an upload frame adds the cycler terms).
+const TICK_ACTOR_CYCLES: i64 = 350;
+/// The per-kind entries of the tick passes, the mean of each class over the
+/// `130` cost states `retail-exec actor-ticks` runs (`field-cost-films.py`'s
+/// state set): a script actor on draw kind `5` (`350`, `4180` entries) and
+/// on kind `1`, a model (`551`, `3837`); a move-VM part on mode `0`
+/// (`1303`, `159`), the VRAM scroller's mode `4` (`4120`, `41`), the sound
+/// emitter's mode `5` (`1023`, `54`) and a library mesh on draw kind `5`
+/// (`1437`, `5`; `rugi` `P2[72]`'s model-45 parts `611..613`). A cycler
+/// part (mode `3`) keeps [`TICK_PART_CYCLES`] beside its upload terms.
+const TICK_MODEL_ACTOR_CYCLES: i64 = 551;
+const TICK_PLAIN_PART_CYCLES: i64 = 1_303;
+const TICK_SCROLL_PART_CYCLES: i64 = 4_120;
+const TICK_EMITTER_PART_CYCLES: i64 = 1_023;
+const TICK_STATIC_PART_CYCLES: i64 = 1_437;
 const TICK_PLAYER_STILL_CYCLES: i64 = 5_071;
 const TICK_PLAYER_MOVING_CYCLES: i64 = 31_115;
-const TICK_SYSTEM_CYCLES: i64 = 12_300;
+const TICK_SYSTEM_CYCLES: i64 = 4452 + 4245 + 3109 + 109 + 109 + 39;
 const TICK_SPRITE_PART_CYCLES: i64 = 1_475;
 /// A default-arm part's tick (draw kind `4`, `+0x9E & 0x6000` clear):
 /// `782..894` over `kor5` `P2[5]`'s and `rugi` `P2[72]`'s rings
@@ -363,6 +381,9 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
                     + prims * clip_prim(f.player_clip_kept)
             }
         }
+        + n(f.mesh_parts) * MESH_PART_CYCLES
+        + n(f.mesh_part_groups) * GROUP_CYCLES
+        + kinds(&f.mesh_part_kinds, &ACTOR_PRIM_CYCLES)
         + n(f.placed_draws) * PLACED_CYCLES
         + n(f.placed_objects) * PLACED_MESH_CYCLES
         + n(f.placed_groups) * GROUP_CYCLES
@@ -391,11 +412,22 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         TICK_PLAYER_MOVING_CYCLES
     } else {
         TICK_PLAYER_STILL_CYCLES
-    } + n(f.tick_actors) * TICK_ACTOR_CYCLES
+    } + n(f.tick_actors).saturating_sub(n(f.tick_model_actors)) * TICK_ACTOR_CYCLES
+        + n(f.tick_model_actors) * TICK_MODEL_ACTOR_CYCLES
         + TICK_SYSTEM_CYCLES
         + n(f.sprite_parts).saturating_sub(n(f.default_arm_parts)) * TICK_SPRITE_PART_CYCLES
         + n(f.default_arm_parts) * TICK_DEFAULT_ARM_PART_CYCLES
-        + n(f.parts).saturating_sub(n(f.sprite_parts)) * TICK_PART_CYCLES;
+        + n(f.static_parts) * TICK_STATIC_PART_CYCLES
+        + n(f.cycler_parts) * TICK_PART_CYCLES
+        + n(f.scroll_parts) * TICK_SCROLL_PART_CYCLES
+        + n(f.emitter_parts) * TICK_EMITTER_PART_CYCLES
+        + n(f.parts)
+            .saturating_sub(n(f.sprite_parts))
+            .saturating_sub(n(f.static_parts))
+            .saturating_sub(n(f.cycler_parts))
+            .saturating_sub(n(f.scroll_parts))
+            .saturating_sub(n(f.emitter_parts))
+            * TICK_PLAIN_PART_CYCLES;
     let cycles = decoration + ground + actors + fog + tick;
     // The cyclers' measured terms, in 1/1024 hblank.
     let ticked = n(f.cycler_calls) * COST_PER_CYCLER_CALL

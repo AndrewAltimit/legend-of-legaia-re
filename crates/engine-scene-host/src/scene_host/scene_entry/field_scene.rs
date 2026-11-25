@@ -1781,6 +1781,10 @@ pub fn field_cost_table(
         npc_spawns: npc_prims.2,
         npc_prims_through: npc_prims.3,
         player: head(0),
+        part_meshes: legaia_engine_scene::field_env::env_pack_tmd_indices(scene, res)
+            .into_iter()
+            .map(mesh)
+            .collect(),
     })
 }
 
