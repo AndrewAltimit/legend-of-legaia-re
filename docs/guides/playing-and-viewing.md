@@ -537,8 +537,8 @@ picture outside the buttons still turns the camera. On a phone held upright
 the pad sits under the picture rather than over it, so the HUD and the scene
 stay clear; turned sideways or in fullscreen it is back over the picture. The
 title and the screens it opens (the New Game rules, Continue, Options) keep it
-under the picture in every layout but fullscreen, so their tabs, help line and
-key hint stay readable.
+under the picture, or in fullscreen beside it on a wide screen, so their tabs,
+help line and key hint stay readable.
 
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
