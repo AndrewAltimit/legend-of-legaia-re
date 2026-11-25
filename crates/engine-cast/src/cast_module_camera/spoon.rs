@@ -64,14 +64,15 @@ fn group_aim(st: &ModuleCamState) -> ([i16; 3], i16) {
 }
 
 /// Arm 4's pass (`0x801F7098..`): four parts for each of the creature's five
-/// eyes, seated on the creature and then moved onto the eye's pose object every
+/// eyes, seated on the creature turned to the arm's cut (`a1 = sp+0x20`) and
+/// then moved onto the eye's pose object every
 /// pass of arms 5..7 (`World::seat_spoon_eye_parts`).
 pub const SPOON_EYE_RECORDS: [u32; 4] = [0x801F_8CC8, 0x801F_8D24, 0x801F_8D80, 0x801F_8DF8];
 const SPOON_EYE_SPAWNS: [ModuleSpawn; 20] = {
-    let mut out = [spoon_spawn(SPOON_EYE_RECORDS[0], SpawnAnchor::Creature); 20];
+    let mut out = [spoon_spawn(SPOON_EYE_RECORDS[0], SpawnAnchor::CreatureOnShot); 20];
     let mut i = 0;
     while i < 20 {
-        out[i] = spoon_spawn(SPOON_EYE_RECORDS[i % 4], SpawnAnchor::Creature);
+        out[i] = spoon_spawn(SPOON_EYE_RECORDS[i % 4], SpawnAnchor::CreatureOnShot);
         i += 1;
     }
     out
@@ -112,22 +113,25 @@ pub fn spoon_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             } else {
                 None
             };
+            // Arm 2's pass seats the creature (`jal 0x801F19EC` at
+            // `0x801F6DA8`), which stands it on the caster wearing the
+            // caster's facing, and seats five parts on it right behind
+            // (`0x801F6DFC..0x801F6E5C`): the anchor is that seat.
+            if phase == 2 && !hold {
+                st.creature.get_or_insert(seats.caster);
+                return ArmDirection {
+                    hold,
+                    drift: d,
+                    spawns: &SPOON_SEAT_SPAWNS,
+                    ..ArmDirection::PASS
+                };
+            }
             ArmDirection {
                 drift: d,
                 ..ArmDirection::PASS
             }
         }
         3 if !hold => caption(ArmDirection::PASS, ModuleCaption::SpellName),
-        // Retail seats these on arm 2's pass, right behind the creature; the
-        // engine stands the creature up on arm 3's first tick (`seat_arm`), and
-        // the anchor needs it.
-        3 if st.wait != (3, 1) => {
-            st.wait = (3, 1);
-            ArmDirection {
-                spawns: &SPOON_SEAT_SPAWNS,
-                ..ArmDirection::PASS
-            }
-        }
         4 if !hold => ArmDirection {
             spawns: &SPOON_EYE_SPAWNS,
             ..caption(

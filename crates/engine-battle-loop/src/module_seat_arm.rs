@@ -208,6 +208,9 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
         915 => seat(VictimPlus(0), VictimPlus(-0xA00), 0).target(9),
         // `0x801F6E48..0x801F6E50`.
         917 => seat(Lit(0), Lit(0), 0),
+        // `0x801F6DB0..0x801F6DD4`: the colour word `0xFFFFF`, which the
+        // idle tint arm eases to neutral; the director seats the creature.
+        919 => in_place().colour(0x000F_FFFF),
         // `0x801F71EC..0x801F7204`, the node scale `+0x72 = 0` the creature
         // grows in from over arm 6.
         918 => seat(Lit(0), Lit(-0xC00), 0).y(-0x7F0).render_scale(0),

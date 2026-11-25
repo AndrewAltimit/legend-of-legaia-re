@@ -727,6 +727,11 @@ pub enum SpawnAnchor {
     /// The creature seat `actor_table[7]`: `a0 = creature + 0x34`,
     /// `a1 = creature + 0x44`.
     Creature,
+    /// The creature seat's position on the arm's shot angles: `a0 =
+    /// creature + 0x34`, `a1 = sp+0x20`. PROT 0919 arm 4's twenty eye parts
+    /// (`0x801F70C4..0x801F71F4`), on the cut it armed just before
+    /// (`0x801F705C..0x801F707C`).
+    CreatureOnShot,
     /// The arm's own shot trios: `a0 = sp+0x30` (the negated focus),
     /// `a1 = sp+0x20` (the shot angles). Every record a module spawns this
     /// way is camera-relative (`+0x52 & 0x780`), so its program's own
@@ -1061,6 +1066,10 @@ pub fn spawn_anchor_point_with(
         }
         SpawnAnchor::CreatureDepth { x, y } => ([x, y, seats.creature_body?.z], [0; 3]),
         SpawnAnchor::Creature => seat_at(creature?),
+        SpawnAnchor::CreatureOnShot => {
+            let c = creature?;
+            ([c.x, c.y, c.z], shot?.angles)
+        }
         SpawnAnchor::Victim => seat_at(victim?),
         SpawnAnchor::ShotFocus | SpawnAnchor::ShotFocusScaled { .. } => {
             let s = shot?;

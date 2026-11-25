@@ -1405,6 +1405,13 @@ since the depth it stores is what arm `0x12` and the shots after it read. It fou
 - Arm `0x12` stands monsters `0x4B` and `0xB3` at `z = -0x600` (`0x801F86B8..0x801F86E0`). In a scripted fight,
   arm `0x13` lays a victim the spear killed half a unit in front of the caster (`0x801F89BC..0x801F8A48`).
 
+Spoon (PROT 0919) runs in the walk as well. It found that arm 2's pass seats the creature and its five parts
+together (`0x801F6DA8..0x801F6E5C`), where the port seated the parts a pass later on arm 3, and that it gives the
+creature its colour word `0xFFFFF` after the installer's reset (`0x801F6DB0..0x801F6DD4`). It also found that
+arm 4's twenty eye parts sit on the arm's cut angles (`a1 = sp+0x20`, `SpawnAnchor::CreatureOnShot`), not on the
+creature's. The walk does not seed the creature's eye poses (`+0x6F4`), so arm 4's placement products only take
+one sign.
+
 The command prompts (`command_prompts`) also compare the battle tick's idle orbit at frame steps 1 to 4: on the
 round prompt, the flee confirm and the commit confirm its prologue turns the shared yaw `0x8007B792` by `2 * step`
 (`0x801D078C..0x801D07CC`), the turn `BattleCamera`'s Menu phase takes over the same pass. The ring and the

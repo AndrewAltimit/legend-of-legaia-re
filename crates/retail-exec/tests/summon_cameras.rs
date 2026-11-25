@@ -283,14 +283,16 @@ const BODIES: [(u32, u32, u8); 14] = [
 /// tick body, target code)`. Vera heals a party seat. PROT 0924's and 0925's
 /// target kind is pinned by no capture; they run on a seat. PROT 0903 runs
 /// with its CD word idle and its range poll answered (below); PROT 0918 with
-/// its part handles real and its arm `0xE` framing call live. The other paced
-/// directors (PROT 0904, 0906, 0909..0913, 0919, 0922) hand
+/// its part handles real and its arm `0xE` framing call live; PROT 0919 on
+/// the party. The other paced directors (PROT 0904, 0906, 0909..0913, 0922)
+/// hand
 /// their holds to the tick body's own port and arm a passed arm's shot on
 /// the body's next tick (`ModuleProfile::body_paced`), which a walk of the
 /// director alone cannot pace.
-const PACED: [(u32, u32, u8); 9] = [
+const PACED: [(u32, u32, u8); 10] = [
     (903, GIMARD, 3),
     (918, KEMARO, 3),
+    (919, SPOON, 8),
     (905, VERA, 2),
     (907, NIGHTO, 3),
     (908, ZENOIR, 3),
@@ -303,6 +305,7 @@ const PACED: [(u32, u32, u8); 9] = [
 const VERA: u32 = 0x801F_69D8;
 const GIMARD: u32 = 0x801F_69D8;
 const KEMARO: u32 = 0x801F_6C70;
+const SPOON: u32 = 0x801F_69D8;
 const ZENOIR: u32 = 0x801F_69D8;
 const ULTIMATE_RAVE: u32 = 0x801F_6A18;
 const SPIKEFISH: u32 = 0x801F_6A00;
