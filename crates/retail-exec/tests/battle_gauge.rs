@@ -145,6 +145,12 @@ const CTX_PTR: u32 = 0x8007_BD24;
 const CTX: u32 = 0x8012_0000;
 const FRAME_STEP: u32 = 0x1F80_0393;
 const SPECIAL_WORD: u32 = 0x8007_BAC0;
+/// The game-mode word MAIN dispatches on.
+const GAME_MODE: u32 = 0x8007_B83C;
+/// The exit selector's hold word: non-zero, the exit leaves mode `0`.
+const EXIT_HOLD: u32 = 0x8007_B7FC;
+/// The battle-return marker `FUN_8003AEB0` tests for `2`.
+const RETURN_MARKER: u32 = 0x8007_B8B8;
 const RUMBLE_HOLD: u32 = 0x8007_BD34;
 const PULSE: u32 = 0x8007_B92C;
 const LEVEL: u32 = 0x8007_B930;
@@ -200,6 +206,11 @@ fn the_frame_driver_exits_and_decays_as_retail_does() {
         let keep = rng.below(2) != 0;
         let yaw = rng.next() as u16;
         let message = [0i32, -3, 1, 2, 3, 0x78][rng.below(6) as usize];
+        // The exit selector's inputs: the hold word `_DAT_8007B7FC` and the
+        // battle-return marker `_DAT_8007B8B8` (non-zero for a battle the
+        // field entered).
+        let exit_hold = [0i16, 0, 0, 1][rng.below(4) as usize];
+        let marker = [0u32, 1, 1, 2][rng.below(4) as usize];
 
         cpu.mem = clean.clone();
         unloads.borrow_mut().clear();
@@ -215,6 +226,9 @@ fn the_frame_driver_exits_and_decays_as_retail_does() {
         cpu.mem.wr8(CTX + 6, 0xFF);
         cpu.mem.wr8(FRAME_STEP, step);
         cpu.mem.wr32(SPECIAL_WORD, special);
+        cpu.mem.wr16(EXIT_HOLD, exit_hold as u16);
+        cpu.mem.wr32(RETURN_MARKER, marker);
+        cpu.mem.wr16(GAME_MODE, 0x7777);
         cpu.mem.wr32(RUMBLE_HOLD, hold as u32);
         cpu.mem.wr32(PULSE, pulse as u32);
         cpu.mem.wr32(LEVEL, level as u32);
@@ -272,6 +286,25 @@ fn the_frame_driver_exits_and_decays_as_retail_does() {
                 };
                 assert_eq!(retail, want, "seat {s}, {at}");
             }
+            // The mode the exit hands MAIN, `0x80046DD8..0x80046E60`. A
+            // battle the field entered (marker up, no hold) returns to the
+            // field (`2`, the marker set to `2` for `FUN_8003AEB0`'s
+            // back-from-battle arm) or, for a special word carrying `0x100`,
+            // to the arena (`0x18`): the split the engine's teardown takes
+            // on a Muscle Dome leg (`World::finish_battle`). The hold, or a
+            // battle with no marker, leaves mode `0` (`0x18` on the arena bit
+            // with no marker), arms the engine has no counterpart for.
+            let arena = special & 0x100 != 0;
+            let (want_mode, want_marker) = match (exit_hold != 0, marker != 0) {
+                (true, _) => (0, marker),
+                (false, true) => (if arena { 0x18 } else { 2 }, 2),
+                (false, false) => (if arena { 0x18 } else { 0 }, 0),
+            };
+            assert_eq!(
+                (cpu.mem.rd16(GAME_MODE), cpu.mem.rd32(RETURN_MARKER)),
+                (want_mode, want_marker),
+                "exit mode, hold {exit_hold} marker {marker}, {at}"
+            );
             exits += 1;
             continue;
         }
