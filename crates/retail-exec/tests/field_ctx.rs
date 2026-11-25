@@ -1191,6 +1191,9 @@ struct Recording {
     ramps: Vec<(u32, u32, u32)>,
     /// `_DAT_8008457C`, the duck slot's scale.
     duck_scale: u32,
+    /// Stores to words outside [`HOST_GLOBALS`] a hook names by an
+    /// operand (op 43 07's rotation row): `address -> (width, value)`.
+    rows: BTreeMap<u32, (u8, u32)>,
 }
 impl Recording {
     fn put(&mut self, at: u32, v: u32) {
@@ -1283,13 +1286,75 @@ impl FieldDialogMenuHost for Recording {
         self.inert.op4c_n5_sub3_dialog_wait(ctx)
     }
 }
-impl FieldActorHost for Recording {}
+impl FieldActorHost for Recording {
+    fn actor_face_rotation_setup(
+        &mut self,
+        _ctx: &mut FieldCtx,
+        face_id: u8,
+        payload_4: u32,
+        params: [u16; 4],
+        target: i16,
+    ) {
+        // `0x801DF6F8..0x801DF7A0`: the 12-byte row at `0x8007BE60 +
+        // face * 12` (four halfwords, then the packed word), then a ramp of
+        // `+0x7A` from 0 to `0x1000` over `target` ticks, or back down over
+        // `-target`.
+        let row = 0x8007_BE60 + u32::from(face_id) * 12;
+        for (k, p) in params.iter().enumerate() {
+            self.rows.insert(row + 2 * k as u32, (2, u32::from(*p)));
+        }
+        self.rows.insert(row + 8, (4, payload_4));
+        let (to, ticks) = if target > 0 {
+            (0x1000, i32::from(target))
+        } else {
+            (0, -i32::from(target))
+        };
+        self.ramps.push((CTX + 0x7A, to, ticks as u32));
+    }
+    fn ramp_ctx_slot(&mut self, _ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
+        // The nibble-4 context slots' ramps (`0x801E118C..0x801E12A0`, sub 8
+        // beside them): the scheduler takes the slot's address, the target
+        // sign-extended and the ticks.
+        let off = match sub {
+            0 => 0x72,
+            1 => 0x6A,
+            2 => 0x8E,
+            3 => 0x24,
+            4 => 0x28,
+            8 => 0x26,
+            _ => return,
+        };
+        self.ramps
+            .push((CTX + off, i32::from(target) as u32, u32::from(ticks)));
+    }
+}
 impl FieldActorSpawnHost for Recording {
     fn actor_guard(&mut self, actor_id: u8) -> Option<()> {
         self.inert.actor_guard(actor_id)
     }
 }
 impl FieldActorFxHost for Recording {
+    fn set_actor_tint(
+        &mut self,
+        ctx: &mut FieldCtx,
+        _target: Option<u8>,
+        colour: u32,
+        blend: u16,
+        ticks: u16,
+    ) {
+        // `0x801E1FC4..0x801E2068`: with ticks, a blend at rest tweens
+        // `+0x78` alone; otherwise the colour `+0x74` tweens first (skipped
+        // for a zero blend), then `+0x78`.
+        if ticks == 0 {
+            return;
+        }
+        let blend_word = i32::from(blend as i16) as u32;
+        if ctx.field_78 != 0 && blend != 0 {
+            self.ramps.push((CTX + 0x74, colour, u32::from(ticks)));
+        }
+        self.ramps
+            .push((CTX + 0x78, blend_word, i32::from(ticks as i16) as u32));
+    }
     fn spawn_attached_light(
         &mut self,
         ctx: &FieldCtx,
@@ -1329,7 +1394,7 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
         let ramps = ramps.clone();
         cpu.hook(0x8003_C5F0, move |r, m| {
             let at = r.r[5];
-            if HOST_GLOBALS.iter().any(|g| g.0 == at) {
+            if HOST_GLOBALS.iter().any(|g| g.0 == at) || (CTX..CTX + 0x100).contains(&at) {
                 let sp = r.r[29];
                 ramps
                     .borrow_mut()
@@ -1337,6 +1402,11 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
             }
         });
     }
+    // The 32-bit operand reader op 43 07 loads its packed word through.
+    cpu.hook(0x8003_CED8, |r, m| {
+        let a = r.r[4];
+        r.r[2] = (0..4).fold(0, |w, k| w | u32::from(m.rd8(a + k)) << (8 * k));
+    });
     // The 24-bit operand reader op 4C 8A loads its packed colour through.
     cpu.hook(0x8003_CEB8, |r, m| {
         let a = r.r[4];
@@ -1355,6 +1425,7 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
     };
     let (mut ran, mut stored) = (0u32, BTreeMap::<String, u32>::new());
     let mut ramped = 0usize;
+    let mut rows_held = 0usize;
     let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
     for (script, pc, label) in &corpus {
         for round in 0..2 {
@@ -1387,6 +1458,7 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
                 g: BTreeMap::new(),
                 ramps: Vec::new(),
                 duck_scale: cpu.mem.rd32(0x8008_457C),
+                rows: BTreeMap::new(),
             };
             ramps.borrow_mut().clear();
             let mut seeds = BTreeMap::new();
@@ -1425,6 +1497,13 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
                     ));
                 }
             }
+            for (&at, &(w, v)) in &host.rows {
+                let r = read(&mut cpu, at, w);
+                if r != v {
+                    wrong.push(format!("{at:08X} retail {r:#x} port {v:#x}"));
+                }
+            }
+            rows_held += host.rows.len();
             let retail_ramps = ramps.borrow().clone();
             if retail_ramps != host.ramps {
                 wrong.push(format!(
@@ -1454,6 +1533,7 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
     assert!(report.is_empty(), "{}", report.join("\n"));
     assert!(ran > 4000, "{ran}");
     assert!(ramped > 0, "no instruction ramps a hook-owned word");
+    assert!(rows_held > 0, "no rotation row held");
     // Every hook's word is stored by some instruction of the corpus.
     for (at, _) in HOST_GLOBALS {
         assert!(
