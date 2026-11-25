@@ -49,4 +49,4 @@ reason = "The shatter primitive's packet emit after its RTPT: the switch on the 
 entry = "0x80029DD8"
 range = "0x8002A4E4..0x8002A4E4"
 verdict = "unported"
-reason = "The shatter primitive's OT link window (AVSZ3's OTZ in 0xA1..0x3FFF, sltiu at 0x8002A4E0): the port's shatter kernel returns vertices only and the host draws every triangle through its mesh path with no ordering table, so the window has no counterpart (port gap)"
+reason = "The shatter primitive's OT link window (AVSZ3's OTZ in 0xA1..0x3FFF, sltiu at 0x8002A4E0): render_kernels::shatter returns vertices only and nothing in the port applies this window to a shattered triangle, so it has no counterpart (port gap)"
