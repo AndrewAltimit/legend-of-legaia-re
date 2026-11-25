@@ -1163,7 +1163,11 @@ fn an_attached_light_is_found_where_retail_finds_it() {
 /// The field VM's host globals the port's `FieldHost` hooks name one to one:
 /// `(address, width)`. A store the hook owns lands here on the port's side,
 /// as the hook's documentation spells it.
-const HOST_GLOBALS: [(u32, u8); 11] = [
+const HOST_GLOBALS: [(u32, u8); 15] = [
+    (0x8007_B910, 4), // op 4C 4D, the audio duck level (scaled by 0x8008457C)
+    (0x8007_BCD0, 4), // ops 4C 4A..4C, the horizon gate's scale / step / layer
+    (0x8007_BCD4, 4),
+    (0x8007_BCD8, 4),
     (0x8007_B44C, 4), // op 49 sub 1, the actor handle the menu park keeps
     (0x8007_B628, 2), // op 4C CF, the script camera-focus X
     (0x8007_B62A, 2), // op 4C CF, the focus Z
@@ -1182,6 +1186,11 @@ const HOST_GLOBALS: [(u32, u8); 11] = [
 struct Recording {
     inert: Inert,
     g: BTreeMap<u32, u32>,
+    /// The ramps the hooks schedule: `(global, target, ticks)`, as retail's
+    /// `FUN_8003C5F0` takes them.
+    ramps: Vec<(u32, u32, u32)>,
+    /// `_DAT_8008457C`, the duck slot's scale.
+    duck_scale: u32,
 }
 impl Recording {
     fn put(&mut self, at: u32, v: u32) {
@@ -1216,6 +1225,26 @@ impl FieldCameraMotionHost for Recording {
     }
 }
 impl FieldScreenHost for Recording {
+    fn write_or_ramp_global_slot(&mut self, sub: u8, target: i32, ticks: u16) {
+        // `0x801E1630..0x801E1768`: subs `A..D` write their word at once
+        // with no ticks, or hand `FUN_8003C5F0` a ramp; `D` scales the
+        // target by `_DAT_8008457C` (`mult`, `srl 0xc`).
+        let (at, value) = match sub {
+            0xA => (0x8007_BCD0, target as u32),
+            0xB => (0x8007_BCD4, target as u32),
+            0xC => (0x8007_BCD8, target as u32),
+            0xD => (
+                0x8007_B910,
+                (target as u32).wrapping_mul(self.duck_scale) >> 12,
+            ),
+            _ => return,
+        };
+        if ticks == 0 {
+            self.put(at, value);
+        } else {
+            self.ramps.push((at, value, u32::from(ticks)));
+        }
+    }
     fn set_ambient_particle_gate(&mut self, enabled: bool) {
         self.put(0x8007_B854, enabled.into());
     }
@@ -1293,6 +1322,21 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
+    // The ramp scheduler: `(global, target, ticks)` of each ramp the
+    // dispatcher schedules on a hook-owned word.
+    let ramps: std::rc::Rc<std::cell::RefCell<Vec<(u32, u32, u32)>>> = Default::default();
+    {
+        let ramps = ramps.clone();
+        cpu.hook(0x8003_C5F0, move |r, m| {
+            let at = r.r[5];
+            if HOST_GLOBALS.iter().any(|g| g.0 == at) {
+                let sp = r.r[29];
+                ramps
+                    .borrow_mut()
+                    .push((at, m.rd32(sp + 0x10), m.rd32(sp + 0x14)));
+            }
+        });
+    }
     // The 24-bit operand reader op 4C 8A loads its packed colour through.
     cpu.hook(0x8003_CEB8, |r, m| {
         let a = r.r[4];
@@ -1310,6 +1354,7 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
         }
     };
     let (mut ran, mut stored) = (0u32, BTreeMap::<String, u32>::new());
+    let mut ramped = 0usize;
     let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
     for (script, pc, label) in &corpus {
         for round in 0..2 {
@@ -1340,7 +1385,10 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
             let mut host = Recording {
                 inert: Inert { hit: true },
                 g: BTreeMap::new(),
+                ramps: Vec::new(),
+                duck_scale: cpu.mem.rd32(0x8008_457C),
             };
+            ramps.borrow_mut().clear();
             let mut seeds = BTreeMap::new();
             for (at, w) in HOST_GLOBALS {
                 let v = if w == 2 {
@@ -1377,6 +1425,14 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
                     ));
                 }
             }
+            let retail_ramps = ramps.borrow().clone();
+            if retail_ramps != host.ramps {
+                wrong.push(format!(
+                    "ramps retail {retail_ramps:x?} port {:x?}",
+                    host.ramps
+                ));
+            }
+            ramped += usize::from(!retail_ramps.is_empty());
             if !wrong.is_empty() {
                 let e = differ.entry(label.clone()).or_default();
                 e.0 += 1;
@@ -1397,6 +1453,7 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
     eprintln!("{ran} runs; host-global stores: {stored:?}");
     assert!(report.is_empty(), "{}", report.join("\n"));
     assert!(ran > 4000, "{ran}");
+    assert!(ramped > 0, "no instruction ramps a hook-owned word");
     // Every hook's word is stored by some instruction of the corpus.
     for (at, _) in HOST_GLOBALS {
         assert!(
