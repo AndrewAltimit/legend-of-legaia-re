@@ -321,3 +321,24 @@ image = "1a117ddfa651aab2"
 range = "0x801F86A0..0x801F86A0"
 verdict = "unreachable"
 reason = "PROT 0918 arm 0x12's rounding fix-up of `ctx[+0x6D0] / 8` (0x801F8698..0x801F86A8): the word arm 0xE's framing stored, at least 0xC00 (see 0x801F7F00)."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6A44..0x801F6A44"
+verdict = "unreachable"
+reason = "PROT 0907's prologue loads its victim only for a seat target code (`sltiu 8` / `beq` at 0x801F6A40..0x801F6A44). Nighto strikes one monster, so the cast reaches the module with the caster's `+0x1DD` on that monster's seat and never on a group code 8 or 9."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6B40..0x801F6B48"
+verdict = "unreachable"
+reason = "PROT 0907's phase dispatch past 0xF: only `0xFF` has an arm there. The module's phase stores are the early arms' `+1` / `+2` / `4` (0x801F71B4..0x801F71E0), the later arms' `+1` up to arm 13's step to 0xE (0x801F7E8C), arm 13's `0xF` (0x801F7E28), and the `0xFF` of arms 0xE and 0xF (0x801F7EF0, 0x801F7F60), so no phase from 0x10 to 0xFE is ever stored."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6C7C..0x801F6C9C"
+verdict = "unreachable"
+reason = "PROT 0907 arm 0's resist roll: the compiler's divide guards (`break 0x1C00` on a zero divisor, the `-1` / `0x80000000` overflow test) round `rand() % (0x13 - level)` (`div` at 0x801F6C78), where `level` is the caster's level byte for the spell (`+0x729`). The level-up check raises that byte only while it is below 9 (`magic_xp::accrue_and_level`), so the divisor is at least 10."

@@ -1964,6 +1964,9 @@ Kemaro grows in on a spin: its seat leaves the creature at node scale `0`, and a
 stages no clip, a kill's knockdown included, so the victim stays frozen on its flinch until
 arm `0x13`; in a scripted fight that arm lays a killed victim in front of the caster.
 
+Nighto's instant death, once resisted, waits out its own countdown before the cast ends; that wait runs at the
+pass's whole `scalar * step`, one tick's share a tick.
+
 Gimard's walk-in hit (arm 11) skips a Stoned victim, as the hit loops in `STONE_SKIPPING_HITS` do
 (`0x801F7494..0x801F749C`): no roll, no reaction and no turn onto the creature. Its arm 4 sinks the
 creature by the pass's whole `step * scalar` before the gate, so the arm's leaving tick owes the rest of

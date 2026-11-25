@@ -1414,8 +1414,16 @@ Spoon (PROT 0919) runs in the walk as well. It found that arm 2's pass seats the
 together (`0x801F6DA8..0x801F6E5C`), where the port seated the parts a pass later on arm 3, and that it gives the
 creature its colour word `0xFFFFF` after the installer's reset (`0x801F6DB0..0x801F6DD4`). It also found that
 arm 4's twenty eye parts sit on the arm's cut angles (`a1 = sp+0x20`, `SpawnAnchor::CreatureOnShot`), not on the
-creature's. The walk does not seed the creature's eye poses (`+0x6F4`), so arm 4's placement products only take
-one sign.
+creature's. The walk seeds the battle context's five eye poses `ctx[+0x6F4]` with offsets of both signs and turns the
+caster off the axis, then compares every eye part's `+0x14..+0x18` through arms 4 to 7 against `spoon_eye_seat`,
+the kernel `World::seat_spoon_eye_parts` places them with.
+
+Nighto (PROT 0907) runs its kill leg on the walk's fallen runs and odd-step live runs: arm 0's fork word
+`0x801F8534` is zeroed, and on the fallen runs the resist word `0x801F853C` too. Retail's kill leg (arm `0xE`)
+drains its halfword by the pass's `scalar * step` (`0x801F7E98..0x801F7EB4`). The director drained the whole pass
+on every tick, so above step 1 a resisted instant death ran its wait one and a half to two and a half times too fast; it now drains a tick's
+share. The leg's hold on the victim's fade is the tick body's, so the walk leaves that arm's pace to the band
+shadow.
 
 The command prompts (`command_prompts`) also compare the battle tick's idle orbit at frame steps 1 to 4: on the
 round prompt, the flee confirm and the commit confirm its prologue turns the shared yaw `0x8007B792` by `2 * step`
