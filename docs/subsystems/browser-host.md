@@ -278,7 +278,10 @@ upright (portrait, at most 620px wide) and out of fullscreen the pad sits in a
 band under the picture instead, START and SELECT between the shoulders: over a
 picture that small its shoulder buttons covered the party's HP readout and its
 D-pad and face buttons a third of the scene. Landscape and fullscreen keep it over
-the picture.
+the picture, except while the boot title runs: the title and its handoffs (the New
+Game rules, Continue, Options) draw tabs along the top and a help line and key hint
+along the foot, so the wrap carries `pad-band` and the pad takes the band in every
+layout out of fullscreen.
 
 What only a browser has is driven headless by the `controls` step of
 [`check-pages.mjs`](../../scripts/ci/check-pages.mjs) on the built bundle: a

@@ -40,10 +40,10 @@
     </tbody>
   </table>
   <p>On the desktop, the launcher's <em>Saves folder</em> button opens the folder; options and key bindings sit beside the saves (<a href="desktop-apps.html#port-saves">where saves and settings live</a>). A <code>play-window</code> started from a terminal keeps them in the current directory instead, unless you pass <code>--save-dir</code>.</p>
-  <p>In the browser, the card stays as long as the browser keeps the site's data: clearing site data, a private window, or another browser or computer starts with an empty card. Use the <em>Saves</em> card's <em>Export</em> to keep a copy, or to carry a game to another machine.</p>
+  <p>In the browser, the card stays as long as the browser keeps the site's data: clearing site data, a private window, or another browser or computer starts with an empty card. Use the <em>Saves</em> panel's <em>Export</em> to keep a copy, or to carry a game to another machine.</p>
 
   <h3 id="emulator-saves">Can I use my saves from an emulator?</h3>
-  <p>Yes. The desktop and the browser both read emulator memory cards (<code>.mcr</code>, <code>.mcd</code>, <code>.srm</code>, DexDrive <code>.gme</code>, single-save <code>.mcs</code>). On the desktop, drop the card on the launcher or right-click <em>Saves folder</em>: it becomes card 2 on the game's Load and Save screens, and saving writes back into it (<a href="desktop-apps.html#port-memory-card">saves from another emulator</a>). On the play page, import it on the <em>Saves</em> card or put it in a card slot. The other way works too: <code>memcard1.mcr</code> is an ordinary PlayStation card image, and a card exported from the play page loads in an emulator.</p>
+  <p>Yes. The desktop and the browser both read emulator memory cards (<code>.mcr</code>, <code>.mcd</code>, <code>.srm</code>, DexDrive <code>.gme</code>, single-save <code>.mcs</code>). On the desktop, drop the card on the launcher or right-click <em>Saves folder</em>: it becomes card 2 on the game's Load and Save screens, and saving writes back into it (<a href="desktop-apps.html#port-memory-card">saves from another emulator</a>). On the play page, import it on the <em>Saves</em> panel or put it in a card slot. The other way works too: <code>memcard1.mcr</code> is an ordinary PlayStation card image, and a card exported from the play page loads in an emulator.</p>
 
   <h3 id="where-save">Where can I save?</h3>
   <p>Where the original lets you: save points and the world map, through the game's own Save screen. The <em>Save anywhere</em> tweak (off by default) lets the pause menu's Save row work in every scene.</p>
@@ -119,7 +119,7 @@
   <h2>The scene selector</h2>
 
   <h3 id="jump">Can I jump straight to a town or dungeon?</h3>
-  <p>Yes. On the play page, pick it on the <em>Scenes</em> card (the box above the list filters it). In the desktop game, <kbd>F12</kbd> then <kbd>Tab</kbd> (or L1 / R1) to the <em>Scenes</em> page takes you there with your party and bag. From a terminal, <code>legaia-engine list-scenes --disc &lt;bin&gt;</code> lists the names and <code>play-window --scene &lt;name&gt;</code> starts in one. You arrive where the game's own doors put you. With no save loaded, a picked scene starts with Vahn, Noa and Gala at level 1, a convenience of the port; a real New Game starts with Vahn alone.</p>
+  <p>Yes. On the play page, open <em>Scene picker</em> in the row above the picture and pick it (the box above the list filters it). In the desktop game, <kbd>F12</kbd> then <kbd>Tab</kbd> (or L1 / R1) to the <em>Scenes</em> page takes you there with your party and bag. From a terminal, <code>legaia-engine list-scenes --disc &lt;bin&gt;</code> lists the names and <code>play-window --scene &lt;name&gt;</code> starts in one. You arrive where the game's own doors put you. With no save loaded, a picked scene starts with Vahn, Noa and Gala at level 1, a convenience of the port; a real New Game starts with Vahn alone.</p>
 
   <h3 id="scene-cutscene">Why did a cutscene start when I picked a scene?</h3>
   <p>Because the story opens that scene on one: a town's welcome, a dungeon's first line, the Uru Mais dreams, frozen and thawed Buma, the Bio Castle's last room and Noa's dream among them. The selector seats the party where the beat plays and raises the story flags the door in would have raised, so it plays as it does when you walk in. With a save already past that point, nothing fires, as in the original. Some picks are cutscene-only scenes that the game only ever passes through (the second form of Zora's castle is one); they play that passage and move on. More in <a href="playing-and-viewing.html#scenes">Pick a scene</a>.</p>
@@ -140,7 +140,7 @@
   <h2>Expansion packs and other languages</h2>
 
   <h3 id="expansion">What is an expansion pack, and where do I get one?</h3>
-  <p>New content made for the port - maps, quests, fights, trading cards, game modes - that plays beside your own disc and carries none of its data. Every release includes the sample pack. On the desktop, the launcher's <em>Expansion pack...</em> button picks one; on the play page, the <em>Expansion pack</em> card loads an <code>.lxpack</code> once the disc is up. With a pack on, Select in the pause menu opens its Journal. The steps are in <a href="playing-expansion-packs.html">Playing an expansion pack</a>; making one is <a href="making-expansion-packs.html">Making expansion packs</a>.</p>
+  <p>New content made for the port - maps, quests, fights, trading cards, game modes - that plays beside your own disc and carries none of its data. Every release includes the sample pack. On the desktop, the launcher's <em>Expansion pack...</em> button picks one; on the play page, the <em>Expansion pack</em> panel (its button is in the row above the picture) loads an <code>.lxpack</code> once the disc is up. With a pack on, Select in the pause menu opens its Journal. The steps are in <a href="playing-expansion-packs.html">Playing an expansion pack</a>; making one is <a href="making-expansion-packs.html">Making expansion packs</a>.</p>
 
   <h3 id="language">Can I play in another language?</h3>
   <p>Yes, by translating a copy of your disc: the <a href="../tooling/rom-patcher.html">ROM patcher page</a>'s <em>Language</em> box applies one of the community translations (Spanish, French, German, Italian, Polish, Brazilian Portuguese) or your own pack, in the browser, and gives you a patched image to play. Your own disc is not changed. Writing or improving a translation: <a href="translating.html">Translating the game</a>.</p>
@@ -200,7 +200,7 @@
       <tr><td>Desktop game, still running</td><td><kbd>F12</kbd>, <em>Tools</em> page, <em>Copy report</em> (written to <code>legaia-report.txt</code> in the saves folder where there is no clipboard)</td></tr>
       <tr><td>Desktop game that stopped with an error</td><td>The launcher comes back: <kbd>Ctrl</kbd>+<kbd>C</kbd>, or a click on its help box; the full log is <code>legaia-engine-game.log</code> in the saves folder</td></tr>
       <tr><td>Legaia Explorer</td><td><em>Copy report</em> on its error banner</td></tr>
-      <tr><td>Browser play page</td><td><em>Copy report</em> beside the picture</td></tr>
+      <tr><td>Browser play page</td><td><em>Copy report</em> in the disc panel above the picture</td></tr>
     </tbody>
   </table>
   <p>The report carries the version, your system (and in the browser, the browser and graphics chip), the scene and the settings. Add to it:</p>
@@ -209,7 +209,7 @@
     <li><b>Original mode</b><span>Whether it still happens with Original mode on. That tells an enhancement's side effect apart from the game itself.</span></li>
     <li><b>Your disc</b><span>The plain USA disc, or a randomized or patched copy (and its seed or patch).</span></li>
     <li><b>A picture</b><span><kbd>Print Screen</kbd> saves a screenshot on both hosts; a short video is better for anything that moves. For a "looks different" report, footage of the original at the same moment helps most.</span></li>
-    <li><b>A save near it</b><span>Desktop: <em>Export session</em> on the <kbd>F12</kbd> <em>Tools</em> page writes an <code>.lgsf</code> into the saves folder. Browser: <em>Export save</em> on the <em>Saves</em> card.</span></li>
+    <li><b>A save near it</b><span>Desktop: <em>Export session</em> on the <kbd>F12</kbd> <em>Tools</em> page writes an <code>.lgsf</code> into the saves folder. Browser: <em>Export save</em> on the <em>Saves</em> panel.</span></li>
   </ol>
   <p class="hint">Never attach the disc image or files extracted from it; the project cannot take Sony's data.</p>
 </section>

@@ -377,7 +377,7 @@ Every page rebuilds its whole engine per delivery (`new LegaiaRuntime()` +
 `load_disc`), so the second delivery lands on top of whatever the first one
 started. On the play page that is fatal, and it does not look like a double
 load: the title card comes up normally, and a few seconds later the status
-snaps back to `Disc loaded (…). Pick a boot mode.` over a dead canvas, because
+snaps back to `Disc loaded (…)` over a dead canvas, because
 the runtime the live title session was stepping has been replaced under it. The
 same shape can strand a scene entered from the picker.
 
@@ -396,7 +396,7 @@ input already holds, so re-picking the same disc after Forget used to cache
 nothing.
 
 The reproduction is a control pair, not a screenshot: with a warm cache, pick
-the file again, click **New game** as soon as the boot modes appear, and read
+the file again, start New Game from the title the load boots, and read
 the HUD ten seconds later. Re-picking leaves the HUD's Scene at `-` (the engine
 never ticked); skipping the re-pick, same profile and same timing, boots to `opdeene`.
 
