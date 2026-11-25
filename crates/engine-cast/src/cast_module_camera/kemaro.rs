@@ -155,6 +155,8 @@ pub fn kemaro_drift(phase: u8, drained: i32) -> Option<CaptureDrift> {
 /// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; camera arms 0, 4, 7, 9, 11, 13, 14, 16 and 17, the drifts of arms 1, 4 and 8..13, arm 4's TR y store, the spawn calls of arms 3, 5, 7, 9, 13 and 17, arm 8's pool spawn and the captions of arms 6, 7 and 0x13)
 pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let drained = st.countdown.0 - SPEED_SCALAR;
+    // The word as the pass opened on it, ahead of the pass's drain.
+    let pass_word = st.pass_word();
     let ramp_before = st.ramp;
     let held = hold_step(KEMARO, st, phase);
     let mut base = if held {
@@ -178,9 +180,12 @@ pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
     if phase == 6 && !held && ramp_before < 0x1000 {
         base.caption = Some(ModuleCaption::SpellName);
     }
-    // Arm 13's one-shot spawns, on the first pass at or under `scalar << 5`
-    // (`0x801F7C30..0x801F7D38`; arm 12's pass zeroes the latch).
-    if phase == 13 && drained <= SPEED_SCALAR << 5 && st.ramp == 0 {
+    // Arm 13's one-shot spawns, on the first pass that opens at or under
+    // `scalar << 5` (the word read at `0x801F7C2C` ahead of the drain at
+    // `0x801F7DA0`; `0x801F7C30..0x801F7D38`; arm 12's pass zeroes the latch).
+    // The latch is the ramp word as the tick opened: the pass that leaves
+    // resets the word, and retail's latch `0x801F92F8` stays raised.
+    if phase == 13 && pass_word <= SPEED_SCALAR << 5 && ramp_before == 0 {
         st.ramp = 1;
         base.spawns = &KEMARO_ARM13_SPAWNS;
     }

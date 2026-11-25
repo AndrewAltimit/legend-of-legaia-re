@@ -20,38 +20,57 @@ impl World {
     /// |---|---|
     /// | 0 (`0x801F6E48..0x801F6EA0`, pass) | the victim's pose saved, then `x = 0`, `z = -0x800`, facing `0` |
     /// | 1 (`0x801F6F20..0x801F6F30`, every pass) | the victim shown |
-    /// | 6 (`0x801F7480..0x801F74A4`, every pass) | the creature's facing `= +0x72 * 6`, the spin it grows in on |
+    /// | 6 (`0x801F7328..0x801F74A4`, every pass) | the creature's scale `+0x72` up `4 * scalar * step` to `0x1000`, its facing `= +0x72 * 6`: the spin it grows in on |
     /// | 8 (`0x801F7640..0x801F7674`, while the word is at or under `scalar << 6`) | the creature's height [`kemaro_arm8_height`] |
     /// | 8 (`0x801F7690..0x801F76A8`, while the word is at or under `scalar << 5`) | the creature at `z = 0x400`, facing `0x800`, pitch `+0x44 = (word << 4) & 0xFFF`; height and pitch back to `0` on the pass (`0x801F7748`, `0x801F7750`) |
     /// | 13 (`0x801F7D40..0x801F7D78`, at or under `scalar << 5`; pass `0x801F7DC0..0x801F7DCC`) | the creature walks `scalar / 4` a tick along `z`; on the pass the creature and the victim hidden |
     /// | 14 (`0x801F7E84..0x801F7E90`, pass) | the victim shown |
     /// | 15 (`0x801F8088..0x801F80BC`, pass) | the victim's flinch staged |
     /// | 16 (`0x801F81E0..0x801F825C`, `0x801F8370..0x801F8388`, pass) | the victim on `+0x04 = 0x401004`, `+0x21C = 0xC8`; on the neutral word for ids `0xA8`, `0x53..0x55`; frozen on its flinch (cursor `0x30`, rate `0`, pitch `1`) |
-    /// | `0x12` (`0x801F8698..0x801F86E0`, every pass) | the victim at `z = ctx[+0x6D0] / 8 - 0xA00` |
-    /// | `0x13` (`0x801F893C..0x801F89B8`, pass) | the victim's pose restored, clip `0` at rate `8`, pitch `0`; shown, or `+0x21C = 2` when it died |
+    /// | `0x12` (`0x801F8698..0x801F86E0`, every pass) | the victim at `z = ctx[+0x6D0] / 8 - 0xA00`, or `-0x600` for monster ids `0x4B` / `0xB3` |
+    /// | `0x13` (`0x801F893C..0x801F8A48`, pass) | the victim's pose restored, clip `0` at rate `8`, pitch `0`; shown, or `+0x21C = 2` when it died, and in a scripted fight (`ctx[+0x287]`) laid half a unit in front of the caster |
     ///
     /// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; the victim and creature seat writes of arms 0, 1, 6, 8 (height, pitch), 13, 14, 16, 0x12 and 0x13)
     pub(in crate::world::battle::cast_band) fn apply_kemaro_writes(
         &mut self,
         phase: u8,
         passed: bool,
+        caster: u8,
         victim: u8,
     ) {
         let s = legaia_engine_cast::cast_module_camera::SPEED_SCALAR;
         let countdown = self.casting.module_cam.countdown.0;
         let ramp = self.casting.module_cam.ramp;
+        // The word as the pass opened on it, latched ahead of the director
+        // (`ModuleCamState::latch_pass_word`): retail reads it once a pass,
+        // ahead of the pass's whole drain.
+        let rest = i32::from(self.casting.module_cam.countdown.1);
+        let pass_word = self.casting.module_cam.pass_word_in;
         let creature = self.casting.summon_actor_slot.map(usize::from);
         let v = usize::from(victim);
         let depth = i32::from(self.battle.camera_frame_height);
         self.kemaro_spear_writes(phase, passed, victim, countdown, depth);
         if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
             match phase {
-                6 => a.battle.facing_angle = ((ramp * 6) & 0xFFF) as u16,
+                // The creature grows in from nothing: arm 4's seat leaves it
+                // at node scale `+0x72 = 0` (`module_seat_arm`), and arm 6
+                // adds `4 * scalar * step` a pass, clamped to `0x1000` on the
+                // pass that leaves (`0x801F7328..0x801F73B0`), the facing
+                // `+0x72 * 6` off the clamped scale.
+                6 => {
+                    let scale = if passed {
+                        0x1000
+                    } else {
+                        ramp.clamp(0, 0x1000)
+                    };
+                    a.battle.render_scale = Some(scale as u16);
+                    a.battle.facing_angle = ((scale * 6) & 0xFFF) as u16;
+                }
                 8 if !passed => {
                     // The arm's stores read the word ahead of the pass's
                     // drain (`lw a0,-0x6D1C(v1)` at `0x801F762C`, the drain at
                     // `0x801F7730`).
-                    let w = countdown + s;
+                    let w = pass_word;
                     if w <= s << 6 {
                         a.move_state.world_y = kemaro_arm8_height(w);
                     }
@@ -61,8 +80,14 @@ impl World {
                         a.battle.render_pitch = ((w << 4) & 0xFFF) as u16;
                     }
                 }
-                13 if countdown <= s << 5 && !passed => {
-                    a.move_state.world_z = a.move_state.world_z.wrapping_add((s / 4) as i16);
+                // The walk reads the pass's opening word (`lw` at
+                // `0x801F7C2C`, the drain at `0x801F7DA0`) and steps the
+                // pass's whole `scalar * step / 4`, the leaving pass's too:
+                // the leaving tick owes the rest of its pass's step.
+                13 if pass_word <= s << 5 => {
+                    let ticks = 1 + if passed { rest } else { 0 };
+                    a.move_state.world_z =
+                        a.move_state.world_z.wrapping_add((s / 4 * ticks) as i16);
                 }
                 _ => {}
             }
@@ -86,10 +111,20 @@ impl World {
             a.battle.render_flag = 0;
             a.battle.render_color = SHOWN_TINT;
         }
+        // Two monsters stand further back on the line, whatever the depth: a
+        // formation cell of `0x4B` or `0xB3` takes `z = -0x600`
+        // (`0x801F86B8..0x801F86E0`).
         if phase == 0x12
             && let Some(a) = self.actors.get_mut(v)
         {
-            a.move_state.world_z = (depth / 8 - 0xA00) as i16;
+            let set_back = a
+                .battle_monster_id
+                .is_some_and(|id| matches!(id, 0x4B | 0xB3));
+            a.move_state.world_z = if set_back {
+                -0x600
+            } else {
+                (depth / 8 - 0xA00) as i16
+            };
         }
         if !passed {
             return;
@@ -110,6 +145,7 @@ impl World {
             0 => {
                 // The hit stages no clip (`0x801F87B0..0x801F8864`).
                 self.casting.module_fold_quiet = true;
+                self.casting.module_fold_unstaged = true;
                 self.casting.module_saved_poses.clear();
                 if let Some(a) = self.actors.get_mut(v) {
                     self.casting.module_saved_poses.push((
@@ -175,6 +211,18 @@ impl World {
                     .iter()
                     .find(|p| p.0 == v)
                     .copied();
+                // A scripted fight's victim that died is laid half a unit in
+                // front of the caster, off the caster's facing
+                // (`ctx[+0x287]`, `0x801F89BC..0x801F8A48`).
+                let scripted = self.battle_ctx.scripted_fight != 0;
+                let caster_front = self.actors.get(usize::from(caster)).map(|c| {
+                    let (sin, cos) =
+                        legaia_engine_system::trig::trig12(c.battle.facing_angle & 0xFFF);
+                    (
+                        c.move_state.world_x.wrapping_add(sin >> 1),
+                        c.move_state.world_z.wrapping_add(cos >> 1),
+                    )
+                });
                 if let Some(a) = self.actors.get_mut(v) {
                     a.battle.render_pitch = 0;
                     if let Some((_, pos, facing)) = saved {
@@ -190,6 +238,10 @@ impl World {
                     } else {
                         a.battle.render_flag = 2;
                         a.battle.render_color = 0;
+                        if scripted && let Some((x, z)) = caster_front {
+                            a.move_state.world_x = x;
+                            a.move_state.world_z = z;
+                        }
                     }
                 }
             }

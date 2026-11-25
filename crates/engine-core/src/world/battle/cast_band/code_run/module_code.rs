@@ -369,7 +369,7 @@ impl World {
         if entry == 918
             && let Some(d) = direction
         {
-            self.apply_kemaro_writes(ctx.phase, !d.hold, victim_slot);
+            self.apply_kemaro_writes(ctx.phase, !d.hold, caster_slot, victim_slot);
         }
         if entry == 917
             && let Some(d) = direction

@@ -86,6 +86,8 @@ const SPECIAL_WORD: u32 = 0x8007_BAC0;
 const ARENA_WORD: u32 = 0x200;
 /// `FUN_8004E2F0`, the range poll.
 const RANGE: u32 = 0x8004_E2F0;
+/// The target-size framing `FUN_801F0348`, which stores `ctx[+0x6D0]`.
+const FRAME_SIZE: u32 = 0x801F_0348;
 /// The battle's outcome byte the range poll gates on.
 const BATTLE_OUTCOME: u32 = 0x8007_BD71;
 /// `FUN_8003F2B8`, the drive poll `CdSync(1)` each module's poll arm makes.
@@ -280,13 +282,15 @@ const BODIES: [(u32, u32, u8); 14] = [
 /// The directors beside a ported tick body whose arms they pace, as `(entry,
 /// tick body, target code)`. Vera heals a party seat. PROT 0924's and 0925's
 /// target kind is pinned by no capture; they run on a seat. PROT 0903 runs
-/// with its CD word idle and its range poll answered (below). The other paced
-/// directors (PROT 0904, 0906, 0909..0913, 0918, 0919, 0922) hand
+/// with its CD word idle and its range poll answered (below); PROT 0918 with
+/// its part handles real and its arm `0xE` framing call live. The other paced
+/// directors (PROT 0904, 0906, 0909..0913, 0919, 0922) hand
 /// their holds to the tick body's own port and arm a passed arm's shot on
 /// the body's next tick (`ModuleProfile::body_paced`), which a walk of the
 /// director alone cannot pace.
-const PACED: [(u32, u32, u8); 8] = [
+const PACED: [(u32, u32, u8); 9] = [
     (903, GIMARD, 3),
+    (918, KEMARO, 3),
     (905, VERA, 2),
     (907, NIGHTO, 3),
     (908, ZENOIR, 3),
@@ -298,6 +302,7 @@ const PACED: [(u32, u32, u8); 8] = [
 
 const VERA: u32 = 0x801F_69D8;
 const GIMARD: u32 = 0x801F_69D8;
+const KEMARO: u32 = 0x801F_6C70;
 const ZENOIR: u32 = 0x801F_69D8;
 const ULTIMATE_RAVE: u32 = 0x801F_6A18;
 const SPIKEFISH: u32 = 0x801F_6A00;
@@ -645,6 +650,11 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // PROT 0915's chase reads the range poll live: its creature
             // stands on the row in turn (below).
             let live_reach = matches!(entry, 915 | 903) && target == RANGE;
+            // PROT 0918's arm `0xE` re-frames the camera off the victim's
+            // size (`jal 0x801F0348` at `0x801F7EA4`), whose `ctx[+0x6D0]`
+            // its later arms read: it runs live, as the host's
+            // `cast_target_frame_depth` does beside it.
+            let live_reach = live_reach || (entry == 918 && target == FRAME_SIZE);
             if ![AIM, BUILDER, BEARING, RAND, WRAPPER, DRIVE_POLL, INSTALLER].contains(&target)
                 && !live_reach
             {
@@ -790,7 +800,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 log.borrow_mut()
                     .push((r.r[A2], trio(m, r.r[A0]), trio(m, r.r[A1])));
                 r.r[V0] = 0;
-                if entry == 922 || entry == 933 {
+                if matches!(entry, 918 | 922 | 933) {
                     let at = next.get();
                     next.set(at + 0x80);
                     for o in (0..0x80).step_by(4) {
@@ -963,8 +973,21 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // The band shadow: a world seated off the same records, the
             // band's module half (`World::drive_summon_module_pass`) run on
             // retail's phase beside each pass, every seat compared after it.
-            let scripted = entry == 931 && fallen;
+            // So are PROT 0918's: its arm `0x13` lays a victim the spear
+            // killed in front of the caster (`0x801F89BC..0x801F8A48`).
+            let scripted = matches!(entry, 931 | 918) && fallen;
+            // PROT 0918's even-step runs cast on one of the two monsters arm
+            // `0x12` stands further back (`0x4B` / `0xB3` in the victim's
+            // formation cell, `0x801F86C4..0x801F86E0`).
+            let set_back = (entry == 918 && step % 2 == 0 && victim >= 3)
+                .then_some([0x4Bu8, 0xB3][usize::from(step / 2) % 2]);
+            if let Some(id) = set_back {
+                cpu.mem.wr8(FORMATION + victim - 3, id);
+            }
             let mut shadow = summon_shadow(&mut cpu, layout, action, live.then_some(&overlay[..]));
+            if let (Some(id), Some(w)) = (set_back, shadow.as_mut()) {
+                w.actors[victim as usize].battle_monster_id = Some(u16::from(id));
+            }
             if let Some(w) = shadow.as_mut()
                 && fallen
             {
@@ -1216,6 +1239,20 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 };
                 st.row_settled = (3..3 + layout.monsters).all(|s| settled(&mut cpu.mem, s));
                 st.victim_settled = settled(&mut cpu.mem, victim);
+                // The victim's display seat `+0x3C..+0x40`, which the host
+                // hands the director (`World::module_body_seat`): PROT
+                // 0918's arm `0xE` stands its spear at four thirds of its
+                // height (`lh 0x3e(s4)` at `0x801F7F5C`).
+                st.victim_body = Some(seat_at(&mut cpu.mem, victim, true));
+                // PROT 0918's arm `0xE` re-frames off the victim's size at the
+                // head of its pass (`jal 0x801F0348` at `0x801F7EA4`), ahead
+                // of the shot that reads `ctx[+0x6D0]`: the director reads the
+                // depth that call leaves, as the host's
+                // `cast_target_frame_depth` hands it. The call is a pure
+                // store of the word, so the pass makes it again unchanged.
+                if (entry, phase) == (918, 0xE) {
+                    assert_eq!(cpu.call(FRAME_SIZE, &[]), Stop::Returned);
+                }
                 let t0 = Target::read(&mut cpu.mem);
                 let live_code = cpu.mem.rd8(ACTOR + layout.caster * STRIDE + 0x1DD);
                 let seats = ModuleCamSeats {
