@@ -139,11 +139,8 @@ impl App {
         }
         let reveal = std::mem::take(&mut self.media.reveal);
         let side_max = super::side_panel_max(ui, 200.0);
-        let side = self.side_width("media", 260.0).min(side_max);
-        let panel = egui::Panel::left("media_files")
-            .resizable(true)
-            .default_size(side)
-            .max_size(side_max)
+        let panel = self
+            .left_panel("media", 260.0, 0.0, side_max)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
@@ -183,8 +180,7 @@ impl App {
                         }
                     });
             });
-        self.side_widths
-            .insert("media", panel.response.rect.width());
+        self.note_left_panel(ui, "media", panel.response.rect.width());
         if let Some(p) = pick
             && self.media.sel.as_deref() != Some(p.as_str())
         {
