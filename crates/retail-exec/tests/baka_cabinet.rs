@@ -67,6 +67,16 @@ const SPAWNED: u32 = 0x8013_0000;
 /// The HUD widget emitter the front end, the FIGHT flash and the choice
 /// sheet draw through.
 const WIDGET: u32 = 0x801D_5ED0;
+const TITLE_CARD: u32 = 0x801D_59D4;
+const ROUND_BANNER: u32 = 0x801D_5C7C;
+const ANNOUNCER: u32 = 0x8003_D53C;
+const SCREEN_FADE: u32 = 0x8002_4EE4;
+/// The arena pass's first wall (`0x801D20AC`) and the HUD pass (`0x801D21A4`).
+const ARENA: u32 = 0x801D_6BB8;
+const HUD: u32 = 0x801D_2AFC;
+
+/// Each logged call: the callee and its first three arguments.
+type CallLog = Vec<(u32, [u32; 3])>;
 
 fn word(cpu: &mut psx_retail_exec::Cpu, a: u32) -> i32 {
     if a == SECRET {
@@ -122,6 +132,20 @@ fn the_cabinet_runs_sessions_as_retail_does() {
         });
     }
     let mut widget_frames = 0usize;
+    // The other draws and cues the arms call out for, by callee: the title
+    // card, the round banner, the announcer line, the full-screen fade, the
+    // arena pass and the HUD pass, each with its first three arguments.
+    let calls: std::rc::Rc<std::cell::RefCell<CallLog>> = Default::default();
+    for callee in [TITLE_CARD, ROUND_BANNER, ANNOUNCER, SCREEN_FADE, ARENA, HUD] {
+        let calls = calls.clone();
+        cpu.hook(callee, move |r, _| {
+            use psx_retail_exec::{A0, A1, A2};
+            calls
+                .borrow_mut()
+                .push((callee, [r.r[A0], r.r[A1], r.r[A2]]));
+        });
+    }
+    let mut called = [0usize; 6];
     // The duel's and the drive's perturbations draw from their own stream, so
     // the pad stream the sessions' routes hang on stays the one it was.
     let mut aux = Rng(0x5348_414B);
@@ -307,6 +331,7 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             let timer_before = cpu.mem.rd32(ROUND_TIMER) as i32;
             spawns.set(0);
             widgets.borrow_mut().clear();
+            calls.borrow_mut().clear();
             assert_eq!(
                 cpu.call(CABINET, &[ACTOR]),
                 Stop::Returned,
@@ -359,6 +384,59 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             drawn.sort_unstable();
             assert_eq!(drawn, cells, "widgets, {at}");
             widget_frames += usize::from(!cells.is_empty());
+            let log = calls.borrow().clone();
+            let args = |callee: u32| -> Vec<[u32; 3]> {
+                log.iter()
+                    .filter(|(c, _)| *c == callee)
+                    .map(|(_, a)| *a)
+                    .collect()
+            };
+            let one = |v: Option<[u32; 3]>| v.into_iter().collect::<Vec<_>>();
+            assert_eq!(
+                args(TITLE_CARD)
+                    .iter()
+                    .map(|a| a[0] as i32)
+                    .collect::<Vec<_>>(),
+                f.title_card.into_iter().collect::<Vec<_>>(),
+                "title card, {at}"
+            );
+            assert_eq!(
+                args(ROUND_BANNER)
+                    .iter()
+                    .map(|a| a[0] as i32)
+                    .collect::<Vec<_>>(),
+                f.round_banner.into_iter().collect::<Vec<_>>(),
+                "round banner, {at}"
+            );
+            // The all-clear beats' lines are the announcer walk's (stubbed).
+            if !(ST_CLEAR_A..=ST_CLEAR_E).contains(&state) {
+                assert_eq!(
+                    args(ANNOUNCER),
+                    one(f
+                        .xa
+                        .map(|x| [u32::from(x.clip), u32::from(x.chan), u32::from(x.dur)])),
+                    "announcer line, {at}"
+                );
+            }
+            let fades: Vec<[u32; 3]> = f
+                .clear_fade
+                .map(|l| [0xA, 2, u32::from(l) * 0x01_0101])
+                .into_iter()
+                .chain(f.exit_fade.map(|l| [0, 2, u32::from(l) * 0x01_0101]))
+                .collect();
+            assert_eq!(args(SCREEN_FADE), fades, "screen fade, {at}");
+            assert_eq!(!args(ARENA).is_empty(), f.draw_arena, "arena pass, {at}");
+            assert_eq!(
+                args(HUD).len(),
+                usize::from(f.hud.is_some()),
+                "HUD pass, {at}"
+            );
+            for (k, callee) in [TITLE_CARD, ROUND_BANNER, ANNOUNCER, SCREEN_FADE, ARENA, HUD]
+                .into_iter()
+                .enumerate()
+            {
+                called[k] += usize::from(!args(callee).is_empty());
+            }
             let cue = cpu.mem.rd16(CUE);
             assert_eq!(cue, f.cues.last().map_or(0, |&c| u16::from(c)), "cue, {at}");
             frames_run += 1;
@@ -371,6 +449,10 @@ fn the_cabinet_runs_sessions_as_retail_does() {
         "states seen {seen:x?}, frames {frames_run}, clear fighter {clear_spawn_seen:?}, widget frames {widget_frames}"
     );
     assert!(widget_frames > 1000, "{widget_frames} frames drew widgets");
+    assert!(
+        called.iter().all(|&n| n > 20),
+        "frames per callee {called:?}"
+    );
     assert_eq!(
         clear_spawn_seen, [true; 2],
         "the all-clear with and without its fighter"

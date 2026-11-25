@@ -415,6 +415,9 @@ impl BakaCabinet {
                     f.payout = Some(self.pot);
                     self.pot = 0;
                 }
+                // The fade to black, on the clock after its step.
+                // PORT: FUN_801cf388 (`0x801D1F38..0x801D1F70`, the exit fade)
+                f.exit_fade = Some(self.exit_timer.wrapping_mul(6).clamp(0, 0xFF) as u8);
             }
             _ => {}
         }

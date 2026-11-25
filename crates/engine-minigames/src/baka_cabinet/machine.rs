@@ -82,6 +82,12 @@ pub struct CabinetFrame {
     ///
     /// REF: FUN_80024EE4
     pub clear_fade: Option<u8>,
+    /// The level of the full-screen subtractive quad the exit state draws
+    /// every frame on its way out (`FUN_80024EE4(0, 2, level * 0x010101)`,
+    /// `0x801D1F38..0x801D1F70`): the exit clock times six, held to `0xFF`.
+    ///
+    /// REF: FUN_80024EE4
+    pub exit_fade: Option<u8>,
 }
 
 /// Per-frame inputs the cabinet reads out of shared globals.

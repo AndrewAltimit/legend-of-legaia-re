@@ -241,6 +241,7 @@ Port: the cabinet emits these as `CabinetFrame::widgets` / `title_card` / `insta
 
 State `0x38` draws the "FIGHT!" card (widget `4` at `(0xA0, 0x78)`) twice each frame through `FUN_801D5ED0`, its level the round-go clock times eight held to `0x100` below `0x20`, then falling sixteen a step to zero (`0x801D0504..0x801D05B8`, `baka_cabinet::fight_flash`).
 The "NEXT GAME / PAY OUT" sheet is drawn inside state `0x68`'s arm after the cursor step and before the confirm, so it is absent on the frame the state is entered and present on the confirm frame (`BakaCabinet::choice_sheet`).
+The exit state `0x1F4` fades to black on its way out: a full-screen subtractive quad on layer `0` at the exit clock times six, held to `0xFF` (`0x801D1F38..0x801D1F70`, `CabinetFrame::exit_fade`, drawn by both play hosts through `minigame_hud`).
 
 `BakaFight` runs no rule while `baka_cabinet::front_end` holds; it steps the select camera (`baka_duel::SELECT_CAMERA`) and the lineup clock, and `BakaDuelScene` poses the lineup (`SELECT_LINEUP`, the half depth cue as `SELECT_DIM_KEEP`). Every host enters here: the scene host's mode-24 arm boots the fight with `BakaFight::with_attract`, and the minigames page opens the same cabinet (`baka_start_cabinet`). The port keeps Start as its minigame escape everywhere except the attract card, whose own edge reads it.
 
