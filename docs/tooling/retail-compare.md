@@ -1389,6 +1389,12 @@ started from:
   replays that arm's op-`0x35` words first
   (`man_field_scripts::walk_spawn_scores`: the last start within eight
   instructions of the `44`, through `World::replay_field_bgm_words`).
+  A start counts only when no branch from elsewhere in the record joins
+  between it and the spawn: `koin3`'s entry picks `2055` or `2018` on a box
+  test and both arms meet at `+0x16C` ahead of the `0x59B` test that spawns
+  `P2[8]`, so the `2018` start six instructions before `44 56` is one arm's,
+  not the spawn's. Scored by it, `koin3_disco_king_points_box` replaced the
+  `2055` the entry chose with `2018` (`bgm` `0` to `1`).
   A record that runs *after* a spawned record has ended inherits that
   record's music the same way. `vozz`'s entry spawns the Songi aftermath
   `P2[14]` (`44 2A`) behind the fight's marker `0x2B5`; `P2[14]` clears the

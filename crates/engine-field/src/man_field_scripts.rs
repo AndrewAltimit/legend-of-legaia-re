@@ -49,7 +49,8 @@
 //! (see [`legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
 
 use legaia_scene_formats::field_disasm::{
-    EffectKind, FlagKind, InsnInfo, LinearWalker, MenuCtrlKind, YieldKind, scene_change_name,
+    EffectKind, FlagKind, InsnInfo, InventoryCmpKind, LinearWalker, MenuCtrlKind, YieldKind,
+    scene_change_name,
 };
 use legaia_scene_formats::man_section::{ActorPlacement, ManFile};
 

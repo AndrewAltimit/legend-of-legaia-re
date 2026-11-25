@@ -1210,8 +1210,39 @@ pub struct SpawnScore {
     pub words: Vec<(u16, u8)>,
 }
 
+/// The byte offsets an instruction may transfer control to besides its
+/// fall-through: a jump's target, a test's skip target, a picker's arms.
+fn branch_targets(info: &InsnInfo) -> impl Iterator<Item = usize> {
+    let (one, picker): (Option<usize>, &[usize]) = match info {
+        InsnInfo::JmpRel { target, .. } | InsnInfo::CondJmp { target, .. } => (Some(*target), &[]),
+        InsnInfo::BBoxTest { skip_target, .. } => (Some(*skip_target), &[]),
+        InsnInfo::SystemFlag { target, .. } => (*target, &[]),
+        InsnInfo::InventoryCmp {
+            kind:
+                InventoryCmpKind::Compare { skip_target, .. }
+                | InventoryCmpKind::PartyBank { skip_target, .. },
+            ..
+        } => (Some(*skip_target), &[]),
+        InsnInfo::Picker { count, targets, .. } => {
+            (None, &targets[..usize::from(*count).min(targets.len())])
+        }
+        _ => (None, &[]),
+    };
+    one.into_iter().chain(picker.iter().copied())
+}
+
 /// Every [`SpawnScore`] in `man`: one per op-`0x44` spawn whose arm started a
-/// track within [`SPAWN_ARM_WINDOW`] instructions before it.
+/// track within [`SPAWN_ARM_WINDOW`] instructions before it, with no branch
+/// from elsewhere in the record joining between the start and the spawn.
+///
+/// `koin3`'s entry `P1[0]` picks its track on a box test - `2055` on one arm
+/// (`+0xC9`), `2018` on the other (`+0x165`) - and both arms meet at `+0x16C`
+/// (the first arm's `26 99 00` at `+0xD2`), the head of the flag tests that
+/// spawn the dance-floor beats (`44 56` at `+0x175`, behind `0x59B`). The
+/// `2018` start sits six instructions before that spawn, but the spawn is no
+/// more its arm's than the other's: scored by it, a resume of `P2[8]` (the
+/// Disco King's points after the lesson) swapped the `2055` the entry chose
+/// for `2018`.
 pub fn walk_spawn_scores(man_file: &ManFile, man: &[u8]) -> Vec<SpawnScore> {
     let mut out = Vec::new();
     for partition in 0..3 {
@@ -1229,14 +1260,30 @@ pub fn walk_spawn_scores(man_file: &ManFile, man: &[u8]) -> Vec<SpawnScore> {
                 continue;
             };
             let body = &man[script_start..script_start + body_len];
+            let insns: Vec<_> = LinearWalker::new(body, pc0).flatten().collect();
+            let branches: Vec<(usize, usize)> = insns
+                .iter()
+                .flat_map(|i| branch_targets(&i.info).map(move |t| (i.pc, t)))
+                .collect();
             let mut start_run: Vec<(u16, u8)> = Vec::new();
+            let mut start_pc = 0usize;
             let mut since_start = usize::MAX;
-            for insn in LinearWalker::new(body, pc0).flatten() {
+            for insn in insns {
                 since_start = since_start.saturating_add(1);
+                // A branch from outside the run landing inside it is a join:
+                // another arm reaches the spawn without the start.
+                if !start_run.is_empty()
+                    && branches
+                        .iter()
+                        .any(|&(src, t)| t == insn.pc && !(start_pc..insn.pc).contains(&src))
+                {
+                    start_run.clear();
+                }
                 match insn.info {
                     InsnInfo::Bgm { text_id, sub_op } => match sub_op {
                         1 | 9 => {
                             start_run = vec![(text_id, sub_op)];
+                            start_pc = insn.pc;
                             since_start = 0;
                         }
                         2 | 3 | 4 | 0xA if !start_run.is_empty() => {
