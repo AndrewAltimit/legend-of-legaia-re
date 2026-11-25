@@ -123,6 +123,12 @@ pub fn format_fixed_decimal(value: i32, width: usize) -> String {
 /// `row_is_closed` -> `retail_row`.
 /// The 18 rows the engine has no backing state for are modelled here and not
 /// listed there.
+/// The debug printer's neutral colour word (`_DAT_8007B7B8 = 0x808080`).
+pub const DEV_PRINT_NEUTRAL: u32 = 0x0080_8080;
+/// The word the `EVENT_FLAG` readout prints in under the cursor
+/// (`lui 0x10; ori 0xA080` at `0x801EBF38`).
+pub const DEV_PRINT_HIGHLIGHT: u32 = 0x0010_A080;
+
 /// PORT: FUN_801EAD98 (row dispatch)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevMenuRow {
@@ -208,6 +214,28 @@ impl DevMenuRow {
     /// PORT: FUN_801EAD98 (cases 0 and 1)
     pub fn is_closed(self, gate_b868: u32) -> bool {
         matches!(self, DevMenuRow::MapChange | DevMenuRow::CardOption) && gate_b868 != 0
+    }
+
+    /// The debug printer's colour word (`_DAT_8007B7B8`, `0x808080` neutral)
+    /// this row's readout prints in, with the list's cursor on retail row
+    /// `cursor` (`*(short *)(param_1 + 0x9E)`).
+    ///
+    /// Only the `EVENT_FLAG` arm sets it: after its label it stores
+    /// `0x808080`, then `0x10A080` when `local_40 == +0x9E`
+    /// (`bne t3,v0` at `0x801EBF30`), prints the flag index, and stores
+    /// `0x808080` again (`0x801EC0C4`, and `0x801EC3C0` behind the flag
+    /// grid it opens under the cursor). Every other arm prints in the word
+    /// the last store left, which is that neutral.
+    ///
+    /// Wired: `legaia_engine_screens::dev_menu::dev_menu_list_draws` inks
+    /// each row's readout through here on both hosts.
+    /// PORT: FUN_801EAD98 (the `EVENT_FLAG` readout's colour, `0x801EBF18..0x801EBF40`)
+    pub fn readout_print_word(self, cursor: i32) -> u32 {
+        if self == DevMenuRow::EventFlag && cursor == 0x11 {
+            DEV_PRINT_HIGHLIGHT
+        } else {
+            DEV_PRINT_NEUTRAL
+        }
     }
 }
 

@@ -56,12 +56,20 @@ pub fn dev_menu_list_draws(session: &DevMenuSession, font: &legaia_font::Font) -
         .iter()
         .map(|r| session.row_value(*r).unwrap_or_default())
         .collect();
+    // The cursor in retail's row-index space (`+0x9E`), which the readout's
+    // colour is decided in.
+    let cursor_index = DevMenuRow::ALL
+        .get(session.row)
+        .map_or(-1, |r| r.retail_index() as i32);
     let rows: Vec<DevMenuListRow<'_>> = DevMenuRow::ALL
         .iter()
         .zip(values.iter())
         .map(|(r, v)| DevMenuListRow {
             label: session.row_label(*r),
             value: Some((v.as_str(), 0x68)),
+            value_tint: r.retail_row().map_or(ui::DEV_MENU_NEUTRAL_TINT, |rr| {
+                rr.readout_print_word(cursor_index)
+            }),
         })
         .collect();
     let pen_of = |row: i32| (DEV_MENU_PEN.0, DEV_MENU_PEN.1 + row * DEV_MENU_FONT_PITCH);
@@ -317,6 +325,27 @@ mod tests {
         let session = DevMenuSession::new();
         let font = legaia_font::Font::placeholder();
         assert_on_stage(&dev_menu_list_draws(&session, &font));
+    }
+
+    /// The `EVENT_FLAG` readout takes retail's cursor tint (`0x10A080`,
+    /// green over red, little blue) while the cursor sits on it; with the
+    /// cursor elsewhere every quad keeps the list ink.
+    #[test]
+    fn the_event_flag_readout_lights_under_the_cursor() {
+        let font = legaia_font::Font::placeholder();
+        let mut session = DevMenuSession::new();
+        let plain = dev_menu_list_draws(&session, &font);
+        assert!(plain.iter().all(|d| d.color == ui::MENU_TEXT_WHITE));
+        session.row = DevMenuRow::ALL
+            .iter()
+            .position(|r| *r == DevMenuRow::EventFlag)
+            .unwrap();
+        let lit = dev_menu_list_draws(&session, &font);
+        let tinted: Vec<_> = lit.iter().filter(|d| d.color != ui::MENU_TEXT_WHITE).collect();
+        assert!(!tinted.is_empty());
+        for d in tinted {
+            assert!(d.color[1] > d.color[0] && d.color[2] < d.color[0], "{:?}", d.color);
+        }
     }
 
     /// The rows sit a font pitch apart, not retail's 8 px: at 8 a row's ink

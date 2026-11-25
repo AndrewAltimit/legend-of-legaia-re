@@ -61,6 +61,19 @@ pub struct DevMenuListRow<'a> {
     /// Formatted numeric readout and its x column offset from the origin, for
     /// the rows that show a live value. `None` for label-only rows.
     pub value: Option<(&'a str, i32)>,
+    /// The debug printer's colour word the readout prints in (`0x808080`
+    /// neutral; `DevMenuRow::readout_print_word` in `legaia_engine_dev_menu`).
+    pub value_tint: u32,
+}
+
+/// The neutral print word: the readout keeps the list ink.
+pub const DEV_MENU_NEUTRAL_TINT: u32 = 0x0080_8080;
+
+/// `ink` modulated by a debug-printer colour word, `0x80` a channel being
+/// unity as on the GPU (`R` in the low byte), each channel capped at full.
+pub fn dev_menu_tinted_ink(ink: [f32; 4], word: u32) -> [f32; 4] {
+    let ch = |i: usize| (ink[i] * ((word >> (8 * i)) & 0xFF) as f32 / 128.0).min(1.0);
+    [ch(0), ch(1), ch(2), ink[3]]
 }
 
 /// Screen y of the row at absolute index `row` given a list scrolled so
@@ -122,7 +135,7 @@ pub fn dev_menu_list_draws_for(
             out.extend(text_draws_for(
                 &font.layout_ascii(value),
                 (pen.0 + col, y),
-                ink,
+                dev_menu_tinted_ink(ink, r.value_tint),
             ));
         }
     }
@@ -138,22 +151,27 @@ mod tests {
             DevMenuListRow {
                 label: "MAP CHANGE",
                 value: None,
+                value_tint: DEV_MENU_NEUTRAL_TINT,
             },
             DevMenuListRow {
                 label: "CARD OPTION",
                 value: None,
+                value_tint: DEV_MENU_NEUTRAL_TINT,
             },
             DevMenuListRow {
                 label: "PLAYER STATUS",
                 value: None,
+                value_tint: DEV_MENU_NEUTRAL_TINT,
             },
             DevMenuListRow {
                 label: "CAMERA",
                 value: Some(("000 000", 0x58)),
+                value_tint: DEV_MENU_NEUTRAL_TINT,
             },
             DevMenuListRow {
                 label: "ENCOUNT",
                 value: Some(("15", 0x50)),
+                value_tint: DEV_MENU_NEUTRAL_TINT,
             },
         ]
     }
@@ -199,7 +217,8 @@ mod tests {
         let many = vec![
             DevMenuListRow {
                 label: "X",
-                value: None
+                value: None,
+                value_tint: DEV_MENU_NEUTRAL_TINT,
             };
             30
         ];
