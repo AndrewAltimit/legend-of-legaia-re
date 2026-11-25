@@ -1665,9 +1665,9 @@ impl App {
             None => Err("Open your Legend of Legaia (USA) disc image first.".to_string()),
         };
         match (&self.engine, &disc) {
-            _ if self.game.is_some() && self.game_is_launcher => {
-                Some("The game's options window is open; its Play starts the game.".to_string())
-            }
+            _ if self.game.is_some() && self.game_is_launcher => Some(
+                "The game's options window, or the game its Play started, is open.".to_string(),
+            ),
             _ if self.game.is_some() => Some("The game is running.".to_string()),
             (None, _) => Some(format!(
                 "{} was not found. It ships in the release folder's {} \
@@ -1683,8 +1683,10 @@ impl App {
     fn play_button(&mut self, ui: &mut egui::Ui) {
         let running = self.game.is_some();
         let blocked = self.play_blocked();
+        // A launcher started from *Game options* turns into the game on its
+        // own Play, in the same process, so the label names both.
         let button = if running && self.game_is_launcher {
-            egui::Button::new("Options open")
+            egui::Button::new("Game open")
         } else if running {
             egui::Button::new("Game running")
         } else if blocked.is_none() {
@@ -1818,7 +1820,7 @@ impl App {
             Ok(()) => {
                 // The launcher ends with a game its Play started, or on Quit.
                 self.explorer.status = Some(if self.game_is_launcher {
-                    "The game's options window has closed.".into()
+                    "The game's window has closed.".into()
                 } else {
                     "The game has closed.".into()
                 })
