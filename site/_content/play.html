@@ -109,7 +109,9 @@
 
 .play-canvas-wrap { position: relative; }
 .play-canvas-wrap .play-rules-seed { position: absolute; z-index: 5; margin: 0; }
-.play-rules-buttons { display: flex; justify-content: center; gap: 0.75em; margin: 0.5em 0; }
+.play-rules-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75em; margin: 0.5em 0; }
+.play-rules-touch-hint { display: none; flex-basis: 100%; margin: 0; text-align: center; font-size: 0.9em; opacity: 0.85; }
+.play-rules-buttons.with-touch-hint .play-rules-touch-hint { display: block; }
 .play-rules-buttons button {
   font: inherit; padding: 0.35em 1.1em; color: #f0d070; background: rgba(8, 12, 30, 0.88);
   border: 1px solid #c8a040; border-radius: 4px; cursor: pointer;
@@ -2253,9 +2255,19 @@ div.play-vis-head { cursor: default; }
         if (rulesButtons) { rulesButtons.remove(); rulesButtons = null; }
         return;
       }
-      if (rulesButtons) return;
+      if (rulesButtons) {
+        /* The on-screen pad covers the canvas's foot, where the key hint
+         * is drawn: while it is shown, the bar carries the touch hint. */
+        const pad = wrapEl.querySelector('.touch-pad');
+        rulesButtons.classList.toggle('with-touch-hint', !!pad && !pad.classList.contains('is-hidden'));
+        return;
+      }
       rulesButtons = document.createElement('div');
       rulesButtons.className = 'play-rules-buttons';
+      const hint = document.createElement('p');
+      hint.className = 'play-rules-touch-hint';
+      hint.textContent = 'Tap a tab or a row; tap left or right of a value to change it.';
+      rulesButtons.appendChild(hint);
       for (const [label, button] of [['Back', 'back'], ['Begin', 'begin']]) {
         const b = document.createElement('button');
         b.type = 'button';
@@ -2550,7 +2562,7 @@ div.play-vis-head { cursor: default; }
         catch (e) { opened = false; }
         if (opened) {
           handoff = 'rules';
-          statusEl.textContent = 'New Game rules. Q/E switch tabs, Up/Down picks a row, Left/Right changes it, Z confirms, V resets the tab, Enter begins, X returns to the title. Z on the seed opens its editor, where the keyboard types. On a touch screen, tap a tab or a row, tap the arrows beside a value, and use Begin and Back.';
+          statusEl.textContent = 'New Game rules. Q/E switch tabs, Up/Down picks a row, Left/Right changes it, Z confirms, V resets the tab, Enter begins, X returns to the title. Z on the seed opens its editor, where the keyboard types. On a touch screen, tap a tab or a row, tap left or right of a value to change it, and use Begin and Back.';
           return;
         }
       }

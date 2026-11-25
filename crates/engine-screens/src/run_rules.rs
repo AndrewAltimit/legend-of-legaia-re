@@ -238,6 +238,11 @@ fn boss_rush_info(s: &RulesSetup) -> Vec<InfoLine> {
         cells.truncate(STAGE_LINES * 3 - 1);
         cells.push((format!("+{more} more"), String::new()));
     }
+    // Every stage line has three cells, so a short last line stays on the
+    // grid of the ones above it.
+    while !cells.len().is_multiple_of(3) {
+        cells.push((String::new(), String::new()));
+    }
     lines.extend(lines_of(cells, 3));
     lines
 }
@@ -549,6 +554,10 @@ mod tests {
         assert_eq!(m.info.len(), 5, "two record lines, three stage lines");
         assert_eq!(m.info[0][0], ("Runs".to_string(), "4".to_string()));
         assert_eq!(m.info[4][2].0, "+4 more");
+        // Eight retail stages: the last line is padded onto the grid.
+        s.boss_rush_stages.truncate(8);
+        let m = setup_menu(&s, &PromptKeys::default(), None);
+        assert!(m.info[2..].iter().all(|l| l.len() == 3));
     }
 
     #[test]

@@ -119,7 +119,7 @@ pub const MENU_MAIN_FRAME: (i32, i32, i32, i32) = (8, 28, 304, 138);
 /// The help window.
 pub const MENU_HELP_FRAME: (i32, i32, i32, i32) = (8, 168, 304, 38);
 /// The seed editor's window, over the rows.
-pub const MENU_GRID_FRAME: (i32, i32, i32, i32) = (36, 40, 248, 124);
+pub const MENU_GRID_FRAME: (i32, i32, i32, i32) = (36, 40, 248, 112);
 /// The list window (save list, confirm), over the rows.
 pub const MENU_LIST_FRAME: (i32, i32, i32, i32) = (20, 34, 280, 130);
 /// A window's content inset from its frame, across and down (the glyph
@@ -138,11 +138,13 @@ const MENU_LABEL_W: i32 = 124;
 const MENU_VALUE_X: i32 = MENU_LABEL_X + 140;
 const MENU_VALUE_W: i32 = 106;
 /// The value arrows' columns (12-px cells), and the scroll marks' (8-px).
-const ARROW_PREV_X: i32 = MENU_VALUE_X - 14;
-const ARROW_NEXT_X: i32 = MENU_VALUE_X + MENU_VALUE_W + 2;
+const ARROW_GAP: i32 = 2;
+const ARROW_PREV_X: i32 = MENU_VALUE_X - 12 - ARROW_GAP;
 const SCROLL_MARK_X: i32 = MENU_MAIN_FRAME.0 + MENU_MAIN_FRAME.2 - INSET - 6;
 /// The rows the main window holds.
 pub const MENU_VISIBLE_ROWS: usize = ((MENU_MAIN_FRAME.3 - 2 * INSET_Y) / MENU_LINE) as usize;
+/// The gap a fact cell keeps before the next cell.
+const INFO_CELL_GAP: i32 = 12;
 const SUMMARY_Y: i32 = 209;
 const MENU_HINT_Y: i32 = 224;
 /// A text box the width of the stage, less a margin each side.
@@ -351,13 +353,32 @@ fn compose_menu(v: &RulesMenuView<'_>, font: Option<&legaia_font::Font>) -> Menu
         }
         if row.changes {
             if selected {
+                // The arrows hug the value on both sides: the left one a
+                // fixed step before its column, the right one the same step
+                // past its measured end (held inside the column).
+                let w = font.map_or(MENU_VALUE_W, |f| {
+                    (f.layout_ascii(&row.value).advance_x as i32).min(MENU_VALUE_W)
+                });
                 c.marks.push(((ARROW_PREV_X, y + 1), Mark::Prev));
-                c.marks.push(((ARROW_NEXT_X, y + 1), Mark::Next));
+                c.marks
+                    .push(((MENU_VALUE_X + w + ARROW_GAP, y + 1), Mark::Next));
             }
-            c.hits
-                .push(((ARROW_PREV_X - 4, y - 1, 18, MENU_LINE), MenuHit::Prev(k)));
-            c.hits
-                .push(((ARROW_NEXT_X - 2, y - 1, 18, MENU_LINE), MenuHit::Next(k)));
+            // A tap on the value's left half steps it back, on its right half
+            // forward; the arrows sit in those halves.
+            let half = MENU_VALUE_X + MENU_VALUE_W / 2;
+            c.hits.push((
+                (ARROW_PREV_X - 4, y - 1, half - ARROW_PREV_X + 4, MENU_LINE),
+                MenuHit::Prev(k),
+            ));
+            c.hits.push((
+                (
+                    half,
+                    y - 1,
+                    MENU_MAIN_FRAME.0 + MENU_MAIN_FRAME.2 - 4 - half,
+                    MENU_LINE,
+                ),
+                MenuHit::Next(k),
+            ));
         }
         c.hits.push((
             (
@@ -383,24 +404,27 @@ fn compose_menu(v: &RulesMenuView<'_>, font: Option<&legaia_font::Font>) -> Menu
     // lines past the window are dropped.
     let info_top = top + shown as i32 * MENU_LINE + 6;
     let bottom = MENU_MAIN_FRAME.1 + MENU_MAIN_FRAME.3 - INSET_Y - MENU_LINE;
-    let info_w = 280;
+    let info_w = MENU_MAIN_FRAME.0 + MENU_MAIN_FRAME.2 - INSET - MENU_LABEL_X;
     for (k, line) in v.info.iter().enumerate() {
         let y = info_top + k as i32 * MENU_LINE;
         if y > bottom || line.is_empty() {
             continue;
         }
+        // One grid per line count: each cell's label left, its value right
+        // against the cell's end, so the columns of every line agree.
         let cell_w = info_w / line.len() as i32;
-        let value_dx = cell_w * 3 / 5;
+        let label_w = cell_w / 2;
         for (j, (label, value)) in line.iter().enumerate() {
             let x = MENU_LABEL_X + j as i32 * cell_w;
-            c.label(label.clone(), x, y, value_dx - 2, white, Align::Left);
+            let end = x + cell_w - INFO_CELL_GAP;
+            c.label(label.clone(), x, y, label_w, white, Align::Left);
             c.label(
                 value.clone(),
-                x + value_dx,
+                end,
                 y,
-                cell_w - value_dx - 4,
+                end - (x + label_w) - 2,
                 gold,
-                Align::Left,
+                Align::Right,
             );
         }
     }
@@ -444,15 +468,44 @@ fn compose_menu(v: &RulesMenuView<'_>, font: Option<&legaia_font::Font>) -> Menu
 
 /// The list window over the rows: its title, its facts, then its choices
 /// with the hand on the cursor's, scrolling past the window.
+/// The most facts a choice window lists; more are summed up on one line.
+const LIST_FACTS_MAX: usize = 5;
+/// A choice window's width (the confirm): sized to its content, centred
+/// over the rows.
+const CHOICE_W: i32 = 232;
+
+/// The list window's frame: a list with many rows (the save list) takes the
+/// fixed list frame and scrolls; a choice window (two or three choices
+/// under a few facts, the confirm) is sized to its content and centred over
+/// the rows, as the game's own choice windows are.
+pub fn list_window_frame(l: &ListWindowView<'_>) -> (i32, i32, i32, i32) {
+    if l.rows.len() > 3 {
+        return MENU_LIST_FRAME;
+    }
+    let facts = l.facts.len().min(LIST_FACTS_MAX) as i32;
+    let h = INSET_Y
+        + MENU_LINE
+        + 4
+        + facts * MENU_LINE
+        + if facts > 0 { 4 } else { 0 }
+        + l.rows.len() as i32 * MENU_LINE
+        + INSET_Y
+        + 2;
+    let (mx, my, mw, mh) = MENU_MAIN_FRAME;
+    (mx + (mw - CHOICE_W) / 2, my + (mh - h) / 2, CHOICE_W, h)
+}
+
 fn compose_list(c: &mut MenuCanvas, l: &ListWindowView<'_>) {
     let white = crate::MENU_TEXT_WHITE;
     let gold = crate::MENU_TEXT_GOLD;
-    let (fx, fy, fw, fh) = MENU_LIST_FRAME;
-    c.cover(MENU_LIST_FRAME);
-    c.windows.push(MENU_LIST_FRAME);
+    let frame = list_window_frame(l);
+    let (fx, fy, fw, fh) = frame;
+    c.cover(frame);
+    c.windows.push(frame);
     let x = fx + INSET + 18;
-    let value_x = x + 128;
-    let value_w = fx + fw - INSET - value_x - 10;
+    let compact = frame != MENU_LIST_FRAME;
+    let value_x = if compact { x + 92 } else { x + 128 };
+    let value_w = fx + fw - INSET - value_x - 6;
     c.label(
         l.title,
         fx + fw / 2,
@@ -462,9 +515,21 @@ fn compose_list(c: &mut MenuCanvas, l: &ListWindowView<'_>) {
         Align::Centre,
     );
     let mut y = fy + INSET_Y + MENU_LINE + 4;
-    for (label, value) in l.facts {
-        c.label(label.clone(), x, y, 124, white, Align::Left);
+    // A list longer than the window holds sums up its tail on the last line.
+    let over = l.facts.len() > LIST_FACTS_MAX;
+    let shown_facts = if over {
+        LIST_FACTS_MAX - 1
+    } else {
+        l.facts.len()
+    };
+    for (label, value) in l.facts.iter().take(shown_facts) {
+        c.label(label.clone(), x, y, value_x - x - 4, white, Align::Left);
         c.label(value.clone(), value_x, y, value_w, gold, Align::Left);
+        y += MENU_LINE;
+    }
+    if over {
+        let more = l.facts.len() - shown_facts;
+        c.label(format!("+{more} more"), x, y, fw - 44, white, Align::Left);
         y += MENU_LINE;
     }
     if !l.facts.is_empty() {
@@ -479,7 +544,11 @@ fn compose_list(c: &mut MenuCanvas, l: &ListWindowView<'_>) {
         if k == l.cursor {
             c.hands.push((x - 18, ry));
         }
-        let label_w = if row.value.is_empty() { fw - 44 } else { 124 };
+        let label_w = if row.value.is_empty() {
+            fw - 44
+        } else {
+            value_x - x - 4
+        };
         c.label(row.label.clone(), x, ry, label_w, white, Align::Left);
         if !row.value.is_empty() {
             c.label(row.value.clone(), value_x, ry, value_w, gold, Align::Left);
@@ -718,6 +787,14 @@ mod tests {
                 "{:?}",
                 l.text
             );
+            if ["K0", "K1", "A", "x1", "1"].contains(&l.text.as_str()) {
+                assert!(
+                    inside(l, MENU_MAIN_FRAME),
+                    "fact {:?} at {:?}",
+                    l.text,
+                    l.span()
+                );
+            }
             if l.text.starts_with("Row") || l.text.starts_with('v') {
                 assert!(inside(l, MENU_MAIN_FRAME), "{:?} at {}", l.text, l.y);
             }
@@ -734,7 +811,7 @@ mod tests {
         let label = c.labels.iter().find(|l| l.text == "Row 0").unwrap();
         assert!(label.span().unwrap().1 <= ARROW_PREV_X);
         let value = c.labels.iter().find(|l| l.text == "v0").unwrap();
-        assert!(value.span().unwrap().1 <= ARROW_NEXT_X);
+        assert!(value.span().unwrap().1 <= MENU_VALUE_X + MENU_VALUE_W);
         assert_eq!(MENU_VISIBLE_ROWS, 9);
         assert_eq!(
             c.tabs.iter().filter(|t| t.2).count(),
@@ -794,7 +871,7 @@ mod tests {
             Some(MenuHit::Prev(1))
         );
         assert_eq!(
-            rules_menu_hit(&v, (ARROW_NEXT_X + 4, row_y)),
+            rules_menu_hit(&v, (MENU_VALUE_X + MENU_VALUE_W - 4, row_y)),
             Some(MenuHit::Next(1))
         );
         assert_eq!(
@@ -875,5 +952,75 @@ mod tests {
         assert!(c.tabs[0].2, "the title is never darkened");
         assert_eq!(c.tabs[0].1, MENU_MAIN_FRAME.2 - 16);
         assert!(!c.hits.iter().any(|h| matches!(h.1, MenuHit::Tab(_))));
+    }
+
+    #[test]
+    fn the_value_arrows_sit_the_same_step_either_side_of_the_value() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = menu_rows(2);
+        let c = compose_menu(&menu_view(&rows, &[], None), Some(&font));
+        let at = |m: Mark| c.marks.iter().find(|x| x.1 == m).unwrap().0;
+        let w = font.layout_ascii("v0").advance_x as i32;
+        assert_eq!(at(Mark::Prev).0 + 12 + ARROW_GAP, MENU_VALUE_X);
+        assert_eq!(at(Mark::Next).0, MENU_VALUE_X + w + ARROW_GAP);
+    }
+
+    #[test]
+    fn fact_lines_share_one_grid() {
+        let cell = |n: &str, v: &str| (n.to_string(), v.to_string());
+        let info: Vec<InfoLine> = vec![
+            vec![
+                cell("Gimard", "Lv4"),
+                cell("Caruban", "Lv7"),
+                cell("Songi", "Lv11"),
+            ],
+            vec![cell("Koru", "Lv28"), cell("Cort", "Lv35"), cell("", "")],
+        ];
+        let rows = menu_rows(1);
+        let c = compose_menu(&menu_view(&rows, &info, None), None);
+        let x_of = |t: &str| {
+            let l = c.labels.iter().find(|l| l.text == t).unwrap();
+            (l.x, l.align)
+        };
+        assert_eq!(x_of("Gimard").0, x_of("Koru").0);
+        assert_eq!(x_of("Caruban").0, x_of("Cort").0);
+        assert_eq!(
+            x_of("Lv7"),
+            x_of("Lv35"),
+            "values right-aligned on one column"
+        );
+        assert_eq!(x_of("Lv4"), x_of("Lv28"));
+    }
+
+    #[test]
+    fn the_confirm_is_sized_to_its_content_and_centred() {
+        let rows = menu_rows(3);
+        let choices = [RulesMenuRow::action("Begin"), RulesMenuRow::action("Back")];
+        for n in [1usize, 5, 9] {
+            let facts: Vec<(String, String)> = (0..n)
+                .map(|i| (format!("Rule {i}"), "On".to_string()))
+                .collect();
+            let l = ListWindowView {
+                title: "Begin with these rules?",
+                facts: &facts,
+                rows: &choices,
+                cursor: 1,
+            };
+            let f = list_window_frame(&l);
+            let (mx, my, mw, mh) = MENU_MAIN_FRAME;
+            assert_eq!(f.0 - mx, mx + mw - (f.0 + f.2), "centred across");
+            assert!((f.1 - my) - (my + mh - (f.1 + f.3)) <= 1, "centred down");
+            assert!(f.1 >= my && f.1 + f.3 <= my + mh, "{n} facts fit");
+            let v = RulesMenuView {
+                list: Some(l),
+                ..menu_view(&rows, &[], None)
+            };
+            let c = compose_menu(&v, None);
+            for t in ["Begin", "Back"] {
+                let lab = c.labels.iter().find(|x| x.text == t).unwrap();
+                assert!(inside(lab, f), "{t} inside with {n} facts");
+            }
+            assert_eq!(c.labels.iter().any(|x| x.text == "+5 more"), n == 9);
+        }
     }
 }
