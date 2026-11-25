@@ -1233,6 +1233,17 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // word `0x801F9010` reads `0` (a kill) on both sides from the
                 // pass after it, which arms 0x11 to 0x14 fork on
                 // (`0x801F7DC4`, `0x801F8598`, `0x801F871C`).
+                // PROT 0907's fallen runs, and its odd-step live runs, take the
+                // instant death: arm 0's fork word `0x801F8534` reads `0`
+                // (`rand() % 8 == 0`), which arm 13 forks on (`0x801F7E04`);
+                // the fallen runs land it unresisted (`0x801F853C = 0`,
+                // `0x801F7E50`). The shadow reads both words off retail.
+                if entry == 907 && (fallen || (live && step % 2 == 1)) && phase > 0 {
+                    cpu.mem.wr32(0x801F_8534, 0);
+                    if fallen {
+                        cpu.mem.wr32(0x801F_853C, 0);
+                    }
+                }
                 if entry == 916 && (fallen || (live && step % 2 == 1)) && phase > 0 {
                     if st.kill != Some(true) {
                         cpu.mem.wr32(0x801F_9010, 0);
@@ -2224,7 +2235,15 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // A director beside a ported tick body leaves the phase to
                 // the body: only its hold is its own.
                 let walks = profile.director_body;
-                if !terminal && (held != arm.hold || (walks && !held && after != port_after)) {
+                // PROT 0907's kill leg (arm `0xE`) holds on the victim's fade
+                // and, resisted, on its word: the tick body's call
+                // (`nighto_tick`), which the band shadow runs and compares;
+                // the director drains the word and passes.
+                let body_holds = (entry, phase) == (907, 0xE);
+                if !terminal
+                    && !body_holds
+                    && (held != arm.hold || (walks && !held && after != port_after))
+                {
                     diffs.push(format!(
                         "pace retail {held}/{after:#x} port {}/{port_after:#x}",
                         arm.hold

@@ -324,10 +324,13 @@ pub fn nighto_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 ..ArmDirection::PASS
             }
         }
+        // The kill leg drains its halfword by the pass's `scalar * step`
+        // (`0x801F7E98..0x801F7EB4`), one tick's share a tick; the tick it
+        // goes negative on, which the body leaves on when resisted, owes the
+        // rest of its pass's.
         14 => {
             nighto_leg_countdown(st, NIGHTO_KILL_SETTLE_PER_SCALAR);
-            st.countdown.pass_drain(MODULE_DRAIN_PER_TICK);
-            st.countdown.0 = i32::from(st.countdown.0 as i16);
+            nighto_drain_holds(st);
             ArmDirection::PASS
         }
         15 => {
