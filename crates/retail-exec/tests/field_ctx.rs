@@ -4,8 +4,9 @@
 //! retail leaves them? `field_vm` asks where the next instruction is; this asks
 //! what the instruction did to the context it ran on. Calls outside the field
 //! overlay are stubbed on retail's side and the host is `Inert` on the port's,
-//! so a field the port leaves to its host is counted, not compared: what is
-//! held is every store `step` makes itself.
+//! so a field the port leaves to its host is counted, not compared, and must
+//! be one of the pairs [`LEFT_TO_HOST`] names: what is held is every store
+//! `step` makes itself, and no store retail makes that the port makes nowhere.
 
 use crate::common::{Rng, disc, scus_cpu};
 use crate::field_vm::{Inert, corpus};
@@ -51,6 +52,48 @@ const FIELDS: [(&str, u32, u8); 28] = [
     ("npc_x", 0x8C, 1),
     ("npc_facing", 0x8D, 1),
     ("field_8e", 0x8E, 2),
+];
+
+/// The `(instruction, field)` pairs whose context store `step` leaves to
+/// its host (the field differs from retail's and `step` left the seed):
+/// a store the port routes to the host by design. Any other such pair is a
+/// store retail makes that nothing in the port makes.
+const LEFT_TO_HOST: [&str; 35] = [
+    "23 flags",
+    "23 world_y",
+    "38 field_26",
+    "3E field_8b",
+    "43 00 field_8e",
+    "43 0A field_8e",
+    "4C 51 field_26",
+    "4C 51 field_5e",
+    "4C 51 field_8b",
+    "4C 51 flags",
+    "4C 51 local_flags",
+    "4C 51 move_id",
+    "4C 51 npc_facing",
+    "4C 51 npc_x",
+    "4C 51 world_x",
+    "4C 51 world_y",
+    "4C 51 world_z",
+    "4C 81 field_74",
+    "4C 81 field_78",
+    "4C C3 field_6a",
+    "4C C3 field_72",
+    "4C C3 field_78",
+    "4C C3 field_8b",
+    "4C C3 field_8e",
+    "4C C3 flags",
+    "4C C3 local_flags",
+    "4C C3 move_id",
+    "4C C3 npc_facing",
+    "4C C3 npc_x",
+    "4C C3 wait_accum",
+    "4C C3 world_x",
+    "4C C3 world_z",
+    "4C DA world_y",
+    "4C E3 field_8b",
+    "4C E3 field_8e",
 ];
 
 fn port_field(c: &FieldCtx, name: &str) -> u32 {
@@ -239,6 +282,14 @@ fn every_instruction_leaves_its_context_as_retail_leaves_it() {
         .collect();
     eprintln!("{ran} runs; left to the host: {missed:?}");
     assert!(report.is_empty(), "{}", report.join("\n"));
+    let stray: Vec<&String> = missed
+        .keys()
+        .filter(|k| !LEFT_TO_HOST.contains(&k.as_str()))
+        .collect();
+    assert!(
+        stray.is_empty(),
+        "context stores retail makes that neither step nor its host's share makes: {stray:?}"
+    );
     assert!(ran > 4000, "{ran}");
 }
 
