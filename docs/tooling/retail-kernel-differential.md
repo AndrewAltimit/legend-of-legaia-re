@@ -327,6 +327,11 @@ An unchecked direction falls in one of these, read from the disassembly:
   `unported`, so the ported figure stops counting it.
 - **Tolerated stop.** The test skips a round whose call stops abnormally, and
   the mutant's runaway lands in that skip. The row says `survived-abnormal`.
+- **Tolerated difference.** The test sees the arm's effect and forgives it:
+  a field the port leaves to its host is counted rather than compared, so a
+  store retail makes and the port makes nowhere lands in the count. The fix
+  names the pairs the host owns and fails on any other (`field_ctx`'s
+  `LEFT_TO_HOST`).
 
 **The compiler's divide guards.** Every `div` / `divu` the compiler emits
 carries two guards: `bnez divisor` over `break 7`, and `bne divisor,-1`
