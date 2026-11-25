@@ -84,7 +84,8 @@ RULES: dict[str, list[tuple[str, str]]] = {
     "scripts/replays/boot_logos_baseline.toml": [("*", "up")],
     "scripts/replays/chapter1_frontier_baseline.toml": [("*", "up")],
     "scripts/replays/critical_path_baseline.toml": [("*", "up")],
-    "scripts/replays/full_game_baseline.toml": [("*", "up")],
+    # Part C's shortcut rows are ceilings (a run asserts <=), so they ratchet down.
+    "scripts/replays/full_game_baseline.toml": [("shortcuts/*", "down"), ("*", "up")],
     "scripts/replays/menu_replay_baseline.toml": [("*", "up")],
     "scripts/replays/minigame_replay_baseline.toml": [("*", "up")],
     "scripts/replays/play_compose_baseline.toml": [("*", "up")],
