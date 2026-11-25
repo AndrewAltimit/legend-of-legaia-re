@@ -19,6 +19,7 @@ aborting, not by the comparison.
     checked-arms.py --addr 801D0748          # every ported, covered direction of one routine
     checked-arms.py --all                    # the whole population (see --cost)
     checked-arms.py --cost                   # population size and the --all estimate
+    checked-arms.py --rerun OLD.tsv          # the directions an earlier results file holds (before / after)
     checked-arms.py                          # summary + per-routine worklist of the results
 
 Each direction first flips its first execution; when every test survives that,
@@ -327,6 +328,8 @@ def main() -> int:
     ap.add_argument("--sample", type=int, help="mutate this many directions, drawn with --seed")
     ap.add_argument("--seed", type=int, default=58)
     ap.add_argument("--addr", help="mutate every ported, covered direction of one routine")
+    ap.add_argument("--rerun", type=Path, metavar="RESULTS",
+                    help="mutate the directions an earlier results file holds (a paired before / after)")
     ap.add_argument("--all", action="store_true", help="mutate the whole population")
     ap.add_argument("--cost", action="store_true", help="population size and the --all estimate")
     ap.add_argument("--recheck", type=int, metavar="K",
@@ -344,7 +347,7 @@ def main() -> int:
     if args.recheck:
         recheck(args.recheck, args.jobs, args.timeout)
         return 0
-    if args.sample or args.addr or args.all or args.cost:
+    if args.sample or args.addr or args.all or args.cost or args.rerun:
         entry = args.addr.lower().removeprefix("fun_").removeprefix("0x") if args.addr else None
         dirs, ms = population(entry)
         if args.cost:
@@ -357,6 +360,11 @@ def main() -> int:
             return 0
         if args.sample:
             dirs = random.Random(args.seed).sample(dirs, min(args.sample, len(dirs)))
+        if args.rerun:
+            # The directions an earlier results file holds, where the
+            # population still has them: a paired before / after.
+            old = {tuple(r.split("\t")[:4]) for r in args.rerun.read_text().splitlines() if r}
+            dirs = [d for d in dirs if d.key in old]
         if not os.environ.get("LEGAIA_DISC_BIN"):
             print("checked-arms: LEGAIA_DISC_BIN is unset; every test would skip")
             return 2
