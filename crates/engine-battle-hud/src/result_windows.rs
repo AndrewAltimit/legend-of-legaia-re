@@ -206,7 +206,7 @@ fn victory_name_seat(world: &World) -> usize {
 /// Who the battle-result messages name: participant ids in panel order,
 /// `0` for an empty seat - the shape of retail's `0x8007BD10` list the
 /// two build arms of `FUN_801D84C0` key on.
-fn battle_result_subject(
+pub fn battle_result_subject(
     world: &World,
 ) -> legaia_engine_battle_vm::battle_party_panel::ResultSubject {
     use legaia_engine_battle_vm::battle_party_panel::ResultSubject;
