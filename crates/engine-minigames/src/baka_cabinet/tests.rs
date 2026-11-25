@@ -450,8 +450,21 @@ fn the_choice_sheet_lights_the_picked_side_and_swaps_the_arrows() {
     let mut cab = BakaCabinet::new();
     assert!(cab.choice_sheet().is_none());
     cab.state = ST_CHOICE;
+    let idle = CabinetInput {
+        frame_step: 1,
+        win_target: 2,
+        ..Default::default()
+    };
+    cab.tick(&idle);
     assert!(cab.choice_sheet().is_some());
-    cab.state_timer = 1;
+    // The confirm frame still draws it; the frame after, NEXT GAME has
+    // latched and the sheet is gone.
+    cab.tick(&CabinetInput {
+        pad_edge: CABINET_CONFIRM,
+        ..idle
+    });
+    assert!(cab.choice_sheet().is_some(), "the confirm frame draws it");
+    cab.tick(&idle);
     assert!(
         cab.choice_sheet().is_none(),
         "NEXT GAME taken: the sheet is gone"

@@ -8,6 +8,7 @@ impl BakaCabinet {
         let step = input.frame_step;
         let edge = input.pad_edge;
         let mut f = CabinetFrame::default();
+        self.sheet = None;
 
         // Prologue: two accumulators run regardless of state.
         self.blink += step;
@@ -188,6 +189,10 @@ impl BakaCabinet {
                     f.xa = Some(crate::baka_fighter_chrome::FIGHT_FLASH_XA);
                 }
                 self.scene_timer += step;
+                // The "FIGHT!" card itself, drawn twice at one level each
+                // frame: up at eight a step to `0x100`, then down at sixteen
+                // from `0x20` (`0x801D0504..0x801D05B8`).
+                f.widgets.extend([fight_flash(self.scene_timer); 2]);
                 if self.scene_timer >= 0x31 {
                     self.state = ST_DUEL;
                     self.state_timer = 0;
@@ -568,6 +573,8 @@ impl BakaCabinet {
             if moved {
                 f.cues.push(crate::baka_fighter::BAKA_CUE_CURSOR);
             }
+            // The sheet, on the cursor this frame left (`0x801D0C10..0x801D0D24`).
+            self.sheet = Some(choice_sheet(self.menu_cursor, self.blink));
             if edge & CABINET_CONFIRM != 0 {
                 f.cues.push(crate::baka_fighter::BAKA_CUE_CONFIRM);
                 if self.menu_cursor == 0 {

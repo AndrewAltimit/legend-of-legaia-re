@@ -26,7 +26,7 @@ use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_minigames::baka_cabinet::{
     BakaCabinet, CabinetInput, ST_CLEAR_A, ST_CLEAR_B, ST_CLEAR_E, ST_DUEL, ST_EXIT,
     ST_ROUND_BANNER_A, ST_ROUND_BANNER_B, ST_ROUND_BANNER_C, ST_ROUND_SETUP, SecretOpponent,
-    cabinet_rumble,
+    WIDGET_PLAYER_SELECT, cabinet_rumble,
 };
 use legaia_engine_minigames::baka_duel::DuelCamera;
 use psx_retail_exec::Stop;
@@ -64,6 +64,9 @@ const MOTORS: u32 = 0x8007_B92C;
 /// a scratch record it hands back.
 const SPAWN: u32 = 0x8002_0DE0;
 const SPAWNED: u32 = 0x8013_0000;
+/// The HUD widget emitter the front end, the FIGHT flash and the choice
+/// sheet draw through.
+const WIDGET: u32 = 0x801D_5ED0;
 
 fn word(cpu: &mut psx_retail_exec::Cpu, a: u32) -> i32 {
     if a == SECRET {
@@ -101,6 +104,24 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             r.r[psx_retail_exec::V0] = SPAWNED;
         });
     }
+    // The widget emitter `FUN_801D5ED0(x, y, widget, level, scale)`, logged:
+    // the cells the cabinet's own arms draw this frame.
+    let widgets: std::rc::Rc<std::cell::RefCell<Vec<[i32; 5]>>> = Default::default();
+    {
+        let widgets = widgets.clone();
+        cpu.hook(WIDGET, move |r, m| {
+            use psx_retail_exec::{A0, A1, A2, A3, SP};
+            let scale = m.rd32(r.r[SP] + 0x10) as i32;
+            widgets.borrow_mut().push([
+                r.r[A0] as i32,
+                r.r[A1] as i32,
+                r.r[A2] as i32,
+                r.r[A3] as i32,
+                scale,
+            ]);
+        });
+    }
+    let mut widget_frames = 0usize;
     // The duel's and the drive's perturbations draw from their own stream, so
     // the pad stream the sessions' routes hang on stays the one it was.
     let mut aux = Rng(0x5348_414B);
@@ -285,6 +306,7 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             }
             let timer_before = cpu.mem.rd32(ROUND_TIMER) as i32;
             spawns.set(0);
+            widgets.borrow_mut().clear();
             assert_eq!(
                 cpu.call(CABINET, &[ACTOR]),
                 Stop::Returned,
@@ -321,6 +343,22 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             } else if (ST_CLEAR_A..=ST_CLEAR_E).contains(&state) {
                 assert_eq!(spawns.get(), 0, "{at}");
             }
+            // The cells: the frame's own and the choice sheet, less the
+            // select banner (an effect actor in retail) and the all-clear
+            // captions (the announcer's, stubbed here).
+            let mut cells: Vec<[i32; 5]> = f
+                .widgets
+                .iter()
+                .filter(|c| c.widget != WIDGET_PLAYER_SELECT)
+                .filter(|_| !(ST_CLEAR_A..=ST_CLEAR_E).contains(&state))
+                .chain(port.choice_sheet().iter().flatten())
+                .map(|c| [c.x, c.y, i32::from(c.widget), c.brightness, 0x1000])
+                .collect();
+            let mut drawn = widgets.borrow().clone();
+            cells.sort_unstable();
+            drawn.sort_unstable();
+            assert_eq!(drawn, cells, "widgets, {at}");
+            widget_frames += usize::from(!cells.is_empty());
             let cue = cpu.mem.rd16(CUE);
             assert_eq!(cue, f.cues.last().map_or(0, |&c| u16::from(c)), "cue, {at}");
             frames_run += 1;
@@ -329,7 +367,10 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             }
         }
     }
-    eprintln!("states seen {seen:x?}, frames {frames_run}, clear fighter {clear_spawn_seen:?}");
+    eprintln!(
+        "states seen {seen:x?}, frames {frames_run}, clear fighter {clear_spawn_seen:?}, widget frames {widget_frames}"
+    );
+    assert!(widget_frames > 1000, "{widget_frames} frames drew widgets");
     assert_eq!(
         clear_spawn_seen, [true; 2],
         "the all-clear with and without its fighter"

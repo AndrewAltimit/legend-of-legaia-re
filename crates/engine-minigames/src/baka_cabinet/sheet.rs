@@ -47,6 +47,30 @@ pub const PRESS_START_PEN: (i32, i32) = (0xA0, 0xCC);
 /// cabinet rewrites `+0x14` / `+0x16` to `(0xA0, 0x20)` (`0x801CFA4C..0x801CFA60`).
 pub const PLAYER_SELECT_PEN: (i32, i32) = (0xA0, 0x20);
 
+/// "FIGHT!" card (widget `0x04`), state `0x38`'s flash.
+pub const WIDGET_FIGHT: u8 = 0x04;
+/// Where state `0x38` draws [`WIDGET_FIGHT`].
+pub const FIGHT_PEN: (i32, i32) = (0xA0, 0x78);
+
+/// The "FIGHT!" card at the round-go clock `clock` (`DAT_801DC128` after its
+/// step): `clock * 8` held to `0x100` below `0x20`, then
+/// `0x100 - (clock - 0x20) * 16` held at zero. State `0x38` draws it twice.
+///
+/// PORT: FUN_801cf388 (`0x801D0504..0x801D05B8`)
+pub fn fight_flash(clock: i32) -> SheetCell {
+    let brightness = if clock < 0x20 {
+        clock.wrapping_mul(8).min(0x100)
+    } else {
+        (0x100 - (clock - 0x20).wrapping_mul(16)).max(0)
+    };
+    SheetCell {
+        widget: WIDGET_FIGHT,
+        x: FIGHT_PEN.0,
+        y: FIGHT_PEN.1,
+        brightness,
+    }
+}
+
 /// "NEXT GAME" cell (widget `0x2C`).
 pub const WIDGET_NEXT_GAME: u8 = 0x2C;
 /// "PAY OUT" cell (widget `0x2D`).
@@ -119,6 +143,7 @@ pub fn sheet_label(widget: u8) -> &'static str {
         WIDGET_ARROW_LIT | WIDGET_ARROW_DIM => "<>",
         WIDGET_PRESS_START => "PRESS START",
         WIDGET_PLAYER_SELECT => "PLAYER SELECT",
+        WIDGET_FIGHT => "FIGHT!",
         _ => "?",
     }
 }
