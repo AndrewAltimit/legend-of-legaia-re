@@ -190,6 +190,10 @@ pub enum TitleTickEffect {
     /// The tick called the card driver's reset `FUN_801E373C(arg)` (`1`
     /// re-probes the slot, `0` only clears the operation).
     CardReset { arg: u32 },
+    /// The tail drew the title backdrop: the strip drawer `FUN_801E0418`
+    /// and the dimmed art `FUN_801E02A4`, both handed `shade` as their one
+    /// brightness byte ([`TitleTickState::backdrop_shade`]).
+    Backdrop { shade: u8 },
 }
 
 /// The tick's own state - the fields the 25 handlers and the shared

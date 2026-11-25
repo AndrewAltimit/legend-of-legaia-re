@@ -202,6 +202,8 @@ mod tick_words {
     pub const SLOT_STATUS: u32 = 0x8011_0000;
     pub const RESET_LOG: u32 = 0x8011_0010;
     pub const LOADED: u32 = 0x8011_0008;
+    /// Test scratch: each backdrop drawer's call count and last `a0`.
+    pub const BACKDROP_LOG: u32 = 0x8011_0100;
 }
 
 /// Every word of `TitleTickState` and `TitleCardStatus` a frame can move,
@@ -318,6 +320,15 @@ fn every_title_sub_mode_steps_as_retail_does() {
         m.wr32(RESET_LOG + 4 + 4 * n, r.r[psx_retail_exec::A0]);
         m.wr32(RESET_LOG, n + 1);
     });
+    // The tail's two backdrop drawers, each handed the shade in `a0`.
+    for (k, drawer) in [0x801E_0418u32, 0x801E_02A4].into_iter().enumerate() {
+        let log = BACKDROP_LOG + 8 * k as u32;
+        cpu.hook(drawer, move |r, m| {
+            let n = m.rd32(log);
+            m.wr32(log, n + 1);
+            m.wr32(log + 4, r.r[psx_retail_exec::A0]);
+        });
+    }
     for load in [0x8003_E6BC, 0x8003_EB98] {
         cpu.hook(load, |_, m| m.wr32(LOADED, 1));
     }
@@ -328,6 +339,7 @@ fn every_title_sub_mode_steps_as_retail_does() {
     cpu.mem.wr32(SET_UP, 1);
     let mut rng = Rng(0x5449_434B);
     let mut seen = [0u32; 0x1B];
+    let mut backdrops = 0usize;
     for run in 0..8000 {
         let mut s = TitleTickState::cold_boot();
         s.submode = match rng.below(12) {
@@ -456,6 +468,9 @@ fn every_title_sub_mode_steps_as_retail_does() {
                 .wr32(BLOCK + 0x1FFC, if c.verify_ok { 0x1234 } else { 0x1235 });
             cpu.mem.wr32(RESET_LOG, 0);
             cpu.mem.wr32(LOADED, 0);
+            for w in 0..4 {
+                cpu.mem.wr32(BACKDROP_LOG + 4 * w, 0);
+            }
             // `0x8007B8C2`, which picks the cold boot's loader; both load.
             cpu.mem.wr16(0x8007_B8C2, rng.below(2) as u16);
             cpu.mem.wr32(PRESS, u32::from(edge));
@@ -505,6 +520,23 @@ fn every_title_sub_mode_steps_as_retail_does() {
                 })
                 .collect();
             assert_eq!(resets, port_resets, "{ctx}: the card resets");
+            // The backdrop: drawn by both drawers at one shade, or by neither.
+            let drawn: Vec<(u32, u32)> = (0..2)
+                .map(|k| {
+                    let log = BACKDROP_LOG + 8 * k;
+                    (cpu.mem.rd32(log), cpu.mem.rd32(log + 4))
+                })
+                .collect();
+            let port_shade = fx.iter().find_map(|e| match e {
+                TitleTickEffect::Backdrop { shade } => Some(u32::from(*shade)),
+                _ => None,
+            });
+            let want = match port_shade {
+                Some(v) => vec![(1, v), (1, v)],
+                None => vec![(0, 0), (0, 0)],
+            };
+            assert_eq!(drawn, want, "{ctx}: the backdrop");
+            backdrops += usize::from(port_shade.is_some_and(|v| v != 0 && v != 0xFF));
             assert_eq!(
                 cpu.mem.rd32(LOADED) != 0,
                 fx.contains(&TitleTickEffect::LoadTitleAssets),
@@ -529,4 +561,5 @@ fn every_title_sub_mode_steps_as_retail_does() {
         }
     }
     assert!(seen.iter().take(0x19).all(|&n| n > 50), "{seen:?}");
+    assert!(backdrops > 1000, "{backdrops} part-lit backdrops");
 }

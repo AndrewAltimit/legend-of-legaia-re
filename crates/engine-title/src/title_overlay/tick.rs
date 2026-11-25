@@ -1008,6 +1008,36 @@ impl TitleTickState {
                 self.cursor_y = 0;
             }
         }
+        if let Some(shade) = self.backdrop_shade() {
+            fx.push(TitleTickEffect::Backdrop { shade });
+        }
+    }
+
+    /// The brightness the tick's tail draws the title backdrop at, or
+    /// `None` when it draws none.
+    ///
+    /// The tail draws only while the entry word is raised and alpha
+    /// channel B is short of `0x1000` (`0x801E01D0..0x801E01EC`), so the
+    /// backdrop goes to black as B ramps up on a confirmed slot. The
+    /// shade is the attract countdown clamped to `0..=16` times eight
+    /// times `0x1000 - preroll / 2 - alpha_b`, over `0x1000` rounded
+    /// toward zero, clamped to a byte (`0x801E01F0..0x801E025C`): `0x80`
+    /// (neutral) at rest, half that while the pre-roll is full.
+    ///
+    /// PORT: FUN_801DD35C (`0x801E01D0..0x801E026C`, the backdrop shade)
+    pub fn backdrop_shade(&self) -> Option<u8> {
+        if self.entry_word == 0 || self.alpha_b == 0x1000 {
+            return None;
+        }
+        // `slti 0x11` then `bgez`: the count is clamped high, then low.
+        let count = self.countdown.clamp(0, 16);
+        let span = 0x1000i32
+            .wrapping_sub(self.preroll / 2)
+            .wrapping_sub(self.alpha_b)
+            .wrapping_mul(8);
+        // `mult` / `mflo`, then the signed shift's round toward zero.
+        let shade = count.wrapping_mul(span) / 0x1000;
+        Some(shade.clamp(0, 0xFF) as u8)
     }
 
     pub(super) fn panel_fade_up(&mut self, scalar: i32) {
