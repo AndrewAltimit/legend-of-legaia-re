@@ -454,9 +454,11 @@ mod tests {
         let mut w = World::default();
         assert_eq!(w.field_xa_polled_cost(400), 400, "no clip reading");
         w.push_field_xa_cue(0x07, 1, 0x216);
-        // The field's own ratio, `3.34` (`FIELD_XA_POLL_COST_RATIO_MILLI`):
-        // `garmel` `P2[12]`'s `440`-hblank frames span six vsyncs and more.
-        assert_eq!(w.field_xa_polled_cost(400), 1336);
+        // The field's own law (`field_xa_loaded_frame_cost`): `167` hblanks
+        // of every vsync go to the CD, so the work stretches by `263 / 96`
+        // and a vsync's worth past it; `garmel` `P2[12]`'s `440`-hblank
+        // frames span six vsyncs and more.
+        assert_eq!(w.field_xa_polled_cost(400), 1359);
         assert_eq!(
             legaia_engine_battle_loop::frame_clock::frame_span(
                 super::super::field_frame_cost::field_xa_loaded_frame_cost(440),

@@ -658,6 +658,25 @@ impl World {
     /// no published camera or while the model is not drawn.
     ///
     /// REF: FUN_8001ADA4
+    /// `Some(())` when placement `slot` is a static model (draw kind `5`, no
+    /// move id) at render scale `0`. The animated renderer
+    /// refuses a zero `+0x72` (`0x8001B9A0`), but the draw walk's case `5`
+    /// does not: it takes the box test and dispatches every primitive at
+    /// scale `0` (`0x8001B1A8..0x8001B1E0`). `koin1`'s ten model-162
+    /// placements cost `3172..3879` cycles each that way on retail's walk.
+    fn field_npc_scale0_static(&self, slot: u8) -> Option<()> {
+        let c = self
+            .field_vm
+            .channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))?;
+        // The kind is the one op `0x22` leaves (`5` for move id `0`, else
+        // `1`); every seated actor starts on `5`, and one that holds a move
+        // id is on `1` by the time it draws (`koin1`'s scale-`0` model-157
+        // placements, `+0x5C = 48`, stand on kind `1`).
+        (c.ctx.field_72 == 0 && c.ctx.move_substate == 5 && c.ctx.move_id == 0).then_some(())
+    }
+
     pub fn field_npc_near_rejected(&self, slot: u8, spawn: (i16, i16)) -> bool {
         let (Some(cam), Some([x, y, z])) = (
             self.npcs.cull_camera.as_ref(),
@@ -941,7 +960,22 @@ impl World {
             if m.objects == 0 {
                 continue;
             }
-            let Some([x, y, z]) = self.field_npc_live_anchor(slot, spawn) else {
+            let scale0 = self.field_npc_scale0_static(slot);
+            let anchor = self.field_npc_live_anchor(slot, spawn).or_else(|| {
+                // A static model at render scale `0` draws nothing, but the
+                // walk still dispatches it (below).
+                scale0?;
+                let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+                let (x, z) = self.npcs.positions.get(&slot).copied().unwrap_or(spawn);
+                ((x, z) != (hide, hide)).then(|| {
+                    [
+                        f32::from(x),
+                        self.field_npc_render_y(slot, x, z) as f32,
+                        f32::from(z),
+                    ]
+                })
+            });
+            let Some([x, y, z]) = anchor else {
                 continue;
             };
             if self.field_npc_culled(x as i16, z as i16) {
@@ -949,11 +983,14 @@ impl World {
             }
             // The dispatcher's near reject on the actor's view depth
             // (`slti v0,v0,0xa1` at `0x8001AE9C`), the one both play hosts
-            // ask (`World::field_npc_near_rejected`).
+            // ask (`World::field_npc_near_rejected`). Case `5` skips its own
+            // depth test when `+0x72` is `0` (`beq v0,zero,0x8001B1E0` at
+            // `0x8001B1B0`).
             let at = [x as i16, y as i16, z as i16];
-            if gte
-                .as_ref()
-                .is_some_and(|g| walker_near_rejected(g.rtps(at).mac[2], true, false))
+            if scale0.is_none()
+                && gte
+                    .as_ref()
+                    .is_some_and(|g| walker_near_rejected(g.rtps(at).mac[2], true, false))
             {
                 continue;
             }
@@ -1132,24 +1169,35 @@ impl World {
     }
 }
 
-/// What a field frame the clip's polls load costs on PCSX-Redux, in
-/// thousandths of its work: the frame's CPU time over its time outside the CD
-/// interrupt. Two `autorun_field_cd_trace.lua` recordings (breakpoint core)
-/// price each frame of a voice line from the frame end's `VSync(n)` return
-/// (`0x800171C8`) to the CPU-done `VSync(1)` (`0x800174CC`), every CD
-/// interrupt from the exception vector to the response dispatcher's exit
-/// (`0x8005DB74`): `garmel` `P2[12]` (Zeto's appearance, from
-/// `chapter2_garmel_pre_zeto`) reads `3.34` over 85 frames and record 14
-/// (his defeat, from `garmel_zeto_defeat_pre_line`) `3.36` over 62, against
-/// the battle's `3.1` ([`legaia_engine_battle_loop::frame_clock::XA_POLL_COST_RATIO_MILLI`]).
-pub const FIELD_XA_POLL_COST_RATIO_MILLI: u32 = 3340;
+/// The CD interrupt time a field vsync takes on PCSX-Redux while a clip's
+/// one-shot read runs, in hblanks. Three `autorun_field_cd_trace.lua`
+/// recordings (breakpoint core) price each frame from the frame end's
+/// `VSync(n)` return (`0x800171C8`) to the CPU-done `VSync(1)`
+/// (`0x800174CC`) and every CD interrupt from the exception vector to the
+/// response dispatcher's exit (`0x8005DB74`): `garmel` `P2[12]` (Zeto's
+/// appearance, from `chapter2_garmel_pre_zeto`), record 14 (his defeat, from
+/// `garmel_zeto_defeat_pre_line`) and `rugi` `P2[72]` (the flight in, from
+/// `juui1_vortex_exit_flash`) all read `167` a vsync of the frame, whatever
+/// the frame's work.
+pub const FIELD_XA_CD_HBLANKS_PER_VSYNC: u32 = 167;
+
+/// The CPU time past the stretched work a loaded frame spends, in hblanks:
+/// the traces' mean CPU time less `work * 263 / (263 - 167)` is `258`
+/// (Zeto's appearance, `443`-hblank frames), `251` (his defeat, `410`) and
+/// `280` (rugi, `737`), about one vsync's worth. A single ratio cannot hold
+/// both: the appearance's `3.32` overprices rugi's frames by `8` per cent,
+/// enough to tip its `9`-vsync frames to `10`.
+pub const FIELD_XA_CD_FRAME_HBLANKS: u32 = 263;
 
 /// What a field frame of `work` hblanks costs while the clip's polls load it
-/// on PCSX-Redux ([`FIELD_XA_POLL_COST_RATIO_MILLI`]), at least the battle's
-/// floor ([`legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST`]).
+/// on PCSX-Redux: the work runs in the `263 - 167` hblanks each vsync leaves
+/// it ([`FIELD_XA_CD_HBLANKS_PER_VSYNC`]), plus
+/// [`FIELD_XA_CD_FRAME_HBLANKS`], at least the battle's floor
+/// ([`legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST`]).
 pub const fn field_xa_loaded_frame_cost(work: u16) -> u16 {
     let floor = legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST;
-    let c = (work as u32 * FIELD_XA_POLL_COST_RATIO_MILLI + 500) / 1000;
+    let free = 263 - FIELD_XA_CD_HBLANKS_PER_VSYNC;
+    let c = (work as u32 * 263 + free / 2) / free + FIELD_XA_CD_FRAME_HBLANKS;
     if c > u16::MAX as u32 {
         u16::MAX
     } else if c < floor as u32 {
