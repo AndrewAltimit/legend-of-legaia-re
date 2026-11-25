@@ -1184,6 +1184,16 @@ mod walk {
                         );
                     }
                     let mut w = shadow(&mut r.cpu, layout, action).expect("shadow");
+                    // PROT 0918's even-step runs cast on one of the four
+                    // monsters its arm 16 spares the dark tint (`0xA8`,
+                    // `0x53..0x55` off the formation byte, `0x801F81F4..
+                    // 0x801F8214`), on both sides.
+                    if entry == 918 && step % 2 == 0 && (3..7).contains(&layout.victim) {
+                        let id = [0xA8u8, 0x53, 0x54, 0x55]
+                            [usize::from(fallen) * 2 + usize::from(step == 4)];
+                        r.cpu.mem.wr8(FORMATION + layout.victim - 3, id);
+                        w.actors[layout.eng(layout.victim)].battle_monster_id = Some(u16::from(id));
+                    }
                     w.battle.camera = Some(
                         legaia_engine_battle_vm::battle_cam_script::BattleCamera::new(
                             legaia_engine_battle_vm::battle_cam_script::BattleCamPhase::Menu,

@@ -143,7 +143,7 @@ V = (c &amp; 0xF0) - 0x20</code></pre>
 
 <section class="doc-section" id="line-width-and-wrapping" data-doc="line-width-and-wrapping">
   <h2>Line width: nothing wraps</h2>
-  <p><strong>No retail text surface wraps.</strong> Every line break is an authored <code>0x7C</code> or a new dialog line; an over-long line is drawn in full, over the box frame and off it. The renderer has no clip and no width test, and none of its callers measure a line first. Its only bound is an optional cap on the number of units drawn (glyphs, numeric escapes and line breaks), which is the typewriter: the pager passes its reveal counter for the row being typed and no cap anywhere else. That is why a translation has to fit the box <em>by pixels</em>, not only its byte slot.</p>
+  <p><strong>No retail text surface wraps.</strong> Every line break is an authored <code>0x7C</code> or a new dialog line; an over-long line is drawn in full, over the box frame and off it. The renderer has no clip and no width test, and none of its callers measure a line first. Its only bound is an optional cap on the number of units drawn (glyphs, numeric escapes and line breaks), which is the typewriter: the pager passes its reveal counter for the row being typed and no cap anywhere else. That is why a translation has to fit the box <em>by pixels</em>, not only its byte slot. A string whose <em>first</em> byte is below <code>0x20</code> draws nothing at all; a control byte later in the string is skipped.</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Surface</th><th>Pad</th><th>Room</th><th>Notes</th></tr></thead>

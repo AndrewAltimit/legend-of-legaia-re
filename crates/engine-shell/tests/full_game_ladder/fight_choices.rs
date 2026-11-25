@@ -583,7 +583,7 @@ pub(super) fn wanted_power_item(
     // Che Delilas duel (`nilboa`) is about thirty Arts rounds against a
     // 12000-HP foe out of one bag that has to last two more duels.
     if solo_duel(w) {
-        if usize::from(actor) >= n || miracle_armed_fury(w, actor) {
+        if usize::from(actor) >= n {
             return None;
         }
         let has = |stat: BuffStat| {

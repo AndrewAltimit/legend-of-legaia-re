@@ -99,9 +99,18 @@ pub fn paralyzing_wave_camera(
         1..=3 => {
             arm.drift = Some(push(s >> 1));
             if phase == 3 {
-                st.module_words[0] = (st.module_words[0] + 4 * SPEED_SCALAR).min(FADE_DONE);
+                // `+= 4 * scalar * step` once a pass, and the arm leaves on a
+                // level past `0x1000` (`slti 0x1001` at `0x801F7130`), clamped
+                // to it, ahead of the countdown's gate.
+                if st.opens_pass || st.frame_step <= 1 {
+                    st.module_words[0] += 4 * SPEED_SCALAR * i32::from(st.frame_step.max(1));
+                }
+                let over = st.module_words[0] > FADE_DONE;
+                if over {
+                    st.module_words[0] = FADE_DONE;
+                }
                 arm.parts_level = Some(st.module_words[0] as u16);
-                arm.hold = st.module_words[0] < FADE_DONE && st.countdown.drain_above(0);
+                arm.hold = !over && st.countdown.drain_above(0);
                 return arm;
             }
             arm.hold = st.countdown.drain_above(0);
@@ -164,6 +173,7 @@ mod tests {
                 break;
             }
         }
-        assert_eq!(ticks, 0x1000 / (4 * SPEED_SCALAR));
+        // The pass that lands on `0x1000` holds; the one past it leaves.
+        assert_eq!(ticks, 0x1000 / (4 * SPEED_SCALAR) + 1);
     }
 }

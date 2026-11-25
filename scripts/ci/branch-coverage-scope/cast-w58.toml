@@ -1,0 +1,288 @@
+# Non-summon cast-module images (PROT 0935..0970 but 0947), round eight: arms out of scope, by image.
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F828C..0x801F828C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F82D0..0x801F82D0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F82F8..0x801F82F8"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F833C..0x801F833C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8540..0x801F8540"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8584..0x801F8584"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F85CC..0x801F85CC"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8610..0x801F8610"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's swap slide: the card moves by `(far - near) * clock >> 4` toward the other card's point, where the `slt` ahead of it (`0x801F8274` on the opening pass, `0x801F8504` after) picks the order so both differences are non-negative, and the swap clock `0x801FA27C` (`-0x5D84`) is `0` plus the frame step on the opening pass (`0x801F8258`) and grows by the step to its `0x10` clamp after (`0x801F84D8..0x801F84F0`): the product is never negative, so the rounding fix-up of its signed shift never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8A6C..0x801F8A6C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's blink clock `0x801FA280` (`-0x5D80`): its only stores are `0` (`0x801F812C`, `0x801F87EC`), the swap count `+1` (`0x801F87C4`, reset at thirteen) and itself plus the frame step (`0x801F8A34`, `0x801F8D60`), so it is never negative and the rounding fix-up of its signed `>> 4` never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8AB0..0x801F8AB0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's blink clock `0x801FA280` (`-0x5D80`): its only stores are `0` (`0x801F812C`, `0x801F87EC`), the swap count `+1` (`0x801F87C4`, reset at thirteen) and itself plus the frame step (`0x801F8A34`, `0x801F8D60`), so it is never negative and the rounding fix-up of its signed `>> 4` never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8D9C..0x801F8D9C"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's blink clock `0x801FA280` (`-0x5D80`): its only stores are `0` (`0x801F812C`, `0x801F87EC`), the swap count `+1` (`0x801F87C4`, reset at thirteen) and itself plus the frame step (`0x801F8A34`, `0x801F8D60`), so it is never negative and the rounding fix-up of its signed `>> 4` never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8DE0..0x801F8DE0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's blink clock `0x801FA280` (`-0x5D80`): its only stores are `0` (`0x801F812C`, `0x801F87EC`), the swap count `+1` (`0x801F87C4`, reset at thirteen) and itself plus the frame step (`0x801F8A34`, `0x801F8D60`), so it is never negative and the rounding fix-up of its signed `>> 4` never runs."
+
+[[arm]]
+entry = "0x801F798C"
+image = "df488fd3098b7996"
+range = "0x801F8ED0..0x801F8ED0"
+verdict = "unreachable"
+reason = "PROT 0957 Death Game's pick walks the four cards for the one whose `+0x14` x is the pointer's stop `(target - 0x28) * 0xC0 / 0x4C - 0x120` (`0x801F8E70..0x801F8EC0`). The target `0x801FA2AE` (`-0x5D52`) is only ever `0x28` (`0x801F87E4`, `0x801F897C`), `0x10C` (`0x801F8930`) or a step of `0x4C` between them (`0x801F8914`, `0x801F8964`), so the stop is one of `-0x120, -0x60, 0x60, 0x120`; the deal seats the cards on exactly those (`-0x120 + i * 0xC0`, `0x801F7E78..0x801F7F24`) and each swap ends on its clamp `0x10`, where the slide lands on the other card's point exactly, so a card always matches and the walk never runs out."
+
+[[arm]]
+entry = "0x801F730C"
+image = "f562ac6cdeade13e"
+range = "0x801F73D4..0x801F73D4"
+verdict = "unreachable"
+reason = "PROT 0941 Steal's phase dispatch: the phase byte `ctx[+0x279]` is stored only `+1` from arms 0, 1 and 2 (`0x801F7584`, `0x801F7B40`, `0x801F7CAC`) and `0xFF` from arm 3 (`0x801F7CFC`), so a phase under 3 that is neither 2 (`0x801F73B4`) nor 0 (`0x801F73C4`) is 1 and the `beq` on 1 is always taken."
+
+[[arm]]
+entry = "0x801F730C"
+image = "f562ac6cdeade13e"
+range = "0x801F73F0..0x801F73F0"
+verdict = "unreachable"
+reason = "PROT 0941 Steal's phase dispatch default: the phase stores are `+1` from arms 0..2 (`0x801F7584`, `0x801F7B40`, `0x801F7CAC`) and `0xFF` from arm 3 (`0x801F7CFC`), so a phase of 3 or more that is not 3 is `0xFF` and the fall-through past the `0xFF` test (phases `4..0xFE`) never runs."
+
+[[arm]]
+entry = "0x801F730C"
+image = "f562ac6cdeade13e"
+range = "0x801F78DC..0x801F78DC"
+verdict = "unreachable"
+reason = "PROT 0941 Steal's bag pick re-tests the slot its draw loop left on (`0x801F78D4..0x801F7914`): the loop leaves before `0x400` draws only through `0x801F78A4`, after the same three tests (id `+0x1818`, count `+0x1819`, the item's price `0x80074368 + id * 0xC + 2`) passed on the same slot, so each re-test passes and its exit to the empty-bag line never runs."
+
+[[arm]]
+entry = "0x801F730C"
+image = "f562ac6cdeade13e"
+range = "0x801F78EC..0x801F78EC"
+verdict = "unreachable"
+reason = "PROT 0941 Steal's bag pick re-tests the slot its draw loop left on (`0x801F78D4..0x801F7914`): the loop leaves before `0x400` draws only through `0x801F78A4`, after the same three tests (id `+0x1818`, count `+0x1819`, the item's price `0x80074368 + id * 0xC + 2`) passed on the same slot, so each re-test passes and its exit to the empty-bag line never runs."
+
+[[arm]]
+entry = "0x801F730C"
+image = "f562ac6cdeade13e"
+range = "0x801F7914..0x801F7914"
+verdict = "unreachable"
+reason = "PROT 0941 Steal's bag pick re-tests the slot its draw loop left on (`0x801F78D4..0x801F7914`): the loop leaves before `0x400` draws only through `0x801F78A4`, after the same three tests (id `+0x1818`, count `+0x1819`, the item's price `0x80074368 + id * 0xC + 2`) passed on the same slot, so each re-test passes and its exit to the empty-bag line never runs."
+
+[[arm]]
+entry = "0x801F6A04"
+image = "8f45220a72a5e1d6"
+range = "0x801F6A88..0x801F6A88"
+verdict = "unreachable"
+reason = "PROT 0941 Stone Circle (`0xB9`): the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F728C`, reached from arms 0..3) and arm 4 leaves it (`0x801F72C0..0x801F72D4` returns Done), so the phase stays in `0..=4` and the `sltiu 5` table guard never fails."
+
+[[arm]]
+entry = "0x801F6EDC"
+image = "62862162354c13e7"
+range = "0x801F6F6C..0x801F6F6C"
+verdict = "unreachable"
+reason = "PROT 0945 Water Column (`0x54`): the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F75F0..0x801F7600`, the shared step arms 0..6 end on) and arm 7 returns without a store (`0x801F7654..0x801F76C8`), so the phase stays in `0..=7` and the `sltiu 8` table guard never fails."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "e64ec1b29a386f02"
+range = "0x801F6A80..0x801F6A80"
+verdict = "unreachable"
+reason = "PROT 0945 All Stats Surge (`0xBA`): the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F6BB8..0x801F6BC8`, `0x801F6E58..0x801F6E68`) and arm 3 returns without a store (`0x801F6E9C..0x801F6EB0`), so the phase stays in `0..=3`: a phase under 2 that is not 1 is 0, and one of 2 or more that is not 2 is 3, so neither test of the chain falls through."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "e64ec1b29a386f02"
+range = "0x801F6A98..0x801F6A98"
+verdict = "unreachable"
+reason = "PROT 0945 All Stats Surge (`0xBA`): the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F6BB8..0x801F6BC8`, `0x801F6E58..0x801F6E68`) and arm 3 returns without a store (`0x801F6E9C..0x801F6EB0`), so the phase stays in `0..=3`: a phase under 2 that is not 1 is 0, and one of 2 or more that is not 2 is 3, so neither test of the chain falls through."
+
+[[arm]]
+entry = "0x801F6A14"
+image = "356b82773af1ef8f"
+range = "0x801F6ABC..0x801F6ABC"
+verdict = "unreachable"
+reason = "PROT 0957 Thunder Storm (`0x77`): the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F6D98`, `0x801F7654`) and `0xFF` (`0x801F78B0`), so a phase under 2 that is not 1 (`0x801F6AAC`) is 0 and the `beqz` on it is always taken."
+
+[[arm]]
+entry = "0x801F6A14"
+image = "356b82773af1ef8f"
+range = "0x801F6AE8..0x801F6AE8"
+verdict = "unreachable"
+reason = "PROT 0957 Thunder Storm's phase dispatch default: the phase stores are `+1` from arms 0..5 (`0x801F6D98`, `0x801F7654`) and `0xFF` from arm 6 (`0x801F78B0`), so a phase past 5 that is not 6 is `0xFF` and the fall-through past the `0xFF` test (phases `7..0xFE`) never runs."
+
+[[arm]]
+entry = "0x801F6A14"
+image = "356b82773af1ef8f"
+range = "0x801F6DC4..0x801F6DC4"
+verdict = "unreachable"
+reason = "PROT 0957 Thunder Storm: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F6A14"
+image = "356b82773af1ef8f"
+range = "0x801F7660..0x801F7660"
+verdict = "unreachable"
+reason = "PROT 0957 Thunder Storm: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F6AD8..0x801F6AD8"
+verdict = "unreachable"
+reason = "PROT 0935 Earthquake: the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F6C14`, `0x801F70B8`, `0x801F7D84`) and `0xFF` (`0x801F7F5C`), so a phase past 5 that is not 6 is `0xFF` and the fall-through past the `0xFF` test (phases `7..0xFE`) never runs."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F7458..0x801F7458"
+verdict = "unreachable"
+reason = "PROT 0935 Earthquake's quadrant word `0x801F82C0` (`-0x7D40`) is stored only `0` (`0x801F7158`) and `(word + 1) & 3` (`0x801F73E4`, `0x801F7764`, `0x801F7DC0`), so it is `0..=3`: a value under 2 that is not 1 is 0, and one of 2 or more that is not 2 is 3, so neither test of the switch falls through."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F7470..0x801F7470"
+verdict = "unreachable"
+reason = "PROT 0935 Earthquake's quadrant word `0x801F82C0` (`-0x7D40`) is stored only `0` (`0x801F7158`) and `(word + 1) & 3` (`0x801F73E4`, `0x801F7764`, `0x801F7DC0`), so it is `0..=3`: a value under 2 that is not 1 is 0, and one of 2 or more that is not 2 is 3, so neither test of the switch falls through."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F77FC..0x801F77FC"
+verdict = "unreachable"
+reason = "PROT 0935 Earthquake's quadrant word `0x801F82C0` (`-0x7D40`) is stored only `0` (`0x801F7158`) and `(word + 1) & 3` (`0x801F73E4`, `0x801F7764`, `0x801F7DC0`), so it is `0..=3`: a value under 2 that is not 1 is 0, and one of 2 or more that is not 2 is 3, so neither test of the switch falls through."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "19352512f8ed73da"
+range = "0x801F7814..0x801F7814"
+verdict = "unreachable"
+reason = "PROT 0935 Earthquake's quadrant word `0x801F82C0` (`-0x7D40`) is stored only `0` (`0x801F7158`) and `(word + 1) & 3` (`0x801F73E4`, `0x801F7764`, `0x801F7DC0`), so it is `0..=3`: a value under 2 that is not 1 is 0, and one of 2 or more that is not 2 is 3, so neither test of the switch falls through."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F6AA8..0x801F6AA8"
+verdict = "unreachable"
+reason = "PROT 0936 Hyper Crush: the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F6F6C`, `0x801F72E8`, `0x801F7610`, `0x801F78DC`, `0x801F7AE0`) and `0xFF` (`0x801F7B9C`), so it is `0..=8` or `0xFF`. The dispatch takes 4 and 7 first (`0x801F6A84`, `0x801F6AD0`): a phase under 2 that is not 1 is 0, one in `2..=3` that is not 2 is 3, one in `5..=6` that is not 5 is 6, and one of 8 or more that is not 8 is `0xFF`, so none of these tests falls through."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F6AC0..0x801F6AC0"
+verdict = "unreachable"
+reason = "PROT 0936 Hyper Crush: the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F6F6C`, `0x801F72E8`, `0x801F7610`, `0x801F78DC`, `0x801F7AE0`) and `0xFF` (`0x801F7B9C`), so it is `0..=8` or `0xFF`. The dispatch takes 4 and 7 first (`0x801F6A84`, `0x801F6AD0`): a phase under 2 that is not 1 is 0, one in `2..=3` that is not 2 is 3, one in `5..=6` that is not 5 is 6, and one of 8 or more that is not 8 is `0xFF`, so none of these tests falls through."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F6AE8..0x801F6AE8"
+verdict = "unreachable"
+reason = "PROT 0936 Hyper Crush: the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F6F6C`, `0x801F72E8`, `0x801F7610`, `0x801F78DC`, `0x801F7AE0`) and `0xFF` (`0x801F7B9C`), so it is `0..=8` or `0xFF`. The dispatch takes 4 and 7 first (`0x801F6A84`, `0x801F6AD0`): a phase under 2 that is not 1 is 0, one in `2..=3` that is not 2 is 3, one in `5..=6` that is not 5 is 6, and one of 8 or more that is not 8 is `0xFF`, so none of these tests falls through."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F6B04..0x801F6B04"
+verdict = "unreachable"
+reason = "PROT 0936 Hyper Crush: the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F6F6C`, `0x801F72E8`, `0x801F7610`, `0x801F78DC`, `0x801F7AE0`) and `0xFF` (`0x801F7B9C`), so it is `0..=8` or `0xFF`. The dispatch takes 4 and 7 first (`0x801F6A84`, `0x801F6AD0`): a phase under 2 that is not 1 is 0, one in `2..=3` that is not 2 is 3, one in `5..=6` that is not 5 is 6, and one of 8 or more that is not 8 is `0xFF`, so none of these tests falls through."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F7B20..0x801F7B20"
+verdict = "unreachable"
+reason = "PROT 0936 Hyper Crush: `beqz` on the battle's party count `ctx+0` (`lbu` through `0x8007BD24`), which skips a party-row loop; a battle always seats the lead, so the count is at least one."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "3cbe7596f05f395c"
+range = "0x801F6A8C..0x801F6A8C"
+verdict = "unreachable"
+reason = "PROT 0937 Hyper Lightning: the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F703C`, `0x801F7224`, `0x801F7578`) and `0xFF` (`0x801F77F4`), so it is `0..=7` or `0xFF`. The dispatch takes 4 and 6 first (`0x801F6A68`, `0x801F6AB4`): a phase under 2 that is not 1 is 0, one in `2..=3` that is not 2 is 3, and one of 7 or more that is not 7 is `0xFF`, so none of these tests falls through."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "3cbe7596f05f395c"
+range = "0x801F6AA4..0x801F6AA4"
+verdict = "unreachable"
+reason = "PROT 0937 Hyper Lightning: the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F703C`, `0x801F7224`, `0x801F7578`) and `0xFF` (`0x801F77F4`), so it is `0..=7` or `0xFF`. The dispatch takes 4 and 6 first (`0x801F6A68`, `0x801F6AB4`): a phase under 2 that is not 1 is 0, one in `2..=3` that is not 2 is 3, and one of 7 or more that is not 7 is `0xFF`, so none of these tests falls through."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "3cbe7596f05f395c"
+range = "0x801F6AD0..0x801F6AD0"
+verdict = "unreachable"
+reason = "PROT 0937 Hyper Lightning: the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F703C`, `0x801F7224`, `0x801F7578`) and `0xFF` (`0x801F77F4`), so it is `0..=7` or `0xFF`. The dispatch takes 4 and 6 first (`0x801F6A68`, `0x801F6AB4`): a phase under 2 that is not 1 is 0, one in `2..=3` that is not 2 is 3, and one of 7 or more that is not 7 is `0xFF`, so none of these tests falls through."
+
+[[arm]]
+entry = "0x801F6A10"
+image = "09a5959b39c64cac"
+range = "0x801F6AA4..0x801F6AA4"
+verdict = "unreachable"
+reason = "PROT 0949 Water Crystals: the phase byte `ctx[+0x279]` is stored only `+1` (`0x801F6E24`, `0x801F7020`, `0x801F73FC`) and arm 5 returns without a store (`0x801F7480..0x801F7508`), so the phase stays in `0..=5` and the `sltiu 6` table guard never fails."
+
+[[arm]]
+entry = "0x801F7298"
+image = "efda14ae5c665360"
+range = "0x801F7394..0x801F7394"
+verdict = "unreachable"
+reason = "PROT 0956 Water Hazard's arm 0 aims at one seat only for a caster code below `8` (`bnez s1` to `0x801F73C4`, the group aim `FUN_801DCEAC` on the fall-through). The spell's target shape `0x64` has `& 0x60 == 0x60`, which the monster picker stores as the party code `8` (`0x801EA5A4..0x801EA5D4`, `sb` at `0x801EA934`), the AI switch casts it on the whole party (`engine_battle::monster_ai`), and a confused caster's retarget `FUN_801E7320` writes only the group codes `8` and `9` for a group cast (docs: battle-action.md), so no single-seat code reaches the arm."

@@ -452,6 +452,50 @@ pub(super) fn evil_magic_due(w: &legaia_engine_core::world::World) -> bool {
     })
 }
 
+/// The evolved Cort (`jouine` P2[5]'s fight, monster `0xB5`).
+pub(super) const EVOLVED_CORT: u16 = 0xB5;
+
+/// Whether the evolved Cort has charged: its pick arm (`FUN_801E9FD4`,
+/// ported as `monster_ai::decide`, held to retail by the `monster_pick`
+/// differential) casts Ultra Charge (`0xA5`) on itself one turn in four and
+/// counts the phase word `DAT_801C8FE4` up, and its next turn counts it back
+/// down and casts `0xB4` on the whole party. A level-53 party takes about
+/// 3100 a member from that cast - more than Noa's whole bar - and about half
+/// in the Spirit stance. The charge is on screen, so a player who sees it
+/// guards the round it lands.
+pub(super) fn cort_charged(w: &legaia_engine_core::world::World) -> bool {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    w.battle.monster_ai_state.counter() != 0
+        && (n..w.actors.len()).any(|i| {
+            let a = &w.actors[i];
+            a.battle.hp > 0 && a.battle_monster_id == Some(EVOLVED_CORT)
+        })
+}
+
+/// [`cort_charged`] for one member: it guards when the stance lets it live
+/// through the cast and the cast would drop it, or leave it within one more
+/// hit of dropping, unguarded. Before the party has seen the cast land
+/// ([`AOE_HIT`] still empty), every member above a quarter of its bar
+/// guards.
+pub(super) fn wants_cort_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    if !cort_charged(w) {
+        return false;
+    }
+    let Some(a) = w.actors.get(usize::from(actor)) else {
+        return false;
+    };
+    let hp = projected_hp(w)
+        .get(usize::from(actor))
+        .copied()
+        .unwrap_or(0);
+    let max = u32::from(a.battle.max_hp);
+    let aoe = AOE_HIT.with(std::cell::Cell::get);
+    if aoe == 0 {
+        return hp > 0 && hp * 4 >= max;
+    }
+    hp > aoe * 5 / 8 && hp <= aoe + aoe / 8
+}
+
 /// [`evil_magic_due`] for one member: it guards when the stance lets it
 /// live through the cast (about half of what it does unguarded), and is left
 /// to the heal arm when even the guarded hit would drop it.

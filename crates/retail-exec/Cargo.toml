@@ -27,6 +27,11 @@ cli = ["dep:clap"]
 # when `PSX_RETAIL_EXEC_BRANCHES` is also set; off, the interpreter's loop
 # carries none of it. `scripts/ci/branch-coverage.py --record` turns it on.
 branch-cov = []
+# Branch-flip mutation (`branch_flip`): invert one branch of one routine on
+# the retail side when `PSX_RETAIL_EXEC_FLIP` names it, to measure whether a
+# differential compares that arm's effect. `scripts/ci/checked-arms.py`
+# drives it; off, the interpreter's loop carries none of it.
+branch-flip = []
 
 [dependencies]
 anyhow.workspace = true

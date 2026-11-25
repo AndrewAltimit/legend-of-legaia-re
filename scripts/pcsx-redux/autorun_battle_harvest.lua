@@ -97,6 +97,11 @@
 --                    still applies first (0 = attack from round one).
 --                    LEGAIA_PARTY_KEY_BATTLE=1 adds the battle count to the
 --                    key, so LEGAIA_PER_KEY counts per fight.
+--   LEGAIA_SAVE_RETURN 1 = save <prefix>_return_v<vsync> on the first vsync the
+--                    game mode leaves the battle (0x14 / 0x15) after a fight,
+--                    and end the run there: the anchor for a film of what the
+--                    field plays on its return (an arrival record a scripted
+--                    fight hands its flag to)
 --   LEGAIA_MONSTER_TOUGH 1 = at each round prompt write every monster's HP back
 --                    to its maximum, so the fight outlasts the arts lists; say
 --                    so in the state's description
@@ -314,6 +319,13 @@ end
 
 -- The round-prompt writes (LEGAIA_TOUGH, LEGAIA_WOUND, LEGAIA_FINISH).
 local function round_pokes(round)
+    -- Read-only: each seat's HP at the prompt, the fight's course in the log.
+    local hp = {}
+    for s = 0, 7 do
+        local a = seat_actor(s)
+        hp[#hp + 1] = a ~= nil and tostring(probe.read_u16(a + 0x14C) or 0) or "-"
+    end
+    logf("round %d hp %s", round, table.concat(hp, " "))
     if TOUGH then
         for s = 0, 2 do
             local a = seat_actor(s)
@@ -356,6 +368,8 @@ local caps = 0
 local per_key = {}
 local band_key, band_since = nil, 0
 local last_mode, last_flow = nil, nil
+-- Kept on P: the capture closure is at luajit's upvalue limit.
+P.SAVE_RETURN = probe.getenv_num("LEGAIA_SAVE_RETURN", 0) == 1
 local next_menu_press = 0
 local walk_i, walk_next = 1, 0
 local battles = 0
@@ -541,6 +555,13 @@ probe.run({
         end
         if mode ~= last_mode then
             logf("vsync=%d game_mode=0x%02x scene=%q", vsync, mode, scene_name())
+            if P.SAVE_RETURN and (last_mode == 0x14 or last_mode == 0x15)
+                and mode ~= 0x14 and mode ~= 0x15 then
+                if held ~= nil then probe.pad.release(held); held = nil end
+                save_checkpoint(string.format("%s_return_v%d", PREFIX, vsync), vsync)
+                ctx.request_quit = true
+                return
+            end
             if mode == 0x14 or mode == 0x15 then
                 if last_mode ~= 0x14 and last_mode ~= 0x15 then
                     battles = battles + 1

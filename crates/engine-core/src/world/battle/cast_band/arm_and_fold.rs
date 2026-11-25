@@ -496,6 +496,7 @@ impl World {
             }
         }
         self.casting.module_fold_quiet = false;
+        self.casting.module_fold_unstaged = false;
         if pc.caster >= self.party.party_count {
             self.apply_enemy_move_status(pc.caster, def.id, hit_fx_start);
             self.apply_enemy_agl_status(pc.caster, def.id, &pc.targets);

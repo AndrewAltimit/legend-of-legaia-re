@@ -262,3 +262,82 @@ fn the_row_readouts_print_what_the_port_formats() {
     }
     assert!(checked > 5000, "{checked}");
 }
+
+/// The colour word `_DAT_8007B7B8` each print of `FUN_801EAD98` goes out in,
+/// against `DevMenuRow::readout_print_word`: with the cursor (`+0x9E`) on
+/// the `EVENT_FLAG` row (`0x11`) its flag-index readout prints in
+/// `0x10A080`, anywhere else in the neutral `0x808080`, and every other
+/// print outside the flag grid that row opens under the cursor (the prints
+/// returning to `0x801EC2A0` / `0x801EC37C`, which the port's flag page
+/// replaces) goes out in the neutral word the arms leave. The prints are
+/// told apart by their return address.
+#[test]
+fn the_event_flag_readout_inks_where_retail_inks_it() {
+    differential!(prot(897, ROWS));
+    use legaia_engine_dev_menu::dev_menu_leaves::{DEV_PRINT_NEUTRAL, DevMenuRow};
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const INK: u32 = 0x8007_B7B8;
+    const RECORD: u32 = 0x8013_0000;
+    const READOUT_RA: u32 = 0x801E_C0A8;
+    const GRID_RA: [u32; 2] = [0x801E_C2A0, 0x801E_C37C];
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
+    let log: Rc<RefCell<Vec<(u32, u32)>>> = Rc::default();
+    let l = log.clone();
+    cpu.hook(PRINT, move |r, m| {
+        l.borrow_mut().push((r.r[31], m.rd32(INK)))
+    });
+    cpu.mem.wr32(0x1F80_03A0, 0x8014_0000);
+    cpu.mem.wr32(0x1F80_03F4, 0x8016_0000);
+    let mut rng = Rng(0x494E_4B53);
+    let (mut lit, mut plain) = (0, 0);
+    for run in 0..600 {
+        let start = rng.below(0x12) as i32;
+        let end = (start + rng.below(0x10) as i32).min(0x17);
+        let cursor = match rng.below(3) {
+            0 => 0x11,
+            1 => start + rng.below((end - start + 1) as u32) as i32,
+            _ => rng.below(0x20) as i32 - 4,
+        };
+        cpu.mem.wr16(RECORD + 0x9E, cursor as u16);
+        cpu.mem.wr32(INK, DEV_PRINT_NEUTRAL);
+        cpu.mem.wr32(STACK_TOP + 0x10, end as u32);
+        log.borrow_mut().clear();
+        let (x, y) = (rng.below(0x100), 0x70 + rng.below(0x50));
+        assert_eq!(
+            cpu.call(ROWS, &[RECORD, x, y, start as u32]),
+            Stop::Returned,
+            "run {run}"
+        );
+        let log = log.borrow();
+        let readouts: Vec<u32> = log
+            .iter()
+            .filter(|p| p.0 == READOUT_RA)
+            .map(|p| p.1)
+            .collect();
+        if (start..=end).contains(&0x11) {
+            let want = DevMenuRow::EventFlag.readout_print_word(cursor);
+            assert_eq!(readouts, [want], "run {run}: cursor {cursor:#x}");
+            if want == DEV_PRINT_NEUTRAL {
+                plain += 1;
+            } else {
+                lit += 1;
+            }
+        } else {
+            assert!(readouts.is_empty(), "run {run}");
+        }
+        for &(ra, word) in log.iter() {
+            if ra != READOUT_RA && !GRID_RA.contains(&ra) {
+                assert_eq!(
+                    word, DEV_PRINT_NEUTRAL,
+                    "run {run}: print returning to {ra:#x}"
+                );
+            }
+        }
+    }
+    assert!(lit > 50 && plain > 50, "{lit} lit, {plain} plain");
+}

@@ -154,6 +154,7 @@ impl World {
                     at: (s.pos[0], s.pos[1], s.pos[2]),
                     facing: s.heading,
                     homing_slot: Some(k.min(slots.len() - 1) as u8),
+                    table_scale: fx::TABLE_SCALE_SEED,
                 },
             );
         }
@@ -407,6 +408,7 @@ impl World {
                 at: (s.at[0], s.at[1], s.at[2]),
                 facing: s.heading,
                 homing_slot: Some(s.slot),
+                table_scale: legaia_engine_effects::action_effect_script::TABLE_SCALE_SEED,
             });
         }
     }

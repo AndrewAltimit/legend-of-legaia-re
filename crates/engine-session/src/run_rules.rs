@@ -20,7 +20,10 @@ use legaia_engine_core::world::run_rules::{RulesSetupSeat, StagedRun};
 use legaia_engine_core::world::run_rules_boss_rush::BossRushDue;
 use legaia_engine_run_rules::rules::{RunMode, RunRules};
 use legaia_engine_run_rules::save::RunSave;
-use legaia_engine_run_rules::setup::{RulesSetup, SetupInput, SetupOutcome};
+/// What a tap on the rules screen lands on (a host resolves it with
+/// `legaia_engine_screens::run_rules::setup_tap`).
+pub use legaia_engine_run_rules::setup::SetupTap;
+use legaia_engine_run_rules::setup::{NgSource, RulesSetup, SetupInput, SetupOutcome};
 use legaia_engine_save_state::WorldSaveState;
 
 use legaia_engine_audio::AudioSink;
@@ -35,9 +38,13 @@ const PAD_DOWN: u16 = 0x0040;
 const PAD_LEFT: u16 = 0x0080;
 const PAD_CIRCLE: u16 = 0x2000;
 const PAD_CROSS: u16 = 0x4000;
+const PAD_L1: u16 = 0x0400;
+const PAD_R1: u16 = 0x0800;
+const PAD_SQUARE: u16 = 0x8000;
 
 /// The setup screen's input off a pad edge word (retail bit layout:
-/// D-pad `0x10..0x80`, Cross confirms, Circle backs out, Start begins).
+/// D-pad `0x10..0x80`, Cross confirms, Circle backs out, Start begins,
+/// L1 / R1 switch tabs, Square resets the tab).
 pub fn setup_input(edge: u16) -> SetupInput {
     SetupInput {
         up: edge & PAD_UP != 0,
@@ -47,6 +54,9 @@ pub fn setup_input(edge: u16) -> SetupInput {
         confirm: edge & PAD_CROSS != 0,
         cancel: edge & PAD_CIRCLE != 0,
         start: edge & PAD_START != 0,
+        tab_prev: edge & PAD_L1 != 0,
+        tab_next: edge & PAD_R1 != 0,
+        reset: edge & PAD_SQUARE != 0,
     }
 }
 
@@ -79,26 +89,90 @@ pub fn open_run_rules_screen(
     ports: CardPorts<'_>,
     entropy: u64,
 ) {
-    let mut labels = Vec::new();
+    let mut found = Vec::new();
     let mut sources = Vec::new();
+    // The Boss Rush record shown is the best any save holds (or the session).
+    let mut record = world.run_rules.record.clone();
     for (port, card) in ports.iter().enumerate().take(CARD_PORTS) {
         let Some(card) = card else { continue };
         for n in 0..legaia_engine_menus::save_screen::SLOT_GRID_CELLS as usize {
-            let Some((sf, _)) = card.save_numbered(n) else {
+            let Some((sf, resume)) = card.save_numbered(n) else {
                 continue;
             };
-            let cycle = save_run_rules(&sf).map_or(0, |r| r.rules.ng_plus_cycle());
-            let lead = sf
-                .leader_summary()
-                .map_or_else(String::new, |l| format!(" {} Lv{}", l.name, l.level));
-            labels.push((format!("Card {} #{}{lead}", port + 1, n + 1), cycle));
+            let run = save_run_rules(&sf);
+            if let Some(r) = run.as_ref() {
+                merge_record(&mut record, &r.record);
+            }
+            found.push(ng_source(port, n, &sf, &resume, run.as_ref()));
             sources.push(sf);
         }
     }
-    world.run_rules.setup = Some(Box::new(RulesSetupSeat {
-        setup: RulesSetup::new(labels, entropy),
-        sources,
-    }));
+    let mut setup = RulesSetup::new(found, entropy);
+    setup.boss_rush_stages = boss_rush_preview(world);
+    setup.boss_rush_record = record;
+    world.run_rules.setup = Some(Box::new(RulesSetupSeat { setup, sources }));
+}
+
+/// One save as the rules screen lists it: where it is and who leads it,
+/// where it was written and its play time (the launcher's and the Continue
+/// screen's summary), and the New Game+ cycle it is on.
+fn ng_source(
+    port: usize,
+    n: usize,
+    sf: &legaia_save::SaveFile,
+    resume: &legaia_save::SaveResume,
+    run: Option<&RunSave>,
+) -> NgSource {
+    let lead = sf
+        .leader_summary()
+        .map_or_else(String::new, |l| format!("{} Lv {}", l.name, l.level));
+    let place = if resume.location.is_empty() {
+        resume.scene.clone()
+    } else {
+        resume.location.clone()
+    };
+    let t = sf.ext_v2.play_time_seconds;
+    let time = if t == 0 {
+        String::new()
+    } else {
+        format!("{}:{:02}:{:02}", t / 3600, t / 60 % 60, t % 60)
+    };
+    let detail = [place, time]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("  ");
+    NgSource {
+        label: format!("Card {} #{}", port + 1, n + 1),
+        lead,
+        detail,
+        cycle: run.map_or(0, |r| r.rules.ng_plus_cycle()),
+    }
+}
+
+/// Fold `other` into `best`: the most runs, clears and stages, the fastest
+/// clear.
+fn merge_record(
+    best: &mut legaia_engine_run_rules::boss_rush::BossRushRecord,
+    other: &legaia_engine_run_rules::boss_rush::BossRushRecord,
+) {
+    best.runs = best.runs.max(other.runs);
+    best.clears = best.clears.max(other.clears);
+    best.best_stages = best.best_stages.max(other.best_stages);
+    best.best_clear_frames = match (best.best_clear_frames, other.best_clear_frames) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
+}
+
+/// The stages a Boss Rush started now would fight, `(name, level)`: the
+/// retail stages, then the active pack's bosses in their order.
+fn boss_rush_preview(world: &legaia_engine_core::world::World) -> Vec<(String, u8)> {
+    legaia_engine_run_rules::boss_rush::RETAIL_STAGES
+        .iter()
+        .map(|s| (s.name.to_string(), s.level))
+        .chain(boss_rush_pack_stages(world))
+        .collect()
 }
 
 /// Whether the New Game rules screen is up.
@@ -129,11 +203,78 @@ pub fn step_run_rules_screen(
     step
 }
 
+/// A tap on the open rules screen ([`SetupTap`], resolved from the screen's
+/// layout by the host), as [`step_run_rules_screen`] would act on a press.
+pub fn tap_run_rules_screen(
+    world: &mut legaia_engine_core::world::World,
+    tap: SetupTap,
+) -> RunRulesStep {
+    let Some(seat) = world.run_rules.setup.as_mut() else {
+        return RunRulesStep::Running;
+    };
+    let step = match seat.setup.tap(tap) {
+        SetupOutcome::Open => return RunRulesStep::Running,
+        SetupOutcome::Cancelled => RunRulesStep::Cancelled,
+        SetupOutcome::Start { rules, ng_source } => RunRulesStep::Start {
+            rules,
+            source: ng_source
+                .and_then(|i| seat.sources.get(i).cloned())
+                .map(Box::new),
+        },
+    };
+    world.run_rules.setup = None;
+    step
+}
+
 /// Type a randomizer seed into the open rules screen (a host with a
 /// keyboard or a text box).
 pub fn set_run_rules_seed(world: &mut legaia_engine_core::world::World, seed: &str) {
     if let Some(seat) = world.run_rules.setup.as_mut() {
         seat.setup.set_seed(seed);
+    }
+}
+
+/// Whether the rules screen's seed editor is up: a host routes typed
+/// characters to it ([`seed_editor_key`]) instead of its pad bindings.
+pub fn seed_editor_open(world: &legaia_engine_core::world::World) -> bool {
+    world
+        .run_rules
+        .setup
+        .as_ref()
+        .is_some_and(|s| s.setup.seed_editor.is_some())
+}
+
+/// A key a host typed into the open seed editor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeedKey {
+    /// A character to append.
+    Char(char),
+    /// Erase the last character.
+    Backspace,
+    /// Take the seed.
+    Accept,
+    /// Drop the edit.
+    Cancel,
+}
+
+/// Apply `key` to the open seed editor; nothing when none is up.
+pub fn seed_editor_key(world: &mut legaia_engine_core::world::World, key: SeedKey) {
+    let Some(seat) = world.run_rules.setup.as_mut() else {
+        return;
+    };
+    let s = &mut seat.setup;
+    match key {
+        SeedKey::Char(c) => s.seed_editor_type(c),
+        SeedKey::Backspace => s.seed_editor_backspace(),
+        SeedKey::Accept => s.close_seed_editor(true),
+        SeedKey::Cancel => s.close_seed_editor(false),
+    }
+}
+
+/// Replace the open seed editor's text whole (the page's text box).
+pub fn seed_editor_set_text(world: &mut legaia_engine_core::world::World, text: &str) {
+    if let Some(seat) = world.run_rules.setup.as_mut() {
+        seat.setup.seed_editor_set_text(text);
     }
 }
 
@@ -239,6 +380,37 @@ fn pack_stage_levels<'a>(
         .collect();
     out.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
     out
+}
+
+#[cfg(test)]
+mod input_tests {
+    #[test]
+    fn the_shoulders_switch_the_rules_tabs() {
+        let i = super::setup_input(0x0400 | 0x4000);
+        assert!(i.tab_prev && i.confirm && !i.tab_next);
+        assert!(super::setup_input(0x0800).tab_next);
+        assert!(super::setup_input(0x8000).reset);
+    }
+
+    #[test]
+    fn the_best_boss_rush_record_wins() {
+        use legaia_engine_run_rules::boss_rush::BossRushRecord;
+        let mut a = BossRushRecord {
+            runs: 3,
+            clears: 1,
+            best_stages: 8,
+            best_clear_frames: Some(9000),
+        };
+        let b = BossRushRecord {
+            runs: 5,
+            clears: 0,
+            best_stages: 4,
+            best_clear_frames: Some(7000),
+        };
+        super::merge_record(&mut a, &b);
+        assert_eq!((a.runs, a.clears, a.best_stages), (5, 1, 8));
+        assert_eq!(a.best_clear_frames, Some(7000));
+    }
 }
 
 #[cfg(test)]

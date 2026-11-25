@@ -190,19 +190,25 @@ const NPC_CYCLES: i64 = 148 + 1297;
 /// A model object a raised `+0x42` sends through the clip arm
 /// (`0x8001BC34..0x8001BD88`): the object path's own share (`919`, no
 /// dispatcher draw), `FUN_8001C204` (`1610`, every call) and the TMD
-/// renderer `FUN_8002735C`'s set-up (`600`); and each primitive the renderer
-/// walks and clips (`634`), pooled over `garmel`'s Zeto (six objects, `145`
-/// primitives) on four frames of his appearance, from `80696` to `111747`
-/// cycles a frame with the share of edges the clip loop `FUN_80027F00`
-/// crosses. A primitive the renderer's `NCLIP` turns away (`bltz` at
-/// `0x8002755C`) costs little and a front face about a thousand, so the
-/// figure holds for a model about half of whose faces face the eye: raising
-/// Vahn's `+0x42` on `rugi_field_card_boot` (a `retail-exec frame-cost
-/// --poke` probe) takes retail's actor passes from `150.7` to `274.0`
-/// hblanks, and the price of the same switch on `rugi`'s player is about
-/// `115`.
+/// renderer `FUN_8002735C`'s set-up (`600`).
+///
+/// Each primitive the renderer walks costs [`CLIP_PRIM_CYCLES`] whether or
+/// not its corners survive the slab, and a primitive of a model whose anchor
+/// stands inside it ([`World::effect_clip_keeps_anchor`]) costs
+/// [`CLIP_KEPT_PRIM_CYCLES`] more: the corners `FUN_80027F00` keeps, the
+/// projection and the link (`0x80027C6C..0x80027EFC`, which a dropped
+/// primitive never reaches). Fitted on `rugi` `P2[72]` (`retail-exec
+/// frame-cost` on states a retail film of the flight kept): the three flyers'
+/// `30` objects, the engine's `1041` primitives, cost `499526` cycles in the
+/// renderer while every anchor is short of the slab (no primitive linked) and
+/// `745087` once all three are through it (`714..739` linked). `garmel`'s
+/// Zeto (six objects, `145` primitives, `112..118` linked) prices at `104800`
+/// against retail's `107301..111747`.
+///
+/// [`World::effect_clip_keeps_anchor`]: crate::world::World::effect_clip_keeps_anchor
 const CLIP_OBJECT_CYCLES: i64 = 919 + 1610 + 600;
-const CLIP_PRIM_CYCLES: i64 = 634;
+const CLIP_PRIM_CYCLES: i64 = 462;
+const CLIP_KEPT_PRIM_CYCLES: i64 = 236;
 /// A placed actor (`1202`), and each of its meshes (`75` and a dispatcher
 /// draw, `200`).
 const PLACED_CYCLES: i64 = 1202;
@@ -219,6 +225,22 @@ const MORPH_VERTEX_CYCLES: i64 = 61;
 /// actor pass: `3300` drawn, `705` off screen, `3071` at
 /// `uru2_field_door_hop`'s `62` drawn of `68`.
 const SPRITE_PART_CYCLES: i64 = 3071;
+/// A move-VM part on the static-mesh draw kind `5`, its walk entry, box
+/// test and object set-up beside its groups and primitives: `rugi`
+/// `P2[72]`'s ten model-45 parts (one object, one group of twelve kind-`18`
+/// quads) cost `5143` cycles each on retail's draw walk.
+const MESH_PART_CYCLES: i64 = 5143 - GROUP_CYCLES - 12 * ACTOR_PRIM_CYCLES[10];
+/// A move-VM part on the default arm (`+0x9E & 0x6000` clear), priced by the
+/// packets its build `FUN_80028158` writes and the model draw dispatches.
+/// Per actor on retail's draw walk (`retail-exec frame-cost` marks at
+/// `0x8001AE60`): `rugi` `P2[72]`'s plain rings cost `17063` (24 columns),
+/// `21914..22057` (32) and `24370` (36), `2450` a part and `609` a packet;
+/// `kor5` `P2[5]`'s textured 32-column rings (`128` packets, each quad split
+/// four ways) `95072..95215`, `724` a packet. [`SPRITE_PART_CYCLES`] keeps
+/// the sprite arm.
+const DEFAULT_ARM_PART_CYCLES: i64 = 2450;
+const DEFAULT_ARM_PACKET_CYCLES: i64 = 609;
+const DEFAULT_ARM_TEXTURED_PACKET_CYCLES: i64 = 724;
 /// A fog record, its half-sheets kept (`233`) and culled (`149`); each
 /// record emits two.
 const FOG_RECORD_CYCLES: i64 = 655;
@@ -240,19 +262,36 @@ const LIST_ENTRY_CYCLES: i64 = 59;
 /// and the system actors.
 const LIST_FIXED_ENTRIES: i64 = 5;
 
-/// The tick passes (`FUN_8002519C`, `retail-exec actor-ticks` over thirteen
-/// states): a script actor's tick through `FUN_8003BC08` (`485`, `669`
-/// entries), the player's (`FUN_801D1344`: `5071` standing, `31115`
-/// walking or running, `3106..44018` in all), the system actors' (the
-/// ambient emitter, the camera and the rest: `2967..24399`, mean `12300`),
-/// a sprite part's (`1475`), and any other move-VM part's own tick off a
-/// cycler upload (`689..3940`, mean `2243` over `35`; an upload frame adds
-/// the cycler terms).
-const TICK_ACTOR_CYCLES: i64 = 485;
+/// The tick passes (`FUN_8002519C`, `retail-exec actor-ticks`): the
+/// player's (`FUN_801D1344`: `5071` standing, `31115` walking or running,
+/// `3106..44018` in all), the system actors' (the sum of each one's mean over
+/// the `130` cost states: `FUN_801DA51C` `4452`, the ambient emitter
+/// `FUN_801D6058` `4245`, `FUN_801D84D0` `3109`, `FUN_80036D80` and
+/// `FUN_801E76D4` `109` each, `FUN_8002504C` `39`), a sprite part's
+/// (`1475`), and a cycler part's own tick off an upload (`689..3940`, mean
+/// `2243` over `35`; an upload frame adds the cycler terms).
+const TICK_ACTOR_CYCLES: i64 = 350;
+/// The per-kind entries of the tick passes, the mean of each class over the
+/// `130` cost states `retail-exec actor-ticks` runs (`field-cost-films.py`'s
+/// state set): a script actor on draw kind `5` (`350`, `4180` entries) and
+/// on kind `1`, a model (`551`, `3837`); a move-VM part on mode `0`
+/// (`1303`, `159`), the VRAM scroller's mode `4` (`4120`, `41`), the sound
+/// emitter's mode `5` (`1023`, `54`) and a library mesh on draw kind `5`
+/// (`1437`, `5`; `rugi` `P2[72]`'s model-45 parts `611..613`). A cycler
+/// part (mode `3`) keeps [`TICK_PART_CYCLES`] beside its upload terms.
+const TICK_MODEL_ACTOR_CYCLES: i64 = 551;
+const TICK_PLAIN_PART_CYCLES: i64 = 1_303;
+const TICK_SCROLL_PART_CYCLES: i64 = 4_120;
+const TICK_EMITTER_PART_CYCLES: i64 = 1_023;
+const TICK_STATIC_PART_CYCLES: i64 = 1_437;
 const TICK_PLAYER_STILL_CYCLES: i64 = 5_071;
 const TICK_PLAYER_MOVING_CYCLES: i64 = 31_115;
-const TICK_SYSTEM_CYCLES: i64 = 12_300;
+const TICK_SYSTEM_CYCLES: i64 = 4452 + 4245 + 3109 + 109 + 109 + 39;
 const TICK_SPRITE_PART_CYCLES: i64 = 1_475;
+/// A default-arm part's tick (draw kind `4`, `+0x9E & 0x6000` clear):
+/// `782..894` over `kor5` `P2[5]`'s and `rugi` `P2[72]`'s rings
+/// (`retail-exec actor-ticks`).
+const TICK_DEFAULT_ARM_PART_CYCLES: i64 = 870;
 const TICK_PART_CYCLES: i64 = 2_243;
 
 /// Fitted, not derived: the frame driver's work outside the priced passes
@@ -271,6 +310,15 @@ const OTHER_HBLANKS: i64 = 4;
 /// moves a pass's price by up to `6%`.
 pub fn derived_field_frame_cost(f: &FieldFrameFeatures) -> i32 {
     derived_field_frame_parts(f)[5]
+}
+
+/// One clip-arm primitive's price: kept models link theirs.
+const fn clip_prim(kept: bool) -> i64 {
+    if kept {
+        CLIP_PRIM_CYCLES + CLIP_KEPT_PRIM_CYCLES
+    } else {
+        CLIP_PRIM_CYCLES
+    }
 }
 
 /// [`derived_field_frame_cost`] by part, in hblanks: the decoration pass,
@@ -315,7 +363,9 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + match (f.player, f.player_clipped) {
             (None, false) => PLAYER_CYCLES,
             (None, true) => {
-                NPC_CYCLES + PLAYER_OBJECTS * CLIP_OBJECT_CYCLES + PLAYER_PRIMS * CLIP_PRIM_CYCLES
+                NPC_CYCLES
+                    + PLAYER_OBJECTS * CLIP_OBJECT_CYCLES
+                    + PLAYER_PRIMS * clip_prim(f.player_clip_kept)
             }
             (Some(m), false) => {
                 let k: [u32; 12] = m.kinds.map(u32::from);
@@ -326,9 +376,14 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
             }
             (Some(m), true) => {
                 let prims: i64 = m.kinds.iter().map(|&k| i64::from(k)).sum();
-                NPC_CYCLES + i64::from(m.objects) * CLIP_OBJECT_CYCLES + prims * CLIP_PRIM_CYCLES
+                NPC_CYCLES
+                    + i64::from(m.objects) * CLIP_OBJECT_CYCLES
+                    + prims * clip_prim(f.player_clip_kept)
             }
         }
+        + n(f.mesh_parts) * MESH_PART_CYCLES
+        + n(f.mesh_part_groups) * GROUP_CYCLES
+        + kinds(&f.mesh_part_kinds, &ACTOR_PRIM_CYCLES)
         + n(f.placed_draws) * PLACED_CYCLES
         + n(f.placed_objects) * PLACED_MESH_CYCLES
         + n(f.placed_groups) * GROUP_CYCLES
@@ -341,7 +396,12 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         + kinds(&f.npc_cued_kinds, &ACTOR_OFFTEST_PRIM_CYCLES)
         + n(f.npc_clip_objects) * CLIP_OBJECT_CYCLES
         + n(f.npc_clip_prims) * CLIP_PRIM_CYCLES
-        + n(f.sprite_parts) * SPRITE_PART_CYCLES
+        + n(f.npc_clip_kept_prims) * CLIP_KEPT_PRIM_CYCLES
+        + n(f.sprite_parts).saturating_sub(n(f.default_arm_parts)) * SPRITE_PART_CYCLES
+        + n(f.default_arm_parts) * DEFAULT_ARM_PART_CYCLES
+        + n(f.default_arm_packets).saturating_sub(n(f.default_arm_textured_packets))
+            * DEFAULT_ARM_PACKET_CYCLES
+        + n(f.default_arm_textured_packets) * DEFAULT_ARM_TEXTURED_PACKET_CYCLES
         + n(f.morph_calls) * MORPH_CALL_CYCLES
         + n(f.morph_copied) * MORPH_COPY_CYCLES
         + n(f.morph_vertices) * MORPH_VERTEX_CYCLES;
@@ -352,10 +412,22 @@ pub fn derived_field_frame_parts(f: &FieldFrameFeatures) -> [i32; 6] {
         TICK_PLAYER_MOVING_CYCLES
     } else {
         TICK_PLAYER_STILL_CYCLES
-    } + n(f.tick_actors) * TICK_ACTOR_CYCLES
+    } + n(f.tick_actors).saturating_sub(n(f.tick_model_actors)) * TICK_ACTOR_CYCLES
+        + n(f.tick_model_actors) * TICK_MODEL_ACTOR_CYCLES
         + TICK_SYSTEM_CYCLES
-        + n(f.sprite_parts) * TICK_SPRITE_PART_CYCLES
-        + n(f.parts).saturating_sub(n(f.sprite_parts)) * TICK_PART_CYCLES;
+        + n(f.sprite_parts).saturating_sub(n(f.default_arm_parts)) * TICK_SPRITE_PART_CYCLES
+        + n(f.default_arm_parts) * TICK_DEFAULT_ARM_PART_CYCLES
+        + n(f.static_parts) * TICK_STATIC_PART_CYCLES
+        + n(f.cycler_parts) * TICK_PART_CYCLES
+        + n(f.scroll_parts) * TICK_SCROLL_PART_CYCLES
+        + n(f.emitter_parts) * TICK_EMITTER_PART_CYCLES
+        + n(f.parts)
+            .saturating_sub(n(f.sprite_parts))
+            .saturating_sub(n(f.static_parts))
+            .saturating_sub(n(f.cycler_parts))
+            .saturating_sub(n(f.scroll_parts))
+            .saturating_sub(n(f.emitter_parts))
+            * TICK_PLAIN_PART_CYCLES;
     let cycles = decoration + ground + actors + fog + tick;
     // The cyclers' measured terms, in 1/1024 hblank.
     let ticked = n(f.cycler_calls) * COST_PER_CYCLER_CALL
@@ -446,11 +518,13 @@ mod tests {
             npc_models: 1,
             npc_clip_objects: 6,
             npc_clip_prims: 145,
+            npc_clip_kept_prims: 145,
             ..FieldFrameFeatures::default()
         };
         let plain = FieldFrameFeatures {
             npc_clip_objects: 0,
             npc_clip_prims: 0,
+            npc_clip_kept_prims: 0,
             npc_objects: 6,
             npc_groups: 19,
             npc_kinds: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 145],
@@ -459,7 +533,8 @@ mod tests {
         let base = FieldFrameFeatures::default();
         let n = |v: u32| i64::from(v);
         let arm = n(clipped.npc_clip_objects) * (CLIP_OBJECT_CYCLES - 919)
-            + n(clipped.npc_clip_prims) * CLIP_PRIM_CYCLES;
+            + n(clipped.npc_clip_prims) * CLIP_PRIM_CYCLES
+            + n(clipped.npc_clip_kept_prims) * CLIP_KEPT_PRIM_CYCLES;
         assert!((90_356..=121_407).contains(&arm), "{arm}");
         let hb =
             |f: &FieldFrameFeatures| derived_field_frame_cost(f) - derived_field_frame_cost(&base);
@@ -480,9 +555,52 @@ mod tests {
         let plain = FieldFrameFeatures::default();
         let raised = FieldFrameFeatures {
             player_clipped: true,
+            player_clip_kept: true,
             ..plain
         };
         let d = derived_field_frame_cost(&raised) - derived_field_frame_cost(&plain);
         assert!((90..=140).contains(&d), "{d}");
+    }
+
+    /// `rugi` `P2[72]`'s three flyers short of their slab link nothing, and
+    /// retail's renderer spends `499526` cycles on them a frame against
+    /// `745087` once they are through it: about `114` hblanks between the
+    /// two.
+    #[test]
+    fn a_model_short_of_its_slab_links_nothing() {
+        let out = FieldFrameFeatures {
+            npc_models: 2,
+            npc_clip_objects: 20,
+            npc_clip_prims: 617,
+            player_clipped: true,
+            ..FieldFrameFeatures::default()
+        };
+        let through = FieldFrameFeatures {
+            npc_clip_kept_prims: 617,
+            player_clip_kept: true,
+            ..out
+        };
+        let d = derived_field_frame_cost(&through) - derived_field_frame_cost(&out);
+        assert!((100..=125).contains(&d), "{d}");
+    }
+
+    /// `kor5` `P2[5]`'s five portal rings (two textured, 128 packets each;
+    /// three plain, 32 each) cost retail `258139` cycles in the actor pass,
+    /// where the flat sprite price had them at `15355`.
+    #[test]
+    fn default_arm_rings_price_by_their_packets() {
+        let flat = FieldFrameFeatures {
+            sprite_parts: 5,
+            ..FieldFrameFeatures::default()
+        };
+        let rings = FieldFrameFeatures {
+            default_arm_parts: 5,
+            default_arm_packets: 2 * 128 + 3 * 32,
+            default_arm_textured_packets: 2 * 128,
+            ..flat
+        };
+        let cycles = (derived_field_frame_cost(&rings) - derived_field_frame_cost(&flat)) * 2146
+            + 5 * SPRITE_PART_CYCLES as i32;
+        assert!((240_000..=275_000).contains(&cycles), "{cycles}");
     }
 }

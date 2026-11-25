@@ -227,6 +227,56 @@ pub struct EscapeCell {
 /// by the text pen (`FUN_8002C488` emits it at `0x808080`).
 pub const ESCAPE_GLYPH_BYTE: u8 = 0xCE;
 
+/// First operand of the port's resolved-numeral pair `0xCE, NUMERAL_ESCAPE_BASE
+/// + d`: one cell of a numeric `0xCE` escape (`0x0B..=0x0E`, a script
+/// counter) once its value is known, `d` its digit. Retail's renderer draws
+/// the counter through the numeral writer `FUN_80034B78` - the menu numeral
+/// face, not the dialog font - and steps the pen
+/// [`measure::NUMERIC_DIGIT_PX`] per digit with no glyph pad
+/// (`0x80036A54..0x80036B10`). The operand sits past the 38-entry escape
+/// table, so no retail string carries one; [`Font::layout`] advances the pen
+/// a cell for it and lays no glyph, and the dialog box draws the numeral
+/// there ([`numeral_escape_digit`]).
+pub const NUMERAL_ESCAPE_BASE: u8 = 0xF0;
+
+/// The digit a resolved-numeral operand stands for ([`NUMERAL_ESCAPE_BASE`]).
+pub fn numeral_escape_digit(op: u8) -> Option<u8> {
+    op.checked_sub(NUMERAL_ESCAPE_BASE).filter(|&d| d < 10)
+}
+
+/// `bytes` with each resolved-numeral pair ([`numeral_escape_run`]) folded
+/// back to its ASCII digit, for a reader that wants the text, not the draw.
+pub fn numeral_escape_plain(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match (
+            bytes[i],
+            bytes.get(i + 1).copied().and_then(numeral_escape_digit),
+        ) {
+            (ESCAPE_GLYPH_BYTE, Some(d)) => {
+                out.push(b'0' + d);
+                i += 2;
+            }
+            (b, _) => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// The page bytes a numeric escape resolves to: one `0xCE` pair per digit
+/// of `digits` (ASCII), each laid one numeral cell wide.
+pub fn numeral_escape_run(digits: &[u8]) -> Vec<u8> {
+    digits
+        .iter()
+        .filter(|b| b.is_ascii_digit())
+        .flat_map(|&b| [ESCAPE_GLYPH_BYTE, NUMERAL_ESCAPE_BASE + (b - b'0')])
+        .collect()
+}
+
 impl Font {
     /// Load the font from an `extracted/` root containing `font/` artifacts.
     pub fn load_from_extracted(root: impl AsRef<Path>) -> Result<Self> {

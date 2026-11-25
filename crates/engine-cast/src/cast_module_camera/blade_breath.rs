@@ -359,12 +359,18 @@ pub enum CaptureVictimSettle {
     /// Breath and Gigaton Press test the playing clip `+0x1D9` alone (`bnez`
     /// on `0`, `bne` on `8`, `0x801F7440..0x801F7454` on Gigaton Press).
     EitherRestClip,
+    /// [`Self::Rest`], and a fallen victim also once its prim word `+0x04`
+    /// reads `0`: PROT 0949's arm 5 (`0x801F7460..0x801F7478`), which runs
+    /// while its arm 0 has the whole field hidden (`sw zero,0x4`), so a victim
+    /// the crystals fell settles at once.
+    RestOrFaded,
 }
 
 /// The [`CaptureVictimSettle`] rule of capture body `body` in PROT `entry`.
 pub fn capture_victim_settle(entry: u32, body: Option<u32>) -> CaptureVictimSettle {
     match (entry, body) {
         (962, Some(BLADE_BREATH_BODY | GIGATON_PRESS_BODY)) => CaptureVictimSettle::EitherRestClip,
+        (949, _) => CaptureVictimSettle::RestOrFaded,
         _ => CaptureVictimSettle::Rest,
     }
 }

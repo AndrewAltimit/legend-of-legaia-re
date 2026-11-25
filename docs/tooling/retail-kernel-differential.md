@@ -242,6 +242,110 @@ the Rust that ports it, or the arm is exercised and not checked. The table holds
 instruction bytes, and stays under `target/branch-coverage/`. It is a
 measurement, not a gate.
 
+## Checked arms
+
+Branch coverage is an upper bound: it counts an arm once retail takes it, not
+once a comparison sees what the arm did. Checked arms measures the second by
+mutation. Built with the `branch-flip` feature, the interpreter
+(`crates/retail-exec/src/branch_flip.rs`) reads `PSX_RETAIL_EXEC_FLIP` and
+inverts one conditional branch of one routine image, on the retail side only:
+
+```text
+PSX_RETAIL_EXEC_FLIP=<entry>:<image-hash>:<branch-pc>:<taken|fell>:<n|all>
+```
+
+The entry and hash name the routine image as the branch table does, so a
+slot-B VA flips only while its overlay is resident. Each execution of the
+branch that would go the named way counts; the `n`-th one, or every one, goes
+the other way instead. Registers, the delay slot and the link of
+`bltzal` / `bgezal` are as the hardware leaves them; only the next PC changes.
+The Rust side never runs in the interpreter, so nothing on it moves. Without
+the feature the check compiles to nothing; with it and the variable unset it
+is one test per conditional branch.
+
+```bash
+python3 scripts/ci/checked-arms.py --record                # flip binary + its branch table (disc)
+python3 scripts/ci/checked-arms.py --sample 1200 --seed 58  # a seeded sample of the population
+python3 scripts/ci/checked-arms.py --addr 801D0748          # every direction of one routine
+python3 scripts/ci/checked-arms.py --recheck 12             # unchecked rows again, with more tests
+python3 scripts/ci/checked-arms.py --cost                   # population size, the --all estimate
+python3 scripts/ci/checked-arms.py                          # summary and per-routine worklist
+```
+
+The population is the ported arms of [branch coverage](#branch-coverage):
+directions taken in a `PORT:`-tagged routine and outside every scope row. The
+branch table's per-test `B` lines name the tests that took each direction, and
+its `T` lines their run times. A mutant reruns the cheapest few of those
+tests, flipping first the direction's first execution and, when every test
+survives that, every execution; a survivor of both then tries the next
+cheapest few, since the cheapest tests are often not the one that compares
+the arm (a step test runs the field VM's every op in seconds, and the test
+that holds an op's globals is slower). Each direction gets one verdict:
+
+- **checked**: a test fails. The comparison sees retail leave the arm.
+- **abnormal**: no test fails cleanly, but a flipped call stopped other than by
+  returning (the step budget, a bad access, a divide by zero) or the run timed
+  out. The mutant is detected, by the run aborting rather than by the
+  comparison, and is reported apart.
+- **unchecked**: every test that ran the flip passes. Either the arm's effect is
+  outside what the tests compare, or the two directions compute the same thing
+  for every input the tests reach.
+
+A test that passes after a runaway call is unchecked too, and its row says
+`survived-abnormal`: the test tolerates the stop, so the comparison cannot see
+the arm. The summary gives the checked share with a Wilson 95% interval for a
+sample, and the worklist groups the unchecked directions by routine. Results
+land in `target/checked-arms/results.tsv`, addresses and hashes only, and a
+rerun skips the rows already there. A mutant costs about one run of its tests,
+so a sample of a thousand or so directions runs inside an hour, and `--all`
+over the whole population takes most of a day.
+
+An unchecked direction falls in one of these, read from the disassembly:
+
+- **Equivalent mutant.** Both directions compute the same result. The common
+  forms: a guard a later one makes redundant (a digit loop's count exit behind
+  its divisor table's zero sentinel), a clamp the next test cannot tell from
+  the raw value, a ramp that a clamp right after it pins either way, a field
+  cleared that was already zero, a distance `|a - b|` compared with
+  `|b - a|`, and the compiler's divide-overflow guard (`bne` on `-1` ahead of
+  `break 6`), which only a divisor of `-1` tells apart.
+- **Equivalent on the shipped data.** The arms differ only for a table entry
+  the disc does not hold (a spell-0 guard ahead of a test of spell 0's
+  description byte, which is zero).
+- **Equivalent under the harness.** The arms differ only in a call the test
+  stubs or hooks alike (two file loaders answered by one hook).
+- **Comparison gap.** The arm writes something the test does not compare: a
+  global the field VM writes beside the context the test holds, a mode word a
+  battle exit sets beside the seats it checks. This is what the measurement is
+  for; the fix is to widen the comparison.
+- **Weak inputs.** The arm is compared, but no generated input makes its two
+  directions differ (arms that part only for an operand the generator never
+  makes negative, or never takes past a cap).
+- **Unported effect.** The arm's write has no counterpart in the port: the
+  dialog border's tile rows where the port keeps only the footprint, a heap
+  free in an engine with no PSX heap. The arm belongs in a scope row,
+  `unported`, so the ported figure stops counting it.
+- **Tolerated stop.** The test skips a round whose call stops abnormally, and
+  the mutant's runaway lands in that skip. The row says `survived-abnormal`.
+- **Tolerated difference.** The test sees the arm's effect and forgives it:
+  a field the port leaves to its host is counted rather than compared, so a
+  store retail makes and the port makes nowhere lands in the count. The fix
+  names the pairs the host owns and fails on any other (`field_ctx`'s
+  `LEFT_TO_HOST`).
+
+**The compiler's divide guards.** Every `div` / `divu` the compiler emits
+carries two guards: `bnez divisor` over `break 7`, and `bne divisor,-1`
+then `bne dividend,0x80000000` over `break 6`. They are real conditional
+branches, so both populations count them, but no shipped game state takes the trap
+side of the first and only a divisor of `-1` tells the second's two
+directions apart: in branch coverage they sit at "one way" for ever, and
+here their taken side is an equivalent mutant. They should leave both
+populations together, recognised by the walk from the `break 6` / `break 7`
+they guard, rather than by scope rows one routine at a time. Until then a
+routine with many divides reads lower on both figures than its arms are.
+
+Like branch coverage, it is a measurement, not a gate.
+
 ## What it has found
 
 The first routine in it, the stat aggregator `FUN_80042558`, showed its grant
@@ -919,6 +1023,17 @@ shot, records, cues, message raises, wheel words, icon offsets and seat stores, 
 beside the angle, and arm 2 showing the victim before it hides the caster, so a cast on the caster's own seat
 leaves it hidden.
 
+The walk resets the frame's primitive cursor `0x1F8003A0` every pass, as the frame does: a body's sprites
+advance it by their size (Death Game's digit and pointer, `0x801F8828..0x801F8834`), and left to run it
+walked up through RAM until, past Death Game's sixty-third round, it rewrote the spell table at `0x800754C8`
+and with it the target shape the walk seats the cast by. With that fixed, Death Game runs enough rounds for its
+heal to land capped and uncapped on both seats, and its odd rounds walk a frame step of 4, 3 so the pick
+timer's last drain goes below zero and is clamped (`0x801F880C`). Water Hazard's `0xFF` arm shows seats `0..6`
+with HP (`sltiu 7` at `0x801F7E08`), where the port showed the caster whatever its seat, so a seat-7 caster lost
+arm 0's `+0x21C = 9`. Stone Circle's sweep matches `steal_sweep_tick` on a Stoned seat and on rolls past the
+seat's HP, Steal's thief voices match `steal_voice`, and Water Column's hit clamp and its arm 7 settle tail,
+on a live victim's clip and a fallen one's down clip or fade, match the band.
+
 <a id="the-band-shadow"></a>
 **The band shadow.** Each capture cast also runs on an engine `World` seated off the same actor records
 (`World::drive_arm_capture_cast_module`), stepped through `World::run_cast_module_code` while the band walks
@@ -1247,7 +1362,106 @@ is put into it by the battle fade pass (`DEAD_IDLE_FADE_PASSES`), so the wait al
 runs, Mule's backdrop follow on a negative pitch (`0x801F8B80`) is driven both ways. `mule_wave` runs its 600
 rounds at steps 1, 2 and 3, the wave's damage, spirit and XP compared live at each, and so does `ozma_ladder` over
 PROT 0934's arm `0x18` hit ladder. The summon tick bodies' phase walk (`chain_ticks`) runs at steps 1 to 4, and
-the Spoon and Vera heal arms at a random step. The chain-body walk over the capture bodies stays at step 1.
+the Spoon and Vera heal arms at a random step.
+
+The capture-side walks run at steps 1 to 4 as well, each pass as the host runs it (`step` one-vsync ticks of the
+director, the countdown's rest `step - 1 - i`, stopping on the tick that passes): the chain-body walk (`chain_ticks`,
+with every tick's seat writes, the calls the host stages once a pass and the countdown word retail's passing pass
+leaves), the single Curse (`capture_curse`), Fatal Decision's phase chain (`fatal_outcomes`), Spikefish's arm 8 on
+words either side of its drain, and the battle open's intro hold (`command_prompts`, whose per-vsync ticks must end
+inside retail's last held pass). They found:
+
+- PROT 0947's arm 3 aims on the pass's drained word off the blade the pass opened on (`0x801F70C4..0x801F7104`)
+  and arm 4 runs the blade by `sin * step >> 6` once a pass (`0x801F752C..0x801F7594`); the trail sat off
+  retail's points above step 1.
+- PROT 0956's arm 3 adds `4 * scalar * step` to the parts' level once a pass and leaves on a level past `0x1000`
+  (`slti 0x1001` at `0x801F7130`), where the port left on reaching it, a pass early at any step.
+- Fatal Decision scales every drain, spin, spread and snap by the step once a pass; run a vsync at a time, arm 7's
+  slowdown spun on each tick's drained word and the wheel could stop on another slot. The host now runs the body
+  on the pass's opening tick at the pass's step (`World::run_fatal_decision`).
+- Spikefish's arm 8 adds `step << 3` to the creature's shatter word ahead of its gate and leaves on that pass; the
+  tick it leaves on owes the rest (`spikefish_shatter_add`).
+- Gimard's settle arm 12 has the same shape: it adds `2 * step * scalar` to the creature's shatter word on every
+  pass, the one that stores `0xFF` included (`0x801F7698` falls into the add at `0x801F76A4`), so its leaving tick
+  owes the rest too (`gimard_shatter_add`, driven at steps 1 to 4 by
+  `gimards_settle_arm_breaks_the_creature_up_as_retail_does`).
+
+The summon walk runs Gimard (PROT 0903) as a paced director, its CD word `0x8007BDB0` idle so arm 2 stores the
+creature stream's `7` itself, and its arm 11 range poll `FUN_8004E2F0(7, victim)` answering out of reach on the
+arm's first calls, with the shadow's walk-in reading the same answer. It found two defects. Arm 4 sinks the
+creature by the pass's whole `step * scalar` ahead of its gate (`0x801F6E78..0x801F6E94`), so the tick the arm
+leaves on owes the rest of its pass's sink. And arm 11 skips a Stoned victim (`andi 4` / `bne` at
+`0x801F7494..0x801F749C`): no roll, no reaction and no turn onto the creature, where the host's fold struck it and
+turned it. Gimard now sits in `STONE_SKIPPING_HITS`.
+
+The summon walk runs Kemaro (PROT 0918) as a paced director too. Its part handles are real, so the spear's
+`+0x16` that arm `0x11` frames on is the part's own, and its arm `0xE` framing call `FUN_801F0348` runs live,
+since the depth it stores is what arm `0x12` and the shots after it read. It found five defects:
+
+- The creature grows in. Arm 4's seat leaves the node scale `+0x72` at `0` (`0x801F7204`), and arm 6 adds
+  `4 * scalar * step` a pass, clamped to `0x1000` (`0x801F7328..0x801F73B0`); the port drew it full size.
+- Arm 13 reads its word once a pass, ahead of the pass's drain (`0x801F7C2C`, drain at `0x801F7DA0`). Its spawns
+  and its creature walk start on the pass that opens at or under `scalar << 5`, and the walk steps the whole pass,
+  the leaving pass's too. The port started a pass early, ended a pass short, and spawned the records again on the
+  leaving tick.
+- Arm 8's height and pitch read the same opening word at every frame step.
+- Arm `0x12`'s hit stages no clip, a kill's knockdown included (`0x801F87A4..0x801F8834`), where the fold staged
+  the knockdown (`module_fold_unstaged`).
+- Arm `0x12` stands monsters `0x4B` and `0xB3` at `z = -0x600` (`0x801F86B8..0x801F86E0`). In a scripted fight,
+  arm `0x13` lays a victim the spear killed half a unit in front of the caster (`0x801F89BC..0x801F8A48`).
+
+Spoon (PROT 0919) runs in the walk as well. It found that arm 2's pass seats the creature and its five parts
+together (`0x801F6DA8..0x801F6E5C`), where the port seated the parts a pass later on arm 3, and that it gives the
+creature its colour word `0xFFFFF` after the installer's reset (`0x801F6DB0..0x801F6DD4`). It also found that
+arm 4's twenty eye parts sit on the arm's cut angles (`a1 = sp+0x20`, `SpawnAnchor::CreatureOnShot`), not on the
+creature's. The walk seeds the battle context's five eye poses `ctx[+0x6F4]` with offsets of both signs and turns the
+caster off the axis, then compares every eye part's `+0x14..+0x18` through arms 4 to 7 against `spoon_eye_seat`,
+the kernel `World::seat_spoon_eye_parts` places them with.
+
+Nighto (PROT 0907) runs its kill leg on the walk's fallen runs and odd-step live runs: arm 0's fork word
+`0x801F8534` is zeroed, and on the fallen runs the resist word `0x801F853C` too. Retail's kill leg (arm `0xE`)
+drains its halfword by the pass's `scalar * step` (`0x801F7E98..0x801F7EB4`). The director drained the whole pass
+on every tick, so above step 1 a resisted instant death ran its wait one and a half to two and a half times too fast; it now drains a tick's
+share. The leg's hold on the victim's fade is the tick body's, so the walk leaves that arm's pace to the band
+shadow.
+
+The command prompts (`command_prompts`) also compare the battle tick's idle orbit at frame steps 1 to 4: on the
+round prompt, the flee confirm and the commit confirm its prologue turns the shared yaw `0x8007B792` by `2 * step`
+(`0x801D078C..0x801D07CC`), the turn `BattleCamera`'s Menu phase takes over the same pass. The ring and the
+attack-mode prompt leave the word alone; their frames' turn is the action SM's store.
+
+The chain-body walk holds a row settle as well as the victim's: PROT 0935's arm 6 over the row its target names
+(`0x801F7E2C..0x801F7F50`) and PROT 0936's arm 8 over the party (`0x801F7B18..0x801F7B90`), one seat busy at a time,
+fallen monsters lit until the hold ends. PROT 0937's arm 7 settles once its fourth hit has landed (`0x801F8098`,
+`0x801F77AC`). Its step-3 walks run 2, 3, 4, 4, so a word of whole scalars overshoots its gate.
+
+The capture walk runs PROT 0949's Water Crystals, a single-body module at its image's own entry. Its arm 0 hides
+the monster row by its count (`3 .. 3 + ctx[+0x01]`, `0x801F6D98..0x801F6E04`) and arm 5 shows it again, so a
+fifth monster at seat 7 hides and shows with the rest, where the port's seven-seat walk left it standing. Arm 5
+waits on the victim (`0x801F7438..0x801F7478`): a live one idle, a fallen one on clip `8` or faded out, and the
+port's victim settle now reads the fade (`CaptureVictimSettle::RestOrFaded`). The walk also drives its hit past
+the victim's HP and a victim radius past its framing cap.
+
+The capture walk also checks Thunder Storm's party sweep against the host's fold: the seats retail's sweep rolls
+(alive and out of Stone, `0x801F74E8` / `0x801F74FC`) are the ones the fold strikes, a Stoned seat stays whole and
+unreacting, and a roll past HP leaves a seat on `0`. Arm 6's pool level (`0x801F78B8..0x801F78E0`) is compared
+against the director's on a part standing in the pool. The summon walk seats PROT 0933's two whirl records in the
+part pool beside the module's own part, with the shadow's scene holding the same two, and compares each pass's
+`+0x7A`, `+0x16` and retire. Terra's orbit radius takes `|sin(a) * x| + |cos(a) * z'|` off the seat its arm 0
+copied, `z' = z - 0x613`; every seat of both seat families stands at `z` from 600 to 1400, so the second product's
+fix-ups never run (`terras_orbit_products_keep_their_sign_on_every_seat`).
+
+The chain-body walk also compares the rumble words every pass against `module_rumble_due`, with the Battles
+vibration row `0x800845C8` off on the odd-seeded walks. It found Genocidal Cannon's arms 7 and 9 storing arm `0xB`'s
+rumble: both leave through its tail (`j 0x801F77E0` at `0x801F73B8` / `0x801F75A0`), so the pad shook on three arms
+where the port shook it on one.
+
+The summon walk also runs a lone-monster layout, and compares PROT 0916's band packets (every `AddPrim` of arms
+`0x11..0x13` and the tpage its `SetDrawMode` takes) against `aluru_band_prims` at the spread its director leaves
+each pass on. Its fallen and odd-step live runs take the kill path (the verdict word `0x801F9010` at `0`). That
+found arms `0x12` / `0x13` leaving a tick's band growth unpaid on the tick they hand over above step 1, and the
+kill path's fold: retail's arm `0x12` skips its wrapper on a kill (`0x801F8598`), so the victim plays no hit
+reaction, takes no spirit and gets no impact store (`0x801F8684`), where the port's fold had run.
 
 **The spawned records.** The capture and chain walks log every `FUN_80021B04` / `FUN_80050ED4` call a pass makes,
 as record, point, angle trio and scale, and every literal-anchored record a director seats (its charge records and
@@ -1573,6 +1787,11 @@ retail splits the work, pixel-identical to the fused decoder it replaced. The ST
 `FUN_801F1A00` match on generated streams. The play loop's context init, frame poll and slice callback,
 the stream open and frame pump over the nine retail dispatch slots on their own movies, the MDEC output
 word, the slice-callback install and the four MDEC DMA sync routines (`str_player`, `mdec_sync`) match.
+An empty ring takes the frame poll through its `0x7D0` spins to `0` and the pump through its own to `-1`, which is
+the port's `PumpIdle::NeedSectors`. Every other movie runs with the Iki word clear, the dispatch to the STRv2
+decoder that the dev slots take. The play loop's first-slice kick, and the slice callback's, match
+`slice_word_count` on a frame with no rows too. The loop's CD search retry and its stall re-seeks are not ported:
+the engine reads each movie off the disc image a sector at a time.
 
 Among the system and render leaves, the boot SPU-base seeder, the staged character pair, the prompt
 line counter, the DRAWENV seed, the fade ramp step, the rumble actuator kernel and the scene-name sync

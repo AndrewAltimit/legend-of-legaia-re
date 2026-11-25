@@ -1955,6 +1955,22 @@ Charge have the same shape: without their tables every arm took one pass, so Cha
 landed `384` game frames early and a body that stepped off the end of its arms walked on to `0xFF`. Water Column runs its caster at half rate from arm 0 and halves the
 victim's beside the hit, so the knockdown's cues sit twice as far apart, and doubles both
 back in arm 7.
+Water Crystals hides the monster row by its count, a fifth monster at seat 7 included
+(`0x801F6D98..0x801F6E04`), and its arm 5 lets a fallen victim through on clip `8` or once its
+prim word `+0x04` reads `0` (`0x801F7460..0x801F7478`, `CaptureVictimSettle::RestOrFaded`).
+
+Kemaro grows in on a spin: its seat leaves the creature at node scale `0`, and arm 6 adds
+`4 * scalar * step` a pass up to `0x1000`, the facing six times the scale. Its arm `0x12` hit
+stages no clip, a kill's knockdown included, so the victim stays frozen on its flinch until
+arm `0x13`; in a scripted fight that arm lays a killed victim in front of the caster.
+
+Nighto's instant death, once resisted, waits out its own countdown before the cast ends; that wait runs at the
+pass's whole `scalar * step`, one tick's share a tick.
+
+Gimard's walk-in hit (arm 11) skips a Stoned victim, as the hit loops in `STONE_SKIPPING_HITS` do
+(`0x801F7494..0x801F749C`): no roll, no reaction and no turn onto the creature. Its arm 4 sinks the
+creature by the pass's whole `step * scalar` before the gate, so the arm's leaving tick owes the rest of
+its pass's sink.
 
 **Settle waits** are carried (`ChainSettle`, held by the band's caller). Each
 tests a seat the same way: live (`+0x14C != 0`) once its playing clip `+0x1D9`
@@ -4841,6 +4857,12 @@ fold.
   id is `0x299`.
 - **The settle.** Arm 12 reads the victim's clip off the reaction channel, and a
   party seat at zero HP settles on its Defeat pose, the engine's clip `8`.
+- **Once a pass.** Retail enters the body once a battle frame and every drain, spin,
+  spread and snap scales by the frame step (`lbu 0x7f(0x1F800314)`), so the host runs
+  it on the tick that opens a pass at that pass's step and holds on the rest
+  (`World::run_fatal_decision`). Arm 7's slowdown spins by `step * word / 128` on the
+  pass's drained word; run a vsync at a time it spun on each tick's, and above step 1
+  the wheel could stop on another slot.
 - **The spin's frames.** Arm 6 drains its countdown `scalar * step` a pass
   (`0x801F75EC..0x801F7630`), so how long the wheel spins, and where it stops, is
   the arm's frame steps. On `kor_shade_pre_fatal_decision`'s recording the arm's
@@ -5013,6 +5035,15 @@ than holding its own: the script is what walks a card in.
 the way a pass. A confirm press (`0x800846D0`) or the spent word plays cue `0x21`.
 The module is entered once a pass, so a press is one step; the port runs a pass as a
 frame step of one-vsync ticks and feeds the pad to the first alone.
+What it feeds is the word the pad pump builds once at the start of a game frame,
+`held & !prev` against the frame before ([the dance's pad pump](minigame-dance.md)),
+so the first tick builds it from the held pad against the held pad the last pass
+read (`DeathGame::pad_held_at_pass`). Under the battle frame cadence a pass opens
+on one tick of its two- or three-tick frame; read as the host's per-tick edge, a
+press that began on another tick of the frame was lost although it was still held,
+and with the immediate pad a pointer whose presses kept missing the pass's tick
+stood still until the timer took the leftmost card. Where the pad changes only on
+frame boundaries (the retail-faithful pipeline) the two words are the same.
 The swap's frame counter `0x801FA27C` moves the same way: by the pass's step, once,
 on the opening tick (`0x801F8240..0x801F8264`, `0x801F84CC..0x801F84F0`), clamped to
 `16` before the end test, and the next swap is drawn on the pass that opens it. Moved

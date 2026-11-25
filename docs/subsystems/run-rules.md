@@ -36,6 +36,8 @@ A preset is a bundle of scales and gates (`Knobs`). Each scale multiplies the ma
 | Smarter monsters | no | no | yes | yes | the monster target pick, as `--smart-monsters` |
 | No escape | no | no | no | yes | `roll_battle_escape`, as the formation's own no-escape byte |
 
+The *Custom* preset is the player's own bundle: its ten knobs are rows of their own, each stepped by Left / Right (`Knobs::step`: `x0.05` up to `x2`, `x0.25` past it, inside `Knobs::BOUNDS`; encounters may go to `x0`, every other scale keeps `x0.1`; the two gates flip). It opens on the knobs of the preset it was reached from, or on the ones last set. A custom run saves its knobs in `RunRules::custom` (a missing field reads as retail's, and a preset's rules carry none, so a save written before *Custom* decodes unchanged). The difficulty tab's help says which session tweaks stack on the preset (`engine-screens` `run_rules::stacking_tweaks_note`: foe stats, foe attacks, EXP, AP, smart foes).
+
 The AI knob is the existing smarter-targeting rule (a single-target attack picks the weakest living member); the monster AI port has no other clean aggression knob. Tetsu, the unwinnable sparring partner, keeps his stats at every preset, as the enemy-strength tweak pins him.
 
 ## New Game+
@@ -52,7 +54,7 @@ The carry is lifted by loading the source save into the world (`load_full`, so i
 
 Enemies scale on a curve over the cycle and the party's strongest level (`scaling::ng_plus_permille`): `1000 + 250 * cycle + 12 * (level - 1)` permille for an ordinary monster, `20` per level for a story boss, capped at `5x`, so a set piece stays a fight at a cleared game's levels. The curve multiplies the preset's enemy scale.
 
-A pack can gate content on the run: while a pack is active the world raises the pack flags `run.ng_plus`, `run.hard` (Hard or Nightmare), `run.ironman` and `run.randomizer`, and the counter `run.ng_plus_cycle`, so a trigger or quest gates with `requires = { flags = ["run.ng_plus"] }`. Under retail rules nothing is raised.
+A pack can gate content on the run: while a pack is active the world raises the pack flags `run.ng_plus`, `run.hard` (`RunRules::is_hard`: Hard, Nightmare, or *Custom* with enemy stats at Hard's `x1.35` or more), `run.ironman` and `run.randomizer`, and the counter `run.ng_plus_cycle`, so a trigger or quest gates with `requires = { flags = ["run.ng_plus"] }`. Under retail rules nothing is raised.
 
 ## Ironman
 
@@ -88,9 +90,32 @@ A won stage pays `STAGE_PURSE` gold and opens the intermission: next battle, res
 
 ## The rules screen
 
-The title's NEW GAME opens the rules screen (`engine-session` `open_run_rules_screen`) on both hosts, except in retail-faithful mode, where NEW GAME is retail's straight start. It opens on the retail rules with the cursor on *Start*, so one confirm is the original New Game. Up / Down pick a row, Left / Right change it, Cross confirms, Start begins the run from any row, Circle returns to the title. The seed row rolls a readable seed; the page's `play_run_rules_set_seed` takes a typed one.
+The title's NEW GAME opens the rules screen (`engine-session` `open_run_rules_screen`) on both hosts, except in retail-faithful mode, where NEW GAME is retail's straight start. It opens on the retail rules, on the *Run* tab with the cursor on *Start*, so one confirm is the original New Game.
 
-The screen sits on the world (`RunRulesState::setup`), so the shared screen layers draw it (`engine-screens` `run_rules::active_screen`): the native window through its screen-prim pass and text layer, the browser play page on the title's menu canvas (`play_run_rules_draws_json`) and in game through the same pass. The pause menu shows the run's summary line (`Hard / NG+1 / Ironman / Seed RIM-0042`) at the foot of the root panel; under retail rules it shows nothing.
+Its rows sit on four tabs (`setup::SetupTab`), switched with L1 / R1:
+
+| Tab | Rows |
+|---|---|
+| Run | the mode (Story or Boss Rush), ironman (Off, On, Hardcore), *Start*; under Boss Rush, its record and stages |
+| Difficulty | the preset, with every scale it sets listed under it (`Knobs::rows`), or under *Custom* each knob as a row |
+| New Game+ | the save to carry from, then the seven keep switches while one is picked |
+| Randomizer | on or off, then the seed and the seven parts (`Randomizer::parts`) while it is on |
+
+Up / Down pick a row, Left / Right change it (the selected row shows the menu's gold arrows the same step either side of its value), Cross confirms, Square puts the tab on screen back to the original game's rules (`RulesSetup::reset_tab`), Start begins the run, Circle returns to the title. A list longer than the window scrolls, marked with the menu font's own list arrows (icons `0x67` / `0x68`). A help window says what the selected row does at its current value (`RulesSetup::help`), a summary line under it gives the run as the pause menu will (`Hard / NG+1 / Ironman / Seed RIM-0042`), and the key hint names the host's own bindings or the last pressed controller's buttons (`engine-screens` `run_rules::PromptKeys`, built from each host's `prompt_label`, the minigame captions' rule).
+
+Start on the original game's rules begins at once, so one confirm is still the retail New Game; any other rules open a confirm window first (*Begin with these rules?*, listing each rule that differs, `RulesSetup::confirm_lines`), sized to its content and centred over the rows as the game's choice windows are (`run_rules_screen::list_window_frame`). Cross on the New Game+ row opens the save list (`setup::SetupOverlay::Sources`): every readable save on either card port with its leader, the place it was written and its play time (the launcher's and the Continue screen's summary), and the help names the cycle it would start.
+
+A Boss Rush hides the rows it ignores: the keep switches (it seats its own party, so only the cycle's tougher foes carry) and the randomizer parts it never reads (`RulesSetup::BOSS_RUSH_PARTS`: drops and steals stay; its fights are scripted, it buys by name, opens no chest, fights the protected story bosses and re-seeds the party's gear). The run tab then lists its record (the best any save on the cards or the session holds) and its stages with their levels, the active pack's bosses after the retail eight, the stages on one three-column grid (each name left, its level right-aligned in its cell).
+
+Left / Right on the seed row rolls a readable seed; Cross opens the seed editor (`setup::SeedEditor`), a letter grid over the rows: the capitals, the dash and the digits, then *Del* and *Done*. Cross types the cell, Circle erases (and leaves an empty grid), Start takes the seed.
+
+A keyboard types into the same editor: the native window sends letters, digits and the dash to it while it is up (Backspace erases, Enter takes the seed, Escape drops the edit), and the page lays a text box over the editor's text line (`play_run_rules_seed_rect`), whose text the engine filters to the characters the font draws. An empty seed keeps the old one. The help line says what the disc patcher does not: a seed names a different shuffle there, since each engine part is drawn per site rather than over the whole disc.
+
+On the page a tap or click goes to the engine, which resolves it from the geometry it draws (`run_rules_screen::rules_menu_hit`, `engine-screens` `run_rules::setup_tap`, `play_run_rules_tap`): a tab, a row (the first tap selects it, a second acts as Cross), the left or right half of a value (a step back or forward), a window's choice, a seed cell; *Begin* and *Back* buttons sit under the canvas (`play_run_rules_button`).
+
+The screen is drawn in the game's own menu style (`engine-ui` `run_rules_screen::RulesMenuView`): the pause menu's 9-slice windows over black, the carved title-tab plaques for the tabs (those off screen darkened), the pointing hand as the cursor, the menu inks. Its sprites sample the system-UI chrome atlas both hosts already hold for the pause menu, its labels the menu font; the black backdrop is a screen prim. Every piece is laid out on the 320x240 stage through the one stage transform (`pause_menu::stage_transform`), which is also the native window's scene viewport for screen prims, so the windows, the backdrop and the text stay together at any window size.
+
+The screen sits on the world (`RunRulesState::setup`), so the shared screen layers draw it (`engine-screens` `run_rules::active_screen`): the native window through its screen-prim pass, its system-UI sprite pass and its text layer, the browser play page on the title's menu canvas (`play_run_rules_draws_json`). The Boss Rush intermission and result are the same composition with the screen's title on one plaque (`run_rules::boss_rush_screen`), drawn in the field through the same passes. The pause menu shows the run's summary line at the foot of the root panel; under retail rules it shows nothing.
 
 ## Saves and replays
 
@@ -102,12 +127,14 @@ A j-replay-v1 file records the rules as a value row, `set = "run_rules"` with th
 
 | Test | Crate |
 |---|---|
-| `retail_rules_are_the_identity`, `presets_order_and_step`, `rules_round_trip_and_summarise` (`rules`); `the_curve_grows_with_cycle_and_level_and_favours_bosses` (`scaling`); `a_run_walks_its_stages_and_records`, `the_intermission_cursor_wraps` (`boss_rush`); `retail_writes_nothing_and_rules_round_trip` (`save`); `one_confirm_starts_the_retail_game`, `rows_set_every_rule` (`setup`) | `engine-run-rules` |
-| `retail_rules_leave_every_reader_alone`, `difficulty_presets_apply_and_clear`, `staged_rules_take_over_at_new_game_and_round_trip_the_save_block`, `ironman_marks_the_run_on_a_wipe_and_owes_autosaves`, `ng_plus_carries_the_chosen_parts`, `the_randomizer_is_a_function_of_its_seed` (`world::tests::run_rules`); `carry_copies_only_the_chosen_spans` (`world::run_rules`) | `engine-core` |
+| `retail_rules_are_the_identity`, `presets_order_and_step`, `rules_round_trip_and_summarise` (`rules`); `the_curve_grows_with_cycle_and_level_and_favours_bosses` (`scaling`); `a_run_walks_its_stages_and_records`, `the_intermission_cursor_wraps` (`boss_rush`); `retail_writes_nothing_and_rules_round_trip` (`save`); `knob_rows_read_as_multipliers`, `an_older_rules_block_decodes_with_every_part_on`, `custom_knobs_step_inside_their_bounds_and_save` (`rules`) | `engine-run-rules` |
+| `one_confirm_starts_the_retail_game`, `start_begins_the_run_from_any_row_and_tab`, `tabs_wrap_and_keep_their_cursors`, `rows_set_every_rule`, `the_seed_is_typed_on_the_grid_or_the_keyboard` (`setup`); `custom_difficulty_edits_its_knobs_and_remembers_them`, `the_save_list_picks_a_source_and_starts_its_next_cycle`, `a_boss_rush_hides_the_rows_it_ignores`, `taps_act_as_the_pad_does` (`setup`) | `engine-run-rules` |
+| `retail_rules_leave_every_reader_alone`, `difficulty_presets_apply_and_clear`, `staged_rules_take_over_at_new_game_and_round_trip_the_save_block`, `ironman_marks_the_run_on_a_wipe_and_owes_autosaves`, `ng_plus_carries_the_chosen_parts`, `the_randomizer_is_a_function_of_its_seed`, `a_custom_run_at_hards_enemy_stats_raises_run_hard` (`world::tests::run_rules`); `carry_copies_only_the_chosen_spans` (`world::run_rules`) | `engine-core` |
 | `picks_are_stable_per_key_and_spread_across_keys`, `kept_items_and_the_empty_sentinel_never_move`, `bands_hold_and_protected_monsters_keep_their_stats`, `rerolls_keep_the_seat_count_the_species_cap_and_the_guard`, `priced_items_pool_and_named_free_ones_are_kept` | `randomizer` |
-| `the_panel_lists_its_rows_and_scrolls_to_the_cursor` (`run_rules_screen`) | `engine-ui` |
-| `the_setup_screen_lists_the_rows_and_the_run` (`run_rules`) | `engine-screens` |
+| `the_menu_keeps_each_label_in_its_window`, `hidden_rows_are_marked_with_the_list_arrows`, `taps_land_where_the_screen_draws`, `the_seed_grid_covers_the_rows_under_it`, `one_heading_is_a_title_plaque`, `the_value_arrows_sit_the_same_step_either_side_of_the_value`, `fact_lines_share_one_grid`, `the_confirm_is_sized_to_its_content_and_centred` (`run_rules_screen`) | `engine-ui` |
+| `the_setup_screen_lists_the_rows_and_the_run`, `the_difficulty_tab_lists_its_scales_and_the_tweaks_on_top`, `a_boss_rush_fills_the_run_tab_with_its_stages_and_record`, `the_confirm_and_the_save_list_are_windows_over_the_rows`, `the_hint_names_the_hosts_keys` (`run_rules`) | `engine-screens` |
 | `the_rules_screen_draws_nothing_until_opened` (`play_run_rules`) | `web-play` |
 | `erasing_a_save_frees_its_block` (`emu`) | `save` |
 | `ironman_keeps_one_save_and_a_wipe_erases_it` (`card_write`) | `engine-menu-runtime` |
-| `boss_rush_rows_seat_their_bosses`, `boss_rush_runs_its_first_stages` (disc-gated, `tests/boss_rush_disc.rs`); `switches_round_trip_in_every_shape` (`replay`) | `engine-shell` |
+| `the_shoulders_switch_the_rules_tabs`, `the_best_boss_rush_record_wins` (`run_rules`) | `engine-session` |
+| `boss_rush_rows_seat_their_bosses`, `boss_rush_runs_its_first_stages` (disc-gated, `tests/boss_rush_disc.rs`); `switches_round_trip_in_every_shape` (`replay`); `seed_keys_type_capitals_and_digits` (`window::event_handler::keyboard`) | `engine-shell` |

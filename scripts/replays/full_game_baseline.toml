@@ -99,240 +99,240 @@ credits = 4
 
 [shortcuts.walked.default]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_3]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_4]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_5]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_6]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_7]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_8]
-box_face = 2
-examine_face = 39
-examine_far = 36
-examine_seat = 15
-restore_xz = 59
+box_face = 1
+examine_face = 31
+examine_far = 29
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_9]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_10]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_11]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
-touch_seat = 26
+touch_seat = 29
 
 [shortcuts.walked.seed_12]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_13]
-box_face = 1
-examine_face = 35
+box_face = 2
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_14]
 box_face = 1
-examine_face = 35
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_15]
-box_face = 2
-examine_face = 35
+box_face = 1
+examine_face = 31
 examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_seat = 10
+restore_xz = 52
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.walked.seed_16]
 box_face = 1
 examine_face = 35
-examine_far = 29
-examine_seat = 15
-restore_xz = 55
+examine_far = 36
+examine_seat = 10
+restore_xz = 56
 touch_far = 1
 touch_seat = 29
 
 [shortcuts.placed.default]
 box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+examine_face = 131
+examine_seat = 184
+restore_xz = 158
 touch_seat = 81
 
 [shortcuts.placed.seed_3]
 box_face = 12
-examine_face = 120
-examine_seat = 168
-restore_xz = 146
+examine_face = 125
+examine_seat = 174
+restore_xz = 152
 touch_seat = 81
 
 [shortcuts.placed.seed_4]
 box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+examine_face = 125
+examine_seat = 174
+restore_xz = 152
 touch_seat = 81
 
 [shortcuts.placed.seed_5]
 box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+examine_face = 125
+examine_seat = 174
+restore_xz = 152
 touch_seat = 81
 
 [shortcuts.placed.seed_6]
 box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+examine_face = 125
+examine_seat = 174
+restore_xz = 152
 touch_seat = 81
 
 [shortcuts.placed.seed_7]
 box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+examine_face = 125
+examine_seat = 174
+restore_xz = 152
 touch_seat = 81
 
 [shortcuts.placed.seed_8]
 box_face = 12
-examine_face = 112
-examine_seat = 163
-restore_xz = 138
+examine_face = 125
+examine_seat = 174
+restore_xz = 152
 touch_seat = 81
 
 [shortcuts.placed.seed_9]
 box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+examine_face = 125
+examine_seat = 174
+restore_xz = 152
 touch_seat = 81
 
 [shortcuts.placed.seed_10]
 box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+examine_face = 129
+examine_seat = 181
+restore_xz = 156
 touch_seat = 81
 
 [shortcuts.placed.seed_11]
 box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+examine_face = 127
+examine_seat = 177
+restore_xz = 154
 touch_seat = 81
 
 [shortcuts.placed.seed_12]
-box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+box_face = 13
+examine_face = 125
+examine_seat = 174
+restore_xz = 167
 touch_seat = 81
 
 [shortcuts.placed.seed_13]
 box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+examine_face = 125
+examine_seat = 174
+restore_xz = 152
 touch_seat = 81
 
 [shortcuts.placed.seed_14]
-box_face = 12
-examine_face = 110
-examine_seat = 159
-restore_xz = 136
+box_face = 13
+examine_face = 137
+examine_seat = 195
+restore_xz = 164
 touch_seat = 81
 
 [shortcuts.placed.seed_15]
-box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+box_face = 13
+examine_face = 125
+examine_seat = 174
+restore_xz = 152
 touch_seat = 81
 
 [shortcuts.placed.seed_16]
 box_face = 12
-examine_face = 108
-examine_seat = 156
-restore_xz = 134
+examine_face = 125
+examine_seat = 174
+restore_xz = 152
 touch_seat = 81

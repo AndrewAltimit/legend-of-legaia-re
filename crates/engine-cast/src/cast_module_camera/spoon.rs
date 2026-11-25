@@ -64,18 +64,50 @@ fn group_aim(st: &ModuleCamState) -> ([i16; 3], i16) {
 }
 
 /// Arm 4's pass (`0x801F7098..`): four parts for each of the creature's five
-/// eyes, seated on the creature and then moved onto the eye's pose object every
+/// eyes, seated on the creature turned to the arm's cut (`a1 = sp+0x20`) and
+/// then moved onto the eye's pose object every
 /// pass of arms 5..7 (`World::seat_spoon_eye_parts`).
 pub const SPOON_EYE_RECORDS: [u32; 4] = [0x801F_8CC8, 0x801F_8D24, 0x801F_8D80, 0x801F_8DF8];
 const SPOON_EYE_SPAWNS: [ModuleSpawn; 20] = {
-    let mut out = [spoon_spawn(SPOON_EYE_RECORDS[0], SpawnAnchor::Creature); 20];
+    let mut out = [spoon_spawn(SPOON_EYE_RECORDS[0], SpawnAnchor::CreatureOnShot); 20];
     let mut i = 0;
     while i < 20 {
-        out[i] = spoon_spawn(SPOON_EYE_RECORDS[i % 4], SpawnAnchor::Creature);
+        out[i] = spoon_spawn(SPOON_EYE_RECORDS[i % 4], SpawnAnchor::CreatureOnShot);
         i += 1;
     }
     out
 };
+
+/// Where PROT 0919 stands eye `eye`'s parts on a pass of arm `phase` (4..=7):
+/// the creature's ground pair `(cx, cz)` plus the eye's pose offset `pose`
+/// (the battle context's pose objects `ctx[+0x6F4 + 12 * eye]`, x / y / z
+/// halfwords) turned by the creature's facing `f`,
+/// `x = cx + sin(f) * z / d + cos(0xFFF - f) * x / d`,
+/// `z = cz + sin(0xFFF - f) * x / d + cos(f) * z / d`, each product cut
+/// toward zero on its own (`bgez` / `addiu 0xFFF` / `sra 0xC`), `d = 0x1000`,
+/// or `0x1400` for arm 7's last four eyes; the height is the pose's plus `8`
+/// (arm 7: the first eye's plus `0x20`, the last two's less `0x18`).
+/// Arms 4..6 at `0x801F7164..0x801F72A0`, `0x801F7388..0x801F7480`,
+/// `0x801F760C..0x801F76F0`.
+pub fn spoon_eye_seat(cx: i16, cz: i16, f: u16, pose: [i16; 3], phase: u8, eye: usize) -> [i16; 3] {
+    let div = if phase == 7 && eye != 0 {
+        0x1400
+    } else {
+        0x1000
+    };
+    let f = f & 0xFFF;
+    let (sin_f, cos_f) = legaia_engine_system::trig::trig12(f);
+    let (sin_b, cos_b) = legaia_engine_system::trig::trig12(0xFFF - f);
+    let (px, py, pz) = (i32::from(pose[0]), i32::from(pose[1]), i32::from(pose[2]));
+    let x = i32::from(cx) + i32::from(sin_f) * pz / div + i32::from(cos_b) * px / div;
+    let z = i32::from(cz) + i32::from(sin_b) * px / div + i32::from(cos_f) * pz / div;
+    let y = match (phase, eye) {
+        (7, 0) => py + 0x20,
+        (7, 3..) => py + 8 - 0x20,
+        _ => py + 8,
+    };
+    [x as i16, y as i16, z as i16]
+}
 
 /// PROT 0919's director. `c` is the creature seat, `f` its heading, `P` the
 /// frame product a tick.
@@ -112,22 +144,25 @@ pub fn spoon_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             } else {
                 None
             };
+            // Arm 2's pass seats the creature (`jal 0x801F19EC` at
+            // `0x801F6DA8`), which stands it on the caster wearing the
+            // caster's facing, and seats five parts on it right behind
+            // (`0x801F6DFC..0x801F6E5C`): the anchor is that seat.
+            if phase == 2 && !hold {
+                st.creature.get_or_insert(seats.caster);
+                return ArmDirection {
+                    hold,
+                    drift: d,
+                    spawns: &SPOON_SEAT_SPAWNS,
+                    ..ArmDirection::PASS
+                };
+            }
             ArmDirection {
                 drift: d,
                 ..ArmDirection::PASS
             }
         }
         3 if !hold => caption(ArmDirection::PASS, ModuleCaption::SpellName),
-        // Retail seats these on arm 2's pass, right behind the creature; the
-        // engine stands the creature up on arm 3's first tick (`seat_arm`), and
-        // the anchor needs it.
-        3 if st.wait != (3, 1) => {
-            st.wait = (3, 1);
-            ArmDirection {
-                spawns: &SPOON_SEAT_SPAWNS,
-                ..ArmDirection::PASS
-            }
-        }
         4 if !hold => ArmDirection {
             spawns: &SPOON_EYE_SPAWNS,
             ..caption(

@@ -364,7 +364,7 @@ impl WalkFilm {
                 let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
                 writeln!(
                     w,
-                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads,placed_near_draws,placed_near_prims,placed_unlisted_draws,placed_unlisted_prims,placed_parked_draws,fitted,derived,box_cells,dec_groups,ground_window,npc_objects,npc_groups,placed_objects,placed_groups,list_actors,player_prims,d_dec,d_ground,d_actor,d_fog,d_tick,morph_vertices,placed_offtest_prims,ground_far,ground_sorted,npc_models,npc_clip_objects,npc_clip_prims"
+                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads,placed_near_draws,placed_near_prims,placed_unlisted_draws,placed_unlisted_prims,placed_parked_draws,fitted,derived,box_cells,dec_groups,ground_window,npc_objects,npc_groups,placed_objects,placed_groups,list_actors,player_prims,d_dec,d_ground,d_actor,d_fog,d_tick,morph_vertices,placed_offtest_prims,ground_far,ground_sorted,npc_models,npc_clip_objects,npc_clip_prims,sprite_parts,default_arm_parts,default_arm_packets,default_arm_textured_packets,mesh_parts"
                 )?;
                 Some(w)
             }
@@ -522,7 +522,7 @@ impl WalkFilm {
                 // model's finer counts (`field_frame_units`).
                 writeln!(
                     w,
-                    ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                     legaia_engine_core::world::field_frame_cost::field_frame_cost(&f),
                     legaia_engine_core::world::field_frame_units::derived_field_frame_cost(&f),
                     f.decoration_box_cells,
@@ -547,6 +547,11 @@ impl WalkFilm {
                     f.npc_models,
                     f.npc_clip_objects,
                     f.npc_clip_prims,
+                    f.sprite_parts,
+                    f.default_arm_parts,
+                    f.default_arm_packets,
+                    f.default_arm_textured_packets,
+                    f.mesh_parts,
                 )?;
             }
             if session.host.world.active_scene_label != n0_scene {

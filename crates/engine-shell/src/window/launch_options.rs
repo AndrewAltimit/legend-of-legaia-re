@@ -1767,6 +1767,8 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         // The settings page's row reset (`option_keys::panel_key`).
         "DELETE" | "DEL" => KeyCode::Delete,
         "BACKSPACE" => KeyCode::Backspace,
+        // The rules screen's seed editor types a dash.
+        "-" | "MINUS" => KeyCode::Minus,
         "/" | "?" | "SLASH" => KeyCode::Slash,
         // The multiplayer room screen (`window::netplay`).
         "TAB" => KeyCode::Tab,
@@ -1968,6 +1970,7 @@ mod key_script_tests {
         names.push("Home".to_string());
         names.push("Delete".to_string());
         names.push("Backspace".to_string());
+        names.push("-".to_string());
         names.push("Esc".to_string());
         names.push("`".to_string());
         names.push("\\".to_string());

@@ -1787,26 +1787,25 @@ for the read tail; `LEGAIA_FIELD_CD_TIMING=pcsx-redux` in play). A harness stand
 saved under a line seats the drive's remaining read from the stop watch's sectors
 (`RetailObs::xa_drive_left`).
 
-The field's polls take a larger share than the battle's `3.1` prices.
+The field's polls take a share of every vsync, not of the frame's work.
 [`autorun_field_cd_trace.lua`](../../scripts/pcsx-redux/autorun_field_cd_trace.lua) records
 each frame's CD interrupt time (breakpoint core), and
 [`field-cd-frames.py`](../../scripts/ci/field-cd-frames.py) prices the frame's work apart from it.
-Over `garmel` `P2[12]`'s line the frames' CPU time is `3.34` times their work (85 frames, work
-median `444` hblanks), and over record 14's (Zeto's defeat, `garmel_zeto_defeat_pre_line`, 171
-vsyncs before its first line, Cross every 20 vsyncs) `3.36` (62 frames, `433`). The engine
-prices a voiced field frame at `3.34` (`FIELD_XA_POLL_COST_RATIO_MILLI`,
-`field_xa_loaded_frame_cost`). Filmed on both sides (`LEGAIA_RC_WALK_COST=1`):
+Three reads give the same `167` hblanks of CD time a vsync of the frame: `garmel` `P2[12]`'s line
+(Zeto's appearance, 90 frames, mean work `443` hblanks), record 14's (Zeto's defeat,
+`garmel_zeto_defeat_pre_line`, 171 vsyncs before its first line, Cross every 20 vsyncs; 66
+frames, `410`) and `rugi` `P2[72]`'s flight in (`juui1_vortex_exit_flash`, Cross every 8; 67
+frames, `737`). So the work runs in the `96` hblanks a vsync leaves it, and the traces' CPU time
+stands about one vsync past that stretch (`258`, `251` and `280` hblanks). A single ratio of CPU
+time to work reads `3.32`, `3.35` and `3.12` across them and cannot hold all three. The engine
+prices a voiced field frame at `work * 263 / 96 + 263` (`FIELD_XA_CD_HBLANKS_PER_VSYNC`,
+`FIELD_XA_CD_FRAME_HBLANKS`, `field_xa_loaded_frame_cost`). Filmed on both sides
+(`LEGAIA_RC_WALK_COST=1`), counting the frames past `4` vsyncs:
 
-| Beat | Retail step-`4` frames | Engine at `3.34` | Engine at the battle's `3.1` |
-|---|---|---|---|
-| `garmel` `P2[12]`, Zeto's appearance | 90, mean `6.12` vsyncs | 91, `6.09` | 92, `6.00` |
-| record 14, Zeto's defeat | 66, mean `5.74` | 66, `5.83` | 66, `5.83` |
-
-The defeat beat reads the same at either ratio because the engine prices its frames' work at
-about `460` against retail's `433`; the appearance's it prices at about `435` against `444`,
-so the frames that remain there are the work model's, not the ratio's. The defeat beat raises
-no model's `+0x42` and draws the same three models on both sides, so its excess is not the
-clip arm's or the near reject's.
+| Beat | Retail | Engine |
+|---|---|---|
+| `garmel` `P2[12]`, Zeto's appearance | 90, mean `6.16` vsyncs | 90, `6.16` |
+| record 14, Zeto's defeat | 65, mean `5.82` | 66, `5.85` |
 
 The appearance's shortfall is the actor draw pass. A per-routine profile of the same line
 ([`autorun_field_frame_profile.lua`](../../scripts/pcsx-redux/autorun_field_frame_profile.lua),
@@ -1823,7 +1822,9 @@ past the party's two placements (flat `27` and `28`), whose view depth `+0x34` (
 kind-`1` arm drops them there (`slti v0,v0,0xa1` at `0x8001AE9C`; `+0x52 & 0x20` is clear):
 the walk film's actor columns read `64` and `832` on the frame the first goes, `-2793` and
 `-3560` from the end of the dolly to the cut. The engine's near reject drops the same two
-(`npc_models` `3` to `1`), and the frames agree: rendered at four states through the
+(`npc_models` `3` to `1`), and so do both play hosts' NPC passes at retail's vantage
+(`field_view_window::npc_near_rejected`, the kernel `World::field_npc_near_rejected` shares
+with the cost model); the frames agree: rendered at four states through the
 crossing in PSX mode and the clean rasteriser, the port shows the same heads leaving at the
 same frames (`0.999..1.000` and `0.992..0.997`). The retail pass drops `37` hblanks there
 (`retail-exec frame-cost`, `299` to `262`).

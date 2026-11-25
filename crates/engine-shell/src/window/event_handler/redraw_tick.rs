@@ -499,7 +499,11 @@ impl PlayWindowApp {
                 }
                 continue;
             }
-            if let Some(button) = self.mapping.pad_button_for_key(keycode_to_name(code)) {
+            // A key the rules screen's seed editor types is the editor's
+            // alone, as it is off a real keyboard.
+            if self.seed_editor_key_for(code).is_none()
+                && let Some(button) = self.mapping.pad_button_for_key(keycode_to_name(code))
+            {
                 scripted_key_pad |= button.mask();
             }
             self.handle_key(code, ElementState::Pressed);

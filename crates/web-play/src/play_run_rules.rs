@@ -9,8 +9,9 @@
 //! and in game through the screen-prim pass and the overlay's text layer.
 
 use legaia_engine_session::run_rules::{
-    BossRushHostStep, RunRulesStep, boss_rush_screen_input, boss_rush_screen_up, boss_rush_step_on,
-    open_run_rules_screen, set_run_rules_seed, step_run_rules_screen,
+    BossRushHostStep, RunRulesStep, SeedKey, boss_rush_screen_input, boss_rush_screen_up,
+    boss_rush_step_on, open_run_rules_screen, seed_editor_key, seed_editor_open,
+    seed_editor_set_text, step_run_rules_screen, tap_run_rules_screen,
 };
 use legaia_render_kernels::screen_prim::ScreenPrim;
 use wasm_bindgen::prelude::*;
@@ -57,20 +58,94 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Type a randomizer seed into the open rules screen.
-    pub fn play_run_rules_set_seed(&mut self, seed: &str) {
-        if let Some(h) = self.scene_host.host_mut() {
-            set_run_rules_seed(&mut h.world, seed);
+    /// A tap (or click) at surface pixel `(x, y)` on the rules screen,
+    /// resolved from the layout the screen draws: a tab, a row, a value's
+    /// arrows, a window's choice, a seed cell. Answers as
+    /// [`Self::play_run_rules_step`] does.
+    pub fn play_run_rules_tap(&mut self, x: i32, y: i32, surface_w: u32, surface_h: u32) -> String {
+        let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
+        let s = scale.max(1) as i32;
+        let at = ((x - origin.0).div_euclid(s), (y - origin.1).div_euclid(s));
+        let tap = self
+            .scene_host
+            .host()
+            .and_then(|h| legaia_engine_screens::run_rules::setup_tap(&h.world, at));
+        match tap {
+            Some(t) => self.run_rules_tap(t),
+            None => String::new(),
         }
     }
 
+    /// The page's *Begin* (`begin`) and *Back* buttons on the rules screen.
+    pub fn play_run_rules_button(&mut self, begin: bool) -> String {
+        use legaia_engine_session::run_rules::SetupTap;
+        self.run_rules_tap(if begin {
+            SetupTap::Begin
+        } else {
+            SetupTap::Back
+        })
+    }
+
+    /// Whether the rules screen's seed editor is up: the page shows its
+    /// text box over the canvas ([`Self::play_run_rules_seed_rect`]) while
+    /// it is.
+    pub fn play_run_rules_seed_editing(&self) -> bool {
+        self.scene_host
+            .host()
+            .is_some_and(|h| seed_editor_open(&h.world))
+    }
+
+    /// The seed editor's text, as the page's text box shows it.
+    pub fn play_run_rules_seed_text(&self) -> String {
+        self.scene_host
+            .host()
+            .and_then(|h| h.world.run_rules.setup.as_ref())
+            .and_then(|s| s.setup.seed_editor.as_ref())
+            .map(|e| e.text.clone())
+            .unwrap_or_default()
+    }
+
+    /// Replace the seed editor's text from the page's text box.
+    pub fn play_run_rules_seed_input(&mut self, text: &str) {
+        if let Some(h) = self.scene_host.host_mut() {
+            seed_editor_set_text(&mut h.world, text);
+        }
+    }
+
+    /// Close the seed editor from the page's text box: Enter takes the
+    /// seed (`take`), Escape drops the edit.
+    pub fn play_run_rules_seed_close(&mut self, take: bool) {
+        if let Some(h) = self.scene_host.host_mut() {
+            let key = if take {
+                SeedKey::Accept
+            } else {
+                SeedKey::Cancel
+            };
+            seed_editor_key(&mut h.world, key);
+        }
+    }
+
+    /// Where the page puts its seed text box, in surface pixels
+    /// `[x, y, w, h]`: the editor window's text line.
+    pub fn play_run_rules_seed_rect(&self, surface_w: u32, surface_h: u32) -> Vec<i32> {
+        let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
+        let s = scale as i32;
+        let (x, y, w, _) = legaia_engine_ui::run_rules_screen::MENU_GRID_FRAME;
+        let (x, y, w, h) = (x + 52, y + 5, w - 68, 18);
+        vec![origin.0 + x * s, origin.1 + y * s, w * s, h * s]
+    }
+
     /// The rules screen's draws for the title's menu canvas, in surface
-    /// pixels: `{"open", "rects": [{"x","y","w","h","rgba"}], "texts"}`.
+    /// pixels: `{"open", "rects": [{"x","y","w","h","rgba"}], "sprites",
+    /// "texts"}` - the backdrop as rects, the windows as chrome-atlas
+    /// sprites, the labels as font quads.
     pub fn play_run_rules_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
         let (Some(h), Some(assets)) = (self.scene_host.host(), self.menu_assets.as_ref()) else {
             return r#"{"open":false,"rects":[],"texts":[]}"#.to_string();
         };
-        let Some(screen) = legaia_engine_screens::run_rules::active_screen(&h.world) else {
+        let Some(screen) =
+            legaia_engine_screens::run_rules::active_screen(&h.world, &prompt_keys())
+        else {
             return r#"{"open":false,"rects":[],"texts":[]}"#.to_string();
         };
         let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
@@ -97,9 +172,14 @@ impl LegaiaRuntime {
             .collect();
         let mut texts = screen.texts(assets.font_ref());
         legaia_engine_ui::scale_stage_text_draws(&mut texts, origin, scale);
+        let sprites = assets
+            .chrome_rects()
+            .map(|r| screen.sprites(r, origin, scale))
+            .unwrap_or_default();
         serde_json::json!({
             "open": true,
             "rects": rects,
+            "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),
             "texts": texts.iter().map(quad_json).collect::<Vec<_>>(),
         })
         .to_string()
@@ -116,6 +196,23 @@ impl LegaiaRuntime {
 }
 
 impl LegaiaRuntime {
+    /// Act on a resolved tap; `""`, `"back"` or `"start"` as
+    /// [`Self::play_run_rules_step`] answers.
+    fn run_rules_tap(&mut self, tap: legaia_engine_session::run_rules::SetupTap) -> String {
+        let Some(session) = self.scene_host.session_mut() else {
+            return String::new();
+        };
+        match tap_run_rules_screen(&mut session.host.world, tap) {
+            RunRulesStep::Running => String::new(),
+            RunRulesStep::Cancelled => "back".to_string(),
+            RunRulesStep::Start { rules, source } => {
+                crate::console_log(&format!("new game: run rules {:?}", rules.summary()));
+                session.stage_run_rules(rules, source.map(|s| *s));
+                "start".to_string()
+            }
+        }
+    }
+
     /// The run rules' frame step, the native window's `poll_run_rules`
     /// twin: a Boss Rush's next stage entered and armed, and an ironman
     /// run's card rules applied to the rack's port 1 (flagged written for the
@@ -165,6 +262,18 @@ impl LegaiaRuntime {
         self.scene_host
             .host_mut()
             .is_some_and(|h| boss_rush_screen_input(&mut h.world, edge))
+    }
+}
+
+/// The rules screens' key names: the page's live bindings, or the
+/// controller's buttons while one was pressed last
+/// ([`crate::pad_bindings::prompt_label`], the minigame captions' rule).
+pub(crate) fn prompt_keys() -> legaia_engine_screens::run_rules::PromptKeys {
+    legaia_engine_screens::run_rules::PromptKeys {
+        keyboard: crate::pad_bindings::last_pad().is_none(),
+        ..legaia_engine_screens::run_rules::PromptKeys::from_labels(
+            crate::pad_bindings::prompt_label,
+        )
     }
 }
 

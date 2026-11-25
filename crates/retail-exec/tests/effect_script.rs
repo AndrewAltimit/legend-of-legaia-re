@@ -6,7 +6,8 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_effects::action_effect_script::{
-    EffectScriptActor, RECORD_BASE, RECORD_STRIDE, step_effect_script,
+    EffectScriptActor, RECORD_BASE, RECORD_STRIDE, TABLE_ART_SLOT, TABLE_CLUT_GATE,
+    step_effect_script, table_effect_code,
 };
 use legaia_engine_system::rotation_lut::retail_rotation_lut;
 use psx_retail_exec::{A0, A1, Stop};
@@ -36,7 +37,10 @@ const COS: u32 = 0x8016_4000;
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Call {
     Direct(i16, i16, i16),
-    Table(i16, i16, i16),
+    /// The position, then the prototype pointer `a2` and the scale `a3`.
+    Table(i16, i16, i16, u32, i16),
+    /// The CLUT stage's `MoveImage` source x.
+    Clut(u16),
 }
 
 #[test]
@@ -47,8 +51,9 @@ fn the_effect_stepper_is_retails() {
         return;
     };
     let lut = retail_rotation_lut();
-    cpu.mem
-        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    let overlay = disc.read_entry(898).expect("PROT 0898");
+    let aux = legaia_game_tables::move_power::EffectAuxTables::parse(&overlay).expect("aux tables");
+    cpu.mem.load(OVERLAY_BASE, &overlay);
     let map: Vec<u8> = cpu.mem.read(MOVE_MAP, 0x100);
     cpu.mem.wr32(CTX_PTR, CTX);
     cpu.mem.wr32(SIN_PTR, SIN);
@@ -65,9 +70,12 @@ fn the_effect_stepper_is_retails() {
     }
     cpu.stub(APPROACH, 0);
     cpu.stub(BEARING, 0);
-    cpu.stub(MOVE_IMAGE, 0);
     let calls: Rc<RefCell<Vec<Call>>> = Rc::default();
     {
+        let c = calls.clone();
+        cpu.hook(MOVE_IMAGE, move |r, m| {
+            c.borrow_mut().push(Call::Clut(m.rd16(r.r[A0])));
+        });
         let c = calls.clone();
         cpu.hook(DIRECT, move |r, m| {
             let a = r.r[A1];
@@ -84,12 +92,15 @@ fn the_effect_stepper_is_retails() {
                 m.rd16(a) as i16,
                 m.rd16(a + 2) as i16,
                 m.rd16(a + 4) as i16,
+                r.r[6],
+                r.r[7] as i16,
             ));
             r.r[2] = 0;
         });
     }
     let mut rng = Rng(0x4546_4658);
     let (mut spawned, mut terminators, mut failures) = (0u32, 0u32, Vec::new());
+    let mut substituted = 0u32;
     for round in 0..50_000 {
         let n = 1 + rng.below(8) as usize;
         let mut block = vec![0u8; RECORD_BASE + 8 * RECORD_STRIDE];
@@ -129,10 +140,19 @@ fn the_effect_stepper_is_retails() {
         let scope = [3u8, 8, 9, 0xFF][rng.below(4) as usize];
         cpu.mem.wr8(CTX + 0x13, slot as u8);
         cpu.mem.wr32(CTX + 0x1028, 0);
+        for slot in 0..4u32 {
+            cpu.mem.wr8(CTX + 0x24E + slot, 0);
+            for b in 0..8 {
+                cpu.mem.wr8(CTX + 0x1144 + slot * 8 + b, 0x5A);
+            }
+        }
         let a = ACTOR + slot * 0x400;
         cpu.mem.wr8(a + 0x1F5, cursor);
         cpu.mem.wr8(a + 0x1DC, 0);
-        cpu.mem.wr8(a + 0x1D9, 1);
+        // The committed anim: now and then the art slot, which turns a
+        // table-form code `0` into `9`.
+        let anim = if rng.below(4) == 0 { TABLE_ART_SLOT } else { 1 };
+        cpu.mem.wr8(a + 0x1D9, anim);
         cpu.mem.wr16(a + 0x34, world.0 as u16);
         cpu.mem.wr16(a + 0x36, world.1 as u16);
         cpu.mem.wr16(a + 0x38, world.2 as u16);
@@ -162,7 +182,22 @@ fn the_effect_stepper_is_retails() {
         };
         let step = step_effect_script(lut, &block, actor, frame, &map);
         let retail_cursor = cpu.mem.rd8(a + 0x1F5);
-        let mut got = calls.borrow().clone().into_iter();
+        // The CLUT stages, in order, against the drain's gate over the
+        // substituted codes; the spawns go on without them.
+        let all = calls.borrow().clone();
+        let cluts: Vec<u16> = all
+            .iter()
+            .filter_map(|c| match c {
+                Call::Clut(x) => Some(*x),
+                _ => None,
+            })
+            .collect();
+        let mut got = all
+            .into_iter()
+            .filter(|c| !matches!(c, Call::Clut(_)))
+            .collect::<Vec<_>>()
+            .into_iter();
+        let mut port_cluts = Vec::new();
         let mut wrong = None;
         if retail_cursor != step.cursor {
             wrong = Some(format!(
@@ -181,6 +216,15 @@ fn the_effect_stepper_is_retails() {
                 {
                     let mut k = POWER_TABLE + off as u32 + 0xE;
                     while cpu.mem.rd8(k) != 0 {
+                        // Each list entry's own CLUT stage, as the drain
+                        // gates the flight spawns it queues.
+                        let byte = cpu.mem.rd8(k);
+                        if byte & 0x80 == 0
+                            && byte < TABLE_CLUT_GATE
+                            && let Some(x) = aux.effect_clut_x(byte).filter(|&x| x != 0)
+                        {
+                            port_cluts.push(u16::from(x));
+                        }
                         got.next();
                         k += 1;
                     }
@@ -191,11 +235,31 @@ fn the_effect_stepper_is_retails() {
             spawned += 1;
             let want = (s.at.0 as i16, s.at.1 as i16, s.at.2 as i16);
             let next = got.next();
+            let code = table_effect_code(s.effect & 0x7F, anim);
             let (kind_ok, pos) = match next {
                 Some(Call::Direct(x, y, z)) => (s.direct, (x, y, z)),
-                Some(Call::Table(x, y, z)) => (!s.direct, (x, y, z)),
-                None => (false, (0, 0, 0)),
+                Some(Call::Table(x, y, z, proto, scale_arg)) => {
+                    // The prototype and the scale the substituted code picks.
+                    let want_proto = aux.effect_proto(code).unwrap_or(0);
+                    let want_scale = s.table_scale as i16;
+                    if (proto, scale_arg) != (want_proto, want_scale) {
+                        wrong = Some(format!(
+                            "table spawn at cursor {} code {code:#x}: retail proto {proto:#x} scale \
+                             {scale_arg:#x} port {want_proto:#x} {want_scale:#x}",
+                            s.cursor
+                        ));
+                    }
+                    (!s.direct, (x, y, z))
+                }
+                _ => (false, (0, 0, 0)),
             };
+            if !s.direct
+                && code < TABLE_CLUT_GATE
+                && let Some(x) = aux.effect_clut_x(code).filter(|&x| x != 0)
+            {
+                port_cluts.push(u16::from(x));
+            }
+            substituted += u32::from(!s.direct && code != s.effect & 0x7F);
             if !kind_ok || pos != want {
                 wrong = Some(format!(
                     "spawn at cursor {}: retail {next:?} port {:?} direct {}",
@@ -214,14 +278,36 @@ fn the_effect_stepper_is_retails() {
                 got.next();
             }
         }
+        if cluts != port_cluts && wrong.is_none() {
+            wrong = Some(format!(
+                "CLUT stages retail {cluts:x?} port {port_cluts:x?}"
+            ));
+        }
         if let Some(launch) = step.launch {
             terminators += 1;
+            let want = (launch.0 as i16, launch.1 as i16, launch.2 as i16);
+            // The seed loop (`0x801DF294..0x801DF2DC`) raises all four
+            // homing slots' `+0x24E` byte and copies the launch quad into
+            // each `+0x1144 + slot * 8`.
+            for slot in 0..4u32 {
+                let q = CTX + 0x1144 + slot * 8;
+                let seeded = (
+                    cpu.mem.rd16(q) as i16,
+                    cpu.mem.rd16(q + 2) as i16,
+                    cpu.mem.rd16(q + 4) as i16,
+                );
+                let raised = cpu.mem.rd8(CTX + 0x24E + slot);
+                if (seeded, raised) != (want, 1) && wrong.is_none() {
+                    wrong = Some(format!(
+                        "homing slot {slot}: retail launch {seeded:?} raised {raised} port {want:?}"
+                    ));
+                }
+            }
             let retail_launch = (
                 cpu.mem.rd16(CTX + 0x1144) as i16,
                 cpu.mem.rd16(CTX + 0x1146) as i16,
                 cpu.mem.rd16(CTX + 0x1148) as i16,
             );
-            let want = (launch.0 as i16, launch.1 as i16, launch.2 as i16);
             let retail_off = cpu.mem.rd32(CTX + 0x1014).wrapping_sub(POWER_TABLE) as usize;
             if retail_launch != want || Some(retail_off) != step.move_power_offset {
                 wrong = Some(format!(
@@ -241,7 +327,7 @@ fn the_effect_stepper_is_retails() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(
-        spawned > 30_000 && terminators > 3000,
-        "{spawned} {terminators}"
+        spawned > 30_000 && terminators > 3000 && substituted > 100,
+        "{spawned} {terminators} {substituted}"
     );
 }

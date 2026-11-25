@@ -783,7 +783,7 @@ impl FieldApp {
         // box anchored near the lower third of the surface (matches the
         // retail dialog window's screen position).
         if let Some(panel) = self.active_dialog.as_ref() {
-            let bytes = panel.page_bytes();
+            let bytes = legaia_font::numeral_escape_plain(&panel.page_bytes());
             let layout = self.font.layout_ascii(
                 &bytes
                     .iter()

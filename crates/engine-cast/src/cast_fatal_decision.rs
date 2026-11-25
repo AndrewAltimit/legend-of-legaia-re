@@ -54,8 +54,8 @@ pub const FATAL_DECISION_BODY: u32 = 0x801F_6A58;
 /// The module countdown word.
 pub const FATAL_DECISION_COUNTDOWN: u32 = 0x801F_9018;
 
-/// Vsyncs per engine tick, the `*(0x1F800393)` frame delta a retail battle
-/// frame carries (the engine ticks once per vsync).
+/// The `*(0x1F800393)` frame delta of a one-vsync pass, the step a
+/// [`FatalDecisionView`] that names none runs at.
 pub const DELTA: i32 = crate::cast_module_camera::DELTA_PER_TICK;
 
 /// Wheel slots.
@@ -362,6 +362,10 @@ pub struct FatalDecisionView {
     pub victim_playing: u8,
     /// The victim's tint word `+0x04`.
     pub victim_tint: u32,
+    /// The battle frame step `*(0x1F800393)` the pass runs at: every drain,
+    /// spin, spread and snap of the body scales by it once a pass. The host
+    /// runs the body once a battle frame at that step, not once a vsync.
+    pub step: u8,
 }
 
 /// One record a pass spawns, anchored at the origin with no rotation (every
@@ -477,13 +481,15 @@ pub fn fatal_decision_tick(
     host: &mut dyn FatalDecisionHost,
 ) -> FatalDecisionPass {
     let scalar = SPEED_SCALAR;
+    // `lbu 0x7f(0x1F800314)`: the pass's frame step.
+    let delta = i32::from(view.step.max(1));
     let mut p = FatalDecisionPass::default();
     let advance = |ctx: &mut CastModuleCtx| ctx.phase = ctx.phase.wrapping_add(1);
     let v = view.victim;
     let depth = i32::from(view.depth);
     // The `subu; bgtz` gate of the counted arms.
     let gated = |st: &mut FatalDecisionState| {
-        st.countdown -= scalar * DELTA;
+        st.countdown -= scalar * delta;
         st.countdown > 0
     };
     match ctx.phase {
@@ -598,9 +604,9 @@ pub fn fatal_decision_tick(
             advance(ctx);
         }
         5 => {
-            st.spread += DELTA;
-            st.rot -= DELTA << 5;
-            st.countdown -= scalar * DELTA;
+            st.spread += delta;
+            st.rot -= delta << 5;
+            st.countdown -= scalar * delta;
             for (i, place) in p.place.iter_mut().enumerate() {
                 *place = Some(spread_offset(st.rot + i as i32 * WHEEL_STEP, st.spread));
             }
@@ -617,8 +623,8 @@ pub fn fatal_decision_tick(
             advance(ctx);
         }
         6 => {
-            st.rot -= DELTA << 5;
-            st.countdown -= scalar * DELTA;
+            st.rot -= delta << 5;
+            st.countdown -= scalar * delta;
             for (i, place) in p.place.iter_mut().enumerate() {
                 *place = Some(ring_offset(st.rot + i as i32 * WHEEL_STEP));
             }
@@ -634,18 +640,18 @@ pub fn fatal_decision_tick(
         7 => {
             let mut spinning = false;
             if st.countdown >= 0 {
-                st.countdown -= 2 * scalar * DELTA;
+                st.countdown -= 2 * scalar * delta;
                 if st.countdown > 0 {
                     spinning = true;
                     st.rot -= if st.countdown >= 0x200 {
-                        (DELTA * st.countdown) / 128
+                        (delta * st.countdown) / 128
                     } else {
-                        DELTA * 4
+                        delta * 4
                     };
                 }
             }
             if !spinning {
-                st.rot = snap_step(st.rot, DELTA);
+                st.rot = snap_step(st.rot, delta);
                 if st.rot & 0x1FF == 0 {
                     p.flash = true;
                     st.countdown += scalar << 6;
@@ -692,11 +698,11 @@ pub fn fatal_decision_tick(
         }
         9 => {
             let at = (0x800 - st.rot) & 0xFFF;
-            st.spread += DELTA * 6;
-            st.countdown -= scalar * DELTA;
+            st.spread += delta * 6;
+            st.countdown -= scalar * delta;
             for i in 0..WHEEL_SLOTS {
                 if at == (i as i32) << 9 {
-                    p.grow = Some((i, DELTA as i16));
+                    p.grow = Some((i, delta as i16));
                     st.landed = i;
                 } else {
                     p.place[i] = Some(spread_offset(st.rot + i as i32 * WHEEL_STEP, st.spread));

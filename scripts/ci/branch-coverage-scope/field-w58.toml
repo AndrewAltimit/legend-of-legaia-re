@@ -1,0 +1,19 @@
+# Field draw arms out of the kernel differential's reach (FUN_8001B964).
+
+[[arm]]
+entry = "0x8001B964"
+range = "0x8001BC24..0x8001BC24"
+verdict = "cannot-drive"
+reason = "An object with normals (TMD object +0xC n_normal != 0) builds its light matrix in FUN_8001D184 (actor angles times the keyframe's, SetLightMatrix); the port composes the light-source rows' matrix in the hosts' shading pass, which no engine kernel exposes for the differential to compare."
+
+[[arm]]
+entry = "0x8001B964"
+range = "0x8001BC50..0x8001BC50"
+verdict = "cannot-drive"
+reason = "The walk's flag copy 0x1F8002D0 & 0x1000 stages the object through the morph copy FUN_8001C604; the port gates its morph stage on armed op-0x4B lanes (World::field_morph_work), not on the flag word, so pairing the arm needs the flag's writer traced first."
+
+[[arm]]
+entry = "0x8001B964"
+range = "0x8001BD9C..0x8001BD9C"
+verdict = "cannot-drive"
+reason = "The morph arm's restore of the object's vertex pointer (sw t0,0x0(s2)) after the draw; it pairs with 0x8001BC50 and needs the same flag writer traced."

@@ -188,6 +188,7 @@ impl World {
         match capture_victim_settle(entry, body) {
             CaptureVictimSettle::EitherRestClip => self.chain_seat_on_rest_clip(slot),
             CaptureVictimSettle::Rest => self.chain_seat_settled(slot, false),
+            CaptureVictimSettle::RestOrFaded => self.chain_seat_settled(slot, true),
         }
     }
 

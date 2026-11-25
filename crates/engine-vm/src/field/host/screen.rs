@@ -246,14 +246,17 @@ pub trait FieldScreenHost {
     /// Op 0x4C outer-nibble-8 sub-0xA - set the **field light** (three
     /// angles and the back colour).
     ///
-    /// 11-byte instruction `[4C, 0x8A, lo0, hi0, lo1, hi1, lo2, hi2, w_b0, w_b1, w_b2, w_b3]`.
+    /// 11-byte instruction `[4C, 0x8A, lo0, hi0, lo1, hi1, lo2, hi2, c0, c1, c2]`.
     /// Writes:
     /// - `_DAT_8007B780 = signed_16(operand[1..3])`
     /// - `_DAT_8007B782 = signed_16(operand[3..5])`
     /// - `_DAT_8007B784 = signed_16(operand[5..7])`
-    /// - `_DAT_8007B788 = LE_u32(operand[7..11])` (read via `func_0x8003CEB8`).
+    /// - `_DAT_8007B788 = LE_u24(operand[7..10])`, read through the 24-bit
+    ///   reader `FUN_8003CEB8` (three `lbu`s, no fourth byte), so the high
+    ///   byte is zero.
     ///
-    /// PC += 11.
+    /// PC += 11. `field_ctx::every_instruction_leaves_the_host_globals_as_retail_leaves_them`
+    /// compares all four words with retail's.
     fn set_field_light(&mut self, slots: [i16; 3], packed: u32) {
         let _ = (slots, packed);
     }

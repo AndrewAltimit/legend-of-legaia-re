@@ -42,10 +42,32 @@ impl World {
         // (`World::module_pass`) that all see the same edge, so only the
         // first reads it: fed to each, one press walked the pointer three
         // cards at step `3`, and the middle two cards could not be picked.
+        //
+        // The word is the pad pump's new-press word, built once at the start
+        // of a game frame against the frame before (`_DAT_8007B874 = held &
+        // !prev`), so a press made while a frame runs is read by the next.
+        // Under the battle frame cadence a pass opens on one tick of its
+        // frame, and the host's per-tick edge of a press made on another tick
+        // is gone by then: with the immediate pad a held Right walked the
+        // pointer only when the press began on the pass's own tick, and a
+        // pointer whose presses kept missing that tick stood still until the
+        // timer picked the leftmost card. The pass builds the word from the
+        // held pad against the last pass's, which is the per-tick edge when
+        // the pad changes only on frame boundaries (the retail-faithful
+        // pipeline).
         let first = !self.casting.module_pass_repeat;
-        st.death_game.pad.right = first && self.input.just_pressed(PadButton::Right);
-        st.death_game.pad.left = first && self.input.just_pressed(PadButton::Left);
-        st.death_game.pad.confirm = first && self.input.just_pressed(PadButton::Cross);
+        let held = self.input.pad();
+        let pressed = if first {
+            let p = held & !st.death_game.pad_held_at_pass;
+            st.death_game.pad_held_at_pass = held;
+            p
+        } else {
+            0
+        };
+        let on = |b: PadButton| pressed & b.mask() != 0;
+        st.death_game.pad.right = on(PadButton::Right);
+        st.death_game.pad.left = on(PadButton::Left);
+        st.death_game.pad.confirm = on(PadButton::Cross);
         // The arms read each card's live point: its own script walks it in
         // (`lhu v0,0x16(a0)` at `0x801F823C`, the `lwl` / `lwr` copy at
         // `0x801F8B7C`).

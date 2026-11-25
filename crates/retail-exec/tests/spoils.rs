@@ -21,6 +21,10 @@ const RAND: u32 = 0x8005_6798;
 const OVERLAY_BASE: u32 = 0x801C_E818;
 const CTX: u32 = 0x8012_0000;
 const CTX_PTR: u32 = 0x8007_BD24;
+/// The battle's participant ids in panel order (`0x8007BD10`).
+const PARTICIPANTS: u32 = 0x8007_BD10;
+/// What `ctx[+0xAA]` holds before a results frame that leaves it alone.
+const NAME_SENTINEL: u8 = 0x5A;
 const ACTORS: u32 = 0x801C_9370;
 const MONSTER_RECORDS: u32 = 0x801C_9348;
 const SEATS: u32 = 0x8007_BD10;
@@ -152,6 +156,17 @@ fn seed_retail(cpu: &mut Cpu, w: &Win) {
     cpu.mem.wr8(CTX, w.party as u8);
     cpu.mem.wr8(CTX + 1, w.monsters as u8);
     cpu.mem.wr8(CTX + 0x13, w.pose_seat);
+    // The participant list `0x8007BD10` (roster slot + 1, `0` an empty
+    // seat) and a sentinel in the victory line's name operand `+0xAA`.
+    for i in 0..3u32 {
+        let id = if (i as usize) < w.party {
+            i as u8 + 1
+        } else {
+            0
+        };
+        cpu.mem.wr8(PARTICIPANTS + i, id);
+    }
+    cpu.mem.wr8(CTX + 0xAA, NAME_SENTINEL);
     cpu.mem.wr16(CTX + 0x6D0, 0x0C00);
     cpu.mem.wr8(gp + 0x332, 0);
     // The arm that pays: state 5, the seat's line finished, first pass.
@@ -315,12 +330,17 @@ fn a_win_pays_what_retail_pays() {
         0x8003_CBF8,    // The text pool.
         0x8003_CA38,
         0x8005_6758,
-        0x8003_563C, // The results windows.
-        0x8004_FCC8, // The voice.
+        0x8003_563C, // The results windows' number records.
         0x801D_5854, // The camera.
-        0x801D_8DE8, // The banner.
     ] {
         cpu.stub(stub, 0);
+    }
+    // The screen elements the results frame raises (`FUN_801D8DE8`) and the
+    // cues it plays (`FUN_8004FCC8`), in order.
+    let raised = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+    for va in [0x801D_8DE8u32, 0x8004_FCC8] {
+        let log = raised.clone();
+        cpu.hook(va, move |r, _| log.borrow_mut().push((va, r.r[4])));
     }
     let mut world = World::default();
     world.install_retail_progression_tables(&scus);
@@ -329,6 +349,7 @@ fn a_win_pays_what_retail_pays() {
     ));
     let mut rng = Rng(0x534F_494C);
     let (mut failures, mut drops, mut refunds) = (Vec::new(), 0, 0);
+    let (mut levelled, mut specials, mut named) = (0, 0, 0);
     for round in 0..4000 {
         let tracker = &world.party.level_up_tracker;
         let w = gen_win(&mut rng, |m, level| {
@@ -336,6 +357,7 @@ fn a_win_pays_what_retail_pays() {
         });
         seed_retail(&mut cpu, &w);
         granted.borrow_mut().clear();
+        raised.borrow_mut().clear();
         state.set(w.seed);
         match cpu.call(SPOILS, &[]) {
             Stop::Returned => {}
@@ -364,6 +386,8 @@ fn a_win_pays_what_retail_pays() {
             retail_xp,
             granted.borrow().clone(),
             state.get(),
+            raised.borrow().clone(),
+            cpu.mem.rd8(CTX + 0xAA),
         );
         let (formation, catalog) = seed_port(&mut world, &w);
         // The refund runs in the per-member loop, ahead of the drops.
@@ -383,11 +407,56 @@ fn a_win_pays_what_retail_pays() {
                 )
             })
             .collect();
+        // The windows (`0x8004F610..0x8004F72C`): outside a special battle
+        // the report (element `0x41`), then, when anyone levelled, the
+        // level-up jingle and element `0x44 + mask` (bit `k` = character
+        // `k`), the mask `result_windows` names its line by.
+        let mask = r
+            .level_ups
+            .iter()
+            .filter(|lu| lu.char_id < 3)
+            .fold(0u32, |m, lu| m | 1 << lu.char_id);
+        levelled += usize::from(mask != 0);
+        specials += usize::from(w.special != 0);
+        let mut port_raised = Vec::new();
+        if w.special == 0 {
+            port_raised.push((0x801D_8DE8, 0x41));
+        }
+        if mask != 0 {
+            port_raised.push((
+                0x8004_FCC8,
+                u32::from(legaia_engine_battle::victory::LEVEL_UP_CUE),
+            ));
+            port_raised.push((0x801D_8DE8, 0x44 + mask));
+        }
+        // The victory line's name operand (`0x8004F610..0x8004F658`): with
+        // two or more in the party and no special battle, the results
+        // frame re-points the team string's `0xC1` escape at the pose seat's
+        // participant id less one; otherwise it leaves the byte alone.
+        // `battle_result_subject` is what the win window draws from.
+        world.battle.victory = Some(legaia_engine_battle::victory::VictorySequence {
+            cause: legaia_engine_battle_vm::battle_action::BattleEndCause::MonsterWipe,
+            phase: legaia_engine_battle::victory::VictoryPhase::Results { hold: 0 },
+            pose_actor: usize::from(w.pose_seat),
+            pose_id: None,
+            voice_bank: None,
+            window_opened: false,
+        });
+        let port_name = match legaia_engine_battle_hud::battle_result_subject(&world) {
+            legaia_engine_battle_vm::battle_party_panel::ResultSubject::LeadsTeam {
+                escape_operand,
+            } if w.special == 0 => escape_operand,
+            _ => NAME_SENTINEL,
+        };
+        world.battle.victory = None;
+        named += usize::from(port_name != NAME_SENTINEL);
         let port = (
             world.party.money as u32,
             port_xp,
             [refunded, r.drops.clone()].concat(),
             world.rng_state,
+            port_raised,
+            port_name,
         );
         drops += r.drops.len();
         if retail != port {
@@ -403,6 +472,10 @@ fn a_win_pays_what_retail_pays() {
     assert!(
         drops > 100 && refunds > 100,
         "{drops} drops {refunds} refunds"
+    );
+    assert!(
+        levelled > 100 && specials > 100 && named > 100,
+        "{levelled} level-up windows, {specials} special battles, {named} names"
     );
 }
 

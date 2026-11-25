@@ -177,6 +177,9 @@ impl World {
             t
         });
         self.minigames.dance_tutorial_frame = None;
+        self.minigames.dance_park_phase = 0;
+        self.minigames.dance_tutorial_pad = 0;
+        self.minigames.dance_tutorial_started = false;
         self.mode = SceneMode::Dance;
         if legaia_engine_minigames::dance::dance_scene_stage().clear_pad_latch {
             self.input.clear_edges();
@@ -281,7 +284,27 @@ impl World {
             .as_ref()
             .is_some_and(|t| t.hall.load_gate != 0);
         self.minigames.dance_hall_frame = false;
+        // While the lesson parks the hall on state 2 the hall still runs a
+        // game frame every `HALL_FRAME_STEP` vsyncs, and the park's release
+        // is one of them: the frame after the lesson drops the gate finds it
+        // down (a retail how-to film reads the gate's drop and state 3
+        // three vsyncs apart).
+        let parked = self
+            .minigames
+            .dance_countin
+            .as_ref()
+            .is_some_and(|c| c.stage() == legaia_engine_minigames::dance::CountInStage::Parked);
+        let park_frame = self.minigames.dance_park_phase == 0;
+        if self.minigames.dance_tutorial.is_some() && parked {
+            self.minigames.dance_park_phase = (self.minigames.dance_park_phase + 1)
+                % legaia_engine_minigames::dance::HALL_FRAME_STEP as u8;
+        }
         if gated && self.minigames.dance_countin.is_some() {
+            self.minigames.dance_hall_frame = park_frame;
+            self.step_dance_tutorial();
+            return;
+        }
+        if self.minigames.dance_tutorial.is_some() && parked && !park_frame {
             self.step_dance_tutorial();
             return;
         }
@@ -468,14 +491,48 @@ impl World {
             self.minigames.dance_tutorial_frame = None;
             return;
         }
-        let pressed = (self.input.pad() & !self.input.pad_prev()).rotate_right(8);
+        // The handler runs once a hall frame on the frame's step, and reads
+        // the pad word the frame opened on: the edges of the vsyncs before
+        // it (`FUN_8001822C` builds `_DAT_8007B874` once a frame). A retail
+        // film of the lesson steps the Disco King three vsyncs after the
+        // press that pages him, and its countdown holds (`0x3C`, released
+        // once negative) last 21 frames, 63 vsyncs.
+        let now = (self.input.pad() & !self.input.pad_prev()).rotate_right(8);
+        if !self.minigames.dance_hall_frame {
+            self.minigames.dance_tutorial_pad |= now;
+            return;
+        }
+        let mut pressed = std::mem::replace(&mut self.minigames.dance_tutorial_pad, now);
+        // The hall's first frame spawns the actor and its handler first runs
+        // on the next, with the stager's pad-latch clear ahead of it: on the
+        // retail film the press made over the hall's first frame pages
+        // nothing, and the Disco King's first step is the next press's
+        // (inference from the film's timing).
+        if !self.minigames.dance_tutorial_started {
+            self.minigames.dance_tutorial_started = true;
+            self.minigames.dance_tutorial_pad = 0;
+            return;
+        }
+        if self
+            .minigames
+            .dance_tutorial
+            .as_ref()
+            .is_some_and(|t| t.state == 0)
+            && self.minigames.dance_tutorial_frame.is_none()
+        {
+            pressed = 0;
+        }
         let (Some(tut), Some(game)) = (
             self.minigames.dance_tutorial.as_mut(),
             self.minigames.dance.as_mut(),
         ) else {
             return;
         };
-        let frame = tut.step_game(game, pressed, 1);
+        let frame = tut.step_game(
+            game,
+            pressed,
+            legaia_engine_minigames::dance::HALL_FRAME_STEP as u8,
+        );
         // The hall goes back to its count-in (`DAT_801D5334 = 2`); the
         // count-in itself waits on the load gate.
         if frame.restart && self.minigames.dance_countin.is_none() {

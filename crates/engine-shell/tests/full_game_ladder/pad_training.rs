@@ -57,28 +57,44 @@ fn typists_charged(session: &NativeSession) -> bool {
 const GROW_OUTINGS: usize = 16;
 
 /// The AGL a Fury Boost lifts to the nine presses' price
-/// (`base * 7 / 5 + 8 >= 270`), and how far below it a wearer still trains
-/// for it: a level or two.
+/// (`base * 7 / 5 + 8 >= 270`); how far below it a wearer still trains for
+/// it is [`TYPIST_AGL_REACH`].
 const TYPIST_AGL: u16 = 188;
 
 /// The HP, per mille of the weakest member, a growing outing walks out at
 /// and comes back under.
 const GROW_FLOOR: u32 = 400;
+/// How far below [`TYPIST_AGL`] a Miracle wearer still grows for it before
+/// the race: a level or two.
 const TYPIST_AGL_REACH: u16 = 8;
+/// The same once the race has been lost at this door ([`RACE_LOST`]): about
+/// three levels. At eight, placed stream 5 met Koru with Vahn at AGL 179, a
+/// caster, and from that stream's own `nivora_late` save the stretch took
+/// 1/9/5/7 reloads on four dealt streams; grown from twelve off it took
+/// 0/2/0/6. Grown from twelve off before the first race as well, the default
+/// stream, which wins the race ungrown, took 2/0/4 reloads on three dealt
+/// streams from its own save where it took none.
+const TYPIST_AGL_REACH_AFTER_LOSS: u16 = 12;
 
 /// Whether a present member wears a Miracle it cannot type under a Fury Boost
-/// ([`race_typist`]) but is within a level or two of the AGL that pays for
+/// ([`race_typist`]) but is within [`TYPIST_AGL_REACH`] (after a lost race
+/// [`TYPIST_AGL_REACH_AFTER_LOSS`]) of the AGL that pays for
 /// it. One further off (Gala, a caster at AGL 172) spends its Spirit on Arts
 /// instead, and walking for it only met Koru with the bag spent.
 fn miracle_short(session: &NativeSession) -> bool {
     let w = &session.host.world;
+    let reach = if RACE_LOST.with(std::cell::Cell::get) {
+        TYPIST_AGL_REACH_AFTER_LOSS
+    } else {
+        TYPIST_AGL_REACH
+    };
     w.present_party_list().into_iter().any(|m| {
         !race_typist(w, m)
             && w.party.roster.members.get(usize::from(m)).is_some_and(|r| {
                 legaia_engine_battle_vm::battle_action::miracle_marker_armed(
                     m.wrapping_add(1),
                     &r.equipment().slots,
-                ) && r.live_stats().agl + TYPIST_AGL_REACH >= TYPIST_AGL
+                ) && r.live_stats().agl + reach >= TYPIST_AGL
             })
     })
 }
@@ -137,7 +153,18 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
     // frames then coming off the walking budget the reserve was kept for.
     let battle_left = PAD_BATTLE_LEFT.with(std::cell::Cell::get);
     PAD_BATTLE_LEFT.with(|l| l.set(battle_left.max(PAD_BATTLE_ALLOWANCE)));
+    // The bag's heal reserve stays for the race: no outing is begun with the
+    // bag at it. Growing spent the last restorative on dealt stream 10's
+    // outings at Koru's door, where no bed or keeper stands, and the race
+    // opened with the weakest member at 3 per mille and 1 MP, five reloads
+    // running; one outing begun from a bag already at the reserve still
+    // opened it at a fifth.
+    let heal_reserve =
+        HEAL_RESERVE * session.host.world.present_party_list().len().clamp(1, 3) as u32;
     while outings < GROW_OUTINGS && miracle_short(session) && frames_left(session) > 0 {
+        if heals_held(&session.host.world) <= heal_reserve {
+            break;
+        }
         // Mended before each outing, as a player does between fights: the
         // bag first, then the casters' MP, all of it, and the bag's MP
         // restoratives when that runs out. At Koru's door the bag held no

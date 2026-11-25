@@ -2944,6 +2944,16 @@ description = "Biron Monastery (kor5) free field run from the story-ladder card 
 topics = ["field", "kor5", "story flags", "card boot", "probe state"]
 
 [[scenarios]]
+label = "kor5_p2_5_pre_raise"
+backup_fingerprint = "0931ef3d8529d7726e4dfcab3443180b99453c6119d8c10d6734fcb84eaa26f6"
+description = "kor5 (Sol Tower's roof) after Gaza's first fight: the scene's reload into P2[5], about 50 vsyncs before its CC 15 C2 01 / CC 1C C2 01 raise sends the two models through the clip arm (row 0's slab). RETAIL disc: kor5_field_card_boot walked by autorun_walk_route.lua onto P2[3] (32, 43) and P2[4] (32, 41); Gaza's fight (monster 165) played by autorun_battle_harvest.lua with the party's Arts on the pad (LEGAIA_PARTY_ARTS) and, at the round prompts, the party's HP written back to full (LEGAIA_TOUGH=1) and Gaza's HP cut to a third at round 2 (LEGAIA_WOUND=2); the return saved by LEGAIA_SAVE_RETURN, then run on under autorun_field_walk_film.lua (Cross every 8 vsyncs) and saved 600 vsyncs in. The battle writes end with the fight; the field state is the game's."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor5"
+ram_poked = ["party HP restored and Gaza's HP cut during the preceding fight"]
+topics = ["field", "kor5", "cutscene", "clip arm", "frame cost", "film"]
+
+[[scenarios]]
 slot = 255
 label = "korb2_field_card_boot"
 backup_fingerprint = "a598c9057396248355089ec287132f3bc39b912e801de4efd7dbe548ff455ba4"
@@ -2972,6 +2982,15 @@ expected_game_mode = 0x03
 expected_active_scene = "rugi"
 description = "Rugi free field run from the endgame card (playthrough-endgame-7saves block 2), cold boot + memory-card load. Player at world (10918, 8416). The organic route to juui1 from here passes the Rogue boss (rugi P2[39])."
 topics = ["field", "rugi", "juui1", "card boot", "probe state"]
+
+[[scenarios]]
+label = "rugi_p2_72_flyin_crossing"
+backup_fingerprint = "98476d8270d2828b95ad090f75b0f3e827559e15707cacd3384ed910b6faf9da"
+description = "rugi P2[72], the party flying into Rogue's Tower raised (+0x42 = 1, row 0's slab z 10816..14912): Vahn's anchor at z 10880 just through the slab, Noa and Gala short of it. RETAIL disc, pad only, no pokes: juui1_vortex_exit_flash run on into rugi under autorun_field_walk_film.lua (Cross every 8 vsyncs), saved 800 vsyncs in. The clip-arm price's fit state (retail-exec frame-cost, docs/subsystems/engine.md)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "rugi"
+topics = ["field", "rugi", "cutscene", "clip arm", "frame cost", "film"]
 
 [[scenarios]]
 slot = 255
@@ -5121,6 +5140,24 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "koin3"
 topics = ["field", "koin3", "scene coverage", "dialogue", "route walk"]
+
+[[scenarios]]
+label = "koin3_disco_king_talk_open"
+backup_fingerprint = "a83307d77dc4ebd86825623811e78b0673a8990819d056bba5ecb30769ab685e"
+description = "koin3 (Sol Tower rooms C, the dance hall): the Disco King P1[13]'s talk open, before his lesson offer. RETAIL disc, pad only, no pokes: koin3_gold_card_guard_talk walked by autorun_walk_route.lua (Cross 400 vsyncs to page the guard, then to (6112, 13088) and an ACT facing Z+ at the King, tile (47, 103)); saved 895 vsyncs in. With flags 0x428 / 0x430 clear his talk spawns P2[5] (SpawnRecord 0x53), whose Yes enters the how-to lesson (mode 0x19); Cross every 20 vsyncs from here plays the lesson through (autorun_dance_howto_film.lua)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin3"
+topics = ["field", "koin3", "dance", "how-to", "dialogue", "route walk"]
+
+[[scenarios]]
+label = "koin3_disco_king_points_box"
+backup_fingerprint = "acc669d21249947b64cf0fae35fd94a231c2476f3bebe9c27a3a07198a7a9fa0"
+description = "koin3 dance hall after the how-to lesson: the Disco King's box reads 'Disco King: 0 points!', the score through the line renderer's numeric 0xCE escape (0x0B, the numeral face, 8 px a digit). RETAIL disc, pad only, no pokes: koin3_disco_king_talk_open run on under autorun_field_walk_film.lua with Cross every 20 vsyncs (the lesson's Yes, its pages and songs, the return to the field), saved 5870 vsyncs in with the line on screen."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin3"
+topics = ["field", "koin3", "dance", "dialogue", "numeric escape"]
 
 [[scenarios]]
 label = "koin1b_field_route_walk"

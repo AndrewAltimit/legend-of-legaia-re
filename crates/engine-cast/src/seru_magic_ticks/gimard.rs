@@ -41,6 +41,18 @@ pub const GIMARD_SETTLE_ARM: u8 = 12;
 pub const GIMARD_SHATTER_STEP_PER_TICK: u16 =
     2 * crate::cast_module_camera::MODULE_DRAIN_PER_TICK as u16;
 
+/// What one engine tick of PROT 0903's settle arm adds to the creature's
+/// `+0x1BA`: [`GIMARD_SHATTER_STEP_PER_TICK`], and on the tick the arm
+/// leaves, the rest of its pass's too. Retail adds the pass's whole
+/// `2 * step * scalar` on every pass, the one that stores `0xFF` included
+/// (`0x801F7698` falls into the add at `0x801F76A4`), where the host's
+/// one-vsync ticks stop on the leaving one (`World::module_pass`): `rest` is
+/// the pass's ticks still owed after this one.
+pub const fn gimard_shatter_add(leaving: bool, rest: u8) -> u16 {
+    let ticks = if leaving { 1 + rest as u16 } else { 1 };
+    GIMARD_SHATTER_STEP_PER_TICK * ticks
+}
+
 /// The `ctx+0x278` PROT 0903 stores as its arm 4 cut lands
 /// (`li v0,0x3; sb v0,0x278(v1)` at `0x801F6F24..0x801F6F2C`).
 pub const GIMARD_CUT_CTX_278: u8 = 3;

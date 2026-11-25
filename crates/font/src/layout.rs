@@ -82,6 +82,14 @@ impl Font {
         let mut pen_y: i32 = 0;
         let mut max_x: i32 = 0;
         let mut i = 0;
+        // A string that opens below `0x20` draws nothing at all: the
+        // renderer tests the first byte (`sltiu v0,v0,0x20` / `beqz` at
+        // `0x800368C4..0x800368C8`) and returns `0` before its walk. Only the
+        // first byte - a control byte later in the string is skipped below.
+        // PORT: FUN_80036888 (0x800368BC..0x800368D4, the leading-byte refusal)
+        if text.first().is_some_and(|&b| b < FIRST_CHAR) {
+            i = text.len();
+        }
         while i < text.len() {
             let c = text[i];
             i += 1;
@@ -106,6 +114,13 @@ impl Font {
                 0xCE if i < text.len() => {
                     let op = text[i];
                     i += 1;
+                    // A resolved numeric escape: one numeral cell, which the
+                    // host draws at this pen, and an 8 px step with no pad.
+                    // PORT: FUN_80036888 (0x80036A9C..0x80036B10, the 8 px per digit pen step)
+                    if crate::numeral_escape_digit(op).is_some() {
+                        pen_x = pen_x.saturating_add(crate::measure::NUMERIC_DIGIT_PX as i32);
+                        continue;
+                    }
                     if let Some(c) = self.escape_cell(op) {
                         if let Some(inks) = inks.as_deref_mut() {
                             inks.push(*ink);

@@ -127,7 +127,8 @@ impl OwnedDialogPanel {
                         .as_ref()
                         .and_then(|subs| subs.get(&(SCRIPT_COUNTER_KEY, arg)))
                     {
-                        for &b in digits {
+                        // In retail's numeral face, a cell per digit.
+                        for b in legaia_font::numeral_escape_run(digits) {
                             out.push((glyph(b), units));
                         }
                     } else {

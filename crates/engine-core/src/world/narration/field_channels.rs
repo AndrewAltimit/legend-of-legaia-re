@@ -147,7 +147,7 @@ impl World {
         self.field_vm
             .channels
             .iter()
-            .filter(|c| c.object_bind && c.ctx.flags & 0x8080_0000 != 0)
+            .filter(|c| c.object_bind && draws_near_buckets(c.ctx.flags))
             .flat_map(|c| self.object_draw_keys(c.placement_index))
             .collect()
     }
@@ -159,7 +159,7 @@ impl World {
         self.field_vm
             .channels
             .iter()
-            .filter(|c| !c.object_bind && c.ctx.flags & 0x8080_0000 != 0)
+            .filter(|c| !c.object_bind && draws_near_buckets(c.ctx.flags))
             .map(|c| c.placement_index)
             .collect()
     }
@@ -1287,4 +1287,16 @@ pub(crate) fn compass_walk_operands(bc: &[u8], pc: usize) -> Option<(u8, u8, i32
     };
     let at = pc + if op & 0x80 != 0 { 2 } else { 1 };
     Some((*bc.get(at)?, *bc.get(at + 1)?, rate))
+}
+
+/// Whether an actor whose `+0x10` holds `flags` draws ten ordering-table
+/// buckets nearer: a bit of `0x80800000` lowers the table base by `0x28`
+/// for its whole draw (`FUN_8001ADA4` at `0x8001B204..0x8001B21C` for a
+/// placed object, the animated renderer at `0x8001B9B0..0x8001B9CC` off the
+/// walk's scratch copy `0x1F8002D0` for a model), restored as the draw ends
+/// (`0x8001BDCC..0x8001BDD4`).
+///
+/// PORT: FUN_8001B964 (`0x8001B9B0..0x8001B9CC`, the ten-bucket shift)
+pub const fn draws_near_buckets(flags: u32) -> bool {
+    flags & 0x8080_0000 != 0
 }

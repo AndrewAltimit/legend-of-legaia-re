@@ -238,7 +238,7 @@ pub use handler_actors::TransitionSweepReport;
 mod items_arts;
 pub use items_arts::BATTLE_GOLD_CAP;
 mod narration;
-pub use narration::{FrameGrade, MAN_LOAD_FLAG};
+pub use narration::{FrameGrade, MAN_LOAD_FLAG, draws_near_buckets};
 mod npc_morph;
 pub use npc_morph::MorphOwner;
 mod object_actor_height;

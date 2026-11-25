@@ -1548,7 +1548,69 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         class: "b",
         note: DREAM_NOA,
     },
+    KnownDivergence {
+        label: "kor5_p2_5_pre_raise",
+        key: "pos:*",
+        class: "b",
+        note: KOR5_P2_5_MID_BEAT,
+    },
+    KnownDivergence {
+        label: "kor5_p2_5_pre_raise",
+        key: "vis:*",
+        class: "b",
+        note: KOR5_P2_5_MID_BEAT,
+    },
+    KnownDivergence {
+        label: "kor5_p2_5_pre_raise",
+        key: "flag:*",
+        class: "b",
+        note: KOR5_P2_5_MID_BEAT,
+    },
+    KnownDivergence {
+        label: "rugi_p2_72_flyin_crossing",
+        key: "vis:*",
+        class: "b",
+        note: RUGI_P2_72_MID_FLIGHT,
+    },
+    KnownDivergence {
+        label: "koin3_disco_king_talk_open",
+        key: "vis:*",
+        class: "b",
+        note: KOIN3_KING_MID_TALK,
+    },
+    KnownDivergence {
+        label: "koin3_disco_king_talk_open",
+        key: "flag:*",
+        class: "b",
+        note: KOIN3_KING_MID_TALK,
+    },
+    KnownDivergence {
+        label: "koin3_disco_king_points_box",
+        key: "vis:*",
+        class: "b",
+        note: KOIN3_KING_MID_TALK,
+    },
+    KnownDivergence {
+        label: "koin3_disco_king_points_box",
+        key: "flag:*",
+        class: "b",
+        note: KOIN3_KING_MID_TALK,
+    },
 ];
+
+/// The clip-arm and dance films' mid-beat captures: each is saved inside a
+/// running `P2` record, so a cold entry seats the scene's fresh-entry
+/// arrangement while retail's snapshot holds what the beat has moved since.
+const KOR5_P2_5_MID_BEAT: &str = "saved on the scene reload after Gaza's first fight is won, \
+     with kor5 P2[5] already running: the beat has seated placements 4..=6 beside the slab and \
+     placed 15, 16 and 20, and 0x619 is still clear; a cold entry seats the fresh-entry \
+     spawns, parks those three and sets 0x619 on entry.";
+const RUGI_P2_72_MID_FLIGHT: &str = "saved mid-flight in rugi P2[72]: placements 4 and 5 \
+     (Noa and Gala) fly in raised beside Vahn on scene clip 7; a cold entry parks them until \
+     the record raises them.";
+const KOIN3_KING_MID_TALK: &str = "saved inside the Disco King's talk: the conversation \
+     places placement 39 and holds 0x42F set; a cold entry parks it and clears the flag \
+     until the talk runs.";
 
 fn known(label: &str, key: &str) -> Option<&'static KnownDivergence> {
     KNOWN_DIVERGENCES.iter().find(|k| {

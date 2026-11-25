@@ -20,6 +20,7 @@ use legaia_engine_battle_menus::battle_input::{
     BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase, RingGates,
     ring_press_refused,
 };
+use legaia_engine_battle_vm::battle_cam_script::{BattleCamPhase, BattleCamera};
 use legaia_engine_system::option_values::SelectAttackOpt;
 use psx_retail_exec::{A0, Cpu, Stop};
 use std::cell::RefCell;
@@ -51,6 +52,9 @@ const ROT_MARK: u32 = 0x801D_BD04;
 const CURSE_MARK: u32 = 0x801D_BEC4;
 const GLIDE: u32 = 0x801D_9BBC;
 const RING_STEP: u32 = 0x801D_8D00;
+/// The battle frame step, and the shared camera yaw the idle orbit turns.
+const FRAME_STEP: u32 = 0x1F80_0393;
+const ORBIT_YAW: u32 = 0x8007_B792;
 const CONFIRM: u32 = 0x0040;
 const CANCEL: u32 = 0x0020;
 const LEFT: u32 = 0x8000;
@@ -244,6 +248,7 @@ fn the_command_prompts_go_where_retail_goes() {
     w_seat.load_party(legaia_save::Party::zeroed(3));
     w_seat.enter_battle(3, 4);
     let (mut kept, mut repicked) = (0u32, 0u32);
+    let mut orbit_turns = 0usize;
     for round in 0..6000 {
         let state = [0x1E, 0x28, 0x28, 0x28, 0x32, 0x6E, 0x78][rng.below(7) as usize];
         let ring = state == 0x28;
@@ -327,6 +332,12 @@ fn the_command_prompts_go_where_retail_goes() {
         cpu.mem.wr8(BATTLE_ID, 0);
         cpu.stub(FIRST_ABLE, u32::from(first_able));
         cpu.stub(NEXT_ABLE, u32::from(next_able));
+        // The pass's frame step and the shared camera yaw, which the
+        // prologue's idle orbit turns on the prompts (`0x801D078C..0x801D07CC`).
+        let frame_step = 1 + (round % 4) as u8;
+        let yaw0 = (round as u32 * 0x2B7) & 0xFFF;
+        cpu.mem.wr8(FRAME_STEP, frame_step);
+        cpu.mem.wr16(ORBIT_YAW, yaw0 as u16);
         windows.borrow_mut().clear();
         cues.borrow_mut().clear();
         marks.borrow_mut().clear();
@@ -335,6 +346,26 @@ fn the_command_prompts_go_where_retail_goes() {
             Stop::Returned,
             "round {round}"
         );
+        // The orbit against the port's: the battle camera's Menu phase
+        // turns yaw by the same pass of the frame step
+        // (`BattleCamera::advance_to`). The ring `0x28` and attack mode
+        // `0x78` are not the prologue's: their frames' turn is the action
+        // SM's store (`0x801E2A58..0x801E2A68`), which this pass does not run.
+        let turned = (yaw0 as i32 - i32::from(cpu.mem.rd16(ORBIT_YAW))).rem_euclid(0x1000);
+        let port_turn = if matches!(state, 0x1E | 0x32 | 0x6E) {
+            let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+            cam.set_frame_step(frame_step);
+            let y0 = cam.pose().yaw;
+            cam.advance_to(u64::from(frame_step));
+            (y0 - cam.pose().yaw).rem_euclid(4096.0) as i32
+        } else {
+            0
+        };
+        assert_eq!(
+            turned, port_turn,
+            "round {round} state {state:#x} step {frame_step}: the idle orbit's turn"
+        );
+        orbit_turns += usize::from(turned != 0);
         let after = cpu.mem.rd8(CTX + 0x06);
         let win = windows.borrow().clone();
         let cue = cues.borrow().clone();
@@ -497,6 +528,7 @@ fn the_command_prompts_go_where_retail_goes() {
         kept > 20 && repicked > 20,
         "kept {kept} re-picked {repicked}"
     );
+    assert!(orbit_turns > 1000, "{orbit_turns} orbit turns compared");
 }
 
 /// The attack target cursor `0x5A` (`0x801D21CC..0x801D23EC`), with the ring
@@ -1990,6 +2022,12 @@ fn the_magic_window_prices_and_commits_as_retail() {
 /// `BattleState::step_battle_intro_names` (the hold's seed and its drain),
 /// the formation byte's decode the round start's ambush test reads, and the
 /// round counter `World::battle_mode` the DoT gate reads.
+///
+/// The rounds run at frame steps 1 to 4: `0x0B` drains the timer by the step
+/// `0x1F800393` once a pass (`subu` / `bgtz` at `0x801D0E4C..0x801D0E58`),
+/// and the port drains it one a vsync on the command flow's per-vsync ticks,
+/// so the port's last held tick lands inside retail's last held pass: a pass
+/// of `step` vsyncs, so `(passes - 1) * step < ticks <= passes * step`.
 #[test]
 fn the_battle_open_holds_and_opens_the_round_as_retail() {
     differential!(prot(898, STATE_MACHINE));
@@ -2020,6 +2058,7 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
     let mut rng = Rng(0x4F50_454E);
     let mut seen = std::collections::HashMap::<&str, u32>::new();
     for round in 0..400 {
+        let step = 1 + (round % 4) as u8;
         let adv = [0u8, 0, 1, 2, 3][rng.below(5) as usize];
         let first = if rng.below(4) == 0 {
             0xB5
@@ -2037,7 +2076,7 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
         cpu.mem.wr8(CTX + 0x290, adv);
         cpu.mem.wr8(CTX + 0x28A, rounds_done);
         cpu.mem.wr8(BATTLE_ID, first);
-        cpu.mem.wr8(STEP, 1);
+        cpu.mem.wr8(STEP, step);
         cpu.mem.wr32(PAD, 0);
         cpu.mem.wr32(CROSS_ENTRY, 0);
         let pass = |cpu: &mut Cpu| {
@@ -2064,7 +2103,8 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
         w.actors[3].battle_monster_id = Some(u16::from(first));
         w.battle_ctx.formation_advantage = adv;
         w.arm_battle_intro_names();
-        let label = format!("round {round}: adv {adv} first {first:#x} rounds {rounds_done}");
+        let label =
+            format!("round {round} step {step}: adv {adv} first {first:#x} rounds {rounds_done}");
         if first == 0xB5 {
             // Parked for the arrival module: no names, no hold of the port's.
             assert_eq!(after, 0x0C, "{label}");
@@ -2078,9 +2118,9 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
         assert_eq!(after, 0x0B, "{label}");
         assert!(named, "{label}");
         assert_eq!(seed, w.battle.intro_names_frames, "{label}: the hold");
-        // The drain, one pass a vsync.
+        // The drain: one retail pass of `step` vsyncs, one port tick a vsync.
         w.battle.intro_lead_ticks = 0;
-        let mut retail_passes = 0;
+        let mut retail_passes = 0u32;
         let exit = loop {
             let s = pass(&mut cpu);
             retail_passes += 1;
@@ -2089,12 +2129,19 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
             }
             assert!(retail_passes < 0x100, "{label}");
         };
-        let mut port_ticks = 0;
+        let mut port_ticks = 0u32;
         while w.battle.battle_open_held() {
             w.battle.step_battle_intro_names();
             port_ticks += 1;
         }
-        assert_eq!(retail_passes, port_ticks, "{label}");
+        let step = u32::from(step);
+        assert!(
+            (retail_passes - 1) * step < port_ticks && port_ticks <= retail_passes * step,
+            "{label}: retail {retail_passes} passes, port {port_ticks} ticks"
+        );
+        *seen
+            .entry(["", "step 1", "step 2", "step 3", "step 4"][step as usize])
+            .or_default() += 1;
         let ambushed = FormationAdvantage::from_byte(adv) == FormationAdvantage::BackAttack;
         if ambushed {
             assert_eq!(exit, 0xFE, "{label}");
@@ -2119,7 +2166,16 @@ fn the_battle_open_holds_and_opens_the_round_as_retail() {
             })
             .or_default() += 1;
     }
-    for key in ["nameless", "ambushed", "first round", "later round"] {
+    for key in [
+        "nameless",
+        "ambushed",
+        "first round",
+        "later round",
+        "step 1",
+        "step 2",
+        "step 3",
+        "step 4",
+    ] {
         assert!(seen.get(key).copied().unwrap_or(0) > 10, "{key}: {seen:?}");
     }
 }

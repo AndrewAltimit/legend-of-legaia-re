@@ -6,13 +6,6 @@ mod battle_anim;
 mod battle_fx;
 mod mode_entry;
 
-/// The committed anim id (`+0x1D9`) the effect stepper's code substitution
-/// keys on - the dynamic art slot the anim commit remaps an art clip onto.
-const ACTION_FX_ART_SLOT: u8 = 0x11;
-/// The table-form code an art's code-`0` record becomes (`li s1,0x9` at
-/// `0x801DF094`).
-const ACTION_FX_ART_CODE: u8 = 9;
-
 impl World {
     /// The actor allocator's free-stack top `_DAT_8007C348` as the move VM's
     /// ext sub-ops `0x36` / `0x37` read it: `0x8E` less the live actors.

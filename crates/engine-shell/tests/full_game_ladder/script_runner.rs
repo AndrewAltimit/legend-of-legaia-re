@@ -95,6 +95,14 @@ pub(super) fn script_pad(session: &NativeSession, f: usize) -> u16 {
     if let Some(pad) = code_lock_pad(session) {
         return pad;
     }
+    // The art-learned notice (`49 09`, after every scripted Hyper Art grant)
+    // waits for a confirm while its talk parks on the op with no box open,
+    // which the box-less arm below reads as a talk running its ops. Unpressed,
+    // `cave01` P1[2]'s notice held every walk after Noa's rest, and `dolk2`'s
+    // book (P1[49]) every walk across Drake Castle's library.
+    if session.host.world.art_notice_shown().is_some() {
+        return PadButton::Cross.mask();
+    }
     if let Some(ne) = session.host.world.party.name_entry.as_ref()
         && ne.state == NameEntryState::Confirm
         && !ne.confirm_yes

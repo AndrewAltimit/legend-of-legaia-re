@@ -727,6 +727,11 @@ pub enum SpawnAnchor {
     /// The creature seat `actor_table[7]`: `a0 = creature + 0x34`,
     /// `a1 = creature + 0x44`.
     Creature,
+    /// The creature seat's position on the arm's shot angles: `a0 =
+    /// creature + 0x34`, `a1 = sp+0x20`. PROT 0919 arm 4's twenty eye parts
+    /// (`0x801F70C4..0x801F71F4`), on the cut it armed just before
+    /// (`0x801F705C..0x801F707C`).
+    CreatureOnShot,
     /// The arm's own shot trios: `a0 = sp+0x30` (the negated focus),
     /// `a1 = sp+0x20` (the shot angles). Every record a module spawns this
     /// way is camera-relative (`+0x52 & 0x780`), so its program's own
@@ -1061,6 +1066,10 @@ pub fn spawn_anchor_point_with(
         }
         SpawnAnchor::CreatureDepth { x, y } => ([x, y, seats.creature_body?.z], [0; 3]),
         SpawnAnchor::Creature => seat_at(creature?),
+        SpawnAnchor::CreatureOnShot => {
+            let c = creature?;
+            ([c.x, c.y, c.z], shot?.angles)
+        }
         SpawnAnchor::Victim => seat_at(victim?),
         SpawnAnchor::ShotFocus | SpawnAnchor::ShotFocusScaled { .. } => {
             let s = shot?;
@@ -1493,7 +1502,7 @@ pub use shadow_break::{
 };
 pub use spoon::*;
 pub use spore_gas::{spore_gas_camera, spore_gas_hit_spawn};
-pub use steal::{STEAL_BODY, steal_camera};
+pub use steal::{STEAL_BODY, steal_camera, steal_voice};
 pub use stone_circle::{
     RING_RECORDS, STONE_CIRCLE_BODY, STONE_CIRCLE_COUNTDOWN, stone_circle_camera,
 };
@@ -1575,6 +1584,7 @@ pub struct ModuleProfile {
 ///
 /// | PROT | Hit arm | The test |
 /// |---|---|---|
+/// | 0903 Gimard | `0xB` | `0x801F7480..0x801F749C` |
 /// | 0914 Gola Gola | `0xD` | `0x801F76FC..0x801F7708` |
 /// | 0920 Slippery | 9 | `0x801F7828..0x801F7834` |
 /// | 0921 Iota | `0xA` | `0x801F7BCC..0x801F7BD8` |
@@ -1583,7 +1593,7 @@ pub struct ModuleProfile {
 /// | 0928 Palma | `0x13` | `0x801F89D4..0x801F89E0` |
 /// | 0929 Mule | 18 | `0x801F873C..0x801F8748` |
 /// | 0934 Ozma | `0x18` | `0x801F8DE8..0x801F8DF4` |
-pub const STONE_SKIPPING_HITS: [u32; 8] = [914, 920, 921, 922, 923, 928, 929, 934];
+pub const STONE_SKIPPING_HITS: [u32; 9] = [903, 914, 920, 921, 922, 923, 928, 929, 934];
 
 /// The directed profile of a player-Seru module, by owning PROT entry.
 /// `None` for a module whose camera arms are not ported: its phase chain then

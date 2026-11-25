@@ -209,7 +209,7 @@ impl LegaiaRuntime {
                 .trim_end()
                 .to_string()
         };
-        let text = ascii(&id.page_bytes());
+        let text = ascii(&legaia_font::numeral_escape_plain(&id.page_bytes()));
         if text.trim().is_empty() {
             return serde_json::Value::Null;
         }

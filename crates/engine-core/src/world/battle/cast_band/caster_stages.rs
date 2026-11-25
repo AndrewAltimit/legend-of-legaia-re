@@ -582,6 +582,7 @@ impl World {
         self.casting.module_ctx_278 = 0;
         self.casting.module_skips_fold = false;
         self.casting.fatal_decision = None;
+        self.casting.fatal_decision_confirm = false;
         self.casting.fatal_banner = None;
         self.casting.module_swordie = Default::default();
         self.casting.module_rain = Default::default();

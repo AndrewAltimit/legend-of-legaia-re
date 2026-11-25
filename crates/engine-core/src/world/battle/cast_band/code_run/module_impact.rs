@@ -52,6 +52,15 @@ impl World {
         opened: ImpactOpen,
     ) {
         use legaia_engine_cast::cast_module_impact::{ImpactSeat, module_impacts_due};
+        // PROT 0916's arm `0x12` store sits on its damage path
+        // (`0x801F8644..0x801F868C`), which a kill verdict branches past
+        // (`beqz` on `0x801F9010` at `0x801F8598`).
+        if entry == legaia_engine_cast::cast_module_camera::ALURU_ENTRY
+            && arm == legaia_engine_cast::cast_module_camera::ALURU_HIT_ARM
+            && self.casting.module_cam.kill == Some(true)
+        {
+            return;
+        }
         let party = self.party.party_count.clamp(1, 3);
         for m in module_impacts_due(entry, body, arm, passed, countdown) {
             let seats: Vec<u8> = match m.seat {

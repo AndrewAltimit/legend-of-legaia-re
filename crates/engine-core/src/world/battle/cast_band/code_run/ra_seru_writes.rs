@@ -1067,30 +1067,19 @@ impl World {
             return;
         };
         let (cx, cz, f) = (
-            i32::from(a.move_state.world_x),
-            i32::from(a.move_state.world_z),
+            a.move_state.world_x,
+            a.move_state.world_z,
             a.battle.facing_angle,
         );
         let Some(pose) = crate::world::battle::locomotion::stream_pose(a) else {
             return;
         };
-        let (sin_f, cos_f) = legaia_engine_system::trig::trig12(f & 0xFFF);
-        let (sin_b, cos_b) = legaia_engine_system::trig::trig12(0xFFF - (f & 0xFFF));
         let seats: Vec<[i16; 3]> = pose
             .iter()
             .take(5)
             .enumerate()
             .map(|(i, (p, _))| {
-                let div = if phase == 7 && i != 0 { 0x1400 } else { 0x1000 };
-                let (px, py, pz) = (i32::from(p[0]), i32::from(p[1]), i32::from(p[2]));
-                let x = cx + i32::from(sin_f) * pz / div + i32::from(cos_b) * px / div;
-                let z = cz + i32::from(sin_b) * px / div + i32::from(cos_f) * pz / div;
-                let y = match (phase, i) {
-                    (7, 0) => py + 0x20,
-                    (7, 3..) => py + 8 - 0x20,
-                    _ => py + 8,
-                };
-                [x as i16, y as i16, z as i16]
+                legaia_engine_cast::cast_module_camera::spoon_eye_seat(cx, cz, f, *p, phase, i)
             })
             .collect();
         let Some(scene) = self.casting.active_summon.as_mut() else {

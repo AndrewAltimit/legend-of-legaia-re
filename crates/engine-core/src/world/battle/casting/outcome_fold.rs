@@ -34,7 +34,20 @@ impl World {
                 // value clamped against live HP reaches both `+0x10` and
                 // `+0x14C`, so the bar can never outrun HP. That arm also
                 // picks the victim's reaction clip off `+0x1F2`.
+                // A quiet module hit stages no clip, a kill's knockdown
+                // included: PROT 0918's arm `0x12` lands its roll straight on
+                // `+0x14C` / `+0x10` (`0x801F87A4..0x801F8834`), so the victim
+                // stays on the flinch arm 16 froze it on until arm `0x13`.
+                let staged = self
+                    .actors
+                    .get(target as usize)
+                    .map(|a| a.battle.queued_anim);
                 self.apply_effect_child_hit(target as usize, i32::from(applied));
+                if self.casting.module_fold_unstaged
+                    && let (Some(was), Some(a)) = (staged, self.actors.get_mut(target as usize))
+                {
+                    a.battle.queued_anim = was;
+                }
                 self.battle.hit_fx.push(BattleHitFx {
                     target_slot: target,
                     amount: applied,

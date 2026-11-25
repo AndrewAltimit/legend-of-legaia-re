@@ -1922,3 +1922,75 @@ changes = [
   ["counts/native/town01/enhanced/alloc_kb_per_frame", 1713.6, 1714.4],
   ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1491.3, 1491.4],
 ]
+
+[[loosening]]
+file = "scripts/replays/full_game_baseline.toml"
+reason = "The ladder hand now presses Cross on the art-learned notice, which had parked every walk in a 3600-frame window. With it pressed, the dolk2 library examines play to their end and the beats pass continues, so every placed stream fires more examine and restore shortcuts (the per-stretch diff puts the rise in drake_castle_revisited -> west_voz_forest and voz_forest -> zeto_dungeon). The default, 10, 11 and 14 rows add their reloads' replayed stretches; 12, 14 and 15 make one more box talk on their deals. seed_16 also gains touch_seat = 81, the value every other placed row already held."
+changes = [
+  ["shortcuts/placed/default/examine_face", 108, 131],
+  ["shortcuts/placed/default/examine_seat", 156, 184],
+  ["shortcuts/placed/default/restore_xz", 134, 158],
+  ["shortcuts/placed/seed_10/examine_face", 108, 129],
+  ["shortcuts/placed/seed_10/examine_seat", 156, 181],
+  ["shortcuts/placed/seed_10/restore_xz", 134, 156],
+  ["shortcuts/placed/seed_11/examine_face", 108, 127],
+  ["shortcuts/placed/seed_11/examine_seat", 156, 177],
+  ["shortcuts/placed/seed_11/restore_xz", 134, 154],
+  ["shortcuts/placed/seed_12/box_face", 12, 13],
+  ["shortcuts/placed/seed_12/examine_face", 108, 125],
+  ["shortcuts/placed/seed_12/examine_seat", 156, 174],
+  ["shortcuts/placed/seed_12/restore_xz", 134, 167],
+  ["shortcuts/placed/seed_13/examine_face", 108, 125],
+  ["shortcuts/placed/seed_13/examine_seat", 156, 174],
+  ["shortcuts/placed/seed_13/restore_xz", 134, 152],
+  ["shortcuts/placed/seed_14/box_face", 12, 13],
+  ["shortcuts/placed/seed_14/examine_face", 110, 137],
+  ["shortcuts/placed/seed_14/examine_seat", 159, 195],
+  ["shortcuts/placed/seed_14/restore_xz", 136, 164],
+  ["shortcuts/placed/seed_15/box_face", 12, 13],
+  ["shortcuts/placed/seed_15/examine_face", 108, 125],
+  ["shortcuts/placed/seed_15/examine_seat", 156, 174],
+  ["shortcuts/placed/seed_15/restore_xz", 134, 152],
+  ["shortcuts/placed/seed_16/examine_face", 108, 125],
+  ["shortcuts/placed/seed_16/examine_seat", 156, 174],
+  ["shortcuts/placed/seed_16/restore_xz", 134, 152],
+  ["shortcuts/placed/seed_3/examine_face", 120, 125],
+  ["shortcuts/placed/seed_3/examine_seat", 168, 174],
+  ["shortcuts/placed/seed_3/restore_xz", 146, 152],
+  ["shortcuts/placed/seed_4/examine_face", 108, 125],
+  ["shortcuts/placed/seed_4/examine_seat", 156, 174],
+  ["shortcuts/placed/seed_4/restore_xz", 134, 152],
+  ["shortcuts/placed/seed_5/examine_face", 108, 125],
+  ["shortcuts/placed/seed_5/examine_seat", 156, 174],
+  ["shortcuts/placed/seed_5/restore_xz", 134, 152],
+  ["shortcuts/placed/seed_6/examine_face", 108, 125],
+  ["shortcuts/placed/seed_6/examine_seat", 156, 174],
+  ["shortcuts/placed/seed_6/restore_xz", 134, 152],
+  ["shortcuts/placed/seed_7/examine_face", 108, 125],
+  ["shortcuts/placed/seed_7/examine_seat", 156, 174],
+  ["shortcuts/placed/seed_7/restore_xz", 134, 152],
+  ["shortcuts/placed/seed_8/examine_face", 112, 125],
+  ["shortcuts/placed/seed_8/examine_seat", 163, 174],
+  ["shortcuts/placed/seed_8/restore_xz", 138, 152],
+  ["shortcuts/placed/seed_9/examine_face", 108, 125],
+  ["shortcuts/placed/seed_9/examine_seat", 156, 174],
+  ["shortcuts/placed/seed_9/restore_xz", 134, 152],
+]
+
+[[loosening]]
+file = "scripts/replays/full_game_baseline.toml"
+reason = "Re-recorded from one walked run per stream after the art-notice press and the Koru and duel hand changes. seed_11 now places the same seat touches as every other stream (26 -> 29); seed_13 makes one more box talk on its deal; seed_16's one Zora reload replays taiku's far placements (examine_far 29 -> 36, restore_xz 55 -> 56)."
+changes = [
+  ["shortcuts/walked/seed_11/touch_seat", 26, 29],
+  ["shortcuts/walked/seed_13/box_face", 1, 2],
+  ["shortcuts/walked/seed_16/examine_far", 29, 36],
+  ["shortcuts/walked/seed_16/restore_xz", 55, 56],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The play and tool bundles carry the New Game rules screen rebuilt in the game's menu style: four tabs, the randomizer parts, the seed editor, Custom difficulty, the New Game+ save list, the Boss Rush panel and touch hit-testing from its layout. They also carry the numeral escape and the field frame-cost terms ported this wave. About 27 KB gzip on 5.25 MB of play bundle and 26 KB on the tool bundle."
+changes = [
+  ["counts/bundle/gzip_bytes", 7400158, 7426399],
+  ["counts/bundle/play_gzip_bytes", 5249137, 5276608],
+]

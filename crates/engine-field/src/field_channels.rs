@@ -132,6 +132,13 @@ pub fn spawn_channels(man_file: &ManFile, man: &[u8]) -> Vec<FieldChannel> {
         .collect()
 }
 
+/// The draw kind `+0x56` a seated script actor starts on: both seaters'
+/// spawn descriptors (`0x80073E58` for a placement, `FUN_8003A1E4`;
+/// `0x80073E70` for an object bind, `FUN_8003A55C`) carry `5` at `+0x14`,
+/// which `FUN_80020DE0` copies to `+0x56` (`0x80020E5C..0x80020E64`). Op
+/// `0x22` later moves an actor it hands a move id to kind `1`.
+pub const SEATED_DRAW_KIND: u16 = 5;
+
 /// One placement's freshly seated context: what `4C D2` spawns for a channel
 /// nothing answers (`FUN_8003A1E4` at `0x801E2BC8`, `index = channel - N0`).
 // REF: FUN_801DE840 (0x801E2B7C..0x801E2BD8)
@@ -192,6 +199,7 @@ fn placement_channel(p0_count: usize, p: &ActorPlacement) -> FieldChannel {
         // blue cone) to a point. Seeding 0 here made that write
         // meaningless and the markers drew at full size.
         field_72: 0x1000,
+        move_substate: SEATED_DRAW_KIND,
         ..FieldCtx::default()
     };
     FieldChannel {
@@ -302,6 +310,7 @@ pub fn spawn_object_channels(
             saved_pc: 0xFFFF_FFFF,
             // Unit render scale from `actor_free` - see `spawn_channels`.
             field_72: 0x1000,
+            move_substate: SEATED_DRAW_KIND,
             ..FieldCtx::default()
         };
         out.push(FieldChannel {

@@ -144,9 +144,17 @@ pub struct CastFxState {
     /// The module's hit stages no reaction (PROT 0918's): the fold lands its
     /// HP and leaves the victim's clip alone.
     pub module_fold_quiet: bool,
+    /// ... and stages nothing on a kill either (PROT 0918's arm `0x12`,
+    /// whose roll lands straight on `+0x14C`): the fold leaves the victim's
+    /// staged clip as it stood.
+    pub module_fold_unstaged: bool,
     /// PROT 0954's module-resident words while its body runs
     /// ([`legaia_engine_cast::cast_fatal_decision`]).
     pub fatal_decision: Option<legaia_engine_cast::cast_fatal_decision::FatalDecisionState>,
+    /// A confirm press PROT 0954's body saw on a tick of its pass that it
+    /// does not run on, owed to the next pass's run (retail reads the pad
+    /// edge the frame latched, once a pass).
+    pub fatal_decision_confirm: bool,
     /// The outcome name PROT 0954's arm 9 put up in the move-name label
     /// (HUD element `0x4C`), until the band leaves. Read by
     /// `legaia_engine_battle_hud::battle_move_name`.
@@ -665,7 +673,9 @@ impl CastFxState {
             pending_level_check: None,
             spore_gas_beat: Default::default(),
             module_fold_quiet: false,
+            module_fold_unstaged: false,
             fatal_decision: None,
+            fatal_decision_confirm: false,
             fatal_banner: None,
             module_ring_angle: 0,
             band_word_live: None,

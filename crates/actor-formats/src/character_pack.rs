@@ -94,6 +94,11 @@ pub const GROUP_DESCRIPTOR_BYTES: usize = 0x1C;
 /// Byte offset of the first group descriptor inside a Legaia TMD (post-header).
 pub const FIRST_GROUP_DESCRIPTOR_OFFSET: usize = 0x0C;
 
+/// The live group count of an active-party slot (`0..=2`): `FUN_8001E890`
+/// caps the slot's `group_count` here, so the two templates past it are
+/// never walked by a draw.
+pub const PARTY_LIVE_GROUPS: usize = 10;
+
 /// Byte offset of group 10 (the equipment-swap "non-zero byte" template) in a
 /// disc-form character TMD. Equals `FIRST_GROUP_DESCRIPTOR_OFFSET + 10 * GROUP_DESCRIPTOR_BYTES`.
 pub const EQUIP_GROUP_NONZERO_OFFSET: usize = 0x124;

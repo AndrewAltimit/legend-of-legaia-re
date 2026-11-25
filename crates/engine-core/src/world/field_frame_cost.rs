@@ -157,6 +157,9 @@ pub struct FieldCostTable {
     /// The player's model (PROT 0874 §0 head `0`), which the actor passes
     /// draw every field frame and no placement holds.
     pub player: Option<MeshCost>,
+    /// The scene pack's meshes by pack slot (retail `DAT_8007C018[5..]`), the
+    /// library a move-VM part's record names (`record[+0] - 5`).
+    pub part_meshes: Vec<MeshCost>,
     /// The decoration draws' pack meshes as their leaves walk them, one per
     /// distinct mesh ([`CostCell::geom`]).
     pub decoration_geoms: Vec<super::field_deco_outcomes::DecoGeom>,
@@ -521,14 +524,44 @@ pub struct FieldFrameFeatures {
     /// dispatcher (`0x8001BC34..0x8001BC64`, `0x8001BD80..0x8001BD88`).
     pub npc_clip_objects: u32,
     pub npc_clip_prims: u32,
+    /// Of [`Self::npc_clip_prims`]: those of models whose anchor stands
+    /// inside the row's slab, which the renderer keeps and links
+    /// ([`World::effect_clip_keeps_anchor`]).
+    pub npc_clip_kept_prims: u32,
     pub list_actors: u32,
     /// The live script actors (field-VM channels: placements and bound
     /// objects), each an entry of the tick and render lists.
     pub tick_actors: u32,
+    /// Of [`Self::tick_actors`]: the model actors (draw kind `1`, a channel
+    /// with a move id), whose tick runs dearer than a placed static's.
+    pub tick_model_actors: u32,
+    /// The live move-VM parts by the tick's arm, beside the draw-kind-`4`
+    /// counts: draw kind `5` (a library mesh), mode `3` (the CLUT-cell
+    /// cycler), mode `4` (the VRAM scroller) and mode `5` (the sound
+    /// emitter). The rest tick on mode `0`.
+    pub static_parts: u32,
+    pub cycler_parts: u32,
+    pub scroll_parts: u32,
+    pub emitter_parts: u32,
     /// Whether the player moved on the last tick.
     pub player_moving: bool,
     /// The live move-VM parts on draw kind `4` (the sprite emitter).
     pub sprite_parts: u32,
+    /// Of [`Self::sprite_parts`]: those on the default arm (`+0x9E & 0x6000`
+    /// clear), and the packets their builds write
+    /// (`effect_default_arm::default_arm_packet_count`).
+    pub default_arm_parts: u32,
+    pub default_arm_packets: u32,
+    /// Of [`Self::default_arm_packets`]: those built under a texture mode.
+    pub default_arm_textured_packets: u32,
+    /// The live move-VM parts on the static-mesh draw kind `5` (a library
+    /// mesh record, `SpawnSubmode::draw_kind_and_mode`), with their meshes'
+    /// objects, groups and primitives by leaf kind: the walk's case `5`
+    /// draws them through the same arm as the placed statics (`0x8001B1A8`).
+    pub mesh_parts: u32,
+    pub mesh_part_objects: u32,
+    pub mesh_part_groups: u32,
+    pub mesh_part_kinds: [u32; 12],
     /// The draws' morph substitution: `FUN_8001C604` calls, the vertices
     /// they copy, and the vertices `FUN_8005B038` blends.
     pub morph_calls: u32,
@@ -538,6 +571,8 @@ pub struct FieldFrameFeatures {
     pub player: Option<MeshCost>,
     /// The player's `+0x42` is raised: its model takes the clip arm.
     pub player_clipped: bool,
+    /// The raised player's anchor stands inside its row's slab.
+    pub player_clip_kept: bool,
 }
 
 impl World {
@@ -610,6 +645,78 @@ impl World {
                 legaia_engine_cast::cast_module_frame_step::console_poll_cost(work)
             }
         })
+    }
+
+    /// Whether the draw walk's near reject drops field NPC model `slot`
+    /// (spawned at `spawn`) this frame: its live anchor
+    /// ([`Self::field_npc_live_anchor`]) at a view depth under `0xA1` through
+    /// the camera the cull view publishes. A placement model is a posed
+    /// actor (draw kind `1`), whose arm skips the whole actor there
+    /// (`0x8001AE94..0x8001AEB4`) unless its `+0x52 & 0x20` exempts it; no
+    /// placement model on the disc's captured states carries that bit. The
+    /// frame-cost model drops the same models (`npc_models`). `false` with
+    /// no published camera or while the model is not drawn.
+    ///
+    /// REF: FUN_8001ADA4
+    /// `Some(())` when placement `slot` is a static model (draw kind `5`, no
+    /// move id) at render scale `0`. The animated renderer
+    /// refuses a zero `+0x72` (`0x8001B9A0`), but the draw walk's case `5`
+    /// does not: it takes the box test and dispatches every primitive at
+    /// scale `0` (`0x8001B1A8..0x8001B1E0`). `koin1`'s ten model-162
+    /// placements cost `3172..3879` cycles each that way on retail's walk.
+    fn field_npc_scale0_static(&self, slot: u8) -> Option<()> {
+        let c = self
+            .field_vm
+            .channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))?;
+        // The kind is the one op `0x22` leaves (`5` for move id `0`, else
+        // `1`); every seated actor starts on `5`, and one that holds a move
+        // id is on `1` by the time it draws (`koin1`'s scale-`0` model-157
+        // placements, `+0x5C = 48`, stand on kind `1`).
+        (c.ctx.field_72 == 0 && c.ctx.move_substate == 5 && c.ctx.move_id == 0).then_some(())
+    }
+
+    pub fn field_npc_near_rejected(&self, slot: u8, spawn: (i16, i16)) -> bool {
+        let (Some(cam), Some([x, y, z])) = (
+            self.npcs.cull_camera.as_ref(),
+            self.field_npc_live_anchor(slot, spawn),
+        ) else {
+            return false;
+        };
+        let depth = placed_cull_gte(cam)
+            .rtps([x as i16, y as i16, z as i16])
+            .mac[2];
+        walker_near_rejected(depth, true, false)
+    }
+
+    /// Whether a raised actor's anchor `at` (world units) stands inside the
+    /// slab of the object-effect row its `+0x42 = kind` names, at render
+    /// scale `scale` (`+0x72`, `1.0 = 0x1000`, `0` read as `1.0`).
+    ///
+    /// The renderer behind the clip arm keeps a vertex whose effect-space `Y`
+    /// lies inside the row's bounds and drops one past them
+    /// (`FUN_80027F00`, `0x80027F60..0x80028098`); a primitive left with no
+    /// corner links nothing, and one inside is projected and linked
+    /// (`0x80027C6C..0x80027EFC`). A model's corners sit close about its
+    /// anchor along the row's axis, so the anchor decides the model: on
+    /// `rugi` `P2[72]` each of the three flyers links nothing while its
+    /// anchor is outside the slab and most of its primitives from the frame
+    /// its anchor crosses in. A row the port does not track keeps.
+    // REF: FUN_8001C204, FUN_80027F00
+    pub fn effect_clip_keeps_anchor(&self, kind: u16, scale: u16, at: [f32; 3]) -> bool {
+        let Some(clip) = self
+            .object_effect
+            .clip_for(kind, &self.sin_lut, &self.cos_lut)
+        else {
+            return true;
+        };
+        let s = match scale {
+            0 => 1.0,
+            s => f32::from(s) / 4096.0,
+        };
+        let y = s * (0..3).map(|i| clip.n[i] * at[i]).sum::<f32>();
+        y >= clip.lo && y <= clip.hi
     }
 
     /// The model's price of a frame that draws `f`: the fitted weights, or
@@ -853,16 +960,38 @@ impl World {
             if m.objects == 0 {
                 continue;
             }
-            let Some([x, y, z]) = self.field_npc_live_anchor(slot, spawn) else {
+            let scale0 = self.field_npc_scale0_static(slot);
+            let anchor = self.field_npc_live_anchor(slot, spawn).or_else(|| {
+                // A static model at render scale `0` draws nothing, but the
+                // walk still dispatches it (below).
+                scale0?;
+                let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+                let (x, z) = self.npcs.positions.get(&slot).copied().unwrap_or(spawn);
+                ((x, z) != (hide, hide)).then(|| {
+                    [
+                        f32::from(x),
+                        self.field_npc_render_y(slot, x, z) as f32,
+                        f32::from(z),
+                    ]
+                })
+            });
+            let Some([x, y, z]) = anchor else {
                 continue;
             };
             if self.field_npc_culled(x as i16, z as i16) {
                 continue;
             }
             // The dispatcher's near reject on the actor's view depth
-            // (`slti v0,v0,0xa1` at `0x8001AE9C`).
+            // (`slti v0,v0,0xa1` at `0x8001AE9C`), the one both play hosts
+            // ask (`World::field_npc_near_rejected`). Case `5` skips its own
+            // depth test when `+0x72` is `0` (`beq v0,zero,0x8001B1E0` at
+            // `0x8001B1B0`).
             let at = [x as i16, y as i16, z as i16];
-            if gte.as_ref().is_some_and(|g| g.rtps(at).mac[2] < 0xA1) {
+            if scale0.is_none()
+                && gte
+                    .as_ref()
+                    .is_some_and(|g| walker_near_rejected(g.rtps(at).mac[2], true, false))
+            {
                 continue;
             }
             // A model whose `+0x10 & 4` is up draws only when its box
@@ -892,12 +1021,16 @@ impl World {
             // renderer `FUN_8002735C` over the object's primitives
             // (`0x8001BC64` -> `0x8001BD88`), none of them through the
             // dispatcher `FUN_80043390`.
-            let clipped = self.field_vm.channels.iter().any(|c| {
+            let clipped = self.field_vm.channels.iter().find(|c| {
                 !c.object_bind && c.placement_index == usize::from(slot) && c.ctx.field_42 != 0
             });
-            if clipped {
+            if let Some(c) = clipped {
+                let prims = m.kinds.iter().map(|&k| u32::from(k)).sum::<u32>();
                 f.npc_clip_objects += u32::from(m.objects);
-                f.npc_clip_prims += m.kinds.iter().map(|&k| u32::from(k)).sum::<u32>();
+                f.npc_clip_prims += prims;
+                if self.effect_clip_keeps_anchor(c.ctx.field_42, c.ctx.field_72, [x, y, z]) {
+                    f.npc_clip_kept_prims += prims;
+                }
                 continue;
             }
             f.npc_objects += u32::from(m.objects);
@@ -928,6 +1061,25 @@ impl World {
             .iter()
             .filter(|c| c.is_live())
             .count() as u32;
+        f.tick_model_actors = self
+            .field_vm
+            .channels
+            .iter()
+            .filter(|c| c.is_live() && c.ctx.move_substate == 1)
+            .count() as u32;
+        for p in self.ambient.fx.iter().filter(|p| !p.finished) {
+            let s = &p.state;
+            if s.move_substate == 4 {
+                continue;
+            }
+            match (s.move_substate, s.move_submode) {
+                (5, _) => f.static_parts += 1,
+                (_, 3) => f.cycler_parts += 1,
+                (_, 4) => f.scroll_parts += 1,
+                (_, 5) => f.emitter_parts += 1,
+                _ => {}
+            }
+        }
         f.player_moving = self
             .player_actor_slot
             .is_some_and(|s| self.locomotion.actor_moving.contains(&s));
@@ -936,6 +1088,18 @@ impl World {
         // (`CC F8 C2`, `World::field_vm.player_field_42`): the animated
         // renderer reads the word off whichever actor it draws.
         f.player_clipped = self.field_vm.player_field_42 != 0;
+        f.player_clip_kept = f.player_clipped
+            && self
+                .player_actor_slot
+                .and_then(|s| self.actors.get(usize::from(s)))
+                .is_some_and(|a| {
+                    let m = &a.move_state;
+                    self.effect_clip_keeps_anchor(
+                        self.field_vm.player_field_42,
+                        m.field_72,
+                        [m.world_x, m.world_y, m.world_z].map(f32::from),
+                    )
+                });
         f.fog = u32::from(self.fog.live);
         // The quads the last walk left; a closed gate runs no walk.
         f.fog_quads = if self.fog.gate {
@@ -952,6 +1116,35 @@ impl World {
             .iter()
             .filter(|p| !p.finished && p.state.move_substate == 4)
             .count() as u32;
+        for p in self
+            .ambient
+            .fx
+            .iter()
+            .filter(|p| !p.finished && p.state.move_substate == 5)
+        {
+            let Some(m) = super::ambient::pack_slot_of_model_sel(p.model_sel)
+                .and_then(|i| table.part_meshes.get(i))
+            else {
+                continue;
+            };
+            f.mesh_parts += 1;
+            f.mesh_part_objects += u32::from(m.objects);
+            f.mesh_part_groups += u32::from(m.groups);
+            for (k, n) in f.mesh_part_kinds.iter_mut().zip(m.kinds) {
+                *k += u32::from(n);
+            }
+        }
+        for p in self.ambient.fx.iter().filter(|p| {
+            !p.finished && legaia_engine_effects::effect_default_arm::is_default_arm(&p.state)
+        }) {
+            let (n, textured) =
+                legaia_engine_effects::effect_default_arm::default_arm_packet_count(&p.state);
+            f.default_arm_parts += 1;
+            f.default_arm_packets += n;
+            if textured {
+                f.default_arm_textured_packets += n;
+            }
+        }
         // The CLUT-cell cyclers that upload on this frame's tick: the arm runs
         // `FUN_80019D50` on a part whose gate `+0x9C` already reads past `1`
         // (the tick has not run yet, so the gate is the last tick's).
@@ -976,24 +1169,35 @@ impl World {
     }
 }
 
-/// What a field frame the clip's polls load costs on PCSX-Redux, in
-/// thousandths of its work: the frame's CPU time over its time outside the CD
-/// interrupt. Two `autorun_field_cd_trace.lua` recordings (breakpoint core)
-/// price each frame of a voice line from the frame end's `VSync(n)` return
-/// (`0x800171C8`) to the CPU-done `VSync(1)` (`0x800174CC`), every CD
-/// interrupt from the exception vector to the response dispatcher's exit
-/// (`0x8005DB74`): `garmel` `P2[12]` (Zeto's appearance, from
-/// `chapter2_garmel_pre_zeto`) reads `3.34` over 85 frames and record 14
-/// (his defeat, from `garmel_zeto_defeat_pre_line`) `3.36` over 62, against
-/// the battle's `3.1` ([`legaia_engine_battle_loop::frame_clock::XA_POLL_COST_RATIO_MILLI`]).
-pub const FIELD_XA_POLL_COST_RATIO_MILLI: u32 = 3340;
+/// The CD interrupt time a field vsync takes on PCSX-Redux while a clip's
+/// one-shot read runs, in hblanks. Three `autorun_field_cd_trace.lua`
+/// recordings (breakpoint core) price each frame from the frame end's
+/// `VSync(n)` return (`0x800171C8`) to the CPU-done `VSync(1)`
+/// (`0x800174CC`) and every CD interrupt from the exception vector to the
+/// response dispatcher's exit (`0x8005DB74`): `garmel` `P2[12]` (Zeto's
+/// appearance, from `chapter2_garmel_pre_zeto`), record 14 (his defeat, from
+/// `garmel_zeto_defeat_pre_line`) and `rugi` `P2[72]` (the flight in, from
+/// `juui1_vortex_exit_flash`) all read `167` a vsync of the frame, whatever
+/// the frame's work.
+pub const FIELD_XA_CD_HBLANKS_PER_VSYNC: u32 = 167;
+
+/// The CPU time past the stretched work a loaded frame spends, in hblanks:
+/// the traces' mean CPU time less `work * 263 / (263 - 167)` is `258`
+/// (Zeto's appearance, `443`-hblank frames), `251` (his defeat, `410`) and
+/// `280` (rugi, `737`), about one vsync's worth. A single ratio cannot hold
+/// both: the appearance's `3.32` overprices rugi's frames by `8` per cent,
+/// enough to tip its `9`-vsync frames to `10`.
+pub const FIELD_XA_CD_FRAME_HBLANKS: u32 = 263;
 
 /// What a field frame of `work` hblanks costs while the clip's polls load it
-/// on PCSX-Redux ([`FIELD_XA_POLL_COST_RATIO_MILLI`]), at least the battle's
-/// floor ([`legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST`]).
+/// on PCSX-Redux: the work runs in the `263 - 167` hblanks each vsync leaves
+/// it ([`FIELD_XA_CD_HBLANKS_PER_VSYNC`]), plus
+/// [`FIELD_XA_CD_FRAME_HBLANKS`], at least the battle's floor
+/// ([`legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST`]).
 pub const fn field_xa_loaded_frame_cost(work: u16) -> u16 {
     let floor = legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST;
-    let c = (work as u32 * FIELD_XA_POLL_COST_RATIO_MILLI + 500) / 1000;
+    let free = 263 - FIELD_XA_CD_HBLANKS_PER_VSYNC;
+    let c = (work as u32 * 263 + free / 2) / free + FIELD_XA_CD_FRAME_HBLANKS;
     if c > u16::MAX as u32 {
         u16::MAX
     } else if c < floor as u32 {
@@ -1062,6 +1266,7 @@ mod tests {
             npc_spawns: Vec::new(),
             npc_prims_through: Vec::new(),
             player: None,
+            part_meshes: Vec::new(),
             decoration_geoms: Vec::new(),
         }));
         assert_eq!(w.field_frame_features(), None, "no view published");

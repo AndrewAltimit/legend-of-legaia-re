@@ -171,6 +171,7 @@ fn every_dispatch_arm_installs_what_the_port_decodes() {
     };
     let mut rng = Rng(0x4153_4554);
     let mut arms = [0u32; 0x18];
+    let mut reinstalled = 0;
     for round in 0..6_000 {
         let ty = if rng.below(4) == 0 {
             rng.below(0x18) as u8
@@ -212,6 +213,13 @@ fn every_dispatch_arm_installs_what_the_port_decodes() {
             if let Some(g) = install_global(ty) {
                 cpu.mem.wr32(g, 0);
             }
+        }
+        // A type-0xB buffer already installed is freed before the new one
+        // is allocated (`0x8001F580..0x8001F598`); the port's install
+        // replaces the old body.
+        let stale = (ty == 0xB && rng.below(2) == 0).then_some(0x801F_8000);
+        if let Some(p) = stale {
+            cpu.mem.wr32(0x8007_B840, p);
         }
         assert_eq!(
             cpu.call(DISPATCH, &[SRC, header, 0, u32::from(raw)]),
@@ -313,6 +321,14 @@ fn every_dispatch_arm_installs_what_the_port_decodes() {
                 assert_eq!(cpu.mem.rd32(ERROR_WORD), 0, "{ctx}");
             }
             _ => {
+                if let Some(p) = stale {
+                    assert_eq!(
+                        h.frees.first(),
+                        Some(&p),
+                        "{ctx}: the old buffer is freed first"
+                    );
+                    reinstalled += 1;
+                }
                 let global = install_global(ty).expect("a buffer type");
                 let p = cpu.mem.rd32(global);
                 assert_eq!(p, h.blocks[0].0, "{ctx}: installed pointer");
@@ -331,6 +347,7 @@ fn every_dispatch_arm_installs_what_the_port_decodes() {
         }
     }
     assert!(arms.iter().all(|&n| n > 30), "{arms:?}");
+    assert!(reinstalled > 30, "{reinstalled}");
 }
 
 #[test]

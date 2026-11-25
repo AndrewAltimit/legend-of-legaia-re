@@ -369,7 +369,7 @@ impl World {
         if entry == 918
             && let Some(d) = direction
         {
-            self.apply_kemaro_writes(ctx.phase, !d.hold, victim_slot);
+            self.apply_kemaro_writes(ctx.phase, !d.hold, caster_slot, victim_slot);
         }
         if entry == 917
             && let Some(d) = direction
@@ -2272,16 +2272,9 @@ impl World {
                 .get(usize::from(caster_slot))
                 .and_then(|a| a.battle_monster_id)
                 .unwrap_or(0);
-            let cue = match (phase_entry, id) {
-                (1, 4..=6) => Some(0x1D),
-                (1, 0x43..=0x45) => Some(0x137),
-                (1, 0x90..=0x92) => Some(0x155),
-                (2, 4..=6) => Some(0x1C),
-                (2, 0x43..=0x45) => Some(0x138),
-                (2, 0x90..=0x92) => Some(0x18B),
-                _ => None,
-            };
-            if let Some(cue) = cue {
+            let id = u8::try_from(id).unwrap_or(0);
+            if let Some(cue) = legaia_engine_cast::cast_module_camera::steal_voice(phase_entry, id)
+            {
                 let category = self.retail_actor_category(caster_slot);
                 self.route_battle_cue(cue, category);
             }
@@ -2312,8 +2305,11 @@ impl World {
             }
             // The same pass turns the victim onto the creature
             // (`jal 0x80019B28` at `0x801F756C`, `sh v0,0x46(s2)`), which is what
-            // case 8's dead-target yaw reads through arm 12.
+            // case 8's dead-target yaw reads through arm 12. A Stoned victim
+            // takes neither the hit nor the turn (`andi 4` / `bne` at
+            // `0x801F7494..0x801F749C`).
             if (entry, phase_entry) == (903, 11)
+                && !self.battle.actor_is_petrified(victim_slot)
                 && let Some((cz, cx)) = self
                     .actors
                     .get(usize::from(seat_slot))
@@ -2359,6 +2355,8 @@ impl World {
                 p.release_loop_window();
             }
         }
+        // The pass's one-vsync ticks still owed after this one.
+        let rest = self.casting.module_cam.countdown.1;
         // PROT 0903's settle arm breaks the creature up on every pass: `+0x1BA += 2 *
         // frame * scalar` on seat 7 (`0x801F76A4..0x801F76C4`, past the
         // countdown's jump-in like the rate store), the dissolve the settle
@@ -2370,16 +2368,21 @@ impl World {
             a.battle.shatter = a
                 .battle
                 .shatter
-                .wrapping_add(ticks_a::GIMARD_SHATTER_STEP_PER_TICK);
+                .wrapping_add(ticks_a::gimard_shatter_add(ctx.phase != phase_in, rest));
         }
         // PROT 0925's outcome arm breaks the creature up on every pass,
-        // held or not, ahead of its countdown gate.
+        // held or not, ahead of its countdown gate: the pass's whole
+        // `step << 3`, so the tick the arm leaves on adds the rest of its
+        // pass's (`spikefish_shatter_add`).
         if entry == SPIKEFISH_ENTRY
             && phase_in == legaia_engine_cast::cast_module_ticks::SPIKEFISH_OUTCOME_ARM
             && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
         {
             a.battle.shatter = a.battle.shatter.wrapping_add(
-                legaia_engine_cast::cast_module_ticks::SPIKEFISH_SHATTER_STEP_PER_TICK,
+                legaia_engine_cast::cast_module_ticks::spikefish_shatter_add(
+                    ctx.phase != phase_in,
+                    rest,
+                ),
             );
         }
         // PROT 0908's arm 12 shatters the monsters the finisher killed, on

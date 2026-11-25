@@ -786,27 +786,40 @@ impl FieldActors {
     }
 
     /// Per catalog entry: `1` = the actor cull hides it this frame under the
-    /// visible-tile crop `cells` ([`legaia_engine_world_views::field_view_window::npc_actor_visible`],
-    /// the gate the native window's NPC pass asks). Empty while no crop
+    /// visible-tile crop `cells` ([`legaia_engine_world_views::field_view_window::npc_actor_visible`])
+    /// or the draw walk's near reject drops it at retail's vantage `vantage`
+    /// ([`legaia_engine_world_views::field_view_window::npc_near_rejected`]):
+    /// the two gates the native window's NPC pass asks. Empty while neither
     /// applies.
     pub fn culled(
         &self,
         host: &SceneHost,
         cells: Option<&legaia_engine_scene::field_view_window::ViewCells>,
+        vantage: bool,
     ) -> Vec<u8> {
-        let (Some(n), Some(_)) = (self.npcs.as_ref(), cells) else {
+        let Some(n) = self.npcs.as_ref() else {
             return Vec::new();
         };
+        if cells.is_none() && !vantage {
+            return Vec::new();
+        }
         n.pack
             .entries
             .iter()
             .map(|e| {
+                let slot = e.placement.index as u8;
+                let spawn = (e.placement.world_x, e.placement.world_z);
                 u8::from(
                     !legaia_engine_world_views::field_view_window::npc_actor_visible(
                         &host.world,
                         cells,
-                        e.placement.index as u8,
-                        (e.placement.world_x, e.placement.world_z),
+                        slot,
+                        spawn,
+                    ) || legaia_engine_world_views::field_view_window::npc_near_rejected(
+                        &host.world,
+                        vantage,
+                        slot,
+                        spawn,
                     ),
                 )
             })

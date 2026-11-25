@@ -293,6 +293,15 @@ pub struct MinigameState {
     /// The tutorial frame the last dance tick produced (captions / options /
     /// cursor seats), for a host's draw list.
     pub dance_tutorial_frame: Option<legaia_engine_minigames::dance_tutorial::TutorialFrame>,
+    /// The how-to hall's game-frame grid while the lesson parks it (state
+    /// `2`): vsyncs since the hall's last frame there, `0` on a frame.
+    pub dance_park_phase: u8,
+    /// The face-button edges pressed since the lesson's last frame, which its
+    /// next frame reads (the pad word `_DAT_8007B874` is built once a frame).
+    pub dance_tutorial_pad: u16,
+    /// The lesson actor has run once: the hall's first frame spawns it and
+    /// its handler first runs the frame after.
+    pub dance_tutorial_started: bool,
     /// SFX cue ids the minigame sessions queued this frame (the fishing hub's
     /// and point exchange's blips). Drained by
     /// `World::drain_minigame_sfx_cues`; cosmetic.
@@ -444,6 +453,9 @@ impl MinigameState {
             dance_pending_bgm: None,
             dance_tutorial: None,
             dance_tutorial_frame: None,
+            dance_park_phase: 0,
+            dance_tutorial_pad: 0,
+            dance_tutorial_started: false,
             pending_sfx: Vec::new(),
             dance_hud_art_staged: false,
             dance_venue: None,

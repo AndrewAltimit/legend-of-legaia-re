@@ -4315,6 +4315,7 @@
     "gte",
     "battle_cost",
     "branch_cov",
+    "branch_flip",
     "field_units",
     "frame_runner",
     "ledger",

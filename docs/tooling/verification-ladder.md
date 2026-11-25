@@ -81,7 +81,10 @@ differential runs is on the site's landing page, refreshed by
 How much of each routine the tests drive is
 [branch coverage](retail-kernel-differential.md#branch-coverage), a report
 over the ported arms with every arm left out carrying a scope row and its
-reason. One form of the rung reaches further up: the shadow walks
+reason. Whether a test then compares what a taken arm did is
+[checked arms](retail-kernel-differential.md#checked-arms), a mutation
+measurement that flips one branch on retail's side and asks whether a test
+fails; it is a measurement, not a gate. One form of the rung reaches further up: the shadow walks
 ([the summon band shadow](retail-kernel-differential.md#the-summon-band-shadow),
 [the tick-body walk](retail-kernel-differential.md#the-tick-body-walk)) run a
 whole cast module beside the engine's own `World` and compare every pass, which

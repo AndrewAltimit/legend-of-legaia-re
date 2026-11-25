@@ -1690,9 +1690,14 @@ The two arms carry per-code behaviour worth pinning:
   for the spreadsheet's `0x4C` "hit effect" constant the word at
   `0x801F6454` is zero, so `FUN_80050ED4` stages a part from a NULL record
   and no authored visual exists for it. Code `0` substitutes `9` when the
-  active actor's `+0x1D9` reads `0x11`; code `0x7F` terminates. Spawn scale
-  is `0x1000` except code `4` (`0xC00`) and code `6` (`0x2000`), all
-  modulated by the actor's mesh-header `+0x72` scale. Codes `0xA` / `0x2D` /
+  active actor's `+0x1D9` reads `0x11`; code `0x7F` terminates. The spawn
+  scale is a running value the arm keeps in `s7` for the whole call: seeded
+  `0x1000` once ahead of the record loop (`0x801DEC74`; the loop's back edge
+  lands at `0x801DEC88`), reloaded with `0xC00` by code `4` and `0x2000` by
+  code `6`, and multiplied by the actor's mesh-header `+0x72` over `0x1000`
+  by every table record, which keeps the product (`move s7,a3` at
+  `0x801DF168`). Under a node scale other than unity a call's second table
+  spawn is therefore scaled twice. Codes `0xA` / `0x2D` /
   `0x2E` additionally store the spawned part at `ctx[+0x1028]` and the
   record's raw XYZ at `ctx[+0x1184..+0x1188]` (the follow-the-actor handle
   below); codes `4..=6` spawn two extra parts from the fixed prototypes
@@ -1767,7 +1772,7 @@ Engine port: kernel `action_effect_script` (in `crates/engine-effects`) (stepper
 terminator maths, `RetailRotationLut`), driven per battle frame by
 `World::tick_battle_animations`; spawn requests drain via
 `World::drain_battle_effect_spawns` and route into the effect pool (direct
-form) / `World::spawn_action_table_effect` (table form), and the drain queues the table arm's `0x801F6418` CLUT stage under the retail `< 0x32` gate. The table spawn carries the arm's pose and scale (`action_fx_base_scale`: `0xC00` for code 4, `0x2000` for code 6, times the mesh-header `+0x72`) and the two twin records for codes `4..=6` (`engine-core` `world/effects/move_fx.rs`). The terminator's `ctx[+0x1014]` / `+0x1144` block is consumed by the afterimage streak (`action_effect_script::MoveFxStreak`) and the homing slots.
+form) / `World::spawn_action_table_effect` (table form), and the drain queues the table arm's `0x801F6418` CLUT stage under the retail `< 0x32` gate. The table spawn carries the arm's pose and its running scale (`action_effect_script::table_effect_scale`, computed in record order by `step_effect_script`) and the two twin records for codes `4..=6` (`engine-core` `world/effects/move_fx.rs`). The terminator's `ctx[+0x1014]` / `+0x1144` block is consumed by the afterimage streak (`action_effect_script::MoveFxStreak`) and the homing slots.
 
 Not modelled: the prologue's follow-the-actor re-seat (`BattleEffectSpawn` carries no raw-offset channel, and a staged scene is not identified back to its record).
 

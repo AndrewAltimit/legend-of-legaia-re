@@ -185,8 +185,19 @@ pub fn v_windhash_camera(
             st.countdown.add(1 << 6);
         }
         3 => {
+            // Retail's pass drains the whole `scalar * step` and aims on what
+            // is left, off the blade the pass opened on
+            // (`0x801F70C4..0x801F7104`, the bearing at `0x801F7100`): every
+            // tick of the pass reads the pass's end word and the blade
+            // stands until the pass's last tick stores it.
+            let rest = st.countdown.1;
             let held = st.countdown.drain_above(0);
-            let cd = st.countdown.0;
+            let cd = if held {
+                st.countdown.0 - SPEED_SCALAR * i32::from(rest)
+            } else {
+                st.countdown.0
+            };
+            let closes = !held || rest == 0;
             let bearing =
                 bearing_12bit_approx(v.z, v.x, blade[1], blade[0]).wrapping_add(0x800) & 0xFFF;
             let (s, co) = trig12(bearing);
@@ -207,8 +218,11 @@ pub fn v_windhash_camera(
                 focus,
                 frames: 1,
             });
-            *blade = [focus[0].wrapping_neg(), focus[2].wrapping_neg()];
-            arm.pass_spawns = trail(blade[0], blade[1], c.facing as i16, None);
+            let point = [focus[0].wrapping_neg(), focus[2].wrapping_neg()];
+            if closes {
+                *blade = point;
+            }
+            arm.pass_spawns = trail(point[0], point[1], c.facing as i16, None);
             // The trail sits on the focus the pass's whole drain leaves.
             arm.spawns_at_pass_end = true;
             if held {
@@ -223,10 +237,14 @@ pub fn v_windhash_camera(
         4 => {
             let bearing = bearing_12bit_approx(v.z, v.x, c.z, c.x).wrapping_add(0x800) & 0xFFF;
             let (s, co) = trig12(bearing);
-            // `sra 6` after `addiu 0x3F` on a negative product: one tick is
-            // one frame delta here.
-            blade[0] = blade[0].wrapping_add(s / 64);
-            blade[1] = blade[1].wrapping_add(co / 64);
+            // `sra 6` after `addiu 0x3F` on the product with the frame step
+            // (`0x801F752C..0x801F7594`): the pass's whole run, moved on the
+            // tick that opens it.
+            if st.opens_pass || st.frame_step <= 1 {
+                let step = i32::from(st.frame_step.max(1));
+                blade[0] = blade[0].wrapping_add((i32::from(s) * step / 64) as i16);
+                blade[1] = blade[1].wrapping_add((i32::from(co) * step / 64) as i16);
+            }
             arm.pass_spawns = trail(blade[0], blade[1], bearing as i16, None);
             // The point the pass's whole walk leaves.
             arm.spawns_at_pass_end = true;

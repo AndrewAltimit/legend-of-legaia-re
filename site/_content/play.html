@@ -60,18 +60,22 @@
   font-size: 0.7rem; color: var(--text-dim); padding-top: 0.4rem; line-height: 1.5;
 }
 
-/* Boot-mode presets. */
-.play-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.6rem; }
-.play-mode {
-  text-align: left; background: var(--bg-card); border: 1px solid var(--border);
-  padding: 0.7rem 0.8rem; cursor: pointer; color: var(--text);
-  display: flex; flex-direction: column; gap: 0.25rem;
+/* The dock: one row of buttons above the picture, each opening its panel
+   (scenes, saves, expansion pack, controls) under the row. One panel at a
+   time, none by default, so the picture keeps the page's full width. */
+.play-dock { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+.play-dock-btn {
+  background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
+  padding: 0.38rem 0.75rem; cursor: pointer; font-size: 0.82rem; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 0.3rem;
   transition: border-color var(--transition), background var(--transition);
 }
-.play-mode:hover:not([disabled]) { border-color: var(--accent); background: var(--bg-raised); }
-.play-mode[disabled] { opacity: 0.45; cursor: not-allowed; }
-.play-mode.is-active { border-color: var(--accent); background: var(--accent-soft); }
-.play-mode-name { font-weight: 600; font-size: 0.92rem; }
+.play-dock-btn::after { content: "\25BE"; font-size: 0.7em; color: var(--text-dim); }
+.play-dock-btn:hover { border-color: var(--accent); background: var(--bg-raised); }
+.play-dock-btn[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.play-dock-btn[aria-expanded="true"]::after { content: "\25B4"; }
+.play-dock-panels > .play-card { margin-bottom: 0.8rem; }
+.play-dock-panels > .play-card[hidden] { display: none; }
 /* Expansion packs are the port's own, still-moving feature: every place
  * the page offers one says so. */
 .play-experimental {
@@ -81,14 +85,9 @@
   font-family: var(--font-mono); font-size: 0.62rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.04em; vertical-align: middle;
 }
-.play-mode-desc { color: var(--text-muted); font-size: 0.76rem; line-height: 1.45; }
-.play-mode-tag {
-  font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-dim);
-  text-transform: uppercase; letter-spacing: 0.04em;
-}
 
-/* Stage: canvas + side rail. */
-.play-stage { display: grid; grid-template-columns: 1fr 320px; gap: 1rem; align-items: start; }
+/* Stage: the canvas column, full width (the panels live in the dock above it). */
+.play-stage { display: grid; grid-template-columns: 1fr; gap: 1rem; align-items: start; }
 /* The canvas column scrolls with the page: the cheats, battle tools and
    button rows under the canvas sit in the same column, and a column pinned
    under the topbar would hold them below the fold for good once a
@@ -103,11 +102,23 @@
   margin-inline: auto;
 }
 @media (max-width: 980px) {
-  .play-stage { grid-template-columns: 1fr; }
   .play-viewport .play-canvas-wrap { max-width: none; margin-inline: 0; }
 }
 
 .play-canvas-wrap { position: relative; }
+.play-canvas-wrap .play-rules-seed { position: absolute; z-index: 5; margin: 0; }
+.play-rules-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75em; margin: 0.5em 0; }
+.play-rules-touch-hint { display: none; flex-basis: 100%; margin: 0; text-align: center; font-size: 0.9em; opacity: 0.85; }
+.play-rules-buttons.with-touch-hint .play-rules-touch-hint { display: block; }
+.play-rules-buttons button {
+  font: inherit; padding: 0.35em 1.1em; color: #f0d070; background: rgba(8, 12, 30, 0.88);
+  border: 1px solid #c8a040; border-radius: 4px; cursor: pointer;
+}
+.play-canvas-wrap .play-rules-seed input {
+  width: 100%; height: 100%; box-sizing: border-box; margin: 0; padding: 0 0.3em;
+  background: rgba(8, 12, 30, 0.92); color: #e8e8e8; border: 1px solid #c8a040;
+  font-family: ui-monospace, monospace; outline: none;
+}
 /* `?embed=1` (the minigames page's arena): the picture alone, filling the
  * frame it is embedded in. */
 /* No topbar is drawn here, so none of its height is reserved
@@ -318,13 +329,12 @@ body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
 }
 .play-hud b { color: var(--text-dim); font-weight: 500; }
 
-.play-rail { display: flex; flex-direction: column; gap: 0.8rem; }
 .play-card { border: 1px solid var(--border); background: var(--bg-card); padding: 0.6rem 0.7rem; }
-/* The Controls card is a <details>: its summary is the card heading, with
-   the disclosure marker the summary draws by default. */
-.play-keys-card > summary { cursor: pointer; }
-.play-keys-card > summary h3 { display: inline; }
-.play-keys-card[open] > summary { margin-bottom: 0.5rem; }
+/* A dock panel spans the page, so the key list runs in two pairs of columns. */
+@media (min-width: 760px) {
+  .play-dock-panels .play-keys { grid-template-columns: auto 1fr auto 1fr; }
+  .play-dock-panels .play-keys kbd { justify-self: start; }
+}
 .play-keys-actions { margin-bottom: 0.5rem; }
 .play-pad-line { margin: 0 0 0.5rem; font-size: 0.9em; color: var(--text-dim); }
 .play-card h3 {
@@ -345,7 +355,11 @@ body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
   border: 1px solid var(--border); padding: 0.3rem 0.45rem;
   font-family: var(--font-mono); font-size: 0.78rem; margin-bottom: 0.4rem;
 }
-.play-scene-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; }
+.play-scene-list {
+  max-height: 340px; overflow-y: auto; display: grid; column-gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); align-content: start;
+}
+.play-scene-list > .play-scene-group { grid-column: 1 / -1; }
 .play-scene-item {
   display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline;
   background: none; border: none; border-bottom: 1px solid var(--border);
@@ -486,7 +500,7 @@ div.play-vis-head { cursor: default; }
   <p class="lede">
     Walk around inside <em>Legend of Legaia</em>, in this browser, on your own copy of the game.
     This is the project's from-scratch rewrite of the game engine compiled to WebAssembly - not a
-    video and not an emulator. Pick your disc image, choose New Game or a town, and take the controls.
+    video and not an emulator. Pick your disc image and the game boots to its title card; take the controls from there.
     The whole game plays, New Game to the credits - towns, battles, menus, minigames, saves - with the
     occasional bug; the <a href="#what-works">list below</a> says what works and what is still rough. To play the original
     with mods instead, patch your disc with the <a href="tooling/rom-patcher.html">ROM patcher</a>
@@ -525,21 +539,90 @@ div.play-vis-head { cursor: default; }
          ports, which is what the SLOT 1 / SLOT 2 pills are. -->
     <div id="play-card-rack" class="play-card-rack" style="display: none;"></div>
 
-    <div class="play-modes" id="play-modes" style="display: none;">
-      <button class="play-mode" type="button" data-mode="newgame">
-        <span class="play-mode-tag">boot</span>
-        <span class="play-mode-name">New game</span>
-        <span class="play-mode-desc">The real title card off your disc's own art, then the opening
-          prologue - the narrated tableaux in their sepia grade (Z or Space skips ahead, as on the
-          console) - ending at the naming prompt. Continue loads a save from an inserted memory
-          card. Idle on the title for 25 seconds, at the prompt or on the menu, and the attract movie plays, as on the console.</span>
-      </button>
-      <button class="play-mode" type="button" data-mode="scene">
-        <span class="play-mode-tag">explore</span>
-        <span class="play-mode-name">Scene picker</span>
-        <span class="play-mode-desc">Drop into any town or field map on the disc and walk it. The
-          best-supported mode - click here, then pick a place from the Scenes list.</span>
-      </button>
+    <!-- The dock: Scene picker, Saves, Expansion pack and Controls, one row
+         above the picture. A disc load boots New Game on its own; each
+         button opens its panel under the row, one at a time. -->
+    <div class="play-dock" id="play-modes" role="toolbar" aria-label="Play panels" style="display: none;">
+      <button class="play-dock-btn" type="button" data-panel="scene" aria-expanded="false" aria-controls="play-scene-card"
+              title="Drop into any town, field or dungeon on the disc and walk it.">Scene picker</button>
+      <button class="play-dock-btn" type="button" data-panel="saves" aria-expanded="false" aria-controls="play-saves-card"
+              title="Export the running session, or import a .lgsf / memory-card save.">Saves</button>
+      <button class="play-dock-btn" type="button" data-panel="expansion" aria-expanded="false" aria-controls="play-expansion-card"
+              title="Install and enable an expansion pack (experimental, incomplete).">Expansion pack</button>
+      <button class="play-dock-btn" type="button" data-panel="keys" aria-expanded="false" aria-controls="play-keys-card"
+              title="The keyboard and controller bindings, the stick dead zone and the key reset.">Controls</button>
+    </div>
+    <div class="play-dock-panels" id="play-dock-panels">
+      <div class="play-card" id="play-scene-card" data-panel="scene" hidden>
+        <h3 id="play-scene-title">Scenes</h3>
+        <input type="search" id="play-scene-search" class="play-scene-search"
+               placeholder="Filter…" autocomplete="off">
+        <div class="play-scene-list" id="play-scene-list"></div>
+      </div>
+
+      <div class="play-card" id="play-saves-card" data-panel="saves" hidden>
+        <h3>Saves</h3>
+        <div class="play-btn-row">
+          <button id="save-export" type="button" disabled>Export save</button>
+        </div>
+        <label class="play-save-import">Import save (.lgsf / memory card)
+          <input type="file" id="save-import" accept=".lgsf,.mcr,.mcd,.srm,.gme,.mcs" disabled>
+        </label>
+        <div class="play-save-status" id="save-status">Load a disc to export or import saves.</div>
+      </div>
+
+      <div class="play-card" id="play-expansion-card" data-panel="expansion" hidden>
+        <h3>Expansion pack <span class="play-experimental">experimental, incomplete</span></h3>
+        <label class="play-save-import">Install another pack (.lxpack, or drop one on this card)
+          <input type="file" id="expansion-import" accept=".lxpack" disabled>
+        </label>
+        <div class="play-lib" id="expansion-library" aria-label="Installed packs"></div>
+        <div class="play-btn-row">
+          <button id="expansion-unload" type="button" disabled
+                  title="Turn the expansion pack off: the game as it shipped. The pack's progress stays in your saves.">Disable</button>
+          <button id="play-back-to-title" type="button" disabled
+                  title="Leave the running game for the title card, where New Game and Continue play with the pack now enabled (or with none).">Back to title</button>
+        </div>
+        <div class="play-save-status" id="expansion-status" aria-live="polite">Load a disc first. Off by default. Expansion packs are experimental and incomplete: enabling one adds its maps and custom game modes to the Scenes list, and New Game and Continue play with it.</div>
+      </div>
+
+      <div class="play-card play-keys-card" id="play-keys-card" data-panel="keys" hidden>
+        <h3>Controls</h3>
+        <div class="play-btn-row play-keys-actions">
+          <button type="button" id="play-keys-reset"
+                  title="Put every key and controller button back to its default binding - the way out if a Key Config rebind left you without a way into the menu (the native legaia-engine config reset).">Reset keys and buttons</button>
+          <label class="play-volume" title="Stick dead zone: how far a controller's left stick moves before it walks or moves a cursor (the native launcher's Stick dead zone row, persisted with the other options). Higher ignores a worn stick's drift.">
+            Stick dead zone <input type="range" id="play-stick-dead-zone" min="20" max="80" step="10" value="50">
+            <span id="play-stick-dead-zone-value">50%</span>
+          </label>
+        </div>
+        <p class="play-pad-line">Controller: <span id="play-pad-status">No controller (press a button on one)</span></p>
+        <div class="play-keys" id="play-keys">
+          <kbd data-key="ArrowUp">&uarr;&darr;&larr;&rarr;</kbd><span>Walk (camera-relative)</span>
+          <kbd data-key="KeyW">W A S D</kbd><span>Walk, same as the arrows</span>
+          <kbd data-key="KeyZ">Z</kbd><span>Talk / confirm (Cross)</span>
+          <kbd data-key="KeyX">X</kbd><span>Cancel (Circle)</span>
+          <kbd data-key="KeyC">C</kbd><span>Triangle (opens the pause menu, the original game's menu button)</span>
+          <kbd data-key="KeyV">V</kbd><span>Square (reel harder while fishing)</span>
+          <kbd data-key="Enter">Enter</kbd><span>Start (opens the pause menu too; Space is Start as well)</span>
+          <kbd data-key="ShiftRight">R-Shift</kbd><span>Select</span>
+          <kbd data-key="KeyQ">Q</kbd><span>L1</span>
+          <kbd data-key="KeyE">E</kbd><span>R1</span>
+          <kbd data-key="Digit1">1</kbd><span>L2</span>
+          <kbd data-key="Digit2">2</kbd><span>R2</span>
+          <kbd>`</kbd><span>Game modes (Tab or ` in a room: the room screen)</span>
+          <kbd>\</kbd><span>Card menu, with a pack that has cards</span>
+          <kbd>Drag</kbd><span>Swing / tilt the camera (locked during cutscenes)</span>
+          <kbd>Wheel</kbd><span>Zoom in / out</span>
+          <kbd>Dbl-click</kbd><span>Reset the camera to retail framing</span>
+          <kbd>F11</kbd><span>Fullscreen on / off, as the Fullscreen button</span>
+          <kbd>Touch</kbd><span>On-screen pad over the picture: the Touch pad button shows or hides it</span>
+          <kbd>Pad</kbd><span>A controller plays by position (bottom Cross, right Circle, left Square, top Triangle); the left stick walks. Every connected pad drives the player</span>
+          <kbd>Pad rebind</kbd><span>Pause menu, Options, Select: Key Config takes a key or a controller button on each row</span>
+          <!-- The host hotkeys, listed from the engine's own table
+               (`host_hotkeys_json`) once a runtime is up. -->
+        </div>
+      </div>
     </div>
 
     <div class="play-stage" id="play-stage" style="display: none;">
@@ -1032,79 +1115,6 @@ div.play-vis-head { cursor: default; }
         </details>
       </div>
 
-      <div class="play-rail">
-        <div class="play-card" id="play-scene-card">
-          <h3 id="play-scene-title">Scenes</h3>
-          <input type="search" id="play-scene-search" class="play-scene-search"
-                 placeholder="Filter…" autocomplete="off">
-          <div class="play-scene-list" id="play-scene-list"></div>
-        </div>
-
-        <div class="play-card" id="play-saves-card">
-          <h3>Saves</h3>
-          <div class="play-btn-row">
-            <button id="save-export" type="button" disabled>Export save</button>
-          </div>
-          <label class="play-save-import">Import save (.lgsf / memory card)
-            <input type="file" id="save-import" accept=".lgsf,.mcr,.mcd,.srm,.gme,.mcs" disabled>
-          </label>
-          <div class="play-save-status" id="save-status">Load a disc to export or import saves.</div>
-        </div>
-
-        <div class="play-card" id="play-expansion-card">
-          <h3>Expansion pack <span class="play-experimental">experimental, incomplete</span></h3>
-          <label class="play-save-import">Install another pack (.lxpack, or drop one on this card)
-            <input type="file" id="expansion-import" accept=".lxpack" disabled>
-          </label>
-          <div class="play-lib" id="expansion-library" aria-label="Installed packs"></div>
-          <div class="play-btn-row">
-            <button id="expansion-unload" type="button" disabled
-                    title="Turn the expansion pack off: the game as it shipped. The pack's progress stays in your saves.">Disable</button>
-          </div>
-          <div class="play-save-status" id="expansion-status" aria-live="polite">Load a disc first. Off by default. Expansion packs are experimental and incomplete: enabling one adds its maps and custom game modes to the Scenes list, and New Game and Continue play with it.</div>
-        </div>
-
-        <!-- Collapsed by default: the key list is long and most visitors only
-             need it once. The open / closed choice is remembered per
-             browser (`play-controls-open`). -->
-        <details class="play-card play-keys-card" id="play-keys-card">
-          <summary><h3>Controls</h3></summary>
-          <div class="play-btn-row play-keys-actions">
-            <button type="button" id="play-keys-reset"
-                    title="Put every key and controller button back to its default binding - the way out if a Key Config rebind left you without a way into the menu (the native legaia-engine config reset).">Reset keys and buttons</button>
-            <label class="play-volume" title="Stick dead zone: how far a controller's left stick moves before it walks or moves a cursor (the native launcher's Stick dead zone row, persisted with the other options). Higher ignores a worn stick's drift.">
-              Stick dead zone <input type="range" id="play-stick-dead-zone" min="20" max="80" step="10" value="50">
-              <span id="play-stick-dead-zone-value">50%</span>
-            </label>
-          </div>
-          <p class="play-pad-line">Controller: <span id="play-pad-status">No controller (press a button on one)</span></p>
-          <div class="play-keys" id="play-keys">
-            <kbd data-key="ArrowUp">&uarr;&darr;&larr;&rarr;</kbd><span>Walk (camera-relative)</span>
-            <kbd data-key="KeyW">W A S D</kbd><span>Walk, same as the arrows</span>
-            <kbd data-key="KeyZ">Z</kbd><span>Talk / confirm (Cross)</span>
-            <kbd data-key="KeyX">X</kbd><span>Cancel (Circle)</span>
-            <kbd data-key="KeyC">C</kbd><span>Triangle (opens the pause menu, the original game's menu button)</span>
-            <kbd data-key="KeyV">V</kbd><span>Square (reel harder while fishing)</span>
-            <kbd data-key="Enter">Enter</kbd><span>Start (opens the pause menu too; Space is Start as well)</span>
-            <kbd data-key="ShiftRight">R-Shift</kbd><span>Select</span>
-            <kbd data-key="KeyQ">Q</kbd><span>L1</span>
-            <kbd data-key="KeyE">E</kbd><span>R1</span>
-            <kbd data-key="Digit1">1</kbd><span>L2</span>
-            <kbd data-key="Digit2">2</kbd><span>R2</span>
-            <kbd>`</kbd><span>Game modes (Tab or ` in a room: the room screen)</span>
-            <kbd>\</kbd><span>Card menu, with a pack that has cards</span>
-            <kbd>Drag</kbd><span>Swing / tilt the camera (locked during cutscenes)</span>
-            <kbd>Wheel</kbd><span>Zoom in / out</span>
-            <kbd>Dbl-click</kbd><span>Reset the camera to retail framing</span>
-            <kbd>F11</kbd><span>Fullscreen on / off, as the Fullscreen button</span>
-            <kbd>Touch</kbd><span>On-screen pad over the picture: the Touch pad button shows or hides it</span>
-            <kbd>Pad</kbd><span>A controller plays by position (bottom Cross, right Circle, left Square, top Triangle); the left stick walks. Every connected pad drives the player</span>
-            <kbd>Pad rebind</kbd><span>Pause menu, Options, Select: Key Config takes a key or a controller button on each row</span>
-            <!-- The host hotkeys, listed from the engine's own table
-                 (`host_hotkeys_json`) once a runtime is up. -->
-          </div>
-        </details>
-      </div>
     </div>
   </div>
 </section>
@@ -1127,8 +1137,9 @@ div.play-vis-head { cursor: default; }
     pages here, and never uploaded.
   </p>
   <p>
-    <strong>Three ways in.</strong> <em>New game</em> runs the title card and prologue.
-    <em>Scene picker</em> drops you straight into any town, field or dungeon. You arrive where the game's own doors land you: a town's gate from the world map, a
+    <strong>Three ways in.</strong> The title card and New Game start on their own once the disc is read
+    (the expansion panel's <em>Back to title</em> returns there).
+    <em>Scene picker</em>, in the row above the picture, opens the Scenes list and drops you straight into any town, field or dungeon. You arrive where the game's own doors land you: a town's gate from the world map, a
     dungeon's door from the room before it; the few scenes no door leads into (Rim Elm, which the
     game itself starts in Vahn's yard, and some cutscene-only maps) start at a standable spot
     inside the map instead. Where the story opens a scene on a cutscene - a town's welcome, a
@@ -1461,33 +1472,46 @@ div.play-vis-head { cursor: default; }
     else enter(b.dataset.scene);
   });
 
-  document.getElementById('play-modes').addEventListener('click', (e) => {
-    const b = e.target.closest('.play-mode');
+  /* Boot chain: show the retail title card (New Game / Continue) off the
+   * disc's own title art, then run the prologue cutscene chain (falling
+   * back to Rim Elm directly if the cutscene scene fails to enter).
+   *
+   * Continue and Options are live rows: the engine routes them to the
+   * retail save-select and options screens (the shared pause-menu rows),
+   * and a Continue that loads a card block ends the title with
+   * 'loaded'. What happens next is the engine's (`onTitleOutcome`).
+   *
+   * A New Game supersedes whatever started before it: the running
+   * scene's loop stops (the title owns the screen until its outcome
+   * enters the opening) and any start still in flight is torn down. A disc
+   * load runs it, and so does the expansion panel's Back to title. */
+  function bootNewGameTitle() {
+    if (!runtime) return;
+    supersedeStarts();
+    if (view) { try { view.stop(); } catch (e) {} }
+    runBootTitle(onTitleOutcome);
+  }
+  /* For the web benches (frame-bench-web, movie-timeline-web): a fresh title. */
+  window.__playBootNewGame = bootNewGameTitle;
+  document.getElementById('play-back-to-title').addEventListener('click', bootNewGameTitle);
+
+  /* The dock: each button opens its panel and closes the others; a second
+   * press closes it. The Scene picker also shows the stage, so the list can
+   * be used before anything has booted. */
+  function setDockPanel(name) {
+    for (const b of modesEl.querySelectorAll('.play-dock-btn')) {
+      b.setAttribute('aria-expanded', b.dataset.panel === name ? 'true' : 'false');
+    }
+    for (const c of document.querySelectorAll('#play-dock-panels > [data-panel]')) {
+      c.hidden = c.dataset.panel !== name;
+    }
+  }
+  modesEl.addEventListener('click', (e) => {
+    const b = e.target.closest('.play-dock-btn');
     if (!b) return;
-    for (const el of modesEl.querySelectorAll('.play-mode')) el.classList.remove('is-active');
-    b.classList.add('is-active');
-    if (b.dataset.mode === 'newgame') {
-      /* Boot chain: show the retail title card (New Game / Continue) off the
-       * disc's own title art, then run the prologue cutscene chain (falling
-       * back to Rim Elm directly if the cutscene scene fails to enter).
-       *
-       * Continue and Options are live rows: the engine routes them to the
-       * retail save-select and options screens (the shared pause-menu rows),
-       * and a Continue that loads a card block ends the title with
-       * 'loaded'. What happens next is the engine's (`onTitleOutcome`).
-       *
-       * A New Game supersedes whatever started before it: the running
-       * scene's loop stops (the title owns the screen until its outcome
-       * enters the opening) and any start still in flight is torn down. */
-      if (!runtime) return;
-      supersedeStarts();
-      if (view) { try { view.stop(); } catch (e) {} }
-      runBootTitle(onTitleOutcome);
-    } else {
-      /* The scene list lives inside #play-stage, which starts hidden. Reveal
-       * the stage so the picker is visible and selectable without first
-       * booting a scene via New Game. The canvas stays blank until a scene is
-       * chosen from the list. */
+    const name = b.getAttribute('aria-expanded') === 'true' ? null : b.dataset.panel;
+    setDockPanel(name);
+    if (name === 'scene') {
       showStage();
       searchEl.focus();
     }
@@ -1499,7 +1523,7 @@ div.play-vis-head { cursor: default; }
    * is not copied into wasm memory (a cached bundle without the export gets
    * the whole of it). */
   /* The first scene entry's one-time work that reads nothing a scene or a save
-   * decides, done while the page sits at "Pick a boot mode": the renderer's
+   * decides, done while the page sits on a linked start (a plain load boots New Game): the renderer's
    * shaders and the menu assets. A pick that beats the idle callback builds
    * them where it always did. */
   let prewarmedRenderer = null;
@@ -1550,9 +1574,10 @@ div.play-vis-head { cursor: default; }
        * so a consumer can read a named file - an XA voice bank, a movie -
        * without the engine holding a second copy of the image. */
       const count = await disc.loadInto(runtime);
-      prog.done(`${count} PROT entries. Pick a boot mode.`);
-      statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
-      modesEl.style.display = 'grid';
+      prog.done(`${count} PROT entries. Starting a New Game.`);
+      statusEl.textContent = `Disc loaded (${count} PROT entries). Starting a New Game.`;
+      modesEl.style.display = 'flex';
+      document.getElementById('play-back-to-title').disabled = false;
       window.__playRuntime = runtime;
       if (typeof window.__playListHotkeys === 'function') window.__playListHotkeys(runtime);
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
@@ -1571,6 +1596,10 @@ div.play-vis-head { cursor: default; }
        * portrait faces + card icons now that WASM + disc bytes are available. */
       renderSavesStrip();
       installXaBanks();
+      /* A plain load boots New Game, the default way in; a link that names
+       * its own start (a minigame, a cast, a resumed session) takes that
+       * instead. The Scene picker button is the other way in. */
+      const bootNewGame = !minigamePending && !castPending && !resumePending;
       /* ?minigame=<sub_id>: open that minigame once the disc is up. */
       if (minigamePending) startPendingMinigame();
       /* ?cast=<spell>: open a battle and cast it once the disc is up. */
@@ -1582,7 +1611,11 @@ div.play-vis-head { cursor: default; }
         if (entry) resumeSession(entry);
         else saveMsg('The session in the resume link is no longer in this browser.', true);
       }
-      prewarmFirstEntry(runtime);
+      if (bootNewGame) {
+        bootNewGameTitle();
+      } else {
+        prewarmFirstEntry(runtime);
+      }
     } catch (err) {
       const msg = String(err.message || err);
       /* The loader's own refusal: `load_disc: ...` is a file with no game in it. */
@@ -2138,14 +2171,6 @@ div.play-vis-head { cursor: default; }
     };
     const pulse = new Set();
     const onKey = (e) => {
-      /* On the New Game rules screen, Tab types a randomizer seed (the pad
-       * row rolls one). */
-      if (handoff === 'rules' && e.code === 'Tab') {
-        e.preventDefault();
-        const seed = window.prompt('Randomizer seed');
-        if (seed) { try { runtime.play_run_rules_set_seed(seed); } catch (err) { console.warn(err); } }
-        return;
-      }
       if (!PAD || PAD[e.code] === undefined) return;
       /* Typing in the scene search (or any field) is not a pad press. */
       const t = e.target;
@@ -2156,11 +2181,132 @@ div.play-vis-head { cursor: default; }
     window.addEventListener('keydown', onKey);
     canvas.focus();
     let torn = false;
+    /* The rules screen's seed text box: an HTML input laid over the seed
+     * editor's text line while the editor is up, so a keyboard (or a phone's
+     * own keyboard) types the seed; the letter grid under it still answers
+     * the pad, a controller and the touch pad. Its text is the engine's
+     * (`play_run_rules_seed_input` filters it), Enter takes the seed and
+     * Escape drops the edit. */
+    let seedBox = null;
+    let seedForm = null;
+    const syncSeedBox = (editing) => {
+      if (!editing) {
+        if (seedForm) { seedForm.remove(); seedForm = null; seedBox = null; canvas.focus(); }
+        return;
+      }
+      const wrap = menuCanvas.parentElement;
+      if (!seedForm) {
+        /* A form, so Enter submits it: the text box reads no key of its own
+         * but Escape. */
+        seedForm = document.createElement('form');
+        seedForm.className = 'play-rules-seed';
+        seedBox = document.createElement('input');
+        seedBox.type = 'text';
+        seedBox.maxLength = 20;
+        seedBox.spellcheck = false;
+        seedBox.autocomplete = 'off';
+        seedBox.enterKeyHint = 'done';
+        seedBox.setAttribute('aria-label', 'Randomizer seed');
+        seedForm.appendChild(seedBox);
+        seedBox.addEventListener('input', () => {
+          try {
+            runtime.play_run_rules_seed_input(seedBox.value);
+            const t = runtime.play_run_rules_seed_text();
+            if (t !== seedBox.value) seedBox.value = t;
+          } catch (err) { console.warn(err); }
+        });
+        seedForm.addEventListener('submit', (e) => {
+          e.preventDefault();
+          try { runtime.play_run_rules_seed_close(true); } catch (err) { console.warn(err); }
+        });
+        seedBox.addEventListener('keydown', (e) => {
+          if (e.code !== 'Escape') return;
+          e.preventDefault();
+          e.stopPropagation();
+          try { runtime.play_run_rules_seed_close(false); } catch (err) { console.warn(err); }
+        });
+        try { seedBox.value = runtime.play_run_rules_seed_text(); } catch (err) {}
+        wrap.appendChild(seedForm);
+        seedBox.focus();
+        seedBox.select();
+      } else if (document.activeElement !== seedBox) {
+        /* The grid typed: show it. */
+        try {
+          const t = runtime.play_run_rules_seed_text();
+          if (t !== seedBox.value) seedBox.value = t;
+        } catch (err) {}
+      }
+      /* Over the editor's text line, in the canvas's CSS pixels. */
+      let r = null;
+      try { r = runtime.play_run_rules_seed_rect(menuCanvas.width, menuCanvas.height); } catch (err) { r = null; }
+      if (r && r.length === 4) {
+        const cr = menuCanvas.getBoundingClientRect();
+        const wr = wrap.getBoundingClientRect();
+        const kx = cr.width / menuCanvas.width, ky = cr.height / menuCanvas.height;
+        seedForm.style.left = (cr.left - wr.left + r[0] * kx) + 'px';
+        seedForm.style.top = (cr.top - wr.top + r[1] * ky) + 'px';
+        seedForm.style.width = (r[2] * kx) + 'px';
+        seedForm.style.height = (r[3] * ky) + 'px';
+        seedBox.style.fontSize = Math.max(10, r[3] * ky * 0.7) + 'px';
+      }
+    };
+    /* Touch and mouse on the rules screen: a tap on the canvas goes to the
+     * engine, which resolves it from the layout it draws (a tab, a row, a
+     * value's arrows, a window's choice, a seed cell); Begin and Back are
+     * buttons under the canvas. Both queue for the next frame. */
+    const rulesTaps = [];
+    const wrapEl = menuCanvas.parentElement;
+    const onRulesTap = (e) => {
+      if (handoff !== 'rules') return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'BUTTON')) return;
+      const cr = menuCanvas.getBoundingClientRect();
+      if (e.clientX < cr.left || e.clientY < cr.top || e.clientX >= cr.right || e.clientY >= cr.bottom) return;
+      rulesTaps.push({
+        x: Math.floor((e.clientX - cr.left) * menuCanvas.width / cr.width),
+        y: Math.floor((e.clientY - cr.top) * menuCanvas.height / cr.height),
+      });
+      e.preventDefault();
+    };
+    wrapEl.addEventListener('pointerdown', onRulesTap);
+    let rulesButtons = null;
+    const syncRulesButtons = (open) => {
+      if (!open) {
+        if (rulesButtons) { rulesButtons.remove(); rulesButtons = null; }
+        return;
+      }
+      if (rulesButtons) {
+        /* The on-screen pad covers the canvas's foot, where the key hint
+         * is drawn: while it is shown, the bar carries the touch hint. */
+        const pad = wrapEl.querySelector('.touch-pad');
+        rulesButtons.classList.toggle('with-touch-hint', !!pad && !pad.classList.contains('is-hidden'));
+        return;
+      }
+      rulesButtons = document.createElement('div');
+      rulesButtons.className = 'play-rules-buttons';
+      const hint = document.createElement('p');
+      hint.className = 'play-rules-touch-hint';
+      hint.textContent = 'Tap a tab or a row; tap left or right of a value to change it.';
+      rulesButtons.appendChild(hint);
+      for (const [label, button] of [['Back', 'back'], ['Begin', 'begin']]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.addEventListener('click', (e) => { e.preventDefault(); rulesTaps.push({ button }); });
+        rulesButtons.appendChild(b);
+      }
+      /* Under the canvas, not over it: the touch pad's buttons own its
+       * edges. */
+      wrapEl.after(rulesButtons);
+    };
     const teardownTitle = () => {
       if (torn) return;
       torn = true;
       if (bootTitleRAF) cancelAnimationFrame(bootTitleRAF);
       bootTitleRAF = 0;
+      syncSeedBox(false);
+      syncRulesButtons(false);
+      wrapEl.removeEventListener('pointerdown', onRulesTap);
       window.removeEventListener('keydown', onKey);
       ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
       if (cancelBootTitle === cancelThis) cancelBootTitle = null;
@@ -2237,6 +2383,12 @@ div.play-vis-head { cursor: default; }
       const ticks = titleTicks();
       const edge = ticks > 0 ? titleEdge : 0;
       if (ticks > 0) titleEdge = 0;
+      /* Nearest-neighbour, as the in-game overlay (`play-view-overlay.js`)
+       * and the native window sample: a 2D canvas defaults to bilinear,
+       * which bleeds the neighbouring atlas cell's edge texels into every
+       * scaled glyph - a stray bar after each word of the rules, Continue
+       * and Options screens. Set per frame: resizing the canvas resets it. */
+      ctx.imageSmoothingEnabled = false;
       /* Publisher-logo stage: owns the frame until the sequencer finishes or
        * a Start / Cross edge skips it, then the title card opens. It runs the frame's ticks
        * (the stepper above) - the fade ramps are counted in
@@ -2316,18 +2468,38 @@ div.play-vis-head { cursor: default; }
         for (let i = 0; i < ticks && !step; i++) {
           try { step = runtime.play_run_rules_step(i === 0 ? edge : 0); } catch (e) { return finish('new_game'); }
         }
+        /* Taps and the Begin / Back buttons, queued by their handlers. */
+        while (!step && rulesTaps.length) {
+          const t = rulesTaps.shift();
+          try {
+            step = t.button
+              ? runtime.play_run_rules_button(t.button === 'begin')
+              : runtime.play_run_rules_tap(t.x, t.y, menuCanvas.width, menuCanvas.height);
+          } catch (e) { step = ''; }
+        }
+        syncRulesButtons(!step);
         let rd = null;
         try { rd = JSON.parse(runtime.play_run_rules_draws_json(menuCanvas.width, menuCanvas.height)); }
         catch (e) { rd = null; }
         ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
         if (rd && rd.open) {
+          /* Black past the stage, as the Continue and Options handoffs; then
+           * the backdrop rects, the menu windows off the chrome atlas (the
+           * pause menu's), and the labels. */
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
           for (const r of rd.rects) {
             ctx.fillStyle = 'rgba(' + r.rgba[0] + ',' + r.rgba[1] + ',' + r.rgba[2] + ',' + (r.rgba[3] / 255) + ')';
             ctx.fillRect(r.x, r.y, r.w, r.h);
           }
+          const cb = ensureChrome();
+          if (cb && rd.sprites) cb.blit(ctx, rd.sprites);
           const fr = ensureFont();
           if (fr) fr.blit(ctx, rd.texts);
         }
+        let editing = false;
+        try { editing = step === '' && runtime.play_run_rules_seed_editing(); } catch (e) { editing = false; }
+        syncSeedBox(editing);
         if (step === 'start') return finish('new_game');
         if (step === 'back') backToTitle();
         return;
@@ -2410,7 +2582,7 @@ div.play-vis-head { cursor: default; }
         catch (e) { opened = false; }
         if (opened) {
           handoff = 'rules';
-          statusEl.textContent = 'New Game rules. Up/Down picks a row, Left/Right changes it, Z on Start begins, X returns to the title, Tab types a randomizer seed.';
+          statusEl.textContent = 'New Game rules. Q/E switch tabs, Up/Down picks a row, Left/Right changes it, Z confirms, V resets the tab, Enter begins, X returns to the title. Z on the seed opens its editor, where the keyboard types. On a touch screen, tap a tab or a row, tap left or right of a value to change it, and use Begin and Back.';
           return;
         }
       }
@@ -4006,17 +4178,6 @@ div.play-vis-head { cursor: default; }
     saveMsg(err ? `Party: ${err}` : `Party set to ${spec}.`, !!err);
     canvas.focus();
   });
-  /* Controls card: collapsed for a first visit, then whatever the reader
-   * last left it at. Storage can throw (private window, blocked site data);
-   * the card then just opens collapsed. */
-  (() => {
-    const card = document.getElementById('play-keys-card');
-    const KEY = 'play-controls-open';
-    try { if (localStorage.getItem(KEY) === '1') card.open = true; } catch (_) { /* default */ }
-    card.addEventListener('toggle', () => {
-      try { localStorage.setItem(KEY, card.open ? '1' : '0'); } catch (_) { /* not remembered */ }
-    });
-  })();
   /* Reset keys: the engine's default layout back over a Key Config rebind
    * (`pad_bindings_reset`, the native `legaia-engine config reset`); the
    * running view re-reads the table through its revision counter. */

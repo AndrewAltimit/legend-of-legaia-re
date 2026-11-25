@@ -1,0 +1,52 @@
+# Arms that checked-arms.py found taken but unchecked because no port implements their effect.
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FB3C..0x8002FB3C"
+verdict = "unported"
+reason = "The reading box's border walk: the row loop's entry test over the style's tile records (0x8002FB2C..0x8002FC5C, the inner sprite loop already scoped). The port keeps the border as one footprint rect (dialog_window_footprint) that the host fills from its atlas nine-slice, so no Rust lays the rows; window_emitter compares the union bound"
+
+[[arm]]
+entry = "0x8002C69C"
+range = "0x8002FC5C..0x8002FC5C"
+verdict = "unported"
+reason = "The same border walk's row loop-back (s2 += row height; s2 < bottom): the per-row sprites the port does not emit, the host drawing the footprint from its atlas"
+
+[[arm]]
+entry = "0x801D6704"
+range = "0x801D6970..0x801D6970"
+verdict = "unported"
+reason = "The mode-entry init frees the previous scene heap block _DAT_8007BAF0 through FUN_8001763C when it is set, then clears the word; the engine allocates no PSX heap, so the port has no free to make"
+
+[[arm]]
+entry = "0x801DD35C"
+image = "4612e100f59ba766"
+range = "0x801E01D8..0x801E0254"
+verdict = "unported"
+reason = "The title tail's attract fade: under the entry word 0x8007BB00 and a page offset 0x801EF194 short of 0x1000, it scales the attract countdown 0x801EF16C (capped at 16) into a 0..0xFF shade and draws it through the overlay's own quad builders 0x801E02A4 / 0x801E0418; no Rust names those builders or the shade, so title_menu compares the sub-mode step only (port gap)"
+
+[[arm]]
+entry = "0x801DEA50"
+image = "0dcde6a277f4b4aa"
+range = "0x801DEA90..0x801DEAD4"
+verdict = "unported"
+reason = "The stepper's prologue over the tracked part handle ctx[+0x1028]: drop it once the part's +0x10 bit 3 retires it, and while the stepped actor is the active one re-seat the part at the actor with the stashed raw offset turned by the current facing. legaia_engine_effects::action_effect_script says the port has no carrier for it: its table spawns are seated once and never re-seated (port gap)"
+
+[[arm]]
+entry = "0x801DEA50"
+image = "0dcde6a277f4b4aa"
+range = "0x801DF1A0..0x801DF1B0"
+verdict = "unported"
+reason = "Codes 0xA / 0x2D / 0x2E install the tracked part handle at ctx[+0x1028] and the record's raw XYZ at ctx[+0x1184..+0x1188] for the prologue's re-seat; with no re-seat in the port (the prologue row above) the install has no reader (port gap)"
+
+[[arm]]
+entry = "0x80029DD8"
+range = "0x8002A33C..0x8002A364"
+verdict = "unported"
+reason = "The shatter primitive's packet emit after its RTPT: the switch on the template's kind bits picks which colour / UV / tpage words of the TMD packet to copy beside the projected SXYs. The port (render_kernels::shatter) hands the host the shattered vertices and leaves the packet to the host's mesh draw, so no Rust lays these words"
+
+[[arm]]
+entry = "0x80029DD8"
+range = "0x8002A4E4..0x8002A4E4"
+verdict = "unported"
+reason = "The shatter primitive's OT link window (AVSZ3's OTZ in 0xA1..0x3FFF, sltiu at 0x8002A4E0): render_kernels::shatter returns vertices only and nothing in the port applies this window to a shattered triangle, so it has no counterpart (port gap)"

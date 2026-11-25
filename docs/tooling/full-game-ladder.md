@@ -977,6 +977,17 @@ restoratives the bag holds beyond the boss's reserve and with no field cast
 heal that spent them before the walk traded fewer walk-in reloads for more
 of Cort's.
 
+The triples' cast is Death Game, and their deal is stacked: three of the four
+cards are "the victim falls". The player steers the pick whoever cast it, and
+the fighter follows the one good card through the shuffle and walks the pointer
+onto it. The pointer reads the pad once a pass, one tick of each two- or
+three-tick battle frame, so the fighter holds each press for four ticks: the
+one-tick press it gives a command window could miss that tick every frame. It
+did, until the engine built the pass's press from the held pad (see
+[the Death Game pad](../subsystems/cast-module.md#prot-0957-death-game)):
+read as the per-tick edge, a press that did not begin on the pass's own tick
+was lost, the pointer stood still, and the timer took the leftmost card.
+
 Running is not free: the escape roll is retail's (`FUN_801E791C`, party
 `1.5 x SPD` against the foes' `SPD`, both raised by missing HP), and one
 deal met a Puera triple with a string of failed runs that wiped a full
@@ -1939,7 +1950,9 @@ So the hand:
 - Casts when the turn's Miracle is out of reach and the best spell beats the member's swings (`race_spell_gain`): about ten per point of catalog power until a cast is measured, against presses at about seven tenths of ATK and any Arts hit measured this battle. A caster's magic level makes the difference: Gala's Kemaro takes about 2900, retail's level-25 party casts Aluru at 1500..1700 each. A race keeps no MP back and drinks the largest MP item while a cast is still to come.
 - Strikes with the Point Card whenever `min(bank, 9999)` off the shop-points bank beats the member's own turn (`wanted_point_card`, any fight that forbids running, [`item-effect-table.md`](../formats/item-effect-table.md)). The card goes back in the bag, so a run that has shopped opens Koru with a third to a half of its HP.
 - Hands out Power Elixirs from the opening round when a fifth of what a typist still has to deal beats the giver's own turn (`race_ramp_pays`). Each use ramps again, so Vahn's Miracle reaches about 5600.
-- Grows a Miracle wearer into a typist at the door of a race (`pad_grow_for_race`): one within 8 AGL of the 188 a Fury Boost needs for nine presses walks the scene's encounters before the hand dresses, since the dress plan reads who types. A dealt run met Koru with Vahn at AGL 185 and lost twelve times with Noa typing alone. A wearer further off (Gala) is left a caster. The growing keeps a third of the stretch's budget for the race, and that reserve bounds each outing as well as the start of one: an outing walks against a deadline a third short of the stretch's, and reaching it ends the growing, not the stretch. Two outings begun with the reserve in hand once spent all of `nivora_late -> zora_castle` on `nilboa`'s 6700-frame legs (dealt stream 13).
+- Grows a Miracle wearer into a typist at the door of a race (`pad_grow_for_race`): one within 8 AGL of the 188 a Fury Boost needs for nine presses walks the scene's encounters before the hand dresses, since the dress plan reads who types, and after a lost race one within 12 (about three levels). A dealt run met Koru with Vahn at AGL 185 and lost twelve times with Noa typing alone. A placed run met it with Vahn at 179, a caster, and its stretch took 1/9/5/7 reloads on four dealt streams from its own save, 0/2/0/6 grown from twelve off; grown from twelve off before the first race as well, the default stream, which wins it ungrown, took 2/0/4 reloads on three dealt streams from its own save where it took none. A wearer further off (Gala at 172) is left a caster.
+  The growing keeps a third of the stretch's budget for the race, and that reserve bounds each outing as well as the start of one: an outing walks against a deadline a third short of the stretch's, and reaching it ends the growing, not the stretch. Two outings begun with the reserve in hand once spent all of `nivora_late -> zora_castle` on `nilboa`'s 6700-frame legs (dealt stream 13).
+  Nor is an outing begun with the bag at its heal reserve (three heals a member): Koru's door has no bed or keeper behind it, and outings that spent the last restorative opened the race with the weakest member at 3 per mille and 1 MP, five reloads running (dealt stream 10).
   Its outings fight what they meet, as training does, though the walk is a boss's lead-in, where every other walk runs: a fled fight earns no EXP, and an outing that fled every encounter at Koru's door (Gala at AGL 181, walked props, dealt stream 15) spent the bag and the MP on fights it ran from and met the race at a third of its HP, twelve times.
 - Dresses at the door of a race (`race_goods_plan`, `race_ahead`): at the beat whose staged formation row seats Koru in the scene's formation table, or the beat a race was lost at (`RACE_LOST`). Met in the Goods the run chose, the race was lost on every dealt stream's first attempt, Koru at 2184..6684 of 20000 when Dead End Crisis landed.
   Dressed, each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where an undressed run has one.
@@ -1975,6 +1988,20 @@ member of the anchor's lv30 party - more than any member holds - and about
 half that in the Spirit stance. So once the shield has dropped, on the rounds
 the cast can come, every member above 55% of its HP takes Spirit; the others
 are the heal arm's, and the even rounds are the party's to act on.
+
+The evolved Cort (monster `0xB5`, `jouine` P2[5]'s fight) tells its heavy
+cast the same way a capture body does. Its pick arm casts Ultra Charge
+(`0xA5`) on itself one turn in four while it holds 200 MP and counts the phase
+word `DAT_801C8FE4` up; its next turn counts the word down and casts `0xB4` on
+the whole party, about 3100 a member at level 53, more than Noa's whole bar.
+On a round the word is up, a member the stance lets live and the cast would
+drop or leave within an eighth of it takes Spirit (`wants_cort_guard`; before
+the cast has landed once, every member above a quarter of its bar). Read as a
+plain cadence, the charge was invisible: Noa took the cast at full HP and fell
+to it on every charge, and the three Phoenixes the run carries in were spent
+by the third. Its other party-wide cast, `0xB6` (255 MP, about 2400 a
+member, on odd battle-mode rounds below half HP), comes unannounced and is
+the heal arm's.
 
 The shield also stops every plain swing whoever swings it (`FUN_801EC3E4`,
 `0x801ECA84..0x801ECAF8`, a clip below `0x10`), and an art passes at half damage.
@@ -2039,7 +2066,12 @@ the bag and its own spell list give it:
   compounds as in retail ([`item-effect-table.md`](../formats/item-effect-table.md#stat-up--buff-items-class-567)):
   a turn spent on a second ramp is a turn of the foe's swings with no Arts
   in it. A member whose Miracle string the
-  boosted pool pays for drinks a Fury Boost instead. Outside a duel the
+  boosted pool pays for drinks a Fury Boost first, and the Elixirs after
+  it: with the boost taken, the arm once handed the member none, and Vahn
+  fought Lu Delilas out of a bag of five Shield, five Power and two Wonder
+  Elixirs and lost with Lu at about 2000. Resumed from that stream's own
+  `nivora` save on four dealt streams, the duels' stretch took 0/0/0/0
+  reloads where it took 8/1/1/1. Outside a duel the
   Fury Boost and the attack Elixir wait for a foe of ten times the party's
   largest HP, or for a race against a timed finisher (Koru) whatever that
   HP is: Koru's 20000 is ten times a 1891-HP Gala but not a 2080-HP one in
@@ -2098,6 +2130,7 @@ A fight runs at least 60 000 ticks and goes on past that while a foe's HP is sti
 - **A press into an open menu waits for its windows to land** (`BootSession::field_menu_settled`): every menu screen reads nothing while a window slides, thirteen frames after a press that changes the screen ([field-menu.md](../subsystems/field-menu.md#the-window-slide-input-lock)), and the headless session runs that lock as the play hosts do. A heal pass that pressed into it read its own dropped Cross as an Items screen with nothing to use.
 - **An all-party restorative** (Healing Bloom, Magic Fruit) is confirmed on its party-wide confirm, which picks no row.
 - **A talk between boxes gets no Cross.** Nothing reads a confirm while a talk runs its ops, and in the retail-faithful mode (`WorldToggles::immediate_pad` off) a press reaches the field a frame late: one pressed while Tetsu's spar (`town01` P1[10]) ran the `21` past its `3E FF 04` landed after the talk had ended, on Tetsu, and re-entered the record at its loop head and menu.
+- **The art-learned notice gets Cross.** `49 09 00 <char> <art>`, after every scripted Hyper Art grant, opens the prompt screen while its talk parks on the op with no box open, the shape the rule above reads as a talk running its ops. Unpressed, `cave01` P1[2]'s notice after Noa's rest held every walk in the cave, each one ending a 3600-frame window as `Parked("dialogue at talk pc=0x0F92 op=0x49")`, and Drake Castle's book (`dolk2` P1[49]) every walk across its library; the `dolk2` examine at (11712, 10480) was placed because of it.
 - **The retail-faithful mode is played in game frames.** There the field reads the pad once a frame, latched at its end, and a frame is the two or three vsyncs the field frame-cost model prices. So the scripted-sequence Cross is held four ticks, not two, and a post-step wait ends on twelve idle ticks, not four: a two-frame gap in a system script's chain (`taiku`'s post-Koru `P2[27]`, `P2[12]`, `P2[29]`) is not the end. A pause menu's Start waits up to six ticks for the menu to open, a pad walk waits out a closing menu's exit hold before it takes its mode, and a walk interrupted by a fight waits out the battle-return hold (`World::field_init_hold`) before its stall test counts again. The default mode keeps the immediate pad and none of these waits.
 - **One-shot presses span a game frame there too.** The talk press, the seated talk's Cross, a box talk's lean steps and a stalled walk's action tap are held four ticks, with four released before each Cross (one tick each, and no extra release, in the default mode): `suimon`'s ferryman (P1[4]) and `dolk`'s door prop at (100, 53) took no one-tick press. The heal that follows a fight mid-walk closes its menu under the walk, and the walk waits out that exit hold as well (`map01` on the way to `izumi`). The beats pass also waits out a closing menu's hold before it reads the mode: the arrival pass's Best Equipment left `garmel` read as no field, and unplayed.
 

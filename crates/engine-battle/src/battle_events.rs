@@ -196,6 +196,10 @@ pub struct BattleEffectSpawn {
     /// heading un-turned, scale `0x1000` (`0x801E1204..0x801E1228`) - and
     /// becomes that slot's handle, the actor the flight drags.
     pub homing_slot: Option<u8>,
+    /// The table form's spawn scale the effect-script walk carried for this
+    /// record (`legaia_engine_effects::action_effect_script::table_effect_scale`);
+    /// `0x1000` for a flight spawn and the direct form.
+    pub table_scale: u16,
 }
 
 /// One **hit event** the attack band resolved this tick - the retail

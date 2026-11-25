@@ -190,7 +190,8 @@ pub fn sprite_arm_draw_row(
 /// keyframes, where the ordinary path would stack them on the node.
 ///
 /// A keyframe-mesh node without a seated pose block draws nothing (retail's
-/// renderer refuses a clip whose part count is not the list's). Any other
+/// renderer refuses a clip whose part count is not the list's), nor does one
+/// at render scale `0`. Any other
 /// sprite-arm node is the one quad of [`sprite_arm_draw`].
 ///
 /// PORT: FUN_8001ADA4 (`0x8001B160..0x8001B19C`, the `+0x5A == 6` hand-off
@@ -211,6 +212,11 @@ pub fn sprite_arm_draws_row(
     };
     if s.move_submode != 6 {
         return vec![base];
+    }
+    // The animated renderer draws nothing at render scale `0`
+    // (`beq v0,zero` at `0x8001B9A0`, past every part).
+    if s.field_72 == 0 {
+        return Vec::new();
     }
     const A: f32 = std::f32::consts::TAU / 4096.0;
     let k = f32::from(s.field_72) / 4096.0;

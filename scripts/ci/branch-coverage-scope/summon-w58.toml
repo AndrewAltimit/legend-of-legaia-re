@@ -1,0 +1,344 @@
+# Summon module images (PROT 0905..0934): arms out of scope, by image.
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F6AA8..0x801F6AA8"
+verdict = "unreachable"
+reason = "PROT 0933's phase dispatch bound (`sltiu 0x16` / `beqz` at 0x801F6AA4..0x801F6AA8): the module's one phase store is the shared `+1` (0x801F8614..0x801F8624), and its last arm 0x15 (0x801F8628) returns its busy word cleared (`sw zero,0x38(sp)` at 0x801F8710) without reaching it, so the phase never passes 0x15."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F6C04..0x801F6C04"
+verdict = "unreachable"
+reason = "PROT 0933 arm 0's row seating: the `bgez` is the rounding fix-up of `z / 4` on the formation seat's z (`lh 0x4` at 0x801F6BFC), and every row of the battle's monster seat tables (0x80077608, both families) holds z from 600 to 1400, so the negative side is never taken."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F7D58..0x801F7D70"
+verdict = "unreachable"
+reason = "PROT 0933 arm 0xC: the compiler's divide guards (`break` on a zero divisor, the `-1` / `0x80000000` overflow test) around the row height's `/ n` (`div v1,s5` at 0x801F7D54), where `n` counts the monster seats with HP as the loop opens on each (`beqz` on `+0x14C` at 0x801F7C80 skips the count's `addiu s5` at 0x801F7D0C): the module's only damage roll is inside that loop (`jal 0x801DD0AC` at 0x801F7CCC), so a summon cast on a living monster reaches it with `n` at least 1, never 0 or -1."
+
+[[arm]]
+entry = "0x801F6A58"
+image = "24d82884a97bcd51"
+range = "0x801F6AC4..0x801F6AC4"
+verdict = "unreachable"
+reason = "PROT 0931's phase dispatch bound (`sltiu 0x20` / `beqz` at 0x801F6AC0..0x801F6AC4): the module's one phase store is the shared `+1` (0x801F88B4..0x801F88C4), and its last arm 31 clears its busy register (`clear s7` at 0x801F8988) and returns without reaching it, so the phase never passes 31."
+
+[[arm]]
+entry = "0x801F69FC"
+image = "a949b76d721e2b2f"
+range = "0x801F6BA4..0x801F6BA4"
+verdict = "unreachable"
+reason = "PROT 0929's phase dispatch: `beq v1,0xff` is reached only by a phase of 0x13 or more (`slti 0x13` at 0x801F6B74) that is not 0x13 (0x801F6B9C). The module stores only `+1` (0x801F71C4, 0x801F728C, 0x801F7334, 0x801F7B0C, 0x801F7CE8, 0x801F8544, 0x801F8904, the last in arm 0x12) and 0xFF (arm 0x13's exit, 0x801F8A6C), so the only phase past 0x13 is 0xFF, which takes it."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F7F14..0x801F8148"
+verdict = "unported"
+reason = "PROT 0916 arm 0x11's five band links: each `bgez` is the rounding fix-up of `ctx[+0x6D0] >> 3`, the ordering-table slot the band packet links at (`FUN_8003D2C4` at 0x801F7F2C..0x801F8160). The port draws the bands over the finished scene (`render_kernels::cast_aluru`, disclosed), not at the framing depth's slot; the packets themselves are compared against `aluru_band_prims` in the summon walk."
+
+[[arm]]
+entry = "0x801F69F8"
+image = "7aed4667c1e04dda"
+range = "0x801F82E0..0x801F852C"
+verdict = "unported"
+reason = "PROT 0916 arms 0x12 / 0x13's five band links: the same `ctx[+0x6D0] >> 3` ordering-table slot fix-ups as arm 0x11's (0x801F82E0..0x801F852C). The port draws the bands over the finished scene (`render_kernels::cast_aluru`, disclosed); the packets are compared against `aluru_band_prims` in the summon walk."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F6A6C..0x801F6A6C"
+verdict = "unreachable"
+reason = "PROT 0925's phase dispatch bound (`sltiu 0xA` / `beqz` at 0x801F6A68..0x801F6A6C): the module's phase stores are `+1` alone (0x801F6C34..0x801F6C40, 0x801F7A8C..0x801F7A9C), and its last arm 9 clears its busy register (`clear s6` at 0x801F7AA0) without storing one, so the phase never passes 9."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F7660..0x801F76B4"
+verdict = "unreachable"
+reason = "PROT 0925: the compiler's divide guards (`break` on a zero divisor, the `-1` / `0x80000000` overflow test) around the two `/ ctx[+0]` of the party centroid (`div` at 0x801F765C and 0x801F7698): `ctx[+0]` is the battle's party count, 1 to 3 in any fight, never 0 or -1."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F76D4..0x801F76D4"
+verdict = "unreachable"
+reason = "PROT 0925: the empty-party skip (`beqz` on `ctx[+0]` at 0x801F76D4) ahead of a loop over the party seats: `ctx[+0]` is the battle's party count, at least 1 in any fight."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F77AC..0x801F77AC"
+verdict = "unreachable"
+reason = "PROT 0925: the empty-party skip (`beqz` on `ctx[+0]` at 0x801F77AC) ahead of a loop over the party seats: `ctx[+0]` is the battle's party count, at least 1 in any fight."
+
+[[arm]]
+entry = "0x801F6A00"
+image = "5451429ed5818ca0"
+range = "0x801F795C..0x801F795C"
+verdict = "unreachable"
+reason = "PROT 0925 arm 8's flee: the empty-party skip (`beqz` on `ctx[+0]` at 0x801F795C) ahead of the loop that stands each downed member up on 1 HP: `ctx[+0]` is the battle's party count, at least 1 in any fight."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6A88..0x801F6A88"
+verdict = "unreachable"
+reason = "PROT 0919's phase dispatch: `beqz s2` is reached only by a phase under 2 (`slti 2` at 0x801F6A7C) that is not 1 (`beq s2,1` at 0x801F6A78), so by phase 0 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6AA0..0x801F6AA0"
+verdict = "unreachable"
+reason = "PROT 0919's phase dispatch: `beq s2,3` is reached only by a phase from 2 to 4 (`slti 5` at 0x801F6A6C) that is neither 4 (0x801F6A68) nor 2 (0x801F6A98), so by phase 3 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6AC8..0x801F6AC8"
+verdict = "unreachable"
+reason = "PROT 0919's phase dispatch: `beq s2,6` is reached only by a phase from 5 to 7 (`slti 8` at 0x801F6AB4) that is neither 7 (0x801F6AB0) nor 5 (0x801F6AC0), so by phase 6 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "a906a582cd44f8eb"
+range = "0x801F6AE4..0x801F6AE4"
+verdict = "unreachable"
+reason = "PROT 0919's phase dispatch: `beq s2,0xff` is reached only by a phase past 8 (0x801F6ADC). The module stores only `+1` (0x801F6F78..0x801F6F88, the shared tail) and 0xFF (arm 8's exit, 0x801F8534..0x801F853C), so the only phase past 8 is 0xFF, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F6AC0..0x801F6AC0"
+verdict = "unreachable"
+reason = "PROT 0915's phase dispatch: `beqz v1` is reached only by a phase under 2 (`slti 2` at 0x801F6AB4) that is not 1 (`beq v1,1` at 0x801F6AB0), so by phase 0 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F6B30..0x801F6B30"
+verdict = "unreachable"
+reason = "PROT 0915's phase dispatch: `beq v1,0xff` is reached only by a phase past 0xD (`slt 0xd` at 0x801F6B20, `beq 0xd` at 0x801F6B1C). The module stores only `+1` (the shared tail 0x801F7DA8..0x801F7DB8, which arm 0xD's code at 0x801F7DBC..0x801F7ED0 never jumps to) and 0xFF (arm 0xD's exit, 0x801F7EC8..0x801F7ED0), so the only phase past 0xD is 0xFF, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9e9d52ef03115e27"
+range = "0x801F6A8C..0x801F6A8C"
+verdict = "unreachable"
+reason = "PROT 0920's phase dispatch: `beq v1,s8` (`s8 = 1`, 0x801F6A18) is reached only by a phase under 3 (`slti 3` at 0x801F6A78) that is neither 2 (0x801F6A74) nor 0 (0x801F6A84), so by phase 1 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9e9d52ef03115e27"
+range = "0x801F6AA8..0x801F6AA8"
+verdict = "unreachable"
+reason = "PROT 0920's phase dispatch: `beq v1,4` is reached only by a phase from 3 to 5 (`slti 6` at 0x801F6A68, `slti 3` at 0x801F6A78) that is neither 5 (0x801F6A60) nor 3 (0x801F6AA0), so by phase 4 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "9e9d52ef03115e27"
+range = "0x801F6AD4..0x801F6AD4"
+verdict = "unreachable"
+reason = "PROT 0920's phase dispatch: `beq v1,7` is reached only by a phase from 6 to 8 (`slti 9` at 0x801F6AC0) that is neither 8 (0x801F6ABC) nor 6 (0x801F6ACC), so by phase 7 alone, which takes it."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "af0b90e2d32e7187"
+range = "0x801F6ACC..0x801F6ACC"
+verdict = "unreachable"
+reason = "PROT 0908's phase dispatch: `beq v1,1` is reached only by a phase under 3 (`slti 3` at 0x801F6AB8) that is neither 2 (0x801F6AB4) nor 0 (0x801F6AC4), so by phase 1 alone, which takes it."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F76D4..0x801F76D4"
+verdict = "unreachable"
+reason = "PROT 0933 arm 9's orbit radius: the `bgez` is the rounding fix-up of `cos(a) * z'` (`mult` at 0x801F76BC), where `z'` is the seat z its arm 0 copied less 0x613 (0x801F6C9C) and `a = ratan2(z', x)`. Every monster seat of both families stands at z from 600 to 1400, so `z'` and the product are negative on every seat (`terras_orbit_products_keep_their_sign_on_every_seat` reads both off SCUS's own ratan2 and tables)."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F76E8..0x801F76E8"
+verdict = "unreachable"
+reason = "PROT 0933 arm 9's orbit radius: the `abs` of `cos(a) * z' >> 12` (`bgez` / `subu` at 0x801F76E8..0x801F76F0), negative on every seat of both seat families for the reason the fix-up at 0x801F76D4 gives."
+
+[[arm]]
+entry = "0x801F6A30"
+image = "deb83ea0adb14f24"
+range = "0x801F7A54..0x801F7A54"
+verdict = "unreachable"
+reason = "PROT 0933 arm 0xB's orbit radius: the same `cos(a) * z'` rounding fix-up as arm 9's 0x801F76D4 (`mult` at 0x801F7A3C over the arm 0 copy), negative on every seat of both seat families."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F744C..0x801F744C"
+verdict = "unreachable"
+reason = "PROT 0936's rounding fix-up of `word / 4` on its growth word 0x801F8178 (`lw` / `bgez` at 0x801F7444..0x801F744C): the word's stores are the zero at 0x801F72F4 and the adds of `scalar * step` (0x801F7528) and `(scalar * step) / 4` (0x801F7894), both of unsigned bytes, so it never goes negative."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "681c6ba817ae9361"
+range = "0x801F779C..0x801F779C"
+verdict = "unreachable"
+reason = "PROT 0936's second read of the growth word 0x801F8178 (`lw` / `bgez` at 0x801F7794..0x801F779C), non-negative for the reason the fix-up at 0x801F744C gives."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "bad3acf3fffd9928"
+range = "0x801F6AA0..0x801F6AA0"
+verdict = "unreachable"
+reason = "PROT 0903's phase dispatch: the `beq v1,t3` (t3 = 1) at 0x801F6AA0 is reached only for a phase below 3 that is neither 2 (0x801F6A88) nor 0 (0x801F6A98), so it is always 1 and never falls to the default `j 0x801F76E8`."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "bad3acf3fffd9928"
+range = "0x801F6B10..0x801F6B10"
+verdict = "unreachable"
+reason = "PROT 0903's phase dispatch bound: past 12 (0x801F6AFC..0x801F6B04) only `0xFF` has an arm. The module's phase stores are the shared `+1` (0x801F7390..0x801F73A0, 0x801F7474..0x801F7478) up to arm 12 and arm 12's `0xFF` (0x801F7698), so no phase from 13 to 0xFE is ever stored."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "bad3acf3fffd9928"
+range = "0x801F6C98..0x801F6C98"
+verdict = "unported"
+reason = "PROT 0903 arm 2's wait on the creature's CD stream: once its countdown is out the arm holds until the CD word 0x8007BDB0 reads 7 (0x801F6D14..0x801F6D1C), and a countdown already spent as the arm re-enters takes the `blez`. The engine holds the creature resident and reads the stream as loaded, so the arm never waits past its countdown."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "bad3acf3fffd9928"
+range = "0x801F6D1C..0x801F6D1C"
+verdict = "unported"
+reason = "PROT 0903 arm 2's test of the CD word 0x8007BDB0 against the creature stream's 7 (0x801F6D14..0x801F6D1C): the engine holds the creature resident, so the stream is always read as loaded (see 0x801F6C98)."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7A28..0x801F7A28"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`, `mult` at 0x801F7A10), the `/ 8` of the pitch ramp stored at 0x801F7A70. Both bytes are unsigned, so the product is at most `0xFE01` and never negative, and the fix-up `addiu a1,a1,0x7` never runs."
+
+[[arm]]
+entry = "0x801CF098"
+image = "facd000dd17cc885"
+range = "0x801CF0DC..0x801CF0FC"
+verdict = "unported"
+reason = "PROT 0970's play loop retries `CdSearchFile` on the movie's path while `0x8007B8C2` is non-zero and returns `0` once it is clear (0x801CF0D0..0x801CF0FC). The engine opens each movie off the disc image by its ISO path (`psx_iso::iso9660::find_path_in_image`), with no drive to miss it, so there is no search to retry."
+
+[[arm]]
+entry = "0x801CF098"
+image = "facd000dd17cc885"
+range = "0x801CF228..0x801CF250"
+verdict = "unported"
+reason = "PROT 0970's play loop re-seeks the file's first sector while the first pump comes back empty (`-1`, 0x801CF220..0x801CF250): a CD read that has not filled the ring after the pump's 0x7D0 polls. The engine feeds the ring from the disc image a sector at a time (`StrPlayer::deliver_sector`), so a pump only idles until more sectors are fed (`PumpIdle::NeedSectors`) and there is no stall to recover from."
+
+[[arm]]
+entry = "0x801CF098"
+image = "facd000dd17cc885"
+range = "0x801CF360..0x801CF3B8"
+verdict = "unported"
+reason = "PROT 0970's mid-movie stall recovery: a pump that comes back empty re-seeks `StGetBackloc`'s sector, or the file's first when that frame is past the slot's `+0x0C` or not positive (0x801CF358..0x801CF3BC). The engine reads the movie off the disc image with no drive to stall (see 0x801CF228)."
+
+[[arm]]
+entry = "0x801CF56C"
+image = "9ffaf7ec915df0d6"
+range = "0x801CF590..0x801CF5A0"
+verdict = "unported"
+reason = "PROT 0970's slice callback runs the `St` library's deferred demux (`FUN_8005F024`) when a sector came in while the MDEC was busy (`0x801CADA4`, 0x801CF588..0x801CF5A0). The engine's ring takes each sector as the host delivers it (`StrPlayer::deliver_sector`), so no demux is ever deferred."
+
+[[arm]]
+entry = "0x801CF56C"
+image = "9ffaf7ec915df0d6"
+range = "0x801CF604..0x801CF624"
+verdict = "unreachable"
+reason = "PROT 0970's slice callback: the compiler's divide guards (`break 7` on a zero divisor, the `-1` / `0x80000000` overflow test) round the leading column's `w % slice_w` (`div` at 0x801CF600). The divisor is the slice width `ctx+0x30`, which only the context init stores, as 0x10 or 0x18 (0x801CF94C..0x801CF958); the frame poll leaves it alone."
+
+[[arm]]
+entry = "0x801CF8B0"
+image = "8de763d58af1724c"
+range = "0x801CF8FC..0x801CF8FC"
+verdict = "unported"
+reason = "PROT 0970's context init builds the code buffers and resets the toggles only on a residency's first movie (`0x801D0D4C == 1`, cleared at 0x801CF930); a later movie in the same overlay load keeps them. The port has no globals to preserve and builds a complete context on every open (`DecodeEnv::init`, disclosed)."
+
+[[arm]]
+entry = "0x801CF8B0"
+image = "8de763d58af1724c"
+range = "0x801CF968..0x801CF968"
+verdict = "unported"
+reason = "PROT 0970's context init starts the slice cursor on the frame rect `ctx+0x28` names (0x801CF960..0x801CF984): on a residency's first movie the toggle is reset to 0, and only a later movie can keep the other rect, which the port's whole-context init does not model (see 0x801CF8FC)."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F6CCC..0x801F6CCC"
+verdict = "unreachable"
+reason = "PROT 0918's prologue loads its victim only for a seat target code (`sltiu 8` / `beq` at 0x801F6CC8..0x801F6CCC). Kemaro strikes one monster, so the cast reaches the module with the caster's `+0x1DD` on that monster's seat and never on a group code 8 or 9."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7138..0x801F718C"
+verdict = "unreachable"
+reason = "PROT 0918 arm 4's step of the part `0x801F92C4` holds: the word's one store is arm 0's zero (`sw zero,-0x6d3c` at 0x801F6EA8), and the image holds zero there, so the `beq a0,zero` at 0x801F7138 is always taken and the `slti -0x800` clamp behind it never runs. The handles the module keeps sit at `0x801F92C8..0x801F92D4`."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F765C..0x801F765C"
+verdict = "unreachable"
+reason = "PROT 0918 arm 8's height: the rounding fix-up of `sin(4 * word) / 4` (`lh` off the sine table at 0x801F7650). The arm reads the word only once it is at most `scalar << 6` (0x801F7634), 0x200 at the battle's speed scalar 8, and holds while it is positive, so the angle `4 * word` stays in `(0, 0x800]`, where the sine is never negative."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7944..0x801F7944"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`, `mult` at 0x801F792C). Both bytes are unsigned, so the product is never negative and the fix-up `addiu a1,a1,0x7` never runs."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7F00..0x801F7F44"
+verdict = "unreachable"
+reason = "PROT 0918 arm 0xE's rounding fix-ups of `ctx[+0x6D0] / 8` (0x801F7F00, 0x801F7F24, 0x801F7F44). The arm opens on the target-size framing `FUN_801F0348` (`jal` at 0x801F7EA4), which stores the word clamped to 0xC00..0x1400 (`camera_height_for_frame`), so it is never negative."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F82B0..0x801F82B0"
+verdict = "unreachable"
+reason = "PROT 0918 arm 16's rounding fix-up of `ctx[+0x6D0] / 4` (0x801F82A8..0x801F82B8): the word arm 0xE's framing stored, at least 0xC00 (see 0x801F7F00), and nothing in arms 0xE..0x10 writes it."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F86A0..0x801F86A0"
+verdict = "unreachable"
+reason = "PROT 0918 arm 0x12's rounding fix-up of `ctx[+0x6D0] / 8` (0x801F8698..0x801F86A8): the word arm 0xE's framing stored, at least 0xC00 (see 0x801F7F00)."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6A44..0x801F6A44"
+verdict = "unreachable"
+reason = "PROT 0907's prologue loads its victim only for a seat target code (`sltiu 8` / `beq` at 0x801F6A40..0x801F6A44). Nighto strikes one monster, so the cast reaches the module with the caster's `+0x1DD` on that monster's seat and never on a group code 8 or 9."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6B40..0x801F6B48"
+verdict = "unreachable"
+reason = "PROT 0907's phase dispatch past 0xF: only `0xFF` has an arm there. The module's phase stores are the early arms' `+1` / `+2` / `4` (0x801F71B4..0x801F71E0), the later arms' `+1` up to arm 13's step to 0xE (0x801F7E8C), arm 13's `0xF` (0x801F7E28), and the `0xFF` of arms 0xE and 0xF (0x801F7EF0, 0x801F7F60), so no phase from 0x10 to 0xFE is ever stored."
+
+[[arm]]
+entry = "0x801F69E8"
+image = "007a2043becf5a7c"
+range = "0x801F6C7C..0x801F6C9C"
+verdict = "unreachable"
+reason = "PROT 0907 arm 0's resist roll: the compiler's divide guards (`break 0x1C00` on a zero divisor, the `-1` / `0x80000000` overflow test) round `rand() % (0x13 - level)` (`div` at 0x801F6C78), where `level` is the caster's level byte for the spell (`+0x729`). The level-up check raises that byte only while it is below 9 (`magic_xp::accrue_and_level`), so the divisor is at least 10."

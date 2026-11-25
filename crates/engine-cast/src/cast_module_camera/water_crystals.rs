@@ -117,6 +117,9 @@ pub fn water_crystals_camera(
             let facing = bearing_12bit_approx(v.z, v.x, c.z, c.x).wrapping_add(0x800) & 0xFFF;
             arm.ctx_278 = Some(2);
             arm.others_write = HIDDEN;
+            // The monster row by its count (`3 .. 3 + ctx[+0x01]`,
+            // `0x801F6D98..0x801F6E04`): a fifth monster at seat 7 hides too.
+            arm.others_reach_seat_7 = true;
             arm.caster_write = CaptureSeatWrite {
                 facing: Some(facing),
                 ..SHOWN
@@ -166,7 +169,17 @@ pub fn water_crystals_camera(
             st.countdown.add(1 << 6);
         }
         4 => st.countdown.0 += SPEED_SCALAR * 12,
-        5 => arm.others_write = SHOWN,
+        5 => {
+            // Once the victim has settled (`0x801F7438..0x801F7478`: a live
+            // one idle, a fallen one on clip `8` or faded out), the rows show
+            // again (`0x801F74B8..0x801F7520`).
+            if !st.victim_settled {
+                arm.hold = true;
+                return arm;
+            }
+            arm.others_write = SHOWN;
+            arm.others_reach_seat_7 = true;
+        }
         _ => {}
     }
     arm

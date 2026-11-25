@@ -146,8 +146,10 @@ fn frame(session: &mut NativeSession, binding: &SceneActorBinding) {
 /// landing slot and never the motion-derived walk.
 #[test]
 fn rugi_flies_vahn_in_on_his_scene_clip() {
-    // The flight's three raised (`+0x42`) models take the clip arm, priced
-    // at about 720 hblanks a frame under the clip's read: it lands near 740.
+    // The flight's three raised (`+0x42`) models take the clip arm under the
+    // clip's read. A PCSX-Redux film of the beat (`juui1_vortex_exit_flash`
+    // run on into `rugi`, Cross every 8 vsyncs) holds Vahn on clip 7 for
+    // 712 vsyncs, the first 398 of them before the first leg moves him.
     let Some(run) = run_record("rugi", 72, 1000) else {
         return;
     };
@@ -156,6 +158,22 @@ fn rugi_flies_vahn_in_on_his_scene_clip() {
         .filter(|s| s.clip == 7)
         .skip(1) // the bind tick, before the host resolves the scene clip
         .collect();
+    let start = run.iter().position(|s| s.clip == 7).expect("clip 7 seated");
+    let held = run.iter().skip(start).take_while(|s| s.clip == 7).count();
+    let hover = run
+        .iter()
+        .skip(start + 1)
+        .position(|s| s.moved)
+        .map_or(0, |i| i + 1);
+    eprintln!("[rugi] clip 7 held {held} vsyncs, first leg after {hover} (retail 712, 398)");
+    assert!(
+        (695..=730).contains(&held),
+        "the flight holds clip 7 about as long as retail's 712 vsyncs: {held}"
+    );
+    assert!(
+        (380..=420).contains(&hover),
+        "the first leg starts about where retail's does (398): {hover}"
+    );
     assert!(
         flight.len() > 300,
         "the seat picked clip 7 ({} frames)",

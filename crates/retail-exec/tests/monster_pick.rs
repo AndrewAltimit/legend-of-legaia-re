@@ -137,6 +137,15 @@ fn gen_monster(rng: &mut Rng) -> Monster {
     }
 }
 
+/// Whether the record holds a swing candidate, which the physical arm's
+/// `rand() % count` divides by (`0x801EA270..0x801EA2B4` builds the list).
+fn has_swing(m: &Monster) -> bool {
+    m.tags
+        .iter()
+        .zip(&m.costs)
+        .any(|(t, c)| (0x0C..0x20).contains(t) && *c != 0xFF)
+}
+
 fn gen_pick(rng: &mut Rng) -> Pick {
     let count = 1 + rng.below(4) as usize;
     let mut monsters: Vec<Monster> = (0..count).map(|_| gen_monster(rng)).collect();
@@ -373,9 +382,17 @@ fn a_monster_picks_what_retail_picks() {
         let stop = cpu.call(PICKER, &[u32::from(p.caster)]);
         match stop {
             Stop::Returned => {}
-            // A record with no swing entry traps at `0x801EA2F8`; no shipped
-            // monster is one.
-            Stop::DivideByZero { .. } => continue,
+            // A record with no swing entry (tag `0x0C..=0x1F` at a cost other
+            // than `0xFF`) traps in the physical arm's `rand() % count`
+            // (`0x801EA30C`), and one with no castable spell in the magic
+            // arm's (`0x801EA41C`); no shipped monster is either. A physical
+            // trap on a record that has a swing is a defect, not a skip.
+            Stop::DivideByZero { pc: 0x801E_A30C }
+                if !has_swing(&p.monsters[usize::from(p.caster)]) =>
+            {
+                continue;
+            }
+            Stop::DivideByZero { pc: 0x801E_A41C } => continue,
             // The forced magic arm of `0xB4` retries for ever on a record whose
             // every match fails; its real record has a match.
             Stop::StepLimit { .. } if p.monsters[usize::from(p.caster)].id == 0xB4 => continue,
