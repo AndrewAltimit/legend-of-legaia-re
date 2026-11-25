@@ -279,12 +279,14 @@ const BODIES: [(u32, u32, u8); 14] = [
 
 /// The directors beside a ported tick body whose arms they pace, as `(entry,
 /// tick body, target code)`. Vera heals a party seat. PROT 0924's and 0925's
-/// target kind is pinned by no capture; they run on a seat. The other paced
-/// directors (PROT 0903, 0904, 0906, 0909..0913, 0918, 0919, 0922) hand
+/// target kind is pinned by no capture; they run on a seat. PROT 0903 runs
+/// with its CD word idle and its range poll answered (below). The other paced
+/// directors (PROT 0904, 0906, 0909..0913, 0918, 0919, 0922) hand
 /// their holds to the tick body's own port and arm a passed arm's shot on
 /// the body's next tick (`ModuleProfile::body_paced`), which a walk of the
 /// director alone cannot pace.
-const PACED: [(u32, u32, u8); 7] = [
+const PACED: [(u32, u32, u8); 8] = [
+    (903, GIMARD, 3),
     (905, VERA, 2),
     (907, NIGHTO, 3),
     (908, ZENOIR, 3),
@@ -295,6 +297,7 @@ const PACED: [(u32, u32, u8); 7] = [
 ];
 
 const VERA: u32 = 0x801F_69D8;
+const GIMARD: u32 = 0x801F_69D8;
 const ZENOIR: u32 = 0x801F_69D8;
 const ULTIMATE_RAVE: u32 = 0x801F_6A18;
 const SPIKEFISH: u32 = 0x801F_6A00;
@@ -608,6 +611,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     };
     let mut band_passes = 0usize;
     let mut whirl_passes = 0usize;
+    let mut gimard_far_passes = 0usize;
     let mut live_runs = 0usize;
     let mut live_spirit = 0usize;
     let mut live_xp = 0usize;
@@ -640,12 +644,26 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         for target in jal_targets(&module) {
             // PROT 0915's chase reads the range poll live: its creature
             // stands on the row in turn (below).
-            let live_reach = entry == 915 && target == RANGE;
+            let live_reach = matches!(entry, 915 | 903) && target == RANGE;
             if ![AIM, BUILDER, BEARING, RAND, WRAPPER, DRIVE_POLL, INSTALLER].contains(&target)
                 && !live_reach
             {
                 cpu.stub(target, 0);
             }
+        }
+        // PROT 0903's arm 11 walks its creature in until the range poll
+        // `FUN_8004E2F0(7, victim)` reads zero (`0x801F740C..0x801F7418`):
+        // the walk answers out of reach on the arm's first calls, a count
+        // keyed on the run, and the shadow's walk-in reads the same answer.
+        let gimard_far = Rc::new(std::cell::Cell::new(0u32));
+        if entry == 903 {
+            let far = gimard_far.clone();
+            cpu.hook(RANGE, move |r, _| {
+                let left = far.get();
+                far.set(left.saturating_sub(1));
+                r.r[V0] = u32::from(left > 0);
+            });
+            gimard_far.set(1 + u32::from(step) + layout.monsters + u32::from(fallen));
         }
         // The drive poll answers busy on its first calls from the module's
         // poll arm (`legaia_engine_battle_vm::battle_cast_cue::module_drive_arms`),
@@ -878,11 +896,14 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             }
             // Each monster's reaction run `+0x1EF..+0x1F2`, which a hit arm
             // stages from: the flinch, its fallback, the knockdown and the
-            // knockdown gate (set on every other seat).
+            // knockdown gate (set on every other seat). PROT 0903's even-step
+            // runs give its victim no flinch, so its hit stages the fallback
+            // (`0x801F7524..0x801F753C`).
             for s in 3..7u32 {
                 let a = ACTOR + s * STRIDE;
+                let no_flinch = s == 4 || (entry == 903 && s == layout.victim && step % 2 == 0);
                 cpu.mem
-                    .wr8(a + 0x1EF, if s == 4 { 0 } else { 0x10 + s as u8 });
+                    .wr8(a + 0x1EF, if no_flinch { 0 } else { 0x10 + s as u8 });
                 cpu.mem.wr8(a + 0x1F0, 0x20 + s as u8);
                 cpu.mem.wr8(a + 0x1F1, 0x30 + s as u8);
                 cpu.mem.wr8(a + 0x1F2, (s & 1) as u8);
@@ -1000,6 +1021,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // (`0x801F941C`), which arms 6 and 7 step over
             // (`0x801F70E0..0x801F7160`, `0x801F724C..0x801F72CC`); the
             // shadow's scene holds the same two, tagged by record.
+            // PROT 0903's arm 2 loads the creature's stream once the CD
+            // word `0x8007BDB0` reads idle (`-1`, `0x801F6CD4..0x801F6CF4`),
+            // then waits on it reading the stream's `7`; the engine holds the
+            // creature resident.
+            if entry == 903 {
+                cpu.mem.wr32(0x8007_BDB0, u32::MAX);
+            }
             let whirls = entry == 933;
             let mut whirl_retired = [false; 2];
             if whirls {
@@ -1037,6 +1065,9 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 }
             }
             for pass in 0..20_000u32 {
+                let far_pass = cpu.mem.rd8(CTX + 0x279) == 11 && gimard_far.get() > 0;
+                gimard_far_passes += usize::from(far_pass);
+                st.creature_arrived = !far_pass;
                 if fallen {
                     let step = walk_step() as i16;
                     let staged = cpu.mem.rd8(CTX + 0x276) != 0;
@@ -1462,7 +1493,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         }
                     });
                     let run = w
-                        .drive_summon_module_frame(layout.caster as u8, action, true)
+                        .drive_summon_module_frame(layout.caster as u8, action, !far_pass)
                         .pop()
                         .flatten();
                     if port_band {
@@ -2276,6 +2307,10 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
     assert!(
         whirl_passes >= 100,
         "PROT 0933: {whirl_passes} whirl passes"
+    );
+    assert!(
+        gimard_far_passes >= 100,
+        "PROT 0903: {gimard_far_passes} walk-in passes out of reach"
     );
     // PROT 0915's chase struck the row through its live reach poll.
     assert!(chase_hits >= 50, "PROT 0915 chase: {chase_hits} hits");

@@ -47,6 +47,10 @@ const DCT_RESET: u32 = 0x801C_FC18;
 const SEEK: u32 = 0x801C_FB94;
 /// `CdReady`-shaped status poll the demux opens with.
 const CD_POLL: u32 = 0x8005_BEAC;
+/// The STRv2 decoder the pump dispatches a dev slot's frame to, and the VLC
+/// table it hands it.
+const STRV2_DECODE: u32 = 0x801D_070C;
+const STRV2_TABLE: u32 = 0x801E_0A00;
 const DEMUX: u32 = 0x8005_F024;
 
 const CTX: u32 = 0x801D_19A0;
@@ -181,6 +185,7 @@ fn the_decode_context_and_slice_walk_match_the_overlay() {
 
     let mut rng = Rng(0x534C_4943);
     let (mut flips, mut partial, mut latched) = (0usize, 0usize, 0usize);
+    let mut zero_rows = 0usize;
     for case in 0..400 {
         let slot = FmvSlot {
             colour: rng.below(2) == 0,
@@ -206,6 +211,13 @@ fn the_decode_context_and_slice_walk_match_the_overlay() {
             if rng.below(3) == 0 {
                 w = 8 * (1 + rng.below(48)) as u16;
                 ht = 16 * (1 + rng.below(16)) as u16;
+            }
+            // Now and then a header with no height: the slice rect takes it
+            // unchecked, and the kick's `(h - 1) / 16` rounds toward zero
+            // (`bgez` / `addiu 0xE` at 0x801CF6B4..0x801CF6BC).
+            if rng.below(8) == 0 {
+                ht = 0;
+                zero_rows += 1;
             }
             let number = slot.start_frame + frame * rng.below(30);
             *header.borrow_mut() = (w, ht, number);
@@ -262,8 +274,8 @@ fn the_decode_context_and_slice_walk_match_the_overlay() {
         }
     }
     assert!(
-        flips > 300 && partial > 300 && latched > 100,
-        "{flips} {partial} {latched}"
+        flips > 300 && partial > 300 && latched > 100 && zero_rows > 50,
+        "{flips} {partial} {latched} {zero_rows}"
     );
 }
 
@@ -287,13 +299,23 @@ fn retail_slots(cpu: &mut Cpu) -> Vec<(u32, FmvSlot, String)> {
 
 #[test]
 fn the_stream_open_and_frame_pump_match_the_overlay_on_the_disc_movies() {
-    differential!(prot(970, OPEN), prot(970, PUMP));
+    differential!(prot(970, OPEN), prot(970, PUMP), prot(970, POLL));
     let Some(mut probe) = str_cpu() else {
         return;
     };
     let d = disc().expect("disc");
-    let (mut pumped, mut ends) = (0usize, 0usize);
+    let (mut pumped, mut ends, mut idle_pumps, mut strv2) = (0usize, 0usize, 0usize, 0usize);
     for (k, (_, retail_slot, path)) in retail_slots(&mut probe).into_iter().enumerate() {
+        // Every other movie runs with the Iki word clear, the dispatch the
+        // dev slots' STRv2 streams take (`bnez` at 0x801CFA70): retail calls
+        // `FUN_801D070C` on the frame, the code buffer and the table
+        // `0x801E0A00`, which the walk records (its decode is
+        // `strv2_decode.rs`'s) as the port names `Bitstream::Strv2`.
+        let kind = if k % 2 == 1 {
+            Bitstream::Strv2
+        } else {
+            Bitstream::Iki
+        };
         // The segment, cut short so the run stays quick: the end latch is
         // what stops both sides.
         let mut slot = retail_slot;
@@ -326,7 +348,12 @@ fn the_stream_open_and_frame_pump_match_the_overlay_on_the_disc_movies() {
         cpu.mem.wr32(0x8007_97A0, 0x801F_A080);
         // The MDEC-in DMA status a colour stream's demux checks: idle.
         cpu.mem.wr32(0x8007_9790, 0x801F_A0C0);
-        cpu.mem.wr32(IKI, 1);
+        cpu.mem.wr32(IKI, u32::from(kind == Bitstream::Iki));
+        let v2_calls = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+        let v = v2_calls.clone();
+        cpu.hook(STRV2_DECODE, move |r, _| {
+            v.borrow_mut().push((r.r[A1], r.r[psx_retail_exec::A2]))
+        });
         retail_init(&mut cpu, &slot);
         assert_eq!(cpu.call(OPEN, &[0x801F_B000, SLICE, SLOT]), Stop::Returned);
         assert_eq!(
@@ -334,7 +361,7 @@ fn the_stream_open_and_frame_pump_match_the_overlay_on_the_disc_movies() {
             Some((1, SLICE)),
             "the slice callback armed"
         );
-        let mut player = StrPlayer::open(slot, Bitstream::Iki);
+        let mut player = StrPlayer::open(slot, kind);
         assert_eq!(
             initialised(&mut cpu.mem, player.env()),
             *player.env(),
@@ -369,15 +396,28 @@ fn the_stream_open_and_frame_pump_match_the_overlay_on_the_disc_movies() {
             }
             let frame = match player.next_frame() {
                 Err(PumpIdle::NeedSectors) => {
-                    // The pump's poll found nothing: retail's spins on
-                    // `StGetNext` have the one side effect the port's single
-                    // try has (a reader parked on the wrap marker restarts at
-                    // slot 0), so run one on the retail ring.
+                    // The pump's poll found nothing: the poll's own `0x7D0`
+                    // spins on `StGetNext` give up with `0`
+                    // (`0x801CF764..0x801CF780`), and have the one side
+                    // effect the port's single try has (a reader parked on
+                    // the wrap marker restarts at slot 0).
+                    assert_eq!(cpu.call(POLL, &[CTX, SLOT]), Stop::Returned);
+                    assert_eq!(cpu.regs.r[V0], 0, "{path} sector {n}: retail had a frame");
+                    // Then the pump itself, its poll answering empty: it
+                    // spins `0x7D0` polls and gives up with `-1`
+                    // (`0x801CFA3C..0x801CFA5C`), the port's `NeedSectors`,
+                    // the context left as it stood.
+                    let env = retail_env(&mut cpu.mem, slot.colour);
+                    cpu.stub(POLL, 0);
+                    assert_eq!(cpu.call(PUMP, &[CTX, SLOT]), Stop::Returned);
+                    cpu.unhook(POLL);
+                    assert_eq!(cpu.regs.r[V0] as i32, -1, "{path} sector {n}: idle pump");
                     assert_eq!(
-                        cpu.call(ST_GET_NEXT, &[SLOT + 0x40, SLOT + 0x44]),
-                        Stop::Returned
+                        retail_env(&mut cpu.mem, slot.colour),
+                        env,
+                        "{path} sector {n}"
                     );
-                    assert_ne!(cpu.regs.r[V0], 0, "{path} sector {n}: retail had a frame");
+                    idle_pumps += 1;
                     continue;
                 }
                 Err(PumpIdle::Finished) => break,
@@ -388,9 +428,24 @@ fn the_stream_open_and_frame_pump_match_the_overlay_on_the_disc_movies() {
             assert_eq!(cpu.regs.r[V0] as i32, 0, "{at}: pump result");
             assert_eq!(retail_env(&mut cpu.mem, slot.colour), *player.env(), "{at}");
             assert_eq!(cpu.mem.rd32(END_LATCH) != 0, frame.is_last, "{at}");
-            assert_eq!(frame.bitstream_kind, Bitstream::Iki);
-            let codes = psx_mdec::iki_mdec_codes(&frame.bitstream).expect("Iki");
+            assert_eq!(frame.bitstream_kind, kind);
             let buf = cpu.mem.rd32(CTX + 4 * frame.code_buf as u32);
+            if kind == Bitstream::Strv2 {
+                assert_eq!(
+                    std::mem::take(&mut *v2_calls.borrow_mut()),
+                    vec![(buf, STRV2_TABLE)],
+                    "{at}: the STRv2 dispatch"
+                );
+                strv2 += 1;
+                pumped += 1;
+                ends += usize::from(frame.is_last);
+                if frame.is_last {
+                    break;
+                }
+                continue;
+            }
+            assert!(v2_calls.borrow().is_empty(), "{at}");
+            let codes = psx_mdec::iki_mdec_codes(&frame.bitstream).expect("Iki");
             let retail = cpu.mem.read(buf, codes.len() * 2);
             let port: Vec<u8> = codes.iter().flat_map(|c| c.to_le_bytes()).collect();
             assert!(retail == port, "{at}: the frame's MDEC codes");
@@ -401,7 +456,10 @@ fn the_stream_open_and_frame_pump_match_the_overlay_on_the_disc_movies() {
             }
         }
     }
-    assert!(pumped > 100 && ends == 9, "pumped {pumped} ends {ends}");
+    assert!(
+        pumped > 100 && ends == 9 && idle_pumps > 20 && strv2 > 20,
+        "pumped {pumped} ends {ends} idle {idle_pumps} strv2 {strv2}"
+    );
 }
 
 #[test]
@@ -532,8 +590,13 @@ fn the_play_loop_seeks_shows_and_skips_as_the_port() {
         m.wr32(PAD_WORD, pad);
         g.pads.push(pad);
     });
+    // The MDEC-out kick of a frame's first slice (`0x801CF314..0x801CF350`).
+    let kicks = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+    let k = kicks.clone();
+    cpu.hook(KICK, move |r, _| k.borrow_mut().push((r.r[A0], r.r[A1])));
     let mut rng = Rng(0x504C_4159);
     let (mut skipped, mut ran_out) = (0, 0);
+    let mut headless = 0usize;
     for round in 0..3000 {
         let slot = FmvSlot {
             colour: rng.below(2) == 0,
@@ -563,6 +626,23 @@ fn the_play_loop_seeks_shows_and_skips_as_the_port() {
         }
         let active = rng.below(2);
         cpu.mem.wr32(CTX + 0x28, active);
+        // The slice rect's width and height, and the staging buffer the kick
+        // fills; a frame with no rows yet rounds `(h - 1) / 16` toward zero
+        // (`bgez` / `addiu 0xE` at 0x801CF32C..0x801CF334).
+        let slice_w = [16i16, 24][rng.below(2) as usize];
+        let slice_h = if rng.below(6) == 0 {
+            0
+        } else {
+            16 * rng.below(16) as i16 + rng.below(16) as i16
+        };
+        headless += usize::from(slice_h == 0);
+        cpu.mem.wr16(CTX + 0x30, slice_w as u16);
+        cpu.mem.wr16(CTX + 0x32, slice_h as u16);
+        let slice_buf = rng.below(2);
+        cpu.mem.wr32(CTX + 0x14, slice_buf);
+        cpu.mem.wr32(CTX + 0x0C, 0x8011_0000);
+        cpu.mem.wr32(CTX + 0x10, 0x8011_8000);
+        kicks.borrow_mut().clear();
         let fmv_id = [0i16, 0, 0, 1, 3, rng.next() as i16][rng.below(6) as usize];
         cpu.mem.wr16(FMV_ID, fmv_id as u16);
         let frames = 1 + rng.below(12) as usize;
@@ -587,6 +667,16 @@ fn the_play_loop_seeks_shows_and_skips_as_the_port() {
 
         let log = log.borrow();
         let label = format!("round {round} {slot:?}");
+        // The kick opens every frame's decode, on the slice rect as it stands.
+        let kick = (
+            [0x8011_0000, 0x8011_8000][slice_buf as usize],
+            psx_mdec::str_player::slice_word_count(slice_w, slice_h) as u32,
+        );
+        assert!(
+            !kicks.borrow().is_empty() && kicks.borrow().iter().all(|&k| k == kick),
+            "{label}: the slice kicks {:x?}, port {kick:x?}",
+            kicks.borrow()
+        );
         // The seek: the file's sector plus the start frame's offset.
         assert_eq!(
             log.seek,
@@ -625,5 +715,8 @@ fn the_play_loop_seeks_shows_and_skips_as_the_port() {
             ran_out += 1;
         }
     }
-    assert!(skipped > 300 && ran_out > 300, "{skipped} {ran_out}");
+    assert!(
+        skipped > 300 && ran_out > 300 && headless > 200,
+        "{skipped} {ran_out} {headless}"
+    );
 }

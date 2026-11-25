@@ -20,6 +20,7 @@ use legaia_engine_battle_menus::battle_input::{
     BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase, RingGates,
     ring_press_refused,
 };
+use legaia_engine_battle_vm::battle_cam_script::{BattleCamPhase, BattleCamera};
 use legaia_engine_system::option_values::SelectAttackOpt;
 use psx_retail_exec::{A0, Cpu, Stop};
 use std::cell::RefCell;
@@ -51,6 +52,9 @@ const ROT_MARK: u32 = 0x801D_BD04;
 const CURSE_MARK: u32 = 0x801D_BEC4;
 const GLIDE: u32 = 0x801D_9BBC;
 const RING_STEP: u32 = 0x801D_8D00;
+/// The battle frame step, and the shared camera yaw the idle orbit turns.
+const FRAME_STEP: u32 = 0x1F80_0393;
+const ORBIT_YAW: u32 = 0x8007_B792;
 const CONFIRM: u32 = 0x0040;
 const CANCEL: u32 = 0x0020;
 const LEFT: u32 = 0x8000;
@@ -244,6 +248,7 @@ fn the_command_prompts_go_where_retail_goes() {
     w_seat.load_party(legaia_save::Party::zeroed(3));
     w_seat.enter_battle(3, 4);
     let (mut kept, mut repicked) = (0u32, 0u32);
+    let mut orbit_turns = 0usize;
     for round in 0..6000 {
         let state = [0x1E, 0x28, 0x28, 0x28, 0x32, 0x6E, 0x78][rng.below(7) as usize];
         let ring = state == 0x28;
@@ -327,6 +332,12 @@ fn the_command_prompts_go_where_retail_goes() {
         cpu.mem.wr8(BATTLE_ID, 0);
         cpu.stub(FIRST_ABLE, u32::from(first_able));
         cpu.stub(NEXT_ABLE, u32::from(next_able));
+        // The pass's frame step and the shared camera yaw, which the
+        // prologue's idle orbit turns on the prompts (`0x801D078C..0x801D07CC`).
+        let frame_step = 1 + (round % 4) as u8;
+        let yaw0 = (round as u32 * 0x2B7) & 0xFFF;
+        cpu.mem.wr8(FRAME_STEP, frame_step);
+        cpu.mem.wr16(ORBIT_YAW, yaw0 as u16);
         windows.borrow_mut().clear();
         cues.borrow_mut().clear();
         marks.borrow_mut().clear();
@@ -335,6 +346,26 @@ fn the_command_prompts_go_where_retail_goes() {
             Stop::Returned,
             "round {round}"
         );
+        // The orbit against the port's: the battle camera's Menu phase
+        // turns yaw by the same pass of the frame step
+        // (`BattleCamera::advance_to`). The ring `0x28` and attack mode
+        // `0x78` are not the prologue's: their frames' turn is the action
+        // SM's store (`0x801E2A58..0x801E2A68`), which this pass does not run.
+        let turned = (yaw0 as i32 - i32::from(cpu.mem.rd16(ORBIT_YAW))).rem_euclid(0x1000);
+        let port_turn = if matches!(state, 0x1E | 0x32 | 0x6E) {
+            let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+            cam.set_frame_step(frame_step);
+            let y0 = cam.pose().yaw;
+            cam.advance_to(u64::from(frame_step));
+            (y0 - cam.pose().yaw).rem_euclid(4096.0) as i32
+        } else {
+            0
+        };
+        assert_eq!(
+            turned, port_turn,
+            "round {round} state {state:#x} step {frame_step}: the idle orbit's turn"
+        );
+        orbit_turns += usize::from(turned != 0);
         let after = cpu.mem.rd8(CTX + 0x06);
         let win = windows.borrow().clone();
         let cue = cues.borrow().clone();
@@ -497,6 +528,7 @@ fn the_command_prompts_go_where_retail_goes() {
         kept > 20 && repicked > 20,
         "kept {kept} re-picked {repicked}"
     );
+    assert!(orbit_turns > 1000, "{orbit_turns} orbit turns compared");
 }
 
 /// The attack target cursor `0x5A` (`0x801D21CC..0x801D23EC`), with the ring

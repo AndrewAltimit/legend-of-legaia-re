@@ -2305,8 +2305,11 @@ impl World {
             }
             // The same pass turns the victim onto the creature
             // (`jal 0x80019B28` at `0x801F756C`, `sh v0,0x46(s2)`), which is what
-            // case 8's dead-target yaw reads through arm 12.
+            // case 8's dead-target yaw reads through arm 12. A Stoned victim
+            // takes neither the hit nor the turn (`andi 4` / `bne` at
+            // `0x801F7494..0x801F749C`).
             if (entry, phase_entry) == (903, 11)
+                && !self.battle.actor_is_petrified(victim_slot)
                 && let Some((cz, cx)) = self
                     .actors
                     .get(usize::from(seat_slot))

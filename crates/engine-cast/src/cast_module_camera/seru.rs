@@ -185,6 +185,17 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             if st.countdown.drain_above(SPEED_SCALAR << 5) {
                 return ArmDirection::HOLD;
             }
+            // Retail sinks the creature by the pass's whole `step * scalar`
+            // ahead of the gate (`0x801F6E78..0x801F6E94`), so the tick the
+            // arm leaves on owes the rest of its pass's sink.
+            let rest = i16::from(st.countdown.1) * MODULE_DRAIN_PER_TICK as i16;
+            let creature = match st.creature.as_mut() {
+                Some(c) => {
+                    c.y = c.y.wrapping_sub(rest);
+                    *c
+                }
+                None => creature,
+            };
             ArmDirection::shot(ModuleShot {
                 angles: [-0x1C0, yaw_from(0x700, creature.facing), 0],
                 tr: [0, 0x380, 0x1E0],

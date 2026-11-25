@@ -1575,6 +1575,7 @@ pub struct ModuleProfile {
 ///
 /// | PROT | Hit arm | The test |
 /// |---|---|---|
+/// | 0903 Gimard | `0xB` | `0x801F7480..0x801F749C` |
 /// | 0914 Gola Gola | `0xD` | `0x801F76FC..0x801F7708` |
 /// | 0920 Slippery | 9 | `0x801F7828..0x801F7834` |
 /// | 0921 Iota | `0xA` | `0x801F7BCC..0x801F7BD8` |
@@ -1583,7 +1584,7 @@ pub struct ModuleProfile {
 /// | 0928 Palma | `0x13` | `0x801F89D4..0x801F89E0` |
 /// | 0929 Mule | 18 | `0x801F873C..0x801F8748` |
 /// | 0934 Ozma | `0x18` | `0x801F8DE8..0x801F8DF4` |
-pub const STONE_SKIPPING_HITS: [u32; 8] = [914, 920, 921, 922, 923, 928, 929, 934];
+pub const STONE_SKIPPING_HITS: [u32; 9] = [903, 914, 920, 921, 922, 923, 928, 929, 934];
 
 /// The directed profile of a player-Seru module, by owning PROT entry.
 /// `None` for a module whose camera arms are not ported: its phase chain then
