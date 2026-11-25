@@ -188,3 +188,87 @@ image = "681c6ba817ae9361"
 range = "0x801F779C..0x801F779C"
 verdict = "unreachable"
 reason = "PROT 0936's second read of the growth word 0x801F8178 (`lw` / `bgez` at 0x801F7794..0x801F779C), non-negative for the reason the fix-up at 0x801F744C gives."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "bad3acf3fffd9928"
+range = "0x801F6AA0..0x801F6AA0"
+verdict = "unreachable"
+reason = "PROT 0903's phase dispatch: the `beq v1,t3` (t3 = 1) at 0x801F6AA0 is reached only for a phase below 3 that is neither 2 (0x801F6A88) nor 0 (0x801F6A98), so it is always 1 and never falls to the default `j 0x801F76E8`."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "bad3acf3fffd9928"
+range = "0x801F6B10..0x801F6B10"
+verdict = "unreachable"
+reason = "PROT 0903's phase dispatch bound: past 12 (0x801F6AFC..0x801F6B04) only `0xFF` has an arm. The module's phase stores are the shared `+1` (0x801F7390..0x801F73A0, 0x801F7474..0x801F7478) up to arm 12 and arm 12's `0xFF` (0x801F7698), so no phase from 13 to 0xFE is ever stored."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "bad3acf3fffd9928"
+range = "0x801F6C98..0x801F6C98"
+verdict = "unported"
+reason = "PROT 0903 arm 2's wait on the creature's CD stream: once its countdown is out the arm holds until the CD word 0x8007BDB0 reads 7 (0x801F6D14..0x801F6D1C), and a countdown already spent as the arm re-enters takes the `blez`. The engine holds the creature resident and reads the stream as loaded, so the arm never waits past its countdown."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "bad3acf3fffd9928"
+range = "0x801F6D1C..0x801F6D1C"
+verdict = "unported"
+reason = "PROT 0903 arm 2's test of the CD word 0x8007BDB0 against the creature stream's 7 (0x801F6D14..0x801F6D1C): the engine holds the creature resident, so the stream is always read as loaded (see 0x801F6C98)."
+
+[[arm]]
+entry = "0x801F6C70"
+image = "1a117ddfa651aab2"
+range = "0x801F7A28..0x801F7A28"
+verdict = "unreachable"
+reason = "PROT 0918: `bgez` on the battle frame's speed scalar times its step (`lbu 0x69` / `lbu 0x7F` off `0x1F800314`, `mult` at 0x801F7A10), the `/ 8` of the pitch ramp stored at 0x801F7A70. Both bytes are unsigned, so the product is at most `0xFE01` and never negative, and the fix-up `addiu a1,a1,0x7` never runs."
+
+[[arm]]
+entry = "0x801CF098"
+image = "facd000dd17cc885"
+range = "0x801CF0DC..0x801CF0FC"
+verdict = "unported"
+reason = "PROT 0970's play loop retries `CdSearchFile` on the movie's path while `0x8007B8C2` is non-zero and returns `0` once it is clear (0x801CF0D0..0x801CF0FC). The engine opens each movie off the disc image by its ISO path (`psx_iso::iso9660::find_path_in_image`), with no drive to miss it, so there is no search to retry."
+
+[[arm]]
+entry = "0x801CF098"
+image = "facd000dd17cc885"
+range = "0x801CF228..0x801CF250"
+verdict = "unported"
+reason = "PROT 0970's play loop re-seeks the file's first sector while the first pump comes back empty (`-1`, 0x801CF220..0x801CF250): a CD read that has not filled the ring after the pump's 0x7D0 polls. The engine feeds the ring from the disc image a sector at a time (`StrPlayer::deliver_sector`), so a pump only idles until more sectors are fed (`PumpIdle::NeedSectors`) and there is no stall to recover from."
+
+[[arm]]
+entry = "0x801CF098"
+image = "facd000dd17cc885"
+range = "0x801CF360..0x801CF3B8"
+verdict = "unported"
+reason = "PROT 0970's mid-movie stall recovery: a pump that comes back empty re-seeks `StGetBackloc`'s sector, or the file's first when that frame is past the slot's `+0x0C` or not positive (0x801CF358..0x801CF3BC). The engine reads the movie off the disc image with no drive to stall (see 0x801CF228)."
+
+[[arm]]
+entry = "0x801CF56C"
+image = "9ffaf7ec915df0d6"
+range = "0x801CF590..0x801CF5A0"
+verdict = "unported"
+reason = "PROT 0970's slice callback runs the `St` library's deferred demux (`FUN_8005F024`) when a sector came in while the MDEC was busy (`0x801CADA4`, 0x801CF588..0x801CF5A0). The engine's ring takes each sector as the host delivers it (`StrPlayer::deliver_sector`), so no demux is ever deferred."
+
+[[arm]]
+entry = "0x801CF56C"
+image = "9ffaf7ec915df0d6"
+range = "0x801CF604..0x801CF624"
+verdict = "unreachable"
+reason = "PROT 0970's slice callback: the compiler's divide guards (`break 7` on a zero divisor, the `-1` / `0x80000000` overflow test) round the leading column's `w % slice_w` (`div` at 0x801CF600). The divisor is the slice width `ctx+0x30`, which only the context init stores, as 0x10 or 0x18 (0x801CF94C..0x801CF958); the frame poll leaves it alone."
+
+[[arm]]
+entry = "0x801CF8B0"
+image = "8de763d58af1724c"
+range = "0x801CF8FC..0x801CF8FC"
+verdict = "unported"
+reason = "PROT 0970's context init builds the code buffers and resets the toggles only on a residency's first movie (`0x801D0D4C == 1`, cleared at 0x801CF930); a later movie in the same overlay load keeps them. The port has no globals to preserve and builds a complete context on every open (`DecodeEnv::init`, disclosed)."
+
+[[arm]]
+entry = "0x801CF8B0"
+image = "8de763d58af1724c"
+range = "0x801CF968..0x801CF968"
+verdict = "unported"
+reason = "PROT 0970's context init starts the slice cursor on the frame rect `ctx+0x28` names (0x801CF960..0x801CF984): on a residency's first movie the toggle is reset to 0, and only a later movie can keep the other rect, which the port's whole-context init does not model (see 0x801CF8FC)."

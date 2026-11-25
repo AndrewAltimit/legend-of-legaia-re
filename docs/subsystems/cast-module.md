@@ -1959,6 +1959,11 @@ Water Crystals hides the monster row by its count, a fifth monster at seat 7 inc
 (`0x801F6D98..0x801F6E04`), and its arm 5 lets a fallen victim through on clip `8` or once its
 prim word `+0x04` reads `0` (`0x801F7460..0x801F7478`, `CaptureVictimSettle::RestOrFaded`).
 
+Gimard's walk-in hit (arm 11) skips a Stoned victim, as the hit loops in `STONE_SKIPPING_HITS` do
+(`0x801F7494..0x801F749C`): no roll, no reaction and no turn onto the creature. Its arm 4 sinks the
+creature by the pass's whole `step * scalar` before the gate, so the arm's leaving tick owes the rest of
+its pass's sink.
+
 **Settle waits** are carried (`ChainSettle`, held by the band's caller). Each
 tests a seat the same way: live (`+0x14C != 0`) once its playing clip `+0x1D9`
 is back at `0`, dead once it reads the down clip `8`.

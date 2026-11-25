@@ -1367,6 +1367,19 @@ inside retail's last held pass). They found:
   owes the rest too (`gimard_shatter_add`, driven at steps 1 to 4 by
   `gimards_settle_arm_breaks_the_creature_up_as_retail_does`).
 
+The summon walk runs Gimard (PROT 0903) as a paced director, its CD word `0x8007BDB0` idle so arm 2 stores the
+creature stream's `7` itself, and its arm 11 range poll `FUN_8004E2F0(7, victim)` answering out of reach on the
+arm's first calls, with the shadow's walk-in reading the same answer. It found two defects. Arm 4 sinks the
+creature by the pass's whole `step * scalar` ahead of its gate (`0x801F6E78..0x801F6E94`), so the tick the arm
+leaves on owes the rest of its pass's sink. And arm 11 skips a Stoned victim (`andi 4` / `bne` at
+`0x801F7494..0x801F749C`): no roll, no reaction and no turn onto the creature, where the host's fold struck it and
+turned it. Gimard now sits in `STONE_SKIPPING_HITS`.
+
+The command prompts (`command_prompts`) also compare the battle tick's idle orbit at frame steps 1 to 4: on the
+round prompt, the flee confirm and the commit confirm its prologue turns the shared yaw `0x8007B792` by `2 * step`
+(`0x801D078C..0x801D07CC`), the turn `BattleCamera`'s Menu phase takes over the same pass. The ring and the
+attack-mode prompt leave the word alone; their frames' turn is the action SM's store.
+
 The chain-body walk holds a row settle as well as the victim's: PROT 0935's arm 6 over the row its target names
 (`0x801F7E2C..0x801F7F50`) and PROT 0936's arm 8 over the party (`0x801F7B18..0x801F7B90`), one seat busy at a time,
 fallen monsters lit until the hold ends. PROT 0937's arm 7 settles once its fourth hit has landed (`0x801F8098`,
@@ -1724,6 +1737,11 @@ retail splits the work, pixel-identical to the fused decoder it replaced. The ST
 `FUN_801F1A00` match on generated streams. The play loop's context init, frame poll and slice callback,
 the stream open and frame pump over the nine retail dispatch slots on their own movies, the MDEC output
 word, the slice-callback install and the four MDEC DMA sync routines (`str_player`, `mdec_sync`) match.
+An empty ring takes the frame poll through its `0x7D0` spins to `0` and the pump through its own to `-1`, which is
+the port's `PumpIdle::NeedSectors`. Every other movie runs with the Iki word clear, the dispatch to the STRv2
+decoder that the dev slots take. The play loop's first-slice kick, and the slice callback's, match
+`slice_word_count` on a frame with no rows too. The loop's CD search retry and its stall re-seeks are not ported:
+the engine reads each movie off the disc image a sector at a time.
 
 Among the system and render leaves, the boot SPU-base seeder, the staged character pair, the prompt
 line counter, the DRAWENV seed, the fade ramp step, the rumble actuator kernel and the scene-name sync
