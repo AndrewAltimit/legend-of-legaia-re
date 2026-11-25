@@ -315,12 +315,17 @@ fn a_win_pays_what_retail_pays() {
         0x8003_CBF8,    // The text pool.
         0x8003_CA38,
         0x8005_6758,
-        0x8003_563C, // The results windows.
-        0x8004_FCC8, // The voice.
+        0x8003_563C, // The results windows' number records.
         0x801D_5854, // The camera.
-        0x801D_8DE8, // The banner.
     ] {
         cpu.stub(stub, 0);
+    }
+    // The screen elements the results frame raises (`FUN_801D8DE8`) and the
+    // cues it plays (`FUN_8004FCC8`), in order.
+    let raised = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+    for va in [0x801D_8DE8u32, 0x8004_FCC8] {
+        let log = raised.clone();
+        cpu.hook(va, move |r, _| log.borrow_mut().push((va, r.r[4])));
     }
     let mut world = World::default();
     world.install_retail_progression_tables(&scus);
@@ -329,6 +334,7 @@ fn a_win_pays_what_retail_pays() {
     ));
     let mut rng = Rng(0x534F_494C);
     let (mut failures, mut drops, mut refunds) = (Vec::new(), 0, 0);
+    let (mut levelled, mut specials) = (0, 0);
     for round in 0..4000 {
         let tracker = &world.party.level_up_tracker;
         let w = gen_win(&mut rng, |m, level| {
@@ -336,6 +342,7 @@ fn a_win_pays_what_retail_pays() {
         });
         seed_retail(&mut cpu, &w);
         granted.borrow_mut().clear();
+        raised.borrow_mut().clear();
         state.set(w.seed);
         match cpu.call(SPOILS, &[]) {
             Stop::Returned => {}
@@ -364,6 +371,7 @@ fn a_win_pays_what_retail_pays() {
             retail_xp,
             granted.borrow().clone(),
             state.get(),
+            raised.borrow().clone(),
         );
         let (formation, catalog) = seed_port(&mut world, &w);
         // The refund runs in the per-member loop, ahead of the drops.
@@ -383,11 +391,34 @@ fn a_win_pays_what_retail_pays() {
                 )
             })
             .collect();
+        // The windows (`0x8004F610..0x8004F72C`): outside a special battle
+        // the report (element `0x41`), then, when anyone levelled, the
+        // level-up jingle and element `0x44 + mask` (bit `k` = character
+        // `k`), the mask `result_windows` names its line by.
+        let mask = r
+            .level_ups
+            .iter()
+            .filter(|lu| lu.char_id < 3)
+            .fold(0u32, |m, lu| m | 1 << lu.char_id);
+        levelled += usize::from(mask != 0);
+        specials += usize::from(w.special != 0);
+        let mut port_raised = Vec::new();
+        if w.special == 0 {
+            port_raised.push((0x801D_8DE8, 0x41));
+        }
+        if mask != 0 {
+            port_raised.push((
+                0x8004_FCC8,
+                u32::from(legaia_engine_battle::victory::LEVEL_UP_CUE),
+            ));
+            port_raised.push((0x801D_8DE8, 0x44 + mask));
+        }
         let port = (
             world.party.money as u32,
             port_xp,
             [refunded, r.drops.clone()].concat(),
             world.rng_state,
+            port_raised,
         );
         drops += r.drops.len();
         if retail != port {
@@ -403,6 +434,10 @@ fn a_win_pays_what_retail_pays() {
     assert!(
         drops > 100 && refunds > 100,
         "{drops} drops {refunds} refunds"
+    );
+    assert!(
+        levelled > 100 && specials > 100,
+        "{levelled} level-up windows, {specials} special battles"
     );
 }
 
