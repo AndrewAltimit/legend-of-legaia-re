@@ -1159,3 +1159,249 @@ fn an_attached_light_is_found_where_retail_finds_it() {
         "{ran} {found} {captured}"
     );
 }
+
+/// The field VM's host globals the port's `FieldHost` hooks name one to one:
+/// `(address, width)`. A store the hook owns lands here on the port's side,
+/// as the hook's documentation spells it.
+const HOST_GLOBALS: [(u32, u8); 11] = [
+    (0x8007_B44C, 4), // op 49 sub 1, the actor handle the menu park keeps
+    (0x8007_B628, 2), // op 4C CF, the script camera-focus X
+    (0x8007_B62A, 2), // op 4C CF, the focus Z
+    (0x8007_B630, 4), // op 4C 84, the shake amplitude
+    (0x8007_B6AC, 4), // op 4C CE, the player clip override
+    (0x8007_B780, 2), // op 4C 8A, the field light's three angles
+    (0x8007_B782, 2),
+    (0x8007_B784, 2),
+    (0x8007_B788, 4), // op 4C 8A, the packed back colour
+    (0x8007_B854, 4), // ops 4C 30 / 31, the ambient-particle gate
+    (0x8007_BA66, 2), // op 4C ED, the dither word
+];
+
+/// `Inert`, with the hooks whose whole effect is a store to a
+/// [`HOST_GLOBALS`] word making that store into `g`.
+struct Recording {
+    inert: Inert,
+    g: BTreeMap<u32, u32>,
+}
+impl Recording {
+    fn put(&mut self, at: u32, v: u32) {
+        self.g.insert(at, v);
+    }
+}
+impl FieldFlagsHost for Recording {
+    fn global_flags(&self) -> u32 {
+        self.inert.global_flags()
+    }
+    fn set_global_flags(&mut self, value: u32) {
+        self.inert.set_global_flags(value)
+    }
+    fn frame_delta(&self) -> u16 {
+        self.inert.frame_delta()
+    }
+}
+impl FieldSceneHost for Recording {}
+impl FieldTerrainHost for Recording {}
+impl FieldCameraHost for Recording {
+    fn set_camera_focus_override(&mut self, x_global: i16, z_global: i16) {
+        self.put(0x8007_B628, x_global as u16 as u32);
+        self.put(0x8007_B62A, z_global as u16 as u32);
+    }
+}
+impl FieldCameraMotionHost for Recording {
+    fn camera_glide_live(&mut self) -> bool {
+        self.inert.camera_glide_live()
+    }
+    fn set_shake_amplitude(&mut self, value: u8) {
+        self.put(0x8007_B630, value.into());
+    }
+}
+impl FieldScreenHost for Recording {
+    fn set_ambient_particle_gate(&mut self, enabled: bool) {
+        self.put(0x8007_B854, enabled.into());
+    }
+    fn set_field_light(&mut self, slots: [i16; 3], packed: u32) {
+        for (k, s) in slots.iter().enumerate() {
+            self.put(0x8007_B780 + 2 * k as u32, *s as u16 as u32);
+        }
+        self.put(0x8007_B788, packed);
+    }
+    fn set_dither(&mut self, value: u8) {
+        self.put(0x8007_BA66, value.into());
+    }
+}
+impl FieldAudioHost for Recording {
+    fn bgm_ready(&mut self, sub_op: u8) -> bool {
+        self.inert.bgm_ready(sub_op)
+    }
+}
+impl FieldPartyInventoryHost for Recording {
+    fn op4c_nd_subc_item_held(&self, needle: u8) -> bool {
+        self.inert.op4c_nd_subc_item_held(needle)
+    }
+}
+impl FieldDialogMenuHost for Recording {
+    fn op49_arm(&mut self, sub_op: u8, _pc: usize, field_90: u32) {
+        // `sw v1,-0x4bb4(v0)` at `0x801E09C8`, on sub-op 1 alone; the park
+        // word `_DAT_8007B450` itself is a RAM pointer the port does not keep.
+        if sub_op == 1 {
+            self.put(0x8007_B44C, field_90);
+        }
+    }
+    fn press_prompt(&mut self, x: u16, y: u16) -> bool {
+        self.inert.press_prompt(x, y)
+    }
+    fn op4c_n5_sub3_dialog_wait(&mut self, ctx: &mut FieldCtx) -> bool {
+        self.inert.op4c_n5_sub3_dialog_wait(ctx)
+    }
+}
+impl FieldActorHost for Recording {}
+impl FieldActorSpawnHost for Recording {
+    fn actor_guard(&mut self, actor_id: u8) -> Option<()> {
+        self.inert.actor_guard(actor_id)
+    }
+}
+impl FieldActorFxHost for Recording {
+    fn spawn_attached_light(
+        &mut self,
+        ctx: &FieldCtx,
+        ext: Option<u8>,
+        spawn: &legaia_engine_vm::field_actor_billboard::AttachedSpriteSpawn,
+        script: Option<&[u8]>,
+    ) -> bool {
+        self.inert.spawn_attached_light(ctx, ext, spawn, script)
+    }
+}
+impl FieldPlayerHost for Recording {
+    fn set_player_clip_override(&mut self, value: u8) {
+        self.put(0x8007_B6AC, value.into());
+    }
+}
+impl FieldHaltHost for Recording {}
+
+/// The host half of [`every_instruction_leaves_its_context_as_retail_leaves_it`]:
+/// over the same corpus, on a seeded context, do the globals the field VM
+/// writes outside the context (every [`HOST_GLOBALS`] word, seeded at random
+/// on both sides) end where retail leaves them? Retail's side runs the
+/// dispatcher with its SCUS calls stubbed (but the operand readers); the port's runs `step` on a
+/// [`Recording`] host whose hooks store what their documentation says the
+/// arm stores. A word no hook touched must keep its seed, so a store the
+/// port routes nowhere fails as surely as a wrong value.
+#[test]
+fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
+    differential!(prot(897, VM));
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The 24-bit operand reader op 4C 8A loads its packed colour through.
+    cpu.hook(0x8003_CEB8, |r, m| {
+        let a = r.r[4];
+        r.r[2] = u32::from(m.rd8(a)) | u32::from(m.rd8(a + 1)) << 8 | u32::from(m.rd8(a + 2)) << 16;
+    });
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let corpus = corpus();
+    let mut rng = Rng(0x484F_5354);
+    let read = |cpu: &mut psx_retail_exec::Cpu, at: u32, w: u8| {
+        if w == 2 {
+            u32::from(cpu.mem.rd16(at))
+        } else {
+            cpu.mem.rd32(at)
+        }
+    };
+    let (mut ran, mut stored) = (0u32, BTreeMap::<String, u32>::new());
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    for (script, pc, label) in &corpus {
+        for round in 0..2 {
+            cpu.mem = clean.clone();
+            cpu.regs.r[GP] = gp;
+            cpu.mem.load(SCRIPT, script);
+            cpu.mem.wr32(CTX + 0x94, SCRIPT);
+            let mut ctx = FieldCtx::default();
+            for (name, off, width) in FIELDS {
+                let mut v = rng.next();
+                if name == "flags" {
+                    v &= !0x400;
+                }
+                if name == "script_id" {
+                    v = if round == 0 { 0xFB } else { rng.below(0x40) };
+                }
+                if width == 1 {
+                    v &= 0xFF;
+                } else if width == 2 {
+                    v &= 0xFFFF;
+                }
+                wr(&mut cpu, off, width, v);
+                seat(&mut ctx, name, v);
+            }
+            let handle = rng.next();
+            cpu.mem.wr32(CTX + 0x90, handle);
+            ctx.field_90 = handle;
+            let mut host = Recording {
+                inert: Inert { hit: true },
+                g: BTreeMap::new(),
+            };
+            let mut seeds = BTreeMap::new();
+            for (at, w) in HOST_GLOBALS {
+                let v = if w == 2 {
+                    rng.next() & 0xFFFF
+                } else {
+                    rng.next()
+                };
+                if w == 2 {
+                    cpu.mem.wr16(at, v as u16);
+                } else {
+                    cpu.mem.wr32(at, v);
+                }
+                seeds.insert(at, v);
+            }
+            if cpu.call(VM, &[SCRIPT, *pc as u32, CTX]) != Stop::Returned {
+                continue;
+            }
+            let res = step(&mut host, &mut ctx, script, *pc);
+            if matches!(res, StepResult::Pending { .. } | StepResult::Unknown { .. }) {
+                continue;
+            }
+            ran += 1;
+            let mut wrong = Vec::new();
+            for (at, w) in HOST_GLOBALS {
+                let r = read(&mut cpu, at, w);
+                let p = host.g.get(&at).copied().unwrap_or(seeds[&at]);
+                if r != seeds[&at] {
+                    *stored.entry(format!("{label} {at:08X}")).or_default() += 1;
+                }
+                if r != p {
+                    wrong.push(format!(
+                        "{at:08X} retail {r:#x} port {p:#x} seed {:#x}",
+                        seeds[&at]
+                    ));
+                }
+            }
+            if !wrong.is_empty() {
+                let e = differ.entry(label.clone()).or_default();
+                e.0 += 1;
+                if e.0 == 1 {
+                    e.1 = format!(
+                        "pc {pc:#x} bytes {:02x?}: {}",
+                        &script[*pc..(*pc + 12).min(script.len())],
+                        wrong.join(", ")
+                    );
+                }
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    eprintln!("{ran} runs; host-global stores: {stored:?}");
+    assert!(report.is_empty(), "{}", report.join("\n"));
+    assert!(ran > 4000, "{ran}");
+    // Every hook's word is stored by some instruction of the corpus.
+    for (at, _) in HOST_GLOBALS {
+        assert!(
+            stored.keys().any(|k| k.ends_with(&format!("{at:08X}"))),
+            "no instruction stores {at:08X}"
+        );
+    }
+}
