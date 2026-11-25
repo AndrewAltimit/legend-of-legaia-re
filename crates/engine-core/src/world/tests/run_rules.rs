@@ -300,3 +300,34 @@ fn the_randomizer_is_a_function_of_its_seed() {
         "another seed is another run"
     );
 }
+
+#[test]
+fn a_custom_run_at_hards_enemy_stats_raises_run_hard() {
+    use legaia_engine_run_rules::rules::Knobs;
+    let pack = {
+        let mut files = legaia_expansion_format::PackFiles::new();
+        files.insert(
+            "pack.toml".into(),
+            b"id = \"t\"\nname = \"T\"\nversion = \"1.0.0\"\n".to_vec(),
+        );
+        std::sync::Arc::new(
+            legaia_expansion_format::ExpansionPack::from_files(&files).expect("pack parses"),
+        )
+    };
+    let flag = |stats: u16| {
+        let mut w = one_member_world();
+        w.expansion.pack = Some(pack.clone());
+        w.run_rules.rules = RunRules {
+            difficulty: Difficulty::Custom,
+            custom: Some(Knobs {
+                enemy_stat_permille: stats,
+                ..Knobs::RETAIL
+            }),
+            ..Default::default()
+        };
+        w.sync_run_pack_flags();
+        w.expansion.quests.progress.flags.is_set("run.hard")
+    };
+    assert!(flag(1350), "Hard's x1.35");
+    assert!(!flag(1300));
+}

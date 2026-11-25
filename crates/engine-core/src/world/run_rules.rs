@@ -451,13 +451,13 @@ impl World {
     /// The run's flags in the active pack's flag bank, so a pack can gate
     /// New Game+ content (`requires = { flags = ["run.ng_plus"] }`): the flag
     /// `run.ng_plus` and the counter `run.ng_plus_cycle`, plus `run.hard`
-    /// (Hard or Nightmare), `run.ironman` and `run.randomizer`. Nothing is
+    /// (`RunRules::is_hard`: Hard, Nightmare, or a custom preset at Hard's
+    /// enemy stats or more), `run.ironman` and `run.randomizer`. Nothing is
     /// written without a pack, and nothing is raised under retail rules.
     pub fn sync_run_pack_flags(&mut self) {
         if self.expansion.pack.is_none() {
             return;
         }
-        use legaia_engine_run_rules::rules::Difficulty;
         let r = self.run_rules.rules.clone();
         let flags = &mut self.expansion.quests.progress.flags;
         let mut raise = |name: &str, on: bool| {
@@ -466,10 +466,7 @@ impl World {
             }
         };
         raise("run.ng_plus", r.ng_plus.is_some());
-        raise(
-            "run.hard",
-            matches!(r.difficulty, Difficulty::Hard | Difficulty::Nightmare),
-        );
+        raise("run.hard", r.is_hard());
         raise("run.ironman", r.ironman.is_some());
         raise("run.randomizer", r.randomizer.is_some());
         if r.ng_plus.is_some() {

@@ -476,6 +476,18 @@ impl RunRules {
         }
     }
 
+    /// Whether the run plays hard (a pack's `run.hard` flag): Hard or
+    /// Nightmare, or a custom preset whose enemy stats are at least Hard's.
+    pub fn is_hard(&self) -> bool {
+        match self.difficulty {
+            Difficulty::Hard | Difficulty::Nightmare => true,
+            Difficulty::Custom => {
+                self.knobs().enemy_stat_permille >= Difficulty::Hard.knobs().enemy_stat_permille
+            }
+            Difficulty::Easy | Difficulty::Normal => false,
+        }
+    }
+
     /// The New Game+ cycle, `0` outside New Game+.
     pub fn ng_plus_cycle(&self) -> u8 {
         self.ng_plus.map_or(0, |n| n.cycle)
@@ -609,6 +621,16 @@ mod tests {
         };
         assert_eq!(r.knobs(), k);
         assert_eq!(r.summary().unwrap(), "Custom");
+        assert!(r.is_hard(), "x5 foes are hard");
+        let mut soft = r.clone();
+        soft.custom = Some(Knobs {
+            enemy_stat_permille: 1300,
+            ..Knobs::RETAIL
+        });
+        assert!(!soft.is_hard(), "under Hard's x1.35");
+        soft.custom.as_mut().unwrap().enemy_stat_permille = 1350;
+        assert!(soft.is_hard());
+        assert!(!RunRules::default().is_hard());
         let json = serde_json::to_string(&r).unwrap();
         assert_eq!(serde_json::from_str::<RunRules>(&json).unwrap(), r);
         // A custom block missing a knob reads it as retail's.
