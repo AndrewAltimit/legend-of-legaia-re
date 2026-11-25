@@ -705,7 +705,7 @@ async function playerPath(browser, port, kind, errors) {
   });
   let block = null;
   if (kind === 'new_game') {
-    await page.evaluate(() => { document.querySelector('[data-mode="newgame"]').click(); });
+    await page.evaluate(() => { window.__playBootNewGame(); });
     /* Past the logos, the title's Start, its New Game row and the rules screen. */
     const started = Date.now();
     for (let i = 0; Date.now() - started < 60000; i++) {

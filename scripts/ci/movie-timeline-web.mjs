@@ -283,7 +283,7 @@ try {
   const fillMs = await page.evaluate(() => window.__playDisc.fillMs ?? null);
   extra.fill_ms = fillMs;
   if (ROUTE === 'attract') {
-    await page.evaluate(() => { document.querySelector('[data-mode="newgame"]').click(); });
+    await page.evaluate(() => { window.__playBootNewGame(); });
   } else {
     await page.evaluate(() => { document.querySelector('[data-scene="town01"]').click(); });
     await page.waitForFunction((n) => { const M = window.__mt; M.rafAtClick = M.rafAtClick ?? M.raf.length; return M.raf.length - M.rafAtClick >= n; }, SETTLE, { timeout: 60000, polling: 'raf' });
