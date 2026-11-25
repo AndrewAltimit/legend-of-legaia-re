@@ -57,17 +57,22 @@ fn typists_charged(session: &NativeSession) -> bool {
 const GROW_OUTINGS: usize = 16;
 
 /// The AGL a Fury Boost lifts to the nine presses' price
-/// (`base * 7 / 5 + 8 >= 270`), and how far below it a wearer still trains
-/// for it: a level or two.
+/// (`base * 7 / 5 + 8 >= 270`); how far below it a wearer still trains for
+/// it is [`TYPIST_AGL_REACH`].
 const TYPIST_AGL: u16 = 188;
 
 /// The HP, per mille of the weakest member, a growing outing walks out at
 /// and comes back under.
 const GROW_FLOOR: u32 = 400;
-const TYPIST_AGL_REACH: u16 = 8;
+/// How far below [`TYPIST_AGL`] a Miracle wearer still grows for it: about
+/// three levels. At eight, placed stream 5 met Koru with Vahn at AGL 179,
+/// a caster, and from that stream's own `nivora_late` save the stretch took
+/// 1/9/5/7 reloads on four dealt streams; at twelve it grows him, and took
+/// 0/2/0/6. The growing keeps the bag's heal reserve whatever the reach.
+const TYPIST_AGL_REACH: u16 = 12;
 
 /// Whether a present member wears a Miracle it cannot type under a Fury Boost
-/// ([`race_typist`]) but is within a level or two of the AGL that pays for
+/// ([`race_typist`]) but is within [`TYPIST_AGL_REACH`] of the AGL that pays for
 /// it. One further off (Gala, a caster at AGL 172) spends its Spirit on Arts
 /// instead, and walking for it only met Koru with the bag spent.
 fn miracle_short(session: &NativeSession) -> bool {
