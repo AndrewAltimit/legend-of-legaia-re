@@ -140,6 +140,12 @@ fn the_effect_stepper_is_retails() {
         let scope = [3u8, 8, 9, 0xFF][rng.below(4) as usize];
         cpu.mem.wr8(CTX + 0x13, slot as u8);
         cpu.mem.wr32(CTX + 0x1028, 0);
+        for slot in 0..4u32 {
+            cpu.mem.wr8(CTX + 0x24E + slot, 0);
+            for b in 0..8 {
+                cpu.mem.wr8(CTX + 0x1144 + slot * 8 + b, 0x5A);
+            }
+        }
         let a = ACTOR + slot * 0x400;
         cpu.mem.wr8(a + 0x1F5, cursor);
         cpu.mem.wr8(a + 0x1DC, 0);
@@ -279,12 +285,29 @@ fn the_effect_stepper_is_retails() {
         }
         if let Some(launch) = step.launch {
             terminators += 1;
+            let want = (launch.0 as i16, launch.1 as i16, launch.2 as i16);
+            // The seed loop (`0x801DF294..0x801DF2DC`) raises all four
+            // homing slots' `+0x24E` byte and copies the launch quad into
+            // each `+0x1144 + slot * 8`.
+            for slot in 0..4u32 {
+                let q = CTX + 0x1144 + slot * 8;
+                let seeded = (
+                    cpu.mem.rd16(q) as i16,
+                    cpu.mem.rd16(q + 2) as i16,
+                    cpu.mem.rd16(q + 4) as i16,
+                );
+                let raised = cpu.mem.rd8(CTX + 0x24E + slot);
+                if (seeded, raised) != (want, 1) && wrong.is_none() {
+                    wrong = Some(format!(
+                        "homing slot {slot}: retail launch {seeded:?} raised {raised} port {want:?}"
+                    ));
+                }
+            }
             let retail_launch = (
                 cpu.mem.rd16(CTX + 0x1144) as i16,
                 cpu.mem.rd16(CTX + 0x1146) as i16,
                 cpu.mem.rd16(CTX + 0x1148) as i16,
             );
-            let want = (launch.0 as i16, launch.1 as i16, launch.2 as i16);
             let retail_off = cpu.mem.rd32(CTX + 0x1014).wrapping_sub(POWER_TABLE) as usize;
             if retail_launch != want || Some(retail_off) != step.move_power_offset {
                 wrong = Some(format!(
