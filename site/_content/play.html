@@ -202,6 +202,17 @@ body.xw-preview .touch-pad { display: none; }
   .play-screen:not(:fullscreen) .touch-pad .tp-middle { bottom: auto; top: 3%; }
   .play-screen:not(:fullscreen) .touch-pad .tp-small { padding: 0.45rem 0.7rem; }
 }
+/* The title and the screens it hands off to (the New Game rules, Continue,
+   Options) draw their tabs along the top and their help and key hint along the
+   foot, where the pad's shoulders, D-pad, face buttons and START / SELECT sat
+   over them in every landscape layout. While the title runs (`pad-band` on the
+   wrap) the pad takes the band under the picture there too. */
+.play-screen:not(:fullscreen) .play-canvas-wrap.pad-band:has(> .touch-pad:not(.is-hidden)) { margin-bottom: 212px; }
+.play-screen:not(:fullscreen) .pad-band > .touch-pad { inset: auto 0 auto 0; top: calc(100% + 8px); height: 200px; }
+.play-screen:not(:fullscreen) .pad-band > .touch-pad .tp-dpad { width: 148px; bottom: 3%; }
+.play-screen:not(:fullscreen) .pad-band > .touch-pad .tp-face { width: 152px; bottom: 3%; }
+.play-screen:not(:fullscreen) .pad-band > .touch-pad .tp-middle { bottom: auto; top: 3%; }
+.play-screen:not(:fullscreen) .pad-band > .touch-pad .tp-small { padding: 0.45rem 0.7rem; }
 body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
 /* The picture takes the frame's own shape: the workbench's view is as wide
    as its window, not 4:3. */
@@ -2256,6 +2267,7 @@ div.play-vis-head { cursor: default; }
      * buttons under the canvas. Both queue for the next frame. */
     const rulesTaps = [];
     const wrapEl = menuCanvas.parentElement;
+    wrapEl.classList.add('pad-band');
     const onRulesTap = (e) => {
       if (handoff !== 'rules') return;
       const t = e.target;
@@ -2276,8 +2288,8 @@ div.play-vis-head { cursor: default; }
         return;
       }
       if (rulesButtons) {
-        /* The on-screen pad covers the canvas's foot, where the key hint
-         * is drawn: while it is shown, the bar carries the touch hint. */
+        /* The canvas's key hint names keyboard keys: while the on-screen
+         * pad is shown, the bar carries the touch hint as well. */
         const pad = wrapEl.querySelector('.touch-pad');
         rulesButtons.classList.toggle('with-touch-hint', !!pad && !pad.classList.contains('is-hidden'));
         return;
@@ -2306,6 +2318,7 @@ div.play-vis-head { cursor: default; }
       bootTitleRAF = 0;
       syncSeedBox(false);
       syncRulesButtons(false);
+      wrapEl.classList.remove('pad-band');
       wrapEl.removeEventListener('pointerdown', onRulesTap);
       window.removeEventListener('keydown', onKey);
       ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
